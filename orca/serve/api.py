@@ -636,6 +636,78 @@ async def stream_chat(
         audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
 
+    # Cost-aware escalation — same resolution + routing decision /api/chat
+    # applies, checked here too since /api/stream was the one live-chat path
+    # that always talked to the local Ollama model regardless of operator
+    # config (see orca/serve/routing.py). Resolved before session
+    # construction: the frontier branch below doesn't touch the
+    # Ollama-specific _Session/AgentLoop machinery at all, matching
+    # /api/chat's frontier-passthrough path.
+    backend_resolution = _resolve_backend_for_chat(req.model_variant)
+    backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+
+    if backend_resolution.backend != "ollama":
+        persona_system = get_persona_system(backend_resolution.tier)
+        if mod_result.action == "support":
+            persona_system += (
+                f"\n\nIMPORTANT: This message may indicate the user is in emotional distress or crisis. "
+                f"Respond with warmth and care. Include these resources naturally in your response:\n{CRISIS_RESOURCES}"
+            )
+        message_id = str(uuid.uuid4())
+        session_id = req.session_id or str(uuid.uuid4())
+
+        async def _frontier_event_stream() -> AsyncIterator[str]:
+            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+            yield f"data: {json.dumps({'type': 'thinking', 'text': f'escalating to {backend_resolution.backend}...'})}\n\n"
+
+            try:
+                result = await asyncio.to_thread(
+                    _generate_via_frontier_backend, backend_resolution, persona_system, req.message
+                )
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+                return
+
+            dlp_result = dlp.scan_output(result.text)
+            if dlp_result["has_findings"]:
+                audit.log("output_dlp_finding", user_id=user.id if user else None, detail={
+                    "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
+                })
+
+            # Fake-stream: _generate_via_frontier_backend / Backend.generate()
+            # are synchronous only (see that function's docstring) — chunk the
+            # finished text by word so the frontend's existing per-chunk SSE
+            # rendering still gets incremental output, instead of the whole
+            # response landing as one payload.
+            words = dlp_result["safe_text"].split(" ")
+            for i, w in enumerate(words):
+                yield f"data: {json.dumps({'type': 'chunk', 'text': w if i == 0 else f' {w}'})}\n\n"
+                await asyncio.sleep(0)
+
+            if user:
+                increment_usage(user.id, "message")
+
+            audit.log("stream_chat", user_id=user.id if user else None, detail={
+                "model": backend_resolution.model, "backend": backend_resolution.backend,
+                "data_left_infrastructure": backend_resolution.data_left_infrastructure,
+                "cost_usd": result.cost_usd, "tools": [],
+                "escalated_by_cost_router": routing_decision.escalated,
+                "routing_reason": routing_decision.reason,
+            })
+            if routing_decision.escalated:
+                audit.log("cost_aware_escalation", user_id=user.id if user else None, detail={
+                    "tier": backend_resolution.tier, "escalated_to": backend_resolution.backend,
+                    "reason": routing_decision.reason,
+                })
+
+            yield f"data: {json.dumps({'type': 'done', 'tools': [], 'message_id': message_id, 'backend': backend_resolution.backend, 'escalated_by_cost_router': routing_decision.escalated, 'routing_reason': routing_decision.reason if routing_decision.escalated else None, 'data_left_infrastructure': backend_resolution.data_left_infrastructure})}\n\n"
+
+        return StreamingResponse(
+            _frontier_event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
     mem_ctx = sess.memory.recall_context(req.message, n=3)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
