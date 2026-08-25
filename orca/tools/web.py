@@ -5,9 +5,11 @@ Uses DuckDuckGo's HTML interface and direct page fetching.
 """
 from __future__ import annotations
 
+import ipaddress
 import re
+import socket
 from typing import NamedTuple
-from urllib.parse import quote_plus, urljoin
+from urllib.parse import quote_plus, urljoin, urlparse
 
 import httpx
 
@@ -16,6 +18,30 @@ HEADERS = {
 }
 
 DDG_URL = "https://html.duckduckgo.com/html/?q={query}&kl=us-en"
+
+
+def _is_ssrf_risk(url: str) -> bool:
+    """
+    SECURITY: fetch_page() previously accepted any URL with zero
+    validation — an SSRF vector (internal services, cloud metadata
+    endpoints like 169.254.169.254). Currently unreachable from any
+    tool-calling surface (confirmed: nothing in the codebase calls
+    fetch_page()), but wiring it up in the future without remembering
+    this check would make it live immediately — so the check lives here,
+    at the source, rather than depending on a future caller to add it.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return True
+    host = parsed.hostname
+    if not host:
+        return True
+    try:
+        resolved = socket.gethostbyname(host)
+        addr = ipaddress.ip_address(resolved)
+    except (socket.gaierror, ValueError):
+        return True  # can't resolve/parse it — fail closed, not open
+    return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved or addr.is_multicast
 
 
 class SearchResult(NamedTuple):
@@ -53,7 +79,20 @@ def _parse_ddg(html: str, n: int) -> list[SearchResult]:
 
 
 def fetch_page(url: str, max_chars: int = 8000) -> str:
-    """Fetch and clean a webpage, returning readable text."""
+    """
+    Fetch and clean a webpage, returning readable text.
+
+    HONEST SCOPE: _is_ssrf_risk() checks the URL's resolved address before
+    the initial request, but follow_redirects=True below means a malicious
+    server could still redirect to an internal address AFTER that check
+    passes (a TOCTOU-style bypass) — httpx doesn't cheaply expose per-hop
+    redirect inspection. This is a real, known residual gap, acceptable
+    for now only because this function is currently unreachable from any
+    tool-calling surface; it must be closed (disable auto-follow-redirects
+    and check each hop) before this is ever wired up as a callable tool.
+    """
+    if _is_ssrf_risk(url):
+        return f"Refused to fetch {url}: resolves to a private/internal/reserved address."
     try:
         r = httpx.get(url, headers=HEADERS, timeout=15, follow_redirects=True)
         r.raise_for_status()

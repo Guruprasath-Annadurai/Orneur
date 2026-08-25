@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from orca.auth.db import get_conn
@@ -24,6 +24,56 @@ class User:
     tier: str
     verified: bool
     role: str = "member"
+    signup_seq: int | None = None
+
+
+# First-100 cohort gets Novus free regardless of tier — counted by global
+# signup order (signup_seq), decided explicitly over "first 100 to try
+# Novus" since that produces a different, harder-to-reason-about cohort.
+NOVUS_FREE_SIGNUP_CUTOFF = 100
+
+# Which paid tiers unlock a given model variant outright, independent of
+# the early-cohort exception above.
+_PAID_TIERS = {"pro", "enterprise"}
+
+
+def model_access_allowed(user: "User | None", model_variant: str) -> tuple[bool, str]:
+    """
+    Gates genesis/novus/aeternum (nano/core/ultra) access by plan.
+
+    Rules (decided explicitly, not inferred):
+      - nano (Genesis): always free, no restriction, anonymous included.
+      - core (Novus): free if tier is pro/enterprise, OR if the user is
+        one of the first NOVUS_FREE_SIGNUP_CUTOFF global signups. Anonymous
+        users (no account) do not get the early-cohort exception — there's
+        no signup_seq to check without an account.
+      - ultra (Aeternum): paid only (pro/enterprise), no free path, ever.
+
+    Returns (allowed, reason) — reason is empty on success, else a message
+    safe to show the user directly.
+    """
+    variant = (model_variant or "core").removeprefix("orca-")
+
+    if variant == "nano":
+        return True, ""
+
+    if variant == "core":
+        if user and user.tier in _PAID_TIERS:
+            return True, ""
+        if user and user.signup_seq is not None and user.signup_seq <= NOVUS_FREE_SIGNUP_CUTOFF:
+            return True, ""
+        return False, (
+            "Novus is free for our first 100 users and a paid feature after that. "
+            "Upgrade to Pro to unlock it, or sign in if you believe you qualify for early access."
+        )
+
+    if variant == "ultra":
+        if user and user.tier in _PAID_TIERS:
+            return True, ""
+        return False, "Aeternum is a paid feature. Upgrade to Pro or Enterprise to unlock it."
+
+    # Unknown variant — fail closed, don't silently allow an unrecognized model string through.
+    return False, f"Unknown model variant: {model_variant!r}"
 
 
 # ── User CRUD ─────────────────────────────────────────────────────────────────
@@ -45,19 +95,36 @@ def _count_users() -> int:
     return row["n"] if row else 0
 
 
+def _claim_signup_seq(conn) -> int:
+    """
+    Atomically claims the next global signup sequence number. UPDATE...
+    RETURNING is used (not a read-then-write count) so concurrent signups
+    can't both land on the same number — Postgres row-locks the single
+    counter row on UPDATE, SQLite serializes writes at the connection/file
+    level; both make this race-safe under concurrent signups at scale.
+    """
+    row = conn.execute(
+        "UPDATE signup_counter SET next_seq = next_seq + 1 WHERE id = 1 RETURNING next_seq"
+    ).fetchone()
+    # next_seq was already incremented — the value claimed by THIS signup
+    # is one less than what's now stored (started at 1, so signup #1 claims 1).
+    return row["next_seq"] - 1
+
+
 def create_user(email: str, password: str, name: str = "") -> User:
     uid = str(uuid.uuid4())
     ph  = hash_password(password)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     display = name or email.split("@")[0]
     role = "owner" if _count_users() == 0 else "member"
     with get_conn() as conn:
+        seq = _claim_signup_seq(conn)
         conn.execute(
-            "INSERT INTO users (id, email, name, password_hash, tier, role, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (uid, email.lower().strip(), display, ph, "free", role, now),
+            "INSERT INTO users (id, email, name, password_hash, tier, role, created_at, signup_seq) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (uid, email.lower().strip(), display, ph, "free", role, now, seq),
         )
-    return User(id=uid, email=email, name=display, tier="free", verified=False, role=role)
+    return User(id=uid, email=email, name=display, tier="free", verified=False, role=role, signup_seq=seq)
 
 
 def set_user_tier(user_id: str, tier: str) -> None:
@@ -178,6 +245,7 @@ def _row_to_user(row) -> Optional[User]:
         tier=row["tier"],
         verified=bool(row["verified"]),
         role=row["role"] if "role" in cols else "member",
+        signup_seq=row["signup_seq"] if "signup_seq" in cols else None,
     )
 
 
@@ -233,7 +301,7 @@ def record_user_session(user_id: str, session_id: str) -> None:
         conn.execute(
             "INSERT INTO user_sessions (user_id, session_id, created_at) VALUES (?,?,?) "
             "ON CONFLICT(user_id, session_id) DO NOTHING",
-            (user_id, session_id, datetime.utcnow().isoformat()),
+            (user_id, session_id, datetime.now(timezone.utc).isoformat()),
         )
 
 
@@ -251,7 +319,21 @@ def delete_user_account_records(user_id: str) -> None:
     orchestrated separately in orca/serve/account_delete.py, since it needs
     access to DocStore/EpisodicMemory/session_store, which this module
     intentionally doesn't import (keeps store.py's dependency footprint to
-    just the DB layer)."""
+    just the DB layer).
+
+    api_keys' table is owned by orca/auth/apikeys.py, created lazily by that
+    module's own _ensure_table() at import time — NOT by this module's
+    schema. In the real app something else always imports apikeys.py first,
+    so the table exists by the time anyone calls this function. But that's
+    an import-order assumption, not a guarantee: a script, test, or future
+    refactor that calls delete_user_account_records() without that import
+    having happened yet would crash with "no such table: api_keys". Ensuring
+    it here makes this function self-sufficient regardless of import order —
+    CREATE TABLE IF NOT EXISTS is a no-op when the table already exists, so
+    this changes nothing for the normal path."""
+    from orca.auth.apikeys import _ensure_table as _ensure_api_keys_table
+    _ensure_api_keys_table()
+
     with get_conn() as conn:
         conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
         conn.execute("DELETE FROM usage_daily WHERE user_id=?", (user_id,))

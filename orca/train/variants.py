@@ -46,7 +46,7 @@ VARIANTS: dict[str, VariantSpec] = {
     "nano": VariantSpec(
         name="orca-nano",
         ollama_name="orca-nano",
-        base_model="unsloth/Qwen2.5-3B-Instruct",
+        base_model="unsloth/Qwen2.5-7B-Instruct",
         lora_rank=32,
         batch_size=4,
         gradient_accumulation=4,
@@ -54,9 +54,9 @@ VARIANTS: dict[str, VariantSpec] = {
         temperature=0.7,
         top_p=0.9,
         num_ctx=4096,
-        description="Fast 3B model — instant responses, minimal RAM",
-        vram_gb=6,
-        preset="laptop",
+        description="Genesis — 7B, everyday assistant, business + coding + Hindi/English",
+        vram_gb=10,
+        preset="prosumer",
     ),
     "core": VariantSpec(
         name="orca-core",

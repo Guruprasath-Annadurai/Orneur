@@ -152,3 +152,72 @@ Your AI. Your hardware. Your data.
         print(f"[LICENSE EMAIL FAILED] {to_email}: {e}")
         print(f"  Key: {license_key}")
         return False
+
+
+def send_org_invite_email(to_email: str, invite_link: str, org_name: str, inviter_name: str) -> bool:
+    """
+    Team invite email — deliberately separate from send_license_email
+    rather than reusing its tier/seats/license-key template, which would
+    put nonsensical content ("Your Orca team_invite License Key") in a
+    real email. Same SMTP config and graceful-without-SMTP fallback.
+    """
+    host     = os.environ.get("SMTP_HOST", "")
+    port     = int(os.environ.get("SMTP_PORT", "587"))
+    user     = os.environ.get("SMTP_USER", "")
+    password = os.environ.get("SMTP_PASS", "")
+    from_addr = os.environ.get("SMTP_FROM", user)
+
+    if not host or not user:
+        print(f"\n[TEAM INVITE GENERATED — EMAIL NOT CONFIGURED]")
+        print(f"  To:   {to_email}")
+        print(f"  Link: {invite_link}")
+        return False
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"{inviter_name or 'Someone'} invited you to {org_name} on Orca"
+    msg["From"]    = from_addr
+    msg["To"]      = to_email
+
+    plain = f"""\
+{inviter_name or 'Someone'} has invited you to join {org_name} on Orca.
+
+Accept the invite here:
+  {invite_link}
+
+— The Orca Team
+"""
+
+    html = f"""\
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#050505;font-family:monospace;">
+<div style="max-width:560px;margin:40px auto;padding:40px 48px;background:#0a0a0a;border:1px solid #1f1f1f;">
+  <div style="font-size:22px;font-weight:700;letter-spacing:0.15em;color:#ffffff;margin-bottom:24px;">
+    ORCA
+  </div>
+  <div style="font-size:13px;color:#999;margin-bottom:28px;">
+    <strong style="color:#fff;">{inviter_name or 'Someone'}</strong> has invited you to join
+    <strong style="color:#fff;">{org_name}</strong> on Orca.
+  </div>
+  <a href="{invite_link}" style="display:inline-block;background:#fff;color:#000;padding:12px 24px;text-decoration:none;font-size:12px;letter-spacing:0.1em;">
+    ACCEPT INVITE
+  </a>
+</div>
+</body>
+</html>
+"""
+
+    msg.attach(MIMEText(plain, "plain"))
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        with smtplib.SMTP(host, port, timeout=15) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.login(user, password)
+            smtp.sendmail(from_addr, [to_email], msg.as_string())
+        return True
+    except Exception as e:
+        print(f"[INVITE EMAIL FAILED] {to_email}: {e}")
+        print(f"  Link: {invite_link}")
+        return False

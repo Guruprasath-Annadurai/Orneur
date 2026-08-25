@@ -42,6 +42,32 @@ _status_count: dict[str, int] = defaultdict(int)          # keyed "endpoint:stat
 _error_count: dict[str, int] = defaultdict(int)            # 5xx responses, keyed by endpoint
 _latency_samples: dict[str, deque] = defaultdict(lambda: deque(maxlen=2000))
 
+# Moderation action counts (block/flag/support/allow) — real gap this closes:
+# orca/serve/moderation.py's jailbreak-framing detector (added after a real
+# red-team finding that raw-model fine-tuning couldn't fix jailbreak
+# resistance) had zero visibility into how often it actually fires in
+# production. Without this, an ops team can't tell "moderation is working
+# as designed" from "moderation broke and stopped blocking anything."
+_moderation_action_count: dict[str, int] = defaultdict(int)
+
+# Registry fallback events — real gap: orca/serve/registry.py silently steps
+# a tier down (ultra -> core -> nano) when the configured model for a tier
+# isn't installed, and only logs a warning. A silent substitution serving a
+# DIFFERENT model than what was requested is exactly the kind of thing that
+# should be visible to monitoring/alerting, not buried in a log line no one
+# is watching.
+_registry_fallback_count: dict[str, int] = defaultdict(int)  # keyed "requested_tier->resolved_model"
+
+# Cost-aware routing decisions (see orca/serve/routing.py) — this is what
+# makes the cost-differentiation claim in
+# docs/PERPLEXITY_DIFFERENTIATION_PLAN.md measurable rather than asserted:
+# without counting how often a query actually escalates to a paid frontier
+# backend vs. stays on the near-$0 self-hosted path, there's no way to prove
+# "most queries are cheap" is true in this deployment rather than just
+# architecturally possible.
+_routing_escalated_count: int = 0
+_routing_stayed_self_hosted_count: int = 0
+
 MAX_ENDPOINTS_TRACKED = 500  # defensive cap — see record_request()
 
 
@@ -63,6 +89,41 @@ def record_request(endpoint: str, status_code: int, duration_ms: float) -> None:
             if status_code >= 500:
                 _error_count[endpoint] += 1
             _latency_samples[endpoint].append(duration_ms)
+    except Exception:
+        pass
+
+
+def record_moderation_action(action: str) -> None:
+    """Called once per check_input() result by the chat/stream endpoints.
+    Never raises — same defensive pattern as record_request()."""
+    try:
+        with _lock:
+            _moderation_action_count[action] += 1
+    except Exception:
+        pass
+
+
+def record_registry_fallback(requested_tier: str, resolved_model: str) -> None:
+    """Called whenever orca/serve/registry.py's resolve_tier_model() has to
+    step down from the requested tier's configured model to a fallback."""
+    try:
+        with _lock:
+            _registry_fallback_count[f"{requested_tier}->{resolved_model}"] += 1
+    except Exception:
+        pass
+
+
+def record_routing_decision(escalated: bool) -> None:
+    """Called once per chat request that goes through
+    orca/serve/routing.py's decide_route(). Never raises — same defensive
+    pattern as every other recorder in this module."""
+    global _routing_escalated_count, _routing_stayed_self_hosted_count
+    try:
+        with _lock:
+            if escalated:
+                _routing_escalated_count += 1
+            else:
+                _routing_stayed_self_hosted_count += 1
     except Exception:
         pass
 
@@ -99,6 +160,17 @@ def get_metrics_snapshot() -> dict:
             "total_errors": total_errors,
             "overall_error_rate": round(total_errors / total_requests, 4) if total_requests else 0.0,
             "endpoints": endpoints,
+            "moderation_actions": dict(_moderation_action_count),
+            "registry_fallbacks": dict(_registry_fallback_count),
+            "routing": {
+                "escalated_to_frontier": _routing_escalated_count,
+                "stayed_self_hosted": _routing_stayed_self_hosted_count,
+                "self_hosted_rate": round(
+                    _routing_stayed_self_hosted_count
+                    / (_routing_escalated_count + _routing_stayed_self_hosted_count),
+                    4,
+                ) if (_routing_escalated_count + _routing_stayed_self_hosted_count) else 1.0,
+            },
         }
 
 
@@ -136,13 +208,48 @@ def get_prometheus_text() -> str:
             p95 = _percentile(list(samples), 0.95)
             lines.append(f'orca_latency_p95_ms{{endpoint="{safe_label}"}} {p95}')
 
+        lines += [
+            "",
+            "# HELP orca_moderation_actions_total Input moderation verdicts, by action "
+            "(allow/flag/support/block).",
+            "# TYPE orca_moderation_actions_total counter",
+        ]
+        for action, count in _moderation_action_count.items():
+            lines.append(f'orca_moderation_actions_total{{action="{action}"}} {count}')
+
+        lines += [
+            "",
+            "# HELP orca_registry_fallbacks_total Times a tier's configured model wasn't "
+            "installed and a fallback model was silently substituted.",
+            "# TYPE orca_registry_fallbacks_total counter",
+        ]
+        for path, count in _registry_fallback_count.items():
+            requested, resolved = path.split("->", 1)
+            lines.append(
+                f'orca_registry_fallbacks_total{{requested_tier="{requested}",resolved_model="{resolved}"}} {count}'
+            )
+
+        lines += [
+            "",
+            "# HELP orca_routing_decisions_total Cost-aware routing decisions, by outcome "
+            "(escalated_to_frontier/stayed_self_hosted).",
+            "# TYPE orca_routing_decisions_total counter",
+            f'orca_routing_decisions_total{{outcome="escalated_to_frontier"}} {_routing_escalated_count}',
+            f'orca_routing_decisions_total{{outcome="stayed_self_hosted"}} {_routing_stayed_self_hosted_count}',
+        ]
+
     return "\n".join(lines) + "\n"
 
 
 def reset() -> None:
     """Test-only — clears all recorded metrics."""
+    global _routing_escalated_count, _routing_stayed_self_hosted_count
     with _lock:
         _request_count.clear()
         _status_count.clear()
         _error_count.clear()
         _latency_samples.clear()
+        _moderation_action_count.clear()
+        _registry_fallback_count.clear()
+        _routing_escalated_count = 0
+        _routing_stayed_self_hosted_count = 0

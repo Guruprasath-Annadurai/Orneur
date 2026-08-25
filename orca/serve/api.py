@@ -2,7 +2,9 @@
 Orca Web Server — FastAPI backend for the browser UI.
 
 Endpoints:
-  GET  /                    → serves the web UI
+  GET  /                    → serves the public marketing landing page
+  GET  /app                 → serves the web chat UI
+  GET  /trust               → serves the Trust & Security page
   GET  /api/status          → model, memory stats, uptime
   POST /api/chat            → single-shot response
   POST /api/stream          → SSE streaming response
@@ -17,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from pathlib import Path
@@ -33,10 +36,15 @@ from orca.license.keys import format_expiry
 
 from orca.auth import auth_router, get_current_user, get_current_user_optional, check_quota, increment_usage
 from orca.auth.rbac import require_permission
-from orca.auth.store import User
+from orca.auth.store import User, model_access_allowed
 from orca import audit
+from orca.lens.intent import detect_generation_intent
 
 from orca.brain.providers import get_brain
+from orca.serve.registry import resolve_tier_model, resolve_tier_backend
+from orca.serve import routing
+from orca.governance.model_cards import check_persona_claim_allowed
+from orca.brain.backends import build_backend
 from orca.brain.memory import MemoryEngine, EpisodicMemory
 from orca.brain.agent import AgentLoop
 from orca.brain.context import ContextManager
@@ -55,12 +63,13 @@ from orca.docs.pii_redact import redact_pii
 from orca.brain.explainability import ExplainStore, build_from_rag_result
 from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.brain.vision import is_vision_capable, encode_image, build_vision_message
-from orca.serve import session_store, ratelimit, metrics
+from orca.serve import session_store, ratelimit, metrics, dlp
 from orca.serve.moderation import check_input, CRISIS_RESOURCES
 from orca.code import run_code
 
 _START_TIME = time.time()
 WEB_DIR = Path(__file__).parent / "web"
+_logger = logging.getLogger("orca.serve")
 
 app = FastAPI(title="Orca API", version="1.0.0", docs_url=None, redoc_url=None)
 
@@ -103,11 +112,100 @@ app.include_router(auth_router)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _model_name_for_variant(variant: str | None) -> str:
-    if variant == "nano":
-        return CONFIG.ollama.model_nano
-    if variant == "ultra":
-        return CONFIG.ollama.model_ultra
-    return CONFIG.ollama.model_core
+    def _log_fallback(requested_tier: str, requested_model: str, resolved_model: str) -> None:
+        _logger.warning(
+            "Tier '%s' requested model '%s' which is not installed in Ollama — "
+            "falling back to '%s'.", requested_tier, requested_model, resolved_model,
+        )
+        metrics.record_registry_fallback(requested_tier, resolved_model)
+
+    return resolve_tier_model(variant or "core", on_fallback=_log_fallback)
+
+
+def _resolve_backend_for_chat(variant: str | None):
+    """
+    Full (backend, model) resolution — including frontier API backends and
+    the data-sovereignty lock (see orca/serve/registry.py,
+    orca/brain/backends.py, docs/STARTUP_PLAN.md §2). Used by /api/chat to
+    decide between the existing full-featured Ollama+AgentLoop path (tools,
+    memory, knowledge graph — unchanged) and the simpler frontier-passthrough
+    direct-generation path (see _generate_via_frontier_backend below).
+    """
+    def _log_fallback(requested_tier: str, requested_backend: str, resolved: str) -> None:
+        _logger.warning(
+            "Tier '%s' requested backend '%s' which is unavailable — falling back to '%s'.",
+            requested_tier, requested_backend, resolved,
+        )
+        metrics.record_registry_fallback(requested_tier, resolved)
+
+    def _log_sovereignty_override(tier: str, configured_backend: str) -> None:
+        _logger.warning(
+            "Data sovereignty lock is active — tier '%s' configured for backend '%s' "
+            "was forced to self-hosted Ollama instead.", tier, configured_backend,
+        )
+
+    return resolve_tier_backend(
+        variant or "core", on_fallback=_log_fallback, on_sovereignty_override=_log_sovereignty_override,
+    )
+
+
+def _apply_cost_aware_routing(base_resolution, message: str):
+    """
+    Per-query cost-aware escalation layer (see orca/serve/routing.py) —
+    applied AFTER the tier's static backend resolution, additive and
+    off-by-default. This is the mechanism that makes the "cheaper than
+    frontier-per-query competitors" claim real: most queries stay on the
+    self-hosted resolution _resolve_backend_for_chat already returned;
+    only a query classified as genuinely needing it, and only when the
+    operator explicitly opted in, ever escalates.
+
+    Returns (resolution, decision) — the decision is NOT just logged, it's
+    surfaced to the caller (audit log + API response, see the /api/chat
+    handler below) so a per-request escalation is visible to the end user,
+    not only discoverable by an operator reading logs. A deployment that
+    promises "self-hosted, your data stays here" needs its own users to be
+    able to see the one query that didn't honor that, not just its ops team.
+    """
+    resolution, decision = routing.decide_route(base_resolution, message)
+    metrics.record_routing_decision(decision.escalated)
+    if decision.escalated:
+        _logger.info(
+            "Cost-aware routing escalated tier '%s' to backend '%s' — reason: %s",
+            base_resolution.tier, resolution.backend, decision.reason,
+        )
+    return resolution, decision
+
+
+def _generate_via_frontier_backend(resolution, persona_system: str, message: str):
+    """
+    Direct, single-turn generation through a frontier API backend
+    (OpenAI/Anthropic) — the "bring your own frontier model" path.
+
+    HONEST SCOPE: this does NOT run the tool-use agent loop (web_search,
+    run_code, memory_recall, etc.) that the self-hosted Ollama path gets via
+    AgentLoop — that's real, separately-scoped follow-up work (tool-calling
+    formats differ meaningfully between OpenAI/Anthropic/Ollama, and
+    building that out for one provider without verifying it live isn't
+    something to silently claim parity on). This is a genuine, working
+    single-turn passthrough, not a stub — just intentionally narrower than
+    the self-hosted path until tool-use is built and tested per-provider.
+    """
+    backend = build_backend(
+        resolution.backend, resolution.model,
+        api_key=(
+            CONFIG.backends.openai_api_key if resolution.backend == "openai"
+            else CONFIG.backends.anthropic_api_key
+        ),
+    )
+    disclosure = (
+        f"\n\n[TRANSPARENCY NOTICE — auto-injected]\nThis response is generated by "
+        f"{resolution.backend}'s {resolution.model} model via API, not an Orca-trained model. "
+        f"Orca's own eval/red-team gating does not apply to a model Orca did not train — "
+        f"refer to {resolution.backend}'s own published model card for its capability and "
+        f"safety characteristics."
+    )
+    result = backend.generate(prompt=message, system=persona_system + disclosure, max_tokens=1024)
+    return result
 
 
 class _Session:
@@ -247,11 +345,48 @@ def _save_title(sid: str, title: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
+async def serve_landing():
+    landing = WEB_DIR / "landing.html"
+    if landing.exists():
+        return HTMLResponse(landing.read_text())
+    return HTMLResponse("<h1>Orca landing page not found</h1>")
+
+
+@app.get("/app", response_class=HTMLResponse)
 async def serve_ui():
     index = WEB_DIR / "index.html"
     if index.exists():
         return HTMLResponse(index.read_text())
     return HTMLResponse("<h1>Orca UI not found</h1><p>Run: orca serve</p>")
+
+
+@app.get("/trust", response_class=HTMLResponse)
+async def serve_trust():
+    trust = WEB_DIR / "trust.html"
+    if trust.exists():
+        return HTMLResponse(trust.read_text())
+    return HTMLResponse("<h1>Orca trust page not found</h1>")
+
+
+@app.get("/healthz")
+async def healthz():
+    """
+    Lightweight liveness/readiness probe for load balancers and
+    orchestrators (k8s, etc.) to poll every few seconds.
+
+    Real gap this closes: /api/status does disk I/O (globbing every raw
+    training file to count examples) and lists all sessions on every call
+    — fine for an admin dashboard refreshing occasionally, much too heavy
+    for something a load balancer hits every 5-10 seconds. This endpoint
+    does the minimum: confirm at least nano's tier resolves to an
+    installed Ollama model (using registry's own 15s cache, so this adds
+    no extra Ollama load beyond what real chat traffic already causes).
+    """
+    try:
+        resolved = resolve_tier_model("nano", host=CONFIG.ollama.host)
+        return {"status": "ok", "nano_model": resolved}
+    except RuntimeError as e:
+        return JSONResponse({"status": "unhealthy", "reason": str(e)}, status_code=503)
 
 
 @app.get("/api/status")
@@ -299,6 +434,21 @@ async def chat(
     # their tier quota checked right after.
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="chat")
 
+    # Generation requests (image/video) short-circuit here, before any
+    # text-tier quota/model-access check — Genesis/Novus/Aeternum never see
+    # these messages at all. Orca Lens's actual generation backend isn't
+    # built yet (pending model choice), so this is an honest "not yet
+    # available" response, not a silent fallthrough to the text models.
+    gen_intent = detect_generation_intent(req.message)
+    if gen_intent != "chat":
+        audit.log("lens_generation_requested", user_id=user.id if user else None,
+                  detail={"intent": gen_intent})
+        return JSONResponse(
+            {"error": f"Orca Lens ({gen_intent} generation) isn't available yet — coming soon.",
+             "intent": gen_intent},
+            status_code=501,
+        )
+
     if user:
         allowed, used, limit = check_quota(user.id, user.tier, "message")
         if not allowed:
@@ -307,12 +457,17 @@ async def chat(
                 status_code=429,
             )
 
+    model_allowed, model_reason = model_access_allowed(user, req.model_variant)
+    if not model_allowed:
+        return JSONResponse({"error": model_reason}, status_code=402)
+
     # Input moderation — checked before the message ever reaches the model.
     # BLOCK: hard refusal, generation never happens. SUPPORT (self-harm):
     # never blocked — crisis resources get injected into context instead,
     # since refusing someone in crisis is the opposite of good practice.
     # FLAG: logged for visibility, generation proceeds unchanged.
     mod_result = check_input(req.message)
+    metrics.record_moderation_action(mod_result.action)
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
@@ -323,6 +478,69 @@ async def chat(
     if mod_result.action in ("support", "flag"):
         audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
+
+    # Backend resolution happens BEFORE session construction: the existing
+    # _Session/AgentLoop path is Ollama-specific (tool-use, memory, redis
+    # continuity — all built around OrcaBrain), so a frontier-API backend
+    # takes a deliberately separate, simpler direct-generation path instead
+    # of forcing that machinery to pretend to support providers it hasn't
+    # been built or tested against. See _generate_via_frontier_backend's
+    # docstring for the honest scope of what this path does and doesn't do.
+    backend_resolution = _resolve_backend_for_chat(req.model_variant)
+    backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+
+    if backend_resolution.backend != "ollama":
+        persona_system = get_persona_system(backend_resolution.tier)
+        if mod_result.action == "support":
+            persona_system += (
+                f"\n\nIMPORTANT: This message may indicate the user is in emotional distress or crisis. "
+                f"Respond with warmth and care. Include these resources naturally in your response:\n{CRISIS_RESOURCES}"
+            )
+        try:
+            result = await asyncio.to_thread(
+                _generate_via_frontier_backend, backend_resolution, persona_system, req.message
+            )
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+        if user:
+            increment_usage(user.id, "message")
+
+        audit.log("chat", user_id=user.id if user else None, detail={
+            "model": backend_resolution.model, "backend": backend_resolution.backend,
+            "data_left_infrastructure": backend_resolution.data_left_infrastructure,
+            "cost_usd": result.cost_usd, "tools": [],
+            "escalated_by_cost_router": routing_decision.escalated,
+            "routing_reason": routing_decision.reason,
+        })
+        if routing_decision.escalated:
+            audit.log("cost_aware_escalation", user_id=user.id if user else None, detail={
+                "tier": backend_resolution.tier, "escalated_to": backend_resolution.backend,
+                "reason": routing_decision.reason,
+            })
+
+        # Output-side DLP scan (see orca/serve/dlp.py) — secrets are
+        # actively redacted (no legitimate reason a response should ever
+        # contain a real credential); PII is flagged for audit visibility
+        # only, not stripped from the response, matching
+        # orca/docs/pii_redact.py's own reasoning against mangling a
+        # user's own legitimate data.
+        dlp_result = dlp.scan_output(result.text)
+        if dlp_result["has_findings"]:
+            audit.log("output_dlp_finding", user_id=user.id if user else None, detail={
+                "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
+            })
+
+        return {
+            "response": dlp_result["safe_text"],
+            "session_id": req.session_id or str(uuid.uuid4()),
+            "used_tools": [],
+            "plan": "frontier_passthrough",
+            "backend": result.backend,
+            "data_left_infrastructure": result.data_left_infrastructure,
+            "escalated_by_cost_router": routing_decision.escalated,
+            "routing_reason": routing_decision.reason if routing_decision.escalated else None,
+        }
 
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
     mem_ctx = sess.memory.recall_context(req.message, n=3)
@@ -348,10 +566,23 @@ async def chat(
     sess.persist_to_redis()
 
     audit.log("chat", user_id=user.id if user else None,
-              detail={"model": sess.model_variant, "tools": [tc.tool for tc in trace.tool_calls]})
+              detail={"model": sess.model_variant, "backend": "ollama", "data_left_infrastructure": False,
+                      "tools": [tc.tool for tc in trace.tool_calls]})
+
+    # Output-side DLP scan — see the frontier-passthrough branch above for
+    # the full rationale. Applied after memory/audit logging deliberately:
+    # the audit log and long-term memory should retain what the model
+    # actually said (including any secret that leaked, for real incident
+    # investigation), while what's RETURNED to the user has secrets
+    # redacted.
+    dlp_result = dlp.scan_output(final)
+    if dlp_result["has_findings"]:
+        audit.log("output_dlp_finding", user_id=user.id if user else None, detail={
+            "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
+        })
 
     return {
-        "response": final,
+        "response": dlp_result["safe_text"],
         "session_id": sess.id,
         "used_tools": [tc.tool for tc in trace.tool_calls],
         "plan": trace.plan_action,
@@ -366,6 +597,19 @@ async def stream_chat(
 ):
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="stream")
 
+    # Generation requests (image/video) short-circuit here, before any
+    # text-tier quota/model-access check — same as /api/chat, see that
+    # handler's comment for why this isn't a tool call from within the
+    # text models but a pre-dispatch bypass instead.
+    gen_intent = detect_generation_intent(req.message)
+    if gen_intent != "chat":
+        audit.log("lens_generation_requested", user_id=user.id if user else None,
+                  detail={"intent": gen_intent})
+        _lens_msg = f"Orca Lens ({gen_intent} generation) isn't available yet — coming soon."
+        async def _lens_not_available():
+            yield f"data: {json.dumps({'type': 'error', 'text': _lens_msg, 'intent': gen_intent})}\n\n"
+        return StreamingResponse(_lens_not_available(), media_type="text/event-stream")
+
     if user:
         allowed, used, limit = check_quota(user.id, user.tier, "message")
         if not allowed:
@@ -373,7 +617,14 @@ async def stream_chat(
                 yield f"data: {json.dumps({'type':'error','text':f'Daily limit reached ({used}/{limit}). Upgrade to Pro.'})}\n\n"
             return StreamingResponse(_quota_err(), media_type="text/event-stream")
 
+    model_allowed, model_reason = model_access_allowed(user, req.model_variant)
+    if not model_allowed:
+        async def _model_gate_err():
+            yield f"data: {json.dumps({'type': 'error', 'text': model_reason})}\n\n"
+        return StreamingResponse(_model_gate_err(), media_type="text/event-stream")
+
     mod_result = check_input(req.message)
+    metrics.record_moderation_action(mod_result.action)
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
@@ -619,7 +870,14 @@ async def save_session(req: ChatRequest):
 
 @app.get("/api/models")
 async def list_models():
-    """Return which Orca model variants are available in Ollama."""
+    """
+    Return which Orca model variants are available in Ollama — and, crucially,
+    what model actually GETS SERVED for each tier once the registry's
+    step-down fallback is applied. `configured_model` and `resolved_model`
+    can legitimately differ (e.g. ultra not yet fine-tuned, silently served
+    from core) — showing only `available: false` here previously hid that
+    from anyone debugging why a tier "works" but doesn't sound like itself.
+    """
     import urllib.request
     try:
         req = urllib.request.Request(f"{CONFIG.ollama.host}/api/tags", method="GET")
@@ -637,10 +895,61 @@ async def list_models():
             m == model_name or m.split(":")[0] == base for m in pulled
         )
 
+    def _tier_status(tier: str, configured_model: str) -> dict:
+        try:
+            resolved_model = resolve_tier_model(tier, host=CONFIG.ollama.host)
+        except RuntimeError:
+            resolved_model = None
+
+        return {
+            "model": configured_model,
+            "available": _available(configured_model),
+            "vision_capable": is_vision_capable(configured_model),
+            "resolved_model": resolved_model,
+            "fallback_active": resolved_model is not None and resolved_model != configured_model,
+        }
+
+    def _persona_claim_status(tier: str) -> dict:
+        # Surfaces the exact same gate orca/personas.py enforces at runtime
+        # (get_persona_system swaps the persona's self-description based on
+        # this). Without this, a client had no way to know a tier's claims
+        # are currently demoted short of reading raw eval/redteam JSON off
+        # disk — the one place a real buyer or the admin UI actually looks
+        # (this endpoint) said nothing about it.
+        approved, reason = check_persona_claim_allowed(tier)
+        return {"approved": approved, "reason": reason}
+
+    def _backend_status(tier: str) -> dict:
+        # Real backend/data-sovereignty resolution — see
+        # orca/serve/registry.py's resolve_tier_backend(). Shown separately
+        # from _tier_status above (which is Ollama-only) since a tier can
+        # now resolve to a frontier API instead.
+        try:
+            resolution = resolve_tier_backend(tier, host=CONFIG.ollama.host)
+            return {
+                "backend": resolution.backend,
+                "model": resolution.model,
+                "data_left_infrastructure": resolution.data_left_infrastructure,
+                "sovereignty_overridden": resolution.sovereignty_overridden,
+            }
+        except RuntimeError as e:
+            return {"backend": None, "error": str(e)}
+
     return {
-        "nano":  {"model": CONFIG.ollama.model_nano,  "available": _available(CONFIG.ollama.model_nano)},
-        "core":  {"model": CONFIG.ollama.model_core,  "available": _available(CONFIG.ollama.model_core)},
-        "ultra": {"model": CONFIG.ollama.model_ultra, "available": _available(CONFIG.ollama.model_ultra)},
+        "nano":  _tier_status("nano", CONFIG.ollama.model_nano),
+        "core":  _tier_status("core", CONFIG.ollama.model_core),
+        "ultra": _tier_status("ultra", CONFIG.ollama.model_ultra),
+        "backend_routing": {
+            "nano": _backend_status("nano"),
+            "core": _backend_status("core"),
+            "ultra": _backend_status("ultra"),
+            "data_sovereignty_lock": CONFIG.backends.data_sovereignty_lock,
+        },
+        "persona_claims": {
+            "nano": _persona_claim_status("nano"),
+            "core": _persona_claim_status("core"),
+            "ultra": _persona_claim_status("ultra"),
+        },
     }
 
 
@@ -774,8 +1083,8 @@ async def create_checkout(
         line_items=[{"price": price_id, "quantity": 1}],
         client_reference_id=user.id,
         metadata={"user_id": user.id, "tier": tier},
-        success_url=f"{base_url}/?checkout=success",
-        cancel_url=f"{base_url}/?checkout=cancelled",
+        success_url=f"{base_url}/app?checkout=success",
+        cancel_url=f"{base_url}/app?checkout=cancelled",
     )
     # Reuse the existing Stripe Customer if this user has paid before —
     # avoids creating duplicate Customer records on every checkout attempt.
@@ -1048,6 +1357,7 @@ async def vision_query(
         )
 
     mod_result = check_input(message)
+    metrics.record_moderation_action(mod_result.action)
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories, "endpoint": "vision"})

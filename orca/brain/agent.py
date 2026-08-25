@@ -23,6 +23,7 @@ from orca.brain.providers import OrcaBrain
 from orca.brain.context_intelligence import apply_context_policy
 from orca.tools import ToolRegistry
 from orca.character import CORE_SYSTEM_WITH_TOOLS, REFLECTION_PROMPT
+from orca.docs.citation_check import check_web_citations
 
 MAX_TOOL_ROUNDS = 6
 REFLECTION_THRESHOLD = 150  # reflect if response > N words
@@ -69,6 +70,7 @@ class AgentTrace:
     draft: str = ""
     reflected: bool = False
     final: str = ""
+    citation_compliance: dict | None = None
 
 
 class AgentLoop:
@@ -131,6 +133,7 @@ class AgentLoop:
             final = draft
 
         trace.final = final
+        trace.citation_compliance = check_web_citations(trace.final, tool_context)
 
         # Update history
         self._history.append({"role": "user", "content": user_input})
@@ -174,6 +177,7 @@ class AgentLoop:
                 yield chunk
             trace.final = full
             trace.draft = full
+            trace.citation_compliance = check_web_citations(trace.final, tool_context)
             self._history.append({"role": "user", "content": user_input})
             self._history.append({"role": "assistant", "content": full})
             self._compress_history_if_needed()

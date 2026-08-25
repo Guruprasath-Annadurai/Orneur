@@ -89,14 +89,71 @@ def _ollama_teacher_generate(prompt: str, teacher_model: str, ollama_host: str, 
     return data.get("response", "")
 
 
-def _nvidia_teacher_generate(prompt: str, teacher_model: str, max_tokens: int) -> str:
+OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
+
+_CLOUD_MAX_RETRIES = 6
+_CLOUD_BASE_BACKOFF = 8.0  # seconds — doubles each retry, so worst case ~8+16+32+64+128+256 = 504s of backoff
+
+
+def _openai_compatible_generate(
+    prompt: str, teacher_model: str, max_tokens: int, base_url: str, api_key: str, on_log=None
+) -> str:
     """
-    Calls Nvidia's OpenAI-compatible endpoint for a hosted teacher model
-    (e.g. nvidia/nemotron-3-ultra-550b-a55b). Requires a real NVIDIA_API_KEY —
-    raises clearly if missing rather than silently falling back to something
-    else, since a silent fallback would corrupt the distilled dataset with a
-    weaker model's output under a stronger model's label.
+    Shared retry/backoff logic for any OpenAI-compatible cloud teacher
+    endpoint (Nvidia direct, OpenRouter, etc.) — same provider-agnostic HTTP
+    contract, so one implementation instead of duplicating the retry logic
+    per provider.
+
+    Retries on 429 (rate limit) and 5xx with exponential backoff, preferring
+    the server's own Retry-After header when present over a blind guess —
+    the prior unthrottled version hit a rate-limit wall and logged ~290
+    consecutive failures instead of slowing down, burning the whole run for
+    nothing. A 429 is retried, not counted as a hard failure, unless retries
+    exhaust.
     """
+    from openai import OpenAI, APIStatusError
+
+    log = on_log or (lambda msg: None)
+    client = OpenAI(base_url=base_url, api_key=api_key)
+
+    last_err: Exception | None = None
+    for attempt in range(_CLOUD_MAX_RETRIES):
+        try:
+            completion = client.chat.completions.create(
+                model=teacher_model,
+                messages=[{"role": "user", "content": prompt + REASONING_TRACE_SUFFIX}],
+                temperature=0.3,
+                max_tokens=max_tokens,
+            )
+            return completion.choices[0].message.content or ""
+        except APIStatusError as e:
+            last_err = e
+            if e.status_code not in (429, 500, 502, 503, 504):
+                raise  # not a transient error — don't waste retries on e.g. 400/401
+
+            # Prefer the server's own Retry-After signal over a blind guess —
+            # it tells us exactly when the limit resets instead of us either
+            # waiting longer than necessary (slower than it has to be) or
+            # retrying too soon (another guaranteed 429).
+            retry_after = None
+            try:
+                header_val = e.response.headers.get("retry-after")
+                if header_val is not None:
+                    retry_after = float(header_val)
+            except Exception:
+                retry_after = None
+
+            backoff = retry_after if retry_after is not None else _CLOUD_BASE_BACKOFF * (2 ** attempt)
+            source = "Retry-After header" if retry_after is not None else "exponential backoff"
+            log(f"[distill] rate/server error ({e.status_code}), waiting {backoff:.0f}s per {source} "
+                f"(attempt {attempt + 1}/{_CLOUD_MAX_RETRIES})")
+            time.sleep(backoff)
+
+    raise last_err  # retries exhausted — surface as a real failure
+
+
+def _nvidia_teacher_generate(prompt: str, teacher_model: str, max_tokens: int, on_log=None) -> str:
+    """Calls Nvidia's own hosted endpoint directly. Requires a real NVIDIA_API_KEY."""
     api_key = os.environ.get("NVIDIA_API_KEY")
     if not api_key:
         raise RuntimeError(
@@ -105,23 +162,46 @@ def _nvidia_teacher_generate(prompt: str, teacher_model: str, max_tokens: int) -
             "cannot proceed without one. Never hardcode the key in source; set "
             "it as an environment variable."
         )
-
-    from openai import OpenAI
-    client = OpenAI(base_url=NVIDIA_API_BASE, api_key=api_key)
-
-    completion = client.chat.completions.create(
-        model=teacher_model,
-        messages=[{"role": "user", "content": prompt + REASONING_TRACE_SUFFIX}],
-        temperature=0.3,
-        max_tokens=max_tokens,
-    )
-    return completion.choices[0].message.content or ""
+    return _openai_compatible_generate(prompt, teacher_model, max_tokens, NVIDIA_API_BASE, api_key, on_log)
 
 
-def _teacher_generate(prompt: str, teacher_model: str, ollama_host: str, max_tokens: int = 700) -> str:
-    """Dispatches to the Nvidia-hosted path for 'nvidia/*' model ids, local Ollama otherwise."""
+def _openrouter_teacher_generate(prompt: str, teacher_model: str, max_tokens: int, on_log=None) -> str:
+    """
+    Calls the same teacher model via OpenRouter instead of Nvidia direct —
+    a separate provider/account means a separate rate-limit bucket, which is
+    the actual reason to use this path: routing around a rate wall on one
+    provider, not a quality difference (same underlying model either way).
+    Requires a real OPENROUTER_API_KEY.
+    """
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY not set. Distilling via OpenRouter requires a "
+            "real API key — cannot proceed without one. Never hardcode the key "
+            "in source; set it as an environment variable."
+        )
+    return _openai_compatible_generate(prompt, teacher_model, max_tokens, OPENROUTER_API_BASE, api_key, on_log)
+
+
+def _teacher_generate(
+    prompt: str, teacher_model: str, ollama_host: str, max_tokens: int = 700,
+    on_log=None, teacher_backend: str = "auto",
+) -> str:
+    """
+    Dispatches to the right backend for a teacher call.
+
+    teacher_backend:
+      "auto"       — 'nvidia/*' model ids go to Nvidia direct, everything
+                     else to local Ollama (original behavior, unchanged).
+      "openrouter" — force routing through OpenRouter instead, even for a
+                     'nvidia/*' model id — both providers use the same
+                     'provider/model' naming, so backend choice can't be
+                     inferred from the model string alone and must be explicit.
+    """
+    if teacher_backend == "openrouter":
+        return _openrouter_teacher_generate(prompt, teacher_model, max_tokens, on_log=on_log)
     if teacher_model.startswith("nvidia/"):
-        return _nvidia_teacher_generate(prompt, teacher_model, max_tokens)
+        return _nvidia_teacher_generate(prompt, teacher_model, max_tokens, on_log=on_log)
     return _ollama_teacher_generate(prompt, teacher_model, ollama_host, max_tokens)
 
 
@@ -132,6 +212,7 @@ def distill_from_seeds(
     ollama_host: str = "http://localhost:11434",
     domains: list | None = None,
     on_log=None,
+    teacher_backend: str = "auto",
 ) -> dict:
     """
     Generates n_examples (prompt, teacher_response) pairs using orca's own
@@ -139,6 +220,11 @@ def distill_from_seeds(
     seed` already draws from), but with the TEACHER model's response instead
     of the current generation pipeline's. Appends to the raw training data
     in ShareGPT format.
+
+    teacher_backend: "auto" (default) picks Nvidia-direct for 'nvidia/*'
+    model ids, local Ollama otherwise. Pass "openrouter" to force routing
+    the same model through OpenRouter instead — useful for splitting load
+    across two separate rate-limit buckets on two different providers.
 
     Returns a summary dict — counts, output file, failures.
     """
@@ -166,11 +252,20 @@ def distill_from_seeds(
             _domain_system, prompt_text = build_prompt(domain)
 
             try:
-                response = _teacher_generate(prompt_text, teacher_model, ollama_host)
+                response = _teacher_generate(
+                    prompt_text, teacher_model, ollama_host, on_log=log, teacher_backend=teacher_backend
+                )
             except Exception as e:
                 failed += 1
                 log(f"[distill] [{i+1}/{len(jobs)}] FAILED: {e}")
                 continue
+
+            if teacher_backend == "openrouter" or teacher_model.startswith("nvidia/"):
+                # Proactive throttle, not just reactive backoff — the prior run
+                # fired requests back-to-back and tripped the rate limit almost
+                # immediately, then never recovered. Spacing requests out keeps
+                # us under the limit instead of constantly hitting and retrying it.
+                time.sleep(1.5)
 
             if not response.strip() or len(response.strip()) < 20:
                 failed += 1

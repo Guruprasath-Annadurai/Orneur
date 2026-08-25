@@ -3,9 +3,13 @@ kind: ConfigMap
 metadata:
   name: atheris-config
 data:
-  core-model:  "qwen2.5:14b"
-  nano-model:  "qwen2.5:7b"
-  ultra-model: "qwen2.5:14b"
+  # Real bug this fixes: these previously pointed at raw, un-fine-tuned
+  # base models — a real deployment via these manifests would have
+  # silently served generic Qwen2.5, not Orca's actual fine-tuned models.
+  # Matches the real production aliases (see orca/train/variants.py).
+  core-model:  "orca-core"
+  nano-model:  "orca-nano"
+  ultra-model: "orca-ultra"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

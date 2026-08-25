@@ -70,7 +70,7 @@ def send_verification(to: str, token: str) -> bool:
 
 
 def send_password_reset(to: str, token: str) -> bool:
-    url  = f"{APP_URL}/?reset_token={token}"
+    url  = f"{APP_URL}/app/?reset_token={token}"
     html = f"""
 <div style="{_STYLE}">
   <p style="letter-spacing:0.35em;font-size:18px;color:#fff;margin:0 0 4px">ATHERIS</p>

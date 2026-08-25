@@ -77,6 +77,14 @@ async def signup(req: SignupRequest, request: Request):
         user = create_user(req.email, req.password, req.name)
     except Exception as e:
         raise HTTPException(500, f"Could not create account: {e}")
+    # Seeds the one consent record that isn't really optional (strictly
+    # necessary cookies) — best-effort, a failure here shouldn't block
+    # account creation, same reasoning as the verification email below.
+    try:
+        from orca.auth.privacy import init_default_consents
+        init_default_consents(user.id)
+    except Exception:
+        pass
     # Send verification email (non-blocking best-effort)
     if email_configured():
         token = make_verification_token(user.id, user.email)
@@ -195,8 +203,12 @@ async def disable_2fa(req: TwoFADisableRequest, user: User = Depends(get_current
 async def me(user: User = Depends(get_current_user)):
     limits = DAILY_LIMITS.get(user.tier, DAILY_LIMITS["free"])
     usage  = get_usage_today(user.id)
+    totp_state = get_totp_state(user.id)
     return {
-        "user":   {"id": user.id, "email": user.email, "name": user.name, "tier": user.tier, "role": user.role},
+        "user":   {
+            "id": user.id, "email": user.email, "name": user.name,
+            "tier": user.tier, "role": user.role, "totp_enabled": totp_state["enabled"],
+        },
         "limits": limits,
         "usage":  usage,
     }
@@ -245,7 +257,7 @@ async def verify_email(token: str):
 justify-content:center;height:100vh;margin:0}div{text-align:center}</style></head><body>
 <div><p style="letter-spacing:.35em;font-size:20px;color:#fff">ATHERIS</p>
 <p style="color:#888;letter-spacing:.15em;margin-top:8px">EMAIL VERIFIED</p>
-<p style="color:#555;margin-top:20px">Your account is now active. <a href="/" style="color:#fff">Return to Atheris →</a></p>
+<p style="color:#555;margin-top:20px">Your account is now active. <a href="/app" style="color:#fff">Return to Orca →</a></p>
 </div></body></html>""")
 
 
@@ -383,3 +395,107 @@ async def delete_account_endpoint(req: DeleteAccountRequest, user: User = Depend
     })
 
     return report
+
+
+# ── Enterprise / Team management ─────────────────────────────────────────────
+# One org per owning account, lazily created on first invite — see
+# orca/auth/org_store.py module docstring for the honest scope (seat limits
+# tied to tier, not a separate Stripe seat-billing product).
+
+class OrgInviteRequest(BaseModel):
+    email: str
+    role: str = "member"
+
+
+class OrgMemberRoleUpdate(BaseModel):
+    role: str
+
+
+class OrgAcceptInviteRequest(BaseModel):
+    token: str
+
+
+@router.get("/org")
+async def get_org(user: User = Depends(get_current_user)):
+    from orca.auth.org_store import get_org_for_owner, list_members, SEAT_LIMITS
+    org = get_org_for_owner(user.id)
+    if not org:
+        # No org created yet (no invites sent) — real limit for this
+        # user's actual tier, not a hardcoded placeholder.
+        limit = SEAT_LIMITS.get(user.tier, SEAT_LIMITS["free"])
+        return {"org": None, "members": [], "seats": {"used": 1, "limit": limit}}
+    from orca.auth.org_store import get_seat_usage
+    return {
+        "org": org,
+        "members": list_members(org["id"]),
+        "seats": get_seat_usage(org["id"], user.tier),
+    }
+
+
+@router.post("/org/invite")
+async def invite_org_member(req: OrgInviteRequest, user: User = Depends(get_current_user)):
+    from orca.auth.org_store import get_or_create_org, invite_member
+
+    org_id = get_or_create_org(user.id, user.name)
+    try:
+        result = invite_member(org_id, user.tier, req.email, req.role)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    # Best-effort email delivery — same graceful-without-SMTP pattern as
+    # email verification elsewhere. The invite link itself is always
+    # returned so the inviter can share it manually if SMTP isn't configured.
+    invite_link = f"/accept-invite?token={result['invite_token']}"
+    email_sent = False
+    if email_configured():
+        try:
+            from orca.license.mailer import send_org_invite_email
+            from orca.auth.org_store import get_org_for_owner
+            org_row = get_org_for_owner(user.id)  # already exists — invite_member() above created it
+            org_name = org_row["name"] if org_row else "the team"
+            email_sent = send_org_invite_email(req.email, invite_link, org_name, user.name)
+        except Exception:
+            email_sent = False
+
+    from orca import audit
+    audit.log("org_member_invited", user_id=user.id, detail={"email": req.email, "role": req.role})
+
+    return {**result, "invite_link": invite_link, "email_sent": email_sent}
+
+
+@router.post("/org/accept-invite")
+async def accept_org_invite(req: OrgAcceptInviteRequest, user: User = Depends(get_current_user)):
+    from orca.auth.org_store import accept_invite
+    try:
+        result = accept_invite(req.token, user.id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    from orca import audit
+    audit.log("org_invite_accepted", user_id=user.id, detail={"org_id": result["org_id"]})
+    return result
+
+
+@router.patch("/org/members/{member_id}/role")
+async def update_org_member_role(member_id: str, req: OrgMemberRoleUpdate, user: User = Depends(get_current_user)):
+    from orca.auth.org_store import get_org_for_owner, set_member_role
+    org = get_org_for_owner(user.id)
+    if not org:
+        raise HTTPException(404, "You don't have a team organization yet.")
+    try:
+        set_member_role(org["id"], member_id, req.role)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"updated": True}
+
+
+@router.delete("/org/members/{member_id}")
+async def remove_org_member(member_id: str, user: User = Depends(get_current_user)):
+    from orca.auth.org_store import get_org_for_owner, remove_member
+    org = get_org_for_owner(user.id)
+    if not org:
+        raise HTTPException(404, "You don't have a team organization yet.")
+    remove_member(org["id"], member_id)
+    from orca import audit
+    audit.log("org_member_removed", user_id=user.id, detail={"member_id": member_id})
+    return {"removed": True}

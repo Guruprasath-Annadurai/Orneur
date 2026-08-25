@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "orca-web",
+      "runtimeExecutable": "/Users/ag/orca/.venv/bin/python",
+      "runtimeArgs": ["-m", "uvicorn", "orca.serve.api:app", "--host", "127.0.0.1", "--port", "7337", "--reload"],
+      "port": 7337
+    }
+  ]
+}

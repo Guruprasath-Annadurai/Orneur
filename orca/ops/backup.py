@@ -27,6 +27,7 @@ HONEST SCOPE:
 """
 from __future__ import annotations
 
+import itertools
 import shutil
 import sqlite3
 import subprocess
@@ -40,6 +41,27 @@ BACKUP_DIR = ORCA_HOME / "backups"
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _unique_backup_path(prefix: str, suffix: str) -> Path:
+    """
+    Real bug this fixes: the previous timestamp format had only
+    second-level resolution — two backups created within the same second
+    silently overwrote each other, with no error or warning. Worse, inside
+    restore_sqlite(), the "safety backup of the current state" this creates
+    could collide with and destroy the very backup file being restored
+    from, if both happened within the same second — defeating the entire
+    safety mechanism. Guarantees a unique path by appending a counter if
+    the timestamped name is already taken.
+    """
+    ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    base = BACKUP_DIR / f"{prefix}_{ts}{suffix}"
+    if not base.exists():
+        return base
+    for i in itertools.count(1):
+        candidate = BACKUP_DIR / f"{prefix}_{ts}-{i}{suffix}"
+        if not candidate.exists():
+            return candidate
+
+
 def backup_sqlite() -> Path:
     """
     Consistent snapshot via SQLite's own backup API — safe to run while the
@@ -50,8 +72,7 @@ def backup_sqlite() -> Path:
     if not AUTH_DB.exists():
         raise FileNotFoundError(f"No SQLite database found at {AUTH_DB} — nothing to back up.")
 
-    ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    dest = BACKUP_DIR / f"auth_backup_{ts}.db"
+    dest = _unique_backup_path("auth_backup", ".db")
 
     source_conn = sqlite3.connect(str(AUTH_DB))
     dest_conn = sqlite3.connect(str(dest))
@@ -73,8 +94,7 @@ def backup_postgres(database_url: str) -> Path:
             "package) before running Postgres backups."
         )
 
-    ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    dest = BACKUP_DIR / f"auth_backup_{ts}.pgdump"
+    dest = _unique_backup_path("auth_backup", ".pgdump")
 
     result = subprocess.run(
         ["pg_dump", database_url, "-Fc", "-f", str(dest)],

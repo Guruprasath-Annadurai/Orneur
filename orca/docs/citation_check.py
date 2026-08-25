@@ -70,3 +70,46 @@ def check_citations(response: str, context_block: str) -> dict:
             "answer is wrong, but it failed the citation-discipline check."
         ),
     }
+
+
+_WEB_CITATION_PATTERN = re.compile(r"\[S\d+\]")
+
+
+def check_web_citations(response: str, tool_context: str) -> dict:
+    """
+    Same discipline as check_citations, applied to live web-search sources
+    (see orca/tools/search_grounding.py) marked [S#] instead of uploaded-
+    document [D#] markers. This is what makes "no hallucination" a
+    retrieval-and-citation-discipline claim for live chat, not just for
+    uploaded documents.
+
+    Rules mirror check_citations:
+      - No web sources were provided this turn -> always compliant.
+      - Sources available, response used at least one [S#] marker -> compliant.
+      - Sources available, response used ZERO [S#] markers -> NOT compliant.
+    """
+    had_sources = bool(_WEB_CITATION_PATTERN.search(tool_context))
+    citations_used = sorted(set(_WEB_CITATION_PATTERN.findall(response)))
+
+    if not had_sources:
+        return {
+            "had_sources": False,
+            "citations_used": [],
+            "compliant": True,
+            "note": "No web search sources were available this turn - nothing to check "
+                    "citations against.",
+        }
+
+    compliant = len(citations_used) > 0
+    return {
+        "had_sources": True,
+        "citations_used": citations_used,
+        "compliant": compliant,
+        "note": (
+            f"Used {len(citations_used)} web citation marker(s) from search results."
+            if compliant else
+            "Web search sources WERE available but the response used zero [S#] citation "
+            "markers - cannot be traced back to retrieved sources. Does not prove the "
+            "answer is wrong, but it failed the citation-discipline check."
+        ),
+    }

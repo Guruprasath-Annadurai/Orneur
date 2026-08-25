@@ -53,12 +53,28 @@ spec:
           limits:
             memory: "2Gi"
             cpu: "2000m"
+        # Real gap this closes: livenessProbe previously hit /api/status —
+        # the HEAVY status endpoint, not the lightweight /healthz built
+        # specifically for this (see docs/RUNBOOK.md's distinction between
+        # the two). Repeatedly hitting the heavy endpoint every 30s adds
+        # real load, and a slowdown IN that endpoint could get a perfectly
+        # healthy pod killed by Kubernetes. There was also no readinessProbe
+        # at all — without one, Kubernetes can route real traffic to a pod
+        # that's started but not yet actually able to serve (e.g. before
+        # its Ollama connection is established).
         livenessProbe:
           httpGet:
-            path: /api/status
+            path: /healthz
             port: 7337
           initialDelaySeconds: 15
           periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 7337
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
       volumes:
       - name: data
         persistentVolumeClaim:
@@ -96,6 +112,23 @@ spec:
           # GPU: uncomment after installing nvidia-device-plugin
           # limits:
           #   nvidia.com/gpu: "1"
+        # Real gap this closes: this deployment had NO probes at all —
+        # Kubernetes had no way to know if Ollama was actually up, so a
+        # crashed or still-initializing Ollama pod would keep receiving
+        # traffic/be considered healthy indefinitely.
+        livenessProbe:
+          httpGet:
+            path: /api/tags
+            port: 11434
+          initialDelaySeconds: 20
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/tags
+            port: 11434
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 3
       volumes:
       - name: models
         persistentVolumeClaim:

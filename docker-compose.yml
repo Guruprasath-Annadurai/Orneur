@@ -9,6 +9,18 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
+    # Real gap this closes: no healthcheck meant `atheris`'s `depends_on`
+    # below only waited for this container to START, not for Ollama to
+    # actually be ready to serve — a real race condition on first boot
+    # where atheris could come up and immediately fail against an Ollama
+    # that hadn't finished initializing yet. `ollama list` exercises the
+    # CLI's own round-trip to the local server, no extra tooling needed.
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     # Uncomment for GPU support (requires nvidia-container-toolkit):
     # deploy:
     #   resources:
@@ -67,9 +79,16 @@ services:
       - atheris_data:/root/.orca
     environment:
       ORCA_OLLAMA_HOST: http://ollama:11434
-      ORCA_CORE_MODEL:  ${ORCA_CORE_MODEL:-qwen2.5:14b}
-      ORCA_NANO_MODEL:  ${ORCA_NANO_MODEL:-qwen2.5:7b}
-      ORCA_ULTRA_MODEL: ${ORCA_ULTRA_MODEL:-qwen2.5:14b}
+      # Real bug this fixes: these defaulted to the raw, un-fine-tuned base
+      # models (qwen2.5:14b/7b) — anyone deploying via this compose file
+      # without explicitly overriding these env vars would silently get
+      # generic Qwen2.5, not Orca's actual fine-tuned nano/core/ultra
+      # models. Defaults now match the real production aliases (see
+      # orca/train/variants.py) — override only if you're intentionally
+      # running a different model.
+      ORCA_CORE_MODEL:  ${ORCA_CORE_MODEL:-orca-core}
+      ORCA_NANO_MODEL:  ${ORCA_NANO_MODEL:-orca-nano}
+      ORCA_ULTRA_MODEL: ${ORCA_ULTRA_MODEL:-orca-ultra}
       ORCA_AUTH_SECRET: ${ORCA_AUTH_SECRET:-change-me-in-production}
       # Uncomment to switch from local SQLite to Postgres (needed for
       # multi-instance / horizontally-scaled deployments):
@@ -77,9 +96,21 @@ services:
       # Uncomment for cross-instance session continuity:
       # ORCA_REDIS_URL: redis://redis:6379/0
     depends_on:
-      - ollama
-      # - postgres  # uncomment alongside ORCA_DATABASE_URL above
-      # - redis     # uncomment alongside ORCA_REDIS_URL above
+      ollama:
+        condition: service_healthy
+      # postgres:
+      #   condition: service_healthy  # uncomment alongside ORCA_DATABASE_URL above
+      # redis:
+      #   condition: service_healthy  # uncomment alongside ORCA_REDIS_URL above
+    healthcheck:
+      # Reuses the real GET /healthz endpoint already built for exactly
+      # this — lightweight, cached registry resolution, no extra tooling
+      # needed inside the container beyond Python itself.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7337/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
 volumes:

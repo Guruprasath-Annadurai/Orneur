@@ -83,10 +83,18 @@ class LongTermMemory:
     def store(self, text: str, metadata: dict | None = None) -> str:
         if self._available:
             doc_id = str(uuid.uuid4())
+            # A real production bug, found via load testing: newer chromadb
+            # versions reject an EMPTY metadata dict outright ("Expected
+            # metadata to be a non-empty dict") — every commit_to_long_term()
+            # call with no explicit metadata (the normal case) crashed the
+            # whole request. Always include at least a timestamp so the
+            # dict is never empty, regardless of what the caller passed.
+            stored_metadata = dict(metadata) if metadata else {}
+            stored_metadata.setdefault("stored_at", time.time())
             self._collection.add(
                 documents=[text],
                 ids=[doc_id],
-                metadatas=[metadata or {}],
+                metadatas=[stored_metadata],
             )
             return doc_id
         # Fallback: append to JSONL

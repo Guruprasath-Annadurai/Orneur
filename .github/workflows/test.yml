@@ -1,0 +1,71 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev deps, no GPU/Ollama needed — full suite is mocked)
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+
+      - name: Run test suite
+        run: pytest -v 2>&1 | tee /tmp/pytest-log.txt
+
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-log-${{ github.run_number }}
+          path: /tmp/pytest-log.txt
+          retention-days: 14
+
+  security-audit:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca + pip-audit
+        run: |
+          pip install uv
+          uv pip install --system -e .
+          pip install pip-audit
+
+      # Informational, not blocking: as of docs/SECURITY_AUDIT.md, chromadb
+      # (PYSEC-2026-311) and diskcache (PYSEC-2026-2447) have known,
+      # unpatched CVEs that were assessed and found NOT currently
+      # exploitable given Orca's actual usage (embedded/local-only, no
+      # network exposure) — see that doc for the full reasoning. This job
+      # exists to catch any NEW vulnerability, not to re-litigate those two
+      # every run; a human should review new findings before this becomes
+      # a hard gate.
+      - name: Run pip-audit (informational)
+        run: pip-audit || true

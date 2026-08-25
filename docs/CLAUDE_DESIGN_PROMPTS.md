@@ -11,8 +11,11 @@ real — pulled from the actual API, not placeholder text to invent.
 ## Base Style Prompt (run first)
 
 ```
-Design system for "Orca" — a private, local-first AI platform. Enterprise-
-grade, engineering-tool aesthetic, not a consumer chat app.
+Design system for "Orca" — a corporate AI platform, ChatGPT-class, built for
+enterprise deployment. Enterprise-grade, engineering-tool aesthetic, not a
+consumer chat toy — the visual language should read as a serious platform
+teams trust with real work, with visible provenance and audit trails as a
+first-class trust feature (not a "private/local" pitch).
 
 Palette: true black background (#000000/#080808), off-white primary text
 (#e8e8e8), pure white for emphasis (#ffffff), muted gray tiers for
@@ -54,7 +57,7 @@ Design a 3-step onboarding flow for Orca, black background, white
 line-art orca mark centered on step 1.
 
 Step 1 — Welcome: centered logo mark, one-line value proposition text
-"Private intelligence. Your hardware. Your data." below it, single
+"The AI platform that shows its work." below it, single
 primary white button "Get Started."
 
 Step 2 — Model selection: three cards side by side, labeled Genesis
@@ -78,8 +81,8 @@ Orca anything," and 4 example-prompt chips below it in a 2x2 grid.
 Design a centered auth card, max-width ~420px, black background, bracket-
 corner decorative frame (thin white corner brackets, not a full border).
 
-Header: line-art orca mark, wordmark "ORCA" below it, tagline "Private
-Intelligence / Powered by Atheris" in muted gray monospace.
+Header: line-art orca mark, wordmark "ORCA" below it, tagline "Enterprise
+AI / Powered by Atheris" in muted gray monospace.
 
 Tab switcher: two pill-shaped tabs "Sign In" / "Sign Up," active tab
 white background with black text, inactive tab transparent with muted

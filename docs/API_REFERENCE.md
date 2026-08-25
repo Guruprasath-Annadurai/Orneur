@@ -133,7 +133,7 @@ the account tier), `customer.subscription.deleted` and
 ## Miscellaneous
 
 - `GET /api/status` — model availability, uptime, session/training counts
-- `GET /api/models` — which nano/core/ultra models are pulled in Ollama
+- `GET /api/models` — which nano/core/ultra models are pulled in Ollama, plus the ACTUAL model each tier resolves to after fallback (`resolved_model`, `fallback_active`) — see `orca/serve/registry.py`
 - `GET /api/license` — current license tier
 - `GET /api/sessions` / `POST /api/session/load` / `POST /api/session/save` — session management
 - `PATCH /api/session/{session_id}/title` — rename a session

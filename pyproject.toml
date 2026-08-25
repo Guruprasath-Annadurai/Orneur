@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "orca-ai"
 version = "1.0.0"
-description = "Orca — 100% private local AI, built by Atheris. Document Q&A, code interpreter, voice input. Your hardware, your data, zero cloud."
+description = "Orca — the enterprise AI platform, built by Atheris. Document Q&A, code interpreter, voice input, verifiable audit trails."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Atheris", email = "hello@atheris.ai" }]
-keywords = ["ai", "llm", "local", "private", "ollama", "agent", "rag", "document-qa"]
+keywords = ["ai", "llm", "enterprise", "ollama", "agent", "rag", "document-qa", "audit"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
@@ -80,6 +80,17 @@ redis = [
 nvidia = [
     "openai>=1.0.0",
 ]
+frontier = [
+    "openai>=1.0.0",
+    "anthropic>=0.40.0",
+]
+lens = [
+    "diffusers>=0.30.0",
+    "torch>=2.1.0",
+    "transformers>=4.45.0",
+    "accelerate>=1.0.0",
+    "safetensors>=0.4.0",
+]
 
 [project.scripts]
 orca = "orca.cli:app"
@@ -92,3 +103,7 @@ packages = ["orca"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
