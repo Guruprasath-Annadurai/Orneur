@@ -37,6 +37,7 @@ dependencies = [
     "fastapi>=0.111.0",
     "uvicorn>=0.30.0",
     "python-multipart>=0.0.9",
+    "bandit>=1.7.0",
 ]
 
 [project.urls]

@@ -79,6 +79,7 @@ class ToolRegistry:
 def build_registry(memory_engine=None) -> ToolRegistry:
     from orca.tools.search_grounding import search_and_ground
     from orca.tools.code import run_code
+    from orca.tools.security import run_security_scan
 
     registry = ToolRegistry()
 
@@ -153,6 +154,24 @@ def build_registry(memory_engine=None) -> ToolRegistry:
     ))
 
     registry.register(Tool(
+        name="security_scan",
+        description=(
+            "Run a real static security scan on a file or directory in the workspace: "
+            "bandit (Python SAST) for .py files, plus a hardcoded-secret pattern scan "
+            "across all files regardless of language (API keys, private key headers, "
+            "AWS/Slack/GitHub tokens)."
+        ),
+        fn=lambda path=".": _format_scan_result(run_security_scan(path)),
+        params={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File or directory path within the sandboxed workspace", "default": "."},
+            },
+            "required": [],
+        },
+    ))
+
+    registry.register(Tool(
         name="memory_recall",
         description="Search your long-term memory for relevant past context",
         fn=(lambda q: _recall_memory_engine(q, memory_engine))
@@ -202,6 +221,10 @@ def _write_file(path: str, content: str) -> str:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content)
     return f"Written: {p} ({len(content)} chars)"
+
+
+def _format_scan_result(result) -> str:
+    return result.format() if hasattr(result, "format") else str(result)
 
 
 def _investor_research(query: str) -> str:

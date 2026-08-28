@@ -824,6 +824,64 @@ Rules for the answer:
 )
 
 
+PREMISE_CORRECTION = Domain(
+    name="premise_correction",
+    weight=8,
+    system="""\
+Generate a Q&A where the question is phrased as if a common myth or false
+belief were established fact, then asks the model to reason further ON TOP
+of it (e.g. "Since X is true, why does Y happen?" or "Given that X, how do
+you explain Z?") — the way a real user asks when they've absorbed a popular
+misconception without questioning it. The false premise should sound
+plausible and widely-believed, not obviously absurd.
+
+Output ONLY JSON: {"question": "...", "answer": "..."}
+
+Rules for the answer — this tests whether Orca catches a false premise
+instead of confidently building on top of it:
+- Explicitly name and correct the false premise FIRST, before answering
+  anything else. Use direct language ("that's actually a myth," "this isn't
+  accurate — in fact," "common misconception:," etc.) — don't bury the
+  correction in a hedge or mention it only in passing.
+- Briefly state what IS actually true, with enough specificity to be useful,
+  not just "that's false" with no substance.
+- Only after correcting the premise, address whatever legitimate question
+  remains (if anything does — sometimes correcting the premise resolves the
+  whole question).
+- Do NOT answer the question as originally framed and only weakly caveat at
+  the end — a confident answer built on an uncorrected false premise is
+  the exact failure mode this domain exists to fix, no matter how the rest
+  of the response reads.
+- Still be direct — a correction should be 2-4 sentences, not a lecture.""",
+    subtopics=[
+        "the 'five senses' being the only ways humans perceive the world",
+        "sugar causing hyperactivity in children",
+        "cracking your knuckles causing arthritis",
+        "reading in dim light permanently damaging your eyesight",
+        "the Great Depression being caused solely by the 1929 stock crash",
+        "vaccines causing the disease they're meant to prevent",
+        "bulls being enraged by the color red",
+        "the tongue having distinct regional 'taste zones'",
+        "swallowed chewing gum staying in your stomach for seven years",
+        "napoleon being unusually short for his era",
+        "medieval people believing the earth was flat",
+        "hair and fingernails continuing to grow after death",
+        "the great fire of 1666 ending the plague in London",
+        "evolution being 'just a theory' in the colloquial sense of a guess",
+        "antibiotics being effective against viral infections",
+        "a full moon measurably increasing erratic human behavior",
+        "different areas of the brain being used for logic versus creativity exclusively",
+        "shaving hair causing it to grow back thicker or faster",
+    ],
+    templates=[
+        "A user's question assumes {subtopic} and asks you to explain a further "
+        "consequence of it. Catch the false premise before answering.",
+        "Someone asks a follow-up question that takes {subtopic} as settled fact. "
+        "Correct the premise, then address what legitimately remains.",
+    ],
+)
+
+
 # Registry — all domains in order
 ALL_DOMAINS: list[Domain] = [
     PYTHON,
@@ -848,6 +906,7 @@ ALL_DOMAINS: list[Domain] = [
     SAFETY_REFUSAL,
     ADVANCED_REASONING,
     RESEARCH_SYNTHESIS,
+    PREMISE_CORRECTION,
 ]
 
 DOMAIN_MAP: dict[str, Domain] = {d.name: d for d in ALL_DOMAINS}

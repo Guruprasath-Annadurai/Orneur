@@ -312,6 +312,7 @@ section { padding: 100px 0; border-top: 1px solid var(--line); }
 
 /* Pricing */
 .grid-3.pricing { align-items: stretch; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
 .plan {
   border: 1px solid var(--line);
   background: var(--surface);
@@ -436,7 +437,7 @@ footer { border-top: 1px solid var(--line); padding: 48px 0; }
   #hero h1 { font-size: 36px; }
   .proof-body { grid-template-columns: 1fr; }
   .proof-main { border-right: none; border-bottom: 1px solid var(--line); }
-  .grid-3, .steps, .trust-grid, .stat-row-group { grid-template-columns: 1fr; }
+  .grid-3, .grid-2, .steps, .trust-grid, .stat-row-group { grid-template-columns: 1fr; }
   .step { padding-right: 0; margin-bottom: 32px; }
   .footer-inner { flex-direction: column; }
   .footer-cols { gap: 32px; }
@@ -553,6 +554,59 @@ footer { border-top: 1px solid var(--line); padding: 48px 0; }
   </div>
 </section>
 
+<!-- ── Cost/privacy ─────────────────────────────────────────────────── -->
+<section>
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Your infrastructure, your data</div>
+      <h2>Self-hosted by default. Cost-aware, not cost-blind.</h2>
+    </div>
+    <div class="grid-3">
+      <div class="card">
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="10" width="16" height="10" rx="1.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        </div>
+        <h3>Runs on your hardware.</h3>
+        <p>Orca runs on <a href="https://ollama.com" style="color:var(--accent);">Ollama</a>, self-hosted — your conversations and documents don't leave your infrastructure by default. A data-sovereignty lock keeps it that way even if a frontier backend is later configured.</p>
+      </div>
+      <div class="card">
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        </div>
+        <h3>Escalation is opt-in and capped.</h3>
+        <p>Most queries run on self-hosted models at near-zero marginal cost. Only queries that genuinely need it can be escalated to a frontier backend — off by default, with a real daily spend cap when it's turned on (<code>orca/serve/routing.py</code>).</p>
+      </div>
+      <div class="card">
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12h16M4 6h16M4 18h10"/></svg>
+        </div>
+        <h3>No token-metered surprise bills.</h3>
+        <p>Flat plans, not per-token pricing — see exactly what a message costs before you send it, whether it stayed on your own hardware or was escalated.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Who it's for ─────────────────────────────────────────────────── -->
+<section>
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Who it's for</div>
+      <h2>Two models, two different jobs.</h2>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Genesis — learning &amp; explaining</h3>
+        <p>Built for students, working professionals, teachers, and researchers. Genesis builds intuition, hedges honestly when something isn't known, and weighs evidence instead of asserting it — the everyday tier, not the specialist one.</p>
+      </div>
+      <div class="card">
+        <h3>Novus — building &amp; shipping</h3>
+        <p>Built for developers — building AI agents, mobile apps, and reviewing real code. Novus runs an actual static security scan (bandit for Python, secret-pattern detection across any language) rather than eyeballing code and asserting it's secure.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ── How it works ─────────────────────────────────────────────────── -->
 <section>
   <div class="wrap">
@@ -602,6 +656,7 @@ footer { border-top: 1px solid var(--line); padding: 48px 0; }
           <li>3 Ultra multi-agent runs/day*</li>
           <li>Memory vault</li>
           <li>Session history</li>
+          <li><strong>Novus included free</strong> — first 100 signups†</li>
         </ul>
         <a href="/app" class="btn btn-outline" style="width:100%;">Get started free</a>
       </div>
@@ -632,6 +687,7 @@ footer { border-top: 1px solid var(--line); padding: 48px 0; }
       </div>
     </div>
     <p class="methodology-note" style="margin-top:14px;">*"Ultra runs" are Orca's multi-agent orchestration mode — a planner decomposes your task, specialized sub-agents work it in parallel, and the results are graded and synthesized. It's a distinct feature from picking a chat model below, and doesn't require the Aeternum model tier to be trained.</p>
+    <p class="methodology-note" style="margin-top:6px;">&#8224;Novus (our deep-reasoning tier, normally a paid feature) is free for the first 100 accounts, by global signup order — no code needed, it's applied automatically at signup. After that it requires Pro or Enterprise.</p>
 
     <div class="section-head" style="margin-top:56px; margin-bottom:24px;">
       <div class="eyebrow">Model tiers, on both plans</div>
