@@ -5,6 +5,14 @@ nano  → Qwen2.5-3B-Instruct   — fast, local, minimal VRAM (fits 8GB)
 core  → Llama-3.1-8B-Instruct — balanced default
 ultra → Llama-3.1-70B         — maximum quality, cloud-only
 
+base_model literals are resolved from orca/registry/model_spec.py's
+MODEL_SPECS (the single source of truth) rather than duplicated here --
+this file and orca/train/config.py previously each declared nano's base
+model independently and silently disagreed (docstring said 3B, this file's
+code said 7B, config.py's preset said 3B). See
+docs/orneur/phase-0/GENESIS_MODEL_IDENTITY.md and
+tests/test_registry_model_spec.py's cross-file agreement guard.
+
 Each variant has:
 - base model for fine-tuning
 - Ollama model name (what `ollama run` uses)
@@ -20,6 +28,7 @@ from typing import Optional
 
 from orca.config import ORCA_HOME
 from orca.data.collector import ORCA_SYSTEM_PROMPT
+from orca.registry.model_spec import MODEL_SPECS
 
 MODELS_DIR = ORCA_HOME / "models"
 MODELS_DIR.mkdir(exist_ok=True)
@@ -46,7 +55,13 @@ VARIANTS: dict[str, VariantSpec] = {
     "nano": VariantSpec(
         name="orca-nano",
         ollama_name="orca-nano",
-        base_model="unsloth/Qwen2.5-7B-Instruct",
+        # Canonical FUTURE Genesis target per docs/orneur/phase-0.5/ARCHITECTURAL_DECISIONS.md:
+        # Qwen2.5-3B-class, resolved from the single source of truth
+        # (orca/registry/model_spec.py) rather than duplicated here. Existing
+        # installed orca-nano* checkpoints are forensically confirmed 7B-class
+        # legacy artifacts (see MODEL_SPECS["genesis"].legacy_note) -- this
+        # literal governs NEW training runs only, not what's already installed.
+        base_model=MODEL_SPECS["genesis"].base_model,
         lora_rank=32,
         batch_size=4,
         gradient_accumulation=4,
@@ -61,7 +76,7 @@ VARIANTS: dict[str, VariantSpec] = {
     "core": VariantSpec(
         name="orca-core",
         ollama_name="orca-core",
-        base_model="unsloth/Meta-Llama-3.1-8B-Instruct",
+        base_model=MODEL_SPECS["novus"].base_model,
         lora_rank=64,
         batch_size=2,
         gradient_accumulation=8,
@@ -76,7 +91,7 @@ VARIANTS: dict[str, VariantSpec] = {
     "ultra": VariantSpec(
         name="orca-ultra",
         ollama_name="orca-ultra",
-        base_model="unsloth/Meta-Llama-3.1-70B-Instruct",
+        base_model=MODEL_SPECS["aeternum"].base_model,
         lora_rank=64,
         batch_size=4,
         gradient_accumulation=4,

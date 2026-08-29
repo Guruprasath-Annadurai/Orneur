@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from orca.config import ORCA_HOME
+from orca.registry.model_spec import MODEL_SPECS
 
 MODELS_DIR = ORCA_HOME / "models"
 MODELS_DIR.mkdir(exist_ok=True)
@@ -106,7 +107,10 @@ class TrainingConfig:
             cfg.output_dir = str(MODELS_DIR / "orca-ultra-qlora")
         # ── Atheris named variants ─────────────────────────────────────────────
         elif name == "nano":
-            cfg.base_model = "unsloth/Qwen2.5-3B-Instruct"
+            # Resolved from the single source of truth (orca/registry/model_spec.py)
+            # -- see docs/orneur/phase-0/GENESIS_MODEL_IDENTITY.md for why this
+            # literal must not be duplicated independently again.
+            cfg.base_model = MODEL_SPECS["genesis"].base_model
             cfg.model_name = "orca-nano"
             cfg.lora.r = 32
             cfg.lora.lora_alpha = 64
@@ -115,7 +119,7 @@ class TrainingConfig:
             cfg.max_seq_length = 4096
             cfg.output_dir = str(MODELS_DIR / "orca-nano-qlora")
         elif name == "core":
-            cfg.base_model = "unsloth/Meta-Llama-3.1-8B-Instruct"
+            cfg.base_model = MODEL_SPECS["novus"].base_model
             cfg.model_name = "orca-core"
             cfg.lora.r = 64
             cfg.lora.lora_alpha = 128
@@ -124,7 +128,7 @@ class TrainingConfig:
             cfg.max_seq_length = 8192
             cfg.output_dir = str(MODELS_DIR / "orca-core-qlora")
         elif name == "ultra":
-            cfg.base_model = "unsloth/Meta-Llama-3.1-70B-Instruct"
+            cfg.base_model = MODEL_SPECS["aeternum"].base_model
             cfg.model_name = "orca-ultra"
             cfg.lora.r = 64
             cfg.lora.lora_alpha = 128
