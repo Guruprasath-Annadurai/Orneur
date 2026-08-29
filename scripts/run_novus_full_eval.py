@@ -28,7 +28,7 @@ with open(acc_path, "w") as f:
 print(f"[eval] wrote {acc_path}")
 
 print(f"\n[eval] running Novus domain eval (24 probes) against {model}...")
-domain_evaluator = NovusEvaluator(model, on_log=print)
+domain_evaluator = NovusEvaluator(model)
 domain_report = domain_evaluator.run()
 domain_path = EVAL_DIR / f"novus_eval_{model}.json"
 with open(domain_path, "w") as f:
