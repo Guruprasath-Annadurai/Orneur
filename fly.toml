@@ -1,6 +1,17 @@
-# Orca — Fly.io deployment configuration
+# Orneur (formerly "Orca"/"Atheris") — Fly.io deployment configuration
 # Deploy: fly launch --copy-config
 # Docs:   https://fly.io/docs/
+#
+# NOTE on naming: `app` and the volume `source` below are NOT renamed to
+# "orneur-*" in this pass. Unlike the k8s/docker-compose manifests (fresh,
+# never-deployed config in this repo), a Fly app name and volume are real,
+# potentially-already-provisioned cloud resources tied to a specific
+# account -- renaming them here would silently point this config at
+# resources that don't exist (or worse, orphan real data in the existing
+# `atheris_data` volume/`orca-demo` app if they're already live). If no
+# such resources exist yet, it's safe to rename both to `orneur-*` when you
+# first deploy; if they DO exist, migrate deliberately (see
+# docs/orneur/phase-1/DEPLOYMENT_NAME_MIGRATION.md).
 
 app = "orca-demo"
 primary_region = "ord"        # Chicago — change to nearest: iad, lax, sea, lhr, fra, sin, syd
@@ -12,13 +23,15 @@ kill_timeout   = 5
 
 [env]
   PORT           = "7337"
-  ORCA_HOME      = "/data"
-  # ORCA_OLLAMA_HOST is intentionally unset here — the demo uses the cloud
+  ORNEUR_HOME    = "/data"
+  # ORNEUR_OLLAMA_HOST is intentionally unset here — the demo uses the cloud
   # Ollama instance (see [services] below) or set it to your own.
 
 [mounts]
   # Persistent volume for SQLite auth DB, session history, and doc registry.
   # Create: fly volumes create atheris_data --size 3 --region ord
+  # (rename to orneur_data below ONLY if this is a fresh deployment with no
+  # existing atheris_data volume already provisioned)
   source      = "atheris_data"
   destination = "/data"
   initial_size = 3   # GB

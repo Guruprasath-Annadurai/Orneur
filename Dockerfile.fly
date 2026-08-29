@@ -1,4 +1,4 @@
-# Atheris — Fly.io production image
+# Orneur (formerly "Atheris") — Fly.io production image
 # Slimmer than the dev Dockerfile: no build-essential, uses pre-built wheel.
 FROM python:3.12-slim
 
@@ -9,17 +9,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 
 RUN pip install --no-cache-dir uv
 
-# Install from the pre-built wheel (avoids re-compiling on every deploy)
-COPY dist/atheris_ai-*.whl /tmp/
-RUN uv pip install --system "/tmp/atheris_ai-$(ls /tmp/atheris_ai-*.whl | head -1 | grep -oP '\d+\.\d+\.\d+').whl[docs]" \
-    || uv pip install --system /tmp/atheris_ai-*.whl
+# Install from the pre-built wheel (avoids re-compiling on every deploy).
+# NOTE: this previously referenced "atheris_ai-*.whl", which never matched
+# the actual built wheel name (the package is "orca-ai" per pyproject.toml
+# -- `dist/orca_ai-*.whl` is what `python -m build` actually produces). That
+# was a real, pre-existing bug: this build would fail today against any
+# real dist/ directory. Fixed to reference the wheel that's actually built;
+# not renamed to "orneur_ai" since the Python package name itself hasn't
+# been migrated yet (see docs/orneur/phase-1/LEGACY_COMPATIBILITY.md).
+COPY dist/orca_ai-*.whl /tmp/
+RUN uv pip install --system "/tmp/orca_ai-$(ls /tmp/orca_ai-*.whl | head -1 | grep -oP '\d+\.\d+\.\d+').whl[docs]" \
+    || uv pip install --system /tmp/orca_ai-*.whl
 
 # Copy web assets and app code
 COPY orca/ ./orca/
 
 # /data is the Fly volume mount — all persistent state goes here
 RUN mkdir -p /data
-ENV ORCA_HOME=/data
+ENV ORNEUR_HOME=/data
 
 EXPOSE 7337
 

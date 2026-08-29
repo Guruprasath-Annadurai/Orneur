@@ -16,8 +16,8 @@ RUN mkdir -p /root/.orca
 
 EXPOSE 7337
 
-ENV ORCA_HOME=/root/.orca \
-    ORCA_OLLAMA_HOST=http://ollama:11434
+ENV ORNEUR_HOME=/root/.orca \
+    ORNEUR_OLLAMA_HOST=http://ollama:11434
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:7337/api/status || exit 1

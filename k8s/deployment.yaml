@@ -1,47 +1,47 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: atheris
+  name: orneur-api
   labels:
-    app: atheris
+    app: orneur-api
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: atheris
+      app: orneur-api
   template:
     metadata:
       labels:
-        app: atheris
+        app: orneur-api
     spec:
       containers:
-      - name: atheris
-        image: atheris:latest
+      - name: orneur-api
+        image: orneur-api:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 7337
         env:
-        - name: ORCA_OLLAMA_HOST
+        - name: ORNEUR_OLLAMA_HOST
           value: "http://ollama:11434"
-        - name: ORCA_AUTH_SECRET
+        - name: ORNEUR_AUTH_SECRET
           valueFrom:
             secretKeyRef:
-              name: atheris-secrets
+              name: orneur-api-secrets
               key: auth-secret
-        - name: ORCA_CORE_MODEL
+        - name: ORNEUR_CORE_MODEL
           valueFrom:
             configMapKeyRef:
-              name: atheris-config
+              name: orneur-api-config
               key: core-model
-        - name: ORCA_NANO_MODEL
+        - name: ORNEUR_NANO_MODEL
           valueFrom:
             configMapKeyRef:
-              name: atheris-config
+              name: orneur-api-config
               key: nano-model
-        - name: ORCA_ULTRA_MODEL
+        - name: ORNEUR_ULTRA_MODEL
           valueFrom:
             configMapKeyRef:
-              name: atheris-config
+              name: orneur-api-config
               key: ultra-model
         volumeMounts:
         - name: data
@@ -78,7 +78,7 @@ spec:
       volumes:
       - name: data
         persistentVolumeClaim:
-          claimName: atheris-pvc
+          claimName: orneur-api-pvc
 ---
 apiVersion: apps/v1
 kind: Deployment

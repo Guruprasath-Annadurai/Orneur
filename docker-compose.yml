@@ -3,16 +3,16 @@ version: '3.9'
 services:
   ollama:
     image: ollama/ollama:latest
-    container_name: atheris-ollama
+    container_name: orneur-ollama
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
-    # Real gap this closes: no healthcheck meant `atheris`'s `depends_on`
+    # Real gap this closes: no healthcheck meant `orneur-api`'s `depends_on`
     # below only waited for this container to START, not for Ollama to
     # actually be ready to serve — a real race condition on first boot
-    # where atheris could come up and immediately fail against an Ollama
+    # where orneur-api could come up and immediately fail against an Ollama
     # that hadn't finished initializing yet. `ollama list` exercises the
     # CLI's own round-trip to the local server, no extra tooling needed.
     healthcheck:
@@ -30,24 +30,25 @@ services:
     #           count: all
     #           capabilities: [gpu]
 
-  # Optional — only needed once you're running multiple `atheris` API
+  # Optional — only needed once you're running multiple `orneur-api`
   # instances behind a load balancer. A single local install is fine on
-  # SQLite (the default, no ORCA_DATABASE_URL needed). Uncomment this service
-  # plus the ORCA_DATABASE_URL line below when moving to production scale.
+  # SQLite (the default, no ORNEUR_DATABASE_URL needed). Uncomment this
+  # service plus the ORNEUR_DATABASE_URL line below when moving to
+  # production scale.
   postgres:
     image: postgres:17-alpine
-    container_name: atheris-postgres
+    container_name: orneur-postgres
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: orca
-      POSTGRES_PASSWORD: ${ORCA_DB_PASSWORD:-change-me-in-production}
-      POSTGRES_DB: orca
+      POSTGRES_USER: orneur
+      POSTGRES_PASSWORD: ${ORNEUR_DB_PASSWORD:-change-me-in-production}
+      POSTGRES_DB: orneur
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U orca"]
+      test: ["CMD-SHELL", "pg_isready -U orneur"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -58,7 +59,7 @@ services:
   # it — sessions just live in that one process's memory, exactly as today.
   redis:
     image: redis:7-alpine
-    container_name: atheris-redis
+    container_name: orneur-redis
     ports:
       - "6379:6379"
     volumes:
@@ -70,38 +71,44 @@ services:
       timeout: 5s
       retries: 5
 
-  atheris:
+  orneur-api:
     build: .
-    container_name: atheris-server
+    container_name: orneur-api
     ports:
       - "7337:7337"
     volumes:
-      - atheris_data:/root/.orca
+      # NOTE: if you have an existing deployment with data in a volume
+      # named `atheris_data` (the pre-Orneur name), rename/migrate it
+      # rather than losing that data -- this compose file assumes a fresh
+      # deployment. See docs/orneur/phase-1/DEPLOYMENT_NAME_MIGRATION.md.
+      - orneur_data:/root/.orca
     environment:
-      ORCA_OLLAMA_HOST: http://ollama:11434
+      ORNEUR_OLLAMA_HOST: http://ollama:11434
       # Real bug this fixes: these defaulted to the raw, un-fine-tuned base
       # models (qwen2.5:14b/7b) — anyone deploying via this compose file
       # without explicitly overriding these env vars would silently get
-      # generic Qwen2.5, not Orca's actual fine-tuned nano/core/ultra
+      # generic Qwen2.5, not Orneur's actual fine-tuned nano/core/ultra
       # models. Defaults now match the real production aliases (see
       # orca/train/variants.py) — override only if you're intentionally
-      # running a different model.
-      ORCA_CORE_MODEL:  ${ORCA_CORE_MODEL:-orca-core}
-      ORCA_NANO_MODEL:  ${ORCA_NANO_MODEL:-orca-nano}
-      ORCA_ULTRA_MODEL: ${ORCA_ULTRA_MODEL:-orca-ultra}
-      ORCA_AUTH_SECRET: ${ORCA_AUTH_SECRET:-change-me-in-production}
+      # running a different model. ORNEUR_* is canonical; the legacy
+      # ORCA_* names below are still accepted as a deprecated fallback
+      # (see orca/config.py's orneur_env()) if you have existing overrides.
+      ORNEUR_CORE_MODEL:  ${ORNEUR_CORE_MODEL:-${ORCA_CORE_MODEL:-orca-core}}
+      ORNEUR_NANO_MODEL:  ${ORNEUR_NANO_MODEL:-${ORCA_NANO_MODEL:-orca-nano}}
+      ORNEUR_ULTRA_MODEL: ${ORNEUR_ULTRA_MODEL:-${ORCA_ULTRA_MODEL:-orca-ultra}}
+      ORNEUR_AUTH_SECRET: ${ORNEUR_AUTH_SECRET:-${ORCA_AUTH_SECRET:-change-me-in-production}}
       # Uncomment to switch from local SQLite to Postgres (needed for
       # multi-instance / horizontally-scaled deployments):
-      # ORCA_DATABASE_URL: postgresql://orca:${ORCA_DB_PASSWORD:-change-me-in-production}@postgres:5432/orca
+      # ORNEUR_DATABASE_URL: postgresql://orneur:${ORNEUR_DB_PASSWORD:-change-me-in-production}@postgres:5432/orneur
       # Uncomment for cross-instance session continuity:
-      # ORCA_REDIS_URL: redis://redis:6379/0
+      # ORNEUR_REDIS_URL: redis://redis:6379/0
     depends_on:
       ollama:
         condition: service_healthy
       # postgres:
-      #   condition: service_healthy  # uncomment alongside ORCA_DATABASE_URL above
+      #   condition: service_healthy  # uncomment alongside ORNEUR_DATABASE_URL above
       # redis:
-      #   condition: service_healthy  # uncomment alongside ORCA_REDIS_URL above
+      #   condition: service_healthy  # uncomment alongside ORNEUR_REDIS_URL above
     healthcheck:
       # Reuses the real GET /healthz endpoint already built for exactly
       # this — lightweight, cached registry resolution, no extra tooling
@@ -115,6 +122,6 @@ services:
 
 volumes:
   ollama_data:
-  atheris_data:
+  orneur_data:
   postgres_data:
   redis_data:

@@ -27,7 +27,7 @@ on:
 
 jobs:
   eval:
-    name: Atheris Model Eval
+    name: Orneur Model Eval
     runs-on: self-hosted   # requires a runner with Ollama installed
     timeout-minutes: 30
 
