@@ -101,6 +101,33 @@ class ModelGateway:
         "experimental": "EXPERIMENTAL",
     }
 
+    @staticmethod
+    def _artifact_is_available(deployment: ModelDeployment) -> bool:
+        """
+        Cross-checks Phase 1's checkpoint registry (orca/registry/checkpoint.py)
+        so a deployment can never be routed when its underlying weight
+        artifact is MISSING/CORRUPT -- ModelDeployment's own lifecycle/
+        health/warmup fields are a separate system from the checkpoint
+        registry's ArtifactAvailability, and the two must agree before
+        routing, not just the deployment's own optimistic state.
+
+        Fails OPEN (returns True) only when no CheckpointRecord exists at
+        all for this artifact_id -- that's the case for every test double
+        in this test suite and for any deployment whose artifact was never
+        registered with Phase 1's registry, which must not be treated as
+        "missing" (that would be a false negative, not a safety check).
+        A record that DOES exist and says MISSING/CORRUPT must block
+        routing, unconditionally.
+        """
+        try:
+            from orca.registry.checkpoint import ArtifactAvailability, CheckpointRecord
+            record = CheckpointRecord.load(deployment.artifact_id)
+        except FileNotFoundError:
+            return True
+        except Exception:
+            return True
+        return record.availability not in (ArtifactAvailability.MISSING.value, ArtifactAvailability.CORRUPT.value)
+
     def _parse_alias(self, model_id: str) -> tuple[str, str | None]:
         if ":" in model_id:
             base, suffix = model_id.split(":", 1)
@@ -135,12 +162,18 @@ class ModelGateway:
             raise ModelNotRoutableError(model_id, "no deployment is registered for this model")
 
         if requested_lifecycle:
-            aliased = [d for d in candidates if d.lifecycle == requested_lifecycle and d.is_routable(allow_experimental=True)]
+            aliased = [
+                d for d in candidates
+                if d.lifecycle == requested_lifecycle and d.is_routable(allow_experimental=True) and self._artifact_is_available(d)
+            ]
             if not aliased:
                 raise ModelNotRoutableError(model_id, f"no routable deployment with lifecycle={requested_lifecycle}")
             return aliased[0]
 
-        routable = [d for d in candidates if d.is_routable(allow_experimental=allow_experimental)]
+        routable = [
+            d for d in candidates
+            if d.is_routable(allow_experimental=allow_experimental) and self._artifact_is_available(d)
+        ]
         if not routable:
             raise ModelNotRoutableError(
                 model_id,
