@@ -18,10 +18,20 @@ _allowed_roots: list[Path] = [Path.cwd(), Path.home() / "projects"]
 
 
 def _safe_path(p: str) -> Path:
+    # SECURITY: a substring/startswith check on the resolved path string is
+    # vulnerable to prefix confusion -- e.g. allowed root "/safe/data" would
+    # also match "/safe/database-secret", since the STRING starts with the
+    # same characters despite the directory not being inside the root.
+    # Proper ancestry uses Path.relative_to() against each root's own
+    # resolved form, matching orca/tools/__init__.py's _resolve_in_workspace().
     path = Path(p).resolve()
-    if not any(str(path).startswith(str(r)) for r in _allowed_roots):
-        raise PermissionError(f"Path {p} is outside allowed directories")
-    return path
+    for root in _allowed_roots:
+        try:
+            path.relative_to(root.resolve())
+            return path
+        except ValueError:
+            continue
+    raise PermissionError(f"Path {p} is outside allowed directories")
 
 
 @app.list_tools()
