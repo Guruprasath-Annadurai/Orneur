@@ -1,4 +1,4 @@
-"""Atheris fine-tuning pipeline: config → train → eval → export."""
+"""Orneur fine-tuning pipeline: config → train → eval → export."""
 from orca.train.config import TrainingConfig, LoRAConfig, MODELS_DIR
 from orca.train.variants import VariantSpec, VARIANTS, get_variant, status as variant_status
 from orca.train.eval import OllamaEvaluator, ModelEvaluator, GOLDEN_EVALS

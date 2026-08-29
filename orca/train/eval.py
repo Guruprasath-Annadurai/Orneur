@@ -1,5 +1,5 @@
 """
-Atheris Model Evaluator — two modes:
+Orneur Model Evaluator — two modes:
 
   OllamaEvaluator  — talks to a live Ollama model (no GPU deps, runs in CI)
   ModelEvaluator   — loads a merged HF/Unsloth checkpoint for offline eval

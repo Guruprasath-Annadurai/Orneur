@@ -1,5 +1,5 @@
 """
-Atheris model variant definitions.
+Orneur model variant definitions.
 
 nano  → Qwen2.5-3B-Instruct   — fast, local, minimal VRAM (fits 8GB)
 core  → Llama-3.1-8B-Instruct — balanced default

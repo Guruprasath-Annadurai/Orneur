@@ -105,7 +105,7 @@ class TrainingConfig:
             cfg.load_in_4bit = True
             cfg.model_name = "orca-ultra"
             cfg.output_dir = str(MODELS_DIR / "orca-ultra-qlora")
-        # ── Atheris named variants ─────────────────────────────────────────────
+        # ── Orneur named variants ──────────────────────────────────────────────
         elif name == "nano":
             # Resolved from the single source of truth (orca/registry/model_spec.py)
             # -- see docs/orneur/phase-0/GENESIS_MODEL_IDENTITY.md for why this

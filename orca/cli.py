@@ -426,7 +426,7 @@ def data_seed(
     elif n is None:
         n = 500
 
-    console.print(f"[bold cyan]◈ Atheris Seed Pipeline[/bold cyan]")
+    console.print(f"[bold cyan]◈ Orneur Seed Pipeline[/bold cyan]")
     console.print(f"  [dim]model:[/dim]   [bold]{brain.name}[/bold]")
     console.print(f"  [dim]target:[/dim]  [bold]{n}[/bold] examples this run")
     console.print(f"  [dim]workers:[/dim] [bold]{workers}[/bold] parallel")
@@ -663,7 +663,7 @@ def train_run(
 
 @train_app.command("status")
 def train_status():
-    """Show build status for all Atheris model variants."""
+    """Show build status for all Orneur model variants."""
     from rich.table import Table
     from rich import box
     from orca.train.variants import status, VARIANTS
@@ -751,7 +751,7 @@ def _run_variant_train(variant_name: str, epochs: int | None, rank: int | None):
         f"[bold]Epochs:[/bold]     {cfg.num_epochs}\n"
         f"[bold]VRAM needed:[/bold] {v.vram_gb}GB\n"
         f"[bold]Output:[/bold]     {cfg.output_dir}",
-        title=f"[bold red]Atheris {v.name} — QLoRA Fine-Tune[/bold red]",
+        title=f"[bold red]Orneur {v.name} — QLoRA Fine-Tune[/bold red]",
         border_style="red",
     ))
 
@@ -837,7 +837,7 @@ def train_eval(
         report = ev.full_report()
     else:
         from orca.train.eval import OllamaEvaluator
-        console.print(f"\n[bold cyan]◈ Atheris Eval — {target}[/bold cyan]")
+        console.print(f"\n[bold cyan]◈ Orneur Eval — {target}[/bold cyan]")
         console.print(f"  [dim]host:[/dim]   {host}")
         console.print(f"  [dim]prompts:[/dim] {n_acc or 50} accuracy + {n_style} style\n")
         ev = OllamaEvaluator(
@@ -859,7 +859,7 @@ def train_eval(
         f"[bold]Style:[/bold]    {report['style']['style_score']:.1f}/10  "
         f"({report['style']['n_samples']} samples)\n"
         f"[bold]Speed:[/bold]    {report['speed'].get('tokens_per_sec', 0):.1f} tok/s",
-        title="[bold]◈ Atheris Eval Report[/bold]",
+        title="[bold]◈ Orneur Eval Report[/bold]",
         border_style=color,
     ))
 
@@ -949,7 +949,7 @@ def train_redteam(
         console.print("[red]Specify a model: orca train redteam --model orca-core[/red]")
         raise typer.Exit(1)
 
-    console.print(f"\n[bold cyan]◈ Atheris Red-Team Suite — {model}[/bold cyan]")
+    console.print(f"\n[bold cyan]◈ Orneur Red-Team Suite — {model}[/bold cyan]")
     console.print(f"  [dim]host:[/dim] {host}\n")
 
     ev = RedTeamEvaluator(model, ollama_host=host, on_log=lambda m: console.print(f"  [dim]{m}[/dim]"))
@@ -1100,7 +1100,7 @@ def train_compare(
     from rich import box
     from orca.train.eval import OllamaEvaluator
 
-    console.print(f"\n[bold cyan]◈ Atheris Compare: {model_a} vs {model_b}[/bold cyan]\n")
+    console.print(f"\n[bold cyan]◈ Orneur Compare: {model_a} vs {model_b}[/bold cyan]\n")
 
     if judge:
         with console.status(f"[dim]Running {n or 'all'} domain-neutral prompts, judged by {judge}...[/dim]"):

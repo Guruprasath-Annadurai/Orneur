@@ -1,4 +1,4 @@
-"""Role-Based Access Control for Atheris enterprise tier."""
+"""Role-Based Access Control for Orneur enterprise tier."""
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException

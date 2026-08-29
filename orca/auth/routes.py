@@ -255,7 +255,7 @@ async def verify_email(token: str):
     return HTMLResponse("""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>body{background:#000;color:#e8e8e8;font-family:monospace;display:flex;align-items:center;
 justify-content:center;height:100vh;margin:0}div{text-align:center}</style></head><body>
-<div><p style="letter-spacing:.35em;font-size:20px;color:#fff">ATHERIS</p>
+<div><p style="letter-spacing:.35em;font-size:20px;color:#fff">ORNEUR</p>
 <p style="color:#888;letter-spacing:.15em;margin-top:8px">EMAIL VERIFIED</p>
 <p style="color:#555;margin-top:20px">Your account is now active. <a href="/app" style="color:#fff">Return to Orca →</a></p>
 </div></body></html>""")
