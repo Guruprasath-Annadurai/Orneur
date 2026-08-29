@@ -49,10 +49,14 @@ _TRAIN_SCRIPT = '''#!/usr/bin/env python3
 import json, os, sys, time
 from pathlib import Path
 
-preset = os.environ.get("ORCA_PRESET", "cloud")
-epochs = int(os.environ.get("ORCA_EPOCHS", "3"))
-rank   = int(os.environ.get("ORCA_RANK", "128"))
-base   = os.environ.get("ORCA_BASE_MODEL", "unsloth/Meta-Llama-3.1-8B-Instruct")
+
+# This script runs standalone on a bare cloud GPU instance (no orca package
+# installed there), so it can't import orca.config.orneur_env -- the same
+# ORNEUR-wins-over-legacy-ORCA precedence is inlined here instead.
+preset = os.environ.get("ORNEUR_PRESET") or os.environ.get("ORCA_PRESET", "cloud")
+epochs = int(os.environ.get("ORNEUR_EPOCHS") or os.environ.get("ORCA_EPOCHS", "3"))
+rank   = int(os.environ.get("ORNEUR_RANK") or os.environ.get("ORCA_RANK", "128"))
+base   = os.environ.get("ORNEUR_BASE_MODEL") or os.environ.get("ORCA_BASE_MODEL", "unsloth/Meta-Llama-3.1-8B-Instruct")
 train_file = "data/orca_llama3_train.jsonl"
 eval_file  = "data/orca_llama3_eval.jsonl"
 

@@ -51,7 +51,7 @@ from orca.brain.context import ContextManager
 from orca.tools import build_registry
 from orca.character import CORE_SYSTEM_WITH_TOOLS
 from orca.personas import get_persona_system
-from orca.config import CONFIG, ORCA_HOME
+from orca.config import CONFIG, ORCA_HOME, orneur_env
 from orca.variants.ultra import OrcaUltra
 from orca.docs import (
     extract, SUPPORTED_EXTENSIONS, MAX_FILE_SIZE,
@@ -1148,7 +1148,7 @@ async def create_checkout(
     from orca.auth.store import get_stripe_customer_id
     existing_customer_id = get_stripe_customer_id(user.id)
 
-    base_url = _os.environ.get("ORCA_PUBLIC_URL", "http://localhost:7337")
+    base_url = orneur_env("PUBLIC_URL", "http://localhost:7337")
 
     session_kwargs = dict(
         mode="subscription",

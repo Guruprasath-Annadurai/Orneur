@@ -34,7 +34,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from orca.config import ORCA_HOME
+from orca.config import ORCA_HOME, orneur_env
 from orca.auth.db import AUTH_DB, BACKEND
 
 BACKUP_DIR = ORCA_HOME / "backups"
@@ -108,10 +108,8 @@ def backup_postgres(database_url: str) -> Path:
 
 def run_backup() -> dict:
     """Dispatches to the right backup method based on the active DB backend."""
-    import os
-
     if BACKEND == "postgres":
-        database_url = os.environ.get("ORCA_DATABASE_URL", "")
+        database_url = orneur_env("DATABASE_URL")
         path = backup_postgres(database_url)
         backend = "postgres"
     else:

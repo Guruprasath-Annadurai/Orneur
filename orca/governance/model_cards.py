@@ -26,6 +26,8 @@ import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
+from orca.config import orneur_env
+
 from orca.config import ORCA_HOME
 from orca.train.eval import EVAL_DIR
 from orca.train.redteam import REDTEAM_DIR
@@ -38,7 +40,7 @@ CARDS_DIR.mkdir(parents=True, exist_ok=True)
 
 def _card_key() -> bytes:
     """Signing key for model cards — same env var family as the audit log."""
-    key = os.environ.get("ORCA_GOVERNANCE_KEY") or os.environ.get("ORCA_AUDIT_KEY")
+    key = orneur_env("GOVERNANCE_KEY") or orneur_env("AUDIT_KEY")
     if key:
         return key.encode()
     return b"orca-dev-governance-key-DO-NOT-USE-IN-PRODUCTION"

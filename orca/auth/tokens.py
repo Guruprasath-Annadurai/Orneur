@@ -13,7 +13,9 @@ import os
 import time
 from typing import Optional
 
-_SECRET = os.environ.get("ORCA_AUTH_SECRET", "dev-secret-change-me")
+from orca.config import orneur_env
+
+_SECRET = orneur_env("AUTH_SECRET", "dev-secret-change-me")
 
 
 def _encode(payload: dict) -> str:

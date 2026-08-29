@@ -60,11 +60,11 @@ VAULT_DIR.mkdir(exist_ok=True)
 
 
 class OllamaConfig(BaseModel):
-    host: str = os.environ.get("ORCA_OLLAMA_HOST", "http://localhost:11434")
+    host: str = orneur_env("OLLAMA_HOST", "http://localhost:11434")
     # Priority: your fine-tuned model → best available open model
-    model_nano: str = os.environ.get("ORCA_NANO_MODEL", "orca-nano")
-    model_core: str = os.environ.get("ORCA_CORE_MODEL", "orca-core")
-    model_ultra: str = os.environ.get("ORCA_ULTRA_MODEL", "orca-ultra")
+    model_nano: str = orneur_env("NANO_MODEL", "orca-nano")
+    model_core: str = orneur_env("CORE_MODEL", "orca-core")
+    model_ultra: str = orneur_env("ULTRA_MODEL", "orca-ultra")
     fallback_models: list[str] = [
         "llama3.1:8b",
         "llama3:8b",
@@ -91,22 +91,22 @@ class BackendConfig(BaseModel):
     document. This is checked in registry.py, not here — this class only
     holds the configuration values.
     """
-    backend_nano: str = os.environ.get("ORCA_NANO_BACKEND", "ollama")
-    backend_core: str = os.environ.get("ORCA_CORE_BACKEND", "ollama")
-    backend_ultra: str = os.environ.get("ORCA_ULTRA_BACKEND", "ollama")
+    backend_nano: str = orneur_env("NANO_BACKEND", "ollama")
+    backend_core: str = orneur_env("CORE_BACKEND", "ollama")
+    backend_ultra: str = orneur_env("ULTRA_BACKEND", "ollama")
 
-    openai_model_core: str = os.environ.get("ORCA_OPENAI_MODEL_CORE", "gpt-4o")
-    openai_model_ultra: str = os.environ.get("ORCA_OPENAI_MODEL_ULTRA", "gpt-4o")
-    anthropic_model_core: str = os.environ.get("ORCA_ANTHROPIC_MODEL_CORE", "claude-sonnet-4-6")
-    anthropic_model_ultra: str = os.environ.get("ORCA_ANTHROPIC_MODEL_ULTRA", "claude-opus-4-8")
+    openai_model_core: str = orneur_env("OPENAI_MODEL_CORE", "gpt-4o")
+    openai_model_ultra: str = orneur_env("OPENAI_MODEL_ULTRA", "gpt-4o")
+    anthropic_model_core: str = orneur_env("ANTHROPIC_MODEL_CORE", "claude-sonnet-4-6")
+    anthropic_model_ultra: str = orneur_env("ANTHROPIC_MODEL_ULTRA", "claude-opus-4-8")
 
-    openai_api_key: str = os.environ.get("ORCA_OPENAI_API_KEY", "")
-    anthropic_api_key: str = os.environ.get("ORCA_ANTHROPIC_API_KEY", "")
+    openai_api_key: str = orneur_env("OPENAI_API_KEY", "")
+    anthropic_api_key: str = orneur_env("ANTHROPIC_API_KEY", "")
 
     # Fail-closed: when true, every tier is forced to "ollama" regardless
     # of backend_nano/core/ultra above. Real deployments serving customers
     # with a strict data-residency requirement set this once and trust it.
-    data_sovereignty_lock: bool = os.environ.get("ORCA_DATA_SOVEREIGNTY_LOCK", "false").lower() == "true"
+    data_sovereignty_lock: bool = orneur_env("DATA_SOVEREIGNTY_LOCK", "false").lower() == "true"
 
     # Cost-aware escalation (see orca/serve/routing.py) — OFF by default.
     # A tier configured for "ollama" is a promise of near-$0 marginal cost
@@ -114,14 +114,14 @@ class BackendConfig(BaseModel):
     # queries to a paid frontier API would break that promise. An operator
     # must explicitly opt in and name which frontier backend to escalate
     # to before any per-query routing decision can ever fire.
-    cost_aware_escalation_enabled: bool = os.environ.get("ORCA_COST_AWARE_ESCALATION", "false").lower() == "true"
-    escalation_backend: str = os.environ.get("ORCA_ESCALATION_BACKEND", "")  # "openai" | "anthropic"
+    cost_aware_escalation_enabled: bool = orneur_env("COST_AWARE_ESCALATION", "false").lower() == "true"
+    escalation_backend: str = orneur_env("ESCALATION_BACKEND", "")  # "openai" | "anthropic"
 
     # Safety valve even when opted in: opting into escalation should not mean
     # opting into an unbounded bill. 0 means "not set" — routing.py treats
     # that as a conservative default cap, not as unlimited, so an operator
     # who enables the flag but forgets to set a cap doesn't get surprised.
-    escalation_daily_cap: int = int(os.environ.get("ORCA_ESCALATION_DAILY_CAP", "0") or "0")
+    escalation_daily_cap: int = int(orneur_env("ESCALATION_DAILY_CAP", "0") or "0")
 
 
 class BrainConfig(BaseModel):

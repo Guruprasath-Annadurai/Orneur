@@ -34,6 +34,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from orca.config import orneur_env
+
 
 # ─── Price ID → license params mapping ────────────────────────────────────────
 
@@ -180,7 +182,7 @@ def _verify_signature(payload: bytes, sig_header: str, secret: str) -> dict:
         # checkout.session.completed and grant themselves a paid tier for
         # free. Local dev without a real Stripe secret must opt in
         # explicitly via ORCA_ALLOW_UNSIGNED_WEBHOOKS=1, not get it by default.
-        if os.environ.get("ORCA_ALLOW_UNSIGNED_WEBHOOKS") == "1":
+        if orneur_env("ALLOW_UNSIGNED_WEBHOOKS") == "1":
             return json.loads(payload)
         raise ValueError(
             "STRIPE_WEBHOOK_SECRET not configured — refusing to process an "

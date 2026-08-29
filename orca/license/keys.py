@@ -18,6 +18,8 @@ import hashlib
 import hmac as _hmac
 import os
 import secrets
+
+from orca.config import orneur_env
 import struct
 from base64 import b32decode, b32encode
 from dataclasses import dataclass
@@ -74,7 +76,7 @@ _BUILT_IN_SECRET = (
 
 
 def _secret() -> bytes:
-    return os.environ.get("ORCA_LICENSE_SECRET", _BUILT_IN_SECRET).encode()
+    return orneur_env("LICENSE_SECRET", _BUILT_IN_SECRET).encode()
 
 
 # ─── Key dataclass ─────────────────────────────────────────────────────────────

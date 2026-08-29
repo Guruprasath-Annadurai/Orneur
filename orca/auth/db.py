@@ -23,11 +23,11 @@ import re
 import sqlite3
 from pathlib import Path
 
-from orca.config import ORCA_HOME
+from orca.config import ORCA_HOME, orneur_env
 
 AUTH_DB = ORCA_HOME / "auth.db"
 
-BACKEND = "postgres" if os.environ.get("ORCA_DATABASE_URL") else "sqlite"
+BACKEND = "postgres" if orneur_env("DATABASE_URL") else "sqlite"
 
 _PLACEHOLDER_RE = re.compile(r"\?")
 
@@ -481,7 +481,7 @@ def _get_postgres_conn() -> _PGConnAdapter:
     import psycopg
     from psycopg.rows import dict_row
 
-    dsn = os.environ["ORCA_DATABASE_URL"]
+    dsn = orneur_env("DATABASE_URL")
     conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False)
     return _PGConnAdapter(conn)
 

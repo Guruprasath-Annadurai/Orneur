@@ -9,6 +9,8 @@ import os
 import secrets
 import time
 
+from orca.config import orneur_env
+
 
 # ── Password hashing (PBKDF2-SHA256) ─────────────────────────────────────────
 
@@ -30,9 +32,9 @@ def verify_password(password: str, stored: str) -> bool:
 # ── Token signing (HMAC-SHA256, no PyJWT dep) ────────────────────────────────
 
 def _secret() -> bytes:
-    return os.environ.get(
-        "ORCA_AUTH_SECRET",
-        "atheris-auth-dev-secret-CHANGE-THIS-IN-PRODUCTION"
+    return orneur_env(
+        "AUTH_SECRET",
+        "orneur-auth-dev-secret-CHANGE-THIS-IN-PRODUCTION"
     ).encode()
 
 
