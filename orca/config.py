@@ -1,9 +1,42 @@
 import os
+import warnings
 from pathlib import Path
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def orneur_env(suffix: str, default: str = "") -> str:
+    """
+    ORCA -> ORNEUR environment variable compatibility resolver (Phase 1,
+    stage D of docs/orneur/phase-0/BRAND_MIGRATION_PLAN.md's migration
+    order). ORNEUR_<suffix> takes precedence; the legacy ORCA_<suffix> is
+    accepted as a deprecated fallback with a one-time warning. Never logs
+    the resolved VALUE (only the variable NAME) — several of these vars
+    carry secrets (e.g. ORCA_AUTH_SECRET).
+
+    Only ORCA_HOME is wired through this resolver in this phase, as the
+    single highest-value case (it determines where every other ORCA_HOME-
+    relative store lives). The remaining ~41 ORCA_* vars census'd in
+    BRAND_MIGRATION_PLAN.md follow the same pattern at their own call sites
+    in a later, deliberately separate migration stage — not silently done
+    here in one pass.
+    """
+    orneur_name = f"ORNEUR_{suffix}"
+    orca_name = f"ORCA_{suffix}"
+    if orneur_name in os.environ:
+        return os.environ[orneur_name]
+    if orca_name in os.environ:
+        warnings.warn(
+            f"{orca_name} is deprecated; set {orneur_name} instead. "
+            f"{orca_name} fallback support will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return os.environ[orca_name]
+    return default
+
 
 # .expanduser() is required here — python-dotenv (and any shell config a
 # user copies verbatim from .env.example) can set ORCA_HOME to a literal
@@ -13,7 +46,7 @@ load_dotenv()
 # directory happens to be — a real bug found in this project's own testing,
 # not a hypothetical: it silently redirected the auth DB, audit log, memory,
 # and every other ORCA_HOME-relative store to the wrong location.
-ORCA_HOME = Path(os.environ.get("ORCA_HOME", str(Path.home() / ".orca"))).expanduser()
+ORCA_HOME = Path(orneur_env("HOME", str(Path.home() / ".orca"))).expanduser()
 ORCA_HOME.mkdir(parents=True, exist_ok=True)
 
 MEMORY_DIR = ORCA_HOME / "memory"
