@@ -10,6 +10,7 @@ frontier vs. future runtimes) happens here, keyed off ModelDeployment.runtime
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from typing import AsyncIterator
@@ -17,16 +18,20 @@ from typing import AsyncIterator
 from orca.gateway.circuit_breaker import CircuitBreaker
 from orca.gateway.concurrency import ConcurrencyLimiter
 from orca.gateway.contracts import InferenceChunk, InferenceRequest, InferenceResponse
-from orca.gateway.deployment import ModelDeployment, list_deployments
+from orca.gateway.deployment import DeploymentHealth, ModelDeployment, list_deployments
 from orca.gateway.errors import (
     CircuitOpenError,
     ContextTooLongError,
     GenerationTimeoutError,
+    InferenceError,
     InvalidParametersError,
     ModelNotRoutableError,
     RuntimeExecutionError,
 )
+from orca.gateway import metrics
 from orca.gateway.runtime import InferenceRuntime
+
+_logger = logging.getLogger("orca.gateway")
 
 # Rough estimate only -- no tokenizer dependency at this layer. Deliberately
 # conservative (over-estimates) so a request that's actually borderline
@@ -83,6 +88,28 @@ class ModelGateway:
     def _deployments_for_model(self, model_id: str) -> list[ModelDeployment]:
         return [d for d in self._deployments.values() if d.model_id == model_id]
 
+    # Alias suffixes resolve to a lifecycle policy, e.g. "orneur-novus:candidate"
+    # means "the CANDIDATE-lifecycle deployment for orneur-novus", NOT a
+    # specific checkpoint pin (that's what model_version is for). An
+    # unversioned bare alias like "orneur-novus" always means "whatever is
+    # currently PRODUCTION" and must never silently fall through to an
+    # experimental/candidate deployment -- that's exactly the "unversioned
+    # string aliases bypass promotion governance" failure mode this guards.
+    _ALIAS_LIFECYCLE = {
+        "production": "PRODUCTION",
+        "candidate": "CANDIDATE",
+        "experimental": "EXPERIMENTAL",
+    }
+
+    def _parse_alias(self, model_id: str) -> tuple[str, str | None]:
+        if ":" in model_id:
+            base, suffix = model_id.split(":", 1)
+            lifecycle = self._ALIAS_LIFECYCLE.get(suffix.lower())
+            if lifecycle is None:
+                raise ModelNotRoutableError(model_id, f"unknown alias suffix ':{suffix}'")
+            return base, lifecycle
+        return model_id, None
+
     def resolve_deployment(self, model_id: str, model_version: str | None = None, allow_experimental: bool = False) -> ModelDeployment:
         """
         The routing-safety gate. Raises ModelNotRoutableError -- never
@@ -93,13 +120,25 @@ class ModelGateway:
             deploy)
           - deployments exist but none pass ModelDeployment.is_routable()
             under the caller's policy
+        An unversioned bare model_id (no ":alias" suffix) ALWAYS requires
+        PRODUCTION lifecycle -- allow_experimental only affects requests
+        that didn't ask for a specific alias, and an explicit ":candidate"/
+        ":experimental" alias is honored regardless of allow_experimental
+        (naming the alias IS the explicit policy decision).
         """
-        candidates = self._deployments_for_model(model_id)
+        base_model_id, requested_lifecycle = self._parse_alias(model_id)
+        candidates = self._deployments_for_model(base_model_id)
         if model_version:
             candidates = [d for d in candidates if d.model_version == model_version]
 
         if not candidates:
             raise ModelNotRoutableError(model_id, "no deployment is registered for this model")
+
+        if requested_lifecycle:
+            aliased = [d for d in candidates if d.lifecycle == requested_lifecycle and d.is_routable(allow_experimental=True)]
+            if not aliased:
+                raise ModelNotRoutableError(model_id, f"no routable deployment with lifecycle={requested_lifecycle}")
+            return aliased[0]
 
         routable = [d for d in candidates if d.is_routable(allow_experimental=allow_experimental)]
         if not routable:
@@ -110,6 +149,12 @@ class ModelGateway:
             )
 
         production = [d for d in routable if d.lifecycle == "PRODUCTION"]
+        if not production and not allow_experimental:
+            raise ModelNotRoutableError(
+                model_id,
+                "no PRODUCTION deployment exists for this model, and allow_experimental was not set "
+                "-- a bare model_id never falls back to an experimental/candidate deployment implicitly",
+            )
         return production[0] if production else routable[0]
 
     def _runtime_for(self, deployment: ModelDeployment) -> InferenceRuntime:
@@ -124,6 +169,7 @@ class ModelGateway:
     async def generate(self, request: InferenceRequest, allow_experimental: bool = False) -> InferenceResponse:
         _validate_parameters(request)
         deployment = self.resolve_deployment(request.model_id, request.model_version, allow_experimental)
+        metrics.record_request(deployment.deployment_id)
 
         estimated = _estimate_tokens(request)
         if estimated + request.max_tokens > deployment.context_limit:
@@ -134,6 +180,10 @@ class ModelGateway:
 
         runtime = self._runtime_for(deployment)
         t0 = time.monotonic()
+        log_ctx = dict(
+            model_id=request.model_id, model_version=deployment.model_version, deployment_id=deployment.deployment_id,
+            runtime=deployment.runtime, request_id=request.request_id, trace_id=request.trace_id,
+        )
         try:
             async with await self.concurrency.acquire(deployment.deployment_id, queue_timeout_s=self.timeouts.queue_timeout_s):
                 queue_latency_ms = (time.monotonic() - t0) * 1000
@@ -142,17 +192,38 @@ class ModelGateway:
                 response.deployment_id = deployment.deployment_id
         except asyncio.TimeoutError:
             self.circuit_breaker.record_failure(deployment.deployment_id)
+            metrics.record_timeout(deployment.deployment_id, "total_request")
+            metrics.record_failure(deployment.deployment_id, "GENERATION_TIMEOUT")
+            _logger.warning("inference request timed out", extra={**log_ctx, "status": "timeout"})
             raise GenerationTimeoutError(internal_detail=f"exceeded total_request_timeout_s={self.timeouts.total_request_timeout_s}")
-        except Exception:
+        except InferenceError as e:
             self.circuit_breaker.record_failure(deployment.deployment_id)
+            metrics.record_failure(deployment.deployment_id, e.code.value)
+            _logger.warning("inference request failed", extra={**log_ctx, "status": "error", "error_class": e.code.value})
+            raise
+        except Exception as e:
+            self.circuit_breaker.record_failure(deployment.deployment_id)
+            metrics.record_failure(deployment.deployment_id, "UNKNOWN")
+            _logger.error("inference request failed with an unclassified error", extra={**log_ctx, "status": "error", "error_class": type(e).__name__})
             raise
         else:
             self.circuit_breaker.record_success(deployment.deployment_id)
+            total_latency_ms = (time.monotonic() - t0) * 1000
+            metrics.record_success(deployment.deployment_id, total_latency_ms, response.queue_latency_ms, response.completion_tokens)
+            if response.retries:
+                for _ in range(response.retries):
+                    metrics.record_retry(deployment.deployment_id)
+            _logger.info("inference request succeeded", extra={**log_ctx, "status": "ok", "latency_ms": round(total_latency_ms, 1)})
             return response
 
     async def stream(self, request: InferenceRequest, allow_experimental: bool = False) -> AsyncIterator[InferenceChunk]:
         _validate_parameters(request)
         deployment = self.resolve_deployment(request.model_id, request.model_version, allow_experimental)
+        metrics.record_request(deployment.deployment_id)
+        log_ctx = dict(
+            model_id=request.model_id, model_version=deployment.model_version, deployment_id=deployment.deployment_id,
+            runtime=deployment.runtime, request_id=request.request_id, trace_id=request.trace_id,
+        )
 
         estimated = _estimate_tokens(request)
         if estimated + request.max_tokens > deployment.context_limit:
@@ -162,9 +233,10 @@ class ModelGateway:
             raise CircuitOpenError(deployment.deployment_id)
 
         runtime = self._runtime_for(deployment)
-        t_acquire_start = time.monotonic()
+        t0 = time.monotonic()
 
         async with await self.concurrency.acquire(deployment.deployment_id, queue_timeout_s=self.timeouts.queue_timeout_s):
+            queue_latency_ms = (time.monotonic() - t0) * 1000
             t_first_chunk_deadline = time.monotonic() + self.timeouts.first_token_timeout_s
             first_chunk_seen = False
             try:
@@ -172,12 +244,27 @@ class ModelGateway:
                     if not first_chunk_seen:
                         if time.monotonic() > t_first_chunk_deadline:
                             self.circuit_breaker.record_failure(deployment.deployment_id)
+                            metrics.record_timeout(deployment.deployment_id, "first_token")
                             raise GenerationTimeoutError(internal_detail="exceeded first_token_timeout_s")
                         first_chunk_seen = True
+                        metrics.record_ttft(deployment.deployment_id, (time.monotonic() - t0) * 1000)
+                    if chunk.finish_reason == "cancelled":
+                        metrics.record_cancellation(deployment.deployment_id)
+                        _logger.info("inference stream cancelled", extra={**log_ctx, "status": "cancelled"})
                     yield chunk
                 self.circuit_breaker.record_success(deployment.deployment_id)
-            except Exception:
+                total_latency_ms = (time.monotonic() - t0) * 1000
+                metrics.record_success(deployment.deployment_id, total_latency_ms, queue_latency_ms, 0)
+                _logger.info("inference stream completed", extra={**log_ctx, "status": "ok", "latency_ms": round(total_latency_ms, 1)})
+            except InferenceError as e:
                 self.circuit_breaker.record_failure(deployment.deployment_id)
+                metrics.record_failure(deployment.deployment_id, e.code.value)
+                _logger.warning("inference stream failed", extra={**log_ctx, "status": "error", "error_class": e.code.value})
+                raise
+            except Exception as e:
+                self.circuit_breaker.record_failure(deployment.deployment_id)
+                metrics.record_failure(deployment.deployment_id, "UNKNOWN")
+                _logger.error("inference stream failed with an unclassified error", extra={**log_ctx, "status": "error", "error_class": type(e).__name__})
                 raise
 
     async def cancel(self, model_id: str, request_id: str) -> bool:
@@ -187,3 +274,71 @@ class ModelGateway:
             return False
         runtime = self._runtime_for(candidates[0])
         return await runtime.cancel(request_id)
+
+    async def warmup(self, deployment: ModelDeployment, probe_message: str = "Say OK.") -> bool:
+        """
+        A deployment is not READY until this succeeds. Runs: (1) an
+        explicit load_model() call where the runtime supports it (a no-op
+        returning False, not raising, for runtimes that don't -- e.g.
+        frontier passthrough), (2) a small deterministic generation to
+        verify the deployment can actually answer, not just that the
+        health endpoint responds. On success, sets health=READY and
+        warmup_completed=True; on failure, leaves it at STARTING (never
+        silently marks a deployment ready after a failed warmup) and logs
+        the failure with latency recorded either way.
+        """
+        runtime = self._runtime_for(deployment)
+        t0 = time.monotonic()
+        try:
+            await runtime.load_model(deployment.model_version)
+            probe_request = InferenceRequest(
+                request_id=f"warmup-{deployment.deployment_id}",
+                model_id=deployment.model_id,
+                model_version=deployment.model_version,
+                messages=[{"role": "user", "content": probe_message}],
+                max_tokens=5,
+                timeout_s=self.timeouts.total_request_timeout_s,
+            )
+            await runtime.generate(probe_request)
+        except Exception as e:
+            _logger.warning(
+                "deployment warmup failed",
+                extra={"deployment_id": deployment.deployment_id, "runtime": deployment.runtime,
+                       "latency_ms": round((time.monotonic() - t0) * 1000, 1), "error_class": type(e).__name__},
+            )
+            return False
+        deployment.health = DeploymentHealth.READY.value
+        deployment.warmup_completed = True
+        deployment.save()
+        _logger.info(
+            "deployment warmup succeeded",
+            extra={"deployment_id": deployment.deployment_id, "runtime": deployment.runtime,
+                   "latency_ms": round((time.monotonic() - t0) * 1000, 1)},
+        )
+        return True
+
+    def report_health(self) -> dict:
+        """
+        Distinguishes service liveness (this process is up -- trivially
+        true if this call returns at all) from readiness (at least one
+        runtime is registered) from per-model deployment readiness (is
+        THIS specific model actually routable right now). The API layer
+        can be alive with zero models ready -- these must never be
+        conflated into one boolean.
+        """
+        model_readiness = {}
+        for model_id in {d.model_id for d in self._deployments.values()}:
+            try:
+                self.resolve_deployment(model_id)
+                model_readiness[model_id] = "READY"
+            except ModelNotRoutableError:
+                allow_exp_routable = any(
+                    d.is_routable(allow_experimental=True) for d in self._deployments_for_model(model_id)
+                )
+                model_readiness[model_id] = "CANDIDATE_ONLY" if allow_exp_routable else "NOT_ROUTABLE"
+        return {
+            "service_live": True,
+            "service_ready": len(self._runtimes) > 0,
+            "registered_runtimes": sorted(self._runtimes.keys()),
+            "model_readiness": model_readiness,
+        }
