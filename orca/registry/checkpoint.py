@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 
 from orca.config import ORCA_HOME
@@ -22,6 +23,24 @@ CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 class CorruptCheckpointError(Exception):
     pass
+
+
+class ArtifactAvailability(str, Enum):
+    """
+    Distinct from LifecycleState (orca/registry/model_spec.py) -- lifecycle
+    is about whether a checkpoint is production-worthy; availability is
+    about whether its WEIGHT FILE can currently be read at all. A checkpoint
+    can be RETIRED (lifecycle) yet still LOCAL (availability), or
+    EXPERIMENTAL (lifecycle) yet MISSING (availability) -- the two axes are
+    independent. This distinction exists specifically because Phase 1
+    overloaded "the artifact isn't reachable" into an ad-hoc checksum
+    sentinel string, which this replaces with a real, checked field.
+    """
+    LOCAL = "LOCAL"          # weight file verified present & readable on this machine
+    REMOTE = "REMOTE"        # not local, but verified recoverable from a known source (e.g. a specific Kaggle kernel)
+    MISSING = "MISSING"      # not local, no verified recovery path -- the honest "just gone" state
+    CORRUPT = "CORRUPT"      # present but fails checksum verification
+    ARCHIVED = "ARCHIVED"    # deliberately moved to cold storage, not an accident
 
 
 @dataclass
@@ -42,6 +61,13 @@ class CheckpointRecord:
     legacy_ollama_name: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
     validation_state: str = "UNVALIDATED"  # UNVALIDATED | VALID | CORRUPT
+    # Deliberately defaults to MISSING, not LOCAL -- a checkpoint is only
+    # ever considered present after an explicit check sets this, never by
+    # assumption. See ArtifactAvailability's docstring for why this is a
+    # separate axis from lifecycle_state.
+    availability: str = ArtifactAvailability.MISSING.value
+    recovery_source: str | None = None   # e.g. "kaggle:guruprasathannadurai/orca-core-dpo-merge-export-v1" -- required when availability=REMOTE
+    availability_note: str = ""
 
     def manifest_path(self) -> Path:
         validate_id(self.checkpoint_id, "checkpoint_id")
@@ -85,7 +111,41 @@ class CheckpointRecord:
                 f"recorded={self.artifact_checksum} actual={actual}"
             )
         self.validation_state = "VALID"
+        self.availability = ArtifactAvailability.LOCAL.value
         return True
+
+    def refresh_availability(self, artifact_path: Path | None = None) -> str:
+        """
+        Checks local file presence/integrity and sets availability to LOCAL
+        or CORRUPT accordingly. Does NOT downgrade an existing REMOTE or
+        ARCHIVED state to MISSING just because the file isn't locally
+        present right now -- those states represent a deliberate, verified
+        fact about a KNOWN remote location, which a missing local copy
+        doesn't invalidate. Only call this after actually checking a
+        specific local path; it never guesses.
+        """
+        path = artifact_path or Path(self.artifact_path)
+        if not path.exists():
+            if self.availability not in (ArtifactAvailability.REMOTE.value, ArtifactAvailability.ARCHIVED.value):
+                self.availability = ArtifactAvailability.MISSING.value
+            return self.availability
+        try:
+            self.verify_integrity(path)
+        except CorruptCheckpointError:
+            self.availability = ArtifactAvailability.CORRUPT.value
+        return self.availability
+
+    def is_loadable(self) -> bool:
+        """
+        The routing guard: a checkpoint whose weight artifact is not
+        verified LOCAL must never be treated as loadable, regardless of
+        its lifecycle_state. REMOTE means "recoverable with an explicit
+        fetch step" -- still not loadable as-is.
+        """
+        return self.availability == ArtifactAvailability.LOCAL.value
+
+    def is_routable(self) -> bool:
+        return self.is_loadable()
 
 
 def list_checkpoints(model_id: str | None = None) -> list[CheckpointRecord]:
@@ -98,9 +158,16 @@ def list_checkpoints(model_id: str | None = None) -> list[CheckpointRecord]:
     return records
 
 
-def latest_good_checkpoint(model_id: str) -> CheckpointRecord | None:
-    """Most recent checkpoint for a family that isn't marked CORRUPT."""
+def latest_good_checkpoint(model_id: str, require_loadable: bool = False) -> CheckpointRecord | None:
+    """
+    Most recent checkpoint for a family that isn't marked CORRUPT. Pass
+    require_loadable=True to additionally require the artifact be verified
+    LOCAL -- the right choice for anything that intends to actually load
+    the weights, as opposed to a lineage/history query.
+    """
     candidates = [c for c in list_checkpoints(model_id) if c.validation_state != "CORRUPT"]
+    if require_loadable:
+        candidates = [c for c in candidates if c.is_loadable()]
     if not candidates:
         return None
     return max(candidates, key=lambda c: c.created_at)
