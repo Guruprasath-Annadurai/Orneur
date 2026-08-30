@@ -30,6 +30,7 @@ from orca.gateway.errors import (
 )
 from orca.gateway import metrics
 from orca.gateway.runtime import InferenceRuntime
+from orca.gateway.worker import Worker
 
 _logger = logging.getLogger("orca.gateway")
 
@@ -72,6 +73,7 @@ class ModelGateway:
     ):
         self._runtimes: dict[str, InferenceRuntime] = {}
         self._deployments: dict[str, ModelDeployment] = {}  # deployment_id -> deployment
+        self._workers: dict[str, Worker] = {}  # worker_id -> Worker
         self.circuit_breaker = circuit_breaker or CircuitBreaker()
         self.concurrency = concurrency or ConcurrencyLimiter()
         self.timeouts = timeout_policy or TimeoutPolicy()
@@ -84,6 +86,41 @@ class ModelGateway:
         self.concurrency.configure(
             deployment.deployment_id, max_concurrency=deployment.max_concurrency, max_queue_depth=deployment.max_concurrency * 4,
         )
+
+    def register_worker(self, worker: Worker) -> None:
+        self._workers[worker.worker_id] = worker
+
+    def _worker_permits_routing(self, deployment: ModelDeployment) -> bool:
+        """
+        Deployments with no worker_id set are unconstrained by this check
+        (backward compatible with every deployment registered before
+        worker-aware routing existed, and with every deployment that
+        genuinely doesn't need a worker association -- e.g. a frontier API
+        passthrough has no meaningful "worker"). A deployment WITH a
+        worker_id is refused if that worker isn't registered at all, or
+        fails Worker.is_available_for_routing() (covers UNHEALTHY, OFFLINE,
+        DRAINING, stale heartbeat, and no-spare-capacity in one call --
+        that method already existed in Phase 2, just never consulted here).
+        """
+        if deployment.worker_id is None:
+            return True
+        worker = self._workers.get(deployment.worker_id)
+        if worker is None:
+            return False
+        return worker.is_available_for_routing()
+
+    def _rank_key(self, deployment: ModelDeployment) -> tuple:
+        """
+        Deterministic ranking among multiple eligible deployments for the
+        same request: prefer a READY worker over DEGRADED, prefer lower
+        active load, then break ties by deployment_id for reproducibility.
+        A deployment with no worker_id sorts as if its worker were READY
+        with zero load (no worker constraint = no worker-based penalty).
+        """
+        worker = self._workers.get(deployment.worker_id) if deployment.worker_id else None
+        worker_rank = 0 if worker is None or worker.status == "READY" else 1
+        load = worker.active_requests if worker else 0
+        return (worker_rank, load, deployment.deployment_id)
 
     def _deployments_for_model(self, model_id: str) -> list[ModelDeployment]:
         return [d for d in self._deployments.values() if d.model_id == model_id]
@@ -164,21 +201,23 @@ class ModelGateway:
         if requested_lifecycle:
             aliased = [
                 d for d in candidates
-                if d.lifecycle == requested_lifecycle and d.is_routable(allow_experimental=True) and self._artifact_is_available(d)
+                if d.lifecycle == requested_lifecycle and d.is_routable(allow_experimental=True)
+                and self._artifact_is_available(d) and self._worker_permits_routing(d)
             ]
             if not aliased:
                 raise ModelNotRoutableError(model_id, f"no routable deployment with lifecycle={requested_lifecycle}")
-            return aliased[0]
+            return sorted(aliased, key=self._rank_key)[0]
 
         routable = [
             d for d in candidates
             if d.is_routable(allow_experimental=allow_experimental) and self._artifact_is_available(d)
+            and self._worker_permits_routing(d)
         ]
         if not routable:
             raise ModelNotRoutableError(
                 model_id,
                 "deployment(s) exist but none are currently routable "
-                "(lifecycle/health/warmup state, or experimental policy not permitted)",
+                "(lifecycle/health/warmup state, experimental policy not permitted, or worker unavailable)",
             )
 
         production = [d for d in routable if d.lifecycle == "PRODUCTION"]
@@ -188,7 +227,8 @@ class ModelGateway:
                 "no PRODUCTION deployment exists for this model, and allow_experimental was not set "
                 "-- a bare model_id never falls back to an experimental/candidate deployment implicitly",
             )
-        return production[0] if production else routable[0]
+        eligible = production if production else routable
+        return sorted(eligible, key=self._rank_key)[0]
 
     def _runtime_for(self, deployment: ModelDeployment) -> InferenceRuntime:
         runtime = self._runtimes.get(deployment.runtime)

@@ -55,6 +55,7 @@ class ModelDeployment:
     health: str = DeploymentHealth.STARTING.value
     max_concurrency: int = 4
     context_limit: int = 8192
+    worker_id: str | None = None   # None = no worker constraint (backward compatible with deployments that predate worker-aware routing)
     capabilities: dict = field(default_factory=dict)
     created_at: str = field(default_factory=_now_iso)
     last_health_check_at: str | None = None
