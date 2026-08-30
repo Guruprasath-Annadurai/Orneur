@@ -43,3 +43,39 @@ Consistent ~7.2–8.0 tokens/sec across all three runs — CPU-bound generation,
 ## Honest takeaway
 
 The current single-host, CPU-only Ollama deployment produces single-digit tokens/sec — real, workable for low-traffic personal/small-team use, and exactly the gap Phase 2's Model Gateway architecture is designed to eventually let a GPU-backed runtime (vLLM/SGLang/TensorRT-LLM) close without requiring cognitive/application code to change, since it already only depends on the `InferenceRuntime` protocol, not Ollama specifically.
+
+---
+
+## Phase 2.1: Integrated path (real API + Gateway), measured post-cutover
+
+The numbers above measured `OllamaRuntime` directly, in isolation. Phase 2.1's cutover means real user traffic now takes a much longer path: `POST /api/stream` → auth/ratelimit/quota/moderation → `_Session`/`AgentLoop`/`ContextManager` → `GatewayBrain` → `ModelGateway.stream()` (circuit breaker + worker/priority-aware concurrency acquire) → `OllamaRuntime`. `scripts/measure_integrated_baseline.py` measures this actual path end-to-end through a real FastAPI `TestClient`, against the same local `orca-nano-v7` model. Raw output: `docs/orneur/phase-2/integrated_baseline_raw.json`.
+
+### Client-observed (full HTTP round trip, 3 runs)
+
+| run | ttft_ms | total_ms |
+|---|---|---|
+| 1 | 6,404 | 6,404 |
+| 2 | 5,039 | 5,039 |
+| 3 | 4,843 | 4,843 |
+
+**Caveat:** each run reported `chunk_count: 1` — `TestClient.stream()` does not appear to expose true incremental SSE arrival in-process the way a real network client would, so `ttft_ms` here is effectively "time to full response," not true time-to-first-byte. This is a test-harness limitation, not evidence the Gateway buffers responses (see `Gateway-observed` below, which is measured from inside the actual streaming call and does show real incremental TTFT).
+
+### Gateway-observed (`metrics.get_snapshot()`, from inside the actual `generate`/`stream` calls)
+
+| | |
+|---|---|
+| requests | 9 |
+| successes | 9 |
+| avg TTFT | 740.9ms |
+| avg total latency | 1,540.0ms |
+| avg queue latency | 0.02ms |
+
+**9 requests for 3 user-facing turns is expected, not a bug or Gateway-introduced amplification**: `AgentLoop` (`orca/brain/agent.py`) calls `self.brain.complete()`/`.stream()` from multiple internal call sites (draft, refine/critique, context-policy summarization) per turn — unchanged, pre-existing behavior this phase did not touch. Each of those calls independently goes through the Gateway now, which is exactly the intended effect of the cutover (previously only some of these calls could have been observed by anything resembling a gateway; now all of them are).
+
+### Reading the two numbers together
+
+The Gateway's own instrumented **avg TTFT of 740.9ms** is within noise of Phase 2's raw-runtime baseline (**729.6ms**) — meaning the Gateway itself (deployment resolution, circuit breaker check, concurrency acquire — avg queue latency measured at **0.02ms**, i.e. no contention in this single-client test) adds no measurable per-call overhead. The multi-second client-observed wall time is real, but it is the cost of **AgentLoop's multi-call-per-turn design plus session/context/memory work surrounding the Gateway**, not Gateway overhead — the per-call Gateway numbers make that attribution possible where a black-box HTTP measurement alone could not.
+
+### Novus benchmark: not attempted, and why
+
+Benchmarking `orneur-novus` through this same integrated path was considered and explicitly not done this pass: `docs/orneur/phase-2/LIVE_SERVING_CUTOVER.md`'s policy-decision section already establishes that live traffic registers deployments as `EXPERIMENTAL` lifecycle, and the wiring bridge in `orca/gateway/wiring.py` only maps configured tiers (`nano`/`core`/`ultra`) to installed Ollama models — Novus has no tier mapping and no installed checkpoint on this machine, so there is no real, non-fabricated request to measure. Benchmarking it would require either a synthetic/mocked runtime (which Phase 2's own baseline explicitly rejected as dishonest) or a real Novus checkpoint, which does not exist in this environment. This is disclosed rather than silently skipped.

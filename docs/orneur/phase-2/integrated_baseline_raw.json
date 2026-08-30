@@ -1,0 +1,35 @@
+{
+  "runs": [
+    {
+      "ttft_ms": 6404.1,
+      "total_ms": 6404.2,
+      "chunk_count": 1
+    },
+    {
+      "ttft_ms": 5039.0,
+      "total_ms": 5039.0,
+      "chunk_count": 1
+    },
+    {
+      "ttft_ms": 4843.4,
+      "total_ms": 4843.5,
+      "chunk_count": 1
+    }
+  ],
+  "gateway_metrics": {
+    "per_deployment": {
+      "ollama-orca-nano": {
+        "requests": 9,
+        "successes": 9,
+        "cancellations": 0,
+        "retries": 0,
+        "tokens_generated": 52,
+        "avg_total_latency_ms": 1539.98,
+        "avg_queue_latency_ms": 0.02,
+        "avg_ttft_ms": 740.9
+      }
+    },
+    "failures_by_code": {},
+    "timeouts_by_category": {}
+  }
+}

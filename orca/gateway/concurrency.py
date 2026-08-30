@@ -111,6 +111,26 @@ class ConcurrencyLimiter:
         self._aging_interval_s = aging_interval_s
 
     def configure(self, deployment_id: str, max_concurrency: int, max_queue_depth: int) -> None:
+        """
+        Must be idempotent in the face of already-tracked in-flight state.
+        `ModelGateway.register_deployment()` calls this on EVERY request
+        (idempotent registration -- see orca/gateway/wiring.py, "safe to
+        call every request"), so under real concurrent traffic this can run
+        while other requests to the same deployment currently hold a permit
+        or are queued waiting for one. Replacing the _DeploymentLimiter
+        object outright (the original implementation) would silently
+        discard that in-flight _active count and orphan any current
+        _waiters' futures -- a genuine concurrency-safety bug found while
+        writing this phase's integrated-path timeout test (see
+        docs/orneur/phase-2/PRIORITY_SCHEDULING.md). Updating limits on the
+        existing limiter in place instead preserves _active/_waiters/_lock
+        exactly, while still letting limits themselves be changed.
+        """
+        existing = self._limiters.get(deployment_id)
+        if existing is not None:
+            existing.max_concurrency = max_concurrency
+            existing.max_queue_depth = max_queue_depth
+            return
         self._limiters[deployment_id] = _DeploymentLimiter(max_concurrency, max_queue_depth, self._aging_interval_s)
 
     def _get(self, deployment_id: str) -> _DeploymentLimiter:

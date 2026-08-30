@@ -179,3 +179,48 @@ async def test_deployments_are_isolated():
 
     release.set()
     await busy_task
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_while_a_permit_is_held_does_not_lose_it():
+    """
+    Phase 2.1 closure finding: ModelGateway.register_deployment() calls
+    configure() on EVERY request (idempotent deployment registration, see
+    orca/gateway/wiring.py), which under real concurrent traffic can run
+    while another request already holds a permit on the same deployment.
+    Before the fix, configure() replaced the _DeploymentLimiter object
+    outright, silently resetting _active to 0 and orphaning any _waiters --
+    a real request that already believed it held a permit would have its
+    bookkeeping erased out from under it, and a second reconfigure-time
+    caller could then be wrongly admitted past what should be a full
+    deployment.
+    """
+    limiter = ConcurrencyLimiter()
+    limiter.configure("dep-1", max_concurrency=1, max_queue_depth=1)
+
+    holder_entered = asyncio.Event()
+    release_holder = asyncio.Event()
+
+    async def _holder():
+        async with await limiter.acquire("dep-1"):
+            holder_entered.set()
+            await release_holder.wait()
+
+    holder_task = asyncio.create_task(_holder())
+    await holder_entered.wait()
+    assert limiter.stats("dep-1").active == 1
+
+    # Simulate the idempotent re-registration that happens on every real
+    # request -- must not disturb the permit currently held.
+    limiter.configure("dep-1", max_concurrency=1, max_queue_depth=1)
+    assert limiter.stats("dep-1").active == 1
+
+    # With max_concurrency still 1 and the permit still genuinely held, a
+    # second acquire attempt must correctly queue/reject, not be wrongly
+    # admitted because reconfigure reset the active count to 0.
+    with pytest.raises(QueueTimeoutError):
+        async with await limiter.acquire("dep-1", queue_timeout_s=0.05):
+            pass
+
+    release_holder.set()
+    await holder_task

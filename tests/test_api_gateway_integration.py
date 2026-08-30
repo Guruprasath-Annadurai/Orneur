@@ -134,3 +134,46 @@ def test_circuit_breaker_open_prevents_reaching_ollama_through_the_real_api(clie
     # No successful generation content should have been produced this time.
     chunk_events = [e for e in events if e.get("type") == "chunk"]
     assert len(chunk_events) == 0
+
+
+def test_queue_timeout_surfaces_through_the_real_api_without_reaching_ollama(client):
+    """
+    Timeout-through-the-integrated-path (Phase 2.1 closure requirement):
+    saturates the real deployment's concurrency (as a real request would if
+    the deployment were already at max_concurrency) and shrinks
+    queue_timeout_s to near-zero, then proves a second real /api/stream
+    request surfaces a real QUEUE_TIMEOUT error through the actual HTTP
+    endpoint -- same manipulate-real-gateway-state-then-hit-the-real-
+    endpoint pattern as the circuit breaker test above.
+    """
+    _skip_if_no_ollama()
+
+    with client.stream("POST", "/api/stream", json={"message": "Hi", "model_variant": "nano"}) as response:
+        list(response.iter_text())
+
+    gw = wiring.get_shared_gateway()
+    deployment_id = next(iter(gw._deployments.keys()))
+
+    # Saturate this deployment's concurrency slot(s) and make the queue
+    # timeout effectively instant, so the next request cannot ever be
+    # admitted and must time out in queue rather than reaching Ollama.
+    limiter = gw.concurrency._get(deployment_id)
+    limiter._active = limiter.max_concurrency
+    original_queue_timeout = gw.timeouts.queue_timeout_s
+    gw.timeouts.queue_timeout_s = 0.05
+
+    try:
+        with client.stream(
+            "POST", "/api/stream",
+            json={"message": "This should time out waiting in queue.", "model_variant": "nano"},
+        ) as response:
+            raw = "".join(response.iter_text())
+    finally:
+        limiter._active = 0
+        gw.timeouts.queue_timeout_s = original_queue_timeout
+
+    events = _parse_sse_events(raw)
+    error_events = [e for e in events if e.get("type") == "error"]
+    assert len(error_events) >= 1
+    chunk_events = [e for e in events if e.get("type") == "chunk"]
+    assert len(chunk_events) == 0

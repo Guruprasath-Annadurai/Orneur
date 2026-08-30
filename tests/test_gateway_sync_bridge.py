@@ -83,6 +83,45 @@ async def test_run_async_gen_in_thread_works_while_a_loop_is_already_running_on_
     assert items == [0, 1, 2]
 
 
+def test_run_async_gen_in_thread_cancels_promptly_on_early_close():
+    """
+    Phase 2.1 closure finding: client disconnect on /api/stream closes the
+    sync generator early (Starlette's StreamingResponse cleanup calls
+    .close() on it). Before this fix, .close() blocked in thread.join()
+    until the abandoned async generator finished on its own -- for a real
+    generation, that could be tens of seconds, potentially stalling
+    whatever thread called .close(). Cancellation must now propagate
+    promptly: closing early must return near-instantly, and the abandoned
+    async generator must actually observe asyncio.CancelledError (proving
+    it can release resources -- e.g. a Gateway concurrency permit -- rather
+    than being silently abandoned mid-await forever).
+    """
+    import time
+
+    cleanup: list = []
+
+    async def _slow_agen():
+        try:
+            yield "first"
+            await asyncio.sleep(30)
+            yield "second"
+        except asyncio.CancelledError:
+            cleanup.append("cancelled")
+            raise
+        finally:
+            cleanup.append("finally")
+
+    gen = run_async_gen_in_thread(_slow_agen)
+    assert next(gen) == "first"
+
+    start = time.monotonic()
+    gen.close()
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 2.0, f"close() took {elapsed:.2f}s -- cancellation did not propagate promptly"
+    assert cleanup == ["cancelled", "finally"]
+
+
 def test_run_async_in_thread_works_when_called_directly_from_the_main_thread_with_a_manually_started_loop():
     """
     Simulates orca/serve/api.py's exact real shape more precisely: a

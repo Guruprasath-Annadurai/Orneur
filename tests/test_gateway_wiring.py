@@ -77,6 +77,47 @@ def test_get_shared_gateway_returns_the_same_instance_across_calls():
     assert "ollama" in gw1._runtimes
 
 
+def test_legacy_genesis_7b_cannot_silently_become_canonical_future_3b():
+    """
+    Explicit closure gate (Phase 2.1 spec): today's live traffic serves a
+    legacy Genesis-7B-class checkpoint (orca-nano-v7); a canonical future
+    Genesis-3B checkpoint may eventually exist under the SAME family
+    (orneur-genesis). Through the real live wiring path, these two
+    checkpoints must register as two DISTINCT deployments (distinct
+    deployment_id AND distinct model_version) -- resolving one must never
+    silently return the other, and resolving without a pinned model_version
+    must not accidentally prefer whichever happens to be a dict-ordering
+    artifact.
+    """
+    legacy = TierResolution(tier="nano", backend="ollama", model="orca-nano-v7", data_left_infrastructure=False)
+    canonical = TierResolution(tier="nano", backend="ollama", model="orca-nano-genesis-3b", data_left_infrastructure=False)
+
+    legacy_brain = wiring.brain_for_tier_resolution(legacy)
+    canonical_brain = wiring.brain_for_tier_resolution(canonical)
+
+    # Same family (both Genesis) -- that part IS supposed to be shared.
+    assert legacy_brain.model_id == "orneur-genesis"
+    assert canonical_brain.model_id == "orneur-genesis"
+
+    # But never the same deployment/version -- family identity is not
+    # checkpoint identity.
+    assert legacy_brain.model_version == "orca-nano-v7"
+    assert canonical_brain.model_version == "orca-nano-genesis-3b"
+    assert legacy_brain.model_version != canonical_brain.model_version
+
+    gw = legacy_brain._gateway
+    assert gw is canonical_brain._gateway
+    assert len(gw._deployments) == 2
+
+    # Resolving pinned to the legacy version must return exactly the legacy
+    # deployment -- never the canonical one -- and vice versa.
+    resolved_legacy = gw.resolve_deployment("orneur-genesis", model_version="orca-nano-v7", allow_experimental=True)
+    assert resolved_legacy.model_version == "orca-nano-v7"
+
+    resolved_canonical = gw.resolve_deployment("orneur-genesis", model_version="orca-nano-genesis-3b", allow_experimental=True)
+    assert resolved_canonical.model_version == "orca-nano-genesis-3b"
+
+
 def test_reset_for_tests_actually_clears_state():
     wiring.get_shared_gateway()
     assert wiring._gateway is not None
