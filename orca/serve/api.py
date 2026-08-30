@@ -1255,6 +1255,19 @@ async def ultra_run(req: UltraRequest):
     sess = _get_session(req.session_id)
     progress_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
+    # Phase 2.1 cutover: OrcaUltra previously built its own OrcaBrain via
+    # get_brain(), bypassing the Model Gateway entirely -- unlike /api/chat
+    # and /api/stream, this HTTP-reachable path was missed by the original
+    # cutover. Resolve the same way _Session.__init__ does and inject the
+    # Gateway-routed brain so live Ultra traffic is routed identically.
+    ultra_resolution = TierResolution(
+        tier="ultra",
+        backend="ollama",
+        model=_model_name_for_variant("ultra"),
+        data_left_infrastructure=False,
+    )
+    ultra_brain = brain_for_tier_resolution(ultra_resolution)
+
     def on_progress(msg: str):
         # Called from within async coroutine context (main event loop thread)
         try:
@@ -1266,7 +1279,7 @@ async def ultra_run(req: UltraRequest):
         yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
         yield f"data: {json.dumps({'type': 'pod_launch'})}\n\n"
 
-        ultra = OrcaUltra(on_progress=on_progress, use_tools=True)
+        ultra = OrcaUltra(on_progress=on_progress, use_tools=True, brain=ultra_brain)
         pipeline_task = asyncio.create_task(ultra._run_async(req.task, max_retries=1))
 
         # Stream progress events while pipeline runs

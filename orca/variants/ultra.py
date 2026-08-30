@@ -82,8 +82,15 @@ class OrcaUltra:
         on_progress: Callable[[str], None] | None = None,
         model: str | None = None,
         use_tools: bool = True,
+        brain=None,
     ):
-        self.brain = get_brain(model or CONFIG.ollama.model_ultra)
+        # `brain` lets callers that already have a Gateway-routed brain
+        # (e.g. the live /api/ultra HTTP endpoint, see orca/serve/api.py's
+        # brain_for_tier_resolution cutover) inject it instead of going
+        # through get_brain() directly. CLI usage (orca/cli.py) is
+        # unaffected -- it never passes `brain`, so it keeps building an
+        # OrcaBrain straight from the requested model name.
+        self.brain = brain if brain is not None else get_brain(model or CONFIG.ollama.model_ultra)
         self.tools = build_registry() if use_tools else None
         self.on_progress = on_progress or print
 
