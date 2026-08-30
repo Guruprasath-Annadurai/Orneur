@@ -177,6 +177,31 @@ def _apply_cost_aware_routing(base_resolution, message: str):
     return resolution, decision
 
 
+def _run_cognitive_shadow(message: str, legacy_tier: str) -> None:
+    """
+    Phase 3 shadow-mode integration (see docs/orneur/phase-3/CUTOVER.md):
+    runs the Cognitive Kernel's deterministic plan() on every real
+    /api/chat and /api/stream request, purely for observability -- it
+    NEVER changes the tier/backend actually used, and any failure here
+    must never break the real request (hence the broad except). This is
+    what makes "the Kernel exists and plans for every ordinary request"
+    true without risking the production chat path's existing behavior
+    (conversation history, memory, RAG, tools -- all untouched).
+    """
+    try:
+        from orca.cognitive.contracts import CognitiveRequest
+        from orca.cognitive.metrics import record_shadow_comparison
+        from orca.cognitive.policy import characteristic_to_tier
+        from orca.cognitive.wiring import get_shared_kernel
+
+        kernel = get_shared_kernel()
+        plan = kernel.plan(CognitiveRequest(objective=message))
+        suggested_tier = characteristic_to_tier(plan.model_policy.characteristic)
+        record_shadow_comparison(kernel_tier=suggested_tier, legacy_tier=legacy_tier)
+    except Exception:
+        _logger.debug("Cognitive shadow planning failed for this request — real serving path unaffected.", exc_info=True)
+
+
 def _generate_via_frontier_backend(resolution, persona_system: str, message: str):
     """
     Direct, single-turn generation through a frontier API backend
@@ -474,6 +499,82 @@ async def status():
     }
 
 
+class CognitiveExecuteRequest(BaseModel):
+    objective: str
+
+
+@app.post("/api/cognitive/execute")
+async def cognitive_execute(
+    req: CognitiveExecuteRequest,
+    request: Request,
+    user: User | None = Depends(get_current_user_optional),
+):
+    """
+    INTERNAL / EXPERIMENTAL (Phase 3). The real, end-to-end Cognitive
+    Kernel cutover path: unlike /api/chat and /api/stream (which run the
+    Kernel in shadow-only mode -- see _run_cognitive_shadow -- to avoid
+    risking the existing session/memory/RAG/tool-use behavior those
+    endpoints must preserve), this endpoint IS authoritatively planned AND
+    executed by the Kernel: no session, no conversation history, no RAG,
+    no tools. It only genuinely answers requests whose plan needs nothing
+    beyond a direct model call (ANSWER_DIRECTLY/REASON/RECALL_MEMORY); a
+    plan needing tools/retrieval/agents completes with an explicit warning
+    naming what it deferred, rather than fabricating an answer. See
+    docs/orneur/phase-3/CUTOVER.md for why full production cutover of
+    /api/chat and /api/stream was not attempted in Phase 3 (a real,
+    disclosed tension between cognitive model-policy and paid-tier
+    entitlement, not an oversight).
+    """
+    ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="cognitive")
+
+    if user:
+        allowed, used, limit = check_quota(user.id, user.tier, "message")
+        if not allowed:
+            return JSONResponse(
+                {"error": f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages."},
+                status_code=429,
+            )
+
+    mod_result = check_input(req.objective)
+    metrics.record_moderation_action(mod_result.action)
+    if mod_result.action == "block":
+        audit.log("input_moderation_blocked", user_id=user.id if user else None,
+                  detail={"categories": mod_result.flagged_categories, "endpoint": "cognitive_execute"})
+        return JSONResponse(
+            {"error": "This request can't be processed — it matches a category we don't generate content for."},
+            status_code=400,
+        )
+
+    from orca.cognitive.contracts import CognitiveRequest
+    from orca.cognitive.wiring import get_shared_kernel
+
+    kernel = get_shared_kernel()
+    cog_request = CognitiveRequest(objective=req.objective, session_id=None)
+    result = await kernel.execute(cog_request)
+
+    if user and result.output is not None:
+        increment_usage(user.id, "message")
+
+    audit.log("cognitive_execute", user_id=user.id if user else None, detail={
+        "status": result.status.value, "resolved_model": result.resolved_model,
+        "abstention_reason": result.abstention_reason.value if result.abstention_reason else None,
+    })
+
+    return {
+        "request_id": result.request_id,
+        "trace_id": result.trace_id,
+        "status": result.status.value,
+        "output": result.output,
+        "resolved_model": result.resolved_model,
+        "plan_id": result.plan_id,
+        "operations_executed": [op.value for op in result.operations_executed],
+        "abstention_reason": result.abstention_reason.value if result.abstention_reason else None,
+        "usage": result.usage,
+        "latency_ms": round(result.latency_ms, 1),
+        "warnings": result.warnings,
+    }
+
+
 @app.post("/api/chat")
 async def chat(
     req: ChatRequest,
@@ -540,6 +641,7 @@ async def chat(
     # docstring for the honest scope of what this path does and doesn't do.
     backend_resolution = _resolve_backend_for_chat(req.model_variant)
     backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+    _run_cognitive_shadow(req.message, backend_resolution.tier)
 
     if backend_resolution.backend != "ollama":
         persona_system = get_persona_system(backend_resolution.tier)
@@ -697,6 +799,7 @@ async def stream_chat(
     # /api/chat's frontier-passthrough path.
     backend_resolution = _resolve_backend_for_chat(req.model_variant)
     backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+    _run_cognitive_shadow(req.message, backend_resolution.tier)
 
     if backend_resolution.backend != "ollama":
         persona_system = get_persona_system(backend_resolution.tier)
