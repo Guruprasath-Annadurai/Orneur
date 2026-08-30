@@ -258,7 +258,7 @@ class ModelGateway:
             runtime=deployment.runtime, request_id=request.request_id, trace_id=request.trace_id,
         )
         try:
-            async with await self.concurrency.acquire(deployment.deployment_id, queue_timeout_s=self.timeouts.queue_timeout_s):
+            async with await self.concurrency.acquire(deployment.deployment_id, queue_timeout_s=self.timeouts.queue_timeout_s, priority=request.priority.value):
                 queue_latency_ms = (time.monotonic() - t0) * 1000
                 response = await self._generate_via_runtime(deployment, runtime, request)
                 response.queue_latency_ms = queue_latency_ms
@@ -308,7 +308,7 @@ class ModelGateway:
         runtime = self._runtime_for(deployment)
         t0 = time.monotonic()
 
-        async with await self.concurrency.acquire(deployment.deployment_id, queue_timeout_s=self.timeouts.queue_timeout_s):
+        async with await self.concurrency.acquire(deployment.deployment_id, queue_timeout_s=self.timeouts.queue_timeout_s, priority=request.priority.value):
             queue_latency_ms = (time.monotonic() - t0) * 1000
             t_first_chunk_deadline = time.monotonic() + self.timeouts.first_token_timeout_s
             first_chunk_seen = False
