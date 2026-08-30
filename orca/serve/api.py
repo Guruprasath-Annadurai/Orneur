@@ -413,12 +413,32 @@ async def healthz():
     does the minimum: confirm at least nano's tier resolves to an
     installed Ollama model (using registry's own 15s cache, so this adds
     no extra Ollama load beyond what real chat traffic already causes).
+
+    Phase 2.1: additive `gateway` field reports ModelGateway.report_health()
+    -- process liveness, runtime readiness, and PER-MODEL deployment
+    readiness are kept genuinely distinct (see that method's docstring).
+    Deliberately additive, not a replacement: existing clients reading
+    `status`/`nano_model` see unchanged behavior. `gateway` only reflects
+    whatever has actually been registered via real traffic so far in this
+    process's lifetime (deployments are registered lazily on first use per
+    orca/gateway/wiring.py) -- an empty `model_readiness` map before any
+    request has been served is expected, not a failure.
     """
     try:
         resolved = resolve_tier_model("nano", host=CONFIG.ollama.host)
-        return {"status": "ok", "nano_model": resolved}
+        result = {"status": "ok", "nano_model": resolved}
     except RuntimeError as e:
         return JSONResponse({"status": "unhealthy", "reason": str(e)}, status_code=503)
+
+    try:
+        from orca.gateway.wiring import get_shared_gateway
+        result["gateway"] = get_shared_gateway().report_health()
+    except Exception as e:
+        # A gateway-health reporting failure must never take down the
+        # liveness/readiness probe itself -- report it as a sub-field, not
+        # a 503 for the whole endpoint.
+        result["gateway"] = {"error": str(e)}
+    return result
 
 
 @app.get("/api/status")

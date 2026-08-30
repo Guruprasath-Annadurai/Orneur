@@ -22,7 +22,14 @@ def test_healthy_when_nano_model_resolves(client, monkeypatch):
 
     resp = client.get("/healthz")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok", "nano_model": "orca-nano"}
+    body = resp.json()
+    # Phase 2.1 added an additive "gateway" readiness field (see
+    # test_healthz_gateway_readiness.py) -- checking these two fields
+    # specifically (the endpoint's original, still-honored contract)
+    # rather than exact dict equality, so that addition doesn't count as
+    # breaking this test.
+    assert body["status"] == "ok"
+    assert body["nano_model"] == "orca-nano"
 
 
 def test_unhealthy_when_no_model_available(client, monkeypatch):
