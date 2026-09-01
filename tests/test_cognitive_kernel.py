@@ -178,3 +178,62 @@ async def test_genesis_legacy_and_canonical_stay_distinct_through_kernel_policy(
     canonical_brain = brain_for_tier_resolution(canonical)
     assert legacy_brain.model_id == canonical_brain.model_id == TIER_TO_MODEL_ID["nano"]
     assert legacy_brain.model_version != canonical_brain.model_version
+
+
+@pytest.mark.asyncio
+async def test_execute_with_entitlement_downgrades_free_user_deep_request():
+    """Phase 3.1: a free user's cognitively-DEEP-classified request must
+    never actually reach 'ultra' -- entitlement caps it to 'nano', and the
+    result honestly reports the degradation."""
+    if not _ollama_reachable():
+        pytest.skip("No local Ollama instance reachable")
+    from orca.auth.store import User
+    from orca.cognitive.entitlement import derive_entitlement_policy
+
+    kernel = CognitiveKernel()
+    free_user = User(id="u1", email="a@b.com", name="A", tier="free", verified=True)
+    entitlement = derive_entitlement_policy(free_user)
+    req = CognitiveRequest(objective="Orchestrate this multi-step task: compare and analyze the trade-offs, comprehensive, in depth.")
+
+    result = await kernel.execute(req, entitlement=entitlement)
+    assert result.status == CognitiveState.COMPLETED
+    assert result.resolved_tier == "nano"
+    assert result.degraded is True
+    assert result.user_notification_required is True
+
+
+@pytest.mark.asyncio
+async def test_execute_with_entitlement_grants_pro_user_full_policy():
+    if not _ollama_reachable():
+        pytest.skip("No local Ollama instance reachable")
+    from orca.auth.store import User
+    from orca.cognitive.entitlement import derive_entitlement_policy
+
+    kernel = CognitiveKernel()
+    pro_user = User(id="u2", email="b@b.com", name="B", tier="pro", verified=True)
+    entitlement = derive_entitlement_policy(pro_user)
+    req = CognitiveRequest(objective="Say the single word hello and nothing else.")
+
+    result = await kernel.execute(req, entitlement=entitlement)
+    assert result.status == CognitiveState.COMPLETED
+    assert result.degraded is False
+
+
+@pytest.mark.asyncio
+async def test_entitlement_never_upgrades_kernel_choice():
+    """Even a pro/enterprise entitlement must not force a bigger model
+    than the Kernel's own cognitive judgment calls for -- entitlement is a
+    ceiling, never a floor."""
+    if not _ollama_reachable():
+        pytest.skip("No local Ollama instance reachable")
+    from orca.auth.store import User
+    from orca.cognitive.entitlement import derive_entitlement_policy
+
+    kernel = CognitiveKernel()
+    enterprise_user = User(id="u3", email="c@b.com", name="C", tier="enterprise", verified=True)
+    entitlement = derive_entitlement_policy(enterprise_user)
+    req = CognitiveRequest(objective="hi")
+
+    result = await kernel.execute(req, entitlement=entitlement)
+    assert result.resolved_tier == "nano"
+    assert result.degraded is False

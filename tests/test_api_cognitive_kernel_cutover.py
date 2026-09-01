@@ -87,9 +87,10 @@ def test_cognitive_execute_blocks_moderated_content(client):
     assert resp.status_code == 200  # benign input -- sanity check the endpoint doesn't over-block
 
 
-def test_chat_shadow_planning_does_not_change_response_shape(client):
-    """The Kernel runs in shadow on /api/stream but must never change the
-    real response's contract."""
+def test_chat_kernel_authoritative_preserves_sse_contract(client):
+    """Phase 3.1: the Kernel is authoritative on /api/stream now, but the
+    existing SSE contract (session/chunk/done event shape) must still
+    hold -- this is a cutover, not a new wire protocol."""
     _skip_if_no_ollama()
     with client.stream("POST", "/api/stream", json={"message": "Hi", "model_variant": "nano"}) as response:
         raw = "".join(response.iter_text())
@@ -100,13 +101,12 @@ def test_chat_shadow_planning_does_not_change_response_shape(client):
     assert (snapshot["shadow_agree"] + snapshot["shadow_disagree"]) >= 1
 
 
-def test_shadow_planning_failure_never_breaks_the_real_chat_path(client, monkeypatch):
-    """Even if something inside Kernel shadow-planning raises, the real
-    endpoint must still succeed -- this is the whole point of the
-    try/except inside _run_cognitive_shadow itself (patching a real
-    internal dependency here, not the function's own safety net, so this
-    actually exercises that except block rather than bypassing it)."""
-    _skip_if_no_ollama()
+def test_kernel_failure_surfaces_as_a_clean_mapped_error_not_a_raw_500(client, monkeypatch):
+    """Phase 3.1: the Kernel is now AUTHORITATIVE, not shadow -- a genuine
+    internal Kernel failure must surface as a clean, mapped error (never a
+    raw unhandled exception, never silently falling through to legacy
+    behavior as if nothing happened, which was only correct for Phase 3's
+    shadow-only integration)."""
     from orca.cognitive import wiring as cog_wiring
 
     def _boom():
@@ -115,5 +115,6 @@ def test_shadow_planning_failure_never_breaks_the_real_chat_path(client, monkeyp
     monkeypatch.setattr(cog_wiring, "get_shared_kernel", _boom)
     with client.stream("POST", "/api/stream", json={"message": "Hi", "model_variant": "nano"}) as response:
         raw = "".join(response.iter_text())
-    assert response.status_code == 200
-    assert "chunk" in raw or "done" in raw
+    assert response.status_code == 200  # SSE handshake itself always succeeds
+    assert '"type": "error"' in raw
+    assert "RuntimeError" not in raw and "simulated cognitive kernel failure" not in raw  # never leak internals
