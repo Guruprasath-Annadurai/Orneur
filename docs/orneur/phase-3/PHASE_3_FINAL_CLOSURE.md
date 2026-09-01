@@ -49,11 +49,28 @@ Re-run full security suite: 31 passed (unchanged from Phase 2.1/3). Specifically
 
 ## Test suite state
 
-Full suite: **[see final report]**. New tests this phase: `tests/test_cognitive_entitlement.py` (12), 3 new real-Ollama tests in `tests/test_cognitive_kernel.py`, `tests/test_api_production_cutover.py` (13, real end-to-end). All real-Ollama tests auto-skip (not fail) when Ollama is unreachable, consistent with this project's standing testing discipline.
+Full suite: **725 passed, 1 failed, 106 warnings** (14m14s) on the definitive run. The single failure (`test_free_user_complex_request_is_downgraded_not_elevated`) is real-Ollama infrastructure flakiness under sustained load — confirmed passing in 3 separate isolated/small-combination reruns (including one immediately preceding the full run) with the identical assertion. Same category as the pre-existing flaky test disclosed in Phase 2.1's own closure (`test_live_gateway_brain_end_to_end_matches_orca_brain_interface`): a CPU-only local Ollama instance serving 700+ real generation requests back-to-back over 10+ minutes occasionally hits a transient `InferenceError` ("inference request failed", `orca/gateway/gateway.py:275`) on an otherwise-unchanged, pre-existing error path (`sess.agent.run`'s `except Exception` wrapping predates this phase). Not a Kernel/entitlement logic defect.
 
-## A test-isolation issue found and fixed during this phase's own verification
+Security suite: **31 passed**.
 
-Running `tests/test_api_production_cutover.py` as part of the full suite (rather than in isolation) intermittently failed several of its own tests — traced to `orca/serve/ratelimit.py`'s `_local_counters` being a process-wide dict keyed by client IP, and `TestClient` reporting the same fake IP for every test file in the suite. Other test files' real calls to `/api/chat`/`/api/stream` (Phase 2.1's frontier-passthrough tests, gateway integration tests, Phase 3's cognitive-kernel-cutover tests) could exhaust this file's rate-limit budget by the time its own tests ran, depending on suite execution order and timing — not a defect in the Kernel/entitlement logic itself. Fixed by clearing `ratelimit._local_counters` in this file's own `autouse` fixture (the same pattern `tests/test_ratelimit.py` already uses for its own isolation).
+New tests this phase: `tests/test_cognitive_entitlement.py` (12), 3 new real-Ollama tests in `tests/test_cognitive_kernel.py`, `tests/test_api_production_cutover.py` (15, real end-to-end, including explicit malformed-metadata and admin-role-string escalation-attempt tests). All real-Ollama tests auto-skip (not fail) when Ollama is unreachable, consistent with this project's standing testing discipline.
+
+## Performance
+
+Measured on this machine (Apple M4, 16GB, CPU-only Ollama — same environment as prior phase baselines):
+
+| | |
+|---|---|
+| `kernel.plan()` latency (pure, no I/O, 20 runs) | avg 0.069ms, min 0.053ms, max 0.139ms |
+| `derive_entitlement_policy()` latency (pure, no I/O, 20 runs) | avg 0.003ms, min 0.002ms, max 0.012ms |
+| `/api/chat` total request latency (3 real runs, `plan=cognitive_direct`) | 2302.1ms / 1318.6ms / 1686.5ms |
+
+Combined planning + entitlement-reconciliation overhead is well under 0.1ms — effectively free, deterministic, zero I/O. All measured end-to-end latency is the real Gateway/Ollama generation call, consistent with prior phases' own findings that Kernel orchestration adds no material overhead.
+
+## Two test-isolation issues found and fixed during this phase's own verification
+
+1. **Rate-limit bucket exhaustion**: `orca/serve/ratelimit.py`'s `_local_counters` is a process-wide dict keyed by client IP, and `TestClient` reports the same fake IP for every test file in the suite. Other files' real calls to `/api/chat`/`/api/stream` could exhaust this file's rate-limit budget depending on suite execution order — not a Kernel/entitlement defect. Fixed by clearing `ratelimit._local_counters` in this file's own `autouse` fixture (the pattern `tests/test_ratelimit.py` already uses).
+2. **Auth DB schema loss from an unrelated fixture**: `tests/conftest.py`'s `isolated_home` fixture (used by `test_account_delete.py` and others) reloads `orca.auth.db` against a temp directory, then on teardown restores the `ORCA_HOME` env var **without reloading `orca.auth.db` again** — leaving its module-global `AUTH_DB` path pointing at the now-deleted temp directory for the rest of the process. The next real write there (e.g. this file's `check_quota()` calls through `/api/chat`) silently opens a fresh, schema-less SQLite file (`sqlite3.OperationalError: no such table: usage_daily`) rather than erroring loudly. Pre-existing test-infrastructure gap, not a Phase 3.1 code defect — fixed defensively in this file's fixture by re-running `orca.auth.db.init_db()` (idempotent, `CREATE TABLE IF NOT EXISTS`) before each test, rather than depending on suite run order to have left global auth-DB state in a good place.
 
 ## Known limitations (disclosed, not hidden)
 
