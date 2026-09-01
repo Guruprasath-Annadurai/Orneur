@@ -177,29 +177,89 @@ def _apply_cost_aware_routing(base_resolution, message: str):
     return resolution, decision
 
 
-def _run_cognitive_shadow(message: str, legacy_tier: str) -> None:
+# Phase 3.1: user-safe abstention messages -- never expose the internal
+# AbstentionReason enum name directly (spec §17). Kept as one table so
+# every caller (chat/stream) shows the identical wording.
+_ABSTENTION_MESSAGES = {
+    "INSUFFICIENT_CAPABILITY": "This request needs a verification capability that isn't available yet, so it can't be safely answered.",
+    "INSUFFICIENT_EVIDENCE": "This request can't be answered with sufficient grounding right now.",
+    "BUDGET_EXHAUSTED": "This request exceeds the available processing budget for a single turn.",
+    "MODEL_UNAVAILABLE": "No model is currently available to handle this request.",
+    "REQUIRED_OPERATION_UNAVAILABLE": "This request needs a capability that isn't available yet.",
+    "POLICY_RESTRICTION": "This request can't be completed under your current plan.",
+    "AMBIGUOUS_REQUEST": "This request is too ambiguous to plan safely.",
+}
+
+
+async def _run_cognitive_kernel(message: str, user: "User | None", model_variant: str | None):
     """
-    Phase 3 shadow-mode integration (see docs/orneur/phase-3/CUTOVER.md):
-    runs the Cognitive Kernel's deterministic plan() on every real
-    /api/chat and /api/stream request, purely for observability -- it
-    NEVER changes the tier/backend actually used, and any failure here
-    must never break the real request (hence the broad except). This is
-    what makes "the Kernel exists and plans for every ordinary request"
-    true without risking the production chat path's existing behavior
-    (conversation history, memory, RAG, tools -- all untouched).
+    Phase 3.1: the Cognitive Kernel is now AUTHORITATIVE for planning and,
+    where possible, execution of /api/chat and /api/stream requests (see
+    docs/orneur/phase-3/PRODUCTION_CUTOVER.md). Every request is planned
+    and entitlement-reconciled here before any generation happens.
+
+    Returns the real orca.cognitive.contracts.CognitiveResult. Callers
+    branch on `.status`/`.output`:
+      - status == ABSTAINED           -> the Kernel declined; no generation
+                                          should happen at all.
+      - status == COMPLETED, output   -> the Kernel answered directly via
+        is not None                      ModelGateway; use `.output` as the
+                                          final response, skip AgentLoop.
+      - status == COMPLETED, output   -> the plan needs RETRIEVE/USE_TOOL/
+        is None                          RECALL_MEMORY/DELEGATE_AGENT; fall
+                                          through to the existing
+                                          _Session/AgentLoop path, using
+                                          `.resolved_tier` (already
+                                          entitlement-reconciled) instead of
+                                          the raw requested tier.
+
+    This function itself never raises for entitlement/reconciliation
+    reasons -- CognitiveKernel.execute() only raises
+    CognitiveExecutionFailedError for a genuine internal failure, which
+    callers must let propagate (mapped the same way any other internal
+    error already is), never silently swallowed.
+    """
+    from orca.cognitive.contracts import CognitiveRequest
+    from orca.cognitive.entitlement import class_rank, derive_entitlement_policy, tier_to_class
+    from orca.cognitive.wiring import get_shared_kernel
+
+    kernel = get_shared_kernel()
+    entitlement = derive_entitlement_policy(user, model_variant)
+
+    # The user's OWN explicit tier choice is an ADDITIONAL ceiling on top
+    # of their overall commercial entitlement -- a pro user who explicitly
+    # picked "nano" for this conversation must not have some individual
+    # message silently answered via "ultra" just because the Kernel judged
+    # it complex and their overall plan permits ultra. Entitlement caps
+    # what's possible; the user's own selection caps what's used here.
+    if model_variant:
+        requested_class = tier_to_class(model_variant.removeprefix("orca-"))
+        if class_rank(requested_class) < class_rank(entitlement.maximum_quality_class):
+            entitlement.maximum_quality_class = requested_class
+            entitlement.allowed_model_classes = {
+                c for c in entitlement.allowed_model_classes if class_rank(c) <= class_rank(requested_class)
+            }
+
+    cognitive_request = CognitiveRequest(
+        objective=message, session_id=None, requested_mode=model_variant,
+        tenant=user.id if user else None,
+    )
+    return await kernel.execute(cognitive_request, entitlement=entitlement)
+
+
+def _record_shadow_verification(requested_tier: str | None, resolved_tier: str | None) -> None:
+    """
+    Phase 3.1 spec §11: shadow comparison is retained TEMPORARILY, purely
+    as a verification/drift-monitoring signal now that the Kernel is
+    authoritative -- it can never override what the Kernel already
+    decided (that decision already happened in _run_cognitive_kernel by
+    the time this is called). Never breaks the real request.
     """
     try:
-        from orca.cognitive.contracts import CognitiveRequest
         from orca.cognitive.metrics import record_shadow_comparison
-        from orca.cognitive.policy import characteristic_to_tier
-        from orca.cognitive.wiring import get_shared_kernel
-
-        kernel = get_shared_kernel()
-        plan = kernel.plan(CognitiveRequest(objective=message))
-        suggested_tier = characteristic_to_tier(plan.model_policy.characteristic)
-        record_shadow_comparison(kernel_tier=suggested_tier, legacy_tier=legacy_tier)
+        record_shadow_comparison(kernel_tier=resolved_tier or "", legacy_tier=(requested_tier or "core").removeprefix("orca-"))
     except Exception:
-        _logger.debug("Cognitive shadow planning failed for this request — real serving path unaffected.", exc_info=True)
+        _logger.debug("Cognitive shadow verification recording failed — real serving path unaffected.", exc_info=True)
 
 
 def _generate_via_frontier_backend(resolution, persona_system: str, message: str):
@@ -510,20 +570,16 @@ async def cognitive_execute(
     user: User | None = Depends(get_current_user_optional),
 ):
     """
-    INTERNAL / EXPERIMENTAL (Phase 3). The real, end-to-end Cognitive
-    Kernel cutover path: unlike /api/chat and /api/stream (which run the
-    Kernel in shadow-only mode -- see _run_cognitive_shadow -- to avoid
-    risking the existing session/memory/RAG/tool-use behavior those
-    endpoints must preserve), this endpoint IS authoritatively planned AND
-    executed by the Kernel: no session, no conversation history, no RAG,
-    no tools. It only genuinely answers requests whose plan needs nothing
+    INTERNAL / EXPERIMENTAL. Kept from Phase 3 as the no-session, no-
+    entitlement, no-RAG/tools variant of Kernel-authoritative execution
+    (useful for isolated testing of the Kernel's own direct-answer path).
+    As of Phase 3.1, /api/chat and /api/stream are ALSO Kernel-
+    authoritative (with entitlement reconciliation) for real production
+    traffic -- see docs/orneur/phase-3/PRODUCTION_CUTOVER.md. This
+    endpoint only genuinely answers requests whose plan needs nothing
     beyond a direct model call (ANSWER_DIRECTLY/REASON/RECALL_MEMORY); a
     plan needing tools/retrieval/agents completes with an explicit warning
-    naming what it deferred, rather than fabricating an answer. See
-    docs/orneur/phase-3/CUTOVER.md for why full production cutover of
-    /api/chat and /api/stream was not attempted in Phase 3 (a real,
-    disclosed tension between cognitive model-policy and paid-tier
-    entitlement, not an oversight).
+    naming what it deferred, rather than fabricating an answer.
     """
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="cognitive")
 
@@ -639,9 +695,42 @@ async def chat(
     # of forcing that machinery to pretend to support providers it hasn't
     # been built or tested against. See _generate_via_frontier_backend's
     # docstring for the honest scope of what this path does and doesn't do.
+    # Phase 3.1: Cognitive Kernel is now AUTHORITATIVE for planning and,
+    # where possible, direct execution -- see
+    # docs/orneur/phase-3/PRODUCTION_CUTOVER.md. Runs before any
+    # generation happens; a high-risk/unavailable-capability request now
+    # honestly abstains here instead of reaching a model at all.
+    from orca.cognitive.contracts import CognitiveState
+    from orca.cognitive.errors import CognitiveError
+
+    try:
+        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant)
+    except Exception as e:
+        # A real internal Kernel failure -- the Kernel is authoritative
+        # now, so this must surface as a clean error, never be silently
+        # swallowed and fallen through to legacy behavior (that was only
+        # correct for Phase 3's shadow-mode integration). Never leaks the
+        # internal exception/class name to the caller (spec §17). Catches
+        # any exception, not just the CognitiveError taxonomy, since a
+        # wiring/infrastructure failure reaching this call site is just as
+        # real a Kernel-execution failure from the caller's perspective.
+        code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
+        audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
+        return JSONResponse({"error": "This request could not be processed right now. Please try again."}, status_code=500)
+
+    if cognitive_result.status == CognitiveState.ABSTAINED:
+        audit.log("cognitive_abstained", user_id=user.id if user else None, detail={
+            "reason": cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else None,
+        })
+        reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
+        return JSONResponse(
+            {"error": _ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), "abstained": True},
+            status_code=422,
+        )
+
     backend_resolution = _resolve_backend_for_chat(req.model_variant)
     backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
-    _run_cognitive_shadow(req.message, backend_resolution.tier)
+    _record_shadow_verification(req.model_variant, cognitive_result.resolved_tier)
 
     if backend_resolution.backend != "ollama":
         persona_system = get_persona_system(backend_resolution.tier)
@@ -706,10 +795,23 @@ async def chat(
             f"Respond with warmth and care. Include these resources naturally in your response:\n{CRISIS_RESOURCES}"
         )
 
-    try:
-        final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    used_tools: list[str] = []
+    plan_action = "cognitive_direct"
+    if cognitive_result.output is not None:
+        # Kernel's plan needed nothing beyond a direct model call --
+        # answered via ModelGateway already, entitlement-reconciled. Skip
+        # AgentLoop's extra plan/reflect calls for this turn entirely.
+        final = cognitive_result.output
+    else:
+        # Plan requires RETRIEVE/USE_TOOL/RECALL_MEMORY/DELEGATE_AGENT --
+        # real capabilities the existing AgentLoop path provides; the
+        # Kernel already decided this is needed, this is not a bypass.
+        try:
+            final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+        used_tools = [tc.tool for tc in trace.tool_calls]
+        plan_action = trace.plan_action
 
     if user:
         increment_usage(user.id, "message")
@@ -721,7 +823,8 @@ async def chat(
 
     audit.log("chat", user_id=user.id if user else None,
               detail={"model": sess.model_variant, "backend": "ollama", "data_left_infrastructure": False,
-                      "tools": [tc.tool for tc in trace.tool_calls]})
+                      "tools": used_tools, "cognitive_degraded": cognitive_result.degraded,
+                      "cognitive_resolved_tier": cognitive_result.resolved_tier})
 
     # Output-side DLP scan — see the frontier-passthrough branch above for
     # the full rationale. Applied after memory/audit logging deliberately:
@@ -738,8 +841,10 @@ async def chat(
     return {
         "response": dlp_result["safe_text"],
         "session_id": sess.id,
-        "used_tools": [tc.tool for tc in trace.tool_calls],
-        "plan": trace.plan_action,
+        "used_tools": used_tools,
+        "plan": plan_action,
+        "degraded": cognitive_result.degraded,
+        "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
     }
 
 
@@ -790,6 +895,32 @@ async def stream_chat(
         audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
 
+    # Phase 3.1: Cognitive Kernel is now AUTHORITATIVE for planning and,
+    # where possible, direct execution -- see
+    # docs/orneur/phase-3/PRODUCTION_CUTOVER.md.
+    from orca.cognitive.contracts import CognitiveState
+    from orca.cognitive.errors import CognitiveError
+
+    try:
+        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant)
+    except Exception as e:
+        code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
+        audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
+        _fail_msg = "This request could not be processed right now. Please try again."
+        async def _fail_stream():
+            yield f"data: {json.dumps({'type': 'error', 'text': _fail_msg})}\n\n"
+        return StreamingResponse(_fail_stream(), media_type="text/event-stream")
+
+    if cognitive_result.status == CognitiveState.ABSTAINED:
+        audit.log("cognitive_abstained", user_id=user.id if user else None, detail={
+            "reason": cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else None,
+        })
+        reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
+        _abstain_msg = _ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed.")
+        async def _abstain_stream():
+            yield f"data: {json.dumps({'type': 'error', 'text': _abstain_msg, 'abstained': True})}\n\n"
+        return StreamingResponse(_abstain_stream(), media_type="text/event-stream")
+
     # Cost-aware escalation — same resolution + routing decision /api/chat
     # applies, checked here too since /api/stream was the one live-chat path
     # that always talked to the local Ollama model regardless of operator
@@ -799,7 +930,7 @@ async def stream_chat(
     # /api/chat's frontier-passthrough path.
     backend_resolution = _resolve_backend_for_chat(req.model_variant)
     backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
-    _run_cognitive_shadow(req.message, backend_resolution.tier)
+    _record_shadow_verification(req.model_variant, cognitive_result.resolved_tier)
 
     if backend_resolution.backend != "ollama":
         persona_system = get_persona_system(backend_resolution.tier)
@@ -867,11 +998,18 @@ async def stream_chat(
     mem_ctx = sess.memory.recall_context(req.message, n=3)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
 
+    # Kernel's direct-answer path is only used when this session has no
+    # loaded documents -- RAG behavior (query rewriting, HyDE, corrective
+    # retrieval, citation DNA) must survive cutover unconditionally
+    # whenever docs are present, regardless of what a single message's
+    # own cognitive plan says (Phase 3.1 spec §13).
+    use_kernel_direct = cognitive_result.output is not None and sess.doc_store.count() == 0
+
     # Deep RAG: 7-stage pipeline (query intelligence → multi-signal recall →
     # RRF fusion → rerank → sufficiency check → citation DNA). Only runs if
     # docs are loaded for this session.
     rag_result = None
-    if sess.doc_store.count() > 0:
+    if not use_kernel_direct and sess.doc_store.count() > 0:
         history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
         history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
         rag_result = await asyncio.to_thread(
@@ -903,25 +1041,39 @@ async def stream_chat(
         tool_names: list[str] = []
         plan_action = "direct"
 
-        try:
-            gen, trace = await asyncio.to_thread(
-                lambda: sess.agent.stream(enriched, persona_system)
-            )
-            # Send tool activity if any
-            if trace.plan_action == "tools":
-                yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
-
-            for chunk in gen:
-                full += chunk
-                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+        if use_kernel_direct:
+            # Kernel's plan needed nothing beyond a direct model call --
+            # already answered via ModelGateway, entitlement-reconciled.
+            # Word-chunked for the same incremental SSE UX as any other
+            # path (same pattern as the frontier-passthrough branch above)
+            # -- ModelGateway.generate() was a single non-streaming call,
+            # this is presentation-layer chunking, not fake generation.
+            plan_action = "cognitive_direct"
+            words = (cognitive_result.output or "").split(" ")
+            for i, w in enumerate(words):
+                full += w if i == 0 else f" {w}"
+                yield f"data: {json.dumps({'type': 'chunk', 'text': w if i == 0 else f' {w}'})}\n\n"
                 await asyncio.sleep(0)
+        else:
+            try:
+                gen, trace = await asyncio.to_thread(
+                    lambda: sess.agent.stream(enriched, persona_system)
+                )
+                # Send tool activity if any
+                if trace.plan_action == "tools":
+                    yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
 
-            tool_names = [tc.tool for tc in trace.tool_calls]
-            plan_action = trace.plan_action
+                for chunk in gen:
+                    full += chunk
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                    await asyncio.sleep(0)
 
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
-            return
+                tool_names = [tc.tool for tc in trace.tool_calls]
+                plan_action = trace.plan_action
+
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+                return
 
         # Persist
         sess.memory.add_turn("user", req.message)
@@ -955,7 +1107,9 @@ async def stream_chat(
                       detail={"message_id": message_id, "note": citation_report["note"]})
 
         audit.log("stream_chat", user_id=user.id if user else None,
-                  detail={"model": sess.model_variant, "tools": tool_names})
+                  detail={"model": sess.model_variant, "tools": tool_names,
+                          "cognitive_degraded": cognitive_result.degraded,
+                          "cognitive_resolved_tier": cognitive_result.resolved_tier})
 
         # Explainability: capture the full retrieval/reasoning trace for this
         # message, keyed by message_id so the frontend "Explain" button can
@@ -963,7 +1117,7 @@ async def stream_chat(
         explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
         sess.explain_store.add(explain_record)
 
-        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None})}\n\n"
 
     return StreamingResponse(
         _event_stream(),
@@ -1357,6 +1511,23 @@ async def ultra_run(req: UltraRequest):
 
     sess = _get_session(req.session_id)
     progress_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+
+    # Phase 3.1: cognitive planning must not be bypassed even for Ultra
+    # (spec §10) -- but Ultra is a distinct, deliberately deep, paid
+    # product mode with its own entitlement gate (has_feature("ultra"),
+    # checked above), not a plan the Kernel should re-decide or execute
+    # itself. The Kernel PLANS (never executes) here, purely for trace/
+    # observability parity with /api/chat and /api/stream -- Ultra's own
+    # fixed multi-agent pipeline remains authoritative for HOW this
+    # request is actually answered. Never allowed to break the real
+    # request (matches the same safety discipline Phase 3's shadow mode
+    # used).
+    try:
+        from orca.cognitive.contracts import CognitiveRequest
+        from orca.cognitive.wiring import get_shared_kernel
+        get_shared_kernel().plan(CognitiveRequest(objective=req.task, requested_mode="ultra"))
+    except Exception:
+        _logger.debug("Cognitive planning failed for /api/ultra request — pipeline unaffected.", exc_info=True)
 
     # Phase 2.1 cutover: OrcaUltra previously built its own OrcaBrain via
     # get_brain(), bypassing the Model Gateway entirely -- unlike /api/chat
