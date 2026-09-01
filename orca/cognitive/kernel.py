@@ -35,12 +35,14 @@ from orca.cognitive.contracts import (
     OperationSupportState,
     OperationType,
 )
+from orca.cognitive.entitlement import EntitlementPolicy
 from orca.cognitive.errors import CognitiveExecutionFailedError, PlanInvalidError
 from orca.cognitive.evidence import assess_evidence_requirement
 from orca.cognitive.freshness import assess_freshness
 from orca.cognitive.intent import compile_intent
 from orca.cognitive.planner import build_plan, plan_abstention_reason
 from orca.cognitive.policy import characteristic_to_tier, select_model_policy
+from orca.cognitive.reconciliation import ReconciliationOutcome, reconcile_policy
 from orca.cognitive.risk import assess_risk
 from orca.cognitive.state_machine import CognitiveStateMachine
 from orca.cognitive.trace import CognitiveTraceBuilder
@@ -101,8 +103,21 @@ class CognitiveKernel:
         )
         return plan
 
-    async def execute(self, request: CognitiveRequest) -> CognitiveResult:
+    async def execute(self, request: CognitiveRequest, entitlement: EntitlementPolicy | None = None) -> CognitiveResult:
         """
+        `entitlement`, when given, makes this call entitlement-aware
+        (Phase 3.1): the Kernel's own ModelPolicy is reconciled against it
+        via orca/cognitive/reconciliation.py BEFORE any tier is resolved,
+        for BOTH the direct-answer path and the deferred-to-existing-stack
+        path (CognitiveResult.resolved_tier carries the reconciled tier
+        either way, so callers like orca/serve/api.py use the SAME
+        entitlement-capped tier regardless of which path actually executes
+        the request). The Kernel's own cognitive judgment (plan(), model
+        policy selection) never sees or is influenced by entitlement --
+        only this reconciliation step is. Omitting `entitlement` entirely
+        preserves exact Phase 3 behavior (e.g. /api/cognitive/execute,
+        which has no session/commercial-tier concept).
+
         Cancellation: this is a plain `async def` awaiting ModelGateway
         directly -- a cancelled asyncio.Task propagates CancelledError
         through this call exactly like any other await, reaching the
@@ -151,11 +166,42 @@ class CognitiveKernel:
         sm.transition(CognitiveState.EXECUTING)
         trace_builder.record_transition(sm.history[-1])
 
+        # Entitlement/cognitive-policy reconciliation (Phase 3.1 spec §5-6)
+        # -- applied BEFORE any tier is resolved, for both the
+        # deferred-to-existing-stack path and the direct-answer path
+        # below. Omitting `entitlement` preserves exact Phase 3 behavior.
+        degraded = False
+        degradation_reason: str | None = None
+        notification_required = False
+        resolved_tier = characteristic_to_tier(plan.model_policy.characteristic)
+        if entitlement is not None:
+            effective = reconcile_policy(plan.model_policy, entitlement)
+            resolved_tier = effective.resolved_tier
+            degraded = effective.degraded
+            degradation_reason = effective.reason if effective.degraded else None
+            notification_required = effective.user_notification_required
+            trace_builder.record_reconciliation(effective)
+            if effective.outcome == ReconciliationOutcome.ABSTAINED:
+                sm.transition(CognitiveState.ABSTAINED)
+                trace_builder.record_transition(sm.history[-1])
+                trace_builder.record_abstention(AbstentionReason.POLICY_RESTRICTION)
+                metrics.record_abstention(AbstentionReason.POLICY_RESTRICTION.value)
+                trace_builder.finalize(plan.budget)
+                latency_ms = (time.monotonic() - start) * 1000
+                metrics.record_total_latency(latency_ms)
+                return CognitiveResult(
+                    request_id=request.request_id, trace_id=request.trace_id, status=CognitiveState.ABSTAINED,
+                    plan_id=plan.plan_id, abstention_reason=AbstentionReason.POLICY_RESTRICTION, latency_ms=latency_ms,
+                    degraded=True, degradation_reason=effective.reason, user_notification_required=True,
+                )
+
         if non_kernel_ops:
             # Real, valid plan -- but satisfying RETRIEVE/USE_TOOL/
             # DELEGATE_AGENT is the existing serving stack's job in Phase
             # 3, not this method's (see module docstring / CUTOVER.md).
-            # The plan itself is still useful output for the caller.
+            # The plan itself is still useful output for the caller;
+            # resolved_tier carries the entitlement-reconciled tier the
+            # caller's own execution (e.g. AgentLoop) should use.
             sm.transition(CognitiveState.COMPLETED)
             trace_builder.record_transition(sm.history[-1])
             trace_builder.record_operation_outcome("deferred_to_existing_serving_stack")
@@ -164,16 +210,17 @@ class CognitiveKernel:
             metrics.record_total_latency(latency_ms)
             return CognitiveResult(
                 request_id=request.request_id, trace_id=request.trace_id, status=CognitiveState.COMPLETED,
-                plan_id=plan.plan_id, operations_executed=[], latency_ms=latency_ms,
+                resolved_tier=resolved_tier, plan_id=plan.plan_id, operations_executed=[], latency_ms=latency_ms,
                 warnings=[f"plan requires {op.type.value} -- executed by the existing serving stack, not the Kernel" for op in non_kernel_ops],
+                degraded=degraded, degradation_reason=degradation_reason, user_notification_required=notification_required,
             )
 
-        warnings: list[str] = []
+        warnings: list[str] = list()
         try:
             # Hard-stop check BEFORE spending anything -- a model call is
             # about to happen, so MODEL_CALLS is enforced pre-flight.
             consume(plan.budget, BudgetDimension.MODEL_CALLS, 1)
-            tier = characteristic_to_tier(plan.model_policy.characteristic)
+            tier = resolved_tier
             output_text, resolved_model, usage = await self._answer_directly(request.objective, tier, request.trace_id)
             # TOKENS can only be known AFTER the call completes -- record
             # actual consumption for observability, but don't retroactively
@@ -230,9 +277,10 @@ class CognitiveKernel:
         metrics.record_total_latency(latency_ms)
         return CognitiveResult(
             request_id=request.request_id, trace_id=request.trace_id, status=CognitiveState.COMPLETED,
-            output=output_text, resolved_model=resolved_model, plan_id=plan.plan_id,
+            output=output_text, resolved_model=resolved_model, resolved_tier=resolved_tier, plan_id=plan.plan_id,
             operations_executed=[op.type for op in executable_ops], latency_ms=latency_ms,
             usage=usage, warnings=warnings,
+            degraded=degraded, degradation_reason=degradation_reason, user_notification_required=notification_required,
         )
 
     async def _answer_directly(self, objective: str, tier: str, trace_id: str) -> tuple[str, str, dict]:

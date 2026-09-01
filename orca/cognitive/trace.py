@@ -53,6 +53,17 @@ class CognitiveTraceBuilder:
         self._trace.abstention_reason = reason
         self._trace.decision_explanations.append(f"abstained: {reason.value}")
 
+    def record_reconciliation(self, effective) -> None:
+        """`effective` is an EffectiveExecutionPolicy (Phase 3.1) -- typed
+        loosely here to avoid a circular import (reconciliation.py imports
+        contracts.py); only enum values/short strings are ever stored."""
+        t = self._trace
+        t.entitlement_ceiling = effective.permitted_ceiling.value
+        t.effective_capability = effective.resolved_characteristic.value
+        t.reconciliation_outcome = effective.outcome.value
+        t.resolved_tier = effective.resolved_tier
+        t.decision_explanations.append(f"reconciliation: {effective.reason}")
+
     def finalize(self, budget: CognitiveBudget | None = None) -> CognitiveTrace:
         self._trace.latency_ms = (time.monotonic() - self._start) * 1000
         if budget is not None:

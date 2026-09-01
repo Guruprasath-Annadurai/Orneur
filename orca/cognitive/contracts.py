@@ -342,12 +342,19 @@ class CognitiveResult:
     status: CognitiveState
     output: str | None = None
     resolved_model: str | None = None
+    resolved_tier: str | None = None
     plan_id: str | None = None
     operations_executed: list[OperationType] = field(default_factory=list)
     abstention_reason: AbstentionReason | None = None
     usage: dict[str, Any] = field(default_factory=dict)
     latency_ms: float = 0.0
     warnings: list[str] = field(default_factory=list)
+    # Phase 3.1: entitlement/cognitive-policy reconciliation outcome. Never
+    # exposes internal class names -- `degraded`/`degradation_reason` are
+    # the stable, user-safe surface (see orca/cognitive/reconciliation.py).
+    degraded: bool = False
+    degradation_reason: str | None = None
+    user_notification_required: bool = False
 
 
 # ── Trace ────────────────────────────────────────────────────────────────
@@ -384,3 +391,9 @@ class CognitiveTrace:
     decision_explanations: list[str] = field(default_factory=list)
     latency_ms: float = 0.0
     resource_consumption: dict[str, Any] = field(default_factory=dict)
+    # Phase 3.1: entitlement/reconciliation observability (§19) -- labels
+    # only, never raw prompts/user IDs.
+    entitlement_ceiling: str | None = None
+    effective_capability: str | None = None
+    reconciliation_outcome: str | None = None
+    resolved_tier: str | None = None
