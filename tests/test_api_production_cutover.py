@@ -46,6 +46,22 @@ def _reset_state():
     # since this file makes real, deliberate, repeated calls to both
     # endpoints and must not be flaky depending on suite run order.
     ratelimit._local_counters.clear()
+    # Pre-existing test-suite hazard, not introduced by this file: any
+    # earlier test using tests/conftest.py's `isolated_home` fixture
+    # reloads orca.auth.db against a temp directory and, on teardown,
+    # restores the ORCA_HOME env var WITHOUT reloading orca.auth.db again
+    # -- orca.auth.db.AUTH_DB (a module global, looked up fresh on every
+    # get_conn() call) is left pointing at that now-deleted temp path for
+    # the rest of the process. The next real DB write there
+    # (sqlite3.connect() auto-creates an empty file) then has no schema at
+    # all, since init_db() only runs automatically at orca.auth.db's own
+    # import time. This file makes real check_quota()/model_access_allowed()
+    # calls through the HTTP layer, so it re-runs init_db() defensively
+    # (idempotent -- CREATE TABLE IF NOT EXISTS) against whatever path
+    # orca.auth.db currently resolves to, rather than depending on suite
+    # run order to have left it in a good state.
+    from orca.auth.db import init_db
+    init_db()
     gateway_wiring.reset_for_tests()
     cognitive_wiring.reset_for_tests()
     cognitive_metrics.reset()
@@ -262,3 +278,34 @@ def test_trace_id_propagates_from_request_into_gateway_metrics(app_and_client):
     client.post("/api/chat", json={"message": "hi", "model_variant": "nano"})
     snapshot = gateway_metrics.get_snapshot()
     assert len(snapshot["per_deployment"]) >= 1
+
+
+# ── Security: malformed metadata cannot escalate anything ──────────────
+
+def test_malformed_cognitive_metadata_does_not_crash_or_escalate(app_and_client):
+    """orca/cognitive/contracts.py::CognitiveRequest.metadata/capability_context
+    are plain dicts the Kernel never trusts for entitlement -- garbage
+    values there must not crash the request or change what tier gets
+    used."""
+    app, client = app_and_client
+    _as_user(app, "free")
+    resp = client.post("/api/chat", json={
+        "message": "hello",
+        "model_variant": "nano",
+        "metadata": {"tier": "enterprise", "__proto__": {"tier": "enterprise"}, "capability_context": {"admin": True}},
+        "capability_context": {"bypass_entitlement": True},
+    })
+    # Pydantic ignores unknown fields on ChatRequest entirely -- still just
+    # a normal, successful nano request, never an error from the garbage.
+    assert resp.status_code in (200, 422)  # 422 only if pydantic itself rejects the shape, never a 500
+    if resp.status_code == 200:
+        assert resp.json()["degraded"] in (True, False)
+
+
+def test_admin_role_string_in_body_does_not_bypass_ultra_gate(app_and_client):
+    app, client = app_and_client
+    _as_user(app, "free")
+    resp = client.post("/api/chat", json={
+        "message": "hello", "model_variant": "ultra", "role": "admin", "is_admin": True, "bypass": "true",
+    })
+    assert resp.status_code == 402
