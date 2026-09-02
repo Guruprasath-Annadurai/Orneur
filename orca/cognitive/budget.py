@@ -104,6 +104,22 @@ def consume(budget: CognitiveBudget, dimension: BudgetDimension, amount: float |
     setattr(budget, consumed_field, new_total)
 
 
+def release(budget: CognitiveBudget, dimension: BudgetDimension, amount: float | int) -> None:
+    """
+    The reservation counterpart to `consume()` (Phase 7 spec §25):
+    hands back budget that was reserved/consumed but not actually used --
+    e.g. a parallel role that was cancelled before it ran. Never drops a
+    dimension's consumed total below zero (a caller releasing more than it
+    reserved is a bug, not a license to go negative and corrupt
+    `remaining()`'s accounting).
+    """
+    if amount < 0:
+        raise ValueError(f"release() amount must be >= 0, got {amount}")
+    consumed_field = _CONSUMED_FIELDS[dimension]
+    current = getattr(budget, consumed_field)
+    setattr(budget, consumed_field, max(0.0, current - amount) if isinstance(current, float) else max(0, current - amount))
+
+
 def has_any_capacity(budget: CognitiveBudget, dimension: BudgetDimension, amount: float | int = 1) -> bool:
     """Non-mutating check -- use before attempting an operation that would
     consume budget, to decide plan feasibility without side effects."""
