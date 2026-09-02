@@ -62,8 +62,26 @@ def _reset_state():
     # (idempotent -- CREATE TABLE IF NOT EXISTS) against whatever path
     # orca.auth.db currently resolves to, rather than depending on suite
     # run order to have left it in a good state.
-    from orca.auth.db import init_db
+    from orca.auth.db import get_conn, init_db
     init_db()
+    # Phase 5.1 (spec §18 root-cause investigation): unlike the rate
+    # limiter above, orca.auth.store.increment_usage()'s usage_daily
+    # table is a REAL, persistent sqlite row keyed by (user_id, date) --
+    # it survives across separate pytest process invocations (each a
+    # fresh process, so the in-memory rate limiter always starts at 0,
+    # but this table does not). This file's tests share the hardcoded
+    # user_id "u-test" across many call sites; after enough repeated
+    # runs on the same calendar date, "u-test"'s daily quota (free
+    # tier = 50 messages) genuinely gets exhausted, and /api/chat starts
+    # returning a real 402/429 quota response instead of reaching the
+    # entitlement/rate-limit logic these tests actually exercise. Found
+    # by reproducing test_metadata_cannot_manufacture_entitlement in a
+    # fresh, isolated process and reading the actual response body
+    # ("Daily limit reached (52/50)") rather than assuming "flaky."
+    # Cleared here for the same reason the rate limiter is cleared above.
+    with get_conn() as conn:
+        conn.execute("DELETE FROM usage_daily WHERE user_id=?", ("u-test",))
+        conn.commit()
     gateway_wiring.reset_for_tests()
     cognitive_wiring.reset_for_tests()
     cognitive_metrics.reset()
