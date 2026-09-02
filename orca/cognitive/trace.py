@@ -64,6 +64,21 @@ class CognitiveTraceBuilder:
         t.resolved_tier = effective.resolved_tier
         t.decision_explanations.append(f"reconciliation: {effective.reason}")
 
+    def record_memory_trace(self, memory_trace) -> None:
+        """`memory_trace` is an orca.memory.contracts.MemoryTrace --
+        typed loosely here to avoid a circular import (memory.contracts
+        does not import cognitive.contracts, but memory modules do).
+        Only memory ids and type/state LABELS are copied, never recalled
+        memory text (spec §45)."""
+        t = self._trace
+        t.memory_query_id = memory_trace.memory_query_id
+        t.memory_ids_recalled = list(memory_trace.memory_ids_recalled)
+        t.memory_types_recalled = list(memory_trace.memory_types)
+        t.memory_epistemic_states = list(memory_trace.epistemic_states)
+        t.memory_stale_count = memory_trace.stale_memory_count
+        t.memory_refresh_count = memory_trace.refresh_count
+        t.memory_promotion_decisions = list(memory_trace.promotion_decisions)
+
     def finalize(self, budget: CognitiveBudget | None = None) -> CognitiveTrace:
         self._trace.latency_ms = (time.monotonic() - self._start) * 1000
         if budget is not None:

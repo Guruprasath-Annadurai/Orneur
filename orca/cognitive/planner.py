@@ -119,6 +119,7 @@ def build_plan(
         max_agent_calls=DEFAULT_BUDGET.max_agent_calls,
         max_cost_usd=DEFAULT_BUDGET.max_cost_usd,
         max_reasoning_rounds=DEFAULT_BUDGET.max_reasoning_rounds,
+        max_memory_operations=DEFAULT_BUDGET.max_memory_operations,
     )
 
     # AUDIT_GRADE evidence requires VERIFY, which is PLANNED (not

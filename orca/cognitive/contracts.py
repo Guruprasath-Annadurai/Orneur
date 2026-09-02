@@ -142,6 +142,11 @@ class BudgetDimension(str, Enum):
     AGENT_CALLS = "AGENT_CALLS"
     COST_USD = "COST_USD"
     REASONING_ROUNDS = "REASONING_ROUNDS"
+    # Phase 5 (spec §46): one dimension covering memory queries, candidate
+    # comparisons, refresh calls, and consolidation work -- a deliberate
+    # choice not to add four separate dimensions to an already-tested
+    # budget system; see docs/orneur/phase-5/ARCHITECTURE.md.
+    MEMORY_OPERATIONS = "MEMORY_OPERATIONS"
 
 
 # Limits are None-able (no cap tracked for that dimension); consumed_*
@@ -157,6 +162,7 @@ class CognitiveBudget:
     max_agent_calls: int | None = None
     max_cost_usd: float | None = None
     max_reasoning_rounds: int | None = None
+    max_memory_operations: int | None = None
 
     consumed_tokens: int = 0
     consumed_latency_ms: float = 0.0
@@ -166,6 +172,7 @@ class CognitiveBudget:
     consumed_agent_calls: int = 0
     consumed_cost_usd: float = 0.0
     consumed_reasoning_rounds: int = 0
+    consumed_memory_operations: int = 0
 
 
 # ── Cognitive Request ────────────────────────────────────────────────────
@@ -402,3 +409,12 @@ class CognitiveTrace:
     effective_capability: str | None = None
     reconciliation_outcome: str | None = None
     resolved_tier: str | None = None
+    # Phase 5 (spec §45): safe, structured memory metadata only -- memory
+    # IDs and type/state labels, never recalled memory TEXT.
+    memory_query_id: str | None = None
+    memory_ids_recalled: list[str] = field(default_factory=list)
+    memory_types_recalled: list[str] = field(default_factory=list)
+    memory_epistemic_states: list[str] = field(default_factory=list)
+    memory_stale_count: int = 0
+    memory_refresh_count: int = 0
+    memory_promotion_decisions: list[str] = field(default_factory=list)

@@ -23,6 +23,7 @@ _LIMIT_FIELDS: dict[BudgetDimension, str] = {
     BudgetDimension.AGENT_CALLS: "max_agent_calls",
     BudgetDimension.COST_USD: "max_cost_usd",
     BudgetDimension.REASONING_ROUNDS: "max_reasoning_rounds",
+    BudgetDimension.MEMORY_OPERATIONS: "max_memory_operations",
 }
 _CONSUMED_FIELDS: dict[BudgetDimension, str] = {
     BudgetDimension.TOKENS: "consumed_tokens",
@@ -33,6 +34,7 @@ _CONSUMED_FIELDS: dict[BudgetDimension, str] = {
     BudgetDimension.AGENT_CALLS: "consumed_agent_calls",
     BudgetDimension.COST_USD: "consumed_cost_usd",
     BudgetDimension.REASONING_ROUNDS: "consumed_reasoning_rounds",
+    BudgetDimension.MEMORY_OPERATIONS: "consumed_memory_operations",
 }
 
 # A sane, documented default -- never "unlimited by omission." Any caller
@@ -46,6 +48,7 @@ DEFAULT_BUDGET = CognitiveBudget(
     max_agent_calls=1,
     max_cost_usd=None,
     max_reasoning_rounds=3,
+    max_memory_operations=10,
 )
 
 

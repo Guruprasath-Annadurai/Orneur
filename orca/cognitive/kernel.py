@@ -93,6 +93,7 @@ class CognitiveKernel:
             max_agent_calls=DEFAULT_BUDGET.max_agent_calls,
             max_cost_usd=DEFAULT_BUDGET.max_cost_usd,
             max_reasoning_rounds=DEFAULT_BUDGET.max_reasoning_rounds,
+            max_memory_operations=DEFAULT_BUDGET.max_memory_operations,
         )
 
         plan = build_plan(
@@ -246,11 +247,24 @@ class CognitiveKernel:
 
         warnings: list[str] = list()
         try:
+            # Phase 5 (spec §41-42, fixing the audit's Finding #2 --
+            # docs/orneur/phase-5/CURRENT_MEMORY_ARCHITECTURE.md): when the
+            # plan actually needs RECALL_MEMORY, real memory recall now
+            # happens HERE, before the model is ever called -- previously
+            # RECALL_MEMORY was marked SUPPORTED_NOW but _answer_directly()
+            # never consulted memory at all, silently discarding whatever
+            # context a separate, non-Kernel code path had recalled.
+            # IntentPlan (not every request) determines when this runs --
+            # a plan with no RECALL_MEMORY operation pays nothing extra.
+            objective_for_model = request.objective
+            if any(op.type == OperationType.RECALL_MEMORY for op in executable_ops) and request.session_id:
+                objective_for_model = await self._recall_memory_and_enrich(request, plan, trace_builder)
+
             # Hard-stop check BEFORE spending anything -- a model call is
             # about to happen, so MODEL_CALLS is enforced pre-flight.
             consume(plan.budget, BudgetDimension.MODEL_CALLS, 1)
             tier = resolved_tier
-            output_text, resolved_model, usage = await self._answer_directly(request.objective, tier, request.trace_id)
+            output_text, resolved_model, usage = await self._answer_directly(objective_for_model, tier, request.trace_id)
             # TOKENS can only be known AFTER the call completes -- record
             # actual consumption for observability, but don't retroactively
             # fail an already-completed, already-useful response over it;
@@ -311,6 +325,51 @@ class CognitiveKernel:
             usage=usage, warnings=warnings,
             degraded=degraded, degradation_reason=degradation_reason, user_notification_required=notification_required,
         )
+
+    async def _recall_memory_and_enrich(self, request: CognitiveRequest, plan, trace_builder) -> str:
+        """Phase 5: real MemoryQuery -> retrieval.recall() -> Memory
+        Firewall -> enriched objective. Never raises -- a memory-layer
+        failure degrades to the plain objective (memory recall augments
+        an answer, it never blocks one), consistent with how
+        recall_context() failures were already handled before this phase.
+        Consumes BudgetDimension.MEMORY_OPERATIONS for the query itself
+        (spec §46); the recall/firewall work itself has no model call, so
+        it is fast enough to run even on lightweight conversational
+        requests (spec §48)."""
+        from orca.memory import firewall as memory_firewall
+        from orca.memory import retrieval as memory_retrieval
+        from orca.memory.contracts import MemoryQuery, MemoryScope, MemoryTrace
+
+        try:
+            consume(plan.budget, BudgetDimension.MEMORY_OPERATIONS, 1)
+        except CognitiveBudgetExhaustedError:
+            return request.objective
+
+        try:
+            query = MemoryQuery(scope=MemoryScope.SESSION, scope_id=request.session_id, relevance_text=request.objective, limit=3)
+            result = memory_retrieval.recall(query)
+            allowed, _verdicts = memory_firewall.filter_recall(result.memories, MemoryScope.SESSION, request.session_id)
+        except Exception:
+            return request.objective  # memory is an enrichment, never a hard dependency of answering
+
+        memory_trace = MemoryTrace(
+            memory_query_id=query.query_id, memory_ids_recalled=[m.memory_id for m in allowed],
+            memory_types=[m.memory_type.value for m in allowed], epistemic_states=[m.epistemic_state.value for m in allowed],
+            stale_memory_count=len(result.stale_memory_ids), refresh_count=0,
+        )
+        trace_builder.record_memory_trace(memory_trace)
+
+        if not allowed:
+            return request.objective
+
+        lines = []
+        for m in allowed:
+            claim_text = getattr(m, "claim", None) or getattr(m, "task_context", None) or getattr(m, "name", "")
+            if claim_text:
+                lines.append(f"- {claim_text} (epistemic_state={m.epistemic_state.value})")
+        if not lines:
+            return request.objective
+        return f"{request.objective}\n\n[Relevant remembered context -- may be stale, verify if load-bearing]\n" + "\n".join(lines)
 
     async def _answer_directly(self, objective: str, tier: str, trace_id: str) -> tuple[str, str, dict]:
         """The one place the Kernel actually reaches ModelGateway --
