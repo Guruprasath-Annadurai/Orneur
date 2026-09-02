@@ -508,6 +508,7 @@ class CognitiveKernel:
             from orca.deliberation.compiler import compile_reasoning_plan
             from orca.deliberation.contracts import CourtVerdictState
             from orca.deliberation.court import CognitiveCourt
+            from orca.deliberation.replanning import ReplanState, revise_plan_for_court_verdict
 
             reasoning_plan = compile_reasoning_plan(
                 request.objective, plan.complexity.level, plan.risk.level, plan.evidence_requirement.level, truth_result=assessed,
@@ -516,27 +517,44 @@ class CognitiveKernel:
             trace_builder.record_deliberation(reasoning_plan.mode.value)
 
             if reasoning_plan.requires_court:
+                # Phase 7.1 (spec §15-19): a REVISE verdict may now trigger
+                # ONE bounded plan revision + re-run of Court -- never an
+                # unbounded loop. `ReplanState`/`MAX_REPLANS` (imported
+                # above) enforce the cap; a REVISE verdict that persists
+                # past the cap degrades to "proceed to generation" exactly
+                # as Phase 7 did, rather than looping forever.
                 is_audit_grade_precheck = plan.evidence_requirement.level.value == "AUDIT_GRADE"
                 court = CognitiveCourt()
-                case, court_verdict, court_stop_reason = await court.run(
-                    request.objective, truth_result=assessed, risk_level=plan.risk.level,
-                    audit_grade=is_audit_grade_precheck, budget=plan.budget,
-                )
-                trace_builder.record_operation_outcome(f"court_verdict:{court_verdict.verdict.value}:{court_stop_reason}")
-                trace_builder.record_deliberation(reasoning_plan.mode.value, verdict=court_verdict.verdict.value, stop_reason=court_stop_reason, role_executions=case.role_executions)
-                if court_stop_reason == "DELIBERATION_BUDGET_EXHAUSTED":
-                    return _abstain(AbstentionReason.DELIBERATION_BUDGET_EXHAUSTED, plan.plan_id)
-                if court_verdict.verdict == CourtVerdictState.REJECT:
-                    reason = AbstentionReason.CRITICAL_CONTRADICTION if any(
-                        getattr(getattr(c, "relationship", None), "value", "") == "DIRECT_CONTRADICTION" for c in case.contradictions
-                    ) else AbstentionReason.FALSIFICATION_FAILED
-                    return _abstain(reason, plan.plan_id)
-                if court_verdict.verdict == CourtVerdictState.INSUFFICIENT_EVIDENCE:
-                    return _abstain(AbstentionReason.COURT_INSUFFICIENT_EVIDENCE, plan.plan_id)
-                # ACCEPT/REVISE both proceed to generation -- Court ACCEPT
-                # does NOT itself authorize anything (spec §48); it only
-                # means the Kernel may proceed to answer generation, which
-                # verify_answer() below still independently re-checks.
+                replan_state = ReplanState()
+                while True:
+                    case, court_verdict, court_stop_reason = await court.run(
+                        request.objective, truth_result=assessed, risk_level=plan.risk.level,
+                        audit_grade=is_audit_grade_precheck, budget=plan.budget,
+                    )
+                    trace_builder.record_operation_outcome(f"court_verdict:{court_verdict.verdict.value}:{court_stop_reason}")
+                    trace_builder.record_deliberation(reasoning_plan.mode.value, verdict=court_verdict.verdict.value, stop_reason=court_stop_reason, role_executions=case.role_executions)
+                    if court_stop_reason == "DELIBERATION_BUDGET_EXHAUSTED":
+                        return _abstain(AbstentionReason.DELIBERATION_BUDGET_EXHAUSTED, plan.plan_id)
+                    if court_verdict.verdict == CourtVerdictState.REJECT:
+                        reason = AbstentionReason.CRITICAL_CONTRADICTION if any(
+                            getattr(getattr(c, "relationship", None), "value", "") == "DIRECT_CONTRADICTION" for c in case.contradictions
+                        ) else AbstentionReason.FALSIFICATION_FAILED
+                        return _abstain(reason, plan.plan_id)
+                    if court_verdict.verdict == CourtVerdictState.INSUFFICIENT_EVIDENCE:
+                        return _abstain(AbstentionReason.COURT_INSUFFICIENT_EVIDENCE, plan.plan_id)
+                    if court_verdict.verdict == CourtVerdictState.REVISE and replan_state.can_replan():
+                        reasoning_plan = revise_plan_for_court_verdict(reasoning_plan, court_verdict.verdict, replan_state)
+                        trace_builder.record_operation_outcome(
+                            f"replan:v{reasoning_plan.parent_version}->v{reasoning_plan.version}:COURT_REVISE"
+                        )
+                        continue
+                    # ACCEPT (or REVISE with the replan budget exhausted --
+                    # degrades to proceeding rather than looping forever)
+                    # both proceed to generation. Court ACCEPT does NOT
+                    # itself authorize anything (spec §48); it only means
+                    # the Kernel may proceed to answer generation, which
+                    # verify_answer() below still independently re-checks.
+                    break
 
             consume(plan.budget, BudgetDimension.MODEL_CALLS, 1)
             objective_with_context = (
