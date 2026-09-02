@@ -184,6 +184,9 @@ class WorldState:
     assumption_ids: list[str] = field(default_factory=list)
     as_of: str = field(default_factory=_now_iso)
     constraints: list[str] = field(default_factory=list)
+    # Phase 7 spec §30: structured operations applied so far -- short
+    # labels only ("ADD_FACT:<source_ref>"), never raw reasoning prose.
+    update_log: list[str] = field(default_factory=list)
 
 
 # ── Reasoning compiler I/O (spec §5) ──────────────────────────────────────
@@ -214,6 +217,12 @@ class ReasoningPlan:
     model_policy_hint: str = "BALANCED"
     completion_conditions: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
+    # Plan versioning (Phase 7 spec §33) -- preserved for audit, never
+    # discarded on revision.
+    version: int = 1
+    parent_version: int | None = None
+    revision_reason: str | None = None
+    created_at: str = field(default_factory=_now_iso)
 
 
 # ── Deliberation rounds / Twin / Court (spec §11-19) ──────────────────────
@@ -279,6 +288,12 @@ class CourtCase:
     risk_level: RiskLevel = RiskLevel.LOW
     rounds: list[DeliberationRound] = field(default_factory=list)
     role_executions: list[RoleExecution] = field(default_factory=list)
+    # Phase 7: Model Society routing/world-state audit trail.
+    world_state: WorldState | None = None
+    same_model_role_overlap: bool = False
+    routing_decision_ids: list[str] = field(default_factory=list)
+    disagreement_severity: str = "NONE"
+    disagreement_types: list[str] = field(default_factory=list)
 
 
 @dataclass
