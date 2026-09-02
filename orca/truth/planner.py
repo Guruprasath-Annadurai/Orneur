@@ -27,6 +27,16 @@ MAX_DOCUMENTS_BY_MODE = {
 }
 MAX_PASSAGES_BY_MODE = {mode: max(1, docs // 2) for mode, docs in MAX_DOCUMENTS_BY_MODE.items()}
 
+# Phase 4.1 spec §11: multi-hop depth and corrective rounds must share ONE
+# global query budget, not multiply against each other unbounded --
+# MAX_MULTI_HOP_DEPTH(3 subqueries via decompose_query) * MAX_CORRECTIVE_
+# ROUNDS(2) could otherwise imply up to 6+ retrieval passes for a single
+# request. This caps the TOTAL number of distinct retrieval queries
+# (initial + every multi-hop subquery + every corrective round's
+# rewritten query) issued across one assess_evidence() call, regardless
+# of mode.
+MAX_TOTAL_RETRIEVAL_QUERIES = 6
+
 
 def _select_mode(evidence: EvidenceLevel, complexity: ComplexityLevel, intent: IntentPlan) -> tuple[RetrievalMode, list[str]]:
     reasons: list[str] = []

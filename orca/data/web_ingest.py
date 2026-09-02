@@ -8,12 +8,15 @@ as real source material a teacher model can be asked to generate Q&A
 pairs FROM — a genuinely more grounded distillation approach than pure
 invention.
 
-Respects robots.txt (real, checked before every fetch, not decorative)
-and reuses orca/tools/web.py's fetch_page(), which already has SSRF
-protection built in (see docs/SECURITY_AUDIT.md). Single-machine,
-sequential, no JS rendering (static HTML only via httpx) — honestly
-scoped as a lightweight corpus builder, not a production-grade
-distributed crawler.
+Respects robots.txt (real, checked before every fetch, not decorative).
+
+Phase 4.1 (spec §4): migrated off orca/tools/web.py's fetch_page(), whose
+SSRF check only validated the initial URL and then followed redirects
+automatically (a TOCTOU bypass — see docs/orneur/phase-4/SECURITY.md).
+Uses orca/truth/fetch.py's fetch_document()/extract_text() instead, which
+re-validates every redirect hop. Single-machine, sequential, no JS
+rendering (static HTML only via httpx) — honestly scoped as a lightweight
+corpus builder, not a production-grade distributed crawler.
 """
 from __future__ import annotations
 
@@ -24,7 +27,8 @@ from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 from orca.config import ORCA_HOME
-from orca.tools.web import fetch_page
+from orca.truth.errors import FetchRefusedError
+from orca.truth.fetch import extract_text, fetch_document
 
 WEB_CORPUS_DIR = ORCA_HOME / "training" / "web_corpus"
 WEB_CORPUS_DIR.mkdir(parents=True, exist_ok=True)
@@ -77,9 +81,10 @@ class IngestedPage:
 def ingest_urls(urls: list[str], max_chars_per_page: int = 8000, on_log=None) -> dict:
     """
     Fetches and cleans each URL — skipping anything robots.txt disallows,
-    and anything fetch_page() itself refuses (SSRF-risky targets, fetch
-    failures) — and appends the cleaned text to a dated JSONL corpus file
-    under WEB_CORPUS_DIR.
+    and anything fetch_document() itself refuses (SSRF-risky targets,
+    redirect-hop violations, oversized documents, fetch failures) — and
+    appends the cleaned text to a dated JSONL corpus file under
+    WEB_CORPUS_DIR.
 
     Returns a summary dict: counts (fetched/skipped_robots/failed) and the
     output file path. Each real fetch produces a real entry an operator or
@@ -99,11 +104,21 @@ def ingest_urls(urls: list[str], max_chars_per_page: int = 8000, on_log=None) ->
                 log(f"[web-ingest] [{i+1}/{len(urls)}] robots.txt disallows, skipped: {url}")
                 continue
 
-            text = fetch_page(url, max_chars=max_chars_per_page)
-            if text.startswith("Failed to fetch") or text.startswith("Refused to fetch"):
+            try:
+                doc = fetch_document(url)
+            except FetchRefusedError as e:
                 failed += 1
-                log(f"[web-ingest] [{i+1}/{len(urls)}] FAILED: {text[:100]}")
+                log(f"[web-ingest] [{i+1}/{len(urls)}] FAILED: {e.message} ({e.internal_detail})")
                 continue
+            except Exception as e:
+                # A genuine HTTP/network failure (404, connection error,
+                # etc.) from httpx -- not an SSRF refusal, but still a
+                # real failure to count, never silently skipped or
+                # written to the corpus as if it succeeded.
+                failed += 1
+                log(f"[web-ingest] [{i+1}/{len(urls)}] FAILED: {e}")
+                continue
+            text = extract_text(doc.raw_html, max_chars=max_chars_per_page)
 
             page = IngestedPage(url=url, text=text, char_count=len(text))
             out_f.write(json.dumps(page.to_dict()) + "\n")

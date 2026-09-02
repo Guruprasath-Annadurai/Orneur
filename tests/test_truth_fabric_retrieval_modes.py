@@ -62,7 +62,7 @@ async def test_hybrid_retrieval_pulls_from_both_dense_and_web():
         SearchResultMetadata(title="Rate limits", url="https://docs.example.com/limits", snippet="100 requests per minute", domain="docs.example.com"),
     ])
     fabric = TruthFabric(search_provider=search_provider)
-    evidence, sources = await fabric._retrieve(plan, doc_store=doc_store, budget=None)
+    evidence, sources, _queries_issued = await fabric._retrieve(plan, doc_store=doc_store, budget=None)
 
     assert doc_store.queries, "dense source was never queried"
     assert search_provider.calls == 1, "web source was never queried"

@@ -239,6 +239,8 @@ class CitationVerdict:
 class ContradictionRelationship(str, Enum):
     DIRECT_CONTRADICTION = "DIRECT_CONTRADICTION"
     TEMPORALLY_RECONCILABLE = "TEMPORALLY_RECONCILABLE"   # e.g. "was true, no longer is" -- not a real contradiction
+    SCOPE_DIFFERENCE = "SCOPE_DIFFERENCE"                  # e.g. different jurisdiction/product tier/version -- not a real contradiction
+    LIKELY_CONFLICT = "LIKELY_CONFLICT"                    # judge suspects conflict but couldn't confirm same-subject with confidence
     UNRELATED = "UNRELATED"
 
 
@@ -249,6 +251,17 @@ class Contradiction:
     relationship: ContradictionRelationship
     temporal_context: str = ""
     source_context: str = ""
+    # Phase 4.1 (spec §12-15): populated by detect_evidence_contradictions()
+    # for evidence-vs-evidence pairs -- left empty ("") for the original
+    # answer-claim-vs-answer-claim pairs from detect_contradictions(), which
+    # have no single source/subject to name.
+    subject: str = ""
+    source_a_id: str = ""
+    source_b_id: str = ""
+    # Never "automatically resolved by higher authority" (spec §15) --
+    # UNRESOLVED until a human or a later phase's dedicated resolution step
+    # changes it; this phase never writes anything but UNRESOLVED.
+    resolution_state: str = "UNRESOLVED"
 
 
 # ── Evidence state / Truth result ────────────────────────────────────────
@@ -293,3 +306,39 @@ class TruthResult:
     citation_coverage: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     latency_ms: float = 0.0
+    # Phase 4.1 (spec §8-11, §16-17, §25): manifest fields for the real
+    # corrective-retrieval loop and the bounded counter-evidence hook.
+    corrective_rounds: list["CorrectiveRound"] = field(default_factory=list)
+    retrieval_stop_reason: str = ""
+    counter_evidence: "CounterEvidenceResult | None" = None
+
+
+@dataclass
+class CorrectiveRound:
+    """One executed corrective-retrieval round (spec §10: provenance, not
+    raw chain-of-thought -- `reason`/`evidence_gap` are short, structured
+    strings from the reform-query judge call, never a full reasoning
+    trace)."""
+    round_index: int
+    original_query: str
+    rewritten_query: str
+    reason: str = ""
+    evidence_gap: str = ""
+    evidence_state_before: "EvidenceState | None" = None
+    new_evidence_count: int = 0
+
+
+class CounterEvidenceStatus(str, Enum):
+    RAN = "RAN"
+    NOT_RUN = "NOT_RUN"
+    BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
+
+
+@dataclass
+class CounterEvidenceResult:
+    """Bounded FIND_COUNTER_EVIDENCE hook (spec §16-17) -- never claims to
+    have run an exhaustive adversarial search; `status` is always honest
+    about whether it actually executed."""
+    status: CounterEvidenceStatus
+    query: str = ""
+    evidence: list[Evidence] = field(default_factory=list)

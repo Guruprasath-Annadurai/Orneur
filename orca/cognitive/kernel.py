@@ -354,7 +354,7 @@ class CognitiveKernel:
         "verified" answer.
         """
         from orca.gateway.errors import ModelNotRoutableError
-        from orca.truth.contracts import EvidenceState, TruthRequest
+        from orca.truth.contracts import CounterEvidenceStatus, EvidenceState, TruthRequest
         from orca.truth.errors import TruthBudgetExhaustedError, TruthError
         from orca.truth.truth_fabric import TruthFabric
 
@@ -393,9 +393,19 @@ class CognitiveKernel:
             )
             output_text, resolved_model, usage = await self._answer_directly(objective_with_context, resolved_tier, request.trace_id)
 
-            final = await truth_fabric.verify_answer(output_text, assessed, budget=plan.budget)
-            if plan.evidence_requirement.level.value == "AUDIT_GRADE" and final.evidence_state != EvidenceState.SUFFICIENT:
-                return _abstain(AbstentionReason.INSUFFICIENT_EVIDENCE, plan.plan_id)
+            is_audit_grade = plan.evidence_requirement.level.value == "AUDIT_GRADE"
+            final = await truth_fabric.verify_answer(output_text, assessed, budget=plan.budget, run_counter_evidence=is_audit_grade)
+            # Phase 4.1 spec §23: AUDIT_GRADE success requires ALL of --
+            # EvidenceState=SUFFICIENT (itself already folding in citation
+            # coverage >=0.8, no unresolved DIRECT_CONTRADICTION, required
+            # source authority, and required freshness -- see
+            # orca/truth/state.py::compute_evidence_state), PLUS a
+            # counter-evidence attempt actually having been made (never
+            # silently skipped for AUDIT_GRADE -- spec §17/§23).
+            if is_audit_grade:
+                counter_evidence_ran = final.counter_evidence is not None and final.counter_evidence.status == CounterEvidenceStatus.RAN
+                if final.evidence_state != EvidenceState.SUFFICIENT or not counter_evidence_ran:
+                    return _abstain(AbstentionReason.INSUFFICIENT_EVIDENCE, plan.plan_id)
         except CognitiveBudgetExhaustedError:
             return _abstain(AbstentionReason.BUDGET_EXHAUSTED, plan.plan_id)
         except TruthBudgetExhaustedError:

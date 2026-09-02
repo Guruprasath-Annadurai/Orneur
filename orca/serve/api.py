@@ -1007,12 +1007,25 @@ async def stream_chat(
     mem_ctx = sess.memory.recall_context(req.message, n=3)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
 
-    # Kernel's direct-answer path is only used when this session has no
-    # loaded documents -- RAG behavior (query rewriting, HyDE, corrective
-    # retrieval, citation DNA) must survive cutover unconditionally
-    # whenever docs are present, regardless of what a single message's
-    # own cognitive plan says (Phase 3.1 spec §13).
-    use_kernel_direct = cognitive_result.output is not None and sess.doc_store.count() == 0
+    # Kernel's direct-answer path is used whenever the Kernel actually
+    # produced an answer -- either because this session has no loaded
+    # documents (Phase 3.1 spec §13's original guard: the legacy RAG
+    # pipeline's query rewriting/HyDE/corrective-retrieval/citation-DNA
+    # behavior must survive cutover unconditionally whenever docs ARE
+    # present), OR because the Kernel's answer came from Truth Fabric
+    # itself (`evidence_state is not None`), in which case it already
+    # used this session's doc_store as real evidence and is authoritative
+    # over the legacy pipeline for this request (Phase 4.1 spec §26-27:
+    # "Do not allow existing RAG branches to bypass Truth Fabric for
+    # request classes where Truth Fabric is authoritative"). Before this
+    # fix, a Truth-Fabric-verified, citation-checked answer was silently
+    # discarded in favor of the legacy Gateway-bypassing pipeline for
+    # every session that had any document loaded -- exactly backwards,
+    # since that is precisely when Truth Fabric's evidence grounding
+    # matters most.
+    use_kernel_direct = cognitive_result.output is not None and (
+        sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None
+    )
 
     # Deep RAG: 7-stage pipeline (query intelligence → multi-signal recall →
     # RRF fusion → rerank → sufficiency check → citation DNA). Only runs if

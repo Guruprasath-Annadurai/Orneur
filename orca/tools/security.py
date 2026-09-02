@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -102,10 +104,29 @@ def _scan_secrets(files: list[Path]) -> list[SecurityFinding]:
     return findings
 
 
+def _bandit_executable() -> str:
+    """
+    `bandit` is a declared, required project dependency (pyproject.toml),
+    not optional -- so "not found on PATH" almost always means the
+    invoking shell simply hasn't activated this project's venv, not that
+    bandit is genuinely absent. Resolving relative to sys.executable's own
+    directory (the same venv the running Python process came from) makes
+    this tool work correctly regardless of the CALLER's PATH/activation
+    state -- the actual gap found in Phase 4.1's environment audit
+    (bandit was pip-installed in .venv but .venv/bin wasn't on PATH in the
+    shell that ran the test suite).
+    """
+    found = shutil.which("bandit")
+    if found:
+        return found
+    venv_candidate = Path(sys.executable).parent / "bandit"
+    return str(venv_candidate) if venv_candidate.exists() else "bandit"
+
+
 def _run_bandit(target: Path) -> tuple[list[SecurityFinding], str | None]:
     try:
         proc = subprocess.run(
-            ["bandit", "-r", "-f", "json", str(target)],
+            [_bandit_executable(), "-r", "-f", "json", str(target)],
             capture_output=True, text=True, timeout=_BANDIT_TIMEOUT,
         )
     except FileNotFoundError:

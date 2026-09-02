@@ -86,10 +86,17 @@ def fetch_page(url: str, max_chars: int = 8000) -> str:
     the initial request, but follow_redirects=True below means a malicious
     server could still redirect to an internal address AFTER that check
     passes (a TOCTOU-style bypass) — httpx doesn't cheaply expose per-hop
-    redirect inspection. This is a real, known residual gap, acceptable
-    for now only because this function is currently unreachable from any
-    tool-calling surface; it must be closed (disable auto-follow-redirects
-    and check each hop) before this is ever wired up as a callable tool.
+    redirect inspection. This is a real, known residual gap.
+
+    Phase 4.1 (spec §4): this function's one former caller
+    (orca/data/web_ingest.py) has been migrated to the fixed,
+    redirect-hop-revalidating orca/truth/fetch.py::fetch_document() — see
+    docs/orneur/phase-4/SECURITY.md. This function is now confirmed to
+    have zero callers anywhere in the codebase. It is kept only for any
+    external/notebook usage that may still import it directly; it must
+    not be wired up as a callable tool without first closing this gap the
+    same way fetch_document() already does (disable auto-follow-redirects,
+    check each hop).
     """
     if _is_ssrf_risk(url):
         return f"Refused to fetch {url}: resolves to a private/internal/reserved address."
