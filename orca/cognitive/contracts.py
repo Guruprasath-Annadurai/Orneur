@@ -231,6 +231,11 @@ class CognitiveContext:
     tool_observations: list[dict[str, Any]] = field(default_factory=list)
     world_state_refs: list[str] = field(default_factory=list)
     capability_context: dict[str, Any] = field(default_factory=dict)
+    # Phase 5.1 (spec §3): a real orca.memory.contracts.WorkingMemory
+    # instance for this request. Typed as `Any` here (not imported
+    # directly) to avoid a circular import -- orca.memory.contracts
+    # itself imports PrivacyClass from this module.
+    working_memory: Any = None
 
 
 # ── Operations / Plan ────────────────────────────────────────────────────

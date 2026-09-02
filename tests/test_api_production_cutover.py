@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -242,7 +243,19 @@ def test_rag_forces_deferral_to_existing_stack_when_docs_are_loaded(app_and_clie
     from orca.serve.api import _get_session
     app, client = app_and_client
 
-    session_id = "rag-cutover-test-session"
+    # Phase 5.1 (spec §18 root-cause investigation): this was previously a
+    # fixed, hard-coded session_id shared across every run of this test.
+    # Both _sessions (in-process) and the on-disk ChromaDB/doc_store
+    # collection are keyed by session_id -- a fixed id is a genuine
+    # cross-run shared-state hazard (stale doc_store content, or
+    # collision with a concurrently-running instance of this same test),
+    # independent of whatever caused the one observed flaky failure
+    # (most likely real Ollama contention under heavy concurrent load
+    # from other tests in the same session -- reproduced individually and
+    # within the full security suite afterward with zero failures,
+    # matching the OLLAMA_TEST_RELIABILITY.md flakiness class rather than
+    # a code defect). Fixed regardless, since it's a real, separate risk.
+    session_id = f"rag-cutover-test-session-{uuid.uuid4().hex[:8]}"
     sess = _get_session(session_id, "nano")
     chunks = chunk_text("Orneur is a fictional cognitive architecture used for internal testing.", doc_id="doc-1", filename="test.txt")
     sess.doc_store.add_chunks(chunks, doc_id="doc-1", filename="test.txt")

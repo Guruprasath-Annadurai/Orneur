@@ -145,6 +145,16 @@ class CognitiveKernel:
         sm = CognitiveStateMachine()
         trace_builder = CognitiveTraceBuilder(request.request_id, request.trace_id)
 
+        # Phase 5.1 (spec §3-6): a real, bounded WorkingMemory instance
+        # for this request -- not a dict, not the full transcript.
+        # Discarded by default; only finalized (persisted as an episode/
+        # candidates) explicitly at the direct-answer completion point
+        # below, per spec §5's "choose explicitly, never persist
+        # wholesale automatically."
+        from orca.memory.contracts import WorkingMemory, WorkingMemoryLifecycle
+        working_memory = WorkingMemory(objective=request.objective)
+        working_memory.lifecycle_state = WorkingMemoryLifecycle.ACTIVE
+
         sm.transition(CognitiveState.CLASSIFYING)
         try:
             plan = self.plan(request)
@@ -258,7 +268,7 @@ class CognitiveKernel:
             # a plan with no RECALL_MEMORY operation pays nothing extra.
             objective_for_model = request.objective
             if any(op.type == OperationType.RECALL_MEMORY for op in executable_ops) and request.session_id:
-                objective_for_model = await self._recall_memory_and_enrich(request, plan, trace_builder)
+                objective_for_model = await self._recall_memory_and_enrich(request, plan, trace_builder, working_memory)
 
             # Hard-stop check BEFORE spending anything -- a model call is
             # about to happen, so MODEL_CALLS is enforced pre-flight.
@@ -312,6 +322,13 @@ class CognitiveKernel:
         trace_builder.record_model_resolved(resolved_model)
         trace_builder.record_operation_outcome("answered_directly")
 
+        # Phase 5.1 (spec §5): explicit disposition of WorkingMemory at
+        # request completion -- discard (the default) or emit a
+        # significance-gated episode/candidates. Never persisted
+        # wholesale, never automatic. _finalize_working_memory() is the
+        # sole authority on the final lifecycle_state.
+        self._finalize_working_memory(request, working_memory, output_text, trace_builder)
+
         sm.transition(CognitiveState.COMPLETED)
         trace_builder.record_transition(sm.history[-1])
         trace_builder.finalize(plan.budget)
@@ -326,7 +343,35 @@ class CognitiveKernel:
             degraded=degraded, degradation_reason=degradation_reason, user_notification_required=notification_required,
         )
 
-    async def _recall_memory_and_enrich(self, request: CognitiveRequest, plan, trace_builder) -> str:
+    def _finalize_working_memory(self, request: CognitiveRequest, working_memory, output_text: str, trace_builder) -> None:
+        """Spec §5's explicit lifecycle choice, made HERE rather than left
+        implicit: discard by default; emit a significance-gated episode
+        + MemoryCandidates only when the Kernel's own answer was
+        significant AND a session_id exists to scope it to. Reuses the
+        exact same significance/candidate/promotion pipeline
+        orca/memory/turn_ingest.py already uses for AgentLoop-executed
+        turns, so a Kernel-answered turn and an AgentLoop-answered turn
+        are governed identically -- not two divergent policies."""
+        from orca.memory.contracts import WorkingMemoryLifecycle
+
+        if not request.session_id:
+            working_memory.lifecycle_state = WorkingMemoryLifecycle.DISCARDED
+            return
+        try:
+            from orca.memory.turn_ingest import maybe_ingest_turn
+            episode = maybe_ingest_turn(request.session_id, request.objective, output_text)
+        except Exception:
+            episode = None
+
+        if episode is None:
+            working_memory.lifecycle_state = WorkingMemoryLifecycle.DISCARDED
+        else:
+            working_memory.lifecycle_state = WorkingMemoryLifecycle.COMPLETED
+            trace_builder.record_operation_outcome(f"working_memory_finalized:episode={episode.memory_id}")
+
+        trace_builder.record_working_memory_disposition(working_memory.working_memory_id, working_memory.lifecycle_state.value)
+
+    async def _recall_memory_and_enrich(self, request: CognitiveRequest, plan, trace_builder, working_memory=None) -> str:
         """Phase 5: real MemoryQuery -> retrieval.recall() -> Memory
         Firewall -> enriched objective. Never raises -- a memory-layer
         failure degrades to the plain objective (memory recall augments
@@ -358,6 +403,13 @@ class CognitiveKernel:
             stale_memory_count=len(result.stale_memory_ids), refresh_count=0,
         )
         trace_builder.record_memory_trace(memory_trace)
+
+        if working_memory is not None:
+            # Only firewall-ALLOWED memories are ever added -- WorkingMemory
+            # must never become a bypass for content the Firewall already
+            # rejected (spec §6).
+            for m in allowed:
+                working_memory.add_recalled_memory_id(m.memory_id)
 
         if not allowed:
             return request.objective

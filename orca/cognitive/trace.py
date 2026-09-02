@@ -79,6 +79,19 @@ class CognitiveTraceBuilder:
         t.memory_refresh_count = memory_trace.refresh_count
         t.memory_promotion_decisions = list(memory_trace.promotion_decisions)
 
+    def record_working_memory_disposition(self, working_memory_id: str, lifecycle_state: str) -> None:
+        """Additive -- unlike record_memory_trace() (a full snapshot,
+        called at most once per recall), this may be called after a
+        recall already populated the trace; it only sets
+        memory_query_id if still unset and APPENDS to
+        memory_promotion_decisions, never overwriting recall-specific
+        fields (spec §32: WorkingMemory disposition and MemoryQuery
+        results must both be linkable in the same trace)."""
+        t = self._trace
+        if t.memory_query_id is None:
+            t.memory_query_id = working_memory_id
+        t.memory_promotion_decisions.append(lifecycle_state)
+
     def finalize(self, budget: CognitiveBudget | None = None) -> CognitiveTrace:
         self._trace.latency_ms = (time.monotonic() - self._start) * 1000
         if budget is not None:

@@ -237,15 +237,29 @@ class FailureMemoryRecord(MemoryRecord):
     verification_state: FailureVerificationState = FailureVerificationState.UNVERIFIED
 
 
-# ── Working memory (spec §7, bounded, not a persisted MemoryRecord) ──────
+# ── Working memory (spec §3-7, bounded, not a persisted MemoryRecord) ────
+
+class WorkingMemoryLifecycle(str, Enum):
+    """Spec §5."""
+    CREATED = "CREATED"
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    DISCARDED = "DISCARDED"
+
+
+MAX_WORKING_MEMORY_SERIALIZED_CHARS = 8000   # a rough token-budget proxy (spec §4: "max serialized size/tokens")
+
 
 @dataclass
 class WorkingMemory:
     """Ephemeral cognitive state for the CURRENT request -- not long-term
-    storage by default (spec §7). Bounded lists, never the full
+    storage by default (spec §7). Bounded lists (deterministic FIFO
+    eviction via add_*() below, never unbounded growth), never the full
     transcript. Promotion to a persisted MemoryEpisode/MemoryCandidate
-    happens explicitly at request completion (spec §42), never
+    happens explicitly at request completion (spec §5, §42), never
     automatically."""
+    working_memory_id: str = field(default_factory=lambda: _new_id("wm"))
+    lifecycle_state: WorkingMemoryLifecycle = WorkingMemoryLifecycle.CREATED
     objective: str = ""
     active_plan_ref: str | None = None
     hypotheses: list[str] = field(default_factory=list)
@@ -258,12 +272,58 @@ class WorkingMemory:
     next_actions: list[str] = field(default_factory=list)
 
     MAX_ITEMS_PER_LIST: int = field(default=20, repr=False, compare=False)
+    MAX_ENTITY_REFS: int = field(default=30, repr=False, compare=False)
+    MAX_RECALLED_MEMORY_REFS: int = field(default=10, repr=False, compare=False)
+    MAX_OBSERVATIONS: int = field(default=20, repr=False, compare=False)
 
-    def _bounded_append(self, list_name: str, item: str) -> None:
+    def _bounded_append(self, list_name: str, item: str, max_items: int | None = None) -> bool:
+        """Deterministic FIFO eviction (spec §4): once the bound is hit,
+        the OLDEST entry is dropped to make room for the new one, rather
+        than silently growing or refusing outright. Returns False (item
+        NOT added) only if `item` itself is too large to ever fit within
+        MAX_WORKING_MEMORY_SERIALIZED_CHARS on its own."""
+        if len(item) > MAX_WORKING_MEMORY_SERIALIZED_CHARS:
+            return False
         lst = getattr(self, list_name)
+        cap = max_items if max_items is not None else self.MAX_ITEMS_PER_LIST
         lst.append(item)
-        if len(lst) > self.MAX_ITEMS_PER_LIST:
-            del lst[: len(lst) - self.MAX_ITEMS_PER_LIST]
+        if len(lst) > cap:
+            del lst[: len(lst) - cap]
+        while self.serialized_size() > MAX_WORKING_MEMORY_SERIALIZED_CHARS and lst:
+            lst.pop(0)
+        return True
+
+    def add_entity(self, entity: str) -> bool:
+        return self._bounded_append("entities", entity, self.MAX_ENTITY_REFS)
+
+    def add_recalled_memory_id(self, memory_id: str) -> bool:
+        return self._bounded_append("recalled_memory_ids", memory_id, self.MAX_RECALLED_MEMORY_REFS)
+
+    def add_tool_observation(self, observation: str) -> bool:
+        return self._bounded_append("tool_observations", observation, self.MAX_OBSERVATIONS)
+
+    def add_decision(self, decision: str) -> bool:
+        return self._bounded_append("decisions", decision)
+
+    def add_unresolved_question(self, question: str) -> bool:
+        return self._bounded_append("unresolved_questions", question)
+
+    def add_next_action(self, action: str) -> bool:
+        return self._bounded_append("next_actions", action)
+
+    def add_hypothesis(self, hypothesis: str) -> bool:
+        return self._bounded_append("hypotheses", hypothesis)
+
+    def serialized_size(self) -> int:
+        """A rough proxy for token budget (spec §4) -- character count of
+        every bounded list's content, not a real tokenizer call (that
+        would make WorkingMemory itself expensive to update, defeating
+        its own purpose as cheap per-request scratch state)."""
+        parts = (
+            self.hypotheses + self.entities + self.tool_observations + self.recalled_memory_ids
+            + self.decisions + self.unresolved_questions + self.next_actions
+        )
+        return len(self.objective) + sum(len(p) for p in parts)
 
 
 # ── Candidate pipeline (spec §10) ────────────────────────────────────────
