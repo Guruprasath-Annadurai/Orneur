@@ -33,6 +33,7 @@ from orca.deliberation.evidence_clerk import build_evidence_report
 from orca.deliberation.risk_counsel import assess_risk_opinion
 from orca.deliberation.twin import EpistemicTwin
 from orca.deliberation.worldstate_build import build_world_state
+from orca.deliberation.worldstate_ops import unavailable_model_ids
 from orca.society.budget_ledger import SocietyBudgetLedger
 from orca.society.disagreement import compute_disagreement
 from orca.society.router import model_id_to_tier
@@ -54,6 +55,7 @@ class CognitiveCourt:
         self, objective: str, *, truth_result=None, risk_level: RiskLevel = RiskLevel.LOW,
         audit_grade: bool = False, budget: CognitiveBudget | None = None,
         allowed_capability_classes: list[str] | None = None,
+        initial_world_state=None,
     ) -> tuple[CourtCase, CourtVerdict, str]:
         """Returns (case, verdict, stop_reason). Bounded to one
         Constructor+Falsifier round in this first production version
@@ -64,6 +66,22 @@ class CognitiveCourt:
             (ev.evidence_id, ev.passage.text) for ev in (getattr(truth_result, "evidence", None) or [])
         ]
 
+        # WorldState is built BEFORE routing this phase (Phase 7.1 spec
+        # §12-13) so a caller-recorded model-unavailability observation can
+        # actually change the routing decision, not just be recorded
+        # after the fact.
+        world_state = build_world_state(objective, truth_result=truth_result)
+        if initial_world_state is not None:
+            # A caller (Kernel, or a tool-observation hook) may seed
+            # observations made BEFORE this Court invocation started --
+            # e.g. "deployment X went unhealthy mid-session" (spec §13's
+            # own worked example). Merged, never overwritten: an entity
+            # already present in the freshly-built state is not clobbered.
+            for entity, info in initial_world_state.variables.items():
+                world_state.variables.setdefault(entity, info)
+            world_state.update_log.extend(initial_world_state.update_log)
+        excluded_model_ids = unavailable_model_ids(world_state)
+
         if self._explicit_twin is not None:
             twin = self._explicit_twin
             constructor_tier = falsifier_tier = None
@@ -73,6 +91,7 @@ class CognitiveCourt:
             plan = build_court_society_plan(
                 risk_level=risk_level.value, allow_experimental=self.allow_experimental_models,
                 allowed_capability_classes=allowed_capability_classes or [],
+                exclude_model_ids=excluded_model_ids,
             )
             constructor_decision = plan.assignments[0].routing_decision
             falsifier_decision = plan.assignments[1].routing_decision
@@ -82,7 +101,10 @@ class CognitiveCourt:
                     decision_reasons=["Model Society found no eligible model for Constructor/Falsifier"],
                     epistemic_state="UNVERIFIED",
                 )
-                case = CourtCase(objective=objective, risk_level=risk_level)
+                case = CourtCase(
+                    objective=objective, risk_level=risk_level, world_state=world_state,
+                    routing_decision_ids=[constructor_decision.decision_id, falsifier_decision.decision_id],
+                )
                 return case, verdict, "COURT_INSUFFICIENT_EVIDENCE"
             constructor_tier = model_id_to_tier(constructor_decision.selected_model_id)
             falsifier_tier = model_id_to_tier(falsifier_decision.selected_model_id)
@@ -93,8 +115,6 @@ class CognitiveCourt:
             )
             same_model_overlap = plan.same_model_role_overlap
             routing_decision_ids = [constructor_decision.decision_id, falsifier_decision.decision_id]
-
-        world_state = build_world_state(objective, truth_result=truth_result)
 
         if budget is not None:
             allocation = allocate_budget(

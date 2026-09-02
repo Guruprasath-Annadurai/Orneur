@@ -96,3 +96,27 @@ def apply_update(state: WorldState, update: WorldStateUpdate) -> WorldState:
 
     state.update_log.append(f"{update.op.value}:{update.source_ref}")
     return state
+
+
+# Phase 7.1 spec §12-13: a real, structured way for downstream decisions
+# (routing, replanning) to actually CONSUME WorldState, rather than the
+# Phase 7 state of "built but never read." Deliberately keyword-based, not
+# free-text scanning of arbitrary model output -- the ONLY way a model_id
+# ends up in `state.variables` at all is through a typed
+# `UPDATE_ENTITY_STATE` op with a real `source_ref` (see `apply_update`
+# above), so this reads exactly what a caller explicitly recorded, never
+# something a model asserted in prose.
+_UNAVAILABLE_MARKERS = ("UNAVAILABLE", "UNHEALTHY", "OFFLINE", "DRAINING")
+
+
+def unavailable_model_ids(state: WorldState) -> list[str]:
+    """Entities recorded via UPDATE_ENTITY_STATE whose value indicates the
+    model/deployment is not currently usable -- consumed by
+    `orca.deliberation.court.CognitiveCourt` to exclude that candidate from
+    its Society routing requests (spec §13's own worked example)."""
+    unavailable = []
+    for entity, info in state.variables.items():
+        value = str(info.get("value", "")) if isinstance(info, dict) else str(info)
+        if any(marker in value.upper() for marker in _UNAVAILABLE_MARKERS):
+            unavailable.append(entity)
+    return unavailable

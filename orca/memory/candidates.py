@@ -63,18 +63,30 @@ def extract_candidates(episode: MemoryEpisode, evidence_refs: list[MemoryEvidenc
     return candidates
 
 
-async def extract_candidates_via_gateway(episode: MemoryEpisode, evidence_refs: list[MemoryEvidence] | None = None, tier: str = "nano") -> list[MemoryCandidate]:
+async def extract_candidates_via_gateway(episode: MemoryEpisode, evidence_refs: list[MemoryEvidence] | None = None, tier: str | None = None) -> list[MemoryCandidate]:
     """Gateway-routed variant, reusing orca.truth.claims.extract_atomic_claims
     (already tested, already Gateway-routed) rather than a second,
     parallel claim-extraction implementation. Used for episodes worth the
     extra latency -- explicit remember requests, decisions, failures --
-    not the default per-turn path."""
+    not the default per-turn path.
+
+    Not currently called by any production code path (verified -- no
+    caller exists in orca/ or tests/ as of Phase 7.1); documented honestly
+    as unwired in docs/orneur/phase-7/ROLE_MIGRATION.md rather than left
+    silently on a hardcoded tier. `tier=None` (the default) resolves
+    through Model Society's MEMORY_SELECTOR role for whenever this
+    function is eventually wired in; an explicit `tier` bypasses Society
+    (LEGACY_COMPATIBILITY)."""
+    from orca.society.contracts import CognitiveRole
+    from orca.society.router import resolve_tier_for_role
     from orca.truth.claims import extract_atomic_claims
+
+    resolved_tier, _decision = resolve_tier_for_role(CognitiveRole.MEMORY_SELECTOR, override_tier=tier)
 
     text = f"{episode.event} {episode.outcome}".strip()
     if not text:
         return []
-    atomic_claims = await extract_atomic_claims(text, tier=tier)
+    atomic_claims = await extract_atomic_claims(text, tier=resolved_tier)
     candidates = []
     for claim in atomic_claims[:MAX_CANDIDATES_PER_EPISODE]:
         candidates.append(MemoryCandidate(

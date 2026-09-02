@@ -165,7 +165,7 @@ def _build_candidate(family: str, profile: ModelCapabilityProfile | None, reques
     candidate = RoutingCandidate(model_id=profile.model_id, checkpoint_id=profile.checkpoint_id, profile=profile)
     reasons: list[RoutingReason] = []
 
-    if profile.checkpoint_id in request.exclude_model_ids:
+    if profile.checkpoint_id in request.exclude_model_ids or profile.model_id in request.exclude_model_ids:
         reasons.append(RoutingReason.EXCLUDED_BY_CALLER)
 
     if is_lifecycle_disqualified(profile.lifecycle_state):

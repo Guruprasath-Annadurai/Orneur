@@ -21,19 +21,28 @@ def build_court_society_plan(
     profiles: dict | None = None,
     checkpoint_lookup=None,
     deployment_lookup=None,
+    exclude_model_ids: list[str] | None = None,
 ) -> SocietyPlan:
     """
     Builds the Constructor/Falsifier assignment for one Cognitive Court
     invocation. EvidenceClerk/RiskCounsel/Arbiter are NOT included -- they
     remain deterministic, model-free roles (Phase 6 design, unchanged by
     Phase 7 spec §41).
+
+    `exclude_model_ids` (Phase 7.1 spec §12-13): model/checkpoint ids a
+    caller's WorldState has recorded as currently unavailable
+    (`orca.deliberation.worldstate_ops.unavailable_model_ids`) -- excluded
+    from BOTH Constructor's and Falsifier's candidate pool, a real
+    WorldState-driven routing consequence, not a cosmetic diversity trick.
     """
     allowed_capability_classes = allowed_capability_classes or []
+    exclude_model_ids = exclude_model_ids or []
 
     constructor_request = RoutingRequest(
         role=CognitiveRole.CONSTRUCTOR, trace_id=trace_id, risk_level=risk_level,
         complexity_level=complexity_level, evidence_requirement=evidence_requirement,
         allow_experimental=allow_experimental, allowed_capability_classes=allowed_capability_classes,
+        exclude_model_ids=exclude_model_ids,
     )
     constructor_decision = route(constructor_request, profiles=profiles, checkpoint_lookup=checkpoint_lookup, deployment_lookup=deployment_lookup)
 
@@ -41,10 +50,12 @@ def build_court_society_plan(
         role=CognitiveRole.FALSIFIER, trace_id=trace_id, risk_level=risk_level,
         complexity_level=complexity_level, evidence_requirement=evidence_requirement,
         allow_experimental=allow_experimental, allowed_capability_classes=allowed_capability_classes,
+        exclude_model_ids=exclude_model_ids,
         # Do not manufacture cosmetic diversity (spec §18) -- Falsifier is
-        # NOT told to exclude Constructor's model. If a genuinely different
-        # eligible model exists and scores higher, the router will pick it
-        # on its own merits; if not, honest same-model overlap follows.
+        # NOT told to exclude Constructor's model beyond WorldState-driven
+        # unavailability shared above. If a genuinely different eligible
+        # model exists and scores higher, the router will pick it on its
+        # own merits; if not, honest same-model overlap follows.
     )
     falsifier_decision = route(falsifier_request, profiles=profiles, checkpoint_lookup=checkpoint_lookup, deployment_lookup=deployment_lookup)
 
