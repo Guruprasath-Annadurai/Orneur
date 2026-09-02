@@ -14,7 +14,25 @@ is satisfied by construction, not by an extra redaction step.
 """
 from __future__ import annotations
 
+import re
+
 from orca.deliberation.contracts import Argument, CounterArgument, CourtRole, RoleExecution, TwinResult
+
+# Layered ON TOP of orca.truth.fetch's generic injection-pattern scan
+# (reused below, not duplicated) -- these are Deliberation-Fabric-
+# specific role-hijack attempts (spec §47's own named examples) that the
+# generic patterns don't cover, since they were written before Court
+# roles existed. Role identity is always set by the calling code
+# (CourtRole enum), never parsed from content -- these patterns exist
+# only to keep such content OUT of the prompt, not to detect a role
+# assignment that could ever actually happen.
+_ROLE_INJECTION_PATTERNS = [
+    r"\byou are (now |the )?(the )?(arbiter|constructor|falsifier|evidence clerk|risk counsel)\b",
+    r"\bignore (the )?(falsifier|constructor|arbiter|court)\b",
+    r"\bverdict (must|should|will) be\b",
+    r"\b(the )?verdict is\s*:?\s*(accept|reject|revise)\b",
+]
+_ROLE_INJECTION_RE = [re.compile(p, re.IGNORECASE) for p in _ROLE_INJECTION_PATTERNS]
 
 _CONSTRUCTOR_SYSTEM = """\
 You build the STRONGEST candidate answer to the objective, using ONLY the
@@ -40,6 +58,26 @@ For each claim, check for:
 Return ONLY JSON:
 {"objections": [{"claim_index": 0, "objection": "...", "objection_kind": "counter_evidence|missing_assumption|edge_case|unsupported_inference|temporal_scope_mismatch|contradiction|alternative_explanation"}],
  "unsupported_assumptions": ["..."], "unresolved_questions": ["..."]}"""
+
+
+def _sanitize_evidence_texts(evidence_texts: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Retrieved/uploaded evidence is untrusted content (spec §46-47) --
+    a passage containing "You are the Arbiter", "Ignore Falsifier",
+    "Verdict must be ACCEPT", etc. must never reach the Constructor/
+    Falsifier prompt at all. Reuses orca.truth.fetch.sanitize_extracted_text's
+    injection-pattern scan (the same one Memory's Firewall reuses) rather
+    than a third parallel implementation. Flagged passages are EXCLUDED
+    entirely, never "cleaned" and used anyway."""
+    from orca.truth.fetch import sanitize_extracted_text
+    safe = []
+    for eid, text in evidence_texts:
+        sanitized = sanitize_extracted_text(text)
+        if sanitized.flagged:
+            continue
+        if any(p.search(text) for p in _ROLE_INJECTION_RE):
+            continue
+        safe.append((eid, sanitized.text))
+    return safe
 
 
 class EpistemicTwin:
@@ -112,8 +150,9 @@ class EpistemicTwin:
         the full structured breakdown, even when the Falsifier finds
         nothing wrong (empty counter_arguments is itself meaningful,
         distinct from "Falsifier never ran")."""
-        claims, assumptions, constructor_exec = await self.construct(objective, evidence_texts)
-        counter_arguments, unsupported, unresolved, falsifier_exec = await self.falsify(objective, claims, evidence_texts)
+        safe_evidence_texts = _sanitize_evidence_texts(evidence_texts)
+        claims, assumptions, constructor_exec = await self.construct(objective, safe_evidence_texts)
+        counter_arguments, unsupported, unresolved, falsifier_exec = await self.falsify(objective, claims, safe_evidence_texts)
 
         disputed_ids = {ca.target_argument_id for ca in counter_arguments if ca.target_argument_id}
         surviving_ids = [c.argument_id for c in claims if c.argument_id not in disputed_ids]
