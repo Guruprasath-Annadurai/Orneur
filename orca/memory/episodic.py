@@ -100,6 +100,34 @@ def get_episode(scope: MemoryScope, scope_id: str, memory_id: str) -> MemoryEpis
     return None
 
 
+def delete_episode(scope: MemoryScope, scope_id: str, memory_id: str) -> bool:
+    """Privacy-safe tombstone (spec §29, §38), not a silent full removal:
+    the episode's content fields are redacted and lifecycle_state is set
+    to PURGED, but the ledger LINE remains (memory_id, timestamps,
+    scope) -- callers holding a source_ref to this episode_id can still
+    tell "this existed and was deleted" apart from "this id never
+    existed", which orca/memory/consolidation.py's derived-memory
+    re-evaluation (spec §39) depends on."""
+    path = _ledger_path(scope, scope_id)
+    episodes = _read_all(path)
+    found = False
+    rewritten = []
+    for ep in episodes:
+        if ep.memory_id == memory_id:
+            found = True
+            ep.actors, ep.event, ep.context = [], "", ""
+            ep.actions, ep.observations, ep.outcome = [], [], ""
+            from orca.memory.contracts import MemoryLifecycleState
+            ep.lifecycle_state = MemoryLifecycleState.PURGED
+        rewritten.append(ep)
+    if not found:
+        return False
+    with open(path, "w") as f:
+        for ep in rewritten:
+            f.write(json.dumps(asdict(ep)) + "\n")
+    return True
+
+
 def delete_ledger(scope: MemoryScope, scope_id: str) -> bool:
     """Full ledger removal for a scope -- used by account deletion (spec
     §38). Returns whether a ledger actually existed to delete."""
