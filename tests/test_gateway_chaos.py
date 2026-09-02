@@ -77,14 +77,17 @@ async def test_chaos_generation_timeout_does_not_hang_forever():
 
 
 @pytest.mark.asyncio
-async def test_chaos_deployment_draining_stops_new_requests_but_is_explicit():
+async def test_chaos_deployment_draining_stops_new_requests_but_is_explicit(tmp_path, monkeypatch):
+    import orca.gateway.deployment as deployment_mod
+    monkeypatch.setattr(deployment_mod, "DEPLOYMENT_DIR", tmp_path)
+
     runtime = _FakeRuntime()
     gw = ModelGateway()
     gw.register_runtime("fake", runtime)
     dep = _deployment()
     gw.register_deployment(dep)
 
-    dep.request_drain()
+    dep.request_drain()  # calls ModelDeployment.save() -- must never touch real ORCA_HOME (see docs/orneur/phase-7/TEST_ISOLATION.md)
     with pytest.raises(ModelNotRoutableError):
         await gw.generate(_req())
 

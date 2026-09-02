@@ -17,6 +17,26 @@ import shutil
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_gateway_registry_dirs(request, tmp_path, monkeypatch):
+    """
+    Regression protection (Phase 7.1 spec §29-30): `tests/test_gateway_chaos.py`
+    was found writing a real `ModelDeployment` record into the developer's
+    actual `~/.orca/registry/deployments/` (via `ModelDeployment.request_drain()`
+    -> `.save()`) because that one test forgot to isolate `DEPLOYMENT_DIR`.
+    Every `tests/test_gateway_*.py` module now gets `DEPLOYMENT_DIR`
+    pointed at a fresh `tmp_path` automatically, so a future test that
+    forgets an explicit `monkeypatch.setattr(..., "DEPLOYMENT_DIR", ...)`
+    still cannot touch real developer state. A test that explicitly sets
+    its own `DEPLOYMENT_DIR` override still works -- this fixture runs
+    first and the test's own `monkeypatch.setattr` simply takes over.
+    """
+    if request.module.__name__.startswith("tests.test_gateway") or request.module.__name__.startswith("test_gateway"):
+        import orca.gateway.deployment as deployment_mod
+        monkeypatch.setattr(deployment_mod, "DEPLOYMENT_DIR", tmp_path)
+    yield
+
+
 @pytest.fixture
 def isolated_home():
     """
