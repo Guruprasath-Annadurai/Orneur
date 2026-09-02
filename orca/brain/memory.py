@@ -270,7 +270,33 @@ class MemoryEngine:
         return self.short.to_api_messages()
 
     def distill_and_save(self, brain) -> str:
-        """Summarize session into semantic facts. Call at session end."""
+        """Summarize session into semantic facts. Call at session end.
+
+        Phase 5.1 (docs/orneur/phase-5/LEGACY_MEMORY_AUTHORITY_AUDIT.md):
+        this used to ALSO merge every session's distilled summary into one
+        shared, unscoped `all_sessions_summary` string -- readable by ANY
+        session via load_prior_context(), including through the
+        `memory_recall` agent tool on the multi-tenant web serving path
+        (orca/tools/__init__.py::_recall_memory_engine). That was a real,
+        confirmed cross-session (and, in a multi-user deployment,
+        cross-user) read path with zero scope check. Retired outright
+        (spec §9/§16 option "retire the path") -- no code still needs it,
+        and it never went through MemoryArbiter/evidence-lineage/firewall
+        governance in the first place.
+
+        The distilled summary is now ALSO routed through Memory
+        Continuum's real candidate/promotion pipeline, scoped to this
+        session and carrying NO evidence_refs (a raw self-summary of the
+        conversation is not verified against anything) -- MemoryArbiter
+        promotes it at UNVERIFIED, never KNOWN/SUPPORTED, per spec §9's
+        "no silently labeling generated summaries as SUPPORTED or KNOWN".
+        The legacy per-session `fact:session_{id[:8]}` key is still
+        written too (an explicit, documented dual-write -- see
+        docs/orneur/phase-5/MEMORY_MIGRATION.md) since
+        orca/variants/core.py's own `/recall` command still reads it
+        directly; it is itself session-scoped and was never part of the
+        cross-session leak.
+        """
         msgs = self.short.to_api_messages()
         if len(msgs) < 2:
             return ""
@@ -290,12 +316,29 @@ class MemoryEngine:
         except Exception:
             return ""
         self.semantic.store_fact(f"session_{self.session_id[:8]}", summary)
-        existing = self.semantic.recall_fact("all_sessions_summary") or ""
-        merged = f"{existing}\n\n[Session {self.session_id[:8]}]\n{summary}".strip()
-        self.semantic.store_fact("all_sessions_summary", merged[-4000:])
         self.save_session(summary=summary)
+
+        try:
+            from orca.memory.arbiter import MemoryArbiter
+            from orca.memory.contracts import MemoryCandidate, MemoryScope, MemoryType
+            from orca.memory import store as memory_store
+
+            arbiter = MemoryArbiter()
+            candidate = MemoryCandidate(
+                extracted_claim=summary[:2000], scope=MemoryScope.SESSION, scope_id=self.session_id,
+            )
+            existing = memory_store.list_records(MemoryType.SEMANTIC, MemoryScope.SESSION, self.session_id)
+            decision, _reasons = arbiter.decide_promotion(candidate, existing)
+            if decision.value == "PROMOTED":
+                arbiter.promote(candidate)
+        except Exception:
+            pass  # Memory Continuum promotion is additive -- never blocks the legacy summary from being returned/saved
+
         return summary
 
     def load_prior_context(self) -> str:
-        """Return distilled facts from past sessions to inject at startup."""
-        return self.semantic.recall_fact("all_sessions_summary") or ""
+        """Return this session's own distilled facts -- NEVER another
+        session's (see distill_and_save()'s docstring: the old
+        cross-session `all_sessions_summary` fallback was a real,
+        confirmed unscoped read leak, retired in Phase 5.1)."""
+        return self.semantic.recall_fact(f"session_{self.session_id[:8]}") or ""
