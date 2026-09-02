@@ -92,6 +92,19 @@ class CognitiveTraceBuilder:
             t.memory_query_id = working_memory_id
         t.memory_promotion_decisions.append(lifecycle_state)
 
+    def record_deliberation(self, mode: str, verdict: str | None = None, stop_reason: str | None = None, role_executions=None) -> None:
+        """Spec §45: structured labels only. `role_executions` is a list
+        of orca.deliberation.contracts.RoleExecution -- typed loosely
+        here to avoid a circular import."""
+        t = self._trace
+        t.reasoning_mode = mode
+        if verdict is not None:
+            t.court_verdict = verdict
+        if stop_reason is not None:
+            t.court_stop_reason = stop_reason
+        for role_exec in role_executions or []:
+            t.role_models_used[role_exec.role.value] = role_exec.model_id
+
     def finalize(self, budget: CognitiveBudget | None = None) -> CognitiveTrace:
         self._trace.latency_ms = (time.monotonic() - self._start) * 1000
         if budget is not None:

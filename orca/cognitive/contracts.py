@@ -431,3 +431,9 @@ class CognitiveTrace:
     memory_stale_count: int = 0
     memory_refresh_count: int = 0
     memory_promotion_decisions: list[str] = field(default_factory=list)
+    # Phase 6 (spec §45): Deliberation Fabric flight-recorder metadata --
+    # labels only, never raw private reasoning prose.
+    reasoning_mode: str | None = None
+    court_verdict: str | None = None
+    court_stop_reason: str | None = None
+    role_models_used: dict[str, str] = field(default_factory=dict)   # role -> model_id

@@ -513,6 +513,7 @@ class CognitiveKernel:
                 request.objective, plan.complexity.level, plan.risk.level, plan.evidence_requirement.level, truth_result=assessed,
             )
             trace_builder.record_operation_outcome(f"reasoning_mode:{reasoning_plan.mode.value}")
+            trace_builder.record_deliberation(reasoning_plan.mode.value)
 
             if reasoning_plan.requires_court:
                 is_audit_grade_precheck = plan.evidence_requirement.level.value == "AUDIT_GRADE"
@@ -522,6 +523,7 @@ class CognitiveKernel:
                     audit_grade=is_audit_grade_precheck, budget=plan.budget,
                 )
                 trace_builder.record_operation_outcome(f"court_verdict:{court_verdict.verdict.value}:{court_stop_reason}")
+                trace_builder.record_deliberation(reasoning_plan.mode.value, verdict=court_verdict.verdict.value, stop_reason=court_stop_reason, role_executions=case.role_executions)
                 if court_stop_reason == "DELIBERATION_BUDGET_EXHAUSTED":
                     return _abstain(AbstentionReason.DELIBERATION_BUDGET_EXHAUSTED, plan.plan_id)
                 if court_verdict.verdict == CourtVerdictState.REJECT:
