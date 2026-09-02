@@ -108,3 +108,8 @@ allow-direct-references = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "live_ollama_smoke: real, non-mocked test against a local Ollama instance -- bounded output/latency, part of the normal release suite (auto-skips if Ollama is unreachable). See docs/orneur/phase-3/TEST_EXECUTION_POLICY.md.",
+    "live_ollama_stress: sustained-concurrency/overload real-Ollama test -- NOT part of the normal release suite; run explicitly via -m live_ollama_stress. See docs/orneur/phase-3/TEST_EXECUTION_POLICY.md.",
+    "performance: benchmark/timing-measurement test -- reports numbers, does not gate pass/fail on absolute latency. See docs/orneur/phase-3/TEST_EXECUTION_POLICY.md.",
+]

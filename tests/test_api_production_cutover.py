@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,19 +19,21 @@ from orca.cognitive import metrics as cognitive_metrics
 from orca.cognitive import wiring as cognitive_wiring
 from orca.gateway import wiring as gateway_wiring
 from orca.serve import ratelimit
+from tests.ollama_test_support import ollama_reachable, require_ollama, warm_model
 
+# Phase 3.2: _ollama_reachable/_skip_if_no_ollama are now thin aliases
+# over tests/ollama_test_support.py's centralized versions (deduplicated
+# from the near-identical copy this file, and 8 others, used to define
+# locally -- see docs/orneur/phase-3/OLLAMA_TEST_RELIABILITY.md).
+_ollama_reachable = ollama_reachable
+_skip_if_no_ollama = require_ollama
 
-def _ollama_reachable() -> bool:
-    try:
-        r = httpx.get("http://localhost:11434/api/tags", timeout=2)
-        return r.status_code == 200
-    except Exception:
-        return False
-
-
-def _skip_if_no_ollama():
-    if not _ollama_reachable():
-        pytest.skip("No local Ollama instance reachable")
+# Phase 3.2 test classification (docs/orneur/phase-3/TEST_EXECUTION_POLICY.md):
+# this whole module is LIVE_OLLAMA_SMOKE -- real, non-mocked end-to-end
+# tests, part of the normal release suite, auto-skipping (not failing)
+# when Ollama is unreachable. Not LIVE_OLLAMA_STRESS: no test here
+# deliberately drives sustained concurrency/overload.
+pytestmark = pytest.mark.live_ollama_smoke
 
 
 @pytest.fixture(autouse=True)
@@ -150,10 +151,22 @@ def test_free_user_complex_request_is_downgraded_not_elevated(app_and_client):
     their entitled tier, degraded and disclosed -- never silently
     elevated to a paid tier's model."""
     _skip_if_no_ollama()
+    warm_model("nano")
     app, client = app_and_client
     _as_user(app, "free")
     resp = client.post("/api/chat", json={
-        "message": "Orchestrate this multi-step task: compare and analyze the trade-offs, comprehensive, in depth.",
+        # "Answer in one short sentence" keeps this a real, DEEP/AGENTIC-
+        # classified request (proven in orca/cognitive/tests -- the
+        # classifier keys on the keywords, not response length) while
+        # bounding the actual generation AgentLoop performs when it defers
+        # to it. Without this, the model's own "comprehensive, in depth"
+        # response reliably exceeds AgentLoop's 150-word reflection
+        # threshold, triggering a SECOND full real generation call and
+        # roughly tripling this test's wall-clock Ollama usage -- see
+        # docs/orneur/phase-3/OLLAMA_TEST_RELIABILITY.md for the measured
+        # evidence this was the actual cause of this test's flakiness
+        # under real system load, not a Kernel/entitlement defect.
+        "message": "Orchestrate this multi-step task: compare and analyze the trade-offs, comprehensive, in depth. Answer in one short sentence.",
         "model_variant": "nano",
     })
     assert resp.status_code == 200
@@ -183,10 +196,22 @@ def test_metadata_cannot_manufacture_entitlement(app_and_client):
 
 def test_aeternum_still_unavailable_through_kernel_authoritative_chat(app_and_client):
     _skip_if_no_ollama()
+    warm_model("nano")
     app, client = app_and_client
     _as_user(app, "enterprise")
     resp = client.post("/api/chat", json={
-        "message": "Orchestrate this multi-step task: compare and analyze the trade-offs, comprehensive, in depth.",
+        # "Answer in one short sentence" keeps this a real, DEEP/AGENTIC-
+        # classified request (proven in orca/cognitive/tests -- the
+        # classifier keys on the keywords, not response length) while
+        # bounding the actual generation AgentLoop performs when it defers
+        # to it. Without this, the model's own "comprehensive, in depth"
+        # response reliably exceeds AgentLoop's 150-word reflection
+        # threshold, triggering a SECOND full real generation call and
+        # roughly tripling this test's wall-clock Ollama usage -- see
+        # docs/orneur/phase-3/OLLAMA_TEST_RELIABILITY.md for the measured
+        # evidence this was the actual cause of this test's flakiness
+        # under real system load, not a Kernel/entitlement defect.
+        "message": "Orchestrate this multi-step task: compare and analyze the trade-offs, comprehensive, in depth. Answer in one short sentence.",
         "model_variant": "ultra",
     })
     assert resp.status_code == 200
