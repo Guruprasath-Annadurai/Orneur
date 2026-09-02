@@ -38,11 +38,53 @@ this, not just re-running until green.
    during this session's own benchmarking work).
 
 **Conclusion**: real Ollama resource contention under concurrent load,
-not a code defect, an auth-DB fixture issue, or a race in the code under
-test — consistent with the already-documented flakiness class, and
-consistent with every individual/group reproduction passing cleanly.
-The one collateral finding (hard-coded session_id) is fixed as a
-legitimate, independent hardening improvement.
+not a code defect, a race in the code under test, or (for THIS
+particular test) an auth-DB fixture issue — consistent with the
+already-documented flakiness class, and consistent with every
+individual/group reproduction passing cleanly. The one collateral
+finding (hard-coded session_id) is fixed as a legitimate, independent
+hardening improvement.
+
+## A second, real auth-DB fixture issue — found and fixed (not the same one)
+
+A later, fuller security-suite run in this same phase (after this
+phase's own new memory-authority test files were added) surfaced 3
+NEW failures, all in `tests/test_api_production_cutover.py`, all
+`HTTP 429` where `402`/`200`/`422` was expected:
+`test_metadata_cannot_manufacture_entitlement`,
+`test_malformed_cognitive_metadata_does_not_crash_or_escalate`,
+`test_admin_role_string_in_body_does_not_bypass_ultra_gate`. These are
+deterministic entitlement tests with no Ollama dependency, so the
+"contention" explanation above did not apply — investigated properly
+rather than assumed:
+
+1. Reproduced in a **fresh, isolated process** — still failed (ruling
+   out a within-process ordering effect).
+2. Read the actual response body instead of guessing:
+   `{"error": "Daily limit reached (52/50). Upgrade to Pro for
+   unlimited messages."}` — a real quota rejection, not a rate-limit
+   rejection.
+3. Traced to `orca.auth.store.increment_usage()`, which writes a real,
+   persistent sqlite `usage_daily` row keyed by `(user_id, date)`. This
+   test file's `_as_user()` helper hard-codes `user_id="u-test"` across
+   many call sites. The file's own `_reset_state` autouse fixture
+   already clears the in-process rate-limit counter every test (with a
+   comment explaining exactly why: cross-run flakiness) — but nothing
+   cleared this quota table, which (unlike the rate limiter) survives
+   across every separate `pytest` process invocation on the same
+   calendar date. After this session's cumulative volume of test runs
+   today, `"u-test"`'s free-tier daily quota (50 messages) was
+   genuinely exhausted.
+
+**Fixed**: `_reset_state` now also deletes `"u-test"`'s `usage_daily`
+rows, in the same fixture, for the same documented reason as the
+rate-limit clear beside it. Verified: all 3 tests pass individually and
+the full 15-test file passes together immediately after the fix.
+
+This is the kind of failure spec §18 is explicitly guarding against —
+it looked superficially similar to "just flaky," but was a real,
+fixable test-isolation bug with a concrete root cause, not resolved by
+assumption or by rerunning.
 
 ## Final qualification runs (this phase, clean)
 
