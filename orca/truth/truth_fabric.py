@@ -272,6 +272,24 @@ class TruthFabric:
                 complexity=ComplexityLevel.MEDIUM,
             )
             verification_ledger = _SocietyBudgetLedger(budget=budget, allocation=verification_allocation)
+            # verify_answer's per-claim reservation count is not known
+            # until AFTER claim extraction (it depends on how many claims
+            # the extractor returns), so a small, fixed PERCENTAGE-of-pool
+            # cap (verification's ~15% base weight -- see
+            # docs/orneur/phase-7/BUDGET_EXECUTION.md) can be smaller than
+            # what a request with several claims genuinely needs, causing
+            # a premature TruthBudgetExhaustedError even though the real
+            # shared budget has capacity left (a real regression found
+            # and fixed live during Phase 7.1's own testing). Verification
+            # is effectively the sole MODEL_CALLS consumer within
+            # verify_answer's own scope, so its cap is widened to the
+            # full REMAINING shared-budget capacity -- still bounded by
+            # (never exceeding) the real `CognitiveBudget`, just not
+            # artificially pre-throttled below it.
+            from orca.cognitive.budget import remaining as _remaining_budget
+            remaining_calls = _remaining_budget(budget, BudgetDimension.MODEL_CALLS)
+            if remaining_calls is not None:
+                verification_ledger.caps["verification"] = max(verification_ledger.caps["verification"], int(remaining_calls))
 
         start = time.monotonic()
         try:
