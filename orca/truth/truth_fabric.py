@@ -137,8 +137,11 @@ class TruthFabric:
             except TruthBudgetExhaustedError:
                 stop_reason = "budget_exhausted"
                 break
+            from orca.society.contracts import CognitiveRole
+            from orca.society.router import resolve_tier_for_role
+            rewriter_tier, _rewriter_decision = resolve_tier_for_role(CognitiveRole.QUERY_REWRITER)
             try:
-                reformed = await asyncio.wait_for(reform_query(plan.queries[0].text, gap_reason), timeout=SEARCH_TIMEOUT_S)
+                reformed = await asyncio.wait_for(reform_query(plan.queries[0].text, gap_reason, tier=rewriter_tier), timeout=SEARCH_TIMEOUT_S)
             except asyncio.TimeoutError:
                 stop_reason = "reform_query_unavailable"
                 break
@@ -219,17 +222,39 @@ class TruthFabric:
         prior_result: TruthResult,
         *,
         budget: CognitiveBudget | None = None,
-        tier: str = "nano",
+        tier: str | None = None,
         run_counter_evidence: bool = False,
+        allow_experimental_models: bool = False,
     ) -> TruthResult:
         """`run_counter_evidence=True` (the Kernel passes this for
         AUDIT_GRADE requests -- spec §16) triggers the bounded
         FIND_COUNTER_EVIDENCE hook against the single highest-confidence
         SUPPORTED claim, if any. Never runs for every claim -- one bounded
-        adversarial search per verify_answer() call, at most."""
+        adversarial search per verify_answer() call, at most.
+
+        Phase 7.1 spec §5-6: `tier=None` (the default -- the Kernel never
+        overrides this today, so this IS the live production path) resolves
+        claim extraction / verification / contradiction-judging through
+        Model Society (CLAIM_EXTRACTOR / VERIFIER roles) instead of a
+        hardcoded `"nano"` literal. Passing an explicit `tier` string
+        bypasses Society entirely (LEGACY_COMPATIBILITY -- existing callers
+        like `orca.memory.candidates` that pass their own tier keep working
+        unchanged). Society routing still respects lifecycle/entitlement/
+        budget hard filters -- it cannot silently promote Novus into a
+        production request."""
+        from orca.society.contracts import CognitiveRole
+        from orca.society.router import resolve_tier_for_role
+
+        extractor_tier, extractor_decision = resolve_tier_for_role(
+            CognitiveRole.CLAIM_EXTRACTOR, override_tier=tier, allow_experimental=allow_experimental_models,
+        )
+        verifier_tier, verifier_decision = resolve_tier_for_role(
+            CognitiveRole.VERIFIER, override_tier=tier, allow_experimental=allow_experimental_models,
+        )
+
         start = time.monotonic()
         try:
-            claims = await asyncio.wait_for(extract_atomic_claims(answer_text, tier=tier), timeout=VERIFICATION_TIMEOUT_S)
+            claims = await asyncio.wait_for(extract_atomic_claims(answer_text, tier=extractor_tier), timeout=VERIFICATION_TIMEOUT_S)
         except asyncio.TimeoutError:
             raise TruthTimeoutError(internal_detail=f"claim extraction exceeded VERIFICATION_TIMEOUT_S={VERIFICATION_TIMEOUT_S}")
 
@@ -240,10 +265,10 @@ class TruthFabric:
         for claim in claims:
             if budget is not None:
                 _consume_or_raise(budget, BudgetDimension.MODEL_CALLS, 1)
-            support = await verify_claim(claim.claim_id, claim.text, prior_result.evidence, tier=tier)
+            support = await verify_claim(claim.claim_id, claim.text, prior_result.evidence, tier=verifier_tier)
             claim_supports.append(support)
 
-        answer_contradictions = await detect_contradictions(claims, tier=tier)
+        answer_contradictions = await detect_contradictions(claims, tier=verifier_tier)
         # Evidence-vs-evidence contradictions already found in assess_evidence
         # remain visible here too -- verification never drops a known
         # source conflict just because the model's answer didn't repeat it.
@@ -273,6 +298,7 @@ class TruthFabric:
             citation_verdicts=citation_mod.reject_unsupported(citation_verdicts),
             contradictions=contradictions, context_block=prior_result.context_block, citation_coverage=coverage,
             latency_ms=(time.monotonic() - start) * 1000, counter_evidence=counter_evidence,
+            routing_decision_ids=[extractor_decision.decision_id, verifier_decision.decision_id],
         )
 
     async def _retrieve(

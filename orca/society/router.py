@@ -51,6 +51,43 @@ def model_id_to_tier(model_id: str) -> str:
     docs/orneur/phase-7/CURRENT_MODEL_ROUTING.md)."""
     return _MODEL_ID_TO_TIER.get(model_id, "nano")
 
+
+def resolve_tier_for_role(
+    role,
+    *,
+    override_tier: str | None = None,
+    allow_experimental: bool = False,
+    allowed_capability_classes: list[str] | None = None,
+) -> tuple[str, "RoutingDecision"]:
+    """
+    The single place a Truth Fabric/Memory production call site resolves
+    its serving tier through Model Society instead of a hardcoded literal
+    (Phase 7.1 spec §5-7). `override_tier`, when given, is an EXPLICIT
+    caller override (e.g. a test or a compatibility caller that still
+    wants a specific tier) -- Society routing is bypassed entirely in that
+    case, and the returned `RoutingDecision` is a synthetic
+    `RoutingReason.EXCLUDED_BY_CALLER`-free record for trace consistency.
+    Falls back to `"nano"` (never silently to a different, unrequested
+    tier) only when Society finds literally no eligible candidate for the
+    role -- this never happens today (legacy Genesis is always eligible
+    for every declared role absent an entitlement/context constraint), so
+    the fallback is a documented, honest safety net, not the real
+    production path.
+    """
+    if override_tier is not None:
+        tier_to_model_id = {v: k for k, v in _MODEL_ID_TO_TIER.items()}
+        decision = RoutingDecision(
+            requested_role=role, selected_model_id=tier_to_model_id.get(override_tier),
+            reasons=["EXCLUDED_BY_CALLER: explicit tier override -- Society routing bypassed"],
+        )
+        return override_tier, decision
+
+    request = RoutingRequest(role=role, allow_experimental=allow_experimental, allowed_capability_classes=allowed_capability_classes or [])
+    decision = route(request)
+    if decision.selected_model_id is None:
+        return "nano", decision
+    return model_id_to_tier(decision.selected_model_id), decision
+
 # Explicit, testable scoring weights (spec §14). Sum to 1.0.
 W_ROLE_SUITABILITY = 0.50
 W_SAFETY = 0.20

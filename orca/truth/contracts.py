@@ -311,6 +311,10 @@ class TruthResult:
     corrective_rounds: list["CorrectiveRound"] = field(default_factory=list)
     retrieval_stop_reason: str = ""
     counter_evidence: "CounterEvidenceResult | None" = None
+    # Phase 7.1 spec §38: Model Society RoutingDecision IDs for every
+    # role-based model call verify_answer()/assess_evidence() made --
+    # short structured labels only, never raw reasoning.
+    routing_decision_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
