@@ -95,3 +95,29 @@ async def test_detect_contradictions_does_not_flag_unrelated_claims():
 async def test_detect_contradictions_bounded_below_two_claims():
     contradictions = await detect_contradictions([AtomicClaim(claim_id="a", text="Only one claim.")])
     assert contradictions == []
+
+
+@pytest.mark.asyncio
+async def test_detect_contradictions_does_not_flag_comparative_claim_as_direct_conflict():
+    """Phase 4.1 spec §19: reproduces the exact nano-tier judge false
+    positive found by Phase 4's evaluation harness (see
+    docs/orneur/phase-4/EVALUATION_V2.md) -- a comparative claim ("Model A
+    performs better...") and a specific-value claim about one of the
+    compared subjects ("Model B achieves 88%...") are logically
+    consistent, not contradictory. The judge prompt was extended with an
+    explicit rule + example for this pattern; this regression test pins
+    down that DIRECT_CONTRADICTION (the worse of the two possible
+    failures -- it forces EvidenceState.CONFLICTED) is no longer produced
+    for this pattern. A generically correct UNRELATED/TEMPORALLY_
+    RECONCILABLE classification for a genuinely non-contradictory pair
+    like this is still an open, disclosed nano-tier judge imprecision
+    (see EVALUATION_V2.md) -- this test only asserts the specific
+    high-severity misclassification is fixed, not that the label is
+    perfectly correct."""
+    require_ollama()
+    claims = [
+        AtomicClaim(claim_id="a", text="Model B achieves 88% accuracy."),
+        AtomicClaim(claim_id="b", text="Model A performs better than Model B based on accuracy."),
+    ]
+    contradictions = await detect_contradictions(claims)
+    assert not any(c.relationship == ContradictionRelationship.DIRECT_CONTRADICTION for c in contradictions)

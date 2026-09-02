@@ -38,6 +38,7 @@ class EvalCase:
                                        # isolates citation/claim-verification metrics from generation quality)
     expected_supported: bool          # whether answer_text SHOULD be judged supported by this corpus
     expected_contradicted_pair: bool = False  # for the one contradiction-detection case
+    evidence_level: EvidenceLevel = EvidenceLevel.SUPPORTED   # Phase 4.1 spec §32 additions use STRICT/AUDIT_GRADE
 
 
 # Small, hand-labeled corpus -- 6 cases, each with its own tiny document
@@ -118,6 +119,41 @@ CASES: list[EvalCase] = [
     ),
 ]
 
+# Phase 4.1 additions (spec §32) -- kept SEPARATE from the original six
+# above, never replacing them. Web-search-dependent case types from the
+# spec's list (low-authority web evidence, derived-duplicate web source,
+# prompt-injected page) are covered by dedicated deterministic pytest
+# tests instead of this harness (tests/test_truth_safe_fetch_cutover.py,
+# tests/test_truth_evidence_provenance_graph.py) -- this sandbox has no
+# outbound web access (orca.tools.web.search returns [] here), so a
+# harness case depending on live DuckDuckGo results would be flaky/empty
+# rather than a real measurement. See EVALUATION_V2.md.
+CASES_V2: list[EvalCase] = [
+    EvalCase(
+        case_id="audit_grade_strong_evidence",
+        corpus=[
+            ("d1", "The database migration runbook states: run `ALTER TABLE users ADD COLUMN verified_at TIMESTAMP;` before deploying v2."),
+            ("d2", "Rollback procedure: run `ALTER TABLE users DROP COLUMN verified_at;` if the migration fails."),
+        ],
+        query="What is the exact migration command to add the verified_at column?",
+        relevant_doc_ids=["d1"],
+        answer_text="Run `ALTER TABLE users ADD COLUMN verified_at TIMESTAMP;` before deploying v2.",
+        expected_supported=True,
+        evidence_level=EvidenceLevel.AUDIT_GRADE,
+    ),
+    EvalCase(
+        case_id="audit_grade_insufficient_evidence",
+        corpus=[
+            ("d1", "The office is located on the fifth floor of the building."),
+        ],
+        query="What is the exact rollback command for the payment service migration?",
+        relevant_doc_ids=[],
+        answer_text="The rollback command is not documented in the available materials.",
+        expected_supported=False,
+        evidence_level=EvidenceLevel.AUDIT_GRADE,
+    ),
+]
+
 
 def _dcg(relevances: list[int]) -> float:
     return sum(rel / math.log2(i + 2) for i, rel in enumerate(relevances))
@@ -139,7 +175,16 @@ class CaseResult:
     ndcg: float
     citation_coverage_ratio: float | None
     unsupported_claim_rate: float
-    contradiction_detected: bool
+    # Split (Phase 4.1 spec §20: report honestly) -- "any_contradiction"
+    # includes TEMPORALLY_RECONCILABLE/SCOPE_DIFFERENCE/LIKELY_CONFLICT,
+    # which are NOT flagged as a real conflict (EvidenceState stays
+    # unaffected by them); "direct_conflict" is only DIRECT_CONTRADICTION,
+    # the one relationship that actually drives EvidenceState.CONFLICTED.
+    # Phase 4's original single `contradiction_detected` field conflated
+    # these, making a real fix (the nano judge no longer misclassifying a
+    # comparative claim as DIRECT_CONTRADICTION) invisible in that metric.
+    any_contradiction_detected: bool
+    direct_conflict_detected: bool
     retrieval_latency_ms: float
     verification_latency_ms: float
     supported_matches_expected: bool
@@ -148,7 +193,7 @@ class CaseResult:
 async def _run_case(fabric: TruthFabric, case: EvalCase) -> CaseResult:
     store = _build_doc_store(case)
     intent = compile_intent(case.query)
-    req = TruthRequest(objective=case.query, evidence_requirement=EvidenceLevel.SUPPORTED, freshness_requirement=FreshnessLevel.STATIC)
+    req = TruthRequest(objective=case.query, evidence_requirement=case.evidence_level, freshness_requirement=FreshnessLevel.STATIC)
 
     t0 = time.monotonic()
     assessed = await fabric.assess_evidence(req, intent, ComplexityLevel.LOW, doc_store=store)
@@ -173,12 +218,15 @@ async def _run_case(fabric: TruthFabric, case: EvalCase) -> CaseResult:
     unsupported = final.citation_coverage.get("unsupported_claims", 0)
     unsupported_rate = (unsupported / total_claims) if total_claims else 0.0
     is_supported = coverage is not None and coverage > 0
-    contradiction_detected = bool(final.contradictions)
+    from orca.truth.contracts import ContradictionRelationship
+    any_contradiction_detected = bool(final.contradictions)
+    direct_conflict_detected = any(c.relationship == ContradictionRelationship.DIRECT_CONTRADICTION for c in final.contradictions)
 
     return CaseResult(
         case_id=case.case_id, recall_at_k=recall_at_k, reciprocal_rank=reciprocal_rank, ndcg=ndcg,
         citation_coverage_ratio=coverage, unsupported_claim_rate=unsupported_rate,
-        contradiction_detected=contradiction_detected, retrieval_latency_ms=retrieval_latency_ms,
+        any_contradiction_detected=any_contradiction_detected, direct_conflict_detected=direct_conflict_detected,
+        retrieval_latency_ms=retrieval_latency_ms,
         verification_latency_ms=verification_latency_ms, supported_matches_expected=(is_supported == case.expected_supported),
     )
 
@@ -201,13 +249,36 @@ async def run_all() -> dict:
         ),
         "mean_unsupported_claim_rate": round(sum(r.unsupported_claim_rate for r in results) / n, 3),
         "claim_support_precision": round(sum(1 for r in results if r.supported_matches_expected) / n, 3),
-        "contradiction_case_detected": next(
-            (r.contradiction_detected for r, c in zip(results, CASES) if c.expected_contradicted_pair), None,
+        "contradiction_case_any_detected": next(
+            (r.any_contradiction_detected for r, c in zip(results, CASES) if c.expected_contradicted_pair), None,
+        ),
+        "contradiction_case_direct_conflict_detected": next(
+            (r.direct_conflict_detected for r, c in zip(results, CASES) if c.expected_contradicted_pair), None,
+        ),
+        "false_positive_case_direct_conflict_detected": next(
+            (r.direct_conflict_detected for r, c in zip(results, CASES) if c.case_id == "multi_doc_synthesis"), None,
         ),
         "mean_retrieval_latency_ms": round(sum(r.retrieval_latency_ms for r in results) / n, 1),
         "mean_verification_latency_ms": round(sum(r.verification_latency_ms for r in results) / n, 1),
         "per_case": [vars(r) for r in results],
     }
+
+    # Phase 4.1 additions (spec §32) -- reported separately, never
+    # blended into the original six cases' numbers above, so the
+    # before/after comparison in EVALUATION_V2.md stays apples-to-apples.
+    v2_results = [await _run_case(fabric, case) for case in CASES_V2]
+    summary["v2_additions"] = {
+        "cases_run": len(v2_results),
+        "audit_grade_success_case_completed_with_sufficient_evidence": next(
+            (r.citation_coverage_ratio is not None and r.citation_coverage_ratio >= 0.8
+             for r, c in zip(v2_results, CASES_V2) if c.case_id == "audit_grade_strong_evidence"), None,
+        ),
+        "audit_grade_insufficient_case_correctly_shows_no_coverage": next(
+            (r.citation_coverage_ratio in (None, 0) for r, c in zip(v2_results, CASES_V2) if c.case_id == "audit_grade_insufficient_evidence"), None,
+        ),
+        "per_case": [vars(r) for r in v2_results],
+    }
+    gateway_wiring.reset_for_tests()
     return summary
 
 

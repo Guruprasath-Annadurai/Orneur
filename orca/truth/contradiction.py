@@ -25,6 +25,13 @@ Do NOT flag as a contradiction:
 - A claim that was true at one time and a claim that is true now (that is
   TEMPORALLY_RECONCILABLE, not a contradiction -- note it as such)
 - Complementary or additional information
+- A comparative claim ("X is better/faster/higher than Y") and a claim
+  giving one of the specific values the comparison could be based on --
+  these are CONSISTENT as long as no specific number or fact in one
+  claim directly conflicts with a specific number or fact in the other.
+
+Example (NOT a contradiction): "Product B costs $50." vs "Product A is cheaper than Product B."
+Example (a real contradiction): "The limit is 100." vs "The limit is 500."
 
 Return ONLY JSON:
 {"relationship": "DIRECT_CONTRADICTION"|"TEMPORALLY_RECONCILABLE"|"UNRELATED", "temporal_context": "", "reason": "one sentence"}"""
