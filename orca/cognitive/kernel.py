@@ -52,6 +52,13 @@ from orca.cognitive.trace import CognitiveTraceBuilder
 # is real (not an error), just not something THIS method executes.
 _KERNEL_EXECUTABLE_OPS = {OperationType.ANSWER_DIRECTLY, OperationType.REASON, OperationType.RECALL_MEMORY}
 
+# Since Phase 4: real via orca.truth.truth_fabric.TruthFabric, bounded,
+# Gateway-routed. Handled by _answer_with_truth_fabric() below -- NOT by
+# _answer_directly(), and NOT delegated to the existing serving stack, as
+# long as the plan needs nothing ELSE (USE_TOOL/DELEGATE_AGENT) beyond
+# these three operations.
+_TRUTH_FABRIC_OPS = {OperationType.RETRIEVE, OperationType.SEARCH, OperationType.VERIFY}
+
 
 class CognitiveKernel:
     def __init__(self, gateway=None):
@@ -103,8 +110,15 @@ class CognitiveKernel:
         )
         return plan
 
-    async def execute(self, request: CognitiveRequest, entitlement: EntitlementPolicy | None = None) -> CognitiveResult:
+    async def execute(self, request: CognitiveRequest, entitlement: EntitlementPolicy | None = None, doc_store=None) -> CognitiveResult:
         """
+        `doc_store`, when given (Phase 4), lets the Kernel route a plan
+        needing RETRIEVE/SEARCH/VERIFY through orca.truth.truth_fabric's
+        TruthFabric itself rather than deferring to the existing serving
+        stack -- see _answer_with_truth_fabric(). Omitting it (or a plan
+        that ALSO needs USE_TOOL/DELEGATE_AGENT) preserves exact Phase 3.1
+        deferred behavior.
+
         `entitlement`, when given, makes this call entitlement-aware
         (Phase 3.1): the Kernel's own ModelPolicy is reconciled against it
         via orca/cognitive/reconciliation.py BEFORE any tier is resolved,
@@ -161,7 +175,16 @@ class CognitiveKernel:
             )
 
         executable_ops = [op for op in plan.operations if op.type in _KERNEL_EXECUTABLE_OPS and op.support_state == OperationSupportState.SUPPORTED_NOW]
-        non_kernel_ops = [op for op in plan.operations if op.type not in _KERNEL_EXECUTABLE_OPS]
+        truth_fabric_ops = [op for op in plan.operations if op.type in _TRUTH_FABRIC_OPS and op.support_state == OperationSupportState.SUPPORTED_NOW]
+        other_ops = [op for op in plan.operations if op.type not in _KERNEL_EXECUTABLE_OPS and op.type not in _TRUTH_FABRIC_OPS]
+        # A plan needing USE_TOOL/DELEGATE_AGENT (in `other_ops`) ALONGSIDE
+        # RETRIEVE/SEARCH/VERIFY still defers everything to the existing
+        # stack unchanged (Truth Fabric doesn't run tools/agents). Absent
+        # that, Truth Fabric runs even with doc_store=None -- it honestly
+        # reports INSUFFICIENT evidence rather than needing a fallback
+        # (verified in tests/test_truth_fabric_integration.py).
+        use_truth_fabric = bool(truth_fabric_ops) and not other_ops
+        non_kernel_ops = other_ops if use_truth_fabric else other_ops + truth_fabric_ops
 
         sm.transition(CognitiveState.EXECUTING)
         trace_builder.record_transition(sm.history[-1])
@@ -194,6 +217,12 @@ class CognitiveKernel:
                     plan_id=plan.plan_id, abstention_reason=AbstentionReason.POLICY_RESTRICTION, latency_ms=latency_ms,
                     degraded=True, degradation_reason=effective.reason, user_notification_required=True,
                 )
+
+        if use_truth_fabric:
+            return await self._answer_with_truth_fabric(
+                request, plan, resolved_tier, doc_store, sm, trace_builder, start,
+                degraded, degradation_reason, notification_required,
+            )
 
         if non_kernel_ops:
             # Real, valid plan -- but satisfying RETRIEVE/USE_TOOL/
@@ -308,3 +337,92 @@ class CognitiveKernel:
             "total_tokens": (response.prompt_tokens or 0) + (response.completion_tokens or 0),
         }
         return response.output, response.resolved_version, usage
+
+    async def _answer_with_truth_fabric(
+        self, request: CognitiveRequest, plan, resolved_tier: str, doc_store, sm, trace_builder, start: float,
+        degraded: bool, degradation_reason, notification_required: bool,
+    ) -> CognitiveResult:
+        """
+        Phase 4: a plan needing only RETRIEVE/SEARCH/VERIFY (no
+        USE_TOOL/DELEGATE_AGENT) is answered end-to-end through
+        orca.truth.truth_fabric.TruthFabric -- assess evidence, answer via
+        ModelGateway using the retrieved context, then verify the answer's
+        own claims against that evidence. For AUDIT_GRADE evidence
+        requirements specifically, a failed verification (insufficient/
+        conflicted/low-authority evidence AFTER checking, not merely
+        assumed) means an honest abstention (spec §36), never a fabricated
+        "verified" answer.
+        """
+        from orca.gateway.errors import ModelNotRoutableError
+        from orca.truth.contracts import EvidenceState, TruthRequest
+        from orca.truth.errors import TruthBudgetExhaustedError, TruthError
+        from orca.truth.truth_fabric import TruthFabric
+
+        def _abstain(reason: AbstentionReason, plan_id: str) -> CognitiveResult:
+            sm.transition(CognitiveState.ABSTAINED)
+            trace_builder.record_transition(sm.history[-1])
+            trace_builder.record_abstention(reason)
+            metrics.record_abstention(reason.value)
+            if reason == AbstentionReason.BUDGET_EXHAUSTED:
+                metrics.record_budget_exhaustion()
+            trace_builder.finalize(plan.budget)
+            latency_ms = (time.monotonic() - start) * 1000
+            metrics.record_total_latency(latency_ms)
+            return CognitiveResult(
+                request_id=request.request_id, trace_id=request.trace_id, status=CognitiveState.ABSTAINED,
+                plan_id=plan_id, abstention_reason=reason, latency_ms=latency_ms,
+            )
+
+        truth_fabric = TruthFabric()
+        truth_request = TruthRequest(
+            objective=request.objective, evidence_requirement=plan.evidence_requirement.level,
+            freshness_requirement=plan.freshness.level, trace_id=request.trace_id,
+        )
+        strict_or_higher = plan.evidence_requirement.level.value in ("STRICT", "AUDIT_GRADE")
+
+        try:
+            assessed = await truth_fabric.assess_evidence(
+                truth_request, plan.intent, plan.complexity.level, doc_store=doc_store, budget=plan.budget,
+            )
+            if strict_or_higher and assessed.evidence_state in (EvidenceState.INSUFFICIENT, EvidenceState.CONFLICTED, EvidenceState.LOW_AUTHORITY):
+                return _abstain(AbstentionReason.INSUFFICIENT_EVIDENCE, plan.plan_id)
+
+            consume(plan.budget, BudgetDimension.MODEL_CALLS, 1)
+            objective_with_context = (
+                f"{request.objective}\n\n[Retrieved context]\n{assessed.context_block}" if assessed.context_block else request.objective
+            )
+            output_text, resolved_model, usage = await self._answer_directly(objective_with_context, resolved_tier, request.trace_id)
+
+            final = await truth_fabric.verify_answer(output_text, assessed, budget=plan.budget)
+            if plan.evidence_requirement.level.value == "AUDIT_GRADE" and final.evidence_state != EvidenceState.SUFFICIENT:
+                return _abstain(AbstentionReason.INSUFFICIENT_EVIDENCE, plan.plan_id)
+        except CognitiveBudgetExhaustedError:
+            return _abstain(AbstentionReason.BUDGET_EXHAUSTED, plan.plan_id)
+        except TruthBudgetExhaustedError:
+            return _abstain(AbstentionReason.BUDGET_EXHAUSTED, plan.plan_id)
+        except ModelNotRoutableError:
+            return _abstain(AbstentionReason.MODEL_UNAVAILABLE, plan.plan_id)
+        except TruthError as e:
+            sm.transition(CognitiveState.FAILED)
+            trace_builder.record_transition(sm.history[-1])
+            trace_builder.finalize(plan.budget)
+            raise CognitiveExecutionFailedError(internal_detail=str(e)) from e
+
+        metrics.record_model_resolution(resolved_model)
+        trace_builder.record_model_resolved(resolved_model)
+        trace_builder.record_operation_outcome(f"answered_via_truth_fabric:{final.evidence_state.value}")
+
+        sm.transition(CognitiveState.COMPLETED)
+        trace_builder.record_transition(sm.history[-1])
+        trace_builder.finalize(plan.budget)
+
+        latency_ms = (time.monotonic() - start) * 1000
+        metrics.record_total_latency(latency_ms)
+        return CognitiveResult(
+            request_id=request.request_id, trace_id=request.trace_id, status=CognitiveState.COMPLETED,
+            output=output_text, resolved_model=resolved_model, resolved_tier=resolved_tier, plan_id=plan.plan_id,
+            operations_executed=[op.type for op in plan.operations if op.type in _TRUTH_FABRIC_OPS],
+            latency_ms=latency_ms, usage=usage,
+            evidence_state=final.evidence_state.value, citation_coverage=final.citation_coverage,
+            degraded=degraded, degradation_reason=degradation_reason, user_notification_required=notification_required,
+        )

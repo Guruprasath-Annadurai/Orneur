@@ -191,7 +191,7 @@ _ABSTENTION_MESSAGES = {
 }
 
 
-async def _run_cognitive_kernel(message: str, user: "User | None", model_variant: str | None):
+async def _run_cognitive_kernel(message: str, user: "User | None", model_variant: str | None, session_id: str | None = None):
     """
     Phase 3.1: the Cognitive Kernel is now AUTHORITATIVE for planning and,
     where possible, execution of /api/chat and /api/stream requests (see
@@ -244,7 +244,16 @@ async def _run_cognitive_kernel(message: str, user: "User | None", model_variant
         objective=message, session_id=None, requested_mode=model_variant,
         tenant=user.id if user else None,
     )
-    return await kernel.execute(cognitive_request, entitlement=entitlement)
+
+    # Phase 4: a lightweight lookup into the existing module-level
+    # `_sessions` dict, not a forced full _Session construction (this
+    # function runs BEFORE session construction on the /api/chat and
+    # /api/stream paths -- see the caller's own comment on why). Only an
+    # ALREADY-LIVE session's DocStore is used; a brand-new session simply
+    # has no doc_store yet, which TruthFabric already handles honestly
+    # (no evidence found, not a fabricated citation).
+    doc_store = _sessions[session_id].doc_store if session_id and session_id in _sessions else None
+    return await kernel.execute(cognitive_request, entitlement=entitlement, doc_store=doc_store)
 
 
 def _record_shadow_verification(requested_tier: str | None, resolved_tier: str | None) -> None:
@@ -704,7 +713,7 @@ async def chat(
     from orca.cognitive.errors import CognitiveError
 
     try:
-        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant)
+        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
     except Exception as e:
         # A real internal Kernel failure -- the Kernel is authoritative
         # now, so this must surface as a clean error, never be silently
@@ -902,7 +911,7 @@ async def stream_chat(
     from orca.cognitive.errors import CognitiveError
 
     try:
-        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant)
+        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
     except Exception as e:
         code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
         audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})

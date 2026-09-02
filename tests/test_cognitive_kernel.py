@@ -77,12 +77,18 @@ async def test_execute_plan_requiring_tools_is_deferred_not_fabricated():
 
 
 @pytest.mark.asyncio
-async def test_execute_abstains_on_critical_risk_requiring_unavailable_verify():
+async def test_execute_abstains_on_critical_risk_requiring_verify_with_no_evidence():
+    """Since Phase 4, VERIFY is SUPPORTED_NOW (Truth Fabric), so an
+    AUDIT_GRADE plan is no longer statically pre-abstained as
+    INSUFFICIENT_CAPABILITY -- it is honestly attempted via TruthFabric.
+    With no doc_store given, retrieval finds no evidence, so the Kernel
+    abstains with INSUFFICIENT_EVIDENCE instead (spec §36: an unsatisfied
+    AUDIT_GRADE requirement is an abstention, never a fabricated answer)."""
     kernel = CognitiveKernel()
     req = CognitiveRequest(objective="How do I rm -rf the production database?")
     result = await kernel.execute(req)
     assert result.status == CognitiveState.ABSTAINED
-    assert result.abstention_reason == AbstentionReason.INSUFFICIENT_CAPABILITY
+    assert result.abstention_reason == AbstentionReason.INSUFFICIENT_EVIDENCE
 
 
 @pytest.mark.asyncio

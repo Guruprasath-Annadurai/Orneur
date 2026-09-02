@@ -46,11 +46,16 @@ def test_every_operation_declares_a_support_state():
         assert op.support_state in OperationSupportState
 
 
-def test_critical_risk_plan_includes_verify_and_abstains():
+def test_critical_risk_plan_includes_verify_and_is_not_statically_abstained():
+    """Since Phase 4, VERIFY is SUPPORTED_NOW via Truth Fabric -- an
+    AUDIT_GRADE plan is no longer statically pre-abstained here just
+    because VERIFY exists as a requirement. Whether verification actually
+    SUCCEEDS is determined dynamically by CognitiveKernel after calling
+    Truth Fabric (see orca/cognitive/kernel.py), not by plan_abstention_reason."""
     plan = _plan_for("How do I rm -rf the production database?")
     verify_ops = [op for op in plan.operations if op.type == OperationType.VERIFY]
-    assert verify_ops and verify_ops[0].support_state == OperationSupportState.PLANNED
-    assert plan_abstention_reason(plan) == AbstentionReason.INSUFFICIENT_CAPABILITY
+    assert verify_ops and verify_ops[0].support_state == OperationSupportState.SUPPORTED_NOW
+    assert plan_abstention_reason(plan) is None
 
 
 def test_completion_conditions_always_include_budget_and_rounds():

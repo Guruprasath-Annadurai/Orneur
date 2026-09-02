@@ -355,6 +355,11 @@ class CognitiveResult:
     degraded: bool = False
     degradation_reason: str | None = None
     user_notification_required: bool = False
+    # Phase 4: surfaced only when the answer was produced via TruthFabric
+    # (orca.truth.truth_fabric) -- see orca/cognitive/kernel.py's
+    # _answer_with_truth_fabric. None for answers that didn't go through it.
+    evidence_state: str | None = None
+    citation_coverage: dict[str, Any] | None = None
 
 
 # ── Trace ────────────────────────────────────────────────────────────────

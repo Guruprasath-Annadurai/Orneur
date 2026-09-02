@@ -58,9 +58,13 @@ def test_metrics_snapshot_has_no_high_cardinality_labels():
 
 @pytest.mark.asyncio
 async def test_execute_records_request_and_abstention_metrics():
+    """Since Phase 4, VERIFY is SUPPORTED_NOW via Truth Fabric, so this
+    AUDIT_GRADE request abstains with INSUFFICIENT_EVIDENCE (no doc_store
+    given -> no evidence found) rather than the old static
+    INSUFFICIENT_CAPABILITY abstention."""
     kernel = CognitiveKernel()
     req = CognitiveRequest(objective="How do I rm -rf the production database?")
     await kernel.execute(req)
     snapshot = metrics.get_snapshot()
     assert snapshot["cognitive_requests_total"] == 1
-    assert snapshot["abstention_reasons"].get("INSUFFICIENT_CAPABILITY") == 1
+    assert snapshot["abstention_reasons"].get("INSUFFICIENT_EVIDENCE") == 1

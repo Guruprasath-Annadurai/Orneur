@@ -41,20 +41,24 @@ from orca.cognitive.decomposition import decompose
 # Honest, documented support-state map for Phase 3 -- see module docstring.
 # ANSWER_DIRECTLY/REASON/RECALL_MEMORY/RETRIEVE/SEARCH/USE_TOOL/ABSTAIN are
 # real, working paths through the existing serving stack (ModelGateway,
-# MemoryEngine, DocStore, AgentLoop's web_search tool). DELEGATE_AGENT,
-# VERIFY, and SIMULATE have no general-purpose Kernel-invokable
-# implementation yet (OrcaUltra is a separate, narrower, user-selected
-# entry point today, not a Kernel operation -- see
-# CURRENT_COGNITIVE_ORCHESTRATION.md).
+# MemoryEngine, DocStore, AgentLoop's web_search tool). Since Phase 4,
+# RETRIEVE/SEARCH/VERIFY are also real via orca.truth.truth_fabric.TruthFabric
+# (bounded retrieval, claim-linked citation verification -- see
+# docs/orneur/phase-4/ARCHITECTURE.md); orca/cognitive/kernel.py routes
+# through it when a doc_store/search context is available, otherwise still
+# defers to the existing stack exactly as before. DELEGATE_AGENT and
+# SIMULATE have no general-purpose Kernel-invokable implementation yet
+# (OrcaUltra is a separate, narrower, user-selected entry point today, not
+# a Kernel operation -- see CURRENT_COGNITIVE_ORCHESTRATION.md).
 _SUPPORT_STATES: dict[OperationType, tuple[OperationSupportState, str]] = {
     OperationType.ANSWER_DIRECTLY: (OperationSupportState.SUPPORTED_NOW, "ModelGateway direct completion"),
-    OperationType.RETRIEVE: (OperationSupportState.SUPPORTED_NOW, "existing DocStore-backed RAG path"),
-    OperationType.SEARCH: (OperationSupportState.SUPPORTED_NOW, "existing AgentLoop web_search tool (heuristic-quality, pre-Truth-Fabric)"),
+    OperationType.RETRIEVE: (OperationSupportState.SUPPORTED_NOW, "Truth Fabric (DocStore-backed) or existing RAG path"),
+    OperationType.SEARCH: (OperationSupportState.SUPPORTED_NOW, "Truth Fabric SearchProvider or existing AgentLoop web_search tool"),
     OperationType.RECALL_MEMORY: (OperationSupportState.SUPPORTED_NOW, "existing MemoryEngine"),
     OperationType.REASON: (OperationSupportState.SUPPORTED_NOW, "ModelGateway completion/streaming"),
     OperationType.USE_TOOL: (OperationSupportState.SUPPORTED_NOW, "existing AgentLoop tool registry"),
     OperationType.DELEGATE_AGENT: (OperationSupportState.PLANNED, "general-purpose Agent Runtime delegation does not exist yet"),
-    OperationType.VERIFY: (OperationSupportState.PLANNED, "Truth Fabric / Deliberation Fabric verification does not exist yet"),
+    OperationType.VERIFY: (OperationSupportState.SUPPORTED_NOW, "Truth Fabric ClaimVerifier (Phase 4)"),
     OperationType.SIMULATE: (OperationSupportState.PLANNED, "Simulation Chamber does not exist yet"),
     OperationType.ABSTAIN: (OperationSupportState.SUPPORTED_NOW, "the Kernel can always decline to answer"),
 }
@@ -158,10 +162,13 @@ def plan_abstention_reason(plan: CognitivePlan) -> AbstentionReason | None:
     for op in plan.operations:
         if op.support_state in (OperationSupportState.UNAVAILABLE, OperationSupportState.FORBIDDEN):
             return AbstentionReason.REQUIRED_OPERATION_UNAVAILABLE
-        if op.support_state == OperationSupportState.PLANNED and op.type == OperationType.VERIFY:
-            # VERIFY is required (AUDIT_GRADE evidence) but only PLANNED --
-            # the plan is honestly unsatisfiable, not silently downgraded.
-            return AbstentionReason.INSUFFICIENT_CAPABILITY
+        # Note: VERIFY is SUPPORTED_NOW since Phase 4 (Truth Fabric) -- an
+        # AUDIT_GRADE plan is no longer pre-emptively abstained here just
+        # because VERIFY exists as a requirement. Whether verification
+        # actually SUCCEEDS (sufficient evidence, no unresolved
+        # contradiction) is determined dynamically by CognitiveKernel
+        # after calling Truth Fabric, not statically from support state
+        # alone -- see orca/cognitive/kernel.py.
 
     if not has_any_capacity(plan.budget, BudgetDimension.MODEL_CALLS):
         return AbstentionReason.BUDGET_EXHAUSTED
