@@ -136,29 +136,41 @@ def bench_kernel_fast_path_no_memory() -> dict:
 def bench_truth_refresh(reps: int = 3) -> dict:
     """Spec §26: measured SEPARATELY from Memory Continuum's own recall
     cost, and never blended into it. Requires live Ollama -- returns a
-    clear skip marker (not a fabricated number) if unreachable."""
+    clear skip marker (not a fabricated number) if unreachable.
+
+    Uses a real DocStore with one matching chunk so this actually
+    exercises dense retrieval (an embedding call) -- a claim with no
+    retrieval/search intent signal and no doc_store finds nothing and
+    returns near-instantly, which would honestly measure "no work was
+    done," not "Truth Fabric refresh cost.\""""
     from tests.ollama_test_support import ollama_reachable
     if not ollama_reachable():
         return {"skipped": True, "reason": "no local Ollama instance reachable"}
 
     import asyncio
+    from orca.docs.chunker import Chunk
+    from orca.docs.store import DocStore
     from orca.memory.contracts import EpistemicState
     from orca.memory.refresh import refresh_stale_memory
 
     async def _run():
         samples = []
         for _ in range(reps):
+            sid = f"bench-{uuid.uuid4().hex[:8]}"
+            doc_store = DocStore(session_id=sid)
+            chunk = Chunk(text="The Eiffel Tower is 330 meters tall and located in Paris, France.", doc_id="d1", filename="f.txt", chunk_idx=0, char_start=0, char_end=60)
+            doc_store.add_chunks([chunk], doc_id="d1", filename="f.txt")
             record = SemanticMemoryRecord(
-                claim="The Eiffel Tower is located in Paris, France.", scope=MemoryScope.SESSION,
-                scope_id=f"bench-{uuid.uuid4().hex[:8]}", epistemic_state=EpistemicState.STALE,
+                claim="According to the documents, where is the Eiffel Tower located?", scope=MemoryScope.SESSION,
+                scope_id=sid, epistemic_state=EpistemicState.STALE,
             )
             t0 = time.perf_counter()
-            await refresh_stale_memory(record, doc_store=None)
+            await refresh_stale_memory(record, doc_store=doc_store)
             samples.append((time.perf_counter() - t0) * 1000)
         return samples
 
     samples = asyncio.run(_run())
-    return {"p50_ms": _p50(samples), "reps": len(samples), "note": "no doc_store given -- measures web-search-path cost only, real network conditions in this sandbox may show near-zero web results"}
+    return {"p50_ms": _p50(samples), "reps": len(samples), "note": "real DENSE retrieval via a matching DocStore chunk -- not the near-instant no-evidence-found path"}
 
 
 def bench_fast_path_vs_memory_recall_kernel_roundtrip(reps: int = 3) -> dict:
@@ -199,9 +211,30 @@ def bench_fast_path_vs_memory_recall_kernel_roundtrip(reps: int = 3) -> dict:
 
     no_memory_samples = asyncio.run(_run_no_memory())
     with_memory_samples = asyncio.run(_run_with_memory_recall_empty())
+    raw_diff = round(_p50(with_memory_samples) - _p50(no_memory_samples), 2)
+
+    # IMPORTANT (spec §26's discipline applied here too): the raw diff
+    # above is DOMINATED by model-tier selection, not memory recall --
+    # "What did I tell you earlier..." classifies to a heavier
+    # ModelPolicyCharacteristic than "What is the capital of France?"
+    # (a pre-existing Kernel intent->policy decision, unrelated to
+    # Memory Continuum). The actual isolated memory-subsystem cost is
+    # the deterministic Memory Firewall + semantic/episodic recall
+    # numbers measured elsewhere in this module (sub-millisecond to
+    # single-digit-ms). Reporting raw_diff as "memory overhead" without
+    # this caveat would misattribute model-tier cost to memory, exactly
+    # what spec §26 warns against for Truth Fabric -- applied
+    # symmetrically here.
     return {
         "no_memory_recall_p50_ms": _p50(no_memory_samples), "with_memory_recall_p50_ms": _p50(with_memory_samples),
-        "overhead_ms": round(_p50(with_memory_samples) - _p50(no_memory_samples), 2), "reps": reps,
+        "raw_diff_ms": raw_diff, "reps": reps,
+        "caveat": (
+            "raw_diff_ms is dominated by model-tier selection (the memory-recall "
+            "objective resolves to a heavier ModelPolicyCharacteristic than the "
+            "no-memory objective), NOT memory subsystem overhead. The actual "
+            "isolated memory cost is the memory_firewall/semantic_recall/"
+            "episodic_recall p50 figures elsewhere in this report."
+        ),
     }
 
 
@@ -219,6 +252,8 @@ def run_all() -> dict:
         "failure_recall": bench_failure_recall(),
         "candidate_promotion": bench_candidate_promotion(),
         "kernel_fast_path_no_memory_plan_only": bench_kernel_fast_path_no_memory(),
+        "truth_refresh_live_ollama": bench_truth_refresh(),
+        "fast_path_vs_memory_recall_kernel_roundtrip_live_ollama": bench_fast_path_vs_memory_recall_kernel_roundtrip(),
     }
 
 
