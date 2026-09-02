@@ -59,27 +59,40 @@ W_LIFECYCLE_MATURITY = 0.10
 W_COST = 0.05
 
 
-def _checkpoint_available(checkpoint_id: str) -> tuple[bool, str]:
+def _default_checkpoint_lookup(checkpoint_id: str) -> CheckpointRecord | None:
     try:
-        record = CheckpointRecord.load(checkpoint_id)
+        return CheckpointRecord.load(checkpoint_id)
     except FileNotFoundError:
+        return None
+
+
+def _default_deployment_lookup(model_id: str) -> list:
+    from orca.gateway.deployment import list_deployments
+    return list_deployments(model_id=model_id)
+
+
+def _checkpoint_available(checkpoint_id: str, checkpoint_lookup) -> tuple[bool, str]:
+    record = checkpoint_lookup(checkpoint_id)
+    if record is None:
         return False, f"no CheckpointRecord on file for '{checkpoint_id}'"
     if not record.is_routable():
         return False, f"checkpoint availability={record.availability}, not LOCAL"
     return True, "available"
 
 
-def _deployment_health_ok(model_id: str, allow_experimental: bool) -> tuple[bool, str]:
+def _deployment_health_ok(model_id: str, allow_experimental: bool, deployment_lookup) -> tuple[bool, str]:
     """
     Best-effort: only enforced when a ModelDeployment record actually
     exists for this model_id. No deployment records exist today for the
     legacy tier-based Ollama serving path (see CURRENT_MODEL_ROUTING.md) --
     absence of a record is NOT treated as unhealthy, only a present,
-    unhealthy record is.
+    unhealthy record is. `deployment_lookup` is injectable (default: real
+    `orca.gateway.deployment.list_deployments`) so unit tests that pass
+    synthetic profiles are not accidentally coupled to real, global
+    on-disk deployment state (a real hazard found during this phase's own
+    development -- see ADAPTIVE_ROUTER.md's disclosed gap).
     """
-    from orca.gateway.deployment import list_deployments
-
-    deployments = list_deployments(model_id=model_id)
+    deployments = deployment_lookup(model_id)
     if not deployments:
         return True, "no deployment record on file -- health check skipped (documented gap)"
     if any(d.is_routable(allow_experimental=allow_experimental) for d in deployments):
@@ -99,7 +112,7 @@ def _entitlement_ok(family: str, allowed_capability_classes: list[str]) -> tuple
     return False, f"entitlement does not permit {required_class} (family={family})"
 
 
-def _build_candidate(family: str, profile: ModelCapabilityProfile | None, request: RoutingRequest) -> RoutingCandidate:
+def _build_candidate(family: str, profile: ModelCapabilityProfile | None, request: RoutingRequest, checkpoint_lookup, deployment_lookup) -> RoutingCandidate:
     if profile is None:
         # Aeternum: family is defined but has no trained checkpoint at all.
         # Always represented explicitly as a rejected candidate so its
@@ -125,7 +138,7 @@ def _build_candidate(family: str, profile: ModelCapabilityProfile | None, reques
             RoutingReason.NOVUS_REJECTED_LIFECYCLE if family == "novus" else RoutingReason.LIFECYCLE_DISQUALIFIED
         )
 
-    available, _ = _checkpoint_available(profile.checkpoint_id)
+    available, _ = _checkpoint_available(profile.checkpoint_id, checkpoint_lookup)
     if not available:
         reasons.append(RoutingReason.ARTIFACT_UNAVAILABLE)
 
@@ -137,7 +150,7 @@ def _build_candidate(family: str, profile: ModelCapabilityProfile | None, reques
     if not entitled:
         reasons.append(RoutingReason.ENTITLEMENT_LIMIT)
 
-    healthy, _ = _deployment_health_ok(profile.model_id, request.allow_experimental)
+    healthy, _ = _deployment_health_ok(profile.model_id, request.allow_experimental, deployment_lookup)
     if not healthy:
         reasons.append(RoutingReason.DEPLOYMENT_UNHEALTHY)
 
@@ -168,15 +181,25 @@ def _score(candidate: RoutingCandidate, role: CognitiveRole, cost_sensitive: boo
     return sum(breakdown.values()), breakdown
 
 
-def route(request: RoutingRequest, profiles: dict[str, ModelCapabilityProfile | None] | None = None) -> RoutingDecision:
+def route(
+    request: RoutingRequest,
+    profiles: dict[str, ModelCapabilityProfile | None] | None = None,
+    checkpoint_lookup=None,
+    deployment_lookup=None,
+) -> RoutingDecision:
     """
     Deterministic routing decision for a single CognitiveRole request.
     `profiles` defaults to the real current profiles
-    (orca.society.profiles.list_current_profiles) -- overridable in tests.
+    (orca.society.profiles.list_current_profiles); `checkpoint_lookup`/
+    `deployment_lookup` default to the real on-disk registry/deployment
+    readers. All three are overridable so unit tests can be fully
+    hermetic (never accidentally coupled to real, global ORCA_HOME state).
     """
     profiles = profiles if profiles is not None else list_current_profiles()
+    checkpoint_lookup = checkpoint_lookup or _default_checkpoint_lookup
+    deployment_lookup = deployment_lookup or _default_deployment_lookup
 
-    candidates = [_build_candidate(family, profile, request) for family, profile in profiles.items()]
+    candidates = [_build_candidate(family, profile, request, checkpoint_lookup, deployment_lookup) for family, profile in profiles.items()]
 
     for c in candidates:
         if c.eligible:
