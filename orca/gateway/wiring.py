@@ -26,6 +26,7 @@ from orca.gateway.frontier_runtime import FrontierRuntime
 from orca.gateway.gateway import ModelGateway
 from orca.gateway.ollama_runtime import OllamaRuntime
 from orca.registry.model_spec import LifecycleState
+from orca.society.lifecycle import LEGACY_PRODUCTION_SERVING
 
 TIER_TO_MODEL_ID = {"nano": "orneur-genesis", "core": "orneur-novus", "ultra": "orneur-aeternum"}
 
@@ -33,6 +34,12 @@ _lock = threading.Lock()
 _gateway: ModelGateway | None = None
 _ollama_runtime_registered = False
 _frontier_runtimes_registered: set[str] = set()
+# Phase 7.1 (spec §25-26): deployment_ids already persisted to disk this
+# process -- `.save()` once per unique deployment, not on every single
+# resolved request (this function runs on every live model call; an
+# unconditional disk write per call would be real, needless I/O cost for
+# a record that doesn't change between calls).
+_deployments_persisted: set[str] = set()
 
 
 def get_shared_gateway() -> ModelGateway:
@@ -85,20 +92,37 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None) -
 
     if resolution.backend == "ollama":
         deployment_id = f"ollama-{resolution.model}"
-        gw.register_deployment(ModelDeployment(
+        # Phase 7.1 spec §25-26: Genesis's legacy checkpoint gets its own
+        # truthful, disclosed lifecycle classification
+        # (LEGACY_PRODUCTION_SERVING -- see orca.society.lifecycle's
+        # docstring) rather than EXPERIMENTAL, precisely so that once this
+        # record is persisted to disk (below) and Model Society's router
+        # starts reading it, production requests for Genesis are NOT
+        # suddenly rejected as "experimental lifecycle not permitted" --
+        # that would be a real regression, not a safety improvement. Every
+        # OTHER family (Novus, anything else) keeps the existing, correct
+        # EXPERIMENTAL lifecycle -- this does not weaken Novus's gating.
+        deployment_lifecycle = LEGACY_PRODUCTION_SERVING if model_id == "orneur-genesis" else LifecycleState.EXPERIMENTAL.value
+        deployment = ModelDeployment(
             deployment_id=deployment_id,
             model_id=model_id,
             model_version=resolution.model,
             artifact_id=resolution.model,
             runtime="ollama",
             runtime_endpoint=CONFIG.ollama.host,
+            # Honest -- no GPU/hardware claim is made; "local" only means
+            # "this machine's local Ollama install," not a verified spec.
             hardware_profile="local",
-            lifecycle=LifecycleState.EXPERIMENTAL.value,
+            lifecycle=deployment_lifecycle,
             health=DeploymentHealth.READY.value,
             warmup_completed=True,
             max_concurrency=4,
             context_limit=CONFIG.brain.context_length,
-        ))
+        )
+        gw.register_deployment(deployment)
+        if deployment_id not in _deployments_persisted:
+            deployment.save()
+            _deployments_persisted.add(deployment_id)
         return GatewayBrain(gw, model_id, resolution.model, allow_experimental=True)
 
     _ensure_frontier_runtime(gw, resolution.backend)
@@ -123,8 +147,9 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None) -
 def reset_for_tests() -> None:
     """Test-only: clears the module-level singleton so tests don't leak
     registered runtimes/deployments across test files."""
-    global _gateway, _ollama_runtime_registered, _frontier_runtimes_registered
+    global _gateway, _ollama_runtime_registered, _frontier_runtimes_registered, _deployments_persisted
     with _lock:
         _gateway = None
         _ollama_runtime_registered = False
         _frontier_runtimes_registered = set()
+        _deployments_persisted = set()

@@ -108,6 +108,23 @@ def _default_deployment_lookup(model_id: str) -> list:
     return list_deployments(model_id=model_id)
 
 
+def _default_circuit_breaker():
+    """
+    Best-effort access to the LIVE ModelGateway's circuit breaker (Phase
+    7.1 spec §27) -- circuit state is deliberately NOT disk-persisted
+    (it's ephemeral per-process runtime state, correctly so), so this
+    consults the same shared gateway singleton the live serving path
+    actually uses (`orca.gateway.wiring.get_shared_gateway`). Returns
+    None (never raises) if the gateway module can't be imported/
+    constructed for any reason -- a missing circuit breaker means "not
+    checked", never "assume open"."""
+    try:
+        from orca.gateway.wiring import get_shared_gateway
+        return get_shared_gateway().circuit_breaker
+    except Exception:
+        return None
+
+
 def _checkpoint_available(checkpoint_id: str, checkpoint_lookup) -> tuple[bool, str]:
     record = checkpoint_lookup(checkpoint_id)
     if record is None:
@@ -117,24 +134,37 @@ def _checkpoint_available(checkpoint_id: str, checkpoint_lookup) -> tuple[bool, 
     return True, "available"
 
 
-def _deployment_health_ok(model_id: str, allow_experimental: bool, deployment_lookup) -> tuple[bool, str]:
+def _deployment_health_ok(model_id: str, allow_experimental: bool, deployment_lookup, circuit_breaker_lookup) -> tuple[bool, str]:
     """
     Best-effort: only enforced when a ModelDeployment record actually
-    exists for this model_id. No deployment records exist today for the
-    legacy tier-based Ollama serving path (see CURRENT_MODEL_ROUTING.md) --
-    absence of a record is NOT treated as unhealthy, only a present,
-    unhealthy record is. `deployment_lookup` is injectable (default: real
-    `orca.gateway.deployment.list_deployments`) so unit tests that pass
-    synthetic profiles are not accidentally coupled to real, global
-    on-disk deployment state (a real hazard found during this phase's own
-    development -- see ADAPTIVE_ROUTER.md's disclosed gap).
+    exists for this model_id -- absence of a record is NOT treated as
+    unhealthy, only a present, unhealthy record is. `deployment_lookup`/
+    `circuit_breaker_lookup` are injectable (defaults: the real disk-based
+    `orca.gateway.deployment.list_deployments` and the real shared
+    ModelGateway's `CircuitBreaker`) so unit tests that pass synthetic
+    profiles are not accidentally coupled to real, global on-disk/runtime
+    state (a real hazard found during this phase's own development -- see
+    ADAPTIVE_ROUTER.md's disclosed gap). As of Phase 7.1 (spec §25-26),
+    `orca.gateway.wiring.brain_for_tier_resolution` persists a real record
+    for every actively-served model, so this check is no longer a no-op
+    for the common case.
     """
     deployments = deployment_lookup(model_id)
     if not deployments:
         return True, "no deployment record on file -- health check skipped (documented gap)"
-    if any(d.is_routable(allow_experimental=allow_experimental) for d in deployments):
-        return True, "at least one routable deployment found"
-    return False, "no deployment for this model_id is currently routable (health/lifecycle/warmup)"
+
+    circuit_breaker = circuit_breaker_lookup()
+
+    def _routable(d) -> bool:
+        if not d.is_routable(allow_experimental=allow_experimental):
+            return False
+        if circuit_breaker is not None and not circuit_breaker.allow_request(d.deployment_id):
+            return False
+        return True
+
+    if any(_routable(d) for d in deployments):
+        return True, "at least one routable deployment found (health/lifecycle/warmup/circuit all clear)"
+    return False, "no deployment for this model_id is currently routable (health/lifecycle/warmup/circuit)"
 
 
 def _entitlement_ok(family: str, allowed_capability_classes: list[str]) -> tuple[bool, str]:
@@ -149,7 +179,7 @@ def _entitlement_ok(family: str, allowed_capability_classes: list[str]) -> tuple
     return False, f"entitlement does not permit {required_class} (family={family})"
 
 
-def _build_candidate(family: str, profile: ModelCapabilityProfile | None, request: RoutingRequest, checkpoint_lookup, deployment_lookup) -> RoutingCandidate:
+def _build_candidate(family: str, profile: ModelCapabilityProfile | None, request: RoutingRequest, checkpoint_lookup, deployment_lookup, circuit_breaker_lookup) -> RoutingCandidate:
     if profile is None:
         # Aeternum: family is defined but has no trained checkpoint at all.
         # Always represented explicitly as a rejected candidate so its
@@ -187,7 +217,7 @@ def _build_candidate(family: str, profile: ModelCapabilityProfile | None, reques
     if not entitled:
         reasons.append(RoutingReason.ENTITLEMENT_LIMIT)
 
-    healthy, _ = _deployment_health_ok(profile.model_id, request.allow_experimental, deployment_lookup)
+    healthy, _ = _deployment_health_ok(profile.model_id, request.allow_experimental, deployment_lookup, circuit_breaker_lookup)
     if not healthy:
         reasons.append(RoutingReason.DEPLOYMENT_UNHEALTHY)
 
@@ -223,20 +253,24 @@ def route(
     profiles: dict[str, ModelCapabilityProfile | None] | None = None,
     checkpoint_lookup=None,
     deployment_lookup=None,
+    circuit_breaker_lookup=None,
 ) -> RoutingDecision:
     """
     Deterministic routing decision for a single CognitiveRole request.
     `profiles` defaults to the real current profiles
     (orca.society.profiles.list_current_profiles); `checkpoint_lookup`/
-    `deployment_lookup` default to the real on-disk registry/deployment
-    readers. All three are overridable so unit tests can be fully
-    hermetic (never accidentally coupled to real, global ORCA_HOME state).
+    `deployment_lookup`/`circuit_breaker_lookup` default to the real
+    on-disk registry/deployment readers and the real shared gateway's
+    circuit breaker. All are overridable so unit tests can be fully
+    hermetic (never accidentally coupled to real, global ORCA_HOME/
+    runtime state).
     """
     profiles = profiles if profiles is not None else list_current_profiles()
     checkpoint_lookup = checkpoint_lookup or _default_checkpoint_lookup
     deployment_lookup = deployment_lookup or _default_deployment_lookup
+    circuit_breaker_lookup = circuit_breaker_lookup or _default_circuit_breaker
 
-    candidates = [_build_candidate(family, profile, request, checkpoint_lookup, deployment_lookup) for family, profile in profiles.items()]
+    candidates = [_build_candidate(family, profile, request, checkpoint_lookup, deployment_lookup, circuit_breaker_lookup) for family, profile in profiles.items()]
 
     for c in candidates:
         if c.eligible:

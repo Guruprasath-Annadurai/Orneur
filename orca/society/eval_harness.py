@@ -24,6 +24,10 @@ from orca.society.router import _default_checkpoint_lookup, route
 from orca.society.society_plan import build_court_society_plan
 
 
+def _harness_circuit_breaker_lookup():
+    return None
+
+
 def _harness_deployment_lookup(model_id: str) -> list:
     """The harness must be deterministic regardless of whatever stray
     ModelDeployment records happen to exist on this machine's real
@@ -35,7 +39,7 @@ def _harness_deployment_lookup(model_id: str) -> list:
 
 
 def _route(request):
-    return route(request, checkpoint_lookup=_default_checkpoint_lookup, deployment_lookup=_harness_deployment_lookup)
+    return route(request, checkpoint_lookup=_default_checkpoint_lookup, deployment_lookup=_harness_deployment_lookup, circuit_breaker_lookup=_harness_circuit_breaker_lookup)
 
 
 @dataclass
@@ -87,7 +91,7 @@ def run_all() -> HarnessResult:
     profiles_test = _route(RoutingRequest(role=CognitiveRole.CODER, allowed_capability_classes=["BASIC"]))
     _record(results, "entitlement-constrained request respects the constraint", "orneur-novus" != profiles_test.selected_model_id)
 
-    plan = build_court_society_plan(allow_experimental=False, checkpoint_lookup=_default_checkpoint_lookup, deployment_lookup=_harness_deployment_lookup)
+    plan = build_court_society_plan(allow_experimental=False, checkpoint_lookup=_default_checkpoint_lookup, deployment_lookup=_harness_deployment_lookup, circuit_breaker_lookup=_harness_circuit_breaker_lookup)
     _record(results, "same-model Constructor/Falsifier disclosed honestly", plan.same_model_role_overlap is True)
 
     from orca.deliberation.contracts import Argument, CounterArgument, TwinResult

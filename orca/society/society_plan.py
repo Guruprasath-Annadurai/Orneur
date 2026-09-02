@@ -21,6 +21,7 @@ def build_court_society_plan(
     profiles: dict | None = None,
     checkpoint_lookup=None,
     deployment_lookup=None,
+    circuit_breaker_lookup=None,
     exclude_model_ids: list[str] | None = None,
 ) -> SocietyPlan:
     """
@@ -44,7 +45,7 @@ def build_court_society_plan(
         allow_experimental=allow_experimental, allowed_capability_classes=allowed_capability_classes,
         exclude_model_ids=exclude_model_ids,
     )
-    constructor_decision = route(constructor_request, profiles=profiles, checkpoint_lookup=checkpoint_lookup, deployment_lookup=deployment_lookup)
+    constructor_decision = route(constructor_request, profiles=profiles, checkpoint_lookup=checkpoint_lookup, deployment_lookup=deployment_lookup, circuit_breaker_lookup=circuit_breaker_lookup)
 
     falsifier_request = RoutingRequest(
         role=CognitiveRole.FALSIFIER, trace_id=trace_id, risk_level=risk_level,
@@ -57,7 +58,7 @@ def build_court_society_plan(
         # model exists and scores higher, the router will pick it on its
         # own merits; if not, honest same-model overlap follows.
     )
-    falsifier_decision = route(falsifier_request, profiles=profiles, checkpoint_lookup=checkpoint_lookup, deployment_lookup=deployment_lookup)
+    falsifier_decision = route(falsifier_request, profiles=profiles, checkpoint_lookup=checkpoint_lookup, deployment_lookup=deployment_lookup, circuit_breaker_lookup=circuit_breaker_lookup)
 
     overlap = (
         constructor_decision.selected_checkpoint_id is not None
