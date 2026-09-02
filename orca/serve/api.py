@@ -188,6 +188,11 @@ _ABSTENTION_MESSAGES = {
     "REQUIRED_OPERATION_UNAVAILABLE": "This request needs a capability that isn't available yet.",
     "POLICY_RESTRICTION": "This request can't be completed under your current plan.",
     "AMBIGUOUS_REQUEST": "This request is too ambiguous to plan safely.",
+    "UNRESOLVED_HYPOTHESES": "This request has multiple plausible explanations that couldn't be resolved with the available evidence.",
+    "CRITICAL_CONTRADICTION": "The available evidence contains an unresolved contradiction on a critical point, so this can't be answered with confidence.",
+    "FALSIFICATION_FAILED": "The candidate answer for this request didn't hold up under review, and no adequate revision could be produced.",
+    "COURT_INSUFFICIENT_EVIDENCE": "This request needed deeper review, and the available evidence wasn't sufficient to reach a confident answer.",
+    "DELIBERATION_BUDGET_EXHAUSTED": "This request needed deeper review, which ran out of available processing budget before completing.",
 }
 
 

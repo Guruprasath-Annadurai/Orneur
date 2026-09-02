@@ -498,6 +498,44 @@ class CognitiveKernel:
             if strict_or_higher and assessed.evidence_state in (EvidenceState.INSUFFICIENT, EvidenceState.CONFLICTED, EvidenceState.LOW_AUTHORITY):
                 return _abstain(AbstentionReason.INSUFFICIENT_EVIDENCE, plan.plan_id)
 
+            # Phase 6 (spec §40-41): the ReasoningCompiler decides -- from
+            # risk/evidence-conflict/AUDIT_GRADE, never from complexity
+            # alone -- whether this request needs Cognitive Court review
+            # BEFORE an answer is even generated. Most requests don't
+            # (spec §42's fast-path requirement): compile_reasoning_plan()
+            # is a pure, synchronous, sub-millisecond call, so a request
+            # that doesn't need Court pays nothing beyond that check.
+            from orca.deliberation.compiler import compile_reasoning_plan
+            from orca.deliberation.contracts import CourtVerdictState
+            from orca.deliberation.court import CognitiveCourt
+
+            reasoning_plan = compile_reasoning_plan(
+                request.objective, plan.complexity.level, plan.risk.level, plan.evidence_requirement.level, truth_result=assessed,
+            )
+            trace_builder.record_operation_outcome(f"reasoning_mode:{reasoning_plan.mode.value}")
+
+            if reasoning_plan.requires_court:
+                is_audit_grade_precheck = plan.evidence_requirement.level.value == "AUDIT_GRADE"
+                court = CognitiveCourt()
+                case, court_verdict, court_stop_reason = await court.run(
+                    request.objective, truth_result=assessed, risk_level=plan.risk.level,
+                    audit_grade=is_audit_grade_precheck, budget=plan.budget,
+                )
+                trace_builder.record_operation_outcome(f"court_verdict:{court_verdict.verdict.value}:{court_stop_reason}")
+                if court_stop_reason == "DELIBERATION_BUDGET_EXHAUSTED":
+                    return _abstain(AbstentionReason.DELIBERATION_BUDGET_EXHAUSTED, plan.plan_id)
+                if court_verdict.verdict == CourtVerdictState.REJECT:
+                    reason = AbstentionReason.CRITICAL_CONTRADICTION if any(
+                        getattr(getattr(c, "relationship", None), "value", "") == "DIRECT_CONTRADICTION" for c in case.contradictions
+                    ) else AbstentionReason.FALSIFICATION_FAILED
+                    return _abstain(reason, plan.plan_id)
+                if court_verdict.verdict == CourtVerdictState.INSUFFICIENT_EVIDENCE:
+                    return _abstain(AbstentionReason.COURT_INSUFFICIENT_EVIDENCE, plan.plan_id)
+                # ACCEPT/REVISE both proceed to generation -- Court ACCEPT
+                # does NOT itself authorize anything (spec §48); it only
+                # means the Kernel may proceed to answer generation, which
+                # verify_answer() below still independently re-checks.
+
             consume(plan.budget, BudgetDimension.MODEL_CALLS, 1)
             objective_with_context = (
                 f"{request.objective}\n\n[Retrieved context]\n{assessed.context_block}" if assessed.context_block else request.objective

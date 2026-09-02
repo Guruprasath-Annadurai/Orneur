@@ -102,7 +102,12 @@ async def test_audit_grade_request_with_strong_evidence_can_succeed():
         assert result.evidence_state == "SUFFICIENT"
         assert result.output is not None
     else:
-        assert result.abstention_reason == AbstentionReason.INSUFFICIENT_EVIDENCE
+        # Phase 6: AUDIT_GRADE now always routes through Cognitive Court
+        # before generation (spec §41), so an abstention here may come
+        # from either the pre-Court evidence check (INSUFFICIENT_EVIDENCE)
+        # or Court's own review (COURT_INSUFFICIENT_EVIDENCE) -- both are
+        # honest "could not confidently answer" outcomes.
+        assert result.abstention_reason in (AbstentionReason.INSUFFICIENT_EVIDENCE, AbstentionReason.COURT_INSUFFICIENT_EVIDENCE)
         assert result.output is None
 
 

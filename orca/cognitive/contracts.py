@@ -332,6 +332,14 @@ class AbstentionReason(str, Enum):
     REQUIRED_OPERATION_UNAVAILABLE = "REQUIRED_OPERATION_UNAVAILABLE"
     POLICY_RESTRICTION = "POLICY_RESTRICTION"
     AMBIGUOUS_REQUEST = "AMBIGUOUS_REQUEST"
+    # Phase 6 (spec §43) -- Deliberation Fabric abstention reasons.
+    # Never invent certainty: these are honest, structured outcomes of a
+    # Cognitive Court review, not a fallback catch-all.
+    UNRESOLVED_HYPOTHESES = "UNRESOLVED_HYPOTHESES"
+    CRITICAL_CONTRADICTION = "CRITICAL_CONTRADICTION"
+    FALSIFICATION_FAILED = "FALSIFICATION_FAILED"
+    COURT_INSUFFICIENT_EVIDENCE = "COURT_INSUFFICIENT_EVIDENCE"
+    DELIBERATION_BUDGET_EXHAUSTED = "DELIBERATION_BUDGET_EXHAUSTED"
 
 
 class CognitiveState(str, Enum):

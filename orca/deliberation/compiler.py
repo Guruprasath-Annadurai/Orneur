@@ -40,7 +40,18 @@ def compile_reasoning_plan(
     is_causal = bool(_CAUSAL_RE.search(objective))
     is_counterfactual = bool(_COUNTERFACTUAL_RE.search(objective))
     is_ambiguous = bool(_AMBIGUOUS_RE.search(objective))
-    evidence_conflict = bool(truth_result is not None and getattr(truth_result, "contradictions", None))
+    # Only a DIRECT_CONTRADICTION counts as a real "evidence conflict"
+    # signal here -- TEMPORALLY_RECONCILABLE/SCOPE_DIFFERENCE/
+    # LIKELY_CONFLICT are Truth Fabric's own honest "not actually a
+    # standing conflict" classifications (see orca/truth/contradiction.py)
+    # and must not, on their own, force every such request into Court
+    # review. This also protects against the documented nano-tier judge
+    # false-positive class (docs/orneur/phase-4/EVALUATION_V2.md) turning
+    # an otherwise-clean STRICT request into an unnecessary abstention.
+    evidence_conflict = any(
+        getattr(getattr(c, "relationship", None), "value", "") == "DIRECT_CONTRADICTION"
+        for c in (getattr(truth_result, "contradictions", None) or [])
+    )
     high_consequence = risk in (RiskLevel.HIGH, RiskLevel.CRITICAL)
     audit_grade = evidence_requirement == EvidenceLevel.AUDIT_GRADE
 
