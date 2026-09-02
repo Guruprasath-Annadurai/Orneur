@@ -20,8 +20,22 @@ from orca.deliberation.budget_market import allocate_budget
 from orca.society.budget_ledger import SocietyBudgetLedger
 from orca.society.contracts import CognitiveRole, RoutingRequest
 from orca.society.escalation import FAST, decide_escalation
-from orca.society.router import route
+from orca.society.router import _default_checkpoint_lookup, route
 from orca.society.society_plan import build_court_society_plan
+
+
+def _harness_deployment_lookup(model_id: str) -> list:
+    """The harness must be deterministic regardless of whatever stray
+    ModelDeployment records happen to exist on this machine's real
+    ORCA_HOME (a real fragility found during this phase's own
+    development, see EVALUATION.md) -- always report 'no deployment
+    record', matching this codebase's actual common-case state for the
+    legacy tier-based serving path."""
+    return []
+
+
+def _route(request):
+    return route(request, checkpoint_lookup=_default_checkpoint_lookup, deployment_lookup=_harness_deployment_lookup)
 
 
 @dataclass
@@ -50,30 +64,30 @@ def _record(results: list[Scenario], name: str, condition: bool, detail: str = "
 def run_all() -> HarnessResult:
     results: list[Scenario] = []
 
-    d = route(RoutingRequest(role=CognitiveRole.FAST_RESPONDER))
+    d = _route(RoutingRequest(role=CognitiveRole.FAST_RESPONDER))
     _record(results, "simple fast request routes without error", d.selected_model_id is not None)
 
-    d = route(RoutingRequest(role=CognitiveRole.CLAIM_EXTRACTOR))
+    d = _route(RoutingRequest(role=CognitiveRole.CLAIM_EXTRACTOR))
     _record(results, "structured extraction role routes", d.selected_model_id is not None)
 
-    d = route(RoutingRequest(role=CognitiveRole.VERIFIER, allow_experimental=False))
+    d = _route(RoutingRequest(role=CognitiveRole.VERIFIER, allow_experimental=False))
     _record(results, "experimental Novus disallowed in production", d.selected_model_id != "orneur-novus")
 
-    d = route(RoutingRequest(role=CognitiveRole.VERIFIER, allow_experimental=True))
+    d = _route(RoutingRequest(role=CognitiveRole.VERIFIER, allow_experimental=True))
     _record(results, "experimental Novus explicitly allowed in evaluation", d.selected_model_id == "orneur-novus")
 
-    d = route(RoutingRequest(role=CognitiveRole.CONSTRUCTOR, allow_experimental=True))
+    d = _route(RoutingRequest(role=CognitiveRole.CONSTRUCTOR, allow_experimental=True))
     aeternum_ids = [c for c in d.rejected_candidates if "aeternum" in c]
     _record(results, "Aeternum absent -- never a routing candidate", bool(aeternum_ids) and d.selected_model_id != "orneur-aeternum")
 
-    d = route(RoutingRequest(role=CognitiveRole.CONSTRUCTOR))
+    d = _route(RoutingRequest(role=CognitiveRole.CONSTRUCTOR))
     _record(results, "legacy Genesis mapping selectable for fast roles", d.selected_model_id == "orneur-genesis")
 
-    d = route(RoutingRequest(role=CognitiveRole.CODER))
-    profiles_test = route(RoutingRequest(role=CognitiveRole.CODER, allowed_capability_classes=["BASIC"]))
+    d = _route(RoutingRequest(role=CognitiveRole.CODER))
+    profiles_test = _route(RoutingRequest(role=CognitiveRole.CODER, allowed_capability_classes=["BASIC"]))
     _record(results, "entitlement-constrained request respects the constraint", "orneur-novus" != profiles_test.selected_model_id)
 
-    plan = build_court_society_plan(allow_experimental=False)
+    plan = build_court_society_plan(allow_experimental=False, checkpoint_lookup=_default_checkpoint_lookup, deployment_lookup=_harness_deployment_lookup)
     _record(results, "same-model Constructor/Falsifier disclosed honestly", plan.same_model_role_overlap is True)
 
     from orca.deliberation.contracts import Argument, CounterArgument, TwinResult

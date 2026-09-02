@@ -18,6 +18,9 @@ def build_court_society_plan(
     allow_experimental: bool = False,
     allowed_capability_classes: list[str] | None = None,
     trace_id: str | None = None,
+    profiles: dict | None = None,
+    checkpoint_lookup=None,
+    deployment_lookup=None,
 ) -> SocietyPlan:
     """
     Builds the Constructor/Falsifier assignment for one Cognitive Court
@@ -32,7 +35,7 @@ def build_court_society_plan(
         complexity_level=complexity_level, evidence_requirement=evidence_requirement,
         allow_experimental=allow_experimental, allowed_capability_classes=allowed_capability_classes,
     )
-    constructor_decision = route(constructor_request)
+    constructor_decision = route(constructor_request, profiles=profiles, checkpoint_lookup=checkpoint_lookup, deployment_lookup=deployment_lookup)
 
     falsifier_request = RoutingRequest(
         role=CognitiveRole.FALSIFIER, trace_id=trace_id, risk_level=risk_level,
@@ -43,7 +46,7 @@ def build_court_society_plan(
         # eligible model exists and scores higher, the router will pick it
         # on its own merits; if not, honest same-model overlap follows.
     )
-    falsifier_decision = route(falsifier_request)
+    falsifier_decision = route(falsifier_request, profiles=profiles, checkpoint_lookup=checkpoint_lookup, deployment_lookup=deployment_lookup)
 
     overlap = (
         constructor_decision.selected_checkpoint_id is not None
