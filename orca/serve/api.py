@@ -828,6 +828,11 @@ async def chat(
     sess.memory.add_turn("user", req.message)
     sess.memory.add_turn("assistant", final)
     sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {final[:500]}")
+    # Phase 5: additive, significance-gated Memory Continuum ingestion --
+    # does NOT replace the unconditional legacy commit_to_long_term()
+    # call above (see orca/memory/turn_ingest.py's own docstring for why).
+    from orca.memory.turn_ingest import maybe_ingest_turn
+    maybe_ingest_turn(sess.id, req.message, final)
     sess.persist_to_redis()
 
     audit.log("chat", user_id=user.id if user else None,
@@ -1101,6 +1106,8 @@ async def stream_chat(
         sess.memory.add_turn("user", req.message)
         sess.memory.add_turn("assistant", full)
         sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
+        from orca.memory.turn_ingest import maybe_ingest_turn
+        maybe_ingest_turn(sess.id, req.message, full)
         sess.persist_to_redis()
         if user:
             increment_usage(user.id, "message")

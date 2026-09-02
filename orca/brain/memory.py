@@ -191,6 +191,38 @@ class SemanticMemory:
     def all_concepts(self) -> dict[str, str]:
         return self._cache.get("concepts", {})
 
+    def delete_session_facts(self, session_id: str) -> bool:
+        """Phase 5 (docs/orneur/phase-5/CURRENT_MEMORY_ARCHITECTURE.md's
+        Finding: this store was entirely missing from
+        orca/serve/account_delete.py's deletion cascade before this fix).
+
+        Removes this session's own `fact:session_{id[:8]}` key, AND strips
+        this session's block out of the shared `all_sessions_summary`
+        string -- distill_and_save() merges every session's distilled
+        summary into ONE global string tagged with "[Session {id[:8]}]"
+        markers, so a plain per-session key deletion alone would leave
+        this session's content sitting inside that merged blob forever.
+        Returns whether anything was actually found and removed.
+        """
+        removed = False
+        session_key = f"fact:session_{session_id[:8]}"
+        if session_key in self._cache:
+            del self._cache[session_key]
+            removed = True
+
+        merged = self._cache.get("fact:all_sessions_summary", "")
+        marker = f"[Session {session_id[:8]}]"
+        if marker in merged:
+            import re
+            # Split on each "[Session <id>]" header, keeping the header
+            # attached to its own block, regardless of whether it's the
+            # first block in the string or not.
+            parts = re.split(r"(?=\[Session )", merged)
+            kept = [p for p in parts if p.strip() and not p.startswith(marker)]
+            self._cache["fact:all_sessions_summary"] = "\n\n".join(p.strip() for p in kept).strip()
+            removed = True
+        return removed
+
 
 class MemoryEngine:
     """Unified interface over all four memory layers."""
