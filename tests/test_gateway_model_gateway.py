@@ -40,6 +40,7 @@ class _FakeRuntime:
 
     async def generate(self, request: InferenceRequest) -> InferenceResponse:
         self.calls += 1
+        self.last_request = request
         if self.delay_s:
             await asyncio.sleep(self.delay_s)
         if self.fail:

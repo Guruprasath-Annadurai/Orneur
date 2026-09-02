@@ -17,6 +17,7 @@ from orca.gateway.deployment import DeploymentHealth, ModelDeployment
 from orca.gateway.gateway import ModelGateway
 from orca.gateway.ollama_runtime import OllamaRuntime
 from orca.registry.model_spec import LifecycleState
+from tests.ollama_test_support import retry_transient
 from tests.test_gateway_model_gateway import _FakeRuntime
 
 
@@ -132,7 +133,18 @@ async def test_live_gateway_brain_end_to_end_matches_orca_brain_interface():
     def _sync_complete():
         return brain.complete([{"role": "user", "content": "Say the word OK."}], max_tokens=5)
 
-    result = await asyncio.to_thread(_sync_complete)
+    # Phase 3.2 (docs/orneur/phase-3/OLLAMA_TEST_RELIABILITY.md): this
+    # test constructs a brand-new ModelGateway/OllamaRuntime rather than
+    # reusing the process-wide warm singleton, so if this exact model was
+    # evicted since a prior test (Ollama's default keep_alive), the FIRST
+    # call here pays a real cold-load cost from disk -- root-cause
+    # analysis measured this occasionally exceeding the runtime's own
+    # timeout under real memory pressure on this shared machine, despite
+    # requesting only 5 tokens. Bounded, classified retry (2 attempts,
+    # GenerationTimeoutError/QueueTimeoutError ONLY) rather than a longer
+    # timeout, since the failure mode is "the first call happened to be
+    # the unlucky cold one," not "90s is too short for 5 tokens."
+    result = await asyncio.to_thread(lambda: retry_transient(_sync_complete, attempts=2, label="compat_brain_e2e"))
     assert isinstance(result, str)
 
     def _sync_stream():
@@ -140,3 +152,48 @@ async def test_live_gateway_brain_end_to_end_matches_orca_brain_interface():
 
     chunks = await asyncio.to_thread(_sync_stream)
     assert all(isinstance(c, str) for c in chunks)
+
+
+# ── Phase 3.2 regression: background work must not contend at INTERACTIVE priority ──
+
+def test_complete_defaults_to_interactive_priority_unchanged():
+    """Every existing caller that doesn't pass `priority` must see byte-
+    for-byte the same InferenceRequest.priority as before this phase."""
+    from orca.gateway.contracts import RequestPriority
+
+    runtime = _FakeRuntime()
+    gw = _gw_with_deployment(runtime)
+    brain = GatewayBrain(gw, "orneur-novus")
+
+    brain.complete([{"role": "user", "content": "hi"}])
+    assert runtime.last_request.priority == RequestPriority.INTERACTIVE
+
+
+def test_complete_honors_explicit_background_priority():
+    from orca.gateway.contracts import RequestPriority
+
+    runtime = _FakeRuntime()
+    gw = _gw_with_deployment(runtime)
+    brain = GatewayBrain(gw, "orneur-novus")
+
+    brain.complete([{"role": "user", "content": "hi"}], priority="BACKGROUND")
+    assert runtime.last_request.priority == RequestPriority.BACKGROUND
+
+
+def test_knowledge_graph_extraction_defaults_to_background_priority():
+    """The actual bug found in Phase 3.2 root-cause analysis: fire-and-
+    forget KG extraction (orca/serve/api.py) previously contended for a
+    deployment's bounded concurrency permits at the SAME priority as real
+    foreground user requests. extract_and_add() must now default to
+    BACKGROUND so it never elevates itself to INTERACTIVE by omission."""
+    from orca.brain.knowledge_graph import KnowledgeGraph
+    from orca.gateway.contracts import RequestPriority
+
+    runtime = _FakeRuntime(chunks=["[]"])
+    gw = _gw_with_deployment(runtime)
+    brain = GatewayBrain(gw, "orneur-novus")
+
+    kg = KnowledgeGraph(session_id="test-session")
+    kg.extract_and_add("some conversation text", "chat", brain)
+
+    assert runtime.last_request.priority == RequestPriority.BACKGROUND

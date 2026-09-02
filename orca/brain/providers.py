@@ -132,8 +132,17 @@ class OrcaBrain:
         max_tokens: int | None = None,
         timeout: float = 120.0,
         retries: int = 1,
+        priority: str = "INTERACTIVE",
     ) -> str:
         """
+        `priority` is a no-op here -- a raw Ollama HTTP call has no
+        Gateway-level priority/concurrency concept to honor. Accepted
+        anyway so this method's signature stays interface-compatible with
+        orca.gateway.compat_brain.GatewayBrain.complete() (which DOES
+        route it through real bounded-fairness scheduling), matching this
+        class's own stated goal of every "brain" caller working unchanged
+        regardless of which implementation it holds.
+
         Real problem this fixes: this method previously caught ONLY
         httpx.ConnectError — a real request timeout (httpx.TimeoutException)
         under load propagated as an unhandled exception straight to the

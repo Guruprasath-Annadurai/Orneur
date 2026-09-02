@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from typing import Iterator
 
-from orca.gateway.contracts import InferenceRequest
+from orca.gateway.contracts import InferenceRequest, RequestPriority
 from orca.gateway.errors import InferenceError
 from orca.gateway.gateway import ModelGateway
 from orca.gateway.sync_bridge import run_async_gen_in_thread, run_async_in_thread
@@ -59,7 +59,7 @@ class GatewayBrain:
         except InferenceError:
             return False
 
-    def _build_request(self, messages: list[dict], system, temperature, max_tokens, timeout) -> InferenceRequest:
+    def _build_request(self, messages: list[dict], system, temperature, max_tokens, timeout, priority: str) -> InferenceRequest:
         return InferenceRequest(
             request_id=str(uuid.uuid4()),
             model_id=self.model_id,
@@ -69,6 +69,7 @@ class GatewayBrain:
             temperature=temperature if temperature is not None else 0.7,
             max_tokens=max_tokens or 1024,
             timeout_s=timeout,
+            priority=RequestPriority(priority),
         )
 
     def complete(
@@ -79,8 +80,19 @@ class GatewayBrain:
         max_tokens: int | None = None,
         timeout: float = 120.0,
         retries: int = 1,
+        priority: str = "INTERACTIVE",
     ) -> str:
-        request = self._build_request(messages, system, temperature, max_tokens, timeout)
+        """
+        `priority` defaults to INTERACTIVE, preserving exact existing
+        behavior for every caller that doesn't pass it. Background/non-
+        user-facing callers (e.g. fire-and-forget knowledge-graph
+        extraction, see orca/serve/api.py) should pass BACKGROUND so
+        Phase 2.1's own bounded-fairness priority scheduling naturally
+        yields the deployment's limited concurrency permits to real
+        foreground requests instead of contending with them at equal
+        priority (see docs/orneur/phase-3/OLLAMA_TEST_RELIABILITY.md).
+        """
+        request = self._build_request(messages, system, temperature, max_tokens, timeout, priority)
         response = run_async_in_thread(lambda: self._gateway.generate(request, allow_experimental=self.allow_experimental))
         return response.output
 
@@ -92,8 +104,9 @@ class GatewayBrain:
         max_tokens: int | None = None,
         timeout: float = 120.0,
         retries: int = 1,
+        priority: str = "INTERACTIVE",
     ) -> Iterator[str]:
-        request = self._build_request(messages, system, temperature, max_tokens, timeout)
+        request = self._build_request(messages, system, temperature, max_tokens, timeout, priority)
 
         async def _agen():
             async for chunk in self._gateway.stream(request, allow_experimental=self.allow_experimental):
