@@ -43,7 +43,7 @@ from pathlib import Path
 
 from orca.auth.store import get_user_session_ids, delete_user_account_records, get_stripe_customer_id
 from orca.docs.store import unregister_doc, list_docs, DocStore
-from orca.brain.memory import EpisodicMemory, SemanticMemory
+from orca.brain.memory import EpisodicMemory, LongTermMemory, SemanticMemory
 from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.serve import session_store
 from orca.config import ORCA_HOME, CONFIG
@@ -54,6 +54,7 @@ def _delete_session_data(session_id: str) -> dict:
     result = {
         "session_id": session_id, "memory_deleted": False, "docs_deleted": 0, "redis_deleted": False,
         "knowledge_graph_deleted": False, "semantic_facts_deleted": False, "memory_continuum_deleted": {},
+        "long_term_vector_memory_deleted": False,
     }
 
     try:
@@ -63,6 +64,16 @@ def _delete_session_data(session_id: str) -> dict:
             result["memory_deleted"] = True
     except Exception as e:
         result["memory_error"] = str(e)
+
+    try:
+        # Phase 5.1: a real, confirmed gap this cascade never covered --
+        # every raw Q:/A: turn committed via MemoryEngine.commit_to_long_term()
+        # (unconditional, every chat/stream/ultra turn) lived in this
+        # session's own ChromaDB collection with NO deletion path at all
+        # before LongTermMemory.delete() was added this phase.
+        result["long_term_vector_memory_deleted"] = LongTermMemory(session_id).delete()
+    except Exception as e:
+        result["long_term_vector_memory_error"] = str(e)
 
     try:
         docs = list_docs(session_id)

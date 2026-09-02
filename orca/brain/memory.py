@@ -126,6 +126,27 @@ class LongTermMemory:
         hits.sort(key=lambda x: x[0], reverse=True)
         return [h[1] for h in hits[:n]]
 
+    def delete(self) -> bool:
+        """Phase 5.1 (docs/orneur/phase-5/LEGACY_MEMORY_AUTHORITY_AUDIT.md):
+        a real, confirmed gap -- this class had NO deletion method at
+        all, and orca/serve/account_delete.py never touched it, meaning
+        every raw Q:/A: turn ever written via commit_to_long_term()
+        (which runs unconditionally on every chat/stream/ultra turn)
+        persisted in this session's ChromaDB collection FOREVER, even
+        after a full account deletion. Removes the collection (or the
+        JSONL fallback file). Returns whether anything was actually
+        found and removed."""
+        if self._available:
+            try:
+                self._client.delete_collection(name=f"orca_{self._session_id[:8]}")
+                return True
+            except Exception:
+                return False
+        if self._fallback_file.exists():
+            self._fallback_file.unlink()
+            return True
+        return False
+
 
 class EpisodicMemory:
     """Structured session logs stored as JSON files."""
