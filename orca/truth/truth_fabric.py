@@ -27,7 +27,7 @@ import asyncio
 import time
 
 from orca.cognitive.budget import CognitiveBudgetExhaustedError, consume
-from orca.cognitive.contracts import BudgetDimension, CognitiveBudget, FreshnessLevel
+from orca.cognitive.contracts import BudgetDimension, CognitiveBudget, ComplexityLevel, FreshnessLevel, RiskLevel
 from orca.truth import citation as citation_mod
 from orca.truth import evidence as evidence_mod
 from orca.truth.claims import extract_atomic_claims
@@ -252,19 +252,46 @@ class TruthFabric:
             CognitiveRole.VERIFIER, override_tier=tier, allow_experimental=allow_experimental_models,
         )
 
+        # Phase 7.1 spec §20-21: the "verification" Cognitive Budget Market
+        # purpose now has real enforcement effect, reserved against the
+        # SAME shared `budget.max_model_calls`/`consumed_model_calls` pool
+        # Court's own SocietyBudgetLedger draws from -- one bounded
+        # allocation hierarchy, not a second independent cap that could
+        # collectively exceed the request's real budget. (`counter_evidence`/
+        # `retrieval` purposes are NOT wired here -- Truth Fabric's actual
+        # counter-evidence/retrieval calls consume the separate
+        # RETRIEVAL_CALLS dimension, which this MODEL_CALLS-only ledger
+        # doesn't model; disclosed honestly in BUDGET_EXECUTION.md rather
+        # than force a mismatched wiring.)
+        verification_ledger = None
+        if budget is not None:
+            from orca.deliberation.budget_market import allocate_budget as _allocate_budget
+            from orca.society.budget_ledger import SocietyBudgetLedger as _SocietyBudgetLedger
+            verification_allocation = _allocate_budget(
+                uncertainty=0.5, risk=RiskLevel.LOW, evidence_conflict=bool(prior_result.contradictions),
+                complexity=ComplexityLevel.MEDIUM,
+            )
+            verification_ledger = _SocietyBudgetLedger(budget=budget, allocation=verification_allocation)
+
         start = time.monotonic()
         try:
             claims = await asyncio.wait_for(extract_atomic_claims(answer_text, tier=extractor_tier), timeout=VERIFICATION_TIMEOUT_S)
         except asyncio.TimeoutError:
             raise TruthTimeoutError(internal_detail=f"claim extraction exceeded VERIFICATION_TIMEOUT_S={VERIFICATION_TIMEOUT_S}")
 
-        if budget is not None:
-            _consume_or_raise(budget, BudgetDimension.MODEL_CALLS, 1)
+        if verification_ledger is not None:
+            try:
+                verification_ledger.reserve("verification", 1)
+            except CognitiveBudgetExhaustedError as e:
+                raise TruthBudgetExhaustedError(internal_detail=str(e)) from e
 
         claim_supports = []
         for claim in claims:
-            if budget is not None:
-                _consume_or_raise(budget, BudgetDimension.MODEL_CALLS, 1)
+            if verification_ledger is not None:
+                try:
+                    verification_ledger.reserve("verification", 1)
+                except CognitiveBudgetExhaustedError as e:
+                    raise TruthBudgetExhaustedError(internal_detail=str(e)) from e
             support = await verify_claim(claim.claim_id, claim.text, prior_result.evidence, tier=verifier_tier)
             claim_supports.append(support)
 

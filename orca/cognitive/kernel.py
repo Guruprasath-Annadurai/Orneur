@@ -526,6 +526,22 @@ class CognitiveKernel:
                 is_audit_grade_precheck = plan.evidence_requirement.level.value == "AUDIT_GRADE"
                 court = CognitiveCourt()
                 replan_state = ReplanState()
+                # Phase 7.1 spec §20-21: the "replanning" Cognitive Budget
+                # Market purpose gets real enforcement -- reserved against
+                # the SAME shared plan.budget.max_model_calls pool Court's
+                # own ledger and Truth Fabric's verification ledger draw
+                # from, before a REVISE-triggered Court re-run is allowed
+                # to start (spec §22: "before optional expensive
+                # operations: reserve budget... if reservation fails,
+                # operation does not start").
+                replan_ledger = None
+                if plan.budget is not None:
+                    from orca.deliberation.budget_market import allocate_budget as _allocate_budget
+                    from orca.society.budget_ledger import SocietyBudgetLedger as _SocietyBudgetLedger
+                    replan_ledger = _SocietyBudgetLedger(
+                        budget=plan.budget,
+                        allocation=_allocate_budget(uncertainty=0.5, risk=plan.risk.level, evidence_conflict=False, complexity=plan.complexity.level),
+                    )
                 while True:
                     case, court_verdict, court_stop_reason = await court.run(
                         request.objective, truth_result=assessed, risk_level=plan.risk.level,
@@ -543,6 +559,11 @@ class CognitiveKernel:
                     if court_verdict.verdict == CourtVerdictState.INSUFFICIENT_EVIDENCE:
                         return _abstain(AbstentionReason.COURT_INSUFFICIENT_EVIDENCE, plan.plan_id)
                     if court_verdict.verdict == CourtVerdictState.REVISE and replan_state.can_replan():
+                        if replan_ledger is not None:
+                            try:
+                                replan_ledger.reserve("replanning", 1)
+                            except CognitiveBudgetExhaustedError:
+                                return _abstain(AbstentionReason.DELIBERATION_BUDGET_EXHAUSTED, plan.plan_id)
                         reasoning_plan = revise_plan_for_court_verdict(reasoning_plan, court_verdict.verdict, replan_state)
                         trace_builder.record_operation_outcome(
                             f"replan:v{reasoning_plan.parent_version}->v{reasoning_plan.version}:COURT_REVISE"
