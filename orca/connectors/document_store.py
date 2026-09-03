@@ -59,17 +59,25 @@ def search_documents(identity: ConnectorIdentity, instance: ConnectorInstance, r
     hits = store.retrieve(request.query, top_k=5)
     latency_ms = (time.monotonic() - start) * 1000
 
+    # DocStore.retrieve() never returns a doc_id field (its return shape
+    # is {"text", "filename", "chunk_idx"} only) -- filename+chunk_idx is
+    # the actual identity it exposes, so that is what real object identity
+    # (spec §26) must be derived from here, not a nonexistent "doc_id" key
+    # that would silently always resolve to "".
+    def _object_id(h: dict) -> str:
+        return f"{h.get('filename', '')}#chunk{h.get('chunk_idx', 0)}"
+
     object_refs = [
         ConnectorObjectRef(
             connector_instance_id=instance.connector_instance_id,
-            provider_object_id=h.get("doc_id", ""),
+            provider_object_id=_object_id(h),
             resource_scope=instance.scope.resource_path,
             last_modified=None,
         )
         for h in hits
     ]
     normalized = [
-        {"text": h.get("text", ""), "doc_id": h.get("doc_id", ""), "filename": h.get("filename", ""), "score": h.get("score", 0.0)}
+        {"text": h.get("text", ""), "doc_id": _object_id(h), "filename": h.get("filename", ""), "score": h.get("score", 0.0)}
         for h in hits
     ]
     return ConnectorResult(
