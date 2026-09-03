@@ -81,7 +81,16 @@ def _validate_and_build_plan(raw: dict, allowed_tool_specs: dict[str, ToolSpec])
             return None
         dep_ids = []
         for i in deps_idx:
-            if not isinstance(i, int) or not (0 <= i < len(tasks)):
+            if not isinstance(i, int):
+                return None
+            if i < 0:
+                # Bounded repair (spec §6): a negative index is a common
+                # "no dependency" sentinel some models emit instead of an
+                # empty list -- safely dropped rather than invalidating
+                # the whole plan. Never security-relevant (dependencies
+                # only gate task ORDERING, not authorization).
+                continue
+            if i >= len(tasks):
                 return None
             dep_ids.append(tasks[i].task_id)
         t.dependencies = dep_ids
