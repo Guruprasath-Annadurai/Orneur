@@ -45,11 +45,23 @@ def test_agent_runtime_without_lease_resolver_never_touches_godmode_module():
     orca.godmode at all: _try_elevate() is only ever called when
     lease_resolver is not None, and its own `from orca.godmode... import`
     statements are LOCAL to that method body, so the module is never even
-    imported for a normal run."""
+    imported for a normal run.
+
+    Deliberately does NOT delete already-imported `orca.godmode.*`
+    entries from `sys.modules` (an earlier version of this test did, and
+    that broke `tests/conftest.py`'s autouse monkeypatch isolation for
+    every OTHER test running later in the same pytest session -- re-
+    importing `orca.godmode.lease_store` after eviction creates a NEW
+    module object with its `LEASE_DIR` back at the real, unpatched
+    `ORCA_HOME` default, silently leaking real lease files into the
+    developer's actual `~/.orca/godmode/leases/`. Instead this test
+    snapshots the baseline set of already-loaded module names and asserts
+    no NEW `orca.godmode.*` entry appears after the run -- a
+    non-destructive check that catches the same regression without the
+    side effect.)
+    """
     import sys
-    for mod_name in list(sys.modules):
-        if mod_name.startswith("orca.godmode"):
-            del sys.modules[mod_name]
+    baseline = {m for m in sys.modules if m.startswith("orca.godmode")}
 
     from orca.agent.contracts import AgentAction, AgentGoal, AgentPlan, AgentTask, Capability, SideEffectClass, ToolSpec, ActionRiskLevel
     from orca.agent.runtime import AgentRuntime
@@ -66,4 +78,5 @@ def test_agent_runtime_without_lease_resolver_never_touches_godmode_module():
     runtime = AgentRuntime(registry=registry, goal=goal, capabilities=frozenset({Capability.FILE_READ}))
     run, trace, world_state = runtime.execute(plan)
 
-    assert not any(m.startswith("orca.godmode") for m in sys.modules), "a normal AgentRuntime run must never import orca.godmode"
+    after = {m for m in sys.modules if m.startswith("orca.godmode")}
+    assert after == baseline, "a normal AgentRuntime run must never newly import any orca.godmode module"
