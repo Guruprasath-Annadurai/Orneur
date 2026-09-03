@@ -42,6 +42,8 @@ _PURPOSE_TO_ALLOCATION_FIELD: dict[str, str] = {
     "retrieval": "retrieval",
     "optional_second_model": "agents",
     "replanning": "reasoning",
+    "tool_execution": "agents",
+    "agent_delegation": "agents",
 }
 
 # The REAL resource dimension each purpose actually consumes (Phase 7.2
@@ -56,6 +58,8 @@ _PURPOSE_TO_DIMENSION: dict[str, BudgetDimension] = {
     "optional_second_model": BudgetDimension.MODEL_CALLS,
     "retrieval": BudgetDimension.RETRIEVAL_CALLS,
     "counter_evidence": BudgetDimension.RETRIEVAL_CALLS,
+    "tool_execution": BudgetDimension.TOOL_CALLS,
+    "agent_delegation": BudgetDimension.AGENT_CALLS,
 }
 
 # Which CognitiveBudget field holds each dimension's cap -- mirrors
@@ -65,6 +69,8 @@ _PURPOSE_TO_DIMENSION: dict[str, BudgetDimension] = {
 _DIMENSION_TO_LIMIT_FIELD: dict[BudgetDimension, str] = {
     BudgetDimension.MODEL_CALLS: "max_model_calls",
     BudgetDimension.RETRIEVAL_CALLS: "max_retrieval_calls",
+    BudgetDimension.TOOL_CALLS: "max_tool_calls",
+    BudgetDimension.AGENT_CALLS: "max_agent_calls",
 }
 
 # Honest fallback pool sizes if the CognitiveBudget doesn't track a cap
@@ -74,6 +80,8 @@ _DIMENSION_TO_LIMIT_FIELD: dict[BudgetDimension, str] = {
 _DEFAULT_POOL: dict[BudgetDimension, int] = {
     BudgetDimension.MODEL_CALLS: 6,
     BudgetDimension.RETRIEVAL_CALLS: 4,
+    BudgetDimension.TOOL_CALLS: 6,
+    BudgetDimension.AGENT_CALLS: 1,
 }
 
 # Constructor and Falsifier must always get at least 1 call each, or Court
