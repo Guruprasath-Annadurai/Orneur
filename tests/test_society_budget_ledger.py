@@ -54,9 +54,12 @@ def test_release_is_idempotent():
 
 
 def test_reallocation_moves_only_unspent_capacity_and_is_recorded():
+    """retrieval -> counter_evidence: both RETRIEVAL_CALLS, a legitimate
+    same-dimension move (Phase 7.2: cross-dimension moves are refused --
+    see test_reallocation_refuses_cross_dimension_moves below)."""
     ledger = _ledger(max_model_calls=10)
     retrieval_cap = ledger.caps["retrieval"]
-    record = ledger.reallocate("retrieval", "falsifier", retrieval_cap, reason="no retrieval needed")
+    record = ledger.reallocate("retrieval", "counter_evidence", retrieval_cap, reason="no retrieval needed")
     assert ledger.caps["retrieval"] == 0
     assert record.reason == "no retrieval needed"
     assert ledger.reallocations[-1] is record
@@ -65,7 +68,15 @@ def test_reallocation_moves_only_unspent_capacity_and_is_recorded():
 def test_reallocation_cannot_move_more_than_unspent():
     ledger = _ledger(max_model_calls=10)
     with pytest.raises(ValueError):
-        ledger.reallocate("retrieval", "falsifier", ledger.caps["retrieval"] + 100, reason="bad")
+        ledger.reallocate("retrieval", "counter_evidence", ledger.caps["retrieval"] + 100, reason="bad")
+
+
+def test_reallocation_refuses_cross_dimension_moves():
+    """Phase 7.2 spec §15: unused RETRIEVAL_CALLS capacity must never be
+    converted into MODEL_CALLS capacity just because both are "budget"."""
+    ledger = _ledger(max_model_calls=10)
+    with pytest.raises(ValueError):
+        ledger.reallocate("retrieval", "falsifier", 1, reason="attack")
 
 
 def test_budget_exhaustion_stops_optional_work():

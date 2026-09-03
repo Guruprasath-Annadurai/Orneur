@@ -66,10 +66,11 @@ def test_budget_reallocation_cannot_exceed_parent_budget():
     ledger = SocietyBudgetLedger(budget=budget, allocation=allocation)
     total_before = sum(ledger.caps.values())
 
-    # Attempt an oversized reallocation -- must raise, never silently
-    # create budget by exceeding what was actually unspent.
+    # Attempt an oversized reallocation (same-dimension, so this
+    # specifically tests the amount bound, not the dimension check) --
+    # must raise, never silently create budget by exceeding unspent.
     with pytest.raises(ValueError):
-        ledger.reallocate("retrieval", "falsifier", amount=total_before + 100, reason="attack")
+        ledger.reallocate("retrieval", "counter_evidence", amount=total_before + 100, reason="attack")
 
     assert sum(ledger.caps.values()) == total_before  # no budget created
 
