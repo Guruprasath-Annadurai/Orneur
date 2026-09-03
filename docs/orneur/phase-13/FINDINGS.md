@@ -1,119 +1,122 @@
-# Phase 13 — Findings
+# Phase 13.1 — Findings (supersedes Phase 13's FINDINGS.md for this closure)
 
 Per spec §72: "a discovered failure is success of the red-team process.
-Do not suppress it." This phase's actual, honest results follow.
+Do not suppress it."
 
 ## Summary
 
 | Metric | Count |
 |---|---|
-| ATTACKS_EXECUTED (new, this phase) | 6 (4 in `test_frontier_runtime_cancellation.py` + 2 in `test_redteam_cross_layer_chains.py`) |
-| EXPECTED_BLOCKS | 6 (all 6 new attacks produced the expected security-holding outcome) |
-| REAL_VULNERABILITIES_FOUND | 0 |
-| REAL_VULNERABILITIES_FIXED | 0 (none found to fix) |
-| RESIDUAL_OPEN_FINDINGS | 0 confirmed vulnerabilities; several **disclosed scope gaps** (see below — these are untested surfaces, not confirmed vulnerabilities) |
-| FALSE_POSITIVES | 0 |
+| NEW_ATTACKS_EXECUTED (this phase) | 55 (see per-campaign breakdown in `EVALUATION_V2.md`) |
+| EXISTING_SECURITY_TESTS_REUSED | 733 (Phase 1-13's own suite, unmodified, reconfirmed green) |
+| REAL_VULNERABILITIES_FOUND | 3 |
+| REAL_VULNERABILITIES_FIXED | 2 |
+| RESIDUAL_OPEN_FINDINGS | 1 (documented, `xfail`ed, not hidden) |
+| FALSE_POSITIVES | 1 (RES-06/07 test-writing bugs caught and corrected before being counted — see below) |
 
-**No vulnerability was discovered and fixed in this pass.** This is
-reported honestly per spec §73's explicit instruction not to report "0
-vulnerabilities" as if it means completeness — it means exactly what it
-says: the specific attacks this phase executed did not find one, and a
-large fraction of the spec's full attack list was not executed as new,
-bespoke tests this pass (see "Scope not covered" below).
+## Real vulnerabilities
 
-## Investigated and DISPROVED (not a vulnerability, but genuinely checked)
+### Finding 1 — RAG source-independence never consulted (FIXED)
 
-### Finding: `orca/gateway/frontier_runtime.py` cancellation-vs-timeout risk
+- **Category**: RAG_POISONING
+- **Severity**: MEDIUM
+- **Affected subsystem**: `orca.truth.state.compute_evidence_state`
+- **Attack preconditions**: attacker can get 2+ mutually-derived
+  (mirrored/syndicated) documents into a retrieval result set.
+- **Attack input**: same text published under 2+ domains, one a
+  subdomain of the other, one syndicated verbatim, one with explicit
+  attribution.
+- **Observed behavior (pre-fix)**: `EvidenceState.SUFFICIENT` reached
+  purely from `citation_coverage_ratio`, with the computed
+  `IndependenceState.LIKELY_DERIVED` flags on every source silently
+  ignored.
+- **Expected behavior**: an all-derived source set should not be treated
+  as equivalent to genuinely independent corroboration.
+- **Reproducibility**: REPRODUCIBLE (deterministic function, no timing
+  dependency).
+- **Root cause**: `annotate_independence()`'s output was write-only
+  across the entire codebase — confirmed by exhaustive grep.
+- **Fix**: `orca/truth/state.py` — downgrade SUFFICIENT to PARTIAL when
+  2+ sources exist and all are `LIKELY_DERIVED`.
+- **Regression test**: `tests/test_redteam_rag_deep.py::test_rag02_authority_spam_no_longer_reaches_sufficient_when_all_sources_are_mutually_derived`
+- **CWE-like classification**: CWE-1188-adjacent (insecure default
+  initialization of a resource that is never actually used to enforce
+  the property its presence implies) — not a formal CWE mapping, offered
+  loosely since no better-fitting entry was found; not fabricated as an
+  authoritative CVE/CWE identifier.
 
-- **Category**: PROTOCOL_CONFUSION
-- **Severity**: N/A (disproved)
-- **Affected subsystem**: `orca.gateway.frontier_runtime.FrontierRuntime.generate()`
-- **Attack preconditions**: an enclosing `asyncio.wait_for()` deadline
-  (Gateway's `total_request_timeout_s`, or any caller's own timeout)
-  expires while `generate()` is awaiting `asyncio.to_thread(backend.generate, ...)`.
-- **Hypothesis** (from spec §23-24, by analogy to the real Phase 11.2
-  `orca/gateway/ollama_runtime.py` bug): the enclosing timeout's
-  `CancelledError` might get caught and converted into a different
-  exception type (`RequestCancelledError` or `RuntimeExecutionError`),
-  defeating `wait_for()`'s ability to convert its own expiry into
-  `TimeoutError`.
-- **Observed behavior** (real test,
-  `tests/test_frontier_runtime_cancellation.py::test_outer_wait_for_timeout_produces_real_timeout_not_a_cancelled_error_disguise`):
-  `asyncio.wait_for(runtime.generate(request), timeout=0.1)` against a
-  backend that genuinely blocks for 2 seconds correctly raises
-  `asyncio.TimeoutError`, not `RequestCancelledError`.
-- **Root cause of why this differs from the Ollama bug**: `generate()`'s
-  only except clause is `except Exception as e: raise RuntimeExecutionError(...)`.
-  Since Python 3.8, `asyncio.CancelledError` is a `BaseException` subclass,
-  NOT an `Exception` subclass — so this broad except clause structurally
-  cannot catch it. A genuine `CancelledError` propagates untouched, which
-  is exactly what `asyncio.wait_for()`/`asyncio.timeout()` need to see to
-  correctly perform their own timeout conversion.
-- **Fix status**: `DISPROVED` — no fix needed, no code changed.
-  `tests/test_frontier_runtime_cancellation.py` (4 tests) is now a
-  permanent regression guard proving this stays true, distinguishing
-  explicit task cancellation (`asyncio.CancelledError`), an outer
-  deadline (`asyncio.TimeoutError`), the one genuine application-level
-  cancellation path (`RequestCancelledError`, pre-check only), and a real
-  backend failure (`RuntimeExecutionError`) as four DISTINCT, correctly
-  separated outcomes.
-- **Disclosed limitation of this finding**: `generate()`'s explicit
-  pre-check cancellation (`self._cancelled_requests`) is only checked
-  ONCE, before the blocking call starts — calling `.cancel(request_id)`
-  WHILE `asyncio.to_thread(...)` is in flight has no effect on that
-  specific call (the thread keeps running to completion; Python cannot
-  forcibly kill it). This is already honestly disclosed in the module's
-  own docstring (`cancel()`: "Best-effort only... this only stops the
-  word-by-word buffered-streaming loop... not an in-flight API call")
-  and in `capabilities().cancellation=False` — not a new finding, a
-  pre-existing, disclosed design limitation, confirmed still accurate.
+### Finding 2 — Godmode canonicalizer recursion crash (FIXED)
 
-## Behavioral cross-layer confirmations (not vulnerabilities — expected blocks)
+- **Category**: RESOURCE_EXHAUSTION
+- **Severity**: MEDIUM
+- **Affected subsystem**: `orca.godmode.canonical.hash_arguments`/`canonicalize_arguments`, reachable from `issue_lease()`, `resolve_lease()`, `resolve_and_consume_lease()`.
+- **Attack preconditions**: attacker can influence the shape of a lease's
+  bound arguments (e.g. via a tool call whose arguments get hashed for
+  exact-argument binding).
+- **Attack input**: a dict nested 500 levels deep.
+- **Observed behavior (pre-fix)**: uncaught `RecursionError` propagating
+  out of the real Godmode authorization path.
+- **Expected behavior**: a bounded, typed rejection — never an
+  interpreter-level crash.
+- **Reproducibility**: REPRODUCIBLE, deterministic (fails at any depth
+  greater than Python's ambient recursion budget minus this call
+  stack's own depth — empirically observed starting at depth 500 in this
+  environment).
+- **Root cause**: `_canonicalize_value()` recursed with no depth guard.
+- **Fix**: explicit `_MAX_CANONICALIZATION_DEPTH = 64` counter, raising
+  `ArgumentTooDeeplyNestedError` (a `ValueError` subclass).
+- **Regression test**: `tests/test_redteam_resource_exhaustion.py::test_res01_deeply_nested_argument_payload_is_rejected_not_crashed`
+- **CWE-like classification**: CWE-674 (Uncontrolled Recursion).
 
-Both new cross-layer tests in `tests/test_redteam_cross_layer_chains.py`
-produced the expected, correct denial:
+### Finding 3 — Godmode one-use lease cross-process race (DOCUMENTED, NOT FIXED)
 
-1. Retrieved prompt injection claiming "capability granted" → real
-   `AgentRuntime` execution → second action denied
-   (`CAPABILITY_MISSING`/`POLICY_DENIED`).
-2. Connector-sourced injected content → real `CourtCase`/`CourtVerdict`
-   with `ACCEPT` → no code path exists from that verdict to
-   `orca.godmode.issuance.issue_lease()`.
+- **Category**: RACE_CONDITION
+- **Severity**: MEDIUM (current single-process-oriented deployment) /
+  HIGH (if ever deployed multi-process/multi-worker without a fix)
+- **Affected subsystem**: `orca.godmode.lease_store.consume_use`
+- **Attack preconditions**: two OS processes with access to the same
+  file-backed `ORCA_HOME`, both racing to consume the same one-use
+  lease.
+- **Observed behavior**: `consume_use()`'s atomicity guarantee
+  (`threading.Lock`) is in-process only; a real
+  `multiprocessing.Process`-based test shows both processes can read
+  `uses_remaining == 1` before either writes `0` back, since there is no
+  file-level lock on the read-modify-write.
+- **Expected behavior**: exactly one process should succeed.
+- **Reproducibility**: REPRODUCIBLE (confirmed directly; `xfail`ed
+  rather than silently passed).
+- **Root cause**: no `fcntl.flock`/equivalent advisory lock wraps the
+  `get()`-then-`save()` critical section.
+- **Fix status**: **NOT FIXED THIS PASS** — disclosed as residual risk.
+  A correct fix needs real file-level locking, a more invasive change to
+  a security-critical module than justified for a single newly-found
+  issue within this qualification pass's scope.
+- **Regression test**: `tests/test_redteam_toctou.py::test_toctou04_real_multiprocess_race_on_one_use_lease` (asserts and `xfail`s the reproduction so it can never silently regress into looking passed without investigation).
+- **CWE-like classification**: CWE-362 (Concurrent Execution using
+  Shared Resource with Improper Synchronization, "Race Condition").
 
-## Scope not covered this phase (disclosed, not silently omitted)
+## False positive (caught before being counted as a finding)
 
-- RAG source-independence / citation-confusion / temporal-truth attacks
-  (spec §12-15) — audited (existing coverage confirmed present for the
-  general injection-exclusion property), no new bespoke poisoned-corpus
-  tests built.
-- Memory staleness-vs-fresh-Truth reconciliation (spec §19) — not newly
-  tested.
-- JSON/structured-input bomb testing against the API layer (spec §53).
-- Regex/parser DoS formal analysis (spec §54) — only a quick visual audit
-  performed, not a timing/fuzz analysis.
-- Bounded fuzz/property testing (spec §58-59) — not implemented.
-- Penetration-style API endpoint tests (spec §66) — not newly executed
-  this phase beyond existing `test_auth_*`/`test_org_store.py` coverage.
-- Log injection / audit tampering formal analysis (spec §68-69) — not
-  newly tested.
-- Live-model red-team resistance tests (spec §60, §65) — not run this
-  phase (would require live Ollama calls; existing
-  `tests/test_redteam_jailbreak_trials.py`/`test_redteam_bias_trials.py`
-  already cover the closest existing equivalent).
+An initial hypothesis for RAG-06 (citation numeric mismatch) assumed the
+lexical fallback would score near-zero overlap for a wildly wrong number
+— running the actual test showed `overlap=0.80` (surrounding words
+matched), `PARTIALLY_SUPPORTED`. This was NOT a security bug: reclassified
+honestly as the same disclosed fallback limitation as RAG-04/05 (the
+ceiling — never full SUPPORTED — still holds), and the test assertion was
+corrected to match the REAL observed behavior rather than the original
+(wrong) assumption. Recorded here as a false-positive-caught-during-
+investigation, per spec §45's honesty requirement, not silently dropped.
 
-These are genuine, disclosed gaps in this pass's coverage — not claims
-that the underlying subsystems are insecure, and not vulnerabilities.
-They are documented here so a future pass has an honest starting point
-rather than a false "fully red-teamed" claim.
-
-## Severity table (genuine findings only)
+## Severity table (real findings only)
 
 | Severity | Count |
 |---|---|
 | CRITICAL | 0 |
 | HIGH | 0 |
-| MEDIUM | 0 |
+| MEDIUM | 3 (2 fixed, 1 documented residual) |
 | LOW | 0 |
 
-(Zero because zero real vulnerabilities were found — see summary above
-for why this is reported honestly rather than omitted.)
+(The disclosed fallback-path limitations in RAG-04/05/06 are NOT counted
+as vulnerabilities — they are pre-existing, honestly-labeled design
+limitations of a degraded fallback path whose ceiling property was
+verified to hold, not new bypasses.)
