@@ -40,7 +40,7 @@ re-run confirmed zero further leakage. Disclosed in SECURITY.md.
 |---|---|
 | Full application suite (deterministic) | 1237 passed, 0 failed, 40 deselected |
 | Authoritative security suite (68 files, deterministic) | 579 passed, 0 failed, 1 deselected |
-| Live/integration suite (`-m live_ollama_smoke`, 8 files) | see FINAL REPORT (run completed against a real local Ollama instance) |
+| Live/integration suite (`-m live_ollama_smoke`, 8 files) | 40 passed, 0 failed, against a real local Ollama instance |
 | Godmode-specific tests | 57 passed, 0 failed (4 files) |
 | Godmode eval harness | 24/24 (100%) |
 
