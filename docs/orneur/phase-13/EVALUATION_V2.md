@@ -38,4 +38,4 @@ itself (spec §47).
 |---|---|
 | Full deterministic application suite | 1448 passed, 0 failed, 1 xfailed (documented Finding 3), 43 deselected |
 | Authoritative security suite (89 files) | 790 passed, 0 failed, 1 xfailed, 4 deselected |
-| Live suite (`-m live_ollama_smoke`) | see `PHASE_13_FINAL_CLOSURE.md` for the confirmed post-change result (43 tests: 40 pre-existing + 3 new live-model red-team cases) |
+| Live suite (`-m live_ollama_smoke`) | **43 passed, 0 failed** (726.77s) |

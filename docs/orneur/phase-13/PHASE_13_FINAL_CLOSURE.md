@@ -37,7 +37,7 @@ known before this phase's own active attack work.
 |---|---|
 | Full application suite (deterministic) | 1448 passed, 0 failed, 1 xfailed, 43 deselected |
 | Authoritative security suite (89 files) | 790 passed, 0 failed, 1 xfailed, 4 deselected |
-| Live suite (`-m live_ollama_smoke`) | **[filled in below once the run completes]** |
+| Live suite (`-m live_ollama_smoke`) | **43 passed, 0 failed** (726.77s) |
 | New red-team tests | 55/55 executed, 52 passed clean, 2 real findings fixed, 1 real finding documented/xfailed |
 
 ## Vulnerability accounting (honest, spec §45/§73-75)
