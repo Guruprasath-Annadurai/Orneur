@@ -80,3 +80,44 @@ def failure_candidate_from_diff(diff: RealityDiff) -> FailureCandidateRecord | N
         simulation_id=diff.simulation_id, reality_diff_id=diff.diff_id,
         summary=f"{diff.status.value}: {diff.actual_observation_summary}",
     )
+
+
+_STATUS_SEVERITY_RANK = {
+    RealityDiffStatus.MATCHED: 0, RealityDiffStatus.PARTIAL_MATCH: 1, RealityDiffStatus.OUTCOME_UNKNOWN: 2,
+    RealityDiffStatus.MISSING_EXPECTED_EFFECT: 3, RealityDiffStatus.UNEXPECTED_EFFECT: 3,
+}
+
+# Statuses severe enough that remaining, not-yet-executed real actions
+# in the same plan should be halted rather than blindly continuing
+# against a stale plan (spec §40).
+_HALTING_STATUSES = {RealityDiffStatus.MISSING_EXPECTED_EFFECT, RealityDiffStatus.UNEXPECTED_EFFECT}
+
+
+def reconcile_plan(*, plan_simulation_id: str, per_action_predicted: list[tuple[str, list]], observations) -> "PlanRealityDiff":
+    """
+    `per_action_predicted`: list of `(action_id, predicted_effects)` for
+    every action that was actually SIMULATED (never for one that was
+    `BLOCKED_BY_DEPENDENCY` and so never got predicted effects at all).
+    `observations`: `{action_id: Observation}` for every action that was
+    actually EXECUTED for real -- an action simulated but never executed
+    (e.g. the plan stopped early) has no observation and is skipped here
+    (there is nothing to reconcile against yet).
+    """
+    from orca.simulation.contracts import PlanRealityDiff
+
+    diffs = []
+    for action_id, predicted_effects in per_action_predicted:
+        observation = observations.get(action_id)
+        if observation is None:
+            continue
+        diffs.append(reconcile(simulation_id=plan_simulation_id, predicted_effects=predicted_effects, observation=observation))
+
+    if not diffs:
+        aggregate = RealityDiffStatus.OUTCOME_UNKNOWN
+    else:
+        worst = max(diffs, key=lambda d: _STATUS_SEVERITY_RANK[d.status])
+        aggregate = worst.status
+
+    halted = aggregate in _HALTING_STATUSES
+
+    return PlanRealityDiff(plan_simulation_id=plan_simulation_id, per_action_diffs=diffs, aggregate_status=aggregate, remaining_actions_halted=halted)

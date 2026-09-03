@@ -339,6 +339,19 @@ class RealityDiff:
     created_at: str = field(default_factory=now_iso)
 
 
+@dataclass
+class PlanRealityDiff:
+    """Phase 11.1 spec §39-40: per-action RealityDiff list plus a
+    deterministic aggregate status -- never a single flattened diff that
+    hides which specific action diverged."""
+    plan_diff_id: str = field(default_factory=lambda: _new_id("plandiff"))
+    plan_simulation_id: str = ""
+    per_action_diffs: list[RealityDiff] = field(default_factory=list)
+    aggregate_status: RealityDiffStatus = RealityDiffStatus.OUTCOME_UNKNOWN
+    remaining_actions_halted: bool = False
+    created_at: str = field(default_factory=now_iso)
+
+
 class SimulationFailureCandidateKind(str, Enum):
     """spec §61-62: emitted only as a CANDIDATE record -- never
     auto-written to durable Memory, never auto-converted to training
