@@ -28,7 +28,7 @@ through it.
 |---|---|
 | Full application suite (deterministic) | 1262 passed, 0 failed, 40 deselected |
 | Authoritative security suite (69 files, deterministic) | 604 passed, 0 failed, 1 deselected |
-| Live/integration suite (`-m live_ollama_smoke`, 8 files) | see FINAL REPORT |
+| Live/integration suite (`-m live_ollama_smoke`, 8 files) | 40 passed, 0 failed (a first run had 1 transient failure in `test_truth_fabric_integration.py`, unrelated to any Phase 10.1 code, confirmed as live-model environmental flakiness — passed in isolation and on a clean full re-run) |
 | Godmode-specific tests (5 files) | 82 passed, 0 failed |
 | Godmode eval harness | 24/24 (100%) |
 
