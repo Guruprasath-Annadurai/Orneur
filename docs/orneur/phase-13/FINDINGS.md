@@ -1,17 +1,23 @@
-# Phase 13.1 — Findings (supersedes Phase 13's FINDINGS.md for this closure)
+# Phase 13.1 / 13.2 — Findings (supersedes Phase 13's FINDINGS.md for this closure)
 
 Per spec §72: "a discovered failure is success of the red-team process.
 Do not suppress it."
+
+**Phase 13.2 update**: Finding 3 (Godmode cross-process lease race),
+originally documented and `xfail`ed as an open finding at Phase 13.1
+close, is now **FIXED** — see `GODMODE_DISTRIBUTED_ATOMICITY.md`. All
+counts below reflect the final, post-13.2 state.
 
 ## Summary
 
 | Metric | Count |
 |---|---|
-| NEW_ATTACKS_EXECUTED (this phase) | 55 (see per-campaign breakdown in `EVALUATION_V2.md`) |
+| NEW_ATTACKS_EXECUTED (Phase 13.1) | 55 |
+| NEW_REGRESSION_TESTS (Phase 13.2 fix) | 11 (`tests/test_godmode_distributed_atomicity.py`) |
 | EXISTING_SECURITY_TESTS_REUSED | 733 (Phase 1-13's own suite, unmodified, reconfirmed green) |
 | REAL_VULNERABILITIES_FOUND | 3 |
-| REAL_VULNERABILITIES_FIXED | 2 |
-| RESIDUAL_OPEN_FINDINGS | 1 (documented, `xfail`ed, not hidden) |
+| REAL_VULNERABILITIES_FIXED | **3** (all three — Finding 3 fixed in Phase 13.2) |
+| RESIDUAL_OPEN_FINDINGS | **0** |
 | FALSE_POSITIVES | 1 (RES-06/07 test-writing bugs caught and corrected before being counted — see below) |
 
 ## Real vulnerabilities
@@ -68,30 +74,38 @@ Do not suppress it."
 - **Regression test**: `tests/test_redteam_resource_exhaustion.py::test_res01_deeply_nested_argument_payload_is_rejected_not_crashed`
 - **CWE-like classification**: CWE-674 (Uncontrolled Recursion).
 
-### Finding 3 — Godmode one-use lease cross-process race (DOCUMENTED, NOT FIXED)
+### Finding 3 — Godmode one-use lease cross-process race (FIXED in Phase 13.2)
 
 - **Category**: RACE_CONDITION
-- **Severity**: MEDIUM (current single-process-oriented deployment) /
-  HIGH (if ever deployed multi-process/multi-worker without a fix)
+- **Severity**: MEDIUM (current host-local deployment) / would have been
+  HIGH if ever deployed multi-process/multi-worker without a fix
 - **Affected subsystem**: `orca.godmode.lease_store.consume_use`
 - **Attack preconditions**: two OS processes with access to the same
   file-backed `ORCA_HOME`, both racing to consume the same one-use
   lease.
-- **Observed behavior**: `consume_use()`'s atomicity guarantee
-  (`threading.Lock`) is in-process only; a real
-  `multiprocessing.Process`-based test shows both processes can read
-  `uses_remaining == 1` before either writes `0` back, since there is no
+- **Observed behavior (pre-fix)**: `consume_use()`'s atomicity guarantee
+  (`threading.Lock`) was in-process only; a real
+  `multiprocessing.Process`-based test showed both processes could read
+  `uses_remaining == 1` before either wrote `0` back, since there was no
   file-level lock on the read-modify-write.
 - **Expected behavior**: exactly one process should succeed.
-- **Reproducibility**: REPRODUCIBLE (confirmed directly; `xfail`ed
-  rather than silently passed).
-- **Root cause**: no `fcntl.flock`/equivalent advisory lock wraps the
-  `get()`-then-`save()` critical section.
-- **Fix status**: **NOT FIXED THIS PASS** — disclosed as residual risk.
-  A correct fix needs real file-level locking, a more invasive change to
-  a security-critical module than justified for a single newly-found
-  issue within this qualification pass's scope.
-- **Regression test**: `tests/test_redteam_toctou.py::test_toctou04_real_multiprocess_race_on_one_use_lease` (asserts and `xfail`s the reproduction so it can never silently regress into looking passed without investigation).
+- **Reproducibility**: REPRODUCIBLE (confirmed directly at Phase 13.1;
+  re-confirmed as the pre-fix baseline behavior at the start of Phase
+  13.2 before implementation changes, per spec §1's explicit requirement).
+- **Root cause**: no cross-process lock/transaction wrapped the
+  read-modify-write.
+- **Fix status**: **FIXED in Phase 13.2**. `orca/godmode/lease_store.py`
+  rewritten to a SQLite-backed store (`ORCA_HOME/godmode/leases.db`);
+  `consume_use()`/`revoke()` now run inside a `BEGIN IMMEDIATE`
+  transaction, whose RESERVED lock is enforced by SQLite's own
+  file-locking — genuinely visible across process boundaries. See
+  `GODMODE_DISTRIBUTED_ATOMICITY.md` for the full design.
+- **Regression tests**: `tests/test_redteam_toctou.py::test_toctou04_real_multiprocess_race_on_one_use_lease`
+  (xfail removed, now a permanent passing guard) plus 11 new tests in
+  `tests/test_godmode_distributed_atomicity.py` covering repeated
+  2-process races, 8-process/3-use high contention, revocation/kill-switch/
+  expiry races, restart safety, corruption handling, and the real
+  `resolve_and_consume_lease()`/file-elevation caller paths.
 - **CWE-like classification**: CWE-362 (Concurrent Execution using
   Shared Resource with Improper Synchronization, "Race Condition").
 
@@ -113,7 +127,7 @@ investigation, per spec §45's honesty requirement, not silently dropped.
 |---|---|
 | CRITICAL | 0 |
 | HIGH | 0 |
-| MEDIUM | 3 (2 fixed, 1 documented residual) |
+| MEDIUM | 3 (all 3 fixed) |
 | LOW | 0 |
 
 (The disclosed fallback-path limitations in RAG-04/05/06 are NOT counted

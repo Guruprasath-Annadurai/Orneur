@@ -2,6 +2,12 @@
 
 **Repository**: orca | **Branch**: session-update-2026-08-25
 
+**Superseded by Phase 13.2's own closure below** — Finding 3 (Godmode
+cross-process lease race), open and `xfail`ed at the time this document
+was first written, is now FIXED. Kept here unedited otherwise as the
+honest historical record of what was known and reported at Phase 13.1
+closure time.
+
 ## What Phase 13.1 did differently from Phase 13
 
 Phase 13's own closure was rejected as insufficient: only 6 new attacks
@@ -83,5 +89,102 @@ any model checkpoint, registry entry, or lifecycle state.
 None — Finding 3 is disclosed residual risk, not a blocker, per spec
 §75's "some risks may remain intentionally... do not claim perfect
 security."
+
+**READY TO ADVANCE TO PHASE 14: YES** *(superseded — see Phase 13.2 below for the final answer)*
+
+---
+
+# Phase 13.2 — Distributed-Authority Security Closure
+
+**Repository**: orca | **Branch**: session-update-2026-08-25
+
+## What Phase 13.2 closed
+
+The one real security blocker left open by Phase 13.1: Godmode one-use
+leases were atomic only within a single Python process. Fixed by
+rewriting `orca/godmode/lease_store.py`'s persistence backend to SQLite
+with `BEGIN IMMEDIATE` transactions — see `GODMODE_DISTRIBUTED_ATOMICITY.md`
+for the full audit and design.
+
+## Original exploit (re-confirmed as the pre-fix baseline)
+
+Before implementation changes, the existing `xfail`ed reproducer
+(`tests/test_redteam_toctou.py::test_toctou04_real_multiprocess_race_on_one_use_lease`)
+was re-run and confirmed to still demonstrate the bug (per spec §1's
+explicit requirement not to fix blind) — 2 real OS processes, a
+`max_uses=1` lease, and (pre-fix) both processes could report a
+successful consumption.
+
+## The fix
+
+SQLite-backed lease store (`ORCA_HOME/godmode/leases.db`, stdlib
+`sqlite3`, no new dependency). `consume_use()`/`revoke()` run their
+entire read-validate-mutate-persist sequence inside one `BEGIN IMMEDIATE`
+transaction — a RESERVED lock enforced by SQLite's own file-locking,
+genuinely visible across process boundaries. Lock/transaction failure
+fails closed (deny), bounded at a 5-second timeout. All existing
+function signatures preserved — zero changes needed to `resolution.py`,
+`issuance.py`, `session.py`, or any of the 82 pre-existing Godmode tests.
+
+## Test results (fresh, this closure)
+
+| Suite | Result |
+|---|---|
+| Full application suite (deterministic) | **1460 passed, 0 failed, 0 xfailed** (up from 1448/0/1) |
+| Authoritative security suite (90 files) | **802 passed, 0 failed, 0 xfailed** (up from 790/0/1) |
+| Live suite (`-m live_ollama_smoke`) | see the final chat-delivered report for the confirmed post-fix result |
+| New regression tests | 11/11 (`tests/test_godmode_distributed_atomicity.py`) — 2-process repeated race, 8-process high contention, revocation/kill-switch/expiry races, restart safety, corruption, real-caller-path (AgentRuntime-compatible + file elevation), performance baseline |
+
+## Multiprocess evidence
+
+- **2-process, max_uses=1, 5 repeated iterations**: exactly 1 success and `uses_remaining=0` every single iteration.
+- **8-process, max_uses=3, high contention**: exactly 3 successes, `uses_remaining=0`, never negative.
+- **Real caller path** (`resolve_and_consume_lease()`, the actual function AgentRuntime/connector elevation call): 2 processes, only 1 reaches `ALLOW`.
+- **File elevation path** (`elevated_write_file()`): 2 processes, only 1 privileged write authorized.
+
+## Vulnerability accounting (final)
+
+- REAL_VULNERABILITIES_FOUND (Phase 13.1 + 13.2 combined): **3**
+- REAL_VULNERABILITIES_FIXED: **3** (all three)
+- OPEN_FINDINGS: **0**
+- MULTIPROCESS_LEASE_USE_RACE: **0**, based on 11 passing, executable, real-multiprocess regression tests — not structural reasoning.
+
+## Severity (final)
+
+CRITICAL: 0 | HIGH: 0 | MEDIUM: 3 (all fixed) | LOW: 0
+
+## Xfail policy compliance (spec §33)
+
+`grep -rn "pytest.xfail\|@pytest.mark.xfail" tests/*.py` — **zero matches**
+anywhere in the repository. No hidden duplicate reproducer exists.
+
+## PROCESS_EXECUTION Godmode
+
+Remains **disabled** — unchanged, not enabled to test it.
+
+## Phase 14 compatibility
+
+This fix guarantees correctness for multiple LOCAL processes sharing one
+host's authority store — explicitly NOT a distributed (multi-host)
+solution (no Kubernetes service, no Redis cluster, no consensus
+protocol was built, per spec §40's explicit prohibition). A future
+Phase 14 multi-host architecture would need a real distributed
+transactional store behind the same, deliberately-unchanged
+`lease_store` function signatures.
+
+## Known residual risks (disclosed)
+
+1. RAG citation-confusion attacks against the deterministic lexical
+   fallback path remain a pre-existing, honestly-labeled limitation
+   (unchanged from Phase 13.1).
+2. Structured-input bomb testing against the live API/serve layer was
+   not newly executed.
+3. This fix is host-local only (SQLite file locking) — a genuinely
+   distributed (multi-host) deployment is explicitly out of scope,
+   reserved for Phase 14 per spec §39-40.
+
+## Remaining Phase-13 blockers
+
+None.
 
 **READY TO ADVANCE TO PHASE 14: YES**
