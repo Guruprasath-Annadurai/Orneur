@@ -234,7 +234,7 @@ def simulate_plan(plan: AgentPlan, *, filesystem_root: Path | None = None, live_
 
 async def simulate_plan_async(
     plan: AgentPlan, *, filesystem_root: Path | None = None, live_world_state: WorldState | None = None,
-    budget_ledger=None, cancellation_check=None,
+    budget_ledger=None, cancellation_check=None, on_action_start=None,
 ) -> PlanSimulationResult:
     """
     Real async entry point (Phase 11.1 spec §26). A cooperative
@@ -257,6 +257,14 @@ async def simulate_plan_async(
     for actions that never began are never taken in the first place
     (this function reserves ONE unit per action actually attempted, not
     up front for the whole plan) -- see `_reserve_action_budget()`.
+
+    `on_action_start` (Phase 11.2, optional): an `async def(action_id) ->
+    None` callback awaited immediately after the cancellation checkpoint,
+    BEFORE the action's real work begins. Test-only instrumentation hook
+    (e.g. to signal "this branch is genuinely active" via an
+    `asyncio.Event` and then block on a release gate) -- production
+    callers never need it; default `None` is a no-op and every existing
+    caller/test is unaffected.
     """
     import asyncio
 
@@ -280,6 +288,8 @@ async def simulate_plan_async(
                 if cancellation_check is not None and cancellation_check():
                     cancelled = True
                     break
+                if on_action_start is not None:
+                    await on_action_start(action.action_id)  # test instrumentation only -- itself a real cancellation point
             except asyncio.CancelledError:
                 cancelled = True
                 break

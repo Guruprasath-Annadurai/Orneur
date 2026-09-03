@@ -15,7 +15,7 @@ from orca.cognitive.intent import compile_intent
 from orca.gateway import wiring as gateway_wiring
 from orca.truth.contracts import EvidenceState, TruthRequest
 from orca.truth.truth_fabric import TruthFabric
-from tests.ollama_test_support import require_ollama, warm_model
+from tests.ollama_test_support import require_ollama, retry_transient_async, warm_model
 
 pytestmark = pytest.mark.live_ollama_smoke
 
@@ -71,9 +71,9 @@ async def test_verify_answer_supports_a_grounded_claim():
     objective = "Where is the Eiffel Tower located?"
     intent = compile_intent(objective)
     req = TruthRequest(objective=objective, evidence_requirement=EvidenceLevel.SUPPORTED, freshness_requirement=FreshnessLevel.STATIC)
-    assessed = await fabric.assess_evidence(req, intent, ComplexityLevel.LOW, doc_store=store)
+    assessed = await retry_transient_async(lambda: fabric.assess_evidence(req, intent, ComplexityLevel.LOW, doc_store=store), label="assess_evidence")
 
-    final = await fabric.verify_answer("The Eiffel Tower is located in Paris, France.", assessed)
+    final = await retry_transient_async(lambda: fabric.verify_answer("The Eiffel Tower is located in Paris, France.", assessed), label="verify_answer")
     assert final.claims
     assert any(s.support_state.value == "SUPPORTED" for s in final.claim_supports)
     assert final.citation_coverage["citation_coverage_ratio"] > 0
@@ -89,9 +89,9 @@ async def test_verify_answer_never_fabricates_support_for_unrelated_claim():
     objective = "Where is the Eiffel Tower located?"
     intent = compile_intent(objective)
     req = TruthRequest(objective=objective, evidence_requirement=EvidenceLevel.SUPPORTED, freshness_requirement=FreshnessLevel.STATIC)
-    assessed = await fabric.assess_evidence(req, intent, ComplexityLevel.LOW, doc_store=store)
+    assessed = await retry_transient_async(lambda: fabric.assess_evidence(req, intent, ComplexityLevel.LOW, doc_store=store), label="assess_evidence")
 
-    final = await fabric.verify_answer("The Great Wall of China is over 13,000 miles long.", assessed)
+    final = await retry_transient_async(lambda: fabric.verify_answer("The Great Wall of China is over 13,000 miles long.", assessed), label="verify_answer")
     assert final.claims
     assert not any(s.support_state.value == "SUPPORTED" for s in final.claim_supports)
 

@@ -11,13 +11,14 @@ from orca.agent.contracts import AgentGoal, SideEffectClass
 from orca.agent.planner import AgentPlanner
 from orca.agent.tool_registry import build_agent_tool_registry
 from orca.cognitive.contracts import CognitiveBudget
-from tests.ollama_test_support import require_ollama
+from tests.ollama_test_support import require_ollama, warm_model
 
 
 @pytest.mark.asyncio
 @pytest.mark.live_ollama_smoke
 async def test_live_goal_produces_a_validated_plan_using_only_read_only_tools():
     require_ollama()
+    warm_model("nano")  # Phase 11.2: absorb cold-load latency here, not in this test's own budget
     registry = build_agent_tool_registry()
     # Only offer read-only tools -- the plan CANNOT propose a write/shell/
     # destructive action even if the model wanted to (spec §8's "planner
