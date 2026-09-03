@@ -91,10 +91,33 @@ class TruthFabric:
                 latency_ms=(time.monotonic() - start) * 1000,
             )
 
+        # Phase 7.2 spec §7-9: ONE retrieval-purpose ledger for this whole
+        # assess_evidence() call -- the initial retrieval, every corrective
+        # round, and every multi-hop sub-query all reserve against the
+        # SAME ledger (never an independent fresh allocation per round/hop).
+        # Reserves against the REAL RETRIEVAL_CALLS dimension (see
+        # BUDGET_DIMENSION_AUDIT.md) -- distinct from MODEL_CALLS.
+        retrieval_ledger = None
+        if budget is not None:
+            from orca.deliberation.budget_market import allocate_budget as _allocate_budget
+            from orca.society.budget_ledger import SocietyBudgetLedger as _SocietyBudgetLedger
+            from orca.cognitive.budget import remaining as _remaining_budget
+            retrieval_allocation = _allocate_budget(
+                uncertainty=0.5, risk=RiskLevel.LOW, evidence_conflict=False, complexity=ComplexityLevel.MEDIUM,
+            )
+            retrieval_ledger = _SocietyBudgetLedger(budget=budget, allocation=retrieval_allocation)
+            # Retrieval is effectively the sole RETRIEVAL_CALLS consumer
+            # within assess_evidence's own scope (same reasoning, and the
+            # same premature-exhaustion bug class, as verify_answer's
+            # "verification" cap fix -- see BUDGET_EXECUTION.md).
+            remaining_retrieval = _remaining_budget(budget, BudgetDimension.RETRIEVAL_CALLS)
+            if remaining_retrieval is not None:
+                retrieval_ledger.caps["retrieval"] = max(retrieval_ledger.caps["retrieval"], int(remaining_retrieval))
+
         deadline = time.monotonic() + OVERALL_DEADLINE_S
         try:
             evidence, sources, queries_issued = await asyncio.wait_for(
-                self._retrieve(plan, doc_store=doc_store, budget=budget), timeout=OVERALL_DEADLINE_S,
+                self._retrieve(plan, doc_store=doc_store, budget=budget, retrieval_ledger=retrieval_ledger), timeout=OVERALL_DEADLINE_S,
             )
         except asyncio.TimeoutError:
             raise TruthTimeoutError(internal_detail=f"exceeded OVERALL_DEADLINE_S={OVERALL_DEADLINE_S}")
@@ -155,7 +178,7 @@ class TruthFabric:
             round_index += 1
             try:
                 new_evidence, new_sources, new_queries_issued = await asyncio.wait_for(
-                    self._retrieve(plan, doc_store=doc_store, budget=budget, query_override=reformed["reformed_query"], web_allowed=False),
+                    self._retrieve(plan, doc_store=doc_store, budget=budget, query_override=reformed["reformed_query"], web_allowed=False, retrieval_ledger=retrieval_ledger),
                     timeout=RETRIEVAL_TIMEOUT_S,
                 )
             except TruthBudgetExhaustedError:
@@ -334,7 +357,19 @@ class TruthFabric:
             if not supported_claims:
                 counter_evidence = CounterEvidenceResult(status=CounterEvidenceStatus.NOT_RUN)
             else:
-                counter_evidence = await find_counter_evidence(supported_claims[0].text, self._search_provider, budget=budget)
+                counter_evidence_ledger = None
+                if budget is not None:
+                    from orca.deliberation.budget_market import allocate_budget as _allocate_budget2
+                    from orca.society.budget_ledger import SocietyBudgetLedger as _SocietyBudgetLedger2
+                    from orca.cognitive.budget import remaining as _remaining_budget2
+                    ce_allocation = _allocate_budget2(uncertainty=0.5, risk=RiskLevel.LOW, evidence_conflict=False, complexity=ComplexityLevel.MEDIUM)
+                    counter_evidence_ledger = _SocietyBudgetLedger2(budget=budget, allocation=ce_allocation)
+                    remaining_ce = _remaining_budget2(budget, BudgetDimension.RETRIEVAL_CALLS)
+                    if remaining_ce is not None:
+                        counter_evidence_ledger.caps["counter_evidence"] = max(counter_evidence_ledger.caps["counter_evidence"], int(remaining_ce))
+                counter_evidence = await find_counter_evidence(
+                    supported_claims[0].text, self._search_provider, budget=budget, retrieval_ledger=counter_evidence_ledger,
+                )
 
         return TruthResult(
             request_id=prior_result.request_id, trace_id=prior_result.trace_id, evidence_state=evidence_state,
@@ -347,7 +382,7 @@ class TruthFabric:
         )
 
     async def _retrieve(
-        self, plan, *, doc_store, budget, query_override: str | None = None, web_allowed: bool = True,
+        self, plan, *, doc_store, budget, query_override: str | None = None, web_allowed: bool = True, retrieval_ledger=None,
     ) -> tuple[list[Evidence], list[EvidenceSource], int]:
         """Returns (evidence, sources, queries_issued). `query_override`
         (used by the corrective-retrieval loop) replaces the plan's own
@@ -355,7 +390,11 @@ class TruthFabric:
         retries with ONE reformed query, not a fresh multi-hop fan-out.
         `web_allowed=False` (also corrective-round-only) skips re-querying
         the web provider on every corrective round -- only the initial
-        pass re-searches the web."""
+        pass re-searches the web. `retrieval_ledger` (Phase 7.2 spec §7-9),
+        when given, is ONE shared SocietyBudgetLedger across the initial
+        call AND every corrective round -- multi-hop sub-queries within a
+        single call already share the same counter/budget object, so no
+        additional per-hop allocation is created here."""
         evidence: list[Evidence] = []
         sources: list[EvidenceSource] = []
         queries_issued = 0
@@ -371,8 +410,7 @@ class TruthFabric:
             else:
                 queries = [plan.queries[0].text]
             for q in queries:
-                if budget is not None:
-                    _consume_or_raise(budget, BudgetDimension.RETRIEVAL_CALLS, 1)
+                _reserve_retrieval_or_raise(budget, retrieval_ledger)
                 queries_issued += 1
                 try:
                     chunks = await asyncio.wait_for(asyncio.to_thread(doc_store.retrieve, q, plan.max_documents), timeout=RETRIEVAL_TIMEOUT_S)
@@ -384,8 +422,7 @@ class TruthFabric:
                     sources.append(src)
 
         if web_allowed and RetrievalSourceType.WEB in plan.sources:
-            if budget is not None:
-                _consume_or_raise(budget, BudgetDimension.RETRIEVAL_CALLS, 1)
+            _reserve_retrieval_or_raise(budget, retrieval_ledger)
             queries_issued += 1
             web_query = query_override or plan.queries[0].text
             try:
@@ -403,7 +440,7 @@ class TruthFabric:
                 # beyond what a snippet-only pass needs). Every other
                 # result still uses snippet-only evidence, same as before.
                 if i == 0 and plan.mode == RetrievalMode.RAG_5_RESEARCH and result.url:
-                    fetched_ev = await self._safe_fetch_evidence(result, budget)
+                    fetched_ev = await self._safe_fetch_evidence(result, budget, retrieval_ledger)
                     if fetched_ev is not None:
                         ev, src = fetched_ev
                         evidence.append(ev)
@@ -415,7 +452,7 @@ class TruthFabric:
 
         return evidence[: plan.max_documents], sources[: plan.max_documents], queries_issued
 
-    async def _safe_fetch_evidence(self, result, budget) -> tuple[Evidence, EvidenceSource] | None:
+    async def _safe_fetch_evidence(self, result, budget, retrieval_ledger=None) -> tuple[Evidence, EvidenceSource] | None:
         """Fetches ONE search result's full page through the SSRF-hardened
         orca/truth/fetch.py boundary (URL/DNS/redirect validation, bounded
         size, streamed read), sanitizes it for prompt-injection patterns,
@@ -424,8 +461,7 @@ class TruthFabric:
         snippet-only path rather than treating a fetch failure as a
         retrieval failure."""
         try:
-            if budget is not None:
-                _consume_or_raise(budget, BudgetDimension.RETRIEVAL_CALLS, 1)
+            _reserve_retrieval_or_raise(budget, retrieval_ledger)
             doc = await asyncio.wait_for(asyncio.to_thread(fetch_document, result.url), timeout=FETCH_TIMEOUT_S)
         except Exception:
             return None
@@ -457,6 +493,20 @@ def _consume_or_raise(budget: CognitiveBudget, dimension: BudgetDimension, amoun
         consume(budget, dimension, amount)
     except CognitiveBudgetExhaustedError as e:
         raise TruthBudgetExhaustedError(internal_detail=str(e)) from e
+
+
+def _reserve_retrieval_or_raise(budget: CognitiveBudget | None, retrieval_ledger, amount: int = 1) -> None:
+    """Reserves BEFORE the retrieval call is made (spec §7: 'do not run
+    first and account afterward') -- through the shared retrieval-purpose
+    ledger when one is given (Phase 7.2), falling back to a direct
+    RETRIEVAL_CALLS consume for any caller that doesn't build one."""
+    if retrieval_ledger is not None:
+        try:
+            retrieval_ledger.reserve("retrieval", amount)
+        except CognitiveBudgetExhaustedError as e:
+            raise TruthBudgetExhaustedError(internal_detail=str(e)) from e
+    elif budget is not None:
+        _consume_or_raise(budget, BudgetDimension.RETRIEVAL_CALLS, amount)
 
 
 def _format_context(evidence: list[Evidence]) -> str:

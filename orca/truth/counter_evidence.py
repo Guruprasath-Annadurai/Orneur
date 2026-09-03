@@ -19,7 +19,7 @@ COUNTER_EVIDENCE_TIMEOUT_S = 10.0
 
 
 async def find_counter_evidence(
-    claim_text: str, search_provider: SearchProvider, *, budget: CognitiveBudget | None = None,
+    claim_text: str, search_provider: SearchProvider, *, budget: CognitiveBudget | None = None, retrieval_ledger=None,
 ) -> CounterEvidenceResult:
     """
     Issues ONE bounded adversarial query ("evidence against: <claim>") --
@@ -28,10 +28,24 @@ async def find_counter_evidence(
     afford it, returns NOT_RUN (spec §17: "If unavailable due budget:
     record COUNTER_EVIDENCE_NOT_RUN. Do not pretend it was performed.")
     rather than silently skipping with no trace.
+
+    Phase 7.2 spec §10: reserves against the `"counter_evidence"` purpose
+    of a shared `SocietyBudgetLedger` (RETRIEVAL_CALLS -- this function is
+    pure retrieval; no model/judge step exists here at all, per
+    BUDGET_DIMENSION_AUDIT.md's finding) when `retrieval_ledger` is given,
+    falling back to a direct `RETRIEVAL_CALLS` consume otherwise. Never
+    reports `RAN` when the reservation itself failed (spec §10's explicit
+    "do not report COUNTER_EVIDENCE_RAN when the operation did not
+    actually run").
     """
     query = f"evidence against: {claim_text}"
 
-    if budget is not None:
+    if retrieval_ledger is not None:
+        try:
+            retrieval_ledger.reserve("counter_evidence", 1)
+        except CognitiveBudgetExhaustedError:
+            return CounterEvidenceResult(status=CounterEvidenceStatus.BUDGET_EXHAUSTED, query=query)
+    elif budget is not None:
         try:
             consume(budget, BudgetDimension.RETRIEVAL_CALLS, 1)
         except CognitiveBudgetExhaustedError:
