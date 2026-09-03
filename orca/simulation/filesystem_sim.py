@@ -87,7 +87,17 @@ def simulate_file_action(*, root: Path, action: SimulationAction) -> FilesystemS
         # same real directory spelled two different ways.
         sandbox_root = (Path(tmp).resolve() / "sandbox")
         if root.exists():
-            shutil.copytree(root, sandbox_root)
+            # symlinks=True: preserve symlinks AS symlinks in the copy,
+            # rather than shutil's default of silently dereferencing
+            # them into standalone regular files. Without this, a
+            # symlink pointing outside `root` would be "defused" by the
+            # copy step itself before `_resolve_within_root()` ever gets
+            # a chance to detect it -- diverging from what REAL execution
+            # would do (real execution resolves the symlink against the
+            # real root and correctly blocks the escape). Preserving the
+            # symlink means simulation sees and blocks the exact same
+            # escape a real write would.
+            shutil.copytree(root, sandbox_root, symlinks=True)
         else:
             sandbox_root.mkdir(parents=True)
 
