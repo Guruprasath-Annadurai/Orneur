@@ -1,8 +1,8 @@
-# Orca — The AI Platform That Shows Its Work
+# Orneur — The AI Platform That Shows Its Work
 
 > Your hardware. Your data. Verified answers, not confident guesses.
 
-Orca is a self-hosted AI platform — three model tiers, live web-search
+Orneur is a self-hosted AI platform — three model tiers, live web-search
 grounding with enforced citations, cost-aware routing between self-hosted
 and frontier backends, and a trust layer that tells you plainly when a
 capability claim hasn't been measured yet. It runs on [Ollama](https://ollama.com),
@@ -11,10 +11,10 @@ and a full fine-tuning pipeline.
 
 ---
 
-## Why Orca, honestly
+## Why Orneur, honestly
 
 Most AI products either claim to be smarter than everyone else, or don't
-tell you what they can't do. Orca does neither:
+tell you what they can't do. Orneur does neither:
 
 - **Grounded, cited answers.** Live web search and uploaded documents are
   both wired through the same citation-discipline pipeline
@@ -194,7 +194,7 @@ you can hit right now.
 
 ## Licensing
 
-Orca ships in three tiers, matching the real billing code
+Orneur ships in three tiers, matching the real billing code
 (`orca/auth/store.py`) and the live pricing page:
 
 | Tier | Price | Features |
