@@ -34,6 +34,7 @@ from orca.deliberation.risk_counsel import assess_risk_opinion
 from orca.deliberation.twin import EpistemicTwin
 from orca.deliberation.worldstate_build import build_world_state
 from orca.deliberation.worldstate_ops import unavailable_model_ids
+from orca.gateway.errors import RequestCancelledError
 from orca.society.budget_ledger import SocietyBudgetLedger
 from orca.society.disagreement import compute_disagreement
 from orca.society.router import model_id_to_tier
@@ -141,7 +142,15 @@ class CognitiveCourt:
                 twin.run(objective, evidence_texts, constructor_tier=constructor_tier, falsifier_tier=falsifier_tier),
                 timeout=COURT_DEADLINE_S,
             )
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, RequestCancelledError):
+            # asyncio.wait_for's own cancellation of twin.run() on deadline can
+            # surface as RequestCancelledError rather than asyncio.TimeoutError:
+            # OllamaRuntime.generate()'s `except asyncio.CancelledError: raise
+            # RequestCancelledError()` re-raises a different exception type
+            # before wait_for's own TimeoutError would otherwise be seen here.
+            # Both mean the same thing at this call site -- the deadline was
+            # reached -- and must be handled identically (real bug found via
+            # live-suite root-cause investigation, Phase 11.2 spec §12-13).
             if budget is not None and constructor_reservation is not None:
                 ledger.release_reservation(constructor_reservation)
                 ledger.release_reservation(falsifier_reservation)

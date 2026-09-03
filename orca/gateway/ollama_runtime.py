@@ -123,7 +123,26 @@ class OllamaRuntime:
                 retries += 1
                 continue
             except asyncio.CancelledError:
-                raise RequestCancelledError()
+                # Only convert to the domain-specific RequestCancelledError
+                # for a request this runtime was explicitly told to cancel
+                # via cancel(request_id) -- that is the one case where a
+                # caller wants a stable, catchable exception type rather
+                # than bare CancelledError. Any OTHER CancelledError delivery
+                # (an enclosing asyncio.wait_for()'s own deadline expiring,
+                # or an external task.cancel()) must be re-raised as-is:
+                # asyncio.wait_for()/asyncio.timeout() only convert their own
+                # expiry into TimeoutError when a genuine CancelledError
+                # propagates out of the awaited coroutine -- swallowing it
+                # here and substituting a different exception type silently
+                # defeated every caller's deadline handling (Gateway's
+                # total_request_timeout_s, CognitiveCourt's COURT_DEADLINE_S,
+                # TruthFabric's *_TIMEOUT_S), turning a clean, expected
+                # timeout into an unhandled exception under real load. Real
+                # bug found via Phase 11.2 live-suite root-cause evidence,
+                # not environmental flakiness.
+                if request.request_id in self._cancelled_requests:
+                    raise RequestCancelledError()
+                raise
         raise GenerationTimeoutError(internal_detail=f"timed out after {retries} retries: {last_error}")
 
     async def stream(self, request: InferenceRequest) -> AsyncIterator[InferenceChunk]:
