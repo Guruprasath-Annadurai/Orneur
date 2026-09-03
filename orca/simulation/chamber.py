@@ -166,3 +166,37 @@ def run_simulation(request: SimulationRequest, deps: ChamberDependencies) -> tup
     )
     trace.verdict = result.verdict
     return apply_result_signature(result), trace
+
+
+async def apply_truth_verification_and_impact(
+    result: SimulationResult, *, simulation_id: str, verification_ctx, is_high_risk: bool, doc_store=None, budget=None,
+) -> SimulationResult:
+    """
+    Real Truth Fabric integration (Phase 11.1 spec §18-24). Runs
+    `orca.simulation.truth_verification.verify_assumption()` (a genuine
+    `TruthFabric.assess_evidence()` call, no fabricated result) against
+    every assumption on `result`, then applies
+    `orca.simulation.truth_impact.apply_truth_impact_to_verdict()` --
+    which only ever DOWNGRADES the verdict, never upgrades one. Returns
+    a NEW, re-signed `SimulationResult` (the original is never mutated
+    in place, matching this module's own "never let a caller silently
+    modify a signed result" discipline from `integrity.py`).
+    """
+    from orca.simulation.truth_impact import apply_truth_impact_to_verdict
+    from orca.simulation.truth_verification import verify_assumption
+
+    verified_assumptions = []
+    for assumption in result.assumptions:
+        verified = await verify_assumption(assumption, simulation_id=simulation_id, ctx=verification_ctx, doc_store=doc_store, budget=budget)
+        verified_assumptions.append(verified)
+
+    new_verdict, truth_warnings = apply_truth_impact_to_verdict(result.verdict, verified_assumptions, is_high_risk=is_high_risk)
+
+    updated = SimulationResult(
+        result_id=result.result_id, request_id=result.request_id, mode_used=result.mode_used, verdict=new_verdict,
+        predicted_effects=result.predicted_effects, assumptions=verified_assumptions,
+        compensation_plans=result.compensation_plans, warnings=result.warnings + truth_warnings,
+        block_reasons=result.block_reasons, failure_reason=result.failure_reason,
+        input_fingerprints=result.input_fingerprints, created_at=result.created_at,
+    )
+    return apply_result_signature(updated)
