@@ -37,6 +37,31 @@
   Phase 8 — Phase 10 never modified the functions that define "normal
   authority," only added a layer that computes what to feed them.
 
+## Phase 10.1 additions
+
+| Threat | Mitigation | Verified in |
+|---|---|---|
+| Argument replay (same lease, changed payload) | `arguments_hash` bound at issuance, checked at resolution via canonical hashing | `test_godmode_exact_argument_binding.py` |
+| `str(dict)`/`repr(sorted(...))` hash instability | Real recursive JSON canonicalization (`orca/godmode/canonical.py`) — stable across key order, nested structures, list order preserved, Unicode NFC/NFD, explicit bool/int/float separation | `test_godmode_exact_argument_binding.py` (7 canonicalization property tests) |
+| Missing-arguments silent skip | `resolve_lease()` denies an `EXACT_ARGUMENTS` lease when the caller passes no arguments at all (distinct from passing `{}`) | `test_connector_write_missing_arguments_denies` |
+| Empty-hash-as-wildcard | `is_argument_binding_consistent()` rejected at issuance for `EXACT_ARGUMENTS`; `SCOPED_ARGUMENTS` must be explicitly requested | `test_scoped_arguments_must_be_explicitly_requested` |
+| Failed argument match consuming a use | `resolve_and_consume_lease()` validates fully (including arguments) before ever calling `consume_use()` | `test_failed_argument_match_never_consumes_a_use` |
+| Concurrent race with a wrong-argument competitor | 6 real threads (1 correct + 5 wrong payloads) racing a one-use lease — exactly the correct one wins | `test_resolve_and_consume_lease_is_atomic_only_correct_argument_competitor_wins` |
+| Numeric/boolean type confusion in arguments | Canonicalization tags every value with an explicit type marker (`bool` checked before `int`, `float` via stable `repr()`) | `test_numeric_type_confusion_denied`, `test_boolean_string_confusion_denied` |
+| Extra "ignored" field smuggled into arguments | The hash covers the FULL supplied payload — an extra field changes the hash and denies | `test_extra_ignored_field_denied` |
+| `arguments_hash`/`binding_mode` tampering | Both are now signed fields — tampering fails integrity | `test_arguments_hash_tampering_fails_integrity`, `test_binding_mode_tampering_fails_integrity` |
+
+### Related gap also found and fixed
+
+`AgentRuntime`'s and connector elevation's lease resolution never
+actually called `consume_use()` at all prior to this pass — only
+`file_elevation.py` did. This meant a "one-use" `AGENT`/`CONNECTOR`-domain
+lease was never truly single-use in real usage (only in direct
+low-level test calls to `consume_use()`). Fixed by routing
+`orca.godmode.policy.evaluate_elevated_policy()` and
+`orca.godmode.connector_elevation.evaluate_connector_policy_with_elevation()`
+through the new `resolve_and_consume_lease()`.
+
 ## Real bug found and fixed during this phase
 
 `tests/test_godmode_fast_path.py`'s original fast-path proof deleted

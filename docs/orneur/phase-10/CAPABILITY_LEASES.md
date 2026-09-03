@@ -19,6 +19,21 @@
 | `nonce` | Per-lease random value, covered by the signature. |
 | `revocation_state` | `ACTIVE` \| `REVOKED`. |
 | `signature` | HMAC integrity tag — see LEASE_INTEGRITY.md. |
+| `arguments_hash` | (Phase 10.1) Canonical SHA-256 of the action's PAYLOAD arguments — `None` only when `binding_mode=SCOPED_ARGUMENTS`. Signed. |
+| `binding_mode` | (Phase 10.1) `EXACT_ARGUMENTS` (default) or `SCOPED_ARGUMENTS` (explicit-only). Signed. |
+
+## Argument binding (Phase 10.1 — see EXACT_ACTION_BINDING.md for the full story)
+
+`resource_scope`/`operation_scope` are the lease's COARSE scope (e.g.
+"this connector instance, this record, this operation name").
+`arguments_hash` binds the FINE-GRAINED action PAYLOAD on top — e.g. the
+concrete write body. Both are checked independently by
+`resolve_lease()`; changing either one alone denies the action. An
+`EXACT_ARGUMENTS` lease with `arguments_hash=None` cannot be issued
+(`CapabilityLease.is_argument_binding_consistent()` is enforced at
+issuance) — an empty/missing hash is never silently treated as
+wildcard; true argument-agnostic behavior requires the issuer to request
+`binding_mode=SCOPED_ARGUMENTS` explicitly.
 
 ## No wildcard shape exists
 
