@@ -111,9 +111,9 @@ is outside Model Society's own scope.
 
 - Full application suite: **999 passed, 1 failed** (the disclosed
   pre-existing flake above), 38 deselected, 260.93s.
-- Security suite (16 files, including the two new Phase 7.1 security test
-  files): see the final report for the exact clean-run count.
-- 7 new Phase 7.1 test files (~50 new tests), all passing reliably.
+- Security suite (15 files, including the two new Phase 7.1 security test
+  files): **161 passed, 0 failures**, 547.45s.
+- 8 new Phase 7.1 test files (~55 new tests), all passing reliably.
 
 ## `ROUTING_LIFECYCLE_BYPASS` / `ROUTING_ENTITLEMENT_BYPASS` / `ROUTING_BUDGET_BYPASS` / `UNHEALTHY_DEPLOYMENT_ROUTING` / `UNBOUNDED_REPLAN_LOOP` / `UNVALIDATED_ROLE_OUTPUT` / `RAW_CHAIN_OF_THOUGHT_STORAGE` (spec §49)
 
