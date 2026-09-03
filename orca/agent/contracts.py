@@ -38,6 +38,12 @@ class Capability(str, Enum):
     SECRET_USE = "SECRET_USE"
     EXTERNAL_MESSAGE = "EXTERNAL_MESSAGE"
     PROCESS_EXECUTION = "PROCESS_EXECUTION"
+    # Phase 9 (spec §10): distinct from FILE_READ/FILE_WRITE/NETWORK_*
+    # -- an enterprise connector read/write is its own capability class,
+    # gated by the SAME Capability Engine, on top of (never instead of)
+    # orca.connectors.policy's own tenant/scope/sensitivity checks.
+    CONNECTOR_READ = "CONNECTOR_READ"
+    CONNECTOR_WRITE = "CONNECTOR_WRITE"
 
 
 @dataclass
