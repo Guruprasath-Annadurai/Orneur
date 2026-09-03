@@ -53,3 +53,35 @@ def verify_result_integrity(result: SimulationResult) -> bool:
     if not result.result_hash:
         return False
     return hmac.compare_digest(result.result_hash, sign_result(result))
+
+
+# ── Plan-level (Phase 11.1) -- same HMAC pattern, different field set ────
+
+_PLAN_SIGNED_FIELDS = ("plan_simulation_id", "plan_id", "aggregate_verdict", "aggregate_blast_radius", "aggregate_reversibility")
+
+
+def _plan_canonical_payload(result) -> str:
+    parts = []
+    for name in _PLAN_SIGNED_FIELDS:
+        value = getattr(result, name)
+        domain_value = value.value if hasattr(value, "value") else value
+        parts.append(f"{name}={domain_value}")
+    parts.append("action_order=" + ",".join(result.action_order))
+    parts.append("effect_ids=" + ",".join(sorted(e.effect_id for e in result.aggregate_effects)))
+    parts.append("block_reasons=" + "|".join(result.block_reasons))
+    return "\x1f".join(parts)
+
+
+def sign_plan_result(result) -> str:
+    return hmac.new(_SECRET.encode(), _plan_canonical_payload(result).encode(), hashlib.sha256).hexdigest()
+
+
+def apply_plan_result_signature(result):
+    result.result_hash = sign_plan_result(result)
+    return result
+
+
+def verify_plan_result_integrity(result) -> bool:
+    if not result.result_hash:
+        return False
+    return hmac.compare_digest(result.result_hash, sign_plan_result(result))
