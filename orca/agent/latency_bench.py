@@ -92,6 +92,48 @@ def bench_delegation_overhead() -> dict:
     return {"p50_ms": _p50(samples), "reps": REPS}
 
 
+def bench_plan_schema_validation() -> dict:
+    """Phase 8.1: plan schema validation overhead, excluding any model
+    call (the raw dict is already in hand -- this measures ONLY
+    `_validate_and_build_plan`'s own framework cost)."""
+    from orca.agent.planner import _validate_and_build_plan
+    registry = build_agent_tool_registry()
+    specs = {"read_file": registry.get_spec("read_file")}
+    raw = {"tasks": [{"description": "t"}], "actions": [{"task_index": 0, "tool_id": "read_file", "arguments": {"path": "x"}}]}
+    samples = []
+    for _ in range(REPS):
+        t0 = time.perf_counter()
+        _validate_and_build_plan(raw, specs)
+        samples.append((time.perf_counter() - t0) * 1000)
+    return {"p50_ms": _p50(samples), "reps": REPS}
+
+
+def bench_memory_hook_overhead() -> dict:
+    """Real recall() + Firewall filter cost against an empty/small local
+    store -- excludes any model call (Memory hooks are model-free)."""
+    from orca.agent.memory_hook import recall_advisory_context
+    samples = []
+    for _ in range(REPS):
+        t0 = time.perf_counter()
+        recall_advisory_context("some objective", scope_id="latency-bench-scope")
+        samples.append((time.perf_counter() - t0) * 1000)
+    return {"p50_ms": _p50(samples), "reps": REPS}
+
+
+def bench_court_trigger_policy() -> dict:
+    """`should_request_court_review()`'s own deterministic decision cost
+    -- excludes any actual Court invocation."""
+    from orca.agent.contracts import AgentGoal
+    from orca.agent.court_hook import should_request_court_review
+    goal = AgentGoal(objective="x", allowed_action_classes=frozenset({SideEffectClass.READ_ONLY}))
+    samples = []
+    for _ in range(REPS):
+        t0 = time.perf_counter()
+        should_request_court_review(goal)
+        samples.append((time.perf_counter() - t0) * 1000)
+    return {"p50_ms": _p50(samples), "reps": REPS}
+
+
 if __name__ == "__main__":
     import json
     print(json.dumps({
@@ -100,4 +142,7 @@ if __name__ == "__main__":
         "policy_decision": bench_policy_decision(),
         "full_run_read_only_action": bench_full_run_read_only(),
         "delegation_overhead": bench_delegation_overhead(),
+        "plan_schema_validation": bench_plan_schema_validation(),
+        "memory_hook_overhead": bench_memory_hook_overhead(),
+        "court_trigger_policy": bench_court_trigger_policy(),
     }, indent=2))
