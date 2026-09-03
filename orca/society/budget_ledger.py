@@ -60,6 +60,15 @@ _PURPOSE_TO_DIMENSION: dict[str, BudgetDimension] = {
     "counter_evidence": BudgetDimension.RETRIEVAL_CALLS,
     "tool_execution": BudgetDimension.TOOL_CALLS,
     "agent_delegation": BudgetDimension.AGENT_CALLS,
+    # Phase 11 spec §36: no dedicated SIMULATION_OPERATIONS dimension
+    # exists on CognitiveBudget (adding one would touch a foundational,
+    # widely-consumed contract for a single new caller) -- "fit
+    # repository conventions" instead: a simulation operation is
+    # framework work standing in for what would otherwise be a real
+    # tool call, so it shares TOOL_CALLS' pool, tracked under its own
+    # purpose key so its spend is never conflated with actual tool
+    # execution in `caps`/`spent` accounting.
+    "simulation_operations": BudgetDimension.TOOL_CALLS,
 }
 
 # Which CognitiveBudget field holds each dimension's cap -- mirrors
