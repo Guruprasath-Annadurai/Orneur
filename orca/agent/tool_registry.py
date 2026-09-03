@@ -7,6 +7,8 @@ defines security (spec §8's explicit instruction), `ToolSpec.required_capabilit
 """
 from __future__ import annotations
 
+import asyncio
+import inspect
 import time
 
 from orca.agent.contracts import ActionRiskLevel, Capability, SideEffectClass, ToolInvocation, ToolResult, ToolSpec
@@ -44,6 +46,39 @@ class AgentToolRegistry:
             output = fn(**invocation.arguments)
             latency_ms = (time.monotonic() - start) * 1000
             return ToolResult(invocation_id=invocation.invocation_id, tool_id=invocation.tool_id, success=True, output=str(output), latency_ms=latency_ms)
+        except Exception as e:
+            latency_ms = (time.monotonic() - start) * 1000
+            return ToolResult(invocation_id=invocation.invocation_id, tool_id=invocation.tool_id, success=False, error_class=type(e).__name__, output=str(e), latency_ms=latency_ms)
+
+    async def invoke_async(self, invocation: ToolInvocation) -> ToolResult:
+        """
+        Async invocation (Phase 8.1 spec §23-26) -- a genuinely-async
+        tool function (`inspect.iscoroutinefunction`) is awaited directly
+        and IS interruptible mid-execution by `asyncio.CancelledError`
+        (e.g. at its own internal `await asyncio.sleep(...)` points). A
+        plain sync tool function is run via `asyncio.to_thread()` --
+        HONEST SEMANTICS (spec §26): cancelling the awaiting Task
+        interrupts the AWAIT, but Python cannot forcibly kill the
+        underlying OS thread already running the sync function; that
+        thread keeps executing in the background to completion (its
+        result is simply discarded) -- exactly CPython's real
+        `asyncio.to_thread`/`ThreadPoolExecutor` behavior, not
+        misrepresented as true preemptive cancellation.
+        """
+        spec = self._specs.get(invocation.tool_id)
+        if spec is None:
+            return ToolResult(invocation_id=invocation.invocation_id, tool_id=invocation.tool_id, success=False, error_class="UNKNOWN_TOOL", output=f"Unknown tool: {invocation.tool_id}")
+        fn = self._fns[invocation.tool_id]
+        start = time.monotonic()
+        try:
+            if inspect.iscoroutinefunction(fn):
+                output = await fn(**invocation.arguments)
+            else:
+                output = await asyncio.to_thread(fn, **invocation.arguments)
+            latency_ms = (time.monotonic() - start) * 1000
+            return ToolResult(invocation_id=invocation.invocation_id, tool_id=invocation.tool_id, success=True, output=str(output), latency_ms=latency_ms)
+        except asyncio.CancelledError:
+            raise  # never swallowed -- must propagate for the runtime's own cancellation handling
         except Exception as e:
             latency_ms = (time.monotonic() - start) * 1000
             return ToolResult(invocation_id=invocation.invocation_id, tool_id=invocation.tool_id, success=False, error_class=type(e).__name__, output=str(e), latency_ms=latency_ms)

@@ -1,25 +1,31 @@
 """
-Agent Runtime execution loop (Phase 8 spec §1, §7, §13, §20, §24-27).
-Canonical flow, never model->tool direct (spec §13):
+Agent Runtime execution loop (Phase 8 spec §1, §7, §13, §20, §24-27;
+Phase 8.1 spec §23-36 async/cancellation). Canonical flow, never
+model->tool direct (spec §13):
 
   ActionRequest -> capability check -> policy check -> budget reservation
   -> execution -> result validation -> Observation -> WorldState update
 
 PLAN -> AUTHORIZE -> EXECUTE -> OBSERVE -> UPDATE WORLD STATE -> VERIFY
 -> REPLAN IF REQUIRED -> STOP, bounded by MAX_AGENT_REPLANS, a deadline,
-and the shared CognitiveBudget (via SocietyBudgetLedger's `tool_execution`
-purpose, TOOL_CALLS dimension -- never MODEL_CALLS, per Phase 7.2's
-dimension discipline).
+and the shared CognitiveBudget.
+
+`execute_async()` is the real implementation (Phase 8.1 spec §23: "add a
+genuine async execution entry point... avoid nested event-loop hacks").
+`execute()` is a thin synchronous wrapper (`asyncio.run(...)`) preserved
+for Phase 8's existing callers/tests -- it does NOT duplicate the loop
+logic, so there is exactly one execution path to keep correct.
 """
 from __future__ import annotations
 
+import asyncio
+import inspect
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from orca.agent.capability import check_capabilities
 from orca.agent.contracts import (
     ActionAuthorization,
-    ActionRequest,
     AgentAction,
     AgentGoal,
     AgentPlan,
@@ -32,7 +38,6 @@ from orca.agent.contracts import (
     Observation,
     ObservationTrustClass,
     PolicyDecisionState,
-    SideEffectClass,
     TaskStatus,
     ToolInvocation,
 )
@@ -72,7 +77,8 @@ class AgentRuntime:
         """
         `replan_fn`, when given, is called as
         `replan_fn(plan, failed_task, world_state) -> AgentPlan | None`
-        to produce a LOCAL revision (spec §25's "prefer local revisions")
+        (sync OR async -- both `iscoroutinefunction` are supported) to
+        produce a LOCAL revision (spec §25's "prefer local revisions")
         after a bounded, classified failure -- returning None means no
         revision is possible and the run stops honestly. Never regenerates
         the whole strategy by default; callers that want that pass a
@@ -134,7 +140,8 @@ class AgentRuntime:
     def _apply_observation(self, world_state: WorldState, action: AgentAction, observation: Observation) -> None:
         """Only typed operations mutate WorldState (spec §22) -- an
         observation's raw text becomes a fact tagged with the tool as its
-        source_ref, never asserted without provenance."""
+        source_ref, never asserted without provenance. A CANCELLED/
+        uncertain observation never emits a success fact (spec §34)."""
         if observation.status == "OK" and observation.facts:
             apply_update(
                 world_state,
@@ -142,7 +149,33 @@ class AgentRuntime:
             )
             observation.world_state_changes.append(f"ADD_OBSERVATION:tool:{action.tool_id}")
 
+    async def _call_replan_fn(self, plan, task, world_state):
+        if inspect.iscoroutinefunction(self.replan_fn):
+            return await self.replan_fn(plan, task, world_state)
+        return self.replan_fn(plan, task, world_state)
+
     def execute(self, plan: AgentPlan, world_state: WorldState | None = None) -> tuple[AgentRun, AgentTrace, WorldState]:
+        """Synchronous entry point (Phase 8, preserved) -- wraps
+        `execute_async()` via `asyncio.run()`. Only valid when called from
+        outside a running event loop (the normal case for every existing
+        Phase 8 caller/test); calling it FROM an async context raises
+        `RuntimeError` from `asyncio.run()` itself, exactly as Python's own
+        rules dictate -- callers already inside an event loop should
+        `await execute_async()` directly instead."""
+        return asyncio.run(self.execute_async(plan, world_state))
+
+    async def execute_async(self, plan: AgentPlan, world_state: WorldState | None = None) -> tuple[AgentRun, AgentTrace, WorldState]:
+        """
+        The real execution loop. Cancellable: if the enclosing
+        `asyncio.Task` running this coroutine is cancelled
+        (`task.cancel()`), `asyncio.CancelledError` is caught HERE (not
+        re-raised) so the Task completes normally with a structured
+        `(run, trace, world_state)` result carrying
+        `AgentRunStatus.CANCELLED` / `ExecutionStopReason.CANCELLED` --
+        never mis-reported as `TIMEOUT` (spec §25), and any in-flight
+        budget reservation for the interrupted action is released (spec
+        §28), never left as an orphaned/leaked reservation.
+        """
         run = AgentRun(goal=self.goal, capabilities=self.capabilities, deadline_s=self.deadline_s, status=AgentRunStatus.RUNNING)
         trace = AgentTrace(run_id=run.run_id)
         world_state = world_state or WorldState()
@@ -152,127 +185,147 @@ class AgentRuntime:
         task_map: dict[str, AgentTask] = {t.task_id: t for t in plan.tasks}
         actions = list(plan.actions)
         replans_used = 0
+        cancelled = False
 
         idx = 0
-        while idx < len(actions):
-            if time.monotonic() - start > self.deadline_s:
-                run.status = AgentRunStatus.FAILED
-                run.stop_reason = ExecutionStopReason.TIMEOUT
-                break
-
-            action = actions[idx]
-            task = task_map.get(action.task_id)
-            trace.action_ids.append(action.action_id)
-
-            if task is not None and any(
-                task_map[dep].status not in (TaskStatus.COMPLETED, TaskStatus.SKIPPED)
-                for dep in task.dependencies if dep in task_map
-            ):
-                task.status = TaskStatus.BLOCKED
-                run.blocked_task_ids.append(task.task_id)
-                idx += 1
-                continue
-
-            auth, spec = self._authorize(action)
-            trace.authorization_ids.append(auth.authorization_id)
-
-            if spec is None:
-                if task is not None:
-                    task.status = TaskStatus.FAILED
-                run.stop_reason = ExecutionStopReason.DEPENDENCY_FAILED
-                idx += 1
-                continue
-
-            if not auth.capability_decision.granted:
-                if task is not None:
-                    task.status = TaskStatus.FAILED
-                run.status = AgentRunStatus.PARTIAL
-                run.stop_reason = ExecutionStopReason.CAPABILITY_MISSING
-                idx += 1
-                continue
-
-            if auth.decision.state == PolicyDecisionState.DENY:
-                if task is not None:
-                    task.status = TaskStatus.FAILED
-                run.status = AgentRunStatus.PARTIAL
-                run.stop_reason = ExecutionStopReason.POLICY_DENIED
-                idx += 1
-                continue
-
-            if auth.decision.state == PolicyDecisionState.REQUIRE_APPROVAL:
-                if task is not None:
-                    task.status = TaskStatus.BLOCKED
-                    run.blocked_task_ids.append(task.task_id)
-                run.status = AgentRunStatus.BLOCKED
-                run.stop_reason = ExecutionStopReason.APPROVAL_REQUIRED
-                idx += 1
-                continue
-
-            # Budget reservation BEFORE execution (spec §13/§45-46).
-            reservation = None
-            if self.ledger is not None:
-                try:
-                    reservation = self.ledger.reserve("tool_execution", 1)
-                except CognitiveBudgetExhaustedError:
-                    run.status = AgentRunStatus.PARTIAL
-                    run.stop_reason = ExecutionStopReason.BUDGET_EXHAUSTED
-                    if task is not None:
-                        task.status = TaskStatus.BLOCKED
+        try:
+            while idx < len(actions):
+                if time.monotonic() - start > self.deadline_s:
+                    run.status = AgentRunStatus.FAILED
+                    run.stop_reason = ExecutionStopReason.TIMEOUT
                     break
 
-            # Idempotency (spec §27): a non-idempotent tool is never
-            # invoked twice for the same key within one run.
-            idem_key = f"{action.tool_id}:{sorted(action.arguments.items())}"
-            if not spec.idempotent and idem_key in self._idempotency_seen:
-                observation = Observation(action_id=action.action_id, source=action.tool_id, status="DEDUPED", facts=["deduplicated -- already executed this run"])
-            else:
-                invocation = ToolInvocation(tool_id=action.tool_id, arguments=action.arguments, idempotency_key=idem_key)
-                tool_result = self.registry.invoke(invocation)
-                retries = 0
-                while not tool_result.success and tool_result.error_class in _TRANSIENT_ERROR_CLASSES and retries < _MAX_ACTION_RETRIES:
-                    retries += 1
-                    tool_result = self.registry.invoke(invocation)
-                tool_result.retries = retries
-                if not spec.idempotent:
-                    self._idempotency_seen.add(idem_key)
-                trace.tool_invocation_ids.append(invocation.invocation_id)
-                observation = self._to_observation(action, tool_result)
+                action = actions[idx]
+                task = task_map.get(action.task_id)
+                trace.action_ids.append(action.action_id)
 
-            trace.observation_ids.append(observation.observation_id)
-            self._apply_observation(world_state, action, observation)
+                if task is not None and any(
+                    task_map[dep].status not in (TaskStatus.COMPLETED, TaskStatus.SKIPPED)
+                    for dep in task.dependencies if dep in task_map
+                ):
+                    task.status = TaskStatus.BLOCKED
+                    run.blocked_task_ids.append(task.task_id)
+                    idx += 1
+                    continue
 
-            if observation.status == "ERROR":
-                if task is not None:
-                    task.status = TaskStatus.FAILED
-                if self.replan_fn is not None and replans_used < MAX_AGENT_REPLANS:
-                    revised = self.replan_fn(plan, task, world_state)
-                    replans_used += 1
-                    trace.replan_events.append(f"replan:{replans_used}:{action.tool_id}_failed")
-                    if revised is not None:
-                        # The original task's failure is superseded by a
-                        # working local revision (spec §25) -- SKIPPED, not
-                        # left as a permanent FAILED, since a substitute
-                        # task now carries the work forward. The failure
-                        # itself is still visible in the trace's replan_events.
+                auth, spec = self._authorize(action)
+                trace.authorization_ids.append(auth.authorization_id)
+
+                if spec is None:
+                    if task is not None:
+                        task.status = TaskStatus.FAILED
+                    run.stop_reason = ExecutionStopReason.DEPENDENCY_FAILED
+                    idx += 1
+                    continue
+
+                if not auth.capability_decision.granted:
+                    if task is not None:
+                        task.status = TaskStatus.FAILED
+                    run.status = AgentRunStatus.PARTIAL
+                    run.stop_reason = ExecutionStopReason.CAPABILITY_MISSING
+                    idx += 1
+                    continue
+
+                if auth.decision.state == PolicyDecisionState.DENY:
+                    if task is not None:
+                        task.status = TaskStatus.FAILED
+                    run.status = AgentRunStatus.PARTIAL
+                    run.stop_reason = ExecutionStopReason.POLICY_DENIED
+                    idx += 1
+                    continue
+
+                if auth.decision.state == PolicyDecisionState.REQUIRE_APPROVAL:
+                    if task is not None:
+                        task.status = TaskStatus.BLOCKED
+                        run.blocked_task_ids.append(task.task_id)
+                    run.status = AgentRunStatus.BLOCKED
+                    run.stop_reason = ExecutionStopReason.APPROVAL_REQUIRED
+                    idx += 1
+                    continue
+
+                # Budget reservation BEFORE execution (spec §13/§45-46).
+                reservation = None
+                if self.ledger is not None:
+                    try:
+                        reservation = self.ledger.reserve("tool_execution", 1)
+                    except CognitiveBudgetExhaustedError:
+                        run.status = AgentRunStatus.PARTIAL
+                        run.stop_reason = ExecutionStopReason.BUDGET_EXHAUSTED
                         if task is not None:
-                            task.status = TaskStatus.SKIPPED
-                        for new_action in revised.actions:
-                            if new_action.task_id not in [a.task_id for a in actions[:idx + 1]]:
-                                actions.append(new_action)
-                                task_map.setdefault(new_action.task_id, AgentTask(task_id=new_action.task_id))
-                        idx += 1
-                        continue
-                run.status = AgentRunStatus.PARTIAL
-                run.stop_reason = ExecutionStopReason.TOOL_ERROR
+                            task.status = TaskStatus.BLOCKED
+                        break
+
+                # Idempotency (spec §27): a non-idempotent tool is never
+                # invoked twice for the same key within one run.
+                idem_key = f"{action.tool_id}:{sorted(action.arguments.items())}"
+                if not spec.idempotent and idem_key in self._idempotency_seen:
+                    observation = Observation(action_id=action.action_id, source=action.tool_id, status="DEDUPED", facts=["deduplicated -- already executed this run"])
+                else:
+                    invocation = ToolInvocation(tool_id=action.tool_id, arguments=action.arguments, idempotency_key=idem_key)
+                    try:
+                        tool_result = await self.registry.invoke_async(invocation)
+                        retries = 0
+                        while not tool_result.success and tool_result.error_class in _TRANSIENT_ERROR_CLASSES and retries < _MAX_ACTION_RETRIES:
+                            retries += 1
+                            tool_result = await self.registry.invoke_async(invocation)
+                    except asyncio.CancelledError:
+                        # spec §28: release the reservation for the
+                        # interrupted action -- it was never actually
+                        # consumed by completed work.
+                        if reservation is not None and self.ledger is not None:
+                            self.ledger.release_reservation(reservation)
+                        cancelled = True
+                        break
+                    tool_result.retries = retries
+                    if not spec.idempotent:
+                        self._idempotency_seen.add(idem_key)
+                    trace.tool_invocation_ids.append(invocation.invocation_id)
+                    observation = self._to_observation(action, tool_result)
+
+                trace.observation_ids.append(observation.observation_id)
+                self._apply_observation(world_state, action, observation)
+
+                if observation.status == "ERROR":
+                    if task is not None:
+                        task.status = TaskStatus.FAILED
+                    if self.replan_fn is not None and replans_used < MAX_AGENT_REPLANS:
+                        try:
+                            revised = await self._call_replan_fn(plan, task, world_state)
+                        except asyncio.CancelledError:
+                            cancelled = True
+                            break
+                        replans_used += 1
+                        trace.replan_events.append(f"replan:{replans_used}:{action.tool_id}_failed")
+                        if revised is not None:
+                            # The original task's failure is superseded by a
+                            # working local revision (spec §25) -- SKIPPED, not
+                            # left as a permanent FAILED, since a substitute
+                            # task now carries the work forward. The failure
+                            # itself is still visible in the trace's replan_events.
+                            if task is not None:
+                                task.status = TaskStatus.SKIPPED
+                            for new_action in revised.actions:
+                                if new_action.task_id not in [a.task_id for a in actions[:idx + 1]]:
+                                    actions.append(new_action)
+                                    task_map.setdefault(new_action.task_id, AgentTask(task_id=new_action.task_id))
+                            idx += 1
+                            continue
+                    run.status = AgentRunStatus.PARTIAL
+                    run.stop_reason = ExecutionStopReason.TOOL_ERROR
+                    idx += 1
+                    continue
+
+                if task is not None:
+                    task.status = TaskStatus.COMPLETED
+                    run.completed_task_ids.append(task.task_id)
                 idx += 1
-                continue
+        except asyncio.CancelledError:
+            cancelled = True
 
-            if task is not None:
-                task.status = TaskStatus.COMPLETED
-                run.completed_task_ids.append(task.task_id)
-            idx += 1
-
-        if run.stop_reason is None:
+        if cancelled:
+            run.status = AgentRunStatus.CANCELLED
+            run.stop_reason = ExecutionStopReason.CANCELLED
+        elif run.stop_reason is None:
             all_completed = all(t.status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED) for t in task_map.values()) if task_map else True
             run.status = AgentRunStatus.COMPLETED if all_completed else AgentRunStatus.PARTIAL
             run.stop_reason = ExecutionStopReason.GOAL_ACHIEVED if all_completed else ExecutionStopReason.DEPENDENCY_FAILED
