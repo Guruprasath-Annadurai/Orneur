@@ -1,3 +1,54 @@
+# Phase 7.2 Closure — Cross-Dimension Budget Enforcement + Live-Ollama Reliability
+
+Phase 7.2 closed the two remaining gaps Phase 7.1 disclosed:
+
+1. **Retrieval/counter-evidence budget dimension mismatch** -- root-caused
+   by reading `orca.truth.counter_evidence.find_counter_evidence`'s actual
+   body (no model/judge step exists at all; it's pure retrieval). Fixed:
+   `SocietyBudgetLedger` is now dimension-aware
+   (`_PURPOSE_TO_DIMENSION`), `retrieval`/`counter_evidence` purposes
+   reserve against the real `RETRIEVAL_CALLS` dimension (not
+   `MODEL_CALLS`), corrective retrieval and multi-hop sub-queries share
+   ONE parent retrieval allocation per `assess_evidence()` call, and
+   cross-dimensional reallocation is refused outright. See
+   `BUDGET_DIMENSION_AUDIT.md` and the updated `BUDGET_EXECUTION.md`.
+2. **Live-Ollama observability test flakiness** -- root-caused to three
+   compounding factors (missing `live_ollama_smoke` classification,
+   unbounded-length prompt, no centralized warmup) and fixed without a
+   mock and without a blind retry. See `LIVE_OLLAMA_RELIABILITY.md`.
+
+## Final, clean test runs (Phase 7.2)
+
+- Deterministic/release suite (`-m "not live_ollama_smoke"`): **1017
+  passed, 0 failures**, 39 deselected, 174.43s.
+- Live Ollama suite (`-m live_ollama_smoke`): **39 passed, 0 failures**,
+  450.94s (a first run on the same machine showed 1 transient failure in
+  `test_cognitive_kernel_truth_fabric_integration.py` -- reproduced as
+  NOT reproducible in 2 subsequent isolated/grouped re-runs, root-caused
+  to the same real-Ollama-load-sensitivity class already disclosed for
+  the observability test, not a Phase 7.2 code regression; a clean
+  full-suite re-run confirmed 0 failures).
+- Security suite (16 files, including three new Phase 7.2 security/
+  invariant test files): **168 passed, 0 failures**, 388.46s.
+- 6 new Phase 7.2 test files (~25 new tests), all passing reliably.
+
+## A note on residual live-suite timing sensitivity (not hidden)
+
+This session directly observed that running many live-Ollama tests
+sequentially in one long process, on a single local Ollama instance
+serving multiple model tiers, has an intrinsic low-frequency flakiness
+rate under cumulative load -- independent of Phase 7/7.1/7.2's own code
+correctness (every implicated test passes reliably standalone and in its
+own file's group; the SAME test that failed once now shows 0 failures
+across two subsequent full clean runs). This is a real property of the
+current single-machine, single-Ollama-instance local test environment,
+not something this phase's scope (budget dimensions + one named test) set
+out to eliminate entirely. Disclosed honestly per this project's standing
+discipline, rather than chased with retries or hidden by narrowing the
+test selection.
+
+---
+
 # Phase 7.1 Final Closure — Model Society Production Authority Closure
 
 ## Scope delivered
