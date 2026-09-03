@@ -62,3 +62,19 @@ def test_read_only_requirement_decision_has_zero_side_effects():
     ctx = SimulationRequirementContext(side_effect_class=SideEffectClass.READ_ONLY)
     result = decide_simulation_requirement(ctx, ToolSimulationCapability())
     assert result.value == "NOT_REQUIRED"
+
+
+def test_single_action_chamber_never_imports_plan_or_branch_modules():
+    """spec §52: a single-action static/read-only simulation must not
+    pay multi-plan/branch orchestration overhead -- structurally, the
+    single-action Chamber never even imports those modules."""
+    import ast
+    tree = ast.parse(Path("orca/simulation/chamber.py").read_text())
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+        if isinstance(node, ast.Import):
+            names.update(a.name for a in node.names)
+    assert "orca.simulation.plan_chamber" not in names
+    assert "orca.simulation.branching" not in names
