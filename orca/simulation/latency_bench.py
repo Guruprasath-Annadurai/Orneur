@@ -70,3 +70,55 @@ def run_all() -> list[LatencyResult]:
 if __name__ == "__main__":
     for r in run_all():
         print(f"{r.name}: mean={r.mean_ms:.4f}ms p95={r.p95_ms:.4f}ms (n={r.n})")
+
+
+def run_plan_and_branch_benchmarks() -> list[LatencyResult]:
+    """Phase 11.1 spec §51: multi-action orchestration, branch setup/
+    aggregation, Truth trigger policy, async scheduling, cancellation
+    cleanup, plan RealityDiff -- framework overhead only, separate from
+    the original Phase 11 single-action benchmarks above."""
+    import asyncio
+
+    from orca.agent.contracts import AgentAction, AgentPlan, AgentTask, Observation
+    from orca.simulation.branching import run_bounded_branches
+    from orca.simulation.plan_chamber import simulate_plan, simulate_plan_async
+    from orca.simulation.reality_diff import reconcile_plan
+    from orca.simulation.truth_verification import AssumptionVerificationContext, requires_truth_verification
+
+    root = Path(tempfile.mkdtemp())
+    task_a = AgentTask(description="create")
+    task_b = AgentTask(description="modify", dependencies=[task_a.task_id])
+    action_a = AgentAction(task_id=task_a.task_id, tool_id="write_file", arguments={"operation": "create", "path": "bench.txt", "content": "v1"})
+    action_b = AgentAction(task_id=task_b.task_id, tool_id="write_file", arguments={"operation": "modify", "path": "bench.txt", "content": "v2"})
+    plan = AgentPlan(tasks=[task_a, task_b], actions=[action_a, action_b])
+    plan_result = simulate_plan(plan, filesystem_root=root)
+
+    results = []
+    results.append(_measure("multi_action_plan_orchestration_2_actions", lambda: simulate_plan(plan, filesystem_root=root), n=50))
+    results.append(_measure("branch_setup_and_aggregation", lambda: run_bounded_branches(plan, filesystem_root=root), n=50))
+    results.append(_measure("truth_trigger_policy_decision", lambda: requires_truth_verification(AssumptionVerificationContext(high_impact=True))))
+    results.append(_measure(
+        "plan_reality_diff",
+        lambda: reconcile_plan(
+            plan_simulation_id=plan_result.plan_simulation_id,
+            per_action_predicted=[(plan_result.action_order[0], plan_result.per_action[0].predicted_effects), (plan_result.action_order[1], plan_result.per_action[1].predicted_effects)],
+            observations={plan_result.action_order[0]: Observation(action_id=plan_result.action_order[0], source="write_file", status="OK", facts=["wrote bench.txt"]), plan_result.action_order[1]: Observation(action_id=plan_result.action_order[1], source="write_file", status="OK", facts=["wrote bench.txt"])},
+        ),
+    ))
+
+    async def _async_schedule_and_cancel():
+        t = asyncio.create_task(simulate_plan_async(plan, filesystem_root=root))
+        await asyncio.sleep(0)
+        t.cancel()
+        return await t
+
+    def _run_cancel():
+        return asyncio.run(_async_schedule_and_cancel())
+
+    results.append(_measure("async_scheduling_plus_cancellation_cleanup", _run_cancel, n=50))
+    return results
+
+
+if __name__ == "__main__":
+    for r in run_plan_and_branch_benchmarks():
+        print(f"{r.name}: mean={r.mean_ms:.4f}ms p95={r.p95_ms:.4f}ms (n={r.n})")
