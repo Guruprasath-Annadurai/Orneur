@@ -36,6 +36,9 @@ tests/test_godmode_concurrency_and_e2e.py
 tests/test_godmode_exact_argument_binding.py
 tests/test_godmode_fast_path.py
 tests/test_godmode_security.py
+tests/test_learning_eval_harness.py
+tests/test_learning_phase12.py
+tests/test_learning_training_experiment.py
 tests/test_lens_safety.py
 tests/test_mcp_fs_server_sandbox.py
 tests/test_memory_authority_security.py
