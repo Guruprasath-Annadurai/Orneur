@@ -98,6 +98,25 @@ class ElevatedCapabilityRequest:
     created_at: str = field(default_factory=now_iso)
 
 
+class ArgumentBindingMode(str, Enum):
+    """Phase 10.1 spec §13: wildcard/argument-agnostic behavior must be
+    EXPLICIT and policy-controlled -- an empty/missing arguments_hash
+    must never be silently interpreted as 'any arguments allowed'.
+
+    EXACT_ARGUMENTS (the default): the action's canonicalized arguments
+    must hash to EXACTLY the bound value, or the action is denied.
+
+    SCOPED_ARGUMENTS: an explicit, distinct policy meaning "this lease
+    intentionally authorizes a bounded CLASS of repeated operations
+    within its resource/operation scope, not one exact argument
+    payload" (spec §13's example: FILE_WRITE inside one exact temp
+    directory for N uses, where file content legitimately varies call
+    to call). Never the default -- an issuer must explicitly request it.
+    """
+    EXACT_ARGUMENTS = "EXACT_ARGUMENTS"
+    SCOPED_ARGUMENTS = "SCOPED_ARGUMENTS"
+
+
 # ── Approval (spec §10) -- binds to the EXACT action, never reusable ────
 
 @dataclass(frozen=True)
@@ -114,6 +133,7 @@ class GodmodeApproval:
     reason: str
     approved_by: str
     expires_at: str
+    binding_mode: ArgumentBindingMode = ArgumentBindingMode.EXACT_ARGUMENTS
 
 
 # ── Capability lease (spec §6-7) -- always narrow ────────────────────────
@@ -137,6 +157,12 @@ class CapabilityLease:
     issuer: LeaseIssuerClass = LeaseIssuerClass.SYSTEM_POLICY
     issuer_id: str = ""
     reason: str = ""
+    # Phase 10.1 (spec §4-6): binds the action PAYLOAD, on top of the
+    # capability/resource/operation/tenant scope above. `None` only ever
+    # occurs together with `binding_mode == SCOPED_ARGUMENTS` -- see
+    # `is_argument_binding_consistent()` below, enforced at issuance.
+    arguments_hash: str | None = None
+    binding_mode: ArgumentBindingMode = ArgumentBindingMode.EXACT_ARGUMENTS
     approval_id: str | None = None
     max_uses: int | None = 1             # None only for the rare, explicitly-reviewed multi-use lease
     uses_remaining: int | None = 1
@@ -150,6 +176,15 @@ class CapabilityLease:
         here as a pure, reusable predicate so no issuance path can skip
         it."""
         return any(v in ("*", "", "ALL", "all", "everything", "admin") for v in (self.capability, self.resource_scope, self.operation_scope))
+
+    def is_argument_binding_consistent(self) -> bool:
+        """Phase 10.1 spec §13: an EMPTY/missing `arguments_hash` must
+        NEVER be silently treated as wildcard -- it is only ever valid
+        together with an EXPLICIT `binding_mode == SCOPED_ARGUMENTS`.
+        `EXACT_ARGUMENTS` (the default) REQUIRES a non-empty hash."""
+        if self.binding_mode == ArgumentBindingMode.EXACT_ARGUMENTS:
+            return bool(self.arguments_hash)
+        return True  # SCOPED_ARGUMENTS may have a hash (for a class-fingerprint) or not
 
 
 # ── Godmode session (spec §5) ────────────────────────────────────────────
@@ -193,6 +228,8 @@ class ElevatedPolicyDecision:
     normal_decision_state: str = ""
     lease_considered_id: str | None = None
     scope_match: bool = False
+    argument_match: bool = False
+    binding_mode: str = ""
     expiry_ok: bool = False
     revocation_ok: bool = False
     kill_switch_active: bool = False

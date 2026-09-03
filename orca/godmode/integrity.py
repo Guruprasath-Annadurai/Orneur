@@ -26,6 +26,11 @@ _SIGNED_FIELDS = (
     "lease_id", "principal_id", "tenant_id", "capability_domain", "capability",
     "resource_scope", "operation_scope", "issued_at", "expires_at", "issuer",
     "issuer_id", "approval_id", "max_uses", "delegable", "nonce",
+    # Phase 10.1 (spec §7): the argument binding is part of the lease's
+    # tamper-evident payload -- modifying arguments_hash OR binding_mode
+    # after issuance must invalidate integrity, exactly like modifying
+    # capability/resource/operation does.
+    "arguments_hash", "binding_mode",
 )
 
 

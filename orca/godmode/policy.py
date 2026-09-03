@@ -25,7 +25,7 @@ from orca.godmode.contracts import (
     ElevatedPolicyDecisionState,
 )
 from orca.godmode.kill_switch import is_active as kill_switch_active
-from orca.godmode.resolution import resolve_lease
+from orca.godmode.resolution import _SENTINEL, resolve_and_consume_lease
 
 # Denials this deliberately elevation-eligible for (spec §37: "not every
 # denied action should request Godmode" -- only these two normal-policy
@@ -46,12 +46,22 @@ def evaluate_elevated_policy(
     resource_scope: str,
     operation_scope: str,
     resolved_side_effect_class: SideEffectClass | None = None,
+    arguments: dict | None = _SENTINEL,  # type: ignore[assignment]
 ) -> ElevatedPolicyDecision:
     """
     Returns the full decision trace (spec §20). `lease_id` is the ONE
     lease being considered for this specific action -- callers never pass
     an effective capability *set* here; each elevated action names the
     exact lease it is trying to use.
+
+    `arguments` (Phase 10.1): the action's actual PAYLOAD arguments,
+    forwarded to `resolve_and_consume_lease()` -- this is the ONE place
+    in the whole elevation flow that both validates the exact-action
+    argument binding AND atomically consumes the lease's use, and it
+    only ever runs once normal policy has already been checked (never
+    consumes speculatively during a mere capability-membership probe --
+    see `orca.godmode.capability.compute_effective_capabilities()`,
+    which stays read-only).
     """
     normal = evaluate_policy(
         goal=goal, tool_spec=tool_spec, capability_decision=capability_decision,
@@ -73,12 +83,14 @@ def evaluate_elevated_policy(
         decision.reasons.append("normal policy denied/requires-approval and no lease was supplied -- elevation may be requested")
         return decision
 
-    lease_decision = resolve_lease(
+    lease_decision = resolve_and_consume_lease(
         lease_id, tenant_id=tenant_id, capability_domain=capability_domain, capability=capability,
-        resource_scope=resource_scope, operation_scope=operation_scope,
+        resource_scope=resource_scope, operation_scope=operation_scope, arguments=arguments,
     )
     decision.lease_considered_id = lease_id
     decision.scope_match = lease_decision.scope_match
+    decision.argument_match = lease_decision.argument_match
+    decision.binding_mode = lease_decision.binding_mode
     decision.expiry_ok = lease_decision.expiry_ok
     decision.revocation_ok = lease_decision.revocation_ok
     decision.kill_switch_active = lease_decision.kill_switch_active

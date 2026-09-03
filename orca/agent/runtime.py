@@ -175,6 +175,15 @@ class AgentRuntime:
         genuinely resolves to ALLOW through
         `orca.godmode.policy.evaluate_elevated_policy()`, which itself
         re-runs the unmodified normal Policy Engine first.
+
+        Phase 10.1 (spec §10): the PAYLOAD arguments bound into the
+        lease's `arguments_hash` are `action.arguments` MINUS the two
+        scope-descriptor keys (`resource_scope`/`operation_scope`, which
+        remain the lease's separate, coarse-grained scope fields, not
+        part of the action payload) -- these are the fully validated,
+        schema-normalized arguments already attached to this
+        `AgentAction` by the planner/caller BEFORE this method ever
+        runs, never raw pre-validation model output.
         """
         lease_id = self.lease_resolver(action)
         if lease_id is None:
@@ -186,10 +195,11 @@ class AgentRuntime:
 
         resource_scope = action.arguments.get("resource_scope", action.tool_id)
         operation_scope = action.arguments.get("operation_scope", action.tool_id)
+        payload_arguments = {k: v for k, v in action.arguments.items() if k not in ("resource_scope", "operation_scope")}
 
         effective = compute_effective_capabilities(
             base_granted=self.capabilities, tenant_id=self.tenant_id, lease_ids=(lease_id,),
-            resource_scope=resource_scope, operation_scope=operation_scope,
+            resource_scope=resource_scope, operation_scope=operation_scope, arguments=payload_arguments,
         )
         elevated_cap_decision = check_capabilities(effective.effective, spec)
         capability = next(iter(spec.required_capabilities)).value if spec.required_capabilities else ""
@@ -198,7 +208,7 @@ class AgentRuntime:
             goal=self.goal, tool_spec=spec, capability_decision=elevated_cap_decision,
             tenant_id=self.tenant_id, lease_id=lease_id, capability_domain=CapabilityDomain.AGENT,
             capability=capability, resource_scope=resource_scope, operation_scope=operation_scope,
-            resolved_side_effect_class=action.expected_side_effect,
+            resolved_side_effect_class=action.expected_side_effect, arguments=payload_arguments,
         )
         if elevated_decision.state.value != "ALLOW":
             return None

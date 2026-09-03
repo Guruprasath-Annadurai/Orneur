@@ -1,14 +1,32 @@
 """
-Filesystem elevation (Phase 10 spec §22). An elevated FILE_WRITE lease
-grants write access to exactly one additional, explicit directory root
-(e.g. `/workspace/project-a/config/`) -- NEVER the whole filesystem, and
-never merely because authority is high. Reuses
+Filesystem elevation (Phase 10 spec §22; Phase 10.1 spec §12's honesty
+requirement). An elevated FILE_WRITE lease grants write access to
+exactly one additional, explicit directory ROOT (e.g.
+`/workspace/project-a/config/`) -- NEVER the whole filesystem, and never
+merely because authority is high. Reuses
 `orca.tools._resolve_in_workspace`'s realpath-resolution discipline
 (symlinks are followed and checked against the final resolved path, not
 the literal string) rather than inventing a second path-safety
 implementation, and adds a hard-coded denylist of sensitive absolute
 paths that no lease scope can ever override (spec §22: "does not
 authorize /etc, ~/.ssh, other projects").
+
+EXACT BINDING DIMENSIONS, disclosed explicitly (spec §12: "do not claim
+stronger binding than actually implemented"): a FILE_WRITE lease binds
+`resource_scope` (the root directory) and `operation_scope` exactly --
+it does NOT bind the specific file path within that root, and does NOT
+bind file content. This is a deliberate design choice, not an oversight:
+spec §7's own "good lease" example is itself a DIRECTORY-scoped grant
+(`write /workspace/project-a/config/`), and a fix-a-bug elevated session
+legitimately needs to write more than one file, with content that
+cannot be known at approval time. `resolve_and_consume_lease()` is
+therefore called with `arguments={}` -- the canonical "empty payload"
+that a default (`arguments=None`) approval's `arguments_hash` binds to
+-- rather than the path or content, so this module's `EXACT_ARGUMENTS`
+check passes trivially and the REAL narrowing is the directory-root
+scope check (`_resolve_within_root()`) plus the hard denylist, both of
+which are independent of and unaffected by this phase's argument-hash
+work.
 """
 from __future__ import annotations
 
@@ -16,8 +34,7 @@ from pathlib import Path
 
 from orca.godmode.contracts import CapabilityDomain
 from orca.godmode.lease_store import get as get_lease
-from orca.godmode.lease_store import consume_use
-from orca.godmode.resolution import resolve_lease
+from orca.godmode.resolution import resolve_and_consume_lease
 
 # Absolute, resolved paths (and their descendants) that NO file-elevation
 # lease may ever grant access to, regardless of what its resource_scope
@@ -81,15 +98,12 @@ def elevated_write_file(
     if resolved is None:
         return False, f"path '{path}' is outside the lease's granted root or denylisted -- denied"
 
-    decision = resolve_lease(
+    decision = resolve_and_consume_lease(
         lease_id, tenant_id=tenant_id, capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE",
-        resource_scope=lease.resource_scope, operation_scope=lease.operation_scope,
+        resource_scope=lease.resource_scope, operation_scope=lease.operation_scope, arguments={},
     )
     if decision.state.value != "ALLOW":
         return False, "; ".join(decision.reasons)
-
-    if not consume_use(lease_id):
-        return False, "lease has no uses remaining or failed validation at consumption time"
 
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content)

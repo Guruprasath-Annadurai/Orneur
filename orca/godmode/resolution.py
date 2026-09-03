@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import posixpath
 
+from orca.godmode.canonical import hash_arguments
 from orca.godmode.contracts import (
+    ArgumentBindingMode,
     CapabilityDomain,
     ElevatedPolicyDecision,
     ElevatedPolicyDecisionState,
@@ -18,8 +20,10 @@ from orca.godmode.contracts import (
 )
 from orca.godmode.integrity import verify_lease_integrity
 from orca.godmode.kill_switch import is_active as kill_switch_active
-from orca.godmode.lease_store import get as get_lease
+from orca.godmode.lease_store import consume_use, get as get_lease
 from orca.godmode.lease_store import is_expired
+
+_SENTINEL = object()
 
 
 def _canonicalize(resource_scope: str) -> str:
@@ -43,18 +47,34 @@ def resolve_lease(
     capability: str,
     resource_scope: str,
     operation_scope: str,
+    arguments: dict | None = _SENTINEL,  # type: ignore[assignment]
 ) -> ElevatedPolicyDecision:
     """
-    Returns a full decision trace (spec §20) -- never just a bool. ALLOW
-    only when every one of the following holds:
+    Returns a full decision trace (spec §20) -- never just a bool. Pure
+    / read-only: never consumes a lease use itself (see
+    `resolve_and_consume_lease()` for the side-effecting entry point real
+    callers should use). ALLOW only when every one of the following
+    holds, checked in this order (Phase 10.1 spec §19 -- kill switch
+    first since it is a system-wide gate cheaper and safer to check
+    before touching any per-lease state; documented deviation from the
+    spec's suggested ordering, which is otherwise followed):
 
-      lease exists, integrity verifies, not revoked, not expired,
-      tenant matches exactly, capability domain+value match exactly,
-      resource scope matches (canonically normalized), operation scope
-      matches (canonically normalized), kill switch is not active.
+      kill switch inactive, lease exists, integrity verifies, not
+      revoked, not expired, has uses remaining, tenant matches exactly,
+      capability domain+value match exactly, resource/operation scope
+      match (canonically normalized), AND -- Phase 10.1 -- if the lease's
+      `binding_mode` is `EXACT_ARGUMENTS` (the default), the caller's
+      canonicalized `arguments` hash matches `lease.arguments_hash`
+      exactly.
 
-    Any single failure is DENY with a specific reason -- this function
-    never partially succeeds.
+    `arguments` (Phase 10.1 spec §8-9): omitting it entirely is
+    DIFFERENT from passing `arguments={}` -- omitting it means "the
+    caller did not supply the actual action arguments at all," which
+    FAILS CLOSED against an `EXACT_ARGUMENTS` lease (spec §9: "if the
+    lease requires exact action binding and the runtime does not supply
+    current arguments: DENY. Do not silently skip the comparison.").
+    Passing `arguments={}` is a real, exact claim that the action's
+    canonicalized payload is empty, and is compared normally.
     """
     decision = ElevatedPolicyDecision(lease_considered_id=lease_id)
 
@@ -111,6 +131,71 @@ def resolve_lease(
         decision.state = ElevatedPolicyDecisionState.DENY
         return decision
 
-    decision.reasons.append("lease valid and scope-matched")
+    decision.binding_mode = lease.binding_mode.value
+
+    if lease.binding_mode == ArgumentBindingMode.EXACT_ARGUMENTS:
+        if arguments is _SENTINEL:
+            decision.reasons.append("EXACT_ARGUMENTS lease requires the caller's actual action arguments, none were supplied")
+            decision.state = ElevatedPolicyDecisionState.DENY
+            return decision
+        try:
+            computed_hash = hash_arguments(arguments or {})
+        except TypeError as e:
+            decision.reasons.append(f"arguments could not be canonicalized: {e}")
+            decision.state = ElevatedPolicyDecisionState.DENY
+            return decision
+        decision.argument_match = _constant_time_eq(computed_hash, lease.arguments_hash or "")
+        if not decision.argument_match:
+            decision.reasons.append("argument mismatch: canonicalized action arguments do not match the lease's bound arguments_hash")
+            decision.state = ElevatedPolicyDecisionState.DENY
+            return decision
+    else:
+        decision.argument_match = True  # SCOPED_ARGUMENTS: no per-payload binding by explicit policy
+
+    decision.reasons.append("lease valid, scope-matched, and argument-bound")
     decision.state = ElevatedPolicyDecisionState.ALLOW
+    return decision
+
+
+def _constant_time_eq(a: str, b: str) -> bool:
+    import hmac
+    return hmac.compare_digest(a, b)
+
+
+def resolve_and_consume_lease(
+    lease_id: str,
+    *,
+    tenant_id: str,
+    capability_domain: CapabilityDomain,
+    capability: str,
+    resource_scope: str,
+    operation_scope: str,
+    arguments: dict | None = _SENTINEL,  # type: ignore[assignment]
+) -> ElevatedPolicyDecision:
+    """
+    The side-effecting entry point real callers (AgentRuntime, connector
+    elevation) should use. Runs the exact same fail-closed validation as
+    `resolve_lease()` FIRST -- a request that fails ANY check (including
+    a changed-argument mismatch) NEVER reaches `consume_use()`, so it
+    never burns a use (Phase 10.1 spec §18-19: "Do not consume a lease
+    on a request that fails exact-action matching"). Only after
+    `resolve_lease()` itself returns ALLOW does this attempt the atomic
+    `consume_use()` -- if THAT loses a concurrent race (spec §18's
+    "changed-argument competitor must not consume... verify ordering"
+    generalizes to: only one of any N concurrent, otherwise-identical,
+    valid requests may consume the single use), the decision is
+    downgraded to DENY here, never silently treated as success.
+    """
+    decision = resolve_lease(
+        lease_id, tenant_id=tenant_id, capability_domain=capability_domain, capability=capability,
+        resource_scope=resource_scope, operation_scope=operation_scope, arguments=arguments,
+    )
+    if decision.state != ElevatedPolicyDecisionState.ALLOW:
+        return decision
+
+    if not consume_use(lease_id):
+        decision.state = ElevatedPolicyDecisionState.DENY
+        decision.reasons.append("lease use could not be atomically consumed (exhausted, revoked, or expired between validation and consumption)")
+        return decision
+
     return decision

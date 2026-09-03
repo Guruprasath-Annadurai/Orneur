@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from orca.agent.contracts import Capability
 from orca.godmode.contracts import CapabilityDomain
 from orca.godmode.lease_store import get as get_lease
-from orca.godmode.resolution import resolve_lease
+from orca.godmode.resolution import _SENTINEL, resolve_lease
 
 
 @dataclass
@@ -36,12 +36,18 @@ def compute_effective_capabilities(
     lease_ids: tuple[str, ...] = (),
     resource_scope: str = "",
     operation_scope: str = "",
+    arguments: dict | None = _SENTINEL,  # type: ignore[assignment]
 ) -> EffectiveCapabilityResult:
     """
     Resolves each named `lease_id` against the EXACT resource/operation
-    the caller is about to attempt -- a lease that does not scope-match
-    contributes nothing (fails closed per-lease, never partially widens
-    based on an unrelated lease the caller happened to also hold).
+    (and, Phase 10.1, action PAYLOAD arguments) the caller is about to
+    attempt -- a lease that does not scope/argument-match contributes
+    nothing (fails closed per-lease, never partially widens based on an
+    unrelated lease the caller happened to also hold). Read-only: never
+    consumes a lease use (that happens once, later, in
+    `orca.godmode.policy.evaluate_elevated_policy()`'s own
+    `resolve_and_consume_lease()` call -- this function only answers
+    "would this lease cover it," not "spend it").
     """
     effective = set(base_granted)
     provenance: dict[Capability, str] = {}
@@ -59,6 +65,7 @@ def compute_effective_capabilities(
         decision = resolve_lease(
             lease_id, tenant_id=tenant_id, capability_domain=CapabilityDomain.AGENT,
             capability=capability.value, resource_scope=resource_scope, operation_scope=operation_scope,
+            arguments=arguments,
         )
         if decision.state.value == "ALLOW":
             effective.add(capability)

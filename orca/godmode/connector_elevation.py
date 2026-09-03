@@ -26,7 +26,7 @@ from orca.connectors.contracts import (
 )
 from orca.connectors.policy import evaluate_connector_policy
 from orca.godmode.contracts import CapabilityDomain
-from orca.godmode.resolution import resolve_lease
+from orca.godmode.resolution import _SENTINEL, resolve_and_consume_lease
 
 
 def _connector_resource_scope(instance: ConnectorInstance, resource: str) -> str:
@@ -39,7 +39,18 @@ def _connector_resource_scope(instance: ConnectorInstance, resource: str) -> str
 def evaluate_connector_policy_with_elevation(
     *, identity: ConnectorIdentity, instance: ConnectorInstance, requested_capability: ConnectorCapabilityKind,
     resource: str, operation: str, lease_id: str | None = None, sensitivity: DataSensitivity = DataSensitivity.INTERNAL,
+    arguments: dict | None = _SENTINEL,  # type: ignore[assignment]
 ) -> ConnectorPolicyDecision:
+    """
+    `arguments` (Phase 10.1 spec §11): the connector write's actual
+    PAYLOAD -- e.g. `{"status": "verified"}` -- distinct from `resource`/
+    `operation`, which remain the lease's coarse scope. An
+    `EXACT_ARGUMENTS` lease approved for `{"status": "verified"}` DENIES
+    an attempt with `{"status": "deleted"}` even against the identical
+    connector/tenant/resource/operation, enforced by
+    `resolve_and_consume_lease()`, which also atomically consumes the
+    lease's use ONLY on a full match.
+    """
     normal = evaluate_connector_policy(identity=identity, instance=instance, requested_capability=requested_capability, sensitivity=sensitivity)
     if normal.state == ConnectorPolicyDecisionState.ALLOW:
         return normal
@@ -55,10 +66,10 @@ def evaluate_connector_policy_with_elevation(
     if lease_id is None:
         return normal
 
-    lease_decision = resolve_lease(
+    lease_decision = resolve_and_consume_lease(
         lease_id, tenant_id=identity.tenant_id, capability_domain=CapabilityDomain.CONNECTOR,
         capability=requested_capability.value, resource_scope=_connector_resource_scope(instance, resource),
-        operation_scope=operation,
+        operation_scope=operation, arguments=arguments,
     )
     if lease_decision.state.value != "ALLOW":
         return ConnectorPolicyDecision(state=ConnectorPolicyDecisionState.DENY, reasons=normal.reasons + lease_decision.reasons)

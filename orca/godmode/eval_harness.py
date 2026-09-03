@@ -54,16 +54,16 @@ def run_all() -> HarnessResult:
 
     # 1. Normal action allowed (no lease needed) -- represented via
     # resolve_lease on a nonexistent lease returning DENY without crashing.
-    d = resolve_lease("no-lease", tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/x", operation_scope="write")
+    d = resolve_lease("no-lease", tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/x", operation_scope="write", arguments={})
     _record(results, "normal_denied_action_without_lease", d.state.value == "DENY")
 
     # 2. Approved narrow lease -> allowed.
     lease = _issue()
-    d2 = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    d2 = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     _record(results, "approved_narrow_lease_allowed", d2.state.value == "ALLOW")
 
     # 3. Denied lease -- wrong resource.
-    d3 = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/other", operation_scope="write")
+    d3 = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/other", operation_scope="write", arguments={})
     _record(results, "denied_lease_wrong_resource", d3.state.value == "DENY")
 
     # 4. Expired lease.
@@ -73,13 +73,13 @@ def run_all() -> HarnessResult:
     expired.expires_at = "2020-01-01T00:00:00Z"
     apply_signature(expired)
     save(expired)
-    d4 = resolve_lease(expired.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    d4 = resolve_lease(expired.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     _record(results, "expired_lease_denied", d4.state.value == "DENY")
 
     # 5. Revoked lease.
     revocable = _issue()
     revoke(revocable.lease_id)
-    d5 = resolve_lease(revocable.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    d5 = resolve_lease(revocable.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     _record(results, "revoked_lease_denied", d5.state.value == "DENY")
 
     # 6. Tampered lease.
@@ -88,17 +88,17 @@ def run_all() -> HarnessResult:
     _record(results, "tampered_lease_fails_integrity", verify_lease_integrity(tampered) is False)
 
     # 7. Wrong tenant.
-    d7 = resolve_lease(lease.lease_id, tenant_id="org-EVIL", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    d7 = resolve_lease(lease.lease_id, tenant_id="org-EVIL", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     _record(results, "wrong_tenant_denied", d7.state.value == "DENY")
 
     # 8. Wrong user (principal mismatch doesn't affect scope matching by
     # design -- tenant+capability+resource+operation is the boundary; a
     # lease minted for one principal is still tenant-scoped correctly).
-    d8 = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    d8 = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     _record(results, "correct_tenant_and_scope_allowed_regardless_of_which_principal_requests", d8.state.value == "ALLOW")
 
     # 9. Wrong operation.
-    d9 = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="delete")
+    d9 = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="delete", arguments={})
     _record(results, "wrong_operation_denied", d9.state.value == "DENY")
 
     # 10. One-use lease.
@@ -122,7 +122,7 @@ def run_all() -> HarnessResult:
 
     # 12. Kill switch.
     kill_switch_activate(reason="eval")
-    d12 = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    d12 = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     kill_switch_deactivate()
     _record(results, "kill_switch_denies_all", d12.state.value == "DENY" and d12.kill_switch_active)
 
@@ -159,7 +159,7 @@ def run_all() -> HarnessResult:
     instance = ConnectorInstance(connector_type=ConnectorType.TICKETING, tenant_id="org-1", owner_principal_id="u1", read_write_mode="READ_ONLY", enabled_capabilities=frozenset({ConnectorCapabilityKind.CONNECTOR_READ}))
     identity = ConnectorIdentity(tenant_id="org-1", principal_id="u1")
     connector_lease = _issue(capability_domain=CapabilityDomain.CONNECTOR, capability="CONNECTOR_WRITE", resource_scope=f"{instance.connector_instance_id}:ticket/1", operation_scope="close")
-    conn_decision = evaluate_connector_policy_with_elevation(identity=identity, instance=instance, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="ticket/1", operation="close", lease_id=connector_lease.lease_id)
+    conn_decision = evaluate_connector_policy_with_elevation(identity=identity, instance=instance, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="ticket/1", operation="close", lease_id=connector_lease.lease_id, arguments={})
     _record(results, "connector_narrow_write_elevated_allowed", conn_decision.state.value == "ALLOW")
 
     # 18. Filesystem narrow write.
@@ -186,7 +186,7 @@ def run_all() -> HarnessResult:
 
     # 21. Scope confusion -- prefix abuse rejected.
     prefix_lease = _issue(resource_scope="/workspace/project-x")
-    d21 = resolve_lease(prefix_lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x-evil", operation_scope="write")
+    d21 = resolve_lease(prefix_lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x-evil", operation_scope="write", arguments={})
     _record(results, "scope_confusion_prefix_abuse_rejected", d21.state.value == "DENY")
 
     # 22. Wildcard lease rejected at issuance.
@@ -200,7 +200,7 @@ def run_all() -> HarnessResult:
     # re-read of its persisted file is still correctly expired/revoked.
     from orca.godmode.lease_store import get as get_lease
     restart_check = get_lease(expired.lease_id)
-    _record(results, "restart_safety_expired_lease_stays_expired_after_reread", restart_check is not None and resolve_lease(restart_check.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write").state.value == "DENY")
+    _record(results, "restart_safety_expired_lease_stays_expired_after_reread", restart_check is not None and resolve_lease(restart_check.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={}).state.value == "DENY")
 
     # 24. AgentRuntime elevation e2e.
     from orca.agent.contracts import AgentAction, AgentGoal, AgentPlan, AgentTask, Capability, SideEffectClass, ToolSpec, ActionRiskLevel

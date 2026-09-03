@@ -20,6 +20,7 @@ from pathlib import Path
 
 from orca.config import ORCA_HOME
 from orca.godmode.contracts import (
+    ArgumentBindingMode,
     CapabilityDomain,
     CapabilityLease,
     LeaseIssuerClass,
@@ -49,6 +50,7 @@ def _to_dict(lease: CapabilityLease) -> dict:
     d["capability_domain"] = lease.capability_domain.value
     d["issuer"] = lease.issuer.value
     d["revocation_state"] = lease.revocation_state.value
+    d["binding_mode"] = lease.binding_mode.value
     return d
 
 
@@ -62,6 +64,8 @@ def _from_dict(d: dict) -> CapabilityLease:
         approval_id=d.get("approval_id"), max_uses=d.get("max_uses"), uses_remaining=d.get("uses_remaining"),
         delegable=d.get("delegable", False), nonce=d["nonce"],
         revocation_state=LeaseRevocationState(d["revocation_state"]), signature=d.get("signature", ""),
+        arguments_hash=d.get("arguments_hash"),
+        binding_mode=ArgumentBindingMode(d.get("binding_mode", ArgumentBindingMode.EXACT_ARGUMENTS.value)),
     )
 
 

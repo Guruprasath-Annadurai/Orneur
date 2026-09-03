@@ -69,7 +69,7 @@ def test_expiry_checked_before_every_action_not_only_at_session_creation():
     save(short)
 
     from orca.godmode.resolution import resolve_lease
-    first_check = resolve_lease(short.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    first_check = resolve_lease(short.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     assert first_check.state.value == "DENY"
     assert not first_check.expiry_ok
 
@@ -86,19 +86,19 @@ def test_connector_godmode_end_to_end():
     )
     identity = ConnectorIdentity(tenant_id="org-1", principal_id="u1")
 
-    normal = evaluate_connector_policy_with_elevation(identity=identity, instance=instance, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="ticket/42", operation="close", lease_id=None)
+    normal = evaluate_connector_policy_with_elevation(identity=identity, instance=instance, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="ticket/42", operation="close", lease_id=None, arguments={})
     assert normal.state.value == "DENY"
 
     lease = _issue(capability_domain=CapabilityDomain.CONNECTOR, capability="CONNECTOR_WRITE", resource_scope=f"{instance.connector_instance_id}:ticket/42", operation_scope="close")
 
-    elevated = evaluate_connector_policy_with_elevation(identity=identity, instance=instance, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="ticket/42", operation="close", lease_id=lease.lease_id)
+    elevated = evaluate_connector_policy_with_elevation(identity=identity, instance=instance, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="ticket/42", operation="close", lease_id=lease.lease_id, arguments={})
     assert elevated.state.value == "ALLOW"
 
     state = FakeProviderState()
     result = fake_write(identity, instance, ConnectorWriteRequest(identity=identity, connector_instance_id=instance.connector_instance_id, arguments={"text": "closed"}), state)
     assert result.status == OutcomeStatus.SUCCESS
 
-    different_resource = evaluate_connector_policy_with_elevation(identity=identity, instance=instance, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="ticket/999", operation="close", lease_id=lease.lease_id)
+    different_resource = evaluate_connector_policy_with_elevation(identity=identity, instance=instance, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="ticket/999", operation="close", lease_id=lease.lease_id, arguments={})
     assert different_resource.state.value == "DENY"
 
     from orca.godmode.contracts import now_iso
@@ -107,7 +107,7 @@ def test_connector_godmode_end_to_end():
     lease.expires_at = "2020-01-01T00:00:00Z"
     apply_signature(lease)
     save(lease)
-    expired_check = evaluate_connector_policy_with_elevation(identity=identity, instance=instance, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="ticket/42", operation="close", lease_id=lease.lease_id)
+    expired_check = evaluate_connector_policy_with_elevation(identity=identity, instance=instance, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="ticket/42", operation="close", lease_id=lease.lease_id, arguments={})
     assert expired_check.state.value == "DENY"
 
 

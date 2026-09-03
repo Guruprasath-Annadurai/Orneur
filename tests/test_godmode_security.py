@@ -58,7 +58,7 @@ def test_lease_nonce_reuse_does_not_bypass_a_fresh_lease_signature():
 
 
 def test_fabricated_lease_id_resolves_to_deny():
-    decision = resolve_lease("lease-does-not-exist", tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    decision = resolve_lease("lease-does-not-exist", tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     assert decision.state.value == "DENY"
 
 
@@ -103,7 +103,7 @@ def test_approval_for_different_arguments_produces_lease_that_wont_match_origina
     # different approval was used, since the lease carries none of the
     # approval's argument hash forward into scope matching (scope is
     # exact resource+operation, never argument-shaped).
-    decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/OTHER", operation_scope="write")
+    decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/OTHER", operation_scope="write", arguments={})
     assert decision.state.value == "DENY"
 
 
@@ -113,7 +113,7 @@ def test_expired_approval_still_yields_a_lease_that_expires_no_later_than_approv
     lease = issue_lease(approval=approval, issuer=LeaseIssuerClass.HUMAN_APPROVAL, issuer_id="human-1")
     time.sleep(0.2)
     assert is_expired(lease)
-    decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/x", operation_scope="write")
+    decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/x", operation_scope="write", arguments={})
     assert decision.state.value == "DENY"
 
 
@@ -127,7 +127,7 @@ def test_expired_approval_still_yields_a_lease_that_expires_no_later_than_approv
 ])
 def test_scope_matching_normalizes_but_never_widens(attempted_resource):
     lease = _issue(resource="/workspace/project-x")
-    decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope=attempted_resource, operation_scope="write")
+    decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope=attempted_resource, operation_scope="write", arguments={})
     assert decision.state.value == "ALLOW", f"expected canonical match for {attempted_resource!r}"
 
 
@@ -136,7 +136,7 @@ def test_scope_matching_rejects_prefix_confusion():
     '/workspace/project-x-evil' (naive prefix matching would wrongly
     allow this)."""
     lease = _issue(resource="/workspace/project-x")
-    decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x-evil", operation_scope="write")
+    decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x-evil", operation_scope="write", arguments={})
     assert decision.state.value == "DENY"
 
 
@@ -150,10 +150,10 @@ def test_connector_resource_alias_does_not_cross_connector_instances():
 
     lease = _issue(domain=CapabilityDomain.CONNECTOR, capability="CONNECTOR_WRITE", resource=f"{instance_a.connector_instance_id}:customer/123", operation="update_status")
 
-    decision_same_instance = evaluate_connector_policy_with_elevation(identity=identity, instance=instance_a, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="customer/123", operation="update_status", lease_id=lease.lease_id)
+    decision_same_instance = evaluate_connector_policy_with_elevation(identity=identity, instance=instance_a, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="customer/123", operation="update_status", lease_id=lease.lease_id, arguments={})
     assert decision_same_instance.state.value == "ALLOW"
 
-    decision_other_instance = evaluate_connector_policy_with_elevation(identity=identity, instance=instance_b, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="customer/123", operation="update_status", lease_id=lease.lease_id)
+    decision_other_instance = evaluate_connector_policy_with_elevation(identity=identity, instance=instance_b, requested_capability=ConnectorCapabilityKind.CONNECTOR_WRITE, resource="customer/123", operation="update_status", lease_id=lease.lease_id, arguments={})
     assert decision_other_instance.state.value == "DENY"
 
 
@@ -166,7 +166,7 @@ def test_client_supplied_time_cannot_extend_a_lease():
     for resolve_lease() itself (which always uses the trusted clock)."""
     lease = _issue(duration_s=0.05)
     time.sleep(0.2)
-    decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     assert decision.state.value == "DENY"
 
 
@@ -180,12 +180,12 @@ def test_future_issued_at_does_not_bypass_expiry_check():
 
 def test_revocation_immediately_denies_next_action_even_with_time_remaining():
     lease = _issue(duration_s=300)
-    decision_before = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    decision_before = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     assert decision_before.state.value == "ALLOW"
 
     assert revoke(lease.lease_id)
 
-    decision_after = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+    decision_after = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
     assert decision_after.state.value == "DENY"
     assert "revoked" in " ".join(decision_after.reasons)
 
@@ -197,7 +197,7 @@ def test_kill_switch_denies_new_elevated_actions(monkeypatch):
     lease = _issue(duration_s=300)
     ks.activate(reason="incident")
     try:
-        decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write")
+        decision = resolve_lease(lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope="/workspace/project-x", operation_scope="write", arguments={})
         assert decision.state.value == "DENY"
         assert decision.kill_switch_active is True
     finally:
