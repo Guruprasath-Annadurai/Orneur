@@ -11,6 +11,7 @@ than a second, parallel path-safety implementation.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import shutil
 import tempfile
@@ -69,14 +70,28 @@ def simulate_file_action(*, root: Path, action: SimulationAction) -> FilesystemS
     operation is applied to files inside that COPY ONLY; `root` itself is
     never touched. The copy is always removed before returning --
     simulation leaves no trace on disk.
+
+    For multi-action plan simulation (Phase 11.1), see
+    `open_sandbox()`/`apply_action_to_sandbox()` below -- this function
+    is a single-action convenience wrapper around them, unchanged in
+    behavior from Phase 11.
     """
     root = root.resolve()
-    operation = action.arguments.get("operation", "")
-    raw_path = action.arguments.get("path", "")
+    with open_sandbox(root) as sandbox_root:
+        return apply_action_to_sandbox(sandbox_root=sandbox_root, action=action)
 
-    if operation not in _SUPPORTED_OPERATIONS:
-        return FilesystemSimulationOutcome(blocked=True, block_reason=f"unsupported filesystem simulation operation: {operation!r}", diff_entries=[], predicted_effects=[], assumptions=[])
 
+@contextlib.contextmanager
+def open_sandbox(root: Path):
+    """
+    Yields a real temporary copy-on-write sandbox root for `root` --
+    factored out of `simulate_file_action()` so multi-action plan
+    simulation (`orca.simulation.plan_chamber`) can apply SEVERAL
+    actions to the SAME sandbox in sequence (spec §4: action B must see
+    action A's projected effects), rather than each action getting an
+    independent, unchained copy of the ORIGINAL root.
+    """
+    root = root.resolve()
     with tempfile.TemporaryDirectory() as tmp:
         # .resolve() the temp root itself first -- on macOS, tempfile's
         # default temp dir lives under /var/folders/... which /tmp
@@ -100,79 +115,92 @@ def simulate_file_action(*, root: Path, action: SimulationAction) -> FilesystemS
             shutil.copytree(root, sandbox_root, symlinks=True)
         else:
             sandbox_root.mkdir(parents=True)
+        yield sandbox_root
 
-        target = _resolve_within_root(raw_path, sandbox_root)
-        if target is None:
-            return FilesystemSimulationOutcome(blocked=True, block_reason=f"path '{raw_path}' would escape the sandbox root or hit the denylist -- denied before any simulated write", diff_entries=[], predicted_effects=[], assumptions=[])
 
-        rel_path = str(target.relative_to(sandbox_root))
-        before_hash = _content_hash(target)
-        before_size = target.stat().st_size if target.exists() and target.is_file() else None
+def apply_action_to_sandbox(*, sandbox_root: Path, action: SimulationAction) -> FilesystemSimulationOutcome:
+    """The core per-action logic, operating directly on an
+    ALREADY-ESTABLISHED sandbox root (no copy/cleanup of its own) --
+    called once per action, in dependency order, against the SAME
+    sandbox for a multi-action plan simulation."""
+    operation = action.arguments.get("operation", "")
+    raw_path = action.arguments.get("path", "")
 
-        assumptions = [Assumption(
-            description="target file's on-disk state at simulation time matches the state at real execution time",
-            source="filesystem_snapshot", verification_state="UNVERIFIED",
-            impact_if_false="predicted diff may not match the real diff -- see staleness/fingerprint checks before execution",
-        )]
+    if operation not in _SUPPORTED_OPERATIONS:
+        return FilesystemSimulationOutcome(blocked=True, block_reason=f"unsupported filesystem simulation operation: {operation!r}", diff_entries=[], predicted_effects=[], assumptions=[])
 
-        if operation == "create":
-            if target.exists():
-                return FilesystemSimulationOutcome(blocked=True, block_reason=f"'{rel_path}' already exists -- 'create' would overwrite, use 'modify' instead", diff_entries=[], predicted_effects=[], assumptions=assumptions)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(action.arguments.get("content", ""))
-            entry = FileDiffEntry(path=rel_path, change="created", size_after=target.stat().st_size, content_hash_after=_content_hash(target))
-            effect = PredictedEffect(
-                resource=rel_path, effect_type=EffectType.CREATE, before_reference=None,
-                predicted_after_reference=entry.content_hash_after, reversibility=Reversibility.COMPENSATABLE,
-                blast_radius=BlastRadius.SINGLE_OBJECT, confidence=EffectConfidence.HIGH,
-                assumption_ids=[assumptions[0].assumption_id], provenance=Provenance.SIMULATION,
-            )
+    target = _resolve_within_root(raw_path, sandbox_root)
+    if target is None:
+        return FilesystemSimulationOutcome(blocked=True, block_reason=f"path '{raw_path}' would escape the sandbox root or hit the denylist -- denied before any simulated write", diff_entries=[], predicted_effects=[], assumptions=[])
 
-        elif operation == "modify":
-            if not target.exists():
-                return FilesystemSimulationOutcome(blocked=True, block_reason=f"'{rel_path}' does not exist -- 'modify' requires an existing file, use 'create' instead", diff_entries=[], predicted_effects=[], assumptions=assumptions)
-            target.write_text(action.arguments.get("content", ""))
-            entry = FileDiffEntry(path=rel_path, change="modified", size_before=before_size, size_after=target.stat().st_size, content_hash_before=before_hash, content_hash_after=_content_hash(target))
-            effect = PredictedEffect(
-                resource=rel_path, effect_type=EffectType.UPDATE, before_reference=before_hash,
-                predicted_after_reference=entry.content_hash_after, reversibility=Reversibility.COMPENSATABLE,
-                blast_radius=BlastRadius.SINGLE_OBJECT, confidence=EffectConfidence.HIGH,
-                assumption_ids=[assumptions[0].assumption_id], provenance=Provenance.SIMULATION,
-            )
+    rel_path = str(target.relative_to(sandbox_root))
+    before_hash = _content_hash(target)
+    before_size = target.stat().st_size if target.exists() and target.is_file() else None
 
-        elif operation == "delete":
-            if not target.exists():
-                return FilesystemSimulationOutcome(blocked=True, block_reason=f"'{rel_path}' does not exist -- nothing to delete", diff_entries=[], predicted_effects=[], assumptions=assumptions)
-            target.unlink()
-            entry = FileDiffEntry(path=rel_path, change="deleted", size_before=before_size, content_hash_before=before_hash)
-            # A real filesystem delete with no backup mechanism is
-            # IRREVERSIBLE, honestly -- never classified reversible
-            # merely because an inverse "re-create" command exists
-            # (spec §21's own explicit example: a sent email is not
-            # reversible just because a correction can follow).
-            effect = PredictedEffect(
-                resource=rel_path, effect_type=EffectType.DELETE, before_reference=before_hash,
-                predicted_after_reference=None, reversibility=Reversibility.IRREVERSIBLE,
-                blast_radius=BlastRadius.SINGLE_OBJECT, confidence=EffectConfidence.HIGH,
-                assumption_ids=[assumptions[0].assumption_id], provenance=Provenance.SIMULATION,
-            )
+    assumptions = [Assumption(
+        description="target file's on-disk state at simulation time matches the state at real execution time",
+        source="filesystem_snapshot", verification_state="UNVERIFIED",
+        impact_if_false="predicted diff may not match the real diff -- see staleness/fingerprint checks before execution",
+    )]
 
-        else:  # rename
-            new_raw_path = action.arguments.get("new_path", "")
-            new_target = _resolve_within_root(new_raw_path, sandbox_root)
-            if new_target is None:
-                return FilesystemSimulationOutcome(blocked=True, block_reason=f"new_path '{new_raw_path}' would escape the sandbox root or hit the denylist", diff_entries=[], predicted_effects=[], assumptions=assumptions)
-            if not target.exists():
-                return FilesystemSimulationOutcome(blocked=True, block_reason=f"'{rel_path}' does not exist -- nothing to rename", diff_entries=[], predicted_effects=[], assumptions=assumptions)
-            new_rel_path = str(new_target.relative_to(sandbox_root))
-            new_target.parent.mkdir(parents=True, exist_ok=True)
-            target.rename(new_target)
-            entry = FileDiffEntry(path=rel_path, change="renamed", new_path=new_rel_path, size_before=before_size, content_hash_before=before_hash)
-            effect = PredictedEffect(
-                resource=rel_path, effect_type=EffectType.MOVE, before_reference=before_hash,
-                predicted_after_reference=new_rel_path, reversibility=Reversibility.COMPENSATABLE,
-                blast_radius=BlastRadius.SINGLE_OBJECT, confidence=EffectConfidence.HIGH,
-                assumption_ids=[assumptions[0].assumption_id], provenance=Provenance.SIMULATION,
-            )
+    if operation == "create":
+        if target.exists():
+            return FilesystemSimulationOutcome(blocked=True, block_reason=f"'{rel_path}' already exists -- 'create' would overwrite, use 'modify' instead", diff_entries=[], predicted_effects=[], assumptions=assumptions)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(action.arguments.get("content", ""))
+        entry = FileDiffEntry(path=rel_path, change="created", size_after=target.stat().st_size, content_hash_after=_content_hash(target))
+        effect = PredictedEffect(
+            resource=rel_path, effect_type=EffectType.CREATE, before_reference=None,
+            predicted_after_reference=entry.content_hash_after, reversibility=Reversibility.COMPENSATABLE,
+            blast_radius=BlastRadius.SINGLE_OBJECT, confidence=EffectConfidence.HIGH,
+            assumption_ids=[assumptions[0].assumption_id], provenance=Provenance.SIMULATION,
+        )
 
-        return FilesystemSimulationOutcome(blocked=False, block_reason=None, diff_entries=[entry], predicted_effects=[effect], assumptions=assumptions)
+    elif operation == "modify":
+        if not target.exists():
+            return FilesystemSimulationOutcome(blocked=True, block_reason=f"'{rel_path}' does not exist -- 'modify' requires an existing file, use 'create' instead", diff_entries=[], predicted_effects=[], assumptions=assumptions)
+        target.write_text(action.arguments.get("content", ""))
+        entry = FileDiffEntry(path=rel_path, change="modified", size_before=before_size, size_after=target.stat().st_size, content_hash_before=before_hash, content_hash_after=_content_hash(target))
+        effect = PredictedEffect(
+            resource=rel_path, effect_type=EffectType.UPDATE, before_reference=before_hash,
+            predicted_after_reference=entry.content_hash_after, reversibility=Reversibility.COMPENSATABLE,
+            blast_radius=BlastRadius.SINGLE_OBJECT, confidence=EffectConfidence.HIGH,
+            assumption_ids=[assumptions[0].assumption_id], provenance=Provenance.SIMULATION,
+        )
+
+    elif operation == "delete":
+        if not target.exists():
+            return FilesystemSimulationOutcome(blocked=True, block_reason=f"'{rel_path}' does not exist -- nothing to delete", diff_entries=[], predicted_effects=[], assumptions=assumptions)
+        target.unlink()
+        entry = FileDiffEntry(path=rel_path, change="deleted", size_before=before_size, content_hash_before=before_hash)
+        # A real filesystem delete with no backup mechanism is
+        # IRREVERSIBLE, honestly -- never classified reversible
+        # merely because an inverse "re-create" command exists
+        # (spec §21's own explicit example: a sent email is not
+        # reversible just because a correction can follow).
+        effect = PredictedEffect(
+            resource=rel_path, effect_type=EffectType.DELETE, before_reference=before_hash,
+            predicted_after_reference=None, reversibility=Reversibility.IRREVERSIBLE,
+            blast_radius=BlastRadius.SINGLE_OBJECT, confidence=EffectConfidence.HIGH,
+            assumption_ids=[assumptions[0].assumption_id], provenance=Provenance.SIMULATION,
+        )
+
+    else:  # rename
+        new_raw_path = action.arguments.get("new_path", "")
+        new_target = _resolve_within_root(new_raw_path, sandbox_root)
+        if new_target is None:
+            return FilesystemSimulationOutcome(blocked=True, block_reason=f"new_path '{new_raw_path}' would escape the sandbox root or hit the denylist", diff_entries=[], predicted_effects=[], assumptions=assumptions)
+        if not target.exists():
+            return FilesystemSimulationOutcome(blocked=True, block_reason=f"'{rel_path}' does not exist -- nothing to rename", diff_entries=[], predicted_effects=[], assumptions=assumptions)
+        new_rel_path = str(new_target.relative_to(sandbox_root))
+        new_target.parent.mkdir(parents=True, exist_ok=True)
+        target.rename(new_target)
+        entry = FileDiffEntry(path=rel_path, change="renamed", new_path=new_rel_path, size_before=before_size, content_hash_before=before_hash)
+        effect = PredictedEffect(
+            resource=rel_path, effect_type=EffectType.MOVE, before_reference=before_hash,
+            predicted_after_reference=new_rel_path, reversibility=Reversibility.COMPENSATABLE,
+            blast_radius=BlastRadius.SINGLE_OBJECT, confidence=EffectConfidence.HIGH,
+            assumption_ids=[assumptions[0].assumption_id], provenance=Provenance.SIMULATION,
+        )
+
+    return FilesystemSimulationOutcome(blocked=False, block_reason=None, diff_entries=[entry], predicted_effects=[effect], assumptions=assumptions)
