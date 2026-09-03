@@ -1,16 +1,20 @@
 """
-Orca CLI — god-mode command interface.
+Orneur CLI — god-mode command interface.
 
-  orca nano "what is entropy?"
-  orca core chat
-  orca core chat --thoughts          # show reasoning trace
-  orca core think "design a cache"
-  orca ultra run "build a REST API"
-  cat data.csv | orca nano "analyze"
-  orca backend
-  orca data seed --n 500
-  orca train run --preset prosumer
-  orca train export ~/.orca/models/orca-8b-qlora/merged
+  orneur nano "what is entropy?"
+  orneur core chat
+  orneur core chat --thoughts          # show reasoning trace
+  orneur core think "design a cache"
+  orneur ultra run "build a REST API"
+  cat data.csv | orneur nano "analyze"
+  orneur backend
+  orneur data seed --n 500
+  orneur train run --preset prosumer
+  orneur train export ~/.orca/models/orca-8b-qlora/merged
+
+`orca` remains available as a legacy command alias (same entry point),
+matching this project's existing ORNEUR_<var>-takes-precedence /
+legacy-ORCA_<var>-fallback convention in orca/config.py.
 """
 from __future__ import annotations
 
@@ -23,7 +27,7 @@ from rich.panel import Panel
 from orca.character import banner, TAGLINE, NAME
 
 app = typer.Typer(
-    name="orca",
+    name="orneur",
     help=f"[bold cyan]{NAME}[/bold cyan] — {TAGLINE}",
     no_args_is_help=True,
     rich_markup_mode="rich",
@@ -34,7 +38,7 @@ console = Console()
 def _version_callback(value: bool):
     if value:
         from orca.__version__ import __version__
-        typer.echo(f"orca {__version__}")
+        typer.echo(f"orneur {__version__}")
         raise typer.Exit()
 
 

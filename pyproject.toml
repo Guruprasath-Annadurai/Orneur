@@ -94,6 +94,7 @@ lens = [
 ]
 
 [project.scripts]
+orneur = "orca.cli:app"
 orca = "orca.cli:app"
 
 [tool.hatch.build.targets.wheel]

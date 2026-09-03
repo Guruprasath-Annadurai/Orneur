@@ -65,7 +65,7 @@ Or via pip:
 
 ```bash
 pip install orca-ai
-orca doctor --wizard
+orneur doctor --wizard
 ```
 
 ---
@@ -82,22 +82,22 @@ orca doctor --wizard
 
 ```bash
 # First-run setup wizard
-orca doctor --wizard
+orneur doctor --wizard
 
 # Terminal chat
-orca core chat
+orneur core chat
 
 # Single-shot fast response
-orca nano "explain recursion in 2 sentences"
+orneur nano "explain recursion in 2 sentences"
 
 # Web UI (opens in browser)
-orca serve
+orneur serve
 
 # Multi-agent Ultra (Pro license required)
-orca ultra run "design a REST API for a todo app"
+orneur ultra run "design a REST API for a todo app"
 ```
 
-`orca serve` now splits into two real surfaces: `/` is the public marketing
+`orneur serve` now splits into two real surfaces: `/` is the public marketing
 landing page, `/app` is the actual chat UI, and `/trust` is the live
 security/compliance page — not three separate claims, three separate routes
 you can hit right now.
@@ -108,24 +108,24 @@ you can hit right now.
 
 | Command | Description |
 |---|---|
-| `orca nano <prompt>` | Fast single-shot response |
-| `orca core chat` | Full interactive chat with memory + tools |
-| `orca core think <prompt>` | Deep single-shot reasoning |
-| `orca ultra run <task>` | Multi-agent orchestration |
-| `orca serve` | Launch the web UI (landing page, app, and trust page) |
-| `orca data seed --n 500` | Generate synthetic training data |
-| `orca data curate` | Clean and score training data |
-| `orca train run` | Fine-tune via QLoRA |
-| `orca train eval --ollama <model> --ci` | Judge-mode accuracy eval |
-| `orca train redteam --model <model> --ci` | Jailbreak/bias/toxicity/calibration probes |
-| `orca train card <variant>` | Generate a signed model card + persona-claim check |
-| `orca train cloud --ssh ...` | Train on a rented GPU |
-| `orca doctor` | System health check |
-| `orca doctor --wizard` | First-run setup wizard |
-| `orca upgrade` | Self-update from PyPI |
-| `orca activate <key>` | Activate a Pro license |
-| `orca license` | Show license status |
-| `orca status` | Live system dashboard |
+| `orneur nano <prompt>` | Fast single-shot response |
+| `orneur core chat` | Full interactive chat with memory + tools |
+| `orneur core think <prompt>` | Deep single-shot reasoning |
+| `orneur ultra run <task>` | Multi-agent orchestration |
+| `orneur serve` | Launch the web UI (landing page, app, and trust page) |
+| `orneur data seed --n 500` | Generate synthetic training data |
+| `orneur data curate` | Clean and score training data |
+| `orneur train run` | Fine-tune via QLoRA |
+| `orneur train eval --ollama <model> --ci` | Judge-mode accuracy eval |
+| `orneur train redteam --model <model> --ci` | Jailbreak/bias/toxicity/calibration probes |
+| `orneur train card <variant>` | Generate a signed model card + persona-claim check |
+| `orneur train cloud --ssh ...` | Train on a rented GPU |
+| `orneur doctor` | System health check |
+| `orneur doctor --wizard` | First-run setup wizard |
+| `orneur upgrade` | Self-update from PyPI |
+| `orneur activate <key>` | Activate a Pro license |
+| `orneur license` | Show license status |
+| `orneur status` | Live system dashboard |
 
 ---
 
@@ -157,7 +157,7 @@ you can hit right now.
   30-90% swings on an *unchanged* model in real runs — trials-averaging
   exists because that happened, not speculatively)
 - Probe-grounded safety DPO — trains directly on the exact jailbreak probes
-  `orca train redteam` measures against, not teacher-invented synthetic ones
+  `orneur train redteam` measures against, not teacher-invented synthetic ones
 - Signed model cards with an enforced persona-claim gate
   (`orca/governance/model_cards.py`) — a tier that hasn't cleared its
   accuracy/safety bar has its persona prompt automatically rewritten to
@@ -204,8 +204,8 @@ Orneur ships in three tiers, matching the real billing code
 | **Enterprise** | Contact us | Unlimited everything, org/team management, dedicated support |
 
 ```bash
-orca activate ORCA-PRO-XXXXX-XXXXX-XXXXX
-orca license --buy   # show pricing
+orneur activate ORCA-PRO-XXXXX-XXXXX-XXXXX
+orneur license --buy   # show pricing
 ```
 
 ---
