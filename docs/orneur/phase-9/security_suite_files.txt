@@ -57,6 +57,9 @@ tests/test_redteam_jailbreak_trials.py
 tests/test_registry_id_sanitization.py
 tests/test_run_shell_sandbox.py
 tests/test_serve_dlp.py
+tests/test_simulation_e2e.py
+tests/test_simulation_fast_path.py
+tests/test_simulation_security.py
 tests/test_society_authority_security.py
 tests/test_society_budget_ledger.py
 tests/test_society_security.py
