@@ -206,6 +206,13 @@ class ActionAuthorization:
     capability_decision: CapabilityDecision = field(default_factory=lambda: CapabilityDecision(granted=False))
     authorized: bool = False
     authorization_id: str = field(default_factory=lambda: _new_id("auth"))
+    # Phase 10 (spec §32): "NORMAL_ACTION" | "ELEVATED_ACTION" -- set only
+    # when a named orca.godmode.contracts.CapabilityLease was resolved and
+    # is what made this authorization ALLOW; a plain string (not an
+    # import of orca.godmode's enum) so orca.agent.contracts has no
+    # dependency on orca.godmode at all.
+    elevated_action_class: str = "NORMAL_ACTION"
+    lease_id: str | None = None
 
 
 @dataclass
@@ -300,6 +307,11 @@ class AgentTrace:
     subagent_run_ids: list[str] = field(default_factory=list)
     budget_summary: dict[str, Any] = field(default_factory=dict)
     stop_reason: str | None = None
+    # Phase 10 (spec §32): action_ids (subset of `action_ids` above) that
+    # executed under an ELEVATED_ACTION authorization -- lets forensic
+    # review find every elevated action in a run without re-deriving it
+    # from raw authorization records.
+    elevated_action_ids: list[str] = field(default_factory=list)
 
 
 # ── Delegation (spec §30-34) ───────────────────────────────────────────────

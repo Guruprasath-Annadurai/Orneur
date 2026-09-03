@@ -37,6 +37,7 @@ from orca.agent.contracts import (
     ExecutionStopReason,
     Observation,
     ObservationTrustClass,
+    PolicyDecision,
     PolicyDecisionState,
     TaskStatus,
     ToolInvocation,
@@ -74,6 +75,8 @@ class AgentRuntime:
         deadline_s: float = 120.0,
         replan_fn=None,
         truth_checker=None,
+        tenant_id: str | None = None,
+        lease_resolver=None,
     ):
         """
         `truth_checker` (Phase 8.1 spec §12-14), when given, is called as
@@ -91,6 +94,21 @@ class AgentRuntime:
         revision is possible and the run stops honestly. Never regenerates
         the whole strategy by default; callers that want that pass a
         `replan_fn` that does so explicitly.
+
+        `tenant_id` and `lease_resolver` (Phase 10 spec §31, additive --
+        both default to None, so every pre-Phase-10 caller/test is
+        UNCHANGED): when a normal capability/policy check would otherwise
+        DENY or REQUIRE_APPROVAL, and both are given, `lease_resolver(action)
+        -> lease_id | None` is called to name ONE candidate
+        `orca.godmode.contracts.CapabilityLease` this action might use.
+        The runtime never trusts that name alone -- it re-derives the
+        effective capability set via `orca.godmode.capability.compute_effective_capabilities()`
+        and re-evaluates via `orca.godmode.policy.evaluate_elevated_policy()`,
+        which itself re-runs the NORMAL policy check first (spec §19:
+        Policy Engine remains authoritative) before ever consulting the
+        lease. With `tenant_id=None` (the default), elevation is never
+        attempted at all -- there is no tenant context to safely resolve
+        a lease against.
         """
         self.registry = registry
         self.goal = goal
@@ -99,6 +117,8 @@ class AgentRuntime:
         self.deadline_s = deadline_s
         self.replan_fn = replan_fn
         self.truth_checker = truth_checker
+        self.tenant_id = tenant_id
+        self.lease_resolver = lease_resolver
         self._idempotency_seen: set[str] = set()
 
         self.ledger = None
@@ -126,11 +146,64 @@ class AgentRuntime:
             goal=self.goal, tool_spec=spec, capability_decision=cap_decision,
             resolved_side_effect_class=action.expected_side_effect,
         )
+
+        elevated_action_class = "NORMAL_ACTION"
+        lease_id_used = None
+
+        if (
+            policy_decision.state in (PolicyDecisionState.DENY, PolicyDecisionState.REQUIRE_APPROVAL)
+            and self.lease_resolver is not None
+            and self.tenant_id is not None
+        ):
+            elevated_auth = self._try_elevate(action, spec)
+            if elevated_auth is not None:
+                policy_decision, cap_decision, lease_id_used = elevated_auth
+                elevated_action_class = "ELEVATED_ACTION"
+
         auth = ActionAuthorization(
             decision=policy_decision, capability_decision=cap_decision,
             authorized=policy_decision.state in (PolicyDecisionState.ALLOW, PolicyDecisionState.ALLOW_WITH_RESTRICTIONS),
+            elevated_action_class=elevated_action_class, lease_id=lease_id_used,
         )
         return auth, spec
+
+    def _try_elevate(self, action: AgentAction, spec) -> tuple[PolicyDecision, object, str] | None:
+        """
+        Phase 10 (spec §31): consults exactly ONE named candidate lease
+        for this action -- never a caller-supplied effective capability
+        set (spec §18). Returns None (no elevation) unless the lease
+        genuinely resolves to ALLOW through
+        `orca.godmode.policy.evaluate_elevated_policy()`, which itself
+        re-runs the unmodified normal Policy Engine first.
+        """
+        lease_id = self.lease_resolver(action)
+        if lease_id is None:
+            return None
+
+        from orca.godmode.capability import compute_effective_capabilities
+        from orca.godmode.contracts import CapabilityDomain
+        from orca.godmode.policy import evaluate_elevated_policy
+
+        resource_scope = action.arguments.get("resource_scope", action.tool_id)
+        operation_scope = action.arguments.get("operation_scope", action.tool_id)
+
+        effective = compute_effective_capabilities(
+            base_granted=self.capabilities, tenant_id=self.tenant_id, lease_ids=(lease_id,),
+            resource_scope=resource_scope, operation_scope=operation_scope,
+        )
+        elevated_cap_decision = check_capabilities(effective.effective, spec)
+        capability = next(iter(spec.required_capabilities)).value if spec.required_capabilities else ""
+
+        elevated_decision = evaluate_elevated_policy(
+            goal=self.goal, tool_spec=spec, capability_decision=elevated_cap_decision,
+            tenant_id=self.tenant_id, lease_id=lease_id, capability_domain=CapabilityDomain.AGENT,
+            capability=capability, resource_scope=resource_scope, operation_scope=operation_scope,
+            resolved_side_effect_class=action.expected_side_effect,
+        )
+        if elevated_decision.state.value != "ALLOW":
+            return None
+
+        return PolicyDecision(state=PolicyDecisionState.ALLOW, reasons=elevated_decision.reasons), elevated_cap_decision, lease_id
 
     def _to_observation(self, action: AgentAction, tool_result) -> Observation:
         if tool_result.success:
@@ -219,6 +292,8 @@ class AgentRuntime:
 
                 auth, spec = self._authorize(action)
                 trace.authorization_ids.append(auth.authorization_id)
+                if auth.elevated_action_class == "ELEVATED_ACTION":
+                    trace.elevated_action_ids.append(action.action_id)
 
                 if spec is None:
                     if task is not None:
