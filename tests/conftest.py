@@ -42,6 +42,16 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     """
     import orca.gateway.deployment as deployment_mod
     monkeypatch.setattr(deployment_mod, "DEPLOYMENT_DIR", tmp_path)
+
+    # Phase 10: same real risk for orca.godmode's file-backed lease store
+    # and kill-switch flag file -- both live under ORCA_HOME by default
+    # and must never touch a developer's real ~/.orca/godmode/ during a
+    # test run.
+    import orca.godmode.lease_store as lease_store_mod
+    import orca.godmode.kill_switch as kill_switch_mod
+    godmode_tmp = tmp_path / "godmode"
+    monkeypatch.setattr(lease_store_mod, "LEASE_DIR", godmode_tmp / "leases")
+    monkeypatch.setattr(kill_switch_mod, "_KILL_SWITCH_FILE", godmode_tmp / "kill_switch.flag")
     yield
 
 
