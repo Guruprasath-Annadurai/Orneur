@@ -73,7 +73,7 @@ def _check_lease_compatibility(request: SimulationRequest) -> tuple[bool, list[s
     from orca.godmode.contracts import CapabilityDomain
     from orca.godmode.resolution import resolve_lease
     decision = resolve_lease(
-        request.lease_id, tenant_id=request.tenant_id, capability_domain=CapabilityDomain.CONNECTOR if request.tool_or_connector_id.upper().startswith("CONNECTOR") else CapabilityDomain.FILE,
+        request.lease_id, tenant_id=request.tenant_id, capability_domain=CapabilityDomain(request.capability_domain),
         capability=request.capability, resource_scope=request.action.resource_scope,
         operation_scope=request.action.operation_scope, arguments={},
     )

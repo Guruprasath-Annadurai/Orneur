@@ -221,6 +221,14 @@ class SimulationRequest:
     # during this phase's own eval harness run (a compatibility check
     # comparing "FILE_WRITE" against the literal string "READ_ONLY").
     capability: str = ""
+    # Which orca.godmode.contracts.CapabilityDomain the lease (if any)
+    # would need to belong to -- explicit, never inferred from
+    # `tool_or_connector_id`'s spelling (a "write_file" tool could
+    # legitimately be elevated via either an AGENT-domain Capability
+    # lease, through AgentRuntime's generic path, or a FILE-domain
+    # resource lease, through the dedicated file_elevation.py path --
+    # the caller knows which one applies, this module must not guess).
+    capability_domain: str = "FILE"
     simulation_budget_units: int = 1
     deadline_s: float = 30.0
     required_fidelity: str = "LOW"
