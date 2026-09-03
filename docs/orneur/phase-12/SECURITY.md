@@ -77,9 +77,27 @@ the candidate RECORD is retained (for the audit trail spec §61 requires)
 but its eligibility is permanently withdrawn, never silently left
 training-eligible.
 
+## Phase 12.1 — Registry destination security (spec §21)
+
+See `REGISTRY_ISOLATION.md` for full design. Guards:
+
+- `validate_persist_destination()` — path-traversal and symlink-escape
+  safe (resolves before checking), hard denylist reusing
+  `orca.godmode.file_elevation`'s exact pattern (`/etc`, `/root`,
+  `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.orca/auth.db`, `~/.orca/godmode`).
+- Registry destination cannot be controlled by model/candidate/failure
+  content — a structural guarantee (the one production call site of
+  `isolated_registry()` only ever receives `None` or its own function
+  parameter), verified by AST inspection, not a runtime string filter.
+- A crash mid-harness/mid-experiment leaves the real registry unchanged —
+  `isolated_registry()`'s cleanup runs in a `finally` block.
+- A pre-existing FROZEN artifact at an explicit persist destination
+  cannot be silently overwritten by a fixed-ID collision — enforced by
+  `DatasetManifest.save()`'s existing freeze-immutability check.
+
 ## Audit counters (spec §90)
 
-`orca.learning.audit.AUDIT` — 15 named counters
+`orca.learning.audit.AUDIT` — 19 named counters (15 original + 4 added in Phase 12.1)
 (`orca/learning/audit.py::COUNTER_NAMES`), incremented at real detection
 points in `pipeline.py` (`SECRET_IN_CURRICULUM`,
 `UNVERIFIED_FAILURE_TRAINING_ADMISSION`,
@@ -89,4 +107,4 @@ impossible (e.g. `AUTOMATIC_MODEL_PROMOTION`, `MODEL_SELF_APPROVAL`) —
 their value is 0 because the corresponding code path does not exist, not
 merely because no test happened to trigger it; this is verified by the
 security tests asserting the guard RAISES rather than silently
-succeeding. See the final Phase 12 report for the full 15-counter table.
+succeeding. See the Phase 12.1 final report for the full 19-counter table.

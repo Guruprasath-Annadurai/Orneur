@@ -60,17 +60,19 @@ synchronously; every `orca.learning` entry point is explicitly invoked
 (a script, a test, a future CLI command), never triggered by request
 handling.
 
-## Known limitation: standalone harness invocation is not registry-isolated
+## Resolved (Phase 12.1): standalone harness invocation is now registry-isolated by default
 
-Running `python -m orca.learning.eval_harness` directly (as opposed to via
-`tests/test_learning_eval_harness.py`) writes two harmless,
-fixed-ID artifacts (`phase12-frozen-test-v1.json`,
-`phase12-regression-test.json`) into this developer's real
-`~/.orca/registry/{datasets,evaluations}/` directories, since the
-file-scoped pytest isolation fixture (`tests/_learning_registry_isolation.py`)
-only applies inside a pytest run. This was caught twice during this
-phase's own development (see `DATASET_VERSIONING.md`'s note on the freeze
-bug) and is disclosed rather than silently left as a footgun: prefer
-`pytest tests/test_learning_eval_harness.py` over the standalone
-`python -m` invocation, or manually remove the two `phase12-*` files
-after a standalone run.
+Phase 12's closure report initially disclosed this as an accepted
+limitation. Phase 12.1 rejected that and fixed it properly:
+`orca.learning.eval_harness.run_all()` and
+`orca.learning.training_experiment.prepare_training_experiment()` now
+BOTH run inside `orca.learning.registry_isolation.isolated_registry()`,
+which defaults to an ephemeral `TemporaryDirectory` (deleted on exit,
+including on exception) and only ever touches a real location when the
+caller passes an explicit `persist`/`registry_home` destination — which
+is then validated (path-traversal/symlink-escape checked against a hard
+denylist reusing `orca.godmode.file_elevation`'s discipline) and reported
+before writing. See `REGISTRY_ISOLATION.md` for the full design and
+`tests/test_learning_registry_isolation.py` for the snapshot-diff proof
+that the real `~/.orca/registry/` is untouched by default, with no pytest
+fixture involved in that proof.

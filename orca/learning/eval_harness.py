@@ -289,15 +289,42 @@ _SCENARIOS = [
 ]
 
 
-def run_all() -> tuple[int, int]:
+def run_all(persist: "Path | None" = None) -> tuple[int, int]:
+    """
+    Phase 12.1 spec §5-14: several scenarios below (frozen-dataset
+    immutability, eval-regression-blocks-promotion) exercise real
+    `DatasetManifest.save()`/`EvaluationReport.save()` calls. Those
+    ALWAYS run inside `orca.learning.registry_isolation.isolated_registry()`
+    -- an ephemeral `TemporaryDirectory` by default, or the caller's
+    explicit `persist` directory if one is supplied. This is true for
+    BOTH the CLI (`python -m orca.learning.eval_harness`) and a direct
+    programmatic call (`run_all()` with no arguments) -- safety does not
+    depend on pytest, an environment variable, or the caller remembering
+    anything. The real `~/.orca/registry/` is never touched by this
+    function under any default invocation.
+    """
+    from orca.learning.registry_isolation import isolated_registry
+
     global _PASS_COUNT, _TOTAL
     _PASS_COUNT = 0
     _TOTAL = 0
-    for scenario in _SCENARIOS:
-        scenario()
+    with isolated_registry(destination=persist) as base:
+        if persist is not None:
+            print(f"[persist] writing eval-harness registry artifacts under: {base}")
+        for scenario in _SCENARIOS:
+            scenario()
     print(f"\n{_PASS_COUNT}/{_TOTAL} scenarios passed ({100 * _PASS_COUNT // max(_TOTAL, 1)}%)")
     return _PASS_COUNT, _TOTAL
 
 
 if __name__ == "__main__":
-    run_all()
+    import argparse
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(description="Phase 12 deterministic learning-pipeline eval harness")
+    parser.add_argument(
+        "--persist", type=Path, default=None, metavar="DIR",
+        help="Explicit directory to persist registry artifacts into (default: ephemeral temp dir, discarded on exit)",
+    )
+    args = parser.parse_args()
+    run_all(persist=args.persist)

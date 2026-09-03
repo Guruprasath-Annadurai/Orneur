@@ -2,6 +2,15 @@
 
 **Repository**: orca | **Branch**: session-update-2026-08-25
 
+**Superseded by Phase 12.1's final qualification** —
+[`PHASE_12_FINAL_CLOSURE.md`](PHASE_12_FINAL_CLOSURE.md) corrects this
+document's baseline-lineage gap (see
+[`BASELINE_LINEAGE_AUDIT.md`](BASELINE_LINEAGE_AUDIT.md)) and resolves the
+standalone-eval-harness registry-write limitation this document originally
+accepted (see [`REGISTRY_ISOLATION.md`](REGISTRY_ISOLATION.md)). Kept here
+unedited otherwise as the honest historical record of what was known and
+reported at Phase 12 closure time.
+
 ## What Phase 12 built
 
 A governed, explicitly-invoked pipeline
