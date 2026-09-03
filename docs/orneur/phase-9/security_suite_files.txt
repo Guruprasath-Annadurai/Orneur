@@ -60,6 +60,7 @@ tests/test_serve_dlp.py
 tests/test_simulation_closure.py
 tests/test_simulation_e2e.py
 tests/test_simulation_fast_path.py
+tests/test_simulation_qualification_11_2.py
 tests/test_simulation_security.py
 tests/test_society_authority_security.py
 tests/test_society_budget_ledger.py
