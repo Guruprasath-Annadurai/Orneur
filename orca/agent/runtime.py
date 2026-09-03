@@ -249,6 +249,13 @@ class AgentRuntime:
                     replans_used += 1
                     trace.replan_events.append(f"replan:{replans_used}:{action.tool_id}_failed")
                     if revised is not None:
+                        # The original task's failure is superseded by a
+                        # working local revision (spec §25) -- SKIPPED, not
+                        # left as a permanent FAILED, since a substitute
+                        # task now carries the work forward. The failure
+                        # itself is still visible in the trace's replan_events.
+                        if task is not None:
+                            task.status = TaskStatus.SKIPPED
                         for new_action in revised.actions:
                             if new_action.task_id not in [a.task_id for a in actions[:idx + 1]]:
                                 actions.append(new_action)
@@ -266,7 +273,7 @@ class AgentRuntime:
             idx += 1
 
         if run.stop_reason is None:
-            all_completed = all(t.status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED) for t in plan.tasks) if plan.tasks else True
+            all_completed = all(t.status in (TaskStatus.COMPLETED, TaskStatus.SKIPPED) for t in task_map.values()) if task_map else True
             run.status = AgentRunStatus.COMPLETED if all_completed else AgentRunStatus.PARTIAL
             run.stop_reason = ExecutionStopReason.GOAL_ACHIEVED if all_completed else ExecutionStopReason.DEPENDENCY_FAILED
 
