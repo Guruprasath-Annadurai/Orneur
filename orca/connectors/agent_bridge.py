@@ -25,6 +25,24 @@ from orca.connectors.policy import evaluate_connector_policy
 from orca.connectors.registry import ConnectorRegistry, TenantIsolationError
 
 
+def authorized_connector_tool_specs(registry: ConnectorRegistry, identity: ConnectorIdentity) -> dict[str, ToolSpec]:
+    """
+    Spec §39: `AgentPlanner` should see ONLY connector tools authorized
+    for the current tenant -- never every installed connector with
+    security relying solely on later denial. Returns tool_id -> ToolSpec
+    for every HEALTHY, tenant-visible connector instance; an unhealthy or
+    other-tenant instance never appears here at all (not merely denied
+    later).
+    """
+    specs = {}
+    for instance in registry.list_for_tenant(identity.tenant_id):
+        if not registry.is_routable(instance.connector_instance_id):
+            continue
+        tool_id = f"connector_{instance.connector_instance_id}"
+        specs[tool_id] = connector_tool_spec(instance, tool_id=tool_id)
+    return specs
+
+
 def connector_tool_spec(instance: ConnectorInstance, *, tool_id: str) -> ToolSpec:
     """Builds the `ToolSpec` an `AgentToolRegistry` entry needs -- the
     connector's OWN `read_write_mode` determines the declared
