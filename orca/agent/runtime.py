@@ -73,8 +73,16 @@ class AgentRuntime:
         budget: CognitiveBudget | None = None,
         deadline_s: float = 120.0,
         replan_fn=None,
+        truth_checker=None,
     ):
         """
+        `truth_checker` (Phase 8.1 spec §12-14), when given, is called as
+        `await truth_checker(action) -> bool` for any action with
+        `requires_truth_check=True`. `False` means insufficient evidence
+        -- the runtime does NOT guess-and-execute; the action is treated
+        as a failure eligible for the same bounded local-replan mechanism
+        tool failures use.
+
         `replan_fn`, when given, is called as
         `replan_fn(plan, failed_task, world_state) -> AgentPlan | None`
         (sync OR async -- both `iscoroutinefunction` are supported) to
@@ -90,6 +98,7 @@ class AgentRuntime:
         self.budget = budget
         self.deadline_s = deadline_s
         self.replan_fn = replan_fn
+        self.truth_checker = truth_checker
         self._idempotency_seen: set[str] = set()
 
         self.ledger = None
@@ -242,6 +251,46 @@ class AgentRuntime:
                     run.stop_reason = ExecutionStopReason.APPROVAL_REQUIRED
                     idx += 1
                     continue
+
+                # Pre-action Truth Fabric check (spec §12-14) -- only for
+                # actions explicitly marked as depending on a strict/fresh
+                # external fact. Never forced on every action.
+                if action.requires_truth_check and self.truth_checker is not None:
+                    try:
+                        sufficient = await self.truth_checker(action)
+                    except asyncio.CancelledError:
+                        cancelled = True
+                        break
+                    if not sufficient:
+                        observation = Observation(
+                            action_id=action.action_id, source="truth_fabric", status="ERROR",
+                            error="insufficient evidence for a strict factual prerequisite -- not executing on a guess",
+                            trust_class=ObservationTrustClass.EXTERNAL_API,
+                        )
+                        trace.observation_ids.append(observation.observation_id)
+                        if task is not None:
+                            task.status = TaskStatus.FAILED
+                        if self.replan_fn is not None and replans_used < MAX_AGENT_REPLANS:
+                            try:
+                                revised = await self._call_replan_fn(plan, task, world_state)
+                            except asyncio.CancelledError:
+                                cancelled = True
+                                break
+                            replans_used += 1
+                            trace.replan_events.append(f"replan:{replans_used}:truth_check_insufficient")
+                            if revised is not None:
+                                if task is not None:
+                                    task.status = TaskStatus.SKIPPED
+                                for new_action in revised.actions:
+                                    if new_action.task_id not in [a.task_id for a in actions[:idx + 1]]:
+                                        actions.append(new_action)
+                                        task_map.setdefault(new_action.task_id, AgentTask(task_id=new_action.task_id))
+                                idx += 1
+                                continue
+                        run.status = AgentRunStatus.PARTIAL
+                        run.stop_reason = ExecutionStopReason.UNRESOLVED_WORLD_STATE
+                        idx += 1
+                        continue
 
                 # Budget reservation BEFORE execution (spec §13/§45-46).
                 reservation = None

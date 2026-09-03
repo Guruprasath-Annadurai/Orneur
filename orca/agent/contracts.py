@@ -147,6 +147,12 @@ class AgentAction:
     tool_id: str = ""
     arguments: dict = field(default_factory=dict)
     expected_side_effect: SideEffectClass = SideEffectClass.READ_ONLY
+    # Phase 8.1 spec §12-13: a typed runtime decision, set by the planner
+    # (or a caller) when the action depends on a fresh/strict external
+    # fact -- never inferred silently by the runtime itself. Checked BEFORE
+    # execution; if True and no sufficient TruthResult is available, the
+    # runtime does not guess-and-execute (spec §13).
+    requires_truth_check: bool = False
 
 
 @dataclass
