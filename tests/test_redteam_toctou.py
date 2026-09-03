@@ -8,7 +8,7 @@ Attack log (see docs/orneur/phase-13/TOCTOU.md):
   TOCTOU-01  Godmode: revoke concurrently racing consume_use()          -> BLOCKED_AS_EXPECTED
   TOCTOU-02  Godmode: kill switch activated concurrently racing consume -> BLOCKED_AS_EXPECTED
   TOCTOU-03  Dataset freeze racing a concurrent save()                  -> BLOCKED_AS_EXPECTED
-  TOCTOU-04  Godmode ONE-USE lease consumed by two real OS PROCESSES    -> REAL_VULNERABILITY, documented (not fixed this pass -- see finding)
+  TOCTOU-04  Godmode ONE-USE lease consumed by two real OS PROCESSES    -> REAL_VULNERABILITY, FIXED in Phase 13.2 (see tests/test_godmode_distributed_atomicity.py)
 """
 from __future__ import annotations
 
@@ -186,13 +186,16 @@ def test_toctou04_real_multiprocess_race_on_one_use_lease(tmp_path):
     the SAME one-use lease, using a shared ORCA_HOME so both processes
     read/write the SAME lease file.
 
-    FINDING (real, documented, not fixed this pass -- see
-    docs/orneur/phase-13/TOCTOU.md): both processes can observe
-    `uses_remaining == 1` before either writes back `0`, since
-    consume_use()'s read-modify-write (`get()` then `save()`) has no
-    file-level lock (no `fcntl.flock`/advisory lock on the JSON file
-    itself) -- only an in-process `threading.Lock`, which provides zero
-    protection across process boundaries. Reproduced directly below.
+    Phase 13.2 UPDATE: the finding this test originally reproduced
+    (docs/orneur/phase-13/TOCTOU.md) is now FIXED --
+    orca.godmode.lease_store was rewritten to a SQLite-backed store using
+    `BEGIN IMMEDIATE` transactions, whose locking is genuinely enforced
+    across process boundaries (see
+    docs/orneur/phase-13/GODMODE_DISTRIBUTED_ATOMICITY.md and
+    tests/test_godmode_distributed_atomicity.py for the full Phase 13.2
+    regression suite this fix is verified against). This test is KEPT as
+    a permanent regression guard -- it must never again show more than
+    one successful consumption.
     """
     home = tmp_path / "orca_home_mp_test"
     home.mkdir()
@@ -247,15 +250,7 @@ def test_toctou04_real_multiprocess_race_on_one_use_lease(tmp_path):
         import orca.godmode.lease_store as lease_store_mod
         importlib.reload(lease_store_mod)
 
-    if successful_consumptions > 1:
-        pytest.xfail(
-            f"REAL, REPRODUCED FINDING: {successful_consumptions}/2 processes both successfully consumed a "
-            f"one-use lease -- orca.godmode.lease_store's atomicity guarantee is "
-            f"in-process only (threading.Lock), not cross-process. Documented as a residual, disclosed risk "
-            f"in docs/orneur/phase-13/TOCTOU.md rather than silently passed or hidden. NOT fixed this pass: "
-            f"a correct fix requires real file-level locking (fcntl.flock or equivalent) across the "
-            f"get()-then-save() read-modify-write, which is a more invasive change than this qualification "
-            f"pass's scope for a one-off finding -- recommended as a priority follow-up before any multi-"
-            f"process/multi-worker Godmode deployment."
-        )
-    assert successful_consumptions == 1
+    assert successful_consumptions == 1, (
+        f"{successful_consumptions}/2 processes reported successful consumption of a one-use lease -- "
+        f"this would be a REGRESSION of the Phase 13.2 cross-process atomicity fix."
+    )

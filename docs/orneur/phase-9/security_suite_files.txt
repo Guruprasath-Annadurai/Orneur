@@ -35,6 +35,7 @@ tests/test_gateway_circuit_breaker.py
 tests/test_gateway_test_isolation.py
 tests/test_godmode_boundaries.py
 tests/test_godmode_concurrency_and_e2e.py
+tests/test_godmode_distributed_atomicity.py
 tests/test_godmode_exact_argument_binding.py
 tests/test_godmode_fast_path.py
 tests/test_godmode_security.py
