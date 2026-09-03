@@ -19,8 +19,24 @@ import json
 import unicodedata
 from typing import Any
 
+# Phase 13.1 §23-24 finding: an attacker-supplied argument payload nested
+# deeper than Python's default recursion limit (1000) crashed this
+# function with an uncaught RecursionError -- reproduced at depth 500,
+# well within a plausible malicious payload, not an extreme edge case.
+# This is exactly the "recursion crash instead of a bounded rejection"
+# failure mode the spec calls out. Real fix: an explicit depth counter
+# that raises a proper, typed, catchable error before Python's own stack
+# limit is ever approached -- callers (issue_lease/resolve_lease) already
+# wrap their own construction paths in typed error handling and can
+# treat this exactly like any other malformed-argument rejection.
+_MAX_CANONICALIZATION_DEPTH = 64
 
-def _canonicalize_value(value: Any) -> Any:
+
+class ArgumentTooDeeplyNestedError(ValueError):
+    pass
+
+
+def _canonicalize_value(value: Any, _depth: int = 0) -> Any:
     """
     Recursively normalizes a value into a JSON-representable form with
     stable semantics:
@@ -48,6 +64,10 @@ def _canonicalize_value(value: Any) -> Any:
       difference a caller should not be able to blur).
     - None: unchanged.
     """
+    if _depth > _MAX_CANONICALIZATION_DEPTH:
+        raise ArgumentTooDeeplyNestedError(
+            f"argument structure exceeds max canonicalization depth ({_MAX_CANONICALIZATION_DEPTH}) -- rejected"
+        )
     if isinstance(value, bool):
         return {"__t": "bool", "v": value}
     if isinstance(value, int):
@@ -60,11 +80,11 @@ def _canonicalize_value(value: Any) -> Any:
         return {"__t": "null"}
     if isinstance(value, dict):
         normalized_items = sorted(
-            (unicodedata.normalize("NFC", str(k)), _canonicalize_value(v)) for k, v in value.items()
+            (unicodedata.normalize("NFC", str(k)), _canonicalize_value(v, _depth + 1)) for k, v in value.items()
         )
         return {"__t": "obj", "v": normalized_items}
     if isinstance(value, (list, tuple)):
-        return {"__t": "arr", "v": [_canonicalize_value(v) for v in value]}
+        return {"__t": "arr", "v": [_canonicalize_value(v, _depth + 1) for v in value]}
     # Anything else (a custom object) is rejected outright rather than
     # silently stringified with unstable repr semantics.
     raise TypeError(f"cannot canonicalize argument value of type {type(value).__name__}")

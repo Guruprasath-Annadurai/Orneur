@@ -9,7 +9,7 @@ answer text is judged, from the evidence/claims themselves).
 from __future__ import annotations
 
 from orca.cognitive.contracts import FreshnessLevel
-from orca.truth.contracts import Contradiction, ContradictionRelationship, EvidenceSource, EvidenceState
+from orca.truth.contracts import Contradiction, ContradictionRelationship, EvidenceSource, EvidenceState, IndependenceState
 
 _FRESH_ENOUGH_FOR = {
     FreshnessLevel.REAL_TIME: {FreshnessLevel.REAL_TIME},
@@ -42,6 +42,24 @@ def compute_evidence_state(
         return EvidenceState.STALE
 
     if citation_coverage_ratio >= 0.8:
+        # Phase 13.1 §5 finding: orca.truth.provenance.annotate_independence()
+        # computes IndependenceState/derived_from on each EvidenceSource, but
+        # nothing downstream ever consulted it -- an evidence set entirely
+        # composed of mutually-derived copies (an attacker flooding retrieval
+        # with N mirrors/paraphrases of the same one origin) reached
+        # SUFFICIENT exactly as if it had genuinely independent corroboration.
+        # Real, minimal fix: when there are 2+ sources and EVERY one of them
+        # is marked LIKELY_DERIVED (no source in the set is independent of, or
+        # even merely unknown-relative-to, the others), a would-be SUFFICIENT
+        # result is not upheld -- there is, in truth, only ONE corroborating
+        # origin behind however many copies retrieval surfaced. Any set with
+        # at least one UNKNOWN or INDEPENDENT source is unaffected: this is
+        # deliberately narrow (only the all-derived, zero-diversity case),
+        # matching this module's existing "never assert more than the
+        # evidence supports" discipline rather than inventing a new
+        # confidence-scoring scheme.
+        if len(sources) >= 2 and all(s.independence == IndependenceState.LIKELY_DERIVED for s in sources):
+            return EvidenceState.PARTIAL
         return EvidenceState.SUFFICIENT
     if citation_coverage_ratio > 0.0:
         return EvidenceState.PARTIAL
