@@ -18,7 +18,7 @@ from pathlib import Path
 from orca.agent.contracts import AgentPlan
 from orca.deliberation.contracts import WorldState
 from orca.simulation.contracts import EffectConfidence, SimulationVerdict, _new_id
-from orca.simulation.plan_chamber import MAX_SIMULATION_BRANCHES, PlanSimulationResult, simulate_plan
+from orca.simulation.plan_chamber import MAX_SIMULATION_BRANCHES, PlanSimulationResult, simulate_plan, simulate_plan_async
 
 _VERDICT_PRECEDENCE = [SimulationVerdict.BLOCK, SimulationVerdict.INCONCLUSIVE, SimulationVerdict.REVISE, SimulationVerdict.PASS_WITH_WARNINGS, SimulationVerdict.PASS]
 
@@ -43,6 +43,18 @@ class BranchedSimulationResult:
     worst_case_verdict: SimulationVerdict = SimulationVerdict.INCONCLUSIVE
     critical_uncertainty: str | None = None
     branch_count: int = 0
+    cancelled: bool = False
+    active_branch_ids_at_cancel: list[str] = field(default_factory=list)
+    completed_branch_ids: list[str] = field(default_factory=list)
+    cancelled_branch_ids: list[str] = field(default_factory=list)
+    # Forensic trace (spec §10): the partial PlanSimulationResult each
+    # cancelled branch had produced at the moment it was interrupted --
+    # e.g. which actions it had already recorded -- kept separately from
+    # `branches` (which only ever holds branches that ran to a genuine
+    # conclusion) so a debugger can see exactly how far a cancelled
+    # branch got without that partial data being mistaken for a real,
+    # complete branch outcome.
+    cancelled_branch_partial_results: dict = field(default_factory=dict)
 
 
 def _uncertainty_justifies_branching(result: PlanSimulationResult) -> bool:
@@ -128,4 +140,118 @@ def run_bounded_branches(
     return BranchedSimulationResult(
         branches=branches, shared_effect_resources=sorted(shared), divergent_effect_resources=sorted(divergent),
         worst_case_verdict=worst_case, critical_uncertainty=critical_uncertainty, branch_count=len(branches),
+    )
+
+
+async def run_bounded_branches_async(
+    plan: AgentPlan, *, filesystem_root: Path | None = None, live_world_state: WorldState | None = None,
+    budget_ledger=None, force_branch: bool = False, on_action_start=None,
+) -> BranchedSimulationResult:
+    """
+    Phase 11.2: genuinely CONCURRENT branch execution using
+    `asyncio.TaskGroup` (structured concurrency -- every child task is
+    owned by the group; there is no detached/fire-and-forget
+    `create_task()` anywhere here). When the enclosing task running this
+    coroutine is cancelled, `TaskGroup.__aexit__` cancels EVERY branch
+    task still running, awaits all of them to actually finish (never
+    returns with a child still pending), and only then re-raises
+    `CancelledError` -- which this function catches to build a
+    structured, honest `BranchedSimulationResult` instead of propagating
+    a bare exception.
+
+    `force_branch` (test/caller-driven, since the real "does this need a
+    second branch" judgment in `run_bounded_branches()` depends on the
+    FIRST branch's own outcome -- inherently sequential, and therefore
+    unusable for a genuinely concurrent launch): when True, both branches
+    are launched together upfront rather than one waiting on the other's
+    result. This is a disclosed, deliberate difference from the
+    sequential `run_bounded_branches()`'s outcome-based decision -- used
+    when a caller already knows both branches are worth running
+    concurrently (e.g. this module's own cancellation tests).
+
+    `on_action_start(label, action_id)` (optional): forwarded per-branch
+    into `simulate_plan_async()` -- lets a caller/test prove genuine
+    concurrent activity (e.g. via per-branch `asyncio.Event`s) before
+    triggering cancellation.
+    """
+    import asyncio
+
+    granted = _reserve_branch_budget(budget_ledger, min(2, MAX_SIMULATION_BRANCHES))
+    if granted < 1:
+        return BranchedSimulationResult(branches=[], worst_case_verdict=SimulationVerdict.INCONCLUSIVE, critical_uncertainty="simulation budget exhausted before any branch could run")
+
+    want_two = force_branch and granted >= 2 and len(plan.actions) > 1
+    truncated_plan = AgentPlan(plan_id=plan.plan_id, tasks=plan.tasks, actions=plan.actions[:-1]) if want_two else None
+
+    def _hook_for(label: BranchLabel):
+        if on_action_start is None:
+            return None
+        async def _hook(action_id: str) -> None:
+            await on_action_start(label, action_id)
+        return _hook
+
+    tasks: dict[BranchLabel, "asyncio.Task"] = {}
+    partial_results: dict = {}
+    cancelled = False
+    try:
+        async with asyncio.TaskGroup() as tg:
+            tasks[BranchLabel.EXPECTED_SUCCESS] = tg.create_task(
+                simulate_plan_async(plan, filesystem_root=filesystem_root, live_world_state=live_world_state, on_action_start=_hook_for(BranchLabel.EXPECTED_SUCCESS)),
+                name="branch-EXPECTED_SUCCESS",
+            )
+            if want_two:
+                tasks[BranchLabel.EXPECTED_FAILURE] = tg.create_task(
+                    simulate_plan_async(truncated_plan, filesystem_root=filesystem_root, live_world_state=live_world_state, on_action_start=_hook_for(BranchLabel.EXPECTED_FAILURE)),
+                    name="branch-EXPECTED_FAILURE",
+                )
+    except asyncio.CancelledError:
+        cancelled = True
+
+    branches: list[BranchOutcome] = []
+    completed_ids, cancelled_ids, active_at_cancel = [], [], []
+    for label, task in tasks.items():
+        if task.cancelled():
+            # The task's own asyncio.CancelledError propagated all the
+            # way out (never internally caught) -- a "hard" cancellation.
+            cancelled_ids.append(label.value)
+            active_at_cancel.append(label.value)
+            continue
+        exc = task.exception() if task.done() else None
+        if exc is not None:
+            raise exc  # a genuine, non-cancellation error must never be swallowed
+        result = task.result()
+        # simulate_plan_async() catches its OWN CancelledError internally
+        # (matching orca.agent.runtime.AgentRuntime.execute_async()'s
+        # established pattern) and returns a normal, structured result
+        # rather than propagating -- so a branch interrupted mid-flight
+        # shows up here as a "completed" task whose OWN result honestly
+        # reports the interruption (INCONCLUSIVE + a cancellation
+        # block_reason), never a silent PASS. Classify it as cancelled
+        # for THIS function's own bookkeeping so callers/tests see the
+        # real outcome, not an artifact of where the CancelledError was
+        # actually caught.
+        was_internally_cancelled = result.aggregate_verdict == SimulationVerdict.INCONCLUSIVE and any("cancel" in r.lower() for r in result.block_reasons)
+        if was_internally_cancelled:
+            cancelled_ids.append(label.value)
+            active_at_cancel.append(label.value)
+            partial_results[label.value] = result
+            continue
+        completed_ids.append(label.value)
+        branches.append(BranchOutcome(label=label, result=result))
+
+    all_resources = [{e.resource for e in b.result.aggregate_effects} for b in branches]
+    shared = set.intersection(*all_resources) if all_resources else set()
+    divergent = set.union(*all_resources) - shared if all_resources else set()
+
+    worst_case = SimulationVerdict.INCONCLUSIVE if cancelled else SimulationVerdict.PASS
+    for candidate in _VERDICT_PRECEDENCE:
+        if any(b.result.aggregate_verdict == candidate for b in branches):
+            worst_case = candidate
+            break
+
+    return BranchedSimulationResult(
+        branches=branches, shared_effect_resources=sorted(shared), divergent_effect_resources=sorted(divergent),
+        worst_case_verdict=worst_case, branch_count=len(branches), cancelled=cancelled,
+        active_branch_ids_at_cancel=active_at_cancel, completed_branch_ids=completed_ids, cancelled_branch_ids=cancelled_ids,
+        cancelled_branch_partial_results=partial_results,
     )
