@@ -111,9 +111,47 @@ def run_delegation(
         registry=registry, active_subagent_count=active_subagent_count,
     )
     child_run, child_trace, child_world_state = child_runtime.execute(plan)
+    return _finalize_delegation(child_run, child_world_state, parent_budget, require_schema_validation)
 
+
+async def run_delegation_async(
+    request: DelegationRequest,
+    plan,
+    *,
+    parent_capabilities: frozenset[Capability],
+    parent_budget: CognitiveBudget,
+    registry: AgentToolRegistry,
+    active_subagent_count: int = 0,
+    require_schema_validation: bool = True,
+) -> DelegationResult:
+    """
+    Async twin of `run_delegation()` (Phase 8.1 spec §27, §31): awaits the
+    child's `execute_async()` directly in the SAME task the parent is
+    running in, so a parent cancellation (`task.cancel()`) propagates
+    `asyncio.CancelledError` into the child's own execution loop at
+    whatever await point it is currently at -- the child receives
+    cancellation the same way any other awaited coroutine would, no
+    separate cancellation-relay mechanism needed. Use this (not the sync
+    `run_delegation()`, which calls `asyncio.run()` internally and would
+    raise if invoked from inside an already-running event loop) whenever
+    delegation happens from within an async caller, e.g. `AgentRuntime.execute_async()`.
+    """
+    child_runtime = build_child_runtime(
+        request, parent_capabilities=parent_capabilities, parent_budget=parent_budget,
+        registry=registry, active_subagent_count=active_subagent_count,
+    )
+    child_run, child_trace, child_world_state = await child_runtime.execute_async(plan)
+    return _finalize_delegation(child_run, child_world_state, parent_budget, require_schema_validation)
+
+
+def _finalize_delegation(child_run, child_world_state, parent_budget: CognitiveBudget, require_schema_validation: bool) -> DelegationResult:
     # Consume exactly 1 unit of the PARENT's AGENT_CALLS dimension for the
     # delegation itself -- never an independent fresh allocation (spec §47).
+    # A CANCELLED child still counts as one delegation attempt against the
+    # parent's AGENT_CALLS -- the delegation itself happened (spec §28:
+    # already-consumed work is never refunded); only the CHILD's own
+    # unused TOOL_CALLS/MODEL_CALLS reservations were released internally
+    # by its own execute_async().
     from orca.cognitive.budget import consume as _consume
     from orca.cognitive.errors import CognitiveBudgetExhaustedError
     try:
