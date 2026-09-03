@@ -15,10 +15,12 @@ tests/test_budget_manipulation_security.py
 tests/test_code_sandbox_safety.py
 tests/test_connector_agent_bridge.py
 tests/test_connector_agent_runtime_e2e.py
+tests/test_connector_authority_regressions.py
 tests/test_connector_document_store.py
 tests/test_connector_fake_provider.py
 tests/test_connector_federated_retrieval.py
 tests/test_connector_lifecycle_audit.py
+tests/test_connector_rate_limit_and_budget.py
 tests/test_connector_registry_health.py
 tests/test_connector_security.py
 tests/test_connector_tenant_isolation.py
