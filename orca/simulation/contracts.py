@@ -213,6 +213,14 @@ class SimulationRequest:
     tenant_id: str = ""
     principal_id: str = ""
     lease_id: str | None = None              # Godmode context, if elevated -- NEVER consumed by simulation itself
+    # The Godmode CAPABILITY the lease would need to grant (e.g.
+    # "FILE_WRITE", "CONNECTOR_WRITE") -- deliberately distinct from
+    # `side_effect_class` (READ_ONLY/IRREVERSIBLE_WRITE/...), which
+    # describes the ACTION's effect class, not the capability string a
+    # CapabilityLease binds to. Conflating the two was a real bug found
+    # during this phase's own eval harness run (a compatibility check
+    # comparing "FILE_WRITE" against the literal string "READ_ONLY").
+    capability: str = ""
     simulation_budget_units: int = 1
     deadline_s: float = 30.0
     required_fidelity: str = "LOW"
