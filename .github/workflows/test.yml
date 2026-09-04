@@ -2,9 +2,14 @@ name: Test Suite
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - session-update-2026-08-25
+      - 'phase14b-*'
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - session-update-2026-08-25
 
 jobs:
   pytest:
@@ -37,6 +42,23 @@ jobs:
           name: pytest-log-${{ github.run_number }}
           path: /tmp/pytest-log.txt
           retention-days: 14
+
+  container-build:
+    name: Production Container Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build production Docker image
+        run: docker build --pull --tag orneur-ci:${{ github.sha }} .
+
+      - name: Inspect image metadata
+        run: |
+          docker image inspect orneur-ci:${{ github.sha }} \
+            --format 'id={{.Id}} size={{.Size}} health={{json .Config.Healthcheck}} cmd={{json .Config.Cmd}}'
 
   security-audit:
     name: Dependency Vulnerability Scan
