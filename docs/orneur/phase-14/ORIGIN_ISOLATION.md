@@ -51,3 +51,13 @@ infrastructure this phase):
 
 `DIRECT_ORIGIN_BYPASS`, `CLOUD_METADATA_SSRF`,
 `CROSS_CLOUD_CREDENTIAL_ESCALATION` — all **NOT_EXECUTED**.
+
+## Phase 14B update
+
+Still **NOT_EXECUTED**. This phase's own real-infrastructure check
+(`REAL_STAGING_TOPOLOGY.md`) confirmed no VPS, Cloudflare account, or
+Tunnel exists in this session — the direct-origin-bypass test this
+document describes requires a real public origin to attempt bypassing,
+which does not exist. See `CLOUDFLARE_STAGING.md`'s Phase 14B design
+for the test as planned, and the OWNER ACTION REQUIRED checkpoint in
+`REAL_STAGING_TOPOLOGY.md`/`PHASE_14_CLOSURE.md` for what unblocks it.

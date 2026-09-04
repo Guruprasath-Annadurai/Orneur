@@ -417,27 +417,42 @@ def test_tenant_scoped_audit_no_cross_tenant_leak(tmp_path):
 
 
 def test_godmode_elevation_audit_is_in_memory_only_and_does_not_gate_authorization(tmp_path):
-    """Spec §14: inspect current semantics rather than redesigning them.
-    Godmode's OWN elevation audit (orca.godmode.audit) is a plain
-    in-memory list, entirely separate from ORNEUR_DATABASE_URL's
-    hash-chained audit_log -- confirmed here as a living contract.
-    Elevation authorization decisions (resolution.py) do not call or
-    depend on either audit mechanism succeeding, so there is no
-    "durable audit required before authorization" architecture for
-    this phase to have silently violated -- the pre-existing,
-    already-disclosed limitation (in STATE_OWNERSHIP.md) is that this
-    specific audit trail is not durable, not that authorization is
-    unsafe."""
+    """Spec §14 (Phase 14A.4): inspected, not redesigned, at the time
+    this test was first written -- Godmode's OWN elevation audit
+    (orca.godmode.audit) was a plain in-memory list, entirely separate
+    from ORNEUR_DATABASE_URL's hash-chained audit_log, and elevation
+    authorization did not call or depend on ANY audit mechanism at all.
+
+    SUPERSEDED by Phase 14B (see
+    docs/orneur/phase-14/DURABLE_GODMODE_AUDIT.md): that "no audit
+    trail at all for real elevated actions" finding turned out to be
+    more serious than "not durable" -- resolution.py's authorization
+    choke point never called any audit function, in-memory or durable.
+    Phase 14B fixed this by wiring a NEW durable, hash-chained backend
+    (orca.godmode.durable_audit) directly into
+    resolve_and_consume_lease(), with fail-closed ordering (an ALLOW
+    decision is denied if the durable audit write fails). This test
+    now asserts the CORRECTED contract: resolution.py depends on the
+    NEW durable mechanism (intentionally), but still never touches the
+    OLD in-memory-only orca.godmode.audit module (which remains
+    unused/uncoupled, exactly as it was before -- it was never
+    "fixed," it was bypassed in favor of a new, real backend)."""
     from orca.godmode import audit as godmode_audit
     assert isinstance(godmode_audit._AUDIT_LOG, list)
 
-    import inspect
     import orca.godmode.resolution as resolution
-    source = inspect.getsource(resolution)
-    assert "godmode.audit" not in source and "record_elevation_event" not in source, (
-        "resolution.py's authorization decision must not depend on the in-memory Godmode audit log "
-        "succeeding or being called -- confirming no accidental new coupling was introduced"
+    assert not hasattr(resolution, "record_elevation_event"), (
+        "resolution.py must not import the OLD in-memory-only record_elevation_event function"
     )
+    import inspect
+    code_object_names = resolution.resolve_and_consume_lease.__code__.co_names
+    assert "record_elevation_event" not in code_object_names, (
+        "resolve_and_consume_lease() must not call the old in-memory-only audit function"
+    )
+    # The NEW, intentional Phase 14B coupling: resolution.py DOES now
+    # depend on durable_audit.record_event_durable() succeeding for an
+    # ALLOW decision -- confirmed as a living contract, not a regression.
+    assert "orca.godmode.durable_audit" in inspect.getsource(resolution)
 
 
 @pytestmark_pg

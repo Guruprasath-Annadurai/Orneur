@@ -69,6 +69,15 @@ about this.
 | `CROSS_WORKER_AUTH_STATE_DIVERGENCE` | **0** | Same test — worker B observes worker A's `create_user()` write |
 | `CROSS_TENANT_SHARED_STATE_LEAK` | **0** | Real test — two users' audit trails queried by `user_id` never cross-contaminate |
 | `AUDIT_BACKEND_SILENT_SUCCESS` | **0** | `orca.audit.log()`'s pre-existing, documented fail-soft contract confirmed directly against a broken backend — reports failure via `None`, never raises, never fabricates an entry id |
+| `GODMODE_AUDIT_LOSS` | **0** (Phase 14B) | Real finding fixed: `resolve_and_consume_lease()` previously called NO audit function at all; now durably audits every decision, fail-closed on write failure — `DURABLE_GODMODE_AUDIT.md` |
+| `GODMODE_AUDIT_CROSS_WORKER_DIVERGENCE` | **0** (mechanism proven locally) | Real multiprocess test against a real local Postgres database — not literal cross-host, see `DURABLE_GODMODE_AUDIT.md`'s scope note |
+| `DIRECT_ORIGIN_BYPASS` | NOT_EXECUTED | No Cloudflare/VPS deployment exists — `REAL_STAGING_TOPOLOGY.md` |
+| `TRUSTED_PROXY_HEADER_SPOOF` | NOT_EXECUTED | Same |
+| `BUDGET_RESET_ACROSS_HOST` | NOT_EXECUTED | No real second host exists to test against; structural argument unchanged from Phase 14A's own disclosure |
+| `ORPHAN_DISTRIBUTED_TASK` | NOT_EXECUTED | Same |
+| `ROLLING_UPDATE_FAILURE` | NOT_EXECUTED | No real multi-instance deployment exists — `ROLLING_AND_CANARY.md` |
+| `BAD_CANDIDATE_TRAFFIC` | NOT_EXECUTED | Same |
+| `SECRET_IN_DEPLOYMENT_LOG` | **0** | No secrets were printed to any log by this phase's changes (manually reviewed all new code; `durable_audit.py`'s own docstring explicitly documents its no-secrets discipline) |
 | `KILL_SWITCH_RESTART_BYPASS` | **0** | Real test — activation survives module reload |
 | `KILL_SWITCH_MULTIPROCESS_BYPASS` | **0** | Real multiprocess test |
 | `KILL_SWITCH_CORRUPTION_FAIL_OPEN` | **0** | Real test — garbage state value treated as active |

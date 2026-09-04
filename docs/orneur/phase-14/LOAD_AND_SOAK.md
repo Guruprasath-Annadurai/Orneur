@@ -85,3 +85,15 @@ run.
 - Any cloud-scale load test (spec §46's "primary cloud eventually runs
   real bounded load test") — gated on real cloud infrastructure not
   existing yet.
+
+## Phase 14B update
+
+Still **NOT_EXECUTED** against real Cloudflare/VPS infrastructure — see
+`REAL_STAGING_TOPOLOGY.md`. The local numbers above remain the only
+real load/soak evidence this project has; no new local load/soak run
+was performed this phase (no code change affected request-handling
+performance — only the Godmode authorization path gained one
+additional durable-audit database transaction per elevated call, a
+low-frequency operation this codebase has consistently treated as
+correctness-over-latency, per `lease_store.py`'s own established
+framing).

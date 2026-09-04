@@ -141,3 +141,14 @@ well under one second on this machine — this is evidence that the
 on real network/storage characteristics this environment does not
 have. Per spec §66's own instruction ("do not invent enterprise-grade
 numbers without evidence"), no RPO/RTO figure is stated here.
+
+## Phase 14B update
+
+Real staging backup/restore (against a real VPS-hosted Postgres
+instance) is **NOT_EXECUTED** — gated on real infrastructure, see
+`REAL_STAGING_TOPOLOGY.md`. The new `godmode_audit` table (durable
+Godmode elevation audit, `DURABLE_GODMODE_AUDIT.md`) lives in the same
+authority database as leases and the kill-switch mirror — it inherits
+that database's existing backup/restore characteristics and disclosed
+limitations exactly (see this document's earlier sections); no new,
+separate backup mechanism was needed or built for it specifically.

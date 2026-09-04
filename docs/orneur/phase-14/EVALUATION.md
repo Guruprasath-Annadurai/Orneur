@@ -105,3 +105,31 @@ The deterministic-only invocation has **zero dependency on a live local
 model** and is the correct baseline for spec §29's "final deterministic
 invocation: 0 failed" requirement — achieved cleanly, on the first
 attempt, once correctly scoped.
+
+## Phase 14B addendum
+
+**Real infrastructure check performed before any other work** (spec
+§1): no VPS, no Cloudflare account/tunnel, no SSH access to a remote
+host exist in this session — confirmed by checking `~/.ssh/config`,
+`~/.ssh/known_hosts`, `cloudflared` (not installed), and
+`~/.cloudflared` (does not exist). Per the governing spec's own
+explicit instruction, this was not worked around with local simulation
+presented as multi-host qualification — see `REAL_STAGING_TOPOLOGY.md`
+for the full check and the resulting OWNER ACTION REQUIRED checkpoint.
+
+**Real local work completed instead**: the one item spec §15
+mandated be closed *before* any multi-host elevated-action testing
+could even be attempted — the durable Godmode elevation audit
+(`DURABLE_GODMODE_AUDIT.md`). This surfaced a real finding more serious
+than Phase 14A.4's own disclosure (the elevation audit wasn't merely
+non-durable — it was never called by any real authorization path at
+all) and closed it with 10 new tests, wired directly into the
+authorization choke point (`resolve_and_consume_lease()`), with
+fail-closed ordering per spec §16.
+
+Full regression after this phase's changes: see `PHASE_14_CLOSURE.md`'s
+Phase 14B section for the exact final counts (a full re-run of both
+the deterministic-only and security suites was required and executed,
+since this phase's change touches the actual authorization path every
+elevated action depends on — the highest-risk category of change this
+whole multi-phase closure has made).

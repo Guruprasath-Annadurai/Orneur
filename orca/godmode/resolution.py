@@ -171,6 +171,8 @@ def resolve_and_consume_lease(
     resource_scope: str,
     operation_scope: str,
     arguments: dict | None = _SENTINEL,  # type: ignore[assignment]
+    principal_id: str | None = None,
+    trace_id: str | None = None,
 ) -> ElevatedPolicyDecision:
     """
     The side-effecting entry point real callers (AgentRuntime, connector
@@ -185,12 +187,42 @@ def resolve_and_consume_lease(
     generalizes to: only one of any N concurrent, otherwise-identical,
     valid requests may consume the single use), the decision is
     downgraded to DENY here, never silently treated as success.
+
+    Phase 14B §15-16: every decision this function reaches is now
+    durably audited (`orca.godmode.durable_audit`), closing a finding
+    more serious than Phase 14A.4's own disclosure -- this choke point
+    previously called NO audit function at all (the in-memory
+    `orca.godmode.audit.record_elevation_event()` had exactly one real
+    caller in the whole codebase, a benchmark script). Ordering is
+    fail-closed by design: for an ALLOW decision, the durable audit
+    write happens BEFORE `consume_use()` -- if the audit write fails,
+    the action is denied and the lease use is never consumed, per
+    spec §16's "do not silently succeed while mandatory audit
+    persistence is unavailable." A DENY decision is still audited
+    (best-effort, after the fact) since nothing was granted either way
+    -- an audit-write failure for a DENY does not need to change the
+    decision, since the decision was already the safe one.
     """
     decision = resolve_lease(
         lease_id, tenant_id=tenant_id, capability_domain=capability_domain, capability=capability,
         resource_scope=resource_scope, operation_scope=operation_scope, arguments=arguments,
     )
+
     if decision.state != ElevatedPolicyDecisionState.ALLOW:
+        _audit_decision(decision, lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+                         resource_scope=resource_scope, operation_scope=operation_scope,
+                         principal_id=principal_id, trace_id=trace_id)
+        return decision
+
+    # Durable audit BEFORE consume_use() -- spec §16's fail-closed
+    # ordering. If this write fails, the action must be denied, not
+    # granted without a durable record.
+    audited = _audit_decision(decision, lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+                               resource_scope=resource_scope, operation_scope=operation_scope,
+                               principal_id=principal_id, trace_id=trace_id)
+    if not audited:
+        decision.state = ElevatedPolicyDecisionState.DENY
+        decision.reasons.append("durable audit persistence unavailable -- elevated action denied rather than granted without a durable record (spec §16)")
         return decision
 
     if not consume_use(lease_id):
@@ -199,3 +231,26 @@ def resolve_and_consume_lease(
         return decision
 
     return decision
+
+
+def _audit_decision(
+    decision: ElevatedPolicyDecision, *, lease_id: str, tenant_id: str, capability: str,
+    resource_scope: str, operation_scope: str, principal_id: str | None, trace_id: str | None,
+) -> bool:
+    """Constructs and durably persists one `ElevationAuditEvent` for
+    this decision. Returns whether the durable write succeeded (the
+    caller only acts on this for ALLOW decisions -- see
+    `resolve_and_consume_lease()`'s docstring)."""
+    from orca.godmode.contracts import ElevationAuditEvent, ElevationAuditEventType
+    from orca.godmode.durable_audit import record_event_durable
+
+    event_type = (
+        ElevationAuditEventType.USE if decision.state == ElevatedPolicyDecisionState.ALLOW
+        else ElevationAuditEventType.DENY
+    )
+    event = ElevationAuditEvent(
+        event_type=event_type, principal_id=principal_id or "", tenant_id=tenant_id, lease_id=lease_id,
+        capability=capability, resource_scope=resource_scope, operation_scope=operation_scope,
+        trace_id=trace_id, result=decision.state.value,
+    )
+    return record_event_durable(event)

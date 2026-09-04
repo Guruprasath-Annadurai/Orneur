@@ -581,7 +581,152 @@ None. All three configuration gates this multi-part closure opened to
 address (security root, then core database) are now closed with real
 evidence.
 
-**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES**
+**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES** *(superseded — see Phase 14B below, which found no real infrastructure available and therefore could not attempt real deployment)*
 
 Per spec §26: stopping here. No cloud resources are provisioned. No
 Phase 15 work begins without explicit human approval.
+
+---
+
+# Phase 14B — Real Distributed Staging Qualification (Local Preparation Only)
+
+## Infrastructure check (spec §1) — the first action taken
+
+Before any other work, this session checked for real infrastructure:
+`~/.ssh/config` (does not exist), `~/.ssh/known_hosts` (8 entries, none
+matching a known VPS provider), `cloudflared` (not installed),
+`~/.cloudflared` (does not exist), and every prior `docs/orneur/`
+document (no mention of an approved VPS anywhere in this project's
+history). **Conclusion: no real Linux VPS, no Cloudflare account/zone/
+tunnel, and no SSH access to any remote host are available to this
+session.** Full detail: `REAL_STAGING_TOPOLOGY.md`.
+
+Per the governing spec's own explicit §1/§60 instructions, this was
+**not** worked around with local process simulation presented as
+multi-host qualification. Sections §2-§54 of the governing spec (real
+VPS hardening, Cloudflare Tunnel, cross-host tests, real load/soak,
+real backup/restore against staging infrastructure) are **NOT_EXECUTED**
+— see `MULTI_HOST_EVALUATION.md`'s full, honest scorecard against every
+one of spec §61's acceptance gates.
+
+## What was completed instead: the mandatory pre-multi-host gate (spec §15)
+
+Spec §15 required, explicitly, before ANY real multi-host elevated-
+action test: "audit `orca/godmode/audit.py`... implement a durable/
+shared audit backend." This session's audit found something more
+serious than Phase 14A.4's own disclosure ("Godmode's elevation audit
+remains in-memory-only"): grepping every real caller of
+`record_elevation_event()` found exactly one — a benchmark script.
+`orca.godmode.resolution.resolve_and_consume_lease()`, the single
+choke point every real elevation caller goes through, **never called
+any audit function at all**. There was no audit trail for real
+elevated actions before this phase, not merely a non-durable one.
+
+**Fixed**: `orca/godmode/durable_audit.py` (new) — a hash-chained,
+dual-backend store (SQLite for SOVEREIGN, the shared
+`ORNEUR_GODMODE_DATABASE_URL` Postgres database for DISTRIBUTED,
+reusing `lease_store.py`'s connection primitives), wired directly into
+`resolve_and_consume_lease()` with fail-closed ordering (spec §16): an
+ALLOW decision's durable audit write happens before `consume_use()`;
+if the write fails, the action is denied and the lease is never
+consumed. Tamper-evident via a SHA-256 hash chain plus HMAC signature
+(reusing `orca.audit`'s existing key-management convention). Full
+detail, including an honestly-disclosed accuracy nuance (a narrow race
+between the audit write and `consume_use()` can leave an audit record
+for an action that a concurrent competitor ultimately won instead —
+the safe direction of error, never a privilege escalation): `DURABLE_GODMODE_AUDIT.md`.
+
+## Test evidence
+
+`tests/test_durable_godmode_audit.py` — **10 new tests, all passing**:
+ALLOW/DENY both durably audited, fail-closed denial when the audit
+write fails (with the lease use confirmed NOT consumed), redaction
+preserved, cross-process visibility and "restart" persistence against
+a real local Postgres database (explicitly scoped as proving the
+mechanism, not literal cross-host qualification), `verify_chain()`
+correctly validates a clean chain and detects both a tampered row and
+a deleted row, SQLite Sovereign path, and store-unavailable fail-
+closed. One existing Phase 14A.4 test
+(`test_godmode_elevation_audit_is_in_memory_only_and_does_not_gate_authorization`)
+was updated — not reverted — to assert the new, intentional coupling
+this phase introduced.
+
+## Full regression (the highest-risk change this closure has made)
+
+Wiring durable audit into the live authorization path touches every
+real elevated-action caller in the codebase — the highest-risk change
+across all of Phase 14A/14B. Re-run in full:
+
+- Targeted godmode/connector/simulation/red-team/security-root/core-db
+  regression: **327 passed, 0 failed** (27 files).
+- Deterministic-only (`pytest -m "not live_ollama_smoke"`): **1550
+  passed, 0 failed, 43 deselected** (448.86s).
+- Security suite: **885 passed, 0 failed** (875 + 10 new).
+- Live suite: not re-run — no model-inference-path change was made
+  this phase; Phase 14A.2's clean 43/43 remains the accepted baseline
+  (spec §56's own instruction: disclose rather than fabricate a new
+  run when none was executed).
+- State leak: `~/.orca/godmode` and `~/.orneur-security-root` both
+  confirmed absent throughout. `~/.orca/auth.db` (the real, pre-
+  existing developer file) checksummed before and after — byte-for-
+  byte unchanged (md5 `79bdd5281e3fd3122985fff307269d12`).
+
+## OWNER ACTION REQUIRED (verbatim from `REAL_STAGING_TOPOLOGY.md`)
+
+```
+Provider: any zero/low-cost Linux VPS provider the owner approves
+Purpose: Real Phase-14B distributed staging Host A (public-facing,
+         behind Cloudflare) -- Host B may be this developer Mac
+Owner action: provision (or confirm already-provisioned) a real Linux
+         VPS and provide non-secret connection details (OS, public IP
+         or a configured SSH alias, vCPU, RAM, disk, trial/expiry
+         date). Separately confirm a Cloudflare account exists (free
+         tier sufficient) for an interactive `cloudflared tunnel
+         login` once Host A is reachable.
+Secret required in chat: NO
+Verification: `ssh <host-alias> whoami` succeeding, and/or
+         `cloudflared tunnel login` completing its browser flow.
+Expected cost: ₹0 target -- any provider payment requirement stops
+         this session for explicit approval before accepting it.
+Resume condition: once Host A's connection details are available and
+         Cloudflare access is confirmed, this session resumes at spec
+         §4 (VPS baseline recording) and proceeds through the
+         remaining sections in order.
+```
+
+## Known limitations
+
+1. The durable-audit-write-then-consume_use() ordering is two separate
+   transactions, not one atomically coupled transaction — a narrow
+   race can leave an audit record for an ALLOW that a concurrent
+   competitor's `consume_use()` call ultimately won instead. Disclosed
+   as the safe direction of error (overclaiming, never underclaiming,
+   and never a privilege escalation), not silently treated as perfect.
+2. `ORNEUR_DATABASE_URL` still lacks the exact same fail-startup
+   enforcement pattern extended to `ORNEUR_AUDIT_KEY` specifically —
+   the HMAC signing key falls back to a loud, dev-only default if
+   unset, exactly matching `orca.audit`'s own pre-existing behavior;
+   this was not hardened further this phase.
+3. Every item in `MULTI_HOST_EVALUATION.md` marked NOT_EXECUTED remains
+   exactly that — no real VPS, Cloudflare, cross-host, rolling-update,
+   canary, or real load/soak evidence exists yet.
+
+## Remaining Phase-14B blockers
+
+**Real infrastructure access** (the OWNER ACTION REQUIRED checkpoint
+above) — the only blocker. No code-level blocker exists; the local
+preparation this phase was required to complete before real multi-host
+testing (spec §15's durable audit gate) is done.
+
+**READY FOR PHASE 14C PORTABILITY: NO**
+
+Phase 14C portability qualification presupposes Phase 14B's real
+multi-host staging deployment being complete. It is not — no real VPS,
+Cloudflare edge, or cross-host test has been executed. Per spec §54's
+explicit instruction, no GCP/Azure/AWS/hyperscaler/production-scale
+claim is made.
+
+Per spec §63: stopping here. No Phase 15 work begins. No cloud
+certification of any kind is claimed. Waiting for either real
+infrastructure access (resolving the OWNER ACTION REQUIRED checkpoint
+above) or further explicit instruction.

@@ -45,3 +45,15 @@ Phase 13.3 established for crash injection:
   `AUTHORITY_DISTRIBUTION.md`) is the one piece of code this phase
   added specifically to bound an otherwise-unbounded wait, but it was
   not separately fault-tested against a genuinely stalled connection.
+
+## Phase 14B update
+
+Real Cloudflare Tunnel restart, real Host B disconnect, and real
+network-interruption-between-hosts tests are all **NOT_EXECUTED** —
+gated on the same missing real infrastructure documented in
+`REAL_STAGING_TOPOLOGY.md`. What this phase added locally: real
+SIGKILL/backend-unavailable fault injection for the new durable
+Godmode audit path itself (`test_durable_audit_store_unavailable_denies_elevation`
+in `tests/test_durable_godmode_audit.py`), confirming the new code path
+fails closed exactly like every other authority-adjacent mechanism in
+this codebase.
