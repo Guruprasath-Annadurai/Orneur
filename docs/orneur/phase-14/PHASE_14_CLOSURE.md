@@ -376,8 +376,90 @@ found and removed; not a leak caused by this phase's own final code.)
 None. Both blockers this phase was opened to close are closed, with
 real evidence.
 
-**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES**
+**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES** *(superseded — see Phase 14A.3 below, which closed one final configuration hazard this closure had not yet addressed)*
 
 Per spec §34: stopping here. No GCP, Azure, AWS, or Cloudflare
 resources are created. No Phase 15 work begins without explicit human
 approval.
+
+---
+
+# Phase 14A.3 — Distributed Security-Root Configuration Gate
+
+Closed the one remaining cloud-blocking configuration hazard Phase
+14A.2's own closure disclosed as a known limitation: in DISTRIBUTED
+mode, if `ORNEUR_SECURITY_ROOT_DATABASE_URL` was absent, the
+implementation silently fell back to per-host file storage — which on
+a genuine multi-host deployment can create multiple independent
+kill-switch/security-root authorities, exactly the class of bug the
+security root itself exists to prevent.
+
+## Fix
+
+`orca/godmode/deployment_profile.py` (new) — an explicit, validated
+`ORNEUR_DEPLOYMENT_PROFILE` (SOVEREIGN default / DISTRIBUTED; an
+unrecognized value fails immediately). `security_root._backend()` and
+`lease_store._backend()` both now call
+`require_distributed_security_root_url()` /
+`require_distributed_authority_url()` when
+`deployment_profile.is_distributed()` is true — raising
+`DeploymentConfigError` (never a connection string in the message) if
+the required URL is missing, empty, or not a recognized `postgresql://`
+DSN. There is no remaining code path to the SQLite/file branch while in
+DISTRIBUTED mode — the fallback is structurally gone, not merely
+discouraged. Read paths (`get_epoch_and_state()`, the lease-store
+dispatchers) catch that raise and convert it to each function's
+existing fail-closed contract, so misconfiguration denies elevation
+rather than crashing a caller.
+
+`orca/serve/api.py` calls `validate_deployment_config()` at module
+import time — a real DISTRIBUTED server process with missing, invalid,
+or (via a real connectivity check) unreachable required backends never
+finishes starting. `/readyz` was extended to reflect DISTRIBUTED
+security-root availability specifically, flipping overall readiness to
+503 when it's unavailable — a stricter standard than the existing,
+intentionally-lenient `authority_store` row.
+
+## Test evidence
+
+`tests/test_distributed_security_root_config_gate.py` — **13 new
+tests**, all passing: SOVEREIGN unaffected, DISTRIBUTED missing/
+malformed/unreachable config all raise (not fall back), unknown
+profile fails startup, `validate_deployment_config()` never leaks a
+connection string, `/readyz` reflects a post-startup security-root
+outage, a genuine two-process simulation (worker A activates against a
+real shared local Postgres security root, worker B — a separate real
+process — observes DENY immediately), a misconfigured worker refuses
+to start rather than joining the serving pool with a local fallback,
+backend outage after successful startup denies with no fallback/reset,
+and recovery observes the correct state with no process restart
+required. No `~/.orca/godmode` or `~/.orneur-security-root` leakage.
+
+## Full regression
+
+- Deterministic-only (`pytest -m "not live_ollama_smoke"`): **1524
+  passed, 0 failed, 43 deselected** (316.71s).
+- Security suite: **859 passed, 0 failed** (846 + 13 new).
+- Live suite: not re-run this phase — per spec §19, this was a
+  configuration-only closure with no model-inference-path changes;
+  Phase 14A.2's clean 43/43 stands as the current live baseline.
+
+## Known limitations
+
+1. `ORNEUR_DATABASE_URL` (the auth/session/audit backend) was not
+   given the same fail-startup enforcement this phase — a real, smaller
+   -blast-radius gap (auth-store staleness, not authority/security-root
+   duplication), disclosed rather than silently left unaddressed.
+2. No provider-specific (GCP/Azure/AWS) overlay was created —
+   `k8s/distributed-overlay.yaml` is provider-neutral and still
+   requires a real cloud account to extend and apply, per the
+   still-unresolved OWNER ACTION REQUIRED checkpoints.
+
+## Remaining Phase-14A blockers
+
+None.
+
+**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES**
+
+Per spec §24: stopping here. No cloud resources are provisioned. No
+Phase 15 work begins without explicit human approval.

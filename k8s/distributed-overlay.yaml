@@ -1,0 +1,74 @@
+# Phase 14A.3 §11 -- provider-neutral DISTRIBUTED-profile overlay.
+#
+# NOT provisioned anywhere -- this is a design/config artifact only,
+# per the governing spec's explicit "prepare overlays for GCP/Azure/AWS
+# but do not provision them yet." Applying this on top of
+# deployment.yaml's SOVEREIGN base is what a real DISTRIBUTED
+# deployment would need; deployment.yaml itself is left completely
+# unmodified so the SOVEREIGN (single-replica, local-storage) use case
+# this project's own developer/self-hosted/offline users depend on is
+# never broken by this overlay's existence (spec §4).
+#
+# The connection strings themselves are NEVER embedded here -- both
+# come from a Kubernetes Secret an operator creates out-of-band
+# (kubectl create secret generic orneur-distributed-secrets
+#  --from-literal=godmode-database-url=... --from-literal=security-root-database-url=...
+#  -- never committed to source control). This manifest only references
+# the Secret's KEYS, matching the existing `orneur-api-secrets`/
+# `auth-secret` pattern already used for ORNEUR_AUTH_SECRET in
+# deployment.yaml.
+#
+# Applying this overlay to a cluster whose Secret is missing or wrong
+# does not "fail silently into a local file" -- it fails the same way
+# Phase 14A.3's `orca.godmode.deployment_profile.validate_deployment_config()`
+# always has: the pod crashes on startup (module import raises
+# `DeploymentConfigError`) and never becomes Ready, which is the
+# correct, visible failure mode for a misconfigured DISTRIBUTED
+# deployment (spec §2's "fail startup for missing/invalid critical
+# configuration").
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orneur-api
+spec:
+  replicas: 3  # DISTRIBUTED implies more than one worker -- see docs/orneur/phase-14/MULTI_WORKER.md
+  template:
+    spec:
+      containers:
+      - name: orneur-api
+        env:
+        - name: ORNEUR_DEPLOYMENT_PROFILE
+          value: "DISTRIBUTED"
+        - name: ORNEUR_GODMODE_DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: orneur-distributed-secrets
+              key: godmode-database-url
+        - name: ORNEUR_SECURITY_ROOT_DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: orneur-distributed-secrets
+              key: security-root-database-url
+        - name: ORNEUR_DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: orneur-distributed-secrets
+              key: auth-database-url
+        - name: ORNEUR_REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: orneur-distributed-secrets
+              key: redis-url
+        # /root/.orca is no longer the authority-of-record for any of
+        # the state above in DISTRIBUTED mode (leases, kill-switch
+        # state, and security root all live in the shared backends
+        # referenced above) -- the persistent volume this pod still
+        # mounts (inherited from deployment.yaml's base) is now only
+        # for the known-remaining single-host-shaped stores documented
+        # in DEPLOYMENT_PROFILES.md (memory, registries, gateway worker
+        # registry). This is a REAL, disclosed limitation of running
+        # this overlay today, not something this overlay silently
+        # papers over -- a genuinely multi-replica DISTRIBUTED
+        # deployment sharing one ReadWriteMany volume for those stores,
+        # or migrating them to a shared backend too, is Phase 14B+
+        # work.

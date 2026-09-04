@@ -33,3 +33,11 @@ Can continue without this action: YES -- independent of Phase 14A
 
 Until this action is taken (and the Azure CLI is installed), all Azure
 deployment, portability, and reliability testing is **NOT_EXECUTED**.
+
+## Phase 14A.3 update
+
+Same provider-neutral `k8s/distributed-overlay.yaml` base applies —
+an AKS-specific overlay would wire the two required database URLs to
+Azure Database for PostgreSQL via Azure Key Vault + a CSI secrets
+driver. Not created this phase — still gated on the OWNER ACTION
+REQUIRED checkpoint above.

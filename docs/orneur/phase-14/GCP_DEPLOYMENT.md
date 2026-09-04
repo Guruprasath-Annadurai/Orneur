@@ -61,3 +61,13 @@ Until this action is taken: GKE deployment, real multi-replica rolling
 update, real canary, real load/soak against cloud infrastructure, real
 fault injection against real nodes, and real backup/restore against a
 managed Cloud SQL instance are all **NOT_EXECUTED**.
+
+## Phase 14A.3 update
+
+`k8s/distributed-overlay.yaml` (see `DEPLOYMENT.md`) is the
+provider-neutral base a future GCP-specific overlay would extend —
+e.g. wiring `ORNEUR_GODMODE_DATABASE_URL`/`ORNEUR_SECURITY_ROOT_DATABASE_URL`
+to two separate Cloud SQL PostgreSQL instances via Secret Manager +
+`external-secrets` (or an equivalent CSI driver), rather than a raw
+Kubernetes Secret. Not created this phase — still gated on the same
+OWNER ACTION REQUIRED checkpoint above.

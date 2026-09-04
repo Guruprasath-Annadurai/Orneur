@@ -35,3 +35,11 @@ Can continue without this action: YES -- independent of Phase 14A
 
 Until this action is taken (and the AWS CLI is installed), all AWS
 deployment, portability, and reliability testing is **NOT_EXECUTED**.
+
+## Phase 14A.3 update
+
+Same provider-neutral `k8s/distributed-overlay.yaml` base applies —
+an EKS-specific overlay would wire the two required database URLs to
+RDS PostgreSQL via AWS Secrets Manager + the Secrets Store CSI driver.
+Not created this phase — still gated on the OWNER ACTION REQUIRED
+checkpoint above.

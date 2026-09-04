@@ -89,6 +89,18 @@ _LOCK_TIMEOUT_S = 5.0
 
 
 def _backend() -> str:
+    """Phase 14A.3: in DISTRIBUTED mode, this now RAISES rather than
+    silently falling back to "sqlite" when no security-root URL is
+    configured -- `require_distributed_security_root_url()` is the
+    actual enforcement point, called from here so "no local fallback"
+    is impossible by construction, not merely documented. See
+    `orca.godmode.deployment_profile`'s module docstring for the real,
+    disclosed vulnerability this closes."""
+    from orca.godmode.deployment_profile import is_distributed, require_distributed_security_root_url
+
+    if is_distributed():
+        require_distributed_security_root_url()
+        return "postgres"
     return "postgres" if orneur_env("SECURITY_ROOT_DATABASE_URL") else "sqlite"
 
 
@@ -253,8 +265,26 @@ def get_epoch_and_state() -> tuple[int | None, str]:
     """Returns (epoch, state). `state` is "ACTIVE", "INACTIVE", or
     "UNKNOWN" (root unreachable -- callers MUST treat UNKNOWN as active,
     spec §9: never infer INACTIVE, epoch 0, or a permissive default).
-    `epoch` is None only when state is UNKNOWN."""
-    if _backend() == "postgres":
+    `epoch` is None only when state is UNKNOWN.
+
+    Phase 14A.3: a DISTRIBUTED-profile configuration defect
+    (`DeploymentConfigError` from `_backend()`) is caught HERE and
+    converted to the same fail-closed UNKNOWN result as a real
+    connectivity failure -- this function must never raise. The loud,
+    process-halting failure belongs to
+    `orca.godmode.deployment_profile.validate_deployment_config()`,
+    called explicitly at server startup; this read path is defense in
+    depth for the case where that startup check was somehow bypassed
+    (e.g. a test or script calling this directly), and it must degrade
+    to "deny elevation," never crash the caller with an unhandled
+    exception."""
+    from orca.godmode.deployment_profile import DeploymentConfigError
+
+    try:
+        backend = _backend()
+    except DeploymentConfigError:
+        return (None, "UNKNOWN")
+    if backend == "postgres":
         return _get_postgres()
     return _get_sqlite()
 
@@ -262,8 +292,16 @@ def get_epoch_and_state() -> tuple[int | None, str]:
 def advance(new_state: str, *, reason: str = "") -> int | None:
     """Atomically increments the epoch by 1 and records `new_state`.
     Returns the new epoch, or None if the root could not be written
-    (fail closed -- caller must not assume the advance took effect)."""
-    if _backend() == "postgres":
+    (fail closed -- caller must not assume the advance took effect).
+    Same DISTRIBUTED-misconfiguration handling as `get_epoch_and_state()`
+    -- returns None rather than raising."""
+    from orca.godmode.deployment_profile import DeploymentConfigError
+
+    try:
+        backend = _backend()
+    except DeploymentConfigError:
+        return None
+    if backend == "postgres":
         return _advance_postgres(new_state, reason)
     return _advance_sqlite(new_state, reason)
 

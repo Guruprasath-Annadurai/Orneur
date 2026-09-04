@@ -73,6 +73,21 @@ _START_TIME = time.time()
 WEB_DIR = Path(__file__).parent / "web"
 _logger = logging.getLogger("orca.serve")
 
+# Phase 14A.3 §2, §6: mandatory startup configuration validation --
+# runs at module import time (the point at which any real server
+# process, and this module itself, first comes into existence), before
+# `app` becomes servable. For the default ORNEUR SOVEREIGN profile this
+# is a complete no-op (see `validate_deployment_config()`'s own early
+# return); it only has real effect in DISTRIBUTED profile, where it
+# raises `DeploymentConfigError` -- and therefore prevents this module,
+# and any server process built on it, from ever finishing import --
+# if the shared security-root and Godmode authority backends are not
+# both explicitly, validly configured and reachable. No connection
+# string appears in any exception this raises (see
+# `orca.godmode.deployment_profile`'s own docstring).
+from orca.godmode.deployment_profile import validate_deployment_config as _validate_deployment_config
+_validate_deployment_config()
+
 app = FastAPI(title="Orca API", version="1.0.0", docs_url=None, redoc_url=None)
 
 app.add_middleware(
@@ -560,6 +575,29 @@ async def readyz():
         dependencies["gateway"] = get_shared_gateway().report_health()
     except Exception as e:
         dependencies["gateway"] = {"error": str(e)}
+
+    # Phase 14A.3 §7: in DISTRIBUTED profile specifically, an
+    # unavailable/misconfigured security root is NOT the same lenient
+    # case as SOVEREIGN's authority_store above -- it means this worker
+    # cannot safely serve elevated-capability requests to a shared
+    # security authority at all, which is exactly the "no silent
+    # fallback" configuration gate this phase closed. SOVEREIGN is
+    # deliberately NOT held to this stricter standard here (its
+    # authority store being down is the existing, softer,
+    # non-gating case above).
+    try:
+        from orca.godmode.deployment_profile import is_distributed
+        if is_distributed():
+            from orca.godmode.security_root import get_epoch_and_state
+            epoch, state = get_epoch_and_state()
+            if state == "UNKNOWN":
+                dependencies["security_root"] = {"status": "unavailable"}
+                ready = False  # never advertise READY while distributed security authority is unavailable
+            else:
+                dependencies["security_root"] = {"status": "ok", "epoch": epoch}
+    except Exception as e:
+        dependencies["security_root"] = {"status": "error", "reason": str(e)}
+        ready = False
 
     status_code = 200 if ready else 503
     return JSONResponse({"status": "ready" if ready else "not_ready", "dependencies": dependencies}, status_code=status_code)

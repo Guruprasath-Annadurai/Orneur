@@ -131,3 +131,44 @@ asserting that Phase 14A.1's original scenario (restoring the leases.db
 mirror alone) is doubly closed: it no longer even needs
 `reconcile_after_restore()` to stay denied, since `is_active()` never
 consulted that mirror in the first place.
+
+## Phase 14A.3 addendum — DISTRIBUTED mode can no longer silently fall back to a local file
+
+This document originally disclosed, as a known limitation: "in
+DISTRIBUTED mode, if `ORNEUR_SECURITY_ROOT_DATABASE_URL` is left unset,
+the security root silently falls back to the SOVEREIGN file-based
+mechanism per host." **This has since been closed.**
+
+`orca/godmode/deployment_profile.py` introduces an explicit,
+validated `ORNEUR_DEPLOYMENT_PROFILE` (SOVEREIGN default /
+DISTRIBUTED). `security_root._backend()` now checks
+`is_distributed()` first: if true, it calls
+`require_distributed_security_root_url()`, which **raises**
+`DeploymentConfigError` (never a connection string in the message) if
+the URL is missing, empty, or not a recognized `postgresql://` DSN.
+There is no code path left in `_backend()` that reaches the SQLite
+branch while in DISTRIBUTED mode — the fallback is not merely
+discouraged, it no longer exists.
+
+`get_epoch_and_state()` and `advance()` catch that raise and convert it
+to the same fail-closed `(None, "UNKNOWN")` / `None` result a real
+connectivity failure already produced — a caller of `is_active()` sees
+"deny," never a crash and never a silent file. The loud, process-
+halting version of this check lives in
+`orca.godmode.deployment_profile.validate_deployment_config()`, called
+once at `orca/serve/api.py`'s module import time — a real DISTRIBUTED
+server with missing or invalid configuration never finishes starting.
+
+**Real test evidence**: `tests/test_distributed_security_root_config_gate.py`
+— 13 tests, all passing, including a genuine two-process simulation
+(worker A activates against a real shared local Postgres security
+root, worker B — a separate real OS process — observes the DENY) and a
+misconfigured-worker test (worker B, missing the URL, refuses to start
+at all rather than joining the serving pool with a local fallback).
+
+**Known, disclosed, narrower gap**: `ORNEUR_DATABASE_URL` (the
+user/session/audit backend, `orca/auth/db.py`) was not given the same
+fail-startup enforcement this phase — it remains dual-backend but
+un-validated at startup. This is a real, smaller-blast-radius gap
+(auth-store staleness, not authority/security-root duplication) not
+closed this phase.

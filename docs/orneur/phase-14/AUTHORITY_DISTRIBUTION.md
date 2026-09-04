@@ -166,3 +166,22 @@ Option B, unchanged) — it adds a narrower, separate decision
 specifically for the one piece of state (kill-switch/global security
 generation) where "restoring an old backup" and "rolling back security
 authority" must never be the same event.
+
+## Phase 14A.3 addendum — the authority backend itself is now fail-fast in DISTRIBUTED mode
+
+`lease_store._backend()` received the same treatment as
+`security_root._backend()`: in DISTRIBUTED mode
+(`orca.godmode.deployment_profile.is_distributed()`), it now calls
+`require_distributed_authority_url()`, which raises if
+`ORNEUR_GODMODE_DATABASE_URL` is missing, empty, or malformed — rather
+than silently returning `"sqlite"`. Every public dispatcher
+(`save`, `get`, `revoke`, `consume_use`, `reserve_uses`,
+`list_active_for_tenant`, `ks_get_state`, `ks_set_state`) resolves the
+backend through a new `_resolved_backend_or_none()` wrapper that
+converts that raise into each function's own existing fail-closed
+return convention (`False`/`None`/`[]`, or `AuthorityStoreUnavailableError`
+for `save()`) — never an uncaught exception reaching a caller that only
+expects the old contract. This closes, for the authority/lease backend
+specifically, the same class of "silent per-host fallback" hazard
+`SECURITY_ROOT.md`'s Phase 14A.3 addendum closes for the security
+root.

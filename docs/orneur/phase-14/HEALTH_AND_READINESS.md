@@ -59,3 +59,21 @@ This matrix was assembled by reading the actual code, not invented —
 every "existing behavior" row reflects what the audited code already
 did before Phase 14; the two new rows (model runtime for `/readyz`)
 reflect this phase's actual change.
+
+## Phase 14A.3 addendum — `/readyz` reflects DISTRIBUTED security-root state
+
+New dependency row, added to `/readyz` specifically (not `/healthz`,
+which keeps its exact pre-Phase-14 contract): in DISTRIBUTED profile
+only, an unreachable or misconfigured security root now flips overall
+readiness to `false` (HTTP 503) — a stricter standard than the
+existing `authority_store` row above, which stays fail-soft for
+ordinary (non-elevated) traffic. The distinction is deliberate: a
+DISTRIBUTED deployment whose security root is unavailable cannot
+safely serve *any* elevated-capability request to a shared authority,
+which is exactly the "no silent fallback" property Phase 14A.3 closed
+at the configuration layer — `/readyz` now surfaces that same property
+operationally, so an orchestrator (Kubernetes, a load balancer) stops
+routing traffic to a worker in that state rather than the application
+silently denying every elevated request one at a time. In SOVEREIGN
+profile, this new check is a no-op (no security root to report on in
+the DISTRIBUTED sense).

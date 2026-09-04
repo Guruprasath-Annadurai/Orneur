@@ -58,6 +58,11 @@ about this.
 | `STALE_WORKER_SECURITY_ALLOW` | **0** | Real test — no caching, every call re-consults the security root fresh |
 | `SECURITY_ROOT_CORRUPTION_FAIL_OPEN` | **0** | Real test — garbage state value treated as active |
 | `SECURITY_EPOCH_CONCURRENCY_FAILURE` | **0** | Real test — 5 concurrent real processes, exact epoch accounting (epoch_after == epoch_before + 5), no lost updates |
+| `DISTRIBUTED_SECURITY_ROOT_FALLBACK` | **0** (Phase 14A.3) | `security_root._backend()` raises rather than falling back in DISTRIBUTED mode with missing/invalid config — no code path to "sqlite" remains reachable |
+| `DISTRIBUTED_MISSING_SECURITY_ROOT_READY` | **0** | `/readyz` returns 503 when DISTRIBUTED and the security root is unavailable — real test |
+| `DISTRIBUTED_LOCAL_SECURITY_ROOT_CREATION` | **0** | Real test confirms no `~/.orneur-security-root` is created when DISTRIBUTED config is missing |
+| `SECURITY_ROOT_OUTAGE_FAIL_OPEN` | **0** | Real test — post-startup outage denies, no fallback, no epoch reset, recovery observes correct state |
+| `CROSS_WORKER_KILL_SWITCH_DIVERGENCE` | **0** | Real two-process test against a shared local Postgres security root — worker B denies immediately |
 | `KILL_SWITCH_RESTART_BYPASS` | **0** | Real test — activation survives module reload |
 | `KILL_SWITCH_MULTIPROCESS_BYPASS` | **0** | Real multiprocess test |
 | `KILL_SWITCH_CORRUPTION_FAIL_OPEN` | **0** | Real test — garbage state value treated as active |

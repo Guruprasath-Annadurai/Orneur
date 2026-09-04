@@ -69,7 +69,37 @@ LEASE_DIR = ORCA_HOME / "godmode" / "leases"
 # clearing the env var and re-importing, matching this module's existing
 # test convention of `importlib.reload(orca.godmode.lease_store)`.
 def _backend() -> str:
+    """Phase 14A.3: in DISTRIBUTED mode, raises rather than silently
+    falling back to "sqlite" when no shared authority-backend URL is
+    configured -- see `orca.godmode.deployment_profile`'s module
+    docstring. Every public dispatcher function below resolves this
+    via `_resolved_backend_or_none()`, which converts that raise into
+    each function's own existing fail-closed behavior -- this
+    function itself must never be called directly from a public
+    dispatcher without going through that wrapper."""
+    from orca.godmode.deployment_profile import is_distributed, require_distributed_authority_url
+
+    if is_distributed():
+        require_distributed_authority_url()
+        return "postgres"
     return "postgres" if orneur_env("GODMODE_DATABASE_URL") else "sqlite"
+
+
+def _resolved_backend_or_none() -> str | None:
+    """None means: DISTRIBUTED profile is missing/has invalid required
+    configuration. Every public dispatcher function checks for None
+    here and applies its OWN existing fail-closed return convention
+    (False/None/[] for reads, `AuthorityStoreUnavailableError` for
+    `save()`, matching its existing `sqlite3.OperationalError`/
+    `psycopg.Error` handling) -- never a raw, uncaught
+    `DeploymentConfigError` reaching a caller that only expects
+    `AuthorityStoreUnavailableError` or a plain return value."""
+    from orca.godmode.deployment_profile import DeploymentConfigError
+
+    try:
+        return _backend()
+    except DeploymentConfigError:
+        return None
 
 # Bounded lock-wait (spec §26: "avoid unbounded process blocking... on
 # timeout: deny"). sqlite3's own `timeout` parameter controls how long a
@@ -756,13 +786,19 @@ def _list_active_for_tenant_postgres(tenant_id: str) -> list[CapabilityLease]:
 
 
 def save(lease: CapabilityLease) -> None:
-    if _backend() == "postgres":
+    backend = _resolved_backend_or_none()
+    if backend is None:
+        raise AuthorityStoreUnavailableError("DISTRIBUTED profile's authority backend is not configured or invalid")
+    if backend == "postgres":
         return _save_postgres(lease)
     return _save_sqlite(lease)
 
 
 def get(lease_id: str) -> CapabilityLease | None:
-    if _backend() == "postgres":
+    backend = _resolved_backend_or_none()
+    if backend is None:
+        return None
+    if backend == "postgres":
         return _get_postgres(lease_id)
     return _get_sqlite(lease_id)
 
@@ -775,7 +811,10 @@ def revoke(lease_id: str) -> bool:
     silently resurrecting the privilege. Recorded only on an actual
     successful revocation (not on a no-op/already-revoked/not-found
     call) -- the ledger records events, not attempts."""
-    if _backend() == "postgres":
+    backend = _resolved_backend_or_none()
+    if backend is None:
+        return False
+    if backend == "postgres":
         result = _revoke_postgres(lease_id)
     else:
         result = _revoke_sqlite(lease_id)
@@ -786,19 +825,28 @@ def revoke(lease_id: str) -> bool:
 
 
 def consume_use(lease_id: str) -> bool:
-    if _backend() == "postgres":
+    backend = _resolved_backend_or_none()
+    if backend is None:
+        return False
+    if backend == "postgres":
         return _consume_use_postgres(lease_id)
     return _consume_use_sqlite(lease_id)
 
 
 def reserve_uses(lease_id: str, n: int) -> bool:
-    if _backend() == "postgres":
+    backend = _resolved_backend_or_none()
+    if backend is None:
+        return False
+    if backend == "postgres":
         return _reserve_uses_postgres(lease_id, n)
     return _reserve_uses_sqlite(lease_id, n)
 
 
 def list_active_for_tenant(tenant_id: str) -> list[CapabilityLease]:
-    if _backend() == "postgres":
+    backend = _resolved_backend_or_none()
+    if backend is None:
+        return []
+    if backend == "postgres":
         return _list_active_for_tenant_postgres(tenant_id)
     return _list_active_for_tenant_sqlite(tenant_id)
 
@@ -913,12 +961,18 @@ def ks_get_state() -> tuple[str, str | None, str | None]:
     "INACTIVE", or "UNKNOWN" (store unreachable -- callers MUST treat
     UNKNOWN as active/fail-closed, per spec §19; see
     `orca.godmode.kill_switch.is_active()`, which does exactly that)."""
-    if _backend() == "postgres":
+    backend = _resolved_backend_or_none()
+    if backend is None:
+        return ("UNKNOWN", None, None)
+    if backend == "postgres":
         return _ks_get_postgres()
     return _ks_get_sqlite()
 
 
 def ks_set_state(state: str, activated_at: str | None, reason: str | None) -> bool:
-    if _backend() == "postgres":
+    backend = _resolved_backend_or_none()
+    if backend is None:
+        return False
+    if backend == "postgres":
         return _ks_set_postgres(state, activated_at, reason)
     return _ks_set_sqlite(state, activated_at, reason)

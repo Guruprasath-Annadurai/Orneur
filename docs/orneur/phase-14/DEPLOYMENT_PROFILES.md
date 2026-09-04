@@ -5,14 +5,25 @@ Both are real today — SOVEREIGN was already the de facto only profile
 before this phase; DISTRIBUTED's foundational piece (the authority
 backend) is built and tested this phase (see `AUTHORITY_DISTRIBUTION.md`).
 
+**Phase 14A.3**: the profile itself is now an explicit, validated
+configuration value (`ORNEUR_DEPLOYMENT_PROFILE`,
+`orca/godmode/deployment_profile.py`) rather than something inferred
+from "does a Postgres URL happen to exist." This closes a real,
+disclosed hazard from Phase 14A.2's own closure: DISTRIBUTED mode used
+to silently fall back to SOVEREIGN's per-host file-based security root
+if `ORNEUR_SECURITY_ROOT_DATABASE_URL` was left unset. That fallback is
+now structurally impossible — see `SECURITY_ROOT.md`'s Phase 14A.3
+addendum.
+
 ## ORNEUR SOVEREIGN
 
 - Single host (or a local cluster sharing one filesystem).
 - `ORCA_HOME` on local disk, SQLite everywhere: Godmode leases
   (`orca/godmode/lease_store.py`), auth (`orca/auth/db.py`), memory,
-  registries.
-- No `ORNEUR_GODMODE_DATABASE_URL`, no `ORNEUR_DATABASE_URL`, no
-  `ORNEUR_REDIS_URL` set — every store defaults to its file-backed form.
+  registries, and the security root (`~/.orneur-security-root`).
+- `ORNEUR_DEPLOYMENT_PROFILE` unset, or explicitly `SOVEREIGN` — this
+  is the default, so every existing developer/self-hosted/offline
+  deployment continues to work with zero configuration changes.
 - This is the zero-setup, "one install, one machine, private/local
   deployment" profile the spec requires it to remain.
 - Every Phase 13.2/13.3 SQLite-path guarantee (cross-process atomicity
@@ -21,28 +32,36 @@ backend) is built and tested this phase (see `AUTHORITY_DISTRIBUTION.md`).
 ## ORNEUR DISTRIBUTED
 
 - Multiple API/worker processes, potentially multiple hosts.
-- **Required** environment for correctness once more than one host is
-  involved:
+- **Must be explicitly declared**: `ORNEUR_DEPLOYMENT_PROFILE=DISTRIBUTED`.
+  An unrecognized value fails startup immediately (spec §5).
+- **Required, validated at startup, no silent fallback** (spec §1-3,
+  §6 — enforced in `orca/godmode/deployment_profile.py`, called from
+  `orca/serve/api.py` at module import time, and from
+  `security_root._backend()`/`lease_store._backend()` themselves so
+  the enforcement cannot be bypassed by skipping a separate validation
+  step):
   - `ORNEUR_GODMODE_DATABASE_URL` (PostgreSQL) — the Godmode authority
-    store. Without this, each host would maintain an independent
-    `leases.db`, silently reintroducing the exact authority-
-    multiplication class of bug Phase 13 fixed (see
+    store. Missing, empty, malformed, or unreachable at startup ⇒ the
+    process never becomes ready (`DeploymentConfigError` raised at
+    import time). Without this enforcement, each host would maintain
+    an independent `leases.db`, silently reintroducing the exact
+    authority-multiplication class of bug Phase 13 fixed (see
     `AUTHORITY_DISTRIBUTION.md`).
+  - `ORNEUR_SECURITY_ROOT_DATABASE_URL` (PostgreSQL) — a **separate
+    database** from `ORNEUR_GODMODE_DATABASE_URL` for the independent
+    security root (`orca/godmode/security_root.py`). Same fail-startup
+    enforcement — DISTRIBUTED mode can no longer silently fall back to
+    a per-host file. See `SECURITY_ROOT.md`.
   - `ORNEUR_DATABASE_URL` (PostgreSQL) — user/session/audit state
-    (`orca/auth/db.py`), already dual-backend from before this phase.
+    (`orca/auth/db.py`), already dual-backend from before this phase
+    (not yet given the same fail-startup enforcement as the two above
+    — a disclosed, narrower gap, see `SECURITY_ROOT.md`'s known
+    limitations).
   - `ORNEUR_REDIS_URL` — cross-instance chat session continuity
     (`orca/serve/session_store.py`) and shared rate-limit counters
     (`orca/serve/ratelimit.py`), both already dual-backend from before
     this phase, now proven under real multi-process load (see
     `MULTI_WORKER.md`).
-  - `ORNEUR_SECURITY_ROOT_DATABASE_URL` (Phase 14A.2, PostgreSQL) — a
-    **separate database** from `ORNEUR_GODMODE_DATABASE_URL` for the
-    independent security root (`orca/godmode/security_root.py`).
-    Without this, DISTRIBUTED mode falls back to the SOVEREIGN
-    file-based security root per host, which does NOT give cross-host
-    kill-switch visibility — a real, disclosed limitation for any
-    genuinely multi-host DISTRIBUTED deployment that skips this
-    variable. See `SECURITY_ROOT.md`.
 - **Known-remaining single-host-shaped stores** (from
   `CURRENT_DEPLOYMENT_ARCHITECTURE.md`'s audit) that DISTRIBUTED mode
   does not yet solve, and must not be assumed solved: the gateway
