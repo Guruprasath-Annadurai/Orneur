@@ -50,7 +50,13 @@ about this.
 | `DISTRIBUTED_TENANT_LEAK` | **0** | Real multiprocess test, `test_postgres_backend_tenant_isolation_no_cross_tenant_leak` |
 | `DISTRIBUTED_AUTHORITY_DUPLICATION` | **0** | Real multiprocess tests against Postgres (one-use, high-contention, delegation races) |
 | `STALE_REVOCATION_BYPASS` | **0** (after fix) | Real finding, real fix, real regression test — see above |
-| `KILL_SWITCH_PROPAGATION_BYPASS` | NOT_EXECUTED | Kill switch remains single-host; the same stale-restore class of risk applies and is disclosed but not fixed this phase (`BACKUP_AND_RECOVERY.md`) |
+| `KILL_SWITCH_PROPAGATION_BYPASS` | **0** (Phase 14A.1) | Kill-switch state now lives in the shared authority database (Postgres for DISTRIBUTED), giving real cross-worker visibility; multiprocess test in `KILL_SWITCH_DURABILITY.md` |
+| `KILL_SWITCH_STALE_RESTORE_BYPASS` | **0** (after fix, Phase 14A.1) | Real finding (reproduced before fixing), real fix (append-only ledger + mandatory reconciliation), 11 real tests — `KILL_SWITCH_DURABILITY.md` |
+| `KILL_SWITCH_RESTART_BYPASS` | **0** | Real test — activation survives module reload |
+| `KILL_SWITCH_MULTIPROCESS_BYPASS` | **0** | Real multiprocess test |
+| `KILL_SWITCH_CORRUPTION_FAIL_OPEN` | **0** | Real test — garbage state value treated as active |
+| `KILL_SWITCH_STORE_FAILURE_FAIL_OPEN` | **0** | Real test — unreachable Postgres host treated as active |
+| `KILL_SWITCH_UNAUTHORIZED_RESET` | NOT_EXECUTED | No production code path exposes activate/deactivate to any request-scoped caller — no authorization boundary exists to test; disclosed in `KILL_SWITCH_DURABILITY.md`'s "Production reset path" section rather than fabricated |
 | `STALE_MODEL_LIFECYCLE_ROUTE` | NOT_EXECUTED | No new test built |
 | `UNREGISTERED_WORKER_ROUTE` | NOT_EXECUTED (this phase) | Pre-existing Gateway registration logic unchanged; not re-attacked this phase |
 | `BUDGET_RESET_ACROSS_WORKER` | NOT_EXECUTED as an asserted test | Structural argument made in `CANCELLATION_AND_RETRY.md`; no executable property test built |

@@ -84,15 +84,18 @@ ideally independent of (e.g. shipped continuously to a separate,
 append-only sink), the leases table itself. Stated explicitly here so
 it is not silently assumed solved.
 
-### Same class of risk, not yet fixed: the kill switch
+### Same class of risk — CLOSED in Phase 14A.1
 
-`orca/godmode/kill_switch.py` is a single file flag under the same
-`ORCA_HOME`. A whole-`ORCA_HOME` restore from before a kill-switch
-activation would silently revert it, with no ledger-based mitigation
-built this phase. Recommended follow-up: an append-only kill-switch
-activation ledger using the identical pattern as
-`revocation_ledger.py`. **Not built this phase** — disclosed as a real,
-specific gap rather than silently left unaddressed.
+Originally disclosed here as "not yet fixed": restoring a stale backup
+of the kill-switch's state would silently revert a committed
+activation. **This has since been fixed** — see
+`KILL_SWITCH_DURABILITY.md` for the full reproduction, design, and test
+evidence (an append-only `kill_switch_ledger.py`, structurally
+identical to this document's own lease-revocation ledger, plus kill-
+switch state itself moving into the same authority database as leases
+rather than a standalone flag file). 11 real tests, including one that
+deliberately keeps reproducing the raw pre-fix bug as a permanent
+regression sentinel.
 
 ## Backup/restore for the other durable stores
 

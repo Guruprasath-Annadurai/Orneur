@@ -203,3 +203,69 @@ resolved.**
 Per the governing spec's STOP condition: this phase does not begin
 Phase 15 (final release certification) or any real cloud provisioning.
 Full session results are in the chat-delivered final report.
+
+---
+
+# Phase 14A.1 — Kill-Switch Restore Security Closure
+
+Closed the one authority-critical issue this same closure document's
+own Phase 14A section flagged as still open: the kill switch had the
+same stale-backup/restore risk class already fixed for lease
+revocation.
+
+**Reproduced before fixing** (per the governing spec's own explicit
+instruction): kill switch OFF → backup → activate → confirmed DENY →
+restore old pre-activation backup → kill switch read back INACTIVE →
+elevated authorization returned ALLOW again. Real, confirmed
+vulnerability, not reasoned-about.
+
+**Fixed**: kill-switch state moved into the same authority database as
+leases (SQLite table or Postgres table, whichever backend is
+configured) — closing spec §21's cross-worker visibility requirement
+structurally, for free, in the DISTRIBUTED profile — plus a new
+append-only kill-switch event ledger (`kill_switch_ledger.py`,
+structurally reusing a new shared `authority_ledger.py` primitive
+factored out of the existing `revocation_ledger.py`), reconciled via a
+mandatory `reconcile_after_restore()` step. Full detail:
+`KILL_SWITCH_DURABILITY.md`.
+
+**A real breaking-change risk was found and fixed during
+implementation**, not after: removing the old file-based
+`_KILL_SWITCH_FILE` broke 5 test files and 2 production simulation
+harness files (`orca/simulation/eval_harness.py`,
+`eval_harness_v2.py`) that directly monkeypatched or reassigned that
+now-removed attribute — including `tests/conftest.py`'s autouse
+fixture, which runs for **every test in the suite**. Caught and fixed
+before running anything, by tracing every reference with `grep` first.
+
+**A real test-isolation bug was also found and fixed**: the
+PostgreSQL fix-verification test's own sanity check failed on first
+run because `kill_switch_state` is a single persistent row shared
+across the whole pytest session (unlike SQLite's fresh temp file per
+test) — a prior run had left it `ACTIVE`, contaminating what the test
+assumed was a clean pre-activation snapshot. Fixed by explicitly
+resetting to a known state at the start of the test.
+
+**Test evidence**: `tests/test_kill_switch_stale_restore.py` — 11
+tests, all passing: raw reproduction (kept alive as a permanent
+regression sentinel), fix verification on both SQLite and a real local
+Postgres 17 server, multiprocess, restart, real-SIGKILL crash
+consistency (3 checkpoints, reusing Phase 13.3's exact injection
+mechanism), corruption fail-closed, store-unavailable fail-closed, and
+a regression check confirming Phase 14A's lease-revocation fix still
+works.
+
+**Full regression**: 1543 passed / 2 failed (deterministic) — the 2
+failures are the exact same pre-existing, previously-disclosed live-
+model-contention flakiness (`TruthTimeoutError`,
+`PLAN_SCHEMA_INVALID`) from Phase 14A's own closure, unrelated to this
+phase's authority-persistence-only changes (test count reconciles
+exactly: 1534 baseline + 11 new = 1545 = 1543 + 2). Security suite: 837
+passed / 0 failed (826 + 11 new). No `~/.orca/godmode` leakage.
+
+**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES** (from an authority-
+security standpoint — the GCP owner checkpoint in `GCP_DEPLOYMENT.md`
+remains the actual gate).
+
+Per spec §32: stopping here. No GCP provisioning, no Cloudflare
+configuration, no Phase 15 work begins without explicit human approval.

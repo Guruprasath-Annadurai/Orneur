@@ -115,7 +115,9 @@ def test_lease_revoked_between_simulation_and_execution_denies(tmp_path, monkeyp
     import orca.godmode.lease_store as ls
     import orca.godmode.kill_switch as ks
     monkeypatch.setattr(ls, "LEASE_DIR", tmp_path / "leases")
-    monkeypatch.setattr(ks, "_KILL_SWITCH_FILE", tmp_path / "kill.flag")
+    # Phase 14A.1: kill-switch state now lives in leases.db (see
+    # orca/godmode/kill_switch.py) -- redirecting LEASE_DIR above
+    # already isolates it; the old _KILL_SWITCH_FILE attribute is gone.
 
     from orca.godmode.contracts import CapabilityDomain, ElevatedCapabilityRequest, LeaseIssuerClass
     from orca.godmode.issuance import issue_lease, make_approval
@@ -143,7 +145,9 @@ def test_kill_switch_activated_after_simulation_pass_denies_execution(tmp_path, 
     import orca.godmode.lease_store as ls
     import orca.godmode.kill_switch as ks
     monkeypatch.setattr(ls, "LEASE_DIR", tmp_path / "leases")
-    monkeypatch.setattr(ks, "_KILL_SWITCH_FILE", tmp_path / "kill.flag")
+    # Phase 14A.1: kill-switch state now lives in leases.db (see
+    # orca/godmode/kill_switch.py) -- redirecting LEASE_DIR above
+    # already isolates it; the old _KILL_SWITCH_FILE attribute is gone.
 
     from orca.godmode.contracts import CapabilityDomain, ElevatedCapabilityRequest, LeaseIssuerClass
     from orca.godmode.issuance import issue_lease, make_approval
@@ -182,7 +186,9 @@ def test_cross_tenant_lease_cannot_be_used_for_simulation_compatibility_check(tm
     import orca.godmode.lease_store as ls
     import orca.godmode.kill_switch as ks
     monkeypatch.setattr(ls, "LEASE_DIR", tmp_path / "leases")
-    monkeypatch.setattr(ks, "_KILL_SWITCH_FILE", tmp_path / "kill.flag")
+    # Phase 14A.1: kill-switch state now lives in leases.db (see
+    # orca/godmode/kill_switch.py) -- redirecting LEASE_DIR above
+    # already isolates it; the old _KILL_SWITCH_FILE attribute is gone.
 
     from orca.godmode.contracts import CapabilityDomain, ElevatedCapabilityRequest, LeaseIssuerClass
     from orca.godmode.issuance import issue_lease, make_approval

@@ -42,63 +42,47 @@ BACKUP_AND_RECOVERY.md.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from orca.config import ORCA_HOME
+from orca.godmode.authority_ledger import append_entry, read_all_entries
 from orca.godmode.contracts import now_iso
 
 
 def _ledger_path() -> Path:
     """Recomputed on every call, never cached at import time -- this is
-    the EXACT bug class this codebase has hit before (kill_switch's
+    the EXACT bug class this codebase has hit before (kill_switch's old
     `_KILL_SWITCH_FILE`, and lease_store's own `LEASE_DIR`/`_db_path()`
     split, whose docstring explains this precisely) and a real instance
-    of it was found during this phase's own final leakage check: a
-    plain `LEDGER_PATH = ORCA_HOME / ...` module-level constant binds
-    to whichever `ORCA_HOME` was active the FIRST time any test in a
-    pytest session imports this module -- if that happens to be before
-    any test's own tmp-`ORCA_HOME` override took effect, every
-    subsequent test's `revoke()` call (regardless of its own tmp
-    `ORCA_HOME`) silently wrote to the real `~/.orca/godmode/
-    revocation_ledger.jsonl`. Fixed by making this a function, matching
-    `lease_store._db_path()`'s established convention exactly."""
-    return ORCA_HOME / "godmode" / "revocation_ledger.jsonl"
+    of it was found during this phase's own final leakage check with an
+    earlier version of this function that read `orca.config.ORCA_HOME`
+    directly as a plain module-level constant.
+
+    Deliberately derived from `orca.godmode.lease_store.LEASE_DIR`
+    (co-located as a sibling file next to `leases.db`, not inside it --
+    that separation is the whole point of this ledger) rather than
+    reading `orca.config.ORCA_HOME` independently: `LEASE_DIR` is
+    already the established, monkeypatchable isolation point every test
+    in this codebase's `tests/conftest.py` autouse fixture redirects --
+    reading `ORCA_HOME` separately here would silently bypass that
+    isolation for any test that patches `LEASE_DIR` without ALSO
+    reloading `orca.config`, exactly the gap Phase 14A.1 found and
+    closed for the new `kill_switch_ledger.py` sibling module."""
+    import orca.godmode.lease_store as lease_store_mod
+
+    return lease_store_mod.LEASE_DIR.parent / "revocation_ledger.jsonl"
 
 
 def record_revocation(lease_id: str) -> None:
-    """Append-only by construction -- always opens in append mode, never
-    truncates or rewrites. Safe to call more than once for the same
-    lease_id (idempotent from the reconciler's point of view -- it just
-    re-applies REVOKED, which is already a no-op if already REVOKED)."""
-    path = _ledger_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {"lease_id": lease_id, "revoked_at": now_iso()}
-    with open(path, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+    """Append-only by construction. Safe to call more than once for the
+    same lease_id (idempotent from the reconciler's point of view -- it
+    just re-applies REVOKED, which is already a no-op if already
+    REVOKED)."""
+    append_entry(_ledger_path(), {"lease_id": lease_id, "revoked_at": now_iso()})
 
 
 def revoked_lease_ids() -> set[str]:
-    """Every lease_id this ledger has EVER recorded a revocation for.
-    Malformed/truncated lines are skipped (fail-closed in the sense of
-    'never silently drop the whole ledger over one bad line', not
-    'ignore revocations' -- a truncated last line from a crash mid-write
-    only loses that one entry, not the ones before it)."""
-    path = _ledger_path()
-    if not path.exists():
-        return set()
-    ids: set[str] = set()
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-                ids.add(entry["lease_id"])
-            except Exception:
-                continue
-    return ids
+    """Every lease_id this ledger has EVER recorded a revocation for."""
+    return {entry["lease_id"] for entry in read_all_entries(_ledger_path()) if "lease_id" in entry}
 
 
 def reconcile_after_restore() -> dict:

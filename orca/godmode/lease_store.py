@@ -138,6 +138,27 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    # Phase 14A.1 -- kill switch state now lives in the SAME authority
+    # database as leases (same file for SQLite, same DSN for Postgres)
+    # rather than a standalone flag file. This is what makes the
+    # Postgres/DISTRIBUTED profile's cross-worker kill-switch visibility
+    # (spec §21) come for free: every worker querying the SAME shared
+    # Postgres instance sees the SAME row live, exactly like leases
+    # already do -- no separate propagation mechanism needed. Single
+    # row, id=1; `state` is a plain string, not a boolean, so a third
+    # state is representable later without a schema migration if ever
+    # needed (see KILL_SWITCH_DURABILITY.md's "states" section for why
+    # only ACTIVE/INACTIVE are used today).
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS kill_switch_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            state TEXT NOT NULL,
+            activated_at TEXT,
+            reason TEXT
+        )
+        """
+    )
 
 
 @contextmanager
@@ -477,6 +498,13 @@ CREATE TABLE IF NOT EXISTS godmode_leases (
     data TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_godmode_leases_tenant ON godmode_leases(tenant_id);
+
+CREATE TABLE IF NOT EXISTS kill_switch_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    state TEXT NOT NULL,
+    activated_at TEXT,
+    reason TEXT
+);
 """
 
 
@@ -773,3 +801,124 @@ def list_active_for_tenant(tenant_id: str) -> list[CapabilityLease]:
     if _backend() == "postgres":
         return _list_active_for_tenant_postgres(tenant_id)
     return _list_active_for_tenant_sqlite(tenant_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 14A.1 -- kill switch state, now living in this same authority
+# database (rather than a standalone flag file under ORCA_HOME) so it
+# gets the exact same cross-process/cross-host visibility guarantee as
+# leases already have: every worker reading the same SQLite file or the
+# same Postgres database sees the SAME row, live -- this is what closes
+# spec §21's "activation visible to both [workers] before any new
+# elevated authorization" requirement, structurally, for the DISTRIBUTED
+# profile, without a separate propagation mechanism.
+#
+# This table alone does NOT close the stale-restore vulnerability --
+# restoring an old copy of this same database restores this table too,
+# by construction (it's in the same backup unit). That protection comes
+# from `orca.godmode.kill_switch_ledger`'s separate, append-only file,
+# reconciled via `reconcile_kill_switch_after_restore()` -- the exact
+# same two-layer pattern (mutable live state + separate durable ledger)
+# already proven for lease revocation in `revocation_ledger.py`.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _ks_get_sqlite() -> tuple[str, str | None, str | None]:
+    try:
+        with _connect() as conn:
+            row = conn.execute("SELECT state, activated_at, reason FROM kill_switch_state WHERE id = 1").fetchone()
+    except sqlite3.OperationalError:
+        return ("UNKNOWN", None, None)  # fail closed -- caller must treat UNKNOWN as active, see kill_switch.py
+    if row is None:
+        return ("INACTIVE", None, None)
+    return (row["state"], row["activated_at"], row["reason"])
+
+
+def _ks_set_sqlite(state: str, activated_at: str | None, reason: str | None) -> bool:
+    """Same `BEGIN IMMEDIATE` transaction discipline, and the same
+    Phase 13.3 crash-injection checkpoints (`_test_checkpoint()`), as
+    the lease functions above -- kill-switch persistence gets the exact
+    same real-SIGKILL crash-consistency evidence
+    (tests/test_kill_switch_stale_restore.py's crash-consistency test)
+    that lease consume/revoke/reserve already have."""
+    try:
+        with _connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            _test_checkpoint("AFTER_BEGIN_IMMEDIATE")
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO kill_switch_state (id, state, activated_at, reason) VALUES (1, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET state=excluded.state, activated_at=excluded.activated_at, reason=excluded.reason
+                    """,
+                    (state, activated_at, reason),
+                )
+                _test_checkpoint("AFTER_UPDATE_BEFORE_COMMIT")
+                conn.execute("COMMIT")
+                _test_checkpoint("AFTER_COMMIT")
+                return True
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+    except sqlite3.OperationalError:
+        return False
+
+
+def _ks_get_postgres() -> tuple[str, str | None, str | None]:
+    import psycopg
+
+    try:
+        conn = _pg_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT state, activated_at, reason FROM kill_switch_state WHERE id = 1")
+                row = cur.fetchone()
+            conn.commit()
+        finally:
+            conn.close()
+    except psycopg.Error:
+        return ("UNKNOWN", None, None)  # fail closed -- see _ks_get_sqlite's docstring note
+    if row is None:
+        return ("INACTIVE", None, None)
+    return (row[0], row[1], row[2])
+
+
+def _ks_set_postgres(state: str, activated_at: str | None, reason: str | None) -> bool:
+    import psycopg
+
+    try:
+        conn = _pg_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO kill_switch_state (id, state, activated_at, reason) VALUES (1, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET state=excluded.state, activated_at=excluded.activated_at, reason=excluded.reason
+                    """,
+                    (state, activated_at, reason),
+                )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    except psycopg.Error:
+        return False
+
+
+def ks_get_state() -> tuple[str, str | None, str | None]:
+    """Returns (state, activated_at, reason). `state` is one of "ACTIVE",
+    "INACTIVE", or "UNKNOWN" (store unreachable -- callers MUST treat
+    UNKNOWN as active/fail-closed, per spec §19; see
+    `orca.godmode.kill_switch.is_active()`, which does exactly that)."""
+    if _backend() == "postgres":
+        return _ks_get_postgres()
+    return _ks_get_sqlite()
+
+
+def ks_set_state(state: str, activated_at: str | None, reason: str | None) -> bool:
+    if _backend() == "postgres":
+        return _ks_set_postgres(state, activated_at, reason)
+    return _ks_set_sqlite(state, activated_at, reason)

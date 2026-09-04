@@ -92,7 +92,9 @@ def test_godmode_end_to_end_with_simulation(tmp_path, monkeypatch):
     import orca.godmode.lease_store as ls
     import orca.godmode.kill_switch as ks
     monkeypatch.setattr(ls, "LEASE_DIR", tmp_path / "leases")
-    monkeypatch.setattr(ks, "_KILL_SWITCH_FILE", tmp_path / "kill.flag")
+    # Phase 14A.1: kill-switch state now lives in leases.db (see
+    # orca/godmode/kill_switch.py) -- redirecting LEASE_DIR above
+    # already isolates it; the old _KILL_SWITCH_FILE attribute is gone.
 
     from orca.godmode.contracts import CapabilityDomain, ElevatedCapabilityRequest, LeaseIssuerClass
     from orca.godmode.issuance import issue_lease, make_approval

@@ -136,3 +136,16 @@ confirmed green — see `PHASE_14_CLOSURE.md` for the exact counts.
   is a connection string the deployment profile sets; provisioning an
   actual managed Postgres instance in GCP/Azure/AWS is Phase 14B/C/D
   work gated on real owner-approved cloud access.
+
+## Phase 14A.1 addendum — kill-switch state joined this same database
+
+The `kill_switch_state` table (added in Phase 14A.1) lives in this same
+authority database — SQLite file or Postgres DSN, whichever backend is
+configured — rather than the standalone flag file it used before. This
+was the natural consequence of applying this exact architecture
+decision consistently: once leases live in a shared transactional
+database for cross-worker correctness, the kill switch needed the same
+treatment for the same reason (spec §21's cross-worker visibility
+requirement). Full detail, including the real stale-restore
+vulnerability this move also had to close, in
+`KILL_SWITCH_DURABILITY.md`.

@@ -1,24 +1,44 @@
 """
-System-level Godmode kill switch (Phase 10 spec §15). File-backed under
-`ORCA_HOME` (the same real, existing home-directory convention every
-other persisted registry in this codebase uses -- `orca.gateway.wiring`'s
-deployment records, `orca.connectors`' would-be lease store) so it
-survives a process restart (spec §58): a restarted process must not
-"forget" that the kill switch was active.
+System-level Godmode kill switch (Phase 10 spec §15; Phase 14A.1
+stale-restore closure).
 
-The kill switch itself never depends on model behavior -- it is a plain
-file flag checked by Python code only; no model output path can set,
-clear, or inspect it (no tool exposes this module to `AgentToolRegistry`
-at all -- see AGENT_INTEGRATION.md).
+Phase 14A.1 rewrite: state now lives in the SAME authority database as
+Godmode leases (`orca.godmode.lease_store`'s `kill_switch_state` table
+-- SQLite file or Postgres, whichever backend is configured) rather
+than a standalone flag file. This closes two things at once:
+
+1. Cross-worker/cross-host visibility (spec §21) comes for free in the
+   Postgres/DISTRIBUTED profile -- every worker querying the same
+   shared database sees the same row, live, exactly like leases
+   already do.
+2. It puts kill-switch state changes through the SAME atomic
+   transaction discipline (`BEGIN IMMEDIATE` / `SELECT...FOR UPDATE`)
+   Phase 13's lease work already proved cross-process-safe.
+
+The REAL vulnerability this phase found and fixed: restoring an old
+backup of that same database silently reverts kill-switch state too --
+reproduced directly (kill switch OFF -> backup -> activate -> confirmed
+DENY -> restore old backup -> kill switch reads INACTIVE again ->
+elevated authorization ALLOWS). Fixed via `orca.godmode.kill_switch_ledger`,
+an append-only event ledger kept deliberately separate from the state
+table's own backup unit, plus a mandatory `reconcile_after_restore()`
+call every restore procedure must run (see
+docs/orneur/phase-14/KILL_SWITCH_DURABILITY.md).
+
+Every `activate()`/`deactivate()` call here writes to BOTH the live
+state table (so `is_active()` stays a fast, single-row read) AND the
+ledger (so a later stale restore can be caught and corrected) -- same
+two-layer pattern already proven for lease revocation in Phase 14A.
+
+The kill switch itself never depends on model behavior -- it is
+checked by Python code only; no tool exposes this module to
+`AgentToolRegistry` at all (see AGENT_INTEGRATION.md).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from orca.config import ORCA_HOME
 from orca.godmode.contracts import now_iso
-
-_KILL_SWITCH_FILE = ORCA_HOME / "godmode" / "kill_switch.flag"
 
 
 @dataclass
@@ -29,28 +49,44 @@ class KillSwitchStatus:
 
 
 def activate(*, reason: str = "") -> KillSwitchStatus:
-    _KILL_SWITCH_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _KILL_SWITCH_FILE.write_text(f"{now_iso()}\n{reason}\n")
+    from orca.godmode.lease_store import ks_set_state
+    from orca.godmode.kill_switch_ledger import record_event
+
+    at = now_iso()
+    ks_set_state("ACTIVE", at, reason)
+    record_event("ACTIVATE", reason=reason)
     return status()
 
 
 def deactivate() -> KillSwitchStatus:
-    if _KILL_SWITCH_FILE.exists():
-        _KILL_SWITCH_FILE.unlink()
+    from orca.godmode.lease_store import ks_set_state
+    from orca.godmode.kill_switch_ledger import record_event
+
+    ks_set_state("INACTIVE", None, None)
+    record_event("DEACTIVATE")
     return status()
 
 
 def is_active() -> bool:
-    return _KILL_SWITCH_FILE.exists()
+    """Fail-closed (spec §19): if the authority store cannot be reached
+    at all, `ks_get_state()` returns "UNKNOWN" -- treated here as
+    active, since an uncertain kill-switch state must never be
+    interpreted as permission to proceed with elevated actions."""
+    from orca.godmode.lease_store import ks_get_state
+
+    state, _, _ = ks_get_state()
+    return state != "INACTIVE"
 
 
 def status() -> KillSwitchStatus:
-    if not _KILL_SWITCH_FILE.exists():
+    from orca.godmode.lease_store import ks_get_state
+
+    state, activated_at, reason = ks_get_state()
+    if state == "UNKNOWN":
+        # Store unreachable -- report as active/unknown-reason rather
+        # than fabricating a specific activation time, but the boolean
+        # itself must still say "assume active" (spec §19).
+        return KillSwitchStatus(active=True, activated_at=None, reason="AUTHORITY_STORE_UNAVAILABLE")
+    if state != "ACTIVE":
         return KillSwitchStatus(active=False, activated_at=None, reason=None)
-    try:
-        lines = _KILL_SWITCH_FILE.read_text().splitlines()
-        activated_at = lines[0] if lines else None
-        reason = lines[1] if len(lines) > 1 else None
-    except Exception:
-        activated_at, reason = None, None
     return KillSwitchStatus(active=True, activated_at=activated_at, reason=reason)

@@ -40,6 +40,7 @@ tests/test_godmode_crash_consistency.py
 tests/test_connector_multiprocess_authority.py
 tests/test_godmode_authority_postgres.py
 tests/test_authority_backup_restore.py
+tests/test_kill_switch_stale_restore.py
 tests/test_godmode_exact_argument_binding.py
 tests/test_godmode_fast_path.py
 tests/test_godmode_security.py

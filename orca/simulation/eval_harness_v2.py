@@ -185,8 +185,11 @@ def run_all() -> HarnessResult:
     gm_tmp = Path(tempfile.mkdtemp())
     import orca.godmode.lease_store as ls
     import orca.godmode.kill_switch as ks
-    orig_dir, orig_kill = ls.LEASE_DIR, ks._KILL_SWITCH_FILE
-    ls.LEASE_DIR, ks._KILL_SWITCH_FILE = gm_tmp / "leases", gm_tmp / "kill.flag"
+    # Phase 14A.1: kill-switch state now lives in leases.db (see
+    # orca/godmode/kill_switch.py) -- redirecting LEASE_DIR below
+    # already isolates it; the old _KILL_SWITCH_FILE attribute is gone.
+    orig_dir = ls.LEASE_DIR
+    ls.LEASE_DIR = gm_tmp / "leases"
     try:
         from orca.godmode.contracts import CapabilityDomain, ElevatedCapabilityRequest, LeaseIssuerClass
         from orca.godmode.issuance import issue_lease, make_approval
@@ -205,7 +208,7 @@ def run_all() -> HarnessResult:
         decision = resolve_and_consume_lease(gm_lease.lease_id, tenant_id="org-1", capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE", resource_scope=str(gm_root), operation_scope="write", arguments={})
         _record(results, "real_action_revalidates_lease_independently", decision.state.value == "ALLOW" and get_lease(gm_lease.lease_id).uses_remaining == 0)
     finally:
-        ls.LEASE_DIR, ks._KILL_SWITCH_FILE = orig_dir, orig_kill
+        ls.LEASE_DIR = orig_dir
 
     # 20. Plan RealityDiff match.
     obs_match = Observation(action_id=r2.action_order[0], source="write_file", status="OK", facts=["wrote chain.txt"])

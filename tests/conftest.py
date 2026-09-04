@@ -44,14 +44,20 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(deployment_mod, "DEPLOYMENT_DIR", tmp_path)
 
     # Phase 10: same real risk for orca.godmode's file-backed lease store
-    # and kill-switch flag file -- both live under ORCA_HOME by default
-    # and must never touch a developer's real ~/.orca/godmode/ during a
-    # test run.
+    # -- lives under ORCA_HOME by default and must never touch a
+    # developer's real ~/.orca/godmode/ during a test run.
+    #
+    # Phase 14A.1: kill-switch state moved INTO this same leases.db file
+    # (orca.godmode.lease_store's kill_switch_state table) rather than
+    # its own flag file -- redirecting LEASE_DIR here already isolates
+    # kill-switch state too, so the old
+    # `monkeypatch.setattr(kill_switch_mod, "_KILL_SWITCH_FILE", ...)`
+    # line is gone (that attribute no longer exists; monkeypatch would
+    # raise AttributeError on every single test in this suite, since
+    # this fixture is autouse). See docs/orneur/phase-14/KILL_SWITCH_DURABILITY.md.
     import orca.godmode.lease_store as lease_store_mod
-    import orca.godmode.kill_switch as kill_switch_mod
     godmode_tmp = tmp_path / "godmode"
     monkeypatch.setattr(lease_store_mod, "LEASE_DIR", godmode_tmp / "leases")
-    monkeypatch.setattr(kill_switch_mod, "_KILL_SWITCH_FILE", godmode_tmp / "kill_switch.flag")
     yield
 
 

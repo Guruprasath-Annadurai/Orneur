@@ -148,9 +148,11 @@ def run_all() -> HarnessResult:
     gm_tmp = Path(_tf.mkdtemp())
     import orca.godmode.lease_store as ls
     import orca.godmode.kill_switch as ks
-    orig_lease_dir, orig_kill_file = ls.LEASE_DIR, ks._KILL_SWITCH_FILE
+    # Phase 14A.1: kill-switch state now lives in leases.db (see
+    # orca/godmode/kill_switch.py) -- redirecting LEASE_DIR below
+    # already isolates it; the old _KILL_SWITCH_FILE attribute is gone.
+    orig_lease_dir = ls.LEASE_DIR
     ls.LEASE_DIR = gm_tmp / "leases"
-    ks._KILL_SWITCH_FILE = gm_tmp / "kill.flag"
     try:
         from orca.godmode.contracts import CapabilityDomain, ElevatedCapabilityRequest, LeaseIssuerClass
         from orca.godmode.issuance import issue_lease, make_approval
@@ -184,7 +186,7 @@ def run_all() -> HarnessResult:
         ks.deactivate()
         _record(results, "kill_switch_after_simulation_prevents_execution", exec_decision2.state.value == "DENY")
     finally:
-        ls.LEASE_DIR, ks._KILL_SWITCH_FILE = orig_lease_dir, orig_kill_file
+        ls.LEASE_DIR = orig_lease_dir
 
     # 19. Simulation cancelled -- represented via explicit failure reason (no live async harness needed for a deterministic scenario).
     from orca.simulation.contracts import SimulationFailureReason, SimulationResult
