@@ -113,6 +113,31 @@ def require_distributed_authority_url() -> str:
     return url
 
 
+def require_distributed_core_db_url() -> str:
+    """Phase 14A.4: same enforcement, for the core application database
+    (auth/session/audit/tenant-scoped shared state --
+    `orca.auth.db`/`orca.audit`, selected via `ORNEUR_DATABASE_URL`).
+    Closes the exact gap Phase 14A.3's own final report disclosed as a
+    known limitation: this backend previously had no fail-startup
+    enforcement at all in DISTRIBUTED mode, even though
+    `orca/auth/db.py` has supported a Postgres backend since before
+    Phase 14. See `docs/orneur/phase-14/STATE_OWNERSHIP.md`'s Phase
+    14A.4 addendum for the full audit of what this database owns."""
+    url = orneur_env("DATABASE_URL")
+    if not url or not url.strip():
+        raise DeploymentConfigError(
+            "DISTRIBUTED profile requires an explicitly configured shared core application database "
+            "(set ORNEUR_DATABASE_URL) -- local per-host auth/session/audit storage is not valid in "
+            "DISTRIBUTED mode."
+        )
+    if not _looks_like_postgres_dsn(url):
+        raise DeploymentConfigError(
+            "DISTRIBUTED profile's core application database URL does not resolve to a supported "
+            "backend (expected a postgresql:// DSN)."
+        )
+    return url
+
+
 def validate_deployment_config(*, check_connectivity: bool = True) -> dict:
     """Mandatory startup validation (spec §2, §6). Intended to be called
     once, early, by the actual server process (see
@@ -129,15 +154,16 @@ def validate_deployment_config(*, check_connectivity: bool = True) -> dict:
     """
     profile = get_profile()
     if profile == "SOVEREIGN":
-        return {"profile": "SOVEREIGN", "security_root_backend": "sqlite", "authority_backend": "sqlite"}
+        return {"profile": "SOVEREIGN", "security_root_backend": "sqlite", "authority_backend": "sqlite", "core_db_backend": "sqlite"}
 
     security_root_url = require_distributed_security_root_url()
     authority_url = require_distributed_authority_url()
+    core_db_url = require_distributed_core_db_url()
 
     if check_connectivity:
         import psycopg
 
-        for label, url in (("security-root", security_root_url), ("authority", authority_url)):
+        for label, url in (("security-root", security_root_url), ("authority", authority_url), ("core application database", core_db_url)):
             try:
                 conn = psycopg.connect(url, connect_timeout=5)
                 conn.close()
@@ -152,4 +178,4 @@ def validate_deployment_config(*, check_connectivity: bool = True) -> dict:
                     f"DISTRIBUTED profile's {label} backend is unreachable during startup validation."
                 ) from None
 
-    return {"profile": "DISTRIBUTED", "security_root_backend": "postgres", "authority_backend": "postgres"}
+    return {"profile": "DISTRIBUTED", "security_root_backend": "postgres", "authority_backend": "postgres", "core_db_backend": "postgres"}

@@ -49,6 +49,13 @@ spec:
             secretKeyRef:
               name: orneur-distributed-secrets
               key: security-root-database-url
+        # Phase 14A.4: the core auth/session/audit backend now receives
+        # the same fail-startup enforcement as the two backends above
+        # (orca.godmode.deployment_profile.validate_deployment_config(),
+        # called at orca/serve/api.py's module import time, and
+        # orca/auth/db.py's own defense-in-depth check) -- missing or
+        # invalid here crashes the pod on startup exactly like a
+        # missing security-root or authority URL does.
         - name: ORNEUR_DATABASE_URL
           valueFrom:
             secretKeyRef:

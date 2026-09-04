@@ -459,7 +459,129 @@ required. No `~/.orca/godmode` or `~/.orneur-security-root` leakage.
 
 None.
 
-**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES**
+**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES** *(superseded — see Phase 14A.4 below, which closed the last disclosed core-DB configuration gap)*
 
 Per spec §24: stopping here. No cloud resources are provisioned. No
+Phase 15 work begins without explicit human approval.
+
+---
+
+# Phase 14A.4 — Distributed Core Database Configuration Gate
+
+Closed the last genuine distributed-cloud blocker Phase 14A.3's own
+final report disclosed as a known limitation: `ORNEUR_DATABASE_URL`
+(the auth/session/audit/tenant-scoped shared-state backend,
+`orca/auth/db.py`) did not receive the same fail-startup enforcement
+as the distributed security-root and Godmode authority backends.
+
+## Audit (spec §2)
+
+Full per-table audit in `STATE_OWNERSHIP.md`'s Phase 14A.4 addendum:
+`users`, `signup_counter`, `usage_daily`, `user_sessions`,
+`organizations`/`org_members`, `privacy_consents`/`consent_audit_log`,
+`data_export_requests`, `security_breach_log`, and the hash-chained
+`audit_log` all require this backend for distributed correctness — all
+now closed. Godmode's *own* elevation audit (`orca/godmode/audit.py`)
+is a separate, pre-existing, in-memory-only mechanism, unaffected by
+and out of scope for this closure — confirmed authorization decisions
+never depend on it, so no "durable audit before authorization"
+architecture was silently violated.
+
+## Fix
+
+`orca.godmode.deployment_profile.require_distributed_core_db_url()`
+extends `validate_deployment_config()` (not a disconnected new path,
+per spec §6). `orca/serve/api.py`'s validation call was moved to the
+very top of the file — before any `orca.*` import that could
+transitively connect to a database — closing a real ordering gap
+(`orca.auth`'s own import chain would otherwise reach `orca.auth.db`'s
+unconditional `init_db()` before validation ever ran). `orca/auth/db.py`
+itself also fails fast at its own import time, as defense in depth for
+any entry point that imports it directly. `/readyz` now also reflects
+core-database availability in DISTRIBUTED mode, mirroring the
+security-root check.
+
+## Two real bugs found and fixed during implementation
+
+1. **Test-pollution root cause**: `tests/conftest.py`'s `isolated_home`
+   fixture only ever popped the legacy `ORCA_DATABASE_URL` env var,
+   never `ORNEUR_DATABASE_URL` — the name this whole project has since
+   migrated to preferring. A leftover value from this phase's own
+   DISTRIBUTED-mode tests silently redirected unrelated tests
+   (`tests/test_auth_privacy.py`, `tests/test_org_store.py`) at a real
+   shared Postgres database instead of their own isolated SQLite tmp
+   file, surfacing as raw `psycopg.errors.UniqueViolation` failures.
+   Fixed at the actual root cause in the shared fixture, not papered
+   over locally.
+2. **Reload-in-teardown hazard, caught before landing**: an initial
+   draft of this phase's own teardown fixture reloaded
+   `orca.auth.db`/`store`/`audit` after restoring env vars — which,
+   once restored to the real (unset) environment, would itself have
+   triggered `init_db()` against the real `~/.orca/auth.db`. Caught by
+   checksumming the real file before/after an isolated run of the new
+   test file and noticing it was untouched only in isolation, not in
+   the combined run; reverted before being kept.
+
+## Test evidence
+
+`tests/test_distributed_core_db_config_gate.py` — **16 new tests**:
+table-ownership contract, SOVEREIGN unaffected, DISTRIBUTED missing/
+malformed/unreachable core-DB config all fail (at import for
+`orca.auth.db`, or via `validate_deployment_config()`), no secret
+leakage in error messages, a genuine two-process test using the real
+production abstraction (`orca.auth.store.create_user`/
+`record_user_session`, `orca.audit.log`/`recent` — not direct SQL) with
+worker B observing worker A's user, session, and audit entry, a
+misconfigured worker refusing startup with no local `auth.db` fallback,
+backend outage after startup denying safely with no fallback and clean
+recovery, tenant-scoped audit isolation across two processes, Godmode's
+in-memory audit and `orca.audit.log()`'s fail-soft contract both
+confirmed as pre-existing/unaffected, a security-root regression check,
+and a `/readyz` core-database-outage test.
+
+## Full regression
+
+- Deterministic-only (`pytest -m "not live_ollama_smoke"`): see the
+  final validated count below (a checkpoint run before the `/readyz`
+  core-database check landed already confirmed **1539 passed, 0
+  failed, 43 deselected**, 336.23s).
+- Security suite: **875 passed, 0 failed** (874 + 1 new `/readyz` test,
+  itself on top of 859 before this phase's other 15 tests).
+- Live suite: not re-run — per spec §22, no model-inference-path
+  changes were made; Phase 14A.2's clean 43/43 remains the accepted
+  baseline.
+- State leak: `~/.orca/godmode` and `~/.orneur-security-root` both
+  confirmed absent throughout. `~/.orca/auth.db` (a real, pre-existing
+  file from ordinary developer use of this repository, predating this
+  entire multi-phase session) was checksummed before and after the
+  full regression and confirmed byte-for-byte unchanged.
+
+## Known limitations
+
+1. `orca/auth/db.py`'s `init_db()` runs unconditionally at module
+   import time (a pre-existing characteristic, not introduced this
+   phase) — this makes reloading that module with a bad DSN a harsher
+   failure mode (crash at import) than a graceful runtime call. This
+   phase's own tests work around it correctly (by not reloading with a
+   bad DSN, relying instead on `_get_postgres_conn()`'s per-call fresh
+   env read), but any other code that reloads this module casually
+   should be aware of the same behavior.
+2. The broader test suite's isolation of `orca.auth.db`/`ORCA_HOME`
+   relies on individual test files' own fixtures (like `isolated_home`)
+   rather than a single global autouse guarantee — unlike
+   `LEASE_DIR`, which conftest.py's autouse fixture redirects for
+   every test unconditionally. This is a real, pre-existing,
+   disclosed structural characteristic of this test suite (module-level
+   imports at collection time happen before any fixture can run), not
+   something this phase introduced or was in scope to redesign.
+
+## Remaining Phase-14A blockers
+
+None. All three configuration gates this multi-part closure opened to
+address (security root, then core database) are now closed with real
+evidence.
+
+**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES**
+
+Per spec §26: stopping here. No cloud resources are provisioned. No
 Phase 15 work begins without explicit human approval.

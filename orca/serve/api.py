@@ -32,6 +32,19 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+# Phase 14A.3/14A.4: mandatory startup configuration validation MUST run
+# before any `orca.*` import that could transitively connect to a
+# database -- `orca.auth` (imported below) pulls in `orca.auth.db`,
+# whose `init_db()` runs UNCONDITIONALLY at that module's own import
+# time and would otherwise raise its own uncontrolled
+# psycopg/sqlite3 exception (potentially with connection details in
+# the message) before this clean, secret-free check ever got a chance
+# to run. `orca.godmode.deployment_profile` itself only depends on
+# `orca.config` (no database connection), so importing and calling it
+# FIRST is safe regardless of profile/configuration validity.
+from orca.godmode.deployment_profile import validate_deployment_config as _validate_deployment_config
+_validate_deployment_config()
+
 from orca.license import current_tier, get_active_license, has_feature
 from orca.license.keys import format_expiry
 
@@ -72,21 +85,6 @@ from orca.code import run_code
 _START_TIME = time.time()
 WEB_DIR = Path(__file__).parent / "web"
 _logger = logging.getLogger("orca.serve")
-
-# Phase 14A.3 §2, §6: mandatory startup configuration validation --
-# runs at module import time (the point at which any real server
-# process, and this module itself, first comes into existence), before
-# `app` becomes servable. For the default ORNEUR SOVEREIGN profile this
-# is a complete no-op (see `validate_deployment_config()`'s own early
-# return); it only has real effect in DISTRIBUTED profile, where it
-# raises `DeploymentConfigError` -- and therefore prevents this module,
-# and any server process built on it, from ever finishing import --
-# if the shared security-root and Godmode authority backends are not
-# both explicitly, validly configured and reachable. No connection
-# string appears in any exception this raises (see
-# `orca.godmode.deployment_profile`'s own docstring).
-from orca.godmode.deployment_profile import validate_deployment_config as _validate_deployment_config
-_validate_deployment_config()
 
 app = FastAPI(title="Orca API", version="1.0.0", docs_url=None, redoc_url=None)
 
@@ -598,6 +596,25 @@ async def readyz():
     except Exception as e:
         dependencies["security_root"] = {"status": "error", "reason": str(e)}
         ready = False
+
+    # Phase 14A.4 §7: same stricter-than-SOVEREIGN treatment for the
+    # core auth/session/audit backend -- a DISTRIBUTED worker whose
+    # shared core database is unreachable cannot guarantee session/
+    # auth correctness (spec §7: "Do not return fully READY when
+    # session/auth correctness cannot be guaranteed"), so this flips
+    # overall readiness the same way an unavailable security root does.
+    # A lightweight `SELECT 1` is enough to prove connectivity without
+    # adding real load to a low-frequency probe endpoint.
+    try:
+        from orca.godmode.deployment_profile import is_distributed
+        if is_distributed():
+            from orca.auth.db import get_conn
+            with get_conn() as conn:
+                conn.execute("SELECT 1")
+            dependencies["core_database"] = {"status": "ok"}
+    except Exception as e:
+        dependencies["core_database"] = {"status": "unavailable", "reason": str(e)}
+        ready = False  # never advertise READY while session/auth correctness cannot be guaranteed
 
     status_code = 200 if ready else 503
     return JSONResponse({"status": "ready" if ready else "not_ready", "dependencies": dependencies}, status_code=status_code)

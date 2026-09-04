@@ -43,3 +43,9 @@ an EKS-specific overlay would wire the two required database URLs to
 RDS PostgreSQL via AWS Secrets Manager + the Secrets Store CSI driver.
 Not created this phase — still gated on the OWNER ACTION REQUIRED
 checkpoint above.
+
+## Phase 14A.4 update
+
+Same core-database fail-startup enforcement now applies to
+`ORNEUR_DATABASE_URL`. Not created this phase — still gated on the
+OWNER ACTION REQUIRED checkpoint above.

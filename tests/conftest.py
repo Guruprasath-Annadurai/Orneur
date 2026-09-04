@@ -76,12 +76,28 @@ def isolated_home():
     """
     Points ORCA_HOME at a fresh temp dir and reloads config/db/store so
     they pick up the new path. Yields the store module for direct use.
+
+    Phase 14A.4 real bug found and fixed: this fixture only ever popped
+    the legacy `ORCA_DATABASE_URL` env var, never `ORNEUR_DATABASE_URL`
+    -- the name `orneur_env()` actually prefers. A test elsewhere in
+    the same pytest session that left `ORNEUR_DATABASE_URL` set (e.g.
+    a DISTRIBUTED-profile config test) meant every test using THIS
+    fixture silently kept hitting that real/leftover Postgres database
+    instead of the fresh isolated SQLite tmp file this fixture exists
+    to guarantee -- surfaced as raw `psycopg.errors.UniqueViolation`
+    failures in tests/test_auth_privacy.py and tests/test_org_store.py
+    that have nothing to do with Postgres at all. Also now reloads the
+    same modules on teardown (not just restoring the env vars) so a
+    LATER test relying on module import order elsewhere doesn't
+    inherit this fixture's own tmp-dir state.
     """
     tmpdir = tempfile.mkdtemp(prefix="orca_test_")
     prev_home = os.environ.get("ORCA_HOME")
     prev_db_url = os.environ.get("ORCA_DATABASE_URL")
+    prev_db_url_orneur = os.environ.get("ORNEUR_DATABASE_URL")
     os.environ["ORCA_HOME"] = tmpdir
     os.environ.pop("ORCA_DATABASE_URL", None)  # force SQLite backend for tests
+    os.environ.pop("ORNEUR_DATABASE_URL", None)  # same -- see docstring
 
     import orca.config as config
     import orca.auth.db as db
@@ -101,5 +117,7 @@ def isolated_home():
         os.environ.pop("ORCA_HOME", None)
     if prev_db_url is not None:
         os.environ["ORCA_DATABASE_URL"] = prev_db_url
+    if prev_db_url_orneur is not None:
+        os.environ["ORNEUR_DATABASE_URL"] = prev_db_url_orneur
 
     shutil.rmtree(tmpdir, ignore_errors=True)

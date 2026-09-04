@@ -53,10 +53,15 @@ addendum.
     enforcement — DISTRIBUTED mode can no longer silently fall back to
     a per-host file. See `SECURITY_ROOT.md`.
   - `ORNEUR_DATABASE_URL` (PostgreSQL) — user/session/audit state
-    (`orca/auth/db.py`), already dual-backend from before this phase
-    (not yet given the same fail-startup enforcement as the two above
-    — a disclosed, narrower gap, see `SECURITY_ROOT.md`'s known
-    limitations).
+    (`orca/auth/db.py`). **Phase 14A.4**: now given the exact same
+    fail-startup enforcement as the two backends above — missing,
+    empty, malformed, or unreachable at startup fails the process
+    before it ever serves traffic. Enforced both in
+    `validate_deployment_config()` (the primary gate, at
+    `orca/serve/api.py`'s import time) and inside `orca/auth/db.py`
+    itself (defense in depth for any other entry point that imports it
+    directly). See `STATE_OWNERSHIP.md`'s Phase 14A.4 addendum for the
+    full per-table audit of what this connection string owns.
   - `ORNEUR_REDIS_URL` — cross-instance chat session continuity
     (`orca/serve/session_store.py`) and shared rate-limit counters
     (`orca/serve/ratelimit.py`), both already dual-backend from before

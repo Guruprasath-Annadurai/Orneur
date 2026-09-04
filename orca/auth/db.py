@@ -27,6 +27,34 @@ from orca.config import ORCA_HOME, orneur_env
 
 AUTH_DB = ORCA_HOME / "auth.db"
 
+# Phase 14A.4: defense-in-depth against the exact "silent per-host
+# fallback" hazard Phase 14A.3 closed for the Godmode authority and
+# security-root backends -- this module is a THIRD backend selection
+# with the same shape (env-var-gated Postgres vs. local-file SQLite),
+# and it must not be the one place that hazard was left open. This
+# check duplicates `orca.godmode.deployment_profile.validate_deployment_config()`'s
+# own core-db requirement (that function is the primary, earlier-
+# running gate at `orca/serve/api.py`'s import time) -- kept here too
+# so any OTHER entry point that imports `orca.auth.db` directly (a CLI
+# tool, a script, a future service) without ever importing
+# `orca.serve.api` still cannot silently fall back to SQLite while
+# ORNEUR_DEPLOYMENT_PROFILE=DISTRIBUTED is set.
+try:
+    from orca.godmode.deployment_profile import is_distributed as _is_distributed
+    _DISTRIBUTED = _is_distributed()
+except Exception:
+    # deployment_profile itself raises DeploymentConfigError for an
+    # UNKNOWN profile value -- let that propagate as-is (it is already
+    # a clear, secret-free error) rather than masking it here.
+    raise
+
+if _DISTRIBUTED and not orneur_env("DATABASE_URL"):
+    raise RuntimeError(
+        "DISTRIBUTED profile requires an explicitly configured shared core application database "
+        "(set ORNEUR_DATABASE_URL) -- local per-host auth/session/audit storage is not valid in "
+        "DISTRIBUTED mode."
+    )
+
 BACKEND = "postgres" if orneur_env("DATABASE_URL") else "sqlite"
 
 _PLACEHOLDER_RE = re.compile(r"\?")

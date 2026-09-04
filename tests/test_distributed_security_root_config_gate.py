@@ -50,6 +50,15 @@ def _restore_env_after_test():
 
 _AUTHORITY_DSN = "postgresql://ag@localhost/orneur_phase14_test"
 _SECURITY_ROOT_DSN = "postgresql://ag@localhost/orneur_phase14_security_root_test"
+_CORE_DB_DSN = "postgresql://ag@localhost/orneur_phase14_authdb_test"
+
+# Phase 14A.4 extended validate_deployment_config() to also require
+# ORNEUR_DATABASE_URL (the core auth/session/audit backend) in
+# DISTRIBUTED mode -- every test in this file that calls
+# validate_deployment_config() or spawns a worker that does now also
+# sets this, even though this file's own primary subject is the
+# security root specifically. See test_distributed_core_db_config_gate.py
+# for the dedicated core-db test suite.
 
 
 def _postgres_reachable(dsn: str) -> bool:
@@ -62,8 +71,8 @@ def _postgres_reachable(dsn: str) -> bool:
         return False
 
 
-_PG_AVAILABLE = _postgres_reachable(_AUTHORITY_DSN) and _postgres_reachable(_SECURITY_ROOT_DSN)
-pytestmark_pg = pytest.mark.skipif(not _PG_AVAILABLE, reason="requires two real local Postgres databases")
+_PG_AVAILABLE = _postgres_reachable(_AUTHORITY_DSN) and _postgres_reachable(_SECURITY_ROOT_DSN) and _postgres_reachable(_CORE_DB_DSN)
+pytestmark_pg = pytest.mark.skipif(not _PG_AVAILABLE, reason="requires three real local Postgres databases")
 
 
 def _reload_all():
@@ -184,6 +193,7 @@ def test_validate_deployment_config_distributed_with_real_backends_succeeds():
     os.environ["ORNEUR_DEPLOYMENT_PROFILE"] = "DISTRIBUTED"
     os.environ["ORNEUR_SECURITY_ROOT_DATABASE_URL"] = _SECURITY_ROOT_DSN
     os.environ["ORNEUR_GODMODE_DATABASE_URL"] = _AUTHORITY_DSN
+    os.environ["ORNEUR_DATABASE_URL"] = _CORE_DB_DSN
     import orca.godmode.deployment_profile as dp
     importlib.reload(dp)
     summary = dp.validate_deployment_config(check_connectivity=True)
@@ -247,11 +257,12 @@ def test_readyz_not_ready_when_distributed_security_root_becomes_unavailable():
 # --------------------------------------------------------------- §8-9: two-host simulation, misconfigured worker cannot join
 
 
-def _worker_check_distributed(security_root_dsn_or_none, authority_dsn, lease_id, home, result_queue):
+def _worker_check_distributed(security_root_dsn_or_none, authority_dsn, lease_id, home, result_queue, core_db_dsn=None):
     os.environ["ORCA_HOME"] = home
     os.environ["ORNEUR_HOME"] = home
     os.environ["ORNEUR_DEPLOYMENT_PROFILE"] = "DISTRIBUTED"
     os.environ["ORNEUR_GODMODE_DATABASE_URL"] = authority_dsn
+    os.environ["ORNEUR_DATABASE_URL"] = core_db_dsn or _CORE_DB_DSN
     if security_root_dsn_or_none is not None:
         os.environ["ORNEUR_SECURITY_ROOT_DATABASE_URL"] = security_root_dsn_or_none
     else:

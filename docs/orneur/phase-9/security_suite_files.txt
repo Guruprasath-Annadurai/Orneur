@@ -43,6 +43,7 @@ tests/test_authority_backup_restore.py
 tests/test_kill_switch_stale_restore.py
 tests/test_security_root_whole_snapshot.py
 tests/test_distributed_security_root_config_gate.py
+tests/test_distributed_core_db_config_gate.py
 tests/test_godmode_exact_argument_binding.py
 tests/test_godmode_fast_path.py
 tests/test_godmode_security.py

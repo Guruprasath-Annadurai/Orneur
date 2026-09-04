@@ -62,3 +62,13 @@ Postgres connections; an edge outage or misconfiguration cannot alter
 either, since the edge layer never sits between the application and
 these backends in this architecture (see `CLOUDFLARE_ARCHITECTURE.md`
 for the ingress topology this doesn't touch).
+
+## Phase 14A.4 update
+
+`k8s/distributed-overlay.yaml`'s `ORNEUR_DATABASE_URL` entry (already
+present from Phase 14A.3, sourced via `secretKeyRef` — never inlined)
+now carries the same real enforcement weight as the other two: missing
+or invalid, and the pod never becomes Ready, per
+`orca.godmode.deployment_profile.validate_deployment_config()`'s
+extended check. No manifest change was needed beyond a clarifying
+comment — the Secret-reference pattern was already correct.

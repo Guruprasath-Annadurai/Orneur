@@ -71,3 +71,13 @@ to two separate Cloud SQL PostgreSQL instances via Secret Manager +
 `external-secrets` (or an equivalent CSI driver), rather than a raw
 Kubernetes Secret. Not created this phase — still gated on the same
 OWNER ACTION REQUIRED checkpoint above.
+
+## Phase 14A.4 update
+
+The core auth/session/audit database (`ORNEUR_DATABASE_URL`) now
+receives the same fail-startup enforcement as the other two Postgres
+backends. A future GCP overlay would wire this to a third Cloud SQL
+instance (or a separate database on the same instance as the authority
+backend, per operator preference) via the same Secret Manager
+mechanism. Not created this phase — still gated on the OWNER ACTION
+REQUIRED checkpoint above.

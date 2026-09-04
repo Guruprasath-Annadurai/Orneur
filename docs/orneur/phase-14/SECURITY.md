@@ -63,6 +63,12 @@ about this.
 | `DISTRIBUTED_LOCAL_SECURITY_ROOT_CREATION` | **0** | Real test confirms no `~/.orneur-security-root` is created when DISTRIBUTED config is missing |
 | `SECURITY_ROOT_OUTAGE_FAIL_OPEN` | **0** | Real test — post-startup outage denies, no fallback, no epoch reset, recovery observes correct state |
 | `CROSS_WORKER_KILL_SWITCH_DIVERGENCE` | **0** | Real two-process test against a shared local Postgres security root — worker B denies immediately |
+| `DISTRIBUTED_CORE_DB_FALLBACK` | **0** (Phase 14A.4) | `orca.auth.db` fails at import time in DISTRIBUTED mode with missing/invalid `ORNEUR_DATABASE_URL` — no fallback to local SQLite reachable |
+| `DISTRIBUTED_MISSING_CORE_DB_READY` | **0** | `/readyz` returns 503 when DISTRIBUTED and the core database is unavailable — real test |
+| `CROSS_WORKER_SESSION_DIVERGENCE` | **0** | Real two-process test — worker B observes worker A's `record_user_session()` write via the real production abstraction |
+| `CROSS_WORKER_AUTH_STATE_DIVERGENCE` | **0** | Same test — worker B observes worker A's `create_user()` write |
+| `CROSS_TENANT_SHARED_STATE_LEAK` | **0** | Real test — two users' audit trails queried by `user_id` never cross-contaminate |
+| `AUDIT_BACKEND_SILENT_SUCCESS` | **0** | `orca.audit.log()`'s pre-existing, documented fail-soft contract confirmed directly against a broken backend — reports failure via `None`, never raises, never fabricates an entry id |
 | `KILL_SWITCH_RESTART_BYPASS` | **0** | Real test — activation survives module reload |
 | `KILL_SWITCH_MULTIPROCESS_BYPASS` | **0** | Real multiprocess test |
 | `KILL_SWITCH_CORRUPTION_FAIL_OPEN` | **0** | Real test — garbage state value treated as active |

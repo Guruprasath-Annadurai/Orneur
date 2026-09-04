@@ -41,3 +41,9 @@ an AKS-specific overlay would wire the two required database URLs to
 Azure Database for PostgreSQL via Azure Key Vault + a CSI secrets
 driver. Not created this phase — still gated on the OWNER ACTION
 REQUIRED checkpoint above.
+
+## Phase 14A.4 update
+
+Same core-database fail-startup enforcement now applies to
+`ORNEUR_DATABASE_URL`. Not created this phase — still gated on the
+OWNER ACTION REQUIRED checkpoint above.

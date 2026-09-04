@@ -77,3 +77,19 @@ routing traffic to a worker in that state rather than the application
 silently denying every elevated request one at a time. In SOVEREIGN
 profile, this new check is a no-op (no security root to report on in
 the DISTRIBUTED sense).
+
+## Phase 14A.4 addendum — `/readyz` also reflects DISTRIBUTED core-database state
+
+Same treatment, one more dependency: a lightweight `SELECT 1` against
+the core auth/session/audit database (`ORNEUR_DATABASE_URL`) in
+DISTRIBUTED profile only. Unreachable ⇒ `dependencies["core_database"]
+= {"status": "unavailable", ...}` and overall readiness flips to 503 —
+per spec §7's explicit "Do not return fully READY when session/auth
+correctness cannot be guaranteed." Real test:
+`test_readyz_not_ready_when_distributed_core_db_becomes_unavailable`.
+No degraded "read-only-safe" mode was implemented for this dependency
+this phase — the binary ready/not-ready model was judged sufficient
+given this codebase's actual request shape (every request path that
+matters for readiness already needs auth/session state), rather than
+introducing a third readiness state without a concrete driving use
+case.

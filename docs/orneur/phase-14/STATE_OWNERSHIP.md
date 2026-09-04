@@ -26,6 +26,49 @@ spec requires, for every state category §6 names explicitly.
 | Rate-limit counters | In-process dict (SOVEREIGN) or Redis (DISTRIBUTED, opt-in) | serve/ratelimit.py | same | SOVEREIGN: `threading.Lock`, single-process; DISTRIBUTED: Redis atomic ops | Ephemeral by design (counters reset naturally) | n/a | No -- REBUILDABLE_CACHE |
 | DocStore | ChromaDB (SOVEREIGN); not yet distributed | docs/store.py callers | same | ChromaDB-internal | Durable, single host | Manual (ChromaDB's own persistence dir) | Yes, user-facing data |
 
+## Phase 14A.4 addendum — `ORNEUR_DATABASE_URL` full audit (spec §2)
+
+Exactly what this one connection string owns, per-table (confirmed by
+reading `orca/auth/db.py`'s schema constants directly, and asserted as
+a living contract in
+`tests/test_distributed_core_db_config_gate.py::test_auth_db_owns_the_expected_tables`):
+
+| State | Owner | Backend | Readers | Writers | Consistency requirement | Distributed required | Fallback behavior |
+|---|---|---|---|---|---|---|---|
+| `users` | `orca/auth/db.py` | SQLite/Postgres via `ORNEUR_DATABASE_URL` | `auth/store.py`, `auth/routes.py` | `auth/store.py`'s `create_user`/`update_password`/etc. | Strict (unique email constraint, transactional) | **YES** — two hosts with independent SQLite files would allow duplicate accounts / diverging credentials | **CLOSED this phase** — DISTRIBUTED without a valid URL now fails startup |
+| `signup_counter` | same | same | `auth/store.py::create_user` | same | Strict (atomic `UPDATE...RETURNING`, explicitly designed for concurrent-safe sequencing) | **YES** — the entire reason this is a dedicated counter, not `COUNT(*)`, is cross-process/cross-host race-safety | **CLOSED this phase** |
+| `usage_daily` | same | same | `auth/store.py::check_quota` | `increment_usage` | Strict-ish (a lost update here under-counts a quota, not a security event) | **YES** for correctness of quota enforcement across workers | **CLOSED this phase** |
+| `user_sessions` | same | same | `auth/store.py::get_user_session_ids` | `record_user_session` | Eventually-consistent acceptable (a listing endpoint, not an auth decision) | **YES** for cross-worker session visibility (proven this phase, real two-process test) | **CLOSED this phase** |
+| `organizations` / `org_members` | same | same | `auth/org_store.py` | same | Strict (seat-limit enforcement, invite tokens) | **YES** — seat limits and invite state must not diverge per host | **CLOSED this phase** |
+| `privacy_consents` / `consent_audit_log` | same | same | `auth/privacy.py` | same | Strict; `consent_audit_log` is append-only (DB-trigger/rule enforced, not just convention) | **YES** — compliance-relevant, must not diverge or be locally overwritable | **CLOSED this phase** |
+| `data_export_requests` | same | same | `auth/privacy.py` | same | Strict (one pending request per user, enforced at the row level) | **YES** | **CLOSED this phase** |
+| `security_breach_log` | same | same | `auth/privacy.py` | same | Strict, immutable (DELETE blocked at the DB layer) | **YES** — an incident record diverging per host defeats its purpose | **CLOSED this phase** |
+| `audit_log` (hash-chained) | `orca/audit.py`, using `get_conn()`/`BACKEND` from `auth/db.py` | same | `orca/audit.py::recent`/`verify_chain`/`export_for_audit` | `orca/audit.py::log()` | Strict — Postgres path uses `pg_advisory_xact_lock` specifically because "multiple API instances writing to the same database" was already an anticipated case; the hash chain itself would visibly break if two hosts each maintained independent chains | **YES** | **CLOSED this phase** — same URL, same enforcement |
+| Godmode elevation audit (`orca/godmode/audit.py`) | **NOT** `ORNEUR_DATABASE_URL` — a separate, pre-existing, in-memory-only mechanism | n/a | simulation/eval tooling only | `record_elevation_event()` | None — plain Python list, never persisted, never shared across processes | Not applicable to this phase's scope (a genuinely separate mechanism) | **NOT CLOSED, pre-existing, disclosed** — see "Audit durability" below |
+
+### Audit durability (spec §14) — inspected, not redesigned
+
+`orca/godmode/audit.py`'s elevation audit trail is a plain in-memory
+list (`_AUDIT_LOG`), completely separate from `ORNEUR_DATABASE_URL`'s
+hash-chained `audit_log` table. Confirmed directly (and asserted as a
+living contract,
+`test_godmode_elevation_audit_is_in_memory_only_and_does_not_gate_authorization`):
+`orca/godmode/resolution.py`'s authorization decision does **not** call
+or depend on either audit mechanism succeeding — there is no "durable
+audit required before authorization" architecture in this codebase for
+this phase to have silently violated. This is the same real, pre-
+existing gap `STATE_OWNERSHIP.md`'s original Phase 14A audit already
+disclosed ("Godmode audit: none, real gap") — not newly introduced,
+not made worse, and not silently hidden behind this phase's core-DB
+enforcement work. `orca.audit.log()` itself (the ORNEUR_DATABASE_URL-
+backed, hash-chained mechanism used for auth/session events) has its
+own explicit, documented, pre-existing fail-soft contract — "Never
+raises... Returns the entry id, or None on failure" — confirmed
+directly against a broken backend
+(`test_orca_audit_log_never_raises_and_reports_failure_via_none_return`).
+This is intentional (audit failures must not break the request being
+logged) and was not changed this phase.
+
 ## Ownership principle applied
 
 Every row above that says "not yet distributed" or "disclosed real
