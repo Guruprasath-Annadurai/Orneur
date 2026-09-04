@@ -149,3 +149,20 @@ treatment for the same reason (spec §21's cross-worker visibility
 requirement). Full detail, including the real stale-restore
 vulnerability this move also had to close, in
 `KILL_SWITCH_DURABILITY.md`.
+
+## Phase 14A.2 addendum — a security root outside this database entirely
+
+The `kill_switch_state` table above is no longer where `is_active()`
+gets its answer. Phase 14A.2 found that even this shared authority
+database is not enough on its own: restoring it (or restoring it
+*together with* Phase 14A.1's ledger) can still roll back committed
+security state, since both live inside the same backup/restore unit.
+`orca/godmode/security_root.py` is a genuinely separate store — a
+different directory (SOVEREIGN) or a different database
+(DISTRIBUTED) — that the authority database's own backup/restore never
+touches. See `SECURITY_ROOT.md` for the full architecture. This does
+not change the authority-distribution decision for *leases* (Postgres,
+Option B, unchanged) — it adds a narrower, separate decision
+specifically for the one piece of state (kill-switch/global security
+generation) where "restoring an old backup" and "rolling back security
+authority" must never be the same event.

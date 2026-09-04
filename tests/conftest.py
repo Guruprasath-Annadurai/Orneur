@@ -58,6 +58,16 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     import orca.godmode.lease_store as lease_store_mod
     godmode_tmp = tmp_path / "godmode"
     monkeypatch.setattr(lease_store_mod, "LEASE_DIR", godmode_tmp / "leases")
+
+    # Phase 14A.2: orca.godmode.security_root is DELIBERATELY independent
+    # of ORCA_HOME (that is its entire security property -- see its
+    # module docstring) and defaults to `~/.orneur-security-root`, a
+    # real directory under the developer's actual home. Every test that
+    # calls kill_switch.activate()/is_active() now writes there unless
+    # isolated -- `monkeypatch.setenv` works directly here (no module
+    # reload needed) because `security_root._root_home()` re-reads this
+    # env var on every call, never caching it at import time.
+    monkeypatch.setenv("ORNEUR_SECURITY_ROOT_HOME", str(godmode_tmp / "security-root"))
     yield
 
 

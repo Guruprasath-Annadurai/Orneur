@@ -69,3 +69,39 @@ keep the two separate).
   (multiworker session test) — plus every Phase 13.3 crash-injection
   scenario reconfirmed green this phase (11 SIGKILL scenarios in
   `test_godmode_crash_consistency.py`, unchanged, still passing).
+
+## Phase 14A.2 addendum — whole-snapshot security-root closure and corrected test classification
+
+**New real finding and fix**: restoring the Phase 14A.1 kill-switch
+ledger together with the stale authority database defeated stale-
+restore protection entirely (`WHOLE_SNAPSHOT_SECURITY_ROLLBACK`) —
+reproduced directly, fixed with an independent security root living
+outside `ORCA_HOME`/the authority database entirely. Full detail:
+`SECURITY_ROOT.md`. 20 real tests (9 new in
+`test_security_root_whole_snapshot.py`, 11 rewritten in
+`test_kill_switch_stale_restore.py` for the new architecture), all
+passing, including real local Postgres (two genuinely separate
+databases) and 5-way concurrent multiprocess activation.
+
+**Test classification correction (spec §25-26)**: investigated whether
+the "1543 passed / 2 failed" result from Phase 14A.1's closure
+represented a marker misclassification. Finding: it did not — this
+project's own `docs/orneur/phase-3/TEST_EXECUTION_POLICY.md` already
+documents, as an intentional and pre-existing convention, that
+`live_ollama_smoke` tests are part of the default `pytest` invocation
+("Full suite, exactly as CI runs it today"). What prior phases called
+"the deterministic suite" was actually the combined default suite
+(unit + integration + live-Ollama together); this was an informal
+labeling imprecision in how results were reported, not a code defect.
+Corrected going forward by reporting two genuinely distinct
+invocations:
+
+| Invocation | Command | Result |
+|---|---|---|
+| Deterministic-only | `pytest -m "not live_ollama_smoke"` | **1511 passed, 0 failed, 43 deselected** (361.17s) |
+| Live suite | `pytest -m live_ollama_smoke` | see `PHASE_14_CLOSURE.md`'s Phase 14A.2 section for the actual, honestly-reported result |
+
+The deterministic-only invocation has **zero dependency on a live local
+model** and is the correct baseline for spec §29's "final deterministic
+invocation: 0 failed" requirement — achieved cleanly, on the first
+attempt, once correctly scoped.

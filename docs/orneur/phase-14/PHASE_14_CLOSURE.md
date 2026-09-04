@@ -263,9 +263,121 @@ phase's authority-persistence-only changes (test count reconciles
 exactly: 1534 baseline + 11 new = 1545 = 1543 + 2). Security suite: 837
 passed / 0 failed (826 + 11 new). No `~/.orca/godmode` leakage.
 
-**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES** (from an authority-
-security standpoint — the GCP owner checkpoint in `GCP_DEPLOYMENT.md`
-remains the actual gate).
+**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES** *(superseded — see Phase 14A.2 below; this phase's own closure disclosed a limitation that turned out to be a real, unfixed vulnerability)*.
 
 Per spec §32: stopping here. No GCP provisioning, no Cloudflare
 configuration, no Phase 15 work begins without explicit human approval.
+
+---
+
+# Phase 14A.2 — Security Root + Final Local Qualification
+
+Closed the two blockers Phase 14A.1's own closure left open:
+
+1. **`WHOLE_SNAPSHOT_SECURITY_ROLLBACK`** — Phase 14A.1's disclosed
+   limitation ("if the ledger is restored together with the stale
+   authority database, the ledger is stale too and this protection
+   does nothing") was a real, unfixed vulnerability, not an
+   operational footnote. Reproduced directly: kill switch OFF →
+   snapshot the ENTIRE `godmode` directory (state table AND the Phase
+   14A.1 ledger together) → activate → confirmed DENY → restore the
+   entire snapshot → restart → `reconcile_after_restore()` finds
+   nothing to reconcile (`{'ledger_entries': 0, 'action':
+   'no_op_never_activated'}`) → `is_active()` returns `False` →
+   elevated authorization `ALLOW`.
+
+2. **The final deterministic invocation was not clean** (1543/2 in
+   Phase 14A.1's closure). Investigated per spec §25-26 rather than
+   just increasing timeouts: this project's own
+   `docs/orneur/phase-3/TEST_EXECUTION_POLICY.md` already documents
+   that `live_ollama_smoke` tests are an intentional part of the
+   default `pytest` invocation — the "2 failures" were real, disclosed,
+   pre-existing live-model-contention flakiness bundled into a number
+   informally (not officially) labeled "deterministic." Corrected by
+   reporting the two invocations separately going forward.
+
+## Fix: an independent security root
+
+`orca/godmode/security_root.py` — a store living structurally outside
+`ORCA_HOME` (SOVEREIGN: `~/.orneur-security-root`, a sibling directory,
+not nested inside `ORCA_HOME`) or in a genuinely separate Postgres
+database (DISTRIBUTED: `ORNEUR_SECURITY_ROOT_DATABASE_URL`, tested
+locally against two distinct local databases). `kill_switch.is_active()`
+now consults this as ground truth, always fresh, never cached. Full
+architecture, honest guarantee statement, and epoch semantics in
+`SECURITY_ROOT.md`.
+
+## Test evidence
+
+- `tests/test_security_root_whole_snapshot.py` — **9 new tests**: raw
+  whole-snapshot reproduction (permanent regression sentinel), the
+  actual fix (whole-`ORCA_HOME` restore proven safe), SQLite Sovereign,
+  PostgreSQL Distributed (two genuinely separate local Postgres 17
+  databases), epoch-rollback-under-tampering behavior, 5-way concurrent
+  activation from real processes (exact epoch accounting, zero lost
+  updates), crash-ordering safety, stale-worker no-cache, delegation/
+  multiprocess regression check.
+- `tests/test_kill_switch_stale_restore.py` — **rewritten** (11 tests)
+  for the new architecture: Phase 14A.1's original scenario now
+  correctly stays denied WITHOUT needing reconciliation at all, since
+  `is_active()` never reads the leases.db mirror it used to depend on.
+
+## Corrected test-suite classification and final numbers
+
+| Invocation | Result |
+|---|---|
+| Deterministic-only (`pytest -m "not live_ollama_smoke"`) | **1511 passed, 0 failed, 43 deselected** (361.17s) |
+| Live suite (`pytest -m live_ollama_smoke`) | **43 passed, 0 failed** (723.94s) — clean on the first attempt |
+| Security suite | **846 passed, 0 failed** (837 + 9 new) |
+
+## State leak check
+
+`~/.orca/godmode` and `~/.orneur-security-root`: both confirmed
+nonexistent after every test run. (One stray, empty, pre-existing
+`~/.orca/godmode` directory — 0 bytes, no files inside — left over from
+earlier session work before this phase's own fixes were complete, was
+found and removed; not a leak caused by this phase's own final code.)
+
+## Audit (all required counters)
+
+| Counter | Result |
+|---|---|
+| `WHOLE_SNAPSHOT_SECURITY_ROLLBACK` | **0** (after fix; confirmed non-zero before, honestly reproduced) |
+| `SECURITY_EPOCH_ROLLBACK` | **0** |
+| `SECURITY_ROOT_UNAVAILABLE_FAIL_OPEN` | **0** |
+| `STALE_WORKER_SECURITY_ALLOW` | **0** |
+| `SECURITY_ROOT_CORRUPTION_FAIL_OPEN` | **0** |
+| `SECURITY_EPOCH_CONCURRENCY_FAILURE` | **0** |
+| `KILL_SWITCH_STALE_RESTORE_BYPASS` (Phase 14A.1 counter, reconfirmed) | **0** |
+| `BACKUP_PRIVILEGE_RESURRECTION` (Phase 14A counter, reconfirmed) | **0** |
+| `DISTRIBUTED_AUTHORITY_DUPLICATION` (Phase 14A counter, reconfirmed) | **0** |
+| Raw chain-of-thought storage | **0** |
+
+## Known limitations (honest, carried forward)
+
+1. The security root is not a hardware monotonic counter and is not
+   tamper-proof against an operator or process with direct filesystem/
+   database access — the guarantee is structural separation from
+   *ordinary* backup/restore tooling, not cryptographic or
+   hardware-backed protection. Stated explicitly in `SECURITY_ROOT.md`.
+2. `advance()`'s monotonicity is relative to whatever the row currently
+   says, not tamper-detection against a direct SQL write bypassing this
+   module — demonstrated directly in
+   `test_epoch_cannot_decrease_via_restored_row`.
+3. In DISTRIBUTED mode, if `ORNEUR_SECURITY_ROOT_DATABASE_URL` is left
+   unset, the security root silently falls back to the SOVEREIGN
+   file-based mechanism per host — which does NOT give cross-host
+   kill-switch visibility. This is a real, disclosed operational trap:
+   a DISTRIBUTED deployment that forgets this one variable loses the
+   cross-worker guarantee without any error.
+
+## Remaining Phase-14A blockers
+
+None. Both blockers this phase was opened to close are closed, with
+real evidence.
+
+**READY FOR PHASE 14B CLOUD DEPLOYMENT: YES**
+
+Per spec §34: stopping here. No GCP, Azure, AWS, or Cloudflare
+resources are created. No Phase 15 work begins without explicit human
+approval.

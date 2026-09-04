@@ -137,12 +137,21 @@ Not applicable — this codebase has exactly one, global kill switch. No
 per-tenant or per-scope variant exists to test cross-scope reset
 against.
 
-## Disclosed limit, same as the lease-revocation ledger
+## Disclosed limit — CLOSED in Phase 14A.2
 
-If `kill_switch_ledger.jsonl` is restored from the SAME stale snapshot
-as `kill_switch_state`'s own database (e.g. a whole-`ORCA_HOME`
-restore rather than a scoped restore of just the state table), the
-ledger is stale too and this protection does nothing — no application
-code can recover data that was never captured. This is an operational
-requirement: the ledger must be backed up on a cadence at least as
-frequent as, and ideally independent of, the authority database itself.
+This section originally disclosed: "if `kill_switch_ledger.jsonl` is
+restored from the SAME stale snapshot as `kill_switch_state`'s own
+database (e.g. a whole-`ORCA_HOME` restore), the ledger is stale too
+and this protection does nothing." **This is exactly the vulnerability
+Phase 14A.2 closed** — reproduced directly, classified
+`WHOLE_SNAPSHOT_SECURITY_ROLLBACK`, and fixed with an independent
+security root (`orca/godmode/security_root.py`) that lives structurally
+outside `ORCA_HOME` entirely, not merely in a separate file within it.
+`is_active()` now consults that security root as ground truth, not the
+`kill_switch_state` mirror this document originally described as the
+sole source of truth. Full detail: `SECURITY_ROOT.md`.
+
+The ledger and mirror described above still exist and still have real
+value as defense-in-depth (see `SECURITY_ROOT.md`'s "Real test
+evidence" section) — they are simply no longer the *only* layer
+protecting this invariant.

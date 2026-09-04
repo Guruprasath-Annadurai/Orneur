@@ -50,8 +50,14 @@ about this.
 | `DISTRIBUTED_TENANT_LEAK` | **0** | Real multiprocess test, `test_postgres_backend_tenant_isolation_no_cross_tenant_leak` |
 | `DISTRIBUTED_AUTHORITY_DUPLICATION` | **0** | Real multiprocess tests against Postgres (one-use, high-contention, delegation races) |
 | `STALE_REVOCATION_BYPASS` | **0** (after fix) | Real finding, real fix, real regression test — see above |
-| `KILL_SWITCH_PROPAGATION_BYPASS` | **0** (Phase 14A.1) | Kill-switch state now lives in the shared authority database (Postgres for DISTRIBUTED), giving real cross-worker visibility; multiprocess test in `KILL_SWITCH_DURABILITY.md` |
-| `KILL_SWITCH_STALE_RESTORE_BYPASS` | **0** (after fix, Phase 14A.1) | Real finding (reproduced before fixing), real fix (append-only ledger + mandatory reconciliation), 11 real tests — `KILL_SWITCH_DURABILITY.md` |
+| `KILL_SWITCH_PROPAGATION_BYPASS` | **0** (Phase 14A.1/14A.2) | Kill-switch ground truth (the security root) is consulted fresh on every call; multiprocess test in `SECURITY_ROOT.md` |
+| `KILL_SWITCH_STALE_RESTORE_BYPASS` | **0** (Phase 14A.1 fix superseded by Phase 14A.2's stronger fix) | Phase 14A.1's ledger fix was itself found incomplete (restoring the ledger together with the database defeated it — `WHOLE_SNAPSHOT_SECURITY_ROLLBACK`); Phase 14A.2's independent security root closes it completely — `SECURITY_ROOT.md` |
+| `WHOLE_SNAPSHOT_SECURITY_ROLLBACK` | **0** (after fix, Phase 14A.2) | Real finding, reproduced before fixing (kill switch OFF → snapshot everything including the ledger → activate → restore everything → ALLOW), real architectural fix (independent security root), permanent regression sentinel test |
+| `SECURITY_EPOCH_ROLLBACK` | **0** | `advance()` never accepts a caller-supplied epoch; always computes current+1 atomically — tested under direct tampering and under 5-way concurrent activation |
+| `SECURITY_ROOT_UNAVAILABLE_FAIL_OPEN` | **0** | Real test — unreachable security-root Postgres host treated as active |
+| `STALE_WORKER_SECURITY_ALLOW` | **0** | Real test — no caching, every call re-consults the security root fresh |
+| `SECURITY_ROOT_CORRUPTION_FAIL_OPEN` | **0** | Real test — garbage state value treated as active |
+| `SECURITY_EPOCH_CONCURRENCY_FAILURE` | **0** | Real test — 5 concurrent real processes, exact epoch accounting (epoch_after == epoch_before + 5), no lost updates |
 | `KILL_SWITCH_RESTART_BYPASS` | **0** | Real test — activation survives module reload |
 | `KILL_SWITCH_MULTIPROCESS_BYPASS` | **0** | Real multiprocess test |
 | `KILL_SWITCH_CORRUPTION_FAIL_OPEN` | **0** | Real test — garbage state value treated as active |

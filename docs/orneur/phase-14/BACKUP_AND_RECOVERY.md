@@ -84,18 +84,37 @@ ideally independent of (e.g. shipped continuously to a separate,
 append-only sink), the leases table itself. Stated explicitly here so
 it is not silently assumed solved.
 
-### Same class of risk — CLOSED in Phase 14A.1
+### Same class of risk — CLOSED in Phase 14A.1, then found incomplete and fully closed in Phase 14A.2
 
 Originally disclosed here as "not yet fixed": restoring a stale backup
 of the kill-switch's state would silently revert a committed
-activation. **This has since been fixed** — see
-`KILL_SWITCH_DURABILITY.md` for the full reproduction, design, and test
-evidence (an append-only `kill_switch_ledger.py`, structurally
-identical to this document's own lease-revocation ledger, plus kill-
-switch state itself moving into the same authority database as leases
-rather than a standalone flag file). 11 real tests, including one that
-deliberately keeps reproducing the raw pre-fix bug as a permanent
-regression sentinel.
+activation. Phase 14A.1 fixed the narrow case (restoring the authority
+database's `kill_switch_state` mirror alone) with an append-only
+`kill_switch_ledger.py`. **Phase 14A.1's own closure then disclosed a
+remaining gap**: restoring the ledger *together with* the stale
+database defeated that fix entirely (the ledger's own record rolled
+back too). **Phase 14A.2 closed this completely** with an independent
+security root (`orca/godmode/security_root.py`) living structurally
+outside `ORCA_HOME` — see `SECURITY_ROOT.md` for the full reproduction,
+architecture, and test evidence.
+
+## Backup classification (spec §7)
+
+Three explicit classes, so "restore my backup" never means "and also
+roll back global security state" by accident:
+
+| Class | Contents | Restoring this... |
+|---|---|---|
+| **APPLICATION BACKUP** | Ordinary service/registry/memory/etc. state | ...may be done freely; no security implication |
+| **AUTHORITY DATA BACKUP** | Leases, approvals, the `kill_switch_state` mirror | ...is safe for leases (the revocation ledger reconciles it) and safe for the kill-switch mirror (the security root is unaffected regardless) |
+| **SECURITY ROOT BACKUP** | The independent security-root store (`~/.orneur-security-root` or its separate Postgres database) | ...must **never** happen implicitly as part of restoring the other two classes — it requires its own explicit, administrator-driven disaster-recovery procedure, precisely because an *older* security-root backup replacing a *newer* one would itself be a privilege-resurrection event |
+
+`orca/ops/backup.py`, this project's existing backup tool, is scoped to
+`ORCA_HOME` (specifically `AUTH_DB`) and has never had any reason to
+reach the security root's separate location — this is what makes the
+whole-`ORCA_HOME`-restore fix real rather than aspirational: the
+existing backup/restore tooling structurally cannot make the mistake
+Phase 14A.1's disclosed gap depended on.
 
 ## Backup/restore for the other durable stores
 

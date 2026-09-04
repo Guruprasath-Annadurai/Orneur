@@ -35,6 +35,14 @@ backend) is built and tested this phase (see `AUTHORITY_DISTRIBUTION.md`).
     (`orca/serve/ratelimit.py`), both already dual-backend from before
     this phase, now proven under real multi-process load (see
     `MULTI_WORKER.md`).
+  - `ORNEUR_SECURITY_ROOT_DATABASE_URL` (Phase 14A.2, PostgreSQL) — a
+    **separate database** from `ORNEUR_GODMODE_DATABASE_URL` for the
+    independent security root (`orca/godmode/security_root.py`).
+    Without this, DISTRIBUTED mode falls back to the SOVEREIGN
+    file-based security root per host, which does NOT give cross-host
+    kill-switch visibility — a real, disclosed limitation for any
+    genuinely multi-host DISTRIBUTED deployment that skips this
+    variable. See `SECURITY_ROOT.md`.
 - **Known-remaining single-host-shaped stores** (from
   `CURRENT_DEPLOYMENT_ARCHITECTURE.md`'s audit) that DISTRIBUTED mode
   does not yet solve, and must not be assumed solved: the gateway

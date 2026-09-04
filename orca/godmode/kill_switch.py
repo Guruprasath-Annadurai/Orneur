@@ -1,34 +1,35 @@
 """
 System-level Godmode kill switch (Phase 10 spec §15; Phase 14A.1
-stale-restore closure).
+authority-database migration; Phase 14A.2 security-root closure).
 
-Phase 14A.1 rewrite: state now lives in the SAME authority database as
-Godmode leases (`orca.godmode.lease_store`'s `kill_switch_state` table
--- SQLite file or Postgres, whichever backend is configured) rather
-than a standalone flag file. This closes two things at once:
+Phase 14A.2 rewrite: `is_active()` now consults
+`orca.godmode.security_root` as GROUND TRUTH -- a store that lives
+structurally outside `ORCA_HOME` and outside the Godmode authority
+database (SQLite or Postgres), specifically so that restoring EITHER
+of those together, in any combination, including the append-only
+ledger Phase 14A.1 added, can never roll effective kill-switch state
+backward. This closes the REAL vulnerability Phase 14A.1's own closure
+disclosed as a known limitation: restoring the kill-switch ledger
+TOGETHER WITH the stale authority database restores both to the same
+old state, defeating stale-restore protection entirely. Reproduced
+directly before this fix (see
+`orca.godmode.security_root`'s module docstring and
+`tests/test_security_root_whole_snapshot.py`'s first test).
 
-1. Cross-worker/cross-host visibility (spec §21) comes for free in the
-   Postgres/DISTRIBUTED profile -- every worker querying the same
-   shared database sees the same row, live, exactly like leases
-   already do.
-2. It puts kill-switch state changes through the SAME atomic
-   transaction discipline (`BEGIN IMMEDIATE` / `SELECT...FOR UPDATE`)
-   Phase 13's lease work already proved cross-process-safe.
-
-The REAL vulnerability this phase found and fixed: restoring an old
-backup of that same database silently reverts kill-switch state too --
-reproduced directly (kill switch OFF -> backup -> activate -> confirmed
-DENY -> restore old backup -> kill switch reads INACTIVE again ->
-elevated authorization ALLOWS). Fixed via `orca.godmode.kill_switch_ledger`,
-an append-only event ledger kept deliberately separate from the state
-table's own backup unit, plus a mandatory `reconcile_after_restore()`
-call every restore procedure must run (see
-docs/orneur/phase-14/KILL_SWITCH_DURABILITY.md).
-
-Every `activate()`/`deactivate()` call here writes to BOTH the live
-state table (so `is_active()` stays a fast, single-row read) AND the
-ledger (so a later stale restore can be caught and corrected) -- same
-two-layer pattern already proven for lease revocation in Phase 14A.
+`activate()`/`deactivate()` write to the security root FIRST (the
+authoritative write), then to the Phase 14A.1 authority-database mirror
+and ledger SECOND (spec §16's crash-safety ordering: if a crash happens
+between the two, the security root -- ground truth -- is already
+correct; the mirror catching up late is a display/audit-convenience
+gap, never a security gap). The mirror is kept for two reasons: (1)
+`orca.godmode.lease_store.ks_get_state()` remains available for
+`/readyz`'s existing "authority_store" reporting field without a
+behavior change there, and (2) `kill_switch_ledger.py`'s
+`reconcile_after_restore()` (Phase 14A.1's own fix) remains meaningful
+defense-in-depth for the case where the SECURITY ROOT is fine but the
+ordinary authority database was restored stale on its own (the
+originally-fixed, narrower scenario) -- it is simply no longer the
+ONLY layer of protection.
 
 The kill switch itself never depends on model behavior -- it is
 checked by Python code only; no tool exposes this module to
@@ -49,9 +50,11 @@ class KillSwitchStatus:
 
 
 def activate(*, reason: str = "") -> KillSwitchStatus:
+    from orca.godmode import security_root
     from orca.godmode.lease_store import ks_set_state
     from orca.godmode.kill_switch_ledger import record_event
 
+    security_root.advance("ACTIVE", reason=reason)
     at = now_iso()
     ks_set_state("ACTIVE", at, reason)
     record_event("ACTIVATE", reason=reason)
@@ -59,34 +62,37 @@ def activate(*, reason: str = "") -> KillSwitchStatus:
 
 
 def deactivate() -> KillSwitchStatus:
+    from orca.godmode import security_root
     from orca.godmode.lease_store import ks_set_state
     from orca.godmode.kill_switch_ledger import record_event
 
+    security_root.advance("INACTIVE")
     ks_set_state("INACTIVE", None, None)
     record_event("DEACTIVATE")
     return status()
 
 
 def is_active() -> bool:
-    """Fail-closed (spec §19): if the authority store cannot be reached
-    at all, `ks_get_state()` returns "UNKNOWN" -- treated here as
-    active, since an uncertain kill-switch state must never be
-    interpreted as permission to proceed with elevated actions."""
-    from orca.godmode.lease_store import ks_get_state
+    """Ground truth is the security root (Phase 14A.2) -- fail-closed
+    (spec §9/§19): an unreachable root, or any state other than the
+    exact string "INACTIVE", is treated as active."""
+    from orca.godmode import security_root
 
-    state, _, _ = ks_get_state()
-    return state != "INACTIVE"
+    return security_root.is_active()
 
 
 def status() -> KillSwitchStatus:
-    from orca.godmode.lease_store import ks_get_state
+    from orca.godmode import security_root
 
-    state, activated_at, reason = ks_get_state()
+    epoch, state = security_root.get_epoch_and_state()
     if state == "UNKNOWN":
-        # Store unreachable -- report as active/unknown-reason rather
-        # than fabricating a specific activation time, but the boolean
-        # itself must still say "assume active" (spec §19).
-        return KillSwitchStatus(active=True, activated_at=None, reason="AUTHORITY_STORE_UNAVAILABLE")
+        return KillSwitchStatus(active=True, activated_at=None, reason="SECURITY_ROOT_UNAVAILABLE")
     if state != "ACTIVE":
         return KillSwitchStatus(active=False, activated_at=None, reason=None)
+    # activated_at/reason are cosmetic display fields -- read from the
+    # authority-database mirror (Phase 14A.1) since the security root
+    # itself stores only epoch/state/updated_at/reason, not a separate
+    # human-facing "activated_at" distinct from its own updated_at.
+    from orca.godmode.lease_store import ks_get_state
+    _, activated_at, reason = ks_get_state()
     return KillSwitchStatus(active=True, activated_at=activated_at, reason=reason)
