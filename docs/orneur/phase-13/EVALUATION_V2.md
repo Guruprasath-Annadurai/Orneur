@@ -37,8 +37,8 @@ itself (spec §47).
 | Suite | Result |
 |---|---|
 | Full deterministic application suite (Phase 13.1) | 1448 passed, 0 failed, 1 xfailed (Finding 3, then open) |
-| Full deterministic application suite (Phase 13.2, after fix) | **1460 passed, 0 failed, 0 xfailed** (90 files) |
+| Full deterministic application suite (Phase 13.2, after both fixes) | **1461 passed, 0 failed, 0 xfailed** (90 files) |
 | Authoritative security suite (Phase 13.1) | 790 passed, 0 failed, 1 xfailed |
-| Authoritative security suite (Phase 13.2, after fix) | **802 passed, 0 failed, 0 xfailed** (90 files) |
+| Authoritative security suite (Phase 13.2, after both fixes) | **803 passed, 0 failed, 0 xfailed** (90 files) |
 | Live suite (`-m live_ollama_smoke`), Phase 13.1 | 43 passed, 0 failed (726.77s) |
 | Live suite (`-m live_ollama_smoke`), Phase 13.2 (after fix) | see `PHASE_13_FINAL_CLOSURE.md` for the confirmed result |

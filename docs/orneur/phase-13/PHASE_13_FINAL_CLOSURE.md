@@ -106,6 +106,14 @@ rewriting `orca/godmode/lease_store.py`'s persistence backend to SQLite
 with `BEGIN IMMEDIATE` transactions — see `GODMODE_DISTRIBUTED_ATOMICITY.md`
 for the full audit and design.
 
+While building the required delegation-race test for that fix (spec
+§17), a SECOND, distinct real vulnerability was found and fixed in the
+same pass: `orca.godmode.delegation.delegate_lease()` never actually
+reserved uses from the parent lease, allowing authority multiplication
+(a 5-use parent could spawn a 5-use child, doubling total authority to
+10). Fixed with a new atomic `reserve_uses()` function using the same
+transaction discipline.
+
 ## Original exploit (re-confirmed as the pre-fix baseline)
 
 Before implementation changes, the existing `xfail`ed reproducer
@@ -130,10 +138,10 @@ function signatures preserved — zero changes needed to `resolution.py`,
 
 | Suite | Result |
 |---|---|
-| Full application suite (deterministic) | **1460 passed, 0 failed, 0 xfailed** (up from 1448/0/1) |
-| Authoritative security suite (90 files) | **802 passed, 0 failed, 0 xfailed** (up from 790/0/1) |
+| Full application suite (deterministic) | **1461 passed, 0 failed, 0 xfailed** (up from 1448/0/1) |
+| Authoritative security suite (90 files) | **803 passed, 0 failed, 0 xfailed** (up from 790/0/1) |
 | Live suite (`-m live_ollama_smoke`) | see the final chat-delivered report for the confirmed post-fix result |
-| New regression tests | 11/11 (`tests/test_godmode_distributed_atomicity.py`) — 2-process repeated race, 8-process high contention, revocation/kill-switch/expiry races, restart safety, corruption, real-caller-path (AgentRuntime-compatible + file elevation), performance baseline |
+| New regression tests | 12/12 (`tests/test_godmode_distributed_atomicity.py`) — 2-process repeated race, 8-process high contention, revocation/kill-switch/expiry races, delegation race (Finding 4), restart safety, corruption, real-caller-path (AgentRuntime-compatible + file elevation), performance baseline |
 
 ## Multiprocess evidence
 
@@ -141,17 +149,18 @@ function signatures preserved — zero changes needed to `resolution.py`,
 - **8-process, max_uses=3, high contention**: exactly 3 successes, `uses_remaining=0`, never negative.
 - **Real caller path** (`resolve_and_consume_lease()`, the actual function AgentRuntime/connector elevation call): 2 processes, only 1 reaches `ALLOW`.
 - **File elevation path** (`elevated_write_file()`): 2 processes, only 1 privileged write authorized.
+- **Delegation race** (Finding 4): 2 processes each attempting to delegate 3 uses from a shared 5-use parent (2×3=6>5) — exactly 1 succeeds, parent ends at `uses_remaining=2`.
 
 ## Vulnerability accounting (final)
 
-- REAL_VULNERABILITIES_FOUND (Phase 13.1 + 13.2 combined): **3**
-- REAL_VULNERABILITIES_FIXED: **3** (all three)
+- REAL_VULNERABILITIES_FOUND (Phase 13.1 + 13.2 combined): **4**
+- REAL_VULNERABILITIES_FIXED: **4** (all four)
 - OPEN_FINDINGS: **0**
-- MULTIPROCESS_LEASE_USE_RACE: **0**, based on 11 passing, executable, real-multiprocess regression tests — not structural reasoning.
+- MULTIPROCESS_LEASE_USE_RACE: **0**, based on 12 passing, executable, real-multiprocess regression tests — not structural reasoning.
 
 ## Severity (final)
 
-CRITICAL: 0 | HIGH: 0 | MEDIUM: 3 (all fixed) | LOW: 0
+CRITICAL: 0 | HIGH: 0 | MEDIUM: 4 (all fixed) | LOW: 0
 
 ## Xfail policy compliance (spec §33)
 
@@ -182,6 +191,22 @@ transactional store behind the same, deliberately-unchanged
 3. This fix is host-local only (SQLite file locking) — a genuinely
    distributed (multi-host) deployment is explicitly out of scope,
    reserved for Phase 14 per spec §39-40.
+4. Connector elevation's multiprocess path was NOT separately tested
+   with a dedicated worker (only file elevation got one) — both share
+   the exact same underlying `resolve_and_consume_lease()` function,
+   already proven atomic via the AgentRuntime-compatible and file-
+   elevation tests, but a connector-specific reproduction was not built.
+5. "Crash consistency" (spec §19) was tested via a module-reload-based
+   restart-safety check, not a literal `kill -9` mid-transaction
+   injection — SQLite's own rollback-journal durability provides real
+   protection here by design, but this phase did not construct an
+   explicit hard-kill test to demonstrate it directly.
+6. A pre-existing, unrelated live test
+   (`tests/test_truth_fabric_integration.py::test_verify_answer_supports_a_grounded_claim`)
+   showed a transient `TruthTimeoutError` under sustained full-suite
+   load in earlier runs this session — confirmed unrelated to any
+   Phase 13.2 change (zero code overlap) and confirmed to pass reliably
+   in isolation; see the final report for this run's actual result.
 
 ## Remaining Phase-13 blockers
 
