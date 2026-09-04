@@ -193,15 +193,52 @@ def resolve_and_consume_lease(
     more serious than Phase 14A.4's own disclosure -- this choke point
     previously called NO audit function at all (the in-memory
     `orca.godmode.audit.record_elevation_event()` had exactly one real
-    caller in the whole codebase, a benchmark script). Ordering is
-    fail-closed by design: for an ALLOW decision, the durable audit
-    write happens BEFORE `consume_use()` -- if the audit write fails,
-    the action is denied and the lease use is never consumed, per
-    spec §16's "do not silently succeed while mandatory audit
-    persistence is unavailable." A DENY decision is still audited
-    (best-effort, after the fact) since nothing was granted either way
-    -- an audit-write failure for a DENY does not need to change the
-    decision, since the decision was already the safe one.
+    caller in the whole codebase, a benchmark script).
+
+    Phase 14B audit-commit-semantics patch: the ORIGINAL Phase 14B fix
+    above still had an audit-TRUTH defect (not a privilege escalation):
+    the durable write and `consume_use()` were separate transactions,
+    so an ALLOW could be durably recorded moments before a concurrent
+    competitor's `consume_use()` call actually won the race -- leaving
+    a record that says ALLOW for an action that never executed. This
+    is fixed by never recording a pre-consume event as a final
+    ALLOW/COMMITTED grant. The flow is now three explicit gates, each
+    of which must succeed before the caller may execute the privileged
+    side effect:
+
+      1. `resolve_lease()` (pure validation) -- DENY here is durably
+         recorded as AUTHORIZATION_DENIED and returned immediately;
+         nothing is attempted.
+      2. Durable audit PRECONDITION (AUTHORIZATION_ATTEMPT, result=
+         "PENDING_CONSUME" -- explicitly NOT "ALLOW", since it is not
+         yet a grant) must be durably written BEFORE `consume_use()`
+         is even called. If this write fails, the action is denied
+         before any lease use is touched (spec §16).
+      3. `consume_use()` must succeed. If a concurrent competitor won
+         the race, this is durably recorded as AUTHORIZATION_LOST_RACE
+         (result="LOST_RACE", never "ALLOW") and DENY is returned --
+         the earlier ATTEMPT record already made clear that row was
+         never a final grant.
+      4. Only after `consume_use()` actually succeeds is the FINAL
+         AUTHORIZATION_COMMITTED event (result="ALLOW") durably
+         written. This is the one and only event type/result
+         combination that means "the privileged side effect may
+         execute." If THIS write fails, the lease use has already been
+         consumed -- per this patch's explicit instruction, that use
+         is NOT restored or re-credited (an already-consumed-but-
+         unexecuted use is treated as acceptable safe failure, not an
+         inconsistency to silently repair), and the side effect is
+         still denied (a best-effort AUDIT_FAILURE_DENY marker is
+         attempted, ignoring its own success/failure, since the write
+         path that just failed is unlikely to succeed on immediate
+         retry).
+
+    `GODMODE_FALSE_COMMITTED_AUDIT` (audit counter, must always be 0):
+    by this construction, no event type other than
+    AUTHORIZATION_COMMITTED is ever written with result="ALLOW" --
+    verified directly by `durable_audit.count_false_committed_audit()`
+    and exercised under real concurrent multiprocess contention in
+    `tests/test_durable_godmode_audit.py`.
     """
     decision = resolve_lease(
         lease_id, tenant_id=tenant_id, capability_domain=capability_domain, capability=capability,
@@ -209,48 +246,98 @@ def resolve_and_consume_lease(
     )
 
     if decision.state != ElevatedPolicyDecisionState.ALLOW:
-        _audit_decision(decision, lease_id=lease_id, tenant_id=tenant_id, capability=capability,
-                         resource_scope=resource_scope, operation_scope=operation_scope,
-                         principal_id=principal_id, trace_id=trace_id)
+        from orca.godmode.contracts import ElevationAuditEventType
+        _audit_decision(
+            event_type=ElevationAuditEventType.AUTHORIZATION_DENIED, result="DENY",
+            lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+            resource_scope=resource_scope, operation_scope=operation_scope,
+            principal_id=principal_id, trace_id=trace_id,
+        )
         return decision
 
-    # Durable audit BEFORE consume_use() -- spec §16's fail-closed
-    # ordering. If this write fails, the action must be denied, not
-    # granted without a durable record.
-    audited = _audit_decision(decision, lease_id=lease_id, tenant_id=tenant_id, capability=capability,
-                               resource_scope=resource_scope, operation_scope=operation_scope,
-                               principal_id=principal_id, trace_id=trace_id)
-    if not audited:
+    from orca.godmode.contracts import ElevationAuditEventType
+
+    # Gate 2: durable audit PRECONDITION, written BEFORE consume_use().
+    # Explicitly NOT a final grant (spec patch §1) -- result is
+    # "PENDING_CONSUME", never "ALLOW".
+    attempted = _audit_decision(
+        event_type=ElevationAuditEventType.AUTHORIZATION_ATTEMPT, result="PENDING_CONSUME",
+        lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+        resource_scope=resource_scope, operation_scope=operation_scope,
+        principal_id=principal_id, trace_id=trace_id,
+    )
+    if not attempted:
         decision.state = ElevatedPolicyDecisionState.DENY
-        decision.reasons.append("durable audit persistence unavailable -- elevated action denied rather than granted without a durable record (spec §16)")
+        decision.reasons.append(
+            "AUDIT_FAILURE_DENY: durable audit precondition write failed -- elevated action "
+            "denied before lease consumption was attempted (spec §16)"
+        )
         return decision
 
+    # Gate 3: lease consumption must succeed.
     if not consume_use(lease_id):
         decision.state = ElevatedPolicyDecisionState.DENY
-        decision.reasons.append("lease use could not be atomically consumed (exhausted, revoked, or expired between validation and consumption)")
+        decision.reasons.append(
+            "AUTHORIZATION_LOST_RACE: lease use was not consumed (exhausted, revoked, expired, "
+            "or won by a concurrent competitor between validation and consumption) -- the prior "
+            "AUTHORIZATION_ATTEMPT record was never a final grant"
+        )
+        # Best-effort: nothing was granted, so a failure to record the
+        # loss does not need to change the (already safe) decision.
+        _audit_decision(
+            event_type=ElevationAuditEventType.AUTHORIZATION_LOST_RACE, result="LOST_RACE",
+            lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+            resource_scope=resource_scope, operation_scope=operation_scope,
+            principal_id=principal_id, trace_id=trace_id,
+        )
+        return decision
+
+    # Gate 4: the lease is now consumed. The final committed
+    # authorization state must ALSO be durably recorded before the
+    # caller may execute the privileged side effect (spec patch §3).
+    committed = _audit_decision(
+        event_type=ElevationAuditEventType.AUTHORIZATION_COMMITTED, result="ALLOW",
+        lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+        resource_scope=resource_scope, operation_scope=operation_scope,
+        principal_id=principal_id, trace_id=trace_id,
+    )
+    if not committed:
+        decision.state = ElevatedPolicyDecisionState.DENY
+        decision.reasons.append(
+            "AUDIT_FAILURE_DENY: lease use was consumed but the final committed-authorization "
+            "audit write failed -- privileged side effect denied; the consumed lease use is "
+            "NOT restored or re-credited (spec patch §5: consuming a lease without executing "
+            "is acceptable safe failure)"
+        )
+        # Best-effort marker only -- the write path that just failed
+        # is unlikely to succeed on an immediate retry.
+        _audit_decision(
+            event_type=ElevationAuditEventType.AUDIT_FAILURE_DENY, result="DENY",
+            lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+            resource_scope=resource_scope, operation_scope=operation_scope,
+            principal_id=principal_id, trace_id=trace_id,
+        )
         return decision
 
     return decision
 
 
 def _audit_decision(
-    decision: ElevatedPolicyDecision, *, lease_id: str, tenant_id: str, capability: str,
+    *, event_type, result: str, lease_id: str, tenant_id: str, capability: str,
     resource_scope: str, operation_scope: str, principal_id: str | None, trace_id: str | None,
 ) -> bool:
-    """Constructs and durably persists one `ElevationAuditEvent` for
-    this decision. Returns whether the durable write succeeded (the
-    caller only acts on this for ALLOW decisions -- see
-    `resolve_and_consume_lease()`'s docstring)."""
-    from orca.godmode.contracts import ElevationAuditEvent, ElevationAuditEventType
+    """Constructs and durably persists one `ElevationAuditEvent`.
+    `result` is passed explicitly by the caller (never derived from
+    `decision.state` here) so that a pre-consume or lost-race event can
+    never accidentally carry "ALLOW" -- see
+    `resolve_and_consume_lease()`'s docstring for the full gate
+    sequence. Returns whether the durable write succeeded."""
+    from orca.godmode.contracts import ElevationAuditEvent
     from orca.godmode.durable_audit import record_event_durable
 
-    event_type = (
-        ElevationAuditEventType.USE if decision.state == ElevatedPolicyDecisionState.ALLOW
-        else ElevationAuditEventType.DENY
-    )
     event = ElevationAuditEvent(
         event_type=event_type, principal_id=principal_id or "", tenant_id=tenant_id, lease_id=lease_id,
         capability=capability, resource_scope=resource_scope, operation_scope=operation_scope,
-        trace_id=trace_id, result=decision.state.value,
+        trace_id=trace_id, result=result,
     )
     return record_event_durable(event)

@@ -71,6 +71,7 @@ about this.
 | `AUDIT_BACKEND_SILENT_SUCCESS` | **0** | `orca.audit.log()`'s pre-existing, documented fail-soft contract confirmed directly against a broken backend — reports failure via `None`, never raises, never fabricates an entry id |
 | `GODMODE_AUDIT_LOSS` | **0** (Phase 14B) | Real finding fixed: `resolve_and_consume_lease()` previously called NO audit function at all; now durably audits every decision, fail-closed on write failure — `DURABLE_GODMODE_AUDIT.md` |
 | `GODMODE_AUDIT_CROSS_WORKER_DIVERGENCE` | **0** (mechanism proven locally) | Real multiprocess test against a real local Postgres database — not literal cross-host, see `DURABLE_GODMODE_AUDIT.md`'s scope note |
+| `GODMODE_FALSE_COMMITTED_AUDIT` | **0** (audit-commit-semantics patch) | A pre-consume event can never carry result="ALLOW" (it is written as AUTHORIZATION_ATTEMPT/"PENDING_CONSUME"); only AUTHORIZATION_COMMITTED, written after `consume_use()` succeeds, may say "ALLOW". Verified directly via `durable_audit.count_false_committed_audit()` and exercised under a real two-worker, max_uses=1 concurrent race (`tests/test_durable_godmode_audit.py::test_concurrent_workers_max_uses_one_exactly_one_committed_one_lost_race`) |
 | `DIRECT_ORIGIN_BYPASS` | NOT_EXECUTED | No Cloudflare/VPS deployment exists — `REAL_STAGING_TOPOLOGY.md` |
 | `TRUSTED_PROXY_HEADER_SPOOF` | NOT_EXECUTED | Same |
 | `BUDGET_RESET_ACROSS_HOST` | NOT_EXECUTED | No real second host exists to test against; structural argument unchanged from Phase 14A's own disclosure |

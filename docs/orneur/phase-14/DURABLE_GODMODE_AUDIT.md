@@ -85,22 +85,87 @@ returned decision is still correctly DENY. A fully atomic coupling
 was not implemented this phase; disclosed as a known limitation rather
 than silently accepted as perfect.
 
+## Audit-commit-semantics patch (closes the accuracy nuance above)
+
+The "disclosed accuracy nuance" above was not a privilege escalation,
+but it WAS a real audit-truth defect: a durable row could say
+`event_type="USE", result="ALLOW"` for an action that a concurrent
+competitor's `consume_use()` call ultimately won instead. An owner
+patch requested this be closed before any real multi-host
+elevated-action test runs. Fixed in
+`orca/godmode/resolution.py::resolve_and_consume_lease()` by replacing
+the single pre-consume audit write with an explicit four-gate sequence
+that never records a pre-consume event as a final grant:
+
+1. `resolve_lease()` DENY → durably recorded as `AUTHORIZATION_DENIED`
+   (result="DENY"), returned immediately.
+2. Durable audit **precondition**: `AUTHORIZATION_ATTEMPT`
+   (result="PENDING_CONSUME" — explicitly never "ALLOW") is written
+   BEFORE `consume_use()` is even called. Write failure → DENY, lease
+   untouched (unchanged from the original spec §16 ordering).
+3. `consume_use()` is attempted. Lost race → durably recorded as
+   `AUTHORIZATION_LOST_RACE` (result="LOST_RACE", never "ALLOW"), DENY
+   returned. **This is the fix**: the earlier ATTEMPT row already made
+   clear that row was never a grant, so no row anywhere claims ALLOW
+   for an action that did not execute.
+4. Only after `consume_use()` actually returns success is the FINAL
+   `AUTHORIZATION_COMMITTED` event (result="ALLOW") durably written —
+   the one and only event type/result pair that means the privileged
+   side effect may execute. If this write fails, the consumed lease
+   use is deliberately **not** restored or re-credited (per the
+   patch's explicit instruction — "consuming a lease without executing
+   is acceptable safe failure"); the caller still receives DENY, and a
+   best-effort `AUDIT_FAILURE_DENY` marker is attempted (its own
+   success is not required, since the write path that just failed is
+   unlikely to succeed on immediate retry).
+
+**New audit counter**: `GODMODE_FALSE_COMMITTED_AUDIT` — counts any
+persisted row with `result="ALLOW"` whose `event_type` is not
+`AUTHORIZATION_COMMITTED`. By this construction it is structurally 0;
+`orca/godmode/durable_audit.py::count_false_committed_audit()` computes
+it directly from a real event list rather than asserting it by
+narrative, and the new concurrency test below checks it against real
+concurrent contention, not just the single-worker happy path.
+
+**Real concurrency test**
+(`test_concurrent_workers_max_uses_one_exactly_one_committed_one_lost_race`):
+a single `max_uses=1` lease, two real separate OS processes (real
+`multiprocessing.get_context("spawn")`, real shared local Postgres)
+race for it. Result: exactly one worker's decision is ALLOW, durably
+recorded as the one `AUTHORIZATION_COMMITTED` row; the other is DENY,
+durably recorded as `AUTHORIZATION_LOST_RACE`; the lease's
+`uses_remaining` reaches exactly 0 (consumed once, not twice); and a
+simulated privileged side effect (a shared counter incremented only
+when `decision.state == "ALLOW"`) executes exactly once — zero double
+execution. Confirmed stable across 5 consecutive real runs.
+
+Cost of the fix: a successful elevation now writes 2 durable rows
+(ATTEMPT + COMMITTED) instead of 1 — a deliberate, disclosed trade of
+one extra write per decision for audit-truth correctness under real
+concurrent contention. `LEASE_CONSUMED` (also in the requested
+vocabulary) is not persisted as its own third row — the existence of
+the `AUTHORIZATION_COMMITTED` row already proves consumption succeeded
+(it is only ever written after `consume_use()` returns `True`), and
+`AUTHORIZATION_LOST_RACE` already proves it did not; a redundant third
+row per decision was judged not worth the extra write.
+
 ## Real test evidence
 
-`tests/test_durable_godmode_audit.py` — **10 tests, all passing**:
+`tests/test_durable_godmode_audit.py` — **11 tests, all passing**:
 
 | Test | What it proves |
 |---|---|
-| ALLOW durably audited, readable after a fresh reload | The core fix |
-| DENY also audited | Complete decision coverage |
-| Audit-write failure denies the action, use not consumed | Spec §16's fail-closed ordering |
-| Redaction preserved | No secret leakage into the durable record |
+| ALLOW durably audited (2 rows: ATTEMPT + COMMITTED), readable after a fresh reload | The core fix, updated for the commit-semantics patch |
+| DENY also audited (as `AUTHORIZATION_DENIED`) | Complete decision coverage |
+| Audit-write failure denies the action, use not consumed | Spec §16's fail-closed ordering (gate 2, unchanged) |
+| Redaction preserved (both rows) | No secret leakage into the durable record |
 | Cross-process visibility + "restart" persistence | Real multiprocess test against a real local Postgres database — see scope note below |
-| `verify_chain()` on a clean chain | No false positives |
+| `verify_chain()` on a clean chain (4 entries: 2 elevations × 2 rows) | No false positives |
 | `verify_chain()` detects a tampered row | Spec §18 |
 | `verify_chain()` detects a deleted row | Spec §18 |
-| SQLite Sovereign path | Explicit backend coverage |
+| SQLite Sovereign path (2 rows) | Explicit backend coverage |
 | Store unavailable denies | Fail-closed on connectivity loss |
+| **Two-worker, max_uses=1 real race → exactly one COMMITTED, one LOST_RACE, one consumption, zero double execution, `GODMODE_FALSE_COMMITTED_AUDIT == 0`** | **The audit-commit-semantics patch** |
 
 ## Honest scope note (spec §17 vs. this session's actual capability)
 
@@ -130,3 +195,13 @@ touches the actual elevation choke point every real caller depends on.
 No `~/.orca/godmode`/`~/.orneur-security-root` leakage; the real,
 pre-existing `~/.orca/auth.db` confirmed byte-for-byte unchanged
 throughout.
+
+**After the audit-commit-semantics patch**: targeted
+godmode/connector/simulation/redteam/security-root/core-db regression
+re-run — **428 passed, 0 failed**. Full deterministic-only suite
+(`pytest -m "not live_ollama_smoke"`) — **1551 passed, 0 failed, 43
+deselected** (up 1 from the pre-patch 1550, the new concurrency test).
+Security suite — **886 passed, 0 failed, 4 deselected** (up 1). Leak
+check re-run clean: no `~/.orca/godmode`, no `~/.orneur-security-root`,
+`~/.orca/auth.db` still byte-for-byte unchanged
+(md5 `79bdd5281e3fd3122985fff307269d12`).

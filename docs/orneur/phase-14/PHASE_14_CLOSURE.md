@@ -671,6 +671,62 @@ across all of Phase 14A/14B. Re-run in full:
   existing developer file) checksummed before and after — byte-for-
   byte unchanged (md5 `79bdd5281e3fd3122985fff307269d12`).
 
+## Audit-commit-semantics patch (applied after the section above, before any real multi-host test)
+
+An owner-requested patch closed this closure's own disclosed
+accuracy nuance (Known limitation 1 below, as originally written) --
+not a privilege escalation, but a real audit-truth defect: the durable
+audit write and `consume_use()` were separate transactions, so a row
+could say `result="ALLOW"` moments before a concurrent competitor's
+`consume_use()` call actually won the race.
+
+Fixed in `orca/godmode/resolution.py::resolve_and_consume_lease()` by
+replacing the single pre-consume audit write with an explicit
+four-gate sequence (`resolve_lease()` DENY → `AUTHORIZATION_DENIED`;
+durable precondition → `AUTHORIZATION_ATTEMPT`, result=
+"PENDING_CONSUME", never "ALLOW"; lost race → `AUTHORIZATION_LOST_RACE`,
+result="LOST_RACE", never "ALLOW"; only after `consume_use()` actually
+succeeds → the one true `AUTHORIZATION_COMMITTED`, result="ALLOW").
+If the final commit-audit write itself fails after the lease was
+already consumed, the consumed use is deliberately **not** restored or
+re-credited (an already-consumed-but-unexecuted use is accepted as
+safe failure, per the patch's explicit instruction), and the caller
+still receives DENY. Full design and rationale:
+`DURABLE_GODMODE_AUDIT.md`'s "Audit-commit-semantics patch" section.
+
+New audit counter `GODMODE_FALSE_COMMITTED_AUDIT` (must be 0 by
+construction) is computed directly from real event data via
+`orca/godmode/durable_audit.py::count_false_committed_audit()`, not
+just asserted by narrative.
+
+**New real test**:
+`test_concurrent_workers_max_uses_one_exactly_one_committed_one_lost_race`
+-- a single `max_uses=1` lease, two real separate OS processes racing
+via `multiprocessing.get_context("spawn")` against a real shared local
+Postgres database. Confirmed: exactly one worker ALLOW (durably
+`AUTHORIZATION_COMMITTED`), one worker DENY (durably
+`AUTHORIZATION_LOST_RACE`), the lease consumed exactly once, and a
+simulated privileged side effect (a shared counter gated on
+`decision.state == "ALLOW"`) executing exactly once -- zero double
+execution. Stable across 5 consecutive real runs.
+
+**Full regression after the patch**:
+
+- Targeted godmode/connector/simulation/redteam/security-root/core-db
+  regression: **428 passed, 0 failed**.
+- Deterministic-only (`pytest -m "not live_ollama_smoke"`): **1551
+  passed, 0 failed, 43 deselected** (136.92s) -- up 1 from 1550 (the
+  new concurrency test).
+- Security suite: **886 passed, 0 failed, 4 deselected** -- up 1.
+- State leak: `~/.orca/godmode` and `~/.orneur-security-root` both
+  confirmed absent. `~/.orca/auth.db` re-checksummed -- still
+  byte-for-byte unchanged (md5 `79bdd5281e3fd3122985fff307269d12`).
+
+This patch is local-only work, same as the rest of Phase 14B --  it
+does not touch, require, or claim any real multi-host/Cloudflare/VPS
+infrastructure. The OWNER ACTION REQUIRED checkpoint below is
+unchanged and still the only remaining blocker.
+
 ## OWNER ACTION REQUIRED (verbatim from `REAL_STAGING_TOPOLOGY.md`)
 
 ```
@@ -696,12 +752,22 @@ Resume condition: once Host A's connection details are available and
 
 ## Known limitations
 
-1. The durable-audit-write-then-consume_use() ordering is two separate
-   transactions, not one atomically coupled transaction — a narrow
-   race can leave an audit record for an ALLOW that a concurrent
-   competitor's `consume_use()` call ultimately won instead. Disclosed
-   as the safe direction of error (overclaiming, never underclaiming,
-   and never a privilege escalation), not silently treated as perfect.
+1. ~~The durable-audit-write-then-consume_use() ordering is two
+   separate transactions...~~ **Closed by the audit-commit-semantics
+   patch above.** A pre-consume event (`AUTHORIZATION_ATTEMPT`) can no
+   longer carry result="ALLOW"; only `AUTHORIZATION_COMMITTED`,
+   written after `consume_use()` has already succeeded, may say
+   "ALLOW". Verified under real two-worker concurrent contention, not
+   only the single-worker happy path. A residual, disclosed gap: the
+   commit-audit write and the earlier consume are still two
+   sequential operations rather than one atomically-coupled
+   transaction — if the commit-audit write itself fails AFTER a
+   successful consume, the consumed use is deliberately not restored
+   (accepted as safe failure per the patch's own instruction), so a
+   lease can, in that specific failure mode, be "spent" without its
+   privileged action ever executing. This is inventory loss, not an
+   audit-truth or privilege-escalation defect, and is disclosed rather
+   than silently accepted as fully solved.
 2. `ORNEUR_DATABASE_URL` still lacks the exact same fail-startup
    enforcement pattern extended to `ORNEUR_AUDIT_KEY` specifically —
    the HMAC signing key falls back to a loud, dev-only default if

@@ -39,6 +39,24 @@ decision. Design:
   model output/reasoning text -- only the same structured fields
   `ElevationAuditEvent` already defined (principal/tenant/lease/
   capability/scope/outcome/timestamp/trace).
+
+Audit-commit-semantics patch (still Phase 14B, applied before any real
+multi-host elevated-action test per the governing spec): the original
+design above had an audit-TRUTH defect, not a privilege escalation --
+the durable audit write and `consume_use()` were separate
+transactions, so a row could say result="ALLOW" moments before a
+concurrent competitor's `consume_use()` call actually won the race.
+Fixed in `orca/godmode/resolution.py::resolve_and_consume_lease()`: a
+successful elevation now writes TWO rows -- AUTHORIZATION_ATTEMPT
+(result="PENDING_CONSUME", written before `consume_use()`, never a
+final grant) and, only after `consume_use()` actually succeeds,
+AUTHORIZATION_COMMITTED (result="ALLOW", the one and only event
+type/result pair that means the privileged side effect may execute).
+A race loss is recorded as AUTHORIZATION_LOST_RACE (result=
+"LOST_RACE"), never "ALLOW". See `resolve_and_consume_lease()`'s
+docstring for the full four-gate sequence and
+`count_false_committed_audit()` below for the resulting
+`GODMODE_FALSE_COMMITTED_AUDIT` counter.
 """
 from __future__ import annotations
 
@@ -274,6 +292,25 @@ def _list_events_postgres(tenant_id: str) -> list[dict]:
             conn.close()
     except psycopg.Error:
         return []
+
+
+def count_false_committed_audit(events: list[dict]) -> int:
+    """`GODMODE_FALSE_COMMITTED_AUDIT` counter (audit-commit-semantics
+    patch). Counts any persisted event whose `result` says "ALLOW" but
+    whose `event_type` is NOT `AUTHORIZATION_COMMITTED` -- the one and
+    only event type `resolve_and_consume_lease()` writes with
+    result="ALLOW", and only after `consume_use()` has already
+    returned True. Must always be 0; a nonzero count means some other
+    event type persisted a final grant it never durably earned (the
+    exact audit-truth defect this patch closes). Callers pass in the
+    event list they already have (e.g. from `list_events_for_tenant()`
+    or a full-chain fetch) rather than this function re-querying, so it
+    composes with both per-tenant and whole-chain callers without a
+    third storage-dispatch path to maintain."""
+    return sum(
+        1 for e in events
+        if e.get("result") == "ALLOW" and e.get("event_type") != ElevationAuditEventType.AUTHORIZATION_COMMITTED.value
+    )
 
 
 def verify_chain(tenant_id: str | None = None) -> dict:

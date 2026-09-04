@@ -256,6 +256,18 @@ class ElevationAuditEventType(str, Enum):
     REVOKE = "REVOKE"
     KILL_SWITCH_DENIAL = "KILL_SWITCH_DENIAL"
 
+    # ── Phase 14B audit-commit-semantics patch ──────────────────────
+    # `orca.godmode.resolution.resolve_and_consume_lease()` uses these
+    # exclusively (not the legacy USE/DENY pair above) so that a
+    # pre-consume durable record can never be mistaken for a final
+    # committed grant. See durable_audit.py's module docstring.
+    AUTHORIZATION_ATTEMPT = "AUTHORIZATION_ATTEMPT"
+    AUTHORIZATION_DENIED = "AUTHORIZATION_DENIED"
+    LEASE_CONSUMED = "LEASE_CONSUMED"
+    AUTHORIZATION_COMMITTED = "AUTHORIZATION_COMMITTED"
+    AUTHORIZATION_LOST_RACE = "AUTHORIZATION_LOST_RACE"
+    AUDIT_FAILURE_DENY = "AUDIT_FAILURE_DENY"
+
 
 @dataclass
 class ElevationAuditEvent:
