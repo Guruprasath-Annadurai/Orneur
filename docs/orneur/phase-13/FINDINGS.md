@@ -175,3 +175,15 @@ investigation, per spec §45's honesty requirement, not silently dropped.
 as vulnerabilities — they are pre-existing, honestly-labeled design
 limitations of a degraded fallback path whose ceiling property was
 verified to hold, not new bypasses.)
+
+## Phase 13.3 — no new findings (verification/closure work only)
+
+Phase 13.3 closed the two evidence gaps Phase 13.2 itself disclosed
+(real-SIGKILL crash consistency; a dedicated connector multiprocess E2E)
+rather than hunting for new vulnerability classes. No new real
+vulnerability was discovered or fixed this phase — see
+[`CRASH_CONSISTENCY.md`](CRASH_CONSISTENCY.md) and
+[`CONNECTOR_MULTIPROCESS_AUTHORITY.md`](CONNECTOR_MULTIPROCESS_AUTHORITY.md)
+for the full evidence. The severity table above is therefore unchanged
+from Phase 13.2's close: still 4 real vulnerabilities found across
+Phases 13.1-13.2, all 4 fixed, 0 open.

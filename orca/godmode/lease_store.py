@@ -28,7 +28,9 @@ than kept as redundant dead code.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import time
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -63,6 +65,33 @@ class AuthorityStoreUnavailableError(Exception):
     §25's `AUTHORITY_STORE_UNAVAILABLE` represented as this exception
     class, never allowed to propagate as an ambiguous crash a caller
     might mishandle as "maybe it succeeded." """
+
+
+# --------------------------------------------------------------- Phase 13.3 §3: test-only crash-injection hook
+#
+# Inert in ordinary production operation: `_test_checkpoint()` is a single
+# `os.environ.get()` read that returns immediately unless
+# `GODMODE_TEST_CRASH_CHECKPOINT` is set to the EXACT checkpoint name
+# passed in -- an environment variable no production deployment ever
+# sets. This is what makes "kill a real OS process while it is provably
+# inside this exact point of an authority-store transaction" a real,
+# verifiable test (tests/test_godmode_crash_consistency.py) rather than a
+# guess about timing: the child process signals readiness by creating a
+# file, then blocks, giving the parent test process a wide, reliable
+# window to SIGKILL it before it can proceed past this exact checkpoint.
+_CRASH_CHECKPOINT_ENV = "GODMODE_TEST_CRASH_CHECKPOINT"
+_CRASH_SIGNAL_FILE_ENV = "GODMODE_TEST_CRASH_SIGNAL_FILE"
+
+
+def _test_checkpoint(name: str) -> None:
+    target = os.environ.get(_CRASH_CHECKPOINT_ENV)
+    if target != name:
+        return
+    signal_file = os.environ.get(_CRASH_SIGNAL_FILE_ENV)
+    if signal_file:
+        with open(signal_file, "w") as f:
+            f.write("ready")
+    time.sleep(30)  # far longer than any real test needs to observe the signal file and SIGKILL this process
 
 
 def _db_path() -> Path:
@@ -191,8 +220,10 @@ def revoke(lease_id: str) -> bool:
     try:
         with _connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            _test_checkpoint("AFTER_BEGIN_IMMEDIATE")
             try:
                 row = conn.execute("SELECT data FROM leases WHERE lease_id = ?", (lease_id,)).fetchone()
+                _test_checkpoint("AFTER_RECORD_READ")
                 if row is None:
                     conn.execute("ROLLBACK")
                     return False
@@ -200,12 +231,15 @@ def revoke(lease_id: str) -> bool:
                 if lease is None:
                     conn.execute("ROLLBACK")
                     return False
+                _test_checkpoint("AFTER_MUTABLE_VALIDATION")
                 lease.revocation_state = LeaseRevocationState.REVOKED
                 conn.execute(
                     "UPDATE leases SET revocation_state = ?, data = ? WHERE lease_id = ?",
                     (LeaseRevocationState.REVOKED.value, json.dumps(_to_dict(lease)), lease_id),
                 )
+                _test_checkpoint("AFTER_UPDATE_BEFORE_COMMIT")
                 conn.execute("COMMIT")
+                _test_checkpoint("AFTER_COMMIT")
                 return True
             except Exception:
                 conn.execute("ROLLBACK")
@@ -252,8 +286,10 @@ def consume_use(lease_id: str) -> bool:
     try:
         with _connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            _test_checkpoint("AFTER_BEGIN_IMMEDIATE")
             try:
                 row = conn.execute("SELECT data FROM leases WHERE lease_id = ?", (lease_id,)).fetchone()
+                _test_checkpoint("AFTER_RECORD_READ")
                 if row is None:
                     conn.execute("ROLLBACK")
                     return False
@@ -270,6 +306,7 @@ def consume_use(lease_id: str) -> bool:
                 if not verify_lease_integrity(lease):
                     conn.execute("ROLLBACK")
                     return False
+                _test_checkpoint("AFTER_MUTABLE_VALIDATION")
                 if lease.max_uses is None:
                     conn.execute("COMMIT")
                     return True  # explicitly unmetered lease -- reviewed at issuance, nothing to decrement
@@ -281,7 +318,9 @@ def consume_use(lease_id: str) -> bool:
                     "UPDATE leases SET uses_remaining = ?, data = ? WHERE lease_id = ?",
                     (lease.uses_remaining, json.dumps(_to_dict(lease)), lease_id),
                 )
+                _test_checkpoint("AFTER_UPDATE_BEFORE_COMMIT")
                 conn.execute("COMMIT")
+                _test_checkpoint("AFTER_COMMIT")
                 return True
             except Exception:
                 conn.execute("ROLLBACK")
@@ -323,8 +362,10 @@ def reserve_uses(lease_id: str, n: int) -> bool:
     try:
         with _connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            _test_checkpoint("AFTER_BEGIN_IMMEDIATE")
             try:
                 row = conn.execute("SELECT data FROM leases WHERE lease_id = ?", (lease_id,)).fetchone()
+                _test_checkpoint("AFTER_RECORD_READ")
                 if row is None:
                     conn.execute("ROLLBACK")
                     return False
@@ -341,6 +382,7 @@ def reserve_uses(lease_id: str, n: int) -> bool:
                 if not verify_lease_integrity(lease):
                     conn.execute("ROLLBACK")
                     return False
+                _test_checkpoint("AFTER_MUTABLE_VALIDATION")
                 if lease.max_uses is None:
                     conn.execute("COMMIT")
                     return True  # unmetered -- nothing to reserve
@@ -352,7 +394,9 @@ def reserve_uses(lease_id: str, n: int) -> bool:
                     "UPDATE leases SET uses_remaining = ?, data = ? WHERE lease_id = ?",
                     (lease.uses_remaining, json.dumps(_to_dict(lease)), lease_id),
                 )
+                _test_checkpoint("AFTER_UPDATE_BEFORE_COMMIT")
                 conn.execute("COMMIT")
+                _test_checkpoint("AFTER_COMMIT")
                 return True
             except Exception:
                 conn.execute("ROLLBACK")

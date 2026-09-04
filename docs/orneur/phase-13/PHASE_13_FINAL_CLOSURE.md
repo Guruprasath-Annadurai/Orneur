@@ -212,4 +212,86 @@ transactional store behind the same, deliberately-unchanged
 
 None.
 
+**READY TO ADVANCE TO PHASE 14: YES** *(superseded — see Phase 13.3 below for the final answer)*
+
+---
+
+# Phase 13.3 — Final Distributed-Authority Qualification
+
+## What Phase 13.3 closed
+
+The two evidence gaps Phase 13.2 disclosed as residual risks (#4 and #5
+in its own list above), and nothing else — per the governing spec's
+explicit instruction to close only these two gaps and not begin Phase 14
+work in the same pass.
+
+1. **Real crash consistency**: five test-only, env-var-gated checkpoint
+   hooks added to `orca/godmode/lease_store.py` (inert unless
+   `GODMODE_TEST_CRASH_CHECKPOINT` is set, which no production
+   deployment sets); a real `multiprocessing.Process.kill()` (SIGKILL)
+   sent to a real child process at each checkpoint, for `consume_use()`,
+   `revoke()`, and `reserve_uses()`. Full results:
+   [`CRASH_CONSISTENCY.md`](CRASH_CONSISTENCY.md).
+2. **Connector multiprocess E2E**: a dedicated multiprocess race through
+   the real `evaluate_connector_policy_with_elevation()` path (not
+   direct `lease_store` calls), using Phase 9's existing deterministic
+   fake connector/provider — no new provider integrations. Includes
+   wrong-action, wrong-tenant, and revocation-race controls, with an
+   explicit marker-file proof that authorization gating (not provider
+   idempotency) is what limits writes to exactly one. Full results:
+   [`CONNECTOR_MULTIPROCESS_AUTHORITY.md`](CONNECTOR_MULTIPROCESS_AUTHORITY.md).
+
+## New findings
+
+None. This phase closed disclosed evidence gaps rather than hunting for
+new vulnerability classes — see `FINDINGS.md`'s Phase 13.3 section.
+
+## New tests added
+
+- `tests/test_godmode_crash_consistency.py` — 11 tests (pre-commit crash
+  ×4 checkpoints, post-commit crash, revocation crash ×3 checkpoints,
+  delegation crash ×3 checkpoints).
+- `tests/test_connector_multiprocess_authority.py` — 4 tests (core race,
+  wrong-action control, wrong-tenant control, revocation race).
+
+Both files added to `docs/orneur/phase-9/security_suite_files.txt`.
+
+## Production code changes
+
+One file: `orca/godmode/lease_store.py` — five `_test_checkpoint()` call
+sites added (no-ops in production), plus the `_test_checkpoint()`
+function itself. No other production behavior changed. Performance is
+unchanged from Phase 13.2 (the full pre-existing godmode suite continues
+to run in the same sub-second range it did before this phase).
+
+## Vulnerability accounting (final, Phases 13.1-13.3 combined)
+
+- REAL_VULNERABILITIES_FOUND: **4** (unchanged from Phase 13.2)
+- REAL_VULNERABILITIES_FIXED: **4** (all four)
+- OPEN_FINDINGS: **0**
+- New Phase 13.3 audit counters, all confirmed **0**:
+  `AUTHORITY_CRASH_EXTRA_USE`, `AUTHORITY_CRASH_CORRUPTION`,
+  `AUTHORITY_COMMIT_RESPONSE_LOSS_RETRY`,
+  `CONNECTOR_MULTIPROCESS_DOUBLE_EXECUTION`.
+
+## Known residual risks (disclosed, carried forward)
+
+1. This work proves process-crash consistency (real SIGKILL), not
+   physical-disk/power-loss durability — see `CRASH_CONSISTENCY.md`'s
+   durability-scope section for the precise, conservative claim.
+2. A dedicated connector-specific kill-switch race was intentionally not
+   added as a second race test, on top of the connector revocation race
+   that was added — justified in
+   `CONNECTOR_MULTIPROCESS_AUTHORITY.md` by the fact that connector
+   elevation shares the exact kill-switch-check code path already
+   proven race-safe by Phase 13.2's own kill-switch-race test.
+3. All Phase 13.2 residual risks not specifically targeted by this phase
+   (host-local-only SQLite locking; RAG fallback-path limitations;
+   structured-input bomb testing against the live API/serve layer not
+   newly executed) remain unchanged and are not re-litigated here.
+
+## Remaining Phase-13 blockers
+
+None.
+
 **READY TO ADVANCE TO PHASE 14: YES**

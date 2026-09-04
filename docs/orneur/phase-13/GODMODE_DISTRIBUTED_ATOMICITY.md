@@ -138,3 +138,31 @@ surface — the function signatures (`save`, `get`, `revoke`, `consume_use`,
 `list_active_for_tenant`) were deliberately kept unchanged through this
 fix specifically so that swap could happen later without touching
 `resolution.py`, `issuance.py`, `session.py`, or any caller.
+
+---
+
+## Phase 13.3 addendum — crash consistency and connector coverage
+
+Phase 13.2 left two disclosed residual gaps (see its own "Known residual
+risks" #4 and #5 above): connector elevation shared `resolve_and_consume_lease()`
+without its own dedicated multiprocess test, and "crash consistency" had
+only been reasoned about via SQLite's rollback-journal semantics plus a
+module-reload-based restart check — never a literal `kill -9` mid-
+transaction. Phase 13.3 closes both. Full detail:
+
+- [`CRASH_CONSISTENCY.md`](CRASH_CONSISTENCY.md) — real SIGKILL injection
+  at five transaction checkpoints, all four required scenarios
+  (pre-commit, post-commit, revocation, delegation), journal-mode
+  disclosure, durability-claim scope.
+- [`CONNECTOR_MULTIPROCESS_AUTHORITY.md`](CONNECTOR_MULTIPROCESS_AUTHORITY.md) —
+  dedicated connector-elevation multiprocess E2E through the real
+  `evaluate_connector_policy_with_elevation()` path, with wrong-action,
+  wrong-tenant, and revocation-race controls, and an explicit anti-
+  idempotency-masking proof (marker files independent of provider state).
+
+No production code paths changed behavior in Phase 13.3 — the only
+production-file change is the five `_test_checkpoint()` call sites added
+to `orca/godmode/lease_store.py`, each an inert no-op unless the
+`GODMODE_TEST_CRASH_CHECKPOINT` environment variable is set, which no
+production deployment ever sets. Performance is unchanged from Phase
+13.2.
