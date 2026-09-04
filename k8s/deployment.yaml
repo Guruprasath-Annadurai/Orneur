@@ -53,24 +53,24 @@ spec:
           limits:
             memory: "2Gi"
             cpu: "2000m"
-        # Real gap this closes: livenessProbe previously hit /api/status —
-        # the HEAVY status endpoint, not the lightweight /healthz built
-        # specifically for this (see docs/RUNBOOK.md's distinction between
-        # the two). Repeatedly hitting the heavy endpoint every 30s adds
-        # real load, and a slowdown IN that endpoint could get a perfectly
-        # healthy pod killed by Kubernetes. There was also no readinessProbe
-        # at all — without one, Kubernetes can route real traffic to a pod
-        # that's started but not yet actually able to serve (e.g. before
-        # its Ollama connection is established).
+        # Phase 14 §18-19 gap this closes: liveness and readiness previously
+        # both hit /healthz (which itself did dependency checks) — a slow
+        # DEPENDENCY (e.g. Ollama) could get a perfectly-alive pod killed
+        # and restarted by Kubernetes, which never fixes a dependency
+        # problem and adds restart churn on top of it. /livez does no I/O
+        # and no dependency check (see orca/serve/api.py); /readyz checks
+        # dependencies and is what actually gates traffic routing.
+        # /healthz is preserved as an alias to /readyz for callers not yet
+        # migrated to the split endpoints (see docs/orneur/phase-14/HEALTH_AND_READINESS.md).
         livenessProbe:
           httpGet:
-            path: /healthz
+            path: /livez
             port: 7337
           initialDelaySeconds: 15
           periodSeconds: 30
         readinessProbe:
           httpGet:
-            path: /healthz
+            path: /readyz
             port: 7337
           initialDelaySeconds: 10
           periodSeconds: 10

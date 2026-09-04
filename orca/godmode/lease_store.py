@@ -1,29 +1,43 @@
 """
 Capability lease persistence (Phase 10 spec §57-58; Phase 13.2 spec
-§1-9). SQLite-backed under `ORCA_HOME/godmode/leases.db` (stdlib
-`sqlite3`, no new dependency) -- the same real persistence convention as
-`orca.gateway.deployment`'s `ModelDeployment` records, extended to be
-genuinely safe across MULTIPLE OS PROCESSES sharing the same file, not
-just multiple threads within one process.
+§1-9; Phase 14 spec §34-36). Dual-backend by the same design already
+established in `orca.auth.db`:
+
+  - Default (no `ORNEUR_GODMODE_DATABASE_URL` set): SQLite under
+    `ORCA_HOME/godmode/leases.db` (stdlib `sqlite3`, no new dependency).
+    This is the ORNEUR SOVEREIGN profile -- a single host, `BEGIN
+    IMMEDIATE` transactions, proven cross-process-safe on one host by
+    Phase 13.2/13.3 (real multiprocess races, real SIGKILL crash
+    injection). Nothing about this path changes in Phase 14.
+  - Production/distributed mode (`ORNEUR_GODMODE_DATABASE_URL` set, e.g.
+    `postgresql://...`): PostgreSQL. This is the ORNEUR DISTRIBUTED
+    profile's answer to Phase 14 spec §4-6/§34: "do NOT let each host
+    maintain an independent authority database" -- SQLite's file lock
+    is inherently single-host, so once ORNEUR runs on more than one
+    host, every host must point at the SAME transactional database
+    rather than each keeping its own `leases.db`. See
+    docs/orneur/phase-14/AUTHORITY_DISTRIBUTION.md for the full
+    decision record and real (non-cloud, local Postgres) test evidence.
+
+Both backends preserve identical atomicity semantics for the exact same
+reason: SQLite's `BEGIN IMMEDIATE` acquires a RESERVED lock on the whole
+database file before any read in the transaction; Postgres's
+`SELECT ... FOR UPDATE` acquires a row-level lock on the specific lease
+row before any read used for a mutation decision. Either way, a second
+concurrent transaction attempting to read-modify-write the SAME lease
+blocks until the first commits or rolls back, then re-reads the
+now-current row -- this is what makes "only one of N callers racing a
+one-use lease can ever decrement it" a real, engine-enforced guarantee
+under both backends, not an in-process-only promise.
 
 Phase 13.2 finding (docs/orneur/phase-13/GODMODE_DISTRIBUTED_ATOMICITY.md):
 the previous one-JSON-file-per-lease + `threading.Lock` design was atomic
 only within a single Python process -- a real `multiprocessing.Process`-
 based test proved two independent OS processes could both read
 `uses_remaining == 1` and both write back `0`, since nothing serialized
-the read-modify-write across process boundaries. Fixed here: `consume_use()`
-and `revoke()` now run as a single SQLite transaction using `BEGIN
-IMMEDIATE`, which acquires a RESERVED lock on the database file that is
-enforced by the OS (via SQLite's own file-locking, `flock`-equivalent on
-POSIX) -- genuinely visible across processes, not just threads. Only one
-transaction can hold that lock at a time; a second, concurrent
-`BEGIN IMMEDIATE` from ANY process (or thread) blocks until the first
-commits or rolls back, then re-reads the now-current row. This is
-`orca.godmode.lease_store`'s ENTIRE cross-process safety mechanism -- no
-`threading.Lock` is needed anymore (SQLite's own locking already
-subsumes it, including for same-process concurrent callers), so the
-former `_lock_for()`/`_lease_locks` machinery has been removed rather
-than kept as redundant dead code.
+the read-modify-write across process boundaries. Fixed with SQLite's
+`BEGIN IMMEDIATE` for the single-host case; Phase 14 extends the same
+guarantee across hosts via the Postgres backend below.
 """
 from __future__ import annotations
 
@@ -35,7 +49,7 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
-from orca.config import ORCA_HOME
+from orca.config import ORCA_HOME, orneur_env
 from orca.godmode.contracts import (
     ArgumentBindingMode,
     CapabilityDomain,
@@ -48,6 +62,14 @@ from orca.godmode.contracts import (
 from orca.godmode.integrity import verify_lease_integrity
 
 LEASE_DIR = ORCA_HOME / "godmode" / "leases"
+
+# Backend selection recomputed as a function (not a module-level constant)
+# so tests -- and a running process reacting to a config reload the same
+# way `orca.auth.db` already assumes -- can flip backends by setting/
+# clearing the env var and re-importing, matching this module's existing
+# test convention of `importlib.reload(orca.godmode.lease_store)`.
+def _backend() -> str:
+    return "postgres" if orneur_env("GODMODE_DATABASE_URL") else "sqlite"
 
 # Bounded lock-wait (spec §26: "avoid unbounded process blocking... on
 # timeout: deny"). sqlite3's own `timeout` parameter controls how long a
@@ -173,7 +195,7 @@ def _row_to_lease(row: sqlite3.Row) -> CapabilityLease | None:
         return None
 
 
-def save(lease: CapabilityLease) -> None:
+def _save_sqlite(lease: CapabilityLease) -> None:
     """Upsert -- used for both first issuance and any full-record
     rewrite. Runs in its own short IMMEDIATE transaction so a save can
     never interleave with a concurrent consume_use()/revoke() on the
@@ -201,7 +223,7 @@ def save(lease: CapabilityLease) -> None:
         raise AuthorityStoreUnavailableError("could not acquire the authority store lock to save this lease")
 
 
-def get(lease_id: str) -> CapabilityLease | None:
+def _get_sqlite(lease_id: str) -> CapabilityLease | None:
     try:
         with _connect() as conn:
             row = conn.execute("SELECT data FROM leases WHERE lease_id = ?", (lease_id,)).fetchone()
@@ -212,7 +234,7 @@ def get(lease_id: str) -> CapabilityLease | None:
     return _row_to_lease(row)
 
 
-def revoke(lease_id: str) -> bool:
+def _revoke_sqlite(lease_id: str) -> bool:
     """Immediate revocation (spec §14) -- the lease becomes unusable for
     new actions the instant this returns, regardless of remaining TTL or
     uses_remaining. Atomic across processes: uses the same BEGIN
@@ -261,7 +283,7 @@ def is_expired(lease: CapabilityLease, *, at: str | None = None) -> bool:
         return True  # fail closed on an unparseable expiry
 
 
-def consume_use(lease_id: str) -> bool:
+def _consume_use_sqlite(lease_id: str) -> bool:
     """
     Atomic single-use (or N-use) consumption (spec §35-36; Phase 13.2
     spec §4-9, §10-13). Returns True if a use was successfully consumed,
@@ -332,7 +354,7 @@ def consume_use(lease_id: str) -> bool:
         return False
 
 
-def reserve_uses(lease_id: str, n: int) -> bool:
+def _reserve_uses_sqlite(lease_id: str, n: int) -> bool:
     """
     Phase 13.2 spec §17 finding: `orca.godmode.delegation.delegate_lease()`
     read `parent.uses_remaining` to VALIDATE that `child_max_uses` did not
@@ -405,7 +427,7 @@ def reserve_uses(lease_id: str, n: int) -> bool:
         return False
 
 
-def list_active_for_tenant(tenant_id: str) -> list[CapabilityLease]:
+def _list_active_for_tenant_sqlite(tenant_id: str) -> list[CapabilityLease]:
     try:
         with _connect() as conn:
             rows = conn.execute(
@@ -423,3 +445,331 @@ def list_active_for_tenant(tenant_id: str) -> list[CapabilityLease]:
             continue
         leases.append(lease)
     return leases
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 14 §34-36: PostgreSQL backend for the ORNEUR DISTRIBUTED profile.
+#
+# The atomicity primitive here is `SELECT ... FOR UPDATE` inside an explicit
+# transaction, taken on the lease's own row before any read used to decide a
+# mutation. This is actually FINER-GRAINED than SQLite's `BEGIN IMMEDIATE`
+# (which locks the whole database file): a `FOR UPDATE` on lease A does not
+# block a concurrent transaction on lease B. For the property this codebase
+# actually needs -- "two callers racing the SAME lease can never both
+# consume/reserve/revoke it" -- both give an identical, engine-enforced
+# guarantee. A bounded `statement_timeout` (mirroring `_LOCK_TIMEOUT_S`)
+# is set per-transaction so a caller that cannot acquire the row lock in
+# time gets `psycopg.errors.QueryCanceled`, caught at the same public
+# function boundary as SQLite's `OperationalError` and converted to the
+# same fail-closed return value -- never a fresh ambiguous exception type
+# a caller has to learn to catch separately.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PG_LOCK_TIMEOUT_MS = int(_LOCK_TIMEOUT_S * 1000)
+
+_PG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS godmode_leases (
+    lease_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    uses_remaining INTEGER,
+    revocation_state TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_godmode_leases_tenant ON godmode_leases(tenant_id);
+"""
+
+
+def _pg_connect():
+    """One fresh connection per call, same rationale as `_connect()` above
+    -- this is a low-frequency authority-boundary operation, not a hot
+    request path. `autocommit=False` so every caller controls its own
+    transaction boundary explicitly (never an implicit one left open)."""
+    import psycopg
+
+    dsn = orneur_env("GODMODE_DATABASE_URL")
+    conn = psycopg.connect(dsn, autocommit=False, connect_timeout=_LOCK_TIMEOUT_S)
+    with conn.cursor() as cur:
+        cur.execute(f"SET statement_timeout = {_PG_LOCK_TIMEOUT_MS}")
+        cur.execute(_PG_SCHEMA)
+    conn.commit()
+    return conn
+
+
+def _pg_row_to_lease(data: str) -> CapabilityLease | None:
+    try:
+        return _from_dict(json.loads(data))
+    except Exception:
+        return None
+
+
+def _save_postgres(lease: CapabilityLease) -> None:
+    import psycopg
+
+    payload = json.dumps(_to_dict(lease))
+    try:
+        conn = _pg_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO godmode_leases (lease_id, tenant_id, uses_remaining, revocation_state, expires_at, data)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (lease_id) DO UPDATE SET
+                        tenant_id=excluded.tenant_id, uses_remaining=excluded.uses_remaining,
+                        revocation_state=excluded.revocation_state, expires_at=excluded.expires_at, data=excluded.data
+                    """,
+                    (lease.lease_id, lease.tenant_id, lease.uses_remaining, lease.revocation_state.value, lease.expires_at, payload),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except psycopg.Error:
+        raise AuthorityStoreUnavailableError("could not reach the authority store (postgres) to save this lease")
+
+
+def _get_postgres(lease_id: str) -> CapabilityLease | None:
+    import psycopg
+
+    try:
+        conn = _pg_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT data FROM godmode_leases WHERE lease_id = %s", (lease_id,))
+                row = cur.fetchone()
+            conn.commit()
+        finally:
+            conn.close()
+    except psycopg.Error:
+        return None  # fail closed -- see AuthorityStoreUnavailableError's docstring
+    if row is None:
+        return None
+    return _pg_row_to_lease(row[0])
+
+
+def _revoke_postgres(lease_id: str) -> bool:
+    import psycopg
+
+    try:
+        conn = _pg_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT data FROM godmode_leases WHERE lease_id = %s FOR UPDATE", (lease_id,))
+                _test_checkpoint("AFTER_RECORD_READ")
+                row = cur.fetchone()
+                if row is None:
+                    conn.rollback()
+                    return False
+                lease = _pg_row_to_lease(row[0])
+                if lease is None:
+                    conn.rollback()
+                    return False
+                _test_checkpoint("AFTER_MUTABLE_VALIDATION")
+                lease.revocation_state = LeaseRevocationState.REVOKED
+                cur.execute(
+                    "UPDATE godmode_leases SET revocation_state = %s, data = %s WHERE lease_id = %s",
+                    (LeaseRevocationState.REVOKED.value, json.dumps(_to_dict(lease)), lease_id),
+                )
+                _test_checkpoint("AFTER_UPDATE_BEFORE_COMMIT")
+            conn.commit()
+            _test_checkpoint("AFTER_COMMIT")
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    except psycopg.Error:
+        return False
+
+
+def _consume_use_postgres(lease_id: str) -> bool:
+    import psycopg
+
+    try:
+        conn = _pg_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT data FROM godmode_leases WHERE lease_id = %s FOR UPDATE", (lease_id,))
+                _test_checkpoint("AFTER_RECORD_READ")
+                row = cur.fetchone()
+                if row is None:
+                    conn.rollback()
+                    return False
+                lease = _pg_row_to_lease(row[0])
+                if lease is None:
+                    conn.rollback()
+                    return False
+                if lease.revocation_state == LeaseRevocationState.REVOKED:
+                    conn.rollback()
+                    return False
+                if is_expired(lease):
+                    conn.rollback()
+                    return False
+                if not verify_lease_integrity(lease):
+                    conn.rollback()
+                    return False
+                _test_checkpoint("AFTER_MUTABLE_VALIDATION")
+                if lease.max_uses is None:
+                    conn.commit()
+                    return True  # explicitly unmetered lease -- nothing to decrement
+                if lease.uses_remaining is None or lease.uses_remaining <= 0:
+                    conn.rollback()
+                    return False
+                lease.uses_remaining -= 1
+                cur.execute(
+                    "UPDATE godmode_leases SET uses_remaining = %s, data = %s WHERE lease_id = %s",
+                    (lease.uses_remaining, json.dumps(_to_dict(lease)), lease_id),
+                )
+                _test_checkpoint("AFTER_UPDATE_BEFORE_COMMIT")
+            conn.commit()
+            _test_checkpoint("AFTER_COMMIT")
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    except psycopg.Error:
+        return False
+
+
+def _reserve_uses_postgres(lease_id: str, n: int) -> bool:
+    import psycopg
+
+    if n <= 0:
+        return False
+    try:
+        conn = _pg_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT data FROM godmode_leases WHERE lease_id = %s FOR UPDATE", (lease_id,))
+                _test_checkpoint("AFTER_RECORD_READ")
+                row = cur.fetchone()
+                if row is None:
+                    conn.rollback()
+                    return False
+                lease = _pg_row_to_lease(row[0])
+                if lease is None:
+                    conn.rollback()
+                    return False
+                if lease.revocation_state == LeaseRevocationState.REVOKED:
+                    conn.rollback()
+                    return False
+                if is_expired(lease):
+                    conn.rollback()
+                    return False
+                if not verify_lease_integrity(lease):
+                    conn.rollback()
+                    return False
+                _test_checkpoint("AFTER_MUTABLE_VALIDATION")
+                if lease.max_uses is None:
+                    conn.commit()
+                    return True  # unmetered -- nothing to reserve
+                if lease.uses_remaining is None or lease.uses_remaining < n:
+                    conn.rollback()
+                    return False
+                lease.uses_remaining -= n
+                cur.execute(
+                    "UPDATE godmode_leases SET uses_remaining = %s, data = %s WHERE lease_id = %s",
+                    (lease.uses_remaining, json.dumps(_to_dict(lease)), lease_id),
+                )
+                _test_checkpoint("AFTER_UPDATE_BEFORE_COMMIT")
+            conn.commit()
+            _test_checkpoint("AFTER_COMMIT")
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    except psycopg.Error:
+        return False
+
+
+def _list_active_for_tenant_postgres(tenant_id: str) -> list[CapabilityLease]:
+    import psycopg
+
+    try:
+        conn = _pg_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT data FROM godmode_leases WHERE tenant_id = %s AND revocation_state != %s",
+                    (tenant_id, LeaseRevocationState.REVOKED.value),
+                )
+                rows = cur.fetchall()
+            conn.commit()
+        finally:
+            conn.close()
+    except psycopg.Error:
+        return []
+    leases = []
+    for row in rows:
+        lease = _pg_row_to_lease(row[0])
+        if lease is None:
+            continue
+        if is_expired(lease):
+            continue
+        leases.append(lease)
+    return leases
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public API -- dispatches to the SQLite or Postgres implementation above
+# based on `_backend()`. Every caller in the codebase (resolution.py,
+# issuance.py, delegation.py, connector_elevation.py, and every existing
+# test) continues to call these exact same six function names with the
+# exact same signatures -- this is precisely why Phase 13.2 kept the
+# original SQLite migration's function surface frozen, and it pays off
+# again here: adding a second backend required zero changes outside this
+# one file.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def save(lease: CapabilityLease) -> None:
+    if _backend() == "postgres":
+        return _save_postgres(lease)
+    return _save_sqlite(lease)
+
+
+def get(lease_id: str) -> CapabilityLease | None:
+    if _backend() == "postgres":
+        return _get_postgres(lease_id)
+    return _get_sqlite(lease_id)
+
+
+def revoke(lease_id: str) -> bool:
+    """Dispatches to the backend-specific revoke, then records the
+    revocation in the append-only ledger (Phase 14 §67-68 --
+    orca.godmode.revocation_ledger) so a later restore of a stale
+    pre-revocation backup can be reconciled back to REVOKED rather than
+    silently resurrecting the privilege. Recorded only on an actual
+    successful revocation (not on a no-op/already-revoked/not-found
+    call) -- the ledger records events, not attempts."""
+    if _backend() == "postgres":
+        result = _revoke_postgres(lease_id)
+    else:
+        result = _revoke_sqlite(lease_id)
+    if result:
+        from orca.godmode.revocation_ledger import record_revocation
+        record_revocation(lease_id)
+    return result
+
+
+def consume_use(lease_id: str) -> bool:
+    if _backend() == "postgres":
+        return _consume_use_postgres(lease_id)
+    return _consume_use_sqlite(lease_id)
+
+
+def reserve_uses(lease_id: str, n: int) -> bool:
+    if _backend() == "postgres":
+        return _reserve_uses_postgres(lease_id, n)
+    return _reserve_uses_sqlite(lease_id, n)
+
+
+def list_active_for_tenant(tenant_id: str) -> list[CapabilityLease]:
+    if _backend() == "postgres":
+        return _list_active_for_tenant_postgres(tenant_id)
+    return _list_active_for_tenant_sqlite(tenant_id)

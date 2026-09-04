@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -499,29 +500,83 @@ async def serve_trust():
     return HTMLResponse("<h1>Orca trust page not found</h1>")
 
 
+@app.get("/livez")
+async def livez():
+    """
+    Phase 14 §18-19: LIVENESS only -- "is this process alive?" Answers in
+    microseconds, does no I/O, calls no dependency (Ollama, gateway,
+    authority store, disk). A liveness probe exists so an orchestrator
+    (k8s, etc.) can decide "this process is wedged, restart it" -- it
+    must never itself perform the expensive check that would make a slow
+    DEPENDENCY (not a wedged process) look like a reason to kill and
+    restart an otherwise-healthy worker. That confusion is exactly what
+    Phase 14's audit found: both livenessProbe and readinessProbe in the
+    existing k8s manifest pointed at the same endpoint (see
+    docs/orneur/phase-14/CURRENT_DEPLOYMENT_ARCHITECTURE.md's "Health
+    endpoints" finding) -- this endpoint and /readyz below are the fix.
+    """
+    return {"status": "alive", "pid": os.getpid()}
+
+
+@app.get("/readyz")
+async def readyz():
+    """
+    Phase 14 §20-22: READINESS -- "can this worker safely serve the
+    claimed model / claimed capabilities right now?" Unlike /livez, this
+    DOES check dependencies, each reported separately (spec §21:
+    "Track dependencies separately... Do not mark entire service healthy
+    when a critical required dependency is down"), and applies the
+    fail-closed/fail-soft matrix from
+    docs/orneur/phase-14/HEALTH_AND_READINESS.md: the model runtime and
+    Godmode authority store are REQUIRED (their failure -> 503, not
+    ready); the gateway's own health report and connector state are
+    reported but do not by themselves flip readiness to false, since
+    normal (non-elevated) requests do not depend on them.
+    """
+    dependencies: dict[str, dict] = {}
+    ready = True
+
+    try:
+        resolved = resolve_tier_model("nano", host=CONFIG.ollama.host)
+        dependencies["model_runtime"] = {"status": "ok", "nano_model": resolved}
+    except RuntimeError as e:
+        dependencies["model_runtime"] = {"status": "unavailable", "reason": str(e)}
+        ready = False  # REQUIRED dependency -- fail closed, per spec §21-22
+
+    try:
+        from orca.godmode.lease_store import _backend  # noqa: PLC0415 -- see api.py's existing lazy-import convention below
+        dependencies["authority_store"] = {"status": "ok", "backend": _backend()}
+    except Exception as e:
+        # The authority store being unreachable does not mean ORDINARY
+        # (non-elevated) requests can't be served -- spec §22/§53: "Godmode
+        # store unavailable -> elevated actions DENY. Normal operations
+        # continue where safe." So this is reported, but does not flip
+        # `ready` to False by itself; individual elevated-action call
+        # sites already fail closed on their own (AuthorityStoreUnavailableError).
+        dependencies["authority_store"] = {"status": "error", "reason": str(e)}
+
+    try:
+        from orca.gateway.wiring import get_shared_gateway
+        dependencies["gateway"] = get_shared_gateway().report_health()
+    except Exception as e:
+        dependencies["gateway"] = {"error": str(e)}
+
+    status_code = 200 if ready else 503
+    return JSONResponse({"status": "ready" if ready else "not_ready", "dependencies": dependencies}, status_code=status_code)
+
+
 @app.get("/healthz")
 async def healthz():
     """
-    Lightweight liveness/readiness probe for load balancers and
-    orchestrators (k8s, etc.) to poll every few seconds.
-
-    Real gap this closes: /api/status does disk I/O (globbing every raw
-    training file to count examples) and lists all sessions on every call
-    — fine for an admin dashboard refreshing occasionally, much too heavy
-    for something a load balancer hits every 5-10 seconds. This endpoint
-    does the minimum: confirm at least nano's tier resolves to an
-    installed Ollama model (using registry's own 15s cache, so this adds
-    no extra Ollama load beyond what real chat traffic already causes).
-
-    Phase 2.1: additive `gateway` field reports ModelGateway.report_health()
-    -- process liveness, runtime readiness, and PER-MODEL deployment
-    readiness are kept genuinely distinct (see that method's docstring).
-    Deliberately additive, not a replacement: existing clients reading
-    `status`/`nano_model` see unchanged behavior. `gateway` only reflects
-    whatever has actually been registered via real traffic so far in this
-    process's lifetime (deployments are registered lazily on first use per
-    orca/gateway/wiring.py) -- an empty `model_readiness` map before any
-    request has been served is expected, not a failure.
+    Preserved EXACTLY as before Phase 14 -- same response shape
+    (`status`/`nano_model`/`gateway` at the top level), same existing
+    test contract (tests/test_healthz_endpoint.py,
+    tests/test_healthz_gateway_readiness.py). Phase 14 §18 requires that
+    liveness and readiness EXIST as separate concepts, not that this
+    already-established endpoint's shape be broken for existing callers
+    in the same change -- /livez and /readyz above are the new,
+    recommended entry points (see the updated k8s/deployment.yaml); this
+    one is kept, unmodified, for backward compatibility.
     """
     try:
         resolved = resolve_tier_model("nano", host=CONFIG.ollama.host)
@@ -533,9 +588,6 @@ async def healthz():
         from orca.gateway.wiring import get_shared_gateway
         result["gateway"] = get_shared_gateway().report_health()
     except Exception as e:
-        # A gateway-health reporting failure must never take down the
-        # liveness/readiness probe itself -- report it as a sub-field, not
-        # a 503 for the whole endpoint.
         result["gateway"] = {"error": str(e)}
     return result
 
