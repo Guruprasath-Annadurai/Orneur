@@ -281,6 +281,78 @@ def test_expiry_race_near_boundary_has_well_defined_transactional_validity_point
     assert not consume_use(lease.lease_id)  # expired -- denied, no ambiguity
 
 
+# --------------------------------------------------------------- §17: delegation race (real second finding, fixed)
+
+
+def _delegate_worker(parent_lease_id: str, home: str, child_max_uses: int, start_barrier, result_queue):
+    _setup_shared_home(home)
+    from orca.godmode.delegation import LeaseDelegationError, delegate_lease
+    start_barrier.wait()
+    try:
+        child = delegate_lease(parent_lease_id, child_principal_id=f"child-{os.getpid()}", child_max_uses=child_max_uses, child_duration_s=100, reason="delegation race test")
+        result_queue.put(("ok", child.uses_remaining))
+    except LeaseDelegationError as e:
+        result_queue.put(("denied", str(e)))
+
+
+def test_delegation_race_total_authority_never_exceeds_parent_allowance(tmp_path):
+    """
+    Spec §17 -- REAL SECOND FINDING, found and fixed during this phase's
+    own closure work (not merely audited): `orca.godmode.delegation.
+    delegate_lease()` used to only READ-and-compare
+    `parent.uses_remaining` against `child_max_uses`, never actually
+    reserving/decrementing anything from the parent -- a delegable parent
+    with `uses_remaining=5` could delegate a child ALSO carrying its own
+    independent `uses_remaining=5`, doubling total available authority to
+    10. Fixed: `delegate_lease()` now calls the new, atomic
+    `orca.godmode.lease_store.reserve_uses()` (same `BEGIN IMMEDIATE`
+    transaction discipline as `consume_use()`) to decrement the parent
+    BEFORE creating the child.
+
+    This test races TWO REAL PROCESSES, each attempting to delegate
+    `child_max_uses=3` from the SAME parent lease with `uses_remaining=5`
+    -- required: at most one delegation can succeed (3 <= 5, but two
+    successes would reserve 6 > 5), and the parent's final
+    `uses_remaining` accounts for exactly what was actually reserved,
+    never negative.
+    """
+    home = str(tmp_path / "home-delegation-race")
+    os.makedirs(home, exist_ok=True)
+    from orca.godmode.contracts import CapabilityDomain, GodmodeApproval, LeaseIssuerClass
+    from orca.godmode.issuance import issue_lease
+    from orca.godmode.canonical import hash_arguments
+
+    _setup_shared_home(home)
+    approval = GodmodeApproval(
+        approval_id="ap-delegation-race-1", principal_id="u1", tenant_id="t1", capability_domain=CapabilityDomain.CONNECTOR,
+        capability="CONNECTOR_WRITE", resource_scope="conn-1", operation_scope="write", arguments_hash=hash_arguments({}),
+        duration_s=300, reason="delegation race test", approved_by="human:tester",
+        expires_at=(datetime.now(timezone.utc) + timedelta(seconds=300)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+    parent = issue_lease(approval=approval, issuer=LeaseIssuerClass.HUMAN_APPROVAL, issuer_id="human:tester", max_uses=5, delegable=True)
+
+    ctx = multiprocessing.get_context("spawn")
+    barrier = ctx.Barrier(2)
+    result_queue = ctx.Queue()
+    processes = [ctx.Process(target=_delegate_worker, args=(parent.lease_id, home, 3, barrier, result_queue)) for _ in range(2)]
+    for p in processes:
+        p.start()
+    for p in processes:
+        p.join(timeout=30)
+
+    results = []
+    while not result_queue.empty():
+        results.append(result_queue.get())
+    successes = [r for r in results if r[0] == "ok"]
+    assert len(successes) == 1, f"expected exactly 1 successful delegation of 3 uses out of a 5-use parent (2x3=6>5), got {len(successes)}: {results}"
+
+    _setup_shared_home(home)
+    from orca.godmode.lease_store import get
+    parent_after = get(parent.lease_id)
+    assert parent_after.uses_remaining == 2  # 5 - 3 (the one successful reservation), never negative, never untouched-at-5
+    assert parent_after.uses_remaining >= 0
+
+
 # --------------------------------------------------------------- §18: restart safety
 
 

@@ -293,6 +293,74 @@ def consume_use(lease_id: str) -> bool:
         return False
 
 
+def reserve_uses(lease_id: str, n: int) -> bool:
+    """
+    Phase 13.2 spec §17 finding: `orca.godmode.delegation.delegate_lease()`
+    read `parent.uses_remaining` to VALIDATE that `child_max_uses` did not
+    exceed it, but never actually reserved/decremented anything from the
+    parent -- a delegable parent with `uses_remaining=5` could delegate a
+    child ALSO carrying its own independent `uses_remaining=5`, doubling
+    total available authority to 10. This is a real authority-
+    multiplication bug, distinct from (but sibling to) the cross-process
+    `consume_use()` race this phase's main fix addresses -- same missing
+    atomicity discipline, different call site.
+
+    `reserve_uses()` atomically checks-and-decrements `uses_remaining` by
+    `n` in ONE `BEGIN IMMEDIATE` transaction (same locking discipline as
+    `consume_use()`), so two concurrent delegations from the same parent
+    can never each believe they reserved the same uses out of a shared
+    pool. Returns True (and commits the decrement) only if the lease is
+    valid (exists, not revoked, not expired, passes integrity) AND has at
+    least `n` uses remaining; False otherwise (nothing is decremented on
+    a False return -- the transaction rolls back).
+
+    A lease with `max_uses=None` (explicitly unmetered) has nothing to
+    reserve from -- always returns True without touching any counter,
+    matching `consume_use()`'s own treatment of unmetered leases.
+    """
+    if n <= 0:
+        return False
+    try:
+        with _connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute("SELECT data FROM leases WHERE lease_id = ?", (lease_id,)).fetchone()
+                if row is None:
+                    conn.execute("ROLLBACK")
+                    return False
+                lease = _row_to_lease(row)
+                if lease is None:
+                    conn.execute("ROLLBACK")
+                    return False
+                if lease.revocation_state == LeaseRevocationState.REVOKED:
+                    conn.execute("ROLLBACK")
+                    return False
+                if is_expired(lease):
+                    conn.execute("ROLLBACK")
+                    return False
+                if not verify_lease_integrity(lease):
+                    conn.execute("ROLLBACK")
+                    return False
+                if lease.max_uses is None:
+                    conn.execute("COMMIT")
+                    return True  # unmetered -- nothing to reserve
+                if lease.uses_remaining is None or lease.uses_remaining < n:
+                    conn.execute("ROLLBACK")
+                    return False
+                lease.uses_remaining -= n
+                conn.execute(
+                    "UPDATE leases SET uses_remaining = ?, data = ? WHERE lease_id = ?",
+                    (lease.uses_remaining, json.dumps(_to_dict(lease)), lease_id),
+                )
+                conn.execute("COMMIT")
+                return True
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+    except sqlite3.OperationalError:
+        return False
+
+
 def list_active_for_tenant(tenant_id: str) -> list[CapabilityLease]:
     try:
         with _connect() as conn:

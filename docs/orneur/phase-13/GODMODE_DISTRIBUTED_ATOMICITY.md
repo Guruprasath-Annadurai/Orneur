@@ -7,6 +7,7 @@
 | `CapabilityLease.uses_remaining` | `orca/godmode/lease_store.py` | `consume_use()`: read, validate, decrement, persist | **NON_ATOMIC** (in-process `threading.Lock` only) | **ATOMIC_CROSS_PROCESS** (SQLite `BEGIN IMMEDIATE`) |
 | `CapabilityLease.revocation_state` | same | `revoke()`: read, set REVOKED, persist | NON_ATOMIC | ATOMIC_CROSS_PROCESS |
 | `CapabilityLease` full record (issuance) | same | `save()`: upsert | NON_ATOMIC (plain file overwrite) | ATOMIC_CROSS_PROCESS (SQLite upsert in its own transaction) |
+| `CapabilityLease.uses_remaining` (parent, on delegation) | `orca/godmode/delegation.py` | `delegate_lease()`: read parent's `uses_remaining`, compare, **never decremented** | **NON_ATOMIC — worse, not decremented at all** (real second finding, see below) | **ATOMIC_CROSS_PROCESS** (new `reserve_uses()`, same `BEGIN IMMEDIATE` discipline) |
 | Kill switch flag | `orca/godmode/kill_switch.py` | `activate()`/`deactivate()`: existence-based flag, no counter | ATOMIC_CROSS_PROCESS (file existence is inherently atomic at the OS level; no read-modify-write counter exists here to race) | unchanged — already correct, not touched |
 | `GodmodeSession` | `orca/godmode/session.py` | none — purely in-memory, caller-held, never persisted to disk | READ_ONLY / not applicable (no file-backed state) | unchanged |
 | Elevation audit events | `orca/godmode/audit.py` | `record_elevation_event()`: in-memory append (`_AUDIT_LOG` list) | not applicable — in-memory only, not shared across processes today | unchanged |
@@ -78,6 +79,48 @@ project's existing architecture where the mutable checks (revocation,
 expiry, usage count) are re-validated INSIDE the same atomic transaction
 as the decrement itself, never trusted from an earlier, now-possibly-stale
 read.
+
+## Second real finding: delegation authority multiplication (spec §17)
+
+While building the required delegation-race test (spec §17: "test
+concurrent parent consumption and child delegation... total available
+authority cannot exceed parent's valid remaining allowance"), a second,
+distinct real vulnerability was found: `orca.godmode.delegation.
+delegate_lease()` read `parent.uses_remaining` only to VALIDATE that
+`child_max_uses` did not exceed it — it never actually reserved or
+decremented anything from the parent. A delegable parent lease with
+`uses_remaining=5` could delegate a child ALSO carrying its own
+independent `uses_remaining=5`, doubling total available authority to
+10 — confirmed directly with a real, single-process reproduction before
+any fix:
+
+```
+parent.uses_remaining after delegation: 5   # unchanged!
+child.uses_remaining: 5                      # a brand new, independent allowance
+TOTAL available authority: 10                # parent's original max_uses was only 5
+```
+
+**Fixed**: a new `orca.godmode.lease_store.reserve_uses(lease_id, n)`
+function, using the exact same `BEGIN IMMEDIATE` transaction discipline
+as `consume_use()`, atomically checks-and-decrements `uses_remaining` by
+`n` in one transaction. `delegate_lease()` now calls
+`reserve_uses(parent_lease_id, child_max_uses)` before ever constructing
+the child lease — if the reservation fails (revoked, expired, integrity
+failure, or insufficient remaining uses after re-validation), delegation
+is denied outright, and nothing is decremented. Re-running the same
+reproduction after the fix:
+
+```
+parent.uses_remaining after delegation: 0
+child.uses_remaining: 5
+TOTAL available authority: 5   # matches the parent's original max_uses exactly
+```
+
+A dedicated real 2-process regression test
+(`test_delegation_race_total_authority_never_exceeds_parent_allowance`)
+races two processes each attempting to delegate 3 uses from a shared
+5-use parent (2×3=6 > 5) — exactly one succeeds, and the parent's final
+`uses_remaining` is `2` (never negative, never left untouched at `5`).
 
 ## Phase 14 compatibility (spec §39-40)
 

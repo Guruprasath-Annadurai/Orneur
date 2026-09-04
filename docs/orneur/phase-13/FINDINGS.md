@@ -5,18 +5,21 @@ Do not suppress it."
 
 **Phase 13.2 update**: Finding 3 (Godmode cross-process lease race),
 originally documented and `xfail`ed as an open finding at Phase 13.1
-close, is now **FIXED** — see `GODMODE_DISTRIBUTED_ATOMICITY.md`. All
-counts below reflect the final, post-13.2 state.
+close, is now **FIXED** — see `GODMODE_DISTRIBUTED_ATOMICITY.md`. While
+building Phase 13.2's own required delegation-race test, a FOURTH real
+vulnerability (Finding 4, delegation authority multiplication) was
+discovered and fixed in the same pass. All counts below reflect the
+final, post-13.2 state.
 
 ## Summary
 
 | Metric | Count |
 |---|---|
 | NEW_ATTACKS_EXECUTED (Phase 13.1) | 55 |
-| NEW_REGRESSION_TESTS (Phase 13.2 fix) | 11 (`tests/test_godmode_distributed_atomicity.py`) |
+| NEW_REGRESSION_TESTS (Phase 13.2 fixes) | 12 (`tests/test_godmode_distributed_atomicity.py`) |
 | EXISTING_SECURITY_TESTS_REUSED | 733 (Phase 1-13's own suite, unmodified, reconfirmed green) |
-| REAL_VULNERABILITIES_FOUND | 3 |
-| REAL_VULNERABILITIES_FIXED | **3** (all three — Finding 3 fixed in Phase 13.2) |
+| REAL_VULNERABILITIES_FOUND | **4** |
+| REAL_VULNERABILITIES_FIXED | **4** (all four) |
 | RESIDUAL_OPEN_FINDINGS | **0** |
 | FALSE_POSITIVES | 1 (RES-06/07 test-writing bugs caught and corrected before being counted — see below) |
 
@@ -109,6 +112,44 @@ counts below reflect the final, post-13.2 state.
 - **CWE-like classification**: CWE-362 (Concurrent Execution using
   Shared Resource with Improper Synchronization, "Race Condition").
 
+### Finding 4 — Godmode delegation authority multiplication (FOUND AND FIXED in Phase 13.2)
+
+- **Category**: AUTHORITY_ESCALATION
+- **Severity**: MEDIUM
+- **Affected subsystem**: `orca.godmode.delegation.delegate_lease`
+- **Attack preconditions**: a delegable `CapabilityLease` with
+  `max_uses`/`uses_remaining` set.
+- **Discovery context**: found while building the required delegation-
+  race test for Finding 3's own closure work (spec §17), not via a
+  separate audit pass — a direct consequence of actually testing the
+  invariant the spec asked for rather than assuming it held.
+- **Observed behavior (pre-fix)**: `delegate_lease()` read
+  `parent.uses_remaining` only to VALIDATE `child_max_uses` did not
+  exceed it, never actually decrementing the parent. A parent with
+  `uses_remaining=5` could delegate a child ALSO carrying its own
+  independent `uses_remaining=5` — reproduced directly: total available
+  authority became `10` from a parent that only ever had `5`.
+- **Expected behavior**: total available authority (parent's remaining +
+  any delegated children's allowances) must never exceed the parent's
+  original allowance.
+- **Reproducibility**: REPRODUCIBLE (deterministic, single-process
+  reproduction shown in `GODMODE_DISTRIBUTED_ATOMICITY.md`; a 2-process
+  race version confirms the atomic fix holds under concurrency too).
+- **Root cause**: no reservation/decrement step existed in
+  `delegate_lease()` at all — not a race-condition bug in an existing
+  atomic operation, but a missing operation entirely.
+- **Fix**: new `orca.godmode.lease_store.reserve_uses(lease_id, n)`,
+  atomic (`BEGIN IMMEDIATE`, same discipline as `consume_use()`).
+  `delegate_lease()` now calls it before constructing the child; denies
+  delegation outright if the reservation fails.
+- **Regression test**: `tests/test_godmode_distributed_atomicity.py::test_delegation_race_total_authority_never_exceeds_parent_allowance`
+  (2 real processes, 3-use delegation attempts against a 5-use parent,
+  exactly 1 succeeds, parent ends at `uses_remaining=2`).
+- **CWE-like classification**: CWE-840 (Business Logic Errors) /
+  CWE-284-adjacent (Improper Access Control via missing resource
+  accounting) — no single CWE entry maps exactly; offered loosely, not
+  as an authoritative mapping.
+
 ## False positive (caught before being counted as a finding)
 
 An initial hypothesis for RAG-06 (citation numeric mismatch) assumed the
@@ -127,7 +168,7 @@ investigation, per spec §45's honesty requirement, not silently dropped.
 |---|---|
 | CRITICAL | 0 |
 | HIGH | 0 |
-| MEDIUM | 3 (all 3 fixed) |
+| MEDIUM | 4 (all 4 fixed) |
 | LOW | 0 |
 
 (The disclosed fallback-path limitations in RAG-04/05/06 are NOT counted

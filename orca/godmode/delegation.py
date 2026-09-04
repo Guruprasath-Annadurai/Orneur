@@ -21,6 +21,7 @@ from orca.godmode.contracts import (
 from orca.godmode.integrity import apply_signature, verify_lease_integrity
 from orca.godmode.lease_store import get as get_lease
 from orca.godmode.lease_store import is_expired as lease_is_expired
+from orca.godmode.lease_store import reserve_uses as reserve_parent_uses
 from orca.godmode.lease_store import save as save_lease
 
 
@@ -54,7 +55,18 @@ def delegate_lease(
       independently-approved lease, not a delegation).
     - child `expires_at` <= parent `expires_at`.
     - child `max_uses` <= parent's remaining uses (when the parent is
-      use-limited).
+      use-limited) -- Phase 13.2 finding: this used to be a bare
+      READ-then-compare, never actually reserving anything from the
+      parent, so a delegable parent with `uses_remaining=5` could spawn a
+      child ALSO carrying its own independent `uses_remaining=5` --
+      authority multiplication (spec §17: "total available authority
+      cannot exceed parent's valid remaining allowance"). Fixed: the
+      parent's `uses_remaining` is now atomically DECREMENTED by
+      `child_max_uses` via `orca.godmode.lease_store.reserve_uses()`
+      (same `BEGIN IMMEDIATE` transaction discipline as `consume_use()`)
+      before the child is ever created -- two concurrent delegation
+      attempts against the same parent can never both succeed in
+      reserving more than the parent actually has.
     - tenant is identical (delegation never crosses tenants -- structural
       copy of the parent's own `tenant_id`, never caller-supplied).
 
@@ -84,6 +96,18 @@ def delegate_lease(
     parent_remaining = parent.uses_remaining
     if parent_remaining is not None and child_max_uses > parent_remaining:
         raise LeaseDelegationError(f"child max_uses ({child_max_uses}) exceeds parent's remaining uses ({parent_remaining})")
+
+    # Phase 13.2 fix: ATOMICALLY reserve (decrement) child_max_uses from
+    # the parent's own uses_remaining -- the check above is a fast,
+    # pre-flight rejection for an obviously-too-large request, but the
+    # real, race-safe enforcement is this call. If two concurrent
+    # delegation attempts both pass the check above (stale read), only
+    # one of them can actually win this atomic reservation.
+    if parent_remaining is not None and not reserve_parent_uses(parent_lease_id, child_max_uses):
+        raise LeaseDelegationError(
+            f"could not atomically reserve {child_max_uses} use(s) from parent lease {parent_lease_id} "
+            f"(revoked, expired, integrity failure, or insufficient uses remaining after re-validation)"
+        )
 
     child = CapabilityLease(
         principal_id=child_principal_id, tenant_id=parent.tenant_id,
