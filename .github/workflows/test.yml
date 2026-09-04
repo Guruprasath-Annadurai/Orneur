@@ -13,7 +13,7 @@ on:
 
 jobs:
   pytest:
-    name: Unit Tests
+    name: Deterministic Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -27,13 +27,13 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install Orca (dev deps, no GPU/Ollama needed — full suite is mocked)
+      - name: Install Orca (dev deps, no GPU/Ollama needed)
         run: |
           pip install uv
           uv pip install --system -e ".[dev]"
 
-      - name: Run test suite
-        run: pytest -v 2>&1 | tee /tmp/pytest-log.txt
+      - name: Run deterministic test suite
+        run: pytest -m "not live_ollama_smoke" -v 2>&1 | tee /tmp/pytest-log.txt
 
       - name: Upload test log on failure
         if: failure()
@@ -44,7 +44,7 @@ jobs:
           retention-days: 14
 
   container-build:
-    name: Production Container Build
+    name: Production Container Build + Boot Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -59,6 +59,40 @@ jobs:
         run: |
           docker image inspect orneur-ci:${{ github.sha }} \
             --format 'id={{.Id}} size={{.Size}} health={{json .Config.Healthcheck}} cmd={{json .Config.Cmd}}'
+
+      - name: Boot image and verify /livez
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name orneur-ci-runtime -p 127.0.0.1:7337:7337 orneur-ci:${{ github.sha }}
+          trap 'docker logs orneur-ci-runtime || true; docker rm -f orneur-ci-runtime >/dev/null 2>&1 || true' EXIT
+
+          ok=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:7337/livez > /tmp/livez.json; then
+              ok=1
+              break
+            fi
+            if ! docker inspect -f '{{.State.Running}}' orneur-ci-runtime | grep -q true; then
+              echo 'Container exited before liveness became available.' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$ok" -ne 1 ]; then
+            echo 'Timed out waiting for /livez.' >&2
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/livez.json').read_text())
+          assert payload.get('status') == 'alive', payload
+          print('container_livez=PASS')
+          PY
 
   security-audit:
     name: Dependency Vulnerability Scan
