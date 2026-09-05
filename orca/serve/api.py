@@ -88,9 +88,24 @@ _logger = logging.getLogger("orca.serve")
 
 app = FastAPI(title="Orca API", version="1.0.0", docs_url=None, redoc_url=None)
 
+
+def _allowed_origins() -> list[str]:
+    """`ORNEUR_ALLOWED_ORIGINS`: comma-separated explicit origin
+    allowlist. Unset/empty defaults to `["*"]` -- unchanged for every
+    existing local/self-hosted/private-staging deployment (this
+    codebase's zero-config default). Before any public Cloudflare
+    exposure (Phase 14B §15), set this to the real ORNEUR origin(s)
+    so the wildcard does not carry into a publicly reachable
+    deployment."""
+    raw = orneur_env("ALLOWED_ORIGINS", "*").strip()
+    if not raw or raw == "*":
+        return ["*"]
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
