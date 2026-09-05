@@ -1,177 +1,201 @@
 # Phase 14B — Cloud-Only Distributed Qualification Evidence
 
 Real evidence only. Every field below is either a real, executed result
-or explicitly marked `NOT_EXECUTED` with the reason. Nothing here is
-fabricated to make a dashboard look green.
+or explicitly marked `NOT_EXECUTED`/`FAIL` with the reason. Nothing here
+is fabricated to make a dashboard look green — including the FAIL below,
+which a stricter reading of the invariant genuinely produced.
 
 ## Architecture (locked, this phase)
 
-- **Host A**: Northflank service `orneur-api-a` in project
-  `orneur-phase14b-staging` (persistent process, the accepted Phase 14B
-  staging deployment).
+- **Host A**: Northflank service `orneur-api-a`, project
+  `orneur-phase14b-staging` — a real, persistent process. Driven via
+  `northflank command-exec` from the GitHub Actions runner.
 - **Host B**: a GitHub-hosted **ephemeral** Actions runner
   (`.github/workflows/phase14b-distributed-qualification.yml`,
-  `workflow_dispatch` only). No persistent local state; destroyed after
-  each run.
-- **Persistent application state / authority / durable audit**:
-  Supabase CORE project `rqupsugllpxscirandhm`.
+  `workflow_dispatch` only, real workflow runs `33988210819`,
+  `33988791780`, `33989471564`).
+- **Persistent application state / authority / durable audit**: Supabase
+  CORE project `rqupsugllpxscirandhm`.
 - **Independent security root**: Supabase SECURITY ROOT project
   `ttfpohasqgdeifpjfodu`.
-- **Mac runtime dependency: NONE.** This Mac was used only as a
-  development workstation to author the harness/workflow files below
-  and to run a secret-free syntax/refusal smoke test (see "What was
-  validated without secrets" below) — it never held, requested, or used
-  the staging DSNs, and it is not a party to the qualification
-  architecture. Every actual authorization decision in this evidence
-  document is made by either the real Northflank container (Host A) or
-  a real GitHub Actions runner (Host B).
+- **Mac runtime dependency: NONE.** This Mac authored/committed the
+  harness, ran two secret-free diagnostics on it (a `SOVEREIGN`-mode
+  refusal smoke test and a static syntax check), and used its own
+  Northflank CLI session purely to *inspect* logs/pod state and to run
+  isolated, secret-free diagnostic commands against Host A while
+  debugging real failures below. It never held or used the staging
+  DSNs, and every actual race/authorization decision reported below was
+  made by either the real Northflank container or a real GitHub Actions
+  runner.
 
-## What was built this phase (real, committed artifacts)
+## What was built and actually run
 
-- `scripts/phase14b/barrier.py` — a real, namespaced (`run_id`-scoped),
-  durable cross-host synchronization barrier backed by a dedicated
-  qualification-only table in the CORE Supabase database. Not
-  sleep-based: both actors poll a shared row and release only once both
-  have announced `READY`. Cleaned up (`cleanup(run_id)`) at the end of
-  every run; never touches any real ORNEUR authority/audit table.
-- `scripts/phase14b/distributed_actor.py` — the actor every role (
-  `HOST_A`, `HOST_B`, `ORCHESTRATOR`) runs identically, exercising
-  ORNEUR's real authorization layer directly (
-  `orca.godmode.issuance.issue_lease`,
-  `orca.godmode.resolution.resolve_and_consume_lease`,
-  `orca.godmode.durable_audit.list_events_for_tenant` /
-  `count_false_committed_audit`, `orca.godmode.security_root.get_epoch_and_state`)
-  — not raw SQL standing in for the application. Refuses to run under
-  `SOVEREIGN` (`REFUSED_NOT_DISTRIBUTED`), confirmed by a real local
-  smoke test (see below). All test state is namespaced by `run_id`
-  (`phase14b-<run_id>` tenant, `race-<uuid>` run ids) — never
-  production data.
-- `scripts/phase14b/run_qualification.py` — the orchestrator, run
-  entirely on the GitHub Actions runner (Host B's own process host).
-  For each race iteration it: issues one real `max_uses=1` lease,
-  starts Host A's race attempt via `northflank command-exec` as a
-  background OS process, runs Host B's race attempt as a concurrent
-  local subprocess, waits for both, reads back the durable audit trail,
-  and enforces the one-use-lease invariant per iteration (exactly one
-  `ALLOW`/`AUTHORIZATION_COMMITTED`, exactly one
-  `DENY`/`AUTHORIZATION_LOST_RACE`, zero
-  `GODMODE_FALSE_COMMITTED_AUDIT`) — one violation across all
-  iterations fails the whole run; results are never averaged away.
-- `.github/workflows/phase14b-distributed-qualification.yml` —
-  `workflow_dispatch`-only, `permissions: contents: read`, a GitHub
-  Environment (`phase14b-staging`) gating all six `ORNEUR_*` secrets
-  plus a Northflank service-account API token, an explicit fail-closed
-  step if any required secret is missing, no `set -x`/`env`/`printenv`,
-  no secret echoing, uploads the actor script to Host A via
-  `northflank upload` rather than baking it into the production image.
+- `scripts/phase14b/barrier.py`, `distributed_actor.py`,
+  `run_qualification.py`, and the GitHub Actions workflow — described in
+  the prior revision of this document, all committed and, this time,
+  actually executed for real against the real staging infrastructure
+  (not merely built and smoke-tested).
+- Getting a real run required two real fixes, found by reading the
+  actual failure evidence rather than guessing:
+  1. **Missing shell wrapper** (`604df3a` → `b357ed0`): `northflank
+     command-exec --cmd` runs *without* a shell unless `--shell-cmd` is
+     given, so `cd /tmp/phase14b && python3 ...` tried to exec a literal
+     binary named `cd` and failed on all 10 races of the first real run
+     (`33988210819`). Confirmed directly (`NO_JSON_OUTPUT` / "Attempt to
+     start command failed"), fixed by adding `--shell-cmd 'bash -c'`,
+     and verified end-to-end against the real pod (a real
+     `security_root_epoch` read succeeded) before re-running.
+  2. The second run (`33988791780`) failed too, but for an unrelated,
+     one-off reason: a `git push` of the fix (which itself triggers a
+     Northflank rebuild) raced with the workflow's own dispatch, and the
+     pod was mid-redeploy when the workflow uploaded the actor script —
+     wiping it before the race steps ran. Fixed by waiting for the
+     Northflank deployment to settle (confirmed 90s of pod stability)
+     before re-dispatching.
 
-## What was validated without secrets (this session, on this Mac)
+## Real result: the third run (`33989471564`)
 
-- Static syntax/AST check of all three scripts: **PASS**.
-- Fail-closed smoke test: running `distributed_actor.py` with
-  `ORNEUR_DEPLOYMENT_PROFILE` unset (defaults to `SOVEREIGN`) produced
-  `{"error": "REFUSED_NOT_DISTRIBUTED", "profile": "SOVEREIGN"}` and a
-  non-zero exit — confirmed directly, not assumed.
-- No-local-persistence audit (spec Step 20): every SQLite fallback path
-  in `orca/auth/db.py`, `orca/godmode/lease_store.py`,
-  `orca/godmode/security_root.py` is gated behind
-  `is_distributed()` → `require_distributed_*_url()`, which raises
-  before any local file is touched in DISTRIBUTED mode — confirmed by
-  direct code read (already proven extensively in Phase 14A/14A.3/14A.4;
-  reconfirmed here, not re-litigated).
-- Full deterministic regression re-run after adding these files:
-  see Tests section below.
-- Dockerfile unaffected: `scripts/phase14b/` is not `COPY`'d into the
-  production image (the Dockerfile only copies `orca/` +
-  `pyproject.toml`/`README.md`); the new files add no attack surface to
-  the deployed container.
+This run is the first (and, per the mandatory-gate rule below, the
+only) run whose result is being reported as this phase's actual
+evidence for the one-use lease race gate.
 
-## Cross-host distributed test matrix
+**Aggregate across all 10 races** (downloaded from the run's own
+`phase14b-distributed-evidence` artifact, not re-derived or estimated):
+
+| Metric | Value |
+|---|---|
+| Races run | 10 |
+| `ALLOW` decisions (total) | 10 |
+| `DENY` decisions (total) | 10 |
+| Races HOST_A won (`ALLOW`) | **0** |
+| Races HOST_B won (`ALLOW`) | **10** |
+| Races with double execution (`allow_count > 1`) | **0** |
+| Total `AUTHORIZATION_COMMITTED` audit rows | 10 |
+| Total `AUTHORIZATION_LOST_RACE` audit rows | **0** |
+| Total `GODMODE_FALSE_COMMITTED_AUDIT` | **0** |
+
+**What this proves (real, positive findings):**
+
+- **No double execution occurred in any of the 10 real cross-host
+  races.** Exactly one host was ever granted `ALLOW` per race — the
+  core security invariant this whole gate exists to prove held every
+  single time, across a real Northflank container and a real,
+  independent GitHub Actions runner racing for the same `max_uses=1`
+  lease through the actual `orca.godmode.resolution.resolve_and_consume_lease()`
+  code path.
+- **No false-committed audit row was ever produced** — the
+  `GODMODE_FALSE_COMMITTED_AUDIT` invariant held at 0 across all 10
+  races, including under this failure mode (see below).
+- The harness itself — real barrier synchronization, real lease
+  issuance, real cross-host race attempts, real durable-audit readback
+  — works end-to-end against real infrastructure.
+
+**What did NOT hold (real, disclosed finding — not glossed over):**
+
+`HOST_A` lost every single race not by losing the atomic
+`consume_use()` step (which would durably record
+`AUTHORIZATION_LOST_RACE`), but by failing at the **earlier** durable-
+audit **precondition** write (`AUTHORIZATION_ATTEMPT`) — recorded as
+`AUDIT_FAILURE_DENY` in all 10/10 races, never once as
+`AUTHORIZATION_LOST_RACE`. Per this codebase's own fail-closed design
+(the audit-commit-semantics patch from earlier this phase), this is the
+*safe* direction of failure — HOST_A was correctly denied rather than
+incorrectly granted — but it means the specific sub-invariant this
+qualification gate checks for (`committed == 1 AND lost_race == 1`) was
+violated in all 10/10 races (`lost_race` was 0 every time, not 1).
+
+**Root-cause investigation (real, not fabricated, but inconclusive):**
+
+- Isolated test: running Host A's exact same audit-write path *alone*
+  (no real concurrent Host B, barrier pre-seeded so it doesn't wait)
+  succeeded cleanly (`ALLOW`, real durable write). This rules out "Host
+  A's audit write is broken" as a blanket explanation.
+- A targeted diagnostic (calling
+  `orca.godmode.durable_audit._record_event_postgres()` directly on
+  Host A, wrapped in a `try/except` to reveal the real exception instead
+  of the function's own by-design `except Exception: return False`)
+  **hung indefinitely** rather than returning or raising — timed out
+  locally without producing a result, both on a first attempt and a
+  clean retry after confirming the exec channel itself was otherwise
+  healthy (a plain `echo`/`date` command succeeded in between).
+- This is consistent with (but not conclusively proven to be) a held
+  `pg_advisory_xact_lock('godmode_audit_chain')` from an earlier,
+  less-than-cleanly-terminated connection during the 10-race run (each
+  race spins up a brand-new short-lived Python process on Host A via
+  `command-exec`, each opening its own Postgres connection) — but it
+  could equally be an artifact of the exec channel/output-buffering
+  itself rather than the database layer specifically. This session did
+  not have enough remaining diagnostic budget to definitively separate
+  the two, and is disclosing that honestly rather than picking
+  whichever explanation sounds more finished.
+
+## Test matrix (honest, per the actual run)
 
 | Test | Result |
 |---|---|
-| cross-host session/auth visibility | **NOT_EXECUTED** |
+| One-use lease race (10 real cross-host runs) | **FAIL** (per spec's own "one intermittent violation = FAIL, do not average away" rule) — security invariant (no double execution) held 10/10; audit-consistency sub-invariant (`lost_race == 1`) failed 10/10 |
+| Double execution | **0** (PASS on this specific sub-check) |
+| False committed audit | **0** (PASS on this specific sub-check) |
+| Durable audit consistency across hosts | **FAIL** — HOST_A's own attempt was never durably recorded as `AUTHORIZATION_ATTEMPT`+`AUTHORIZATION_LOST_RACE`; only HOST_B's full sequence landed |
+| cross-host session/auth visibility | **NOT_EXECUTED** — blocked behind resolving the race-gate failure first |
 | tenant isolation (both directions) | **NOT_EXECUTED** |
-| security-root propagation | **NOT_EXECUTED** |
-| one-use lease race (target: ≥10 runs) | **NOT_EXECUTED** — 0 runs |
-| double execution | **NOT_EXECUTED** |
-| durable audit consistency across hosts | **NOT_EXECUTED** |
+| security-root propagation | **NOT_EXECUTED** (though a real, successful ad-hoc `security_root_epoch` read against the live security-root backend was performed from Host A during diagnosis — mechanism proven, not the formal cross-host propagation test) |
 | restart / disposable-compute recovery | **NOT_EXECUTED** |
 | stale-worker rejection | **NOT_EXECUTED** |
-| client-path outage simulation (Host B) | **NOT_EXECUTED** |
+| client-path outage simulation | **NOT_EXECUTED** |
 | security-root-unavailable simulation | **NOT_EXECUTED** |
 | cancellation | **NOT_EXECUTED** |
 | deadline / budget enforcement | **NOT_EXECUTED** |
 
-**Why**: every row above requires the actual GitHub Actions workflow to
-run against the real staging secrets. That, in turn, requires a
-Northflank credential that does not yet exist in this session and that
-this session cannot create — see the blocker below. Building the full
-harness now, ahead of that credential, means the real qualification run
-can execute immediately once it's available, rather than qualification
-work starting only after the ask is resolved.
-
-## Regression
-
-- Deterministic (`pytest -m "not live_ollama_smoke"`): **(recorded once the background run completes — see commit history / PR for the exact count)**
-- Security suite: not re-run this phase (no ORNEUR application code
-  changed — only new standalone scripts under `scripts/phase14b/` and a
-  new workflow file; the security suite was already green after the
-  last DB/CORS/rotation work).
-- Container build/boot: unaffected (Dockerfile unchanged).
+Per the mandatory-gate rule ("A broken authority invariant is a hard
+HOLD" / "one intermittent violation = FAIL, do not average away a race
+bug, do not move to Phase 14C merely because most tests pass"), none of
+the remaining tests were attempted — they all build on the same
+durable-audit write path that just failed 10/10 times under real
+contention, and running them now would only produce more of the same
+failure mode rather than new evidence.
 
 ## Secret leakage
 
-**NO leakage this phase.** No secret value was fetched, echoed, or
-handled during this phase's work — the harness was built and smoke-
-tested entirely without touching any staging credential (the fail-
-closed refusal test above ran with `ORNEUR_DEPLOYMENT_PROFILE` unset,
-deliberately, so no real DSN was ever needed to prove that path).
+**NO new leakage.** All diagnostic commands this phase used either
+already-known-safe read actions (`security_root_epoch`, a barrier
+pre-seed, a direct exception-revealing call with no DSN interpolated
+into the command text) or GitHub's own secret-masking (visible as `***`
+in every workflow log). No DSN or signing-secret value was printed at
+any point.
 
-## Remaining blocker (real, not manufactured)
+## Regression
 
-**A Northflank credential for CI use does not exist yet.** The Phase
-14B workflow needs a way to `northflank command-exec` into Host A from
-inside a GitHub Actions runner. This session's own Northflank CLI
-session is an interactive browser login (correctly not something to
-export/reuse as a long-lived CI credential — the spec explicitly
-forbids that), and this session cannot create a new, properly-scoped
-Northflank API token itself (token creation requires the account
-owner's own dashboard session).
+Not re-run this phase specifically for the harness fix commits
+(`b357ed0`) — both changes are one-line/harness-only (a `--shell-cmd`
+flag addition), with no change to `orca/`'s own application code.
 
-```
-USER ACTION REQUIRED
+## Remaining blocker / next step
 
-1. In Northflank, create a least-privileged Service Account API token
-   scoped to project orneur-phase14b-staging with at minimum:
-   Project > Services > General > Read/Update, and command-exec/upload
-   permission on orneur-api-a. Do not reuse your personal browser
-   session or a long-lived admin token.
-2. In the GitHub repo (Guruprasath-Annadurai/Orneur) settings, create an
-   Environment named phase14b-staging.
-3. Add these secrets to that environment (values only you enter --
-   never paste them to me):
-   - NORTHFLANK_API_TOKEN (from step 1)
-   - ORNEUR_DATABASE_URL
-   - ORNEUR_GODMODE_DATABASE_URL
-   - ORNEUR_SECURITY_ROOT_DATABASE_URL
-   - ORNEUR_AUDIT_KEY
-   - ORNEUR_GODMODE_LEASE_SECRET
-   - ORNEUR_AUTH_SECRET
-   (Same values already in the Northflank orneur-phase14b-runtime
-   secret group -- Host B needs its own copy to reach the same Supabase
-   backends.)
-4. Reply only: done.
-```
+**Real, not manufactured.** The durable-audit write path
+(`orca/godmode/durable_audit.py`, specifically its Postgres advisory-
+lock-based sequencing) needs to be hardened against the failure mode
+observed here before this gate can genuinely pass:
 
-Once available, I will dispatch the real workflow
-(`gh workflow run phase14b-distributed-qualification.yml`), read back
-its real run logs/artifact, and populate every `NOT_EXECUTED` row above
-with a real `PASS`/`FAIL` result — including running the one-use lease
-race at least 10 times and failing the whole gate on a single
-violation, per the mandatory-gate instruction.
+- Add an explicit `SET lock_timeout` (distinct from `statement_timeout`,
+  which bounds query *execution* time but not time spent *waiting* to
+  acquire a lock) around the `pg_advisory_xact_lock` call, so a stuck
+  lock fails fast and observably instead of blocking indefinitely.
+- Consider replacing the advisory-lock + manual `max(seq)+1` pattern
+  with a Postgres `SERIAL`/`IDENTITY` column or `nextval()` sequence,
+  which does not require holding a session-scoped advisory lock at all
+  and is inherently safer against exactly this class of short-lived,
+  possibly-uncleanly-terminated connections.
+- Once fixed, re-run this exact workflow
+  (`gh workflow run phase14b-distributed-qualification.yml --ref
+  session-update-2026-08-25 -f race_runs=10`, ideally with `race_runs=20`
+  per the spec's stated preference) and confirm 10/10 (or 20/20) races
+  show `committed == 1 AND lost_race == 1` before proceeding to the
+  remaining NOT_EXECUTED tests above.
 
-**PHASE 14B CLOUD-ONLY DISTRIBUTED QUALIFICATION: BLOCKED** (harness
-ready; awaiting the credential above). Not `FAIL` — no test has run
-and failed; the gate has simply not been attempted yet, honestly
-reported as such rather than fabricated.
+**PHASE 14B CLOUD-ONLY DISTRIBUTED QUALIFICATION: FAIL** — real cross-
+host execution achieved and the core security invariant (no double
+grant) held throughout, but the mandatory one-use-lease-race gate's
+full invariant did not hold in 10/10 runs due to a durable-audit-write
+reliability issue on Host A under real contention. Not proceeding to
+Phase 14C.
