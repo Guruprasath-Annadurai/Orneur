@@ -1,61 +1,99 @@
-# Phase 14B §7-10 — Cloudflare Staging Edge
+# Phase 14B — Cloudflare Staging Edge
 
-**Status: NOT_EXECUTED.** No Cloudflare account, zone, or Tunnel is
-configured in this environment (confirmed: `cloudflared` not
-installed, `~/.cloudflared` does not exist — see
-`REAL_STAGING_TOPOLOGY.md`). This document records the design to
-implement once the OWNER ACTION REQUIRED checkpoint is resolved and a
-real VPS (Host A) exists to tunnel to.
+**Status: DESIGN UPDATED FOR REAL NORTHFLANK TOPOLOGY; TUNNEL NOT YET EXECUTED.**
 
-## Design (once real infrastructure exists)
+The original design assumed a raw VPS. Phase 14B now has a real managed remote workload on Northflank (`orneur-api-a`, Europe-West/London) with port `7337/TCP` private-only. That changes how the edge connector should be hosted, but does not weaken the direct-origin requirement.
+
+## Target topology
 
 ```
-Internet → Cloudflare edge → Cloudflare Tunnel → ORNEUR staging ingress (Host A)
+Internet
+  -> Cloudflare edge
+  -> remotely-managed Cloudflare Tunnel
+  -> cloudflared connector workload on Northflank
+  -> Northflank private service DNS
+  -> orneur-api-a:7337
 ```
 
-- **Cloudflare Tunnel preferred over exposing a public HTTP port** on
-  Host A (spec §7) — `cloudflared` runs on Host A, makes an
-  **outbound-only** connection to Cloudflare's edge, so Host A's
-  firewall never needs an inbound rule for HTTP traffic at all. This
-  directly satisfies spec §9's "direct origin isolation" requirement
-  structurally, not just by convention.
-- **Never tunnel/expose**: Postgres, Redis (if deployed), the security-
-  root backend, or any model-worker admin endpoint. Only the ORNEUR API
-  ingress port is tunneled.
-- **Owner checkpoint** (spec §8): Tunnel authorization
-  (`cloudflared tunnel login`) is an interactive browser-based flow —
-  this session would run the command and report the browser URL for
-  the owner to complete, never request a pasted credential. A scoped
-  Cloudflare API token (not the Global API Key) would be used only if
-  Cloudflare-side automation (DNS record creation, Tunnel route
-  configuration) is needed beyond what `cloudflared`'s own CLI handles
-  interactively.
+The ORNEUR API port stays private. PostgreSQL, the independent security-root database, and any future model-worker/admin ports are never published through the tunnel.
 
-## Direct-origin bypass test (spec §9) — design
+## Northflank Service B plan
 
-Once configured: attempt a direct HTTP connection to Host A's public IP
-on the ORNEUR service port. Required result: connection refused or
-timed out (no inbound firewall rule permits it) — `DIRECT_ORIGIN_BYPASS`
-audit counter would be `0` only once this is actually executed and
-observed, not assumed from the Tunnel's outbound-only design alone.
+Create the second and final free-project service only after `orneur-api-a` is proven stable and after the `orneur-phase14b-runtime` secret group has been restricted to that API service.
 
-## Trusted proxy header validation (spec §10) — design
+Recommended connector workload:
 
-Once Cloudflare is the reverse proxy, `CF-Connecting-IP`/
-`X-Forwarded-For` headers must only be trusted when a request
-genuinely arrived via Cloudflare's tunnel — spoofed headers sent
-directly to Host A (bypassing Cloudflare) must not be trusted, since a
-direct connection to Host A should already be refused per the bypass
-test above; the header-trust boundary is a second layer of defense in
-case that first layer is ever misconfigured. **No code in this
-codebase currently validates Cloudflare-specific proxy headers**
-(confirmed: no such validation exists in `orca/serve/api.py`) — this
-was already noted as a concrete TODO in `CLOUDFLARE_ARCHITECTURE.md`
-from the earlier local-foundation phase, unchanged this phase since
-there is still no real Cloudflare deployment to validate against.
+- Service ID: `orneur-edge-tunnel`
+- Source: external Docker image
+- Image: `cloudflare/cloudflared:latest`
+- Region: Europe-West/London, same project/network as the API
+- Compute: smallest free plan sufficient for the connector; do not spend money merely to increase edge-connector resources
+- Public ports: none
+- Private application ports: none required for the tunnel itself
+- Autoscaling: off on the free project
+- Persistent volume: none
+- Secret group: separate runtime-only group, for example `orneur-cloudflare-tunnel`
+- Secret key: `TUNNEL_TOKEN` only
+- Command arguments: `tunnel --no-autoupdate --loglevel info run`
 
-## Not executed
+Cloudflare documents `TUNNEL_TOKEN` as the environment-variable equivalent of `--token` for remotely-managed tunnels, so the token does not need to appear in a command line or repository file. The official Cloudflare Docker guidance uses the same `cloudflare/cloudflared:latest` image and remotely-managed tunnel model.
 
-Everything in this document beyond the design itself: no Tunnel
-exists, no zone is configured, no direct-origin test has been run, no
-trusted-proxy-header test has been run.
+## Cloudflare owner checkpoint
+
+Owner action is still required for the Cloudflare-side trust decision:
+
+1. Add/manage the `orneur.com` zone in the owner's Cloudflare account if not already present.
+2. Create a **remotely-managed** tunnel named for staging (for example `orneur-phase14b-staging`).
+3. Configure a staging hostname, preferably a non-production hostname such as `staging.orneur.com` or `api-staging.orneur.com`.
+4. Set the tunnel origin service to the Northflank private API address for `orneur-api-a:7337` using HTTP inside the private project network.
+5. Copy only the generated tunnel token into the Northflank runtime-only secret group. Never commit or paste the token into chat/docs.
+
+No Global API Key is required for this path. If later automation uses a Cloudflare API token, it must be narrowly scoped to the minimum tunnel/DNS permissions required.
+
+## Direct-origin isolation
+
+The strongest property of the current Northflank layout is already structural: `orneur-api-a:7337` is configured as **Private**, so there is no public Northflank origin URL for ordinary clients to bypass Cloudflare through.
+
+This is stronger than exposing a public origin and relying only on application headers. Before marking the counter green, however, execute a real bypass test after the tunnel exists:
+
+- attempt to reach the API through any Northflank-generated public route: expected result — no such route / unreachable;
+- attempt to reach port 7337 directly from the public Internet: expected result — unreachable;
+- reach the configured staging hostname through Cloudflare: expected result — routed successfully only through the tunnel.
+
+`DIRECT_ORIGIN_BYPASS=0` is claimed only after those tests run.
+
+## Trusted proxy headers
+
+Do not trust arbitrary client-supplied `CF-Connecting-IP` or `X-Forwarded-For` merely because the header exists. The primary trust boundary is the private-only origin plus Cloudflare Tunnel. Any code-level client-IP trust added later must be tested against spoofed headers and must not become an authentication/authorization primitive.
+
+The absence of public direct-origin access means spoofed proxy headers from the public Internet should never reach the API except through the configured edge path, but this must still be verified after the tunnel is live.
+
+## Connector health
+
+Cloudflare's current container/Kubernetes guidance exposes a connector readiness endpoint when metrics are enabled. For Phase 14B, first prove the connector stays connected and that Cloudflare reports the tunnel Healthy. If a Northflank health check is added to Service B, configure a cloudflared metrics/readiness endpoint explicitly rather than probing ORNEUR's `/livez` through the connector container.
+
+## Failure tests after execution
+
+Once the real tunnel is running, execute and record at minimum:
+
+1. restart `orneur-edge-tunnel` and verify automatic tunnel reconnection;
+2. stop the connector and verify the public staging hostname fails closed rather than bypassing to the origin;
+3. restore the connector and verify recovery without changing ORNEUR secrets/state;
+4. spoof proxy headers through the public hostname and confirm they do not bypass auth/policy;
+5. confirm no database/security-root/model-admin endpoint is reachable through the tunnel;
+6. confirm API port 7337 remains private in Northflank after all edge changes;
+7. scan runtime logs to ensure the tunnel token is never printed.
+
+## Evidence boundary
+
+Northflank + Cloudflare Tunnel can satisfy application-origin isolation and real remote edge qualification without a raw VPS. It cannot satisfy VPS-specific evidence such as host firewall rules, SSH daemon hardening, kernel controls, or root-owned systemd configuration. Those host-level checks remain NOT_EXECUTED unless a raw host is provisioned later.
+
+## References used for this design
+
+- Cloudflare Tunnel setup: `https://developers.cloudflare.com/tunnel/setup/`
+- Cloudflare tunnel run parameters and `TUNNEL_TOKEN`: `https://developers.cloudflare.com/tunnel/advanced/run-parameters/`
+- Cloudflare Kubernetes/container deployment guide: `https://developers.cloudflare.com/tunnel/deployment-guides/kubernetes/`
+- Northflank command/entrypoint overrides: `https://northflank.com/docs/v1/application/run/override-command-entrypoint`
+- Northflank runtime secrets: `https://northflank.com/docs/v1/application/secure/inject-secrets`
+
+No tunnel, DNS route, or Cloudflare-side configuration is claimed as executed by this document yet.
