@@ -5,14 +5,55 @@ fields are stated as such.
 
 ## Repository / deployment identity
 
-- Git SHA (live, deployed): `796768d9a21dd4d606c22039374e6c70d9d126dd`
+- Git SHA (live, deployed): `a3f3106159b39ac2b6fd31d7238c19fbd6a8285e` (PR #2 merge commit)
 - Northflank project: `orneur-phase14b-staging`
 - Northflank service: `orneur-api-a`
 - Region/cluster: `nf-europe-west` (Europe West / London)
 - Runtime plan: `nf-compute-20` deployment plan, 1 instance, port `7337` (`public: false`, `vpcAccessible: false` — confirmed private)
 - Liveness probe: HTTP `/livez`, `initialDelaySeconds: 20`, `periodSeconds: 30`, `timeoutSeconds: 5`, `failureThreshold: 3`
-- Latest build: `SUCCESS` (triggered by pushing `825befa` + `796768d`)
-- Current pod: `orneur-api-a-698f54759f-nsq2t`, created after the latest rebuild
+- Latest build: `SUCCESS`, `deployedSHA` confirmed `a3f3106159b39ac2b6fd31d7238c19fbd6a8285e`
+- Current pod: `orneur-api-a-7f8b899f46-zwdnb`
+
+## Final closure (post-rotation, post-merge)
+
+After the READY=YES report above, the two exposed database passwords
+(security-root project `ttfpohasqgdeifpjfodu`, core project
+`rqupsugllpxscirandhm`) were rotated by the account owner directly in
+Supabase, and the corresponding Northflank secret values were updated
+(`ORNEUR_SECURITY_ROOT_DATABASE_URL`, `ORNEUR_DATABASE_URL` +
+`ORNEUR_GODMODE_DATABASE_URL`) — no value was ever pasted into or
+printed by this session.
+
+A controlled `northflank restart service` produced a fresh pod
+(`orneur-api-a-87954597c-wfzwb`) that started clean on the newly
+rotated credentials: no `DeploymentConfigError`, all three backends
+(security-root/authority/core) passed, `/livez` returned `200` on 3
+checks spaced ~40s apart (19:08:16 / 19:09:08 / 19:09:53 UTC),
+`/readyz` returned `503` with `authority_store: ok`, `security_root:
+ok`, `core_database: ok`, and only `model_runtime: unavailable` —
+classified `EXPECTED_NOT_READY`, exactly as this codebase's readiness
+semantics require.
+
+A final leak audit (tracked files, full git history, all local
+diagnostic scripts/logs) found nothing beyond the pre-existing test
+fixture placeholder (`hunter2@example.com`) — `NEW_SECRET_LEAKAGE = NO`.
+
+PR #2 (`phase14b-prep-hardening-2026-09-05`) was reviewed once more
+(CI green, 0 merge conflicts, no secret material) and merged — merge
+commit `a3f3106159b39ac2b6fd31d7238c19fbd6a8285e`. This triggered a
+real Northflank rebuild+redeploy, verified independently rather than
+trusted from GitHub CI alone: new pod `orneur-api-a-7f8b899f46-zwdnb`,
+`deployedSHA` confirmed matching the merge commit, clean startup,
+`/livez` → `200`/`200`/`200` (19:13:35 / 19:14:27 / 19:15:14 UTC),
+`/readyz` → `503` `EXPECTED_NOT_READY` with the same all-dependencies-ok
+breakdown, 0 restarts throughout.
+
+**PHASE 14B STAGING BASELINE: FULLY CLOSED (staging-runtime scope).**
+Distributed multi-host qualification remains separately NOT_EXECUTED.
+Per the architecture correction accepted mid-session, the future Host
+B is an ephemeral GitHub Actions runner, not this Mac — the Mac holds
+no staging/production runtime, models, authority, or security-root
+state.
 
 ## Timeline (what actually happened, in order)
 
