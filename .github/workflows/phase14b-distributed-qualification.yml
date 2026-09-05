@@ -1,0 +1,95 @@
+name: Phase 14B Distributed Qualification
+
+# Manual only -- this workflow connects to real staging Supabase
+# backends and execs into the real Northflank orneur-api-a service.
+# Never runs on pull_request/fork PR/push -- only an explicit,
+# authorized dispatch, per Phase 14B's own gating rule.
+on:
+  workflow_dispatch:
+    inputs:
+      race_runs:
+        description: "Number of one-use lease race iterations"
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase14b-distributed-qualification
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    name: Host B (GitHub ephemeral runner) <-> Host A (Northflank)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: phase14b-staging
+    env:
+      ORNEUR_DEPLOYMENT_PROFILE: DISTRIBUTED
+      ORNEUR_DATABASE_URL: ${{ secrets.ORNEUR_DATABASE_URL }}
+      ORNEUR_GODMODE_DATABASE_URL: ${{ secrets.ORNEUR_GODMODE_DATABASE_URL }}
+      ORNEUR_SECURITY_ROOT_DATABASE_URL: ${{ secrets.ORNEUR_SECURITY_ROOT_DATABASE_URL }}
+      ORNEUR_AUDIT_KEY: ${{ secrets.ORNEUR_AUDIT_KEY }}
+      ORNEUR_GODMODE_LEASE_SECRET: ${{ secrets.ORNEUR_GODMODE_LEASE_SECRET }}
+      ORNEUR_AUTH_SECRET: ${{ secrets.ORNEUR_AUTH_SECRET }}
+      NORTHFLANK_PROJECT: orneur-phase14b-staging
+      NORTHFLANK_SERVICE: orneur-api-a
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ORNEUR (Host B runtime, no local persistence)
+        run: |
+          pip install --no-cache-dir -e ".[postgres]"
+
+      - name: Fail closed if required secrets are missing
+        run: |
+          for v in ORNEUR_DATABASE_URL ORNEUR_GODMODE_DATABASE_URL ORNEUR_SECURITY_ROOT_DATABASE_URL \
+                   ORNEUR_AUDIT_KEY ORNEUR_GODMODE_LEASE_SECRET ORNEUR_AUTH_SECRET NORTHFLANK_API_TOKEN; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Required secret $v is not set in the phase14b-staging environment -- refusing to run."
+              exit 1
+            fi
+          done
+        env:
+          NORTHFLANK_API_TOKEN: ${{ secrets.NORTHFLANK_API_TOKEN }}
+
+      - name: Authenticate Northflank CLI (least-privileged service token, never printed)
+        run: |
+          npx --yes @northflank/cli login --token-login --token "$NORTHFLANK_API_TOKEN" --name phase14b-ci --override
+        env:
+          NORTHFLANK_API_TOKEN: ${{ secrets.NORTHFLANK_API_TOKEN }}
+
+      - name: Upload actor script to Host A (Northflank pod)
+        run: |
+          npx --yes @northflank/cli upload service file \
+            --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
+            --localPath scripts/phase14b --remotePath /tmp/phase14b
+
+      - name: Run distributed qualification (setup + N lease races + audit checks)
+        run: |
+          python3 scripts/phase14b/run_qualification.py --race-runs "${{ github.event.inputs.race_runs }}"
+
+      - name: Cleanup barrier rows on Host B side (safety net; script also cleans up per-run)
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, "scripts/phase14b")
+          import barrier
+          # Best-effort: no run_id known at this scope if the run failed early.
+          PY
+
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase14b-distributed-evidence
+          path: scripts/phase14b/qualification_results.json
+          if-no-files-found: warn
