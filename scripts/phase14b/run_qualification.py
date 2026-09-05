@@ -56,7 +56,7 @@ def _start_remote(args: list[str]) -> subprocess.Popen:
     return subprocess.Popen(
         ["npx", "--yes", "@northflank/cli", "command-exec", "service",
          "--project", _NORTHFLANK_PROJECT, "--service", _NORTHFLANK_SERVICE,
-         "--cmd", cmd],
+         "--shell-cmd", "bash -c", "--cmd", cmd],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
 
