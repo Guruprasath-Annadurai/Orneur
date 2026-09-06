@@ -25,6 +25,7 @@ from orca.connectors.contracts import (
     DataSensitivity,
 )
 from orca.connectors.policy import evaluate_connector_policy
+from orca.godmode.cancellation import CancellationSignal
 from orca.godmode.contracts import CapabilityDomain
 from orca.godmode.resolution import _SENTINEL, resolve_and_consume_lease
 
@@ -40,6 +41,7 @@ def evaluate_connector_policy_with_elevation(
     *, identity: ConnectorIdentity, instance: ConnectorInstance, requested_capability: ConnectorCapabilityKind,
     resource: str, operation: str, lease_id: str | None = None, sensitivity: DataSensitivity = DataSensitivity.INTERNAL,
     arguments: dict | None = _SENTINEL,  # type: ignore[assignment]
+    cancellation: "CancellationSignal | None" = None,
 ) -> ConnectorPolicyDecision:
     """
     `arguments` (Phase 10.1 spec §11): the connector write's actual
@@ -50,6 +52,14 @@ def evaluate_connector_policy_with_elevation(
     connector/tenant/resource/operation, enforced by
     `resolve_and_consume_lease()`, which also atomically consumes the
     lease's use ONLY on a full match.
+
+    `cancellation` (Phase 14B.2): forwarded unchanged to
+    `resolve_and_consume_lease()`. This module's only current callers
+    (`orca/godmode/eval_harness.py`, simulations) are synchronous and
+    do not construct a real cancellation signal -- there is no live
+    async/cancellable production call path into this function today
+    (documented, not invented). `None` (the default) preserves existing
+    behavior exactly.
     """
     normal = evaluate_connector_policy(identity=identity, instance=instance, requested_capability=requested_capability, sensitivity=sensitivity)
     if normal.state == ConnectorPolicyDecisionState.ALLOW:
@@ -69,7 +79,7 @@ def evaluate_connector_policy_with_elevation(
     lease_decision = resolve_and_consume_lease(
         lease_id, tenant_id=identity.tenant_id, capability_domain=CapabilityDomain.CONNECTOR,
         capability=requested_capability.value, resource_scope=_connector_resource_scope(instance, resource),
-        operation_scope=operation, arguments=arguments,
+        operation_scope=operation, arguments=arguments, cancellation=cancellation,
     )
     if lease_decision.state.value != "ALLOW":
         return ConnectorPolicyDecision(state=ConnectorPolicyDecisionState.DENY, reasons=normal.reasons + lease_decision.reasons)

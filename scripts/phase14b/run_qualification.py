@@ -327,6 +327,20 @@ def run_budget_test(run_id: str) -> dict:
     return _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "budget_test"])
 
 
+def run_cancellation_test(run_id: str) -> dict:
+    """Phase 14B.2 Step 13: real cloud proof of the in-process
+    cancellation checkpoints, run on BOTH real hosts against the same
+    real cloud Postgres (Supabase CORE) -- honestly scoped per spec:
+    the cancellation SIGNAL itself is local to each actor process; this
+    proves the checkpoint logic behaves correctly against the real
+    distributed authority backend on each host, not that a cancellation
+    can be propagated FROM one host TO another (no real cross-process
+    worker RPC exists yet to do that)."""
+    host_b = _run_local(["--role", "HOST_B", "--run-id", f"{run_id}-b", "--action", "cancellation_test"])
+    host_a = _start_remote_verified(["--role", "HOST_A", "--run-id", f"{run_id}-a", "--action", "cancellation_test"])
+    return {"host_b": host_b, "host_a": host_a}
+
+
 def run_all_scenarios(run_id_prefix: str) -> dict:
     scenarios = {}
     scenarios["session_visibility"] = run_session_visibility(f"{run_id_prefix}-svis")
@@ -338,7 +352,8 @@ def run_all_scenarios(run_id_prefix: str) -> dict:
     scenarios["outage_core_db"] = run_outage_sim(f"{run_id_prefix}-outage-core", "core_db")
     scenarios["deadline"] = run_deadline_test(f"{run_id_prefix}-deadline")
     scenarios["budget"] = run_budget_test(f"{run_id_prefix}-budget")
-    for rid_suffix in ("svis", "tenant", "secroot", "stale", "outage-auth", "outage-secroot", "outage-core", "deadline", "budget"):
+    scenarios["cancellation"] = run_cancellation_test(f"{run_id_prefix}-cancel")
+    for rid_suffix in ("svis", "tenant", "secroot", "stale", "outage-auth", "outage-secroot", "outage-core", "deadline", "budget", "cancel-a", "cancel-b"):
         _run_local(["--role", "ORCHESTRATOR", "--run-id", f"{run_id_prefix}-{rid_suffix}", "--action", "cleanup"])
     return scenarios
 
@@ -349,7 +364,7 @@ def main() -> None:
     parser.add_argument("--scenario", choices=[
         "race", "session_visibility", "tenant_isolation", "security_root_propagation",
         "stale_worker", "outage_authority", "outage_security_root", "outage_core_db",
-        "deadline", "budget", "all_scenarios",
+        "deadline", "budget", "cancellation", "all_scenarios",
     ], default="race")
     args = parser.parse_args()
 
@@ -368,7 +383,7 @@ def main() -> None:
         dispatch = {
             "session_visibility": run_session_visibility, "tenant_isolation": run_tenant_isolation,
             "security_root_propagation": run_security_root_propagation, "stale_worker": run_stale_worker,
-            "deadline": run_deadline_test, "budget": run_budget_test,
+            "deadline": run_deadline_test, "budget": run_budget_test, "cancellation": run_cancellation_test,
         }
         if args.scenario in ("outage_authority", "outage_security_root", "outage_core_db"):
             target = {"outage_authority": "authority", "outage_security_root": "security_root", "outage_core_db": "core_db"}[args.scenario]
@@ -376,7 +391,11 @@ def main() -> None:
         else:
             result = dispatch[args.scenario](run_id)
         print(json.dumps(result, indent=2))
-        _run_local(["--role", "ORCHESTRATOR", "--run-id", run_id, "--action", "cleanup"])
+        if args.scenario == "cancellation":
+            _run_local(["--role", "ORCHESTRATOR", "--run-id", f"{run_id}-a", "--action", "cleanup"])
+            _run_local(["--role", "ORCHESTRATOR", "--run-id", f"{run_id}-b", "--action", "cleanup"])
+        else:
+            _run_local(["--role", "ORCHESTRATOR", "--run-id", run_id, "--action", "cleanup"])
         return
 
     all_results = []

@@ -98,3 +98,4 @@ tests/test_truth_safe_fetch_cutover.py
 tests/test_web_ingest.py
 tests/test_web_ssrf_guard.py
 tests/test_durable_audit_concurrency_hardening.py
+tests/test_godmode_cancellation.py

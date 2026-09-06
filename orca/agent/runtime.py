@@ -190,6 +190,7 @@ class AgentRuntime:
             return None
 
         from orca.godmode.capability import compute_effective_capabilities
+        from orca.godmode.cancellation import current_task_cancellation_signal
         from orca.godmode.contracts import CapabilityDomain
         from orca.godmode.policy import evaluate_elevated_policy
 
@@ -209,6 +210,7 @@ class AgentRuntime:
             tenant_id=self.tenant_id, lease_id=lease_id, capability_domain=CapabilityDomain.AGENT,
             capability=capability, resource_scope=resource_scope, operation_scope=operation_scope,
             resolved_side_effect_class=action.expected_side_effect, arguments=payload_arguments,
+            cancellation=current_task_cancellation_signal(),
         )
         if elevated_decision.state.value != "ALLOW":
             return None
@@ -387,6 +389,31 @@ class AgentRuntime:
                         run.stop_reason = ExecutionStopReason.BUDGET_EXHAUSTED
                         if task is not None:
                             task.status = TaskStatus.BLOCKED
+                        break
+
+                # Phase 14B.2 (spec Step 5): the caller-side final
+                # cancellation gate. `_try_elevate()` already forwarded
+                # a live cancellation signal into
+                # `resolve_and_consume_lease()`'s own in-flight
+                # checkpoints, but a cancellation could still arrive in
+                # the window between that call returning ALLOW/
+                # COMMITTED and this loop reaching the tool invocation
+                # below -- only relevant for ELEVATED_ACTION, since a
+                # NORMAL_ACTION never consumed a Godmode lease and is
+                # already covered by the existing asyncio.CancelledError
+                # handling around the tool invocation itself.
+                if auth.elevated_action_class == "ELEVATED_ACTION" and auth.lease_id:
+                    from orca.godmode.cancellation import (
+                        check_and_record_pre_side_effect_cancellation,
+                        current_task_cancellation_signal,
+                    )
+                    if not check_and_record_pre_side_effect_cancellation(
+                        cancellation=current_task_cancellation_signal(), tenant_id=self.tenant_id or "",
+                        lease_id=auth.lease_id,
+                    ):
+                        if reservation is not None and self.ledger is not None:
+                            self.ledger.release_reservation(reservation)
+                        cancelled = True
                         break
 
                 # Idempotency (spec §27): a non-idempotent tool is never

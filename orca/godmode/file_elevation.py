@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from orca.godmode.cancellation import CancellationSignal, check_and_record_pre_side_effect_cancellation
 from orca.godmode.contracts import CapabilityDomain
 from orca.godmode.lease_store import get as get_lease
 from orca.godmode.resolution import resolve_and_consume_lease
@@ -79,6 +80,7 @@ def _resolve_within_root(path: str, root: Path) -> Path | None:
 
 def elevated_write_file(
     *, lease_id: str, tenant_id: str, path: str, content: str,
+    cancellation: "CancellationSignal | None" = None,
 ) -> tuple[bool, str]:
     """
     Returns `(success, message)`. Fails closed on ANY of: lease not
@@ -88,6 +90,19 @@ def elevated_write_file(
     remaining (consumed atomically here, exactly once per successful
     write -- never before the path safety checks pass, so a
     path-rejected attempt never burns a use).
+
+    `cancellation` (Phase 14B.2): forwarded to
+    `resolve_and_consume_lease()` for its own in-flight checkpoints, AND
+    checked AGAIN via `check_and_record_pre_side_effect_cancellation()`
+    immediately before the actual file write below -- this function is
+    a self-contained example of Step 5's caller-side final gate: a
+    cancellation arriving in the (normally instantaneous, but real)
+    window between `resolve_and_consume_lease()` returning ALLOW and
+    `resolved.write_text()` actually running must still block the
+    write, even though the lease's use has already been durably
+    committed by that point. `None` (the default) preserves existing
+    behavior exactly -- this module's only current callers
+    (`orca/godmode/eval_harness.py`, simulations) are synchronous.
     """
     lease = get_lease(lease_id)
     if lease is None or lease.capability_domain != CapabilityDomain.FILE or lease.capability != "FILE_WRITE":
@@ -101,9 +116,19 @@ def elevated_write_file(
     decision = resolve_and_consume_lease(
         lease_id, tenant_id=tenant_id, capability_domain=CapabilityDomain.FILE, capability="FILE_WRITE",
         resource_scope=lease.resource_scope, operation_scope=lease.operation_scope, arguments={},
+        cancellation=cancellation,
     )
     if decision.state.value != "ALLOW":
         return False, "; ".join(decision.reasons)
+
+    # Caller-side final gate (spec Step 5): the lease is now durably
+    # COMMITTED -- that fact is never undone below -- but the side
+    # effect (the actual write) has not happened yet.
+    if not check_and_record_pre_side_effect_cancellation(
+        cancellation=cancellation, tenant_id=tenant_id, lease_id=lease_id,
+        capability="FILE_WRITE", resource_scope=lease.resource_scope, operation_scope=lease.operation_scope,
+    ):
+        return False, "cancelled after authorization was committed, before the file write executed -- write not performed"
 
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content)

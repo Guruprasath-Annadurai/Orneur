@@ -261,6 +261,87 @@ def action_resolve_once(run_id: str, lease_id: str, principal_suffix: str) -> No
     print(json.dumps({"run_id": run_id, "lease_id": lease_id, "state": decision.state.value, "reasons": decision.reasons}))
 
 
+def action_cancellation_test(run_id: str) -> None:
+    """Phase 14B.2 Step 13: proves the real cancellation checkpoints
+    (orca.godmode.resolution.resolve_and_consume_lease()'s cancellation
+    parameter) against the REAL cloud Postgres backend (Supabase CORE),
+    on whichever real host (Northflank Host A or the GitHub Actions
+    Host B runner) this action is dispatched to -- not a local test
+    database. Honestly scoped (spec Step 13): the cancellation SIGNAL
+    itself is constructed and checked entirely within this single
+    process -- there is no real cross-process/network worker RPC to
+    propagate a cancellation across today (the Gateway is in-process),
+    so this does not claim distributed cancellation propagation, only
+    that the in-process cancellation contract behaves correctly when
+    the authority backend it talks to is the real cloud database.
+
+    Two sub-scenarios, using two separate one-use leases:
+      1. cancel-before-consume: the lease's use remains available
+         afterward (proven via a second, uncancelled attempt).
+      2. cancel-after-consume: the lease's use is already spent and is
+         NOT refunded (proven via a second attempt correctly denied for
+         exhaustion, never silently re-authorized)."""
+    from datetime import datetime, timedelta, timezone
+    from orca.godmode.canonical import hash_arguments
+    from orca.godmode.cancellation import CallableCancellationSignal
+    from orca.godmode.contracts import CapabilityDomain, GodmodeApproval, LeaseIssuerClass
+    from orca.godmode.issuance import issue_lease
+    from orca.godmode.resolution import resolve_and_consume_lease
+
+    tenant_id = _tenant_id(run_id)
+
+    def _issue(suffix: str):
+        approval = GodmodeApproval(
+            approval_id=f"ap-cancel-{suffix}-{run_id}", principal_id="phase14b-qualification", tenant_id=tenant_id,
+            capability_domain=CapabilityDomain.CONNECTOR, capability="CONNECTOR_WRITE",
+            resource_scope=f"phase14b-cancel-{suffix}-{run_id}", operation_scope="write", arguments_hash=hash_arguments({}),
+            duration_s=900, reason="Phase 14B.2 cancellation cloud qualification", approved_by="human:phase14b-qualification",
+            expires_at=(datetime.now(timezone.utc) + timedelta(seconds=900)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        return issue_lease(approval=approval, issuer=LeaseIssuerClass.HUMAN_APPROVAL, issuer_id="human:phase14b-qualification", max_uses=1)
+
+    def _resolve(lease_id: str, suffix: str, *, cancelled_signal):
+        return resolve_and_consume_lease(
+            lease_id, tenant_id=tenant_id, capability_domain=CapabilityDomain.CONNECTOR,
+            capability="CONNECTOR_WRITE", resource_scope=f"phase14b-cancel-{suffix}-{run_id}", operation_scope="write",
+            arguments={}, principal_id="phase14b-cancellation-test", trace_id=f"phase14b-{run_id}-cancel-{suffix}",
+            cancellation=cancelled_signal,
+        )
+
+    already_cancelled = CallableCancellationSignal(lambda: True)
+
+    lease_a = _issue("before-consume")
+    first_a = _resolve(lease_a.lease_id, "before-consume", cancelled_signal=already_cancelled)
+    second_a = _resolve(lease_a.lease_id, "before-consume", cancelled_signal=None)  # uncancelled retry -- use must still be available
+
+    lease_b = _issue("after-consume")
+    # checkpoint D: cancel only on the 4th is_cancelled() call (after
+    # consume_use() has already succeeded) -- see
+    # tests/test_godmode_cancellation.py's _signal_cancelled_on_call()
+    # for why this deterministically targets checkpoint D.
+    state = {"calls": 0}
+    def _cancel_at_checkpoint_d() -> bool:
+        state["calls"] += 1
+        return state["calls"] >= 4
+    checkpoint_d_signal = CallableCancellationSignal(_cancel_at_checkpoint_d)
+    first_b = _resolve(lease_b.lease_id, "after-consume", cancelled_signal=checkpoint_d_signal)
+    second_b = _resolve(lease_b.lease_id, "after-consume", cancelled_signal=None)  # uncancelled retry -- use must be spent, DENY expected
+
+    print(json.dumps({
+        "run_id": run_id,
+        "cancel_before_consume": {
+            "first_state": first_a.state.value, "first_cancelled": first_a.cancelled, "first_reasons": first_a.reasons,
+            "second_state": second_a.state.value, "second_reasons": second_a.reasons,
+            "use_preserved": second_a.state.value == "ALLOW",
+        },
+        "cancel_after_consume": {
+            "first_state": first_b.state.value, "first_cancelled": first_b.cancelled, "first_reasons": first_b.reasons,
+            "second_state": second_b.state.value, "second_reasons": second_b.reasons,
+            "use_not_refunded": second_b.state.value == "DENY" and "no uses remaining" in "; ".join(second_b.reasons),
+        },
+    }))
+
+
 def action_budget_test(run_id: str) -> None:
     """Spec Step 11: single-actor, sequential proof that a lease's
     max_uses budget is enforced -- consume once (must succeed), then
@@ -369,7 +450,7 @@ def main() -> None:
         "setup_lease", "race", "read_audit", "security_root_epoch", "cleanup",
         "security_root_advance", "write_tenant_state", "read_tenant_state",
         "stale_worker", "revoker_signal", "deadline_test", "budget_test",
-        "outage_sim", "resolve_once",
+        "outage_sim", "resolve_once", "cancellation_test",
     ])
     parser.add_argument("--lease-id", default=None)
     parser.add_argument("--max-uses", type=int, default=1)
@@ -429,6 +510,8 @@ def main() -> None:
             print(json.dumps({"error": "MISSING_LEASE_ID_OR_PRINCIPAL_SUFFIX"}))
             sys.exit(1)
         action_resolve_once(args.run_id, args.lease_id, args.principal_suffix)
+    elif args.action == "cancellation_test":
+        action_cancellation_test(args.run_id)
     elif args.action == "cleanup":
         action_cleanup(args.run_id)
 

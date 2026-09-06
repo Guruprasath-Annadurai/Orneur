@@ -234,6 +234,13 @@ class ElevatedPolicyDecision:
     revocation_ok: bool = False
     kill_switch_active: bool = False
     reasons: list[str] = field(default_factory=list)
+    # Phase 14B.2: machine-readable cancellation marker, deliberately
+    # NOT a new ElevatedPolicyDecisionState value (spec: "Do not create
+    # a new ALLOW-like state") -- `state` stays DENY when this is True;
+    # this field lets a caller distinguish "cancelled" from an ordinary
+    # DENY (revoked/expired/scope-mismatch/lost-race/audit-failure)
+    # without string-matching `reasons`. See `resolution.resolve_and_consume_lease()`.
+    cancelled: bool = False
 
 
 # ── Elevated action class (spec §32) ─────────────────────────────────────
@@ -267,6 +274,29 @@ class ElevationAuditEventType(str, Enum):
     AUTHORIZATION_COMMITTED = "AUTHORIZATION_COMMITTED"
     AUTHORIZATION_LOST_RACE = "AUTHORIZATION_LOST_RACE"
     AUDIT_FAILURE_DENY = "AUDIT_FAILURE_DENY"
+
+    # ── Phase 14B.2: cancellation closure ────────────────────────────
+    # `AUTHORIZATION_CANCELLED` covers every in-`resolve_and_consume_lease()`
+    # cancellation checkpoint (before validation, after validation,
+    # after the pending-consume ATTEMPT record, and immediately after
+    # `consume_use()` succeeds) -- `result` distinguishes whether the
+    # lease's one use was already spent at the moment cancellation was
+    # observed ("CANCELLED_BEFORE_CONSUME" vs "CANCELLED_AFTER_CONSUME"),
+    # so the minimum event taxonomy still preserves that critical
+    # distinction without a separate event type per checkpoint. Never
+    # `result="ALLOW"` -- `count_false_committed_audit()`'s invariant
+    # (only AUTHORIZATION_COMMITTED may ever carry result="ALLOW")
+    # holds automatically.
+    AUTHORIZATION_CANCELLED = "AUTHORIZATION_CANCELLED"
+    # A cancellation observed by the CALLER, strictly after
+    # AUTHORIZATION_COMMITTED already durably recorded a real grant, in
+    # the window between that grant and the caller's own privileged
+    # side effect. Deliberately a SEPARATE event type from
+    # AUTHORIZATION_CANCELLED -- it never means "authorization was
+    # denied/cancelled" (it was genuinely, durably granted); it only
+    # means the side effect itself was not executed. The COMMITTED
+    # event is never rewritten or retracted.
+    EXECUTION_CANCELLED_BEFORE_SIDE_EFFECT = "EXECUTION_CANCELLED_BEFORE_SIDE_EFFECT"
 
 
 @dataclass

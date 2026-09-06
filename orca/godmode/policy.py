@@ -24,6 +24,7 @@ from orca.godmode.contracts import (
     ElevatedPolicyDecision,
     ElevatedPolicyDecisionState,
 )
+from orca.godmode.cancellation import CancellationSignal
 from orca.godmode.kill_switch import is_active as kill_switch_active
 from orca.godmode.resolution import _SENTINEL, resolve_and_consume_lease
 
@@ -47,6 +48,7 @@ def evaluate_elevated_policy(
     operation_scope: str,
     resolved_side_effect_class: SideEffectClass | None = None,
     arguments: dict | None = _SENTINEL,  # type: ignore[assignment]
+    cancellation: "CancellationSignal | None" = None,
 ) -> ElevatedPolicyDecision:
     """
     Returns the full decision trace (spec §20). `lease_id` is the ONE
@@ -62,6 +64,11 @@ def evaluate_elevated_policy(
     consumes speculatively during a mere capability-membership probe --
     see `orca.godmode.capability.compute_effective_capabilities()`,
     which stays read-only).
+
+    `cancellation` (Phase 14B.2): forwarded unchanged to
+    `resolve_and_consume_lease()` -- see its docstring for the exact
+    checkpoint semantics. `None` (the default) preserves existing
+    behavior exactly.
     """
     normal = evaluate_policy(
         goal=goal, tool_spec=tool_spec, capability_decision=capability_decision,
@@ -86,8 +93,10 @@ def evaluate_elevated_policy(
     lease_decision = resolve_and_consume_lease(
         lease_id, tenant_id=tenant_id, capability_domain=capability_domain, capability=capability,
         resource_scope=resource_scope, operation_scope=operation_scope, arguments=arguments,
+        cancellation=cancellation,
     )
     decision.lease_considered_id = lease_id
+    decision.cancelled = lease_decision.cancelled
     decision.scope_match = lease_decision.scope_match
     decision.argument_match = lease_decision.argument_match
     decision.binding_mode = lease_decision.binding_mode

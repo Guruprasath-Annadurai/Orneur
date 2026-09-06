@@ -11,6 +11,7 @@ from __future__ import annotations
 import posixpath
 
 from orca.godmode.canonical import hash_arguments
+from orca.godmode.cancellation import CancellationSignal, is_cancelled
 from orca.godmode.contracts import (
     ArgumentBindingMode,
     CapabilityDomain,
@@ -173,6 +174,7 @@ def resolve_and_consume_lease(
     arguments: dict | None = _SENTINEL,  # type: ignore[assignment]
     principal_id: str | None = None,
     trace_id: str | None = None,
+    cancellation: CancellationSignal | None = None,
 ) -> ElevatedPolicyDecision:
     """
     The side-effecting entry point real callers (AgentRuntime, connector
@@ -239,7 +241,52 @@ def resolve_and_consume_lease(
     verified directly by `durable_audit.count_false_committed_audit()`
     and exercised under real concurrent multiprocess contention in
     `tests/test_durable_godmode_audit.py`.
+
+    Phase 14B.2 (cancellation, cooperative and fail-safe -- see
+    `orca.godmode.cancellation`'s module docstring): `cancellation` is
+    checked at four checkpoints, ALL of which occur strictly before
+    AUTHORIZATION_COMMITTED is ever written:
+
+      A. Before `resolve_lease()` is even called -- nothing validated,
+         nothing consumed.
+      B. After `resolve_lease()` returns ALLOW, before the pending-
+         consume ATTEMPT record is written -- nothing consumed.
+      C. After the ATTEMPT record succeeds, before `consume_use()` --
+         the lease's use is NOT yet spent.
+      D. Immediately after `consume_use()` succeeds, before
+         AUTHORIZATION_COMMITTED -- the use IS ALREADY SPENT here and
+         is deliberately NEVER refunded or re-credited (this already
+         matches this function's own pre-existing conservative
+         semantics for an audit-write failure at the same point:
+         "consumed but not executed" is treated as acceptable safe
+         failure, never as an inconsistency to silently repair).
+
+    Every checkpoint records a durable `AUTHORIZATION_CANCELLED` event
+    (best-effort -- a failure to record it does not change the DENY
+    outcome) with `result` distinguishing whether the use was already
+    spent at that point (`CANCELLED_BEFORE_CONSUME` for A-C,
+    `CANCELLED_AFTER_CONSUME` for D), never `result="ALLOW"`. There is
+    no checkpoint E here -- a cancellation observed strictly AFTER this
+    function returns ALLOW/COMMITTED (between that grant and the
+    caller's own side effect) is the CALLER's responsibility via
+    `orca.godmode.cancellation.check_and_record_pre_side_effect_cancellation()`,
+    since only the caller knows when the side effect is about to run.
+    `cancellation=None` (the default) preserves every existing caller's
+    current behavior exactly -- no checkpoint is ever consulted.
     """
+    if is_cancelled(cancellation):
+        decision = ElevatedPolicyDecision(state=ElevatedPolicyDecisionState.DENY, cancelled=True)
+        decision.reasons.append(
+            "AUTHORIZATION_CANCELLED: cancellation observed before validation -- nothing "
+            "validated or consumed"
+        )
+        _audit_cancellation(
+            "CANCELLED_BEFORE_CONSUME", lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+            resource_scope=resource_scope, operation_scope=operation_scope,
+            principal_id=principal_id, trace_id=trace_id,
+        )
+        return decision
+
     decision = resolve_lease(
         lease_id, tenant_id=tenant_id, capability_domain=capability_domain, capability=capability,
         resource_scope=resource_scope, operation_scope=operation_scope, arguments=arguments,
@@ -256,6 +303,22 @@ def resolve_and_consume_lease(
         return decision
 
     from orca.godmode.contracts import ElevationAuditEventType
+
+    # Cancellation checkpoint B: after validation, before ANYTHING is
+    # consumed. The use remains available.
+    if is_cancelled(cancellation):
+        decision.state = ElevatedPolicyDecisionState.DENY
+        decision.cancelled = True
+        decision.reasons.append(
+            "AUTHORIZATION_CANCELLED: cancellation observed after validation, before consumption "
+            "-- nothing consumed"
+        )
+        _audit_cancellation(
+            "CANCELLED_BEFORE_CONSUME", lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+            resource_scope=resource_scope, operation_scope=operation_scope,
+            principal_id=principal_id, trace_id=trace_id,
+        )
+        return decision
 
     # Gate 2: durable audit PRECONDITION, written BEFORE consume_use().
     # Explicitly NOT a final grant (spec patch §1) -- result is
@@ -274,6 +337,23 @@ def resolve_and_consume_lease(
         )
         return decision
 
+    # Cancellation checkpoint C: the ATTEMPT precondition is durably
+    # recorded, but the use is still NOT yet spent (consume_use() has
+    # not been called).
+    if is_cancelled(cancellation):
+        decision.state = ElevatedPolicyDecisionState.DENY
+        decision.cancelled = True
+        decision.reasons.append(
+            "AUTHORIZATION_CANCELLED: cancellation observed after the pending-consume ATTEMPT "
+            "record, before consume_use() -- the lease's use is still unspent"
+        )
+        _audit_cancellation(
+            "CANCELLED_BEFORE_CONSUME", lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+            resource_scope=resource_scope, operation_scope=operation_scope,
+            principal_id=principal_id, trace_id=trace_id,
+        )
+        return decision
+
     # Gate 3: lease consumption must succeed.
     if not consume_use(lease_id):
         decision.state = ElevatedPolicyDecisionState.DENY
@@ -287,6 +367,26 @@ def resolve_and_consume_lease(
         _audit_decision(
             event_type=ElevationAuditEventType.AUTHORIZATION_LOST_RACE, result="LOST_RACE",
             lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+            resource_scope=resource_scope, operation_scope=operation_scope,
+            principal_id=principal_id, trace_id=trace_id,
+        )
+        return decision
+
+    # Cancellation checkpoint D: consume_use() just succeeded -- the
+    # use IS ALREADY SPENT. Per this function's own conservative
+    # semantics (spec patch §5: "consuming a lease without executing is
+    # acceptable safe failure"), this is NEVER refunded or re-credited,
+    # exactly like an audit-write failure at this same point below.
+    if is_cancelled(cancellation):
+        decision.state = ElevatedPolicyDecisionState.DENY
+        decision.cancelled = True
+        decision.reasons.append(
+            "AUTHORIZATION_CANCELLED: cancellation observed immediately after consume_use() "
+            "succeeded -- the lease's use is already spent and is NOT refunded or re-credited; "
+            "the privileged side effect is not authorized to execute"
+        )
+        _audit_cancellation(
+            "CANCELLED_AFTER_CONSUME", lease_id=lease_id, tenant_id=tenant_id, capability=capability,
             resource_scope=resource_scope, operation_scope=operation_scope,
             principal_id=principal_id, trace_id=trace_id,
         )
@@ -345,3 +445,25 @@ def _audit_decision(
         trace_id=trace_id, result=result,
     )
     return record_event_durable_with_diagnostics(event)
+
+
+def _audit_cancellation(
+    result: str, *, lease_id: str, tenant_id: str, capability: str,
+    resource_scope: str, operation_scope: str, principal_id: str | None, trace_id: str | None,
+) -> None:
+    """Best-effort: records `AUTHORIZATION_CANCELLED` at any of
+    checkpoints A-D. `result` is always `"CANCELLED_BEFORE_CONSUME"` or
+    `"CANCELLED_AFTER_CONSUME"` (never `"ALLOW"`), so
+    `count_false_committed_audit()`'s invariant is preserved
+    automatically. A failure to record this diagnostic marker does not
+    change the (already-decided) DENY outcome -- exactly like the
+    existing best-effort `AUTHORIZATION_LOST_RACE`/`AUDIT_FAILURE_DENY`
+    writes elsewhere in this module."""
+    from orca.godmode.contracts import ElevationAuditEventType
+
+    _audit_decision(
+        event_type=ElevationAuditEventType.AUTHORIZATION_CANCELLED, result=result,
+        lease_id=lease_id, tenant_id=tenant_id, capability=capability,
+        resource_scope=resource_scope, operation_scope=operation_scope,
+        principal_id=principal_id, trace_id=trace_id,
+    )
