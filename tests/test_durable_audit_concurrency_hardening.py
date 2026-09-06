@@ -166,11 +166,100 @@ def test_classify_pg_error_categories_are_sanitized(tmp_path):
     assert durable_audit._classify_pg_error(psycopg.errors.DeadlockDetected("x")) == "DEADLOCK"
     assert durable_audit._classify_pg_error(psycopg.errors.SerializationFailure("x")) == "SERIALIZATION_FAILURE"
     assert durable_audit._classify_pg_error(psycopg.errors.UniqueViolation("x")) == "UNIQUE_VIOLATION"
+    assert durable_audit._classify_pg_error(psycopg.errors.QueryCanceled("x")) == "STATEMENT_TIMEOUT"
     assert durable_audit._classify_pg_error(psycopg.OperationalError("x")) == "CONNECTION_FAILURE"
     # No category string ever contains the word "password" or "dsn" -- a
     # structural guarantee, not just true for the cases above.
-    for cat in ("LOCK_TIMEOUT", "DEADLOCK", "SERIALIZATION_FAILURE", "UNIQUE_VIOLATION", "CONNECTION_FAILURE"):
+    for cat in ("LOCK_TIMEOUT", "STATEMENT_TIMEOUT", "DEADLOCK", "SERIALIZATION_FAILURE", "UNIQUE_VIOLATION", "CONNECTION_FAILURE"):
         assert "password" not in cat.lower() and "dsn" not in cat.lower()
+
+
+# --------------------------------------------------------------- timeout ordering (Phase 14B.1.1)
+
+
+def test_lock_timeout_shorter_than_statement_timeout_fires_first(tmp_path):
+    """Real Postgres proof of the coherent ordering (spec Phase 14B.1.1
+    Step 3/6): hold the head-row lock in a separate real connection
+    longer than _PG_LOCK_WAIT_TIMEOUT_MS but well under
+    _PG_STATEMENT_TIMEOUT_MS, and confirm the waiting writer is
+    cancelled by lock_timeout (LOCK_TIMEOUT), not statement_timeout
+    (STATEMENT_TIMEOUT) -- proving the two no longer race each other
+    with the wrong one winning, which was the real Phase 14B.1 cloud
+    bug (a session-level statement_timeout of 5000ms silently capped an
+    intended 8000ms lock_timeout)."""
+    home = str(tmp_path / "home-timeout-order")
+    os.makedirs(home, exist_ok=True)
+    _, durable_audit, _ = _setup(home)
+    durable_audit._ensure_pg_schema()
+    assert durable_audit._PG_LOCK_WAIT_TIMEOUT_MS < durable_audit._PG_STATEMENT_TIMEOUT_MS
+
+    import psycopg
+    import threading
+    import time
+
+    holder_ready = threading.Event()
+    # Holds for longer than lock_timeout but well under statement_timeout
+    # -- just enough for the writer's FIRST attempt to be cancelled by
+    # lock_timeout specifically, then released so a retry succeeds
+    # quickly. This is the actual point of the test: prove the writer's
+    # own budget (lock_timeout, then retry) governs the outcome, not an
+    # unrelated already-in-effect statement_timeout capping it short.
+    hold_seconds = (durable_audit._PG_LOCK_WAIT_TIMEOUT_MS / 1000.0) + 1.0
+
+    def hold_lock():
+        conn = psycopg.connect(_AUTHORITY_DSN, autocommit=False)
+        with conn.cursor() as cur:
+            cur.execute("SELECT last_seq, last_hash FROM godmode_audit_head WHERE id = 1 FOR UPDATE")
+            holder_ready.set()
+            time.sleep(hold_seconds)
+        conn.rollback()
+        conn.close()
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    holder_ready.wait(timeout=5)
+
+    from orca.godmode.contracts import ElevationAuditEvent, ElevationAuditEventType
+    event = ElevationAuditEvent(event_type=ElevationAuditEventType.AUTHORIZATION_ATTEMPT, principal_id="u1", tenant_id="t-timeout-order", result="PENDING_CONSUME")
+
+    start = time.monotonic()
+    ok, category = durable_audit._record_event_postgres_with_diagnostics(event)
+    elapsed = time.monotonic() - start
+    holder.join(timeout=10)
+
+    # The writer's first attempt gets LOCK_TIMEOUT'd around ~5s (never
+    # STATEMENT_TIMEOUT'd first), then a retry succeeds once the holder
+    # releases -- total time bounded well under statement_timeout, and
+    # the eventual result is a real success, not a masked failure.
+    assert ok is True, f"expected eventual success via retry, got category={category}"
+    assert elapsed < (durable_audit._PG_STATEMENT_TIMEOUT_MS / 1000.0), (
+        f"took {elapsed:.1f}s -- statement_timeout, not lock_timeout, governed this wait"
+    )
+
+
+def test_statement_timeout_category_used_when_it_actually_fires(tmp_path):
+    """Directly forces a real STATEMENT_TIMEOUT (not LOCK_TIMEOUT) by
+    setting an artificially tiny statement_timeout and running a
+    real slow query (pg_sleep), proving the classifier distinguishes
+    them using real Postgres SQLSTATEs, not just unit-level mocking."""
+    home = str(tmp_path / "home-real-stmt-timeout")
+    os.makedirs(home, exist_ok=True)
+    _, durable_audit, _ = _setup(home)
+
+    import psycopg
+    conn = psycopg.connect(_AUTHORITY_DSN, autocommit=False)
+    category = None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SET LOCAL statement_timeout = '200ms'")
+            cur.execute("SELECT pg_sleep(2)")
+    except Exception as e:
+        category = durable_audit._classify_pg_error(e) if isinstance(e, psycopg.Error) else None
+    finally:
+        conn.rollback()
+        conn.close()
+
+    assert category == "STATEMENT_TIMEOUT", f"expected STATEMENT_TIMEOUT, got {category}"
 
 
 # --------------------------------------------------------------- hot path has no DDL

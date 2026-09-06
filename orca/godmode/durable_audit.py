@@ -217,21 +217,32 @@ CREATE TABLE IF NOT EXISTS godmode_audit_head (
 # table schema, not the head table).
 _PG_SCHEMA = _PG_TABLE_SCHEMA
 
-_MAX_RETRY_ATTEMPTS = 7
-# Time willing to WAIT for the head-row lock per attempt, distinct from
-# statement_timeout. Under N-way contention, an actor at the back of the
-# FOR UPDATE queue may need to wait for every one of its N-1 competitors'
-# short critical sections to complete first. Empirically tuned upward
-# twice: 2000ms flaked ~5/8 times at 10-way contention under a loaded
-# pytest run despite 5/5 clean in a standalone process; 5000ms held
-# 20/20 in isolation but still showed 2/9 losing actors exhausting
-# retries when the ENTIRE ~1600-test deterministic suite was running
-# concurrently on the same machine (the heaviest real load this
-# repository's own test suite creates). Both the retry count and the
-# per-attempt wait were raised together rather than either alone, since
-# the failure mode under extreme load is retry-budget exhaustion, not a
-# single too-short wait.
-_PG_LOCK_WAIT_TIMEOUT_MS = 8000
+# Phase 14B.1.1: the earlier tuning history below (2000ms -> 5000ms ->
+# 8000ms, 4 -> 5 -> 7 attempts) was chasing the WRONG variable. The real
+# cloud failure (20/20 races, winner's final audit write failing) was
+# root-caused to a genuine bug, not insufficient wait time:
+# `lease_store._pg_connect()` sets a SESSION-level `statement_timeout`
+# (5000ms) on every connection durable_audit.py obtains through it. This
+# module's own `SET LOCAL lock_timeout` was being silently capped by
+# that shorter, unrelated, already-in-effect session default -- a
+# statement running past 5s was cancelled by `statement_timeout`
+# (SQLSTATE 57014, `QueryCanceled`) BEFORE `lock_timeout` (SQLSTATE
+# 55P03, `LockNotAvailable`) ever had a chance to fire, and this module
+# had no explicit case for `QueryCanceled`, so it fell through to a
+# generic, misleading "CONNECTION_FAILURE" classification. Raising the
+# lock_timeout constant repeatedly could never fix this: any value
+# still tried to exceed the connection's own shorter statement_timeout.
+#
+# Fixed at the source (`lease_store._pg_connect()` no longer runs DDL on
+# every call -- see that function's own docstring) AND here: this
+# module now explicitly `SET LOCAL`s BOTH values together, in the
+# coherent relationship spec Phase 14B.1.1 requires --
+# connect_timeout < lock_timeout < statement_timeout -- scoped to just
+# this transaction, so it never affects lease_store's own unrelated use
+# of the same connection helper.
+_MAX_RETRY_ATTEMPTS = 4
+_PG_LOCK_WAIT_TIMEOUT_MS = 5000
+_PG_STATEMENT_TIMEOUT_MS = 10000  # must stay > _PG_LOCK_WAIT_TIMEOUT_MS
 
 # Keyed by the actual target (resolved SQLite file path / Postgres DSN),
 # NOT a bare process-global bool -- SQLite's target changes per test
@@ -257,6 +268,15 @@ def _classify_pg_error(exc: BaseException) -> str:
 
     if isinstance(exc, psycopg.errors.LockNotAvailable):
         return "LOCK_TIMEOUT"
+    if isinstance(exc, psycopg.errors.QueryCanceled):
+        # SQLSTATE 57014 -- statement_timeout expired, DISTINCT from
+        # LockNotAvailable's 55P03 (lock_timeout expired). Must be
+        # checked as its own category, never allowed to fall through to
+        # the generic OperationalError branch below -- that exact
+        # fallthrough was the real Phase 14B.1 cloud-failure
+        # misclassification (see this module's _MAX_RETRY_ATTEMPTS
+        # comment for the full story).
+        return "STATEMENT_TIMEOUT"
     if isinstance(exc, psycopg.errors.DeadlockDetected):
         return "DEADLOCK"
     if isinstance(exc, psycopg.errors.SerializationFailure):
@@ -418,9 +438,18 @@ def _record_event_postgres_with_diagnostics(event: ElevationAuditEvent) -> tuple
 
         try:
             with conn.cursor() as cur:
-                # SET does not accept bind parameters in Postgres; the
-                # value is an internal integer constant, never
-                # user/caller-supplied, so a literal is safe here.
+                # SET does not accept bind parameters in Postgres; both
+                # values are internal integer constants, never
+                # user/caller-supplied, so literals are safe here.
+                # statement_timeout is set FIRST and LARGER so it can
+                # never silently cap lock_timeout's shorter wait --
+                # `lease_store._pg_connect()` already set a 5000ms
+                # statement_timeout at the SESSION level for its OWN
+                # unrelated purpose; SET LOCAL overrides that for just
+                # this transaction (spec Phase 14B.1.1: connect_timeout
+                # < lock_timeout < statement_timeout, coherent and
+                # explicit, never inherited from an unrelated caller).
+                cur.execute(f"SET LOCAL statement_timeout = '{_PG_STATEMENT_TIMEOUT_MS}ms'")
                 cur.execute(f"SET LOCAL lock_timeout = '{_PG_LOCK_WAIT_TIMEOUT_MS}ms'")
                 cur.execute("SELECT last_seq, last_hash FROM godmode_audit_head WHERE id = 1 FOR UPDATE")
                 head = cur.fetchone()
@@ -459,7 +488,7 @@ def _record_event_postgres_with_diagnostics(event: ElevationAuditEvent) -> tuple
             conn.rollback()
             category = _classify_pg_error(e) if isinstance(e, psycopg.Error) else "UNKNOWN_DATABASE_FAILURE"
             last_category = category
-            if category in ("LOCK_TIMEOUT", "DEADLOCK", "SERIALIZATION_FAILURE") and attempt < _MAX_RETRY_ATTEMPTS - 1:
+            if category in ("LOCK_TIMEOUT", "STATEMENT_TIMEOUT", "DEADLOCK", "SERIALIZATION_FAILURE") and attempt < _MAX_RETRY_ATTEMPTS - 1:
                 import time
                 time.sleep(_retry_backoff_seconds(attempt))
                 continue

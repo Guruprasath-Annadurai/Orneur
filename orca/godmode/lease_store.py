@@ -538,18 +538,70 @@ CREATE TABLE IF NOT EXISTS kill_switch_state (
 """
 
 
-def _pg_connect():
-    """One fresh connection per call, same rationale as `_connect()` above
-    -- this is a low-frequency authority-boundary operation, not a hot
-    request path. `autocommit=False` so every caller controls its own
-    transaction boundary explicitly (never an implicit one left open)."""
+# Phase 14B.1.1: schema DDL was previously executed on EVERY call to
+# `_pg_connect()` -- meaning every caller sharing this connection
+# helper (lease_store's own operations, AND `orca.godmode.durable_audit`,
+# which obtains its Postgres connections through this exact function)
+# indirectly ran `CREATE TABLE IF NOT EXISTS`/`CREATE INDEX IF NOT EXISTS`
+# before every real operation, contradicting durable_audit.py's own
+# "hot-path DDL removed" claim (it only removed its OWN inline DDL, not
+# this shared connection helper's). Fixed the same way durable_audit.py
+# fixes its own schema caching: keyed by DSN (not a bare process-global
+# bool -- see that module's docstring for why a bare bool is wrong),
+# run once via `_pg_connect_raw()` + a separate `_ensure_pg_schema()`,
+# never inside the per-call connection path itself.
+_pg_schema_initialized_dsns: set[str] = set()
+
+
+def _pg_connect_raw(dsn: str):
+    """Just a connection -- connect_timeout only, no DDL, no schema
+    creation, no migration. `autocommit=False` so every caller controls
+    its own transaction boundary explicitly (never an implicit one left
+    open)."""
     import psycopg
 
+    return psycopg.connect(dsn, autocommit=False, connect_timeout=_LOCK_TIMEOUT_S)
+
+
+def _ensure_pg_schema(dsn: str) -> None:
+    """One-time PER DSN, idempotent, on its own short connection/
+    transaction -- never inside a per-request connection path."""
+    if dsn in _pg_schema_initialized_dsns:
+        return
+    conn = _pg_connect_raw(dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(_PG_SCHEMA)
+        conn.commit()
+        _pg_schema_initialized_dsns.add(dsn)
+    finally:
+        conn.close()
+
+
+def _pg_connect():
+    """Returns a ready-to-use connection with schema already guaranteed
+    present -- same contract every existing caller in this module
+    already relies on -- but the schema DDL itself now runs at most
+    once per DSN (see `_ensure_pg_schema()`), not on every call.
+    `statement_timeout` is set at the SESSION level here because
+    lease_store's own lock-wait bounding (its module docstring above)
+    is intentionally designed around this connection-wide default; a
+    caller needing a DIFFERENT, transaction-scoped timeout relationship
+    (e.g. `orca.godmode.durable_audit`'s lock_timeout, which must be
+    SHORTER than whatever governs total statement execution time, not
+    longer) MUST explicitly `SET LOCAL statement_timeout` to a value
+    larger than its own `lock_timeout` inside its own transaction --
+    relying on this session-level default being long enough is what
+    caused the real Phase 14B.1 cloud failure (5000ms statement_timeout
+    silently capped a transaction that also tried to set an 8000ms
+    lock_timeout, so the shorter, unrelated session default fired
+    first, misclassified as a generic connection failure since
+    `QueryCanceled` wasn't handled as its own category)."""
     dsn = orneur_env("GODMODE_DATABASE_URL")
-    conn = psycopg.connect(dsn, autocommit=False, connect_timeout=_LOCK_TIMEOUT_S)
+    _ensure_pg_schema(dsn)
+    conn = _pg_connect_raw(dsn)
     with conn.cursor() as cur:
         cur.execute(f"SET statement_timeout = {_PG_LOCK_TIMEOUT_MS}")
-        cur.execute(_PG_SCHEMA)
     conn.commit()
     return conn
 
