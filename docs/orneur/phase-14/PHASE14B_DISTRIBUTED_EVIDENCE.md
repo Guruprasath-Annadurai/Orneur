@@ -352,3 +352,298 @@ recovery, stale-worker rejection, outage simulations, cancellation,
 deadlines/budgets) — all still `NOT_EXECUTED` above and gated behind
 this race fix, which is now the first item in this document to
 genuinely pass.
+
+## Phase 14B remaining gates — cross-host session visibility, tenancy, security-root propagation, disposable compute, stale-worker, outages, execution semantics, repeatability, final regression, live health
+
+`distributed_actor.py` and `run_qualification.py` were extended with new
+actions/scenarios for every remaining gate, all built on the real
+`orca.godmode` abstractions (`durable_audit`, `kill_switch`,
+`security_root`, `resolution.resolve_and_consume_lease`, `lease_store`)
+— never raw SQL, never a fabricated rejection reason. Every scenario was
+first smoke-tested locally against real local Postgres test databases,
+then run for real against the locked architecture (Northflank Host A,
+GitHub Actions Host B, Supabase CORE + SECURITY ROOT).
+
+**Two real infrastructure bugs found and fixed while getting the
+extended harness to run reliably in the cloud (harness bugs, not
+authority/audit-correctness regressions):**
+
+1. Making every remote call defensively re-upload the actor script to
+   Host A (to survive Host A's pod recycling mid-run — a real,
+   directly-observed behavior, not a hypothesis) blew the job's
+   30-minute timeout once the scenario battery added ~30 remote calls
+   per run (workflow `34030695040`, cancelled). Fixed by verifying the
+   exec first and only re-uploading + retrying once on actual failure
+   (`_start_remote_verified`), and by reupload-then-retry only when a
+   *whole race* reports a delivery failure (`run_one_race_with_delivery_retry`)
+   rather than reuploading unconditionally on every call.
+2. The session-visibility check's own assertion compared against the
+   wrong principal-id string (`"HOST_A"` instead of the real
+   `"written-by-HOST_A"`), so a working cross-host write/read cycle
+   incorrectly reported `a_to_b_visible: false` in workflow
+   `34029392696` even though the read's own `principals_seen` list
+   plainly contained it. Fixed the comparison, not the (already
+   correct) underlying write/read behavior.
+
+**Real, directly-observed infra characteristic (not a code defect):**
+Host A's Northflank pod recycles unpredictably — sometimes mid-run,
+sometimes within seconds of a prior call, evidenced by the pod's own
+`hostname` changing between consecutive `command-exec` calls (e.g.
+`orneur-api-a-6dcbd78654-...` → `orneur-api-a-ddb76bbff-...` inside a
+single workflow run). Every distributed-actor call and the race retry
+path now treat this as the normal case (Host A's compute is disposable,
+per this phase's own design principle) rather than an anomaly to
+suppress.
+
+### Cross-host session/state visibility (spec Step 1) — PASS
+
+Using the real `orca.godmode.durable_audit` abstraction (not raw
+SELECTs): Host A writes a tenant-scoped event, Host B reads it back
+(`a_to_b_visible`); Host B writes, Host A reads it back
+(`b_to_a_visible`). Confirmed in all 3 full qualification runs below —
+`a_to_b_visible: true`, `b_to_a_visible: true` every time. Reported
+latency (~14-32s) is dominated by the defensive actor-script re-upload
+on the Host A side, not pure durable-write round-trip — this is stated
+explicitly in the evidence JSON's own `latency_note` field, no invented
+SLA is claimed.
+
+### Tenant isolation (spec Step 2) — PASS
+
+Tenant A and Tenant B each written by both hosts, then each tenant read
+from both hosts. Required: only that tenant's own two writers ever
+appear. Confirmed in all 3 runs: `tenant_a_isolated: true`,
+`tenant_b_isolated: true`, `cross_tenant_leakage_count: 0` every time.
+
+### Security-root propagation (spec Step 3) — PASS
+
+Advanced through the real `orca.godmode.kill_switch.activate()` /
+`deactivate()` control path (which itself calls
+`security_root.advance()`), never a raw epoch write. Confirmed in all 3
+runs: both hosts observe epoch N before, both observe N+1 after
+(`both_observe_next_epoch: true`). Host A's propagation latency
+(~22-31s) again includes the defensive re-upload; Host B's (~1.7-2.4s)
+is the local-subprocess-only figure.
+
+### Fresh-runner / disposable-compute recovery (spec Step 4) — PASS
+
+Proven with two **genuinely separate** GitHub Actions dispatches, not a
+simulation: workflow `34037715877` (`fresh_runner_mode=write`) issued a
+real one-use lease (`lease-9b6e9abb2b65`) and wrote a durable
+session-state event, then terminated normally. A **separate, later**
+dispatch, workflow `34037775634` (`fresh_runner_mode=read`, zero
+filesystem/memory continuity with the first runner), recovered the
+session-state event (`principals_seen: ["written-by-runner1"]`),
+successfully consumed the lease once (`ALLOW`), and a third attempt to
+replay the same now-consumed lease from yet another call was correctly
+`DENY`ed ("lease has no uses remaining"). No local filesystem
+dependency, no replayed one-use lease, audit/authority/session state
+all correct across the runner's death — compute is disposable.
+
+### Stale-worker rejection (spec Step 5) — PASS
+
+Barrier-coordinated: Host B observes the security-root epoch, pauses on
+the shared barrier; Host A revokes (advances the kill switch to ACTIVE)
+through the legitimate control path and signals the barrier's other
+half; Host B resumes and attempts the privileged action using only its
+stale, pre-pause knowledge. Confirmed in all 3 runs: `denied: true`
+every time, with the real, non-fabricated canonical reason ("kill
+switch is active -- no new elevated actions"), never a manufactured
+rejection string.
+
+### Client-path outage simulations (spec Steps 6-8) — PASS, all 3 backends
+
+Each backend's own env var made unreachable for an isolated Host-B-side
+process only (never the shared staging infrastructure); confirmed
+fail-closed via the real code paths, never a SQLite/SOVEREIGN fallback,
+in all 3 runs:
+
+| Backend | Result |
+|---|---|
+| Authority (Godmode) DB | `AuthorityStoreUnavailableError`, `fails_closed: true` |
+| Security root DB | `state: "UNKNOWN"`, `epoch: null`, `fails_closed: true` (the real, documented `get_epoch_and_state()` contract: UNKNOWN is always treated as active/deny, never inferred INACTIVE) |
+| Core application DB | real Postgres connection failure, classified `CONNECTION_FAILURE_AS_EXPECTED` |
+
+Recovery: a fresh process with the real config restored (the very next
+scenario/race in the same qualification run, using the same env)
+succeeded normally every time — proven implicitly by every subsequent
+scenario passing after the outage-sim scenario ran.
+
+### Deadlines and budgets (spec Steps 10-11) — PASS
+
+**Deadline**: a lease issued with a real 2-second `expires_at`, waited
+past it, then a real `resolve_and_consume_lease()` attempt — the real
+`is_expired()` check denies it ("lease is expired"), confirmed in all 3
+runs.
+
+**Budget**: a `max_uses=1` lease consumed once (`ALLOW`), then a second
+attempt against the same lease — denied ("lease has no uses
+remaining"), confirmed in all 3 runs. No infinite retry, no silent
+reset, no permission escalation, no side effect after exhaustion.
+
+### Cancellation (spec Step 9) — NOT_SUPPORTED (pre-existing, documented gap)
+
+A focused re-investigation of the actual production code (not the
+agent/cognitive-layer cancellation systems, which are a different
+layer out of this gate's scope) confirms: `resolve_and_consume_lease()`
+is a synchronous, non-cancellable function call; it is never invoked
+from an async/HTTP request-handler path in `orca/serve/api.py` (the
+only FastAPI app in the repo) where a client-disconnect or
+`asyncio.CancelledError` could interrupt it; there is no
+`cancel_lease_resolution()` or cooperative-cancellation-token interface
+anywhere in `orca/godmode/`. This is not a new gap discovered this
+session — it is already written down, in the project's own words, in
+`docs/orneur/phase-14/CANCELLATION_AND_RETRY.md` ("A dedicated
+distributed-cancellation test ... was not built — the Gateway today is
+in-process, so there is no real second process to propagate a
+cancellation to yet") and already listed `NOT_EXECUTED` in this
+document's own test matrix above and in `EVALUATION.md`. `lease_store.revoke()`
+exists but is purely administrative (eval-harness cleanup, durable
+revocation-ledger replay of already-revoked leases) — never an
+"abort an in-flight pending resolution" mechanism.
+
+**Per the binding acceptance rule for this phase: a mandatory contract
+that is NOT_SUPPORTED forces the phase status to HOLD, not PASS.**
+Godmode's real equivalents for "bounded stop" are proven instead:
+lease `expires_at` (deadline, PASS above) and `max_uses` (budget, PASS
+above) both correctly bound execution; only cancellation of an
+*already in-flight, not-yet-committed* resolution has no interface,
+because the Gateway is currently in-process and has never needed to
+propagate a cancellation across an actual process boundary.
+
+### Recovery matrix (spec Step 12)
+
+| Scenario | Failure detected | Fails closed | Persistent corruption | Recovery after restore | Manual intervention |
+|---|---|---|---|---|---|
+| Authority (Godmode) DB unavailable | Y | Y (`AuthorityStoreUnavailableError`) | N | PASS | N |
+| Security-root DB unavailable | Y | Y (`UNKNOWN`, treated as active) | N | PASS | N |
+| Core application DB unavailable | Y | Y (`CONNECTION_FAILURE_AS_EXPECTED`) | N | PASS | N |
+| Host B (GitHub runner) destroyed/recreated | Y (every dispatch is a fresh runner by construction) | N/A | N | PASS (Step 4) | N |
+| Host A (Northflank pod) unexpectedly restarted mid-run | Y (observed directly via changed pod hostname / delivery failures) | Y (no corrupted state; work either fully committed or not attempted at all) | N | PASS (self-healing re-upload + delivery-failure retry; live-health retry also recovered) | N (automatic) |
+| Stale worker (resumes after revoke) | Y | Y (real `DENY`, real reason) | N | N/A (correct behavior throughout) | N |
+| Deadline expiry | Y | Y (`DENY`, "lease is expired") | N | N/A | N |
+| Budget/`max_uses` exhaustion | Y | Y (`DENY`, "lease has no uses remaining") | N | N/A | N |
+| Cancellation of in-flight authority op | N/A — **NOT_SUPPORTED**, no interface exists | N/A | N/A | N/A | **blocking gap, see above** |
+
+### Repeatability (spec Step 13) — PASS, 3/3 consolidated runs
+
+Three complete qualification runs, each with fresh `run_id`s/GitHub
+runner instances/test namespaces, each running 20 races + the full
+9-scenario battery:
+
+| Workflow run | Races (20 each) | Committed | Lost race | False-committed | Delivery-failure retries needed | All 9 scenarios |
+|---|---|---|---|---|---|---|
+| `34033340633` | 20/20 | 20 | 20 | 0 | 0 | PASS |
+| `34034788451` | 20/20 | 20 | 20 | 0 | 0 | PASS |
+| `34036147057` | 20/20 | 20 | 20 | 0 | 0 | PASS |
+
+Zero intermittent authority/tenant-isolation/security-root violations
+across all 3 runs — nothing was averaged away.
+
+### Secret/data hygiene (spec Step 14) — clean
+
+Every workflow run's logs and the `qualification_results.json` /
+`scenario_results.json` artifacts from all 3 consolidated runs plus the
+fresh-runner and live-health dispatches were scanned for DSNs,
+passwords, signing keys, and bearer tokens — zero matches. Artifacts
+contain only run IDs, safe timestamps, result categories, latencies,
+counts, and safe pod/host identifiers.
+
+### No-local-persistence audit (spec Step 15) — `MAC_RUNTIME_DEPENDENCY: NONE`, `PERSISTENT_CONTAINER_STATE_REQUIRED: NONE`
+
+Re-confirmed for the critical authority/audit/session path:
+`lease_store._backend()`, `security_root._backend()`, and
+`durable_audit`'s reuse of that same gate all raise/fail-closed via
+`orca.godmode.deployment_profile.require_distributed_*_url()` when
+DISTRIBUTED mode is active — no SQLite fallback is reachable.
+`validate_deployment_config()` runs eagerly at `orca/serve/api.py`
+import time, so a misconfigured DISTRIBUTED process fails at startup,
+before serving traffic. `/readyz` reports live `authority_store`,
+`security_root`, and `core_database` status (not a cached/local
+value). The only `localhost` reference in `orca/godmode/` or
+`orca/serve/` is a Stripe-checkout redirect default, unrelated to the
+critical path. One minor coverage gap noted (not a blocker): no test
+file dedicated solely to the authority/lease config gate the way
+`test_distributed_security_root_config_gate.py` and
+`test_distributed_core_db_config_gate.py` exist for the other two
+backends — the code-level gate is identical and is exercised
+indirectly by other tests, but a dedicated test would be better
+coverage for a future phase.
+
+### Final regression (spec Step 16) — PASS, with one real bug found and fixed along the way
+
+Full deterministic suite and full security suite, run sequentially
+against the same persistent local Postgres test database (deliberately
+*not* reset in between, the realistic scenario): **1566/1566
+deterministic, 895/895 security, both clean.**
+
+A real, reproducible failure was found and root-caused before reaching
+that clean result:
+`test_head_consistency_detects_injected_mismatch` (in
+`tests/test_durable_audit_concurrency_hardening.py`) deliberately
+corrupts the shared, *global* `godmode_audit_head.last_hash` row to
+prove `verify_head_consistency()` detects `HEAD_HASH_MISMATCH` — but
+never restored it. Since the head is a single row shared by every test
+and process pointed at the same Postgres DSN (not scoped to this
+test's own tenant), this permanently poisoned the audit chain for every
+write that came after it in the same database — including across
+separate pytest invocations reusing the same local Postgres instance.
+This is exactly what caused
+`test_fifty_two_actor_races_all_satisfy_the_invariant` to intermittently
+fail during this session's regression runs; the actual
+authority/audit counts (committed/lost_race/false_committed) were
+*always* correct in every failure — only `verify_chain()`'s reconstructed
+hash chain was affected, by this test's own leftover sabotage, not by any
+concurrency defect. **Confirmed NOT a Phase 14B.1.1 regression** — no
+production code (`durable_audit.py`, `resolution.py`, `lease_store.py`)
+was touched. Fixed by capturing the real `last_hash` before corrupting
+it and restoring it in a `finally` block; verified the fix survives two
+consecutive full-file runs against the same persistent database with no
+reset in between (the exact scenario that broke before).
+
+### Docker build + container boot smoke — PASS
+
+`docker build --load` succeeded cleanly; a SOVEREIGN-mode boot smoke
+test confirmed `/livez` = 200 and `/readyz` correctly `not_ready` with
+only `model_runtime` unavailable (`authority_store: ok`, local sqlite
+backend, as expected for a SOVEREIGN-mode local smoke test).
+
+### Final live health (spec Step 17)
+
+First attempt, workflow `34040048369`: **a real, directly-observed pod
+restart occurred mid-check** — the first two `/livez` calls (both 200)
+hit pod instance `orneur-api-a-645dbf6dc-v7stv`; the third call hit a
+*different* instance, `orneur-api-a-7f867c88df-kc8tq` (the pod had
+already recycled), and failed (`000`, curl exit 7 — connection
+refused, consistent with the new pod's app not yet listening). This is
+reported here, not hidden, per the standing rule to preserve every
+failure.
+
+Second attempt, workflow `34040114204`: **PASS.** All three `/livez`
+calls, the `/readyz` call, and the `hostname` check landed on the same
+pod instance (`orneur-api-a-7f867c88df-kc8tq`) throughout —
+`200, 200, 200`. `/readyz`: `{"status":"not_ready", "model_runtime":
+"unavailable" (no installed Ollama model), "authority_store": "ok"
+(postgres), "security_root": "ok" (epoch 28), "core_database": "ok",
+"gateway": {"service_live": true, "service_ready": true}}` — exactly
+the allowed classification (only `model_runtime` unavailable, every
+other dependency `ok`).
+
+**Honest characterization**: Host A's Northflank pod is observed to
+recycle unpredictably in this staging environment — sometimes within
+single-digit seconds between two consecutive commands. This is a real
+operational characteristic of the current staging deployment (not
+correlated with any code change made this session, and not itself an
+authority/audit-correctness defect — no scenario ever produced
+incorrect state across a restart, only a transient connection failure
+that the harness's own retry logic recovered from automatically). It
+is noted here as a genuine finding for future ops attention (worth
+checking Northflank's own health-check/restart-policy configuration),
+not swept under the rug by only reporting the passing attempt.
+
+### Deployed SHA for this phase's final live-health check
+
+No `orca/` application code changed this session (`git diff --stat
+6ae85cd..HEAD -- orca/` is empty) — only the qualification harness
+(`scripts/phase14b/`), the workflow, one test file, and this document.
+The already-deployed `6ae85cd` remains the correct SHA under live-health
+test above; no redeploy was required or performed.
