@@ -136,17 +136,18 @@ def run_session_visibility(run_id: str) -> dict:
     write_a = _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "svis", "--role-label", "HOST_A"]))
     t_write_a = time.monotonic() - t0
     read_b = _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "svis", "--role-label", "HOST_B"])
-    a_to_b_ok = "HOST_A" in read_b.get("principals_seen", [])
+    a_to_b_ok = "written-by-HOST_A" in read_b.get("principals_seen", [])
 
     t1 = time.monotonic()
     write_b = _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "svis", "--role-label", "HOST_B"])
     t_write_b = time.monotonic() - t1
     read_a = _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "svis", "--role-label", "HOST_A"]))
-    b_to_a_ok = "HOST_B" in read_a.get("principals_seen", [])
+    b_to_a_ok = "written-by-HOST_B" in read_a.get("principals_seen", [])
 
     return {
         "run_id": run_id, "a_to_b_visible": a_to_b_ok, "b_to_a_visible": b_to_a_ok,
         "write_a_latency_s": round(t_write_a, 3), "write_b_latency_s": round(t_write_b, 3),
+        "latency_note": "HOST_A latency includes the defensive actor-script re-upload (see _reupload_actor_script), not pure durable-write round-trip; HOST_B latency is local-subprocess only",
         "write_a": write_a, "read_b": read_b, "write_b": write_b, "read_a": read_a,
     }
 
@@ -209,6 +210,7 @@ def run_security_root_propagation(run_id: str) -> dict:
         "run_id": run_id, "epoch_before": epoch_a_before.get("epoch"), "epoch_after": advance.get("epoch"),
         "both_observe_next_epoch": both_observe_next,
         "host_a_propagation_latency_s": round(t_a, 3), "host_b_propagation_latency_s": round(t_b, 3),
+        "latency_note": "host_a latency includes the defensive actor-script re-upload (see _reupload_actor_script), not pure security-root advance round-trip; host_b latency is local-subprocess only",
     }
 
 
