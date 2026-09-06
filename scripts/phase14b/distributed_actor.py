@@ -237,6 +237,30 @@ def action_deadline_test(run_id: str) -> None:
     print(json.dumps({"run_id": run_id, "state": decision.state.value, "reasons": decision.reasons}))
 
 
+def action_resolve_once(run_id: str, lease_id: str, principal_suffix: str) -> None:
+    """Spec Step 4 (fresh-runner/disposable-compute recovery): a single,
+    non-racing resolve_and_consume_lease() attempt against a lease_id
+    that was created by a DIFFERENT, already-dead process -- possibly a
+    prior, now-terminated GitHub Actions runner. This process has no
+    filesystem or memory continuity with whatever created the lease;
+    every fact it needs (lease existence, uses remaining, expiry,
+    tenant/scope binding) comes only from the shared Postgres-backed
+    orca.godmode stores. Used twice across two separate workflow
+    dispatches with the SAME lease_id to prove both "a fresh runner can
+    recover real prior state" and "a consumed one-use lease cannot be
+    replayed by yet another fresh runner."."""
+    from orca.godmode.contracts import CapabilityDomain
+    from orca.godmode.resolution import resolve_and_consume_lease
+
+    tenant_id = _tenant_id(run_id)
+    decision = resolve_and_consume_lease(
+        lease_id, tenant_id=tenant_id, capability_domain=CapabilityDomain.CONNECTOR,
+        capability="CONNECTOR_WRITE", resource_scope=f"phase14b-{run_id}", operation_scope="write",
+        arguments={}, principal_id=f"phase14b-freshrunner-{principal_suffix}", trace_id=f"phase14b-{run_id}-freshrunner-{principal_suffix}",
+    )
+    print(json.dumps({"run_id": run_id, "lease_id": lease_id, "state": decision.state.value, "reasons": decision.reasons}))
+
+
 def action_budget_test(run_id: str) -> None:
     """Spec Step 11: single-actor, sequential proof that a lease's
     max_uses budget is enforced -- consume once (must succeed), then
@@ -345,7 +369,7 @@ def main() -> None:
         "setup_lease", "race", "read_audit", "security_root_epoch", "cleanup",
         "security_root_advance", "write_tenant_state", "read_tenant_state",
         "stale_worker", "revoker_signal", "deadline_test", "budget_test",
-        "outage_sim",
+        "outage_sim", "resolve_once",
     ])
     parser.add_argument("--lease-id", default=None)
     parser.add_argument("--max-uses", type=int, default=1)
@@ -353,6 +377,7 @@ def main() -> None:
     parser.add_argument("--tenant-suffix", default=None)
     parser.add_argument("--role-label", default=None)
     parser.add_argument("--target", choices=["authority", "security_root", "core_db"], default=None)
+    parser.add_argument("--principal-suffix", default=None)
     args = parser.parse_args()
 
     _require_distributed()
@@ -399,6 +424,11 @@ def main() -> None:
             print(json.dumps({"error": "MISSING_TARGET"}))
             sys.exit(1)
         action_outage_sim(args.run_id, args.target)
+    elif args.action == "resolve_once":
+        if not args.lease_id or not args.principal_suffix:
+            print(json.dumps({"error": "MISSING_LEASE_ID_OR_PRINCIPAL_SUFFIX"}))
+            sys.exit(1)
+        action_resolve_once(args.run_id, args.lease_id, args.principal_suffix)
     elif args.action == "cleanup":
         action_cleanup(args.run_id)
 

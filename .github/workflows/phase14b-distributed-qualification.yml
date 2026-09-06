@@ -11,6 +11,16 @@ on:
         description: "Number of one-use lease race iterations"
         required: false
         default: "10"
+      fresh_runner_mode:
+        description: "Spec Step 4 (fresh-runner/disposable-compute recovery): 'write' on this dispatch, terminate this runner, then 'read' on a SEPARATE later dispatch with the printed lease_id. Leave blank for the normal race+scenario battery."
+        required: false
+        default: ""
+        type: choice
+        options: ["", "write", "read"]
+      fresh_runner_lease_id:
+        description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -73,12 +83,37 @@ jobs:
             --localPath scripts/phase14b --remotePath /tmp/phase14b
 
       - name: Run distributed qualification (setup + N lease races + audit checks)
+        if: github.event.inputs.fresh_runner_mode == ''
         run: |
           python3 scripts/phase14b/run_qualification.py --race-runs "${{ github.event.inputs.race_runs }}"
 
       - name: Run remaining distributed scenarios (session visibility, tenant isolation, security-root propagation, stale worker, outages, deadline, budget)
+        if: github.event.inputs.fresh_runner_mode == ''
         run: |
           python3 scripts/phase14b/run_qualification.py --scenario all_scenarios
+
+      - name: "Fresh-runner Step 4 (write): this runner creates durable lease + session state, then terminates"
+        if: github.event.inputs.fresh_runner_mode == 'write'
+        run: |
+          cd scripts/phase14b
+          python3 distributed_actor.py --role ORCHESTRATOR --run-id freshrunner-fixed --action cleanup
+          LEASE_JSON=$(python3 distributed_actor.py --role HOST_B --run-id freshrunner-fixed --action setup_lease --max-uses 1)
+          echo "$LEASE_JSON"
+          LEASE_ID=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['lease_id'])" "$LEASE_JSON")
+          python3 distributed_actor.py --role HOST_B --run-id freshrunner-fixed --action write_tenant_state --tenant-suffix fresh --role-label runner1
+          echo "::notice::FRESH_RUNNER_LEASE_ID=$LEASE_ID -- pass this as fresh_runner_lease_id to a LATER, separate dispatch with fresh_runner_mode=read"
+
+      - name: "Fresh-runner Step 4 (read): a completely separate, later runner recovers state + consumes the lease, then a replay attempt is denied"
+        if: github.event.inputs.fresh_runner_mode == 'read'
+        run: |
+          cd scripts/phase14b
+          echo "--- read durable session state written by the now-dead prior runner ---"
+          python3 distributed_actor.py --role HOST_A --run-id freshrunner-fixed --action read_tenant_state --tenant-suffix fresh --role-label runner2
+          echo "--- fresh runner consumes the lease created by the now-dead prior runner ---"
+          python3 distributed_actor.py --role HOST_A --run-id freshrunner-fixed --action resolve_once --lease-id "${{ github.event.inputs.fresh_runner_lease_id }}" --principal-suffix runner2
+          echo "--- yet another attempt to replay the SAME consumed lease must be denied ---"
+          python3 distributed_actor.py --role HOST_A --run-id freshrunner-fixed --action resolve_once --lease-id "${{ github.event.inputs.fresh_runner_lease_id }}" --principal-suffix runner3
+          python3 distributed_actor.py --role ORCHESTRATOR --run-id freshrunner-fixed --action cleanup
 
       - name: Cleanup barrier rows on Host B side (safety net; script also cleans up per-run)
         if: always()
