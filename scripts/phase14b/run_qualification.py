@@ -70,10 +70,16 @@ def _start_remote(args: list[str]) -> subprocess.Popen:
     """Starts distributed_actor.py on Host A (the real Northflank pod)
     via `northflank command-exec`, as a background OS process on THIS
     runner that itself blocks on the remote exec -- giving true
-    concurrency with Host B's own subprocess below. Re-uploads the
-    actor script first (see `_reupload_actor_script`'s docstring) since
-    Host A's /tmp cannot be assumed to survive between calls."""
-    _reupload_actor_script()
+    concurrency with Host B's own subprocess below. Does NOT re-upload
+    first (that used to be unconditional here and made every remote
+    call pay a ~15-35s re-upload cost regardless of whether the file
+    was actually missing -- with the new scenario battery's ~30 remote
+    calls per job, that alone blew the 30-minute job timeout in
+    workflow run 34030695040. Recovery from a recycled pod (Host A's
+    /tmp is disposable compute, same as everything else in this phase)
+    is now handled by `_finish_remote`'s caller-visible error signal
+    plus each call site's own retry -- see `_start_remote_verified`
+    and `run_one_race_with_delivery_retry`."""
     cmd = "cd /tmp/phase14b && python3 distributed_actor.py " + " ".join(args)
     return subprocess.Popen(
         ["npx", "--yes", "@northflank/cli", "command-exec", "service",
@@ -93,6 +99,23 @@ def _finish_remote(proc: subprocess.Popen) -> dict:
             except json.JSONDecodeError:
                 continue
     return {"error": "NO_JSON_OUTPUT", "stdout_tail": out[-2000:], "stderr_tail": err[-2000:]}
+
+
+def _start_remote_verified(args: list[str]) -> dict:
+    """The sequential (non-racing) remote call helper: tries the exec
+    directly first (fast path, no re-upload), and ONLY if that fails
+    (Host A's pod recycled and /tmp/phase14b is gone, or any other
+    transport error) re-uploads the actor script once and retries the
+    exec once. Used by every new scenario function below; the race
+    path keeps its own `_start_remote`/`_finish_remote` pair unchanged
+    since races need true Popen-level concurrency with Host B and
+    already retry whole race attempts at a higher level."""
+    result = _finish_remote(_start_remote(args))
+    if "error" in result:
+        _reupload_actor_script()
+        result = _finish_remote(_start_remote(args))
+        result["recovered_after_reupload"] = True
+    return result
 
 
 def run_one_race(run_id: str) -> dict:
@@ -164,7 +187,7 @@ def run_session_visibility(run_id: str) -> dict:
     import time
 
     t0 = time.monotonic()
-    write_a = _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "svis", "--role-label", "HOST_A"]))
+    write_a = _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "svis", "--role-label", "HOST_A"])
     t_write_a = time.monotonic() - t0
     read_b = _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "svis", "--role-label", "HOST_B"])
     a_to_b_ok = "written-by-HOST_A" in read_b.get("principals_seen", [])
@@ -172,7 +195,7 @@ def run_session_visibility(run_id: str) -> dict:
     t1 = time.monotonic()
     write_b = _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "svis", "--role-label", "HOST_B"])
     t_write_b = time.monotonic() - t1
-    read_a = _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "svis", "--role-label", "HOST_A"]))
+    read_a = _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "svis", "--role-label", "HOST_A"])
     b_to_a_ok = "written-by-HOST_B" in read_a.get("principals_seen", [])
 
     return {
@@ -189,13 +212,13 @@ def run_tenant_isolation(run_id: str) -> dict:
     two writers ever appear, zero cross-tenant leakage in either
     direction."""
     _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "tenA", "--role-label", "HOST_B"])
-    _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "tenA", "--role-label", "HOST_A"]))
+    _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "tenA", "--role-label", "HOST_A"])
     _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "tenB", "--role-label", "HOST_B"])
-    _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "tenB", "--role-label", "HOST_A"]))
+    _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "write_tenant_state", "--tenant-suffix", "tenB", "--role-label", "HOST_A"])
 
-    read_tenA_from_A = _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "tenA", "--role-label", "HOST_A"]))
+    read_tenA_from_A = _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "tenA", "--role-label", "HOST_A"])
     read_tenA_from_B = _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "tenA", "--role-label", "HOST_B"])
-    read_tenB_from_A = _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "tenB", "--role-label", "HOST_A"]))
+    read_tenB_from_A = _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "tenB", "--role-label", "HOST_A"])
     read_tenB_from_B = _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "read_tenant_state", "--tenant-suffix", "tenB", "--role-label", "HOST_B"])
 
     tenA_principals = set(read_tenA_from_A.get("principals_seen", [])) | set(read_tenA_from_B.get("principals_seen", []))
@@ -217,20 +240,20 @@ def run_security_root_propagation(run_id: str) -> dict:
     dedicated stale-worker scenario, run separately)."""
     import time
 
-    epoch_a_before = _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_epoch"]))
+    epoch_a_before = _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_epoch"])
     epoch_b_before = _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "security_root_epoch"])
 
     t0 = time.monotonic()
-    advance = _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_advance", "--new-state", "ACTIVE"]))
+    advance = _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_advance", "--new-state", "ACTIVE"])
     t_a = time.monotonic() - t0
-    epoch_a_after = _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_epoch"]))
+    epoch_a_after = _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_epoch"])
     t1 = time.monotonic()
     epoch_b_after = _run_local(["--role", "HOST_B", "--run-id", run_id, "--action", "security_root_epoch"])
     t_b = time.monotonic() - t1
 
     # Restore INACTIVE so subsequent scenarios in the same qualification
     # run aren't left behind an active kill switch.
-    _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_advance", "--new-state", "INACTIVE"]))
+    _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_advance", "--new-state", "INACTIVE"])
 
     both_observe_next = (
         epoch_a_after.get("epoch") == advance.get("epoch")
@@ -263,8 +286,8 @@ def run_stale_worker(run_id: str) -> dict:
     )
     import time
     time.sleep(2)  # let the stale worker announce READY and start waiting on the barrier
-    revoke = _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_advance", "--new-state", "ACTIVE"]))
-    _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "revoker_signal"]))
+    revoke = _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_advance", "--new-state", "ACTIVE"])
+    _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "revoker_signal"])
     out, err = stale_proc.communicate(timeout=60)
     stale_result = {"error": "NO_JSON_OUTPUT", "stdout_tail": out[-2000:], "stderr_tail": err[-2000:]}
     for line in reversed(out.strip().splitlines()):
@@ -276,7 +299,7 @@ def run_stale_worker(run_id: str) -> dict:
             break
 
     # Restore INACTIVE.
-    _finish_remote(_start_remote(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_advance", "--new-state", "INACTIVE"]))
+    _start_remote_verified(["--role", "HOST_A", "--run-id", run_id, "--action", "security_root_advance", "--new-state", "INACTIVE"])
 
     denied = stale_result.get("state") == "DENY"
     return {"run_id": run_id, "revoke_epoch": revoke.get("epoch"), "stale_worker_result": stale_result, "denied": denied}

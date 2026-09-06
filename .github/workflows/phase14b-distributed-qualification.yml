@@ -23,7 +23,7 @@ jobs:
   qualify:
     name: Host B (GitHub ephemeral runner) <-> Host A (Northflank)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     environment: phase14b-staging
     env:
       ORNEUR_DEPLOYMENT_PROFILE: DISTRIBUTED
