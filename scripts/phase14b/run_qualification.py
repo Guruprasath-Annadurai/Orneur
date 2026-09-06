@@ -47,11 +47,33 @@ def _run_local(args: list[str]) -> dict:
         return {"error": "PARSE_ERROR", "raw": proc.stdout[-2000:], "stderr": proc.stderr[-2000:]}
 
 
+def _reupload_actor_script() -> None:
+    """Re-pushes scripts/phase14b onto Host A's /tmp. Host A's pod is
+    disposable compute like everything else in this phase -- Northflank
+    can recycle the pod between two `command-exec` calls in the SAME
+    workflow run (observed directly: pod instance suffix changed
+    mid-run, taking /tmp/phase14b with it), so file presence can never
+    be assumed after the job's one-time upload step. This re-upload is
+    cheap and idempotent; calling it defensively before every remote
+    exec is the fix, not a workaround for a race/audit bug -- the
+    concurrency-hardening implementation itself (Phase 14B.1.1) is not
+    touched here."""
+    subprocess.run(
+        ["npx", "--yes", "@northflank/cli", "upload", "service", "file",
+         "--project", _NORTHFLANK_PROJECT, "--service", _NORTHFLANK_SERVICE,
+         "--localPath", str(_SCRIPT_DIR), "--remotePath", "/tmp/phase14b"],
+        capture_output=True, text=True, timeout=60,
+    )
+
+
 def _start_remote(args: list[str]) -> subprocess.Popen:
     """Starts distributed_actor.py on Host A (the real Northflank pod)
     via `northflank command-exec`, as a background OS process on THIS
     runner that itself blocks on the remote exec -- giving true
-    concurrency with Host B's own subprocess below."""
+    concurrency with Host B's own subprocess below. Re-uploads the
+    actor script first (see `_reupload_actor_script`'s docstring) since
+    Host A's /tmp cannot be assumed to survive between calls."""
+    _reupload_actor_script()
     cmd = "cd /tmp/phase14b && python3 distributed_actor.py " + " ".join(args)
     return subprocess.Popen(
         ["npx", "--yes", "@northflank/cli", "command-exec", "service",
