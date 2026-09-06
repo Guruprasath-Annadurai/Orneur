@@ -25,24 +25,68 @@ nginx, etc.), since every request would show the proxy's IP, making the
 """
 from __future__ import annotations
 
+import ipaddress
 import threading
 import time
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
 
+from orca.config import orneur_env
 from orca.serve import session_store  # reuses the same Redis client/connection
 
 _local_lock = threading.Lock()
 _local_counters: dict[str, tuple[int, int]] = {}  # key -> (window_start, count)
 
 
+def _trusted_proxy_networks() -> list:
+    """`ORNEUR_TRUSTED_PROXY_CIDRS`: comma-separated CIDRs (e.g. the
+    private network a Cloudflare Tunnel sidecar connects from). Empty/
+    unset (the default) preserves this module's original, unconditional
+    "trust X-Forwarded-For whenever present" behavior -- unchanged for
+    every existing self-hosted/local/private-staging deployment. Set
+    this before exposing the app through any edge/proxy you don't fully
+    control the network path to (Phase 14C spec Step 8): once set, XFF
+    is trusted ONLY when the DIRECT TCP peer is itself one of these
+    networks, so an attacker who can reach the app directly (bypassing
+    the intended proxy) cannot simply forge X-Forwarded-For to spoof an
+    arbitrary source IP for rate-limit/audit-attribution purposes."""
+    raw = orneur_env("TRUSTED_PROXY_CIDRS", "").strip()
+    if not raw:
+        return []
+    networks = []
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            continue  # malformed entry -- ignored, never crashes request handling
+    return networks
+
+
 def get_client_ip(request: Request) -> str:
-    """First IP in X-Forwarded-For if present (reverse-proxy correct), else the direct peer."""
+    """First IP in X-Forwarded-For if present (reverse-proxy correct),
+    else the direct peer -- UNLESS `ORNEUR_TRUSTED_PROXY_CIDRS` is set,
+    in which case X-Forwarded-For is trusted only when the direct peer
+    (`request.client.host`) is itself inside one of those networks
+    (see `_trusted_proxy_networks()`'s docstring). Never raises on a
+    malformed peer/CIDR -- falls back to the direct peer."""
+    trusted = _trusted_proxy_networks()
+    direct = request.client.host if request.client else "unknown"
     xff = request.headers.get("x-forwarded-for")
-    if xff:
+    if not xff:
+        return direct
+    if not trusted:
         return xff.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    try:
+        direct_addr = ipaddress.ip_address(direct)
+    except ValueError:
+        return direct
+    if any(direct_addr in net for net in trusted):
+        return xff.split(",")[0].strip()
+    return direct
 
 
 def _window_bucket(window_seconds: int) -> int:

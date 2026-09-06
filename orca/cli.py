@@ -1547,7 +1547,19 @@ def serve(
             webbrowser.open(f"http://{host}:{port}")
         threading.Thread(target=_open, daemon=True).start()
 
-    uvicorn.run(create_app(), host=host, port=port, log_level="warning")
+    # Phase 14C spec Step 8/10: uvicorn only trusts X-Forwarded-Proto/
+    # X-Forwarded-For to rewrite request.url.scheme/request.client for
+    # peers whose DIRECT connection IP is in forwarded_allow_ips --
+    # never unconditionally. Reuses ORNEUR_TRUSTED_PROXY_CIDRS (the
+    # same variable orca.serve.ratelimit.get_client_ip() reads) as the
+    # single source of truth for "what counts as our trusted proxy" --
+    # unset preserves uvicorn's own safe default (only 127.0.0.1),
+    # which does NOT help behind a real Cloudflare Tunnel sidecar until
+    # explicitly configured with that sidecar's actual network.
+    from orca.config import orneur_env
+    trusted_proxy_cidrs = orneur_env("TRUSTED_PROXY_CIDRS", "").strip()
+    forwarded_allow_ips = [c.strip() for c in trusted_proxy_cidrs.split(",") if c.strip()] or "127.0.0.1"
+    uvicorn.run(create_app(), host=host, port=port, log_level="warning", proxy_headers=True, forwarded_allow_ips=forwarded_allow_ips)
 
 
 if __name__ == "__main__":

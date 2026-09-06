@@ -89,18 +89,56 @@ _logger = logging.getLogger("orca.serve")
 app = FastAPI(title="Orca API", version="1.0.0", docs_url=None, redoc_url=None)
 
 
+def _is_public_edge() -> bool:
+    """`ORNEUR_PUBLIC_EDGE=1`: set on any deployment that is (or will
+    be) reachable through a public edge (Cloudflare Tunnel, a public
+    load balancer, etc.) -- distinct from `ORNEUR_DEPLOYMENT_PROFILE`
+    (DISTRIBUTED/SOVEREIGN), which is about the authority/DB backend,
+    not public HTTP reachability. Phase 14B ran DISTRIBUTED entirely
+    privately with no public edge at all, so the two flags are
+    deliberately independent."""
+    return orneur_env("PUBLIC_EDGE", "").strip().lower() in ("1", "true", "yes")
+
+
 def _allowed_origins() -> list[str]:
     """`ORNEUR_ALLOWED_ORIGINS`: comma-separated explicit origin
     allowlist. Unset/empty defaults to `["*"]` -- unchanged for every
     existing local/self-hosted/private-staging deployment (this
-    codebase's zero-config default). Before any public Cloudflare
-    exposure (Phase 14B §15), set this to the real ORNEUR origin(s)
-    so the wildcard does not carry into a publicly reachable
-    deployment."""
+    codebase's zero-config default). Phase 14C spec Step 7: a wildcard
+    is forbidden once `ORNEUR_PUBLIC_EDGE` is set -- fails closed at
+    import time (same pattern as `deployment_profile.validate_deployment_config()`)
+    rather than silently serving a publicly-reachable deployment with
+    an open CORS policy."""
     raw = orneur_env("ALLOWED_ORIGINS", "*").strip()
     if not raw or raw == "*":
+        if _is_public_edge():
+            raise RuntimeError(
+                "ORNEUR_PUBLIC_EDGE is set but ORNEUR_ALLOWED_ORIGINS is unset/wildcard -- "
+                "refusing to start with an open CORS policy on a publicly-reachable deployment. "
+                "Set ORNEUR_ALLOWED_ORIGINS to an explicit, comma-separated origin list."
+            )
         return ["*"]
     return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+def _trusted_hosts() -> list[str]:
+    """`ORNEUR_TRUSTED_HOSTS`: comma-separated allowed Host header
+    values (e.g. `staging.orneur.com`). Unset/empty defaults to `["*"]`
+    -- unchanged for every existing local/self-hosted deployment.
+    Phase 14C spec Step 9: reject arbitrary Host header abuse once a
+    real public hostname is known, while never breaking Northflank's
+    own internal liveness probe (which connects via `localhost`/the
+    pod's own address, not the public hostname) -- `localhost`/
+    `127.0.0.1` are always included alongside whatever is configured,
+    specifically so tightening this can never break `/livez`."""
+    raw = orneur_env("TRUSTED_HOSTS", "").strip()
+    if not raw:
+        return ["*"]
+    hosts = [h.strip() for h in raw.split(",") if h.strip()]
+    for always in ("localhost", "127.0.0.1"):
+        if always not in hosts:
+            hosts.append(always)
+    return hosts
 
 
 app.add_middleware(
@@ -109,6 +147,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from starlette.middleware.trustedhost import TrustedHostMiddleware  # noqa: E402
+
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted_hosts())
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Phase 14C spec Step 22: safe-by-default browser security headers.
+    Deliberately conservative -- no CSP (would require auditing every
+    inline script/style in orca/serve/web first, out of scope here) and
+    no frame-ancestors/X-Frame-Options DENY (the `/app` UI may need to
+    remain embeddable in contexts not yet audited); HSTS is only added
+    when the request actually arrived over HTTPS (or is marked as such
+    by a trusted proxy's X-Forwarded-Proto), never unconditionally, so
+    a local plain-HTTP dev server is never told to force HTTPS on
+    itself."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+    return response
 
 
 @app.middleware("http")
