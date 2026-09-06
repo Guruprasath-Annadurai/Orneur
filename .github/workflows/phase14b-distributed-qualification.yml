@@ -12,11 +12,11 @@ on:
         required: false
         default: "10"
       fresh_runner_mode:
-        description: "Spec Step 4 (fresh-runner/disposable-compute recovery): 'write' on this dispatch, terminate this runner, then 'read' on a SEPARATE later dispatch with the printed lease_id. Leave blank for the normal race+scenario battery."
+        description: "Spec Step 4 (fresh-runner/disposable-compute recovery): 'write' on this dispatch, terminate this runner, then 'read' on a SEPARATE later dispatch with the printed lease_id. 'health_check' for Step 17 (3x /livez + /readyz on the live Host A pod, never exposed publicly). Leave blank for the normal race+scenario battery."
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read"]
+        options: ["", "write", "read", "health_check"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -114,6 +114,25 @@ jobs:
           echo "--- yet another attempt to replay the SAME consumed lease must be denied ---"
           python3 distributed_actor.py --role HOST_A --run-id freshrunner-fixed --action resolve_once --lease-id "${{ github.event.inputs.fresh_runner_lease_id }}" --principal-suffix runner3
           python3 distributed_actor.py --role ORCHESTRATOR --run-id freshrunner-fixed --action cleanup
+
+      - name: "Step 17: live health -- 3x /livez + /readyz on the real Host A pod (never exposed publicly, checked only via command-exec against localhost inside the pod)"
+        if: github.event.inputs.fresh_runner_mode == 'health_check'
+        run: |
+          for i in 1 2 3; do
+            echo "--- /livez attempt $i ---"
+            npx --yes @northflank/cli command-exec service \
+              --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
+              --shell-cmd "bash -c" --cmd "curl -s -o /dev/null -w '%{http_code}\n' http://localhost:7337/livez"
+          done
+          echo "--- /readyz classification ---"
+          npx --yes @northflank/cli command-exec service \
+            --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
+            --shell-cmd "bash -c" --cmd "curl -s http://localhost:7337/readyz"
+          echo
+          echo "--- pod identity (to confirm same pod across the 3 /livez calls above) ---"
+          npx --yes @northflank/cli command-exec service \
+            --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
+            --shell-cmd "bash -c" --cmd "hostname"
 
       - name: Cleanup barrier rows on Host B side (safety net; script also cleans up per-run)
         if: always()
