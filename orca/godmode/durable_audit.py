@@ -57,6 +57,56 @@ A race loss is recorded as AUTHORIZATION_LOST_RACE (result=
 docstring for the full four-gate sequence and
 `count_false_committed_audit()` below for the resulting
 `GODMODE_FALSE_COMMITTED_AUDIT` counter.
+
+Phase 14B.1 -- durable audit concurrency hardening (a real distributed
+qualification found a real reliability bug, not a security one): a
+real cross-host run (10 real races between a genuine Northflank
+container and a genuine GitHub Actions runner, both writing to the
+same Supabase Postgres) showed the LOSING actor's durable audit write
+failing in 10/10 races -- never the correct AUTHORIZATION_LOST_RACE
+outcome, always AUDIT_FAILURE_DENY instead. Two real, independent
+defects in the Postgres write path were found and fixed here:
+
+1. **DDL on the hot path**: `_record_event_postgres()` used to execute
+   `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`
+   (`_PG_SCHEMA`) on EVERY write, INSIDE the transaction already
+   holding the lock -- lengthening how long that lock was held on every
+   call and adding real catalog-lock contention risk under genuine
+   concurrent, cross-process, cross-network access. Schema
+   initialization is now a separate, explicit, idempotent
+   `_ensure_pg_schema()`, called once per process (cached), never
+   inside the per-event write transaction.
+2. **Advisory lock, not durable state**: `pg_advisory_xact_lock` is
+   session-scoped, invisible to normal Postgres diagnostics, and not
+   tied to any actual row -- if a connection terminates uncleanly, its
+   release depends on Postgres's own connection-death detection, which
+   is not always prompt. Replaced with an explicit `godmode_audit_head`
+   row (`id=1, last_seq, last_hash`), locked via ordinary
+   `SELECT ... FOR UPDATE` inside the same short transaction that
+   inserts the event and advances the head -- ordinary transactional
+   row-lock semantics, visible in `pg_locks`/`pg_stat_activity`,
+   automatically released at transaction end (commit OR abort).
+
+A local, real-Postgres, barrier-synchronized reproduction (10-way true-
+simultaneous contention, 100 real concurrent writes total) did NOT
+reproduce a failure even before this fix -- the serialization logic was
+never wrong under pure contention; the real failure required genuine
+network latency (a real Supabase pooler round-trip, real cross-host
+timing) a local test cannot recreate. This fix is therefore validated
+locally for correctness (real concurrency tests below) and by an actual
+re-run of the real cross-host qualification -- both are honestly
+distinguished in `docs/orneur/phase-14/PHASE14B_DISTRIBUTED_EVIDENCE.md`,
+never conflated as if the local pass alone proved the cloud fix.
+
+Bounded retry (`_MAX_RETRY_ATTEMPTS`, short jittered backoff) is added
+ONLY for `LOCK_TIMEOUT`/`DEADLOCK`/`SERIALIZATION_FAILURE` -- a safety
+guardrail against real transient contention, never the primary
+correctness mechanism, and never applied to authentication/permission/
+schema/data-integrity failures (those fail closed immediately, no
+retry). `SET lock_timeout` bounds time spent WAITING for the head-row
+lock specifically (distinct from `statement_timeout`, which bounds
+total query execution time and was already set by
+`lease_store._pg_connect()`).
 """
 from __future__ import annotations
 
@@ -125,7 +175,7 @@ CREATE TABLE IF NOT EXISTS godmode_audit (
 )
 """
 
-_PG_SCHEMA = """
+_PG_TABLE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS godmode_audit (
     event_id TEXT PRIMARY KEY,
     seq BIGINT,
@@ -148,14 +198,159 @@ CREATE INDEX IF NOT EXISTS ix_godmode_audit_tenant ON godmode_audit(tenant_id);
 CREATE INDEX IF NOT EXISTS ix_godmode_audit_seq ON godmode_audit(seq);
 """
 
+# Phase 14B.1: the durable chain-head. A single authoritative row
+# (id=1) whose `last_seq`/`last_hash` are protected by an ordinary
+# `SELECT ... FOR UPDATE` row lock -- not a session-scoped advisory
+# lock -- inside the same short transaction that inserts the event and
+# advances the head. See module docstring for why this replaced
+# `pg_advisory_xact_lock`.
+_PG_HEAD_SCHEMA = """
+CREATE TABLE IF NOT EXISTS godmode_audit_head (
+    id INTEGER PRIMARY KEY,
+    last_seq BIGINT NOT NULL,
+    last_hash TEXT NOT NULL
+);
+"""
+
+# Kept for backward compatibility with any external reference to the
+# old combined-schema name (verify_chain()/list callers only need the
+# table schema, not the head table).
+_PG_SCHEMA = _PG_TABLE_SCHEMA
+
+_MAX_RETRY_ATTEMPTS = 7
+# Time willing to WAIT for the head-row lock per attempt, distinct from
+# statement_timeout. Under N-way contention, an actor at the back of the
+# FOR UPDATE queue may need to wait for every one of its N-1 competitors'
+# short critical sections to complete first. Empirically tuned upward
+# twice: 2000ms flaked ~5/8 times at 10-way contention under a loaded
+# pytest run despite 5/5 clean in a standalone process; 5000ms held
+# 20/20 in isolation but still showed 2/9 losing actors exhausting
+# retries when the ENTIRE ~1600-test deterministic suite was running
+# concurrently on the same machine (the heaviest real load this
+# repository's own test suite creates). Both the retry count and the
+# per-attempt wait were raised together rather than either alone, since
+# the failure mode under extreme load is retry-budget exhaustion, not a
+# single too-short wait.
+_PG_LOCK_WAIT_TIMEOUT_MS = 8000
+
+# Keyed by the actual target (resolved SQLite file path / Postgres DSN),
+# NOT a bare process-global bool -- SQLite's target changes per test
+# (each uses its own ORCA_HOME/tmp_path), and even Postgres's DSN can
+# change across a reloaded module within one process (e.g. different
+# tests pointing at different local databases). A bare global flag
+# caused a real regression: test A's schema-initialized flag incorrectly
+# skipped schema creation for test B's different, empty database,
+# producing "no such table"/DENY failures with no relation to
+# concurrency at all.
+_pg_schema_initialized_dsns: set[str] = set()
+_sqlite_schema_initialized_paths: set[str] = set()
+
+
+def _classify_pg_error(exc: BaseException) -> str:
+    """Maps a real psycopg exception to a coarse, secret-safe category.
+    Never includes the DSN, username, password, SQL parameter values,
+    or the raw exception body -- only the category name. Used for
+    tests/structured telemetry (spec Phase 14B.1 §1); production
+    authorization only ever sees the plain bool from
+    `record_event_durable()`."""
+    import psycopg
+
+    if isinstance(exc, psycopg.errors.LockNotAvailable):
+        return "LOCK_TIMEOUT"
+    if isinstance(exc, psycopg.errors.DeadlockDetected):
+        return "DEADLOCK"
+    if isinstance(exc, psycopg.errors.SerializationFailure):
+        return "SERIALIZATION_FAILURE"
+    if isinstance(exc, psycopg.errors.UniqueViolation):
+        return "UNIQUE_VIOLATION"
+    if isinstance(exc, psycopg.errors.InFailedSqlTransaction):
+        return "TRANSACTION_ABORTED"
+    if isinstance(exc, (psycopg.errors.DuplicateTable, psycopg.errors.DuplicateObject, psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn)):
+        return "SCHEMA_FAILURE"
+    if isinstance(exc, (psycopg.errors.InvalidPassword, psycopg.errors.InsufficientPrivilege)):
+        return "PERMISSION_FAILURE"
+    if isinstance(exc, psycopg.OperationalError):
+        return "CONNECTION_FAILURE"
+    if isinstance(exc, psycopg.Error):
+        return "UNKNOWN_DATABASE_FAILURE"
+    return "UNKNOWN_DATABASE_FAILURE"
+
+
+def _retry_backoff_seconds(attempt: int) -> float:
+    import random
+    return min(0.05 * (2 ** attempt), 0.5) + random.uniform(0, 0.05)
+
+
+def _ensure_sqlite_schema() -> None:
+    """One-time PER DATABASE FILE (not per process -- see the cache set's
+    docstring above), idempotent. NOT run inside the per-event write
+    transaction -- moved off the hot path per spec Phase 14B.1 §2, for
+    consistency with the Postgres path even though SQLite's
+    `BEGIN IMMEDIATE` (whole-file exclusive lock) does not have the same
+    catalog-lock contention risk DDL-in-hot-path created for Postgres."""
+    from orca.godmode.lease_store import _connect, _db_path
+
+    path = str(_db_path())
+    if path in _sqlite_schema_initialized_paths:
+        return
+    with _connect() as conn:
+        conn.execute(_SQLITE_SCHEMA)
+    _sqlite_schema_initialized_paths.add(path)
+
+
+def _ensure_pg_schema() -> None:
+    """One-time PER DSN (not per process -- see the cache set's
+    docstring above), idempotent, and run on its OWN short
+    connection/transaction -- never inside the per-event write
+    transaction that holds the head-row lock (spec Phase 14B.1 §2:
+    'Event append should NOT execute CREATE TABLE / CREATE INDEX on
+    every authorization audit write')."""
+    from orca.config import orneur_env
+    from orca.godmode.lease_store import _pg_connect
+
+    dsn = orneur_env("GODMODE_DATABASE_URL")
+    if dsn in _pg_schema_initialized_dsns:
+        return
+
+    conn = _pg_connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(_PG_TABLE_SCHEMA)
+            cur.execute(_PG_HEAD_SCHEMA)
+            # Bootstrap the head from whatever chain state already
+            # exists (a real production database may already have rows
+            # from before this table was introduced) -- never assume an
+            # empty chain. An empty chain correctly bootstraps to
+            # (-1, GENESIS_HASH), matching what the write path expects
+            # as "no prior entry."
+            cur.execute(
+                """
+                INSERT INTO godmode_audit_head (id, last_seq, last_hash)
+                SELECT 1, COALESCE(MAX(seq), -1),
+                       COALESCE((SELECT entry_hash FROM godmode_audit ORDER BY seq DESC LIMIT 1), %s)
+                FROM godmode_audit
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (_GENESIS_HASH,),
+            )
+        conn.commit()
+        _pg_schema_initialized_dsns.add(dsn)
+    finally:
+        conn.close()
+
 
 def _record_event_sqlite(event: ElevationAuditEvent) -> bool:
+    ok, _category = _record_event_sqlite_with_diagnostics(event)
+    return ok
+
+
+def _record_event_sqlite_with_diagnostics(event: ElevationAuditEvent) -> tuple[bool, str]:
     import sqlite3
     from orca.godmode.lease_store import _connect
 
+    _ensure_sqlite_schema()
     try:
         with _connect() as conn:
-            conn.execute(_SQLITE_SCHEMA)
             conn.execute("BEGIN IMMEDIATE")
             try:
                 last = conn.execute("SELECT entry_hash, seq FROM godmode_audit ORDER BY seq DESC LIMIT 1").fetchone()
@@ -180,28 +375,62 @@ def _record_event_sqlite(event: ElevationAuditEvent) -> bool:
                     ),
                 )
                 conn.execute("COMMIT")
-                return True
+                return True, "SUCCESS"
             except Exception:
                 conn.execute("ROLLBACK")
                 raise
     except sqlite3.OperationalError:
-        return False
+        return False, "LOCK_TIMEOUT"
+    except Exception:
+        return False, "UNKNOWN_DATABASE_FAILURE"
 
 
 def _record_event_postgres(event: ElevationAuditEvent) -> bool:
+    ok, _category = _record_event_postgres_with_diagnostics(event)
+    return ok
+
+
+def _record_event_postgres_with_diagnostics(event: ElevationAuditEvent) -> tuple[bool, str]:
+    """Real hot path: a short transaction that locks the single
+    `godmode_audit_head` row (`SELECT ... FOR UPDATE`, an ordinary
+    transactional row lock -- not a session-scoped advisory lock),
+    inserts the event, advances the head, and commits -- all in one
+    transaction, so a failure at any point rolls back BOTH the insert
+    and the head advance (no orphan chain entry, no partially-advanced
+    head). Schema initialization happens once, outside this path (see
+    `_ensure_pg_schema()`). Bounded retry only for genuinely transient
+    categories (`LOCK_TIMEOUT`/`DEADLOCK`/`SERIALIZATION_FAILURE`);
+    every other failure fails closed immediately."""
     import psycopg
     from orca.godmode.lease_store import _pg_connect
 
     try:
-        conn = _pg_connect()
+        _ensure_pg_schema()
+    except psycopg.Error as e:
+        return False, _classify_pg_error(e)
+
+    last_category = "UNKNOWN_DATABASE_FAILURE"
+    for attempt in range(_MAX_RETRY_ATTEMPTS):
+        try:
+            conn = _pg_connect()
+        except psycopg.Error as e:
+            return False, _classify_pg_error(e)
+
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT pg_advisory_xact_lock(hashtext('godmode_audit_chain'))")
-                cur.execute(_PG_SCHEMA)
-                cur.execute("SELECT entry_hash, seq FROM godmode_audit ORDER BY seq DESC LIMIT 1")
-                last = cur.fetchone()
-                prev_hash = last[0] if last else _GENESIS_HASH
-                seq = (last[1] + 1) if last else 0
+                # SET does not accept bind parameters in Postgres; the
+                # value is an internal integer constant, never
+                # user/caller-supplied, so a literal is safe here.
+                cur.execute(f"SET LOCAL lock_timeout = '{_PG_LOCK_WAIT_TIMEOUT_MS}ms'")
+                cur.execute("SELECT last_seq, last_hash FROM godmode_audit_head WHERE id = 1 FOR UPDATE")
+                head = cur.fetchone()
+                if head is None:
+                    # Schema init raced with a concurrent process's own
+                    # init; retry -- the row will exist on the next attempt.
+                    raise psycopg.errors.UndefinedTable("godmode_audit_head row missing")
+                last_seq, last_hash = head
+                seq = last_seq + 1
+                prev_hash = last_hash
                 payload = _canonical_payload(seq, event)
                 entry_hash = _compute_hash(payload)
                 signature = _compute_signature(entry_hash)
@@ -220,32 +449,57 @@ def _record_event_postgres(event: ElevationAuditEvent) -> bool:
                         prev_hash, entry_hash, signature,
                     ),
                 )
+                cur.execute(
+                    "UPDATE godmode_audit_head SET last_seq = %s, last_hash = %s WHERE id = 1",
+                    (seq, entry_hash),
+                )
             conn.commit()
-            return True
-        except Exception:
+            return True, "SUCCESS"
+        except Exception as e:
             conn.rollback()
-            return False
+            category = _classify_pg_error(e) if isinstance(e, psycopg.Error) else "UNKNOWN_DATABASE_FAILURE"
+            last_category = category
+            if category in ("LOCK_TIMEOUT", "DEADLOCK", "SERIALIZATION_FAILURE") and attempt < _MAX_RETRY_ATTEMPTS - 1:
+                import time
+                time.sleep(_retry_backoff_seconds(attempt))
+                continue
+            return False, category
         finally:
             conn.close()
-    except psycopg.Error:
-        return False
+
+    return False, last_category
 
 
 def record_event_durable(event: ElevationAuditEvent) -> bool:
     """Persists `event` durably, hash-chained. Returns True on success,
     False on ANY failure (fail closed -- the caller, per spec §16,
     decides whether a failed audit write should deny the elevated
-    action it was meant to record). Never raises."""
+    action it was meant to record). Never raises. Production
+    authorization only ever sees this plain bool -- use
+    `record_event_durable_with_diagnostics()` for the sanitized failure
+    category (tests/telemetry only)."""
+    ok, _category = record_event_durable_with_diagnostics(event)
+    return ok
+
+
+def record_event_durable_with_diagnostics(event: ElevationAuditEvent) -> tuple[bool, str]:
+    """Same as `record_event_durable()`, but also returns a sanitized
+    failure category (`SUCCESS` on success; one of `_classify_pg_error()`'s
+    categories, or `UNKNOWN_DATABASE_FAILURE`/a backend-selection
+    failure otherwise). Never includes a DSN, credential, SQL parameter
+    value, or the raw exception body -- category name only. Intended
+    for tests and structured telemetry; production authorization code
+    should keep using the plain-bool `record_event_durable()`."""
     from orca.godmode.lease_store import _backend
 
     event = _redact(event)
     try:
         backend = _backend()
     except Exception:
-        return False
+        return False, "CONNECTION_FAILURE"
     if backend == "postgres":
-        return _record_event_postgres(event)
-    return _record_event_sqlite(event)
+        return _record_event_postgres_with_diagnostics(event)
+    return _record_event_sqlite_with_diagnostics(event)
 
 
 def list_events_for_tenant(tenant_id: str) -> list[dict]:
@@ -388,3 +642,65 @@ def _all_events_postgres() -> list[dict]:
             conn.close()
     except psycopg.Error:
         return []
+
+
+def verify_head_consistency() -> dict:
+    """Phase 14B.1 §6: cross-checks the durable `godmode_audit_head` row
+    against the actual chain tail. SOVEREIGN/SQLite has no separate head
+    row (the last row IS the head, protected by `BEGIN IMMEDIATE`'s
+    whole-file exclusive lock) so this is a Postgres-only check;
+    SQLite reports `{"valid": True, "reason": "no separate head row in
+    SQLite backend"}` unconditionally. Never auto-repairs a detected
+    inconsistency -- fails closed and surfaces the fault for an
+    operator to investigate, per spec's explicit "do not silently
+    repair corruption automatically in production"."""
+    from orca.godmode.lease_store import _backend
+
+    try:
+        backend = _backend()
+    except Exception:
+        return {"valid": False, "reason": "authority store unavailable"}
+
+    if backend != "postgres":
+        return {"valid": True, "reason": "no separate head row in SQLite backend"}
+
+    import psycopg
+    from orca.godmode.lease_store import _pg_connect
+
+    try:
+        _ensure_pg_schema()
+    except psycopg.Error:
+        return {"valid": False, "reason": "authority store unavailable"}
+
+    try:
+        conn = _pg_connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT last_seq, last_hash FROM godmode_audit_head WHERE id = 1")
+                head = cur.fetchone()
+                cur.execute("SELECT seq, entry_hash FROM godmode_audit ORDER BY seq DESC LIMIT 1")
+                tail = cur.fetchone()
+            conn.commit()
+        finally:
+            conn.close()
+    except psycopg.Error:
+        return {"valid": False, "reason": "authority store unavailable"}
+
+    if head is None:
+        return {"valid": False, "reason": "HEAD_MISSING"}
+
+    head_seq, head_hash = head
+    if tail is None:
+        if head_seq != -1 or head_hash != _GENESIS_HASH:
+            return {"valid": False, "reason": "HEAD_AHEAD_OF_CHAIN", "head_seq": head_seq}
+        return {"valid": True, "head_seq": head_seq}
+
+    tail_seq, tail_hash = tail
+    if head_seq < tail_seq:
+        return {"valid": False, "reason": "HEAD_BEHIND_CHAIN", "head_seq": head_seq, "tail_seq": tail_seq}
+    if head_seq > tail_seq:
+        return {"valid": False, "reason": "HEAD_AHEAD_OF_CHAIN", "head_seq": head_seq, "tail_seq": tail_seq}
+    if head_hash != tail_hash:
+        return {"valid": False, "reason": "HEAD_HASH_MISMATCH", "head_seq": head_seq}
+
+    return {"valid": True, "head_seq": head_seq}
