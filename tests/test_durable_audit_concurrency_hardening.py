@@ -422,7 +422,19 @@ def test_crash_after_insert_before_head_update_rolls_back_both(tmp_path, monkeyp
 def test_head_consistency_detects_injected_mismatch(tmp_path):
     """Directly corrupts the head row (bypassing the real write path) to
     prove verify_head_consistency() actually detects HEAD_HASH_MISMATCH
-    rather than always reporting valid=True."""
+    rather than always reporting valid=True.
+
+    `godmode_audit_head` is a single global row shared by every test and
+    every process that points at `_AUTHORITY_DSN` -- not scoped to this
+    test's tenant. A real bug found by running this suite repeatedly
+    against a persistent local Postgres instance (not a fresh
+    per-run database): this test corrupted `last_hash` and never
+    restored it, permanently poisoning the chain for every subsequent
+    write in the same database (verify_chain() then reports a
+    `prev_hash mismatch` for the first row written after this test ran
+    -- not because of any real concurrency/audit defect, but because
+    this test's own sabotage was never undone). Fixed by capturing the
+    real value before corrupting and restoring it in a `finally`."""
     home = str(tmp_path / "home-head-mismatch")
     os.makedirs(home, exist_ok=True)
     _, durable_audit, resolution = _setup(home)
@@ -437,11 +449,20 @@ def test_head_consistency_detects_injected_mismatch(tmp_path):
 
     import psycopg
     conn = psycopg.connect(_AUTHORITY_DSN)
-    with conn.cursor() as cur:
-        cur.execute("UPDATE godmode_audit_head SET last_hash = 'deliberately-wrong-hash' WHERE id = 1")
-    conn.commit()
-    conn.close()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT last_hash FROM godmode_audit_head WHERE id = 1")
+            (real_last_hash,) = cur.fetchone()
+            cur.execute("UPDATE godmode_audit_head SET last_hash = 'deliberately-wrong-hash' WHERE id = 1")
+        conn.commit()
 
-    result = durable_audit.verify_head_consistency()
-    assert result["valid"] is False
-    assert result["reason"] == "HEAD_HASH_MISMATCH"
+        result = durable_audit.verify_head_consistency()
+        assert result["valid"] is False
+        assert result["reason"] == "HEAD_HASH_MISMATCH"
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE godmode_audit_head SET last_hash = %s WHERE id = 1", (real_last_hash,))
+        conn.commit()
+        conn.close()
+
+    assert durable_audit.verify_head_consistency()["valid"] is True
