@@ -1,0 +1,127 @@
+name: Test Suite
+
+on:
+  push:
+    branches:
+      - main
+      - session-update-2026-08-25
+      - 'phase14b-*'
+  pull_request:
+    branches:
+      - main
+      - session-update-2026-08-25
+
+jobs:
+  pytest:
+    name: Deterministic Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev deps, no GPU/Ollama needed)
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+
+      - name: Run deterministic test suite
+        run: pytest -m "not live_ollama_smoke" -v 2>&1 | tee /tmp/pytest-log.txt
+
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-log-${{ github.run_number }}
+          path: /tmp/pytest-log.txt
+          retention-days: 14
+
+  container-build:
+    name: Production Container Build + Boot Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build production Docker image
+        run: docker build --pull --tag orneur-ci:${{ github.sha }} .
+
+      - name: Inspect image metadata
+        run: |
+          docker image inspect orneur-ci:${{ github.sha }} \
+            --format 'id={{.Id}} size={{.Size}} health={{json .Config.Healthcheck}} cmd={{json .Config.Cmd}}'
+
+      - name: Boot image and verify /livez
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name orneur-ci-runtime -p 127.0.0.1:7337:7337 orneur-ci:${{ github.sha }}
+          trap 'docker logs orneur-ci-runtime || true; docker rm -f orneur-ci-runtime >/dev/null 2>&1 || true' EXIT
+
+          ok=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:7337/livez > /tmp/livez.json; then
+              ok=1
+              break
+            fi
+            if ! docker inspect -f '{{.State.Running}}' orneur-ci-runtime | grep -q true; then
+              echo 'Container exited before liveness became available.' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$ok" -ne 1 ]; then
+            echo 'Timed out waiting for /livez.' >&2
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/livez.json').read_text())
+          assert payload.get('status') == 'alive', payload
+          print('container_livez=PASS')
+          PY
+
+  security-audit:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca + pip-audit
+        run: |
+          pip install uv
+          uv pip install --system -e .
+          pip install pip-audit
+
+      # Informational, not blocking: as of docs/SECURITY_AUDIT.md, chromadb
+      # (PYSEC-2026-311) and diskcache (PYSEC-2026-2447) have known,
+      # unpatched CVEs that were assessed and found NOT currently
+      # exploitable given Orca's actual usage (embedded/local-only, no
+      # network exposure) — see that doc for the full reasoning. This job
+      # exists to catch any NEW vulnerability, not to re-litigate those two
+      # every run; a human should review new findings before this becomes
+      # a hard gate.
+      - name: Run pip-audit (informational)
+        run: pip-audit || true

@@ -22,7 +22,7 @@ import os
 import sqlite3
 import sys
 
-from orca.config import ORCA_HOME
+from orca.config import ORCA_HOME, orneur_env
 
 
 def _sqlite_source_conn() -> sqlite3.Connection:
@@ -62,9 +62,9 @@ def _migrate_table(sqlite_conn, pg_conn, table: str, columns: list[str]) -> int:
 
 
 def migrate() -> None:
-    dsn = os.environ.get("ORCA_DATABASE_URL")
+    dsn = orneur_env("DATABASE_URL")
     if not dsn:
-        print("ORCA_DATABASE_URL not set — nothing to migrate to. Set it and re-run.")
+        print("ORNEUR_DATABASE_URL (or legacy ORCA_DATABASE_URL) not set — nothing to migrate to. Set it and re-run.")
         sys.exit(1)
 
     import psycopg

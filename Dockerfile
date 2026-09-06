@@ -7,19 +7,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml .
+COPY pyproject.toml README.md ./
 COPY orca/ ./orca/
 
-RUN uv pip install --system -e .
+RUN uv pip install --system -e ".[postgres]"
 
 RUN mkdir -p /root/.orca
 
 EXPOSE 7337
 
-ENV ORCA_HOME=/root/.orca \
-    ORCA_OLLAMA_HOST=http://ollama:11434
+ENV ORNEUR_HOME=/root/.orca \
+    ORNEUR_OLLAMA_HOST=http://ollama:11434
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:7337/api/status || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -f http://localhost:7337/livez || exit 1
 
 CMD ["orca", "serve", "--host", "0.0.0.0", "--port", "7337", "--no-open"]

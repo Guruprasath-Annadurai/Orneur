@@ -1,16 +1,23 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: atheris-config
+  name: orneur-api-config
 data:
-  core-model:  "qwen2.5:14b"
-  nano-model:  "qwen2.5:7b"
-  ultra-model: "qwen2.5:14b"
+  # Real bug this fixes: these previously pointed at raw, un-fine-tuned
+  # base models — a real deployment via these manifests would have
+  # silently served generic Qwen2.5, not Orneur's actual fine-tuned models.
+  # Matches the real production aliases (see orca/train/variants.py).
+  core-model:  "orca-core"
+  nano-model:  "orca-nano"
+  ultra-model: "orca-ultra"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: atheris-pvc
+  # NOTE: if you have an existing deployment with data in a PVC named
+  # `atheris-pvc` (the pre-Orneur name), migrate that data rather than
+  # losing it -- this manifest assumes a fresh deployment.
+  name: orneur-api-pvc
 spec:
   accessModes: [ReadWriteOnce]
   resources:
@@ -28,11 +35,11 @@ spec:
       storage: 50Gi
 ---
 # Create this secret before deploying:
-# kubectl create secret generic atheris-secrets --from-literal=auth-secret=$(openssl rand -hex 32)
+# kubectl create secret generic orneur-api-secrets --from-literal=auth-secret=$(openssl rand -hex 32)
 apiVersion: v1
 kind: Secret
 metadata:
-  name: atheris-secrets
+  name: orneur-api-secrets
 type: Opaque
 stringData:
   auth-secret: "REPLACE_WITH_STRONG_SECRET"

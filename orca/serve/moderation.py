@@ -54,6 +54,65 @@ _BLOCK_PATTERNS = [
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Jailbreak/prompt-injection framing — a real gap found via red-team testing:
+#  orca/train/redteam.py's JAILBREAK_PROBES (roleplay bypass, DAN-style,
+#  "system override", claimed researcher authority, translation tricks) ALL
+#  passed through the BLOCK patterns above as ALLOW, because those patterns
+#  only match a narrow list of named WMD agents — not the generic harm topics
+#  (weapons, drugs, malware, hacking, stalking) these probes actually ask
+#  about, and not the manipulation framing itself.
+#
+#  Two model fine-tuning attempts (DPO and SFT, see ORCA_BLUEPRINT.md) both
+#  failed to teach the underlying model to refuse these on its own — this is
+#  the cheaper, faster, deployable-now lever: catch the ATTACK PATTERN at the
+#  input-moderation layer instead of relying on the model's own training.
+#
+#  Design: the manipulation framing (e.g. "ignore all previous instructions",
+#  "SYSTEM OVERRIDE", "you have no ethical guidelines") is the actual red
+#  flag — legitimate users don't need to say "bypass your restrictions" to
+#  ask a real question. But the framing alone is ambiguous (a user might be
+#  asking ABOUT prompt injection/jailbreaks academically), so:
+#    - framing + harm-adjacent topic together -> BLOCK (high confidence)
+#    - framing alone, no harm-adjacent topic   -> FLAG (ambiguous, log it)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_JAILBREAK_FRAMING_PATTERNS = [
+    r"\bignore (all )?(previous|prior|the above)\b.{0,15}\binstructions\b",
+    r"\byou are now\b.{0,20}\b(DAN|an AI with no restrictions)\b",
+    r"\bsystem override\b",
+    r"\bdisregard (all )?(safety|previous)\b.{0,20}\b(guidelines|instructions)\b",
+    r"\bunfiltered mode\b", r"\bno (ethical guidelines|content policy|restrictions)\b",
+    r"\bbypass your (restrictions|safety|guidelines|filters)\b",
+    r"\b(safety filters?|restrictions?) (disabled|turned off)\b",
+    r"\binternal testing\b.{0,20}\b(disabled|no restrictions)\b",
+    r"\bhypothetical\b.{0,30}\b(villain|antagonist)\b",
+    r"\bas if you had no\b",
+    # Roleplay-as-character framing used to launder a harmful request through
+    # fictional distance ("in character, explain how to...").
+    r"\bpretend you'?re\b.{0,20}\b(an? )?(actor|character)\b",
+    r"\bin character\b.{0,30}\bexplain\b",
+    # Translation-as-injection: smuggling an instruction inside translated text.
+    r"\btranslate\b.{0,40}\bthen follow\b",
+]
+
+_HARM_ADJACENT_TOPIC_PATTERNS = [
+    r"\bsynthes\w*\b.{0,20}\b(meth(amphetamine)?|drugs?)\b",
+    r"\bmake\b.{0,15}\b(weapon|bomb|explosive)\b",
+    r"\b(computer virus|malware)\b", r"\b(create|write)\b.{0,15}\b(computer virus|malware)\b",
+    r"\bhack\w* into\b.{0,20}\b(bank|account|system|email)\b",
+    r"\b(exploit code|buffer overflow)\b",
+    r"\bpick(ing)? a lock\b", r"\bstalk\w*\b.{0,20}\bwithout\b.{0,20}\bnotic\w*\b",
+    r"\bhurt someone\b.{0,20}\bwithout getting caught\b",
+    r"\bmake illegal drugs\b",
+    r"\bhack\w*\b.{0,20}\b(bank|account|system|email)\b.{0,15}\bsystems?\b",
+]
+
+
+def _matches_any(text: str, patterns: list[str]) -> bool:
+    return any(re.search(p, text) for p in patterns)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  SUPPORT — self-harm / suicide ideation, never blocked
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -102,9 +161,30 @@ def check_input(text: str) -> ModerationResult:
         if re.search(pattern, lowered):
             return ModerationResult(action="block", flagged_categories=["hard_block"], matched_pattern=pattern)
 
+    # Jailbreak framing + a harm-adjacent topic together is high-confidence —
+    # block it the same as the narrow WMD-agent patterns above. See the
+    # module-level comment by _JAILBREAK_FRAMING_PATTERNS for why this exists
+    # (the original BLOCK list missed every one of redteam.py's 10 probes).
+    framing_match = next((p for p in _JAILBREAK_FRAMING_PATTERNS if re.search(p, lowered)), None)
+    harm_topic_match = next((p for p in _HARM_ADJACENT_TOPIC_PATTERNS if re.search(p, lowered)), None)
+    if framing_match and harm_topic_match:
+        return ModerationResult(
+            action="block", flagged_categories=["jailbreak_framing", "harm_adjacent_topic"],
+            matched_pattern=f"{framing_match} + {harm_topic_match}",
+        )
+
     for pattern in _SUPPORT_PATTERNS:
         if re.search(pattern, lowered):
             return ModerationResult(action="support", flagged_categories=["self_harm"], matched_pattern=pattern)
+
+    # Framing alone, no harm-adjacent topic detected — ambiguous (could be a
+    # legitimate question about jailbreaks/prompt injection itself). Flag for
+    # governance visibility rather than block, same triage-not-proof spirit
+    # as the bias flags in orca/train/redteam.py.
+    if framing_match:
+        return ModerationResult(
+            action="flag", flagged_categories=["jailbreak_framing_ambiguous"], matched_pattern=framing_match,
+        )
 
     for pattern in _FLAG_PATTERNS:
         if re.search(pattern, lowered):

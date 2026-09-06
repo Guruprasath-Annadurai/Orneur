@@ -43,7 +43,7 @@ from pathlib import Path
 
 from orca.auth.store import get_user_session_ids, delete_user_account_records, get_stripe_customer_id
 from orca.docs.store import unregister_doc, list_docs, DocStore
-from orca.brain.memory import EpisodicMemory
+from orca.brain.memory import EpisodicMemory, LongTermMemory, SemanticMemory
 from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.serve import session_store
 from orca.config import ORCA_HOME, CONFIG
@@ -51,7 +51,11 @@ from orca.config import ORCA_HOME, CONFIG
 
 def _delete_session_data(session_id: str) -> dict:
     """Best-effort cleanup of everything scoped to one session_id. Never raises — one failed store shouldn't block cleanup of the rest."""
-    result = {"session_id": session_id, "memory_deleted": False, "docs_deleted": 0, "redis_deleted": False, "knowledge_graph_deleted": False}
+    result = {
+        "session_id": session_id, "memory_deleted": False, "docs_deleted": 0, "redis_deleted": False,
+        "knowledge_graph_deleted": False, "semantic_facts_deleted": False, "memory_continuum_deleted": {},
+        "long_term_vector_memory_deleted": False,
+    }
 
     try:
         ep = EpisodicMemory(session_id)
@@ -60,6 +64,16 @@ def _delete_session_data(session_id: str) -> dict:
             result["memory_deleted"] = True
     except Exception as e:
         result["memory_error"] = str(e)
+
+    try:
+        # Phase 5.1: a real, confirmed gap this cascade never covered --
+        # every raw Q:/A: turn committed via MemoryEngine.commit_to_long_term()
+        # (unconditional, every chat/stream/ultra turn) lived in this
+        # session's own ChromaDB collection with NO deletion path at all
+        # before LongTermMemory.delete() was added this phase.
+        result["long_term_vector_memory_deleted"] = LongTermMemory(session_id).delete()
+    except Exception as e:
+        result["long_term_vector_memory_error"] = str(e)
 
     try:
         docs = list_docs(session_id)
@@ -85,6 +99,24 @@ def _delete_session_data(session_id: str) -> dict:
         result["redis_deleted"] = session_store.enabled()
     except Exception as e:
         result["redis_error"] = str(e)
+
+    # Phase 5: the audit (docs/orneur/phase-5/CURRENT_MEMORY_ARCHITECTURE.md)
+    # found SemanticMemory's diskcache store was entirely missing from
+    # this cascade -- distilled "facts" from a deleted user's sessions
+    # persisted forever, unreachable by deletion. Fixed here, plus the
+    # new Memory Continuum stores (episodic ledger + semantic/entity/
+    # procedural/failure records) this phase introduces.
+    try:
+        result["semantic_facts_deleted"] = SemanticMemory().delete_session_facts(session_id)
+    except Exception as e:
+        result["semantic_facts_error"] = str(e)
+
+    try:
+        from orca.memory import deletion as memory_deletion
+        from orca.memory.contracts import MemoryScope
+        result["memory_continuum_deleted"] = memory_deletion.delete_scope(MemoryScope.SESSION, session_id)
+    except Exception as e:
+        result["memory_continuum_error"] = str(e)
 
     return result
 

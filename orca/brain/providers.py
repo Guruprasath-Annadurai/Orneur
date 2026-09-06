@@ -57,7 +57,17 @@ class OrcaBrain:
 
         # Explicit model requested
         if self._requested_model:
-            if self._requested_model in available:
+            # Ollama's /api/tags always returns tagged names (e.g.
+            # "orca-nano:latest"), but a configured/resolved model name is
+            # typically bare ("orca-nano") — a real production bug found via
+            # load testing: every chat request failed with "model not found"
+            # even though the exact model WAS listed, just under its tagged
+            # name. Accept either form, same normalization
+            # orca/serve/registry.py's _model_installed() already applies.
+            if (
+                self._requested_model in available
+                or f"{self._requested_model}:latest" in available
+            ):
                 return self._requested_model
             raise RuntimeError(
                 f"Model '{self._requested_model}' not found in Ollama.\n"
@@ -120,14 +130,43 @@ class OrcaBrain:
         system: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        timeout: float = 120.0,
+        retries: int = 1,
+        priority: str = "INTERACTIVE",
     ) -> str:
+        """
+        `priority` is a no-op here -- a raw Ollama HTTP call has no
+        Gateway-level priority/concurrency concept to honor. Accepted
+        anyway so this method's signature stays interface-compatible with
+        orca.gateway.compat_brain.GatewayBrain.complete() (which DOES
+        route it through real bounded-fairness scheduling), matching this
+        class's own stated goal of every "brain" caller working unchanged
+        regardless of which implementation it holds.
+
+        Real problem this fixes: this method previously caught ONLY
+        httpx.ConnectError — a real request timeout (httpx.TimeoutException)
+        under load propagated as an unhandled exception straight to the
+        caller, with zero retry. A live investigation this session found
+        34% of generation calls timing out under sustained load in the eval
+        harness at a SHORTER 60s timeout than this path's 120s — meaning
+        this exact failure mode is real and reachable in production chat
+        under similar load, not hypothetical. Retries once before raising a
+        clear, catchable error, mirroring the same fix already applied to
+        orca/train/eval.py and orca/train/redteam.py.
+        """
         payload = self._build_payload(messages, system, temperature, max_tokens, stream=False)
-        try:
-            r = httpx.post(f"{self.host}/api/chat", json=payload, timeout=120)
-            r.raise_for_status()
-            return r.json()["message"]["content"]
-        except httpx.ConnectError:
-            raise RuntimeError("Ollama disconnected. Is 'ollama serve' still running?")
+        last_error: Exception | None = None
+        for attempt in range(retries + 1):
+            try:
+                r = httpx.post(f"{self.host}/api/chat", json=payload, timeout=timeout)
+                r.raise_for_status()
+                return r.json()["message"]["content"]
+            except httpx.ConnectError:
+                raise RuntimeError("Ollama disconnected. Is 'ollama serve' still running?")
+            except httpx.TimeoutException as e:
+                last_error = e
+                continue
+        raise RuntimeError(f"Ollama request timed out after {retries + 1} attempt(s): {last_error}")
 
     def stream(
         self,
@@ -135,23 +174,43 @@ class OrcaBrain:
         system: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        timeout: float = 120.0,
+        retries: int = 1,
     ) -> Iterator[str]:
+        """
+        Same timeout robustness as complete() (see its docstring), adapted
+        for streaming: a retry is only safe BEFORE any content has been
+        yielded to the caller — once real output has started, silently
+        restarting the request would duplicate it. If a timeout hits after
+        partial output, this raises a clear error instead of retrying.
+        """
         payload = self._build_payload(messages, system, temperature, max_tokens, stream=True)
-        try:
-            with httpx.stream(
-                "POST", f"{self.host}/api/chat", json=payload, timeout=120
-            ) as r:
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if not line:
-                        continue
-                    chunk = json.loads(line)
-                    if content := chunk.get("message", {}).get("content"):
-                        yield content
-                    if chunk.get("done"):
-                        break
-        except httpx.ConnectError:
-            raise RuntimeError("Ollama disconnected mid-stream.")
+        last_error: Exception | None = None
+        for attempt in range(retries + 1):
+            yielded_any = False
+            try:
+                with httpx.stream(
+                    "POST", f"{self.host}/api/chat", json=payload, timeout=timeout
+                ) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines():
+                        if not line:
+                            continue
+                        chunk = json.loads(line)
+                        if content := chunk.get("message", {}).get("content"):
+                            yielded_any = True
+                            yield content
+                        if chunk.get("done"):
+                            break
+                return
+            except httpx.ConnectError:
+                raise RuntimeError("Ollama disconnected mid-stream.")
+            except httpx.TimeoutException as e:
+                last_error = e
+                if yielded_any:
+                    raise RuntimeError(f"Ollama stream timed out mid-response after partial output: {e}")
+                continue
+        raise RuntimeError(f"Ollama stream request timed out before any output after {retries + 1} attempt(s): {last_error}")
 
     def _build_payload(
         self,

@@ -34,6 +34,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from orca.config import orneur_env
+
 
 # ─── Price ID → license params mapping ────────────────────────────────────────
 
@@ -174,8 +176,19 @@ def _verify_signature(payload: bytes, sig_header: str, secret: str) -> dict:
     Raises ValueError on failure.
     """
     if not secret:
-        # Dev mode — skip verification
-        return json.loads(payload)
+        # Fail closed, not open. A missing secret must never mean "trust
+        # every unsigned POST" — that turns a misconfigured deploy (missing
+        # env var/secret) into an open door for anyone to POST a fake
+        # checkout.session.completed and grant themselves a paid tier for
+        # free. Local dev without a real Stripe secret must opt in
+        # explicitly via ORCA_ALLOW_UNSIGNED_WEBHOOKS=1, not get it by default.
+        if orneur_env("ALLOW_UNSIGNED_WEBHOOKS") == "1":
+            return json.loads(payload)
+        raise ValueError(
+            "STRIPE_WEBHOOK_SECRET not configured — refusing to process an "
+            "unsigned webhook. Set STRIPE_WEBHOOK_SECRET, or explicitly set "
+            "ORCA_ALLOW_UNSIGNED_WEBHOOKS=1 for local dev only."
+        )
 
     parts: dict[str, str] = {}
     for chunk in sig_header.split(","):

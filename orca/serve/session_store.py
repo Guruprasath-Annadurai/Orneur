@@ -32,7 +32,9 @@ import os
 import time
 from typing import Optional
 
-REDIS_URL = os.environ.get("ORCA_REDIS_URL")
+from orca.config import orneur_env
+
+REDIS_URL = orneur_env("REDIS_URL") or None
 SESSION_TTL_SECONDS = 7200  # matches the existing 2h idle-eviction window in api.py
 
 _redis_client = None

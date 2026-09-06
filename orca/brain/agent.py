@@ -23,6 +23,7 @@ from orca.brain.providers import OrcaBrain
 from orca.brain.context_intelligence import apply_context_policy
 from orca.tools import ToolRegistry
 from orca.character import CORE_SYSTEM_WITH_TOOLS, REFLECTION_PROMPT
+from orca.docs.citation_check import check_web_citations
 
 MAX_TOOL_ROUNDS = 6
 REFLECTION_THRESHOLD = 150  # reflect if response > N words
@@ -69,6 +70,7 @@ class AgentTrace:
     draft: str = ""
     reflected: bool = False
     final: str = ""
+    citation_compliance: dict | None = None
 
 
 class AgentLoop:
@@ -84,12 +86,27 @@ class AgentLoop:
         session_id: str = "default",
         on_thought: Callable[[str], None] | None = None,
         reflect: bool = True,
+        route_tool_reasoning_via_society: bool = False,
     ):
+        """
+        `route_tool_reasoning_via_society` (Phase 8 spec §17-18): when
+        True, `_plan()`'s tool-reasoning decision resolves its serving
+        tier through Model Society's `TOOL_REASONER` role instead of
+        implicitly inheriting whatever tier the session's general-chat
+        `brain` was constructed with. Model Society still only CHOOSES
+        cognition here -- it grants no tool permission; the Agent Runtime
+        (orca/agent/) is the sole authorization boundary (spec §17).
+        Defaults to False: existing callers/tests that construct
+        `AgentLoop` directly keep their exact current, tested behavior
+        (the session's own `brain` used for both chat and tool-reasoning,
+        unchanged since before this phase).
+        """
         self.brain = brain
         self.tools = tools
         self.session_id = session_id
         self.on_thought = on_thought or (lambda _: None)
         self.reflect = reflect
+        self._route_tool_reasoning_via_society = route_tool_reasoning_via_society
         self._history: list[dict] = []
 
     def run(self, user_input: str, system: str | None = None) -> tuple[str, AgentTrace]:
@@ -131,6 +148,7 @@ class AgentLoop:
             final = draft
 
         trace.final = final
+        trace.citation_compliance = check_web_citations(trace.final, tool_context)
 
         # Update history
         self._history.append({"role": "user", "content": user_input})
@@ -174,6 +192,7 @@ class AgentLoop:
                 yield chunk
             trace.final = full
             trace.draft = full
+            trace.citation_compliance = check_web_citations(trace.final, tool_context)
             self._history.append({"role": "user", "content": user_input})
             self._history.append({"role": "assistant", "content": full})
             self._compress_history_if_needed()
@@ -204,6 +223,28 @@ class AgentLoop:
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
+    def _tool_reasoning_brain(self) -> OrcaBrain:
+        """Resolves (once, cached) the Society-routed TOOL_REASONER brain
+        when opted in; otherwise returns the session's own brain
+        unchanged (spec §18's "no literal model/tier bypass... without
+        breaking current bounded behavior" -- the default path is
+        byte-for-byte the pre-Phase-8 behavior)."""
+        if not self._route_tool_reasoning_via_society:
+            return self.brain
+        cached = getattr(self, "_cached_tool_reasoner_brain", None)
+        if cached is not None:
+            return cached
+        from orca.gateway.wiring import brain_for_tier_resolution
+        from orca.serve.registry import resolve_tier_backend
+        from orca.society.contracts import CognitiveRole
+        from orca.society.router import resolve_tier_for_role
+
+        tier, _decision = resolve_tier_for_role(CognitiveRole.TOOL_REASONER)
+        resolution = resolve_tier_backend(tier)
+        brain = brain_for_tier_resolution(resolution)
+        self._cached_tool_reasoner_brain = brain
+        return brain
+
     def _plan(self, user_input: str, sys_prompt: str) -> dict:
         """Ask Orca whether tools are needed."""
         tool_list = ", ".join(self.tools.all_names())
@@ -223,7 +264,7 @@ class AgentLoop:
 
         prompt = f"Recent context:\n{history_summary}\n\nUser: {user_input}" if history_summary else f"User: {user_input}"
 
-        response = self.brain.complete(
+        response = self._tool_reasoning_brain().complete(
             [{"role": "user", "content": prompt}],
             system=planner_sys,
             temperature=0.1,

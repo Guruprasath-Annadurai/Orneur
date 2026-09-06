@@ -1,0 +1,20 @@
+{
+  "id": "guruprasathannadurai/orca-core-combined-sft-kernel-v1",
+  "title": "orca-core-combined-sft-kernel-v1",
+  "code_file": "orca_core_combined_sft_kaggle_v1.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [
+    "guruprasathannadurai/orca-core-combined-safety-calibration-v1",
+    "guruprasathannadurai/orca-core-sft-adapter-v2"
+  ],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": [],
+  "machine_shape": "NvidiaTeslaT4"
+}

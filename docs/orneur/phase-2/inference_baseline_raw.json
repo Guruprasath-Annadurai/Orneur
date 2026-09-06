@@ -1,0 +1,53 @@
+{
+  "hardware": {
+    "cpu": "Apple M4",
+    "memory_gb": 16.0,
+    "arch": "arm64",
+    "os": "macOS-26.6.2-arm64-arm-64bit",
+    "note": "shared laptop, not a dedicated inference host -- other processes competing for CPU/memory during this measurement"
+  },
+  "model": "orca-nano-v7",
+  "generate_latency": [
+    {
+      "model": "orca-nano-v7",
+      "max_tokens": 5,
+      "total_latency_ms": 694.1,
+      "completion_tokens": 5,
+      "prompt_tokens": 92,
+      "tokens_per_sec": 7.2
+    },
+    {
+      "model": "orca-nano-v7",
+      "max_tokens": 20,
+      "total_latency_ms": 2706.4,
+      "completion_tokens": 20,
+      "prompt_tokens": 92,
+      "tokens_per_sec": 7.39
+    },
+    {
+      "model": "orca-nano-v7",
+      "max_tokens": 50,
+      "total_latency_ms": 4022.7,
+      "completion_tokens": 32,
+      "prompt_tokens": 92,
+      "tokens_per_sec": 7.95
+    }
+  ],
+  "ttft": {
+    "model": "orca-nano-v7",
+    "ttft_ms": 729.6,
+    "total_ms": 4610.1,
+    "chunk_count": 31
+  },
+  "concurrency": {
+    "concurrent_requests": 2,
+    "successes": 2,
+    "failures": 0,
+    "wall_time_s": 1.38,
+    "individual_latencies_s": [
+      1.38,
+      0.97
+    ]
+  },
+  "measured_at": "2026-08-29T19:59:40Z"
+}

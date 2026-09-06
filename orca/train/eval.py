@@ -1,5 +1,5 @@
 """
-Atheris Model Evaluator — two modes:
+Orneur Model Evaluator — two modes:
 
   OllamaEvaluator  — talks to a live Ollama model (no GPU deps, runs in CI)
   ModelEvaluator   — loads a merged HF/Unsloth checkpoint for offline eval
@@ -168,6 +168,48 @@ Scoring (1-10):
 Score 10 = perfect Orca: gets to the point, precise, no filler.
 """
 
+_ACCURACY_JUDGE_SYSTEM = """\
+You are grading a technical response for correctness and completeness, not
+vocabulary. Score from 0.0 to 1.0 how accurate and complete the response is
+as an answer to the prompt.
+
+Do NOT check for specific keywords or exact terminology — a response that
+covers the right substance using different words should score the same as
+one that uses the "expected" phrasing. Penalize genuine factual errors,
+missing the core point of the question, or an incomplete/cut-off answer
+that never reaches a real explanation. Do not penalize for style, length,
+or phrasing choices alone.
+
+Return ONLY JSON: {"score": 0.0-1.0, "reason": "one sentence"}
+"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Domain-neutral prompt set for cross-tier comparison (compare_with_judge)
+#
+#  Deliberately NOT GOLDEN_EVALS (CS/algorithms-heavy — a real nano-vs-core
+#  run on that set came back 19/20 ties, both scoring near-0%, because
+#  neither tier's actual training domains overlap with it well) and NOT
+#  either tier's own dedicated eval set (genesis_eval.py / novus_eval.py),
+#  which would bias the comparison toward whichever tier that set was
+#  designed around. This is the overlap: everyday business reasoning and
+#  basic coding, both explicitly in-scope for nano (Genesis) AND a subset
+#  of what core (Novus) claims to handle too.
+# ─────────────────────────────────────────────────────────────────────────────
+
+SHARED_TIER_EVALS = [
+    {"domain": "business", "prompt": "What's a reasonable way to price a new SaaS product for small businesses?"},
+    {"domain": "business", "prompt": "Explain the difference between gross profit and net profit to someone with no accounting background."},
+    {"domain": "business", "prompt": "What should a founder check before signing a vendor contract?"},
+    {"domain": "business", "prompt": "How should a freelancer invoice a client for the first time?"},
+    {"domain": "coding", "prompt": "Write a Python function that reads a CSV file and returns the average of one column."},
+    {"domain": "coding", "prompt": "Explain the difference between a list and a tuple in Python."},
+    {"domain": "coding", "prompt": "What's the difference between == and = in most programming languages?"},
+    {"domain": "coding", "prompt": "How do you fix an 'IndentationError' in Python?"},
+    {"domain": "reasoning", "prompt": "Should a small company outsource customer support or build an in-house team? Walk through the trade-offs."},
+    {"domain": "reasoning", "prompt": "Explain what a balance sheet is to someone with no accounting background."},
+]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Ollama-native evaluator — no GPU / no ML deps required
@@ -194,8 +236,19 @@ class OllamaEvaluator:
         self.log = on_log or print
         self.judge_model = judge_model or model  # use same model as judge by default
 
-    def _generate(self, prompt: str, system: str = "", max_tokens: int = 512) -> str:
-        """Single Ollama generation via the /api/generate endpoint."""
+    def _generate(self, prompt: str, system: str = "", max_tokens: int = 512, timeout: float = 120.0, retries: int = 1) -> str:
+        """
+        Single Ollama generation via the /api/generate endpoint.
+
+        Real problem this fixes: a live judge-mode accuracy run against
+        orca-core saw 17 of 50 prompts (34%) come back as "[error: timed
+        out]" at the previous 60s limit — not a real model-quality or
+        judge-severity issue, a generation-reliability one. A judge
+        correctly scores a timed-out non-answer as 0.0, so an unreliable
+        generation step silently poisons the whole accuracy number. Retries
+        once and raises the timeout to 120s before giving up, mirroring the
+        same fix already applied to orca/train/redteam.py's bias judge.
+        """
         payload = json.dumps({
             "model": self.model,
             "prompt": prompt,
@@ -203,17 +256,23 @@ class OllamaEvaluator:
             "stream": False,
             "options": {"num_predict": max_tokens, "temperature": 0.7},
         }).encode()
-        req = urllib.request.Request(
-            f"{self.host}/api/generate",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                return json.loads(resp.read())["response"]
-        except Exception as e:
-            return f"[error: {e}]"
+
+        last_error: Exception | None = None
+        for attempt in range(retries + 1):
+            req = urllib.request.Request(
+                f"{self.host}/api/generate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read())["response"]
+            except Exception as e:
+                last_error = e
+                continue
+
+        return f"[error after {retries + 1} attempt(s): {last_error}]"
 
     def benchmark_speed(self, prompt: str = "Explain neural networks in one paragraph.") -> dict:
         """Measure tokens/second. Uses Ollama's built-in token stats."""
@@ -244,6 +303,85 @@ class OllamaEvaluator:
         self.log(f"[eval] speed: {tps:.1f} tok/s ({eval_count} tokens in {elapsed:.1f}s)")
         return {"tokens_per_sec": round(tps, 1), "total_tokens": eval_count, "elapsed_sec": round(elapsed, 2)}
 
+    def _judge_accuracy(self, judge_model: str, prompt: str, response: str) -> tuple[float, str]:
+        judge_input = f'Prompt: "{prompt}"\n\nResponse: "{response}"'
+        payload = json.dumps({
+            "model": judge_model, "prompt": judge_input, "system": _ACCURACY_JUDGE_SYSTEM,
+            "stream": False, "options": {"num_predict": 120, "temperature": 0.1},
+        }).encode()
+        req = urllib.request.Request(
+            f"{self.host}/api/generate", data=payload,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                raw = json.loads(resp.read())["response"]
+            s, e = raw.find("{"), raw.rfind("}") + 1
+            data = json.loads(raw[s:e])
+            return float(data.get("score", 0.5)), str(data.get("reason", ""))
+        except Exception as e:
+            return 0.5, f"judge error: {e}"
+
+    def accuracy_eval_with_judge(self, judge_model: str, n: int | None = None, trials: int = 1) -> dict:
+        """
+        Same GOLDEN_EVALS prompt set as accuracy_eval(), scored by an LLM
+        judge instead of keyword overlap. Real problem this fixes: a live
+        investigation found orca-core scoring 0.0-0.4 on 9 prompts (Dijkstra,
+        float comparison, N+1 queries, circuit breakers, webhooks, XSS,
+        timing attacks, etc.) where the SAVED response text was, on manual
+        read, a genuinely correct and well-reasoned answer every time — the
+        keyword list just didn't match the model's actual (correct)
+        vocabulary. This is the same failure mode already found and fixed
+        for orca/train/novus_eval.py's business-domain eval.
+
+        trials > 1 REGENERATES the response and re-judges it that many
+        times per prompt, averaging the score — real problem this fixes:
+        a live run of this exact eval showed 61.6% (dominated by generation
+        timeouts, since fixed) then 93.1% on the next run of the SAME
+        unchanged model. Even with the timeout bug fixed, a single sample
+        is still just one draw from a nondeterministic (temperature=0.7)
+        generation — the same reasoning that motivated trials-averaging for
+        orca/train/novus_eval.py and orca/train/redteam.py's probes.
+        Default stays 1 for fast/CI usage; use trials=3+ before treating a
+        score as a stable, reportable number.
+
+        HONEST SCOPE: still a heuristic (LLM-as-judge, not human eval), and
+        judge quality depends on the judge model — pass a judge you trust
+        more than the model being evaluated, not the model being evaluated
+        as its own judge. Averaging reduces sampling noise; it does not
+        make the judge itself more accurate.
+        """
+        evals = GOLDEN_EVALS[:n] if n else GOLDEN_EVALS
+        results = []
+        for i, item in enumerate(evals):
+            trial_scores = []
+            trial_reasons = []
+            trial_outputs = []
+            for _ in range(trials):
+                output = self._generate(item["prompt"], max_tokens=400)
+                score, reason = self._judge_accuracy(judge_model, item["prompt"], output)
+                trial_scores.append(score)
+                trial_reasons.append(reason)
+                trial_outputs.append(output)
+
+            avg_score = round(sum(trial_scores) / trials, 3)
+            results.append({
+                "prompt": item["prompt"][:70],
+                "judged_score": avg_score,
+                "judge_reason": trial_reasons[-1],
+                "response": trial_outputs[-1][:500],
+                "trials": trials,
+                "trial_scores": [round(s, 3) for s in trial_scores],
+            })
+            self.log(f"[eval] [{i+1:02d}/{len(evals)}] {item['prompt'][:55]:55s} → {avg_score*100:.0f}% (judged, {trials} trial(s))")
+
+        avg = sum(r["judged_score"] for r in results) / len(results)
+        self.log(f"[eval] accuracy (judged): {avg*100:.1f}% across {len(evals)} prompts")
+        return {
+            "accuracy": round(avg, 3), "judge_model": judge_model, "trials_per_prompt": trials,
+            "results": results, "n_prompts": len(evals),
+        }
+
     def accuracy_eval(self, n: int | None = None) -> dict:
         """Run golden eval set — keyword coverage score."""
         evals = GOLDEN_EVALS[:n] if n else GOLDEN_EVALS
@@ -258,6 +396,15 @@ class OllamaEvaluator:
                 "keyword_score": round(score, 2),
                 "hits": hits,
                 "total": len(item["keywords"]),
+                # Real gap this closes: a 0%-scored prompt was previously
+                # unauditable after the fact — nothing but the score was
+                # kept, so the only way to check whether a low score was a
+                # genuine wrong answer or a keyword-matching miss on an
+                # otherwise-correct response was to re-generate a NEW
+                # (nondeterministic, temperature=0.7) sample, which isn't
+                # the same thing that was actually scored. Persisting the
+                # real response makes every past eval run auditable.
+                "response": output[:500],
             })
             self.log(f"[eval] [{i+1:02d}/{len(evals)}] {item['prompt'][:55]:55s} → {score*100:.0f}%")
 
@@ -301,14 +448,24 @@ class OllamaEvaluator:
         self.log(f"[eval] style: {avg:.1f}/10 (n={len(scores)})")
         return {"style_score": round(avg, 2), "n_samples": len(scores), "scores": scores}
 
-    def full_report(self, n_accuracy: int | None = None, n_style: int = 10) -> dict:
+    def full_report(self, n_accuracy: int | None = None, n_style: int = 10, accuracy_judge_model: str | None = None, accuracy_trials: int = 1) -> dict:
         self.log(f"[eval] evaluating model: {self.model}")
         self.log(f"[eval] host: {self.host}")
         self.log("")
 
-        speed    = self.benchmark_speed()
-        accuracy = self.accuracy_eval(n=n_accuracy)
-        style    = self.style_eval(n=n_style)
+        speed = self.benchmark_speed()
+        # accuracy_judge_model swaps keyword-overlap scoring for LLM-judge
+        # scoring — same "accuracy" key in both, so everything downstream
+        # (overall_score's weighting, the persona-claim gate's eval_accuracy
+        # check) reads either shape unchanged. Use this when keyword scoring
+        # is known to undercount genuinely correct answers — see
+        # accuracy_eval_with_judge's docstring for the real finding that
+        # motivated this.
+        if accuracy_judge_model:
+            accuracy = self.accuracy_eval_with_judge(accuracy_judge_model, n=n_accuracy, trials=accuracy_trials)
+        else:
+            accuracy = self.accuracy_eval(n=n_accuracy)
+        style = self.style_eval(n=n_style)
 
         overall = round(
             accuracy["accuracy"] * 60 + (style["style_score"] / 10) * 40,
@@ -344,6 +501,105 @@ class OllamaEvaluator:
         self.log(f"[eval] history archived: {history_path}")
         self.log(f"[eval] overall score: {overall}/100")
         return report
+
+    @staticmethod
+    def compare_with_judge(
+        model_a: str,
+        model_b: str,
+        judge_model: str,
+        host: str = "http://localhost:11434",
+        n: int | None = None,
+    ) -> dict:
+        """
+        Head-to-head comparison using an LLM judge instead of keyword overlap.
+
+        Real problem this fixes: `compare()` scores by keyword-match against
+        GOLDEN_EVALS, a general CS/algorithms set that doesn't overlap well
+        with either tier's actual training domains (nano: business/coding/
+        Hindi; core: engineering/business/legal). A real run of `compare()`
+        between orca-nano and orca-core-v1 came back 19/20 ties with both
+        scoring near-0% — not a meaningful signal, just a benchmark mismatch.
+
+        Uses SHARED_TIER_EVALS below instead — a small, deliberately
+        domain-neutral prompt set both tiers' claimed use cases actually
+        cover — and asks a judge model to pick a winner with a one-line
+        reason, rather than counting keyword hits.
+
+        HONEST SCOPE: still a heuristic (LLM-as-judge, not human eval), and
+        judge quality depends on the judge model itself — pass a judge you
+        trust more than the two models being compared, not one of the two
+        models being compared as its own judge.
+        """
+        results = []
+        prompts = SHARED_TIER_EVALS[:n] if n else SHARED_TIER_EVALS
+
+        def _generate(model: str, prompt: str) -> str:
+            payload = json.dumps({
+                "model": model, "prompt": prompt, "stream": False,
+                "options": {"num_predict": 400, "temperature": 0.7},
+            }).encode()
+            req = urllib.request.Request(
+                f"{host.rstrip('/')}/api/generate", data=payload,
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    return json.loads(resp.read())["response"]
+            except Exception:
+                return ""
+
+        def _judge(prompt: str, resp_a: str, resp_b: str) -> dict:
+            judge_input = (
+                f'Prompt: "{prompt}"\n\n'
+                f'Response A: "{resp_a}"\n\n'
+                f'Response B: "{resp_b}"\n\n'
+                'Which response better answers the prompt — more accurate, more direct, '
+                'better reasoned? Return ONLY JSON: {"winner": "A"|"B"|"tie", "reason": "one sentence"}'
+            )
+            payload = json.dumps({
+                "model": judge_model, "prompt": judge_input, "stream": False,
+                "options": {"num_predict": 100, "temperature": 0.1},
+            }).encode()
+            req = urllib.request.Request(
+                f"{host.rstrip('/')}/api/generate", data=payload,
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    raw = json.loads(resp.read())["response"]
+                s, e = raw.find("{"), raw.rfind("}") + 1
+                return json.loads(raw[s:e])
+            except Exception:
+                return {"winner": "tie", "reason": "judge failed to respond, defaulted to tie"}
+
+        for item in prompts:
+            resp_a = _generate(model_a, item["prompt"])
+            resp_b = _generate(model_b, item["prompt"])
+            verdict = _judge(item["prompt"], resp_a, resp_b)
+            winner_letter = verdict.get("winner", "tie")
+            winner = model_a if winner_letter == "A" else (model_b if winner_letter == "B" else "tie")
+            results.append({
+                "prompt": item["prompt"][:70],
+                "domain": item.get("domain", "general"),
+                "winner": winner,
+                "reason": verdict.get("reason", ""),
+            })
+
+        wins_a = sum(1 for r in results if r["winner"] == model_a)
+        wins_b = sum(1 for r in results if r["winner"] == model_b)
+        ties = sum(1 for r in results if r["winner"] == "tie")
+
+        return {
+            "model_a": model_a,
+            "model_b": model_b,
+            "judge_model": judge_model,
+            "n_prompts": len(prompts),
+            "wins_a": wins_a,
+            "wins_b": wins_b,
+            "ties": ties,
+            "winner": model_a if wins_a > wins_b else (model_b if wins_b > wins_a else "tie"),
+            "results": results,
+        }
 
     @staticmethod
     def compare(model_a: str, model_b: str, host: str = "http://localhost:11434", n: int = 20) -> dict:

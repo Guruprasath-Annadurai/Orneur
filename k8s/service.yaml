@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: atheris
+  name: orneur-api
 spec:
   selector:
-    app: atheris
+    app: orneur-api
   ports:
   - port: 80
     targetPort: 7337
@@ -25,7 +25,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: atheris-ingress
+  name: orneur-api-ingress
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
@@ -33,13 +33,18 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   rules:
-  - host: atheris.ai
+  # Public domain is deliberately NOT hardcoded here -- docs/orneur/phase-0/
+  # BRAND_MIGRATION_PLAN.md found THREE historical domains already in play
+  # (atheris.ai, orca.systems, orca.ai) and no canonical one has been
+  # confirmed by the project owner yet. Replace this placeholder with your
+  # actual domain at deploy time; do not invent one.
+  - host: "<YOUR_DOMAIN_HERE>"
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: atheris
+            name: orneur-api
             port:
               number: 80

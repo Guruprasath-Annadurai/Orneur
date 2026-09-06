@@ -9,6 +9,9 @@ explains how to read one and how the enforcement mechanism behind it works.
 ```bash
 orca train eval --ollama orca-core --ci        # accuracy/style eval
 orca train redteam --model orca-core --ci      # safety/jailbreak/bias/calibration
+orca train redteam --model orca-core --bias-trials 3  # more reliable bias signal — averages
+                                                        # each bias pair over 3 generations instead
+                                                        # of 1, filtering out single-sample noise
 orca train card core                            # generates the signed card from the two reports above
 orca train cards                                # lists all generated cards
 ```

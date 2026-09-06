@@ -49,10 +49,14 @@ _TRAIN_SCRIPT = '''#!/usr/bin/env python3
 import json, os, sys, time
 from pathlib import Path
 
-preset = os.environ.get("ORCA_PRESET", "cloud")
-epochs = int(os.environ.get("ORCA_EPOCHS", "3"))
-rank   = int(os.environ.get("ORCA_RANK", "128"))
-base   = os.environ.get("ORCA_BASE_MODEL", "unsloth/Meta-Llama-3.1-8B-Instruct")
+
+# This script runs standalone on a bare cloud GPU instance (no orca package
+# installed there), so it can't import orca.config.orneur_env -- the same
+# ORNEUR-wins-over-legacy-ORCA precedence is inlined here instead.
+preset = os.environ.get("ORNEUR_PRESET") or os.environ.get("ORCA_PRESET", "cloud")
+epochs = int(os.environ.get("ORNEUR_EPOCHS") or os.environ.get("ORCA_EPOCHS", "3"))
+rank   = int(os.environ.get("ORNEUR_RANK") or os.environ.get("ORCA_RANK", "128"))
+base   = os.environ.get("ORNEUR_BASE_MODEL") or os.environ.get("ORCA_BASE_MODEL", "unsloth/Meta-Llama-3.1-8B-Instruct")
 train_file = "data/orca_llama3_train.jsonl"
 eval_file  = "data/orca_llama3_eval.jsonl"
 
@@ -304,82 +308,106 @@ class CloudTrainer:
         results: dict = {}
         start = time.time()
 
-        self._step("Checking connectivity")
-        rc = _ssh_run(self.ssh_args, "echo OK", timeout=20)
-        if rc != 0:
-            raise RuntimeError("Cannot reach remote host. Check your SSH command.")
-        console.print("  [green]✓[/green] Connected\n")
-
-        self._step("Installing training dependencies")
-        install_cmd = (
-            "pip install -q 'unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git' "
-            "trl transformers datasets peft bitsandbytes accelerate 2>&1 | tail -5"
-        )
-        _ssh_run(self.ssh_args, install_cmd, timeout=600, on_line=self._log)
-        console.print("  [green]✓[/green] Dependencies installed\n")
-
-        self._step("Creating remote workspace")
-        _ssh_run(self.ssh_args, f"mkdir -p {REMOTE_WORKDIR}/data {REMOTE_WORKDIR}/output {REMOTE_WORKDIR}/merged {REMOTE_WORKDIR}/gguf")
-
-        self._step("Uploading training data")
+        # Check local data exists BEFORE spending a single billed minute on the
+        # remote box — the old order connected, installed deps (~2-5 min
+        # billed), THEN raised FileNotFoundError if you forgot to format the
+        # data. That's paying real money for a mistake that was knowable
+        # locally with zero network calls.
         train_file = FORMATTED_DIR / "orca_llama3_train.jsonl"
         eval_file  = FORMATTED_DIR / "orca_llama3_eval.jsonl"
         if not train_file.exists():
             raise FileNotFoundError(f"Train file not found: {train_file}\nRun: orca data format --format llama3 --split")
-        rc = _rsync_up(self.ssh_args, str(train_file), f"{REMOTE_WORKDIR}/data/")
-        if eval_file.exists():
-            _rsync_up(self.ssh_args, str(eval_file), f"{REMOTE_WORKDIR}/data/")
-        console.print("  [green]✓[/green] Data uploaded\n")
 
-        self._step("Uploading training script")
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(_TRAIN_SCRIPT)
-            script_path = f.name
-        _rsync_up(self.ssh_args, script_path, f"{REMOTE_WORKDIR}/train.py")
-        console.print("  [green]✓[/green] Script uploaded\n")
+        try:
+            self._step("Checking connectivity")
+            rc = _ssh_run(self.ssh_args, "echo OK", timeout=20)
+            if rc != 0:
+                raise RuntimeError("Cannot reach remote host. Check your SSH command.")
+            console.print("  [green]✓[/green] Connected\n")
 
-        self._step(f"Training — {self.preset} preset | {self.epochs} epochs | rank {self.rank}")
-        console.print()
-        train_env = (
-            f"ORCA_PRESET={self.preset} "
-            f"ORCA_EPOCHS={self.epochs} "
-            f"ORCA_RANK={self.rank} "
-            f"ORCA_BASE_MODEL={self.base_model}"
-        )
-        rc = _ssh_run(
-            self.ssh_args,
-            f"cd {REMOTE_WORKDIR} && {train_env} python train.py 2>&1",
-            timeout=7200,
-            on_line=self._train_log,
-        )
-        if rc != 0:
-            raise RuntimeError("Training failed. Check the log above for errors.")
-        console.print("\n  [green]✓[/green] Training complete\n")
+            self._step("Installing training dependencies")
+            install_cmd = (
+                "pip install -q 'unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git' "
+                "trl transformers datasets peft bitsandbytes accelerate 2>&1 | tail -5"
+            )
+            _ssh_run(self.ssh_args, install_cmd, timeout=600, on_line=self._log)
+            console.print("  [green]✓[/green] Dependencies installed\n")
 
-        self._step("Downloading merged model")
-        local_merged = MODELS_DIR / f"{self.model_name}-merged"
-        local_merged.mkdir(exist_ok=True)
-        rc = _rsync_down(self.ssh_args, f"{REMOTE_WORKDIR}/merged/", str(local_merged) + "/")
-        results["merged_path"] = str(local_merged)
-        console.print(f"  [green]✓[/green] Model at {local_merged}\n")
+            self._step("Creating remote workspace")
+            _ssh_run(self.ssh_args, f"mkdir -p {REMOTE_WORKDIR}/data {REMOTE_WORKDIR}/output {REMOTE_WORKDIR}/merged {REMOTE_WORKDIR}/gguf")
 
-        self._step("Downloading GGUF")
-        local_gguf = MODELS_DIR / f"{self.model_name}.gguf"
-        rc = _rsync_down(self.ssh_args, f"{REMOTE_WORKDIR}/gguf/", str(MODELS_DIR) + "/")
-        # Find the q4_k_m file
-        gguf_files = list(MODELS_DIR.glob("*q4_k_m*.gguf"))
-        if gguf_files:
-            results["gguf_path"] = str(gguf_files[0])
-        console.print(f"  [green]✓[/green] GGUF downloaded\n")
+            self._step("Uploading training data")
+            rc = _rsync_up(self.ssh_args, str(train_file), f"{REMOTE_WORKDIR}/data/")
+            if eval_file.exists():
+                _rsync_up(self.ssh_args, str(eval_file), f"{REMOTE_WORKDIR}/data/")
+            console.print("  [green]✓[/green] Data uploaded\n")
 
-        self._step(f"Registering as '{self.model_name}' in Ollama")
-        self._register_ollama(results.get("gguf_path", ""))
-        results["ollama_model"] = self.model_name
-        console.print(f"  [green]✓[/green] Model registered: {self.model_name}\n")
+            self._step("Uploading training script")
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+                f.write(_TRAIN_SCRIPT)
+                script_path = f.name
+            _rsync_up(self.ssh_args, script_path, f"{REMOTE_WORKDIR}/train.py")
+            console.print("  [green]✓[/green] Script uploaded\n")
 
-        results["duration_min"] = round((time.time() - start) / 60, 1)
-        self._print_summary(results)
-        return results
+            self._step(f"Training — {self.preset} preset | {self.epochs} epochs | rank {self.rank}")
+            console.print()
+            train_env = (
+                f"ORCA_PRESET={self.preset} "
+                f"ORCA_EPOCHS={self.epochs} "
+                f"ORCA_RANK={self.rank} "
+                f"ORCA_BASE_MODEL={self.base_model}"
+            )
+            rc = _ssh_run(
+                self.ssh_args,
+                f"cd {REMOTE_WORKDIR} && {train_env} python train.py 2>&1",
+                timeout=7200,
+                on_line=self._train_log,
+            )
+            if rc != 0:
+                raise RuntimeError("Training failed. Check the log above for errors.")
+            console.print("\n  [green]✓[/green] Training complete\n")
+
+            self._step("Downloading merged model")
+            local_merged = MODELS_DIR / f"{self.model_name}-merged"
+            local_merged.mkdir(exist_ok=True)
+            rc = _rsync_down(self.ssh_args, f"{REMOTE_WORKDIR}/merged/", str(local_merged) + "/")
+            results["merged_path"] = str(local_merged)
+            console.print(f"  [green]✓[/green] Model at {local_merged}\n")
+
+            self._step("Downloading GGUF")
+            local_gguf = MODELS_DIR / f"{self.model_name}.gguf"
+            rc = _rsync_down(self.ssh_args, f"{REMOTE_WORKDIR}/gguf/", str(MODELS_DIR) + "/")
+            # Find the q4_k_m file
+            gguf_files = list(MODELS_DIR.glob("*q4_k_m*.gguf"))
+            if gguf_files:
+                results["gguf_path"] = str(gguf_files[0])
+            console.print(f"  [green]✓[/green] GGUF downloaded\n")
+
+            self._step(f"Registering as '{self.model_name}' in Ollama")
+            self._register_ollama(results.get("gguf_path", ""))
+            results["ollama_model"] = self.model_name
+            console.print(f"  [green]✓[/green] Model registered: {self.model_name}\n")
+
+            results["duration_min"] = round((time.time() - start) / 60, 1)
+            self._print_summary(results)
+            return results
+        except Exception:
+            # A rented GPU keeps billing per-hour whether or not the script on
+            # it succeeded — a crash here (bad data, OOM, dependency break)
+            # must never fail silently into "the meter's still running and
+            # nobody was told." This is the one thing that actually costs
+            # real money if missed.
+            console.print()
+            console.print(Panel(
+                "[bold red]Training pipeline failed.[/bold red]\n\n"
+                "Your rented GPU instance is very likely [bold]still running and "
+                "still billing[/bold] — this failure did not stop it.\n\n"
+                "[bold]Go terminate the instance now[/bold] (vast.ai/runpod/lambda "
+                "dashboard) unless you intend to debug on it further.",
+                title="[red bold]Remote instance may still be billing[/red bold]",
+                border_style="red",
+            ))
+            raise
 
     def _register_ollama(self, gguf_path: str) -> None:
         """Create a Modelfile and run ollama create."""

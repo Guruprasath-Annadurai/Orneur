@@ -215,9 +215,30 @@ class OrcaCore:
                 fact = prompt[10:].strip()
                 self.memory.commit_to_long_term(fact, {"type": "user_fact", "manual": True})
                 self.memory.semantic.store_fact(f"user_note_{int(__import__('time').time())}", fact)
-                # also persist to all_sessions_summary
-                existing = self.memory.semantic.recall_fact("all_sessions_summary") or ""
-                self.memory.semantic.store_fact("all_sessions_summary", f"{existing}\n[User note] {fact}".strip())
+                # Phase 5.1: no longer writes into the retired, unscoped
+                # `all_sessions_summary` string (see
+                # orca/brain/memory.py::distill_and_save()'s docstring).
+                # An explicit "/remember" is human-authoritative for THIS
+                # session (spec §15) -- promoted through Memory Continuum
+                # at SUPPORTED, scoped to this session, with the note
+                # marking it as human-confirmed rather than an unverified
+                # external factual claim.
+                try:
+                    from orca.memory.arbiter import MemoryArbiter
+                    from orca.memory.contracts import MemoryCandidate, MemoryEvidence, MemoryScope, MemoryType
+                    from orca.memory import store as memory_store
+
+                    arbiter = MemoryArbiter()
+                    candidate = MemoryCandidate(
+                        extracted_claim=fact, scope=MemoryScope.SESSION, scope_id=self.session_id,
+                        evidence_refs=[MemoryEvidence(note="human_explicit_remember")],
+                    )
+                    existing = memory_store.list_records(MemoryType.SEMANTIC, MemoryScope.SESSION, self.session_id)
+                    decision, _reasons = arbiter.decide_promotion(candidate, existing)
+                    if decision.value == "PROMOTED":
+                        arbiter.promote(candidate)  # evidence_refs present -> promoted at SUPPORTED, not KNOWN (never claimed as external evidence)
+                except Exception:
+                    pass
                 console.print(f"[dim]◈ remembered: {fact[:80]}[/dim]")
                 continue
 

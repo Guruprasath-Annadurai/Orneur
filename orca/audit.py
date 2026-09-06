@@ -27,6 +27,7 @@ import time
 import uuid
 
 from orca.auth.db import get_conn, BACKEND
+from orca.config import orneur_env
 
 _GENESIS_HASH = "0" * 64
 _chain_lock = threading.Lock()   # serializes hash-chain writes — must be strictly ordered
@@ -34,7 +35,7 @@ _chain_lock = threading.Lock()   # serializes hash-chain writes — must be stri
 
 def _audit_key() -> bytes:
     """HMAC signing key. Falls back to a fixed dev key with a loud warning."""
-    key = os.environ.get("ORCA_AUDIT_KEY")
+    key = orneur_env("AUDIT_KEY")
     if key:
         return key.encode()
     return b"orca-dev-audit-key-DO-NOT-USE-IN-PRODUCTION"

@@ -83,10 +83,18 @@ class LongTermMemory:
     def store(self, text: str, metadata: dict | None = None) -> str:
         if self._available:
             doc_id = str(uuid.uuid4())
+            # A real production bug, found via load testing: newer chromadb
+            # versions reject an EMPTY metadata dict outright ("Expected
+            # metadata to be a non-empty dict") — every commit_to_long_term()
+            # call with no explicit metadata (the normal case) crashed the
+            # whole request. Always include at least a timestamp so the
+            # dict is never empty, regardless of what the caller passed.
+            stored_metadata = dict(metadata) if metadata else {}
+            stored_metadata.setdefault("stored_at", time.time())
             self._collection.add(
                 documents=[text],
                 ids=[doc_id],
-                metadatas=[metadata or {}],
+                metadatas=[stored_metadata],
             )
             return doc_id
         # Fallback: append to JSONL
@@ -117,6 +125,27 @@ class LongTermMemory:
                     continue
         hits.sort(key=lambda x: x[0], reverse=True)
         return [h[1] for h in hits[:n]]
+
+    def delete(self) -> bool:
+        """Phase 5.1 (docs/orneur/phase-5/LEGACY_MEMORY_AUTHORITY_AUDIT.md):
+        a real, confirmed gap -- this class had NO deletion method at
+        all, and orca/serve/account_delete.py never touched it, meaning
+        every raw Q:/A: turn ever written via commit_to_long_term()
+        (which runs unconditionally on every chat/stream/ultra turn)
+        persisted in this session's ChromaDB collection FOREVER, even
+        after a full account deletion. Removes the collection (or the
+        JSONL fallback file). Returns whether anything was actually
+        found and removed."""
+        if self._available:
+            try:
+                self._client.delete_collection(name=f"orca_{self._session_id[:8]}")
+                return True
+            except Exception:
+                return False
+        if self._fallback_file.exists():
+            self._fallback_file.unlink()
+            return True
+        return False
 
 
 class EpisodicMemory:
@@ -183,6 +212,38 @@ class SemanticMemory:
     def all_concepts(self) -> dict[str, str]:
         return self._cache.get("concepts", {})
 
+    def delete_session_facts(self, session_id: str) -> bool:
+        """Phase 5 (docs/orneur/phase-5/CURRENT_MEMORY_ARCHITECTURE.md's
+        Finding: this store was entirely missing from
+        orca/serve/account_delete.py's deletion cascade before this fix).
+
+        Removes this session's own `fact:session_{id[:8]}` key, AND strips
+        this session's block out of the shared `all_sessions_summary`
+        string -- distill_and_save() merges every session's distilled
+        summary into ONE global string tagged with "[Session {id[:8]}]"
+        markers, so a plain per-session key deletion alone would leave
+        this session's content sitting inside that merged blob forever.
+        Returns whether anything was actually found and removed.
+        """
+        removed = False
+        session_key = f"fact:session_{session_id[:8]}"
+        if session_key in self._cache:
+            del self._cache[session_key]
+            removed = True
+
+        merged = self._cache.get("fact:all_sessions_summary", "")
+        marker = f"[Session {session_id[:8]}]"
+        if marker in merged:
+            import re
+            # Split on each "[Session <id>]" header, keeping the header
+            # attached to its own block, regardless of whether it's the
+            # first block in the string or not.
+            parts = re.split(r"(?=\[Session )", merged)
+            kept = [p for p in parts if p.strip() and not p.startswith(marker)]
+            self._cache["fact:all_sessions_summary"] = "\n\n".join(p.strip() for p in kept).strip()
+            removed = True
+        return removed
+
 
 class MemoryEngine:
     """Unified interface over all four memory layers."""
@@ -230,7 +291,33 @@ class MemoryEngine:
         return self.short.to_api_messages()
 
     def distill_and_save(self, brain) -> str:
-        """Summarize session into semantic facts. Call at session end."""
+        """Summarize session into semantic facts. Call at session end.
+
+        Phase 5.1 (docs/orneur/phase-5/LEGACY_MEMORY_AUTHORITY_AUDIT.md):
+        this used to ALSO merge every session's distilled summary into one
+        shared, unscoped `all_sessions_summary` string -- readable by ANY
+        session via load_prior_context(), including through the
+        `memory_recall` agent tool on the multi-tenant web serving path
+        (orca/tools/__init__.py::_recall_memory_engine). That was a real,
+        confirmed cross-session (and, in a multi-user deployment,
+        cross-user) read path with zero scope check. Retired outright
+        (spec §9/§16 option "retire the path") -- no code still needs it,
+        and it never went through MemoryArbiter/evidence-lineage/firewall
+        governance in the first place.
+
+        The distilled summary is now ALSO routed through Memory
+        Continuum's real candidate/promotion pipeline, scoped to this
+        session and carrying NO evidence_refs (a raw self-summary of the
+        conversation is not verified against anything) -- MemoryArbiter
+        promotes it at UNVERIFIED, never KNOWN/SUPPORTED, per spec §9's
+        "no silently labeling generated summaries as SUPPORTED or KNOWN".
+        The legacy per-session `fact:session_{id[:8]}` key is still
+        written too (an explicit, documented dual-write -- see
+        docs/orneur/phase-5/MEMORY_MIGRATION.md) since
+        orca/variants/core.py's own `/recall` command still reads it
+        directly; it is itself session-scoped and was never part of the
+        cross-session leak.
+        """
         msgs = self.short.to_api_messages()
         if len(msgs) < 2:
             return ""
@@ -250,12 +337,29 @@ class MemoryEngine:
         except Exception:
             return ""
         self.semantic.store_fact(f"session_{self.session_id[:8]}", summary)
-        existing = self.semantic.recall_fact("all_sessions_summary") or ""
-        merged = f"{existing}\n\n[Session {self.session_id[:8]}]\n{summary}".strip()
-        self.semantic.store_fact("all_sessions_summary", merged[-4000:])
         self.save_session(summary=summary)
+
+        try:
+            from orca.memory.arbiter import MemoryArbiter
+            from orca.memory.contracts import MemoryCandidate, MemoryScope, MemoryType
+            from orca.memory import store as memory_store
+
+            arbiter = MemoryArbiter()
+            candidate = MemoryCandidate(
+                extracted_claim=summary[:2000], scope=MemoryScope.SESSION, scope_id=self.session_id,
+            )
+            existing = memory_store.list_records(MemoryType.SEMANTIC, MemoryScope.SESSION, self.session_id)
+            decision, _reasons = arbiter.decide_promotion(candidate, existing)
+            if decision.value == "PROMOTED":
+                arbiter.promote(candidate)
+        except Exception:
+            pass  # Memory Continuum promotion is additive -- never blocks the legacy summary from being returned/saved
+
         return summary
 
     def load_prior_context(self) -> str:
-        """Return distilled facts from past sessions to inject at startup."""
-        return self.semantic.recall_fact("all_sessions_summary") or ""
+        """Return this session's own distilled facts -- NEVER another
+        session's (see distill_and_save()'s docstring: the old
+        cross-session `all_sessions_summary` fallback was a real,
+        confirmed unscoped read leak, retired in Phase 5.1)."""
+        return self.semantic.recall_fact(f"session_{self.session_id[:8]}") or ""

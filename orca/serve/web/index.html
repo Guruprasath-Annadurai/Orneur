@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ORCA — Private Intelligence</title>
+<title>ORCA — The AI Platform That Shows Its Work</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap');
 
@@ -924,6 +924,29 @@ body {
 }
 .doc-chip-del:hover { color: var(--white); }
 
+/* ── Vision attach ───────────────────────────────────────────────────────────── */
+#image-chip-bar {
+  display: none; align-items: center; gap: 8px;
+  padding: 6px 24px 0 80px; max-width: 900px; margin: 0 auto;
+}
+#image-chip-bar.has-image { display: flex; }
+.image-chip {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface2); border: 1px solid var(--line2); padding: 4px 8px 4px 4px;
+}
+.image-chip img { width: 36px; height: 36px; object-fit: cover; }
+.image-chip-name {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; color: var(--mid);
+  max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.image-chip-del { cursor: pointer; color: var(--muted); font-size: 11px; margin-left: 2px; }
+.image-chip-del:hover { color: var(--white); }
+#image-capability-warning {
+  display: none; max-width: 900px; margin: 6px auto 0; padding: 0 24px 0 80px;
+  font-family: var(--mono); font-size: 10px; color: #d9b34f;
+}
+#image-capability-warning.visible { display: block; }
+
 .attach-btn {
   width: 30px;
   height: 30px;
@@ -1005,6 +1028,41 @@ body {
   justify-content: center;
 }
 #modal-overlay.open { display: flex; }
+
+#knowledge-modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+  z-index: 200; align-items: center; justify-content: center;
+}
+#knowledge-modal-overlay.open { display: flex; }
+#knowledge-modal {
+  background: var(--surface); border: 1px solid var(--line2); padding: 28px;
+  width: 640px; max-width: 92vw; max-height: 80vh; overflow-y: auto; position: relative;
+}
+.kg-honesty-badge {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.05em; color: var(--muted);
+  border: 1px solid var(--line2); padding: 6px 10px; margin-bottom: 16px;
+}
+#kg-body { display: flex; gap: 20px; }
+#kg-entity-list { flex: 0 0 200px; border-right: 1px solid var(--line); padding-right: 16px; }
+#kg-entity-detail { flex: 1; min-width: 0; }
+.kg-entity-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 0; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 12px;
+}
+.kg-entity-row:hover { color: var(--white); }
+.kg-entity-row.active { color: var(--white); }
+.kg-entity-type {
+  font-family: var(--mono); font-size: 8px; letter-spacing: 0.08em; color: var(--muted);
+  border: 1px solid var(--line2); padding: 1px 5px; text-transform: uppercase; flex-shrink: 0;
+}
+.kg-entity-count { font-family: var(--mono); font-size: 9px; color: var(--muted); flex-shrink: 0; }
+.kg-node {
+  display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--white);
+  border: 1px solid var(--line2); padding: 4px 10px; margin: 4px 0;
+}
+.kg-node.center { border-color: var(--white); }
+.kg-edge-row { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); margin: 6px 0 6px 12px; }
+.kg-edge-arrow { color: var(--dim); }
 
 #modal {
   background: var(--surface);
@@ -1464,6 +1522,41 @@ body {
 .astat b { color: var(--white); font-weight: 500; }
 .empty-text { color: var(--muted); font-family: var(--mono); font-size: 11px; padding: 16px 0; }
 
+/* Verify chain */
+.verify-result {
+  margin: 10px 0; padding: 10px 12px; font-family: var(--mono); font-size: 11px;
+  border: 1px solid var(--line2); display: flex; align-items: center; gap: 10px;
+}
+.verify-result.pass { border-color: #2a5a3a; color: #6ec98a; }
+.verify-result.fail { border-color: #6b2222; color: #ff7777; }
+.verify-badge {
+  font-size: 9px; letter-spacing: 0.14em; padding: 2px 8px; border: 1px solid currentColor;
+}
+
+/* Model cards */
+.mcard { border: 1px solid var(--line2); padding: 14px 16px; margin-bottom: 14px; }
+.mcard-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.mcard-variant { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: var(--white); text-transform: uppercase; }
+.mcard-status {
+  font-family: var(--mono); font-size: 8px; letter-spacing: 0.12em; padding: 3px 8px;
+  border: 1px solid var(--line2); color: var(--dim); text-transform: uppercase;
+}
+.mcard-status.approved { border-color: #2a5a3a; color: #6ec98a; }
+.mcard-status.pending { border-color: #6b5a22; color: #d9b34f; }
+.mcard-reason { font-size: 10px; color: var(--muted); margin-bottom: 12px; }
+.mcard-stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.mstat { border: 1px solid var(--line); padding: 6px 10px; min-width: 84px; }
+.mstat-label { font-family: var(--mono); font-size: 8px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; }
+.mstat-value { font-family: var(--mono); font-size: 14px; color: var(--white); margin-top: 2px; }
+.mcard-limitations { font-size: 10px; color: var(--dim); }
+.mcard-limitations li { margin-bottom: 4px; }
+
+/* 2FA */
+.totp-input {
+  font-family: var(--mono); font-size: 22px; letter-spacing: 0.5em;
+  text-align: center; padding-left: 0.5em;
+}
+
 /* ── Upgrade modal ────────────────────────────────────────────────────────── */
 #upgrade-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.88);
@@ -1549,16 +1642,37 @@ body {
 .mpill:hover:not(.active):not(.mpill-unavail) { color: var(--mid); background: var(--surface2); }
 .mpill-unavail { opacity: 0.28; cursor: not-allowed; }
 .mpill-unavail:hover { color: var(--muted) !important; background: transparent !important; }
+
+/* ── Toast (checkout result, etc.) ────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: var(--surface3);
+  border: 1px solid var(--line2);
+  color: var(--text);
+  font-size: 13px;
+  padding: 12px 20px;
+  border-radius: 3px;
+  z-index: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+#toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 </style>
 </head>
 <body>
+
+<div id="toast"></div>
 
 <!-- Auth Overlay -->
 <div id="auth-overlay">
   <div class="auth-box">
     <div class="auth-brand">
       <div class="auth-wordmark">ORCA</div>
-      <div class="auth-tagline">Private Intelligence &nbsp;/&nbsp; Powered by Atheris</div>
+      <div class="auth-tagline">Enterprise AI &nbsp;/&nbsp; Powered by Atheris</div>
     </div>
     <div class="auth-tabs">
       <button class="auth-tab active" id="tab-signin" onclick="switchAuthTab('signin')">Sign In</button>
@@ -1631,6 +1745,18 @@ body {
       <button class="auth-btn" id="rp-btn" onclick="doResetPassword()">Set New Password</button>
       <div class="auth-error" id="rp-error"></div>
     </div>
+    <!-- 2FA Challenge (login gate) -->
+    <div id="form-2fa-challenge" style="display:none">
+      <div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:16px">
+        Enter the 6-digit code from your authenticator app.
+      </div>
+      <div class="auth-field">
+        <input class="auth-input totp-input" id="tfa-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" autocomplete="one-time-code"/>
+      </div>
+      <button class="auth-btn" id="tfa-btn" onclick="doVerify2FALogin()">Verify</button>
+      <div class="auth-error" id="tfa-error"></div>
+      <div class="auth-switch" style="margin-top:8px"><span style="color:var(--muted);text-decoration:none;font-size:9px">Trouble accessing your authenticator? Contact your admin.</span></div>
+    </div>
     <div style="text-align:center;margin-top:16px;font-size:9px;color:var(--muted)">
       <a href="/legal/terms" target="_blank" style="color:var(--muted)">Terms of Service</a>
       &nbsp;·&nbsp;
@@ -1659,7 +1785,7 @@ body {
   <div class="logo-mark">
     <!-- Orca SVG mark -->
     <svg class="logo-icon" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4 20 Q8 8 14 10 Q18 11 20 8 Q22 5 24 7 Q20 9 19 13 Q18 17 22 18 Q16 22 12 20 Q8 22 4 20Z" fill="#fff" opacity="0.9"/>
+      <path d="M4 20 Q6 14 8.5 13.5 Q10.5 13 11 11.5 Q11.5 10 13 10.5 Q15 11 15.5 9 Q16 7.5 17.5 8.5 Q19 9.5 20 8 Q22 5 24 7 Q20 9 19 13 Q18 17 22 18 Q16 22 12 20 Q8 22 4 20Z" fill="#fff" opacity="0.9"/>
       <path d="M4 20 Q6 24 10 23 Q8 21 8 19Z" fill="#fff" opacity="0.5"/>
       <circle cx="20" cy="9" r="1" fill="#fff" opacity="0.6"/>
     </svg>
@@ -1692,6 +1818,16 @@ body {
         <line x1="8" y1="8.5" x2="8" y2="11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
       </svg>
       MEMORY
+    </button>
+    <button class="hbtn" onclick="openKnowledgeModal()">
+      <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+        <circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/>
+        <circle cx="12" cy="5" r="2" stroke="currentColor" stroke-width="1.2"/>
+        <circle cx="7" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="5.4" y1="5.2" x2="5.9" y2="10.6" stroke="currentColor" stroke-width="1"/>
+        <line x1="6" y1="4.6" x2="10.2" y2="4.9" stroke="currentColor" stroke-width="1"/>
+      </svg>
+      KNOWLEDGE
     </button>
     <button class="hbtn" onclick="exportConversation()" id="export-btn" title="Export conversation as Markdown">
       <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
@@ -1775,7 +1911,7 @@ body {
 
         <div class="welcome-brand">
           <div class="welcome-wordmark">ORCA</div>
-          <div class="welcome-tagline">Private Intelligence &nbsp;/&nbsp; Powered by Atheris &nbsp;/&nbsp; 100% Local</div>
+          <div class="welcome-tagline">Enterprise AI &nbsp;/&nbsp; Powered by Atheris &nbsp;/&nbsp; Verified, Auditable Answers</div>
         </div>
 
         <!-- Sub-agent pods -->
@@ -1786,7 +1922,7 @@ body {
             <div class="pods-label-line"></div>
           </div>
           <div class="pods-grid">
-            <div class="pod" onclick="sendStarter('Research the AI assistant market and find VCs who invest in developer tools and private AI.')">
+            <div class="pod" onclick="sendStarter('Research the AI assistant market and find VCs who invest in developer tools and enterprise AI.')">
               <svg class="pod-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
                 <circle cx="11" cy="11" r="7"/>
                 <line x1="16.5" y1="16.5" x2="21" y2="21"/>
@@ -1800,7 +1936,7 @@ body {
               </svg>
               <div class="pod-name">ORCA<br>CODE</div>
             </div>
-            <div class="pod" onclick="sendStarter('Analyze the competitive landscape for private AI assistants and identify the biggest market opportunity.')">
+            <div class="pod" onclick="sendStarter('Analyze the competitive landscape for enterprise AI assistants and identify the biggest market opportunity.')">
               <svg class="pod-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
                 <line x1="18" y1="20" x2="18" y2="10"/>
                 <line x1="12" y1="20" x2="12" y2="4"/>
@@ -1808,7 +1944,7 @@ body {
               </svg>
               <div class="pod-name">ORCA<br>ANALYST</div>
             </div>
-            <div class="pod" onclick="sendStarter('Write a concise, compelling one-page pitch for Orca — a private self-owned AI system.')">
+            <div class="pod" onclick="sendStarter('Write a concise, compelling one-page pitch for Orca — an enterprise AI platform built on verifiable trust.')">
               <svg class="pod-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                 <polyline points="14 2 14 8 20 8"/>
@@ -1828,7 +1964,7 @@ body {
               </svg>
               <div class="pod-name">ORCA<br>CRITIC</div>
             </div>
-            <div class="pod" onclick="sendStarter('Design the technical architecture for a scalable private AI platform that can be sold to enterprises.')">
+            <div class="pod" onclick="sendStarter('Design the technical architecture for a scalable enterprise AI platform that can be sold to enterprises.')">
               <svg class="pod-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
                 <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
                 <line x1="12" y1="2" x2="12" y2="22"/>
@@ -1842,13 +1978,13 @@ body {
 
         <!-- Starter prompts -->
         <div class="starters-grid">
-          <div class="starter" onclick="sendStarter('Research pre-seed AI investors who fund developer tools and private AI. Give me names, fund sizes, and how to approach them.')">
+          <div class="starter" onclick="sendStarter('Research pre-seed AI investors who fund developer tools and enterprise AI. Give me names, fund sizes, and how to approach them.')">
             <svg class="starter-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
               <circle cx="8" cy="6" r="3"/>
               <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
             </svg>
             <div class="starter-title">Find investors</div>
-            <div class="starter-desc">VCs and angels for private AI infrastructure</div>
+            <div class="starter-desc">VCs and angels for enterprise AI infrastructure</div>
           </div>
           <div class="starter" onclick="sendStarter('Write an investor elevator pitch for Orca. 60 seconds, crisp, specific. Lead with the problem, show the moat.')">
             <svg class="starter-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2">
@@ -1896,6 +2032,8 @@ body {
 
     <div id="input-area">
       <div id="doc-chips-bar"></div>
+      <div id="image-chip-bar"></div>
+      <div id="image-capability-warning"></div>
       <div class="input-inner">
         <div class="input-role">YOU</div>
         <textarea id="msg-input" placeholder="Send a message to Atheris..." rows="1"
@@ -1906,6 +2044,16 @@ body {
         <button class="attach-btn" onclick="document.getElementById('doc-file-input').click()" title="Attach document for Q&A">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
             <path d="M13.5 8L7 14.5C5.6 15.9 3.4 15.9 2 14.5C0.6 13.1 0.6 10.9 2 9.5L9 2.5C9.9 1.6 11.4 1.6 12.3 2.5C13.2 3.4 13.2 4.9 12.3 5.8L5.8 12.3C5.4 12.7 4.7 12.7 4.3 12.3C3.9 11.9 3.9 11.2 4.3 10.8L10.5 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <input type="file" id="image-file-input" style="display:none" accept="image/png,image/jpeg,image/webp,image/gif"
+          onchange="attachImage(this.files)">
+        <button class="attach-btn" onclick="document.getElementById('image-file-input').click()" title="Attach image">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+            <rect x="1.5" y="2.5" width="13" height="11" rx="1" stroke="currentColor" stroke-width="1.3"/>
+            <circle cx="5.2" cy="6" r="1.1" stroke="currentColor" stroke-width="1.1"/>
+            <path d="M2 12l3.8-3.8a1 1 0 0 1 1.4 0L10 11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M8.5 12l2.6-2.6a1 1 0 0 1 1.4 0L14 11.9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </button>
         <button class="mic-btn" id="mic-btn" onclick="toggleVoiceInput()" title="Voice input">
@@ -1990,6 +2138,35 @@ body {
   </div>
 </div>
 
+<!-- Knowledge Graph Modal -->
+<div id="knowledge-modal-overlay">
+  <div id="knowledge-modal" class="bracketed">
+    <div class="modal-header">
+      <div class="modal-title">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="margin-right:8px;vertical-align:middle">
+          <circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/>
+          <circle cx="12" cy="5" r="2" stroke="currentColor" stroke-width="1.2"/>
+          <circle cx="7" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/>
+        </svg>
+        KNOWLEDGE GRAPH
+      </div>
+      <button class="modal-close" onclick="closeKnowledgeModal()">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <line x1="2" y1="2" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <line x1="14" y1="2" x2="2" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="kg-honesty-badge">Extracted automatically from this conversation — not independently verified.</div>
+
+    <div id="kg-body">
+      <div id="kg-entity-list"><div class="admin-loading">Loading...</div></div>
+      <div id="kg-entity-detail"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Settings Modal -->
 <div id="settings-overlay" class="hidden">
   <div id="settings-panel">
@@ -1999,6 +2176,8 @@ body {
     </div>
     <div class="settings-tabs">
       <button class="stab active" id="stab-btn-account" onclick="switchSettingsTab('account')">Account</button>
+      <button class="stab" id="stab-btn-security" onclick="switchSettingsTab('security')">Security</button>
+      <button class="stab" id="stab-btn-team" onclick="switchSettingsTab('team')">Team</button>
       <button class="stab" id="stab-btn-apikeys" onclick="switchSettingsTab('apikeys')">API Keys</button>
       <button class="stab" id="stab-btn-admin" style="display:none" onclick="switchSettingsTab('admin')">Admin</button>
     </div>
@@ -2049,6 +2228,45 @@ body {
         </div>
       </div>
 
+      <!-- Security tab -->
+      <div id="stab-panel-security" style="display:none">
+        <div class="settings-section">
+          <div class="settings-section-title">Two-Factor Authentication</div>
+          <div id="tfa-status-view"><div class="admin-loading">Loading...</div></div>
+        </div>
+      </div>
+
+      <!-- Team tab -->
+      <div id="stab-panel-team" style="display:none">
+        <div class="settings-section">
+          <div id="team-seats-bar" class="admin-stats-bar"></div>
+          <div class="settings-section-title" style="margin-top:0">Invite a Team Member</div>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <input class="settings-input" id="team-invite-email" type="email" placeholder="teammate@company.com" style="flex:1"/>
+            <select class="admin-select" id="team-invite-role">
+              <option value="member">member</option>
+              <option value="admin">admin</option>
+            </select>
+            <button class="settings-btn primary" onclick="doInviteTeamMember()">Invite</button>
+          </div>
+          <div class="auth-error" id="team-invite-error"></div>
+          <div id="team-invite-result"></div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title">Members</div>
+          <div style="overflow-x:auto">
+            <table class="admin-table">
+              <thead>
+                <tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Invited</th><th></th></tr>
+              </thead>
+              <tbody id="team-members-tbody">
+                <tr><td colspan="6" class="admin-loading">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- API Keys tab -->
       <div id="stab-panel-apikeys" style="display:none">
         <div class="settings-section">
@@ -2090,8 +2308,36 @@ body {
           </div>
         </div>
         <div class="settings-section">
-          <div class="settings-section-title">Audit Log <span style="color:var(--muted)">(last 50)</span></div>
+          <div class="settings-section-title" style="display:flex;align-items:center;justify-content:space-between;border-bottom:none;padding-bottom:0">
+            <span>Audit Log <span style="color:var(--muted)">(last 50)</span></span>
+            <button class="settings-btn" onclick="adminVerifyChain()">VERIFY CHAIN INTEGRITY</button>
+          </div>
+          <div id="admin-verify-result"></div>
+          <div style="border-bottom:1px solid var(--line);margin-bottom:12px"></div>
           <div id="admin-audit-list"><div class="admin-loading">Loading...</div></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Model Cards</div>
+          <div id="admin-model-cards"><div class="admin-loading">Loading...</div></div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">Metrics</div>
+          <div id="admin-metrics-summary" class="admin-stats-bar"></div>
+          <div style="overflow-x:auto">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Endpoint</th><th>Requests</th><th>Errors</th><th>Error Rate</th>
+                  <th>p50 ms</th><th>p95 ms</th><th>p99 ms</th>
+                </tr>
+              </thead>
+              <tbody id="admin-metrics-tbody">
+                <tr><td colspan="7" class="admin-loading">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -2141,6 +2387,8 @@ let currentModelVariant = 'core';
 let _firstMessageInSession = null;
 let _ragSources = null;
 let _uploadedDocs = [];  // { doc_id, filename }
+let _pendingImage = null;  // File object, cleared after send/remove
+let _modelCapabilities = null;  // cached /api/models response
 
 function setModelVariant(v) {
   currentModelVariant = v;
@@ -2148,6 +2396,7 @@ function setModelVariant(v) {
     const el = document.getElementById('mpill-' + id);
     if (el) el.classList.toggle('active', (id === 'ultra-m' ? 'ultra' : id) === v);
   });
+  _refreshImageCapabilityWarning();
 }
 
 function setMode(mode) {
@@ -2361,6 +2610,11 @@ async function sendMessage() {
   appendUserMsg(text);
   if (!sessionId) _firstMessageInSession = text;
   input.value = ''; autoResize(input);
+
+  if (_pendingImage) {
+    await sendVisionMessage(text);
+    return;
+  }
 
   if (currentMode === 'ultra') {
     await sendUltra(text);
@@ -2730,6 +2984,67 @@ function renderExplainData(data) {
   return html;
 }
 
+// ── Knowledge graph modal ──────────────────────────────────────────────────────
+function openKnowledgeModal() {
+  document.getElementById('knowledge-modal-overlay').classList.add('open');
+  loadKnowledgeEntities();
+}
+function closeKnowledgeModal() {
+  document.getElementById('knowledge-modal-overlay').classList.remove('open');
+}
+
+async function loadKnowledgeEntities() {
+  const list = document.getElementById('kg-entity-list');
+  const detail = document.getElementById('kg-entity-detail');
+  detail.innerHTML = '';
+  list.innerHTML = '<div class="admin-loading">Loading...</div>';
+  try {
+    const d = await fetch(`/api/knowledge/${sessionId}`).then(r => r.json());
+    const entities = d.entities || [];
+    if (!entities.length) {
+      list.innerHTML = '<div class="admin-loading">No entities extracted yet — they\'ll appear here as you chat.</div>';
+      return;
+    }
+    list.innerHTML = entities.map(e => `
+      <div class="kg-entity-row" data-name="${esc(e.name)}" onclick="showEntityDetail('${esc(e.name).replace(/'/g,"\\'")}')">
+        <span>${esc(e.name)}</span>
+        <span style="display:flex;align-items:center;gap:6px">
+          <span class="kg-entity-type">${esc(e.entity_type)}</span>
+          <span class="kg-entity-count">${e.mention_count}×</span>
+        </span>
+      </div>`).join('');
+    // Auto-select first entity
+    if (entities[0]) showEntityDetail(entities[0].name);
+  } catch (e) {
+    list.innerHTML = `<div class="admin-loading">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+async function showEntityDetail(name) {
+  document.querySelectorAll('.kg-entity-row').forEach(r => {
+    r.classList.toggle('active', r.dataset.name === name);
+  });
+  const detail = document.getElementById('kg-entity-detail');
+  detail.innerHTML = '<div class="admin-loading">Loading...</div>';
+  try {
+    const d = await fetch(`/api/knowledge/${sessionId}/${encodeURIComponent(name)}`).then(r => r.json());
+    if (d.error) { detail.innerHTML = `<div class="admin-loading">${esc(d.error)}</div>`; return; }
+    const neighbors = d.neighbors || [];
+    detail.innerHTML = `
+      <div class="kg-node center">${esc(d.entity.name)}</div>
+      ${neighbors.length ? neighbors.map(n => `
+        <div class="kg-edge-row">
+          <span class="kg-edge-arrow">${n.direction === 'outgoing' ? '→' : '←'}</span>
+          <span>${esc(n.via)}</span>
+          <span class="kg-edge-arrow">${n.direction === 'outgoing' ? '→' : '←'}</span>
+          <span class="kg-node" style="margin:0;cursor:pointer" onclick="showEntityDetail('${esc(n.name).replace(/'/g,"\\'")}')">${esc(n.name)}</span>
+        </div>`).join('') : '<div class="admin-loading" style="margin-top:8px">No relationships recorded for this entity yet.</div>'}
+    `;
+  } catch (e) {
+    detail.innerHTML = `<div class="admin-loading">Error: ${esc(e.message)}</div>`;
+  }
+}
+
 // ── Memory modal ──────────────────────────────────────────────────────────────
 function openMemoryModal() {
   document.getElementById('modal-overlay').classList.add('open');
@@ -2812,7 +3127,7 @@ function _authHeaders() {
 }
 
 function switchAuthTab(tab) {
-  const forms = ['signin','signup','forgot','check-email','reset'];
+  const forms = ['signin','signup','forgot','check-email','reset','2fa-challenge'];
   forms.forEach(f => {
     const el = document.getElementById('form-' + f);
     if (el) el.style.display = f === tab ? '' : 'none';
@@ -2820,11 +3135,13 @@ function switchAuthTab(tab) {
   document.getElementById('tab-signin').classList.toggle('active', tab === 'signin');
   document.getElementById('tab-signup').classList.toggle('active', tab === 'signup');
   // Clear errors
-  ['si-error','su-error','fp-error','rp-error'].forEach(id => {
+  ['si-error','su-error','fp-error','rp-error','tfa-error'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.textContent = '';
   });
 }
+
+let _pending2FAToken = null;
 
 async function doLogin() {
   const email = document.getElementById('si-email').value.trim();
@@ -2840,11 +3157,40 @@ async function doLogin() {
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.detail || 'Login failed.'; return; }
+    if (d.requires_2fa) {
+      _pending2FAToken = d.pending_token;
+      switchAuthTab('2fa-challenge');
+      setTimeout(() => document.getElementById('tfa-code')?.focus(), 50);
+      return;
+    }
     _onAuthSuccess(d);
   } catch(e) {
     errEl.textContent = 'Network error. Try again.';
   } finally {
     btn.disabled = false; btn.textContent = 'Sign In';
+  }
+}
+
+async function doVerify2FALogin() {
+  const code  = document.getElementById('tfa-code').value.trim();
+  const errEl = document.getElementById('tfa-error');
+  const btn   = document.getElementById('tfa-btn');
+  if (!code || code.length !== 6) { errEl.textContent = 'Enter the 6-digit code.'; return; }
+  if (!_pending2FAToken) { errEl.textContent = '2FA session expired — sign in again.'; switchAuthTab('signin'); return; }
+  btn.disabled = true; btn.textContent = 'Verifying...';
+  try {
+    const r = await fetch('/api/auth/2fa/verify-login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pending_token: _pending2FAToken, code }),
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.detail || 'Invalid code — check your app and try again.'; return; }
+    _pending2FAToken = null;
+    _onAuthSuccess(d);
+  } catch(e) {
+    errEl.textContent = 'Network error. Try again.';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Verify';
   }
 }
 
@@ -2878,6 +3224,7 @@ function _onAuthSuccess(data) {
   localStorage.setItem('orca_token', data.token);
   document.getElementById('auth-overlay').classList.add('hidden');
   _updateUserUI(data.user, data.usage, data.limits);
+  if (_pendingUpgrade) { openUpgrade(); _pendingUpgrade = null; }
 }
 
 function _updateUserUI(user, usage, limits) {
@@ -2940,13 +3287,42 @@ function doLogout() {
   document.getElementById('usage-bar-wrap').style.display = 'none';
 }
 
+function showToast(message) {
+  const el = document.getElementById('toast');
+  el.textContent = message;
+  el.classList.add('visible');
+  setTimeout(() => el.classList.remove('visible'), 4000);
+}
+
+// Set when the user arrived via a marketing-page "Select Novus"/upgrade
+// link before they were signed in — consumed once, right after the auth
+// overlay closes (either because a session already existed, or because
+// they just logged in / signed up), so the checkout intent isn't lost.
+let _pendingUpgrade = null;
+
 async function initAuth() {
   const params = new URLSearchParams(location.search);
+
+  // Handle Stripe checkout redirect
+  const checkout = params.get('checkout');
+  if (checkout === 'success') {
+    history.replaceState({}, '', '/app');
+    showToast('Payment successful — your plan has been updated.');
+  } else if (checkout === 'cancelled') {
+    history.replaceState({}, '', '/app');
+    showToast('Checkout cancelled — no changes were made to your plan.');
+  }
+
+  // Handle a deep link from the marketing pricing page (/?upgrade=pro)
+  if (params.get('upgrade') === 'pro') {
+    _pendingUpgrade = 'pro';
+    history.replaceState({}, '', '/app');
+  }
 
   // Handle password reset link
   const resetToken = params.get('reset_token');
   if (resetToken) {
-    history.replaceState({}, '', '/');
+    history.replaceState({}, '', '/app');
     switchAuthTab('reset');
     document.getElementById('rp-btn').dataset.token = resetToken;
     return;
@@ -2954,7 +3330,7 @@ async function initAuth() {
 
   // Handle email verification link (redirect from server to home page with ?verified=1)
   if (params.get('verified') === '1') {
-    history.replaceState({}, '', '/');
+    history.replaceState({}, '', '/app');
   }
 
   const stored = localStorage.getItem('orca_token');
@@ -2967,6 +3343,7 @@ async function initAuth() {
     _authUser  = d.user;
     document.getElementById('auth-overlay').classList.add('hidden');
     _updateUserUI(d.user, d.usage, d.limits);
+    if (_pendingUpgrade) { openUpgrade(); _pendingUpgrade = null; }
   } catch {}
 }
 
@@ -2982,14 +3359,16 @@ function closeSettings() {
 }
 
 function switchSettingsTab(tab) {
-  ['account','apikeys','admin'].forEach(t => {
+  ['account','security','team','apikeys','admin'].forEach(t => {
     const panel = document.getElementById('stab-panel-' + t);
     const btn   = document.getElementById('stab-btn-' + t);
     if (panel) panel.style.display = t === tab ? '' : 'none';
     if (btn)   btn.classList.toggle('active', t === tab);
   });
-  if (tab === 'apikeys') loadApiKeys();
-  if (tab === 'admin')   loadAdminPanel();
+  if (tab === 'security') loadSecurityTab();
+  if (tab === 'team')     loadTeamTab();
+  if (tab === 'apikeys')  loadApiKeys();
+  if (tab === 'admin')    loadAdminPanel();
 }
 
 document.getElementById('settings-overlay').addEventListener('click', function(e) {
@@ -3016,6 +3395,177 @@ async function doChangePassword() {
     document.getElementById('cp-new').value='';
     document.getElementById('cp-confirm').value='';
   } catch { msg.style.color='#c05555'; msg.textContent='Network error.'; }
+}
+
+// ── Team / Enterprise management ─────────────────────────────────────────────
+async function loadTeamTab(clearBanners = true) {
+  const seatsBar = document.getElementById('team-seats-bar');
+  const tbody = document.getElementById('team-members-tbody');
+  if (clearBanners) {
+    document.getElementById('team-invite-result').innerHTML = '';
+    document.getElementById('team-invite-error').textContent = '';
+  }
+  try {
+    const d = await fetch('/api/auth/org', { headers: _authHeaders() }).then(r => r.json());
+    seatsBar.innerHTML = `<span class="astat">SEATS USED: <b>${d.seats.used} of ${d.seats.limit}</b></span>`;
+
+    if (!d.members || !d.members.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="admin-loading">No team members yet — invite someone above.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.members.map(m => `
+      <tr>
+        <td class="atd">${esc(m.invited_email)}</td>
+        <td class="atd atd-muted">${esc(m.user_name || '—')}</td>
+        <td class="atd">
+          <select class="admin-select" onchange="doSetMemberRole('${m.id}',this.value)">
+            ${['member','admin'].map(r=>`<option${m.role===r?' selected':''}>${r}</option>`).join('')}
+          </select>
+        </td>
+        <td class="atd">${m.status === 'active' ? '<span class="plan-chip pro">ACTIVE</span>' : '<span class="plan-chip">INVITED</span>'}</td>
+        <td class="atd atd-muted">${m.invited_at ? m.invited_at.slice(0,10) : '—'}</td>
+        <td class="atd"><button class="key-revoke-btn" onclick="doRemoveMember('${m.id}')">REMOVE</button></td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" class="admin-loading">Error: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function doInviteTeamMember() {
+  const email = document.getElementById('team-invite-email').value.trim();
+  const role  = document.getElementById('team-invite-role').value;
+  const errEl = document.getElementById('team-invite-error');
+  const resEl = document.getElementById('team-invite-result');
+  errEl.textContent = ''; resEl.innerHTML = '';
+  if (!email) { errEl.textContent = 'Enter an email address.'; return; }
+  try {
+    const r = await fetch('/api/auth/org/invite', {
+      method: 'POST', headers: _authHeaders(),
+      body: JSON.stringify({ email, role }),
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.detail || 'Invite failed.'; return; }
+    document.getElementById('team-invite-email').value = '';
+    if (d.email_sent) {
+      resEl.innerHTML = `<div class="admin-loading" style="color:var(--mid)">Invite sent to ${esc(d.email)}.</div>`;
+    } else {
+      resEl.innerHTML = `<div class="admin-loading">Email not configured — share this link with ${esc(d.email)} directly: <code style="color:var(--white)">${esc(location.origin + d.invite_link)}</code></div>`;
+    }
+    loadTeamTab(false);
+  } catch (e) {
+    errEl.textContent = 'Network error.';
+  }
+}
+
+async function doSetMemberRole(memberId, role) {
+  await fetch(`/api/auth/org/members/${memberId}/role`, {
+    method: 'PATCH', headers: _authHeaders(), body: JSON.stringify({ role }),
+  });
+}
+
+async function doRemoveMember(memberId) {
+  await fetch(`/api/auth/org/members/${memberId}`, { method: 'DELETE', headers: _authHeaders() });
+  loadTeamTab();
+}
+
+// ── Security / 2FA ────────────────────────────────────────────────────────────
+async function loadSecurityTab() {
+  const view = document.getElementById('tfa-status-view');
+  view.innerHTML = '<div class="admin-loading">Loading...</div>';
+  try {
+    const d = await fetch('/api/auth/me', { headers: _authHeaders() }).then(r => r.json());
+    if (d.user && d.user.totp_enabled) {
+      _renderTfaEnabled();
+    } else {
+      _renderTfaDisabled();
+    }
+  } catch (e) {
+    view.innerHTML = `<div class="admin-loading">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function _renderTfaDisabled() {
+  document.getElementById('tfa-status-view').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span style="font-size:13px;color:var(--dim)">2FA is not enabled on this account.</span>
+      <button class="settings-btn primary" onclick="doStart2FASetup()">Enable 2FA</button>
+    </div>
+    <div id="tfa-setup-box"></div>`;
+}
+
+function _renderTfaEnabled() {
+  document.getElementById('tfa-status-view').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span style="font-size:13px;color:var(--text)">2FA is enabled on this account.</span>
+      <span class="plan-chip pro">ENABLED</span>
+    </div>
+    <div class="settings-field">
+      <label class="settings-label">Enter current code to disable</label>
+      <input class="settings-input totp-input" id="tfa-disable-code" maxlength="6" inputmode="numeric" placeholder="000000"/>
+    </div>
+    <button class="settings-btn danger" onclick="doDisable2FA()">Disable 2FA</button>
+    <div class="auth-error" id="tfa-disable-error"></div>`;
+}
+
+async function doStart2FASetup() {
+  const box = document.getElementById('tfa-setup-box');
+  box.innerHTML = '<div class="admin-loading">Generating secret...</div>';
+  try {
+    const r = await fetch('/api/auth/2fa/setup', { method: 'POST', headers: _authHeaders() });
+    const d = await r.json();
+    if (!r.ok) { box.innerHTML = `<div class="admin-loading">${esc(d.detail || 'Setup failed.')}</div>`; return; }
+    box.innerHTML = `
+      <div class="settings-section" style="margin-top:12px">
+        <div class="settings-label">Manual entry secret (add this to your authenticator app)</div>
+        <div style="display:flex;gap:8px;align-items:center;margin:8px 0">
+          <code style="font-family:var(--mono);font-size:12px;color:var(--white);background:var(--surface2);padding:6px 10px;border:1px solid var(--line2);flex:1;word-break:break-all">${esc(d.secret)}</code>
+          <button class="settings-btn" onclick="navigator.clipboard.writeText('${esc(d.secret)}')">COPY</button>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:12px">
+          Or open this URI directly on mobile: <a href="${esc(d.provisioning_uri)}" style="color:var(--muted)">${esc(d.provisioning_uri.slice(0,40))}...</a>
+        </div>
+        <div class="settings-field">
+          <label class="settings-label">Enter the code from your authenticator app</label>
+          <input class="settings-input totp-input" id="tfa-enable-code" maxlength="6" inputmode="numeric" placeholder="000000"/>
+        </div>
+        <button class="settings-btn primary" onclick="doEnable2FA()">Verify & Enable</button>
+        <div class="auth-error" id="tfa-enable-error"></div>
+      </div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="admin-loading">Network error: ${esc(e.message)}</div>`;
+  }
+}
+
+async function doEnable2FA() {
+  const code = document.getElementById('tfa-enable-code').value.trim();
+  const errEl = document.getElementById('tfa-enable-error');
+  if (!code || code.length !== 6) { errEl.textContent = 'Enter the 6-digit code.'; return; }
+  try {
+    const r = await fetch('/api/auth/2fa/enable', {
+      method: 'POST', headers: _authHeaders(), body: JSON.stringify({ code }),
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.detail || 'Invalid code — check your app and try again.'; return; }
+    _renderTfaEnabled();
+  } catch (e) {
+    errEl.textContent = 'Network error.';
+  }
+}
+
+async function doDisable2FA() {
+  const code = document.getElementById('tfa-disable-code').value.trim();
+  const errEl = document.getElementById('tfa-disable-error');
+  if (!code || code.length !== 6) { errEl.textContent = 'Enter your current 6-digit code.'; return; }
+  try {
+    const r = await fetch('/api/auth/2fa/disable', {
+      method: 'POST', headers: _authHeaders(), body: JSON.stringify({ code }),
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.detail || 'Invalid code.'; return; }
+    _renderTfaDisabled();
+  } catch (e) {
+    errEl.textContent = 'Network error.';
+  }
 }
 
 // ── API Keys ──────────────────────────────────────────────────────────────────
@@ -3085,6 +3635,103 @@ function loadAdminPanel() {
   loadAdminStats();
   loadAdminUsers();
   loadAdminAudit();
+  loadAdminModelCards();
+  loadAdminMetrics();
+}
+
+const VARIANT_NAMES = { nano: 'Genesis', core: 'Novus', ultra: 'Aeternum' };
+
+async function adminVerifyChain() {
+  const box = document.getElementById('admin-verify-result');
+  box.innerHTML = '<div class="verify-result">Verifying…</div>';
+  try {
+    const d = await fetch('/api/admin/audit/verify', { headers: _authHeaders() }).then(r => r.json());
+    if (d.valid) {
+      box.innerHTML = `<div class="verify-result pass"><span class="verify-badge">PASS</span> ${d.entries_checked} entries verified, chain intact.</div>`;
+    } else {
+      const b = (d.breaks || [])[0];
+      const detail = b ? `First break at sequence #${esc(String(b.seq))}: ${esc(b.reason || 'hash mismatch')}` : 'Tampering detected.';
+      box.innerHTML = `<div class="verify-result fail"><span class="verify-badge">FAIL</span> ${detail}</div>`;
+    }
+  } catch (e) {
+    box.innerHTML = `<div class="verify-result fail"><span class="verify-badge">ERROR</span> ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadAdminModelCards() {
+  const container = document.getElementById('admin-model-cards');
+  container.innerHTML = '<div class="admin-loading">Loading...</div>';
+  try {
+    const d = await fetch('/api/admin/governance/cards', { headers: _authHeaders() }).then(r => r.json());
+    const cards = d.cards || [];
+    if (!cards.length) {
+      container.innerHTML = '<div class="admin-loading">No model cards generated yet. Run <code>orca train card &lt;variant&gt;</code> after eval + red-team.</div>';
+      return;
+    }
+    container.innerHTML = cards.map(c => _renderModelCard(c)).join('');
+  } catch (e) {
+    container.innerHTML = `<div class="admin-loading">Error loading model cards: ${esc(e.message)}</div>`;
+  }
+}
+
+function _renderModelCard(c) {
+  const name = VARIANT_NAMES[c.variant] || c.variant;
+  const approved = !!c.persona_claim_approved;
+  const acc = c.eval_scores && c.eval_scores.accuracy ? c.eval_scores.accuracy.accuracy : null;
+  const style = c.eval_scores && c.eval_scores.style ? c.eval_scores.style.style_score : null;
+  const speed = c.eval_scores && c.eval_scores.speed ? c.eval_scores.speed.tokens_per_sec : null;
+  const jailbreak = c.safety_scores && c.safety_scores.jailbreak ? c.safety_scores.jailbreak.block_rate : null;
+  const bias = c.safety_scores && c.safety_scores.bias ? c.safety_scores.bias.flag_rate : null;
+  const calib = c.safety_scores && c.safety_scores.calibration ? c.safety_scores.calibration.calibration_score : null;
+  const limitations = c.known_limitations || [];
+
+  return `
+    <div class="mcard">
+      <div class="mcard-head">
+        <span class="mcard-variant">${esc(name)} <span style="color:var(--muted);text-transform:none">(${esc(c.variant)})</span></span>
+        <span class="mcard-status ${approved ? 'approved' : 'pending'}">${approved ? 'Verified' : 'Still improving'}</span>
+      </div>
+      <div class="mcard-reason">${esc(c.persona_claim_reason || '')}</div>
+      <div class="mcard-stats">
+        <div class="mstat"><div class="mstat-label">Accuracy</div><div class="mstat-value">${acc != null ? Math.round(acc * 100) + '%' : '—'}</div></div>
+        <div class="mstat"><div class="mstat-label">Style</div><div class="mstat-value">${style != null ? style + '/10' : '—'}</div></div>
+        <div class="mstat"><div class="mstat-label">Speed</div><div class="mstat-value">${speed != null ? speed + ' tok/s' : '—'}</div></div>
+        <div class="mstat"><div class="mstat-label">Jailbreak Block</div><div class="mstat-value">${jailbreak != null ? jailbreak + '%' : '—'}</div></div>
+        <div class="mstat"><div class="mstat-label">Bias Flag</div><div class="mstat-value">${bias != null ? bias + '%' : '—'}</div></div>
+        <div class="mstat"><div class="mstat-label">Calibration</div><div class="mstat-value">${calib != null ? calib + '%' : '—'}</div></div>
+      </div>
+      ${limitations.length ? `<ul class="mcard-limitations">${limitations.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
+    </div>`;
+}
+
+async function loadAdminMetrics() {
+  const summary = document.getElementById('admin-metrics-summary');
+  const tbody = document.getElementById('admin-metrics-tbody');
+  try {
+    const d = await fetch('/api/admin/metrics', { headers: _authHeaders() }).then(r => r.json());
+    summary.innerHTML =
+      `<span class="astat">UPTIME: <b>${_fmtUptime(d.uptime_sec)}</b></span>
+       <span class="astat">TOTAL REQUESTS: <b>${d.total_requests}</b></span>
+       <span class="astat">ERROR RATE: <b>${(d.overall_error_rate * 100).toFixed(2)}%</b></span>`;
+
+    const endpoints = Object.entries(d.endpoints || {});
+    if (!endpoints.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="admin-loading">No requests recorded yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = endpoints.map(([ep, m]) => `
+      <tr>
+        <td class="atd atd-muted">${esc(ep)}</td>
+        <td class="atd">${m.requests}</td>
+        <td class="atd">${m.errors}</td>
+        <td class="atd">${(m.error_rate * 100).toFixed(2)}%</td>
+        <td class="atd">${m.latency_p50_ms ?? '—'}</td>
+        <td class="atd">${m.latency_p95_ms ?? '—'}</td>
+        <td class="atd">${m.latency_p99_ms ?? '—'}</td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="admin-loading">Error: ${esc(e.message)}</td></tr>`;
+  }
 }
 
 async function loadAdminStats() {
@@ -3414,6 +4061,97 @@ async function runCodeBlock(idx) {
   }
 
   if (btnEl) btnEl.disabled = false;
+}
+
+// ── Vision attach ────────────────────────────────────────────────────────────
+
+async function _getModelCapabilities() {
+  if (_modelCapabilities) return _modelCapabilities;
+  try {
+    _modelCapabilities = await fetch('/api/models').then(r => r.json());
+  } catch {
+    _modelCapabilities = {};
+  }
+  return _modelCapabilities;
+}
+
+async function _refreshImageCapabilityWarning() {
+  const warn = document.getElementById('image-capability-warning');
+  if (!_pendingImage) { warn.classList.remove('visible'); return; }
+  const caps = await _getModelCapabilities();
+  const variantInfo = caps[currentModelVariant];
+  if (variantInfo && !variantInfo.vision_capable) {
+    warn.textContent = "The current mode doesn't support images. Switch to a vision-capable mode or continue with text only.";
+    warn.classList.add('visible');
+  } else {
+    warn.classList.remove('visible');
+  }
+}
+
+function attachImage(files) {
+  if (!files || !files.length) return;
+  const file = files[0];
+  _pendingImage = file;
+  const bar = document.getElementById('image-chip-bar');
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    bar.innerHTML = `
+      <div class="image-chip">
+        <img src="${e.target.result}" alt="${esc(file.name)}"/>
+        <span class="image-chip-name">${esc(file.name)}</span>
+        <span class="image-chip-del" onclick="removeImage()" title="Remove">×</span>
+      </div>`;
+    bar.classList.add('has-image');
+  };
+  reader.readAsDataURL(file);
+  _refreshImageCapabilityWarning();
+  document.getElementById('image-file-input').value = '';
+}
+
+function removeImage() {
+  _pendingImage = null;
+  document.getElementById('image-chip-bar').innerHTML = '';
+  document.getElementById('image-chip-bar').classList.remove('has-image');
+  document.getElementById('image-capability-warning').classList.remove('visible');
+}
+
+async function sendVisionMessage(text) {
+  isStreaming = true;
+  document.getElementById('send-btn').disabled = true;
+  const thinkEl = appendThinking();
+  thinkEl.querySelector('.thinking-text').textContent = 'READING IMAGE...';
+
+  const fd = new FormData();
+  fd.append('message', text);
+  fd.append('image', _pendingImage);
+  if (sessionId) fd.append('session_id', sessionId);
+  fd.append('model_variant', currentModelVariant);
+
+  const image = _pendingImage;
+  removeImage();
+
+  try {
+    const resp = await fetch('/api/vision', {
+      method: 'POST',
+      headers: _authHeaders(),
+      body: fd,
+    });
+    const data = await resp.json();
+    thinkEl.remove();
+    if (!resp.ok || data.error) {
+      appendOrcaMsg(`Vision request failed: ${esc(data.error || 'Unknown error')}`);
+    } else {
+      if (!sessionId && data.session_id) sessionId = data.session_id;
+      const orcaEl = appendOrcaMsg('');
+      orcaEl.querySelector('.msg-body').innerHTML = mdToHtml(data.response || '');
+    }
+  } catch (e) {
+    thinkEl.remove();
+    appendOrcaMsg(`Vision request error: ${esc(e.message)}`);
+  } finally {
+    isStreaming = false;
+    document.getElementById('send-btn').disabled = false;
+  }
 }
 
 // ── Document Q&A ─────────────────────────────────────────────────────────────

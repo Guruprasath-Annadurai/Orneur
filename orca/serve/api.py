@@ -2,7 +2,9 @@
 Orca Web Server — FastAPI backend for the browser UI.
 
 Endpoints:
-  GET  /                    → serves the web UI
+  GET  /                    → serves the public marketing landing page
+  GET  /app                 → serves the web chat UI
+  GET  /trust               → serves the Trust & Security page
   GET  /api/status          → model, memory stats, uptime
   POST /api/chat            → single-shot response
   POST /api/stream          → SSE streaming response
@@ -17,6 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -28,22 +32,41 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+# Phase 14A.3/14A.4: mandatory startup configuration validation MUST run
+# before any `orca.*` import that could transitively connect to a
+# database -- `orca.auth` (imported below) pulls in `orca.auth.db`,
+# whose `init_db()` runs UNCONDITIONALLY at that module's own import
+# time and would otherwise raise its own uncontrolled
+# psycopg/sqlite3 exception (potentially with connection details in
+# the message) before this clean, secret-free check ever got a chance
+# to run. `orca.godmode.deployment_profile` itself only depends on
+# `orca.config` (no database connection), so importing and calling it
+# FIRST is safe regardless of profile/configuration validity.
+from orca.godmode.deployment_profile import validate_deployment_config as _validate_deployment_config
+_validate_deployment_config()
+
 from orca.license import current_tier, get_active_license, has_feature
 from orca.license.keys import format_expiry
 
 from orca.auth import auth_router, get_current_user, get_current_user_optional, check_quota, increment_usage
 from orca.auth.rbac import require_permission
-from orca.auth.store import User
+from orca.auth.store import User, model_access_allowed
 from orca import audit
+from orca.lens.intent import detect_generation_intent
 
 from orca.brain.providers import get_brain
+from orca.serve.registry import resolve_tier_model, resolve_tier_backend, TierResolution
+from orca.serve import routing
+from orca.governance.model_cards import check_persona_claim_allowed
+from orca.brain.backends import BackendResponse
+from orca.gateway.wiring import brain_for_tier_resolution
 from orca.brain.memory import MemoryEngine, EpisodicMemory
 from orca.brain.agent import AgentLoop
 from orca.brain.context import ContextManager
 from orca.tools import build_registry
 from orca.character import CORE_SYSTEM_WITH_TOOLS
 from orca.personas import get_persona_system
-from orca.config import CONFIG, ORCA_HOME
+from orca.config import CONFIG, ORCA_HOME, orneur_env
 from orca.variants.ultra import OrcaUltra
 from orca.docs import (
     extract, SUPPORTED_EXTENSIONS, MAX_FILE_SIZE,
@@ -55,18 +78,34 @@ from orca.docs.pii_redact import redact_pii
 from orca.brain.explainability import ExplainStore, build_from_rag_result
 from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.brain.vision import is_vision_capable, encode_image, build_vision_message
-from orca.serve import session_store, ratelimit, metrics
+from orca.serve import session_store, ratelimit, metrics, dlp
 from orca.serve.moderation import check_input, CRISIS_RESOURCES
 from orca.code import run_code
 
 _START_TIME = time.time()
 WEB_DIR = Path(__file__).parent / "web"
+_logger = logging.getLogger("orca.serve")
 
 app = FastAPI(title="Orca API", version="1.0.0", docs_url=None, redoc_url=None)
 
+
+def _allowed_origins() -> list[str]:
+    """`ORNEUR_ALLOWED_ORIGINS`: comma-separated explicit origin
+    allowlist. Unset/empty defaults to `["*"]` -- unchanged for every
+    existing local/self-hosted/private-staging deployment (this
+    codebase's zero-config default). Before any public Cloudflare
+    exposure (Phase 14B §15), set this to the real ORNEUR origin(s)
+    so the wildcard does not carry into a publicly reachable
+    deployment."""
+    raw = orneur_env("ALLOWED_ORIGINS", "*").strip()
+    if not raw or raw == "*":
+        return ["*"]
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -103,11 +142,220 @@ app.include_router(auth_router)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _model_name_for_variant(variant: str | None) -> str:
-    if variant == "nano":
-        return CONFIG.ollama.model_nano
-    if variant == "ultra":
-        return CONFIG.ollama.model_ultra
-    return CONFIG.ollama.model_core
+    def _log_fallback(requested_tier: str, requested_model: str, resolved_model: str) -> None:
+        _logger.warning(
+            "Tier '%s' requested model '%s' which is not installed in Ollama — "
+            "falling back to '%s'.", requested_tier, requested_model, resolved_model,
+        )
+        metrics.record_registry_fallback(requested_tier, resolved_model)
+
+    return resolve_tier_model(variant or "core", on_fallback=_log_fallback)
+
+
+def _resolve_backend_for_chat(variant: str | None):
+    """
+    Full (backend, model) resolution — including frontier API backends and
+    the data-sovereignty lock (see orca/serve/registry.py,
+    orca/brain/backends.py, docs/STARTUP_PLAN.md §2). Used by /api/chat to
+    decide between the existing full-featured Ollama+AgentLoop path (tools,
+    memory, knowledge graph — unchanged) and the simpler frontier-passthrough
+    direct-generation path (see _generate_via_frontier_backend below).
+    """
+    def _log_fallback(requested_tier: str, requested_backend: str, resolved: str) -> None:
+        _logger.warning(
+            "Tier '%s' requested backend '%s' which is unavailable — falling back to '%s'.",
+            requested_tier, requested_backend, resolved,
+        )
+        metrics.record_registry_fallback(requested_tier, resolved)
+
+    def _log_sovereignty_override(tier: str, configured_backend: str) -> None:
+        _logger.warning(
+            "Data sovereignty lock is active — tier '%s' configured for backend '%s' "
+            "was forced to self-hosted Ollama instead.", tier, configured_backend,
+        )
+
+    return resolve_tier_backend(
+        variant or "core", on_fallback=_log_fallback, on_sovereignty_override=_log_sovereignty_override,
+    )
+
+
+def _apply_cost_aware_routing(base_resolution, message: str):
+    """
+    Per-query cost-aware escalation layer (see orca/serve/routing.py) —
+    applied AFTER the tier's static backend resolution, additive and
+    off-by-default. This is the mechanism that makes the "cheaper than
+    frontier-per-query competitors" claim real: most queries stay on the
+    self-hosted resolution _resolve_backend_for_chat already returned;
+    only a query classified as genuinely needing it, and only when the
+    operator explicitly opted in, ever escalates.
+
+    Returns (resolution, decision) — the decision is NOT just logged, it's
+    surfaced to the caller (audit log + API response, see the /api/chat
+    handler below) so a per-request escalation is visible to the end user,
+    not only discoverable by an operator reading logs. A deployment that
+    promises "self-hosted, your data stays here" needs its own users to be
+    able to see the one query that didn't honor that, not just its ops team.
+    """
+    resolution, decision = routing.decide_route(base_resolution, message)
+    metrics.record_routing_decision(decision.escalated)
+    if decision.escalated:
+        _logger.info(
+            "Cost-aware routing escalated tier '%s' to backend '%s' — reason: %s",
+            base_resolution.tier, resolution.backend, decision.reason,
+        )
+    return resolution, decision
+
+
+# Phase 3.1: user-safe abstention messages -- never expose the internal
+# AbstentionReason enum name directly (spec §17). Kept as one table so
+# every caller (chat/stream) shows the identical wording.
+_ABSTENTION_MESSAGES = {
+    "INSUFFICIENT_CAPABILITY": "This request needs a verification capability that isn't available yet, so it can't be safely answered.",
+    "INSUFFICIENT_EVIDENCE": "This request can't be answered with sufficient grounding right now.",
+    "BUDGET_EXHAUSTED": "This request exceeds the available processing budget for a single turn.",
+    "MODEL_UNAVAILABLE": "No model is currently available to handle this request.",
+    "REQUIRED_OPERATION_UNAVAILABLE": "This request needs a capability that isn't available yet.",
+    "POLICY_RESTRICTION": "This request can't be completed under your current plan.",
+    "AMBIGUOUS_REQUEST": "This request is too ambiguous to plan safely.",
+    "UNRESOLVED_HYPOTHESES": "This request has multiple plausible explanations that couldn't be resolved with the available evidence.",
+    "CRITICAL_CONTRADICTION": "The available evidence contains an unresolved contradiction on a critical point, so this can't be answered with confidence.",
+    "FALSIFICATION_FAILED": "The candidate answer for this request didn't hold up under review, and no adequate revision could be produced.",
+    "COURT_INSUFFICIENT_EVIDENCE": "This request needed deeper review, and the available evidence wasn't sufficient to reach a confident answer.",
+    "DELIBERATION_BUDGET_EXHAUSTED": "This request needed deeper review, which ran out of available processing budget before completing.",
+}
+
+
+async def _run_cognitive_kernel(message: str, user: "User | None", model_variant: str | None, session_id: str | None = None):
+    """
+    Phase 3.1: the Cognitive Kernel is now AUTHORITATIVE for planning and,
+    where possible, execution of /api/chat and /api/stream requests (see
+    docs/orneur/phase-3/PRODUCTION_CUTOVER.md). Every request is planned
+    and entitlement-reconciled here before any generation happens.
+
+    Returns the real orca.cognitive.contracts.CognitiveResult. Callers
+    branch on `.status`/`.output`:
+      - status == ABSTAINED           -> the Kernel declined; no generation
+                                          should happen at all.
+      - status == COMPLETED, output   -> the Kernel answered directly via
+        is not None                      ModelGateway; use `.output` as the
+                                          final response, skip AgentLoop.
+      - status == COMPLETED, output   -> the plan needs RETRIEVE/USE_TOOL/
+        is None                          RECALL_MEMORY/DELEGATE_AGENT; fall
+                                          through to the existing
+                                          _Session/AgentLoop path, using
+                                          `.resolved_tier` (already
+                                          entitlement-reconciled) instead of
+                                          the raw requested tier.
+
+    This function itself never raises for entitlement/reconciliation
+    reasons -- CognitiveKernel.execute() only raises
+    CognitiveExecutionFailedError for a genuine internal failure, which
+    callers must let propagate (mapped the same way any other internal
+    error already is), never silently swallowed.
+    """
+    from orca.cognitive.contracts import CognitiveRequest
+    from orca.cognitive.entitlement import class_rank, derive_entitlement_policy, tier_to_class
+    from orca.cognitive.wiring import get_shared_kernel
+
+    kernel = get_shared_kernel()
+    entitlement = derive_entitlement_policy(user, model_variant)
+
+    # The user's OWN explicit tier choice is an ADDITIONAL ceiling on top
+    # of their overall commercial entitlement -- a pro user who explicitly
+    # picked "nano" for this conversation must not have some individual
+    # message silently answered via "ultra" just because the Kernel judged
+    # it complex and their overall plan permits ultra. Entitlement caps
+    # what's possible; the user's own selection caps what's used here.
+    if model_variant:
+        requested_class = tier_to_class(model_variant.removeprefix("orca-"))
+        if class_rank(requested_class) < class_rank(entitlement.maximum_quality_class):
+            entitlement.maximum_quality_class = requested_class
+            entitlement.allowed_model_classes = {
+                c for c in entitlement.allowed_model_classes if class_rank(c) <= class_rank(requested_class)
+            }
+
+    cognitive_request = CognitiveRequest(
+        objective=message, session_id=None, requested_mode=model_variant,
+        tenant=user.id if user else None,
+    )
+
+    # Phase 4: a lightweight lookup into the existing module-level
+    # `_sessions` dict, not a forced full _Session construction (this
+    # function runs BEFORE session construction on the /api/chat and
+    # /api/stream paths -- see the caller's own comment on why). Only an
+    # ALREADY-LIVE session's DocStore is used; a brand-new session simply
+    # has no doc_store yet, which TruthFabric already handles honestly
+    # (no evidence found, not a fabricated citation).
+    doc_store = _sessions[session_id].doc_store if session_id and session_id in _sessions else None
+    return await kernel.execute(cognitive_request, entitlement=entitlement, doc_store=doc_store)
+
+
+def _record_shadow_verification(requested_tier: str | None, resolved_tier: str | None) -> None:
+    """
+    Phase 3.1 spec §11: shadow comparison is retained TEMPORARILY, purely
+    as a verification/drift-monitoring signal now that the Kernel is
+    authoritative -- it can never override what the Kernel already
+    decided (that decision already happened in _run_cognitive_kernel by
+    the time this is called). Never breaks the real request.
+    """
+    try:
+        from orca.cognitive.metrics import record_shadow_comparison
+        record_shadow_comparison(kernel_tier=resolved_tier or "", legacy_tier=(requested_tier or "core").removeprefix("orca-"))
+    except Exception:
+        _logger.debug("Cognitive shadow verification recording failed — real serving path unaffected.", exc_info=True)
+
+
+def _generate_via_frontier_backend(resolution, persona_system: str, message: str):
+    """
+    Direct, single-turn generation through a frontier API backend
+    (OpenAI/Anthropic) — the "bring your own frontier model" path.
+
+    HONEST SCOPE: this does NOT run the tool-use agent loop (web_search,
+    run_code, memory_recall, etc.) that the self-hosted Ollama path gets via
+    AgentLoop — that's real, separately-scoped follow-up work (tool-calling
+    formats differ meaningfully between OpenAI/Anthropic/Ollama, and
+    building that out for one provider without verifying it live isn't
+    something to silently claim parity on). This is a genuine, working
+    single-turn passthrough, not a stub — just intentionally narrower than
+    the self-hosted path until tool-use is built and tested per-provider.
+    """
+    # Cut over to the Model Gateway (Phase 2.1) -- routed through the same
+    # FrontierRuntime/circuit-breaker/concurrency machinery as any other
+    # Gateway request, instead of constructing a Backend directly. Uses the
+    # Gateway (not GatewayBrain) here because this function's callers need
+    # the FULL response (cost_usd, token counts), not just the output text
+    # GatewayBrain.complete() returns -- see BackendResponse's field shape
+    # below, preserved for backward compatibility with existing callers.
+    from orca.gateway.contracts import InferenceRequest
+    from orca.gateway.sync_bridge import run_async_in_thread
+    from orca.gateway.wiring import brain_for_tier_resolution as _bridge
+
+    disclosure = (
+        f"\n\n[TRANSPARENCY NOTICE — auto-injected]\nThis response is generated by "
+        f"{resolution.backend}'s {resolution.model} model via API, not an Orca-trained model. "
+        f"Orca's own eval/red-team gating does not apply to a model Orca did not train — "
+        f"refer to {resolution.backend}'s own published model card for its capability and "
+        f"safety characteristics."
+    )
+    gateway_brain = _bridge(resolution)
+    inference_request = InferenceRequest(
+        request_id=str(uuid.uuid4()), model_id=gateway_brain.model_id, model_version=gateway_brain.model_version,
+        messages=[{"role": "user", "content": message}], system=persona_system + disclosure, max_tokens=1024,
+    )
+    inference_response = run_async_in_thread(
+        lambda: gateway_brain._gateway.generate(inference_request, allow_experimental=gateway_brain.allow_experimental)
+    )
+    result = BackendResponse(
+        text=inference_response.output,
+        backend=inference_response.runtime,
+        model=inference_response.resolved_version,
+        input_tokens=inference_response.prompt_tokens,
+        output_tokens=inference_response.completion_tokens,
+        cost_usd=inference_response.cost_usd,
+        latency_ms=inference_response.latency_ms,
+        data_left_infrastructure=inference_response.data_left_infrastructure,
+    )
+    return result
 
 
 class _Session:
@@ -128,7 +376,17 @@ class _Session:
 
         self.model_variant = model_variant or "core"
         self.memory = MemoryEngine(session_id=session_id)
-        brain = get_brain(_model_name_for_variant(model_variant))
+        # Cut over to the Model Gateway (Phase 2.1) -- GatewayBrain is a
+        # drop-in replacement for OrcaBrain's exact interface, so nothing
+        # below this line (ContextManager, AgentLoop, tools, memory) needed
+        # to change. See docs/orneur/phase-2/LIVE_SERVING_CUTOVER.md.
+        tier_resolution = TierResolution(
+            tier=(model_variant or "core").removeprefix("orca-"),
+            backend="ollama",
+            model=_model_name_for_variant(model_variant),
+            data_left_infrastructure=False,
+        )
+        brain = brain_for_tier_resolution(tier_resolution)
         self.ctx = ContextManager(brain)
         tools = build_registry(memory_engine=self.memory)
         self.agent = AgentLoop(brain=brain, tools=tools, session_id=session_id)
@@ -247,11 +505,161 @@ def _save_title(sid: str, title: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
+async def serve_landing():
+    landing = WEB_DIR / "landing.html"
+    if landing.exists():
+        return HTMLResponse(landing.read_text())
+    return HTMLResponse("<h1>Orca landing page not found</h1>")
+
+
+@app.get("/app", response_class=HTMLResponse)
 async def serve_ui():
     index = WEB_DIR / "index.html"
     if index.exists():
         return HTMLResponse(index.read_text())
     return HTMLResponse("<h1>Orca UI not found</h1><p>Run: orca serve</p>")
+
+
+@app.get("/trust", response_class=HTMLResponse)
+async def serve_trust():
+    trust = WEB_DIR / "trust.html"
+    if trust.exists():
+        return HTMLResponse(trust.read_text())
+    return HTMLResponse("<h1>Orca trust page not found</h1>")
+
+
+@app.get("/livez")
+async def livez():
+    """
+    Phase 14 §18-19: LIVENESS only -- "is this process alive?" Answers in
+    microseconds, does no I/O, calls no dependency (Ollama, gateway,
+    authority store, disk). A liveness probe exists so an orchestrator
+    (k8s, etc.) can decide "this process is wedged, restart it" -- it
+    must never itself perform the expensive check that would make a slow
+    DEPENDENCY (not a wedged process) look like a reason to kill and
+    restart an otherwise-healthy worker. That confusion is exactly what
+    Phase 14's audit found: both livenessProbe and readinessProbe in the
+    existing k8s manifest pointed at the same endpoint (see
+    docs/orneur/phase-14/CURRENT_DEPLOYMENT_ARCHITECTURE.md's "Health
+    endpoints" finding) -- this endpoint and /readyz below are the fix.
+    """
+    return {"status": "alive", "pid": os.getpid()}
+
+
+@app.get("/readyz")
+async def readyz():
+    """
+    Phase 14 §20-22: READINESS -- "can this worker safely serve the
+    claimed model / claimed capabilities right now?" Unlike /livez, this
+    DOES check dependencies, each reported separately (spec §21:
+    "Track dependencies separately... Do not mark entire service healthy
+    when a critical required dependency is down"), and applies the
+    fail-closed/fail-soft matrix from
+    docs/orneur/phase-14/HEALTH_AND_READINESS.md: the model runtime and
+    Godmode authority store are REQUIRED (their failure -> 503, not
+    ready); the gateway's own health report and connector state are
+    reported but do not by themselves flip readiness to false, since
+    normal (non-elevated) requests do not depend on them.
+    """
+    dependencies: dict[str, dict] = {}
+    ready = True
+
+    try:
+        resolved = resolve_tier_model("nano", host=CONFIG.ollama.host)
+        dependencies["model_runtime"] = {"status": "ok", "nano_model": resolved}
+    except RuntimeError as e:
+        dependencies["model_runtime"] = {"status": "unavailable", "reason": str(e)}
+        ready = False  # REQUIRED dependency -- fail closed, per spec §21-22
+
+    try:
+        from orca.godmode.lease_store import _backend  # noqa: PLC0415 -- see api.py's existing lazy-import convention below
+        dependencies["authority_store"] = {"status": "ok", "backend": _backend()}
+    except Exception as e:
+        # The authority store being unreachable does not mean ORDINARY
+        # (non-elevated) requests can't be served -- spec §22/§53: "Godmode
+        # store unavailable -> elevated actions DENY. Normal operations
+        # continue where safe." So this is reported, but does not flip
+        # `ready` to False by itself; individual elevated-action call
+        # sites already fail closed on their own (AuthorityStoreUnavailableError).
+        dependencies["authority_store"] = {"status": "error", "reason": str(e)}
+
+    try:
+        from orca.gateway.wiring import get_shared_gateway
+        dependencies["gateway"] = get_shared_gateway().report_health()
+    except Exception as e:
+        dependencies["gateway"] = {"error": str(e)}
+
+    # Phase 14A.3 §7: in DISTRIBUTED profile specifically, an
+    # unavailable/misconfigured security root is NOT the same lenient
+    # case as SOVEREIGN's authority_store above -- it means this worker
+    # cannot safely serve elevated-capability requests to a shared
+    # security authority at all, which is exactly the "no silent
+    # fallback" configuration gate this phase closed. SOVEREIGN is
+    # deliberately NOT held to this stricter standard here (its
+    # authority store being down is the existing, softer,
+    # non-gating case above).
+    try:
+        from orca.godmode.deployment_profile import is_distributed
+        if is_distributed():
+            from orca.godmode.security_root import get_epoch_and_state
+            epoch, state = get_epoch_and_state()
+            if state == "UNKNOWN":
+                dependencies["security_root"] = {"status": "unavailable"}
+                ready = False  # never advertise READY while distributed security authority is unavailable
+            else:
+                dependencies["security_root"] = {"status": "ok", "epoch": epoch}
+    except Exception as e:
+        dependencies["security_root"] = {"status": "error", "reason": str(e)}
+        ready = False
+
+    # Phase 14A.4 §7: same stricter-than-SOVEREIGN treatment for the
+    # core auth/session/audit backend -- a DISTRIBUTED worker whose
+    # shared core database is unreachable cannot guarantee session/
+    # auth correctness (spec §7: "Do not return fully READY when
+    # session/auth correctness cannot be guaranteed"), so this flips
+    # overall readiness the same way an unavailable security root does.
+    # A lightweight `SELECT 1` is enough to prove connectivity without
+    # adding real load to a low-frequency probe endpoint.
+    try:
+        from orca.godmode.deployment_profile import is_distributed
+        if is_distributed():
+            from orca.auth.db import get_conn
+            with get_conn() as conn:
+                conn.execute("SELECT 1")
+            dependencies["core_database"] = {"status": "ok"}
+    except Exception as e:
+        dependencies["core_database"] = {"status": "unavailable", "reason": str(e)}
+        ready = False  # never advertise READY while session/auth correctness cannot be guaranteed
+
+    status_code = 200 if ready else 503
+    return JSONResponse({"status": "ready" if ready else "not_ready", "dependencies": dependencies}, status_code=status_code)
+
+
+@app.get("/healthz")
+async def healthz():
+    """
+    Preserved EXACTLY as before Phase 14 -- same response shape
+    (`status`/`nano_model`/`gateway` at the top level), same existing
+    test contract (tests/test_healthz_endpoint.py,
+    tests/test_healthz_gateway_readiness.py). Phase 14 §18 requires that
+    liveness and readiness EXIST as separate concepts, not that this
+    already-established endpoint's shape be broken for existing callers
+    in the same change -- /livez and /readyz above are the new,
+    recommended entry points (see the updated k8s/deployment.yaml); this
+    one is kept, unmodified, for backward compatibility.
+    """
+    try:
+        resolved = resolve_tier_model("nano", host=CONFIG.ollama.host)
+        result = {"status": "ok", "nano_model": resolved}
+    except RuntimeError as e:
+        return JSONResponse({"status": "unhealthy", "reason": str(e)}, status_code=503)
+
+    try:
+        from orca.gateway.wiring import get_shared_gateway
+        result["gateway"] = get_shared_gateway().report_health()
+    except Exception as e:
+        result["gateway"] = {"error": str(e)}
+    return result
 
 
 @app.get("/api/status")
@@ -287,6 +695,78 @@ async def status():
     }
 
 
+class CognitiveExecuteRequest(BaseModel):
+    objective: str
+
+
+@app.post("/api/cognitive/execute")
+async def cognitive_execute(
+    req: CognitiveExecuteRequest,
+    request: Request,
+    user: User | None = Depends(get_current_user_optional),
+):
+    """
+    INTERNAL / EXPERIMENTAL. Kept from Phase 3 as the no-session, no-
+    entitlement, no-RAG/tools variant of Kernel-authoritative execution
+    (useful for isolated testing of the Kernel's own direct-answer path).
+    As of Phase 3.1, /api/chat and /api/stream are ALSO Kernel-
+    authoritative (with entitlement reconciliation) for real production
+    traffic -- see docs/orneur/phase-3/PRODUCTION_CUTOVER.md. This
+    endpoint only genuinely answers requests whose plan needs nothing
+    beyond a direct model call (ANSWER_DIRECTLY/REASON/RECALL_MEMORY); a
+    plan needing tools/retrieval/agents completes with an explicit warning
+    naming what it deferred, rather than fabricating an answer.
+    """
+    ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="cognitive")
+
+    if user:
+        allowed, used, limit = check_quota(user.id, user.tier, "message")
+        if not allowed:
+            return JSONResponse(
+                {"error": f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages."},
+                status_code=429,
+            )
+
+    mod_result = check_input(req.objective)
+    metrics.record_moderation_action(mod_result.action)
+    if mod_result.action == "block":
+        audit.log("input_moderation_blocked", user_id=user.id if user else None,
+                  detail={"categories": mod_result.flagged_categories, "endpoint": "cognitive_execute"})
+        return JSONResponse(
+            {"error": "This request can't be processed — it matches a category we don't generate content for."},
+            status_code=400,
+        )
+
+    from orca.cognitive.contracts import CognitiveRequest
+    from orca.cognitive.wiring import get_shared_kernel
+
+    kernel = get_shared_kernel()
+    cog_request = CognitiveRequest(objective=req.objective, session_id=None)
+    result = await kernel.execute(cog_request)
+
+    if user and result.output is not None:
+        increment_usage(user.id, "message")
+
+    audit.log("cognitive_execute", user_id=user.id if user else None, detail={
+        "status": result.status.value, "resolved_model": result.resolved_model,
+        "abstention_reason": result.abstention_reason.value if result.abstention_reason else None,
+    })
+
+    return {
+        "request_id": result.request_id,
+        "trace_id": result.trace_id,
+        "status": result.status.value,
+        "output": result.output,
+        "resolved_model": result.resolved_model,
+        "plan_id": result.plan_id,
+        "operations_executed": [op.value for op in result.operations_executed],
+        "abstention_reason": result.abstention_reason.value if result.abstention_reason else None,
+        "usage": result.usage,
+        "latency_ms": round(result.latency_ms, 1),
+        "warnings": result.warnings,
+    }
+
+
 @app.post("/api/chat")
 async def chat(
     req: ChatRequest,
@@ -299,6 +779,21 @@ async def chat(
     # their tier quota checked right after.
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="chat")
 
+    # Generation requests (image/video) short-circuit here, before any
+    # text-tier quota/model-access check — Genesis/Novus/Aeternum never see
+    # these messages at all. Orca Lens's actual generation backend isn't
+    # built yet (pending model choice), so this is an honest "not yet
+    # available" response, not a silent fallthrough to the text models.
+    gen_intent = detect_generation_intent(req.message)
+    if gen_intent != "chat":
+        audit.log("lens_generation_requested", user_id=user.id if user else None,
+                  detail={"intent": gen_intent})
+        return JSONResponse(
+            {"error": f"Orca Lens ({gen_intent} generation) isn't available yet — coming soon.",
+             "intent": gen_intent},
+            status_code=501,
+        )
+
     if user:
         allowed, used, limit = check_quota(user.id, user.tier, "message")
         if not allowed:
@@ -307,12 +802,17 @@ async def chat(
                 status_code=429,
             )
 
+    model_allowed, model_reason = model_access_allowed(user, req.model_variant)
+    if not model_allowed:
+        return JSONResponse({"error": model_reason}, status_code=402)
+
     # Input moderation — checked before the message ever reaches the model.
     # BLOCK: hard refusal, generation never happens. SUPPORT (self-harm):
     # never blocked — crisis resources get injected into context instead,
     # since refusing someone in crisis is the opposite of good practice.
     # FLAG: logged for visibility, generation proceeds unchanged.
     mod_result = check_input(req.message)
+    metrics.record_moderation_action(mod_result.action)
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
@@ -324,6 +824,103 @@ async def chat(
         audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
 
+    # Backend resolution happens BEFORE session construction: the existing
+    # _Session/AgentLoop path is Ollama-specific (tool-use, memory, redis
+    # continuity — all built around OrcaBrain), so a frontier-API backend
+    # takes a deliberately separate, simpler direct-generation path instead
+    # of forcing that machinery to pretend to support providers it hasn't
+    # been built or tested against. See _generate_via_frontier_backend's
+    # docstring for the honest scope of what this path does and doesn't do.
+    # Phase 3.1: Cognitive Kernel is now AUTHORITATIVE for planning and,
+    # where possible, direct execution -- see
+    # docs/orneur/phase-3/PRODUCTION_CUTOVER.md. Runs before any
+    # generation happens; a high-risk/unavailable-capability request now
+    # honestly abstains here instead of reaching a model at all.
+    from orca.cognitive.contracts import CognitiveState
+    from orca.cognitive.errors import CognitiveError
+
+    try:
+        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
+    except Exception as e:
+        # A real internal Kernel failure -- the Kernel is authoritative
+        # now, so this must surface as a clean error, never be silently
+        # swallowed and fallen through to legacy behavior (that was only
+        # correct for Phase 3's shadow-mode integration). Never leaks the
+        # internal exception/class name to the caller (spec §17). Catches
+        # any exception, not just the CognitiveError taxonomy, since a
+        # wiring/infrastructure failure reaching this call site is just as
+        # real a Kernel-execution failure from the caller's perspective.
+        code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
+        audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
+        return JSONResponse({"error": "This request could not be processed right now. Please try again."}, status_code=500)
+
+    if cognitive_result.status == CognitiveState.ABSTAINED:
+        audit.log("cognitive_abstained", user_id=user.id if user else None, detail={
+            "reason": cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else None,
+        })
+        reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
+        return JSONResponse(
+            {"error": _ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), "abstained": True},
+            status_code=422,
+        )
+
+    backend_resolution = _resolve_backend_for_chat(req.model_variant)
+    backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+    _record_shadow_verification(req.model_variant, cognitive_result.resolved_tier)
+
+    if backend_resolution.backend != "ollama":
+        persona_system = get_persona_system(backend_resolution.tier)
+        if mod_result.action == "support":
+            persona_system += (
+                f"\n\nIMPORTANT: This message may indicate the user is in emotional distress or crisis. "
+                f"Respond with warmth and care. Include these resources naturally in your response:\n{CRISIS_RESOURCES}"
+            )
+        try:
+            result = await asyncio.to_thread(
+                _generate_via_frontier_backend, backend_resolution, persona_system, req.message
+            )
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+        if user:
+            increment_usage(user.id, "message")
+
+        audit.log("chat", user_id=user.id if user else None, detail={
+            "model": backend_resolution.model, "backend": backend_resolution.backend,
+            "data_left_infrastructure": backend_resolution.data_left_infrastructure,
+            "cost_usd": result.cost_usd, "tools": [],
+            "escalated_by_cost_router": routing_decision.escalated,
+            "routing_reason": routing_decision.reason,
+        })
+        if routing_decision.escalated:
+            audit.log("cost_aware_escalation", user_id=user.id if user else None, detail={
+                "tier": backend_resolution.tier, "escalated_to": backend_resolution.backend,
+                "reason": routing_decision.reason,
+            })
+
+        # Output-side DLP scan (see orca/serve/dlp.py) — secrets are
+        # actively redacted (no legitimate reason a response should ever
+        # contain a real credential); PII is flagged for audit visibility
+        # only, not stripped from the response, matching
+        # orca/docs/pii_redact.py's own reasoning against mangling a
+        # user's own legitimate data.
+        dlp_result = dlp.scan_output(result.text)
+        if dlp_result["has_findings"]:
+            audit.log("output_dlp_finding", user_id=user.id if user else None, detail={
+                "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
+            })
+
+        return {
+            "response": dlp_result["safe_text"],
+            "session_id": req.session_id or str(uuid.uuid4()),
+            "used_tools": [],
+            "plan": "frontier_passthrough",
+            "backend": result.backend,
+            "data_left_infrastructure": result.data_left_infrastructure,
+            "escalated_by_cost_router": routing_decision.escalated,
+            "routing_reason": routing_decision.reason if routing_decision.escalated else None,
+        }
+
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
     mem_ctx = sess.memory.recall_context(req.message, n=3)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
@@ -334,10 +931,23 @@ async def chat(
             f"Respond with warmth and care. Include these resources naturally in your response:\n{CRISIS_RESOURCES}"
         )
 
-    try:
-        final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    used_tools: list[str] = []
+    plan_action = "cognitive_direct"
+    if cognitive_result.output is not None:
+        # Kernel's plan needed nothing beyond a direct model call --
+        # answered via ModelGateway already, entitlement-reconciled. Skip
+        # AgentLoop's extra plan/reflect calls for this turn entirely.
+        final = cognitive_result.output
+    else:
+        # Plan requires RETRIEVE/USE_TOOL/RECALL_MEMORY/DELEGATE_AGENT --
+        # real capabilities the existing AgentLoop path provides; the
+        # Kernel already decided this is needed, this is not a bypass.
+        try:
+            final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+        used_tools = [tc.tool for tc in trace.tool_calls]
+        plan_action = trace.plan_action
 
     if user:
         increment_usage(user.id, "message")
@@ -345,16 +955,37 @@ async def chat(
     sess.memory.add_turn("user", req.message)
     sess.memory.add_turn("assistant", final)
     sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {final[:500]}")
+    # Phase 5: additive, significance-gated Memory Continuum ingestion --
+    # does NOT replace the unconditional legacy commit_to_long_term()
+    # call above (see orca/memory/turn_ingest.py's own docstring for why).
+    from orca.memory.turn_ingest import maybe_ingest_turn
+    maybe_ingest_turn(sess.id, req.message, final)
     sess.persist_to_redis()
 
     audit.log("chat", user_id=user.id if user else None,
-              detail={"model": sess.model_variant, "tools": [tc.tool for tc in trace.tool_calls]})
+              detail={"model": sess.model_variant, "backend": "ollama", "data_left_infrastructure": False,
+                      "tools": used_tools, "cognitive_degraded": cognitive_result.degraded,
+                      "cognitive_resolved_tier": cognitive_result.resolved_tier})
+
+    # Output-side DLP scan — see the frontier-passthrough branch above for
+    # the full rationale. Applied after memory/audit logging deliberately:
+    # the audit log and long-term memory should retain what the model
+    # actually said (including any secret that leaked, for real incident
+    # investigation), while what's RETURNED to the user has secrets
+    # redacted.
+    dlp_result = dlp.scan_output(final)
+    if dlp_result["has_findings"]:
+        audit.log("output_dlp_finding", user_id=user.id if user else None, detail={
+            "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
+        })
 
     return {
-        "response": final,
+        "response": dlp_result["safe_text"],
         "session_id": sess.id,
-        "used_tools": [tc.tool for tc in trace.tool_calls],
-        "plan": trace.plan_action,
+        "used_tools": used_tools,
+        "plan": plan_action,
+        "degraded": cognitive_result.degraded,
+        "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
     }
 
 
@@ -366,6 +997,19 @@ async def stream_chat(
 ):
     ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="stream")
 
+    # Generation requests (image/video) short-circuit here, before any
+    # text-tier quota/model-access check — same as /api/chat, see that
+    # handler's comment for why this isn't a tool call from within the
+    # text models but a pre-dispatch bypass instead.
+    gen_intent = detect_generation_intent(req.message)
+    if gen_intent != "chat":
+        audit.log("lens_generation_requested", user_id=user.id if user else None,
+                  detail={"intent": gen_intent})
+        _lens_msg = f"Orca Lens ({gen_intent} generation) isn't available yet — coming soon."
+        async def _lens_not_available():
+            yield f"data: {json.dumps({'type': 'error', 'text': _lens_msg, 'intent': gen_intent})}\n\n"
+        return StreamingResponse(_lens_not_available(), media_type="text/event-stream")
+
     if user:
         allowed, used, limit = check_quota(user.id, user.tier, "message")
         if not allowed:
@@ -373,7 +1017,14 @@ async def stream_chat(
                 yield f"data: {json.dumps({'type':'error','text':f'Daily limit reached ({used}/{limit}). Upgrade to Pro.'})}\n\n"
             return StreamingResponse(_quota_err(), media_type="text/event-stream")
 
+    model_allowed, model_reason = model_access_allowed(user, req.model_variant)
+    if not model_allowed:
+        async def _model_gate_err():
+            yield f"data: {json.dumps({'type': 'error', 'text': model_reason})}\n\n"
+        return StreamingResponse(_model_gate_err(), media_type="text/event-stream")
+
     mod_result = check_input(req.message)
+    metrics.record_moderation_action(mod_result.action)
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
@@ -385,15 +1036,134 @@ async def stream_chat(
         audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
 
+    # Phase 3.1: Cognitive Kernel is now AUTHORITATIVE for planning and,
+    # where possible, direct execution -- see
+    # docs/orneur/phase-3/PRODUCTION_CUTOVER.md.
+    from orca.cognitive.contracts import CognitiveState
+    from orca.cognitive.errors import CognitiveError
+
+    try:
+        cognitive_result = await _run_cognitive_kernel(req.message, user, req.model_variant, session_id=req.session_id)
+    except Exception as e:
+        code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
+        audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
+        _fail_msg = "This request could not be processed right now. Please try again."
+        async def _fail_stream():
+            yield f"data: {json.dumps({'type': 'error', 'text': _fail_msg})}\n\n"
+        return StreamingResponse(_fail_stream(), media_type="text/event-stream")
+
+    if cognitive_result.status == CognitiveState.ABSTAINED:
+        audit.log("cognitive_abstained", user_id=user.id if user else None, detail={
+            "reason": cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else None,
+        })
+        reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
+        _abstain_msg = _ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed.")
+        async def _abstain_stream():
+            yield f"data: {json.dumps({'type': 'error', 'text': _abstain_msg, 'abstained': True})}\n\n"
+        return StreamingResponse(_abstain_stream(), media_type="text/event-stream")
+
+    # Cost-aware escalation — same resolution + routing decision /api/chat
+    # applies, checked here too since /api/stream was the one live-chat path
+    # that always talked to the local Ollama model regardless of operator
+    # config (see orca/serve/routing.py). Resolved before session
+    # construction: the frontier branch below doesn't touch the
+    # Ollama-specific _Session/AgentLoop machinery at all, matching
+    # /api/chat's frontier-passthrough path.
+    backend_resolution = _resolve_backend_for_chat(req.model_variant)
+    backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
+    _record_shadow_verification(req.model_variant, cognitive_result.resolved_tier)
+
+    if backend_resolution.backend != "ollama":
+        persona_system = get_persona_system(backend_resolution.tier)
+        if mod_result.action == "support":
+            persona_system += (
+                f"\n\nIMPORTANT: This message may indicate the user is in emotional distress or crisis. "
+                f"Respond with warmth and care. Include these resources naturally in your response:\n{CRISIS_RESOURCES}"
+            )
+        message_id = str(uuid.uuid4())
+        session_id = req.session_id or str(uuid.uuid4())
+
+        async def _frontier_event_stream() -> AsyncIterator[str]:
+            yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+            yield f"data: {json.dumps({'type': 'thinking', 'text': f'escalating to {backend_resolution.backend}...'})}\n\n"
+
+            try:
+                result = await asyncio.to_thread(
+                    _generate_via_frontier_backend, backend_resolution, persona_system, req.message
+                )
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+                return
+
+            dlp_result = dlp.scan_output(result.text)
+            if dlp_result["has_findings"]:
+                audit.log("output_dlp_finding", user_id=user.id if user else None, detail={
+                    "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
+                })
+
+            # Fake-stream: _generate_via_frontier_backend / Backend.generate()
+            # are synchronous only (see that function's docstring) — chunk the
+            # finished text by word so the frontend's existing per-chunk SSE
+            # rendering still gets incremental output, instead of the whole
+            # response landing as one payload.
+            words = dlp_result["safe_text"].split(" ")
+            for i, w in enumerate(words):
+                yield f"data: {json.dumps({'type': 'chunk', 'text': w if i == 0 else f' {w}'})}\n\n"
+                await asyncio.sleep(0)
+
+            if user:
+                increment_usage(user.id, "message")
+
+            audit.log("stream_chat", user_id=user.id if user else None, detail={
+                "model": backend_resolution.model, "backend": backend_resolution.backend,
+                "data_left_infrastructure": backend_resolution.data_left_infrastructure,
+                "cost_usd": result.cost_usd, "tools": [],
+                "escalated_by_cost_router": routing_decision.escalated,
+                "routing_reason": routing_decision.reason,
+            })
+            if routing_decision.escalated:
+                audit.log("cost_aware_escalation", user_id=user.id if user else None, detail={
+                    "tier": backend_resolution.tier, "escalated_to": backend_resolution.backend,
+                    "reason": routing_decision.reason,
+                })
+
+            yield f"data: {json.dumps({'type': 'done', 'tools': [], 'message_id': message_id, 'backend': backend_resolution.backend, 'escalated_by_cost_router': routing_decision.escalated, 'routing_reason': routing_decision.reason if routing_decision.escalated else None, 'data_left_infrastructure': backend_resolution.data_left_infrastructure})}\n\n"
+
+        return StreamingResponse(
+            _frontier_event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     sess = _get_session(req.session_id, req.model_variant, user_id=user.id if user else None)
     mem_ctx = sess.memory.recall_context(req.message, n=3)
     enriched = f"[Relevant memory]\n{mem_ctx}\n\n{req.message}" if mem_ctx else req.message
+
+    # Kernel's direct-answer path is used whenever the Kernel actually
+    # produced an answer -- either because this session has no loaded
+    # documents (Phase 3.1 spec §13's original guard: the legacy RAG
+    # pipeline's query rewriting/HyDE/corrective-retrieval/citation-DNA
+    # behavior must survive cutover unconditionally whenever docs ARE
+    # present), OR because the Kernel's answer came from Truth Fabric
+    # itself (`evidence_state is not None`), in which case it already
+    # used this session's doc_store as real evidence and is authoritative
+    # over the legacy pipeline for this request (Phase 4.1 spec §26-27:
+    # "Do not allow existing RAG branches to bypass Truth Fabric for
+    # request classes where Truth Fabric is authoritative"). Before this
+    # fix, a Truth-Fabric-verified, citation-checked answer was silently
+    # discarded in favor of the legacy Gateway-bypassing pipeline for
+    # every session that had any document loaded -- exactly backwards,
+    # since that is precisely when Truth Fabric's evidence grounding
+    # matters most.
+    use_kernel_direct = cognitive_result.output is not None and (
+        sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None
+    )
 
     # Deep RAG: 7-stage pipeline (query intelligence → multi-signal recall →
     # RRF fusion → rerank → sufficiency check → citation DNA). Only runs if
     # docs are loaded for this session.
     rag_result = None
-    if sess.doc_store.count() > 0:
+    if not use_kernel_direct and sess.doc_store.count() > 0:
         history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
         history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
         rag_result = await asyncio.to_thread(
@@ -425,30 +1195,46 @@ async def stream_chat(
         tool_names: list[str] = []
         plan_action = "direct"
 
-        try:
-            gen, trace = await asyncio.to_thread(
-                lambda: sess.agent.stream(enriched, persona_system)
-            )
-            # Send tool activity if any
-            if trace.plan_action == "tools":
-                yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
-
-            for chunk in gen:
-                full += chunk
-                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+        if use_kernel_direct:
+            # Kernel's plan needed nothing beyond a direct model call --
+            # already answered via ModelGateway, entitlement-reconciled.
+            # Word-chunked for the same incremental SSE UX as any other
+            # path (same pattern as the frontier-passthrough branch above)
+            # -- ModelGateway.generate() was a single non-streaming call,
+            # this is presentation-layer chunking, not fake generation.
+            plan_action = "cognitive_direct"
+            words = (cognitive_result.output or "").split(" ")
+            for i, w in enumerate(words):
+                full += w if i == 0 else f" {w}"
+                yield f"data: {json.dumps({'type': 'chunk', 'text': w if i == 0 else f' {w}'})}\n\n"
                 await asyncio.sleep(0)
+        else:
+            try:
+                gen, trace = await asyncio.to_thread(
+                    lambda: sess.agent.stream(enriched, persona_system)
+                )
+                # Send tool activity if any
+                if trace.plan_action == "tools":
+                    yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
 
-            tool_names = [tc.tool for tc in trace.tool_calls]
-            plan_action = trace.plan_action
+                for chunk in gen:
+                    full += chunk
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                    await asyncio.sleep(0)
 
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
-            return
+                tool_names = [tc.tool for tc in trace.tool_calls]
+                plan_action = trace.plan_action
+
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+                return
 
         # Persist
         sess.memory.add_turn("user", req.message)
         sess.memory.add_turn("assistant", full)
         sess.memory.commit_to_long_term(f"Q: {req.message[:200]}\nA: {full[:500]}")
+        from orca.memory.turn_ingest import maybe_ingest_turn
+        maybe_ingest_turn(sess.id, req.message, full)
         sess.persist_to_redis()
         if user:
             increment_usage(user.id, "message")
@@ -477,7 +1263,9 @@ async def stream_chat(
                       detail={"message_id": message_id, "note": citation_report["note"]})
 
         audit.log("stream_chat", user_id=user.id if user else None,
-                  detail={"model": sess.model_variant, "tools": tool_names})
+                  detail={"model": sess.model_variant, "tools": tool_names,
+                          "cognitive_degraded": cognitive_result.degraded,
+                          "cognitive_resolved_tier": cognitive_result.resolved_tier})
 
         # Explainability: capture the full retrieval/reasoning trace for this
         # message, keyed by message_id so the frontend "Explain" button can
@@ -485,7 +1273,7 @@ async def stream_chat(
         explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
         sess.explain_store.add(explain_record)
 
-        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None})}\n\n"
 
     return StreamingResponse(
         _event_stream(),
@@ -619,7 +1407,14 @@ async def save_session(req: ChatRequest):
 
 @app.get("/api/models")
 async def list_models():
-    """Return which Orca model variants are available in Ollama."""
+    """
+    Return which Orca model variants are available in Ollama — and, crucially,
+    what model actually GETS SERVED for each tier once the registry's
+    step-down fallback is applied. `configured_model` and `resolved_model`
+    can legitimately differ (e.g. ultra not yet fine-tuned, silently served
+    from core) — showing only `available: false` here previously hid that
+    from anyone debugging why a tier "works" but doesn't sound like itself.
+    """
     import urllib.request
     try:
         req = urllib.request.Request(f"{CONFIG.ollama.host}/api/tags", method="GET")
@@ -637,10 +1432,61 @@ async def list_models():
             m == model_name or m.split(":")[0] == base for m in pulled
         )
 
+    def _tier_status(tier: str, configured_model: str) -> dict:
+        try:
+            resolved_model = resolve_tier_model(tier, host=CONFIG.ollama.host)
+        except RuntimeError:
+            resolved_model = None
+
+        return {
+            "model": configured_model,
+            "available": _available(configured_model),
+            "vision_capable": is_vision_capable(configured_model),
+            "resolved_model": resolved_model,
+            "fallback_active": resolved_model is not None and resolved_model != configured_model,
+        }
+
+    def _persona_claim_status(tier: str) -> dict:
+        # Surfaces the exact same gate orca/personas.py enforces at runtime
+        # (get_persona_system swaps the persona's self-description based on
+        # this). Without this, a client had no way to know a tier's claims
+        # are currently demoted short of reading raw eval/redteam JSON off
+        # disk — the one place a real buyer or the admin UI actually looks
+        # (this endpoint) said nothing about it.
+        approved, reason = check_persona_claim_allowed(tier)
+        return {"approved": approved, "reason": reason}
+
+    def _backend_status(tier: str) -> dict:
+        # Real backend/data-sovereignty resolution — see
+        # orca/serve/registry.py's resolve_tier_backend(). Shown separately
+        # from _tier_status above (which is Ollama-only) since a tier can
+        # now resolve to a frontier API instead.
+        try:
+            resolution = resolve_tier_backend(tier, host=CONFIG.ollama.host)
+            return {
+                "backend": resolution.backend,
+                "model": resolution.model,
+                "data_left_infrastructure": resolution.data_left_infrastructure,
+                "sovereignty_overridden": resolution.sovereignty_overridden,
+            }
+        except RuntimeError as e:
+            return {"backend": None, "error": str(e)}
+
     return {
-        "nano":  {"model": CONFIG.ollama.model_nano,  "available": _available(CONFIG.ollama.model_nano)},
-        "core":  {"model": CONFIG.ollama.model_core,  "available": _available(CONFIG.ollama.model_core)},
-        "ultra": {"model": CONFIG.ollama.model_ultra, "available": _available(CONFIG.ollama.model_ultra)},
+        "nano":  _tier_status("nano", CONFIG.ollama.model_nano),
+        "core":  _tier_status("core", CONFIG.ollama.model_core),
+        "ultra": _tier_status("ultra", CONFIG.ollama.model_ultra),
+        "backend_routing": {
+            "nano": _backend_status("nano"),
+            "core": _backend_status("core"),
+            "ultra": _backend_status("ultra"),
+            "data_sovereignty_lock": CONFIG.backends.data_sovereignty_lock,
+        },
+        "persona_claims": {
+            "nano": _persona_claim_status("nano"),
+            "core": _persona_claim_status("core"),
+            "ultra": _persona_claim_status("ultra"),
+        },
     }
 
 
@@ -767,15 +1613,15 @@ async def create_checkout(
     from orca.auth.store import get_stripe_customer_id
     existing_customer_id = get_stripe_customer_id(user.id)
 
-    base_url = _os.environ.get("ORCA_PUBLIC_URL", "http://localhost:7337")
+    base_url = orneur_env("PUBLIC_URL", "http://localhost:7337")
 
     session_kwargs = dict(
         mode="subscription",
         line_items=[{"price": price_id, "quantity": 1}],
         client_reference_id=user.id,
         metadata={"user_id": user.id, "tier": tier},
-        success_url=f"{base_url}/?checkout=success",
-        cancel_url=f"{base_url}/?checkout=cancelled",
+        success_url=f"{base_url}/app?checkout=success",
+        cancel_url=f"{base_url}/app?checkout=cancelled",
     )
     # Reuse the existing Stripe Customer if this user has paid before —
     # avoids creating duplicate Customer records on every checkout attempt.
@@ -822,6 +1668,36 @@ async def ultra_run(req: UltraRequest):
     sess = _get_session(req.session_id)
     progress_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
+    # Phase 3.1: cognitive planning must not be bypassed even for Ultra
+    # (spec §10) -- but Ultra is a distinct, deliberately deep, paid
+    # product mode with its own entitlement gate (has_feature("ultra"),
+    # checked above), not a plan the Kernel should re-decide or execute
+    # itself. The Kernel PLANS (never executes) here, purely for trace/
+    # observability parity with /api/chat and /api/stream -- Ultra's own
+    # fixed multi-agent pipeline remains authoritative for HOW this
+    # request is actually answered. Never allowed to break the real
+    # request (matches the same safety discipline Phase 3's shadow mode
+    # used).
+    try:
+        from orca.cognitive.contracts import CognitiveRequest
+        from orca.cognitive.wiring import get_shared_kernel
+        get_shared_kernel().plan(CognitiveRequest(objective=req.task, requested_mode="ultra"))
+    except Exception:
+        _logger.debug("Cognitive planning failed for /api/ultra request — pipeline unaffected.", exc_info=True)
+
+    # Phase 2.1 cutover: OrcaUltra previously built its own OrcaBrain via
+    # get_brain(), bypassing the Model Gateway entirely -- unlike /api/chat
+    # and /api/stream, this HTTP-reachable path was missed by the original
+    # cutover. Resolve the same way _Session.__init__ does and inject the
+    # Gateway-routed brain so live Ultra traffic is routed identically.
+    ultra_resolution = TierResolution(
+        tier="ultra",
+        backend="ollama",
+        model=_model_name_for_variant("ultra"),
+        data_left_infrastructure=False,
+    )
+    ultra_brain = brain_for_tier_resolution(ultra_resolution)
+
     def on_progress(msg: str):
         # Called from within async coroutine context (main event loop thread)
         try:
@@ -833,7 +1709,7 @@ async def ultra_run(req: UltraRequest):
         yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
         yield f"data: {json.dumps({'type': 'pod_launch'})}\n\n"
 
-        ultra = OrcaUltra(on_progress=on_progress, use_tools=True)
+        ultra = OrcaUltra(on_progress=on_progress, use_tools=True, brain=ultra_brain)
         pipeline_task = asyncio.create_task(ultra._run_async(req.task, max_retries=1))
 
         # Stream progress events while pipeline runs
@@ -1048,6 +1924,7 @@ async def vision_query(
         )
 
     mod_result = check_input(message)
+    metrics.record_moderation_action(mod_result.action)
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories, "endpoint": "vision"})

@@ -49,8 +49,8 @@ Do not use both marks interchangeably in the same context — geometric mark
 
 Real gap: no onboarding flow exists today (flagged in the earlier audit).
 Design for:
-1. Welcome screen: line-art mark, one-line value prop ("Private
-   intelligence. Your hardware. Your data."), single CTA to sign up.
+1. Welcome screen: line-art mark, one-line value prop ("The AI platform
+   that shows its work."), single CTA to sign up.
 2. Model selection: explain nano/core/ultra in plain language BEFORE the
    user picks — what each is good at, not just size. Include the honest
    framing already baked into the code: if a variant hasn't cleared its

@@ -1,0 +1,189 @@
+# Phase 13.1 / 13.2 — Findings (supersedes Phase 13's FINDINGS.md for this closure)
+
+Per spec §72: "a discovered failure is success of the red-team process.
+Do not suppress it."
+
+**Phase 13.2 update**: Finding 3 (Godmode cross-process lease race),
+originally documented and `xfail`ed as an open finding at Phase 13.1
+close, is now **FIXED** — see `GODMODE_DISTRIBUTED_ATOMICITY.md`. While
+building Phase 13.2's own required delegation-race test, a FOURTH real
+vulnerability (Finding 4, delegation authority multiplication) was
+discovered and fixed in the same pass. All counts below reflect the
+final, post-13.2 state.
+
+## Summary
+
+| Metric | Count |
+|---|---|
+| NEW_ATTACKS_EXECUTED (Phase 13.1) | 55 |
+| NEW_REGRESSION_TESTS (Phase 13.2 fixes) | 12 (`tests/test_godmode_distributed_atomicity.py`) |
+| EXISTING_SECURITY_TESTS_REUSED | 733 (Phase 1-13's own suite, unmodified, reconfirmed green) |
+| REAL_VULNERABILITIES_FOUND | **4** |
+| REAL_VULNERABILITIES_FIXED | **4** (all four) |
+| RESIDUAL_OPEN_FINDINGS | **0** |
+| FALSE_POSITIVES | 1 (RES-06/07 test-writing bugs caught and corrected before being counted — see below) |
+
+## Real vulnerabilities
+
+### Finding 1 — RAG source-independence never consulted (FIXED)
+
+- **Category**: RAG_POISONING
+- **Severity**: MEDIUM
+- **Affected subsystem**: `orca.truth.state.compute_evidence_state`
+- **Attack preconditions**: attacker can get 2+ mutually-derived
+  (mirrored/syndicated) documents into a retrieval result set.
+- **Attack input**: same text published under 2+ domains, one a
+  subdomain of the other, one syndicated verbatim, one with explicit
+  attribution.
+- **Observed behavior (pre-fix)**: `EvidenceState.SUFFICIENT` reached
+  purely from `citation_coverage_ratio`, with the computed
+  `IndependenceState.LIKELY_DERIVED` flags on every source silently
+  ignored.
+- **Expected behavior**: an all-derived source set should not be treated
+  as equivalent to genuinely independent corroboration.
+- **Reproducibility**: REPRODUCIBLE (deterministic function, no timing
+  dependency).
+- **Root cause**: `annotate_independence()`'s output was write-only
+  across the entire codebase — confirmed by exhaustive grep.
+- **Fix**: `orca/truth/state.py` — downgrade SUFFICIENT to PARTIAL when
+  2+ sources exist and all are `LIKELY_DERIVED`.
+- **Regression test**: `tests/test_redteam_rag_deep.py::test_rag02_authority_spam_no_longer_reaches_sufficient_when_all_sources_are_mutually_derived`
+- **CWE-like classification**: CWE-1188-adjacent (insecure default
+  initialization of a resource that is never actually used to enforce
+  the property its presence implies) — not a formal CWE mapping, offered
+  loosely since no better-fitting entry was found; not fabricated as an
+  authoritative CVE/CWE identifier.
+
+### Finding 2 — Godmode canonicalizer recursion crash (FIXED)
+
+- **Category**: RESOURCE_EXHAUSTION
+- **Severity**: MEDIUM
+- **Affected subsystem**: `orca.godmode.canonical.hash_arguments`/`canonicalize_arguments`, reachable from `issue_lease()`, `resolve_lease()`, `resolve_and_consume_lease()`.
+- **Attack preconditions**: attacker can influence the shape of a lease's
+  bound arguments (e.g. via a tool call whose arguments get hashed for
+  exact-argument binding).
+- **Attack input**: a dict nested 500 levels deep.
+- **Observed behavior (pre-fix)**: uncaught `RecursionError` propagating
+  out of the real Godmode authorization path.
+- **Expected behavior**: a bounded, typed rejection — never an
+  interpreter-level crash.
+- **Reproducibility**: REPRODUCIBLE, deterministic (fails at any depth
+  greater than Python's ambient recursion budget minus this call
+  stack's own depth — empirically observed starting at depth 500 in this
+  environment).
+- **Root cause**: `_canonicalize_value()` recursed with no depth guard.
+- **Fix**: explicit `_MAX_CANONICALIZATION_DEPTH = 64` counter, raising
+  `ArgumentTooDeeplyNestedError` (a `ValueError` subclass).
+- **Regression test**: `tests/test_redteam_resource_exhaustion.py::test_res01_deeply_nested_argument_payload_is_rejected_not_crashed`
+- **CWE-like classification**: CWE-674 (Uncontrolled Recursion).
+
+### Finding 3 — Godmode one-use lease cross-process race (FIXED in Phase 13.2)
+
+- **Category**: RACE_CONDITION
+- **Severity**: MEDIUM (current host-local deployment) / would have been
+  HIGH if ever deployed multi-process/multi-worker without a fix
+- **Affected subsystem**: `orca.godmode.lease_store.consume_use`
+- **Attack preconditions**: two OS processes with access to the same
+  file-backed `ORCA_HOME`, both racing to consume the same one-use
+  lease.
+- **Observed behavior (pre-fix)**: `consume_use()`'s atomicity guarantee
+  (`threading.Lock`) was in-process only; a real
+  `multiprocessing.Process`-based test showed both processes could read
+  `uses_remaining == 1` before either wrote `0` back, since there was no
+  file-level lock on the read-modify-write.
+- **Expected behavior**: exactly one process should succeed.
+- **Reproducibility**: REPRODUCIBLE (confirmed directly at Phase 13.1;
+  re-confirmed as the pre-fix baseline behavior at the start of Phase
+  13.2 before implementation changes, per spec §1's explicit requirement).
+- **Root cause**: no cross-process lock/transaction wrapped the
+  read-modify-write.
+- **Fix status**: **FIXED in Phase 13.2**. `orca/godmode/lease_store.py`
+  rewritten to a SQLite-backed store (`ORCA_HOME/godmode/leases.db`);
+  `consume_use()`/`revoke()` now run inside a `BEGIN IMMEDIATE`
+  transaction, whose RESERVED lock is enforced by SQLite's own
+  file-locking — genuinely visible across process boundaries. See
+  `GODMODE_DISTRIBUTED_ATOMICITY.md` for the full design.
+- **Regression tests**: `tests/test_redteam_toctou.py::test_toctou04_real_multiprocess_race_on_one_use_lease`
+  (xfail removed, now a permanent passing guard) plus 11 new tests in
+  `tests/test_godmode_distributed_atomicity.py` covering repeated
+  2-process races, 8-process/3-use high contention, revocation/kill-switch/
+  expiry races, restart safety, corruption handling, and the real
+  `resolve_and_consume_lease()`/file-elevation caller paths.
+- **CWE-like classification**: CWE-362 (Concurrent Execution using
+  Shared Resource with Improper Synchronization, "Race Condition").
+
+### Finding 4 — Godmode delegation authority multiplication (FOUND AND FIXED in Phase 13.2)
+
+- **Category**: AUTHORITY_ESCALATION
+- **Severity**: MEDIUM
+- **Affected subsystem**: `orca.godmode.delegation.delegate_lease`
+- **Attack preconditions**: a delegable `CapabilityLease` with
+  `max_uses`/`uses_remaining` set.
+- **Discovery context**: found while building the required delegation-
+  race test for Finding 3's own closure work (spec §17), not via a
+  separate audit pass — a direct consequence of actually testing the
+  invariant the spec asked for rather than assuming it held.
+- **Observed behavior (pre-fix)**: `delegate_lease()` read
+  `parent.uses_remaining` only to VALIDATE `child_max_uses` did not
+  exceed it, never actually decrementing the parent. A parent with
+  `uses_remaining=5` could delegate a child ALSO carrying its own
+  independent `uses_remaining=5` — reproduced directly: total available
+  authority became `10` from a parent that only ever had `5`.
+- **Expected behavior**: total available authority (parent's remaining +
+  any delegated children's allowances) must never exceed the parent's
+  original allowance.
+- **Reproducibility**: REPRODUCIBLE (deterministic, single-process
+  reproduction shown in `GODMODE_DISTRIBUTED_ATOMICITY.md`; a 2-process
+  race version confirms the atomic fix holds under concurrency too).
+- **Root cause**: no reservation/decrement step existed in
+  `delegate_lease()` at all — not a race-condition bug in an existing
+  atomic operation, but a missing operation entirely.
+- **Fix**: new `orca.godmode.lease_store.reserve_uses(lease_id, n)`,
+  atomic (`BEGIN IMMEDIATE`, same discipline as `consume_use()`).
+  `delegate_lease()` now calls it before constructing the child; denies
+  delegation outright if the reservation fails.
+- **Regression test**: `tests/test_godmode_distributed_atomicity.py::test_delegation_race_total_authority_never_exceeds_parent_allowance`
+  (2 real processes, 3-use delegation attempts against a 5-use parent,
+  exactly 1 succeeds, parent ends at `uses_remaining=2`).
+- **CWE-like classification**: CWE-840 (Business Logic Errors) /
+  CWE-284-adjacent (Improper Access Control via missing resource
+  accounting) — no single CWE entry maps exactly; offered loosely, not
+  as an authoritative mapping.
+
+## False positive (caught before being counted as a finding)
+
+An initial hypothesis for RAG-06 (citation numeric mismatch) assumed the
+lexical fallback would score near-zero overlap for a wildly wrong number
+— running the actual test showed `overlap=0.80` (surrounding words
+matched), `PARTIALLY_SUPPORTED`. This was NOT a security bug: reclassified
+honestly as the same disclosed fallback limitation as RAG-04/05 (the
+ceiling — never full SUPPORTED — still holds), and the test assertion was
+corrected to match the REAL observed behavior rather than the original
+(wrong) assumption. Recorded here as a false-positive-caught-during-
+investigation, per spec §45's honesty requirement, not silently dropped.
+
+## Severity table (real findings only)
+
+| Severity | Count |
+|---|---|
+| CRITICAL | 0 |
+| HIGH | 0 |
+| MEDIUM | 4 (all 4 fixed) |
+| LOW | 0 |
+
+(The disclosed fallback-path limitations in RAG-04/05/06 are NOT counted
+as vulnerabilities — they are pre-existing, honestly-labeled design
+limitations of a degraded fallback path whose ceiling property was
+verified to hold, not new bypasses.)
+
+## Phase 13.3 — no new findings (verification/closure work only)
+
+Phase 13.3 closed the two evidence gaps Phase 13.2 itself disclosed
+(real-SIGKILL crash consistency; a dedicated connector multiprocess E2E)
+rather than hunting for new vulnerability classes. No new real
+vulnerability was discovered or fixed this phase — see
+[`CRASH_CONSISTENCY.md`](CRASH_CONSISTENCY.md) and
+[`CONNECTOR_MULTIPROCESS_AUTHORITY.md`](CONNECTOR_MULTIPROCESS_AUTHORITY.md)
+for the full evidence. The severity table above is therefore unchanged
+from Phase 13.2's close: still 4 real vulnerabilities found across
+Phases 13.1-13.2, all 4 fixed, 0 open.

@@ -1,47 +1,47 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: atheris
+  name: orneur-api
   labels:
-    app: atheris
+    app: orneur-api
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: atheris
+      app: orneur-api
   template:
     metadata:
       labels:
-        app: atheris
+        app: orneur-api
     spec:
       containers:
-      - name: atheris
-        image: atheris:latest
+      - name: orneur-api
+        image: orneur-api:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 7337
         env:
-        - name: ORCA_OLLAMA_HOST
+        - name: ORNEUR_OLLAMA_HOST
           value: "http://ollama:11434"
-        - name: ORCA_AUTH_SECRET
+        - name: ORNEUR_AUTH_SECRET
           valueFrom:
             secretKeyRef:
-              name: atheris-secrets
+              name: orneur-api-secrets
               key: auth-secret
-        - name: ORCA_CORE_MODEL
+        - name: ORNEUR_CORE_MODEL
           valueFrom:
             configMapKeyRef:
-              name: atheris-config
+              name: orneur-api-config
               key: core-model
-        - name: ORCA_NANO_MODEL
+        - name: ORNEUR_NANO_MODEL
           valueFrom:
             configMapKeyRef:
-              name: atheris-config
+              name: orneur-api-config
               key: nano-model
-        - name: ORCA_ULTRA_MODEL
+        - name: ORNEUR_ULTRA_MODEL
           valueFrom:
             configMapKeyRef:
-              name: atheris-config
+              name: orneur-api-config
               key: ultra-model
         volumeMounts:
         - name: data
@@ -53,16 +53,32 @@ spec:
           limits:
             memory: "2Gi"
             cpu: "2000m"
+        # Phase 14 §18-19 gap this closes: liveness and readiness previously
+        # both hit /healthz (which itself did dependency checks) — a slow
+        # DEPENDENCY (e.g. Ollama) could get a perfectly-alive pod killed
+        # and restarted by Kubernetes, which never fixes a dependency
+        # problem and adds restart churn on top of it. /livez does no I/O
+        # and no dependency check (see orca/serve/api.py); /readyz checks
+        # dependencies and is what actually gates traffic routing.
+        # /healthz is preserved as an alias to /readyz for callers not yet
+        # migrated to the split endpoints (see docs/orneur/phase-14/HEALTH_AND_READINESS.md).
         livenessProbe:
           httpGet:
-            path: /api/status
+            path: /livez
             port: 7337
           initialDelaySeconds: 15
           periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 7337
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
       volumes:
       - name: data
         persistentVolumeClaim:
-          claimName: atheris-pvc
+          claimName: orneur-api-pvc
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -96,6 +112,23 @@ spec:
           # GPU: uncomment after installing nvidia-device-plugin
           # limits:
           #   nvidia.com/gpu: "1"
+        # Real gap this closes: this deployment had NO probes at all —
+        # Kubernetes had no way to know if Ollama was actually up, so a
+        # crashed or still-initializing Ollama pod would keep receiving
+        # traffic/be considered healthy indefinitely.
+        livenessProbe:
+          httpGet:
+            path: /api/tags
+            port: 11434
+          initialDelaySeconds: 20
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/tags
+            port: 11434
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 3
       volumes:
       - name: models
         persistentVolumeClaim:

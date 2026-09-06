@@ -1,0 +1,135 @@
+# Phase 14 §95-97 — Evaluation Harness Results
+
+## Required scenarios (spec §95), honest status
+
+| Scenario | Status |
+|---|---|
+| Two API workers | **Partial** — cross-worker session continuity + fault injection proven via real multiprocess test (not full HTTP E2E) |
+| Multiple inference workers | NOT_EXECUTED — Gateway calls remain in-process |
+| Stale worker removed | NOT_EXECUTED (this phase) — Gateway staleness logic pre-existing, unchanged, not re-tested |
+| Worker crash mid-request | **Proven** — real SIGKILL fault injection, `test_worker_a_crash_does_not_corrupt_or_lose_worker_b_visible_state` |
+| Worker drain | NOT_EXECUTED |
+| Bad candidate canary | NOT_EXECUTED — no real canary infrastructure |
+| Stable deployment survives bad canary | NOT_EXECUTED |
+| Deadline propagation | Structural argument only, no executable test (`CANCELLATION_AND_RETRY.md`) |
+| Distributed cancellation | NOT_EXECUTED |
+| Budget not duplicated | Structural argument only, no executable test |
+| Tenant isolation across workers | **Proven** — `test_postgres_backend_tenant_isolation_no_cross_tenant_leak` |
+| Godmode centralized | **Proven** — `AUTHORITY_DISTRIBUTION.md`, 5 real Postgres multiprocess tests |
+| Kill switch visible to all workers | NOT_EXECUTED — kill switch remains single-host this phase |
+| Authority store unavailable fails closed | **Proven** (pre-existing, reconfirmed) — `AuthorityStoreUnavailableError` handling for both SQLite and the new Postgres path |
+| Registry unavailable | NOT_EXECUTED |
+| Truth unavailable | Investigated as part of live-flakiness root-causing (see `PHASE_14_CLOSURE.md`), not a dedicated fault-injection test |
+| Memory unavailable | NOT_EXECUTED |
+| Connector unavailable | NOT_EXECUTED (this phase; Phase 9/13 already cover related ground) |
+| Rolling upgrade | NOT_EXECUTED — no real multi-replica deployment |
+| Backup | **Proven** — real SQLite online backup, `test_authority_backup_restore.py` |
+| Restore | **Proven** — same test file, including the critical stale-restore finding |
+| Stale authority backup | **Proven — real finding, real fix** — the centerpiece of this phase's security work |
+| Config failure | NOT_EXECUTED — no config-validation-at-startup test built this phase |
+| Worker registration forgery | NOT_EXECUTED (this phase) |
+| Checkpoint mismatch | NOT_EXECUTED (this phase) |
+| Load shedding | Confirmed structurally (pre-existing `ConcurrencyLimiter`), not newly tested |
+| Queue bound | Confirmed structurally (pre-existing), not newly tested |
+| Trace propagation | NOT_EXECUTED as an asserted property |
+
+## Test counts added this phase
+
+- `tests/test_godmode_authority_postgres.py` — 5 tests (one-use race,
+  high-contention, revocation race, delegation race, tenant isolation),
+  all passing against a real local Postgres 17 server.
+- `tests/test_authority_backup_restore.py` — 3 tests (the raw
+  stale-restore bug reproduction, the fix via reconciliation, a
+  no-op-when-nothing-stale safety check), all passing.
+- `tests/test_livez_readyz_endpoints.py` — 5 tests, all passing.
+- `tests/test_multiworker_session_and_fault_injection.py` — 2 tests
+  (cross-worker session continuity, real-SIGKILL fault injection),
+  both passing against a real local Redis server.
+
+**Total new tests this phase: 15, all passing on real infrastructure**
+(local Postgres, local Redis, real SIGKILL) — none mocked, none
+fabricated.
+
+## Performance (spec §96)
+
+See `LOAD_AND_SOAK.md` for the full real, bounded, local measurement
+(336 req/s, p50 31ms / p95 178ms / p99 352ms on `/livez`, one uvicorn
+process, 20-way concurrency, 30s). No production/cloud-scale numbers
+exist (no cloud environment). Model inference time was not separately
+measured this phase (out of scope — `/livez` was chosen specifically to
+isolate framework overhead from it, per spec §73/§96's instruction to
+keep the two separate).
+
+## Reliability test duration (spec §97)
+
+- Load test: 30.00s, 10,090 requests, 0 faults.
+- Soak test: ~110s, continuous single-client requests, 0 leaks
+  observed (RSS and FD count both stable).
+- Fault count: 1 real SIGKILL injected and recovered from cleanly
+  (multiworker session test) — plus every Phase 13.3 crash-injection
+  scenario reconfirmed green this phase (11 SIGKILL scenarios in
+  `test_godmode_crash_consistency.py`, unchanged, still passing).
+
+## Phase 14A.2 addendum — whole-snapshot security-root closure and corrected test classification
+
+**New real finding and fix**: restoring the Phase 14A.1 kill-switch
+ledger together with the stale authority database defeated stale-
+restore protection entirely (`WHOLE_SNAPSHOT_SECURITY_ROLLBACK`) —
+reproduced directly, fixed with an independent security root living
+outside `ORCA_HOME`/the authority database entirely. Full detail:
+`SECURITY_ROOT.md`. 20 real tests (9 new in
+`test_security_root_whole_snapshot.py`, 11 rewritten in
+`test_kill_switch_stale_restore.py` for the new architecture), all
+passing, including real local Postgres (two genuinely separate
+databases) and 5-way concurrent multiprocess activation.
+
+**Test classification correction (spec §25-26)**: investigated whether
+the "1543 passed / 2 failed" result from Phase 14A.1's closure
+represented a marker misclassification. Finding: it did not — this
+project's own `docs/orneur/phase-3/TEST_EXECUTION_POLICY.md` already
+documents, as an intentional and pre-existing convention, that
+`live_ollama_smoke` tests are part of the default `pytest` invocation
+("Full suite, exactly as CI runs it today"). What prior phases called
+"the deterministic suite" was actually the combined default suite
+(unit + integration + live-Ollama together); this was an informal
+labeling imprecision in how results were reported, not a code defect.
+Corrected going forward by reporting two genuinely distinct
+invocations:
+
+| Invocation | Command | Result |
+|---|---|---|
+| Deterministic-only | `pytest -m "not live_ollama_smoke"` | **1511 passed, 0 failed, 43 deselected** (361.17s) |
+| Live suite | `pytest -m live_ollama_smoke` | see `PHASE_14_CLOSURE.md`'s Phase 14A.2 section for the actual, honestly-reported result |
+
+The deterministic-only invocation has **zero dependency on a live local
+model** and is the correct baseline for spec §29's "final deterministic
+invocation: 0 failed" requirement — achieved cleanly, on the first
+attempt, once correctly scoped.
+
+## Phase 14B addendum
+
+**Real infrastructure check performed before any other work** (spec
+§1): no VPS, no Cloudflare account/tunnel, no SSH access to a remote
+host exist in this session — confirmed by checking `~/.ssh/config`,
+`~/.ssh/known_hosts`, `cloudflared` (not installed), and
+`~/.cloudflared` (does not exist). Per the governing spec's own
+explicit instruction, this was not worked around with local simulation
+presented as multi-host qualification — see `REAL_STAGING_TOPOLOGY.md`
+for the full check and the resulting OWNER ACTION REQUIRED checkpoint.
+
+**Real local work completed instead**: the one item spec §15
+mandated be closed *before* any multi-host elevated-action testing
+could even be attempted — the durable Godmode elevation audit
+(`DURABLE_GODMODE_AUDIT.md`). This surfaced a real finding more serious
+than Phase 14A.4's own disclosure (the elevation audit wasn't merely
+non-durable — it was never called by any real authorization path at
+all) and closed it with 10 new tests, wired directly into the
+authorization choke point (`resolve_and_consume_lease()`), with
+fail-closed ordering per spec §16.
+
+Full regression after this phase's changes: see `PHASE_14_CLOSURE.md`'s
+Phase 14B section for the exact final counts (a full re-run of both
+the deterministic-only and security suites was required and executed,
+since this phase's change touches the actual authorization path every
+elevated action depends on — the highest-risk category of change this
+whole multi-phase closure has made).

@@ -5,7 +5,37 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
+
+from orca.config import ORCA_HOME
+
+# SECURITY: read_file/write_file previously accepted ANY absolute path on
+# the filesystem — combined with the model's known jailbreak susceptibility
+# (0% block rate at the model level, see docs/SECURITY_AUDIT.md), a
+# jailbroken model could read secrets (~/.ssh, ~/.env, ~/.orca/auth.db) or
+# write anywhere the OS user running Orca has permission to. Both tools are
+# now restricted to this dedicated workspace directory — see
+# _resolve_in_workspace() below for how traversal ('..') and absolute
+# paths outside it are rejected.
+WORKSPACE_DIR = ORCA_HOME / "workspace"
+WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_in_workspace(path: str) -> Path | None:
+    """
+    Resolves a caller-supplied path against WORKSPACE_DIR, returning None
+    if the resolved path would escape it — via '..' traversal, an absolute
+    path pointing elsewhere, or a symlink resolving outside the sandbox.
+    """
+    raw = Path(path).expanduser()
+    candidate = raw.resolve() if raw.is_absolute() else (WORKSPACE_DIR / raw).resolve()
+
+    try:
+        candidate.relative_to(WORKSPACE_DIR.resolve())
+    except ValueError:
+        return None
+    return candidate
 
 
 @dataclass
@@ -47,15 +77,16 @@ class ToolRegistry:
 
 
 def build_registry(memory_engine=None) -> ToolRegistry:
-    from orca.tools.web import search_and_fetch
+    from orca.tools.search_grounding import search_and_ground
     from orca.tools.code import run_code
+    from orca.tools.security import run_security_scan
 
     registry = ToolRegistry()
 
     registry.register(Tool(
         name="web_search",
         description="Search the web for current information, documentation, or facts",
-        fn=lambda query, n=5: search_and_fetch(query, n=n),
+        fn=lambda query, n=5: search_and_ground(query, n=n)[0],
         params={
             "type": "object",
             "properties": {
@@ -110,12 +141,33 @@ def build_registry(memory_engine=None) -> ToolRegistry:
 
     registry.register(Tool(
         name="shell",
-        description="Run a non-destructive shell command",
+        description=(
+            "Run a single allowed read-oriented command (ls, cat, pwd, grep, find, git, etc.) — "
+            "not arbitrary shell execution. No pipes/chaining, no code interpreters."
+        ),
         fn=lambda command: __import__("orca.tools.code", fromlist=["run_shell"]).run_shell(command).format(),
         params={
             "type": "object",
             "properties": {"command": {"type": "string"}},
             "required": ["command"],
+        },
+    ))
+
+    registry.register(Tool(
+        name="security_scan",
+        description=(
+            "Run a real static security scan on a file or directory in the workspace: "
+            "bandit (Python SAST) for .py files, plus a hardcoded-secret pattern scan "
+            "across all files regardless of language (API keys, private key headers, "
+            "AWS/Slack/GitHub tokens)."
+        ),
+        fn=lambda path=".": _format_scan_result(run_security_scan(path)),
+        params={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File or directory path within the sandboxed workspace", "default": "."},
+            },
+            "required": [],
         },
     ))
 
@@ -151,8 +203,9 @@ def build_registry(memory_engine=None) -> ToolRegistry:
 
 
 def _read_file(path: str, lines: int | None = None) -> str:
-    from pathlib import Path
-    p = Path(path).expanduser()
+    p = _resolve_in_workspace(path)
+    if p is None:
+        return f"Access denied: '{path}' is outside the sandboxed workspace directory ({WORKSPACE_DIR})."
     if not p.exists():
         return f"File not found: {path}"
     text = p.read_text(errors="replace")
@@ -162,21 +215,26 @@ def _read_file(path: str, lines: int | None = None) -> str:
 
 
 def _write_file(path: str, content: str) -> str:
-    from pathlib import Path
-    p = Path(path).expanduser()
+    p = _resolve_in_workspace(path)
+    if p is None:
+        return f"Access denied: '{path}' is outside the sandboxed workspace directory ({WORKSPACE_DIR})."
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content)
-    return f"Written: {path} ({len(content)} chars)"
+    return f"Written: {p} ({len(content)} chars)"
+
+
+def _format_scan_result(result) -> str:
+    return result.format() if hasattr(result, "format") else str(result)
 
 
 def _investor_research(query: str) -> str:
     """Targeted web search for investor and market intelligence."""
-    from orca.tools.web import search_and_fetch
+    from orca.tools.search_grounding import search_and_ground
     investor_query = f"{query} site:crunchbase.com OR site:techcrunch.com OR site:ycombinator.com OR investors funding"
-    results = search_and_fetch(investor_query, n=5)
-    if not results or results.startswith("Search failed"):
+    results, _ = search_and_ground(investor_query, n=5)
+    if not results or results.startswith("No search results"):
         # Fallback: plain search
-        results = search_and_fetch(query, n=5)
+        results, _ = search_and_ground(query, n=5)
     return results
 
 

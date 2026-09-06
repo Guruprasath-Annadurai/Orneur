@@ -128,18 +128,25 @@ class KnowledgeGraph:
         self._relationships.append(rel)
         return rel
 
-    def extract_and_add(self, text: str, source: str, brain: "OrcaBrain") -> list[Relationship]:
+    def extract_and_add(self, text: str, source: str, brain: "OrcaBrain", priority: str = "BACKGROUND") -> list[Relationship]:
         """
         Prompts the LLM to extract (subject, predicate, object) triples from
         text and adds them to the graph. Returns the relationships added
         (including ones that already existed — dedup happens internally).
         Never raises — extraction failure just means nothing gets added
         this turn, not a broken conversation.
+
+        `priority` defaults to BACKGROUND (not INTERACTIVE): every real
+        caller (orca/serve/api.py) invokes this as a fire-and-forget
+        background task after the user's own response has already been
+        sent, and it should never contend for a deployment's bounded
+        concurrency permits at the same priority as a real foreground
+        request -- see docs/orneur/phase-3/OLLAMA_TEST_RELIABILITY.md.
         """
         try:
             raw = brain.complete(
                 [{"role": "user", "content": _EXTRACTION_PROMPT.format(text=text[:3000])}],
-                temperature=0.1, max_tokens=500,
+                temperature=0.1, max_tokens=500, priority=priority,
             )
             match = re.search(r"\[.*\]", raw, re.DOTALL)
             if not match:
