@@ -140,7 +140,7 @@ def run_one_race(run_id: str) -> dict:
         and audit.get("committed") == 1 and audit.get("lost_race") == 1
         and audit.get("false_committed_audit", -1) == 0
     )
-    delivery_failure = (
+    delivery_failure = bool(
         audit.get("total_events", -1) == 0
         and (results["HOST_A"].get("error") or results["HOST_B"].get("error"))
     )
@@ -173,6 +173,13 @@ def run_one_race_with_delivery_retry(max_attempts: int = 3) -> dict:
         all_attempts.append(result)
         if result.get("invariant_ok") or not result.get("delivery_failure"):
             break
+        # A delivery failure means Host A's /tmp/phase14b is very
+        # likely gone (pod recycled) -- reupload before the NEXT
+        # attempt, otherwise every retry fails identically for the
+        # same reason (observed directly: 3/3 races failed the same
+        # way in workflow run 34032203393 because nothing ever
+        # re-uploaded the actor script after the first pod recycle).
+        _reupload_actor_script()
     final = dict(all_attempts[-1])
     final["all_attempts"] = all_attempts
     return final
