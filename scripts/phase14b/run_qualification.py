@@ -117,11 +117,42 @@ def run_one_race(run_id: str) -> dict:
         and audit.get("committed") == 1 and audit.get("lost_race") == 1
         and audit.get("false_committed_audit", -1) == 0
     )
+    delivery_failure = (
+        audit.get("total_events", -1) == 0
+        and (results["HOST_A"].get("error") or results["HOST_B"].get("error"))
+    )
     return {
         "run_id": run_id, "lease_id": lease_id, "results": results,
         "audit": audit, "allow_count": allow_count, "deny_count": deny_count,
-        "invariant_ok": invariant_ok,
+        "invariant_ok": invariant_ok, "delivery_failure": delivery_failure,
     }
+
+
+def run_one_race_with_delivery_retry(max_attempts: int = 3) -> dict:
+    """A `delivery_failure` (neither host ever reached a real ALLOW/DENY
+    decision -- e.g. Northflank's command-exec transport itself
+    returning a bare exit 255, or a barrier timeout because the peer
+    never started -- means the authority/audit code path was NEVER
+    exercised (`total_events == 0`): this is a harness/transport failure,
+    not evidence of the concurrency invariant misbehaving, so it is
+    retried under a fresh run_id/lease_id up to `max_attempts` times.
+    A REAL invariant violation (both hosts got a real decision but the
+    result was wrong) is never retried -- it is returned immediately
+    and counts as a hard failure, exactly per spec ("one intermittent
+    violation = FAIL, do not average away a race bug"). Every attempt,
+    including delivery failures that were retried past, is preserved
+    in `all_attempts` so nothing is hidden from the evidence."""
+    all_attempts = []
+    for attempt in range(1, max_attempts + 1):
+        run_id = f"race-{uuid.uuid4().hex[:12]}"
+        result = run_one_race(run_id)
+        result["attempt"] = attempt
+        all_attempts.append(result)
+        if result.get("invariant_ok") or not result.get("delivery_failure"):
+            break
+    final = dict(all_attempts[-1])
+    final["all_attempts"] = all_attempts
+    return final
 
 
 def run_session_visibility(run_id: str) -> dict:
@@ -320,9 +351,8 @@ def main() -> None:
 
     all_results = []
     for i in range(args.race_runs):
-        run_id = f"race-{uuid.uuid4().hex[:12]}"
-        print(f"::group::Race {i + 1}/{args.race_runs} (run_id={run_id})")
-        result = run_one_race(run_id)
+        print(f"::group::Race {i + 1}/{args.race_runs}")
+        result = run_one_race_with_delivery_retry()
         print(json.dumps(result, indent=2))
         print("::endgroup::")
         all_results.append(result)
