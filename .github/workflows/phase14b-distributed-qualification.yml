@@ -119,19 +119,19 @@ jobs:
         if: github.event.inputs.fresh_runner_mode == 'northflank_inspect'
         run: |
           echo "::group::Projects"
-          npx --yes @northflank/cli get projects --output json
+          npx --yes @northflank/cli list projects --noDefaults --output json
           echo "::endgroup::"
           echo "::group::Staging project detail"
-          npx --yes @northflank/cli get project --project "$NORTHFLANK_PROJECT" --output json
+          npx --yes @northflank/cli get project --project "$NORTHFLANK_PROJECT" --noDefaults --output json
           echo "::endgroup::"
           echo "::group::Services in staging project"
-          npx --yes @northflank/cli get services --project "$NORTHFLANK_PROJECT" --output json
+          npx --yes @northflank/cli list services --project "$NORTHFLANK_PROJECT" --noDefaults --output json
           echo "::endgroup::"
           echo "::group::orneur-api-a service detail"
-          npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --output json
+          npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --noDefaults --output json
           echo "::endgroup::"
           echo "::group::orneur-api-a ports"
-          npx --yes @northflank/cli get service ports --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --output json
+          npx --yes @northflank/cli get service ports --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --noDefaults --output json
           echo "::endgroup::"
 
       - name: "Step 17: live health -- 3x /livez + /readyz on the real Host A pod (never exposed publicly, checked only via command-exec against localhost inside the pod)"
