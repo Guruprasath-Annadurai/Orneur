@@ -12,11 +12,11 @@ on:
         required: false
         default: "10"
       fresh_runner_mode:
-        description: "Spec Step 4 (fresh-runner/disposable-compute recovery): 'write' on this dispatch, terminate this runner, then 'read' on a SEPARATE later dispatch with the printed lease_id. 'health_check' for Step 17 (3x /livez + /readyz on the live Host A pod, never exposed publicly). 'cancellation' for Phase 14B.2 Step 18 (cancellation-only cloud qualification, both real hosts, no full scenario battery). Leave blank for the normal race+scenario battery."
+        description: "Spec Step 4 (fresh-runner/disposable-compute recovery): 'write' on this dispatch, terminate this runner, then 'read' on a SEPARATE later dispatch with the printed lease_id. 'health_check' for Step 17 (3x /livez + /readyz on the live Host A pod, never exposed publicly). 'cancellation' for Phase 14B.2 Step 18 (cancellation-only cloud qualification, both real hosts, no full scenario battery). 'northflank_inspect' for Phase 14C Step 2 (read-only project/service/quota listing, never mutates anything). Leave blank for the normal race+scenario battery."
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -114,6 +114,25 @@ jobs:
           echo "--- yet another attempt to replay the SAME consumed lease must be denied ---"
           python3 distributed_actor.py --role HOST_A --run-id freshrunner-fixed --action resolve_once --lease-id "${{ github.event.inputs.fresh_runner_lease_id }}" --principal-suffix runner3
           python3 distributed_actor.py --role ORCHESTRATOR --run-id freshrunner-fixed --action cleanup
+
+      - name: "Phase 14C Step 2: read-only Northflank project/service/quota inspection (never mutates anything)"
+        if: github.event.inputs.fresh_runner_mode == 'northflank_inspect'
+        run: |
+          echo "::group::Projects"
+          npx --yes @northflank/cli get projects --output json
+          echo "::endgroup::"
+          echo "::group::Staging project detail"
+          npx --yes @northflank/cli get project --project "$NORTHFLANK_PROJECT" --output json
+          echo "::endgroup::"
+          echo "::group::Services in staging project"
+          npx --yes @northflank/cli get services --project "$NORTHFLANK_PROJECT" --output json
+          echo "::endgroup::"
+          echo "::group::orneur-api-a service detail"
+          npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --output json
+          echo "::endgroup::"
+          echo "::group::orneur-api-a ports"
+          npx --yes @northflank/cli get service ports --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --output json
+          echo "::endgroup::"
 
       - name: "Step 17: live health -- 3x /livez + /readyz on the real Host A pod (never exposed publicly, checked only via command-exec against localhost inside the pod)"
         if: github.event.inputs.fresh_runner_mode == 'health_check'
