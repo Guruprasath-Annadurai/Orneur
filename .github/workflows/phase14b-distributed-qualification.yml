@@ -76,6 +76,10 @@ jobs:
         run: |
           python3 scripts/phase14b/run_qualification.py --race-runs "${{ github.event.inputs.race_runs }}"
 
+      - name: Run remaining distributed scenarios (session visibility, tenant isolation, security-root propagation, stale worker, outages, deadline, budget)
+        run: |
+          python3 scripts/phase14b/run_qualification.py --scenario all_scenarios
+
       - name: Cleanup barrier rows on Host B side (safety net; script also cleans up per-run)
         if: always()
         run: |
@@ -91,5 +95,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: phase14b-distributed-evidence
-          path: scripts/phase14b/qualification_results.json
+          path: |
+            scripts/phase14b/qualification_results.json
+            scripts/phase14b/scenario_results.json
           if-no-files-found: warn

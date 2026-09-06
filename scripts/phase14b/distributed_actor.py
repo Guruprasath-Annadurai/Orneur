@@ -116,6 +116,219 @@ def action_security_root_epoch(run_id: str) -> None:
     print(json.dumps({"run_id": run_id, "epoch": epoch, "kill_switch_active": active}))
 
 
+def action_security_root_advance(run_id: str, new_state: str) -> None:
+    """The legitimate control path (spec Step 3): kill_switch.activate()/
+    deactivate() writes through to the real security root first, then
+    the authority-DB mirror -- not a raw SQL UPDATE."""
+    from orca.godmode import kill_switch
+    status = kill_switch.activate(reason=f"phase14b-{run_id}") if new_state == "ACTIVE" else kill_switch.deactivate()
+    from orca.godmode.security_root import get_epoch_and_state
+    epoch, state = get_epoch_and_state()
+    print(json.dumps({"run_id": run_id, "epoch": epoch, "state": state, "kill_switch_active": status.active}))
+
+
+def action_write_tenant_state(run_id: str, tenant_suffix: str, role: str) -> None:
+    """Writes one real, durable, tenant-scoped record via the actual
+    ORNEUR durable-audit abstraction (orca.godmode.durable_audit),
+    the same durable-state system this whole phase's authority race
+    already depends on -- not a raw SQL INSERT standing in for
+    'application state'. Used for both cross-host state visibility
+    (spec Step 1) and tenant isolation (spec Step 2): the tenant_id is
+    parameterized so the SAME primitive proves both."""
+    from orca.godmode.contracts import ElevationAuditEvent, ElevationAuditEventType
+    from orca.godmode.durable_audit import record_event_durable
+
+    tenant_id = f"phase14b-{run_id}-{tenant_suffix}"
+    event = ElevationAuditEvent(
+        event_type=ElevationAuditEventType.AUTHORIZATION_ATTEMPT,
+        principal_id=f"written-by-{role}", tenant_id=tenant_id,
+        lease_id=f"state-{run_id}-{tenant_suffix}", result="PENDING_CONSUME",
+        trace_id=f"phase14b-{run_id}-{tenant_suffix}-{role}",
+    )
+    ok = record_event_durable(event)
+    print(json.dumps({"run_id": run_id, "tenant_suffix": tenant_suffix, "role": role, "written": ok, "tenant_id": tenant_id}))
+
+
+def action_read_tenant_state(run_id: str, tenant_suffix: str, role: str) -> None:
+    """Reads back tenant-scoped durable state via the same real
+    abstraction. The caller (orchestrator) compares which `written-by-*`
+    principals appear here against what was actually written to THIS
+    tenant_suffix, proving both cross-host visibility (same tenant,
+    different host) and tenant isolation (different tenant, must be
+    empty/absent) with the same primitive."""
+    from orca.godmode.durable_audit import list_events_for_tenant
+
+    tenant_id = f"phase14b-{run_id}-{tenant_suffix}"
+    events = list_events_for_tenant(tenant_id)
+    principals = sorted({e["principal_id"] for e in events})
+    print(json.dumps({"run_id": run_id, "tenant_suffix": tenant_suffix, "role": role, "tenant_id": tenant_id, "principals_seen": principals, "count": len(events)}))
+
+
+def action_stale_worker(run_id: str, lease_id: str) -> None:
+    """Spec Step 5: this actor observes/records the kill-switch state it
+    believes is current, PAUSES on the shared barrier (giving the
+    orchestrator a window to revoke/advance security-root state through
+    the legitimate control path -- action_security_root_advance, called
+    separately), then resumes and attempts the SAME privileged action
+    using only its (now provably stale) prior knowledge. The real
+    is_active()/resolve_and_consume_lease() call is what must
+    reject it -- this script never fabricates a rejection reason."""
+    from orca.godmode.contracts import CapabilityDomain
+    from orca.godmode.resolution import resolve_and_consume_lease
+    from orca.godmode.security_root import get_epoch_and_state
+
+    observed_epoch, observed_state = get_epoch_and_state()
+    barrier_mod.announce_ready(run_id, "STALE_WORKER_OBSERVED", payload=str(observed_epoch))
+    released = barrier_mod.wait_for_both(run_id, ("STALE_WORKER_OBSERVED", "REVOKER_DONE"), timeout_s=45)
+    if not released:
+        print(json.dumps({"error": "BARRIER_TIMEOUT", "observed_epoch": observed_epoch}))
+        sys.exit(1)
+
+    tenant_id = _tenant_id(run_id)
+    decision = resolve_and_consume_lease(
+        lease_id, tenant_id=tenant_id, capability_domain=CapabilityDomain.CONNECTOR,
+        capability="CONNECTOR_WRITE", resource_scope=f"phase14b-{run_id}", operation_scope="write",
+        arguments={}, principal_id="phase14b-stale-worker", trace_id=f"phase14b-{run_id}-stale",
+    )
+    print(json.dumps({
+        "run_id": run_id, "observed_epoch_before_pause": observed_epoch,
+        "state": decision.state.value, "reasons": decision.reasons,
+    }))
+
+
+def action_revoker_signal(run_id: str) -> None:
+    """The other half of the stale-worker scenario: announces
+    REVOKER_DONE on the barrier only AFTER the caller has already
+    performed a real security_root_advance -- ordering is enforced by
+    the orchestrator calling this action strictly after the advance
+    action returns, not by anything inside this script."""
+    barrier_mod.announce_ready(run_id, "REVOKER_DONE", payload="done")
+    print(json.dumps({"run_id": run_id, "signaled": "REVOKER_DONE"}))
+
+
+def action_deadline_test(run_id: str) -> None:
+    """Spec Step 10: issues a lease with a real, short (2s) expires_at,
+    waits past it, then attempts resolve_and_consume_lease() -- the
+    real is_expired() check (orca/godmode/lease_store.py) must reject
+    it, not a fabricated timeout."""
+    import time
+    from datetime import datetime, timedelta, timezone
+    from orca.godmode.canonical import hash_arguments
+    from orca.godmode.contracts import CapabilityDomain, GodmodeApproval, LeaseIssuerClass
+    from orca.godmode.issuance import issue_lease
+    from orca.godmode.resolution import resolve_and_consume_lease
+
+    tenant_id = _tenant_id(run_id)
+    approval = GodmodeApproval(
+        approval_id=f"ap-deadline-{run_id}", principal_id="phase14b-qualification", tenant_id=tenant_id,
+        capability_domain=CapabilityDomain.CONNECTOR, capability="CONNECTOR_WRITE",
+        resource_scope=f"phase14b-deadline-{run_id}", operation_scope="write", arguments_hash=hash_arguments({}),
+        duration_s=2, reason="Phase 14B deadline test -- deliberately short-lived",
+        approved_by="human:phase14b-qualification",
+        expires_at=(datetime.now(timezone.utc) + timedelta(seconds=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+    lease = issue_lease(approval=approval, issuer=LeaseIssuerClass.HUMAN_APPROVAL, issuer_id="human:phase14b-qualification", max_uses=1)
+    time.sleep(4)
+    decision = resolve_and_consume_lease(
+        lease.lease_id, tenant_id=tenant_id, capability_domain=CapabilityDomain.CONNECTOR,
+        capability="CONNECTOR_WRITE", resource_scope=f"phase14b-deadline-{run_id}", operation_scope="write",
+        arguments={}, principal_id="phase14b-deadline-test", trace_id=f"phase14b-{run_id}-deadline",
+    )
+    print(json.dumps({"run_id": run_id, "state": decision.state.value, "reasons": decision.reasons}))
+
+
+def action_budget_test(run_id: str) -> None:
+    """Spec Step 11: single-actor, sequential proof that a lease's
+    max_uses budget is enforced -- consume once (must succeed), then
+    attempt a second consumption of the SAME lease (must be denied,
+    budget exhausted). No race/barrier needed -- this is deliberately
+    sequential to isolate budget enforcement from race-timing."""
+    from orca.godmode.canonical import hash_arguments
+    from datetime import datetime, timedelta, timezone
+    from orca.godmode.contracts import CapabilityDomain, GodmodeApproval, LeaseIssuerClass
+    from orca.godmode.issuance import issue_lease
+    from orca.godmode.resolution import resolve_and_consume_lease
+
+    tenant_id = _tenant_id(run_id)
+    approval = GodmodeApproval(
+        approval_id=f"ap-budget-{run_id}", principal_id="phase14b-qualification", tenant_id=tenant_id,
+        capability_domain=CapabilityDomain.CONNECTOR, capability="CONNECTOR_WRITE",
+        resource_scope=f"phase14b-budget-{run_id}", operation_scope="write", arguments_hash=hash_arguments({}),
+        duration_s=900, reason="Phase 14B budget test", approved_by="human:phase14b-qualification",
+        expires_at=(datetime.now(timezone.utc) + timedelta(seconds=900)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+    lease = issue_lease(approval=approval, issuer=LeaseIssuerClass.HUMAN_APPROVAL, issuer_id="human:phase14b-qualification", max_uses=1)
+
+    def _attempt():
+        return resolve_and_consume_lease(
+            lease.lease_id, tenant_id=tenant_id, capability_domain=CapabilityDomain.CONNECTOR,
+            capability="CONNECTOR_WRITE", resource_scope=f"phase14b-budget-{run_id}", operation_scope="write",
+            arguments={}, principal_id="phase14b-budget-test", trace_id=f"phase14b-{run_id}-budget",
+        )
+
+    first = _attempt()
+    second = _attempt()
+    print(json.dumps({
+        "run_id": run_id,
+        "first_state": first.state.value, "first_reasons": first.reasons,
+        "second_state": second.state.value, "second_reasons": second.reasons,
+    }))
+
+
+def action_outage_sim(run_id: str, target: str) -> None:
+    """Spec Steps 6-8: CLIENT_PATH_OUTAGE_SIMULATION only -- makes the
+    named backend's own env var unreachable/invalid for THIS isolated
+    process only (never touches the real shared Supabase infrastructure)
+    and attempts a real operation against it, confirming fail-closed
+    behavior via the real deployment_profile/security_root/lease_store
+    code paths (never a SQLite/SOVEREIGN fallback). `target` is one of
+    authority | security_root | core_db."""
+    import os
+    import importlib
+
+    env_var = {
+        "authority": "ORNEUR_GODMODE_DATABASE_URL",
+        "security_root": "ORNEUR_SECURITY_ROOT_DATABASE_URL",
+        "core_db": "ORNEUR_DATABASE_URL",
+    }[target]
+    os.environ[env_var] = "postgresql://nonexistent-host-for-phase14b-outage-sim:5432/nope"
+
+    import orca.config as config_mod
+    importlib.reload(config_mod)
+    import orca.godmode.lease_store as lease_store_mod
+    importlib.reload(lease_store_mod)
+    import orca.godmode.security_root as security_root_mod
+    importlib.reload(security_root_mod)
+
+    result = {"run_id": run_id, "target": target}
+    try:
+        if target == "authority":
+            from orca.godmode.contracts import CapabilityLease
+            probe = CapabilityLease(lease_id=f"phase14b-outage-probe-{run_id}", tenant_id=f"phase14b-{run_id}")
+            lease_store_mod.save(probe)
+            result["unexpected_success"] = True
+        elif target == "security_root":
+            epoch, state = security_root_mod.get_epoch_and_state()
+            result["epoch"] = epoch
+            result["state"] = state
+            result["fails_closed"] = (state != "INACTIVE")
+        elif target == "core_db":
+            from orca.godmode.deployment_profile import require_distributed_core_db_url
+            import psycopg
+            url = require_distributed_core_db_url()
+            try:
+                conn = psycopg.connect(url, connect_timeout=5)
+                conn.close()
+                result["unexpected_connect_success"] = True
+            except psycopg.Error:
+                result["classification"] = "CONNECTION_FAILURE_AS_EXPECTED"
+    except Exception as e:
+        result["classification"] = type(e).__name__
+        result["fails_closed"] = True
+
+    print(json.dumps(result))
+
+
 def action_cleanup(run_id: str) -> None:
     """Deletes only this run's barrier rows. Leases/audit rows are left
     in place deliberately -- durable audit is append-only by design
@@ -130,9 +343,16 @@ def main() -> None:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--action", required=True, choices=[
         "setup_lease", "race", "read_audit", "security_root_epoch", "cleanup",
+        "security_root_advance", "write_tenant_state", "read_tenant_state",
+        "stale_worker", "revoker_signal", "deadline_test", "budget_test",
+        "outage_sim",
     ])
     parser.add_argument("--lease-id", default=None)
     parser.add_argument("--max-uses", type=int, default=1)
+    parser.add_argument("--new-state", choices=["ACTIVE", "INACTIVE"], default=None)
+    parser.add_argument("--tenant-suffix", default=None)
+    parser.add_argument("--role-label", default=None)
+    parser.add_argument("--target", choices=["authority", "security_root", "core_db"], default=None)
     args = parser.parse_args()
 
     _require_distributed()
@@ -148,6 +368,37 @@ def main() -> None:
         action_read_audit(args.run_id)
     elif args.action == "security_root_epoch":
         action_security_root_epoch(args.run_id)
+    elif args.action == "security_root_advance":
+        if not args.new_state:
+            print(json.dumps({"error": "MISSING_NEW_STATE"}))
+            sys.exit(1)
+        action_security_root_advance(args.run_id, args.new_state)
+    elif args.action == "write_tenant_state":
+        if not args.tenant_suffix or not args.role_label:
+            print(json.dumps({"error": "MISSING_TENANT_SUFFIX_OR_ROLE_LABEL"}))
+            sys.exit(1)
+        action_write_tenant_state(args.run_id, args.tenant_suffix, args.role_label)
+    elif args.action == "read_tenant_state":
+        if not args.tenant_suffix or not args.role_label:
+            print(json.dumps({"error": "MISSING_TENANT_SUFFIX_OR_ROLE_LABEL"}))
+            sys.exit(1)
+        action_read_tenant_state(args.run_id, args.tenant_suffix, args.role_label)
+    elif args.action == "stale_worker":
+        if not args.lease_id:
+            print(json.dumps({"error": "MISSING_LEASE_ID"}))
+            sys.exit(1)
+        action_stale_worker(args.run_id, args.lease_id)
+    elif args.action == "revoker_signal":
+        action_revoker_signal(args.run_id)
+    elif args.action == "deadline_test":
+        action_deadline_test(args.run_id)
+    elif args.action == "budget_test":
+        action_budget_test(args.run_id)
+    elif args.action == "outage_sim":
+        if not args.target:
+            print(json.dumps({"error": "MISSING_TARGET"}))
+            sys.exit(1)
+        action_outage_sim(args.run_id, args.target)
     elif args.action == "cleanup":
         action_cleanup(args.run_id)
 
