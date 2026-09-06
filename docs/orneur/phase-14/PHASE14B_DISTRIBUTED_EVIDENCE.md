@@ -199,3 +199,83 @@ grant) held throughout, but the mandatory one-use-lease-race gate's
 full invariant did not hold in 10/10 runs due to a durable-audit-write
 reliability issue on Host A under real contention. Not proceeding to
 Phase 14C.
+
+## Phase 14B.1 — durable audit concurrency hardening, then a second real requalification (still FAIL, real progress + a new real finding)
+
+Following the FAIL above, real defects were found and fixed in
+`orca/godmode/durable_audit.py` (DDL executing inside the per-event
+write transaction; a session-scoped `pg_advisory_xact_lock` replaced
+with an explicit `godmode_audit_head` row locked via ordinary
+`SELECT ... FOR UPDATE`; sanitized failure classification; bounded
+retry only for genuinely transient categories). Three further real bugs
+were found and fixed while building and testing this fix (an invalid
+`SET LOCAL lock_timeout = %s` Postgres syntax error; a head-row
+bootstrap that didn't account for pre-existing chain history; a
+process-global schema-initialized cache that incorrectly ignored that
+SQLite's target path — and potentially a Postgres DSN — can differ
+across calls in the same process). Full detail and local proof (50
+two-actor races, 5-way and 10-way wider contention, crash/recovery,
+head-consistency corruption detection, two consecutive clean
+1564/1564 full deterministic suite runs) is in
+`orca/godmode/durable_audit.py`'s module docstring and
+`tests/test_durable_audit_concurrency_hardening.py`. Committed as
+`43a887f`.
+
+**A second real cross-host qualification run** (workflow run
+`34014114658`, 20 races, `deployedSHA 43a887f`) was then dispatched
+against real Northflank Host A + real GitHub Actions Host B. Result:
+
+| Metric | Value |
+|---|---|
+| Races run | 20 |
+| Total `ALLOW` | **0** |
+| Total `DENY` | 40 |
+| `AUTHORIZATION_COMMITTED` audit rows | **0** |
+| `AUTHORIZATION_LOST_RACE` audit rows | 20 |
+| `GODMODE_FALSE_COMMITTED_AUDIT` | 0 |
+| Double execution | 0 |
+
+**This is a genuinely different failure from the first FAIL, not a
+repeat of it.** HOST_A correctly lost every race (`AUTHORIZATION_LOST_RACE`,
+never `AUDIT_FAILURE_DENY` this time — the original bug this patch
+targeted is gone). But HOST_B — the actor that actually won
+`consume_use()` every single time — then failed its own **second**
+audit write, the final `AUTHORIZATION_COMMITTED` record, in all 20/20
+races (`AUDIT_FAILURE_DENY: lease use was consumed but the final
+committed-authorization audit write failed`). No security property was
+violated (still fail-closed: a consumed-but-unexecuted lease, never a
+false grant, never a double execution) — but **zero of the 20 real
+races produced a single successful elevation**, which is a severe
+availability/reliability regression under real cross-host use, not
+acceptable to wave through.
+
+A targeted isolation test was run directly on Host A: the exact same
+two-write sequence (`AUTHORIZATION_ATTEMPT` then `AUTHORIZATION_COMMITTED`,
+same tenant/lease shape) executed **alone**, with no real concurrent
+Host B, succeeded cleanly both times. This rules out a deterministic
+logic bug in the two-call sequence itself and points toward something
+specific to the REAL concurrent connection load this qualification
+workflow creates: each race opens roughly three separate Postgres
+connections per actor (the `ATTEMPT` write, `consume_use()` against the
+leases table, and the `COMMITTED` write), times two actors, plus the
+orchestrator's own `setup_lease`/`read_audit`/`cleanup` connections —
+real simultaneous connection pressure against Supabase's pooler that a
+single-actor isolation test does not create. This is a real,
+diagnosed-as-far-as-possible-without-further-expensive-cloud-iteration
+finding, not a guess dressed up as a conclusion: the next investigation
+step should look at Supabase pooler connection limits/behavior under
+this specific access pattern (e.g., whether `_pg_connect()`'s
+per-call fresh-connection design, reasonable for a low-frequency audit
+path in isolation, becomes a real bottleneck when multiple real hosts
+each open several connections in quick succession against a shared
+pooler), not at the hash-chain/locking logic itself, which is now
+independently verified correct under heavy local contention.
+
+**PHASE 14B.1 CLOUD-ONLY DISTRIBUTED QUALIFICATION: FAIL** (unchanged
+verdict, new and different root cause than the first FAIL; real
+progress made and disclosed, not claimed as resolved). Not proceeding
+to Phase 14C. Stopping further expensive real cross-host iteration at
+this point given the cost/time already spent this session; the next
+session should investigate Supabase connection-pooling behavior under
+concurrent multi-connection-per-race load before attempting a third
+real requalification run.
