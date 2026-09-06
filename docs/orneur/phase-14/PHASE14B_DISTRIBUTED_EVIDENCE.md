@@ -271,11 +271,84 @@ each open several connections in quick succession against a shared
 pooler), not at the hash-chain/locking logic itself, which is now
 independently verified correct under heavy local contention.
 
-**PHASE 14B.1 CLOUD-ONLY DISTRIBUTED QUALIFICATION: FAIL** (unchanged
-verdict, new and different root cause than the first FAIL; real
-progress made and disclosed, not claimed as resolved). Not proceeding
-to Phase 14C. Stopping further expensive real cross-host iteration at
-this point given the cost/time already spent this session; the next
-session should investigate Supabase connection-pooling behavior under
-concurrent multi-connection-per-race load before attempting a third
-real requalification run.
+## Phase 14B.1.1 — the real root cause was code, not Supabase: fixed, then proven PASS twice
+
+A repository-level review rejected the connection-pooling hypothesis
+as premature and found two concrete, real defects instead:
+
+1. **DDL was still indirectly on the hot path.** `durable_audit.py`'s
+   own inline DDL had been removed (Phase 14B.1), but every connection
+   it uses comes from `orca.godmode.lease_store._pg_connect()`, which
+   itself ran `CREATE TABLE IF NOT EXISTS`/`CREATE INDEX IF NOT EXISTS`
+   on EVERY call. Fixed: split into `_pg_connect_raw()` (connection
+   only) and `_ensure_pg_schema(dsn)` (idempotent, keyed by DSN, run at
+   most once) — `_pg_connect()` keeps its existing contract for its 8+
+   other callers, unchanged.
+2. **Timeout ordering was genuinely contradictory.** `_pg_connect()`
+   sets a SESSION-level `statement_timeout` of 5000ms (for
+   `lease_store`'s own unrelated lock-wait bounding). `durable_audit.py`
+   separately set `SET LOCAL lock_timeout = '8000ms'` in the same
+   transaction — but the shorter, already-in-effect session default
+   fired first (SQLSTATE 57014 `QueryCanceled`, i.e. `STATEMENT_TIMEOUT`)
+   before the longer `lock_timeout` (SQLSTATE 55P03
+   `LockNotAvailable`) ever had a chance to. `_classify_pg_error` had
+   no case for `QueryCanceled`, so this fell through to a generic,
+   misleading `CONNECTION_FAILURE`. **This alone plausibly explains the
+   entire prior 20/20 cloud failure without any need to invoke Supabase
+   pooling.** Fixed: `durable_audit.py` now explicitly
+   `SET LOCAL`s BOTH values together in the coherent order
+   `connect_timeout(5000ms) < lock_timeout(5000ms) < statement_timeout(10000ms)`,
+   scoped to just its own transaction; added an explicit
+   `STATEMENT_TIMEOUT` category, proven against a real Postgres
+   SQLSTATE (not mocked).
+
+Full detail, local proof (real threaded lock-holder proving the
+ordering end-to-end, real `pg_sleep`-forced `STATEMENT_TIMEOUT`,
+50-race + 5-way/10-way contention re-verified — now both 100% reliable
+AND ~4x faster than the prior, wrong tuning, since correct
+classification means retries are rarely needed at all), and two
+consecutive clean 1566/1566 full deterministic suite runs are in
+`orca/godmode/durable_audit.py`'s module docstring and
+`tests/test_durable_audit_concurrency_hardening.py`. Committed as
+`c349928` (the two code fixes) and `6ae85cd` (additive sanitized
+failure-category surfaced in `decision.reasons`, no change to any
+ALLOW/DENY outcome).
+
+**Cheap cloud diagnostic** (3 races, workflow `34016747480`, per the
+explicit "do not burn another 20-run batch until this passes"
+instruction): **3/3 clean** — every race showed exactly 1
+`AUTHORIZATION_COMMITTED`, 1 `AUTHORIZATION_LOST_RACE`, 0
+`false_committed_audit`; the loser was correctly `AUTHORIZATION_LOST_RACE`
+every time, never `AUDIT_FAILURE_DENY` again.
+
+**Full mandatory cloud requalification** (20 races, workflow
+`34016965630`, `deployedSHA 6ae85cd`):
+
+| Metric | Value |
+|---|---|
+| Races run | 20 |
+| Races satisfying the full invariant | **20/20** |
+| Total `ALLOW` | 20 |
+| Total `DENY` | 20 |
+| `AUTHORIZATION_COMMITTED` | **20** |
+| `AUTHORIZATION_LOST_RACE` | **20** |
+| `GODMODE_FALSE_COMMITTED_AUDIT` | **0** |
+| Double execution | **0** |
+| Head consistency (`verify_head_consistency()`, live pod) | `{"valid": true, "head_seq": 177}` |
+
+**PHASE 14B.1.1 CLOUD-ONLY DISTRIBUTED QUALIFICATION: PASS.** The
+mandatory one-use-lease-race gate now holds cleanly under real
+cross-host contention: real Northflank Host A, real GitHub Actions
+Host B, real Supabase Postgres, 20/20 races with exactly one winner,
+exactly one correctly-recorded loser, zero audit-write failures, zero
+double execution, zero false-committed audits. The Supabase
+connection-pooling hypothesis was never confirmed as a factor — the
+actual root cause was two concrete, fixable bugs in this codebase's own
+connection/timeout handling.
+
+Ready to resume the remaining Phase 14B cross-host tests (session
+visibility, tenant isolation, security-root propagation, fresh-runner
+recovery, stale-worker rejection, outage simulations, cancellation,
+deadlines/budgets) — all still `NOT_EXECUTED` above and gated behind
+this race fix, which is now the first item in this document to
+genuinely pass.
