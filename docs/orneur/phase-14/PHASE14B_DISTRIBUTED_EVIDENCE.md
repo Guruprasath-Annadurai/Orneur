@@ -647,3 +647,225 @@ No `orca/` application code changed this session (`git diff --stat
 (`scripts/phase14b/`), the workflow, one test file, and this document.
 The already-deployed `6ae85cd` remains the correct SHA under live-health
 test above; no redeploy was required or performed.
+
+## PHASE 14B.2 — Godmode cancellation closure
+
+Per the explicit instruction to close the single remaining Phase 14B
+blocker (cancellation) without reopening any already-locked gate
+(authority races, audit concurrency, tenant isolation, security-root
+propagation, stale worker, outage handling, deadlines, budgets,
+disposable compute, no-Mac architecture, cloud topology, Supabase
+configuration) — none of those were touched.
+
+### Contract (spec Steps 1-2)
+
+`orca/godmode/cancellation.py` (new): a narrow, framework-agnostic
+`CancellationSignal` Protocol (`is_cancelled() -> bool`), three concrete
+implementations (`NoCancellation`, `ThreadCancellationSignal`,
+`CallableCancellationSignal`), and one asyncio-specific adapter
+(`current_task_cancellation_signal()`, using `Task.cancelling()` on
+Python 3.11+) kept deliberately in its own function so the rest of the
+module — and everything in `resolution.py` that only type-checks
+against the Protocol — has no `asyncio` dependency at import time.
+Never a bare dict; never couples Godmode itself to `asyncio.Event`.
+
+`ElevatedPolicyDecision` gained a `cancelled: bool = False` field —
+deliberately NOT a new `ElevatedPolicyDecisionState` value (`state`
+stays `DENY`); this is the machine-readable way to distinguish
+"cancelled" from an ordinary DENY (revoked/expired/scope-mismatch/
+lost-race/audit-failure) without string-matching `reasons`.
+
+Two new `ElevationAuditEventType` values: `AUTHORIZATION_CANCELLED`
+(every in-`resolve_and_consume_lease()` checkpoint, `result` always
+`CANCELLED_BEFORE_CONSUME` or `CANCELLED_AFTER_CONSUME`, never
+`ALLOW`) and `EXECUTION_CANCELLED_BEFORE_SIDE_EFFECT` (the caller-side
+gate, strictly after a real `AUTHORIZATION_COMMITTED` — that event is
+never rewritten or retracted). `count_false_committed_audit()`'s
+invariant (only `AUTHORIZATION_COMMITTED` may ever carry
+`result="ALLOW"`) holds automatically by construction.
+
+### Godmode integration (spec Steps 3-4)
+
+`resolve_and_consume_lease()` gained an optional `cancellation:
+CancellationSignal | None = None` parameter (omitting it — every
+existing caller — preserves current behavior exactly), checked at four
+cooperative, fail-safe checkpoints, all strictly before
+`AUTHORIZATION_COMMITTED` is ever written:
+
+- **A** — before `resolve_lease()` at all: nothing validated, nothing
+  consumed.
+- **B** — after validation ALLOW, before the pending-consume `ATTEMPT`
+  record: nothing consumed.
+- **C** — after `ATTEMPT` succeeds, before `consume_use()`: the use is
+  still unspent.
+- **D** — immediately after `consume_use()` succeeds, before
+  `AUTHORIZATION_COMMITTED`: the use **is already spent** here and is
+  never refunded or re-credited — this matches the function's own
+  pre-existing conservative semantics for an audit-write failure at
+  the identical point ("consumed but not executed" is acceptable safe
+  failure, never silently repaired).
+
+Threaded as an optional, default-`None`, fully backward-compatible
+parameter through `policy.py::evaluate_elevated_policy()`,
+`connector_elevation.py::evaluate_connector_policy_with_elevation()`,
+and `file_elevation.py::elevated_write_file()`.
+
+### Caller-side execution gate (spec Step 5)
+
+`check_and_record_pre_side_effect_cancellation()` — the mandatory gate
+between an ALLOW/COMMITTED decision and the actual privileged side
+effect, since a cancellation observed strictly *after*
+`resolve_and_consume_lease()` returns can otherwise still execute (that
+function has no way to observe anything past its own return). Records
+`EXECUTION_CANCELLED_BEFORE_SIDE_EFFECT` (best-effort) and blocks the
+side effect unconditionally on a positive cancellation check; never
+rewrites `AUTHORIZATION_COMMITTED`.
+
+Wired into:
+- **`AgentRuntime.execute_async()`** (`orca/agent/runtime.py`) — the
+  one real, already-cancellable production path (this loop already
+  catches `asyncio.CancelledError` around tool invocation and
+  `truth_checker`/`replan_fn` calls). `_try_elevate()` now forwards
+  `current_task_cancellation_signal()` into
+  `evaluate_elevated_policy()`, and the loop itself calls the
+  caller-side gate immediately before `registry.invoke_async()` for any
+  `ELEVATED_ACTION` (a `NORMAL_ACTION` never consumed a Godmode lease
+  and is already covered by the existing `CancelledError` handling).
+- **`file_elevation.py::elevated_write_file()`** — a self-contained
+  example (authorization and side effect in the same function): the
+  gate is checked immediately before `resolved.write_text()`.
+- **NOT** `connector_elevation.py` — its only current callers
+  (`orca/godmode/eval_harness.py`, simulations) are synchronous with no
+  real async/cancellable call path today; the optional parameter exists
+  for a future caller, but no live wiring is claimed (spec Step 11:
+  "do not wire imaginary dependencies").
+- `orca/serve/api.py` (the only FastAPI app in the repo) still never
+  calls into `resolve_and_consume_lease()` at all (confirmed directly,
+  not assumed) — there is no additional async endpoint to wire.
+
+### Outcome semantics (spec Step 6) — as implemented and tested
+
+| Case | Use consumed | Side effect | Result |
+|---|---|---|---|
+| Cancel before consume (checkpoints A/B/C) | No | No | `DENY`, `cancelled=True`, `AUTHORIZATION_CANCELLED`/`CANCELLED_BEFORE_CONSUME` |
+| Cancel after consume, before COMMITTED (checkpoint D) | Yes, not refunded | No | `DENY`, `cancelled=True`, `AUTHORIZATION_CANCELLED`/`CANCELLED_AFTER_CONSUME` |
+| Cancel after COMMITTED, before side effect (caller-side gate) | Yes (already granted) | No | `AUTHORIZATION_COMMITTED` stands unmodified; `EXECUTION_CANCELLED_BEFORE_SIDE_EFFECT` recorded separately; caller does not execute |
+| Side effect already executing when cancellation arrives | N/A | Best-effort/cooperative only | Not claimed reversible — no mechanism in this codebase pretends to un-execute a non-idempotent side effect, consistent with existing agent-runtime cancellation semantics |
+
+### Local tests (spec Steps 8-10) — 13/13 PASS
+
+`tests/test_godmode_cancellation.py` (added to
+`docs/orneur/phase-9/security_suite_files.txt`), against the same real
+local Postgres test database this phase's other authority tests use:
+
+- All four checkpoints (A/B/C/D), each independently and deterministically
+  targeted via a call-counted `CallableCancellationSignal`.
+- `cancellation=None` and `NoCancellation()` both preserve the existing
+  `ALLOW` path exactly.
+- The caller-side gate: blocks the side effect after a real commit
+  (COMMITTED preserved, `EXECUTION_CANCELLED_BEFORE_SIDE_EFFECT`
+  recorded), and allows it when not cancelled.
+- Deadline/cancellation composition: a genuinely expired lease denies
+  on its own merits with a live-but-never-triggered cancellation signal
+  present; a checkpoint-A cancellation against an also-expired lease
+  correctly reports cancellation first (checkpoint A is unconditionally
+  checked before `resolve_lease()`'s own expiry check — documented, not
+  treated as a defect).
+- Budget/cancellation composition: a cancelled-after-consume attempt
+  does not reset the lease's `max_uses` — a fresh retry is still
+  correctly denied for exhaustion.
+- **Real multiprocess concurrency** (Steps 9-10, not simulated): two
+  actor processes racing for one `max_uses=1` lease, coordinated via a
+  real `multiprocessing.Barrier`, each carrying its own
+  `CallableCancellationSignal` wrapping a shared `multiprocessing.Event`
+  — (a) cancellation set before either actor starts: 0 consumption, use
+  still available afterward; (b) cancellation never set: exactly 1
+  `ALLOW`/1 `DENY`, 1 `AUTHORIZATION_COMMITTED`, 1
+  `AUTHORIZATION_LOST_RACE`, 0 false-committed, valid chain — proving
+  the cancellation plumbing does not perturb the already-locked race
+  invariant when nothing actually cancels.
+
+Verified stable across two consecutive full-file runs against the same
+persistent local database with no reset in between (the exact scenario
+that broke `test_head_consistency_detects_injected_mismatch` earlier
+this session).
+
+### Cloud qualification (spec Steps 13, 18) — PASS, both real hosts
+
+Workflow `34050168247` (`fresh_runner_mode=cancellation`): the real
+`cancellation_test` action run on both Host B (this GitHub runner) and
+Host A (real Northflank pod, via `command-exec`) against the real
+cloud Postgres (Supabase CORE) — not a local test database. Both hosts,
+identical results:
+
+| Sub-scenario | Result |
+|---|---|
+| Cancel before consume | first attempt `DENY`/`cancelled=true`; uncancelled retry `ALLOW` (`use_preserved: true`) |
+| Cancel after consume | first attempt `DENY`/`cancelled=true`; uncancelled retry `DENY` for exhaustion, never refunded (`use_not_refunded: true`) |
+
+**Honestly scoped per spec Step 13/18**: the cancellation *signal*
+itself is constructed and checked entirely within each single actor
+process — there is no real cross-process/network worker RPC in this
+codebase to propagate a cancellation *from* one host *to* another (the
+Gateway is still in-process; see Step 12 below). This proves the
+in-process cancellation contract behaves correctly against the real
+distributed authority backend on each real host, not that a
+cancellation crosses a network boundary. That remains
+`NOT_APPLICABLE_YET` / a future gate, not claimed PASS.
+
+Same workflow run's small race regression batch (3 diagnostic races,
+per the standing cheap-preflight rule): 3/3 clean, 0 delivery-failure
+retries. A follow-up run (`34050534066`, 10 races + the full 9-scenario
+battery including `cancellation`) confirms zero perturbation of any
+already-locked gate: 10/10 races (`committed=10`, `lost_race=10`,
+`false_committed=0`), and `session_visibility`, `tenant_isolation`,
+`security_root_propagation`, `stale_worker`, all three outage
+simulations, `deadline`, and `budget` all still PASS exactly as before,
+plus `cancellation` PASS on both hosts within the same consolidated
+run.
+
+### Regression (spec Step 17) — PASS
+
+Full deterministic and full security suites, run sequentially against
+the same persistent local Postgres database (no reset in between, the
+realistic scenario), with the new cancellation code and its 13 tests
+included: **1579/1579 deterministic** (1566 + 13), **908/908 security**
+(895 + 13). Docker `build --load` succeeded; a SOVEREIGN-mode boot
+smoke test confirmed `/livez=200` and the expected `/readyz`
+classification with the cancellation code included in the image.
+
+Final live-health re-check on the newly-deployed commit (`55f089f` —
+Northflank auto-deploys this branch; confirmed by the cloud
+cancellation test running successfully against the new
+`orca.godmode.cancellation` module on Host A with no explicit redeploy
+step taken): workflow `34051710560`, 3/3 `/livez=200`, same pod
+(`orneur-api-a-874d74447-bhwqx`) throughout, `/readyz` correctly
+`not_ready` with only `model_runtime` unavailable.
+
+### Limitations (spec Step 12, honestly retained)
+
+- **Current**: in-process cancellation (a single actor process's own
+  `resolve_and_consume_lease()` call, checked against the real cloud
+  Postgres authority backend) is proven.
+- **Future**: cross-process/network cancellation propagation is
+  `NOT_APPLICABLE_YET`. No polling database or message bus was added
+  solely for this phase, per the explicit instruction not to build one
+  unless the architecture genuinely requires it. When a real
+  Gateway→worker RPC boundary is introduced, cancellation propagation
+  across that boundary becomes a **mandatory release gate before
+  production** — this is now written down as a standing requirement
+  for whichever future phase introduces that boundary, not merely
+  implied.
+- Client-disconnect testing of `/api/stream` was not exercised this
+  session — `orca/serve/api.py` does not call into
+  `resolve_and_consume_lease()` at all today (confirmed directly), so
+  there is no real Godmode-authority call path behind that endpoint to
+  test cancellation against; marked
+  `NOT_EXECUTED_MODEL_RUNTIME_DEPENDENCY`-equivalent (no fabricated
+  test written).
+
+### Secret/data hygiene — clean
+
+All three new workflow runs' logs and both evidence artifacts
+(`qualification_results.json`, `scenario_results.json`) scanned for
+DSNs, passwords, signing keys, bearer tokens — zero matches.
