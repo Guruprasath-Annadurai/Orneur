@@ -260,7 +260,7 @@ def resolve_and_consume_lease(
     # Gate 2: durable audit PRECONDITION, written BEFORE consume_use().
     # Explicitly NOT a final grant (spec patch §1) -- result is
     # "PENDING_CONSUME", never "ALLOW".
-    attempted = _audit_decision(
+    attempted, attempted_category = _audit_decision(
         event_type=ElevationAuditEventType.AUTHORIZATION_ATTEMPT, result="PENDING_CONSUME",
         lease_id=lease_id, tenant_id=tenant_id, capability=capability,
         resource_scope=resource_scope, operation_scope=operation_scope,
@@ -270,7 +270,7 @@ def resolve_and_consume_lease(
         decision.state = ElevatedPolicyDecisionState.DENY
         decision.reasons.append(
             "AUDIT_FAILURE_DENY: durable audit precondition write failed -- elevated action "
-            "denied before lease consumption was attempted (spec §16)"
+            f"denied before lease consumption was attempted (spec §16) (category: {attempted_category})"
         )
         return decision
 
@@ -295,7 +295,7 @@ def resolve_and_consume_lease(
     # Gate 4: the lease is now consumed. The final committed
     # authorization state must ALSO be durably recorded before the
     # caller may execute the privileged side effect (spec patch §3).
-    committed = _audit_decision(
+    committed, committed_category = _audit_decision(
         event_type=ElevationAuditEventType.AUTHORIZATION_COMMITTED, result="ALLOW",
         lease_id=lease_id, tenant_id=tenant_id, capability=capability,
         resource_scope=resource_scope, operation_scope=operation_scope,
@@ -307,7 +307,7 @@ def resolve_and_consume_lease(
             "AUDIT_FAILURE_DENY: lease use was consumed but the final committed-authorization "
             "audit write failed -- privileged side effect denied; the consumed lease use is "
             "NOT restored or re-credited (spec patch §5: consuming a lease without executing "
-            "is acceptable safe failure)"
+            f"is acceptable safe failure) (category: {committed_category})"
         )
         # Best-effort marker only -- the write path that just failed
         # is unlikely to succeed on an immediate retry.
@@ -325,19 +325,23 @@ def resolve_and_consume_lease(
 def _audit_decision(
     *, event_type, result: str, lease_id: str, tenant_id: str, capability: str,
     resource_scope: str, operation_scope: str, principal_id: str | None, trace_id: str | None,
-) -> bool:
+) -> tuple[bool, str]:
     """Constructs and durably persists one `ElevationAuditEvent`.
     `result` is passed explicitly by the caller (never derived from
     `decision.state` here) so that a pre-consume or lost-race event can
     never accidentally carry "ALLOW" -- see
     `resolve_and_consume_lease()`'s docstring for the full gate
-    sequence. Returns whether the durable write succeeded."""
+    sequence. Returns (success, sanitized_category) -- the category
+    (Phase 14B.1.1) is surfaced in `decision.reasons` on failure purely
+    as additive diagnostic text; it never changes which branch is taken
+    or the resulting ALLOW/DENY outcome. Never a DSN, credential, or raw
+    exception body -- see `durable_audit._classify_pg_error()`."""
     from orca.godmode.contracts import ElevationAuditEvent
-    from orca.godmode.durable_audit import record_event_durable
+    from orca.godmode.durable_audit import record_event_durable_with_diagnostics
 
     event = ElevationAuditEvent(
         event_type=event_type, principal_id=principal_id or "", tenant_id=tenant_id, lease_id=lease_id,
         capability=capability, resource_scope=resource_scope, operation_scope=operation_scope,
         trace_id=trace_id, result=result,
     )
-    return record_event_durable(event)
+    return record_event_durable_with_diagnostics(event)

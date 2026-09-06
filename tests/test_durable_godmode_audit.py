@@ -163,7 +163,7 @@ def test_allow_decision_denied_when_durable_audit_write_fails(tmp_path, monkeypa
     ls, durable_audit, resolution = _setup(home)
     lease = _issue_lease(home, "audit-fail-1")
 
-    monkeypatch.setattr(resolution, "_audit_decision", lambda *a, **k: False)
+    monkeypatch.setattr(resolution, "_audit_decision", lambda *a, **k: (False, "SIMULATED_FAILURE"))
     decision = _elevate(resolution, lease.lease_id)
     assert decision.state.value == "DENY"
     assert "audit" in " ".join(decision.reasons).lower()
