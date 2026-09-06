@@ -1,0 +1,50 @@
+name: Phase 14C Northflank Inspect (read-only)
+
+# Manual, read-only reconnaissance only -- lists the real Northflank
+# project/service/quota state before Phase 14C creates anything (spec
+# Step 2: "verify the current project/service quota. Do not assume the
+# quota."). Never mutates anything; never prints secret values.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: List real Northflank project/service state
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: phase14b-staging
+    env:
+      NORTHFLANK_PROJECT: orneur-phase14b-staging
+    steps:
+      - name: Fail closed if the token is missing
+        run: |
+          if [ -z "$NORTHFLANK_API_TOKEN" ]; then
+            echo "::error::NORTHFLANK_API_TOKEN not set in the phase14b-staging environment -- refusing to run."
+            exit 1
+          fi
+        env:
+          NORTHFLANK_API_TOKEN: ${{ secrets.NORTHFLANK_API_TOKEN }}
+
+      - name: Authenticate Northflank CLI (least-privileged service token, never printed)
+        run: |
+          npx --yes @northflank/cli login --token-login --token "$NORTHFLANK_API_TOKEN" --name phase14c-inspect --override
+        env:
+          NORTHFLANK_API_TOKEN: ${{ secrets.NORTHFLANK_API_TOKEN }}
+
+      - name: List projects
+        run: npx --yes @northflank/cli get projects --output json
+
+      - name: Get staging project detail (plan/quota)
+        run: npx --yes @northflank/cli get project --project "$NORTHFLANK_PROJECT" --output json
+
+      - name: List services in the staging project
+        run: npx --yes @northflank/cli get services --project "$NORTHFLANK_PROJECT" --output json
+
+      - name: Get orneur-api-a service detail (ports, networking, exposure)
+        run: npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service orneur-api-a --output json
+
+      - name: List ports on orneur-api-a
+        run: npx --yes @northflank/cli get service ports --project "$NORTHFLANK_PROJECT" --service orneur-api-a --output json
