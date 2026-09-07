@@ -431,30 +431,53 @@ class _Session:
         # models mid-conversation should be respected); Redis only fills in
         # when the caller didn't specify (session_id known, variant omitted).
         redis_state = session_store.load_session_state(session_id)
-        restored_history = None
+        self._restored_history = None
         if redis_state:
             model_variant = model_variant or redis_state.get("model_variant")
-            restored_history = redis_state.get("history")
+            self._restored_history = redis_state.get("history")
 
         self.model_variant = model_variant or "core"
         self.memory = MemoryEngine(session_id=session_id)
+        # Brain/agent/ctx resolution is LAZY -- see _ensure_agent() below.
+        # Phase 14C edge-qualification finding: doc upload/list/delete,
+        # memory recall/remember, knowledge graph, explain, and session
+        # export never touch the model at all, but used to pay for (and
+        # hard-fail on) a full tier/backend resolution anyway just because
+        # they went through _get_session(). model_runtime being
+        # unavailable is an expected, documented deployment state (see
+        # /readyz) -- a doc-only route shouldn't 500 because of it. Only
+        # chat/stream/ultra/session-load/vision actually need a brain, so
+        # those are the only paths that trigger resolution now, via the
+        # `agent`/`brain`/`ctx` properties.
+        self._brain = None
+        self._ctx = None
+        self._agent = None
+        self.doc_store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host)
+        self.explain_store = ExplainStore()
+        self.knowledge_graph = KnowledgeGraph(session_id=session_id)
+        self.last_active = time.time()
+
+    def _ensure_agent(self):
+        if self._agent is not None:
+            return
         # Cut over to the Model Gateway (Phase 2.1) -- GatewayBrain is a
         # drop-in replacement for OrcaBrain's exact interface, so nothing
         # below this line (ContextManager, AgentLoop, tools, memory) needed
         # to change. See docs/orneur/phase-2/LIVE_SERVING_CUTOVER.md.
         tier_resolution = TierResolution(
-            tier=(model_variant or "core").removeprefix("orca-"),
+            tier=(self.model_variant or "core").removeprefix("orca-"),
             backend="ollama",
-            model=_model_name_for_variant(model_variant),
+            model=_model_name_for_variant(self.model_variant),
             data_left_infrastructure=False,
         )
         brain = brain_for_tier_resolution(tier_resolution)
-        self.ctx = ContextManager(brain)
+        self._ctx = ContextManager(brain)
         tools = build_registry(memory_engine=self.memory)
-        self.agent = AgentLoop(brain=brain, tools=tools, session_id=session_id)
+        self._agent = AgentLoop(brain=brain, tools=tools, session_id=self.id)
+        self._brain = brain
 
-        if restored_history:
-            self.agent.load_history(restored_history)
+        if self._restored_history:
+            self._agent.load_history(self._restored_history)
         else:
             # Fallback: no exact turn history available (fresh session, or
             # Redis disabled/empty) — reconstruct rough context from the
@@ -462,16 +485,25 @@ class _Session:
             # exact history, only used when that's unavailable.
             prior = self.memory.load_prior_context()
             if prior:
-                self.agent.load_history([
+                self._agent.load_history([
                     {"role": "user", "content": f"[Prior context]\n{prior}"},
                     {"role": "assistant", "content": "Context loaded."},
                 ])
 
-        self.brain = brain
-        self.doc_store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host)
-        self.explain_store = ExplainStore()
-        self.knowledge_graph = KnowledgeGraph(session_id=session_id)
-        self.last_active = time.time()
+    @property
+    def agent(self):
+        self._ensure_agent()
+        return self._agent
+
+    @property
+    def brain(self):
+        self._ensure_agent()
+        return self._brain
+
+    @property
+    def ctx(self):
+        self._ensure_agent()
+        return self._ctx
 
     def touch(self):
         self.last_active = time.time()
