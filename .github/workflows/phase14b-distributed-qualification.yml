@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -203,6 +203,34 @@ jobs:
           echo "::endgroup::"
           echo "::group::Inherited (secret-group) runtime environment keys only"
           npx --yes @northflank/cli get service runtime-environment --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --show inherited --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(sorted(d.get('runtimeEnvironment',{}).keys())))"
+          echo "::endgroup::"
+
+      - name: "Phase 14C Step 7/9/10: set the public-edge env vars on orneur-api-a's OWN direct environment (confirmed empty/safe -- all real secrets are inherited from a separate secret group, untouched by this)"
+        if: github.event.inputs.fresh_runner_mode == 'configure_api_a_public_edge_env'
+        run: |
+          set -e
+          cat > /tmp/api-a-public-edge-env.json <<'JSON'
+          {
+            "runtimeEnvironment": {
+              "ORNEUR_ALLOWED_ORIGINS": "https://staging.orneur.com",
+              "ORNEUR_PUBLIC_EDGE": "1",
+              "ORNEUR_TRUSTED_HOSTS": "staging.orneur.com",
+              "APP_URL": "https://staging.orneur.com",
+              "PUBLIC_URL": "https://staging.orneur.com"
+            }
+          }
+          JSON
+          npx --yes @northflank/cli update service runtime-environment -f /tmp/api-a-public-edge-env.json --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --noDefaults --output json
+          echo "::group::Direct env keys after update (values never printed)"
+          npx --yes @northflank/cli get service runtime-environment --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --show this --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(sorted(d.get('runtimeEnvironment',{}).keys())))"
+          echo "::endgroup::"
+          echo "Waiting 25s for redeploy to roll out..."
+          sleep 25
+          echo "::group::Post-update self-check (authority_store/security_root/core_database must all remain ok)"
+          npx --yes @northflank/cli command-exec service \
+            --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
+            --shell-cmd "bash -c" --cmd "curl -s http://localhost:7337/readyz"
+          echo
           echo "::endgroup::"
 
       - name: "Phase 14C: restart orneur-edge-tunnel so it re-fetches the current TUNNEL_TOKEN secret value (same pod hash was observed retrying with a stale value across its own internal crash-loop restarts)"
