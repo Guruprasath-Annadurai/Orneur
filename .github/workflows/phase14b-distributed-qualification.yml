@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -380,6 +380,60 @@ jobs:
           sleep 20
           echo "::group::orneur-edge-tunnel logs after restart (defensively redacted)"
           npx --yes @northflank/cli get service logs --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --lineLimit 30 --noDefaults 2>&1 | sed -E 's/(eyJ|[A-Za-z0-9_-]{40,})/[REDACTED]/g'
+          echo "::endgroup::"
+
+      - name: "Phase 14C Step 23: tunnel outage/recovery -- restart orneur-edge-tunnel and poll the PUBLIC edge throughout, proving the failure is visible/bounded and recovery is automatic (no manual intervention beyond the restart itself)"
+        if: github.event.inputs.fresh_runner_mode == 'tunnel_outage_recovery'
+        run: |
+          set -e
+          echo "::group::Baseline -- public edge healthy before the restart"
+          curl -sS -o /dev/null -w 'pre-restart status=%{http_code}\n' --max-time 8 https://staging.orneur.com/livez || echo "pre-restart: request failed"
+          echo "::endgroup::"
+
+          echo "::group::Restart orneur-edge-tunnel (simulated outage)"
+          npx --yes @northflank/cli restart service --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --noDefaults --output json
+          echo "::endgroup::"
+
+          echo "::group::Poll public edge every 2s for up to 40s, recording when it degrades and when it recovers"
+          for i in $(seq 1 20); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 https://staging.orneur.com/livez 2>/dev/null || echo "000")
+            echo "t+$((i*2))s: status=$code"
+            sleep 2
+          done
+          echo "::endgroup::"
+
+          echo "::group::orneur-edge-tunnel logs across the restart (defensively redacted)"
+          npx --yes @northflank/cli get service logs --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --lineLimit 40 --noDefaults 2>&1 | sed -E 's/(eyJ|[A-Za-z0-9_-]{40,})/[REDACTED]/g'
+          echo "::endgroup::"
+
+          echo "::group::Final confirmation -- public edge healthy again"
+          curl -sS -o /dev/null -w 'post-recovery status=%{http_code}\n' --max-time 8 https://staging.orneur.com/livez || echo "post-recovery: request failed"
+          echo "::endgroup::"
+
+      - name: "Phase 14C Step 24: orneur-api-a pod-recycle observation -- restart the ORIGIN service itself (not the tunnel) and confirm the tunnel reconnects to the new pod without any manual re-linking"
+        if: github.event.inputs.fresh_runner_mode == 'origin_pod_recycle'
+        run: |
+          set -e
+          echo "::group::Pod identity before recycle"
+          npx --yes @northflank/cli command-exec service --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --shell-cmd "bash -c" --cmd "hostname"
+          echo "::endgroup::"
+
+          echo "::group::Restart orneur-api-a"
+          npx --yes @northflank/cli restart service --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --noDefaults --output json
+          echo "::endgroup::"
+
+          echo "::group::Poll public edge every 2s for up to 40s"
+          for i in $(seq 1 20); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 https://staging.orneur.com/livez 2>/dev/null || echo "000")
+            echo "t+$((i*2))s: status=$code"
+            sleep 2
+          done
+          echo "::endgroup::"
+
+          echo "::group::Pod identity after recycle (expect a DIFFERENT hostname) + /readyz classification"
+          npx --yes @northflank/cli command-exec service --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --shell-cmd "bash -c" --cmd "hostname"
+          npx --yes @northflank/cli command-exec service --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --shell-cmd "bash -c" --cmd "curl -s http://localhost:7337/readyz"
+          echo
           echo "::endgroup::"
 
       - name: "Phase 14C Steps 7-9: DNS, TLS, and private-origin-bypass proof for staging.orneur.com, run from this external GitHub runner (never this Mac)"
