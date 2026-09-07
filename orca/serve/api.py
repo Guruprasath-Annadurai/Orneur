@@ -484,6 +484,25 @@ class _Session:
 _sessions: dict[str, _Session] = {}
 
 
+def _session_access_denied(session_id: str, user: "User | None") -> JSONResponse | None:
+    """Phase 14C edge-qualification finding: `/api/knowledge`,
+    `/api/explain`, `/api/session/{id}/export`, and `POST /api/session/load`
+    took a bare `session_id` with no ownership check at all -- any caller
+    who learned or guessed another user's session_id could read their
+    full transcript. A session recorded via `record_user_session()`
+    (i.e. it was created by a signed-in user) may only be read back by
+    that same user. A session with NO recorded owner (created
+    anonymously) is unaffected -- the session_id itself remains its own
+    shareable credential, preserving existing anonymous-chat behavior.
+    Returns a 404 (never 403) so an unauthorized caller cannot even
+    confirm the session exists."""
+    from orca.auth.store import get_session_owner
+    owner = get_session_owner(session_id)
+    if owner is not None and (user is None or user.id != owner):
+        return JSONResponse({"error": "session not found"}, status_code=404)
+    return None
+
+
 def _get_session(session_id: str | None, model_variant: str | None = None, user_id: str | None = None) -> _Session:
     sid = session_id or str(uuid.uuid4())
     if sid not in _sessions:
@@ -1383,7 +1402,10 @@ async def list_sessions():
 
 
 @app.post("/api/session/load")
-async def load_session(req: LoadSessionRequest):
+async def load_session(req: LoadSessionRequest, user: User | None = Depends(get_current_user_optional)):
+    denied = _session_access_denied(req.session_id, user)
+    if denied is not None:
+        return denied
     sess = _get_session(req.target_session_id)
     loaded = sess.memory.load_session(req.session_id)
     if loaded:
@@ -1403,12 +1425,15 @@ async def set_session_title(session_id: str, req: TitleRequest):
 
 
 @app.get("/api/explain/{session_id}/{message_id}")
-async def explain_answer(session_id: str, message_id: str):
+async def explain_answer(session_id: str, message_id: str, user: User | None = Depends(get_current_user_optional)):
     """
     'Explain this answer' — full retrieval chain, query intelligence, citation
     DNA, sufficiency confidence, contradictions, and agent reasoning trace
     for a specific assistant message.
     """
+    denied = _session_access_denied(session_id, user)
+    if denied is not None:
+        return denied
     sess = _get_session(session_id)
     record = sess.explain_store.get(message_id)
     if record is None:
@@ -1420,8 +1445,11 @@ async def explain_answer(session_id: str, message_id: str):
 
 
 @app.get("/api/knowledge/{session_id}")
-async def knowledge_graph_summary(session_id: str):
+async def knowledge_graph_summary(session_id: str, user: User | None = Depends(get_current_user_optional)):
     """Lists every entity the knowledge graph has extracted for this session."""
+    denied = _session_access_denied(session_id, user)
+    if denied is not None:
+        return denied
     sess = _get_session(session_id)
     return {
         "session_id": session_id,
@@ -1431,8 +1459,11 @@ async def knowledge_graph_summary(session_id: str):
 
 
 @app.get("/api/knowledge/{session_id}/{entity_name}")
-async def knowledge_graph_entity(session_id: str, entity_name: str):
+async def knowledge_graph_entity(session_id: str, entity_name: str, user: User | None = Depends(get_current_user_optional)):
     """Full detail on one entity — its relationships as subject and object, plus one-hop neighbors."""
+    denied = _session_access_denied(session_id, user)
+    if denied is not None:
+        return denied
     sess = _get_session(session_id)
     info = sess.knowledge_graph.query_entity(entity_name)
     if info is None:
@@ -1442,7 +1473,10 @@ async def knowledge_graph_entity(session_id: str, entity_name: str):
 
 
 @app.get("/api/session/{session_id}/export")
-async def export_session(session_id: str):
+async def export_session(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    denied = _session_access_denied(session_id, user)
+    if denied is not None:
+        return denied
     sess = _get_session(session_id)
     msgs = sess.memory.messages() if hasattr(sess.memory, "messages") else []
     title = _session_titles.get(session_id, f"Session {session_id[:8].upper()}")

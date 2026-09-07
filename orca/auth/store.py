@@ -313,6 +313,23 @@ def get_user_session_ids(user_id: str) -> list[str]:
     return [r["session_id"] for r in rows]
 
 
+def get_session_owner(session_id: str) -> str | None:
+    """The inverse of `record_user_session()` -- `None` means either the
+    session was created anonymously (never recorded here) or doesn't
+    exist; both are treated identically by callers (no owner to check
+    against). A session WITH a recorded owner must only be readable by
+    that same user_id -- see callers in orca/serve/api.py's
+    knowledge/explain/session-export/session-load endpoints, none of
+    which enforced this before (Phase 14C edge qualification finding:
+    any caller who learned/guessed a session_id could read another
+    user's full transcript regardless of their own identity)."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM user_sessions WHERE session_id=?", (session_id,)
+        ).fetchone()
+    return row["user_id"] if row else None
+
+
 def delete_user_account_records(user_id: str) -> None:
     """Deletes the account-level rows (users, usage_daily, api_keys, user_sessions).
     Does NOT touch session-scoped data (memory files, docs, Redis) — that's
