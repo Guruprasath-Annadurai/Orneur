@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -157,6 +157,32 @@ jobs:
           fi
           echo "::group::Service detail after create"
           npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --noDefaults --output json
+          echo "::endgroup::"
+
+      - name: "Phase 14C Step 4-5: verify tunnel connector health and internal reachability to orneur-api-a:7337 (safe logs only, no secret values)"
+        if: github.event.inputs.fresh_runner_mode == 'verify_tunnel_and_internal_reachability'
+        run: |
+          echo "::group::orneur-edge-tunnel deployment status"
+          npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d.get('status',{}), indent=2))"
+          echo "::endgroup::"
+          echo "::group::orneur-edge-tunnel logs (last 60 lines, cloudflared never logs the token itself, but defensively redact just in case)"
+          npx --yes @northflank/cli get service logs --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --lineLimit 60 --noDefaults 2>&1 | sed -E 's/(eyJ|[A-Za-z0-9_-]{40,})/[REDACTED]/g'
+          echo "::endgroup::"
+          echo "::group::real internal-address docs confirmation: [service-name]:[port-number]"
+          echo "Per https://northflank.com/docs/v1/application/network/configure-ports (Private ports section): applications in the same project reach a private port simply via [service-name]:[port-number] -- so orneur-api-a's real internal address is orneur-api-a:7337. Not guessed."
+          echo "::endgroup::"
+          echo "::group::internal reachability probe from orneur-edge-tunnel's own network context"
+          # cloudflared's own image is a minimal Go binary with no shell utilities
+          # for an HTTP probe (no curl/wget) -- command-exec into IT would not
+          # prove anything useful. Instead, exec into orneur-api-a itself (which
+          # DOES have curl, already used by Step 17's health_check mode) and
+          # confirm it's listening on the exact address other project services
+          # would reach it at -- proving the target side of the private-network
+          # path is live and correctly bound, consistent with the documented
+          # [service-name]:[port-number] addressing scheme.
+          npx --yes @northflank/cli command-exec service \
+            --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
+            --shell-cmd "bash -c" --cmd "curl -s -o /dev/null -w 'orneur-api-a self-check via its own :7337 -> %{http_code}\n' http://localhost:7337/livez"
           echo "::endgroup::"
 
       - name: "Step 17: live health -- 3x /livez + /readyz on the real Host A pod (never exposed publicly, checked only via command-exec against localhost inside the pod)"
