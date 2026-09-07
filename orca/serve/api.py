@@ -153,6 +153,36 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware  # noqa: E402
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted_hosts())
 
 
+MAX_REQUEST_BODY_BYTES = int(orneur_env("MAX_REQUEST_BODY_BYTES", str(30 * 1024 * 1024)))  # 30MB default
+
+
+@app.middleware("http")
+async def request_size_limit_middleware(request: Request, call_next):
+    """Phase 14C spec Step 17: reject oversized request bodies before
+    they're buffered/parsed. `/api/docs/upload` and `/api/vision` already
+    have their own tighter, purpose-specific limits (MAX_FILE_SIZE /
+    MAX_IMAGE_SIZE) enforced AFTER reading the body -- this is the floor
+    that applies to every OTHER route (chat, memory, code/run, etc.),
+    none of which had any body-size ceiling at all before this, so a
+    single oversized JSON payload could be read fully into memory
+    before any per-route validation ran. Deliberately a Content-Length
+    pre-check, not a streaming byte-counter -- a request that omits
+    Content-Length (chunked transfer-encoding) is NOT caught here; that
+    residual gap is documented in PHASE14C_EDGE_EVIDENCE.md rather than
+    silently claimed as fully closed."""
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > MAX_REQUEST_BODY_BYTES:
+                return JSONResponse(
+                    {"error": f"Request body too large. Max: {MAX_REQUEST_BODY_BYTES // 1024 // 1024}MB"},
+                    status_code=413,
+                )
+        except ValueError:
+            pass
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     """Phase 14C spec Step 22: safe-by-default browser security headers.

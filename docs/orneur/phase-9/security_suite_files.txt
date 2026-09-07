@@ -65,6 +65,7 @@ tests/test_moderation_jailbreak.py
 tests/test_ops_backup.py
 tests/test_org_store.py
 tests/test_session_ownership_isolation.py
+tests/test_doc_session_no_model_runtime.py
 tests/test_persona_claim_gate.py
 tests/test_pii_redact.py
 tests/test_ratelimit.py

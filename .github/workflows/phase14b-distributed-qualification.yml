@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -231,6 +231,89 @@ jobs:
             --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
             --shell-cmd "bash -c" --cmd "curl -s http://localhost:7337/readyz"
           echo
+          echo "::endgroup::"
+
+      - name: "Phase 14C Step 11: fix missing HSTS + configure trusted-proxy so X-Forwarded-Proto/X-Forwarded-For are honored from the Cloudflare Tunnel connector (live finding: verify_public_edge showed strict-transport-security MISSING because uvicorn's forwarded_allow_ips defaulted to 127.0.0.1, which the tunnel connector -- a separate Northflank service -- never connects from)"
+        if: github.event.inputs.fresh_runner_mode == 'configure_api_a_trusted_proxy'
+        run: |
+          set -e
+          # Northflank does not publish a stable, documented CIDR for
+          # its internal service-to-service networking (confirmed via
+          # its own docs -- only BYOC cluster-provisioning defaults are
+          # documented, not a fixed platform-wide range), so hardcoding
+          # a guessed CIDR would be fragile and could silently stop
+          # matching on a future redeploy. The REAL trust boundary here
+          # is Northflank's own project-level private-port isolation --
+          # already proven live in Step 9a/9b (direct origin unreachable
+          # even with a spoofed Host header): nothing outside this
+          # Northflank project can reach orneur-api-a:7337 at all, so
+          # the only entity that can ever be the direct TCP peer for a
+          # request reaching this service is something already inside
+          # the project (today, only orneur-edge-tunnel). "*" tells both
+          # uvicorn's ProxyHeadersMiddleware and orca.serve.ratelimit's
+          # get_client_ip() to trust X-Forwarded-Proto/X-Forwarded-For
+          # unconditionally -- correct given that precondition, and
+          # re-uses the SAME env var (ORNEUR_TRUSTED_PROXY_CIDRS) both
+          # code paths already read. This re-sends the full previously-
+          # confirmed-safe direct env (see configure_api_a_public_edge_env
+          # above -- inspect_api_a_env_keys_only proved this service's
+          # own direct env holds only non-secret config, never real
+          # secrets, which are inherited from a separate linked group)
+          # plus this one new key, since runtime-environment updates
+          # REPLACE the entire direct env map.
+          cat > /tmp/api-a-trusted-proxy-env.json <<'JSON'
+          {
+            "runtimeEnvironment": {
+              "ORNEUR_ALLOWED_ORIGINS": "https://staging.orneur.com",
+              "ORNEUR_PUBLIC_EDGE": "1",
+              "ORNEUR_TRUSTED_HOSTS": "staging.orneur.com",
+              "APP_URL": "https://staging.orneur.com",
+              "PUBLIC_URL": "https://staging.orneur.com",
+              "ORNEUR_TRUSTED_PROXY_CIDRS": "*"
+            }
+          }
+          JSON
+          npx --yes @northflank/cli update service runtime-environment -f /tmp/api-a-trusted-proxy-env.json --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --noDefaults --output json
+          echo "::group::Direct env keys after update (values never printed)"
+          npx --yes @northflank/cli get service runtime-environment --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --show this --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(sorted(d.get('runtimeEnvironment',{}).keys())))"
+          echo "::endgroup::"
+          echo "Waiting 25s for redeploy to roll out..."
+          sleep 25
+          echo "::group::Post-update self-check (authority_store/security_root/core_database must all remain ok)"
+          npx --yes @northflank/cli command-exec service \
+            --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
+            --shell-cmd "bash -c" --cmd "curl -s http://localhost:7337/readyz"
+          echo
+          echo "::endgroup::"
+
+      - name: "Phase 14C Steps 11/12/17/20: trusted-proxy live verification (HSTS now present), Host-header validation, request-size limit, SSRF-through-edge regression"
+        if: github.event.inputs.fresh_runner_mode == 'verify_edge_controls_batch2'
+        run: |
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+          echo "::group::Step 11 -- HSTS now present (proves X-Forwarded-Proto is honored from the tunnel connector)"
+          curl -sS -A "$UA" -D - -o /dev/null https://staging.orneur.com/livez 2>&1 | grep -iE "strict-transport-security|x-content-type-options|referrer-policy|permissions-policy" || echo "(none of the expected headers were found)"
+          echo "::endgroup::"
+
+          echo "::group::Step 12 -- Host header validation: a spoofed Host through the real edge must not be served as if valid"
+          echo "--- correct host (expect 200) ---"
+          curl -sS -A "$UA" -o /dev/null -w 'status=%{http_code}\n' https://staging.orneur.com/livez -H "Host: staging.orneur.com" || true
+          echo "--- spoofed host over the same TLS connection (Cloudflare routes by SNI regardless of the Host header value the client sends -- this checks what the ORIGIN does if it ever saw a mismatched Host, not whether Cloudflare's edge can be tricked into routing wrong) ---"
+          curl -sS -A "$UA" -o /dev/null -w 'status=%{http_code}\n' https://staging.orneur.com/livez -H "Host: evil.invalid.example" || true
+          echo "::endgroup::"
+
+          echo "::group::Step 17 -- request-size limit: an oversized JSON body on a route with no per-route size check must be rejected (413), not silently buffered"
+          python3 -c "
+          import json
+          print(json.dumps({'message': 'x' * (31 * 1024 * 1024), 'session_id': None}))
+          " > /tmp/oversized_chat_body.json
+          curl -sS -A "$UA" -o /dev/null -w 'oversized /api/chat status=%{http_code} (expect 413)\n' -X POST https://staging.orneur.com/api/chat -H "Content-Type: application/json" --data-binary @/tmp/oversized_chat_body.json --max-time 30 || true
+          rm -f /tmp/oversized_chat_body.json
+          echo "::endgroup::"
+
+          echo "::group::Step 20 -- SSRF-through-edge regression: a chat/tool request that tries to reach a private/link-local address must be blocked by the existing SSRF guard, proven through the real public edge (not just unit tests)"
+          curl -sS -A "$UA" -o /dev/null -w 'unauthenticated /api/status status=%{http_code} (baseline -- confirms edge routing works before the SSRF-specific check)\n' https://staging.orneur.com/api/status || true
+          echo "(Full SSRF-through-edge tool-call proof requires an authenticated chat/tool-call turn against a live model -- model_runtime is unavailable on this deployment per /readyz, so that specific live path cannot be exercised here; orca/web/ssrf_guard.py's unit-level regression suite -- tests/test_web_ssrf_guard.py -- already covers the guard itself and is included in the Step 33 full local regression run instead. Documented as a scope boundary, not a skipped requirement.)"
           echo "::endgroup::"
 
       - name: "Phase 14C: restart orneur-edge-tunnel so it re-fetches the current TUNNEL_TOKEN secret value (same pod hash was observed retrying with a stale value across its own internal crash-loop restarts)"

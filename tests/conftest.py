@@ -68,6 +68,29 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     # reload needed) because `security_root._root_home()` re-reads this
     # env var on every call, never caching it at import time.
     monkeypatch.setenv("ORNEUR_SECURITY_ROOT_HOME", str(godmode_tmp / "security-root"))
+
+    # Phase 14C: `orca.docs.store` (RAG doc storage, chromadb-backed) has
+    # the exact same real-directory-leak shape as DEPLOYMENT_DIR/LEASE_DIR
+    # above -- `DOCS_DIR` and `_REGISTRY_FILE` are module-level constants
+    # captured once at import time from `ORCA_HOME`, never re-isolated
+    # per test the way `isolated_home` re-isolates auth/db modules. Left
+    # unpatched, every test that constructs a real `_Session` (chat,
+    # docs, memory, knowledge-graph, session-load/export tests) shares
+    # ONE real chromadb `PersistentClient` path across the whole pytest
+    # process -- harmless when only one such test runs, but a SECOND
+    # real chromadb-backed session constructed later in the same process
+    # intermittently hits `chromadb.errors.InternalError: ... readonly
+    # database`, an order-dependent flake with no relation to the code
+    # under test. Isolating both constants here (same tmp_path already
+    # used for DEPLOYMENT_DIR/LEASE_DIR above) gives every test its own
+    # chroma path, matching this fixture's existing unconditional
+    # per-test isolation for the other file-backed stores.
+    import orca.docs.store as docs_store_mod
+    docs_tmp = tmp_path / "docs"
+    docs_tmp.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(docs_store_mod, "DOCS_DIR", docs_tmp)
+    monkeypatch.setattr(docs_store_mod, "_REGISTRY_FILE", docs_tmp / "registry.json")
+
     yield
 
 
