@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle", "verify_cloudflare_access"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle", "verify_cloudflare_access", "verify_waf_and_rate_limit"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -369,6 +369,47 @@ jobs:
           echo "::group::Step 20 -- SSRF-through-edge regression: a chat/tool request that tries to reach a private/link-local address must be blocked by the existing SSRF guard, proven through the real public edge (not just unit tests)"
           curl -sS -A "$UA" -o /dev/null -w 'unauthenticated /api/status status=%{http_code} (baseline -- confirms edge routing works before the SSRF-specific check)\n' https://staging.orneur.com/api/status || true
           echo "(Full SSRF-through-edge tool-call proof requires an authenticated chat/tool-call turn against a live model -- model_runtime is unavailable on this deployment per /readyz, so that specific live path cannot be exercised here; orca/web/ssrf_guard.py's unit-level regression suite -- tests/test_web_ssrf_guard.py -- already covers the guard itself and is included in the Step 33 full local regression run instead. Documented as a scope boundary, not a skipped requirement.)"
+          echo "::endgroup::"
+
+      - name: "Phase 14C.1 Gap 2: WAF baseline live check -- Free Managed Ruleset should intervene on a classic exploit-shaped request while normal traffic passes untouched; app-level auth rate limiter confirmed still active (edge rate-limit slot deliberately left on the pre-existing Leaked Credential Check rule, not replaced -- see PHASE14C1_ROLLBACK_AND_WAF_EVIDENCE.md)"
+        if: github.event.inputs.fresh_runner_mode == 'verify_waf_and_rate_limit'
+        run: |
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+          echo "::group::Baseline -- normal traffic passes"
+          curl -sS -A "$UA" -o /dev/null -w '/livez status=%{http_code} (expect 200)\n' https://staging.orneur.com/livez --max-time 10 || true
+          curl -sS -A "$UA" -o /dev/null -w '/api/status status=%{http_code} (expect 200)\n' https://staging.orneur.com/api/status --max-time 10 || true
+          echo "::endgroup::"
+
+          echo "::group::Classic exploit-shaped requests -- Free Managed Ruleset should intervene (expect NOT 200 -- typically 403 from the edge)"
+          curl -sS -A "$UA" -o /dev/null -w "SQLi-shaped query string status=%{http_code}\n" "https://staging.orneur.com/api/status?id=1%27%20OR%20%271%27%3D%271" --max-time 10 || true
+          curl -sS -A "$UA" -o /dev/null -w "XSS-shaped query string status=%{http_code}\n" "https://staging.orneur.com/api/status?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E" --max-time 10 || true
+          curl -sS -A "$UA" -o /dev/null -w "path-traversal-shaped path status=%{http_code}\n" "https://staging.orneur.com/api/status/../../../../etc/passwd" --max-time 10 || true
+          echo "::endgroup::"
+
+          echo "::group::App-level auth rate limiter still active (orca/serve/ratelimit.py) -- rapid-fire real signups against the same endpoint the qualification test uses, expect a 429 to appear before completing all attempts"
+          python3 - <<'PY'
+          import json, urllib.request, urllib.error, uuid
+          BASE = "https://staging.orneur.com"
+          UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+          hit_429 = False
+          for i in range(15):
+              email = f"phase14c1-ratelimit-check-{uuid.uuid4().hex[:10]}@example.com"
+              body = json.dumps({"email": email, "password": "correcthorsebatterystaple9", "name": "RL Check"}).encode()
+              req = urllib.request.Request(BASE + "/api/auth/signup", data=body, method="POST")
+              req.add_header("User-Agent", UA)
+              req.add_header("Content-Type", "application/json")
+              try:
+                  with urllib.request.urlopen(req, timeout=10) as resp:
+                      status = resp.status
+              except urllib.error.HTTPError as e:
+                  status = e.code
+              print(f"attempt {i+1}: status={status}")
+              if status == 429:
+                  hit_429 = True
+                  break
+          print("APP_LEVEL_RATE_LIMIT_ACTIVE" if hit_429 else "APP_LEVEL_RATE_LIMIT_NOT_TRIGGERED_IN_15_ATTEMPTS")
+          PY
           echo "::endgroup::"
 
       - name: "Phase 14C Steps 14/20/21: Cloudflare Access must block unauthenticated requests to /api/admin, /api/auth/admin, and /metrics through the real public edge -- and must NOT touch any normal user-facing route"
