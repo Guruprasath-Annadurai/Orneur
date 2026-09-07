@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -192,6 +192,17 @@ jobs:
           npx --yes @northflank/cli command-exec service \
             --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
             --shell-cmd "bash -c" --cmd "curl -s -o /dev/null -w '%{http_code}\n' http://localhost:7337/livez" || true
+          echo "::endgroup::"
+
+      - name: "Phase 14C: restart orneur-edge-tunnel so it re-fetches the current TUNNEL_TOKEN secret value (same pod hash was observed retrying with a stale value across its own internal crash-loop restarts)"
+        if: github.event.inputs.fresh_runner_mode == 'restart_edge_tunnel'
+        run: |
+          set -e
+          npx --yes @northflank/cli restart service --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --noDefaults --output json
+          echo "Waiting 20s for the new pod to come up..."
+          sleep 20
+          echo "::group::orneur-edge-tunnel logs after restart (defensively redacted)"
+          npx --yes @northflank/cli get service logs --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --lineLimit 30 --noDefaults 2>&1 | sed -E 's/(eyJ|[A-Za-z0-9_-]{40,})/[REDACTED]/g'
           echo "::endgroup::"
 
       - name: "Phase 14C fix: stop every commit (including pure workflow/doc changes) from rebuilding+redeploying orneur-api-a"
