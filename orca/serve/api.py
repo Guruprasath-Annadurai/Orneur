@@ -86,17 +86,6 @@ _START_TIME = time.time()
 WEB_DIR = Path(__file__).parent / "web"
 _logger = logging.getLogger("orca.serve")
 
-raise RuntimeError(
-    "PHASE_14C1_ROLLBACK_DRILL_DELIBERATE_STARTUP_FAILURE -- this commit "
-    "is a deliberate, harmless bad deploy candidate for the Phase 14C.1 "
-    "rollback drill. It touches no DB schema, no security/authority "
-    "state, and performs no privileged side effect -- it fails at "
-    "Python import time, before the ASGI app object even exists, so no "
-    "request handling code ever runs. This commit is immediately "
-    "reverted as part of the same drill; if you are reading this in a "
-    "deployed, serving instance, the drill's rollback step failed."
-)
-
 app = FastAPI(title="Orca API", version="1.0.0", docs_url=None, redoc_url=None)
 
 
