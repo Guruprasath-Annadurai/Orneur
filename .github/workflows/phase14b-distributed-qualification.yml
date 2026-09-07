@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -132,6 +132,31 @@ jobs:
           echo "::endgroup::"
           echo "::group::orneur-api-a ports"
           npx --yes @northflank/cli get service ports --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --noDefaults --output json
+          echo "::endgroup::"
+
+      - name: "Phase 14C Step 2-3: create orneur-edge-tunnel (idempotent -- skips if it already exists, no application/DB/signing secrets attached)"
+        if: github.event.inputs.fresh_runner_mode == 'create_edge_tunnel_service'
+        run: |
+          set -e
+          EXISTING=$(npx --yes @northflank/cli list services --project "$NORTHFLANK_PROJECT" --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print('yes' if any(s['id']=='orneur-edge-tunnel' for s in d.get('services',[])) else 'no')")
+          if [ "$EXISTING" = "yes" ]; then
+            echo "orneur-edge-tunnel already exists -- skipping creation (idempotent)."
+          else
+            cat > /tmp/edge-tunnel-service.json <<'JSON'
+          {
+            "name": "orneur-edge-tunnel",
+            "billing": { "deploymentPlan": "nf-compute-20" },
+            "deployment": {
+              "instances": 1,
+              "docker": { "configType": "customCommand", "customCommand": "tunnel --no-autoupdate run" },
+              "external": { "imagePath": "cloudflare/cloudflared:latest" }
+            }
+          }
+          JSON
+            npx --yes @northflank/cli create service deployment -f /tmp/edge-tunnel-service.json --project "$NORTHFLANK_PROJECT" --noDefaults --output json
+          fi
+          echo "::group::Service detail after create"
+          npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --noDefaults --output json
           echo "::endgroup::"
 
       - name: "Step 17: live health -- 3x /livez + /readyz on the real Host A pod (never exposed publicly, checked only via command-exec against localhost inside the pod)"
