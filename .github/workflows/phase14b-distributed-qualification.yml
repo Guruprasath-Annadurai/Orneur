@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -194,6 +194,17 @@ jobs:
             --shell-cmd "bash -c" --cmd "curl -s -o /dev/null -w '%{http_code}\n' http://localhost:7337/livez" || true
           echo "::endgroup::"
 
+      - name: "Phase 14C: safe check -- is orneur-api-a's existing config a direct service env map or an inherited secret group? (KEY NAMES ONLY, values never read or printed)"
+        if: github.event.inputs.fresh_runner_mode == 'inspect_api_a_env_keys_only'
+        run: |
+          set -e
+          echo "::group::Direct (this service's own) runtime environment keys only"
+          npx --yes @northflank/cli get service runtime-environment --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --show this --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(sorted(d.get('runtimeEnvironment',{}).keys())))"
+          echo "::endgroup::"
+          echo "::group::Inherited (secret-group) runtime environment keys only"
+          npx --yes @northflank/cli get service runtime-environment --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --show inherited --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(sorted(d.get('runtimeEnvironment',{}).keys())))"
+          echo "::endgroup::"
+
       - name: "Phase 14C: restart orneur-edge-tunnel so it re-fetches the current TUNNEL_TOKEN secret value (same pod hash was observed retrying with a stale value across its own internal crash-loop restarts)"
         if: github.event.inputs.fresh_runner_mode == 'restart_edge_tunnel'
         run: |
@@ -203,6 +214,42 @@ jobs:
           sleep 20
           echo "::group::orneur-edge-tunnel logs after restart (defensively redacted)"
           npx --yes @northflank/cli get service logs --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --lineLimit 30 --noDefaults 2>&1 | sed -E 's/(eyJ|[A-Za-z0-9_-]{40,})/[REDACTED]/g'
+          echo "::endgroup::"
+
+      - name: "Phase 14C Steps 7-9: DNS, TLS, and private-origin-bypass proof for staging.orneur.com, run from this external GitHub runner (never this Mac)"
+        if: github.event.inputs.fresh_runner_mode == 'verify_public_edge'
+        run: |
+          echo "::group::Step 7 -- DNS resolution"
+          dig +short staging.orneur.com || true
+          host staging.orneur.com || true
+          echo "::endgroup::"
+
+          echo "::group::Step 8 -- TLS and HTTP->HTTPS redirect"
+          echo "--- HTTPS /livez ---"
+          curl -sS -o /dev/null -w 'https status=%{http_code} tls_version=%{ssl_verify_result}\n' https://staging.orneur.com/livez || true
+          echo "--- HTTP (expect redirect to HTTPS) ---"
+          curl -sS -o /dev/null -w 'http status=%{http_code} redirect_url=%{redirect_url}\n' http://staging.orneur.com/livez || true
+          echo "--- certificate detail ---"
+          echo | openssl s_client -connect staging.orneur.com:443 -servername staging.orneur.com 2>/dev/null | openssl x509 -noout -subject -issuer -dates || true
+          echo "::endgroup::"
+
+          echo "::group::Step 9a -- direct Northflank origin must NOT be publicly reachable"
+          curl -sS -o /dev/null -w 'direct origin status=%{http_code} (expect connection failure or non-200)\n' --max-time 8 https://p01--orneur-api-a--7knh72p45d7b.code.run/livez || echo "direct origin: connection failed as required"
+          echo "::endgroup::"
+
+          echo "::group::Step 9b -- alternate/spoofed Host header against the direct origin must FAIL"
+          curl -sS -o /dev/null -w 'spoofed-host status=%{http_code}\n' --max-time 8 -H "Host: staging.orneur.com" https://p01--orneur-api-a--7knh72p45d7b.code.run/livez || echo "spoofed host via direct origin: connection failed as required"
+          echo "::endgroup::"
+
+          echo "::group::Step 10 -- CORS: allowed vs hostile origin"
+          echo "--- allowed origin (https://staging.orneur.com) ---"
+          curl -sS -D - -o /dev/null https://staging.orneur.com/api/status -H "Origin: https://staging.orneur.com" 2>&1 | grep -i "access-control" || echo "(no access-control header returned)"
+          echo "--- hostile origin (https://evil.example.com) ---"
+          curl -sS -D - -o /dev/null https://staging.orneur.com/api/status -H "Origin: https://evil.example.com" 2>&1 | grep -i "access-control" || echo "(no access-control header returned -- correct)"
+          echo "::endgroup::"
+
+          echo "::group::Step 22 -- security headers on a real response"
+          curl -sS -D - -o /dev/null https://staging.orneur.com/livez 2>&1 | grep -iE "strict-transport-security|x-content-type-options|referrer-policy|permissions-policy" || echo "(none of the expected headers were found)"
           echo "::endgroup::"
 
       - name: "Phase 14C fix: stop every commit (including pure workflow/doc changes) from rebuilding+redeploying orneur-api-a"
