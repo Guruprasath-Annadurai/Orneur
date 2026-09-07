@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -177,6 +177,21 @@ jobs:
           sleep 20
           echo "::group::orneur-edge-tunnel logs after patch (defensively redacted)"
           npx --yes @northflank/cli get service logs --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --lineLimit 40 --noDefaults 2>&1 | sed -E 's/(eyJ|[A-Za-z0-9_-]{40,})/[REDACTED]/g'
+          echo "::endgroup::"
+
+      - name: "Phase 14C: diagnose why orneur-api-a's own /livez self-check just started failing (exit 7, connection refused)"
+        if: github.event.inputs.fresh_runner_mode == 'diagnose_api_a'
+        run: |
+          echo "::group::orneur-api-a deployment/build status"
+          npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps({'status': d.get('status'), 'deployedSHA': d.get('deployment',{}).get('internal',{}).get('deployedSHA'), 'instances': d.get('deployment',{}).get('instances')}, indent=2))"
+          echo "::endgroup::"
+          echo "::group::orneur-api-a logs (last 80 lines, secret-value patterns redacted defensively)"
+          npx --yes @northflank/cli get service logs --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --lineLimit 80 --noDefaults 2>&1 | sed -E 's/(eyJ|postgresql:\/\/[^ "]*|[A-Za-z0-9_-]{40,})/[REDACTED]/g'
+          echo "::endgroup::"
+          echo "::group::retry /livez now"
+          npx --yes @northflank/cli command-exec service \
+            --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
+            --shell-cmd "bash -c" --cmd "curl -s -o /dev/null -w '%{http_code}\n' http://localhost:7337/livez" || true
           echo "::endgroup::"
 
       - name: "Phase 14C Step 4-5: verify tunnel connector health and internal reachability to orneur-api-a:7337 (safe logs only, no secret values)"
