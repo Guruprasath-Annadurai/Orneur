@@ -393,22 +393,31 @@ consistent with "don't over-build" guidance:
 
 ## Full regression (Step 33)
 
-Local suite (103 files from `docs/orneur/phase-9/security_suite_files.txt`,
-includes deterministic/security/Godmode/cancellation suites and
-`tests/test_web_ssrf_guard.py`) — **results appended below once the
-background run completes; not yet included in this snapshot.**
+**PASS.** Local suite (103 files from
+`docs/orneur/phase-9/security_suite_files.txt`, includes deterministic/
+security/Godmode/cancellation suites and `tests/test_web_ssrf_guard.py`):
+
+```
+916 passed, 486 warnings in 234.10s (0:03:54)
+```
+
+Zero failures. The separately-flagged chromadb ordering flake (below)
+did NOT trip in this full-suite run -- pytest's actual collection/
+fixture interaction across all 103 files did not reproduce the
+two-file isolated repro. Still worth root-causing (task already
+filed) since it remains a real, reproducible risk under the narrower
+two-file invocation, just not one that manifested here.
 
 Known, separately-flagged, non-security test-infra issue: running
 `tests/test_doc_session_no_model_runtime.py` (new this phase) before
-`tests/test_session_ownership_isolation.py` in the same pytest process
-deterministically trips a `chromadb.errors.InternalError: ... readonly
-database` in 2 of the latter's 3 tests — both files pass 100% run
-individually. Root-caused to something process-level in chromadb's
-Rust bindings, not to either file's own logic (both suites' actual
-assertions are unaffected when run alone). Flagged as a separate
-follow-up task, not fixed inline this phase (out of Phase 14C's actual
-edge/infra/security scope). If this shows up in the Step 33 run below,
-treat it as this known issue, not a new regression.
+`tests/test_session_ownership_isolation.py` in ISOLATION (just those
+two files) deterministically trips a `chromadb.errors.InternalError:
+... readonly database` in 2 of the latter's 3 tests -- both files pass
+100% run individually, and both passed cleanly as part of the full
+916-test run above. Root-caused to something process-level in
+chromadb's Rust bindings, not to either file's own logic. Flagged as a
+separate follow-up task, not fixed inline this phase (out of Phase
+14C's actual scope).
 
 ## Final live health (Step 34)
 
@@ -436,7 +445,5 @@ the Step 23/24 drills), most recently at the end of the Step 24 drill
 ## Remaining work before final PASS
 
 1. **Cloudflare Access for `/api/admin/*`, `/api/auth/admin/*`, and
-   `/metrics`** (Steps 14/20/21) — requires one Cloudflare dashboard
-   action from the user. Not yet performed.
-2. Step 33's full regression result (background run in progress as of
-   this snapshot) needs to be appended once complete.
+   `/metrics`** (Steps 14/20/21) -- requires one Cloudflare dashboard
+   action from the user. Not yet performed as of this snapshot.
