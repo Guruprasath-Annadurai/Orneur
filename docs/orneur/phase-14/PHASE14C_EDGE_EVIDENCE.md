@@ -119,9 +119,30 @@ Cloudflare Access candidate alongside the admin routes.
 
 ## Cloudflare Access for operator surfaces (Steps 14/20/21)
 
-**STATUS: PENDING — requires one Cloudflare dashboard action from the
-user**, not yet performed as of this evidence snapshot. See "Remaining
-work" below.
+**PASS.** User created three Cloudflare Zero Trust self-hosted Access
+applications on `staging.orneur.com`, each with a policy requiring
+authentication as the user's own email: paths `/api/admin`,
+`/api/auth/admin`, and `/metrics`. Live-verified, run 34107581483,
+through the real public edge with no bearer token and no Access
+session cookie:
+
+| Path | Result |
+|---|---|
+| `/api/admin/stats` | `HTTP/2 302` (Access login redirect) |
+| `/api/auth/admin/users` | `HTTP/2 302` |
+| `/metrics` | `HTTP/2 302` |
+
+Regression check -- normal user-facing routes completely unaffected:
+
+| Path | Result |
+|---|---|
+| `/livez` | 200 |
+| `/api/status` | 200 |
+| `/api/models` | 200 |
+
+This is now a second, independent gate in front of the network path
+itself, on top of the app's own existing `require_permission(...)`
+checks on every one of these routes (see `PHASE14C_ROUTE_INVENTORY.md`).
 
 ## WAF baseline (Step 15)
 
@@ -444,6 +465,4 @@ the Step 23/24 drills), most recently at the end of the Step 24 drill
 
 ## Remaining work before final PASS
 
-1. **Cloudflare Access for `/api/admin/*`, `/api/auth/admin/*`, and
-   `/metrics`** (Steps 14/20/21) -- requires one Cloudflare dashboard
-   action from the user. Not yet performed as of this snapshot.
+None. All required Phase 14C steps are closed and evidenced above.
