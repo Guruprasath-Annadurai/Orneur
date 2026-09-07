@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -133,6 +133,61 @@ jobs:
           echo "::group::orneur-api-a ports"
           npx --yes @northflank/cli get service ports --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --noDefaults --output json
           echo "::endgroup::"
+
+      - name: "Phase 14C Step 28: secret-scope review -- confirm orneur-api-a, orneur-edge-tunnel, and GitHub Actions never share a secret group (key names only, values never printed)"
+        if: github.event.inputs.fresh_runner_mode == 'secret_scope_review'
+        run: |
+          set -e
+          echo "::group::Project-level secret groups (names/IDs only)"
+          npx --yes @northflank/cli list secrets --project "$NORTHFLANK_PROJECT" --noDefaults --output json | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          items = d.get('secrets', d) if isinstance(d, dict) else d
+          if isinstance(items, dict):
+              items = items.get('secrets', [])
+          for s in items:
+              print(json.dumps({'id': s.get('id'), 'name': s.get('name'), 'priority': s.get('priority')}))
+          "
+          echo "::endgroup::"
+          echo "::group::orneur-api-a -- linked secret groups (IDs/names only)"
+          npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service orneur-api-a --noDefaults --output json | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          print(json.dumps(d.get('addonDependencies', d.get('secrets', 'n/a'))))
+          "
+          echo "::endgroup::"
+          echo "::group::orneur-edge-tunnel -- linked secret groups (IDs/names only)"
+          npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --noDefaults --output json | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          print(json.dumps(d.get('addonDependencies', d.get('secrets', 'n/a'))))
+          "
+          echo "::endgroup::"
+          echo "::group::orneur-api-a direct env keys (already known non-secret -- ORNEUR_ALLOWED_ORIGINS/PUBLIC_EDGE/TRUSTED_HOSTS/TRUSTED_PROXY_CIDRS/APP_URL/PUBLIC_URL)"
+          npx --yes @northflank/cli get service runtime-environment --project "$NORTHFLANK_PROJECT" --service orneur-api-a --show this --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(sorted(d.get('runtimeEnvironment',{}).keys())))"
+          echo "::endgroup::"
+          echo "::group::orneur-edge-tunnel direct env keys (expect ONLY TUNNEL_TOKEN -- never a DB/audit/signing secret)"
+          npx --yes @northflank/cli get service runtime-environment --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --show this --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(sorted(d.get('runtimeEnvironment',{}).keys())))"
+          echo "::endgroup::"
+          echo "::group::GitHub Actions secrets used by THIS workflow (names only, from env: block above -- never re-printed with values)"
+          echo '["NORTHFLANK_API_TOKEN", "ORNEUR_DATABASE_URL", "ORNEUR_GODMODE_DATABASE_URL", "ORNEUR_SECURITY_ROOT_DATABASE_URL", "ORNEUR_AUDIT_KEY", "ORNEUR_GODMODE_LEASE_SECRET", "ORNEUR_AUTH_SECRET"]'
+          echo "(These are GitHub Actions repo/environment secrets, injected only into THIS ephemeral runner's env for local-regression/diagnostic steps -- never written to any Northflank service's runtime environment by this workflow. orneur-api-a gets its OWN copies of the DB/audit/signing secrets via its own linked Northflank secret group, a completely separate storage location from GitHub's secret store.)"
+          echo "::endgroup::"
+
+      - name: "Phase 14C Step 29: secret-leak scan -- grep this repo's tracked files and recent git history for anything secret-shaped"
+        if: github.event.inputs.fresh_runner_mode == 'secret_leak_scan'
+        run: |
+          set -e
+          echo "::group::Tracked files -- pattern scan (private keys, AWS-style keys, generic high-entropy 'secret'/'token'/'password' assignments, DB URLs with embedded credentials)"
+          git grep -nIE "BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY|AKIA[0-9A-Z]{16}|(secret|token|password|api[_-]?key)[[:space:]]*=[[:space:]]*['\"][A-Za-z0-9+/_=-]{16,}['\"]|postgres(ql)?://[^:]+:[^@]+@" -- . ':(exclude)*.lock' ':(exclude)node_modules' ':(exclude).venv' || echo "(no matches)"
+          echo "::endgroup::"
+          echo "::group::Recent commit history (last 100 commits) -- same patterns, diff content"
+          git log -p -100 -- . | grep -nIE "BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY|AKIA[0-9A-Z]{16}|(secret|token|password|api[_-]?key)[[:space:]]*=[[:space:]]*['\"][A-Za-z0-9+/_=-]{16,}['\"]|postgres(ql)?://[^:]+:[^@]+@" || echo "(no matches)"
+          echo "::endgroup::"
+          echo "::group::.env-shaped files tracked in git (should be none)"
+          git ls-files | grep -E "^\.env($|\.[^.]+$)|\.env\.[a-z]+$" || echo "(none tracked)"
+          echo "::endgroup::"
+          echo "NEW_SECRET_LEAKAGE=0 if all three groups above show no matches / no tracked .env files."
 
       - name: "Phase 14C Step 2-3: create orneur-edge-tunnel (idempotent -- skips if it already exists, no application/DB/signing secrets attached)"
         if: github.event.inputs.fresh_runner_mode == 'create_edge_tunnel_service'
