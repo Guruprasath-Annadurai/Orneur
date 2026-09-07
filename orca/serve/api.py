@@ -26,7 +26,7 @@ import uuid
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import Depends, FastAPI, File, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -484,26 +484,41 @@ class _Session:
 _sessions: dict[str, _Session] = {}
 
 
-def _session_access_denied(session_id: str, user: "User | None") -> JSONResponse | None:
-    """Phase 14C edge-qualification finding: `/api/knowledge`,
-    `/api/explain`, `/api/session/{id}/export`, and `POST /api/session/load`
-    took a bare `session_id` with no ownership check at all -- any caller
-    who learned or guessed another user's session_id could read their
-    full transcript. A session recorded via `record_user_session()`
-    (i.e. it was created by a signed-in user) may only be read back by
-    that same user. A session with NO recorded owner (created
-    anonymously) is unaffected -- the session_id itself remains its own
-    shareable credential, preserving existing anonymous-chat behavior.
-    Returns a 404 (never 403) so an unauthorized caller cannot even
-    confirm the session exists."""
+def _check_session_ownership(session_id: str | None, user_id: str | None) -> None:
+    """The raise-only half of `_get_session()`'s ownership check,
+    exposed separately so a route needing to check a session it is NOT
+    about to construct/touch (e.g. `load_session()`'s SOURCE
+    `req.session_id`, as opposed to its `target_session_id`) can do so
+    without the side effect of eagerly constructing a full `_Session`
+    (and its chromadb-backed memory/knowledge-graph objects) for a
+    request that is about to be denied anyway."""
+    if not session_id:
+        return
     from orca.auth.store import get_session_owner
     owner = get_session_owner(session_id)
-    if owner is not None and (user is None or user.id != owner):
-        return JSONResponse({"error": "session not found"}, status_code=404)
-    return None
+    if owner is not None and owner != user_id:
+        raise HTTPException(status_code=404, detail="session not found")
 
 
 def _get_session(session_id: str | None, model_variant: str | None = None, user_id: str | None = None) -> _Session:
+    """Phase 14C edge-qualification finding, fixed centrally here rather
+    than per-route: a CALLER-SUPPLIED `session_id` (never a freshly
+    generated one -- `session_id is None` always means "give me a new
+    session", never an ownership question) that was previously recorded
+    as belonging to a signed-in user (`record_user_session()` below) may
+    only be read back by that SAME user_id. Every route that reaches a
+    session through this function -- chat/stream, docs upload/list/
+    delete, memory recall/remember, explain, knowledge graph, session
+    export/load, ultra -- gets this protection uniformly; a future new
+    route calling `_get_session()` inherits it automatically instead of
+    needing its own copy of the check. A session with NO recorded owner
+    (created anonymously, no bearer token involved) is unaffected -- the
+    session_id itself remains its own shareable credential, preserving
+    existing anonymous-chat behavior exactly. Raises `HTTPException(404)`
+    (never 403) so an unauthorized caller cannot even confirm the
+    session exists."""
+    _check_session_ownership(session_id, user_id)
+
     sid = session_id or str(uuid.uuid4())
     if sid not in _sessions:
         _sessions[sid] = _Session(sid, model_variant)
@@ -1367,8 +1382,8 @@ async def stream_chat(
 
 
 @app.post("/api/memory/recall")
-async def recall_memory(req: MemoryRequest):
-    sess = _get_session(req.session_id)
+async def recall_memory(req: MemoryRequest, user: User | None = Depends(get_current_user_optional)):
+    sess = _get_session(req.session_id, user_id=user.id if user else None)
     hits = sess.memory.long.recall(req.query, n=8)
     prior = sess.memory.load_prior_context()
     return {
@@ -1379,8 +1394,8 @@ async def recall_memory(req: MemoryRequest):
 
 
 @app.post("/api/remember")
-async def remember(req: RememberRequest):
-    sess = _get_session(req.session_id)
+async def remember(req: RememberRequest, user: User | None = Depends(get_current_user_optional)):
+    sess = _get_session(req.session_id, user_id=user.id if user else None)
     sess.memory.commit_to_long_term(req.fact, {"type": "user_fact", "manual": True})
     existing = sess.memory.semantic.recall_fact("all_sessions_summary") or ""
     sess.memory.semantic.store_fact(
@@ -1403,10 +1418,9 @@ async def list_sessions():
 
 @app.post("/api/session/load")
 async def load_session(req: LoadSessionRequest, user: User | None = Depends(get_current_user_optional)):
-    denied = _session_access_denied(req.session_id, user)
-    if denied is not None:
-        return denied
-    sess = _get_session(req.target_session_id)
+    uid = user.id if user else None
+    _check_session_ownership(req.session_id, uid)  # SOURCE session -- checked first, before constructing anything
+    sess = _get_session(req.target_session_id, user_id=uid)
     loaded = sess.memory.load_session(req.session_id)
     if loaded:
         sess.agent.load_history(sess.memory.messages())
@@ -1431,10 +1445,7 @@ async def explain_answer(session_id: str, message_id: str, user: User | None = D
     DNA, sufficiency confidence, contradictions, and agent reasoning trace
     for a specific assistant message.
     """
-    denied = _session_access_denied(session_id, user)
-    if denied is not None:
-        return denied
-    sess = _get_session(session_id)
+    sess = _get_session(session_id, user_id=user.id if user else None)
     record = sess.explain_store.get(message_id)
     if record is None:
         return JSONResponse(
@@ -1447,10 +1458,7 @@ async def explain_answer(session_id: str, message_id: str, user: User | None = D
 @app.get("/api/knowledge/{session_id}")
 async def knowledge_graph_summary(session_id: str, user: User | None = Depends(get_current_user_optional)):
     """Lists every entity the knowledge graph has extracted for this session."""
-    denied = _session_access_denied(session_id, user)
-    if denied is not None:
-        return denied
-    sess = _get_session(session_id)
+    sess = _get_session(session_id, user_id=user.id if user else None)
     return {
         "session_id": session_id,
         "count": sess.knowledge_graph.count(),
@@ -1461,10 +1469,7 @@ async def knowledge_graph_summary(session_id: str, user: User | None = Depends(g
 @app.get("/api/knowledge/{session_id}/{entity_name}")
 async def knowledge_graph_entity(session_id: str, entity_name: str, user: User | None = Depends(get_current_user_optional)):
     """Full detail on one entity — its relationships as subject and object, plus one-hop neighbors."""
-    denied = _session_access_denied(session_id, user)
-    if denied is not None:
-        return denied
-    sess = _get_session(session_id)
+    sess = _get_session(session_id, user_id=user.id if user else None)
     info = sess.knowledge_graph.query_entity(entity_name)
     if info is None:
         return JSONResponse({"error": f"No entity '{entity_name}' found in this session's knowledge graph."}, status_code=404)
@@ -1474,10 +1479,7 @@ async def knowledge_graph_entity(session_id: str, entity_name: str, user: User |
 
 @app.get("/api/session/{session_id}/export")
 async def export_session(session_id: str, user: User | None = Depends(get_current_user_optional)):
-    denied = _session_access_denied(session_id, user)
-    if denied is not None:
-        return denied
-    sess = _get_session(session_id)
+    sess = _get_session(session_id, user_id=user.id if user else None)
     msgs = sess.memory.messages() if hasattr(sess.memory, "messages") else []
     title = _session_titles.get(session_id, f"Session {session_id[:8].upper()}")
     lines = [f"# {title}", f"\n_Exported from Orca — {time.strftime('%Y-%m-%d %H:%M')}_\n", "---\n"]
@@ -1754,14 +1756,14 @@ async def stripe_webhook(request: Request):
 
 
 @app.post("/api/ultra")
-async def ultra_run(req: UltraRequest):
+async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_user_optional)):
     """SSE endpoint — runs OrcaUltra multi-agent pipeline and streams progress."""
     if not has_feature("ultra"):
         async def _gate_stream():
             yield f"data: {json.dumps({'type': 'error', 'text': 'Ultra requires a Pro license. Run: orca activate <key>'})}\n\n"
         return StreamingResponse(_gate_stream(), media_type="text/event-stream")
 
-    sess = _get_session(req.session_id)
+    sess = _get_session(req.session_id, user_id=user.id if user else None)
     progress_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
     # Phase 3.1: cognitive planning must not be bypassed even for Ultra
@@ -1924,9 +1926,9 @@ async def upload_doc(
 
 
 @app.get("/api/docs/list")
-async def list_session_docs(session_id: str | None = None):
+async def list_session_docs(session_id: str | None = None, user: User | None = Depends(get_current_user_optional)):
     """List all documents uploaded in the current session."""
-    sess = _get_session(session_id)
+    sess = _get_session(session_id, user_id=user.id if user else None)
     docs = list_docs(sess.id)
     return {"docs": docs, "session_id": sess.id, "total_chunks": sess.doc_store.count()}
 
