@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -279,6 +279,94 @@ jobs:
           echo "::group::Step 22 -- security headers on a real response"
           curl -sS -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" -D - -o /dev/null https://staging.orneur.com/livez 2>&1 | grep -iE "strict-transport-security|x-content-type-options|referrer-policy|permissions-policy" || echo "(none of the expected headers were found)"
           echo "::endgroup::"
+
+      - name: "Phase 14C Step 19: auth + tenant isolation through the real public edge (real signup, real tokens -- never printed, never any production/customer data)"
+        if: github.event.inputs.fresh_runner_mode == 'verify_edge_auth_tenancy'
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request, urllib.error, uuid
+
+          BASE = "https://staging.orneur.com"
+          UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+          def req(method, path, body=None, token=None, expect_json=True):
+              url = BASE + path
+              data = json.dumps(body).encode() if body is not None else None
+              r = urllib.request.Request(url, data=data, method=method)
+              r.add_header("User-Agent", UA)
+              if data is not None:
+                  r.add_header("Content-Type", "application/json")
+              if token is not None:
+                  r.add_header("Authorization", f"Bearer {token}")
+              try:
+                  with urllib.request.urlopen(r, timeout=15) as resp:
+                      body_bytes = resp.read()
+                      return resp.status, (json.loads(body_bytes) if expect_json and body_bytes else {})
+              except urllib.error.HTTPError as e:
+                  body_bytes = e.read()
+                  try:
+                      return e.code, json.loads(body_bytes) if body_bytes else {}
+                  except Exception:
+                      return e.code, {}
+
+          results = {}
+
+          # -- unauthenticated / invalid / tampered token against a REAL protected route --
+          status, _ = req("GET", "/api/auth/me")
+          results["unauthenticated_denied"] = (status == 401)
+
+          status, _ = req("GET", "/api/auth/me", token="not-a-real-token-at-all")
+          results["invalid_token_denied"] = (status == 401)
+
+          status, _ = req("GET", "/api/auth/me", token="athr_" + "0" * 48)
+          results["tampered_api_key_denied"] = (status == 401)
+
+          # -- real signup, two real qualification-only accounts --
+          email_a = f"phase14c-qual-{uuid.uuid4().hex[:12]}@example.com"
+          email_b = f"phase14c-qual-{uuid.uuid4().hex[:12]}@example.com"
+          status_a, data_a = req("POST", "/api/auth/signup", {"email": email_a, "password": "correcthorsebatterystaple9", "name": "Phase14C Qual A"})
+          status_b, data_b = req("POST", "/api/auth/signup", {"email": email_b, "password": "correcthorsebatterystaple9", "name": "Phase14C Qual B"})
+          results["signup_a_ok"] = (status_a == 200 and "token" in data_a)
+          results["signup_b_ok"] = (status_b == 200 and "token" in data_b)
+          token_a = data_a.get("token")
+          token_b = data_b.get("token")
+
+          status, me = req("GET", "/api/auth/me", token=token_a)
+          results["valid_scoped_identity_ok"] = (status == 200 and me.get("email") == email_a)
+
+          # -- tenant isolation: user A uploads a real doc into a session, user B must not read it back --
+          session_id = str(uuid.uuid4())
+          # docs/upload takes a multipart file field ("file") plus session_id
+          # as a URL QUERY parameter (not a form field -- it's a plain
+          # function param on the route, not Form(...)-annotated).
+          boundary = uuid.uuid4().hex
+          file_content = b"Phase 14C qualification -- tenant isolation test document, not real user data."
+          multipart = (
+              f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"qual.txt\"\r\nContent-Type: text/plain\r\n\r\n"
+          ).encode() + file_content + f"\r\n--{boundary}--\r\n".encode()
+          upload_req = urllib.request.Request(BASE + f"/api/docs/upload?session_id={session_id}", data=multipart, method="POST")
+          upload_req.add_header("User-Agent", UA)
+          upload_req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+          upload_req.add_header("Authorization", f"Bearer {token_a}")
+          try:
+              with urllib.request.urlopen(upload_req, timeout=15) as resp:
+                  upload_status = resp.status
+          except urllib.error.HTTPError as e:
+              upload_status = e.code
+          results["tenant_a_upload_ok"] = (upload_status == 200)
+
+          status, _ = req("GET", f"/api/docs/list?session_id={session_id}", token=token_b)
+          results["tenant_b_cannot_list_tenant_a_docs"] = (status == 404)
+
+          status, _ = req("GET", f"/api/docs/list?session_id={session_id}", token=token_a)
+          results["tenant_a_can_still_list_own_docs"] = (status == 200)
+
+          print(json.dumps(results, indent=2))
+          all_pass = all(results.values())
+          print("ALL_PASS" if all_pass else "SOME_FAILED")
+          import sys
+          sys.exit(0 if all_pass else 1)
+          PY
 
       - name: "Phase 14C fix: stop every commit (including pure workflow/doc changes) from rebuilding+redeploying orneur-api-a"
         if: github.event.inputs.fresh_runner_mode == 'configure_api_a_path_ignore'
