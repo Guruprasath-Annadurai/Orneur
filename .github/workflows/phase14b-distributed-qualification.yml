@@ -254,9 +254,9 @@ jobs:
 
           echo "::group::Step 8 -- TLS and HTTP->HTTPS redirect"
           echo "--- HTTPS /livez ---"
-          curl -sS -o /dev/null -w 'https status=%{http_code} tls_version=%{ssl_verify_result}\n' https://staging.orneur.com/livez || true
+          curl -sS -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" -o /dev/null -w 'https status=%{http_code} tls_version=%{ssl_verify_result}\n' https://staging.orneur.com/livez || true
           echo "--- HTTP (expect redirect to HTTPS) ---"
-          curl -sS -o /dev/null -w 'http status=%{http_code} redirect_url=%{redirect_url}\n' http://staging.orneur.com/livez || true
+          curl -sS -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" -o /dev/null -w 'http status=%{http_code} redirect_url=%{redirect_url}\n' http://staging.orneur.com/livez || true
           echo "--- certificate detail ---"
           echo | openssl s_client -connect staging.orneur.com:443 -servername staging.orneur.com 2>/dev/null | openssl x509 -noout -subject -issuer -dates || true
           echo "::endgroup::"
@@ -271,13 +271,13 @@ jobs:
 
           echo "::group::Step 10 -- CORS: allowed vs hostile origin"
           echo "--- allowed origin (https://staging.orneur.com) ---"
-          curl -sS -D - -o /dev/null https://staging.orneur.com/api/status -H "Origin: https://staging.orneur.com" 2>&1 | grep -i "access-control" || echo "(no access-control header returned)"
+          curl -sS -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" -D - -o /dev/null https://staging.orneur.com/api/status -H "Origin: https://staging.orneur.com" 2>&1 | grep -i "access-control" || echo "(no access-control header returned)"
           echo "--- hostile origin (https://evil.example.com) ---"
-          curl -sS -D - -o /dev/null https://staging.orneur.com/api/status -H "Origin: https://evil.example.com" 2>&1 | grep -i "access-control" || echo "(no access-control header returned -- correct)"
+          curl -sS -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" -D - -o /dev/null https://staging.orneur.com/api/status -H "Origin: https://evil.example.com" 2>&1 | grep -i "access-control" || echo "(no access-control header returned -- correct)"
           echo "::endgroup::"
 
           echo "::group::Step 22 -- security headers on a real response"
-          curl -sS -D - -o /dev/null https://staging.orneur.com/livez 2>&1 | grep -iE "strict-transport-security|x-content-type-options|referrer-policy|permissions-policy" || echo "(none of the expected headers were found)"
+          curl -sS -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" -D - -o /dev/null https://staging.orneur.com/livez 2>&1 | grep -iE "strict-transport-security|x-content-type-options|referrer-policy|permissions-policy" || echo "(none of the expected headers were found)"
           echo "::endgroup::"
 
       - name: "Phase 14C fix: stop every commit (including pure workflow/doc changes) from rebuilding+redeploying orneur-api-a"
