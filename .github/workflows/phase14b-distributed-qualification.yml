@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -192,6 +192,31 @@ jobs:
           npx --yes @northflank/cli command-exec service \
             --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
             --shell-cmd "bash -c" --cmd "curl -s -o /dev/null -w '%{http_code}\n' http://localhost:7337/livez" || true
+          echo "::endgroup::"
+
+      - name: "Phase 14C fix: stop every commit (including pure workflow/doc changes) from rebuilding+redeploying orneur-api-a"
+        if: github.event.inputs.fresh_runner_mode == 'configure_api_a_path_ignore'
+        run: |
+          set -e
+          cat > /tmp/api-a-build-options.json <<'JSON'
+          {
+            "dockerfile": {
+              "buildEngine": "buildkit",
+              "dockerFilePath": "/Dockerfile",
+              "dockerWorkDir": "/"
+            },
+            "pathIgnoreRules": [
+              ".github/**",
+              "docs/**",
+              "scripts/phase14b/**",
+              "*.md"
+            ],
+            "isAllowList": false
+          }
+          JSON
+          npx --yes @northflank/cli update service build-options -f /tmp/api-a-build-options.json --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --noDefaults --output json
+          echo "::group::Build config after update"
+          npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d.get('buildConfiguration', {}), indent=2))"
           echo "::endgroup::"
 
       - name: "Phase 14C Step 4-5: verify tunnel connector health and internal reachability to orneur-api-a:7337 (safe logs only, no secret values)"
