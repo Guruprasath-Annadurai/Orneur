@@ -157,33 +157,6 @@ MAX_REQUEST_BODY_BYTES = int(orneur_env("MAX_REQUEST_BODY_BYTES", str(30 * 1024 
 
 
 @app.middleware("http")
-async def request_size_limit_middleware(request: Request, call_next):
-    """Phase 14C spec Step 17: reject oversized request bodies before
-    they're buffered/parsed. `/api/docs/upload` and `/api/vision` already
-    have their own tighter, purpose-specific limits (MAX_FILE_SIZE /
-    MAX_IMAGE_SIZE) enforced AFTER reading the body -- this is the floor
-    that applies to every OTHER route (chat, memory, code/run, etc.),
-    none of which had any body-size ceiling at all before this, so a
-    single oversized JSON payload could be read fully into memory
-    before any per-route validation ran. Deliberately a Content-Length
-    pre-check, not a streaming byte-counter -- a request that omits
-    Content-Length (chunked transfer-encoding) is NOT caught here; that
-    residual gap is documented in PHASE14C_EDGE_EVIDENCE.md rather than
-    silently claimed as fully closed."""
-    content_length = request.headers.get("content-length")
-    if content_length is not None:
-        try:
-            if int(content_length) > MAX_REQUEST_BODY_BYTES:
-                return JSONResponse(
-                    {"error": f"Request body too large. Max: {MAX_REQUEST_BODY_BYTES // 1024 // 1024}MB"},
-                    status_code=413,
-                )
-        except ValueError:
-            pass
-    return await call_next(request)
-
-
-@app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     """Phase 14C spec Step 22: safe-by-default browser security headers.
     Deliberately conservative -- no CSP (would require auditing every
@@ -224,6 +197,98 @@ async def metrics_middleware(request: Request, call_next):
     metrics.record_request(f"{request.method} {endpoint}", response.status_code, duration_ms)
 
     return response
+
+
+class _BodySizeLimitExceeded(Exception):
+    """Internal signal only -- never leaks past RequestBodySizeLimitMiddleware."""
+
+
+class RequestBodySizeLimitMiddleware:
+    """Phase 14C spec Step 17, closing a real gap found in the first
+    version of this control: a Content-Length PRE-CHECK (the previous
+    `request_size_limit_middleware`) only catches a request that
+    honestly reports its size upfront -- it does nothing for chunked
+    transfer-encoding (no Content-Length header at all) or a request
+    that lies about a smaller Content-Length than it actually sends.
+    Either way, a route with no body-size ceiling of its own (chat,
+    memory, code/run, ...) could still have its FULL oversized body
+    read into memory before any per-route validation ran.
+
+    This is a pure ASGI middleware (not `@app.middleware("http")`/
+    BaseHTTPMiddleware) so it can wrap the raw `receive` callable
+    directly and count bytes as they actually arrive on the wire,
+    regardless of what the client claims. Registered via
+    `app.add_middleware()` AFTER every other middleware in this file
+    (Starlette wraps in reverse registration order -- the LAST
+    `add_middleware`/`@app.middleware("http")` call ends up OUTERMOST,
+    confirmed by reading `Starlette.build_middleware_stack()`), so this
+    is the very first thing that sees each incoming byte and the very
+    last thing that sees each outgoing one -- nothing downstream (CORS,
+    TrustedHost, the other `@app.middleware("http")` functions, FastAPI's
+    own body parsing, a route handler's manual `await request.body()`)
+    can ever see more than `max_bytes` of body, chunked or not.
+
+    Still a fast Content-Length pre-check first (rejects an honest
+    oversized request before reading anything at all); the streaming
+    counter is the real backstop for everyone else.
+    """
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers") or [])
+        content_length = headers.get(b"content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > self.max_bytes:
+                    await self._reject(scope, receive, send)
+                    return
+            except ValueError:
+                pass
+
+        total = 0
+        response_started = False
+
+        async def counting_receive():
+            nonlocal total
+            message = await receive()
+            if message["type"] == "http.request":
+                total += len(message.get("body", b""))
+                if total > self.max_bytes:
+                    raise _BodySizeLimitExceeded()
+            return message
+
+        async def tracking_send(message):
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, counting_receive, tracking_send)
+        except _BodySizeLimitExceeded:
+            if not response_started:
+                await self._reject(scope, receive, send)
+            # else: downstream already started sending a response before
+            # the overflow was detected -- too late to swap it for a 413
+            # without corrupting the response; the connection simply
+            # ends here rather than risk sending a malformed response.
+
+    async def _reject(self, scope, receive, send):
+        response = JSONResponse(
+            {"error": f"Request body too large. Max: {self.max_bytes // 1024 // 1024}MB"},
+            status_code=413,
+        )
+        await response(scope, receive, send)
+
+
+app.add_middleware(RequestBodySizeLimitMiddleware, max_bytes=MAX_REQUEST_BODY_BYTES)
 
 
 app.include_router(auth_router)
