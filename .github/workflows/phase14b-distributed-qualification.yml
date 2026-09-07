@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -157,6 +157,26 @@ jobs:
           fi
           echo "::group::Service detail after create"
           npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --noDefaults --output json
+          echo "::endgroup::"
+
+      - name: "Phase 14C fix: cloudflared 'tunnel run' requires an explicit --token argument (confirmed via Cloudflare's own docs -- TUNNEL_TOKEN alone was not sufficient)"
+        if: github.event.inputs.fresh_runner_mode == 'patch_edge_tunnel_command'
+        run: |
+          set -e
+          cat > /tmp/edge-tunnel-update.json <<'JSON'
+          {
+            "external": { "imagePath": "cloudflare/cloudflared:latest" },
+            "docker": { "configType": "customCommand", "customCommand": "tunnel --no-autoupdate run --token $TUNNEL_TOKEN" }
+          }
+          JSON
+          npx --yes @northflank/cli update service deployment -f /tmp/edge-tunnel-update.json --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --noDefaults --output json
+          echo "::group::Service detail after patch"
+          npx --yes @northflank/cli get service --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --noDefaults --output json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d.get('deployment',{}).get('docker',{}), indent=2))"
+          echo "::endgroup::"
+          echo "Waiting 20s for redeploy to roll out..."
+          sleep 20
+          echo "::group::orneur-edge-tunnel logs after patch (defensively redacted)"
+          npx --yes @northflank/cli get service logs --project "$NORTHFLANK_PROJECT" --service orneur-edge-tunnel --lineLimit 40 --noDefaults 2>&1 | sed -E 's/(eyJ|[A-Za-z0-9_-]{40,})/[REDACTED]/g'
           echo "::endgroup::"
 
       - name: "Phase 14C Step 4-5: verify tunnel connector health and internal reachability to orneur-api-a:7337 (safe logs only, no secret values)"
