@@ -332,7 +332,7 @@ jobs:
           token_b = data_b.get("token")
 
           status, me = req("GET", "/api/auth/me", token=token_a)
-          results["valid_scoped_identity_ok"] = (status == 200 and me.get("email") == email_a)
+          results["valid_scoped_identity_ok"] = (status == 200 and me.get("user", {}).get("email") == email_a)
 
           # -- tenant isolation: user A uploads a real doc into a session, user B must not read it back --
           session_id = str(uuid.uuid4())
@@ -351,9 +351,13 @@ jobs:
           try:
               with urllib.request.urlopen(upload_req, timeout=15) as resp:
                   upload_status = resp.status
+                  upload_body = resp.read().decode(errors="replace")
           except urllib.error.HTTPError as e:
               upload_status = e.code
+              upload_body = e.read().decode(errors="replace")
           results["tenant_a_upload_ok"] = (upload_status == 200)
+          results["_diag_upload_status"] = upload_status
+          results["_diag_upload_body"] = upload_body[:300]
 
           status, _ = req("GET", f"/api/docs/list?session_id={session_id}", token=token_b)
           results["tenant_b_cannot_list_tenant_a_docs"] = (status == 404)
@@ -362,7 +366,7 @@ jobs:
           results["tenant_a_can_still_list_own_docs"] = (status == 200)
 
           print(json.dumps(results, indent=2))
-          all_pass = all(results.values())
+          all_pass = all(v for k, v in results.items() if not k.startswith("_diag"))
           print("ALL_PASS" if all_pass else "SOME_FAILED")
           import sys
           sys.exit(0 if all_pass else 1)
