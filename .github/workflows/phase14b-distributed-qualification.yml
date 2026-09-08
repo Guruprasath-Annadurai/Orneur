@@ -387,6 +387,17 @@ jobs:
           curl -sS -A "$UA" -o /dev/null -w "path-traversal-shaped path status=%{http_code}\n" "https://staging.orneur.com/api/status/../../../../etc/passwd" --max-time 10 || true
           echo "::endgroup::"
 
+          echo "::group::DIAGNOSTIC -- single signup POST via curl with full response headers and timing, before the rapid-fire loop"
+          curl -sS -A "$UA" -D - -o /tmp/signup_diag_body.txt -w '\ncurl: http_code=%{http_code} time_total=%{time_total}s\n' \
+            -X POST "https://staging.orneur.com/api/auth/signup" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"phase14c1-diag-$(date +%s)@example.com\",\"password\":\"correcthorsebatterystaple9\",\"name\":\"RL Diag\"}" \
+            --max-time 20 || echo "curl itself failed/timed out"
+          echo "--- response body (first 500 chars) ---"
+          head -c 500 /tmp/signup_diag_body.txt
+          echo
+          echo "::endgroup::"
+
           echo "::group::App-level auth rate limiter still active (orca/serve/ratelimit.py) -- rapid-fire real signups against the same endpoint the qualification test uses, expect a 429 to appear before completing all attempts"
           python3 - <<'PY'
           import json, urllib.request, urllib.error, uuid
@@ -400,10 +411,13 @@ jobs:
               req.add_header("User-Agent", UA)
               req.add_header("Content-Type", "application/json")
               try:
-                  with urllib.request.urlopen(req, timeout=10) as resp:
+                  with urllib.request.urlopen(req, timeout=15) as resp:
                       status = resp.status
               except urllib.error.HTTPError as e:
                   status = e.code
+              except Exception as e:
+                  print(f"attempt {i+1}: EXCEPTION {type(e).__name__}: {e}")
+                  continue
               print(f"attempt {i+1}: status={status}")
               if status == 429:
                   hit_429 = True
