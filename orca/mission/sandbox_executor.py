@@ -91,6 +91,26 @@ class ExecutionOutcome(str, Enum):
     FAILED = "FAILED"
     TIMED_OUT = "TIMED_OUT"
     CANCELLED = "CANCELLED"
+    #: Phase 15.6.1 -- the verified sandbox (orca.mission.container_executor)
+    #: could not be reached. Fail-closed: this is a terminal, truthful
+    #: outcome -- callers must NEVER interpret it as license to run the
+    #: same untrusted command via this module's weaker LOCAL_SUBPROCESS
+    #: path instead.
+    SANDBOX_UNAVAILABLE = "SANDBOX_UNAVAILABLE"
+
+
+class ExecutionPath(str, Enum):
+    """Phase 15.6.1 -- explicit, never-hidden distinction between the
+    two execution paths this package offers. Only CONTAINER_SANDBOX
+    (orca.mission.container_executor) is the VERIFIED V1 execution
+    path for arbitrary commands -- see REQ-SANDBOX-BOUNDARY-001 in
+    PHASE15_EVIDENCE.md. LOCAL_SUBPROCESS (this module) remains a
+    development-only fallback with the partial-isolation properties
+    documented in this module's own docstring; it is NEVER the path a
+    caller should label as "the ORNEUR Code sandbox" for anything
+    that executes genuinely untrusted, arbitrary commands."""
+    LOCAL_SUBPROCESS = "LOCAL_SUBPROCESS"       # DEVELOPMENT_ONLY, PARTIAL_ISOLATION, NOT_VERIFIED_SANDBOX
+    CONTAINER_SANDBOX = "CONTAINER_SANDBOX"     # VERIFIED_V1_EXECUTION_PATH
 
 
 @dataclass(frozen=True)
@@ -105,6 +125,7 @@ class ExecutionResult:
     stdout_truncated: bool
     stderr_truncated: bool
     evidence_reference: str | None = None
+    execution_path: str = ExecutionPath.LOCAL_SUBPROCESS.value
 
     @property
     def ok(self) -> bool:
