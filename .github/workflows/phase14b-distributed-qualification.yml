@@ -61,6 +61,7 @@ jobs:
       - name: "Phase 15.4 LIVE_NEON_TEMP_BRANCH qualification -- real application code (orca.mission.mission_store) against a disposable Neon branch, never production"
         if: github.event.inputs.fresh_runner_mode == 'phase15_4_live_neon_qualification'
         run: |
+          pip install --no-cache-dir pytest
           python -m pytest tests/test_mission_store_unit.py tests/test_mission_store_live_neon.py -v
         env:
           ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
