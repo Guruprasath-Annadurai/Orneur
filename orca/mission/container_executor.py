@@ -33,7 +33,11 @@ code), using ONLY long-established Docker/OCI runtime primitives:
                            else on the container's own root filesystem.
                            Empirically confirmed:
                            `OSError: Read-only file system`.
-  - `--user <uid>:<gid>` (non-root)
+  - `--user <uid>:<gid>` (non-root, dynamically matched to the
+    workspace directory's actual host owner via
+    `_container_user_for_workspace()` -- NOT a hardcoded value; see
+    that function's own docstring for the real permission bug this
+    fixes on genuine Linux Docker hosts)
                            -- confirmed unable to read `/etc/shadow`
                            inside the container (`PermissionError`).
   - `--pids-limit`, `--memory` (+ `--memory-swap` pinned equal, so
@@ -94,7 +98,6 @@ from orca.mission.sandbox_executor import (
 )
 
 DEFAULT_IMAGE = "python:3.11-slim"
-_CONTAINER_UID_GID = "1000:1000"
 
 
 def _now_iso() -> str:
@@ -111,11 +114,36 @@ def is_docker_available() -> bool:
         return False
     try:
         result = subprocess.run(
-            ["docker", "info"], capture_output=True, timeout=5,
+            ["docker", "info"], capture_output=True, timeout=15,
         )
         return result.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
+
+
+def _container_user_for_workspace(workspace_root: str) -> str:
+    """Returns `<uid>:<gid>` matching the WORKSPACE DIRECTORY's actual
+    host owner, rather than a hardcoded value.
+
+    A hardcoded `--user 1000:1000` looked correct on macOS (Docker
+    Desktop's virtiofs/gRPC-FUSE bind-mount layer maps host
+    permissions loosely enough that it didn't matter which uid was
+    used) but genuinely broke on the real Linux Docker daemon this
+    phase's own CI dispatch runs on: GitHub Actions' `runner` user
+    owns `tmp_path` at some other uid (not 1000), so a container
+    process running as 1000 got a real `PermissionError: [Errno 13]
+    Permission denied: '/workspace'` trying to even list the bind
+    mount -- caught by `test_workspace_contents_are_visible` and
+    `test_workspace_traversal_via_dotdot` failing on GitHub Actions
+    run 34260474526 despite passing locally. Matching the container
+    user to the workspace's real owning uid/gid is the standard,
+    correct fix for Docker bind-mount permissions (not a workaround)
+    -- the container process gets the SAME (non-root, unless the
+    workspace happens to be root-owned) permissions on the mount that
+    the host process already has, without loosening the mount itself
+    or falling back to `--user root`."""
+    st = os.stat(os.path.realpath(workspace_root))
+    return f"{st.st_uid}:{st.st_gid}"
 
 
 def _docker_run_command(plan: ExecutionPlan, container_name: str, *, image: str) -> list[str]:
@@ -127,7 +155,7 @@ def _docker_run_command(plan: ExecutionPlan, container_name: str, *, image: str)
         "-w", "/workspace",
         "--read-only",
         "--tmpfs", "/tmp:rw,size=64m",
-        "--user", _CONTAINER_UID_GID,
+        "--user", _container_user_for_workspace(plan.workspace_root),
     ]
     if resource_policy.max_processes is not None:
         cmd += ["--pids-limit", str(resource_policy.max_processes)]
@@ -202,11 +230,30 @@ def run_in_container(
         time.sleep(0.05)
 
     if outcome in (ExecutionOutcome.CANCELLED, ExecutionOutcome.TIMED_OUT):
-        subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=10)
+        subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=20)
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            # `docker kill` occasionally does not stop the client
+            # process promptly on a loaded Docker Desktop daemon
+            # (observed directly on this host -- see
+            # PHASE15_EVIDENCE.md's Phase 15.6.1 section). Escalate to
+            # `docker rm -f`, which forcibly removes the container
+            # regardless of its current state, then give the client
+            # one more bounded wait. This function must NEVER let an
+            # unhandled TimeoutExpired propagate to the caller -- a
+            # slow-to-die container is still a truthful TIMED_OUT/
+            # CANCELLED outcome, not a crash.
+            subprocess.run(["docker", "rm", "-f", container_name], capture_output=True, timeout=20)
+            try:
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                pass  # proc.returncode stays None below -- disclosed, not hidden
+    else:
+        proc.wait(timeout=30)
 
-    proc.wait(timeout=15)
-    t_stdout.join(timeout=15)
-    t_stderr.join(timeout=15)
+    t_stdout.join(timeout=30)
+    t_stderr.join(timeout=30)
 
     return ExecutionResult(
         execution_id=plan.execution_id,
