@@ -1022,3 +1022,25 @@ Both failures are PRE-EXISTING and already disclosed, not new: `test_memory_lega
 **PROGRESSION VERDICT:**
 
 YES — EVIDENCE SUPPORTS PROGRESSION
+
+---
+
+## PHASE 15.7 — COMMIT MESSAGE COUNTING CORRECTION
+
+The Phase 15.7 implementation commit message (`43c30eb`) states "87 new local tests (no live DB) + 1 LIVE_NEON_TEMP_BRANCH test". This was a counting error in the commit message text only. The actual per-file test counts, and the Phase 15.7 evidence checkpoint's own **TEST COLLECTION DELTA** section above, correctly show:
+
+```
+test_product_contract.py:          14
+test_assumption_model.py:          11
+test_acceptance_criteria.py:       10
+test_requirement_dependencies.py:   9
+test_idea_compiler.py:             19
+test_traceability.py:               5
+                                   ---
+local subtotal:                    68
+test_idea_compiler_live_neon.py:    1
+                                   ---
+TOTAL:                             69
+```
+
+The authoritative Phase 15.7 TEST COLLECTION DELTA is **+69**, exactly as recorded in that checkpoint's own TEST COLLECTION DELTA line. This is a commit-message text error only — it does not affect any test result, any requirement status, the live Neon qualification (`34265412117`, 69/69 passed), or the Phase 15.7 PROGRESSION VERDICT, and does not amend or rewrite the historical commit. Recorded here per the owner's explicit instruction, appended rather than editing prior evidence.
