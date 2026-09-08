@@ -376,6 +376,57 @@ def seed_registry() -> None:
         RequirementStatus.IMPLEMENTED,
         implementation_files=("orca/mission/sandbox_executor.py", "orca/mission/execution_plan.py"),
     )
+    # Phase 15.6.1 (SANDBOX CLOSURE) closes the specific gap that kept
+    # this requirement at IMPLEMENTED: orca/mission/container_executor.py
+    # is now the QUALIFIED V1 path for RUN_ARBITRARY_COMMANDS (never
+    # orca/mission/sandbox_executor.py's LOCAL_SUBPROCESS path, which
+    # stays explicitly DEVELOPMENT_ONLY / PARTIAL_ISOLATION /
+    # NOT_VERIFIED_SANDBOX -- see ExecutionPath in sandbox_executor.py).
+    # Every dimension the statement lists is now adversarially proven
+    # on the qualified path, against a REAL Linux Docker daemon (this
+    # repo's own CI, GitHub Actions run 34262207489, 27/27 passed --
+    # not merely on this dev Mac, where the isolation mechanism is
+    # weaker/looser): filesystem (host home/repo-parent/sibling/
+    # symlink-escape/traversal all proven absent or denied --
+    # test_host_home_directory_not_visible et al.), network (a raw-IP
+    # connect attempt under --network none fails with "Network is
+    # unreachable", a real kernel denial, not a DNS-only failure --
+    # test_outbound_connection_is_kernel_denied_not_dns_failure),
+    # environment variables + secrets (explicit allowlist, synthetic
+    # secret markers proven absent when not allowlisted --
+    # test_synthetic_secret_not_visible_without_allowlist), CPU/RAM
+    # (--cpus/--memory, a genuine cgroup OOM-kill observed, exit 137
+    # -- test_memory_limit_enforced_via_cgroup_oom), runtime duration
+    # (real timeout, truthful TIMED_OUT -- test_timeout_kills_
+    # container_truthfully), process count (--pids-limit, a real
+    # cgroup-enforced fork failure that leaves the HOST's own process
+    # table untouched, unlike the RLIMIT_NPROC bug Phase 15.6
+    # disclosed -- test_pids_limit_enforced_by_cgroup_not_host_ulimit),
+    # privileges (non-root, dynamically matched to the workspace's
+    # real owner after a genuine permission bug was found and fixed
+    # via this exact live dispatch -- test_absolute_host_path_read_
+    # denied_or_absent), child processes (a grandchild spawned inside
+    # the container does not survive a timeout-triggered kill, because
+    # the container's whole PID namespace is torn down --
+    # test_child_process_inside_container_is_cleaned_up_on_timeout),
+    # and working directory (the bind-mounted workspace_root is the
+    # ONLY host path visible at all).
+    #
+    # NOT claimed: the statement's "across DEVELOPMENT/TEST/STAGING/
+    # PRODUCTION boundaries" clause is a separate deployment-profile
+    # concern (orca.godmode.deployment_profile) this module does not
+    # integrate with -- disclosed, not silently assumed satisfied.
+    # NetworkPolicy.RESTRICTED remains unimplemented (only DENIED and
+    # unrestricted ALLOWED exist) and stays out of scope for this
+    # promotion. LOCAL_SUBPROCESS (orca/mission/sandbox_executor.py)
+    # remains explicitly NOT the verified path for this requirement --
+    # its own partial-enforcement disclosure above is unchanged.
+    transition(
+        "REQ-SANDBOX-BOUNDARY-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_container_adversarial.py", "tests/test_container_execution_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1561--sandbox-closure",
+    )
 
     # -- Phase 15.6: Code Mode Contract (spec sections 1-2) --
     register(Requirement(

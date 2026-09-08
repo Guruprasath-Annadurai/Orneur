@@ -250,6 +250,30 @@ class TestTimeoutCancellation:
         result = run_in_container(plan, cancellation=_CancelAfter(0.5))
         assert result.status is ExecutionOutcome.CANCELLED
 
+    def test_child_process_inside_container_is_cleaned_up_on_timeout(self, tmp_path):
+        # A grandchild process spawned INSIDE the container must not
+        # survive the container being killed -- the container's own
+        # PID namespace is torn down as a whole (a structural
+        # container guarantee, unlike the subprocess-only path where
+        # process-group cleanup had to be implemented by hand). Proven
+        # by writing a marker file to the container's own /tmp AFTER
+        # a long sleep in the grandchild -- if timeout/kill worked,
+        # the marker is never written even though we wait past when
+        # the grandchild's sleep would have finished.
+        marker_relpath = "grandchild_marker.txt"
+        script = (
+            "import subprocess, time\n"
+            "subprocess.Popen(['sh', '-c', 'sleep 5 && touch /workspace/" + marker_relpath + "'])\n"
+            "time.sleep(30)\n"
+        )
+        plan = _plan(tmp_path, ["python3", "-c", script], timeout_seconds=1.0)
+        result = run_in_container(plan)
+        assert result.status is ExecutionOutcome.TIMED_OUT
+        time.sleep(6)  # past when the grandchild's 5s sleep would have completed, had it survived
+        assert not (tmp_path / marker_relpath).exists(), (
+            "grandchild process survived container kill -- PID namespace was not fully torn down"
+        )
+
 
 class TestOutputAndShellSafety:
     def test_large_output_bounded(self, tmp_path):
