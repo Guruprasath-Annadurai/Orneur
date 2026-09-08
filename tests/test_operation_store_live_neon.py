@@ -273,8 +273,12 @@ class TestCancellation:
             executor = RecordingTestExecutor()
             with pytest.raises(OperationStateError):
                 authorize_operation(conn, op["id"], tenant_id=TENANT, approved_by="user_bob", reason="too late")
-            with pytest.raises(OperationStateError):
-                start_and_execute_operation(conn, op["id"], executor)
+            # start_and_execute_operation treats an already-terminal
+            # operation as a graceful idempotent no-op (same as
+            # SUCCEEDED/FAILED) rather than raising -- consistent with
+            # test_cancelled_authorized_operation_never_executes below.
+            result = start_and_execute_operation(conn, op["id"], executor)
+            assert result["status"] == "CANCELLED"
             assert executor.call_count == 0
         finally:
             conn.close()

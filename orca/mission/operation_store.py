@@ -322,6 +322,22 @@ def start_and_execute_operation(conn, operation_id: str, executor) -> dict:
     # a database transaction/lock open.
     try:
         _write_operation_transition(conn, operation_id, "STARTED")
+    except OperationStateError:
+        # Concurrency race: another caller's FOR UPDATE-protected
+        # transition won between our unlocked read above and this
+        # attempt. That is NOT an error for this caller -- it is
+        # exactly spec section 15's required behavior ("the other
+        # worker reconciles/observes existing state rather than
+        # performing the side effect again"). Re-check the row's
+        # ACTUAL current state: if a concurrent winner already moved
+        # it past AUTHORIZED, return gracefully without recalling the
+        # executor; any other illegal-transition cause is a real
+        # error and still propagates.
+        conn.rollback()
+        current = get_operation(conn, operation_id)
+        if current is not None and current["status"] in _NO_EXECUTOR_RECALL_STATES:
+            return current
+        raise
     except OperationStoreError:
         conn.rollback()
         raise
