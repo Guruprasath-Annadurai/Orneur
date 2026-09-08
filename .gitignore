@@ -49,3 +49,4 @@ htmlcov/
 # Build artifacts
 dist/
 *.tar.gz
+/scratchpad/
