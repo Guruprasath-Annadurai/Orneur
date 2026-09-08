@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle", "verify_cloudflare_access", "verify_waf_and_rate_limit", "full_edge_battery", "phase15_4_live_neon_qualification", "phase15_5_live_neon_qualification"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle", "verify_cloudflare_access", "verify_waf_and_rate_limit", "full_edge_battery", "phase15_4_live_neon_qualification", "phase15_5_live_neon_qualification", "phase15_6_live_neon_qualification"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -72,6 +72,15 @@ jobs:
         run: |
           pip install --no-cache-dir pytest
           python -m pytest tests/test_authority_bridge.py tests/test_executor_unit.py tests/test_operation_store_live_neon.py -v
+        env:
+          ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
+          ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}
+
+      - name: "Phase 15.6 LIVE_NEON_TEMP_BRANCH qualification -- Code execution foundation (sandbox executor, code modes, real operation/authority integration) against a disposable Neon branch, never production"
+        if: github.event.inputs.fresh_runner_mode == 'phase15_6_live_neon_qualification'
+        run: |
+          pip install --no-cache-dir pytest
+          python -m pytest tests/test_code_mode.py tests/test_providers.py tests/test_sandbox_executor.py tests/test_sandbox_adversarial.py tests/test_code_execution_live_neon.py -v
         env:
           ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
           ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}
