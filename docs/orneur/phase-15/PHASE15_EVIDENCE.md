@@ -1206,3 +1206,42 @@ FAILED tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_wr
 **PROGRESSION VERDICT:**
 
 YES — EVIDENCE SUPPORTS PROGRESSION
+
+---
+
+## PHASE 15.8 — PRODUCTION SCHEMA RECONCILIATION
+
+**OWNER APPROVAL:** Received in chat, this session, scoped EXACTLY to the `PHASE_15_8_MIGRATION_SQL` already defined in `orca/mission/verification_schema.py` and already qualified live on a disposable branch in the checkpoint above. No other schema change was authorized. Quoted in full in the session transcript; not reproduced here beyond the SQL itself, which is public/non-secret.
+
+**MIGRATION ID:** `f22ef726-4f2f-4a20-88b0-cac6743a5931`, applied via the governed `mcp__Neon__prepare_database_migration` → `complete_database_migration` workflow (temporary branch `br-silent-shadow-b32u2gnl`, created and deleted automatically by the tool). No SQL was reconstructed, retyped, or modified from the approved text — the exact string from the owner's message was passed to both calls verbatim.
+
+**PRODUCTION APPLICATION RESULT:** Applied successfully to `production` (`br-orange-morning-b3hu72wc`) with no errors.
+
+**PRODUCTION TABLE COUNT:** 22 (21 pre-existing Phase 15.2 tables + 1 new `verification_records` table) — confirmed via `information_schema.tables` immediately after application.
+
+**VERIFICATION_RECORDS COLUMN COUNT:** **21**, confirmed via `information_schema.columns`. The Phase 15.8 evidence checkpoint above states "20-column table" in its VERIFICATION HISTORY / DURABILITY FINDINGS prose — this was a **counting/documentation error**, not a schema defect: the migration source (`PHASE_15_8_MIGRATION_SQL`) always defined 21 columns (`id, mission_id, requirement_id, criterion_id, category, verification_method, verifier_id, verifier_version, started_at, finished_at, outcome, revision, summary, command_reference, evidence_refs, artifact_hash, environment_identity, limitations, error_detail, not_applicable_reason, created_at`), and the live qualification against the disposable branch in the checkpoint above already queried and confirmed exactly these 21 columns before this reconciliation — the qualification result itself was never wrong, only the "20-column" prose describing it. Not corrected in place, per instruction — recorded here as a reconciliation note.
+
+**COLUMN / CONSTRAINT VERIFICATION:**
+- All 21 columns present with the exact expected names and `text` data type.
+- Nullability matches the DDL exactly: `id, category, verification_method, verifier_id, started_at, outcome, created_at` are `NOT NULL`; all 14 remaining columns are nullable.
+- `outcome` CHECK constraint (`verification_records_outcome_check`) present, containing all seven intended states: `PASS, FAIL, UNVERIFIED, NOT_APPLICABLE, ERROR, CANCELLED, TIMED_OUT` — confirmed via `pg_get_constraintdef()`.
+
+**INDEX VERIFICATION:** All four expected indexes confirmed present via `pg_indexes` (plus the automatic `verification_records_pkey`): `ix_verification_records_mission`, `ix_verification_records_requirement`, `ix_verification_records_criterion`, `ix_verification_records_revision`.
+
+**EVIDENCE TABLE ALTERATION VERIFICATION:** `evidence.verification_id` (text, nullable) and `evidence.revision` (text, nullable) both confirmed present via `information_schema.columns`. `evidence_verification_id_fkey` confirmed via `pg_constraint`: `FOREIGN KEY (verification_id) REFERENCES verification_records(id)`, exactly as approved.
+
+**APPLY_SCHEMA REPRODUCIBILITY:** `PHASE_15_8_MIGRATION_SQL` is now imported and executed by `orca.mission.db.apply_schema()`, immediately after `PHASE_15_5_MIGRATION_SQL`, using the identical idempotent pattern (the migration itself is pure `CREATE TABLE IF NOT EXISTS`/`ADD COLUMN IF NOT EXISTS`). No additional schema change was introduced while doing this. `verification_schema.py`'s own module docstring was updated to reflect the current state (production-applied, wired into `apply_schema()`) — this is live code documentation, not historical evidence, so it was corrected directly rather than reconciled by addendum.
+
+**POST-MIGRATION LIVE TEST RESULT:** A fresh disposable branch (`br-polished-recipe-b3socjwz`) was cloned from the now-migrated `production` and the complete Phase 15.8 qualification suite was re-dispatched: GitHub Actions run [`34269274666`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/34269274666) — **63 passed** (the original 62 plus one new test, `test_apply_schema_second_application_is_idempotent_noop`, added specifically for this reconciliation). Explicitly confirmed within that run: fresh-connection reload (`test_verification_record_persists_and_reloads_through_fresh_connection`), stale-revision rejection (`test_stale_revision_evidence_rejected_as_current_proof`), FAIL-remains-in-history-after-later-PASS (`test_failed_verification_remains_in_history_after_later_pass`), and schema-bootstrap idempotency — `apply_schema()` called a second time against the already-migrated branch changed nothing (column count stayed 21, table count stayed 1, no duplication, no error).
+
+**CLEANUP:** Neon branch `br-polished-recipe-b3socjwz` deleted via `mcp__Neon__delete_branch`. GitHub secrets `ORNEUR_MISSION_DATABASE_URL`/`ORNEUR_MISSION_DATABASE_URL_DIRECT` deleted from the `phase14b-staging` environment — confirmed via `gh api .../environments/phase14b-staging/secrets` showing only the original 8 Phase 14 secrets remain. Local scratch file removed. No test data was ever inserted into production itself — confirmed via `SELECT count(*) FROM verification_records` on production returning 0 immediately after the migration, before any qualification branch was created.
+
+**DOCUMENTATION COUNT CORRECTION:** The Phase 15.8 evidence checkpoint's "20-column" characterization of `verification_records` is corrected here to **21 columns**, matching both the migration source and every live `information_schema` query run against it (on the original qualification branch, on production, and on the post-migration qualification branch). This is a documentation/prose counting error only — it does not affect, and never affected, any test result, any requirement status, or the Phase 15.8 PROGRESSION VERDICT. The prior checkpoint is left unedited above; this note is the correction, per the owner's explicit instruction not to rewrite historical evidence.
+
+**KNOWN LIMITATIONS:** Unchanged from the Phase 15.8 checkpoint above — `artifact_hash` remains unpopulated by any verifier, `verification_records` is not yet wired into the Phase 15.7 traceability report, and `NetworkPolicy.RESTRICTED`/real static-analysis-tool integrations remain deferred. No new limitation was introduced by the production migration itself.
+
+**EPISTEMIC STATE:** VERIFIED — every claim in this reconciliation traces to a direct Neon MCP tool response (`prepare_database_migration`, `complete_database_migration`, `run_sql` against production and both qualification branches) or a live GitHub Actions test run (`34269274666`, quoted above). The 20-vs-21 column discrepancy is disclosed exactly as found, with the exact source of the miscount identified (a documentation/prose error, not a schema or test defect).
+
+**FINAL RECONCILED VERDICT:**
+
+YES — EVIDENCE SUPPORTS PROGRESSION
