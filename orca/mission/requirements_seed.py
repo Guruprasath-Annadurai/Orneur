@@ -348,6 +348,164 @@ def seed_registry() -> None:
             "terminated, not merely discouraged.",
         ),
     ))
+    # Phase 15.6 (orca/mission/sandbox_executor.py) implements and
+    # adversarially tests a REAL subset of this boundary: workspace
+    # cwd containment (traversal/absolute/symlink/sibling-prefix all
+    # rejected), path-controlled write/delete tool actions, argv-only
+    # execution (no shell injection), a real wall-clock timeout that
+    # terminates a runaway process (test_enforced_long_running_
+    # process_times_out -- exactly the spec's own "exceeding the
+    # runtime limit" example), bounded/truncation-flagged output, an
+    # explicit env allowlist (no blind inheritance), and POSIX
+    # process-group cleanup (no orphan survives timeout). BUT the
+    # statement's own listed dimension "network" is explicitly,
+    # adversarially proven NOT enforced at this V1 subprocess layer
+    # (test_network_policy_denied_is_not_kernel_enforced_on_this_v1_
+    # path), an arbitrary command's absolute-path filesystem access is
+    # not namespace-jailed
+    # (test_limitation_arbitrary_command_can_write_outside_workspace_
+    # via_absolute_path), and RLIMIT_AS/process-count limits are
+    # disclosed as unreliable-or-unset on this host. Per the standing
+    # rule ("do not promote because a mechanism partially exists"),
+    # this stays IMPLEMENTED, not VERIFIED -- the full multi-dimension
+    # statement is not yet fully satisfied, even though a real,
+    # tested, adversarially-proven boundary now exists for a genuine
+    # subset of it.
+    transition(
+        "REQ-SANDBOX-BOUNDARY-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/sandbox_executor.py", "orca/mission/execution_plan.py"),
+    )
+
+    # -- Phase 15.6: Code Mode Contract (spec sections 1-2) --
+    register(Requirement(
+        id="REQ-CODEMODE-CONTRACT-001",
+        source_section="spec section 1-2",
+        statement="ORNEUR Code implements four canonical modes (ASSIST, PROTOTYPE, BUILD, "
+                   "LAUNCH), each with an enforceable capability-action policy, not a "
+                   "display label; a mode narrows what may be attempted and never expands "
+                   "authority beyond what the real authority engine grants.",
+        acceptance_criteria=(
+            "A test confirms each mode's policy differs and that ASSIST cannot attempt "
+            "WRITE_FILES/DEPLOY/PUBLISH while LAUNCH can attempt them.",
+            "A test confirms an action requiring real authority (e.g. DEPLOY) still "
+            "requires Phase 15.5 authorization even when the mode permits attempting it.",
+        ),
+    ))
+    transition(
+        "REQ-CODEMODE-CONTRACT-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/code_mode.py",),
+    )
+    transition(
+        "REQ-CODEMODE-CONTRACT-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_code_mode.py", "tests/test_code_execution_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-156--code-execution-foundation",
+    )
+
+    register(Requirement(
+        id="REQ-CODEMODE-AUTHORITY-002",
+        source_section="spec section 13, 20",
+        statement="Privileged Code-mode execution routes through the existing Phase 15.5 "
+                   "operation/authority engine (no parallel authority system); model "
+                   "output can never self-authorize execution.",
+        acceptance_criteria=(
+            "A live test authorizes and executes a Code-mode operation via the real "
+            "orca.mission.operation_store + orca.godmode path and confirms it succeeds.",
+            "A live test confirms a requester cannot also approve their own Code-mode "
+            "operation (SelfAuthorizationError), and that an unauthorized operation "
+            "cannot start.",
+        ),
+    ))
+    transition(
+        "REQ-CODEMODE-AUTHORITY-002",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/sandbox_executor.py", "orca/mission/operation_store.py"),
+    )
+    transition(
+        "REQ-CODEMODE-AUTHORITY-002",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_code_execution_live_neon.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-156--code-execution-foundation",
+    )
+
+    register(Requirement(
+        id="REQ-PROTOTYPE-DEBT-001",
+        source_section="spec section 15-16",
+        statement="Prototype shortcuts are captured as structured, queryable "
+                   "PrototypeDebt; debt blocking LAUNCH must surface (not silently "
+                   "disappear) before a mission can claim LAUNCH readiness.",
+        acceptance_criteria=(
+            "A test records debt, confirms it is queryable by mission, and confirms "
+            "blocking debt is surfaced for a PROTOTYPE -> LAUNCH transition until "
+            "explicitly resolved.",
+            "A test confirms resolved debt is never deleted -- only its status changes.",
+        ),
+    ))
+    transition(
+        "REQ-PROTOTYPE-DEBT-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/code_mode.py",),
+    )
+    transition(
+        "REQ-PROTOTYPE-DEBT-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_code_mode.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-156--code-execution-foundation",
+    )
+
+    register(Requirement(
+        id="REQ-PROVIDER-NEUTRAL-001",
+        source_section="spec section 3",
+        statement="A provider-neutral model interface exists that does not bind the "
+                   "mission engine to any one checkpoint/provider, does not claim any "
+                   "ORNEUR-native model (Genesis/Novus/Aeternum) exists, and does not "
+                   "expose provider secrets through model-visible state.",
+        acceptance_criteria=(
+            "Core tests pass using only a deterministic mock provider, no paid provider "
+            "required.",
+            "A structural test confirms ProviderRequest carries no secret-shaped field.",
+        ),
+    ))
+    transition(
+        "REQ-PROVIDER-NEUTRAL-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/providers.py",),
+    )
+    transition(
+        "REQ-PROVIDER-NEUTRAL-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_providers.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-156--code-execution-foundation",
+    )
+
+    register(Requirement(
+        id="REQ-NOFAKE-EXEC-001",
+        source_section="spec section 18",
+        statement="A successful command exit is not conflated with verified mission "
+                   "completion; a failing, timed-out, or unauthorized Code-mode execution "
+                   "can never produce a SUCCEEDED operation or a COMPLETED_VERIFIED "
+                   "mission state.",
+        acceptance_criteria=(
+            "A live test proves a failing command yields a FAILED operation, never "
+            "SUCCEEDED.",
+            "A live test proves a timed-out command yields a FAILED operation with a "
+            "TIMED_OUT-tagged result, never SUCCEEDED.",
+            "A live test proves an unauthorized execution attempt cannot start at all.",
+        ),
+    ))
+    transition(
+        "REQ-NOFAKE-EXEC-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/sandbox_executor.py", "orca/mission/operation_store.py"),
+    )
+    transition(
+        "REQ-NOFAKE-EXEC-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_code_execution_live_neon.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-156--code-execution-foundation",
+    )
 
     # -- Authority Engine (spec section 14) --
     register(Requirement(
