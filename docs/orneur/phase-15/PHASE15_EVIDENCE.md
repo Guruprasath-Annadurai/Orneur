@@ -1044,3 +1044,165 @@ TOTAL:                             69
 ```
 
 The authoritative Phase 15.7 TEST COLLECTION DELTA is **+69**, exactly as recorded in that checkpoint's own TEST COLLECTION DELTA line. This is a commit-message text error only — it does not affect any test result, any requirement status, the live Neon qualification (`34265412117`, 69/69 passed), or the Phase 15.7 PROGRESSION VERDICT, and does not amend or rewrite the historical commit. Recorded here per the owner's explicit instruction, appended rather than editing prior evidence.
+
+---
+
+## PHASE 15.8 — VERIFICATION ENGINE
+
+**PHASE:** 15.8 — Verification Engine
+
+**OBJECTIVE:** Build the evidence-backed verification layer that determines whether implemented ORNEUR Code work is actually supported by proof — converting real observations (command execution, builds, tests, regressions, static analysis, security checks, authority checks, performance, accessibility, release checks, external confirmation) into typed, traceable verification records. Critical invariant: MISSING EVIDENCE != PASS, and IMPLEMENTED != VERIFIED. A successful command alone is not sufficient; a model statement is not evidence; an absent check is not success.
+
+**BASELINE:** Phase 15.7 closed with verdict YES. HEAD `c4342c8` (after the Phase 15.7 commit-message counting correction). Confirmed clean working tree before starting.
+
+**PRE-FLIGHT FINDINGS:** Inspected before writing code. The existing `evidence` table (Phase 15.2) has only `id/mission_id/requirement_id/kind/reference/summary/created_at` — nowhere near enough shape for this phase's own revision-bound stale-evidence detection or non-vacuous append-only history requirements. `orca.mission.requirements`'s forward-only VERIFIED gate (test_files + evidence_ref) is extended, not replaced. Phase 15.7's `acceptance_criteria.transition_criterion()` already allows a caller-supplied evidence_ref string — Phase 15.8 adds a STRICTER path alongside it rather than modifying it, so Phase 15.7's own tests remain unchanged. Phase 15.6/15.6.1's `sandbox_executor`/`container_executor`/`ExecutionPlan` are reused directly for all command-based verification — no second execution path was built. No existing build/test-runner/static-analysis integration was found elsewhere in the repository to extend.
+
+**IMPLEMENTED:**
+- `orca/mission/verification.py` — `VerificationOutcome` (PASS/FAIL/UNVERIFIED/NOT_APPLICABLE/ERROR/CANCELLED/TIMED_OUT), immutable-in-semantics `VerificationRecord` (NOT_APPLICABLE requires a reason, ERROR requires detail, PASS requires a real evidence_ref or command_reference — all enforced at `__post_init__`, not left to caller discipline), `VerificationPlan` (requires ≥1 check, never claims a check already passed).
+- `orca/mission/verification_schema.py` + `verification_store.py` — a genuinely new `verification_records` table (20 columns) plus `evidence.verification_id`/`evidence.revision`. Append-only: `record_verification()` always INSERTs a fresh row; there is no update function. **Deliberately NOT wired into `apply_schema()`** and **NOT applied to production by any code path this phase** — see MIGRATIONS below.
+- `orca/mission/verifiers.py` — `BuildVerifier`/`UnitTestVerifier` (real command execution through Phase 15.6/15.6.1's governed paths), `parse_pytest_output()` (never fabricates an unparseable metric), `SecurityVerifier`/`AuthorityVerifier` (LOCAL_SUBPROCESS, deliberately, for ORNEUR's own trusted test files), five interface-only verifiers (`StaticAnalysisVerifier`, `PerformanceVerifier`, `AccessibilityVerifier`, `ManualReviewVerifier`, `ExternalConfirmationVerifier`) that default to UNVERIFIED and only reach PASS given a real, caller-supplied observation.
+- `orca/mission/verification_aggregation.py` — the single authoritative non-vacuous aggregation rule, stale-revision filtering, and check-ordering cycle detection (metadata only, not a workflow engine).
+- `orca/mission/verification_integration.py` — `verify_criterion_via_verification_record()`, the stricter engine-integrated path, requiring a real PASS record whose `requirement_id`/`criterion_id` genuinely match.
+- `orca/mission/mission_verification_gate.py` — `can_complete_verified()`/`require_can_complete_verified()`, gating `COMPLETED_VERIFIED` on the real aggregated PASS of every required requirement for the current revision — no second mission completion state machine.
+
+**FILES / COMPONENTS:**
+- `orca/mission/verification.py`, `verification_schema.py`, `verification_store.py`, `verifiers.py`, `verification_aggregation.py`, `verification_integration.py`, `mission_verification_gate.py` (all new)
+- `tests/test_verification.py` (7), `test_verification_aggregation.py` (16), `test_verifiers.py` (22), `test_verification_integration.py` (5), `test_mission_verification_gate.py` (7), `test_verification_e2e.py` (1) — 58 local tests
+- `tests/test_verification_store_live_neon.py` (4 tests, `LIVE_NEON_TEMP_BRANCH`)
+- `.github/workflows/phase14b-distributed-qualification.yml` (new `phase15_8_live_neon_qualification` dispatch mode)
+- `orca/mission/requirements_seed.py` (updated — 4 new requirements registered; 3 VERIFIED immediately, 1 (`REQ-VERIFY-DURABILITY-001`) VERIFIED only after the live dispatch's actual result was in hand)
+
+**MIGRATIONS:** A genuinely new `verification_records` table plus two `evidence` columns — evaluated as necessary (the existing `evidence` table cannot represent outcome/verifier/revision/criterion linkage at all) and NOT avoided merely to skip the approval process. Handled per the standing rule:
+1. **Validated against production's own current schema**, discard-only: `mcp__Neon__prepare_database_migration` created a temp branch off `production` (`br-winter-bar-b3o7u5ln`, migration_id `7b57bb7e-e9d5-4866-b994-c215214ad708`), applied the SQL, confirmed the table/columns exist via `information_schema`, then `complete_database_migration(apply_changes=false)` — temp branch deleted, **nothing applied to production**.
+2. **Applied directly to a separate disposable qualification branch** (`br-sweet-fire-b3kp2c47`, cloned from `production`) via individual `mcp__Neon__run_sql` statements (multi-statement not supported by that tool), for the live app-level test dispatch below.
+3. `orca/mission/db.py`'s `apply_schema()` was **deliberately NOT updated** to include this migration, so no ordinary Phase 15 qualification dispatch against a production-cloned branch silently applies it either.
+4. **Production application requires a separate, explicit owner-approved migration turn** — see OWNER ACTION REQUIRED below. This phase's own PASS conditions (live-Neon durability, fresh-state reload) were satisfiable, and were satisfied, entirely on the disposable qualification branch without touching production.
+
+**VERIFICATION PLAN FINDINGS:** `test_plan_requires_at_least_one_check` and `test_plan_required_checks_property` prove `VerificationPlan` cannot be empty and correctly distinguishes required vs. optional checks — the plan itself asserts nothing about outcomes.
+
+**VERIFICATION RECORD FINDINGS:** `test_not_applicable_requires_reason`, `test_error_requires_detail`, and `test_pass_requires_evidence_or_command_reference` prove all three hard invariants are enforced at construction, not by convention.
+
+**OUTCOME SEMANTICS:** `test_empty_outcomes_is_unverified_never_vacuous_pass` and `test_all_not_applicable_is_unverified_not_vacuous_pass` prove the two vacuous-PASS traps the spec explicitly warns about (`all([]) == True`) are both closed. `test_any_fail_dominates` / `test_any_unverified_blocks_pass` / `test_error_and_cancelled_and_timed_out_all_block_pass` prove every non-PASS outcome correctly propagates through aggregation.
+
+**BUILD FINDINGS:** `test_build_success_yields_pass`, `test_build_failure_yields_fail`, `test_build_timeout_never_pass`, `test_verifier_command_missing_never_yields_pass` — all four scenarios run REAL commands through `orca.mission.sandbox_executor.run_command()` (Phase 15.6, unmodified); none produce PASS except the genuinely successful case.
+
+**TEST FINDINGS:** `parse_pytest_output()` is tested directly against real pytest summary-line shapes (`test_pytest_summary_parsing_basic`, `_failures`, `_unparseable_stays_none`). `test_unit_test_zero_collected_is_unverified_not_pass` proves the spec's own explicit trap ("0 collected unexpectedly must not silently become PASS") is closed — a genuinely-empty collection reports UNVERIFIED, not PASS. `test_unit_test_unparseable_output_is_unverified_not_pass` proves an exit-0 result whose summary line cannot be parsed at all is ALSO UNVERIFIED, never assumed PASS from the exit code alone.
+
+**REGRESSION FINDINGS / TEST COLLECTION FINDINGS:** `orca.mission.verification_aggregation.filter_current_revision()` is the mechanism Phase 15.9's future anti-test-gaming engine will build on — this phase establishes the truthful revision-binding fact base (stale filtering) without attempting intent classification, per the explicit instruction not to build the full anti-test-gaming engine yet.
+
+**SECURITY VERIFICATION FINDINGS:** `SecurityVerifier`/`AuthorityVerifier` are thin `UnitTestVerifier` specializations that run a NAMED, exact list of existing ORNEUR test files via `LOCAL_SUBPROCESS` — deliberately, since this is ORNEUR's own trusted first-party test code, not untrusted/generated content (the exact distinction spec section 6 draws). No vague "security suite PASS" claim is possible — the `command_reference` field always records the exact command/files run.
+
+**AUTHORITY VERIFICATION FINDINGS:** `AuthorityVerifier` reuses (does not reimplement) Phase 15.5's own test evidence — pointed at `test_authority_bridge.py`/`test_operation_store_live_neon.py` when invoked, per the explicit instruction to reuse rather than replace the authority engine.
+
+**STATIC ANALYSIS FINDINGS:** `test_static_analysis_unavailable_tool_is_unverified` and `test_static_analysis_real_result_required_for_pass` prove `StaticAnalysisVerifier` never defaults to PASS — an unavailable tool or an unsupplied result is UNVERIFIED, and only a real `passed=True/False` from an actually-available tool produces PASS/FAIL.
+
+**PERFORMANCE FINDINGS:** `test_performance_no_measurement_is_unverified_not_pass` proves "felt fast" cannot become PASS — only a real `metric`/`threshold`/`measured_value`/`environment` tuple is evaluated, and `test_performance_real_measurement_evaluated_against_threshold` proves the comparison is genuine (exceeding the threshold is FAIL).
+
+**ACCESSIBILITY FINDINGS:** `test_accessibility_no_ui_is_not_applicable_with_reason` proves NOT_APPLICABLE requires (and receives) an explicit reason when no UI exists in scope; `test_accessibility_ui_exists_but_unchecked_is_unverified_not_pass` proves a UI that exists but was never checked is UNVERIFIED, never defaulted to PASS.
+
+**MANUAL / EXTERNAL CONFIRMATION FINDINGS:** `test_manual_review_no_reviewer_is_unverified_not_pass` and `test_external_confirmation_absent_is_unverified_not_pass` prove neither verifier can self-declare — both require a real reviewer/evidence_ref or confirmation_ref supplied by the caller, never inferred or assumed. Neither this module nor any other Phase 15.8 code claims PUBLISHED — that distinction (ENGINEERING_READY/SUBMISSION_READY/RELEASE_CANDIDATE/PUBLISHED, Phase 15.6/15.7) is untouched.
+
+**ACCEPTANCE CRITERIA INTEGRATION:** `verify_criterion_via_verification_record()` is the ONLY strict path this phase adds — `test_non_pass_record_rejected`, `test_record_scoped_to_different_criterion_rejected`, and `test_record_with_mismatched_requirement_rejected` prove a FAIL record, a record scoped to a DIFFERENT criterion, and a record with a mismatched requirement_id are all rejected. `test_string_evidence_ref_alone_is_not_this_path` proves Phase 15.7's original `transition_criterion()` path is completely unmodified — its own historical tests still pass unchanged, exactly as instructed.
+
+**REQUIREMENT AGGREGATION:** `aggregate_outcomes(())` and `aggregate_requirement(())` both return UNVERIFIED, never a vacuous PASS from `all([]) == True`. `test_aggregate_requirement_multiple_criteria_all_must_pass` proves one FAILing criterion among several dominates the whole requirement's aggregate. Requirement-level `RequirementStatus` in `orca.mission.requirements` is NOT automatically mutated by criterion verification — the end-to-end test explicitly shows criterion VERIFIED and requirement-level `transition(..., VERIFIED, ...)` as two separate, deliberate steps, per spec section 17's explicit instruction.
+
+**MISSION COMPLETION INTEGRATION:** `can_complete_verified()`/`require_can_complete_verified()` do not implement a second mission completion state machine — `orca.mission.state_machine`'s own COMPLETED_VERIFIED gate (Phase 15.3, unmodified) still requires VERIFYING/COURT_REVIEW origin and a non-empty evidence_ref. `test_stale_revision_evidence_blocks_completion` proves stale-revision evidence alone cannot satisfy the gate; `test_one_failing_requirement_blocks_completion` proves a single failing required requirement blocks completion even when all others PASS.
+
+**EVIDENCE ARTIFACT FINDINGS:** `VerificationRecord.evidence_refs` is a plain tuple of reference strings (command references, tool result tags, external confirmation refs) — never a raw secret value, following the same convention the existing `evidence` table's own `reference` column comment already establishes.
+
+**HASH / INTEGRITY FINDINGS:** `VerificationRecord.artifact_hash` is defined in the schema/dataclass for future use (spec section 20) but no verifier in this phase populates it yet — disclosed as a known limitation rather than a fabricated SHA-256 value with nothing behind it.
+
+**STALE EVIDENCE FINDINGS:** The core of this phase's own end-to-end proof (see below) — `filter_current_revision()` is exercised against both in-memory fixtures (`test_verification_aggregation.py`) and real durable rows (`test_verification_store_live_neon.py`'s `test_stale_revision_evidence_rejected_as_current_proof`), both confirming revision A's PASS never counts as revision B's proof.
+
+**VERIFICATION HISTORY:** `test_failed_verification_remains_in_history_after_later_pass` (live) proves a FAIL row followed by a PASS row for the same requirement both remain independently queryable — nothing is deleted or overwritten. The end-to-end fixture test extends this to a full PASS → FAIL → PASS sequence (see below).
+
+**DURABILITY FINDINGS:** Proven live, not merely claimed: `test_verification_record_persists_and_reloads_through_fresh_connection` writes a record, closes the connection (simulated process boundary), opens a BRAND-NEW connection, and confirms the reloaded record's outcome/requirement_id/revision/evidence_refs match exactly. Unlike Phase 15.7's intentionally in-process `ProductContract`, `VerificationRecord` state IS durable, backed by the real (disposable-branch-qualified) `verification_records` table.
+
+**LIVE NEON TESTS:** `tests/test_verification_store_live_neon.py` (4 tests) + the CONTAINER_SANDBOX-based `tests/test_verification_e2e.py` (1 test) — GitHub Actions run [`34268049123`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/34268049123), against branch `br-sweet-fire-b3kp2c47` (cloned from `production`, Phase 15.8 schema applied directly, deleted after use). All passed as part of the same 62/62 run quoted below.
+
+**SECRET / REDACTION FINDINGS:** No secret value was ever printed in visible response text or committed to any file — same three-layer handling as every prior Phase 15 live-Neon dispatch. `VerificationRecord`'s `command_reference`/`summary`/`error_detail` fields are all bounded (inherited from `ExecutionResult`'s own 64KB output cap, Phase 15.6) — no unbounded raw log content flows into a durable record.
+
+**CODE MODE INTEGRATION:** Not separately re-tested this phase — Phase 15.6's `evaluate_launch_gate()` was NOT reimplemented (per explicit instruction); Phase 15.8 produces the `VerificationRecord`/aggregation primitives a future Launch-gate evidence-category mapping would consume, deferred to whichever subphase wires that mapping explicitly.
+
+**COMMANDS EXECUTED:**
+```
+git rev-parse HEAD && git status --short
+grep -A 12 "CREATE TABLE IF NOT EXISTS evidence " orca/mission/schema.py   # pre-flight: confirmed insufficient shape
+.venv/bin/python3 -m pytest tests/test_verification*.py tests/test_verifiers.py tests/test_mission_verification_gate.py -q
+git commit ... && git push origin session-update-2026-08-25   # 1ba6c64
+mcp__Neon__prepare_database_migration(...)   # validated against production schema, temp branch br-winter-bar-b3o7u5ln
+mcp__Neon__complete_database_migration(apply_changes=false)   # discarded, nothing applied to production
+mcp__Neon__create_branch(project_id, name="phase15-8-qualification", parent_id=production)   # br-sweet-fire-b3kp2c47
+mcp__Neon__run_sql(...)  x7   # applied Phase 15.8 schema to the disposable branch (multi-statement not supported)
+gh secret set ORNEUR_MISSION_DATABASE_URL(_DIRECT) --env phase14b-staging
+gh workflow run phase14b-distributed-qualification.yml -f fresh_runner_mode=phase15_8_live_neon_qualification   # run 34268049123
+.venv/bin/python3 -m pytest tests/ -k "godmode or authority or authorization or approval or replay or cancellation or audit or auth or tenant" -q
+mcp__Neon__delete_branch(project_id, branch_id=br-sweet-fire-b3kp2c47)   # cleanup
+gh secret delete ORNEUR_MISSION_DATABASE_URL(_DIRECT) --env phase14b-staging  # cleanup
+gh api repos/.../environments/phase14b-staging/secrets                       # confirmed only original Phase 14 secrets remain
+```
+
+**TESTS EXECUTED:**
+- UNIT (no DB): `test_verification.py` (7), `test_verification_aggregation.py` (16), `test_verifiers.py` (22), `test_verification_integration.py` (5), `test_mission_verification_gate.py` (7) — 57 tests.
+- CONTAINER_SANDBOX (Docker, no live DB): `test_verification_e2e.py` (1 test).
+- LIVE_NEON_TEMP_BRANCH: `test_verification_store_live_neon.py` (4 tests).
+- Cross-check regression: full godmode/authority/authorization/approval/replay/cancellation/audit/auth/tenant-isolation suite plus all Phase 15 mission/code/verification tests, local.
+
+**EXACT RESULTS:**
+```
+(local, pre-dispatch, all Phase 15.8 test files)
+tests/test_verification.py tests/test_verification_aggregation.py tests/test_verifiers.py
+tests/test_verification_integration.py tests/test_mission_verification_gate.py
+tests/test_verification_e2e.py tests/test_verification_store_live_neon.py: 58 passed, 4 skipped
+```
+```
+(GitHub Actions, run 34268049123, LIVE_NEON_TEMP_BRANCH + CONTAINER_SANDBOX e2e + all local Phase 15.8 tests, real Linux Docker)
+============================= 62 passed in 29.82s ==============================
+```
+```
+(local, final combined Phase 15.8 + requirements regression)
+77 passed, 4 skipped (the 4 live-only tests, correctly inert without live credentials -- all 4 passed live above)
+```
+```
+(local security regression cross-check, post Phase 15.8)
+1 failed, 355 passed, 18 skipped, 1608 deselected
+FAILED tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary
+```
+
+**REGRESSIONS:** None caused by this phase. The known pre-existing legacy-memory failure is unchanged. The local-only container-sandbox flakiness disclosed in Phase 15.6.1/15.7 did NOT recur in this cross-check run.
+
+**KNOWN PRE-EXISTING FAILURES:** `tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary` — unchanged since Phase 15.5, confirmed unrelated to any file this phase touched.
+
+**TEST COLLECTION DELTA:** +62 (`test_verification.py`: 7, `test_verification_aggregation.py`: 16, `test_verifiers.py`: 22, `test_verification_integration.py`: 5, `test_mission_verification_gate.py`: 7, `test_verification_e2e.py`: 1, `test_verification_store_live_neon.py`: 4).
+
+**REQUIREMENT STATUS DELTA:**
+- `REQ-VERIFY-ENGINE-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-VERIFY-AGGREGATION-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-VERIFY-STALE-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-VERIFY-DURABILITY-001` (new): UNIMPLEMENTED → IMPLEMENTED → VERIFIED (promoted only after the live dispatch's actual 62/62 result was in hand, not before).
+- `REQ-CKPT-RESTORE-002`: unchanged (still IMPLEMENTED only) — untouched this phase.
+- Registry after this subphase (32 total): 22 VERIFIED, 2 IMPLEMENTED-only, 8 UNIMPLEMENTED.
+
+**TECHNICAL DEBT:**
+- `VerificationRecord.artifact_hash` is defined but unpopulated by any verifier this phase (see HASH / INTEGRITY FINDINGS).
+- `CONTAINER_SANDBOX` still defaults to the mutable image tag `python:3.11-slim` (carried forward, not solved opportunistically — belongs to Phase 15.10 supply-chain/Production Proof).
+- The Phase 15.8 schema extension is validated (production-schema-compatible, disposable-branch-qualified) but **not yet applied to production** — see OWNER ACTION REQUIRED.
+
+**KNOWN LIMITATIONS:**
+- `StaticAnalysisVerifier`/`PerformanceVerifier`/`AccessibilityVerifier`/`ManualReviewVerifier`/`ExternalConfirmationVerifier` are interfaces only this phase — real tool integrations (a specific linter, a real benchmark harness, a real accessibility scanner) are deferred; each already enforces truthful UNVERIFIED-by-default semantics so a future integration only needs to supply real observations, never change the contract.
+- `verification_records` is not yet queryable from `orca.mission.traceability`'s report (Phase 15.7) — that wiring is deferred to whichever future subphase needs it.
+- No mission-runner code path in this repository actually calls `mission_verification_gate` yet (no autonomous mission execution exists this phase) — the gate function itself is tested directly.
+
+**UNVERIFIED ITEMS:** None new beyond the disclosed interface-only verifier scope above.
+
+**DEFERRED ITEMS:** Phase 15.9 (Anti-Test-Gaming / Cognitive Court) through 15.15 — not started. Real static-analysis/performance/accessibility tool integrations, `artifact_hash` population, and traceability-report wiring for `verification_records` are all explicitly deferred.
+
+**OWNER ACTION REQUIRED:** Production migration approval. The Phase 15.8 schema extension (`verification_records` table + `evidence.verification_id`/`evidence.revision` columns, full SQL in `orca/mission/verification_schema.py`) has been validated against production's own current schema (discard-only, nothing applied) and separately qualified live on a disposable branch (62/62 passed). It has NOT been applied to production. Per the standing no-autonomous-migration rule, this requires the owner's explicit approval before it can be applied, exactly like Phase 15.5's own production-schema-reconciliation precedent.
+
+**EVIDENCE:** This document; `orca/mission/verification.py` through `mission_verification_gate.py`; `tests/test_verification.py` through `tests/test_verification_store_live_neon.py`; GitHub Actions run `34268049123` (62/62, quoted above); Neon migration validation `7b57bb7e-e9d5-4866-b994-c215214ad708` (discarded, temp branch `br-winter-bar-b3o7u5ln` deleted); Neon qualification branch `br-sweet-fire-b3kp2c47` (created, schema applied, used, deleted); commit `1ba6c64`.
+
+**EPISTEMIC STATE:** VERIFIED — every claim in this checkpoint traces to either a live GitHub Actions test run against real Neon + a real Linux Docker daemon, a direct Neon MCP tool response, a local test run quoted above, or direct code inspection. `REQ-VERIFY-DURABILITY-001` was promoted only after its live evidence existed, not before. The production-migration decision is explicitly deferred to the owner, not assumed or worked around. No claim in this checkpoint is asserted from confidence alone.
+
+**PROGRESSION VERDICT:**
+
+YES — EVIDENCE SUPPORTS PROGRESSION

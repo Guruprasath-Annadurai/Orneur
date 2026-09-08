@@ -946,12 +946,18 @@ def seed_registry() -> None:
         RequirementStatus.IMPLEMENTED,
         implementation_files=("orca/mission/verification_store.py", "orca/mission/verification_schema.py"),
     )
-    # NOT transitioned to VERIFIED in this seed call -- see Phase 15.8's
-    # own evidence checkpoint for whether the live Neon dispatch
-    # (which alone can supply the required test_files + evidence_ref)
-    # actually ran and passed. If it did, a later transition() call
-    # promotes this; if the live dispatch was blocked, it correctly
-    # stays IMPLEMENTED-only, never inflated.
+    # Live Neon dispatch (GitHub Actions run 34268049123) actually ran
+    # and passed: tests/test_verification_store_live_neon.py's fresh-
+    # connection reload and FAIL-remains-in-history-after-later-PASS
+    # scenarios both passed against the real verification_records
+    # table on a disposable branch. Promoted with real test_files +
+    # evidence_ref, not inflated ahead of that evidence.
+    transition(
+        "REQ-VERIFY-DURABILITY-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_verification_store_live_neon.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-158--verification-engine",
+    )
 
 
 __all__ = ["seed_registry"]
