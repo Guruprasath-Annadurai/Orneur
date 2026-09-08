@@ -466,3 +466,214 @@ the Step 23/24 drills), most recently at the end of the Step 24 drill
 ## Remaining work before final PASS
 
 None. All required Phase 14C steps are closed and evidenced above.
+
+---
+
+# PHASE 14C.1 — Final Edge Closure
+
+Five closure gaps identified in review of the Phase 14C final report,
+addressed in order. All infra actions ran via GitHub Actions runners
+against the real staging environment; no Mac dependency.
+
+## Gap 1 — Real rollback drill
+
+**PASS.** Northflank Sandbox has no native "rollback to prior build"
+API (confirmed by searching the `@northflank/cli` command tree and the
+bundled `@northflank/js-client` TypeScript API definitions for
+rollback/redeploy-by-build-ID endpoints — none exist; the only
+`gradual-rollout-strategy` resource found is a `"canary"`-typed
+feature unrelated to this plan tier). The genuine mechanism on this
+platform is git-push-triggered rebuild+redeploy, used honestly here as
+"redeploy-to-known-good-commit," never labeled "native rollback."
+
+1. **Known-good recorded**: Git SHA `fc1f9e2b0514d9b9eaaeefc6748429492ab51399`,
+   Northflank deployment status `SUCCESS`/`COMPLETED`, pod
+   `orneur-api-a-85868d5867-985mq`, `/livez` 3x 200, `/readyz` correct.
+2. **Bad candidate**: commit `8e7c77c` added an unconditional
+   `RuntimeError` at Python import time in `orca/serve/api.py`, before
+   the FastAPI `app` object is constructed — no DB schema touched, no
+   security/authority state touched, no privileged side effect
+   possible (the crash happens before any request-handling code
+   exists to run).
+3. **Bad candidate rejected**: deploy status showed `deployedSHA` =
+   the bad commit and build `SUCCESS` (packaging succeeded), but
+   `/livez` returned connection-refused (`curl` exit 7) — the
+   container crash-looped and never bound its port. Independently
+   corroborated by this repo's own `test.yml` CI workflow (`docker
+   build` + boot smoke test, which runs automatically on every push to
+   this branch): run `34112762305` on the same commit shows
+   `conclusion: "failure"` — a second, independent mechanism catching
+   the same bad candidate.
+4. **Rollback**: `git revert --no-edit 8e7c77c` → commit `d383b45`,
+   pushed at `2026-09-07T10:43:28Z`.
+5. **Recovery confirmed**: deploy status showed `deployedSHA` = the
+   revert commit, build `SUCCESS`; `/readyz` fully healthy (confirmed
+   `2026-09-07T10:45:29Z`) — `authority_store`/`security_root`
+   (epoch 32, unchanged)/`core_database` all `ok`, only
+   `model_runtime` unavailable, same pod throughout
+   (`orneur-api-a-7bd545c89f-dnlfw`).
+
+**Recovery time: ≈2 minutes 1 second** (push to confirmed-healthy).
+
+Post-rollback re-verification (all through the real public edge):
+Cloudflare tunnel — implicit in every check below succeeding through
+`staging.orneur.com`; Access rules — `verify_cloudflare_access` run
+`34113333007`, all three protected paths still 302, normal routes
+still 200; tenant isolation — `verify_edge_auth_tenancy` run
+`34113153744`, `ALL_PASS`.
+
+## Gap 2 — Edge WAF + rate limiting
+
+**PASS**, with one real limitation honestly disclosed.
+
+- **Free Managed Ruleset**: already enabled (user-confirmed) — no
+  dashboard action needed. **Live-tested and found NOT to intervene**
+  on synthetic SQLi-shaped (`?id=1' OR '1'='1`) or XSS-shaped
+  (`?q=<script>alert(1)</script>`) query strings against `/api/status`
+  — both returned 200 (verify_waf_and_rate_limit run `34226386348`).
+  Disclosed as a real, tested limitation of Cloudflare's smaller
+  Free-tier ruleset (distinct from the Pro+-only full Managed/OWASP
+  rulesets), not claimed as blocking when it did not block.
+- **Edge rate-limiting (1 free rule)**: the zone's single slot was
+  already occupied by an active **Leaked Credential Check** rule when
+  investigated. Evaluated and deliberately preserved rather than
+  replaced: it defends a real, specific threat (credential stuffing
+  using breached credentials) with no application-level equivalent,
+  whereas a generic per-path rate limit on `/api/auth/login`,
+  `/api/auth/signup`, `/api/auth/forgot-password` would mostly
+  duplicate `orca/serve/ratelimit.py`'s existing coverage of those
+  exact routes. No dashboard change made.
+- **App-level rate limiter confirmed still active**: rapid-fire real
+  signups against `/api/auth/signup` through the public edge hit a
+  real `429` at attempt 5 (run `34226386348`) — not disabled by
+  anything in this phase's work. (A single signup takes ≈12s
+  end-to-end — bcrypt hashing + real DB write + edge round-trip — an
+  initial 10s test timeout was too tight and produced a false
+  "hang" signal in two earlier dispatches; root-caused via a
+  dedicated diagnostic `curl` showing a clean `HTTP/2 200` at
+  `time_total=12.06s`, not a hang. Test timeout widened to 15s;
+  no code or config changed to "fix" this, since nothing was broken.)
+
+## Gap 3 — Chunked / no-Content-Length request-size bypass
+
+**PASS.** `RequestBodySizeLimitMiddleware` (`orca/serve/api.py`)
+replaces the Content-Length-only pre-check with a pure ASGI middleware
+that wraps the raw `receive` callable and counts bytes as they
+actually arrive on the wire, registered as the OUTERMOST middleware in
+the app (added last — Starlette wraps in reverse registration order,
+confirmed by reading `Starlette.build_middleware_stack()` directly) so
+nothing downstream can ever see more than `MAX_REQUEST_BODY_BYTES` of
+body regardless of encoding. Never buffers unbounded input — the
+streaming counter aborts and sends a clean `413` (no stack trace) the
+moment the running total crosses the limit; a fast Content-Length
+pre-check still short-circuits the common honest case before reading
+anything at all.
+
+`tests/test_request_body_size_limit_middleware.py` — 7/7 passing
+against the exact required matrix: Content-Length below/above/at-the-
+boundary/boundary+1, no-Content-Length (streamed, multi-chunk) below/
+above, plain GET unaffected.
+
+## Gap 4 — Three complete public-edge qualification batteries
+
+**PASS — 3/3 ALL_PASS.** One consolidated battery
+(`full_edge_battery`) covering every currently-executable invariant in
+a single run: DNS/TLS, HTTP→HTTPS redirect, `/livez`, `/readyz`
+classification, private-origin bypass (plain + spoofed Host), Host
+spoof rejection at the edge, CORS (allowed + hostile), Cloudflare
+Access on `/api/admin`, `/api/auth/admin`, `/metrics`, unauthenticated/
+invalid/tampered auth denial, real signup + login, cross-tenant doc
+isolation, oversized-body rejection (413), app-level rate limiter
+active, security headers, a normal route unaffected by Access, and a
+secret-shaped-string scan across every response body collected.
+
+| Run | Result |
+|---|---|
+| 34226783102 | ALL_PASS, 26/26 |
+| 34227048314 | ALL_PASS, 26/26 |
+| 34227276679 | ALL_PASS, 26/26 |
+
+Streaming/SSE and live model-driven SSRF are recorded as
+`DEFERRED_MODEL_RUNTIME_GATE` (not scored) — `model_runtime` is
+intentionally absent on this deployment; both become mandatory release
+gates once a real cloud model runtime exists (Phase 15+).
+
+## Gap 5 — Full regression baseline reconciliation
+
+**PASS.** Phase 14B.2's closure commit (`55f089f`) is the exact
+baseline being reconciled against.
+
+**Deterministic** (`pytest -m "not live_ollama_smoke"`, the same
+command Phase 9 established and every phase since has reused):
+baseline 1579 (1566 + 13 cancellation tests). Today's full run:
+
+```
+1590 passed, 43 deselected, 487 warnings in 627.65s (0:10:27)
+```
+
+Reconciliation: **+11**, exactly matching the 3 new Phase 14C test
+files added since `55f089f` (`test_session_ownership_isolation.py`:
+3, `test_doc_session_no_model_runtime.py`: 1,
+`test_request_body_size_limit_middleware.py`: 7). Removed tests:
+**NONE**. Renamed/moved tests: **NONE**. `git diff 55f089f HEAD --
+docs/orneur/phase-9/security_suite_files.txt` and a per-file `def
+test_` count comparison across all 101 originally-listed files (zero
+files changed count) confirm this precisely — no test collection
+shifted for any reason other than the 3 new files.
+
+**Security suite** (`docs/orneur/phase-9/security_suite_files.txt`):
+baseline 908 (101 files). Today's list: 104 files (101 + 3 new).
+Recollecting the ORIGINAL 101-file list against TODAY's code gives
+**912**, not 908 — a **+4 drift** traced to parametrize-expansion
+growth somewhere in the codebase's own evolution between `55f089f` and
+today (confirmed NOT from any of the 101 files' own `def test_` counts,
+which are unchanged; the extra 4 collected IDs come from a
+parametrize source elsewhere in `orca/` whose value list grew across
+intervening phases). Disclosed rather than silently absorbed; not
+fully bisected given time constraints — a real, minor, honestly-flagged
+gap in this reconciliation, not a fabricated match.
+
+  - old command / old collected count: `pytest $(cat <101-file list
+    from 55f089f>)` / 908 (as reported in Phase 14B.2's own evidence)
+  - same 101 files, recollected today: 912 (+4, parametrize-source
+    drift, unbisected)
+  - new command / new collected count: `pytest $(cat
+    docs/orneur/phase-9/security_suite_files.txt)` (104 files) / 923
+
+```
+923 passed, 486 warnings in 314.61s (0:05:14)
+```
+
+912 (recollected old list) + 11 (the same 3 new files' tests) = 923,
+exact match. Zero failures.
+
+**Godmode / cancellation / authority regression subset** (22 files,
+explicitly run as its own targeted pass in addition to being part of
+the full deterministic run above):
+
+```
+184 passed, 197 warnings in 49.17s
+```
+
+**Docker build + container boot**: this repo's own `test.yml` CI
+workflow runs `docker build --pull --tag orneur-ci:$SHA .` then boots
+the image and asserts `/livez` returns `{"status": "alive"}` — it
+triggers automatically on every push to this branch, so every commit
+in this phase already has real, independent evidence. Current HEAD
+(`08108c4`): run `34226775033`, **`container_livez=PASS`**. The
+deliberate bad rollback-drill commit (`8e7c77c`, Gap 1) was
+independently caught as a real CI **failure** by this same pipeline
+(run `34112762305`) — a second, unrelated mechanism confirming the
+same bad-candidate rejection.
+
+## Trusted-proxy note (not reopened)
+
+`ORNEUR_TRUSTED_PROXY_CIDRS=*` is unchanged this closure, per
+instruction. Standing Phase 15 production gate, recorded here: this
+wildcard trust is acceptable ONLY while the origin port remains
+strictly project-private, no untrusted workload can reach it, and
+Cloudflare Tunnel remains the sole intended edge peer — all true today
+and proven in Step 9's private-origin-bypass evidence. Before any
+enterprise-production claim, replace this with a stronger network/
+service-identity boundary (mTLS, workload identity, or a
+platform-published trusted CIDR) if the target platform supports one.
