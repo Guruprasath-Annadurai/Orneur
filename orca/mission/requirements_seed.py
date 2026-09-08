@@ -829,5 +829,129 @@ def seed_registry() -> None:
         evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-157--product--requirement-compilers",
     )
 
+    # -- Phase 15.8: Verification Engine --
+    register(Requirement(
+        id="REQ-VERIFY-ENGINE-001",
+        source_section="Phase 15.8 spec sections 2-6, 27",
+        statement="A typed VerificationOutcome vocabulary (PASS/FAIL/UNVERIFIED/"
+                   "NOT_APPLICABLE/ERROR/CANCELLED/TIMED_OUT) is enforced structurally: "
+                   "missing evidence, a verifier crash, a timeout, or a cancellation can "
+                   "never produce PASS; NOT_APPLICABLE requires an explicit reason; real "
+                   "command-based verifiers (build, unit test) observe actual execution "
+                   "through the governed Phase 15.6/15.6.1 execution paths; a model cannot "
+                   "self-declare a deterministic PASS.",
+        acceptance_criteria=(
+            "A test constructs a VerificationRecord with NOT_APPLICABLE and no reason, "
+            "or ERROR with no detail, and confirms both are rejected at construction.",
+            "A test runs a real failing/timed-out/cancelled/missing command through "
+            "BuildVerifier/UnitTestVerifier and confirms none of them produce PASS.",
+            "A test confirms an interface-only verifier (StaticAnalysis/Performance/"
+            "Accessibility/ManualReview/ExternalConfirmation) defaults to UNVERIFIED and "
+            "only reaches PASS given a real, caller-supplied observation.",
+        ),
+    ))
+    transition(
+        "REQ-VERIFY-ENGINE-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/verification.py", "orca/mission/verifiers.py"),
+    )
+    transition(
+        "REQ-VERIFY-ENGINE-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_verification.py", "tests/test_verifiers.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-158--verification-engine",
+    )
+
+    register(Requirement(
+        id="REQ-VERIFY-AGGREGATION-001",
+        source_section="Phase 15.8 spec sections 16-18",
+        statement="Requirement/criterion aggregation is non-vacuous (an empty or "
+                   "all-NOT_APPLICABLE set is UNVERIFIED, never a vacuous PASS); a "
+                   "criterion reaches VERIFIED through the integrated engine path only by "
+                   "referencing a real VerificationRecord whose outcome is PASS and whose "
+                   "requirement_id/criterion_id genuinely match; mission COMPLETED_VERIFIED "
+                   "cannot be reached while any required requirement is not PASS for the "
+                   "current revision.",
+        acceptance_criteria=(
+            "A test confirms aggregate_outcomes(()) and an all-NOT_APPLICABLE set both "
+            "yield UNVERIFIED, never PASS.",
+            "A test confirms a FAIL or wrongly-scoped VerificationRecord cannot verify a "
+            "criterion through verify_criterion_via_verification_record().",
+            "A test confirms can_complete_verified() returns False when any required "
+            "requirement is UNVERIFIED, FAIL, or has only stale-revision evidence.",
+        ),
+    ))
+    transition(
+        "REQ-VERIFY-AGGREGATION-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=(
+            "orca/mission/verification_aggregation.py", "orca/mission/verification_integration.py",
+            "orca/mission/mission_verification_gate.py",
+        ),
+    )
+    transition(
+        "REQ-VERIFY-AGGREGATION-001",
+        RequirementStatus.VERIFIED,
+        test_files=(
+            "tests/test_verification_aggregation.py", "tests/test_verification_integration.py",
+            "tests/test_mission_verification_gate.py",
+        ),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-158--verification-engine",
+    )
+
+    register(Requirement(
+        id="REQ-VERIFY-STALE-001",
+        source_section="Phase 15.8 spec section 21",
+        statement="Evidence is bound to the revision it verified; when code changes to a "
+                   "new revision, old evidence never silently counts as proof for the new "
+                   "revision, even though it remains visible in full history.",
+        acceptance_criteria=(
+            "An end-to-end test verifies a correct implementation (revision A, PASS), "
+            "breaks it (revision B), and confirms revision A's PASS evidence is excluded "
+            "from revision B's aggregation -- revision B correctly aggregates to FAIL/"
+            "UNVERIFIED, not PASS.",
+            "A live test confirms the same exclusion against real, durably-stored "
+            "verification history.",
+        ),
+    ))
+    transition(
+        "REQ-VERIFY-STALE-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/verification_aggregation.py",),
+    )
+    transition(
+        "REQ-VERIFY-STALE-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_verification_e2e.py", "tests/test_verification_store_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-158--verification-engine",
+    )
+
+    register(Requirement(
+        id="REQ-VERIFY-DURABILITY-001",
+        source_section="Phase 15.8 spec sections 25-26, 30",
+        statement="Material VerificationRecord state is durable: a record written, then "
+                   "reloaded through a fresh connection after all prior connections close, "
+                   "shows the exact same outcome/revision/requirement linkage/evidence; a "
+                   "FAIL record is never deleted or overwritten by a later PASS -- both "
+                   "remain in queryable history.",
+        acceptance_criteria=(
+            "A live test writes a VerificationRecord, closes the connection, opens a "
+            "fresh one, and confirms the reloaded record matches exactly.",
+            "A live test writes a FAIL then a PASS record for the same requirement and "
+            "confirms both remain independently queryable afterward.",
+        ),
+    ))
+    transition(
+        "REQ-VERIFY-DURABILITY-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/verification_store.py", "orca/mission/verification_schema.py"),
+    )
+    # NOT transitioned to VERIFIED in this seed call -- see Phase 15.8's
+    # own evidence checkpoint for whether the live Neon dispatch
+    # (which alone can supply the required test_files + evidence_ref)
+    # actually ran and passed. If it did, a later transition() call
+    # promotes this; if the live dispatch was blocked, it correctly
+    # stays IMPLEMENTED-only, never inflated.
+
 
 __all__ = ["seed_registry"]
