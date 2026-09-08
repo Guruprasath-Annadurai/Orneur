@@ -19,7 +19,7 @@ values in logs, evidence, or committed files).
 from __future__ import annotations
 
 from orca.config import orneur_env
-from orca.mission.schema import SCHEMA_SQL
+from orca.mission.schema import PHASE_15_5_MIGRATION_SQL, SCHEMA_SQL
 
 
 class MissionDatabaseConfigError(Exception):
@@ -63,11 +63,15 @@ def get_conn(*, direct: bool = False):
 
 def apply_schema(conn) -> None:
     """Applies SCHEMA_SQL (idempotent -- every statement is CREATE
-    TABLE/INDEX IF NOT EXISTS) against an already-open connection.
-    Callers are responsible for committing (or using a `with conn:`
-    block, matching this project's existing psycopg usage pattern)."""
+    TABLE/INDEX IF NOT EXISTS) plus every subsequent schema-evolution
+    migration (also idempotent -- ADD COLUMN IF NOT EXISTS, matching
+    orca/auth/db.py's own established pattern) against an already-open
+    connection. Callers are responsible for committing (or using a
+    `with conn:` block, matching this project's existing psycopg usage
+    pattern)."""
     with conn.cursor() as cur:
         cur.execute(SCHEMA_SQL)
+        cur.execute(PHASE_15_5_MIGRATION_SQL)
 
 
 def list_existing_tables(conn) -> set[str]:

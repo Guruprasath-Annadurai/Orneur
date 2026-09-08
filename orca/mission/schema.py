@@ -375,3 +375,44 @@ ALL_TABLES: tuple[str, ...] = (
     "outcome_memory_reserved",
     "capability_delta_reserved",
 )
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Phase 15.5 schema evolution -- ALTER TABLE ADD COLUMN IF NOT
+#  EXISTS, the same idempotent-migration convention already used by
+#  orca/auth/db.py (see its init_db()). Applied every time
+#  apply_schema() runs, safe on a database that already has these
+#  columns.
+#
+#  operations.parameters_fingerprint: a canonical hash of the
+#  operation's material execution intent (spec section 3) -- lets a
+#  retry with the SAME idempotency_key but DIFFERENT parameters be
+#  detected and rejected as a conflict, instead of silently reusing
+#  (or silently ignoring) the original operation.
+#  operations.requested_by: the requesting principal -- needed to
+#  test the hard invariant "the requester cannot also be the
+#  approver" (spec section 21).
+#
+#  approvals.lease_id: NOT a duplicate authority store. This is a
+#  REFERENCE to the real orca.godmode.contracts.CapabilityLease that
+#  actually backs this approval -- the lease's own expiry/single-use
+#  consumption is enforced for real by
+#  orca.godmode.resolution.resolve_and_consume_lease() (the existing,
+#  battle-tested, race-safe primitive from Phases 9-14B), not
+#  reimplemented here. This column exists so the Neon-side mission/
+#  operation domain has a durable, queryable record of WHICH real
+#  authority decision authorized a given operation, without competing
+#  with godmode as a second source of truth.
+#
+#  authority_decisions.requested_by: same principal-tracking need as
+#  operations.requested_by, recorded on the decision record itself so
+#  a decision remains fully self-describing even if the operations
+#  row it references is later queried separately.
+# ─────────────────────────────────────────────────────────────────
+
+PHASE_15_5_MIGRATION_SQL = """
+ALTER TABLE operations ADD COLUMN IF NOT EXISTS parameters_fingerprint TEXT;
+ALTER TABLE operations ADD COLUMN IF NOT EXISTS requested_by TEXT;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS lease_id TEXT;
+ALTER TABLE authority_decisions ADD COLUMN IF NOT EXISTS requested_by TEXT;
+"""
