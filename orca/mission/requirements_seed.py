@@ -54,6 +54,31 @@ def seed_registry() -> None:
             "transition is confirmed rejected.",
         ),
     ))
+    # Phase 15.3 implemented orca/mission/state_machine.py -- the 15
+    # states and their validated transitions are real, tested code
+    # (tests/test_mission_state_machine.py, 48/48 passing).
+    transition(
+        "REQ-MISSION-STATES-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/state_machine.py",),
+    )
+    transition(
+        "REQ-MISSION-STATES-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_mission_state_machine.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-153--mission-state-machine",
+    )
+    transition(
+        "REQ-MISSION-TRANSITIONS-002",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/state_machine.py",),
+    )
+    transition(
+        "REQ-MISSION-TRANSITIONS-002",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_mission_state_machine.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-153--mission-state-machine",
+    )
     register(Requirement(
         id="REQ-MISSION-DURABILITY-003",
         source_section="spec section 6",
@@ -129,6 +154,22 @@ def seed_registry() -> None:
             "No domain's state is representable only as an opaque chat-transcript blob.",
         ),
     ))
+    # Phase 15.2 built orca/mission/schema.py with a table for every
+    # listed domain, live-verified against real Neon (temp branch +
+    # production) -- see PHASE15_EVIDENCE.md's Phase 15.2 checkpoint.
+    # Corrected retroactively here (should have transitioned during
+    # 15.2 itself).
+    transition(
+        "REQ-STATE-DOMAINS-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/schema.py",),
+    )
+    transition(
+        "REQ-STATE-DOMAINS-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_mission_schema.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-152--durable-data-model",
+    )
     register(Requirement(
         id="REQ-STATE-NEON-002",
         source_section="spec section 9",
@@ -176,6 +217,16 @@ def seed_registry() -> None:
             "(non-null where the mission has a value for it).",
         ),
     ))
+    # Phase 15.2's checkpoints table has every listed field (schema-
+    # level, live-verified via pg_constraint on production) -- only
+    # the FIRST acceptance criterion. The second (a test that actually
+    # CREATES a checkpoint row and confirms population) isn't done
+    # yet -- that's Phase 15.4's job. IMPLEMENTED, not VERIFIED.
+    transition(
+        "REQ-CKPT-FIELDS-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/schema.py",),
+    )
     register(Requirement(
         id="REQ-CKPT-RESTORE-002",
         source_section="spec section 10",
@@ -266,6 +317,17 @@ def seed_registry() -> None:
             "reach COMPLETED_VERIFIED.",
         ),
     ))
+    transition(
+        "REQ-NOFAKE-DISTINCTION-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/state_machine.py",),
+    )
+    transition(
+        "REQ-NOFAKE-DISTINCTION-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_mission_state_machine.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-153--mission-state-machine",
+    )
 
     # -- Production Proof (spec section 18) --
     register(Requirement(

@@ -260,3 +260,76 @@ Live Neon verification (temp branch → production, both independently queried v
 **PROGRESSION VERDICT:**
 
 YES — EVIDENCE SUPPORTS PROGRESSION
+
+---
+
+## PHASE 15.3 — MISSION STATE MACHINE
+
+**OBJECTIVE:** Implement the 15 canonical mission states and validated transitions (spec §6), with two structural guarantees: COMPLETED_VERIFIED is only reachable through a real verification-oriented state, and only with an evidence reference — not merely documented, enforced in code.
+
+**BASELINE:** Phase 15.2 closed with verdict YES. HEAD `186c8dd`.
+
+**IMPLEMENTED:**
+- `orca/mission/state_machine.py` — `MissionState` enum (all 15 spec states), `TERMINAL_STATES` (FAILED, COMPLETED_UNVERIFIED, COMPLETED_VERIFIED, CANCELLED), a full `_ALLOWED_TRANSITIONS` table, and `transition()` enforcing it plus two extra invariants: (1) `COMPLETED_VERIFIED` is reachable only from `VERIFYING`/`COURT_REVIEW` (checked both via the transition table AND an explicit redundant guard, so the invariant survives even a future edit to the table), and (2) reaching `COMPLETED_VERIFIED` requires a non-empty `evidence_ref` in the same call — the same "no fake completion" pattern established for individual requirements in Phase 15.1, now applied to the mission's own terminal state.
+- Corrected two Phase 15.1 seed entries that were actually satisfied by Phase 15.2's work but never transitioned at the time: `REQ-STATE-DOMAINS-001` (schema covers every listed domain, live-verified) → `VERIFIED`; `REQ-CKPT-FIELDS-001` (checkpoints table has every listed field) → `IMPLEMENTED` (not `VERIFIED` — no test yet creates an actual populated checkpoint row, that's Phase 15.4). Disclosed here rather than silently fixed, per spec §35's "every collection-count/status change must be reconciled."
+
+**FILES / COMPONENTS:**
+- `orca/mission/state_machine.py` (new)
+- `tests/test_mission_state_machine.py` (new)
+- `orca/mission/requirements_seed.py` (updated — 5 new `transition()` calls: 3 for this subphase's own new requirements-turned-VERIFIED, 2 retroactive corrections for Phase 15.2)
+
+**MIGRATIONS:** None this subphase.
+
+**COMMANDS EXECUTED:**
+```
+.venv/bin/python3 -m pytest tests/test_mission_state_machine.py -q
+.venv/bin/python3 -m pytest tests/test_mission_requirements.py tests/test_mission_schema.py tests/test_mission_db.py tests/test_mission_state_machine.py -q
+.venv/bin/python3 -c "from orca.mission.requirements_seed import seed_registry; ..."  # printed all 19 requirement statuses
+```
+
+**TESTS EXECUTED:** `tests/test_mission_state_machine.py` (48 new tests: valid transitions, invalid transitions, all 4 terminal states individually confirmed to reject every possible next state, pause/resume for both PAUSED_USER and PAUSED_WINDOW_REACHED, BLOCKED in/out, FAILED reachability and terminality, the full verified-vs-unverified completion distinction — including that COMPLETED_UNVERIFIED and COMPLETED_VERIFIED cannot transition into each other — and a whole-graph sanity check that no non-terminal state is an accidental dead end).
+
+**EXACT RESULTS:**
+```
+48 passed, 1 warning in 0.27s   (test_mission_state_machine.py alone)
+75 passed, 1 warning in 0.35s   (all 4 orca.mission test files combined)
+```
+Requirement registry after this subphase (19 total): 5 `VERIFIED` (REQ-MISSION-STATES-001, REQ-MISSION-TRANSITIONS-002, REQ-STATE-DOMAINS-001, REQ-NOFAKE-DISTINCTION-001, plus REQ-STATE-NEON-002 remains `IMPLEMENTED` not `VERIFIED`), 3 `IMPLEMENTED` (REQ-STATE-NEON-002, REQ-CKPT-FIELDS-001), 11 still honestly `UNIMPLEMENTED`.
+
+**SECURITY FINDINGS:** None — pure in-memory Python logic, no I/O.
+
+**AUTHORITY FINDINGS:** None this subphase — `orca/mission/state_machine.py` does not touch `orca/godmode/`; that integration is Phase 15.5.
+
+**MISSION STATE FINDINGS:** The state machine itself is now real and tested. It is NOT yet wired to the `missions` table (Phase 15.2's schema) or to any mission-lifecycle application code (create/load/save a mission) — that CRUD layer is Phase 15.4's job (checkpoint/resume needs it to have something concrete to checkpoint).
+
+**CHECKPOINT / RESUME FINDINGS:** N/A this subphase — deferred to 15.4.
+
+**RELAY FINDINGS:** N/A this subphase.
+
+**ANTI-TEST-GAMING FINDINGS:** N/A this subphase.
+
+**PRODUCTION PROOF STATUS:** N/A this subphase.
+
+**REGRESSIONS:** None.
+
+**TEST COLLECTION DELTA:** +48 (`tests/test_mission_state_machine.py`). Cumulative Phase 15 test delta so far: 19 (15.1) + 8 (15.2) + 48 (15.3) = 75, matching the combined run above exactly.
+
+**TECHNICAL DEBT:** None new. The retroactive requirement-status correction (above) is disclosed, not hidden — a real process gap (forgetting to transition a requirement in the same subphase that satisfied it) rather than a code defect.
+
+**KNOWN LIMITATIONS:**
+- The state machine's `transition()` is a pure function — it does not itself persist anything to the `missions` table. Wiring it to actual database reads/writes (so a transition actually changes a durable row) is Phase 15.4's responsibility.
+- `REQ-MISSION-DURABILITY-003` (mission state surviving process restart) remains correctly `UNIMPLEMENTED` — that requires the checkpoint/resume application layer, not just the state machine's transition logic.
+
+**UNVERIFIED ITEMS:** None new.
+
+**DEFERRED ITEMS:** Phase 15.4 through 15.15 — not started.
+
+**OWNER ACTION REQUIRED:** None this subphase.
+
+**EVIDENCE:** This document; `orca/mission/state_machine.py`; `tests/test_mission_state_machine.py` (48/48 passing, quoted above).
+
+**EPISTEMIC STATE:** VERIFIED for the state machine's own transition logic (directly, exhaustively tested — every terminal state's rejection of every possible next state is individually confirmed, not sampled). IMPLEMENTED-but-not-yet-VERIFIED for the broader mission-durability requirement, which correctly still depends on later subphases.
+
+**PROGRESSION VERDICT:**
+
+YES — EVIDENCE SUPPORTS PROGRESSION
