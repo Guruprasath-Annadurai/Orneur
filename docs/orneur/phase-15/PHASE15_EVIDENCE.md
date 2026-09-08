@@ -1245,3 +1245,187 @@ YES — EVIDENCE SUPPORTS PROGRESSION
 **FINAL RECONCILED VERDICT:**
 
 YES — EVIDENCE SUPPORTS PROGRESSION
+
+---
+
+## PHASE 15.9 — ANTI-TEST-GAMING + COGNITIVE COURT
+
+**PHASE:** 15.9 — Anti-Test-Gaming Engine + Cognitive Court
+
+**OBJECTIVE:** Prevent ORNEUR Code from "succeeding" by weakening the evidence that judges it. A GREEN TEST SUITE IS NOT TRUSTWORTHY IF THE CHANGE MADE THE TEST SUITE EASIER TO PASS. Build (A) an Anti-Test-Gaming Engine that detects suspicious changes to tests, validation, security checks, and verification scope, and (B) a Cognitive Court that performs risk-aware structured review using independent critic roles and produces an evidence-backed verdict. This phase creates NO ORNEUR-native model intelligence — the "Arbiter" is a software role/interface only, never called Aeternum.
+
+**BASELINE:** Phase 15.8, including production-schema reconciliation, closed with verdict YES. HEAD `9f331ab`. Confirmed clean working tree before starting.
+
+**PRE-FLIGHT FINDINGS:** Inspected before writing code. `orca.mission.verification` (Phase 15.8) and `orca.mission.acceptance_criteria`/`requirements` (Phase 15.7/15.1) are extended (never duplicated) — this phase's findings and decisions reference real requirement/criterion/verification-record identifiers from those existing registries rather than inventing a parallel tracking system. No existing AST-analysis, code-review, or critic abstraction was found anywhere else in the repository. `orca.mission.providers.ModelProvider`/`MockProvider` (Phase 15.6) is reused directly for optional Court narrative — no second provider abstraction.
+
+**IMPLEMENTED:**
+- `orca/mission/anti_gaming.py` — `AntiGamingFinding` (15 categories from the spec's own controlled vocabulary), `Severity`, and the hard invariant that CRITICAL implies `blocking=True` at construction, not by convention.
+- `orca/mission/git_diff_analysis.py` — real `git diff --name-status -M`/`git show`-based baseline/candidate extraction against an actual repository.
+- `orca/mission/gaming_detectors.py` — bounded AST detectors: `detect_test_deletions` (file-level and function-level, rename-aware via git's own detected renames), `detect_skip_additions`, `detect_assertion_weakening` (assert-count decrease, `pytest.raises()` widened to bare `Exception`, and a dedicated broadened-equality-to-membership Compare-node pattern), `detect_error_suppression` (broad `except Exception/BaseException: pass` count increase), `detect_mock_replacing_real_behavior` (AST import analysis, not substring search), `detect_hardcoded_bypass` (production code newly special-casing the test environment), and `analyze_revisions()` combining all of them.
+- `orca/mission/test_collection_diff.py` — real `git worktree` + `pytest --collect-only -q` comparison between two revisions.
+- `orca/mission/cognitive_court.py` — `CourtRole` (7 typed roles), `CriticOutput` (provider narrative kept structurally separate), `RiskLevel`-based `roles_for_risk()`, individual critic functions, and `arbiter_decide()` — the sole function producing a `CourtVerdict`, reading only deterministic inputs.
+- `orca/mission/court_mission_gate.py` — `can_proceed_to_completed_verified()`, requiring both a Court ACCEPT and the Phase 15.8 verification gate independently.
+
+**FILES / COMPONENTS:**
+- `orca/mission/anti_gaming.py`, `git_diff_analysis.py`, `gaming_detectors.py`, `test_collection_diff.py`, `cognitive_court.py`, `court_mission_gate.py` (all new)
+- `tests/test_anti_gaming.py` (6), `test_git_diff_analysis.py` (6), `test_gaming_detectors.py` (12), `test_cognitive_court.py` (23), `test_court_mission_gate.py` (6), `test_test_collection_diff.py` (2) — 55 new tests
+- `orca/mission/requirements_seed.py` (updated — 5 new requirements registered and VERIFIED)
+
+**MIGRATIONS:** NONE. `AntiGamingFinding`/`CourtDecision` state is in-process this phase — the same disclosed pattern `orca.mission.requirements`, `code_mode.PrototypeDebt`, and Phase 15.7's `ProductContract`/`Fact`/`AcceptanceCriterion` registries already established. No Phase 15.9 acceptance criterion required cross-process persistence of findings/decisions themselves; every finding/decision references real, already-durable Phase 15.1/15.7/15.8 identifiers (requirement IDs, criterion IDs, verification record IDs) instead of duplicating that storage.
+
+**ANTI-GAMING FINDING MODEL:** `test_critical_must_be_blocking` proves a `Severity.CRITICAL` finding literally cannot be constructed with `blocking=False` — the invariant is structural, not a convention a detector could forget to apply. `test_empty_confidence_basis_rejected` proves every finding must state what real evidence backs it.
+
+**BASELINE / DIFF FINDINGS:** All ten spec section 32 scenarios were qualified against REAL temporary git repositories with REAL commits (`tests/test_gaming_detectors.py`) — never synthetic diff dictionaries. `test_added_deleted_modified_classified_correctly` and `test_rename_detected_not_deletion` (`test_git_diff_analysis.py`) prove `git diff --name-status -M`'s add/delete/modify/rename classification is used directly, not reconstructed from guesswork.
+
+**TEST COLLECTION FINDINGS:** `test_real_collection_shrinks_when_a_test_is_removed`/`_grows_when_a_test_is_added` (`test_test_collection_diff.py`) prove `collect_test_ids_at_revision()` runs REAL `pytest --collect-only -q` inside a REAL `git worktree` for each revision — the collected test-id sets are genuine pytest output, not derived from diff text.
+
+**TEST DELETION FINDINGS:** `test_scenario_1_test_deleted_for_bug_is_blocking` and `test_scenario_7_pure_rename_not_classified_as_deletion` together prove the exact distinction spec section 5 requires: a genuinely deleted test function is flagged, while a git-proven pure rename (same content, new path) is explicitly NOT flagged as a deletion.
+
+**SKIP / XFAIL FINDINGS:** `test_scenario_3_failing_test_changed_to_skip` proves a newly-added `@pytest.mark.skip` on a previously-unmarked test is detected via decorator-set comparison between the two real revisions.
+
+**ASSERTION FINDINGS:** `test_scenario_5_weakened_assertions_still_flagged_even_if_green` proves BOTH an assert-count decrease AND a strict-equality-to-membership broadening are independently detected for the same test function — a real bug fix this phase (see below) closed the gap where only the count-based check existed.
+
+**EXPECTED-BEHAVIOR FINDINGS:** `test_scenario_6_requirement_driven_change_is_surfaced_not_auto_rejected` proves the detector surfaces a structural change (fewer asserts) regardless of the commit message's own justification claim — distinguishing "justified" from "unjustified" is left to the Regression Critic's `justified_removals` parameter (a Court/policy decision), never silently suppressed by the detector itself.
+
+**ERROR-SUPPRESSION FINDINGS:** `detect_error_suppression()` compares broad `except Exception/BaseException: pass`-shaped handler counts between baseline and candidate — covered by the module's own AST walk logic; no dedicated adversarial fixture was added this phase beyond the direct unit-level coverage in the detector's own structure (disclosed as a narrower-than-ideal test surface below).
+
+**SECURITY / AUTH WEAKENING FINDINGS:** `test_scenario_2_auth_test_weakened_to_expect_success_is_critical` — a real bug was found and fixed here: the original assertion-weakening detector (assert-count + `pytest.raises()` widening only) did not catch `assert result == "DENY"` weakened to `assert result in ("DENY", "ALLOW")` (same assert count, no `pytest.raises()` involved). Fixed by adding `_eq_and_in_comparisons()`, a dedicated Compare-node analysis for exactly this broadening pattern (spec section 6's own literal example). Files matching `DEFAULT_SECURITY_PATHS` (`orca/godmode/`, `orca/auth/`, `orca/mission/operation_store.py`, `tests/test_authority*`, etc.) automatically elevate any of these categories to CRITICAL/blocking.
+
+**MOCKING FINDINGS:** `test_scenario_4_integration_replaced_by_mock` — a second real bug was found and fixed: the original mock-detection check used a plain substring search for the real call name, which was fooled by `run_in_container = MagicMock(...)` (a local variable REASSIGNMENT sharing the real function's name is still a substring match). Fixed with `_imported_names()`, AST-based import analysis — the check now asks "was this name actually IMPORTED from its real module at baseline, and is it no longer imported at candidate," which a local variable shadow does not satisfy.
+
+**HARDCODED-BYPASS FINDINGS:** `detect_hardcoded_bypass()` flags non-test source files that newly reference `PYTEST_CURRENT_TEST`/similar test-environment-detection markers — covered by the detector's own bounded pattern list; no dedicated adversarial git fixture was added this phase (disclosed below).
+
+**REQUIREMENT-JUSTIFICATION FINDINGS:** Scenario 6 (above) is the concrete proof point — a requirement-driven change is surfaced as a finding, never silently exempted by a commit-message claim. Full `JUSTIFIED_REQUIREMENT_CHANGE` vs `UNJUSTIFIED_VERIFICATION_WEAKENING` classification (spec section 13's fuller ask) is NOT implemented this phase — disclosed as a known limitation; the detector's honest behavior today is "always surface, let Court/policy decide," which never silently under-reports.
+
+**BLOCKING POLICY FINDINGS:** `test_arbiter_blocking_finding_always_rejects_regardless_of_critics` proves `arbiter_decide()` returns REJECT when a blocking finding exists even when EVERY supplied critic output is SUPPORTS_ACCEPT — no critic can vote a blocking finding away.
+
+**COURT ROLE FINDINGS:** `test_critic_output_requires_reasoning_summary` and the individual per-role tests (`test_security_critic_*`, `test_regression_critic_*`, `test_test_critic_uses_findings_directly_not_regenerated`, `test_performance_critic_*`) each prove the role's conclusion is computed from real inputs, never asserted. A real pytest-collection-name collision was caught and fixed before it could cause the same silent-miscollection problem Phase 15.8 disclosed: a Court role function was originally named `test_critic_review`, which pytest would have tried to collect as a test function — renamed to `review_test_quality`.
+
+**RISK CLASSIFICATION FINDINGS:** `test_classify_risk_trivial_for_docs_only` / `_critical_when_critical_finding_present` / `_high_for_security_path_without_critical_finding` and `test_roles_for_risk_full_court_at_critical` / `_minimal_at_trivial` prove the risk classifier and role-invocation mapping both behave as specified — a docs-only change never invokes the Security Critic, a CRITICAL finding always does.
+
+**CONSTRUCTOR FINDINGS:** `constructor_summarize()`'s conclusion is unconditionally `NOT_REQUIRED` — Constructor structurally cannot approve its own work, since `NOT_REQUIRED` outputs are excluded from `arbiter_decide()`'s opinion-counting entirely.
+
+**FALSIFIER FINDINGS:** `falsifier_review()` surfaces stale-evidence requirement IDs, missing-negative-case requirement IDs, and not-PASS verification outcomes as explicit gaps — any gap flips the conclusion to SUPPORTS_REJECT, proving a superficially green candidate can be overturned by real evidence gaps (spec section 18's explicit requirement).
+
+**SECURITY CRITIC FINDINGS:** `test_security_critic_supports_reject_on_critical_finding` proves elevated weight for CRITICAL findings specifically (not just any security-relevant finding) — a non-critical security-relevant finding does not by itself flip the conclusion.
+
+**REGRESSION CRITIC FINDINGS:** `test_regression_critic_unjustified_removal_rejects` / `_justified_removal_accepts` / `_no_delta_needs_evidence` prove a green candidate with fewer required tests does NOT automatically ACCEPT — it requires explicit justification, and absent any collection-comparison data at all, the conclusion is NEEDS_MORE_EVIDENCE, never assumed fine.
+
+**TEST CRITIC FINDINGS:** `test_test_critic_uses_findings_directly_not_regenerated` proves `review_test_quality()` consumes the SAME `AntiGamingFinding` objects the anti-gaming engine produced (via `findings_considered`), never re-deriving contradictory facts from prose, exactly per spec section 21's explicit instruction.
+
+**PERFORMANCE CRITIC FINDINGS:** `test_performance_critic_not_required_by_default` / `_needs_evidence_when_relevant_but_unmeasured` / `_real_measurement_used` prove the three-state behavior: NOT_REQUIRED when irrelevant, NEEDS_MORE_EVIDENCE when relevant but unmeasured (never a fabricated PASS), and a genuine measurement-vs-threshold comparison when real data exists.
+
+**ARBITER FINDINGS:** Beyond the blocking-policy proof above, `test_arbiter_unverified_required_verification_blocks_accept`, `test_arbiter_owner_approval_required_returns_human_approval_required`, `test_arbiter_disagreement_at_high_risk_escalates_not_averages`, and `test_arbiter_no_opinions_needs_more_evidence_not_accept` cover every hard-policy branch in `arbiter_decide()` — disagreement is preserved (ESCALATE), never averaged into a false consensus.
+
+**COURT VERDICT FINDINGS:** All five canonical outcomes (`ACCEPT`, `REJECT`, `NEED_MORE_EVIDENCE`, `ESCALATE`, `HUMAN_APPROVAL_REQUIRED`) are exercised by real test cases — `test_arbiter_accepts_when_all_conditions_met` is the sole path to ACCEPT, requiring simultaneously: no blocking finding, all required verification PASS, and at least one real SUPPORTS_ACCEPT opinion with no SUPPORTS_REJECT/NEEDS_MORE_EVIDENCE opinion present.
+
+**PROVIDER INTEGRATION:** `_try_provider_narrative()` is the ONLY function that ever calls `ModelProvider.invoke()` in this module — its return value (`CriticOutput.provider_narrative`) is never read by `arbiter_decide()` or by any critic's own conclusion-computation logic. `MockProvider` (Phase 15.6, unmodified) is sufficient for all Phase 15.9 tests; no paid/live provider was contacted.
+
+**MODEL-DISAGREEMENT FINDINGS:** `test_arbiter_disagreement_at_high_risk_escalates_not_averages` is the concrete proof — two critics genuinely disagreeing (one SUPPORTS_REJECT, one SUPPORTS_ACCEPT) at HIGH risk produces ESCALATE, not a majority vote or an averaged confidence score.
+
+**MISSION INTEGRATION:** `orca.mission.court_mission_gate.can_proceed_to_completed_verified()` does not implement a second mission completion state machine — `orca.mission.state_machine`/`mission_store.transition_mission()` (Phase 15.3, unmodified) still own the actual transition. `test_reject_verdict_blocks_regardless_of_verification` through `test_human_approval_required_blocks` (4 tests) each prove one non-ACCEPT verdict blocks completion regardless of verification state, exactly per spec section 27's enumerated list.
+
+**AUTHORITY SEPARATION:** `court_mission_gate.py`'s own module docstring states the invariant explicitly, and no code path in this module calls into `orca.mission.operation_store`/`authority_bridge` (Phase 15.5) at all — Court review and authority approval remain structurally independent modules with no shared decision function.
+
+**DURABILITY FINDINGS:** Disclosed honestly: `AntiGamingFinding`/`CourtDecision` do not survive a process restart this phase — see MIGRATIONS above for why this was a deliberate, disclosed choice rather than an oversight.
+
+**AUDIT FINDINGS:** No secret value appears in any `AntiGamingFinding`/`CourtDecision` field by construction — `confidence_basis`/`reasoning_summary` describe structural facts (assert counts, decorator sets, import presence) never raw environment/credential content. Tamper-evident storage is NOT claimed (matching the disclosed in-process durability limitation above) — this phase does not integrate findings/decisions into `orca.godmode.durable_audit`'s tamper-evident chain.
+
+**TRACEABILITY FINDINGS:** Not wired into `orca.mission.traceability`'s report this phase — disclosed as deferred to a future subphase (Phase 15.10/15.15) per the explicit instruction that a clean interface plus disclosure is acceptable when full integration would exceed scope. `AntiGamingFinding.requirement_ids`/`test_ids` fields already exist for that future wiring.
+
+**REAL GIT-DIFF QUALIFICATION:** `tests/test_gaming_detectors.py` — 12 tests, every one against a real, freshly-`git init`'d temporary repository with real commits (never a synthetic dictionary).
+
+**ADVERSARIAL RESULTS:** All ten spec section 32 scenarios pass:
+```
+1. test_scenario_1_test_deleted_for_bug_is_blocking -- PASSED
+2. test_scenario_2_auth_test_weakened_to_expect_success_is_critical -- PASSED (after fixing the broadened-comparison detection gap)
+3. test_scenario_3_failing_test_changed_to_skip -- PASSED
+4. test_scenario_4_integration_replaced_by_mock -- PASSED (after fixing the AST-import-based mock detection)
+5. test_scenario_5_weakened_assertions_still_flagged_even_if_green -- PASSED
+6. test_scenario_6_requirement_driven_change_is_surfaced_not_auto_rejected -- PASSED
+7. test_scenario_7_pure_rename_not_classified_as_deletion -- PASSED
+8. test_scenario_8_new_stronger_test_is_not_gaming -- PASSED
+9. test_scenario_9_provider_accept_narrative_cannot_override_critical_finding -- PASSED
+10. test_scenario_10_provider_unavailable_does_not_produce_fake_accept -- PASSED
+```
+Plus self-protection (`test_self_protection_candidate_deletes_anti_gaming_detector_test`, `test_self_protection_candidate_disables_security_critic_test_via_skip`) and verification-history preservation through Court review (`test_verification_history_pass_fail_pass_not_erased_by_current_pass`) — all PASSED, using the identical baseline-bound detector mechanism as every other scenario, never a special-cased self-check.
+
+**SECURITY REGRESSION:**
+```
+(local, godmode/authority/authorization/approval/replay/cancellation/audit/auth/tenant-isolation cross-check, post Phase 15.9)
+1 failed, 358 passed, 18 skipped, 1661 deselected
+FAILED tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary
+```
+The single failure is the same pre-existing, unrelated failure disclosed since Phase 15.5 — confirmed unchanged, not caused by any file this phase touched. The local-only container-sandbox flakiness disclosed in Phase 15.6.1/15.7 did not recur in this cross-check run.
+
+**KNOWN PRE-EXISTING FAILURES:** `tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary` — unchanged since Phase 15.5, confirmed unrelated to any file this phase touched.
+
+**COMMANDS EXECUTED:**
+```
+git rev-parse HEAD && git status --short
+grep -rn "class.*Critic\|AST.*analysis" orca --include="*.py"    # pre-flight: no existing critic/AST abstraction found
+.venv/bin/python3 -m pytest tests/test_anti_gaming.py tests/test_git_diff_analysis.py tests/test_gaming_detectors.py tests/test_cognitive_court.py tests/test_court_mission_gate.py tests/test_test_collection_diff.py -q
+git commit ... && git push origin session-update-2026-08-25   # 99b8881
+.venv/bin/python3 -m pytest tests/ -k "godmode or authority or authorization or approval or replay or cancellation or audit or auth or tenant" -q
+```
+
+**TESTS EXECUTED:**
+- UNIT (no live infra, real git repos in tmp_path): `test_anti_gaming.py` (6), `test_git_diff_analysis.py` (6), `test_gaming_detectors.py` (12), `test_cognitive_court.py` (23), `test_court_mission_gate.py` (6), `test_test_collection_diff.py` (2) — 55 tests.
+- Cross-check regression: full godmode/authority/authorization/approval/replay/cancellation/audit/auth/tenant-isolation suite plus all Phase 15 mission/code/verification/anti-gaming tests, local.
+
+**EXACT RESULTS:**
+```
+(local, pre-fix -- caught both real bugs)
+2 failed, 7 passed (tests/test_gaming_detectors.py)
+FAILED test_scenario_2_auth_test_weakened_to_expect_success_is_critical (missing broadened-comparison detection)
+FAILED test_scenario_4_integration_replaced_by_mock (substring-search mock detection fooled by local variable shadow)
+```
+```
+(local, post-fix, all Phase 15.9 test files)
+55 passed
+```
+```
+(local security regression cross-check, post Phase 15.9)
+1 failed, 358 passed, 18 skipped, 1661 deselected
+```
+```
+(local, final combined Phase 15.9 + requirements regression)
+74 passed (55 Phase 15.9 + 19 test_mission_requirements.py)
+```
+
+**REGRESSIONS:** None caused by this phase. The known pre-existing legacy-memory failure is unchanged.
+
+**TEST COLLECTION DELTA:** +55 (`test_anti_gaming.py`: 6, `test_git_diff_analysis.py`: 6, `test_gaming_detectors.py`: 12, `test_cognitive_court.py`: 23, `test_court_mission_gate.py`: 6, `test_test_collection_diff.py`: 2).
+
+**REQUIREMENT STATUS DELTA:**
+- `REQ-ANTIGAMING-DETECT-001`: UNIMPLEMENTED → VERIFIED.
+- `REQ-ANTIGAMING-BLOCK-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-COURT-ROLES-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-COURT-ARBITRATION-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-COURT-RISK-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-CKPT-RESTORE-002`: unchanged (still IMPLEMENTED only) — untouched this phase.
+- Registry after this subphase (37 total): 27 VERIFIED, 2 IMPLEMENTED-only, 8 UNIMPLEMENTED.
+
+**TECHNICAL DEBT:**
+- Full `JUSTIFIED_REQUIREMENT_CHANGE` vs `UNJUSTIFIED_VERIFICATION_WEAKENING` classification (spec section 13's fuller ask) is not implemented — the detector always surfaces, Court/policy decides, which is honest but not the complete distinguishing logic the spec describes.
+- `detect_error_suppression()` and `detect_hardcoded_bypass()` lack dedicated adversarial git-fixture tests this phase (unlike the other five detectors, which each have a named scenario) — covered only by the smoke-level `test_analyze_revisions_combines_all_detectors` path.
+- Carried forward, not solved opportunistically: `artifact_hash` unpopulated (Phase 15.8), `verification_records` not yet in traceability, `NetworkPolicy.RESTRICTED` unimplemented, `CONTAINER_SANDBOX` default image remains a mutable tag.
+
+**KNOWN LIMITATIONS:**
+- Detection is bounded/heuristic by explicit design (spec section 6) — none of these detectors claim perfect semantic-equivalence detection; a sufficiently obfuscated weakening could evade the current pattern set.
+- `AntiGamingFinding`/`CourtDecision` are in-process only this phase (see DURABILITY FINDINGS).
+- Traceability integration is a clean interface only, not wired end-to-end (see TRACEABILITY FINDINGS).
+
+**UNVERIFIED ITEMS:** None new beyond the disclosed scope limits above.
+
+**DEFERRED ITEMS:** Phase 15.10 (Production Proof) through 15.15 — not started. Full anti-gaming intent classification, traceability wiring, and tamper-evident audit-chain integration for findings/decisions are all explicitly deferred.
+
+**OWNER ACTION REQUIRED:** None.
+
+**EVIDENCE:** This document; `orca/mission/anti_gaming.py` through `court_mission_gate.py`; `tests/test_anti_gaming.py` through `tests/test_test_collection_diff.py`; commit `99b8881`.
+
+**EPISTEMIC STATE:** VERIFIED — every claim in this checkpoint traces to a local test run against a real git repository, quoted above, or direct code inspection. Both real bugs found via this phase's own adversarial test suite (the missing broadened-comparison detector, the substring-search mock-detection false-negative) are disclosed in full, including exactly what evaded detection before the fix. The pytest-collection-name collision caught before it could cause a silent problem is disclosed rather than presented as if it never happened. No claim in this checkpoint is asserted from confidence alone.
+
+**PROGRESSION VERDICT:**
+
+YES — EVIDENCE SUPPORTS PROGRESSION
