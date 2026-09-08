@@ -1,0 +1,371 @@
+"""
+Phase 15.9 -- Cognitive Court: typed critic roles, risk classification,
+and a deterministic Arbiter (spec sections 15-26).
+
+The "Arbiter" here is a SOFTWARE ROLE/INTERFACE only -- it is not, and
+must never be presented as, Orneur Genesis/Novus/Aeternum/ORNEUR Auto.
+No native model intelligence is created by this module.
+
+Hard invariant: a `ModelProvider` (Phase 15.6, reused unmodified) may
+contribute narrative reasoning to any critic, but that narrative is
+kept in a SEPARATE field (`CriticOutput.provider_narrative`) and never
+substitutes for the critic's own deterministic `conclusion`. The
+Arbiter's policy function (`arbiter_decide`) reads ONLY deterministic
+inputs (anti-gaming findings, verification outcomes, critic
+conclusions) -- there is no code path where provider text can flip a
+verdict.
+"""
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+
+from orca.mission.anti_gaming import AntiGamingFinding, critical_findings, has_blocking_finding
+from orca.mission.providers import ModelProvider, ProviderError, ProviderRequest
+from orca.mission.test_collection_diff import CollectionDelta
+from orca.mission.verification import VerificationOutcome
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _did() -> str:
+    return f"court_{uuid.uuid4().hex[:16]}"
+
+
+class CourtRole(str, Enum):
+    CONSTRUCTOR = "CONSTRUCTOR"
+    FALSIFIER = "FALSIFIER"
+    SECURITY_CRITIC = "SECURITY_CRITIC"
+    REGRESSION_CRITIC = "REGRESSION_CRITIC"
+    TEST_CRITIC = "TEST_CRITIC"
+    PERFORMANCE_CRITIC = "PERFORMANCE_CRITIC"
+    ARBITER = "ARBITER"
+
+
+class CriticConclusion(str, Enum):
+    SUPPORTS_ACCEPT = "SUPPORTS_ACCEPT"
+    SUPPORTS_REJECT = "SUPPORTS_REJECT"
+    NEEDS_MORE_EVIDENCE = "NEEDS_MORE_EVIDENCE"
+    NOT_REQUIRED = "NOT_REQUIRED"
+
+
+class RiskLevel(str, Enum):
+    TRIVIAL = "TRIVIAL"
+    STANDARD = "STANDARD"
+    ELEVATED = "ELEVATED"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class CourtVerdict(str, Enum):
+    ACCEPT = "ACCEPT"
+    REJECT = "REJECT"
+    NEED_MORE_EVIDENCE = "NEED_MORE_EVIDENCE"
+    ESCALATE = "ESCALATE"
+    HUMAN_APPROVAL_REQUIRED = "HUMAN_APPROVAL_REQUIRED"
+
+
+class CourtError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class CriticOutput:
+    role: CourtRole
+    conclusion: CriticConclusion
+    reasoning_summary: str
+    findings_considered: tuple[str, ...] = field(default_factory=tuple)
+    provider_narrative: str | None = None  # kept separate -- never authoritative
+
+    def __post_init__(self) -> None:
+        if not self.reasoning_summary.strip():
+            raise CourtError(f"{self.role.value}: reasoning_summary must not be empty.")
+
+
+@dataclass(frozen=True)
+class CourtDecision:
+    decision_id: str
+    mission_id: str | None
+    revision: str
+    risk_level: RiskLevel
+    roles_invoked: tuple[CourtRole, ...]
+    findings_considered: tuple[str, ...]
+    verification_refs: tuple[str, ...]
+    reasoning_summary: str
+    verdict: CourtVerdict
+    created_at: str = field(default_factory=_now_iso)
+    limitations: str | None = None
+
+
+# ── Risk classification (spec section 24) ───────────────────────────
+
+def classify_risk(
+    *, changed_files: tuple[str, ...], security_relevant_files_touched: bool,
+    findings: tuple[AntiGamingFinding, ...],
+) -> RiskLevel:
+    if critical_findings(findings):
+        return RiskLevel.CRITICAL
+    if security_relevant_files_touched:
+        return RiskLevel.HIGH
+    non_doc_files = [f for f in changed_files if not f.endswith((".md", ".txt"))]
+    if not non_doc_files:
+        return RiskLevel.TRIVIAL
+    if len(non_doc_files) <= 2 and not any(f.startswith("tests/") for f in non_doc_files):
+        return RiskLevel.STANDARD
+    return RiskLevel.ELEVATED
+
+
+def roles_for_risk(risk: RiskLevel) -> tuple[CourtRole, ...]:
+    """Which roles are actually invoked, and why (spec section 24:
+    "Record which roles were invoked and why")."""
+    if risk is RiskLevel.TRIVIAL:
+        return (CourtRole.CONSTRUCTOR, CourtRole.REGRESSION_CRITIC)
+    if risk is RiskLevel.STANDARD:
+        return (CourtRole.CONSTRUCTOR, CourtRole.TEST_CRITIC, CourtRole.ARBITER)
+    if risk is RiskLevel.ELEVATED:
+        return (CourtRole.CONSTRUCTOR, CourtRole.TEST_CRITIC, CourtRole.REGRESSION_CRITIC, CourtRole.ARBITER)
+    # HIGH and CRITICAL: full court
+    return (
+        CourtRole.CONSTRUCTOR, CourtRole.FALSIFIER, CourtRole.SECURITY_CRITIC,
+        CourtRole.REGRESSION_CRITIC, CourtRole.TEST_CRITIC, CourtRole.ARBITER,
+    )
+
+
+# ── Roles (spec sections 17-23) ──────────────────────────────────────
+
+def constructor_summarize(
+    *, revision: str, requirement_ids: tuple[str, ...], implementation_files: tuple[str, ...],
+    evidence_refs: tuple[str, ...], limitations: tuple[str, ...],
+    provider: ModelProvider | None = None,
+) -> CriticOutput:
+    """Constructor does NOT approve its own work -- its conclusion is
+    always NOT_REQUIRED (it has no accept/reject opinion), it only
+    summarizes."""
+    summary = (
+        f"Candidate {revision}: requirements={requirement_ids!r}, "
+        f"implementation_files={implementation_files!r}, evidence_refs={evidence_refs!r}, "
+        f"known_limitations={limitations!r}."
+    )
+    narrative = _try_provider_narrative(provider, summary, purpose="constructor_summary")
+    return CriticOutput(
+        role=CourtRole.CONSTRUCTOR, conclusion=CriticConclusion.NOT_REQUIRED,
+        reasoning_summary=summary, provider_narrative=narrative,
+    )
+
+
+def falsifier_review(
+    *, verification_outcomes: dict[str, VerificationOutcome], stale_requirement_ids: tuple[str, ...],
+    missing_negative_case_requirement_ids: tuple[str, ...], provider: ModelProvider | None = None,
+) -> CriticOutput:
+    gaps = []
+    if stale_requirement_ids:
+        gaps.append(f"stale evidence for {stale_requirement_ids!r}")
+    if missing_negative_case_requirement_ids:
+        gaps.append(f"no negative-case coverage for {missing_negative_case_requirement_ids!r}")
+    unverified = [rid for rid, outcome in verification_outcomes.items() if outcome is not VerificationOutcome.PASS]
+    if unverified:
+        gaps.append(f"not-PASS requirements: {unverified!r}")
+
+    summary = f"Falsifier found gaps: {gaps!r}" if gaps else "Falsifier found no contradictory evidence."
+    conclusion = CriticConclusion.SUPPORTS_REJECT if gaps else CriticConclusion.SUPPORTS_ACCEPT
+    narrative = _try_provider_narrative(provider, summary, purpose="falsifier_review")
+    return CriticOutput(role=CourtRole.FALSIFIER, conclusion=conclusion, reasoning_summary=summary,
+                         provider_narrative=narrative)
+
+
+def security_critic_review(
+    findings: tuple[AntiGamingFinding, ...], *, provider: ModelProvider | None = None,
+) -> CriticOutput:
+    crit = critical_findings(findings)
+    if crit:
+        summary = f"{len(crit)} CRITICAL security-relevant finding(s): {[f.finding_id for f in crit]!r}."
+        conclusion = CriticConclusion.SUPPORTS_REJECT
+    else:
+        security_findings = [f for f in findings if f.security_relevance]
+        summary = (f"{len(security_findings)} security-relevant finding(s), none CRITICAL."
+                   if security_findings else "No security-relevant findings.")
+        conclusion = CriticConclusion.SUPPORTS_ACCEPT
+    narrative = _try_provider_narrative(provider, summary, purpose="security_critic_review")
+    return CriticOutput(role=CourtRole.SECURITY_CRITIC, conclusion=conclusion, reasoning_summary=summary,
+                         findings_considered=tuple(f.finding_id for f in findings if f.security_relevance),
+                         provider_narrative=narrative)
+
+
+def regression_critic_review(
+    delta: CollectionDelta | None, *, justified_removals: frozenset[str] = frozenset(),
+    provider: ModelProvider | None = None,
+) -> CriticOutput:
+    if delta is None:
+        return CriticOutput(
+            role=CourtRole.REGRESSION_CRITIC, conclusion=CriticConclusion.NEEDS_MORE_EVIDENCE,
+            reasoning_summary="No test-collection comparison was performed for this candidate.",
+        )
+    unjustified_removed = delta.removed - justified_removals
+    if unjustified_removed:
+        summary = (f"Collection shrank: {len(delta.removed)} test(s) removed, "
+                   f"{len(unjustified_removed)} without justification: {sorted(unjustified_removed)!r}.")
+        conclusion = CriticConclusion.SUPPORTS_REJECT
+    elif delta.removed:
+        summary = f"{len(delta.removed)} test(s) removed, all justified: {sorted(delta.removed)!r}."
+        conclusion = CriticConclusion.SUPPORTS_ACCEPT
+    else:
+        summary = f"No test removed; {len(delta.added)} new test(s) added."
+        conclusion = CriticConclusion.SUPPORTS_ACCEPT
+    narrative = _try_provider_narrative(provider, summary, purpose="regression_critic_review")
+    return CriticOutput(role=CourtRole.REGRESSION_CRITIC, conclusion=conclusion, reasoning_summary=summary,
+                         provider_narrative=narrative)
+
+
+def review_test_quality(
+    findings: tuple[AntiGamingFinding, ...], *, provider: ModelProvider | None = None,
+) -> CriticOutput:
+    """Uses the anti-gaming findings DIRECTLY -- does not regenerate
+    contradictory facts from prose (spec section 21's explicit
+    instruction)."""
+    test_related = [
+        f for f in findings if f.category.value in (
+            "TEST_DELETED", "TEST_DISABLED", "TEST_SKIPPED", "ASSERTION_REMOVED",
+            "ASSERTION_WEAKENED", "MOCK_REPLACES_REQUIRED_BEHAVIOR",
+        )
+    ]
+    blocking = has_blocking_finding(tuple(test_related))
+    summary = (f"{len(test_related)} test-quality finding(s) from the anti-gaming engine, "
+              f"blocking={blocking}: {[f.finding_id for f in test_related]!r}.")
+    conclusion = CriticConclusion.SUPPORTS_REJECT if blocking else (
+        CriticConclusion.NEEDS_MORE_EVIDENCE if test_related else CriticConclusion.SUPPORTS_ACCEPT
+    )
+    narrative = _try_provider_narrative(provider, summary, purpose="review_test_quality")
+    return CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=conclusion, reasoning_summary=summary,
+                         findings_considered=tuple(f.finding_id for f in test_related), provider_narrative=narrative)
+
+
+def performance_critic_review(
+    *, required: bool, measured: bool = False, passed: bool | None = None,
+    provider: ModelProvider | None = None,
+) -> CriticOutput:
+    if not required:
+        return CriticOutput(role=CourtRole.PERFORMANCE_CRITIC, conclusion=CriticConclusion.NOT_REQUIRED,
+                             reasoning_summary="No meaningful performance risk for this candidate; role not required.")
+    if not measured:
+        return CriticOutput(role=CourtRole.PERFORMANCE_CRITIC, conclusion=CriticConclusion.NEEDS_MORE_EVIDENCE,
+                             reasoning_summary="Performance is relevant but no real measurement exists -- never fabricated PASS.")
+    summary = f"Real performance measurement exists; passed={passed}."
+    conclusion = CriticConclusion.SUPPORTS_ACCEPT if passed else CriticConclusion.SUPPORTS_REJECT
+    narrative = _try_provider_narrative(provider, summary, purpose="performance_critic_review")
+    return CriticOutput(role=CourtRole.PERFORMANCE_CRITIC, conclusion=conclusion, reasoning_summary=summary,
+                         provider_narrative=narrative)
+
+
+def _try_provider_narrative(provider: ModelProvider | None, fact_summary: str, *, purpose: str) -> str | None:
+    """Provider output is ADVISORY narrative only. A provider failure
+    or absence never blocks or flips the deterministic conclusion --
+    Court degrades truthfully (spec section 25: "Provider unavailable:
+    Court must degrade truthfully. Do not turn provider failure into
+    automatic ACCEPT"), which is trivially satisfied here since this
+    function's return value is never consulted by arbiter_decide()."""
+    if provider is None:
+        return None
+    try:
+        response = provider.invoke(ProviderRequest(
+            provider=getattr(provider, "provider_name", "unknown"), model=getattr(provider, "model_name", "unknown"),
+            purpose=purpose, prompt=fact_summary,
+        ))
+        return response.text
+    except ProviderError:
+        return None
+
+
+# ── Arbiter (spec section 23) ────────────────────────────────────────
+
+def arbiter_decide(
+    *, mission_id: str | None, revision: str, risk_level: RiskLevel,
+    critic_outputs: tuple[CriticOutput, ...], findings: tuple[AntiGamingFinding, ...],
+    required_verification_outcomes: dict[str, VerificationOutcome],
+    owner_approval_required: bool = False,
+) -> CourtDecision:
+    """The ONLY function that produces a final CourtVerdict. Reads
+    ONLY deterministic inputs -- no provider narrative is consulted
+    here, so no model prompt can override these restrictions (spec
+    section 23's explicit invariant)."""
+    roles_invoked = tuple(c.role for c in critic_outputs)
+    findings_considered = tuple(f.finding_id for f in findings)
+
+    if owner_approval_required:
+        return CourtDecision(
+            decision_id=_did(), mission_id=mission_id, revision=revision, risk_level=risk_level,
+            roles_invoked=roles_invoked, findings_considered=findings_considered, verification_refs=(),
+            reasoning_summary="Owner approval is genuinely required for this candidate's scope.",
+            verdict=CourtVerdict.HUMAN_APPROVAL_REQUIRED,
+        )
+
+    if has_blocking_finding(findings):
+        blocking_ids = [f.finding_id for f in findings if f.blocking]
+        return CourtDecision(
+            decision_id=_did(), mission_id=mission_id, revision=revision, risk_level=risk_level,
+            roles_invoked=roles_invoked, findings_considered=findings_considered, verification_refs=(),
+            reasoning_summary=f"Blocking anti-gaming finding(s) present: {blocking_ids!r} -- cannot ACCEPT "
+                              f"regardless of critic conclusions.",
+            verdict=CourtVerdict.REJECT,
+        )
+
+    not_pass = {rid: o for rid, o in required_verification_outcomes.items() if o is not VerificationOutcome.PASS}
+    if not_pass:
+        not_pass_summary = {rid: o.value for rid, o in not_pass.items()}
+        return CourtDecision(
+            decision_id=_did(), mission_id=mission_id, revision=revision, risk_level=risk_level,
+            roles_invoked=roles_invoked, findings_considered=findings_considered, verification_refs=(),
+            reasoning_summary=f"Required verification not PASS for: {not_pass_summary!r} -- "
+                              f"cannot ACCEPT as COMPLETED_VERIFIED.",
+            verdict=CourtVerdict.NEED_MORE_EVIDENCE,
+        )
+
+    opinions = [c for c in critic_outputs if c.conclusion is not CriticConclusion.NOT_REQUIRED]
+    supports_reject = [c for c in opinions if c.conclusion is CriticConclusion.SUPPORTS_REJECT]
+    needs_evidence = [c for c in opinions if c.conclusion is CriticConclusion.NEEDS_MORE_EVIDENCE]
+    supports_accept = [c for c in opinions if c.conclusion is CriticConclusion.SUPPORTS_ACCEPT]
+
+    if supports_reject and supports_accept and risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL):
+        return CourtDecision(
+            decision_id=_did(), mission_id=mission_id, revision=revision, risk_level=risk_level,
+            roles_invoked=roles_invoked, findings_considered=findings_considered, verification_refs=(),
+            reasoning_summary=f"Critics disagree at {risk_level.value} risk: "
+                              f"{[c.role.value for c in supports_reject]!r} REJECT vs "
+                              f"{[c.role.value for c in supports_accept]!r} ACCEPT -- escalating rather than averaging.",
+            verdict=CourtVerdict.ESCALATE,
+        )
+
+    if supports_reject:
+        return CourtDecision(
+            decision_id=_did(), mission_id=mission_id, revision=revision, risk_level=risk_level,
+            roles_invoked=roles_invoked, findings_considered=findings_considered, verification_refs=(),
+            reasoning_summary=f"Critic(s) {[c.role.value for c in supports_reject]!r} support REJECT.",
+            verdict=CourtVerdict.REJECT,
+        )
+
+    if needs_evidence:
+        return CourtDecision(
+            decision_id=_did(), mission_id=mission_id, revision=revision, risk_level=risk_level,
+            roles_invoked=roles_invoked, findings_considered=findings_considered, verification_refs=(),
+            reasoning_summary=f"Critic(s) {[c.role.value for c in needs_evidence]!r} need more evidence.",
+            verdict=CourtVerdict.NEED_MORE_EVIDENCE,
+        )
+
+    if not opinions:
+        return CourtDecision(
+            decision_id=_did(), mission_id=mission_id, revision=revision, risk_level=risk_level,
+            roles_invoked=roles_invoked, findings_considered=findings_considered, verification_refs=(),
+            reasoning_summary="No critic opinions were supplied -- insufficient factual basis for ACCEPT.",
+            verdict=CourtVerdict.NEED_MORE_EVIDENCE,
+        )
+
+    return CourtDecision(
+        decision_id=_did(), mission_id=mission_id, revision=revision, risk_level=risk_level,
+        roles_invoked=roles_invoked, findings_considered=findings_considered, verification_refs=(),
+        reasoning_summary=f"All {len(opinions)} critic(s) support ACCEPT, no blocking finding, "
+                          f"all required verification PASS.",
+        verdict=CourtVerdict.ACCEPT,
+    )

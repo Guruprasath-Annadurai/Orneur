@@ -959,5 +959,159 @@ def seed_registry() -> None:
         evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-158--verification-engine",
     )
 
+    # -- Phase 15.9: Anti-Test-Gaming + Cognitive Court --
+    register(Requirement(
+        id="REQ-ANTIGAMING-DETECT-001",
+        source_section="Phase 15.9 spec sections 1, 3-13, 31-32",
+        statement="Baseline-bound (real git revision) analysis detects structurally obvious "
+                   "test-suite weakening: deleted tests (distinguished from git-proven renames), "
+                   "newly added skip/xfail markers, assertion weakening (fewer asserts, "
+                   "broadened equality-to-membership comparisons, pytest.raises() widened to "
+                   "bare Exception), new broad exception suppression, and a real integration "
+                   "call replaced by a mock while the import that provided it disappears.",
+        acceptance_criteria=(
+            "A test simulates a diff that deletes or weakens a security-relevant assertion "
+            "with no linked requirement change and confirms the anti-gaming check flags/"
+            "blocks it.",
+            "A test simulates a legitimate test edit (a genuinely NEW, stronger test added) "
+            "backed by real coverage and confirms it is NOT flagged.",
+            "Real git-repository adversarial fixtures cover all ten spec section 32 scenarios "
+            "(deleted test, auth-weakened test, skip-to-avoid-failure, mock-replaces-real, "
+            "weakened-but-green assertions, requirement-driven change surfaced not silently "
+            "dropped, pure rename not misclassified, new test not flagged, provider narrative "
+            "cannot override a CRITICAL finding, provider failure never yields a fake ACCEPT).",
+        ),
+    ))
+    transition(
+        "REQ-ANTIGAMING-DETECT-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=(
+            "orca/mission/anti_gaming.py", "orca/mission/git_diff_analysis.py",
+            "orca/mission/gaming_detectors.py", "orca/mission/test_collection_diff.py",
+        ),
+    )
+    transition(
+        "REQ-ANTIGAMING-DETECT-001",
+        RequirementStatus.VERIFIED,
+        test_files=(
+            "tests/test_anti_gaming.py", "tests/test_git_diff_analysis.py",
+            "tests/test_gaming_detectors.py", "tests/test_test_collection_diff.py",
+        ),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-159--anti-test-gaming--cognitive-court",
+    )
+
+    register(Requirement(
+        id="REQ-ANTIGAMING-BLOCK-001",
+        source_section="Phase 15.9 spec sections 2, 14, 27",
+        statement="A CRITICAL blocking anti-gaming finding structurally prevents "
+                   "COMPLETED_VERIFIED and prevents a Court ACCEPT verdict, with no code path "
+                   "for a critic or provider to vote it away; the same deterministic function "
+                   "is consulted by both the mission gate and the Arbiter.",
+        acceptance_criteria=(
+            "A test constructs a CRITICAL-severity finding with blocking=False and confirms "
+            "construction is rejected -- CRITICAL implies blocking structurally.",
+            "A test proves arbiter_decide() returns REJECT when a blocking finding exists, "
+            "even when every supplied critic output is SUPPORTS_ACCEPT.",
+        ),
+    ))
+    transition(
+        "REQ-ANTIGAMING-BLOCK-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/anti_gaming.py", "orca/mission/cognitive_court.py"),
+    )
+    transition(
+        "REQ-ANTIGAMING-BLOCK-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_anti_gaming.py", "tests/test_cognitive_court.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-159--anti-test-gaming--cognitive-court",
+    )
+
+    register(Requirement(
+        id="REQ-COURT-ROLES-001",
+        source_section="Phase 15.9 spec sections 15-22, 24-26",
+        statement="Cognitive Court implements typed, risk-aware Constructor/Falsifier/"
+                   "Security/Regression/Test/Performance critic roles as software "
+                   "interfaces -- never bound to a specific model family, never named "
+                   "'Aeternum'. A ModelProvider may contribute advisory narrative kept "
+                   "structurally separate from each critic's deterministic conclusion; "
+                   "provider absence or failure never yields a fake ACCEPT.",
+        acceptance_criteria=(
+            "A test confirms Constructor's conclusion is always NOT_REQUIRED (it does not "
+            "approve its own work).",
+            "A test confirms a MockProvider's narrative claiming ACCEPT does not change a "
+            "critic's deterministic SUPPORTS_REJECT conclusion when real findings exist.",
+            "A test confirms a failing/unavailable provider still produces a correct "
+            "deterministic conclusion from real findings, never a default ACCEPT.",
+        ),
+    ))
+    transition(
+        "REQ-COURT-ROLES-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/cognitive_court.py",),
+    )
+    transition(
+        "REQ-COURT-ROLES-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_cognitive_court.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-159--anti-test-gaming--cognitive-court",
+    )
+
+    register(Requirement(
+        id="REQ-COURT-ARBITRATION-001",
+        source_section="Phase 15.9 spec sections 16, 23, 27-28",
+        statement="The Arbiter produces exactly one of ACCEPT/REJECT/NEED_MORE_EVIDENCE/"
+                   "ESCALATE/HUMAN_APPROVAL_REQUIRED from deterministic inputs only "
+                   "(findings, verification outcomes, critic conclusions); conflicting "
+                   "critic conclusions at HIGH/CRITICAL risk escalate rather than average; "
+                   "Court review is never authority -- an ACCEPT verdict grants no "
+                   "deployment/migration/secret-access permission, and a real Phase 15.5 "
+                   "authority approval does not force a Court ACCEPT.",
+        acceptance_criteria=(
+            "A test confirms disagreeing critics at HIGH risk produce ESCALATE, not an "
+            "averaged verdict.",
+            "A test confirms can_proceed_to_completed_verified() requires BOTH a Court "
+            "ACCEPT verdict AND the Phase 15.8 verification gate to independently pass -- "
+            "neither alone is sufficient.",
+        ),
+    ))
+    transition(
+        "REQ-COURT-ARBITRATION-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/cognitive_court.py", "orca/mission/court_mission_gate.py"),
+    )
+    transition(
+        "REQ-COURT-ARBITRATION-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_cognitive_court.py", "tests/test_court_mission_gate.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-159--anti-test-gaming--cognitive-court",
+    )
+
+    register(Requirement(
+        id="REQ-COURT-RISK-001",
+        source_section="Phase 15.9 spec section 24",
+        statement="A deterministic risk classifier (TRIVIAL/STANDARD/ELEVATED/HIGH/CRITICAL) "
+                   "decides which Court roles are actually invoked, avoiding a full-Court "
+                   "run for every trivial edit while guaranteeing full-Court invocation for "
+                   "security-relevant or CRITICAL-finding candidates.",
+        acceptance_criteria=(
+            "A test confirms a docs-only change classifies as TRIVIAL and does not invoke "
+            "the Security Critic.",
+            "A test confirms a candidate with a CRITICAL anti-gaming finding classifies as "
+            "CRITICAL risk and invokes the full role set including Security Critic and "
+            "Falsifier.",
+        ),
+    ))
+    transition(
+        "REQ-COURT-RISK-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/cognitive_court.py",),
+    )
+    transition(
+        "REQ-COURT-RISK-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_cognitive_court.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-159--anti-test-gaming--cognitive-court",
+    )
+
 
 __all__ = ["seed_registry"]
