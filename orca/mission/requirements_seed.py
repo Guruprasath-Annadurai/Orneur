@@ -707,5 +707,127 @@ def seed_registry() -> None:
         ),
     ))
 
+    # -- Phase 15.7: Product Contract + Requirement Compiler --
+    register(Requirement(
+        id="REQ-PRODUCT-CONTRACT-001",
+        source_section="Phase 15.7 spec sections 1-2",
+        statement="A typed Product Contract exists where a missing fact remains explicitly "
+                   "missing/unknown rather than auto-filled with a plausible guess, and "
+                   "structural validation (duplicate actors, undefined actor references, "
+                   "out-of-scope/acceptance-target overlap) is enforced at construction time.",
+        acceptance_criteria=(
+            "A test constructs a minimal valid contract and confirms unaddressed fields "
+            "are None/empty, never invented.",
+            "A test confirms duplicate actor IDs, a journey referencing an undefined actor, "
+            "and out-of-scope/acceptance-target overlap are all rejected at construction.",
+        ),
+    ))
+    transition(
+        "REQ-PRODUCT-CONTRACT-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/product_contract.py",),
+    )
+    transition(
+        "REQ-PRODUCT-CONTRACT-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_product_contract.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-157--product--requirement-compilers",
+    )
+
+    register(Requirement(
+        id="REQ-ASSUMPTION-INTEGRITY-001",
+        source_section="Phase 15.7 spec sections 3, 11",
+        statement="Assumptions/unknowns use exactly the four states the durable assumptions "
+                   "table already defines (VERIFIED/UNVERIFIED/UNKNOWN/CONTESTED); VERIFIED "
+                   "requires real evidence supplied by the caller, never by the fact's own "
+                   "provenance; an inferred or provider-proposed assumption can never "
+                   "self-promote to VERIFIED; CONTESTED preserves competing statements "
+                   "rather than silently picking one.",
+        acceptance_criteria=(
+            "A test constructs a Fact directly as VERIFIED and confirms it is rejected -- "
+            "verify() with real evidence is the only path to VERIFIED.",
+            "A test compiles 'Build me a food-delivery app' with no explicit facts and "
+            "confirms payment/country/tax/etc. all become UNKNOWN facts, never VERIFIED.",
+            "A test confirms a provider-proposed candidate fact is recorded UNVERIFIED/"
+            "INFERRED_ASSUMPTION, never VERIFIED.",
+        ),
+    ))
+    transition(
+        "REQ-ASSUMPTION-INTEGRITY-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/assumption_model.py", "orca/mission/idea_compiler.py"),
+    )
+    transition(
+        "REQ-ASSUMPTION-INTEGRITY-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_assumption_model.py", "tests/test_idea_compiler.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-157--product--requirement-compilers",
+    )
+
+    register(Requirement(
+        id="REQ-REQUIREMENT-COMPILER-001",
+        source_section="Phase 15.7 spec sections 5, 8-9, 16",
+        statement="Requirement IDs are stable under irrelevant source reordering/formatting "
+                   "(derived from content, not list position); a materially changed "
+                   "requirement receives a new stable ID rather than silently inheriting the "
+                   "old one's evidence; dependency cycles are rejected; structurally obvious "
+                   "conflicting requirements are detected and represented, never silently "
+                   "resolved; an idea targeting ORNEUR's own platform cannot compile a "
+                   "requirement that weakens a real Phase 15.5 authority invariant.",
+        acceptance_criteria=(
+            "A test computes the same requirement ID for the same statement under different "
+            "case/whitespace, and a different ID for materially different statement text.",
+            "A test creates a DEPENDS_ON cycle attempt (direct and indirect) and confirms "
+            "both are rejected.",
+            "A test detects a structurally obvious 'data must remain local' vs 'upload to "
+            "third-party' conflict and confirms neither requirement's statement is mutated.",
+            "A test attempts to compile an ORNEUR-platform-targeted idea containing an "
+            "authority-bypass phrase and confirms IdeaCompilerError is raised.",
+        ),
+    ))
+    transition(
+        "REQ-REQUIREMENT-COMPILER-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/idea_compiler.py", "orca/mission/requirement_dependencies.py"),
+    )
+    transition(
+        "REQ-REQUIREMENT-COMPILER-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_idea_compiler.py", "tests/test_requirement_dependencies.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-157--product--requirement-compilers",
+    )
+
+    register(Requirement(
+        id="REQ-ACCEPTANCE-TRACE-001",
+        source_section="Phase 15.7 spec sections 7, 13",
+        statement="Every acceptance criterion is typed (verification method, status, "
+                   "evidence) and rejects vague/unmeasurable descriptions; missing evidence "
+                   "never counts as PASS; implementation existing is not the same as "
+                   "verified; a traceability report from Product Contract through "
+                   "requirement, acceptance criterion, implementation, test, and evidence "
+                   "shows missing links explicitly rather than omitting them.",
+        acceptance_criteria=(
+            "A test registers an orphan criterion (unregistered requirement_id) and "
+            "confirms it is rejected.",
+            "A test confirms a vague description ('works well') is rejected at construction.",
+            "A test confirms a criterion moved to IMPLEMENTED (not VERIFIED) does not count "
+            "as verified, and that a requirement with zero criteria is never vacuously "
+            "considered fully verified.",
+            "A test traces a freshly compiled requirement and confirms has_missing_links "
+            "is True until implementation/test/evidence are actually supplied.",
+        ),
+    ))
+    transition(
+        "REQ-ACCEPTANCE-TRACE-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/acceptance_criteria.py", "orca/mission/traceability.py"),
+    )
+    transition(
+        "REQ-ACCEPTANCE-TRACE-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_acceptance_criteria.py", "tests/test_traceability.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-157--product--requirement-compilers",
+    )
+
 
 __all__ = ["seed_registry"]
