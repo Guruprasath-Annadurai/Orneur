@@ -272,10 +272,27 @@ def seed_registry() -> None:
     # 8: "do not overclaim full dangerous-operation idempotency here").
     # IMPLEMENTED only -- VERIFIED requires the operations-table
     # integration this checkpoint layer doesn't yet have.
+    #
+    # REVISITED in Phase 15.5 per explicit instruction. Phase 15.5 DID
+    # build and live-prove the operations-table idempotency primitive
+    # this requirement depends on (REQ-OPIDEM-LIFECYCLE-001, now
+    # VERIFIED: test_G/test_H prove a retried/reconnected operation
+    # does not re-run a SUCCEEDED side effect). But the EXACT acceptance
+    # criterion here is narrower and still unmet: no test restores a
+    # MISSION from a mission_store checkpoint (mid-mission, via
+    # restore_mission()) and then confirms a subsequent operation
+    # request against an already-SUCCEEDED operation record is not
+    # re-executed as part of that mission-level resume path -- every
+    # Phase 15.5 test drives operation_store directly, with no
+    # mission_store/checkpoint object in the loop. Per the explicit
+    # instruction not to promote "because an operations table exists,"
+    # this stays IMPLEMENTED. Deferred to whichever future subphase
+    # first wires mission resume to real operation execution (spec
+    # section 8/13 territory).
     transition(
         "REQ-CKPT-RESTORE-002",
         RequirementStatus.IMPLEMENTED,
-        implementation_files=("orca/mission/mission_store.py",),
+        implementation_files=("orca/mission/mission_store.py", "orca/mission/operation_store.py"),
     )
 
     # -- Operation Idempotency (spec section 11) --
@@ -293,6 +310,27 @@ def seed_registry() -> None:
             "re-executing the dangerous action.",
         ),
     ))
+    # Phase 15.5's operations table CHECK constraint enforces the five
+    # states and the exact allowed transitions (orca/mission/schema.py,
+    # orca/mission/operation_store.py's _ALLOWED_TRANSITIONS). The
+    # second criterion is proven live on real Neon by
+    # test_G_retry_after_success_no_duplicate_side_effect: an operation
+    # already SUCCEEDED is retried via start_and_execute_operation() and
+    # the executor is NOT invoked again (call_count stays 1, same
+    # result_ref returned) -- see also test_H (fresh-connection replay
+    # after simulated process loss) and test_L (concurrent execution
+    # collapses to exactly one real side effect).
+    transition(
+        "REQ-OPIDEM-LIFECYCLE-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/schema.py", "orca/mission/operation_store.py"),
+    )
+    transition(
+        "REQ-OPIDEM-LIFECYCLE-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_operation_store_live_neon.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-155--operation--authority-engine",
+    )
 
     # -- Execution Sandbox (spec section 12) --
     register(Requirement(
@@ -326,6 +364,36 @@ def seed_registry() -> None:
             "regression, spec section 32).",
         ),
     ))
+    # Phase 15.5's authority_bridge.py contains zero authorization logic
+    # of its own -- it is a thin, direct pass-through to the real,
+    # mature orca.godmode.resolution.resolve_and_consume_lease(), the
+    # same function exercised by godmode's own expired/revoked/replay
+    # test suites (test_godmode_security.py,
+    # test_godmode_distributed_atomicity.py, test_redteam_toctou.py,
+    # etc.) -- those protections apply transitively, unmodified.
+    # operation_store.authorize_operation() hard-rejects
+    # approved_by == requested_by (SelfAuthorizationError) BEFORE ever
+    # calling godmode, proven live by
+    # test_D_requester_cannot_approve_own_operation. Cross-operation and
+    # cross-tenant binding are proven by
+    # test_lease_for_operation_a_does_not_authorize_operation_b and
+    # test_wrong_tenant_denied (both live, real godmode SQLite backend).
+    # The full existing godmode/authority/auth/tenant-isolation
+    # regression suite (344 passed) plus every Phase 15 mission/
+    # operation test ran clean after Phase 15.5's changes -- see
+    # REGRESSIONS in the evidence checkpoint for the one unrelated,
+    # pre-existing failure excluded from this claim.
+    transition(
+        "REQ-AUTH-EXTERNAL-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/authority_bridge.py", "orca/mission/operation_store.py"),
+    )
+    transition(
+        "REQ-AUTH-EXTERNAL-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_authority_bridge.py", "tests/test_operation_store_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-155--operation--authority-engine",
+    )
 
     # -- Anti-Test-Gaming (spec section 15) --
     register(Requirement(

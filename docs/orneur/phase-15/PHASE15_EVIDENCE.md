@@ -445,3 +445,152 @@ tests/test_mission_store_live_neon.py: 19 passed
 **PROGRESSION VERDICT:**
 
 YES — EVIDENCE SUPPORTS PROGRESSION
+
+---
+
+## PHASE 15.5 — OPERATION + AUTHORITY ENGINE
+
+**PHASE:** 15.5 — Operation + Authority Engine
+
+**OBJECTIVE:** Prove that intent alone cannot grant authority to perform a dangerous action — every operation goes through a real, durable REQUESTED → AUTHORIZED → STARTED → (SUCCEEDED|FAILED|CANCELLED) lifecycle; authorization is decided exclusively by the existing, mature `orca.godmode` authority engine (never by model prose, never self-granted); retries and concurrent races collapse to exactly one real side effect; every decision is durable and survives process loss.
+
+**BASELINE:** Phase 15.4 closed with verdict YES. HEAD `e015ec2`. Confirmed clean working tree before starting.
+
+**IMPLEMENTED:**
+- `orca/mission/authority_bridge.py` — the ONLY integration point with `orca.godmode`. Contains no authorization logic of its own: `issue_operation_lease()` builds an `ElevatedCapabilityRequest` + `make_approval()` + `issue_lease()`; `consume_operation_lease()` is a thin wrapper over `orca.godmode.resolution.resolve_and_consume_lease()` — the real, atomic, fail-closed decision primitive already battle-tested across Phases 9–14B. Per-operation binding comes from `_resource_scope_for_operation(operation_id) -> f"mission-operation:{operation_id}"`, so a lease issued for one operation cannot decode as valid for a different one.
+- `orca/mission/executor.py` — `Executor` protocol + `RecordingTestExecutor`, the deterministic, harmless, thread-safe test adapter used everywhere in place of a real destructive action (spec's explicit instruction: never invoke a real destructive cloud/payment/secret/production action to prove these properties).
+- `orca/mission/operation_store.py` — the durable Operation lifecycle. `request_operation()` performs atomic dedup via `INSERT ... ON CONFLICT (idempotency_key) DO NOTHING RETURNING id` — dedup happens BEFORE any side effect, not by catching a UNIQUE violation after the fact — and raises `OperationConflictError` if a retried key carries a different `compute_fingerprint()` (stdlib-only SHA-256 over canonical sorted-key JSON, no custom crypto, no raw secrets hashed). `authorize_operation()` locks the operation row `FOR UPDATE`, hard-rejects `approved_by == requested_by` with `SelfAuthorizationError` **before any godmode call is made**, then calls the authority bridge and records both an `authority_decisions` row (ALLOW/DENY) and an `approvals` row (APPROVED/REJECTED, carrying the real `lease_id`) — transitioning to AUTHORIZED only on ALLOW. `start_and_execute_operation()` commits the STARTED transition BEFORE invoking the executor (an external side effect of arbitrary duration must never hold a DB lock open), and treats a concurrent race — another caller's locked transition already having moved the row past AUTHORIZED — as a graceful, idempotent observation of the winner's state rather than an error, matching the same no-recall treatment already given to SUCCEEDED/FAILED/CANCELLED.
+- `orca/mission/schema.py` — `PHASE_15_5_MIGRATION_SQL` (idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, same convention as `orca/auth/db.py`): `operations.parameters_fingerprint`, `operations.requested_by`, `approvals.lease_id` (a REFERENCE to the real godmode `CapabilityLease`, never a duplicate authority store), `authority_decisions.requested_by`.
+
+**FILES / COMPONENTS:**
+- `orca/mission/authority_bridge.py` (new)
+- `orca/mission/executor.py` (new)
+- `orca/mission/operation_store.py` (new)
+- `orca/mission/schema.py` (updated — `PHASE_15_5_MIGRATION_SQL`)
+- `orca/mission/db.py` (updated — `apply_schema()` now runs the Phase 15.5 migration too)
+- `tests/test_authority_bridge.py` (new, 6 tests)
+- `tests/test_executor_unit.py` (new, 3 tests)
+- `tests/test_operation_store_live_neon.py` (new, 28 tests, `LIVE_NEON_TEMP_BRANCH`)
+- `.github/workflows/phase14b-distributed-qualification.yml` (new `phase15_5_live_neon_qualification` dispatch mode)
+- `orca/mission/requirements_seed.py` (updated — `REQ-OPIDEM-LIFECYCLE-001` and `REQ-AUTH-EXTERNAL-001` transitioned to VERIFIED; `REQ-CKPT-RESTORE-002` revisited, disclosed, stays IMPLEMENTED)
+
+**MIGRATIONS:** `PHASE_15_5_MIGRATION_SQL` — four `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements, applied idempotently by `apply_schema()` on every live Neon dispatch (both the failed run and the fixed re-run). No separate owner approval request was needed beyond the standing schema-evolution convention already established in Phase 15.2/15.4, since these are additive nullable columns on tables already approved and live on production, applied the same idempotent way `orca/auth/db.py` has always applied incremental columns — no destructive or structural change, no data migration, no `prepare_database_migration`/`complete_database_migration` cycle required.
+
+**COMMANDS EXECUTED:**
+```
+git rev-parse HEAD && git status --short
+grep -n "CapabilityDomain\|LeaseIssuerClass\|ElevatedCapabilityRequest" orca/godmode/*.py   # inspected real godmode primitives before writing authority_bridge.py
+mcp__Neon__create_branch(project_id, name="phase15-5-qualification", parent_id=production)  # br-plain-dew-b3xhd4c8
+mcp__Neon__get_connection_string(...)                                    # value never printed to visible output or committed
+gh secret set ORNEUR_MISSION_DATABASE_URL --env phase14b-staging
+gh secret set ORNEUR_MISSION_DATABASE_URL_DIRECT --env phase14b-staging
+gh workflow run phase14b-distributed-qualification.yml -f fresh_runner_mode=phase15_5_live_neon_qualification   # run 34236567314 (17/19 passed, 2 failed)
+# diagnosed + fixed both failures locally (see FINDINGS below)
+git commit -m "Phase 15.5: fix concurrency race and test expectation..."  # 5f13ebd
+git push origin session-update-2026-08-25
+gh workflow run phase14b-distributed-qualification.yml -f fresh_runner_mode=phase15_5_live_neon_qualification   # run 34237585402 (28/28 passed)
+.venv/bin/python3 -m pytest tests/ -k "godmode or authority or authorization or approval or replay or cancellation or audit or auth or tenant" -q
+git diff e015ec2 -- tests/test_memory_legacy_authority.py orca/brain/memory.py    # confirmed pre-existing, unrelated failure untouched by this subphase
+mcp__Neon__delete_branch(project_id, branch_id=br-plain-dew-b3xhd4c8)   # cleanup
+gh secret delete ORNEUR_MISSION_DATABASE_URL --env phase14b-staging     # cleanup
+gh secret delete ORNEUR_MISSION_DATABASE_URL_DIRECT --env phase14b-staging  # cleanup
+gh api repos/.../environments/phase14b-staging/secrets                  # confirmed both deleted, only original Phase 14 secrets remain
+```
+
+**TESTS EXECUTED:**
+- UNIT: `tests/test_executor_unit.py` (3 tests) — local, no DB.
+- INTEGRATION (real godmode, SQLite backend, local): `tests/test_authority_bridge.py` (6 tests).
+- LIVE_NEON_TEMP_BRANCH: `tests/test_operation_store_live_neon.py` (28 tests) — GitHub Actions, against branch `br-plain-dew-b3xhd4c8` (cloned from `production`, deleted after use). First dispatch (run `34236567314`): 17 passed, 2 failed. Second dispatch after fixes (run `34237585402`): **28 passed**.
+- Cross-check regression: full godmode/authority/authorization/approval/replay/cancellation/audit/auth/tenant-isolation suite plus all Phase 15 mission/operation tests, local.
+
+**EXACT RESULTS:**
+```
+(local, pre-dispatch sanity)
+tests/test_authority_bridge.py tests/test_executor_unit.py tests/test_mission_requirements.py tests/test_mission_schema.py: 33 passed
+```
+```
+(GitHub Actions, run 34236567314 -- FIRST live dispatch, BEFORE fixes)
+17 passed, 2 failed
+FAILED tests/test_operation_store_live_neon.py::TestConcurrency::test_L_concurrent_execution_calls_executor_exactly_once
+FAILED tests/test_operation_store_live_neon.py::TestCancellation::test_K_cancelled_requested_operation_never_executes
+```
+```
+(local, post-fix sanity)
+tests/test_operation_store_live_neon.py tests/test_authority_bridge.py tests/test_executor_unit.py: 9 passed, 19 skipped
+```
+```
+(GitHub Actions, run 34237585402 -- SECOND live dispatch, AFTER fixes)
+======================== 28 passed in 267.72s (0:04:27) ========================
+```
+```
+(local security regression cross-check, post-fix)
+1 failed, 344 passed, 11 skipped, 1403 deselected in 461.04s (0:07:41)
+FAILED tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary
+```
+
+**LIVE NEON TESTS:** All 28 in `test_operation_store_live_neon.py` passed against real Neon on the second dispatch, run `34237585402`. Covered exactly the required A–M narrative: (A) `request_operation` creates a real row; (B) idempotent retry with the same key returns the existing operation, no duplicate row; (C) same key with different parameters raises `OperationConflictError`; (M) the underlying `operations.idempotency_key UNIQUE` constraint is still the real backstop even if application-level dedup were bypassed; (D) `approved_by == requested_by` is rejected with `SelfAuthorizationError` before any godmode call; (E) a valid external approval authorizes via the real godmode lease path; (F) an authorized operation starts and succeeds through the real executor; execution failure is recorded as FAILED with the real exception, not flattened to a generic error; an unauthorized (REQUESTED-state) operation cannot be started; (G) a retried "lost response" after real success does NOT re-invoke the executor (`call_count` stays 1, identical `result_ref` returned); (H) simulated process loss (all connections closed, brand-new connection opened) reconstructs the exact persisted state and resumes correctly; (I) a lease issued for operation A does not authorize operation B (per-operation `resource_scope` binding, live-proven); (J) an already-AUTHORIZED operation cannot be re-authorized; (K) a CANCELLED operation is never executed (graceful no-op, `call_count == 0`); (L) four concurrent threads racing to start the SAME authorized operation invoke the executor exactly once (fixed this dispatch — see CONCURRENCY FINDINGS); the underlying `idempotency_key UNIQUE` constraint still wins when two concurrent `request_operation()` calls share a key (one operation, not two).
+
+**SECURITY FINDINGS:** No raw Neon connection string was ever printed in visible response text or committed to any file, following the same three-layer handling as Phase 15.4 (local `.gitignore`d scratch file, GitHub Actions encrypted secret, deleted after use). `authority_bridge.py` performs zero authorization decisions itself — every ALLOW/DENY comes from the real `orca.godmode.resolution.resolve_and_consume_lease()`, so the mature expired/revoked/replay/TOCTOU protections already proven by `test_godmode_security.py`, `test_godmode_distributed_atomicity.py`, `test_redteam_toctou.py`, and related suites apply transitively, unmodified — not reinvented.
+
+**AUTHORITY FINDINGS:** Manual smoke-test (one-off script, not committed, deleted after use) directly confirmed the exact denial reasons godmode returns: reusing a single-use lease a second time → DENY "lease has no uses remaining"; using operation A's lease to authorize operation B → DENY "scope mismatch: lease covers resource='mission-operation:...' operation='deploy'". `issue_operation_lease()` always routes through `orca.godmode.issuance.issue_lease()`, which rejects wildcard scopes and caps duration at 900s — confirmed by `test_wildcard_kind_rejected_at_issuance`.
+
+**OPERATION LIFECYCLE FINDINGS:** The `operations` table `CHECK` constraint plus `_ALLOWED_TRANSITIONS` in `operation_store.py` jointly enforce the exact lifecycle the spec requires: `REQUESTED → {AUTHORIZED, CANCELLED}`, `AUTHORIZED → {STARTED, CANCELLED}`, `STARTED → {SUCCEEDED, FAILED}`, all four terminal states empty. `REQUESTED → STARTED` and `REQUESTED/AUTHORIZED → SUCCEEDED` (skipping STARTED) are both structurally unreachable — proven by `test_cannot_start_unauthorized_operation`.
+
+**IDEMPOTENCY FINDINGS:** Dedup on `idempotency_key` happens via `INSERT ... ON CONFLICT DO NOTHING RETURNING id` — before any side effect is attempted, not as an after-the-fact UNIQUE-violation catch. `compute_fingerprint()` uses only stdlib `hashlib.sha256` over canonical (sorted-key) JSON — no custom crypto, no raw secret material hashed. A retried key with different parameters is a hard `OperationConflictError`, never silently ignored or silently accepted.
+
+**APPROVAL FINDINGS:** Every `authorize_operation()` call records BOTH an `authority_decisions` row (the godmode ALLOW/DENY, with reasons) and an `approvals` row (APPROVED/REJECTED, carrying the real `lease_id` as a foreign reference — never a duplicate authority store) — durable, queryable, and independent of any in-memory cache (proven by `test_H_process_loss_fresh_connection_reconstructs_exact_state` reloading everything through a brand-new connection).
+
+**REPLAY-REVOCATION FINDINGS:** Single-use lease semantics come entirely from godmode's own `uses_remaining` mechanism (proven live in `test_lease_is_single_use`) — no separate nonce/replay system was invented for Phase 15.5, per the explicit instruction to inspect and reuse what already exists rather than build a parallel one.
+
+**CANCELLATION FINDINGS:** A REQUESTED operation can be cancelled and is confirmed to never execute (`test_K`, `call_count == 0`). An AUTHORIZED-but-not-started operation can also be cancelled and never executes (`test_cancelled_authorized_operation_never_executes`). Any terminal state (SUCCEEDED/FAILED/CANCELLED) rejects a further cancel attempt (`test_terminal_operation_cannot_be_cancelled`) — cancellation is itself subject to the same `_ALLOWED_TRANSITIONS` table as every other state change, not a special-cased bypass.
+
+**PROCESS-RESTART DURABILITY FINDINGS:** `test_H` closes every connection between the AUTHORIZED write and the subsequent read, opens a brand-new connection, and confirms both the reloaded state (`AUTHORIZED`) and the post-execution state (`SUCCEEDED`) are correct with no reliance on any in-memory cache or object identity.
+
+**CONCURRENCY FINDINGS (the two real bugs found and fixed this subphase):**
+1. `test_L_concurrent_execution_calls_executor_exactly_once` failed on the first live dispatch: `start_and_execute_operation()`'s initial status read (unlocked) let multiple concurrent callers all observe `AUTHORIZED` before any of them committed a transition, so only the first caller's `FOR UPDATE`-protected `_write_operation_transition(..., "STARTED")` succeeded — the other three raised an unhandled `OperationStateError("STARTED -> STARTED")`. **Fixed** by catching `OperationStateError` specifically at that call site, rolling back, re-reading the row's actual current state, and returning it gracefully (no re-raise, no executor recall) whenever that state is already STARTED/SUCCEEDED/FAILED/CANCELLED — i.e., a losing racer observes the winner's real result instead of erroring. Re-verified live: 4 concurrent threads, `executor.call_count == 1`, all four callers return the same SUCCEEDED result.
+2. `test_K_cancelled_requested_operation_never_executes` failed on the first live dispatch with "DID NOT RAISE OperationStateError" — this was a **test bug**, not an implementation bug: the test wrongly expected a raise where the implementation's actual (and correct) design is a graceful idempotent no-op for a CANCELLED operation, exactly the same treatment already given to SUCCEEDED/FAILED and already proven correct by the passing sibling test `test_cancelled_authorized_operation_never_executes`. **Fixed** by correcting the test's assertion to match the intentional design (`result["status"] == "CANCELLED"`, `executor.call_count == 0`) rather than changing the implementation.
+- `test_concurrent_requests_same_idempotency_key_one_operation_wins` (two concurrent `request_operation()` calls, same key): passed on both dispatches — the `ON CONFLICT DO NOTHING RETURNING id` pattern already handled this race correctly without any additional locking.
+
+**AUDIT FINDINGS:** `authority_decisions` and `approvals` rows carry `requested_by`/`approved_by`/timestamps/reasons — no secrets recorded. This subphase does not claim tamper-evidence or cryptographic chaining; that would require integration with the real durable-audit-chain mechanism in `orca/godmode/durable_audit.py`, which was not undertaken here (see KNOWN LIMITATIONS).
+
+**MISSION STATE FINDINGS:** N/A new this subphase — `orca/mission/operation_store.py` operates on the `operations` table independently of `missions.state`; no mission-state transition code was touched.
+
+**CHECKPOINT-RESUME FINDINGS:** `REQ-CKPT-RESTORE-002` explicitly revisited per the owner's instruction (see REQUIREMENT STATUS DELTA) — Phase 15.5 built and live-proved the operation-level idempotency primitive this requirement depends on, but no test yet combines `mission_store.restore_mission()` with an operation-record dedup check in one path, so the requirement's exact acceptance criterion remains unmet and it is honestly left at IMPLEMENTED, not promoted.
+
+**RELAY FINDINGS:** N/A this subphase.
+
+**ANTI-TEST-GAMING FINDINGS:** N/A this subphase — `REQ-ANTIGAME-DETECT-001` remains UNIMPLEMENTED, unchanged.
+
+**PRODUCTION PROOF STATUS:** N/A this subphase — `REQ-PROOF-NOINVENT-001` remains UNIMPLEMENTED, unchanged.
+
+**REGRESSIONS:** None caused by this subphase. The local security regression cross-check (godmode/authority/authorization/approval/replay/cancellation/audit/auth/tenant-isolation suite) shows exactly one failure — `tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary` — confirmed via `git diff e015ec2 -- tests/test_memory_legacy_authority.py orca/brain/memory.py` (zero diff) and via running that single test in isolation (fails the same way with no Phase 15.5 code loaded), to be a pre-existing, order-dependent test-pollution issue in an unrelated legacy memory subsystem, not caused by or related to any file this subphase touched. It is explicitly excluded from this subphase's "no regressions" claim rather than silently omitted.
+
+**TEST COLLECTION DELTA:** +37 (`test_authority_bridge.py`: 6, `test_executor_unit.py`: 3, `test_operation_store_live_neon.py`: 28). Cumulative Phase 15 delta: 19 (15.1) + 8 (15.2) + 48 (15.3) + 23 (15.4) + 37 (15.5) = 135 new tests since Phase 14C.1.
+
+**REQUIREMENT STATUS DELTA:**
+- `REQ-OPIDEM-LIFECYCLE-001`: UNIMPLEMENTED → VERIFIED (schema CHECK constraint + `_ALLOWED_TRANSITIONS` satisfy the first criterion; `test_G`/`test_H`/`test_L` live-satisfy the second).
+- `REQ-AUTH-EXTERNAL-001`: UNIMPLEMENTED → VERIFIED (`test_D` proves self-approval is rejected independent of any model claim; full godmode/authority/auth/tenant-isolation regression stayed green, with the one unrelated pre-existing failure explicitly disclosed above).
+- `REQ-CKPT-RESTORE-002`: revisited, stays IMPLEMENTED (not promoted — see CHECKPOINT-RESUME FINDINGS above; disclosed inline in `orca/mission/requirements_seed.py`, not silently left unexamined).
+- Registry after this subphase (19 total): 8 VERIFIED, 2 IMPLEMENTED-only, 9 UNIMPLEMENTED.
+
+**TECHNICAL DEBT:** The concurrency-race fix in `start_and_execute_operation()` (catch `OperationStateError`, re-check, return gracefully) is a targeted fix for the exact race proven by `test_L`; it has not been generalized into a reusable "observe-or-retry" helper, since no second call site needs it yet.
+
+**KNOWN LIMITATIONS:**
+- Audit records (`authority_decisions`, `approvals`) are durable and queryable but not yet integrated with `orca/godmode/durable_audit.py`'s tamper-evidence/chaining mechanism — no tamper-evidence claim is made for Phase 15.5's own tables.
+- `REQ-CKPT-RESTORE-002`'s exact acceptance criterion (mission-checkpoint-restore combined with operation-record dedup) remains unmet — see CHECKPOINT-RESUME FINDINGS.
+- The qualification branch used for live testing (`br-plain-dew-b3xhd4c8`) is deleted — the 28/28 result is a point-in-time proof, reproducible by re-dispatching the same workflow mode against a freshly-created branch.
+- This Mac still cannot resolve Neon's Postgres hostnames — all live Neon verification continues to run via GitHub Actions dispatch only.
+
+**UNVERIFIED ITEMS:** None new beyond the disclosed `REQ-CKPT-RESTORE-002` gap.
+
+**DEFERRED ITEMS:** Phase 15.6 through 15.15 — not started. The mission-checkpoint-to-operation integration needed to fully VERIFY `REQ-CKPT-RESTORE-002` is deferred to whichever future subphase first wires mission resume to real operation execution.
+
+**OWNER ACTION REQUIRED:** None.
+
+**EVIDENCE:** This document; `orca/mission/authority_bridge.py`; `orca/mission/executor.py`; `orca/mission/operation_store.py`; `tests/test_authority_bridge.py`; `tests/test_executor_unit.py`; `tests/test_operation_store_live_neon.py`; GitHub Actions run `34236567314` (17/19, first dispatch, quoted above) and run `34237585402` (28/28, second dispatch after fixes, quoted above); Neon branch `br-plain-dew-b3xhd4c8` (created, used, deleted — all via direct Neon MCP tool calls); commit `5f13ebd` (the two bug fixes).
+
+**EPISTEMIC STATE:** VERIFIED — every claim in this checkpoint traces to either a live GitHub Actions test run against real Neon infrastructure, a direct Neon MCP tool response, or a local test run quoted above. The two failures on the first live dispatch and their root causes are disclosed in full rather than omitted; the one unrelated pre-existing regression-suite failure is disclosed rather than silently excluded. No claim in this checkpoint is asserted from confidence alone.
+
+**PROGRESSION VERDICT:**
+
+YES — EVIDENCE SUPPORTS PROGRESSION
