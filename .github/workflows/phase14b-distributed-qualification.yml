@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle", "verify_cloudflare_access", "verify_waf_and_rate_limit"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle", "verify_cloudflare_access", "verify_waf_and_rate_limit", "full_edge_battery"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -425,6 +425,198 @@ jobs:
           print("APP_LEVEL_RATE_LIMIT_ACTIVE" if hit_429 else "APP_LEVEL_RATE_LIMIT_NOT_TRIGGERED_IN_15_ATTEMPTS")
           PY
           echo "::endgroup::"
+
+      - name: "Phase 14C.1 Gap 4: consolidated full public-edge qualification battery -- every currently-executable Phase 14C invariant in one run, single ALL_PASS/SOME_FAILED verdict. Dispatched 3x with fresh run IDs for the required 3/3 repeatability gate."
+        if: github.event.inputs.fresh_runner_mode == 'full_edge_battery'
+        run: |
+          set +e
+          python3 - <<'PY'
+          import json, subprocess, urllib.request, urllib.error, uuid, time
+
+          BASE = "https://staging.orneur.com"
+          DIRECT_ORIGIN = "https://p01--orneur-api-a--7knh72p45d7b.code.run"
+          UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+          results = {}
+          diag = {}
+
+          def curl(args, timeout=15):
+              try:
+                  p = subprocess.run(["curl", "-sS", "--max-time", str(timeout)] + args,
+                                      capture_output=True, text=True)
+                  return p.returncode, p.stdout, p.stderr
+              except Exception as e:
+                  return -1, "", str(e)
+
+          def req(method, path, body=None, token=None, headers=None, base=BASE, expect_json=True, timeout=20):
+              url = base + path
+              data = json.dumps(body).encode() if body is not None else None
+              r = urllib.request.Request(url, data=data, method=method)
+              r.add_header("User-Agent", UA)
+              if data is not None:
+                  r.add_header("Content-Type", "application/json")
+              if token is not None:
+                  r.add_header("Authorization", f"Bearer {token}")
+              for k, v in (headers or {}).items():
+                  r.add_header(k, v)
+              try:
+                  with urllib.request.urlopen(r, timeout=timeout) as resp:
+                      body_bytes = resp.read()
+                      return resp.status, (json.loads(body_bytes) if expect_json and body_bytes else {}), dict(resp.getheaders())
+              except urllib.error.HTTPError as e:
+                  body_bytes = e.read()
+                  try:
+                      return e.code, (json.loads(body_bytes) if body_bytes else {}), dict(e.headers)
+                  except Exception:
+                      return e.code, {}, dict(e.headers) if e.headers else {}
+              except Exception as e:
+                  diag[f"_exc_{method}_{path}"] = f"{type(e).__name__}: {e}"
+                  return None, {}, {}
+
+          # -- DNS/TLS --
+          rc, out, err = curl(["-o", "/dev/null", "-w", "%{http_code}", "https://staging.orneur.com/livez"])
+          results["tls_livez_reachable"] = (out.strip() == "200")
+
+          # -- HTTP -> HTTPS redirect --
+          rc, out, err = curl(["-o", "/dev/null", "-w", "%{http_code} %{redirect_url}", "http://staging.orneur.com/livez"])
+          results["http_redirects_to_https"] = out.startswith("301") and "https://" in out
+
+          # -- /livez --
+          status, _, _ = req("GET", "/livez", expect_json=False)
+          results["livez_200"] = (status == 200)
+
+          # -- /readyz classification --
+          status, body, _ = req("GET", "/readyz", expect_json=True)
+          deps = body.get("dependencies", {}) if isinstance(body, dict) else {}
+          results["readyz_classification_correct"] = (
+              deps.get("authority_store", {}).get("status") == "ok"
+              and deps.get("security_root", {}).get("status") == "ok"
+              and deps.get("core_database", {}).get("status") == "ok"
+              and deps.get("model_runtime", {}).get("status") == "unavailable"
+          )
+          diag["_readyz_body"] = body
+
+          # -- private-origin bypass --
+          rc, out, err = curl(["-o", "/dev/null", "-w", "%{http_code}", DIRECT_ORIGIN + "/livez"], timeout=8)
+          results["direct_origin_unreachable"] = (out.strip() != "200")
+          rc, out, err = curl(["-o", "/dev/null", "-w", "%{http_code}", "-H", "Host: staging.orneur.com", DIRECT_ORIGIN + "/livez"], timeout=8)
+          results["direct_origin_spoofed_host_unreachable"] = (out.strip() != "200")
+
+          # -- Host spoof rejection at the real edge --
+          rc, out, err = curl(["-o", "/dev/null", "-w", "%{http_code}", "-A", UA, BASE + "/livez", "-H", "Host: evil.invalid.example"])
+          results["host_spoof_rejected"] = (out.strip() == "403")
+
+          # -- CORS --
+          rc, out, err = curl(["-D", "-", "-o", "/dev/null", "-A", UA, BASE + "/api/status", "-H", "Origin: https://staging.orneur.com"])
+          results["cors_allowed_origin_ok"] = "access-control-allow-origin" in out.lower()
+          rc, out, err = curl(["-D", "-", "-o", "/dev/null", "-A", UA, BASE + "/api/status", "-H", "Origin: https://evil.example.com"])
+          results["cors_hostile_origin_blocked"] = "access-control-allow-origin" not in out.lower()
+
+          # -- Cloudflare Access on operator surfaces --
+          rc, out, err = curl(["-o", "/dev/null", "-w", "%{http_code}", "-A", UA, BASE + "/api/admin/stats"])
+          results["access_blocks_api_admin"] = (out.strip() == "302")
+          rc, out, err = curl(["-o", "/dev/null", "-w", "%{http_code}", "-A", UA, BASE + "/api/auth/admin/users"])
+          results["access_blocks_api_auth_admin"] = (out.strip() == "302")
+          rc, out, err = curl(["-o", "/dev/null", "-w", "%{http_code}", "-A", UA, BASE + "/metrics"])
+          results["access_blocks_metrics"] = (out.strip() == "302")
+
+          # -- unauthenticated / invalid / tampered auth denial --
+          status, _, _ = req("GET", "/api/auth/me")
+          results["unauthenticated_denied"] = (status == 401)
+          status, _, _ = req("GET", "/api/auth/me", token="not-a-real-token-at-all")
+          results["invalid_token_denied"] = (status == 401)
+          status, _, _ = req("GET", "/api/auth/me", token="athr_" + "0" * 48)
+          results["tampered_api_key_denied"] = (status == 401)
+
+          # -- real signup/login + cross-tenant isolation --
+          email_a = f"phase14c1-battery-{uuid.uuid4().hex[:12]}@example.com"
+          email_b = f"phase14c1-battery-{uuid.uuid4().hex[:12]}@example.com"
+          password = "correcthorsebatterystaple9"
+          status_a, data_a, _ = req("POST", "/api/auth/signup", {"email": email_a, "password": password, "name": "Battery A"}, timeout=20)
+          status_b, data_b, _ = req("POST", "/api/auth/signup", {"email": email_b, "password": password, "name": "Battery B"}, timeout=20)
+          results["signup_a_ok"] = (status_a == 200 and "token" in data_a)
+          results["signup_b_ok"] = (status_b == 200 and "token" in data_b)
+          token_a = data_a.get("token")
+          token_b = data_b.get("token")
+
+          status, data, _ = req("POST", "/api/auth/login", {"email": email_a, "password": password}, timeout=20)
+          results["login_ok"] = (status == 200 and "token" in data)
+
+          session_id = str(uuid.uuid4())
+          boundary = uuid.uuid4().hex
+          file_content = b"Phase 14C.1 full-battery qualification -- not real user data."
+          multipart = (
+              f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"battery.txt\"\r\nContent-Type: text/plain\r\n\r\n"
+          ).encode() + file_content + f"\r\n--{boundary}--\r\n".encode()
+          upload_req = urllib.request.Request(BASE + f"/api/docs/upload?session_id={session_id}", data=multipart, method="POST")
+          upload_req.add_header("User-Agent", UA)
+          upload_req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+          upload_req.add_header("Authorization", f"Bearer {token_a}")
+          try:
+              with urllib.request.urlopen(upload_req, timeout=20) as resp:
+                  upload_status = resp.status
+          except urllib.error.HTTPError as e:
+              upload_status = e.code
+          results["tenant_a_upload_ok"] = (upload_status == 200)
+
+          status, _, _ = req("GET", f"/api/docs/list?session_id={session_id}", token=token_b)
+          results["tenant_b_cannot_list_tenant_a_docs"] = (status == 404)
+          status, _, _ = req("GET", f"/api/docs/list?session_id={session_id}", token=token_a)
+          results["tenant_a_can_still_list_own_docs"] = (status == 200)
+
+          # -- request-size enforcement --
+          p = subprocess.run(
+              ["bash", "-c",
+               f'python3 -c "import json; print(json.dumps({{\'message\': \'x\'*(31*1024*1024), \'session_id\': None}}))" '
+               f'| curl -sS -A \'{UA}\' -o /dev/null -w \'%{{http_code}}\' -X POST {BASE}/api/chat '
+               f'-H \'Content-Type: application/json\' --data-binary @- --max-time 30'],
+              capture_output=True, text=True
+          )
+          results["oversized_body_rejected_413"] = (p.stdout.strip() == "413")
+
+          # -- rate limiting: app-level limiter still active (bounded attempts, stop at first 429) --
+          hit_429 = False
+          for i in range(6):
+              e = f"phase14c1-battery-rl-{uuid.uuid4().hex[:10]}@example.com"
+              status, _, _ = req("POST", "/api/auth/signup", {"email": e, "password": password, "name": "RL"}, timeout=20)
+              if status == 429:
+                  hit_429 = True
+                  break
+          results["app_level_rate_limit_active"] = hit_429
+
+          # -- security headers --
+          rc, out, err = curl(["-D", "-", "-o", "/dev/null", "-A", UA, BASE + "/livez"])
+          low = out.lower()
+          results["security_headers_present"] = (
+              "strict-transport-security" in low
+              and "x-content-type-options" in low
+              and "referrer-policy" in low
+              and "permissions-policy" in low
+          )
+
+          # -- normal route unaffected by Access --
+          status, _, _ = req("GET", "/api/models", expect_json=True)
+          results["normal_route_unaffected"] = (status == 200)
+
+          # -- secret-safe responses: none of the bodies collected above contain anything secret-shaped --
+          import re
+          secret_pattern = re.compile(r"(postgres(ql)?://[^\"'\\s]+:[^\"'\\s]+@|BEGIN (RSA|EC|OPENSSH|PGP) PRIVATE KEY|AKIA[0-9A-Z]{16})")
+          all_text = json.dumps(diag) + json.dumps(results)
+          results["secret_safe_responses"] = (secret_pattern.search(all_text) is None)
+
+          # -- deferred model-runtime gates (recorded, not scored) --
+          diag["_deferred_model_runtime_gates"] = ["streaming_sse_through_edge", "live_model_tool_ssrf"]
+
+          print(json.dumps(results, indent=2))
+          print("::group::diagnostics")
+          print(json.dumps(diag, indent=2, default=str))
+          print("::endgroup::")
+          scored = {k: v for k, v in results.items() if not k.startswith("_")}
+          all_pass = all(scored.values())
+          print("ALL_PASS" if all_pass else "SOME_FAILED")
+          print(f"SCORE: {sum(1 for v in scored.values() if v)}/{len(scored)}")
+          import sys
+          sys.exit(0 if all_pass else 1)
+          PY
 
       - name: "Phase 14C Steps 14/20/21: Cloudflare Access must block unauthenticated requests to /api/admin, /api/auth/admin, and /metrics through the real public edge -- and must NOT touch any normal user-facing route"
         if: github.event.inputs.fresh_runner_mode == 'verify_cloudflare_access'
