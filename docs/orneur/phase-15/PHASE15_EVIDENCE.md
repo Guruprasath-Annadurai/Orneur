@@ -173,3 +173,90 @@ Manual registry inspection confirmed 19/19 requirements registered, no duplicate
 **PROGRESSION VERDICT:**
 
 YES — EVIDENCE SUPPORTS PROGRESSION
+
+---
+
+## PHASE 15.2 — DURABLE DATA MODEL
+
+**OBJECTIVE:** Design durable Neon Postgres schema for the minimum required domains (spec §9), validate via Neon branch-first migration before touching production (spec §30), and apply only with explicit owner authorization.
+
+**BASELINE:** Phase 15.1 closed with verdict YES. HEAD `d756eea`. Neon project `orneur-core` (`little-boat-61470844`), branch `production` (`br-orange-morning-b3hu72wc`), confirmed empty in Phase 15.0.
+
+**IMPLEMENTED:**
+- `orca/mission/schema.py` — `SCHEMA_SQL`: full DDL for 21 tables covering every spec §9 minimum domain (missions, mission_steps, checkpoints, requirements, requirement_acceptance_criteria, assumptions, evidence, operations, approvals, authority_decisions, model_invocations, tool_invocations, devices, relay_sessions, production_proofs, audit_events) plus 5 explicitly-named `*_reserved` tables for Phase 16 domains (epistemic_transitions, escalations, failure_genome, outcome_memory, capability_delta) — opaque JSON-payload-only, no Phase 15 code reads/writes semantic meaning into them, satisfying spec §9's "do not claim Phase 16 semantics are implemented merely because storage tables exist." Follows the existing project's own established convention (`orca/auth/db.py`): TEXT primary keys, TEXT ISO-8601 timestamps, JSON-as-TEXT columns — plus CHECK constraints on every status/enum column as defense-in-depth (a real addition, not present in the existing auth schema, but consistent with it).
+- `orca/mission/db.py` — connection layer with two distinct env vars (`ORNEUR_MISSION_DATABASE_URL` pooled / `ORNEUR_MISSION_DATABASE_URL_DIRECT` unpooled), fail-closed (`MissionDatabaseConfigError`) if either is unset, and `direct=True` never silently falls back to the pooled URL for schema operations (spec §9).
+- Schema validated via Neon's own branch-first migration tool (`prepare_database_migration` → temporary branch `br-patient-unit-b3avpl4i`), constraint-tested with real inserts, then applied to the `production` branch via `complete_database_migration` **after explicit owner authorization** — the exact same `migration_sql` from the prepare step, not reconstructed or modified during promotion.
+
+**FILES / COMPONENTS:**
+- `orca/mission/schema.py` (new)
+- `orca/mission/db.py` (new)
+- `tests/test_mission_schema.py` (new)
+- `tests/test_mission_db.py` (new)
+
+**MIGRATIONS:**
+- Migration ID `2b437665-ad2b-464b-b154-f6d4eadf70ff`, applied to Neon project `little-boat-61470844`, database `neondb`, branch `production` (`br-orange-morning-b3hu72wc`). Prepared on temporary branch `br-patient-unit-b3avpl4i` (auto-deleted by `complete_database_migration` on completion). All 42 DDL statements (21 `CREATE TABLE IF NOT EXISTS` + 21 `CREATE INDEX IF NOT EXISTS`) executed with empty result sets (no errors).
+
+**COMMANDS EXECUTED (Neon MCP tool calls, no raw connection strings ever retrieved, printed, or stored anywhere):**
+```
+list_postgres_databases(project_id, branch_id)              -> confirmed database "neondb"
+prepare_database_migration(project_id, database_name, migration_sql)
+                                                              -> temp branch br-patient-unit-b3avpl4i, migration_id 2b437665-...
+run_sql(temp branch): SELECT table_name FROM information_schema.tables ...
+run_sql(temp branch): INSERT INTO missions (...) VALUES (valid row)              -> succeeded
+run_sql(temp branch): INSERT INTO missions (...) VALUES (state='NOT_A_REAL_STATE') -> rejected (CHECK)
+run_sql(temp branch): INSERT INTO mission_steps (...) VALUES (mission_id=nonexistent) -> rejected (FK)
+run_sql(temp branch): INSERT INTO operations (...) VALUES (idempotency_key='idem_key_abc123')      -> succeeded
+run_sql(temp branch): INSERT INTO operations (...) VALUES (same idempotency_key, different id)     -> rejected (UNIQUE)
+complete_database_migration(..., apply_changes=true)          -> applied to production, temp branch deleted
+run_sql(production): SELECT table_name FROM information_schema.tables ...
+run_sql(production): SELECT conrelid::regclass, conname, contype FROM pg_constraint ...
+run_sql(production): SELECT count(*) FROM missions/operations/mission_steps    -> all 0 (no leftover test data)
+.venv/bin/python3 -m pytest tests/test_mission_schema.py tests/test_mission_db.py tests/test_mission_requirements.py tests/test_auth_store.py tests/test_org_store.py -q
+```
+
+**TESTS EXECUTED:** `tests/test_mission_schema.py` (5 new), `tests/test_mission_db.py` (3 new), plus cross-check against `test_mission_requirements.py` and 2 unrelated existing suites.
+
+**EXACT RESULTS:**
+```
+8 passed, 1 warning in 0.25s    (test_mission_schema.py + test_mission_db.py alone)
+53 passed, 53 warnings in 1.74s (combined cross-check)
+```
+Live Neon verification (temp branch → production, both independently queried via `information_schema.tables`): **21/21 tables**, exact match to `schema.ALL_TABLES`, confirmed via a direct Python set-equality check (not eyeballed). `pg_constraint` query on production confirms all 13 CHECK constraints, all foreign keys matching every `REFERENCES` clause in the DDL, and the `operations_idempotency_key_key` UNIQUE constraint are present. Row counts on `missions`/`operations`/`mission_steps` on production: **0/0/0** — no test data reached production; all constraint-violation testing ran only on the now-deleted temporary branch.
+
+**SECURITY FINDINGS:** No raw secret (connection string, password, token) was ever retrieved, printed, logged, or committed — every Neon operation this subphase went through the MCP tool's own internal connection handling, never through `get_connection_string` or a manually-constructed DSN.
+
+**AUTHORITY FINDINGS:** The production-branch migration apply (`complete_database_migration`) was explicitly gated — the tool itself is marked "never run autonomously," so this session stopped and requested owner authorization before calling it, consistent with spec §14's dangerous-operation-requires-approval requirement applied to this session's own actions, not just to future mission-engine code.
+
+**MISSION STATE FINDINGS:** The `missions` table's `state` CHECK constraint enumerates the exact same 15 states as `REQ-MISSION-STATES-001`'s acceptance criteria (Phase 15.1) — live-verified as enforced by the database itself, not merely declared in Python.
+
+**CHECKPOINT / RESUME FINDINGS:** The `checkpoints` table schema includes every field `REQ-CKPT-FIELDS-001` (Phase 15.1) requires. Not yet exercised by application code (that's Phase 15.4).
+
+**RELAY FINDINGS:** `devices` and `relay_sessions` tables exist with the `trust_level`/`mode` CHECK constraints matching `REQ-DEVICE-REVOCATION-001`'s TRUSTED/PUBLIC distinction. No Relay application code exists yet (Phase 15.11+).
+
+**ANTI-TEST-GAMING FINDINGS:** N/A this subphase.
+
+**PRODUCTION PROOF STATUS:** `production_proofs` table exists with the 4-state `overall_status` CHECK (`ENGINEERING_READY`/`SUBMISSION_READY`/`RELEASE_CANDIDATE`/`PUBLISHED`) matching spec §3. No generator code yet (Phase 15.10).
+
+**REGRESSIONS:** None. Full local regression deferred to Phase 15.15 per spec §30; targeted cross-check shows no interference with existing suites.
+
+**TEST COLLECTION DELTA:** +8 (`tests/test_mission_schema.py`: 5, `tests/test_mission_db.py`: 3). Not yet added to `docs/orneur/phase-9/security_suite_files.txt` — reconciled explicitly in Phase 15.15, same as Phase 15.1's delta.
+
+**TECHNICAL DEBT:** `orca/mission/db.py`'s `get_conn()`/`apply_schema()`/`list_existing_tables()` are not yet exercised by any application code (no mission/checkpoint/operation CRUD layer exists yet — that's Phase 15.3+). The CHECK-constraint-as-defense-in-depth choice (not present in `orca/auth/db.py`'s existing tables) is a deliberate, disclosed departure from the exact existing convention, not an oversight.
+
+**KNOWN LIMITATIONS:**
+- No SQLite dev/test mirror for this schema (unlike `orca/auth/db.py`'s dual-backend design) — spec §9 explicitly says "Postgres only is currently intentional" for this domain, so fast unit tests for future CRUD logic will need either a real (test-branch) Neon connection or an in-memory fake at the Python layer, decided in Phase 15.3 when that logic is written.
+- `ORNEUR_MISSION_DATABASE_URL`/`_DIRECT` are not yet configured anywhere (not in this Mac's `.env`, not in any deployment) — no runtime code has attempted a live pooled/direct connection through `orca/mission/db.py` itself yet, only through the Neon MCP's own internal handling. This is expected at this stage (no application server wiring exists yet) and is not the same as the schema being unverified — the schema itself IS verified, live, against both a temp branch and production.
+
+**UNVERIFIED ITEMS:** None new.
+
+**DEFERRED ITEMS:** Phase 15.3 through 15.15 — not started.
+
+**OWNER ACTION REQUIRED:** None further this subphase — the one required action (production migration authorization) was requested and granted.
+
+**EVIDENCE:** This document; `orca/mission/schema.py`; `orca/mission/db.py`; live Neon query results quoted above (table list, constraint list, row counts — all direct tool output, not summarized from memory).
+
+**EPISTEMIC STATE:** VERIFIED — the schema's structural correctness (table presence, constraint presence, constraint *behavior* under real valid/invalid/duplicate inserts) was proven against real, live Neon infrastructure, both on a disposable temp branch and on the actual production branch after application.
+
+**PROGRESSION VERDICT:**
+
+YES — EVIDENCE SUPPORTS PROGRESSION
