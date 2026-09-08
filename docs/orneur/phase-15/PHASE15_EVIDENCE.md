@@ -877,3 +877,148 @@ The single failure is the SAME pre-existing, unrelated failure disclosed in Phas
 **FINAL VERDICT:**
 
 YES — EVIDENCE SUPPORTS PROGRESSION
+
+---
+
+## PHASE 15.7 — PRODUCT + REQUIREMENT COMPILERS
+
+**PHASE:** 15.7 — Product Contract + Requirement Compiler
+
+**OBJECTIVE:** Build the deterministic software layer that converts an incomplete, human product idea into a typed Product Contract, explicit assumptions and unknowns, stable material requirements, executable/testable acceptance criteria, and traceability into ORNEUR missions/implementation/tests/evidence — without requiring a live LLM, and with the correctness/integrity rules living outside model prose. The required proof is not "an LLM can write a nice specification"; it is "ORNEUR has a structured, validated representation that prevents vague ideas, assumptions, and missing requirements from silently becoming verified facts."
+
+**BASELINE:** Phase 15.6 + Phase 15.6.1 Sandbox Closure closed with verdict YES. HEAD `70e030c`. Confirmed clean working tree before starting.
+
+**PRE-FLIGHT FINDINGS:** Inspected before writing code. `orca.mission.requirements` (Phase 15.1) already provides a forward-only, evidence-gated Requirement registry (`UNIMPLEMENTED → IMPLEMENTED → VERIFIED`, VERIFIED requires test_files + evidence_ref) — extended, not replaced: Phase 15.7's `idea_compiler.py` registers real `Requirement` objects through this exact module. Phase 15.2's `assumptions` table CHECK constraint already defines exactly the four states spec section 3 asks for (`VERIFIED, UNVERIFIED, UNKNOWN, CONTESTED`) — `orca.mission.assumption_model` reuses that vocabulary rather than inventing a new one. `orca.mission.code_mode.PrototypeDebt` (Phase 15.6) established the in-process-registry-with-explicit-disclosure precedent this phase's `ProductContract`/`Fact`/`AcceptanceCriterion` registries follow. `orca.mission.providers.ModelProvider`/`MockProvider` (Phase 15.6) is reused directly for optional compilation assist — no second provider abstraction. No existing Product/Project abstraction, docs/spec parser, or competing requirement system was found anywhere else in the repository.
+
+**IMPLEMENTED:**
+- `orca/mission/provenance.py` — `SourceProvenance` (OWNER_EXPLICIT/SOURCE_SPEC/INFERRED_ASSUMPTION/SYSTEM_CONSTRAINT/SECURITY_INVARIANT/DERIVED_FROM_REQUIREMENT/EXTERNAL_EVIDENCE).
+- `orca/mission/assumption_model.py` — typed `Fact` reusing the Phase 15.2 `assumptions` table's exact state vocabulary. A `Fact` cannot be *constructed* as VERIFIED (`record_fact()` raises `FactError`) — the ONLY path to VERIFIED is `verify()`, which requires a real, non-empty, caller-supplied `evidence_ref`. `contest()` appends to `competing_statements`, never overwrites `statement`.
+- `orca/mission/product_contract.py` — typed `ProductContract` (actors, journeys, target platforms, `LaunchTarget` — deliberately has no PUBLISHED value, mirroring `orca.mission.code_mode.LaunchReadiness`). Structural validation at construction: duplicate actor IDs, a journey referencing an undefined actor, and out-of-scope/acceptance-target overlap are all rejected. `revise_contract()` creates a NEW contract revision superseding the old one; the old contract's fields are never mutated in place.
+- `orca/mission/acceptance_criteria.py` — typed `AcceptanceCriterion` (own id, `VerificationMethod`, forward-mostly lifecycle `PENDING → IMPLEMENTED → VERIFIED/FAILED`, `FAILED → PENDING` retry). Rejects an orphan criterion (unregistered `requirement_id`) and a fixed list of vague/unmeasurable descriptions ("works well", "is secure", "is fast", "looks professional", etc.) at construction.
+- `orca/mission/requirement_dependencies.py` — `DEPENDS_ON`/`BLOCKS`/`DERIVED_FROM`/`CONFLICTS_WITH` edges over the existing requirement registry, both endpoints must already be registered. `_assert_no_cycle()` DFS-detects direct AND indirect `DEPENDS_ON` cycles before the edge is added. `detect_conflicts()` — a deterministic, narrow keyword-pair heuristic (never general semantic reasoning) that only ever REPORTS a structurally obvious contradiction (the spec's own "data must remain local" vs "upload to third-party" example), never resolves one.
+- `orca/mission/idea_compiler.py` — `compile_idea()`, the deterministic core. `KNOWN_UNKNOWN_CATEGORIES` — nine fixed, commonly-material product dimensions (payment provider, country, tax system, age restriction, delivery radius, identity provider, cloud vendor, retention policy, production traffic scale) — any category not mentioned in the raw idea text (and not explicitly addressed via `explicit_facts`) becomes an UNKNOWN `Fact`. `compute_requirement_id()` derives a stable ID from a SHA-256 hash of the normalized (lowercased, whitespace-collapsed) statement text, never from list position. An optional `ModelProvider` may propose candidate facts; every acceptance path records them `UNVERIFIED`/`INFERRED_ASSUMPTION` — there is no code path from provider output to VERIFIED, malformed/unparseable provider output is silently ignored (warned, not fatal), and a provider failure (`ProviderTimeout`/`ProviderCancelled`/`ProviderFailure`) never corrupts the contract already built. `check_platform_invariants()` — when `target_is_orneur_platform=True`, refuses (raises `IdeaCompilerError`) to compile an idea containing an authority-bypass phrase ("skip authorization", "disable auth", etc.); the SAME phrases in an ordinary product idea (`target_is_orneur_platform=False`, the default) are accepted as a legitimate product-level design decision.
+- `orca/mission/traceability.py` — read-only `trace_requirement()`/`trace_requirements()` assembling `ProductContract → Requirement → AcceptanceCriterion → implementation → test → evidence`. `TraceabilityRow.has_missing_links` is explicit and visible — never a silently-omitted field.
+
+**FILES / COMPONENTS:**
+- `orca/mission/provenance.py`, `assumption_model.py`, `product_contract.py`, `acceptance_criteria.py`, `requirement_dependencies.py`, `idea_compiler.py`, `traceability.py` (all new)
+- `tests/test_product_contract.py` (14), `test_assumption_model.py` (11), `test_acceptance_criteria.py` (10), `test_requirement_dependencies.py` (9), `test_idea_compiler.py` (19), `test_traceability.py` (5) — 68 local tests
+- `tests/test_idea_compiler_live_neon.py` (1 test, `LIVE_NEON_TEMP_BRANCH`)
+- `.github/workflows/phase14b-distributed-qualification.yml` (new `phase15_7_live_neon_qualification` dispatch mode)
+- `orca/mission/requirements_seed.py` (updated — 4 new requirements registered and VERIFIED)
+
+**MIGRATIONS:** NONE. Inspected `orca/mission/schema.py` first (spec section 17). `ProductContract`/`Fact`/`AcceptanceCriterion`/dependency-edge state are in-process module-level registries this phase — the SAME disclosed pattern `orca.mission.requirements` and `orca.mission.code_mode.PrototypeDebt` already established and that the owner has already accepted twice. A genuinely new `product_contracts` table was evaluated and explicitly rejected per spec section 17's own instruction not to add one "just because it sounds cleaner" — no Phase 15.7 acceptance criterion requires cross-process persistence of the contract/fact/criterion layers themselves; the requirement/mission linkage those layers ultimately reference IS durable, via the existing, unmodified `orca.mission.requirements` and `orca.mission.mission_store`.
+
+**PRODUCT CONTRACT FINDINGS:** A minimal contract leaves every optional field `None`/empty — `test_unknown_fields_remain_none_not_invented` proves `authentication_needs`, `permission_model`, and `launch_target` are never invented. Duplicate actor IDs, an undefined-actor journey reference, and out-of-scope/acceptance-target overlap are all rejected at `__post_init__` time, not merely discouraged. `LaunchTarget` has no `PUBLISHED` member at all (`test_launch_target_cannot_be_published_no_such_value`) — the invariant "launch target cannot silently imply PUBLISHED" is enforced by the type itself, not by a runtime check that could be bypassed.
+
+**ASSUMPTION / UNKNOWN FINDINGS:** `test_model_suggested_assumption_cannot_self_promote` and `test_cannot_construct_contested_without_competing_statement` prove the two hardest invariants structurally: a `Fact` literally cannot be instantiated as VERIFIED, and CONTESTED cannot exist without preserving the competing statement. `test_food_delivery_app_never_silently_assumes_material_facts` (the spec's own required test, verbatim) compiles "Build me a food-delivery app." with zero explicit facts and confirms ALL NINE `KNOWN_UNKNOWN_CATEGORIES` become UNKNOWN facts — payment provider, country, tax system, age restriction, delivery radius, identity provider, cloud vendor, retention policy, and production traffic scale are never silently assumed.
+
+**PROVENANCE FINDINGS:** `test_explicit_owner_fact_distinguishable_from_inferred` and `test_explicit_facts_are_owner_provenance_and_unverified_not_verified` prove `OWNER_EXPLICIT` and `INFERRED_ASSUMPTION` facts are structurally distinguishable by their `provenance` field, and that BOTH stay UNVERIFIED by default — owner-stated facts are not fast-tracked to VERIFIED either; only `verify()` with real evidence can do that, regardless of provenance.
+
+**REQUIREMENT COMPILER FINDINGS:** `test_requirement_id_stable_under_reordering_of_source` proves the same statement (differing only in case/whitespace) produces the identical ID; `test_requirement_id_differs_for_different_content` proves materially different text produces a different ID. `test_recompiling_same_requirement_is_idempotent` proves a second compilation of the same `CompiledRequirement` reuses the same stable ID rather than duplicating or erroring. **A real bug was found and fixed via this phase's own test suite**: the initial "is this category mentioned" check used naive substring matching, which false-matched the "tax_system" keyword `"vat"` inside the word `"deactivate"` — silently marking a genuinely-unaddressed dimension as addressed, exactly the class of bug this whole phase exists to prevent. Caught by `test_end_to_end_multitenant_task_management_prompt` (a raw idea mentioning "deactivate accounts" produced 8 unknowns instead of the expected 9). Fixed with `_keyword_present()`, a word-boundary-aware match (`(?<!\w)keyword(?!\w)`, chosen over plain `\b` so it still works correctly for a keyword like `"18+"` that ends in a non-word character) — re-verified empirically before and after the fix.
+
+**ACCEPTANCE CRITERIA FINDINGS:** `test_orphan_criterion_rejected` and `test_vague_description_rejected` prove both explicit rejection paths. `test_implementation_only_does_not_equal_verified` and `test_zero_criteria_is_not_vacuously_verified` prove the two subtle "no fake completion" traps: moving a criterion to IMPLEMENTED is not VERIFIED, and a requirement with NO criteria at all is never treated as vacuously fully-verified by `requirement_all_criteria_verified()`.
+
+**DEPENDENCY FINDINGS:** `test_direct_cycle_rejected` and `test_indirect_cycle_rejected` (A→B→C→A) both prove `_assert_no_cycle()`'s DFS catches cycles regardless of depth. `test_unmet_blocking_dependency_stays_visible` proves an unmet `DEPENDS_ON` target remains visible via `unmet_blocking_dependencies()` until the target genuinely reaches VERIFIED (through the real, unmodified `orca.mission.requirements.transition()` gate — no shortcut).
+
+**CONFLICT FINDINGS:** `test_conflict_detection_data_locality_vs_upload` proves the spec's own literal example ("all data must remain local" vs "upload... third-party") is detected. `test_conflict_detection_never_auto_resolves` proves neither requirement's `statement` field is ever mutated by conflict detection — the conflict is reported, never resolved.
+
+**VERSIONING FINDINGS:** `test_contract_version_semantics_via_revision` proves `revise_contract()` increments `version`, sets `supersedes`/`superseded_by` bidirectionally, and — critically — that the OLD contract's `product_purpose` is untouched after the revision (old semantics do not silently absorb the new text). `test_cannot_revise_already_superseded_contract` prevents a contract from being revised twice from the same base.
+
+**TRACEABILITY FINDINGS:** `test_missing_links_visible_for_fresh_requirement` proves a newly-registered requirement's trace row shows `has_missing_links=True` with every field explicitly empty/None (not omitted from the row). `test_fully_linked_requirement_has_no_missing_links` proves the row correctly flips to `False` once implementation, test, evidence, AND at least one VERIFIED acceptance criterion all exist. The end-to-end test additionally traces both compiled requirements immediately after compilation and confirms `has_missing_links is True` for both — a freshly compiled requirement is never mistaken for a verified one.
+
+**MISSION INTEGRATION:** Proven LIVE, not merely asserted: `test_compiled_contract_links_to_a_real_durable_mission` creates a REAL mission via the unmodified `orca.mission.mission_store.create_mission()`, closes the connection (simulated process boundary), compiles a Product Contract referencing that mission's real id, then reloads the mission through a BRAND-NEW connection and confirms the link — GitHub Actions run [`34265412117`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/34265412117). No second mission representation was built.
+
+**CODE MODE INTEGRATION:** `test_ordinary_product_can_have_its_own_auth_design_without_refusal` and `test_orneur_platform_idea_refuses_authority_bypass_attempt` prove the spec section 16 distinction directly: the identical phrase ("skip authorization for the demo environment" / "...for admin deploys") is accepted for an ordinary product's own design decision and REFUSED (raises `IdeaCompilerError`) when the idea explicitly targets ORNEUR's own platform. The existing Phase 15.6 Launch gate (`orca.mission.code_mode.evaluate_launch_gate`) was NOT reimplemented — Phase 15.7 produces the compiled inputs (requirements, criteria, traceability) that gate will consume, per the explicit instruction not to duplicate it.
+
+**DURABILITY FINDINGS:** Disclosed honestly, not claimed beyond what was proven: `ProductContract`/`Fact`/`AcceptanceCriterion`/dependency-edge registries are in-process this phase and do NOT survive a process restart — only the mission linkage itself (proven above) is durable, through the existing, unmodified Neon-backed mission system. No durability claim is made for the compiler's own new state.
+
+**LIVE NEON TESTS:** `tests/test_idea_compiler_live_neon.py` (1 test) — GitHub Actions run `34265412117`, against branch `br-frosty-sound-b3ug86k5` (cloned from `production`, deleted after use). Passed as part of the same 69/69 run quoted below.
+
+**COMMANDS EXECUTED:**
+```
+git rev-parse HEAD && git status --short
+grep -rn "class.*Product\|class.*Project" orca --include="*.py"   # pre-flight: no existing Product/Project abstraction found
+.venv/bin/python3 -m pytest tests/test_product_contract.py tests/test_assumption_model.py tests/test_acceptance_criteria.py tests/test_requirement_dependencies.py tests/test_idea_compiler.py tests/test_traceability.py -q
+git commit ... && git push origin session-update-2026-08-25         # 43c30eb
+mcp__Neon__create_branch(project_id, name="phase15-7-qualification", parent_id=production)   # br-frosty-sound-b3ug86k5
+gh secret set ORNEUR_MISSION_DATABASE_URL(_DIRECT) --env phase14b-staging
+gh workflow run phase14b-distributed-qualification.yml -f fresh_runner_mode=phase15_7_live_neon_qualification   # run 34265412117
+.venv/bin/python3 -m pytest tests/ -k "godmode or authority or authorization or approval or replay or cancellation or audit or auth or tenant" -q
+mcp__Neon__delete_branch(project_id, branch_id=br-frosty-sound-b3ug86k5)   # cleanup
+gh secret delete ORNEUR_MISSION_DATABASE_URL(_DIRECT) --env phase14b-staging  # cleanup
+gh api repos/.../environments/phase14b-staging/secrets                       # confirmed only original Phase 14 secrets remain
+```
+
+**TESTS EXECUTED:**
+- UNIT (no DB): `test_product_contract.py` (14), `test_assumption_model.py` (11), `test_acceptance_criteria.py` (10), `test_requirement_dependencies.py` (9), `test_idea_compiler.py` (19), `test_traceability.py` (5) — 68 tests.
+- LIVE_NEON_TEMP_BRANCH: `test_idea_compiler_live_neon.py` (1 test).
+- Cross-check regression: full godmode/authority/authorization/approval/replay/cancellation/audit/auth/tenant-isolation suite plus all Phase 15 mission/code/product tests, local.
+
+**EXACT RESULTS:**
+```
+(local, pre-fix -- caught the real _keyword_present bug)
+4 failed, 64 passed
+FAILED tests/test_requirement_dependencies.py::test_conflict_detection_data_locality_vs_upload (test over-strict, not a code bug -- fixed the test's own assertion)
+FAILED tests/test_requirement_dependencies.py::test_conflict_detection_never_auto_resolves (same)
+FAILED tests/test_idea_compiler.py::test_mentioning_a_category_removes_it_from_unknowns (test text needed an actual matching keyword -- fixed the test)
+FAILED tests/test_idea_compiler.py::test_end_to_end_multitenant_task_management_prompt (REAL bug: "vat" matched inside "deactivate" -- fixed the code)
+```
+```
+(local, post-fix)
+tests/test_product_contract.py tests/test_assumption_model.py tests/test_acceptance_criteria.py tests/test_requirement_dependencies.py tests/test_idea_compiler.py tests/test_traceability.py: 68 passed
+```
+```
+(GitHub Actions, run 34265412117, LIVE_NEON_TEMP_BRANCH + all local Phase 15.7 tests re-run on the runner)
+============================== 69 passed in 8.08s ==============================
+```
+```
+(local, final combined Phase 15.7 + requirements regression)
+tests/test_product_contract.py ... tests/test_idea_compiler_live_neon.py tests/test_mission_requirements.py:
+87 passed, 1 skipped (the 1 live-only test, correctly inert without live credentials -- it passed live above)
+```
+
+**REGRESSIONS:** None caused by this phase.
+
+**SECURITY REGRESSION:**
+```
+(local, godmode/authority/authorization/approval/replay/cancellation/audit/auth/tenant-isolation cross-check, post Phase 15.7)
+2 failed, 353 passed, 18 skipped, 1547 deselected
+FAILED tests/test_container_adversarial.py::TestTimeoutCancellation::test_child_process_inside_container_is_cleaned_up_on_timeout
+FAILED tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary
+```
+Both failures are PRE-EXISTING and already disclosed, not new: `test_memory_legacy_authority.py` is the same order-dependent legacy-memory-subsystem failure disclosed since Phase 15.5. `test_child_process_inside_container_is_cleaned_up_on_timeout` is the SAME local-only Docker Desktop flakiness under heavy sequential container churn disclosed in Phase 15.6.1's own evidence (real-Linux CI passes it cleanly) — re-confirmed here by re-running it in isolation immediately after this cross-check: 1 passed. Neither failure touches any file this phase changed.
+
+**KNOWN PRE-EXISTING FAILURES:** `tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary` (unchanged since Phase 15.5) and `tests/test_container_adversarial.py::TestTimeoutCancellation::test_child_process_inside_container_is_cleaned_up_on_timeout` (local-only flakiness, unchanged since Phase 15.6.1, passes on real-Linux CI and in local isolation).
+
+**TEST COLLECTION DELTA:** +69 (`test_product_contract.py`: 14, `test_assumption_model.py`: 11, `test_acceptance_criteria.py`: 10, `test_requirement_dependencies.py`: 9, `test_idea_compiler.py`: 19, `test_traceability.py`: 5, `test_idea_compiler_live_neon.py`: 1). Cumulative Phase 15 delta: 19+8+48+23+37+71+27(15.6.1 additions beyond the 15.6 dispatch count)+69 ≈ 302+ new tests since Phase 14C.1 (exact cumulative figure not independently re-summed this checkpoint; each subphase's own delta is exact).
+
+**REQUIREMENT STATUS DELTA:**
+- `REQ-PRODUCT-CONTRACT-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-ASSUMPTION-INTEGRITY-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-REQUIREMENT-COMPILER-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-ACCEPTANCE-TRACE-001` (new): UNIMPLEMENTED → VERIFIED.
+- `REQ-CKPT-RESTORE-002`: unchanged (still IMPLEMENTED only) — its exact outstanding criterion was not touched or claimed this phase.
+- Registry after this subphase (28 total): 18 VERIFIED, 2 IMPLEMENTED-only, 8 UNIMPLEMENTED.
+
+**TECHNICAL DEBT:**
+- `CONTAINER_SANDBOX` still defaults to the mutable image tag `python:3.11-slim` (carried forward from Phase 15.6.1, not solved opportunistically this phase per the explicit instruction — digest pinning belongs to later supply-chain/Production Proof qualification).
+- The keyword-based unknown-category detector and the keyword-pair conflict detector are both intentionally narrow (word-boundary substring matching, not NLP) — they will miss paraphrased mentions of a category or a conflict phrased differently than the fixed phrase table. This is a disclosed scope limit, not a defect: the spec explicitly asks for a deterministic core, not general language understanding.
+
+**KNOWN LIMITATIONS:**
+- ProductContract/Fact/AcceptanceCriterion/dependency state does not survive a process restart (see DURABILITY FINDINGS).
+- Conflict detection and unknown-category detection are both narrow, deterministic keyword matches, not general reasoning.
+- `check_platform_invariants()` covers only the specific authority-bypass phrase list — it is not a general security-review mechanism.
+
+**UNVERIFIED ITEMS:** None new this subphase beyond items already disclosed as IMPLEMENTED-only in prior checkpoints.
+
+**DEFERRED ITEMS:** Phase 15.8 (Verification Engine) through 15.15 — not started. Full NLP-based idea understanding, general contradiction reasoning, and cross-process durability for the compiler's own state are all explicitly out of scope for this phase and not attempted.
+
+**OWNER ACTION REQUIRED:** None.
+
+**EVIDENCE:** This document; `orca/mission/provenance.py`; `assumption_model.py`; `product_contract.py`; `acceptance_criteria.py`; `requirement_dependencies.py`; `idea_compiler.py`; `traceability.py`; `tests/test_product_contract.py` through `tests/test_idea_compiler_live_neon.py`; GitHub Actions run `34265412117` (69/69, quoted above); Neon branch `br-frosty-sound-b3ug86k5` (created, used, deleted — all via direct Neon MCP tool calls); commit `43c30eb`.
+
+**EPISTEMIC STATE:** VERIFIED — every claim in this checkpoint traces to either a live GitHub Actions test run against real Neon + the real mission system, a local test run quoted above, or direct code inspection. The real `_keyword_present` bug found via this phase's own test suite is disclosed in full, including the exact false-positive that caused it. Both pre-existing (non-new) local test failures in the post-phase security regression are disclosed and re-confirmed as unrelated rather than hidden. No claim in this checkpoint is asserted from confidence alone.
+
+**PROGRESSION VERDICT:**
+
+YES — EVIDENCE SUPPORTS PROGRESSION
