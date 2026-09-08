@@ -13,15 +13,17 @@ what it is.
 Per the explicit instruction ("write migration as code; validate on
 disposable Neon branch; test it; STOP; request explicit owner
 approval before production. No autonomous new production migration."):
-this SQL is validated against a disposable Neon branch (see
-PHASE15_EVIDENCE.md's Phase 15.8 section for the exact
-migration_id/branch used) but is NOT applied to production by this
-module or by any code path in this phase. `apply_schema()` in
-`orca/mission/db.py` is NOT updated to include this migration --
-deliberately, so a normal qualification dispatch against production-
-cloned branches does not silently apply it either. Production
-application requires a separate, explicit owner-approved migration
-turn, exactly like Phase 15.2/15.5's own precedent.
+this SQL was validated against a disposable Neon branch (see
+PHASE15_EVIDENCE.md's Phase 15.8 section), then held back from
+`orca/mission/db.py`'s `apply_schema()` until the owner explicitly
+approved production application. That approval was received and the
+migration was APPLIED to production (see
+PHASE15_EVIDENCE.md's Phase 15.8 production-schema-reconciliation
+section for the exact migration_id and post-application verification)
+-- `apply_schema()` now includes `PHASE_15_8_MIGRATION_SQL` alongside
+`PHASE_15_5_MIGRATION_SQL`, exactly like Phase 15.2/15.5's own
+precedent, so new/fresh databases can reproduce the approved schema
+from code.
 """
 from __future__ import annotations
 

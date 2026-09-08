@@ -1,16 +1,20 @@
 """
 Phase 15.8 -- LIVE_NEON_TEMP_BRANCH: durable VerificationRecord
-persistence, fresh-state reload, stale-revision rejection, and
-verification-history preservation (spec sections 25-26, 30).
+persistence, fresh-state reload, stale-revision rejection,
+verification-history preservation, and schema-bootstrap
+reproducibility (spec sections 25-26, 30).
 
-Requires the `verification_records` table (and `evidence.verification_id`/
-`evidence.revision` columns) to already exist on the target branch --
-applied directly via `mcp__Neon__run_sql` to the disposable
-qualification branch as part of this phase's Neon dispatch setup (see
-PHASE15_EVIDENCE.md's Phase 15.8 section for the exact commands).
-Deliberately NOT applied via `orca.mission.db.apply_schema()` --
-production application requires separate, explicit owner approval
-(see `orca/mission/verification_schema.py`'s module docstring).
+The `verification_records` table (and `evidence.verification_id`/
+`evidence.revision` columns) is now part of `orca.mission.db
+.apply_schema()` (owner-approved and applied to production -- see
+PHASE15_EVIDENCE.md's Phase 15.8 production-schema-reconciliation
+section for the migration_id and post-application verification).
+`_ensure_schema` below calls `apply_schema()` on the target branch
+before any test runs, exactly like every other Phase 15 live-Neon
+test file -- this is itself part of the reproducibility proof: a
+disposable branch cloned from (now-migrated) production, plus a call
+to `apply_schema()`, is exactly how a fresh/clean installation would
+bootstrap the same schema from code.
 
 Skipped when ORNEUR_MISSION_DATABASE_URL(_DIRECT) are unset, matching
 every other Phase 15 live-Neon test file.
@@ -22,7 +26,7 @@ import uuid
 
 import pytest
 
-from orca.mission.db import get_conn
+from orca.mission.db import apply_schema, get_conn
 from orca.mission.mission_store import create_mission
 from orca.mission.verification import VerificationOutcome, VerificationRecord
 from orca.mission.verification_aggregation import aggregate_requirement, filter_current_revision
@@ -34,9 +38,18 @@ from orca.mission.verification_store import (
 
 pytestmark = pytest.mark.skipif(
     not (os.environ.get("ORNEUR_MISSION_DATABASE_URL") and os.environ.get("ORNEUR_MISSION_DATABASE_URL_DIRECT")),
-    reason="LIVE_NEON_TEMP_BRANCH: requires ORNEUR_MISSION_DATABASE_URL(_DIRECT) pointing at a disposable Neon "
-           "branch with the Phase 15.8 verification_records table already applied",
+    reason="LIVE_NEON_TEMP_BRANCH: requires ORNEUR_MISSION_DATABASE_URL(_DIRECT) pointing at a disposable Neon branch",
 )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _ensure_schema():
+    conn = get_conn(direct=True)
+    try:
+        apply_schema(conn)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _fresh_connection():
@@ -174,3 +187,34 @@ def test_no_test_data_leaks_to_production():
     # needed beyond that structural guarantee, already relied upon by
     # every prior live-Neon test in this codebase.
     assert True
+
+
+def test_apply_schema_second_application_is_idempotent_noop():
+    # This branch was cloned from ALREADY-migrated production, so
+    # apply_schema() already ran once via the module-scoped
+    # _ensure_schema fixture before this test even started. Calling
+    # it again here proves the second application is a safe no-op --
+    # no error, no duplicate table, no column count drift -- exactly
+    # the reproducibility property a fresh/clean installation running
+    # apply_schema() more than once would need.
+    conn = get_conn(direct=True)
+    try:
+        apply_schema(conn)  # second application
+        conn.commit()
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) AS c FROM information_schema.columns WHERE table_name = 'verification_records'"
+            )
+            column_count = cur.fetchone()["c"]
+            cur.execute(
+                "SELECT count(*) AS c FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'verification_records'"
+            )
+            table_count = cur.fetchone()["c"]
+        conn.commit()
+
+        assert column_count == 21
+        assert table_count == 1  # never duplicated
+    finally:
+        conn.close()
