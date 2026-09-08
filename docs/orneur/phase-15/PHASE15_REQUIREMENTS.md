@@ -45,4 +45,41 @@ REQ-<AREA>-<NAME>-<NNN>
 
 ## Entries
 
-_None yet implemented. First entries are compiled in Phase 15.1._
+The requirement registry is real, executable code, not static prose —
+this file is the index, not the source of truth (a markdown copy
+would drift from the enforced lifecycle in code). See:
+
+- `orca/mission/requirements.py` — the compiler itself: `Requirement`
+  dataclass (ID format enforced by regex, non-empty acceptance
+  criteria enforced at construction), `RequirementStatus`
+  (`UNIMPLEMENTED` → `IMPLEMENTED` → `VERIFIED`, forward-only,
+  enforced by `transition()` — `IMPLEMENTED` requires an
+  implementation-file reference, `VERIFIED` requires both a test-file
+  reference and an evidence reference).
+- `orca/mission/requirements_seed.py` — the Phase 15.1 initial
+  compilation: 19 requirements spanning Mission Engine, the six-hour
+  window, autonomy levels, durable state, checkpoints, operation
+  idempotency, the execution sandbox, the authority engine,
+  anti-test-gaming, no-fake-completion, Production Proof, Relay core,
+  device trust, and reconnect truthfulness. Grows across later
+  subphases as they define their own requirements — not finalized in
+  one pass.
+- `tests/test_mission_requirements.py` — 19 tests proving the
+  lifecycle enforcement is real (malformed IDs rejected, empty
+  acceptance criteria rejected, `IMPLEMENTED` without an
+  implementation file rejected, `VERIFIED` without both a test file
+  and evidence reference rejected, no skipping `UNIMPLEMENTED` →
+  `VERIFIED`, no backward/duplicate transitions, `VERIFIED` is
+  terminal) and that the seed data itself is well-formed (no
+  duplicate IDs, broad spec-area coverage).
+
+To inspect current requirement status programmatically:
+
+```python
+from orca.mission.requirements_seed import seed_registry
+from orca.mission.requirements import all_requirements, by_status, RequirementStatus
+
+seed_registry()
+for req in all_requirements():
+    print(req.id, req.status.value)
+```

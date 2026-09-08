@@ -97,3 +97,79 @@ Neon MCP tool calls (read-only): `describe_project(project_id="little-boat-61470
 **PROGRESSION VERDICT:**
 
 YES — EVIDENCE SUPPORTS PROGRESSION
+
+---
+
+## PHASE 15.1 — CANONICAL SPEC + REQUIREMENTS
+
+**OBJECTIVE:** Compile stable requirement IDs from the persisted spec into a real, testable traceability structure (spec §5) — not a static markdown list, but an enforced lifecycle in code.
+
+**BASELINE:** Phase 15.0 closed with verdict YES. HEAD `07a95c7`.
+
+**IMPLEMENTED:**
+- `orca/mission/requirements.py` — the Requirement Compiler: `Requirement` dataclass with regex-enforced ID format (`REQ-<AREA>-<NAME>-<NNN>`) and construction-time rejection of empty statements/acceptance criteria; `RequirementStatus` enum (`UNIMPLEMENTED`/`IMPLEMENTED`/`VERIFIED`); `transition()` enforcing forward-only movement, requiring an implementation-file reference to reach `IMPLEMENTED`, and requiring both a test-file reference and a non-empty evidence reference to reach `VERIFIED` — structurally enforcing spec §17's "no fake completion" on the requirement registry itself, not merely documenting the rule.
+- `orca/mission/requirements_seed.py` — first real compilation: 19 requirements spanning 14 spec areas (Mission Engine, six-hour window, autonomy levels, durable state, checkpoints, operation idempotency, execution sandbox, authority engine, anti-test-gaming, no-fake-completion, Production Proof, Relay core, device trust, reconnect truthfulness). `REQ-STATE-NEON-002` is transitioned to `IMPLEMENTED` (not `VERIFIED`) reflecting that the Neon project/branch identity half is confirmed live (Phase 15.0), but the connection-routing/capability-restraint half isn't implemented in code yet.
+- `docs/orneur/phase-15/PHASE15_REQUIREMENTS.md` updated to index the real code rather than duplicate it (avoids drift between a markdown copy and the enforced registry).
+
+**FILES / COMPONENTS:**
+- `orca/mission/__init__.py` (new)
+- `orca/mission/requirements.py` (new)
+- `orca/mission/requirements_seed.py` (new)
+- `tests/test_mission_requirements.py` (new)
+- `docs/orneur/phase-15/PHASE15_REQUIREMENTS.md` (updated)
+
+**MIGRATIONS:** None this subphase — no database schema yet (Phase 15.2).
+
+**COMMANDS EXECUTED:**
+```
+.venv/bin/python3 -m pytest tests/test_mission_requirements.py -q
+.venv/bin/python3 -c "from orca.mission.requirements_seed import seed_registry; ..."
+.venv/bin/python3 -m pytest tests/test_mission_requirements.py tests/test_auth_store.py tests/test_org_store.py -q
+```
+
+**TESTS EXECUTED:** `tests/test_mission_requirements.py` (new, 19 tests) + a cross-check against 2 unrelated existing suites to confirm no interference with global test collection.
+
+**EXACT RESULTS:**
+```
+19 passed, 1 warning in 0.31s   (tests/test_mission_requirements.py alone)
+45 passed, 53 warnings in 2.13s (combined with test_auth_store.py + test_org_store.py)
+```
+Manual registry inspection confirmed 19/19 requirements registered, no duplicate IDs, `REQ-STATE-NEON-002` correctly shows `IMPLEMENTED`, all others `UNIMPLEMENTED` (honest — nothing else has been built yet).
+
+**SECURITY FINDINGS:** None. No new attack surface — this is an in-process data structure with no network/filesystem/database access.
+
+**AUTHORITY FINDINGS:** None — `orca/mission/requirements.py` does not touch `orca/godmode/` in this subphase; authority integration is Phase 15.5's job.
+
+**MISSION STATE FINDINGS:** No Mission Engine exists yet (Phase 15.3). `REQ-MISSION-*` requirements are registered but correctly remain `UNIMPLEMENTED`.
+
+**CHECKPOINT / RESUME FINDINGS:** N/A this subphase.
+
+**RELAY FINDINGS:** No Relay code exists yet. `REQ-RELAY-STATE-001` and `REQ-DEVICE-REVOCATION-001` are registered but correctly remain `UNIMPLEMENTED`.
+
+**ANTI-TEST-GAMING FINDINGS:** `REQ-ANTIGAME-DETECT-001` registered; no detection logic implemented yet (Phase 15.9).
+
+**PRODUCTION PROOF STATUS:** No Production Proof generator exists yet (Phase 15.10). `REQ-PROOF-NOINVENT-001` registered, `UNIMPLEMENTED`.
+
+**REGRESSIONS:** None. Full local security-suite/deterministic-suite re-run deferred to Phase 15.15's integrated qualification per spec §30, but a targeted cross-check (`test_auth_store.py`, `test_org_store.py`) alongside the new tests shows no interference.
+
+**TEST COLLECTION DELTA:** +19 (`tests/test_mission_requirements.py`, new file, not yet added to `docs/orneur/phase-9/security_suite_files.txt` — this is Phase 15 mission-engine scaffolding, not a Phase 14-style security-suite test; will be reconciled explicitly in Phase 15.15's full-regression pass rather than silently folded into the existing security suite count).
+
+**TECHNICAL DEBT:** The seed compilation (19 requirements) is material but not exhaustive of every normative sentence in the 39-section spec — deliberately so (spec §5 says "every MATERIAL requirement", not every sentence). Later subphases add their own requirements as they're defined, per the implementation plan.
+
+**KNOWN LIMITATIONS:**
+- `orca/mission/requirements.py` is pure in-memory state — it does not yet persist to Postgres (that's Phase 15.2's `requirements`/`requirement_acceptance_criteria` durable tables) and does not verify that a referenced implementation/test file actually exists on disk (that's the Verification Engine's job, Phase 15.8).
+- The registry is process-local (module-level dict) — not yet durable across restarts. This is expected and correct for Phase 15.1's scope (compiler logic only); durability arrives in 15.2.
+
+**UNVERIFIED ITEMS:** None new this subphase beyond what Phase 15.0 already flagged.
+
+**DEFERRED ITEMS:** Phase 15.2 through 15.15 — not started.
+
+**OWNER ACTION REQUIRED:** None this subphase.
+
+**EVIDENCE:** This document; `orca/mission/requirements.py`; `orca/mission/requirements_seed.py`; `tests/test_mission_requirements.py` (19/19 passing, quoted above).
+
+**EPISTEMIC STATE:** VERIFIED for the compiler's own lifecycle-enforcement logic (directly tested). IMPLEMENTED-but-not-yet-VERIFIED for the specific requirements themselves, since "verified" per this project's own rules means the underlying Phase 15 FEATURE is built and tested, not merely that the requirement-tracking code works.
+
+**PROGRESSION VERDICT:**
+
+YES — EVIDENCE SUPPORTS PROGRESSION
