@@ -93,6 +93,20 @@ def seed_registry() -> None:
             "the mission's state, current step, and progress are recoverable unchanged.",
         ),
     ))
+    # Phase 15.4's live Neon test (test_full_pause_checkpoint_restore_resume_cycle)
+    # persists real mission state, discards every in-memory object,
+    # constructs fresh connections, and confirms exact recovery.
+    transition(
+        "REQ-MISSION-DURABILITY-003",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/mission_store.py",),
+    )
+    transition(
+        "REQ-MISSION-DURABILITY-003",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_mission_store_live_neon.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-154--checkpoint--resume",
+    )
 
     # -- Six-Hour Autonomous Mission Window (spec section 7) --
     register(Requirement(
@@ -227,6 +241,16 @@ def seed_registry() -> None:
         RequirementStatus.IMPLEMENTED,
         implementation_files=("orca/mission/schema.py",),
     )
+    # Phase 15.4's test_checkpoint_creation_and_field_population creates
+    # a real checkpoint with real values for every field (and confirms
+    # active_blocker stays genuinely None, not fabricated) -- the
+    # second acceptance criterion is now satisfied too.
+    transition(
+        "REQ-CKPT-FIELDS-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_mission_store_live_neon.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-154--checkpoint--resume",
+    )
     register(Requirement(
         id="REQ-CKPT-RESTORE-002",
         source_section="spec section 10",
@@ -238,6 +262,21 @@ def seed_registry() -> None:
             "already shows SUCCEEDED.",
         ),
     ))
+    # Phase 15.4 proved the ADJACENT, narrower guarantee -- restored
+    # checkpoints preserve completed vs. remaining STEPS correctly
+    # (test_full_pause_checkpoint_restore_resume_cycle's step H), so
+    # restoration itself is real and tested. But this requirement's
+    # specific acceptance criterion is about the OPERATIONS table's
+    # idempotency-key dedup (SUCCEEDED operation records not re-run),
+    # which the spec explicitly reserves for Phase 15.5/15.13 (section
+    # 8: "do not overclaim full dangerous-operation idempotency here").
+    # IMPLEMENTED only -- VERIFIED requires the operations-table
+    # integration this checkpoint layer doesn't yet have.
+    transition(
+        "REQ-CKPT-RESTORE-002",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/mission_store.py",),
+    )
 
     # -- Operation Idempotency (spec section 11) --
     register(Requirement(

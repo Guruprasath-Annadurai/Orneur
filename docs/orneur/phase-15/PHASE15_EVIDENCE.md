@@ -333,3 +333,115 @@ Requirement registry after this subphase (19 total): 5 `VERIFIED` (REQ-MISSION-S
 **PROGRESSION VERDICT:**
 
 YES — EVIDENCE SUPPORTS PROGRESSION
+
+---
+
+## PHASE 15.4 — CHECKPOINT + RESUME
+
+**PHASE:** 15.4 — Checkpoint + Resume
+
+**OBJECTIVE:** Implement a real durable mission CRUD + checkpoint/resume layer so an ORNEUR mission survives process loss and resumes from persisted state — proven by application code creating, persisting, checkpointing, losing in-memory state, reconstructing fresh objects, restoring, and resuming correctly, not merely by tables existing.
+
+**BASELINE:** Phase 15.3 closed with verdict YES. HEAD `f3f8910`. Confirmed clean working tree before starting.
+
+**IMPLEMENTED:**
+- `orca/mission/mission_store.py` — durable Mission Repository/Checkpoint store. `create_mission`/`get_mission`; `transition_mission` (locks the mission row with `SELECT ... FOR UPDATE`, validates via `orca.mission.state_machine.transition()`, writes, commits — the only code path that ever writes `missions.state`); `resume_mission` (restricted to `PAUSED_USER`/`PAUSED_WINDOW_REACHED` origin, rejects everything else including terminal states, with a clear error, never by mutating the state string directly); `create_checkpoint`/`get_checkpoint`/`get_latest_checkpoint`; `checkpoint_and_pause` (writes the pause transition and its checkpoint in ONE real transaction — see Database/Transaction Findings below for a real bug caught and fixed before this was true); `restore_mission` (the dedicated restoration entrypoint — loads a mission and its latest checkpoint fresh, for use after constructing brand-new connection/application objects).
+- Concurrency: relies on the `FOR UPDATE` row lock (held for the whole transaction) rather than an additive version/revision column — inspected the schema first (spec §3) and confirmed no version field exists; row-level transactional locking is sufficient for this scope and was chosen deliberately, not by default.
+- `tests/test_mission_store_unit.py` (4 tests, no DB) + `tests/test_mission_store_live_neon.py` (19 tests, clearly labeled `LIVE_NEON_TEMP_BRANCH`, `pytest.mark.skipif` when no live DB is configured).
+
+**FILES / COMPONENTS:**
+- `orca/mission/mission_store.py` (new)
+- `tests/test_mission_store_unit.py` (new)
+- `tests/test_mission_store_live_neon.py` (new)
+- `.github/workflows/phase14b-distributed-qualification.yml` (new `phase15_4_live_neon_qualification` dispatch mode)
+- `.gitignore` (added `/scratchpad/`)
+- `orca/mission/requirements_seed.py` (updated — 5 new `transition()` calls)
+
+**MIGRATIONS:** None new. The Phase 15.2 schema (already on production) was applied idempotently (`CREATE TABLE IF NOT EXISTS`) to a disposable qualification branch cloned from production — not a schema change, a confirmation the existing schema was sufficient (spec §0: "identify whether the existing schema already contains everything needed for 15.4" — it did).
+
+**COMMANDS EXECUTED:**
+```
+git rev-parse HEAD && git status --short
+grep -n "version|updated_at|created_at" orca/mission/schema.py         # confirmed no version/revision column exists
+grep -rn "FOR UPDATE" orca/godmode/*.py                                 # confirmed existing project convention
+python3 -c "import socket; socket.gethostbyname('...neon.tech')"        # confirmed this Mac cannot resolve Neon hostnames at all
+mcp__Neon__create_branch(project_id, name="phase15-4-qualification", parent_id=production)
+mcp__Neon__get_connection_string(...)                                    # value never printed to visible output or committed
+gh secret set ORNEUR_MISSION_DATABASE_URL --env phase14b-staging
+gh secret set ORNEUR_MISSION_DATABASE_URL_DIRECT --env phase14b-staging
+gh workflow run phase14b-distributed-qualification.yml -f fresh_runner_mode=phase15_4_live_neon_qualification   # x2 (1st failed on missing pytest, fixed, re-dispatched)
+mcp__Neon__delete_branch(project_id, branch_id=phase15-4-qualification)  # cleanup
+gh secret delete ORNEUR_MISSION_DATABASE_URL --env phase14b-staging      # cleanup
+gh secret delete ORNEUR_MISSION_DATABASE_URL_DIRECT --env phase14b-staging  # cleanup
+gh api repos/.../environments/phase14b-staging/secrets                  # confirmed both deleted, only original Phase 14 secrets remain
+.venv/bin/python3 -m pytest tests/test_mission_*.py tests/test_auth_store.py tests/test_org_store.py tests/test_godmode_boundaries.py tests/test_godmode_security.py -q
+```
+
+**TESTS EXECUTED:**
+- UNIT: `tests/test_mission_store_unit.py` (4 tests) — local, no DB.
+- LIVE_NEON_TEMP_BRANCH: `tests/test_mission_store_live_neon.py` (19 tests) — GitHub Actions run `34234091994`, against branch `phase15-4-qualification` (`br-purple-river-b3szwxog`, cloned from `production`, deleted after this run).
+- Cross-check regression: `tests/test_mission_requirements.py`, `test_mission_schema.py`, `test_mission_db.py`, `test_mission_state_machine.py`, `test_auth_store.py`, `test_org_store.py`, `test_godmode_boundaries.py`, `test_godmode_security.py`.
+
+**EXACT RESULTS:**
+```
+(GitHub Actions, run 34234091994, LIVE_NEON_TEMP_BRANCH)
+tests/test_mission_store_unit.py: 4 passed
+tests/test_mission_store_live_neon.py: 19 passed
+======================== 23 passed in 109.72s (0:01:49) ========================
+```
+```
+(local, cross-check with unrelated suites)
+154 passed, 19 skipped, 53 warnings in 2.55s
+```
+(19 skipped = the live-only tests, correctly inert without live credentials — the same 19 all passed live above.)
+
+**LIVE NEON TESTS:** All 19 in `test_mission_store_live_neon.py` passed against real Neon, run `34234091994` (an earlier dispatch, run `34233966708`, failed on a missing `pytest` install, fixed in commit `8e8ba81`, re-dispatched as `34234091994`). Covered exactly the required narrative: (A) `create_mission` inserts a real row; (B) a fresh connection reads the same mission; (C+D) `checkpoint_and_pause` transitions AND checkpoints atomically; (E) all prior connections closed, nothing referenced across the "state loss" boundary; (F) `restore_mission` on a brand-new connection reloads mission + checkpoint; (G) `resume_mission` transitions back to RUNNING through the canonical state machine; (H) completed vs. remaining steps confirmed correct BEFORE resuming — `step_0`/`step_1` never reappear in `remaining_step_ids`; (I) real constraint behavior (a forced PRIMARY KEY collision proves `checkpoint_and_pause` rolls back BOTH writes together, leaving the mission at its pre-transition state, not half-committed).
+
+**SECURITY FINDINGS:** No raw Neon connection string was ever printed in visible response text or committed to any file. The qualification branch's connection strings were: (1) written once to a local, newly-`.gitignore`d scratch file (`scratchpad/phase15_4_neon_test.env`, confirmed via `git check-ignore -v` before use), (2) set as GitHub Actions environment secrets (`gh secret set`, encrypted by GitHub before transmission), (3) referenced only by `${{ secrets.* }}` in the workflow YAML (GitHub redacts these from Actions logs automatically — confirmed the job's own env-dump lines show `***`, not the real value). All three were deleted after use: local file removed, GitHub secrets deleted (confirmed via `gh api .../secrets` showing only the original 8 Phase 14 secrets remain), and the underlying Neon branch itself deleted (invalidating the credential regardless).
+
+**AUTHORITY FINDINGS:** None this subphase — `orca/mission/mission_store.py` does not yet integrate with `orca/godmode/`'s authority engine (that's Phase 15.5, per the spec's own sequencing).
+
+**MISSION STATE FINDINGS:** Every mission-state write in this module passes through `orca.mission.state_machine.transition()` — confirmed by code inspection (grep shows no other `UPDATE missions SET state` anywhere in the module) and by the live test that attempts an illegal transition (`test_illegal_transition_rejected_and_state_unchanged`) and confirms the persisted state is untouched.
+
+**CHECKPOINT / RESUME FINDINGS:** Checkpoint creation stores only genuinely-supplied data — `active_blocker`, `diff_ref`, etc. are confirmed `None` when not provided (`test_from_row_leaves_genuinely_absent_fields_none`, `test_checkpoint_creation_and_field_population`), never a fabricated placeholder. `restore_mission` on a mission with no checkpoint yet correctly returns `(mission, None)` rather than erroring — a legitimate state, not a defect (`test_restore_mission_with_no_checkpoint_yet`).
+
+**DATABASE / TRANSACTION FINDINGS:** A real atomicity bug was found and fixed BEFORE any live test ran: the first draft of `checkpoint_and_pause()` called a transition helper that committed internally, then tried to add the checkpoint write "in the same transaction" afterward — which would NOT have been atomic at all (a checkpoint-write failure after that point would have left a paused mission with no checkpoint, exactly the "impossible half-state" spec §5 warns against). Refactored to a non-committing `_write_transition()` so both writes genuinely share one transaction with one final commit — then proved this live with `test_checkpoint_and_pause_rolls_back_together_on_failure` (forces a real PRIMARY KEY violation on the checkpoint insert, confirms the mission's state transition was rolled back too, not left committed).
+
+**CONCURRENCY FINDINGS:** `test_for_update_lock_serializes_concurrent_transitions` fires two real threads, each with its own connection, attempting different legal transitions (`RUNNING -> PAUSED_USER` and `RUNNING -> BLOCKED`) on the SAME mission simultaneously. Live-confirmed: exactly one final state is ever persisted (never a lost update, never two different "successful" results reporting different states) — the `FOR UPDATE` lock genuinely serializes the second transaction behind the first.
+
+**RELAY FINDINGS:** N/A this subphase.
+
+**ANTI-TEST-GAMING FINDINGS:** N/A this subphase.
+
+**PRODUCTION PROOF STATUS:** N/A this subphase.
+
+**REGRESSIONS:** None. Cross-check against `test_auth_store.py`, `test_org_store.py`, `test_godmode_boundaries.py`, `test_godmode_security.py` shows no interference.
+
+**TEST COLLECTION DELTA:** +23 (`test_mission_store_unit.py`: 4, `test_mission_store_live_neon.py`: 19). Cumulative Phase 15 delta: 19 (15.1) + 8 (15.2) + 48 (15.3) + 23 (15.4) = 98 new tests since Phase 14C.1.
+
+**REQUIREMENT STATUS DELTA:**
+- `REQ-MISSION-DURABILITY-003`: UNIMPLEMENTED → VERIFIED
+- `REQ-CKPT-FIELDS-001`: IMPLEMENTED → VERIFIED
+- `REQ-CKPT-RESTORE-002`: UNIMPLEMENTED → IMPLEMENTED **only** (deliberately not VERIFIED — this requirement's specific acceptance criterion is about the `operations` table's idempotency-key dedup, which spec §8 explicitly reserves for Phase 15.5/15.13: "do not overclaim full dangerous-operation idempotency here." Phase 15.4 proved the adjacent, narrower guarantee — completed vs. remaining STEPS are preserved correctly across restore — but not operation-record-level dedup.)
+- Registry after this subphase (19 total): 6 VERIFIED, 2 IMPLEMENTED-only, 11 UNIMPLEMENTED.
+
+**TECHNICAL DEBT:** None new beyond the disclosed REQ-CKPT-RESTORE-002 scope gap (intentional, per spec).
+
+**KNOWN LIMITATIONS:**
+- `orca/mission/mission_store.py` has no integration with the `operations`/`approvals`/`authority_decisions` tables yet — Phase 15.5's job.
+- The qualification branch used for live testing is gone (deleted per spec §1's "delete/clean the temporary qualification branch when appropriate") — the 23/23 pass result is a point-in-time proof, reproducible by re-running the same workflow dispatch mode against a freshly-created branch.
+- This Mac genuinely cannot resolve Neon's Postgres hostnames (confirmed directly via `socket.gethostbyname`, not assumed) — all live Neon verification for this project must go through GitHub Actions, consistent with the standing rule already established for Northflank/Cloudflare in Phase 14.
+
+**UNVERIFIED ITEMS:** None new.
+
+**DEFERRED ITEMS:** Phase 15.5 through 15.15 — not started.
+
+**OWNER ACTION REQUIRED:** None.
+
+**EVIDENCE:** This document; `orca/mission/mission_store.py`; `tests/test_mission_store_unit.py`; `tests/test_mission_store_live_neon.py`; GitHub Actions run `34234091994` (23/23 passed, quoted above); Neon branch `br-purple-river-b3szwxog` (created, used, deleted — all via direct Neon MCP tool calls, not assumed).
+
+**EPISTEMIC STATE:** VERIFIED — every claim in this checkpoint traces to either a live GitHub Actions test run against real Neon infrastructure, a direct Neon MCP tool response, or a local test run quoted above. No claim in this checkpoint is asserted from confidence alone.
+
+**PROGRESSION VERDICT:**
+
+YES — EVIDENCE SUPPORTS PROGRESSION
