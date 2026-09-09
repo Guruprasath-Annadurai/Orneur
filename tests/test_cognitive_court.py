@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import pytest
 
+from orca.mission import acceptance_criteria as ac_module
+from orca.mission import requirements as requirements_module
+from orca.mission.acceptance_criteria import VerificationMethod
 from orca.mission.anti_gaming import AntiGamingFinding, FindingCategory, Severity
 from orca.mission.cognitive_court import (
     CourtConfigurationError,
@@ -498,3 +501,133 @@ def test_closure_15_9_2_revision_empty_string_cannot_accept():
             findings=(), required_verification_records={"REQ-X-1": (record,)},
             required_requirement_ids=("REQ-X-1",),
         )
+
+
+# ── Phase 15.9.3 closure item 1/4: requirement-id dict-key spoofing ──
+
+def test_closure_15_9_3_a_dict_key_spoofing_cannot_support_accept():
+    # required_requirement_ids=("REQ-B",) but the ONLY record supplied
+    # under that key genuinely claims requirement_id="REQ-A" -- the
+    # dict placement must not be trusted as the record's identity.
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    spoofed_record = _record(requirement_id="REQ-A", mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-B": (spoofed_record,)},
+        required_requirement_ids=("REQ-B",),
+    )
+    assert decision.verdict is not CourtVerdict.ACCEPT
+    assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
+    assert decision.verification_refs == ()
+
+
+def test_closure_15_9_3_b_correct_dict_key_and_requirement_id_still_accepts():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    real_record = _record(requirement_id="REQ-B", mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-B": (real_record,)},
+        required_requirement_ids=("REQ-B",),
+    )
+    assert decision.verdict is CourtVerdict.ACCEPT
+    assert decision.verification_refs == (real_record.id,)
+
+
+def test_closure_15_9_3_c_wrong_pass_ignored_correct_fail_dominates():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    correct_fail = _record(requirement_id="REQ-B", mission_id="m1", revision="rev2",
+                            outcome=VerificationOutcome.FAIL)
+    wrong_pass = _record(requirement_id="REQ-A", mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-B": (correct_fail, wrong_pass)},
+        required_requirement_ids=("REQ-B",),
+    )
+    assert decision.verdict is not CourtVerdict.ACCEPT
+    assert decision.verification_refs == ()
+
+
+def test_closure_15_9_3_d_provider_accept_narrative_cannot_override_spoofed_record():
+    provider = _accepting_provider()
+    critic = security_critic_review((), provider=provider)
+    assert critic.provider_narrative and "ACCEPT" in critic.provider_narrative
+    spoofed_record = _record(requirement_id="REQ-A", mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=(critic,),
+        findings=(), required_verification_records={"REQ-B": (spoofed_record,)},
+        required_requirement_ids=("REQ-B",),
+    )
+    assert decision.verdict is not CourtVerdict.ACCEPT
+
+
+# ── Phase 15.9.3 closure item 2: required-criterion completeness ────
+
+@pytest.fixture(autouse=True)
+def _clean_criteria_registries():
+    requirements_module.reset_registry_for_tests()
+    ac_module.reset_registry_for_tests()
+    yield
+    requirements_module.reset_registry_for_tests()
+    ac_module.reset_registry_for_tests()
+
+
+def _register_req_with_two_criteria(req_id="REQ-CRIT-X-001"):
+    requirements_module.register(requirements_module.Requirement(
+        id=req_id, source_section="test", statement="Two criteria must both be verified",
+        acceptance_criteria=("first", "second"),
+    ))
+    ac_module.register_criterion(
+        criterion_id="c1", requirement_id=req_id, description="First criterion",
+        verification_method=VerificationMethod.UNIT_TEST,
+    )
+    ac_module.register_criterion(
+        criterion_id="c2", requirement_id=req_id, description="Second criterion",
+        verification_method=VerificationMethod.UNIT_TEST,
+    )
+
+
+def test_closure_15_9_3_missing_required_criterion_cannot_accept():
+    _register_req_with_two_criteria()
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    c1_only = _record(requirement_id="REQ-CRIT-X-001", criterion_id="c1", mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-CRIT-X-001": (c1_only,)},
+        required_requirement_ids=("REQ-CRIT-X-001",),
+    )
+    assert decision.verdict is not CourtVerdict.ACCEPT
+    assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
+    assert decision.verification_refs == ()
+
+
+def test_closure_15_9_3_both_required_criteria_present_can_accept():
+    _register_req_with_two_criteria()
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    c1 = _record(requirement_id="REQ-CRIT-X-001", criterion_id="c1", mission_id="m1", revision="rev2")
+    c2 = _record(requirement_id="REQ-CRIT-X-001", criterion_id="c2", mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-CRIT-X-001": (c1, c2)},
+        required_requirement_ids=("REQ-CRIT-X-001",),
+    )
+    assert decision.verdict is CourtVerdict.ACCEPT
+    assert set(decision.verification_refs) == {c1.id, c2.id}
+
+
+def test_closure_15_9_3_provider_accept_narrative_cannot_override_missing_criterion():
+    _register_req_with_two_criteria()
+    provider = _accepting_provider()
+    critic = security_critic_review((), provider=provider)
+    assert critic.provider_narrative and "ACCEPT" in critic.provider_narrative
+    c1_only = _record(requirement_id="REQ-CRIT-X-001", criterion_id="c1", mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=(critic,),
+        findings=(), required_verification_records={"REQ-CRIT-X-001": (c1_only,)},
+        required_requirement_ids=("REQ-CRIT-X-001",),
+    )
+    assert decision.verdict is not CourtVerdict.ACCEPT

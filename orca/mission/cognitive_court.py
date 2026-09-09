@@ -26,7 +26,7 @@ from orca.mission.anti_gaming import AntiGamingFinding, critical_findings, has_b
 from orca.mission.providers import ModelProvider, ProviderError, ProviderRequest
 from orca.mission.test_collection_diff import CollectionDelta
 from orca.mission.verification import VerificationOutcome, VerificationRecord
-from orca.mission.verification_aggregation import aggregate_requirement, filter_current_context
+from orca.mission.verification_aggregation import evaluate_requirement_completion
 
 
 def _now_iso() -> str:
@@ -306,6 +306,7 @@ def arbiter_decide(
     required_verification_records: dict[str, tuple[VerificationRecord, ...]],
     required_requirement_ids: tuple[str, ...],
     owner_approval_required: bool = False,
+    required_criteria_by_requirement: dict[str, frozenset[str]] | None = None,
 ) -> CourtDecision:
     """The ONLY function that produces a final CourtVerdict. Reads
     ONLY deterministic inputs -- no provider narrative is consulted
@@ -343,7 +344,28 @@ def arbiter_decide(
     correct for the mission Court path). Both are now hard
     preconditions, checked before any `CourtDecision` is constructed,
     and the previous `required_requirement_ids=()` default is removed
-    so a caller must always supply the real set explicitly."""
+    so a caller must always supply the real set explicitly.
+
+    Phase 15.9.3 closure (items 1-2): tracing this hardened path
+    end-to-end found two further scope-integrity gaps. First,
+    `required_verification_records[req_id]` was trusted as proof for
+    `req_id` purely because of its dict placement -- a record whose
+    OWN `requirement_id` field disagreed with the key it was filed
+    under still silently counted. Second, `aggregate_requirement()`
+    could only ever aggregate whichever criterion/category keys
+    happened to be PRESENT in the supplied records -- if a requirement
+    genuinely required two acceptance criteria and only one had
+    evidence, the aggregate was computed over just that one, never
+    detecting the other was silently missing. Both gaps are now closed
+    by delegating to the single, centralized
+    `orca.mission.verification_aggregation.evaluate_requirement_
+    completion()` (also used by `orca.mission.mission_verification_
+    gate`, Phase 15.9.3 closure item 8) -- it independently re-checks
+    `record.requirement_id` against the expected `req_id` and, when
+    the Phase 15.7 `AcceptanceCriterion` registry has criteria
+    registered for `req_id` (or `required_criteria_by_requirement`
+    supplies an explicit override for it), requires every one of them
+    to have current-context PASS evidence of its own."""
     if not mission_id:
         raise CourtConfigurationError(
             "arbiter_decide() requires a non-empty mission_id for the mission Court "
@@ -388,11 +410,14 @@ def arbiter_decide(
     verification_refs: list[str] = []
     for req_id in required_requirement_ids:
         records = required_verification_records.get(req_id, ())
-        current = filter_current_context(records, current_revision=revision, mission_id=mission_id)
-        outcome = aggregate_requirement(current)
+        explicit_keys = (required_criteria_by_requirement or {}).get(req_id)
+        outcome, contributing = evaluate_requirement_completion(
+            records, requirement_id=req_id, current_revision=revision, mission_id=mission_id,
+            required_criterion_ids=explicit_keys,
+        )
         outcomes[req_id] = outcome
         if outcome is VerificationOutcome.PASS:
-            verification_refs.extend(r.id for r in current if r.outcome is VerificationOutcome.PASS)
+            verification_refs.extend(r.id for r in contributing)
 
     not_pass = {rid: o for rid, o in outcomes.items() if o is not VerificationOutcome.PASS}
     if not_pass:

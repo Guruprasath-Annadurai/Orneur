@@ -71,3 +71,35 @@ def test_require_can_complete_verified_raises_with_breakdown():
 def test_require_can_complete_verified_passes_silently_when_all_pass():
     records = {"REQ-A-X-001": (_rec(VerificationOutcome.PASS),)}
     require_can_complete_verified(records, required_requirement_ids=("REQ-A-X-001",), current_revision="rev1")  # no raise
+
+
+# ── Phase 15.9.3 closure item 1/4: requirement-id dict-key spoofing ──
+
+def test_closure_15_9_3_a_dict_key_spoofing_cannot_pass():
+    # required_requirement_ids=("REQ-B",) but the record supplied
+    # under that key genuinely claims requirement_id="REQ-A".
+    spoofed_record = _rec(VerificationOutcome.PASS, requirement_id="REQ-A")
+    can_complete, outcomes = can_complete_verified(
+        {"REQ-B": (spoofed_record,)}, required_requirement_ids=("REQ-B",), current_revision="rev1",
+    )
+    assert can_complete is False
+    assert outcomes["REQ-B"] is VerificationOutcome.UNVERIFIED
+
+
+def test_closure_15_9_3_b_correct_dict_key_and_requirement_id_still_completes():
+    real_record = _rec(VerificationOutcome.PASS, requirement_id="REQ-B")
+    can_complete, outcomes = can_complete_verified(
+        {"REQ-B": (real_record,)}, required_requirement_ids=("REQ-B",), current_revision="rev1",
+    )
+    assert can_complete is True
+    assert outcomes["REQ-B"] is VerificationOutcome.PASS
+
+
+def test_closure_15_9_3_c_mixed_wrong_pass_ignored_correct_fail_dominates():
+    correct_fail = _rec(VerificationOutcome.FAIL, requirement_id="REQ-B")
+    wrong_pass = _rec(VerificationOutcome.PASS, requirement_id="REQ-A", started_at="2026-01-02T00:00:00Z")
+    can_complete, outcomes = can_complete_verified(
+        {"REQ-B": (correct_fail, wrong_pass)}, required_requirement_ids=("REQ-B",), current_revision="rev1",
+    )
+    assert can_complete is False
+    assert outcomes["REQ-B"] is VerificationOutcome.FAIL

@@ -173,3 +173,33 @@ def test_closure_15_9_2_matching_nonempty_mission_and_revision_still_succeeds():
     )
     assert ok is True
     assert "satisfied" in reason.lower()
+
+
+# ── Phase 15.9.3 closure item 1/4: requirement-id dict-key spoofing ──
+
+def test_closure_15_9_3_a_dict_key_spoofing_cannot_complete():
+    # required_requirement_ids=("REQ-B",) but the record supplied
+    # under that dict key genuinely claims requirement_id="REQ-A" --
+    # this must be caught even though the Court's own ACCEPT decision
+    # and mission/revision binding are otherwise perfectly valid.
+    matching_decision = _decision(CourtVerdict.ACCEPT, mission_id="m1", revision="rev1")
+    spoofed_record = _pass_record("REQ-A", mission_id="m1", revision="rev1")
+    ok, reason = can_proceed_to_completed_verified(
+        court_decision=matching_decision,
+        records_by_requirement={"REQ-B": (spoofed_record,)},
+        required_requirement_ids=("REQ-B",), current_revision="rev1", current_mission_id="m1",
+    )
+    assert ok is False
+    assert "Verification gate" in reason
+
+
+def test_closure_15_9_3_b_correct_dict_key_and_requirement_id_still_succeeds():
+    matching_decision = _decision(CourtVerdict.ACCEPT, mission_id="m1", revision="rev1")
+    real_record = _pass_record("REQ-B", mission_id="m1", revision="rev1")
+    ok, reason = can_proceed_to_completed_verified(
+        court_decision=matching_decision,
+        records_by_requirement={"REQ-B": (real_record,)},
+        required_requirement_ids=("REQ-B",), current_revision="rev1", current_mission_id="m1",
+    )
+    assert ok is True
+    assert "satisfied" in reason.lower()

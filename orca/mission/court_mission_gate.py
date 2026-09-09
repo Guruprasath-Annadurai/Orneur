@@ -47,6 +47,21 @@ utility callers of `filter_current_context()` itself (unchanged). This
 mission-completion path now requires a genuine non-empty
 `current_mission_id`, raising `CourtMissionGateError` immediately
 otherwise, rather than silently falling through to an unscoped query.
+
+PHASE 15.9.3 CLOSURE (items 1-2): tracing the hardened Court ->
+Verification -> Mission completion path end-to-end found that
+`can_complete_verified()` (called below) still trusted a
+`records_by_requirement` dictionary KEY as authority for a record's
+identity, and could PASS a requirement with evidence for only SOME of
+its required acceptance criteria. Both are fixed inside
+`orca.mission.mission_verification_gate`/`orca.mission
+.verification_aggregation.evaluate_requirement_completion()` --
+this module's own defense-in-depth mission/revision binding above is
+unchanged and still runs first, but the verification gate it then
+consults is now itself requirement-identity- and criterion-complete.
+An optional `required_criteria_by_requirement` parameter passes
+through unchanged to `can_complete_verified()` for a caller that needs
+to supply an explicit criterion scope.
 """
 from __future__ import annotations
 
@@ -63,6 +78,7 @@ def can_proceed_to_completed_verified(
     *, court_decision: CourtDecision,
     records_by_requirement: dict[str, tuple[VerificationRecord, ...]],
     required_requirement_ids: tuple[str, ...], current_revision: str, current_mission_id: str,
+    required_criteria_by_requirement: dict[str, frozenset[str]] | None = None,
 ) -> tuple[bool, str]:
     """Returns (can_proceed, reason). Only True when the Court
     verdict, the decision's own mission/revision binding, AND the
@@ -106,6 +122,7 @@ def can_proceed_to_completed_verified(
     verification_ok, outcomes = can_complete_verified(
         records_by_requirement, required_requirement_ids=required_requirement_ids,
         current_revision=current_revision, mission_id=current_mission_id,
+        required_criteria_by_requirement=required_criteria_by_requirement,
     )
     if not verification_ok:
         blocking = {rid: o.value for rid, o in outcomes.items() if o.value != "PASS"}
