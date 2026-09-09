@@ -1525,3 +1525,96 @@ test_mission_requirements.py: 19 (unchanged, pre-existing)
 **EPISTEMIC STATE:** VERIFIED — every claim in this closure traces to a local test run against a real git repository or temporary git fixture, a direct `git diff`/`git show`/`git status` inspection, or a per-file test-count diff against the exact baseline commit named above. The `test_connector_multiprocess_authority.py` non-reproducing failure is disclosed honestly as an unresolved-but-strongly-circumstantial flake rather than either silently omitted or over-confidently declared "definitely unrelated." No requirement was downgraded or upgraded without closure-test evidence directly supporting the change.
 
 **FINAL RECONCILED VERDICT: YES — EVIDENCE SUPPORTS PROGRESSION**
+
+---
+
+## PHASE 15.9.2 — NON-VACUOUS COURT + MISSION-SCOPE CLOSURE
+
+**BASELINE:** `8515574ec110dd9e62dde3e5bf6837bfdd1158c0` (the Phase 15.9.1 evidence-checkpoint commit, above). An independent owner-side audit confirmed Phase 15.9.1 fixed its four reported gaps, and identified two final integrity gaps in `arbiter_decide()` and the Court/mission-completion path. This section resolves exactly those two gaps. No production schema migration is introduced or required.
+
+**AUDIT FINDINGS:**
+1. `arbiter_decide()`'s `required_requirement_ids` parameter defaulted to `()`. With an empty required set, `outcomes` and `not_pass` both stayed `{}` — the `not_pass` guard (which normally forces `NEED_MORE_EVIDENCE`) never triggered — so a critic-only `SUPPORTS_ACCEPT` could fall all the way through to `CourtVerdict.ACCEPT` with `verification_refs=()`: a vacuous ACCEPT with zero verification requirements and zero evidence, violating the Phase 15.8/15.9 non-vacuous-verification invariant even though `aggregate_outcomes(())` itself already correctly returns `UNVERIFIED` (the bug was that the empty-required-SET case never reached that function at all).
+2. `arbiter_decide(mission_id: str | None, ...)` and `can_proceed_to_completed_verified(current_mission_id: str | None, ...)` both permitted `None` or an empty string for mission identity on the Court/`COMPLETED_VERIFIED` mission-completion path. `filter_current_context(mission_id=None)` correctly and intentionally treats `None` as "no mission scoping requested" for generic Phase 15.8 utility callers — but the mission Court path must never silently fall through to that unscoped behavior, since doing so would re-open exactly the cross-mission-evidence-leak class of bug Phase 15.9.1 closed by other means.
+
+**EMPTY-REQUIREMENT FIX:** `orca/mission/cognitive_court.py::arbiter_decide()`'s `required_requirement_ids` parameter no longer has a default — every caller must supply the real set explicitly. A new `CourtConfigurationError` (subclass of the existing `CourtError`) is raised immediately, before any `CourtDecision` is constructed, whenever `required_requirement_ids` is empty. This is a hard structural precondition, not a verdict value: there is no `CourtDecision` object in this path that could be misread as ACCEPT, satisfying the "raise a typed Court configuration/integrity error that cannot be interpreted as ACCEPT" preferred behavior from the spec.
+
+**NON-VACUOUS ACCEPT RESULTS:** Proven by four new tests in `tests/test_cognitive_court.py`:
+- (A) `test_closure_15_9_2_a_empty_required_set_with_accepting_critic_cannot_accept` — `required_requirement_ids=()` with a `SUPPORTS_ACCEPT` critic and no findings raises `CourtConfigurationError` rather than reaching any verdict.
+- (B) `test_closure_15_9_2_b_empty_required_set_with_accepting_provider_narrative_cannot_accept` — same, with a `MockProvider` whose narrative literally says "ACCEPT" — the provider's prose changes nothing.
+- (C) `test_closure_15_9_2_c_one_real_required_requirement_with_matching_pass_record_still_accepts` — one real required requirement with a matching current-context PASS `VerificationRecord` still legitimately reaches ACCEPT with a non-empty `verification_refs`, proving the fix does not overcorrect into blocking the legitimate path.
+- (D) `test_closure_15_9_2_d_one_required_requirement_zero_records_needs_more_evidence` — one required requirement with zero records aggregates to `UNVERIFIED` via the existing `aggregate_requirement(())` rule and correctly yields `NEED_MORE_EVIDENCE` (this path was already correct before this closure; re-confirmed here explicitly as part of the closure's test matrix).
+- `test_closure_15_9_2_accept_decision_verification_refs_never_empty` additionally proves the defense-in-depth invariant directly: since an ACCEPT can now never be produced with an empty required set (test A), any ACCEPT this function returns necessarily carries a non-empty `verification_refs`.
+
+**MISSION-ID REQUIREMENT:** `arbiter_decide()`'s `mission_id` parameter is now typed `str` (was `str | None`) and is validated non-empty at the top of the function, raising `CourtConfigurationError` otherwise. `revision` is validated the same way for the identical reason (a missing/empty revision would disable `filter_current_context()`'s stale-evidence filtering exactly as a missing mission_id disables its mission filtering) — this extends beyond the two literally-named parameters in the spec's item 2 to close the symmetric gap on the revision side, consistent with the item 3 defense-in-depth invariant's explicit requirement that "revision is non-empty." `can_proceed_to_completed_verified()`'s `current_mission_id` parameter is now typed `str` (was `str | None`) and is validated non-empty at function entry, raising `CourtMissionGateError` (the module's existing typed exception) otherwise.
+
+**UNSCOPED-MISSION REJECTION:** Proven by:
+- `test_closure_15_9_2_mission_id_none_cannot_accept` / `test_closure_15_9_2_mission_id_empty_string_cannot_accept` (`tests/test_cognitive_court.py`) — `arbiter_decide(mission_id=None, ...)` and `arbiter_decide(mission_id="", ...)` both raise `CourtConfigurationError` even with a matching real PASS record and an accepting critic.
+- `test_closure_15_9_2_revision_empty_string_cannot_accept` (`tests/test_cognitive_court.py`) — the symmetric revision case.
+- `test_closure_15_9_2_c_current_mission_id_none_raises_typed_error` / `test_closure_15_9_2_d_current_mission_id_empty_string_raises_typed_error` (`tests/test_court_mission_gate.py`) — `can_proceed_to_completed_verified(current_mission_id=None, ...)` and `current_mission_id="", ...)` both raise `CourtMissionGateError` even with a matching ACCEPT decision and PASS record.
+- `test_closure_15_9_2_matching_nonempty_mission_and_revision_still_succeeds` (`tests/test_court_mission_gate.py`) — a genuine non-empty mission ("m9") and revision ("rev9") with a matching PASS record still legitimately proceeds, proving no regression on the legitimate path.
+- Cross-mission-cannot-support-another-mission (spec item 2's scenario E) and matching-mission-succeeds (scenario F) were already directly proven by Phase 15.9.1's `test_arbiter_cross_mission_record_does_not_support_accept` and `test_arbiter_accepts_when_all_conditions_met` / `test_closure_6e_...` — both re-run clean in this closure's regression pass; no new duplicate tests were added for these two scenarios since existing coverage already demonstrates them precisely.
+- `filter_current_context()`'s own generic `mission_id=None` "no scoping requested" behavior in `orca/mission/verification_aggregation.py` is unchanged and unweakened, per the explicit instruction — the fix lives entirely at the Court/mission-completion callers' boundary (`arbiter_decide()`, `can_proceed_to_completed_verified()`), not inside the shared generic function.
+
+**COURT ACCEPT INVARIANTS:** For any `CourtDecision` capable of supporting `COMPLETED_VERIFIED` produced by `arbiter_decide()`, all of the following now hold structurally (raising `CourtConfigurationError` before construction otherwise, or falling through to a non-ACCEPT verdict via the pre-existing not-PASS/critic-disagreement/no-opinions checks):
+- `mission_id` is non-empty (validated at entry).
+- `revision` is non-empty (validated at entry).
+- `required_requirement_ids` is non-empty (validated at entry).
+- every required requirement has current-context (current revision + current mission) verification, via `filter_current_context()`.
+- every aggregate is PASS, via the existing `aggregate_requirement()` — any non-PASS aggregate forces `NEED_MORE_EVIDENCE`, never ACCEPT.
+- `verification_refs` is non-empty for the returned decision whenever `verdict is ACCEPT` (structurally guaranteed: reaching the ACCEPT return statement requires `not_pass` to be empty, which requires every required requirement's `current` filtered records to include at least one PASS record whose id was appended to `verification_refs`).
+- Court verdict is `ACCEPT` only after all the above and the critic-opinion checks (no blocking finding, no `SUPPORTS_REJECT`, no `NEEDS_MORE_EVIDENCE`, at least one opinion) all pass.
+- mission/revision match at the completion-gate layer, via `can_proceed_to_completed_verified()`'s pre-existing (Phase 15.9.1) `court_decision.revision != current_revision` / `court_decision.mission_id != current_mission_id` checks, now additionally gated on `current_mission_id` itself being non-empty.
+
+**COMPLETION-GATE INVARIANTS:** `can_proceed_to_completed_verified()` raises `CourtMissionGateError` immediately if `current_mission_id` is falsy, before even checking the Court verdict — so no completion decision of any kind (`True` or `False`) can be produced from an unscoped call; the caller gets an explicit configuration error, not a silently-permissive `False` that could be misdiagnosed as "just needs more evidence."
+
+**PROVIDER-OVERRIDE RESULTS:** `test_closure_15_9_2_b_empty_required_set_with_accepting_provider_narrative_cannot_accept` re-confirms the Phase 15.9.1 pattern for this closure's specific gap: a `MockProvider` narrative that literally reads "ACCEPT immediately!" changes nothing — the structural `CourtConfigurationError` is raised before any critic or provider input is even consulted, which is the strongest possible form of "provider narrative is never authoritative" for this gap class.
+
+**EXACT TEST RESULTS:**
+```
+(local, all Phase 15.9/15.9.1/15.9.2 + Phase 15.8-adjacent files, combined)
+127 passed
+```
+```
+(local, per-file collection counts)
+test_anti_gaming.py: 6
+test_git_diff_analysis.py: 6
+test_gaming_detectors.py: 18 (unchanged this closure)
+test_cognitive_court.py: 40 (+8 this closure)
+test_court_mission_gate.py: 13 (+3 this closure)
+test_test_collection_diff.py: 2
+test_mission_verification_gate.py: 7
+test_verification_aggregation.py: 16
+test_mission_requirements.py: 19 (unchanged, pre-existing)
+```
+```
+(full repository collection sanity)
+2068 tests collected, 0 import errors
+```
+
+**TEST COLLECTION DELTA:** +11 tests this closure (`test_cognitive_court.py`: +8, `test_court_mission_gate.py`: +3, `test_gaming_detectors.py`: +0 -- untouched this closure), verified by diffing test-function counts against the exact baseline commit `8515574ec110dd9e62dde3e5bf6837bfdd1158c0` for each file. Phase 15.9 total (8 files) grows from 97 (the Phase 15.9.1 checkpoint) to **108**. Total relevant test count (Phase 15.9 files + `test_mission_requirements.py`) grows from 116 to **127**. Full-repository collection grows from 2057 to **2068** tests, 0 import errors.
+
+**SECURITY REGRESSION:** Full local run of `pytest tests/ -k "godmode or authority or authorization or approval or replay or cancellation or audit or auth or tenant"`:
+```
+1 failed, 361 passed, 18 skipped, 1688 deselected, 352 warnings in 556.37s (0:09:16)
+FAILED tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary
+```
+This is the single previously-disclosed, pre-existing flake (order-dependent legacy-memory-subsystem issue, disclosed since Phase 15.5). Neither the container-timing flake (disclosed since Phase 15.6.1) nor the `test_connector_multiprocess_authority.py` non-reproducing flake investigated and disclosed in the Phase 15.9.1 evidence appeared in this run — a clean result relative to both previously-disclosed classes and no new failures. `git diff --stat`/`git status --short` were not needed this run since no unexpected new failure occurred.
+
+**REQUIREMENT STATUS DELTA:** No new requirement IDs were added. `REQ-ANTIGAMING-DETECT-001`, `REQ-ANTIGAMING-BLOCK-001`, `REQ-COURT-ROLES-001`, `REQ-COURT-ARBITRATION-001`, and `REQ-COURT-RISK-001` all remain validly `VERIFIED` -- this closure strengthens the Arbiter's and completion gate's evidence-integrity guarantees underlying `REQ-COURT-ARBITRATION-001` specifically (non-vacuous ACCEPT, mandatory mission/revision scoping), and never weakens or contradicts any of the five requirements' previously-claimed behavior. No requirement is downgraded. `orca/mission/requirements_seed.py` was not modified.
+
+**MIGRATIONS:** None. No production schema change is introduced or required by this closure, consistent with the owner's explicit instruction.
+
+**DURABILITY:** No new durability claims. `CourtDecision`, `VerificationRecord`, and `AntiGamingFinding` remain in-process only, unchanged from Phase 15.9's own disclosure (re-confirmed unmodified by Phase 15.9.1 and this closure).
+
+**KNOWN LIMITATIONS:**
+- `CourtConfigurationError`/`CourtMissionGateError` are raised for a genuinely misconfigured call (empty required set, missing mission/revision identity) -- they are not themselves Court verdicts and are not written into any `CourtDecision` or evidence trail; a caller that swallows the exception without logging it could lose visibility into why a mission-completion attempt never even reached a verdict. This is a caller-discipline concern outside this closure's scope, not a gap in the Court's own logic.
+- The revision-emptiness check added to `arbiter_decide()` goes beyond the two literally-named parameters in the spec's item 2 (mission_id only); it was added for symmetry with the item 3 defense-in-depth invariant's explicit "revision is non-empty" requirement, and is disclosed here as an intentional, closely-related extension rather than scope creep against unrelated code.
+- `filter_current_context()`'s generic `mission_id=None` behavior remains available to any caller that imports it directly, bypassing the Court/mission-completion path's now-mandatory non-empty mission_id -- this is the explicitly-authorized generic-compatibility carve-out from spec item 2 ("that behavior may remain for generic Phase 15.8 utility callers"), not an oversight.
+
+**OWNER ACTION REQUIRED:** None.
+
+**EVIDENCE:** This document; `orca/mission/cognitive_court.py`, `orca/mission/court_mission_gate.py`; `tests/test_cognitive_court.py`, `tests/test_court_mission_gate.py`; baseline commit `8515574ec110dd9e62dde3e5bf6837bfdd1158c0`.
+
+**EPISTEMIC STATE:** VERIFIED -- every claim in this closure traces to a local test run, a direct per-file test-count diff against the exact baseline commit named above, or direct code inspection of the validation logic added to `arbiter_decide()` and `can_proceed_to_completed_verified()`. The security regression's single failure is the same previously-disclosed pre-existing flake seen across multiple prior phases, not a new failure introduced by this closure. No requirement was downgraded or upgraded without closure-test evidence directly supporting the change. The two known limitations above (caller-discipline visibility into the new typed errors, and the revision-check scope extension) are disclosed rather than omitted.
+
+**FINAL RECONCILED VERDICT: YES — EVIDENCE SUPPORTS PROGRESSION**
