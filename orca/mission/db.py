@@ -19,6 +19,7 @@ values in logs, evidence, or committed files).
 from __future__ import annotations
 
 from orca.config import orneur_env
+from orca.mission.production_proof_schema import PHASE_15_10_1_MIGRATION_SQL
 from orca.mission.schema import PHASE_15_5_MIGRATION_SQL, SCHEMA_SQL
 from orca.mission.verification_schema import PHASE_15_8_MIGRATION_SQL
 
@@ -74,6 +75,7 @@ def apply_schema(conn) -> None:
         cur.execute(SCHEMA_SQL)
         cur.execute(PHASE_15_5_MIGRATION_SQL)
         cur.execute(PHASE_15_8_MIGRATION_SQL)
+        cur.execute(PHASE_15_10_1_MIGRATION_SQL)
 
 
 def list_existing_tables(conn) -> set[str]:

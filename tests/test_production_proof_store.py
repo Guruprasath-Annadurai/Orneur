@@ -9,6 +9,10 @@ real disposable Neon branch in `tests/test_production_proof_live_neon.py`.
 """
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from orca.mission.cognitive_court import CourtDecision, CourtRole, CourtVerdict, RiskLevel
 from orca.mission.production_proof import (
     AntiGamingAnalysisEvidence,
@@ -20,7 +24,13 @@ from orca.mission.production_proof import (
     generate_production_proof,
     to_dict,
 )
-from orca.mission.production_proof_store import _payload_to_proof, is_proof_stale
+from orca.mission.production_proof_store import (
+    ProductionProofStoreError,
+    _SCHEMA_ALLOWED_STATUSES,
+    _payload_to_proof,
+    _row_to_proof,
+    is_proof_stale,
+)
 from orca.mission.verification import VerificationOutcome, VerificationRecord
 from orca.mission.verification_aggregation import RequiredVerificationScope
 
@@ -112,3 +122,54 @@ def test_stale_proof_detects_new_required_requirement():
         proof, current_revision="rev1", current_required_requirement_ids=("REQ-X-1", "REQ-Y-1"),
         current_required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE, "REQ-Y-1": _UNIT_TEST_SCOPE},
     ) is True
+
+
+# ── Post-migration application-layer reconciliation ──────────────────
+
+def test_schema_allowed_statuses_includes_not_engineering_ready():
+    # The application-layer gate must agree with the MIGRATED
+    # production schema (5 values), not the pre-migration 4-value set.
+    from orca.mission.production_proof import NOT_ENGINEERING_READY
+    assert NOT_ENGINEERING_READY in _SCHEMA_ALLOWED_STATUSES
+    assert _SCHEMA_ALLOWED_STATUSES == frozenset({
+        "NOT_ENGINEERING_READY", "ENGINEERING_READY", "SUBMISSION_READY", "RELEASE_CANDIDATE", "PUBLISHED",
+    })
+
+
+def test_blocked_proof_release_state_no_longer_rejected_by_application_gate():
+    # A genuinely blocked proof's release_state must now pass the
+    # application-layer guard in record_proof() -- the exact gap this
+    # reconciliation closes (previously this value was outside
+    # _CURRENT_SCHEMA_ALLOWED_STATUSES and record_proof() raised).
+    blocked = _proof(build_records=())
+    assert blocked.release_state == "NOT_ENGINEERING_READY"
+    assert blocked.release_state in _SCHEMA_ALLOWED_STATUSES
+
+
+def test_mismatch_between_sql_status_and_json_release_state_still_raises():
+    # Retained per item 6: this defensive check must keep working even
+    # though it should no longer be triggered by record_proof() itself
+    # post-migration -- a row from any OTHER source with contradictory
+    # state must still be refused, never silently accepted.
+    proof = _proof()
+    payload = to_dict(proof)
+    tampered_row = {
+        "id": proof.proof_id,
+        "categories": json.dumps({**payload, "proof_hash": compute_proof_hash(proof)}),
+        "overall_status": "PUBLISHED",  # deliberately disagrees with the payload's real release_state
+    }
+    with pytest.raises(ProductionProofStoreError):
+        _row_to_proof(tampered_row)
+
+
+def test_matching_sql_status_and_json_release_state_round_trips_cleanly():
+    proof = _proof()
+    payload = to_dict(proof)
+    row = {
+        "id": proof.proof_id,
+        "categories": json.dumps({**payload, "proof_hash": compute_proof_hash(proof)}),
+        "overall_status": proof.release_state,
+    }
+    reloaded, stored_hash = _row_to_proof(row)
+    assert stored_hash == compute_proof_hash(proof)
+    assert reloaded == proof

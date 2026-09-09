@@ -12,32 +12,45 @@ INSERTs a new row (a fresh `proof_id`); there is no `update_proof()`.
 PHASE 15.10.1 CLOSURE item 8 (OVERALL-STATUS INTEGRITY): the original
 Phase 15.10 implementation silently mapped `NOT_ENGINEERING_READY` to
 `'ENGINEERING_READY'` for the `overall_status` column, because the
-Phase 15.2 CHECK constraint only allows the 4 canonical `LaunchReadiness`
-values -- a blocked proof's DURABLE ROW claimed the software was
-engineering-ready. This was a hard integrity defect: a durable index
-must never contradict its canonical payload.
+Phase 15.2 CHECK constraint only allowed the 4 canonical
+`LaunchReadiness` values -- a blocked proof's DURABLE ROW claimed the
+software was engineering-ready. This was a hard integrity defect: a
+durable index must never contradict its canonical payload.
 
-`record_proof()` now writes `proof.release_state` EXACTLY, with no
-translation. Against the CURRENT (unmigrated) production schema, this
-means writing a `NOT_ENGINEERING_READY` proof will raise a Postgres
-CHECK-constraint violation rather than silently lying -- this is the
-intended, honest interim behavior until the migration in
-`orca/mission/production_proof_schema.py` (validated on a disposable
-Neon branch, NOT applied to production without explicit owner
-approval -- see PHASE15_EVIDENCE.md's "PHASE 15.10.1" section) is
-approved and applied. `get_proof()`/`proofs_for_mission()` additionally
-detect (and refuse to silently accept) any row whose `overall_status`
-column disagrees with its own JSON payload's `release_state`.
+`record_proof()` writes `proof.release_state` EXACTLY, with no
+translation.
+
+POST-MIGRATION RECONCILIATION (this closure): `orca/mission
+.production_proof_schema.PHASE_15_10_1_MIGRATION_SQL` was
+owner-approved and APPLIED to the real production `orneur-core`
+database, widening `production_proofs.overall_status`'s CHECK
+constraint to also allow `'NOT_ENGINEERING_READY'` (verified in
+production: the constraint now reads `overall_status = ANY
+(ARRAY['NOT_ENGINEERING_READY', 'ENGINEERING_READY',
+'SUBMISSION_READY', 'RELEASE_CANDIDATE', 'PUBLISHED'])`; existing rows
+-- there were zero at migration time -- were unaffected). `_SCHEMA_
+ALLOWED_STATUSES` below now reflects that migrated reality (renamed
+from the prior `_CURRENT_SCHEMA_ALLOWED_STATUSES`, which would now
+falsely describe the schema as still 4-valued): a genuinely-blocked
+`NOT_ENGINEERING_READY` proof now persists successfully, with no
+translation and no application-side rejection. `get_proof()`/
+`proofs_for_mission()` continue to detect (and refuse to silently
+accept) any row whose `overall_status` column disagrees with its own
+JSON payload's `release_state` -- this is now a pure defensive check
+(it should never actually trigger, since `record_proof()` writes the
+exact value), not a description of an expected, common case.
 """
 from __future__ import annotations
 
 import json
 
 from orca.mission.production_proof import (
+    NOT_ENGINEERING_READY,
     AntiGamingSnapshot,
     CourtSnapshot,
     DeploymentResult,
     DeploymentState,
+    LaunchReadiness,
     ProductionProof,
     ProofCategory,
     RegressionResult,
@@ -64,35 +77,36 @@ class ProductionProofStoreError(Exception):
     pass
 
 
-#: The Phase 15.2 CHECK constraint's current allowed values. Any
-#: `release_state` outside this set (i.e. `NOT_ENGINEERING_READY`)
-#: cannot be written to the CURRENT schema at all -- see module
-#: docstring. This set is used only to give a clear, actionable error
-#: message before the raw Postgres exception would otherwise surface.
-_CURRENT_SCHEMA_ALLOWED_STATUSES = frozenset({
-    "ENGINEERING_READY", "SUBMISSION_READY", "RELEASE_CANDIDATE", "PUBLISHED",
-})
+#: The production `production_proofs.overall_status` CHECK constraint's
+#: allowed values, AS OF the Phase 15.10.1 migration actually applied
+#: to production -- every value `release_state` can legitimately take
+#: (the 4 canonical `LaunchReadiness` values plus `NOT_ENGINEERING_
+#: READY`). Built from the same source enums `production_proof.py`
+#: itself uses, rather than a hand-duplicated literal set, so this
+#: cannot silently drift out of sync with the real release-state
+#: vocabulary. This guard is now a pure defensive check: every
+#: genuine `release_state` value should already be a member, so it
+#: should never actually raise against a healthy production schema --
+#: it exists to fail loudly (not silently mis-persist) if the schema
+#: and this constant ever again disagree, e.g. after a future schema
+#: rollback.
+_SCHEMA_ALLOWED_STATUSES = frozenset({NOT_ENGINEERING_READY}) | frozenset(s.value for s in LaunchReadiness)
 
 
 def record_proof(conn, proof: ProductionProof) -> tuple[ProductionProof, str]:
     """Persists `proof` as a new, append-only row, writing
     `proof.release_state` EXACTLY into `overall_status` -- no lying
-    translation (Phase 15.10.1 closure item 8). Returns `(proof,
-    proof_hash)`."""
+    translation (Phase 15.10.1 closure item 8), and (post-migration)
+    no application-side rejection of a genuinely blocked proof either."""
     proof_hash = compute_proof_hash(proof)
     payload = to_dict(proof)
     payload["proof_hash"] = proof_hash
-    if proof.release_state not in _CURRENT_SCHEMA_ALLOWED_STATUSES:
+    if proof.release_state not in _SCHEMA_ALLOWED_STATUSES:
         raise ProductionProofStoreError(
-            f"record_proof(): release_state {proof.release_state!r} cannot be written to the "
-            f"CURRENT production_proofs.overall_status CHECK constraint (Phase 15.2 schema, "
-            f"limited to {sorted(_CURRENT_SCHEMA_ALLOWED_STATUSES)!r}). The Phase 15.10.1 "
-            f"migration that widens this constraint has been validated on a disposable Neon "
-            f"branch but NOT applied to production pending explicit owner approval -- see "
-            f"orca/mission/production_proof_schema.py and PHASE15_EVIDENCE.md's 'PHASE 15.10.1' "
-            f"section. This proof cannot be durably persisted with its true release_state until "
-            f"that migration is approved and applied; it is NOT silently mislabeled as "
-            f"ENGINEERING_READY."
+            f"record_proof(): release_state {proof.release_state!r} is not one of the known "
+            f"production_proofs.overall_status values {sorted(_SCHEMA_ALLOWED_STATUSES)!r} -- "
+            f"refusing to write a value the schema and this store module disagree about, "
+            f"rather than risk a silent mismatch (Phase 15.10.1 closure item 8)."
         )
     with conn.cursor() as cur:
         cur.execute(
