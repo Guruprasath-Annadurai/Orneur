@@ -1113,5 +1113,203 @@ def seed_registry() -> None:
         evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-159--anti-test-gaming--cognitive-court",
     )
 
+    # -- Phase 15.10: Production Proof (spec sections 17-20) --
+    # REQ-PROOF-NOINVENT-001 was already registered above (spec section
+    # 18) but left UNIMPLEMENTED -- no generator existed yet. It is now
+    # implemented and verified by the actual Production Proof engine.
+    transition(
+        "REQ-PROOF-NOINVENT-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/production_proof.py",),
+    )
+    transition(
+        "REQ-PROOF-NOINVENT-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_production_proof.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1510--production-proof",
+    )
+
+    register(Requirement(
+        id="REQ-PROOF-AUTHORITATIVE-001",
+        source_section="Phase 15.10 spec sections 3, 5",
+        statement="Production Proof requirement results are derived exclusively via the "
+                   "Phase 15.9.4 authoritative mission-critical aggregator "
+                   "(evaluate_requirement_completion_for_mission()) with an explicit, "
+                   "non-empty RequiredVerificationScope per required requirement -- unknown "
+                   "expected scope fails closed (a configuration error), never silently "
+                   "inferred from the in-process AcceptanceCriterion registry or from "
+                   "whichever records happen to exist.",
+        acceptance_criteria=(
+            "A test proves a required requirement with no explicit scope raises "
+            "ProductionProofError rather than producing any proof.",
+            "A test proves a stale-revision, cross-mission, or wrong-requirement "
+            "VerificationRecord does not satisfy a requirement in the generated proof.",
+            "A test proves a missing required criterion/category leaves the requirement "
+            "unresolved, never PASS.",
+        ),
+    ))
+    transition(
+        "REQ-PROOF-AUTHORITATIVE-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/production_proof.py",),
+    )
+    transition(
+        "REQ-PROOF-AUTHORITATIVE-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_production_proof.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1510--production-proof",
+    )
+
+    register(Requirement(
+        id="REQ-PROOF-DURABILITY-001",
+        source_section="Phase 15.10 spec sections 27, 30-31",
+        statement="Production Proof persists durably against the existing Phase 15.2 "
+                   "production_proofs table, surviving a fresh connection/process "
+                   "boundary with its hash, mission/revision binding, and evidence refs "
+                   "unchanged; proof history is append-only (a later proof never "
+                   "overwrites an earlier one), and a proof is revision-bound (stale-proof "
+                   "detection rejects reuse for a different revision or changed scope).",
+        acceptance_criteria=(
+            "A live-Neon qualification writes a proof, closes the connection, opens a "
+            "fresh connection, reloads the proof, and confirms the recomputed hash "
+            "matches the hash stored at write time.",
+            "A live-Neon qualification writes three proofs for the same mission across "
+            "three revisions (blocked, ready, regressed) and confirms all three remain "
+            "visible in chronological order with unmodified outcomes.",
+            "A test proves is_proof_stale() returns True for a different revision or a "
+            "changed RequiredVerificationScope, and False when both are unchanged.",
+        ),
+    ))
+    transition(
+        "REQ-PROOF-DURABILITY-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/production_proof_store.py",),
+    )
+    transition(
+        "REQ-PROOF-DURABILITY-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_production_proof_store.py", "tests/test_production_proof_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1510--production-proof",
+    )
+
+    register(Requirement(
+        id="REQ-PROOF-HASH-001",
+        source_section="Phase 15.10 spec section 24",
+        statement="Every Production Proof has a deterministic SHA-256 hash computed over "
+                   "its canonical serialization; the identical canonical payload always "
+                   "yields the identical hash, and any material mutation of the proof "
+                   "changes the hash. The hash proves byte-identity/integrity of the "
+                   "payload -- it does not itself prove the claims inside the proof are "
+                   "true, and this distinction is stated wherever the hash is rendered.",
+        acceptance_criteria=(
+            "A test confirms two proofs built from the identical inputs produce the "
+            "identical hash.",
+            "A test confirms changing one real evidence input changes the hash.",
+            "The human-readable renderer's hash line is accompanied by an explicit "
+            "disclaimer that the hash does not prove the claims are true.",
+        ),
+    ))
+    transition(
+        "REQ-PROOF-HASH-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/production_proof.py",),
+    )
+    transition(
+        "REQ-PROOF-HASH-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_production_proof.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1510--production-proof",
+    )
+
+    register(Requirement(
+        id="REQ-PROOF-RELEASESTATE-001",
+        source_section="Phase 15.10 spec section 22",
+        statement="Production Proof derives release_state (ENGINEERING_READY / "
+                   "SUBMISSION_READY / RELEASE_CANDIDATE / PUBLISHED) from a deterministic "
+                   "policy over its own assembled category outcomes -- never from a "
+                   "caller-supplied boolean -- and PUBLISHED requires explicit external "
+                   "confirmation. A proof with unmet criteria still generates "
+                   "successfully; it simply does not reach a higher release_state.",
+        acceptance_criteria=(
+            "A test proves a Court REJECT/ESCALATE/NEED_MORE_EVIDENCE verdict, a blocking "
+            "anti-gaming finding, or a non-PASS build/unit_tests/security category each "
+            "independently keep release_state at NOT_ENGINEERING_READY.",
+            "A test proves release_state cannot skip a stage (e.g. RELEASE_CANDIDATE "
+            "without SUBMISSION_READY first being satisfied).",
+            "A test proves PUBLISHED is unreachable without published_externally_confirmed "
+            "explicitly set.",
+        ),
+    ))
+    transition(
+        "REQ-PROOF-RELEASESTATE-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/production_proof.py",),
+    )
+    transition(
+        "REQ-PROOF-RELEASESTATE-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_production_proof.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1510--production-proof",
+    )
+
+    register(Requirement(
+        id="REQ-SUPPLY-EVIDENCE-001",
+        source_section="Phase 15.10 spec section 19",
+        statement="Supply-chain and licensing evidence uses only tools genuinely available "
+                   "in this environment (no paid scans, no external service dependency); "
+                   "an unavailable check (vulnerability scanning, SBOM/provenance) is "
+                   "UNVERIFIED, never PASS, and known debt (the mutable "
+                   "CONTAINER_SANDBOX image tag) is surfaced explicitly rather than "
+                   "omitted. Licensing evidence never asserts \"legally safe\" or "
+                   "\"commercially cleared.\"",
+        acceptance_criteria=(
+            "A test confirms the supply-chain category never reports PASS given the "
+            "absence of a vulnerability scanner.",
+            "A test confirms the mutable python:3.11-slim image tag is named explicitly "
+            "in the supply-chain evidence summary.",
+            "A test confirms the licensing category's summary never contains the phrases "
+            "'legally safe' or 'commercially cleared'.",
+        ),
+    ))
+    transition(
+        "REQ-SUPPLY-EVIDENCE-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/supply_chain_evidence.py",),
+    )
+    transition(
+        "REQ-SUPPLY-EVIDENCE-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_supply_chain_evidence.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1510--production-proof",
+    )
+
+    register(Requirement(
+        id="REQ-DEPLOY-EVIDENCE-001",
+        source_section="Phase 15.10 spec sections 19-21",
+        statement="Deployment evidence is revision-bound (NOT_DEPLOYED by default, never "
+                   "assumed) and rollback evidence distinguishes a documented strategy from "
+                   "a tested procedure from proof the rollback actually works for the "
+                   "CURRENT deployment -- a documented plan alone never counts as a tested "
+                   "rollback, preserving Phase 14C.1's honest distinction that this "
+                   "platform's proven rollback mechanism is git revert/redeploy-to-known-"
+                   "good-commit, never labeled \"native rollback.\"",
+        acceptance_criteria=(
+            "A test confirms the default DeploymentResult is NOT_DEPLOYED.",
+            "A test confirms a RollbackResult with strategy_documented=True and "
+            "procedure_tested=False still reports proven_for_current_deployment=False.",
+        ),
+    ))
+    transition(
+        "REQ-DEPLOY-EVIDENCE-001",
+        RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/production_proof.py",),
+    )
+    transition(
+        "REQ-DEPLOY-EVIDENCE-001",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_production_proof.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1510--production-proof",
+    )
+
 
 __all__ = ["seed_registry"]
