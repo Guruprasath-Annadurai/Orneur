@@ -125,6 +125,52 @@ def test_preflight_guard_runs_before_every_live_neon_step():
         )
 
 
+def test_focused_relay_workflow_preflight_exists_before_pytest_steps():
+    """Phase 15.12 item 26: the focused, Northflank-free
+    `phase15-relay-security-qualification.yml` workflow must ALSO
+    fail closed on missing mission DB secrets, ordered before its own
+    pytest steps -- preserving the 15.11.2 invariant in the new,
+    cleaner qualification path."""
+    focused_path = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "phase15-relay-security-qualification.yml"
+    data = yaml.safe_load(focused_path.read_text())
+    steps = data["jobs"]["qualify"]["steps"]
+
+    preflight_idx = next(
+        (i for i, s in enumerate(steps) if "Fail closed if mission DB secrets are missing" in (s.get("name") or "")),
+        None,
+    )
+    assert preflight_idx is not None, "focused workflow must have its own fail-closed preflight step"
+
+    preflight = steps[preflight_idx]
+    assert "if" not in preflight
+    assert "ORNEUR_MISSION_DATABASE_URL" in preflight["run"]
+    assert "ORNEUR_MISSION_DATABASE_URL_DIRECT" in preflight["run"]
+
+    for i, step in enumerate(steps):
+        env = step.get("env") or {}
+        if i == preflight_idx:
+            continue
+        if "ORNEUR_MISSION_DATABASE_URL" in env:
+            assert preflight_idx < i, f"step {step.get('name')!r} runs before the focused workflow's own preflight"
+
+
+def test_focused_relay_workflow_has_no_northflank_step():
+    """The whole point of the focused workflow (item 26) -- it must
+    never actually RUN a Northflank login/deploy step that could make
+    a genuinely successful Relay qualification report a failed whole-
+    job conclusion for an unrelated reason (the exact ambiguity
+    discovered in run 34385145178). Checks the actual step `run`/`env`
+    bodies, not the file's own prose explaining why there isn't one."""
+    focused_path = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "phase15-relay-security-qualification.yml"
+    data = yaml.safe_load(focused_path.read_text())
+    for step in data["jobs"]["qualify"]["steps"]:
+        run_script = step.get("run", "")
+        env = step.get("env") or {}
+        assert "northflank" not in run_script.lower()
+        assert "NORTHFLANK_API_TOKEN" not in env
+        assert "NORTHFLANK_API_TOKEN" not in str(step.get("uses", ""))
+
+
 def test_workflow_dispatch_options_include_every_gated_mode():
     """Sanity cross-check: every mode gating a mission-DB-secret step
     must also be a real, declared `workflow_dispatch` choice (a typo'd

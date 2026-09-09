@@ -732,18 +732,91 @@ def seed_registry() -> None:
     #
     # Phase 15.11.1: creation/expiry/device-association/last-seen/
     # revoke-current/revoke-other/revoke-all-others are all genuinely
-    # implemented and tested (tests/test_relay_store_live_neon.py). Stops
-    # at IMPLEMENTED, deliberately NOT VERIFIED -- this requirement's
-    # second acceptance criterion (Public Device Mode's own capability/
-    # surface restriction relative to Trusted Device, per the 15.11.2
-    # wording correction above) is Phase 15.12's Public/Trusted/Mobile
-    # capability-enforcement work, not yet built. Advancing to VERIFIED
-    # before that would be exactly the "requirement is not VERIFIED
-    # because a test can call transition()" mistake this closure exists
-    # to fix.
+    # implemented and tested (tests/test_relay_store_live_neon.py).
+    #
+    # Phase 15.12: the SECOND acceptance criterion is now also
+    # genuinely satisfied -- `orca.mission.relay_security`'s capability
+    # matrix gives Public Device a real, tested, materially narrower
+    # capability surface than Trusted Device (OPEN_TERMINAL,
+    # EDIT_FILES, RUN_TESTS, AGENT_CONTROL, VIEW_FILES, DEPLOY_CONTROL,
+    # DANGEROUS_OPERATION_CONTROL, DOWNLOAD_CONTENT, and CLIPBOARD_EXPORT
+    # are all denied to Public but permitted to Trusted --
+    # tests/test_relay_security.py::test_public_device_has_at_least_one_capability_trusted_has_that_public_lacks),
+    # while raw secret values remain absent from every Relay payload in
+    # BOTH modes (proven end-to-end against real live Neon in
+    # tests/test_relay_security_live_neon.py::test_no_raw_secrets_in_relay_snapshot_or_mobile_state_across_all_modes).
+    # Both acceptance criteria are now genuinely proven -- this
+    # requirement advances to VERIFIED.
     transition(
         "REQ-DEVICE-REVOCATION-001", RequirementStatus.IMPLEMENTED,
-        implementation_files=("orca/mission/relay_store.py",),
+        implementation_files=("orca/mission/relay_store.py", "orca/mission/relay_security.py"),
+    )
+    transition(
+        "REQ-DEVICE-REVOCATION-001", RequirementStatus.VERIFIED,
+        test_files=("tests/test_relay_store_live_neon.py", "tests/test_relay_security.py", "tests/test_relay_security_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1512-relay-security-modes",
+    )
+
+    # -- Relay Reauthentication Boundary (spec sections 7-8, 13) --
+    register(Requirement(
+        id="REQ-RELAY-REAUTH-001",
+        source_section="spec sections 7-8, 13",
+        statement="Security-sensitive Relay actions (e.g. Trusted-device enrollment, "
+                   "DEPLOY_CONTROL, DANGEROUS_OPERATION_CONTROL) require a genuinely fresh "
+                   "reauthentication -- derived from a real orca.auth password/TOTP "
+                   "verification, never a caller-supplied boolean -- bound to the "
+                   "authenticated user (and, where applicable, the Relay session), and "
+                   "expiring on its own; reauthentication permission is never confused with "
+                   "operation authorization.",
+        acceptance_criteria=(
+            "A test performs a REAL password (and, when TOTP is enabled, TOTP) "
+            "verification through orca.auth.store/orca.auth.totp and confirms a valid "
+            "fresh reauthentication context is produced only on success, never from a "
+            "boolean flag.",
+            "A test confirms a reauthentication context bound to one user/session cannot "
+            "be used to authorize an action for a different user or a different Relay "
+            "session, and that an expired context is rejected.",
+        ),
+    ))
+    transition(
+        "REQ-RELAY-REAUTH-001", RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/relay_security.py",),
+    )
+    transition(
+        "REQ-RELAY-REAUTH-001", RequirementStatus.VERIFIED,
+        test_files=("tests/test_relay_security.py", "tests/test_relay_security_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1512-relay-security-modes",
+    )
+
+    # -- Mobile Review Reduced Surface (spec sections 5, 18, 23) --
+    register(Requirement(
+        id="REQ-RELAY-MOBILEREVIEW-001",
+        source_section="spec sections 5, 18, 23",
+        statement="Mobile Review exposes a deliberately reduced review/control surface "
+                   "(mission status, diff review, tests, Production Proof, blockers, "
+                   "message/approve/reject/pause/resume/revoke) derived from the same "
+                   "canonical, already-consistent, already-secret-sanitized RelaySnapshot -- "
+                   "never a second independently-queried mission representation -- and "
+                   "denies by default a terminal, full editor, arbitrary file browsing, "
+                   "and direct deployment/command execution.",
+        acceptance_criteria=(
+            "A test confirms Mobile Review's effective capability set excludes "
+            "OPEN_TERMINAL, EDIT_FILES, VIEW_FILES, RUN_TESTS, AGENT_CONTROL, "
+            "DEPLOY_CONTROL, and DANGEROUS_OPERATION_CONTROL for both Trusted and Public "
+            "underlying device trust.",
+            "A test confirms MobileReviewState is built exclusively from the canonical "
+            "RelaySnapshot (same mission identity, revision, and consistency basis), "
+            "against real live Neon.",
+        ),
+    ))
+    transition(
+        "REQ-RELAY-MOBILEREVIEW-001", RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/relay_security.py",),
+    )
+    transition(
+        "REQ-RELAY-MOBILEREVIEW-001", RequirementStatus.VERIFIED,
+        test_files=("tests/test_relay_security.py", "tests/test_relay_security_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1512-relay-security-modes",
     )
 
     # -- Reconnect Truthfulness (spec section 26) --

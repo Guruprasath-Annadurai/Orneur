@@ -427,14 +427,34 @@ def _sanitize(value):
 
 def register_device(
     conn, *, authenticated_user_id: str, trust_level: DeviceTrustLevel, name: str | None = None,
-    now_fn=_default_clock,
+    now_fn=_default_clock, _trusted_enrollment_proof=None,
 ) -> RelayDevice:
     """Creates a durable device row OWNED BY `authenticated_user_id`
     (15.11.1 item 5) -- there is no separate `user_id` parameter a
     caller could use to durably register a device for a DIFFERENT
     user. The ID is always generated HERE, server-side (spec section
     3: 'IDs generated server-side') -- callers never supply or choose
-    one."""
+    one.
+
+    15.12 item 6: registering a TRUSTED device requires
+    `_trusted_enrollment_proof` -- an opaque object that only
+    `orca.mission.relay_security.enroll_trusted_device()` can
+    construct, and only after a genuinely fresh, correctly-bound
+    reauthentication. There is no way to reach TRUSTED trust through
+    this function directly; ordinary callers use
+    `relay_security.enroll_public_device()` /
+    `relay_security.enroll_trusted_device()` instead. This keyword is
+    intentionally private (leading underscore) -- it is not part of
+    this function's public contract, only its internal enforcement
+    mechanism."""
+    if trust_level is DeviceTrustLevel.TRUSTED:
+        proof_user_id = getattr(_trusted_enrollment_proof, "user_id", None)
+        if _trusted_enrollment_proof is None or proof_user_id != authenticated_user_id:
+            raise RelayAccessDeniedError(
+                "TRUSTED device enrollment requires a valid fresh-reauthentication proof -- "
+                "use orca.mission.relay_security.enroll_trusted_device() instead of calling "
+                "register_device() directly for TRUSTED trust."
+            )
     device_id = f"dev_{uuid.uuid4().hex[:20]}"
     now = now_fn().isoformat()
     with conn.cursor() as cur:

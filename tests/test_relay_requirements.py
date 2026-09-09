@@ -57,17 +57,40 @@ def test_canonical_req_device_revocation_001_acceptance_wording_does_not_permit_
         requirements_module.reset_registry_for_tests()
 
 
-def test_canonical_req_device_revocation_001_is_implemented_not_verified():
-    """Per the owner's explicit instruction: this requirement spans
-    Phase 15.11 + Phase 15.12 and must NOT be marked VERIFIED until
-    its Public-vs-Trusted-Device security criterion is proven there."""
+def test_canonical_req_device_revocation_001_is_now_verified_in_phase_15_12():
+    """Phase 15.12 closes the second acceptance criterion (Public
+    Device's real, tested capability/surface restriction relative to
+    Trusted Device, with raw secrets absent in BOTH) -- this
+    requirement advances from IMPLEMENTED (15.11.1) to VERIFIED here."""
     _seed_canonical_registry()
     try:
         req = requirements_module.get("REQ-DEVICE-REVOCATION-001")
-        assert req.status is RequirementStatus.IMPLEMENTED
-        assert "orca/mission/relay_store.py" in req.implementation_files
-        assert req.evidence_ref is None
-        assert req.test_files == ()
+        assert req.status is RequirementStatus.VERIFIED
+        assert "orca/mission/relay_security.py" in req.implementation_files
+        assert "tests/test_relay_security_live_neon.py" in req.test_files
+        assert req.evidence_ref is not None and req.evidence_ref.strip() != ""
+    finally:
+        requirements_module.reset_registry_for_tests()
+
+
+def test_canonical_req_relay_reauth_001_is_verified():
+    _seed_canonical_registry()
+    try:
+        req = requirements_module.get("REQ-RELAY-REAUTH-001")
+        assert req.status is RequirementStatus.VERIFIED
+        assert "orca/mission/relay_security.py" in req.implementation_files
+        assert req.evidence_ref is not None and req.evidence_ref.strip() != ""
+    finally:
+        requirements_module.reset_registry_for_tests()
+
+
+def test_canonical_req_relay_mobilereview_001_is_verified():
+    _seed_canonical_registry()
+    try:
+        req = requirements_module.get("REQ-RELAY-MOBILEREVIEW-001")
+        assert req.status is RequirementStatus.VERIFIED
+        assert "orca/mission/relay_security.py" in req.implementation_files
+        assert req.evidence_ref is not None and req.evidence_ref.strip() != ""
     finally:
         requirements_module.reset_registry_for_tests()
 
@@ -88,16 +111,16 @@ def test_canonical_req_reconnect_truth_001_remains_unimplemented():
 
 def test_seed_registry_transition_is_forward_only_and_would_reject_premature_verify():
     """Structural guarantee, not merely a policy choice: even if
-    someone tried to call `transition(..., VERIFIED)` on
-    REQ-DEVICE-REVOCATION-001 today without supplying test_files/
-    evidence_ref, the registry's own gate rejects it -- VERIFIED is
-    not reachable by assertion alone (orca.mission.requirements'
-    own documented invariant)."""
+    someone tried to skip straight to `transition(..., VERIFIED)` on
+    the still-UNIMPLEMENTED REQ-RECONNECT-TRUTH-001 today, the
+    registry's own gate rejects it -- VERIFIED is not reachable by
+    assertion alone, and not reachable by skipping IMPLEMENTED either
+    (orca.mission.requirements' own documented invariant)."""
     _seed_canonical_registry()
     try:
         from orca.mission.requirements import RequirementError
         import pytest
         with pytest.raises(RequirementError):
-            requirements_module.transition("REQ-DEVICE-REVOCATION-001", RequirementStatus.VERIFIED)
+            requirements_module.transition("REQ-RECONNECT-TRUTH-001", RequirementStatus.VERIFIED)
     finally:
         requirements_module.reset_registry_for_tests()
