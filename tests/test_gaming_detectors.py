@@ -15,6 +15,7 @@ from orca.mission.gaming_detectors import (
     analyze_revisions,
     detect_assertion_weakening,
     detect_error_suppression,
+    detect_expected_behavior_mutation,
     detect_mock_replacing_real_behavior,
     detect_skip_additions,
     detect_test_deletions,
@@ -95,6 +96,33 @@ def test_scenario_2_auth_test_weakened_to_expect_success_is_critical(repo):
     findings = analyze_revisions(str(repo), baseline, candidate, mission_id="m1")
     critical = [f for f in findings if f.severity is Severity.CRITICAL]
     assert critical, f"expected a CRITICAL finding, got: {findings!r}"
+    assert has_blocking_finding(findings)
+
+
+def test_scenario_2_strong_case_auth_deny_flipped_to_allow_is_critical(repo):
+    # Phase 15.9.1 closure item 8: the LITERAL strong case -- DENY ->
+    # ALLOW, not merely broadened to accept either. This is
+    # EXPECTED_BEHAVIOR_CHANGED, a different detector/category than
+    # the broadening case above.
+    _write(repo, "tests/test_authority_bridge.py", """
+        def test_unauthorized_denied():
+            result = "DENY"
+            assert result == "DENY"
+    """)
+    baseline = _commit(repo, "baseline: auth test expects denial")
+
+    _write(repo, "tests/test_authority_bridge.py", """
+        def test_unauthorized_denied():
+            result = "DENY"
+            assert result == "ALLOW"
+    """)
+    candidate = _commit(repo, "candidate: flipped expected outcome to ALLOW")
+
+    findings = analyze_revisions(str(repo), baseline, candidate, mission_id="m1")
+    behavior_findings = [f for f in findings if f.category is FindingCategory.EXPECTED_BEHAVIOR_CHANGED]
+    assert behavior_findings, f"expected an EXPECTED_BEHAVIOR_CHANGED finding, got: {findings!r}"
+    assert behavior_findings[0].severity is Severity.CRITICAL
+    assert behavior_findings[0].blocking is True
     assert has_blocking_finding(findings)
 
 
@@ -366,3 +394,159 @@ def test_verification_history_pass_fail_pass_not_erased_by_current_pass():
     current = filter_current_revision(history, current_revision="rev3")
     assert current == (pass2,)
     assert aggregate_requirement(current) is VerificationOutcome.PASS
+
+
+# ── Phase 15.9.1 closure item 3: security-sensitive mock replacement ─
+
+def test_closure_item_3_security_integration_replaced_by_mock_is_critical_blocking(repo):
+    _write(repo, "tests/test_authorize_flow.py", """
+        from orca.mission.operation_store import authorize_operation
+
+        def test_authorization_denies_self_approval():
+            result = authorize_operation(None, "op1", tenant_id="t1", approved_by="alice", reason="x")
+            assert result is not None
+    """)
+    baseline = _commit(repo, "baseline: real authority integration exercised")
+
+    _write(repo, "tests/test_authorize_flow.py", """
+        from unittest.mock import MagicMock
+
+        def test_authorization_denies_self_approval():
+            authorize_operation = MagicMock(return_value={"status": "AUTHORIZED"})
+            result = authorize_operation(None, "op1", tenant_id="t1", approved_by="alice", reason="x")
+            assert result is not None
+    """)
+    candidate = _commit(repo, "candidate: real authority call mocked away, test still 'verifies' authorization")
+
+    diff = get_diff_summary(str(repo), baseline, candidate)
+    findings = detect_mock_replacing_real_behavior(diff, str(repo), mission_id="m1")
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.category is FindingCategory.MOCK_REPLACES_REQUIRED_BEHAVIOR
+    assert finding.severity is Severity.CRITICAL
+    assert finding.blocking is True
+
+    # And the Court cannot ACCEPT while this finding exists.
+    from orca.mission.cognitive_court import CourtRole, CourtVerdict, CriticConclusion, CriticOutput, RiskLevel, arbiter_decide
+    from orca.mission.verification import VerificationOutcome, VerificationRecord
+    pass_record = VerificationRecord(
+        id="v1", mission_id="m1", requirement_id="REQ-AUTH-1", criterion_id=None, category="SECURITY",
+        verification_method="SECURITY_TEST", verifier_id="SecurityVerifier", started_at="2026-01-01T00:00:00Z",
+        outcome=VerificationOutcome.PASS, revision=candidate, evidence_refs=("x",),
+    )
+    all_accept = (CriticOutput(role=CourtRole.SECURITY_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    decision = arbiter_decide(
+        mission_id="m1", revision=candidate, risk_level=RiskLevel.CRITICAL, critic_outputs=all_accept,
+        findings=(finding,), required_verification_records={"REQ-AUTH-1": (pass_record,)},
+        required_requirement_ids=("REQ-AUTH-1",),
+    )
+    assert decision.verdict is not CourtVerdict.ACCEPT
+    assert decision.verdict is CourtVerdict.REJECT
+
+
+def test_ordinary_non_security_mock_stays_high_not_critical(repo):
+    # A mock introduced for a marker that is NOT in
+    # SECURITY_CRITICAL_CALL_MARKERS, in a path that is NOT
+    # security-relevant, must NOT be elevated -- this elevation is
+    # deliberately narrow, not "every mock is CRITICAL."
+    _write(repo, "tests/test_helper_thing.py", """
+        from orca.mission.some_helper import get_conn
+
+        def test_uses_conn():
+            conn = get_conn()
+            assert conn is not None
+    """)
+    baseline = _commit(repo, "baseline: real (non-security-critical-marker) helper call")
+
+    _write(repo, "tests/test_helper_thing.py", """
+        from unittest.mock import MagicMock
+
+        def test_uses_conn():
+            get_conn = MagicMock(return_value="fake-conn")
+            conn = get_conn()
+            assert conn is not None
+    """)
+    candidate = _commit(repo, "candidate: mocked a non-security-critical-marker helper")
+
+    diff = get_diff_summary(str(repo), baseline, candidate)
+    findings = detect_mock_replacing_real_behavior(diff, str(repo), mission_id="m1")
+    assert len(findings) == 1
+    assert findings[0].category is FindingCategory.MOCK_REPLACES_REQUIRED_BEHAVIOR
+    # get_conn is NOT in SECURITY_CRITICAL_CALL_MARKERS and this path
+    # is not security-relevant -- stays HIGH/non-blocking, proving the
+    # elevation in test_closure_item_3 above is narrow, not universal.
+    assert findings[0].severity is Severity.HIGH
+    assert findings[0].blocking is False
+
+
+# ── Phase 15.9.1 closure item 4: expected-behavior mutation ──────────
+
+def test_closure_item_4a_auth_deny_to_allow_is_critical(repo):
+    _write(repo, "tests/test_authz.py", """
+        def test_deny_unauthorized():
+            decision = "DENY"
+            assert decision == "DENY"
+    """)
+    baseline = _commit(repo, "baseline: expects DENY")
+    _write(repo, "tests/test_authz.py", """
+        def test_deny_unauthorized():
+            decision = "DENY"
+            assert decision == "ALLOW"
+    """)
+    candidate = _commit(repo, "candidate: expects ALLOW instead")
+
+    diff = get_diff_summary(str(repo), baseline, candidate)
+    findings = detect_expected_behavior_mutation(diff, str(repo), mission_id="m1")
+    assert len(findings) == 1
+    assert findings[0].category is FindingCategory.EXPECTED_BEHAVIOR_CHANGED
+    assert findings[0].severity is Severity.CRITICAL
+    assert findings[0].blocking is True
+
+
+def test_closure_item_4b_non_security_numeric_change_is_not_automatically_critical(repo):
+    _write(repo, "tests/test_config.py", """
+        def test_timeout_value():
+            timeout = 30
+            assert timeout == 30
+    """)
+    baseline = _commit(repo, "baseline: timeout is 30")
+    _write(repo, "tests/test_config.py", """
+        def test_timeout_value():
+            timeout = 60
+            assert timeout == 60
+    """)
+    candidate = _commit(repo, "candidate: timeout changed to 60")
+
+    diff = get_diff_summary(str(repo), baseline, candidate)
+    findings = detect_expected_behavior_mutation(diff, str(repo), mission_id="m1")
+    assert len(findings) == 1
+    assert findings[0].category is FindingCategory.EXPECTED_BEHAVIOR_CHANGED
+    # Surfaced (never silently dropped) but NOT automatically CRITICAL --
+    # not a known security flip, not a security-relevant path.
+    assert findings[0].severity is Severity.MEDIUM
+    assert findings[0].blocking is False
+
+
+def test_closure_item_4c_requirement_driven_expected_change_is_surfaced_not_discarded(repo):
+    _write(repo, "tests/test_limit.py", """
+        def test_rate_limit():
+            limit = 100
+            assert limit == 100
+    """)
+    baseline = _commit(repo, "baseline: rate limit is 100")
+    _write(repo, "tests/test_limit.py", """
+        def test_rate_limit():
+            limit = 200
+            assert limit == 200
+    """)
+    candidate = _commit(repo, "candidate: REQ-RATE-002 supersedes REQ-RATE-001, owner-approved limit increase")
+
+    diff = get_diff_summary(str(repo), baseline, candidate)
+    findings = detect_expected_behavior_mutation(diff, str(repo), mission_id="m1")
+    # Surfaced regardless of the commit message's own justification
+    # claim -- the detector never silently discards a structural
+    # change; Court/provenance policy (not this detector) decides
+    # whether the justification is acceptable.
+    assert len(findings) == 1
+    assert findings[0].category is FindingCategory.EXPECTED_BEHAVIOR_CHANGED

@@ -25,7 +25,8 @@ from enum import Enum
 from orca.mission.anti_gaming import AntiGamingFinding, critical_findings, has_blocking_finding
 from orca.mission.providers import ModelProvider, ProviderError, ProviderRequest
 from orca.mission.test_collection_diff import CollectionDelta
-from orca.mission.verification import VerificationOutcome
+from orca.mission.verification import VerificationOutcome, VerificationRecord
+from orca.mission.verification_aggregation import aggregate_requirement, filter_current_context
 
 
 def _now_iso() -> str:
@@ -128,10 +129,17 @@ def roles_for_risk(risk: RiskLevel) -> tuple[CourtRole, ...]:
         return (CourtRole.CONSTRUCTOR, CourtRole.TEST_CRITIC, CourtRole.ARBITER)
     if risk is RiskLevel.ELEVATED:
         return (CourtRole.CONSTRUCTOR, CourtRole.TEST_CRITIC, CourtRole.REGRESSION_CRITIC, CourtRole.ARBITER)
-    # HIGH and CRITICAL: full court
+    # HIGH and CRITICAL: full court -- every role is INVOKED (asked for
+    # an opinion), but Performance Critic is free to answer
+    # CriticConclusion.NOT_REQUIRED when the candidate genuinely has no
+    # meaningful performance risk (spec section 22) -- "invoked" here
+    # means "consulted", not "must produce a real measurement out of
+    # nothing." Phase 15.9.1 closure: this role was previously omitted
+    # from the set this branch actually returned, contradicting its
+    # own "full court" comment.
     return (
         CourtRole.CONSTRUCTOR, CourtRole.FALSIFIER, CourtRole.SECURITY_CRITIC,
-        CourtRole.REGRESSION_CRITIC, CourtRole.TEST_CRITIC, CourtRole.ARBITER,
+        CourtRole.REGRESSION_CRITIC, CourtRole.TEST_CRITIC, CourtRole.PERFORMANCE_CRITIC, CourtRole.ARBITER,
     )
 
 
@@ -284,13 +292,30 @@ def _try_provider_narrative(provider: ModelProvider | None, fact_summary: str, *
 def arbiter_decide(
     *, mission_id: str | None, revision: str, risk_level: RiskLevel,
     critic_outputs: tuple[CriticOutput, ...], findings: tuple[AntiGamingFinding, ...],
-    required_verification_outcomes: dict[str, VerificationOutcome],
+    required_verification_records: dict[str, tuple[VerificationRecord, ...]],
+    required_requirement_ids: tuple[str, ...] = (),
     owner_approval_required: bool = False,
 ) -> CourtDecision:
     """The ONLY function that produces a final CourtVerdict. Reads
     ONLY deterministic inputs -- no provider narrative is consulted
     here, so no model prompt can override these restrictions (spec
-    section 23's explicit invariant)."""
+    section 23's explicit invariant).
+
+    Phase 15.9.1 closure (item 5): ACCEPT is evidence-backed. The
+    caller no longer supplies a bare `dict[str, VerificationOutcome]`
+    that could be fabricated with no underlying record -- it supplies
+    real `VerificationRecord` objects (from
+    `orca.mission.verification_store`, the actual Phase 15.8 durable
+    store, or an equivalent in-memory set in tests), and this function
+    reuses `orca.mission.verification_aggregation.filter_current_context()`
+    + `aggregate_requirement()` (the SAME functions the mission gate
+    uses -- not a duplicate) to independently verify: the record's
+    `mission_id` matches THIS decision's `mission_id`, the record's
+    `revision` matches THIS decision's `revision`, and the aggregated
+    outcome is genuinely PASS. Only the real record ids that actually
+    supported an ACCEPT are written into `CourtDecision
+    .verification_refs` -- a decision that could not ACCEPT always
+    carries `verification_refs=()`."""
     roles_invoked = tuple(c.role for c in critic_outputs)
     findings_considered = tuple(f.finding_id for f in findings)
 
@@ -312,14 +337,24 @@ def arbiter_decide(
             verdict=CourtVerdict.REJECT,
         )
 
-    not_pass = {rid: o for rid, o in required_verification_outcomes.items() if o is not VerificationOutcome.PASS}
+    outcomes: dict[str, VerificationOutcome] = {}
+    verification_refs: list[str] = []
+    for req_id in required_requirement_ids:
+        records = required_verification_records.get(req_id, ())
+        current = filter_current_context(records, current_revision=revision, mission_id=mission_id)
+        outcome = aggregate_requirement(current)
+        outcomes[req_id] = outcome
+        if outcome is VerificationOutcome.PASS:
+            verification_refs.extend(r.id for r in current if r.outcome is VerificationOutcome.PASS)
+
+    not_pass = {rid: o for rid, o in outcomes.items() if o is not VerificationOutcome.PASS}
     if not_pass:
         not_pass_summary = {rid: o.value for rid, o in not_pass.items()}
         return CourtDecision(
             decision_id=_did(), mission_id=mission_id, revision=revision, risk_level=risk_level,
             roles_invoked=roles_invoked, findings_considered=findings_considered, verification_refs=(),
-            reasoning_summary=f"Required verification not PASS for: {not_pass_summary!r} -- "
-                              f"cannot ACCEPT as COMPLETED_VERIFIED.",
+            reasoning_summary=f"Required verification not PASS for: {not_pass_summary!r} (revision "
+                              f"{revision!r}, mission {mission_id!r}) -- cannot ACCEPT as COMPLETED_VERIFIED.",
             verdict=CourtVerdict.NEED_MORE_EVIDENCE,
         )
 
@@ -364,8 +399,10 @@ def arbiter_decide(
 
     return CourtDecision(
         decision_id=_did(), mission_id=mission_id, revision=revision, risk_level=risk_level,
-        roles_invoked=roles_invoked, findings_considered=findings_considered, verification_refs=(),
+        roles_invoked=roles_invoked, findings_considered=findings_considered,
+        verification_refs=tuple(verification_refs),
         reasoning_summary=f"All {len(opinions)} critic(s) support ACCEPT, no blocking finding, "
-                          f"all required verification PASS.",
+                          f"all required verification PASS (mission={mission_id!r}, revision={revision!r}, "
+                          f"verification_refs={verification_refs!r}).",
         verdict=CourtVerdict.ACCEPT,
     )

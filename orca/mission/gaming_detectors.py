@@ -120,6 +120,99 @@ def _eq_and_in_comparisons(func: ast.FunctionDef) -> tuple[dict[str, str], dict[
     return eq_compares, in_compares
 
 
+def _eq_literal_map(func: ast.FunctionDef) -> dict[str, object]:
+    """Maps the dumped left-hand-side expression of every single-op
+    `==` Compare against a LITERAL Constant to that constant's real
+    Python value (str/int/bool/None) -- used to detect an expected
+    literal outcome CHANGING (e.g. `"DENY"` -> `"ALLOW"`), distinct
+    from broadening (`==` -> `in (...)`, already covered by
+    `_eq_and_in_comparisons`)."""
+    result: dict[str, object] = {}
+    for node in ast.walk(func):
+        if (
+            isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq)
+            and len(node.comparators) == 1 and isinstance(node.comparators[0], ast.Constant)
+        ):
+            result[ast.dump(node.left)] = node.comparators[0].value
+    return result
+
+
+#: Known security-sensitive "denied/failed" -> "allowed/succeeded"
+#: value pairs (case-insensitive for strings). Deliberately narrow --
+#: this is a disclosed heuristic, not a claim of complete coverage.
+_SECURITY_SENSITIVE_FLIPS: frozenset[tuple[object, object]] = frozenset({
+    ("deny", "allow"), ("denied", "allowed"), ("reject", "accept"), ("rejected", "accepted"),
+    ("fail", "success"), ("failure", "success"), ("failed", "succeeded"),
+    ("false", "true"), (False, True),
+    (403, 200), (401, 200), (403, 204), (401, 204),
+})
+
+
+def _is_security_sensitive_flip(base_value: object, candidate_value: object) -> bool:
+    def _norm(v: object) -> object:
+        return v.lower() if isinstance(v, str) else v
+    return (_norm(base_value), _norm(candidate_value)) in _SECURITY_SENSITIVE_FLIPS
+
+
+def detect_expected_behavior_mutation(
+    diff: DiffSummary, repo_path: str, *, mission_id: str | None,
+) -> tuple[AntiGamingFinding, ...]:
+    """Phase 15.9.1 closure (item 4): detects a test's expected
+    LITERAL outcome changing for the same left-hand expression
+    (`assert status == 403` -> `assert status == 200`,
+    `assert result == "DENY"` -> `assert result == "ALLOW"`) --
+    distinct from the broadening pattern `detect_assertion_weakening`
+    already covers (`==` widened to `in (...)`). Every such change is
+    surfaced as EXPECTED_BEHAVIOR_CHANGED regardless of cause; the
+    detector never infers intent ("the developer cheated") -- it only
+    states the structural fact ("the expected value changed"). A
+    known security-sensitive flip (deny->allow, 403->200, etc.) OR a
+    change in a security-relevant file elevates to CRITICAL/blocking;
+    an ordinary non-security literal change (e.g. a timeout value)
+    stays MEDIUM/non-blocking, still visible for Court/provenance
+    review, never silently discarded."""
+    findings = []
+    for path in diff.modified_files:
+        if not (path.startswith("tests/") or "/tests/" in f"/{path}"):
+            continue
+        baseline_src = read_file_at_revision(repo_path, diff.baseline_revision, path)
+        candidate_src = read_file_at_revision(repo_path, diff.candidate_revision, path)
+        if baseline_src is None or candidate_src is None:
+            continue
+        baseline_funcs = _parse_functions(baseline_src)
+        candidate_funcs = _parse_functions(candidate_src)
+        for name, cand_func in candidate_funcs.items():
+            base_func = baseline_funcs.get(name)
+            if base_func is None:
+                continue
+            base_map = _eq_literal_map(base_func)
+            cand_map = _eq_literal_map(cand_func)
+            for left_dump, base_value in base_map.items():
+                if left_dump not in cand_map:
+                    continue
+                cand_value = cand_map[left_dump]
+                if cand_value == base_value:
+                    continue
+                security_flip = _is_security_sensitive_flip(base_value, cand_value)
+                elevated = security_flip or is_security_relevant(path)
+                findings.append(AntiGamingFinding(
+                    finding_id=_fid(), mission_id=mission_id, revision=diff.candidate_revision,
+                    baseline_revision=diff.baseline_revision,
+                    category=FindingCategory.EXPECTED_BEHAVIOR_CHANGED,
+                    severity=Severity.CRITICAL if elevated else Severity.MEDIUM,
+                    file_path=path,
+                    description=f"Test {name!r}'s expected literal value changed from {base_value!r} "
+                                f"to {cand_value!r} for the same expression -- the expected behavior "
+                                f"changed; this finding does not assert why.",
+                    detector_id="detect_expected_behavior_mutation", detector_version=DETECTOR_VERSION,
+                    confidence_basis=f"AST Eq-comparison literal for the same left-hand expression: "
+                                      f"baseline={base_value!r}, candidate={cand_value!r}; "
+                                      f"known-security-flip={security_flip}, security_path={is_security_relevant(path)}.",
+                    test_ids=(name,), security_relevance=elevated, blocking=elevated,
+                ))
+    return tuple(findings)
+
+
 def _except_pass_count(source: str) -> int:
     try:
         tree = ast.parse(source)
@@ -348,6 +441,17 @@ def _imported_names(source: str) -> set[str]:
     return names
 
 
+#: Real call markers whose mocking-away is ALWAYS security-sensitive,
+#: regardless of which file it happens in -- these are the exact
+#: domains spec section 3 (Phase 15.9.1 closure) names: authority
+#: bridge, authorization, sandbox enforcement, nonce/replay, tenant
+#: isolation, secret/security validation.
+SECURITY_CRITICAL_CALL_MARKERS: frozenset[str] = frozenset({
+    "authorize_operation", "resolve_and_consume_lease", "issue_operation_lease",
+    "consume_operation_lease", "run_in_container", "run_command",
+})
+
+
 def detect_mock_replacing_real_behavior(
     diff: DiffSummary, repo_path: str, *, mission_id: str | None,
     real_call_markers: frozenset[str] = frozenset({
@@ -363,7 +467,17 @@ def detect_mock_replacing_real_behavior(
     as "still importing the real thing") while introducing `Mock`/
     `MagicMock`/`monkeypatch.setattr`, is flagged for review -- the
     concern is losing real integration coverage while a test file's
-    NAME/labeling implies it still exercises the real thing."""
+    NAME/labeling implies it still exercises the real thing.
+
+    Phase 15.9.1 closure (item 3): a plain HIGH/blocking=False finding
+    is not enough when the mocked-away call is itself security-critical
+    (`SECURITY_CRITICAL_CALL_MARKERS`) OR the file is otherwise
+    security-relevant (`is_security_relevant()`) -- in that case the
+    finding is CRITICAL and blocking, exactly like every other
+    security-sensitive category in this module. An ordinary non-
+    security unit-test mock (a marker outside that set, in a non-
+    security path) stays HIGH/non-blocking -- this elevation is
+    deliberately narrow, not "every mock is CRITICAL.\""""
     findings = []
     for path in diff.modified_files:
         if not (path.startswith("tests/") or "/tests/" in f"/{path}"):
@@ -382,20 +496,30 @@ def detect_mock_replacing_real_behavior(
                     and "monkeypatch.setattr" not in baseline_src
                 )
                 if gained_mock:
+                    is_security_critical = (
+                        marker in SECURITY_CRITICAL_CALL_MARKERS or is_security_relevant(path)
+                    )
                     findings.append(AntiGamingFinding(
                         finding_id=_fid(), mission_id=mission_id, revision=diff.candidate_revision,
                         baseline_revision=diff.baseline_revision,
                         category=FindingCategory.MOCK_REPLACES_REQUIRED_BEHAVIOR,
-                        severity=Severity.HIGH,
+                        severity=Severity.CRITICAL if is_security_critical else Severity.HIGH,
                         file_path=path,
-                        description=f"{path} referenced real call {marker!r} at baseline; at candidate "
-                                    f"that reference is gone and mocking was introduced -- review whether "
-                                    f"this test still verifies real integration behavior.",
+                        description=(
+                            f"{path} previously exercised real SECURITY-CRITICAL behavior via "
+                            f"{marker!r}; at candidate that reference is gone and mocking was "
+                            f"introduced while the test still appears to verify the security behavior."
+                            if is_security_critical else
+                            f"{path} referenced real call {marker!r} at baseline; at candidate "
+                            f"that reference is gone and mocking was introduced -- review whether "
+                            f"this test still verifies real integration behavior."
+                        ),
                         detector_id="detect_mock_replacing_real_behavior", detector_version=DETECTOR_VERSION,
                         confidence_basis=f"{marker!r} imported at baseline (AST import analysis), "
                                           f"no longer imported at candidate; "
-                                          f"Mock/MagicMock/monkeypatch.setattr newly present in candidate.",
-                        security_relevance=is_security_relevant(path), blocking=False,
+                                          f"Mock/MagicMock/monkeypatch.setattr newly present in candidate; "
+                                          f"security-critical marker or path: {is_security_critical}.",
+                        security_relevance=is_security_critical, blocking=is_security_critical,
                     ))
     return tuple(findings)
 
@@ -443,6 +567,7 @@ def analyze_revisions(
     findings.extend(detect_test_deletions(diff, repo_path, mission_id=mission_id))
     findings.extend(detect_skip_additions(diff, repo_path, mission_id=mission_id))
     findings.extend(detect_assertion_weakening(diff, repo_path, mission_id=mission_id))
+    findings.extend(detect_expected_behavior_mutation(diff, repo_path, mission_id=mission_id))
     findings.extend(detect_error_suppression(diff, repo_path, mission_id=mission_id))
     findings.extend(detect_mock_replacing_real_behavior(diff, repo_path, mission_id=mission_id))
     findings.extend(detect_hardcoded_bypass(diff, repo_path, mission_id=mission_id))

@@ -73,6 +73,31 @@ def filter_current_revision(
     return tuple(r for r in records if not is_evidence_stale(r, current_revision=current_revision))
 
 
+def is_evidence_for_other_mission(record: VerificationRecord, *, mission_id: str | None) -> bool:
+    """A record whose `mission_id` does not match the expected
+    mission is for a DIFFERENT mission -- it must never silently
+    count as proof for this one, mirroring `is_evidence_stale()`'s
+    revision-binding discipline (Phase 15.9.1 closure item 2/5)."""
+    if mission_id is None:
+        return False  # no mission scoping requested -- caller's choice, not this function's to enforce
+    return record.mission_id != mission_id
+
+
+def filter_current_context(
+    records: tuple[VerificationRecord, ...], *, current_revision: str, mission_id: str | None = None,
+) -> tuple[VerificationRecord, ...]:
+    """`filter_current_revision()` PLUS mission binding: a record from
+    mission B must never count as proof for mission A, exactly as a
+    record from revision A must never count as proof for revision B.
+    This is the single function `orca.mission.cognitive_court
+    .arbiter_decide()` and `orca.mission.mission_verification_gate`
+    both use, so the binding rule lives in exactly one place."""
+    current_revision_records = filter_current_revision(records, current_revision=current_revision)
+    if mission_id is None:
+        return current_revision_records
+    return tuple(r for r in current_revision_records if not is_evidence_for_other_mission(r, mission_id=mission_id))
+
+
 # ── Verification plan check ordering (spec section 22) ──────────────
 
 @dataclass(frozen=True)
