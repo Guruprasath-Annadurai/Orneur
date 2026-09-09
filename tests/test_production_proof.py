@@ -1,9 +1,9 @@
 """
-Phase 15.10 -- Production Proof engine tests: typed model, category
-outcomes, requirement-truth reuse of Phase 15.9.4's authoritative
-scope evaluator, Court/anti-gaming integration, release-state policy,
-hashing, human-readable rendering, secret redaction, and the full
-failure-injection matrix (spec section 32).
+Phase 15.10 -- Production Proof engine tests, hardened by Phase 15.10.1's
+integrity closure: category-identity binding, Court context binding,
+anti-gaming evidence provenance, evidence-derived release policy,
+evidence-backed non-VerificationRecord PASS categories, deployment/
+rollback revision integrity, and the full failure-injection matrix.
 """
 from __future__ import annotations
 
@@ -12,14 +12,24 @@ import pytest
 from orca.mission.anti_gaming import AntiGamingFinding, FindingCategory, Severity
 from orca.mission.cognitive_court import CourtDecision, CourtRole, CourtVerdict, RiskLevel
 from orca.mission.production_proof import (
+    CATEGORY_AUTHORITY,
+    CATEGORY_BUILD,
+    CATEGORY_E2E_TEST,
+    CATEGORY_INTEGRATION_TEST,
+    CATEGORY_SECURITY,
+    CATEGORY_UNIT_TEST,
     NOT_ENGINEERING_READY,
+    AntiGamingAnalysisEvidence,
     DeploymentResult,
     DeploymentState,
+    ExternalPublicationConfirmation,
     ProductionProofError,
     RegressionResult,
+    ReleaseQualificationPolicy,
+    RollbackResult,
     canonical_json,
-    category_from_records,
     compute_proof_hash,
+    evaluate_scoped_category,
     generate_production_proof,
     not_applicable_category,
     redact_secrets,
@@ -33,13 +43,31 @@ from orca.mission.verification_aggregation import RequiredVerificationScope, Sco
 _UNIT_TEST_SCOPE = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST"}))
 _CRIT_SCOPE = RequiredVerificationScope(criterion_ids=frozenset({"c1", "c2"}))
 
+# Fixtures in this file exercise only build/unit_tests/security by
+# design -- integration/e2e/regression/authority are explicitly marked
+# NOT_APPLICABLE by policy for tests that aren't specifically about
+# them, rather than silently omitted (spec item 5's own instruction:
+# absence of evidence must never make a category quietly optional).
+_MINIMAL_POLICY = ReleaseQualificationPolicy(
+    engineering_not_applicable={
+        "integration_tests": "not exercised by this unit test fixture",
+        "e2e_tests": "not exercised by this unit test fixture",
+        "regression": "not exercised by this unit test fixture",
+        "authority": "not exercised by this unit test fixture",
+    },
+)
 
-def _rec(**overrides):
+
+def _rec(category=CATEGORY_UNIT_TEST, requirement_id="REQ-X-1", outcome=VerificationOutcome.PASS,
+         mission_id="m1", revision="rev1", **overrides):
     defaults = dict(
-        id="v1", mission_id="m1", requirement_id="REQ-X-1", criterion_id=None, category="UNIT_TEST",
-        verification_method="UNIT_TEST", verifier_id="UnitTestVerifier", started_at="2026-01-01T00:00:00Z",
-        outcome=VerificationOutcome.PASS, revision="rev1", evidence_refs=("x",),
+        id=f"ver_{category}_{requirement_id}_{mission_id}_{revision}_{overrides.get('id_suffix', '0')}",
+        mission_id=mission_id, requirement_id=requirement_id,
+        criterion_id=None, category=category, verification_method=category, verifier_id="TestVerifier",
+        started_at="2026-01-01T00:00:00Z", outcome=outcome, revision=revision,
+        evidence_refs=("x",) if outcome == VerificationOutcome.PASS else (),
     )
+    overrides.pop("id_suffix", None)
     defaults.update(overrides)
     return VerificationRecord(**defaults)
 
@@ -65,90 +93,671 @@ def _finding(**overrides):
     return AntiGamingFinding(**defaults)
 
 
+def _ag_evidence(**overrides):
+    defaults = dict(
+        analysis_id="ag1", mission_id="m1", baseline_revision="rev0", candidate_revision="rev1",
+        detector_ids=("detect_assertion_weakening",),
+    )
+    defaults.update(overrides)
+    return AntiGamingAnalysisEvidence(**defaults)
+
+
 def _happy_path_kwargs(**overrides):
-    record = _rec()
+    unit_rec = _rec(category=CATEGORY_UNIT_TEST, requirement_id="REQ-X-1")
+    build_rec = _rec(category=CATEGORY_BUILD, requirement_id=None, id_suffix="build")
+    sec_rec = _rec(category=CATEGORY_SECURITY, requirement_id=None, id_suffix="sec")
     kwargs = dict(
         mission_id="m1", revision="rev1", required_requirement_ids=("REQ-X-1",),
         required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
-        records_by_requirement={"REQ-X-1": (record,)},
-        court_decision=_accept_decision(), anti_gaming_analysis_performed=True,
-        anti_gaming_baseline_revision="rev0", anti_gaming_candidate_revision="rev1",
-        build_records=(record,), unit_test_records=(record,),
+        records_by_requirement={"REQ-X-1": (unit_rec,)},
+        court_decision=_accept_decision(), anti_gaming_evidence=_ag_evidence(),
+        build_records=(build_rec,), unit_test_records=(unit_rec,),
         unit_test_stats={"collected": 1, "passed": 1, "failed": 0, "skipped": 0, "errors": 0},
-        security_records=(record,),
+        security_records=(sec_rec,), release_policy=_MINIMAL_POLICY,
     )
     kwargs.update(overrides)
     return kwargs
 
 
-# ── Section 39.3: missing evidence never becomes PASS ────────────────
+# ══════════════════════════════════════════════════════════════════
+# Item 1: VerificationRecord category + context binding
+# ══════════════════════════════════════════════════════════════════
 
-def test_no_records_for_requirement_is_unverified_not_pass():
-    proof = generate_production_proof(**_happy_path_kwargs(
-        records_by_requirement={"REQ-X-1": ()},
-    ))
-    assert proof.requirements_satisfied == ()
-    assert "REQ-X-1" in proof.requirements_unresolved
-    assert proof.release_state == NOT_ENGINEERING_READY
+def test_a_unit_test_record_as_build_evidence_cannot_pass_build():
+    unit_rec = _rec(category=CATEGORY_UNIT_TEST)
+    proof = generate_production_proof(**_happy_path_kwargs(build_records=(unit_rec,)))
+    assert proof.build.status is not VerificationOutcome.PASS
 
 
-def test_build_not_run_is_unverified():
-    proof = generate_production_proof(**_happy_path_kwargs(build_records=()))
+def test_b_unit_test_record_as_security_evidence_cannot_pass_security():
+    unit_rec = _rec(category=CATEGORY_UNIT_TEST)
+    proof = generate_production_proof(**_happy_path_kwargs(security_records=(unit_rec,)))
+    assert proof.security.status is not VerificationOutcome.PASS
+
+
+def test_c_stale_build_pass_record_is_unverified():
+    stale_build = _rec(category=CATEGORY_BUILD, requirement_id=None, revision="rev0", id_suffix="stale")
+    proof = generate_production_proof(**_happy_path_kwargs(build_records=(stale_build,)))
     assert proof.build.status is VerificationOutcome.UNVERIFIED
-    assert proof.release_state == NOT_ENGINEERING_READY
 
 
-def test_security_not_run_is_unverified():
-    proof = generate_production_proof(**_happy_path_kwargs(security_records=()))
+def test_d_cross_mission_security_pass_is_unverified():
+    other_mission = _rec(category=CATEGORY_SECURITY, requirement_id=None, mission_id="m2", id_suffix="xm")
+    proof = generate_production_proof(**_happy_path_kwargs(security_records=(other_mission,)))
     assert proof.security.status is VerificationOutcome.UNVERIFIED
 
 
-def test_authority_not_run_is_unverified():
-    proof = generate_production_proof(**_happy_path_kwargs())
+def test_e_wrong_category_authority_evidence_is_unverified():
+    wrong_cat = _rec(category=CATEGORY_UNIT_TEST, requirement_id=None, id_suffix="wrongcat")
+    proof = generate_production_proof(**_happy_path_kwargs(authority_records=(wrong_cat,)))
     assert proof.authority.status is VerificationOutcome.UNVERIFIED
 
 
-def test_supply_chain_unknown_defaults_unverified_not_pass():
+def test_f_genuine_correctly_scoped_build_record_can_pass():
     proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.supply_chain.status is VerificationOutcome.UNVERIFIED
+    assert proof.build.status is VerificationOutcome.PASS
+    assert proof.build.evidence_refs
 
 
-def test_licensing_unresolved_defaults_unverified():
+def test_g_genuine_correctly_scoped_security_record_can_pass():
     proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.licensing.status is VerificationOutcome.UNVERIFIED
+    assert proof.security.status is VerificationOutcome.PASS
 
 
-# ── Section 4: authoritative scope must be explicit / fail closed ───
+def test_h_genuine_correctly_scoped_authority_record_can_pass():
+    auth_rec = _rec(category=CATEGORY_AUTHORITY, requirement_id=None, id_suffix="auth")
+    policy = ReleaseQualificationPolicy(engineering_not_applicable={
+        "integration_tests": "n/a", "e2e_tests": "n/a", "regression": "n/a",
+    })
+    proof = generate_production_proof(**_happy_path_kwargs(authority_records=(auth_rec,), release_policy=policy))
+    assert proof.authority.status is VerificationOutcome.PASS
+
+
+def test_i_unit_integration_e2e_remain_independently_bound():
+    unit_rec = _rec(category=CATEGORY_UNIT_TEST)
+    integ_rec = _rec(category=CATEGORY_INTEGRATION_TEST, requirement_id=None, id_suffix="integ")
+    proof = generate_production_proof(**_happy_path_kwargs(
+        integration_test_records=(integ_rec,),
+        integration_test_stats={"collected": 1, "passed": 1, "failed": 0, "skipped": 0, "errors": 0},
+    ))
+    assert proof.unit_tests.status is VerificationOutcome.PASS
+    assert proof.integration_tests.status is VerificationOutcome.PASS
+    assert proof.e2e_tests.status is VerificationOutcome.UNVERIFIED
+    # a UNIT_TEST record supplied as e2e evidence must not satisfy e2e:
+    proof2 = generate_production_proof(**_happy_path_kwargs(e2e_test_records=(unit_rec,)))
+    assert proof2.e2e_tests.status is not VerificationOutcome.PASS
+
+
+def test_evaluate_scoped_category_directly_rejects_wrong_category():
+    wrong = _rec(category=CATEGORY_UNIT_TEST, requirement_id=None)
+    result = evaluate_scoped_category(
+        (wrong,), expected_category=CATEGORY_BUILD, mission_id="m1", revision="rev1", not_run_summary="not run",
+    )
+    assert result.status is VerificationOutcome.UNVERIFIED
+    assert "none matched" in result.summary
+
+
+# ══════════════════════════════════════════════════════════════════
+# Item 2: Court decision must be current-context bound
+# ══════════════════════════════════════════════════════════════════
+
+def test_stale_court_accept_blocked():
+    stale = _accept_decision(revision="rev0")
+    proof = generate_production_proof(**_happy_path_kwargs(court_decision=stale))
+    assert proof.cognitive_court.context_bound is False
+    assert proof.release_state == NOT_ENGINEERING_READY
+    assert any("stale or cross-mission" in b for b in proof.blockers)
+
+
+def test_cross_mission_court_accept_blocked():
+    cross = _accept_decision(mission_id="m2")
+    proof = generate_production_proof(**_happy_path_kwargs(court_decision=cross))
+    assert proof.cognitive_court.context_bound is False
+    assert proof.release_state == NOT_ENGINEERING_READY
+
+
+def test_matching_current_court_accept_legitimate():
+    proof = generate_production_proof(**_happy_path_kwargs())
+    assert proof.cognitive_court.context_bound is True
+    assert proof.release_state == "ENGINEERING_READY"
+
+
+# ══════════════════════════════════════════════════════════════════
+# Item 3: fabricated Court durability removed
+# ══════════════════════════════════════════════════════════════════
+
+def test_court_durability_cannot_be_asserted_by_caller():
+    import inspect
+    sig = inspect.signature(generate_production_proof)
+    assert "court_decision_durable" not in sig.parameters
+
+
+def test_court_snapshot_always_in_process_non_durable():
+    proof = generate_production_proof(**_happy_path_kwargs())
+    assert proof.cognitive_court.durable is False
+    assert proof.cognitive_court.evidence_source == "IN_PROCESS_SNAPSHOT"
+    assert any("not independently durable" in w for w in proof.warnings)
+
+
+# ══════════════════════════════════════════════════════════════════
+# Item 4: anti-gaming analysis needs evidence
+# ══════════════════════════════════════════════════════════════════
+
+def test_no_analysis_evidence_means_not_performed():
+    kwargs = _happy_path_kwargs()
+    kwargs["anti_gaming_evidence"] = None
+    proof = generate_production_proof(**kwargs)
+    assert proof.anti_test_gaming.analysis_performed is False
+    assert proof.release_state == NOT_ENGINEERING_READY
+
+
+def test_analysis_evidence_zero_findings_counts_as_analysis_performed():
+    proof = generate_production_proof(**_happy_path_kwargs())
+    assert proof.anti_test_gaming.analysis_performed is True
+    assert proof.anti_test_gaming.total_findings == 0
+    assert proof.release_state == "ENGINEERING_READY"
+
+
+def test_stale_analysis_evidence_cannot_count():
+    stale = _ag_evidence(candidate_revision="rev0")
+    proof = generate_production_proof(**_happy_path_kwargs(anti_gaming_evidence=stale))
+    assert proof.anti_test_gaming.analysis_performed is False
+
+
+def test_cross_mission_analysis_evidence_cannot_count():
+    cross = _ag_evidence(mission_id="m2")
+    proof = generate_production_proof(**_happy_path_kwargs(anti_gaming_evidence=cross))
+    assert proof.anti_test_gaming.analysis_performed is False
+
+
+def test_analysis_evidence_with_blocking_finding_still_blocks():
+    ev = _ag_evidence(findings=(_finding(),))
+    proof = generate_production_proof(**_happy_path_kwargs(anti_gaming_evidence=ev))
+    assert proof.anti_test_gaming.blocking_finding_ids == ("f1",)
+    assert proof.release_state == NOT_ENGINEERING_READY
+
+
+# ══════════════════════════════════════════════════════════════════
+# Item 5: release state must be evidence-derived
+# ══════════════════════════════════════════════════════════════════
+
+def test_raw_submission_ready_boolean_no_longer_exists():
+    import inspect
+    sig = inspect.signature(generate_production_proof)
+    assert "submission_ready_satisfied" not in sig.parameters
+
+
+def test_raw_release_candidate_boolean_no_longer_exists():
+    import inspect
+    sig = inspect.signature(generate_production_proof)
+    assert "release_candidate_satisfied" not in sig.parameters
+
+
+def test_engineering_ready_reachable_with_minimal_policy():
+    proof = generate_production_proof(**_happy_path_kwargs())
+    assert proof.release_state == "ENGINEERING_READY"
+
+
+def test_submission_ready_requires_policy_categories_pass():
+    from orca.mission.production_proof import evidence_backed_pass
+    supply_chain_pass = generate_production_proof(**_happy_path_kwargs(
+        supply_chain=evidence_backed_pass("dependency scan clean", evidence_refs=("scan:1",)),
+        release_policy=ReleaseQualificationPolicy(
+            engineering_not_applicable=_MINIMAL_POLICY.engineering_not_applicable,
+            submission_required=frozenset({"supply_chain"}),
+        ),
+    ))
+    assert supply_chain_pass.release_state == "SUBMISSION_READY"
+
+
+def test_required_supply_chain_unverified_blocks_release_candidate():
+    policy = ReleaseQualificationPolicy(
+        engineering_not_applicable=_MINIMAL_POLICY.engineering_not_applicable,
+        submission_required=frozenset(),
+        release_candidate_required=frozenset({"supply_chain", "release_build", "rollback"}),
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(release_policy=policy))
+    # all base engineering categories PASS, but supply_chain/release_build/rollback
+    # required by policy remain UNVERIFIED -- cannot reach RELEASE_CANDIDATE.
+    assert proof.build.status is VerificationOutcome.PASS
+    assert proof.unit_tests.status is VerificationOutcome.PASS
+    assert proof.security.status is VerificationOutcome.PASS
+    assert proof.release_state != "RELEASE_CANDIDATE"
+    assert any("supply_chain" in b for b in proof.blockers) or any("release_build" in b for b in proof.blockers)
+
+
+def test_release_candidate_reachable_when_policy_categories_genuinely_pass():
+    from orca.mission.production_proof import evidence_backed_pass
+    policy = ReleaseQualificationPolicy(
+        engineering_not_applicable=_MINIMAL_POLICY.engineering_not_applicable,
+        submission_required=frozenset({"supply_chain"}),
+        release_candidate_required=frozenset({"release_build"}),
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(
+        supply_chain=evidence_backed_pass("scanned", evidence_refs=("scan:1",)),
+        release_build=evidence_backed_pass("built", evidence_refs=("artifact:1",)),
+        release_policy=policy,
+    ))
+    assert proof.release_state == "RELEASE_CANDIDATE"
+
+
+def test_published_requires_typed_external_confirmation():
+    policy = ReleaseQualificationPolicy(
+        engineering_not_applicable=_MINIMAL_POLICY.engineering_not_applicable,
+        submission_stage_addressed=True, release_candidate_stage_addressed=True,
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(release_policy=policy))
+    assert proof.release_state == "RELEASE_CANDIDATE"
+    confirmation = ExternalPublicationConfirmation(
+        source="app-store-connect", timestamp="2026-01-02T00:00:00Z", target="production",
+        evidence_reference="submission:12345", revision="rev1",
+    )
+    proof2 = generate_production_proof(**_happy_path_kwargs(
+        release_policy=policy, external_publication_confirmation=confirmation,
+    ))
+    assert proof2.release_state == "PUBLISHED"
+
+
+def test_published_unreachable_without_confirmation():
+    proof = generate_production_proof(**_happy_path_kwargs())
+    assert proof.release_state != "PUBLISHED"
+
+
+def test_external_confirmation_revision_mismatch_cannot_publish():
+    confirmation = ExternalPublicationConfirmation(
+        source="app-store-connect", timestamp="2026-01-02T00:00:00Z", target="production",
+        evidence_reference="submission:12345", revision="rev-different",
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(external_publication_confirmation=confirmation))
+    assert proof.release_state != "PUBLISHED"
+
+
+def test_engineering_not_applicable_requires_reason():
+    with pytest.raises(ProductionProofError):
+        ReleaseQualificationPolicy(engineering_not_applicable={"integration_tests": ""})
+
+
+# ══════════════════════════════════════════════════════════════════
+# Item 6: evidence-backed non-VerificationRecord PASS categories
+# ══════════════════════════════════════════════════════════════════
+
+def test_bare_pass_proof_category_rejected():
+    from orca.mission.production_proof import ProofCategory
+    with pytest.raises(ProductionProofError):
+        ProofCategory(status=VerificationOutcome.PASS, summary="trust me")
+
+
+def test_evidence_backed_pass_requires_real_refs():
+    from orca.mission.production_proof import evidence_backed_pass
+    with pytest.raises(ProductionProofError):
+        evidence_backed_pass("trust me", evidence_refs=())
+
+
+def test_evidence_backed_pass_with_real_refs_accepted():
+    from orca.mission.production_proof import evidence_backed_pass
+    cat = evidence_backed_pass("real scan performed", evidence_refs=("scan:abc123",))
+    assert cat.status is VerificationOutcome.PASS
+    assert cat.evidence_refs == ("scan:abc123",)
+
+
+def test_not_applicable_still_requires_real_reason():
+    with pytest.raises(ProductionProofError):
+        not_applicable_category("")
+
+
+def test_unverified_may_have_no_evidence():
+    cat = unverified_category("no scan performed")
+    assert cat.status is VerificationOutcome.UNVERIFIED
+    assert cat.evidence_refs == ()
+
+
+# ══════════════════════════════════════════════════════════════════
+# Item 7: deployment + rollback revision integrity
+# ══════════════════════════════════════════════════════════════════
+
+def test_reva_deployment_revb_proof_deployment_unverified():
+    from orca.mission.production_proof import launch_evidence_from_proof
+    old_deploy = DeploymentResult(
+        state=DeploymentState.PRODUCTION_DEPLOYED, revision="revA", environment_identity="prod",
+        deployed_at="2026-01-01T00:00:00Z",
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(revision="revB", deployment=old_deploy))
+    evidence = launch_evidence_from_proof(proof)
+    assert evidence["deployment_readiness"] is None
+    assert any("does not match" in w for w in proof.warnings)
+
+
+def test_matching_revision_deployment_is_legitimate_readiness():
+    from orca.mission.production_proof import launch_evidence_from_proof
+    current_deploy = DeploymentResult(
+        state=DeploymentState.PRODUCTION_DEPLOYED, revision="rev1", environment_identity="prod",
+        deployed_at="2026-01-01T00:00:00Z",
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(deployment=current_deploy))
+    evidence = launch_evidence_from_proof(proof)
+    assert evidence["deployment_readiness"] is True
+
+
+def test_rollback_proven_with_no_current_deployment_cannot_count():
+    from orca.mission.production_proof import launch_evidence_from_proof
+    claimed_rollback = RollbackResult(strategy_documented=True, procedure_tested=True, proven_for_current_deployment=True)
+    proof = generate_production_proof(**_happy_path_kwargs(rollback=claimed_rollback))
+    evidence = launch_evidence_from_proof(proof)
+    assert evidence["rollback_readiness"] is None
+
+
+def test_rollback_proven_while_procedure_untested_cannot_count():
+    from orca.mission.production_proof import launch_evidence_from_proof
+    current_deploy = DeploymentResult(
+        state=DeploymentState.PRODUCTION_DEPLOYED, revision="rev1", environment_identity="prod",
+        deployed_at="2026-01-01T00:00:00Z",
+    )
+    claimed_rollback = RollbackResult(strategy_documented=True, procedure_tested=False, proven_for_current_deployment=True)
+    proof = generate_production_proof(**_happy_path_kwargs(deployment=current_deploy, rollback=claimed_rollback))
+    evidence = launch_evidence_from_proof(proof)
+    assert evidence["rollback_readiness"] is None
+
+
+def test_rollback_genuinely_proven_with_current_deployment_counts():
+    from orca.mission.production_proof import launch_evidence_from_proof
+    current_deploy = DeploymentResult(
+        state=DeploymentState.PRODUCTION_DEPLOYED, revision="rev1", environment_identity="prod",
+        deployed_at="2026-01-01T00:00:00Z",
+    )
+    real_rollback = RollbackResult(strategy_documented=True, procedure_tested=True, proven_for_current_deployment=True,
+                                    method="git revert / redeploy known-good commit")
+    proof = generate_production_proof(**_happy_path_kwargs(deployment=current_deploy, rollback=real_rollback))
+    evidence = launch_evidence_from_proof(proof)
+    assert evidence["rollback_readiness"] is True
+
+
+# ══════════════════════════════════════════════════════════════════
+# Item 9: stale-proof context fingerprint
+# ══════════════════════════════════════════════════════════════════
+
+def test_same_context_not_stale():
+    from orca.mission.production_proof import is_proof_stale
+    proof = generate_production_proof(**_happy_path_kwargs())
+    stale = is_proof_stale(
+        proof, current_revision="rev1", current_required_requirement_ids=("REQ-X-1",),
+        current_required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
+    )
+    assert stale is False
+
+
+def test_new_required_requirement_makes_stale():
+    from orca.mission.production_proof import is_proof_stale
+    proof = generate_production_proof(**_happy_path_kwargs())
+    stale = is_proof_stale(
+        proof, current_revision="rev1", current_required_requirement_ids=("REQ-X-1", "REQ-Y-1"),
+        current_required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE, "REQ-Y-1": _UNIT_TEST_SCOPE},
+    )
+    assert stale is True
+
+
+def test_removed_required_requirement_makes_stale():
+    from orca.mission.production_proof import is_proof_stale
+    proof = generate_production_proof(**_happy_path_kwargs())
+    stale = is_proof_stale(
+        proof, current_revision="rev1", current_required_requirement_ids=(),
+        current_required_scopes_by_requirement={},
+    )
+    assert stale is True
+
+
+def test_scope_change_makes_stale():
+    from orca.mission.production_proof import is_proof_stale
+    proof = generate_production_proof(**_happy_path_kwargs())
+    wider = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST", "SECURITY_TEST"}))
+    stale = is_proof_stale(
+        proof, current_revision="rev1", current_required_requirement_ids=("REQ-X-1",),
+        current_required_scopes_by_requirement={"REQ-X-1": wider},
+    )
+    assert stale is True
+
+
+def test_requirement_semantics_change_under_same_id_makes_stale():
+    from orca.mission.production_proof import is_proof_stale
+    proof = generate_production_proof(**_happy_path_kwargs(
+        requirement_semantics_fingerprints={"REQ-X-1": "hash-of-original-statement"},
+    ))
+    stale = is_proof_stale(
+        proof, current_revision="rev1", current_required_requirement_ids=("REQ-X-1",),
+        current_required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
+        current_requirement_semantics_fingerprints={"REQ-X-1": "hash-of-CHANGED-statement"},
+    )
+    assert stale is True
+
+
+def test_revision_change_makes_stale():
+    from orca.mission.production_proof import is_proof_stale
+    proof = generate_production_proof(**_happy_path_kwargs())
+    assert is_proof_stale(proof, current_revision="rev2") is True
+
+
+def test_reordered_equivalent_inputs_not_stale():
+    from orca.mission.production_proof import is_proof_stale
+    scope_a = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST", "SECURITY_TEST"}))
+    proof = generate_production_proof(**_happy_path_kwargs(
+        required_requirement_ids=("REQ-A", "REQ-B"),
+        required_scopes_by_requirement={"REQ-A": scope_a, "REQ-B": _UNIT_TEST_SCOPE},
+        records_by_requirement={"REQ-A": (), "REQ-B": ()},
+    ))
+    stale = is_proof_stale(
+        proof, current_revision="rev1",
+        current_required_requirement_ids=("REQ-B", "REQ-A"),  # reordered
+        current_required_scopes_by_requirement={"REQ-B": _UNIT_TEST_SCOPE, "REQ-A": scope_a},
+    )
+    assert stale is False
+
+
+# ══════════════════════════════════════════════════════════════════
+# Item 10: secret redaction across ALL persisted fields
+# ══════════════════════════════════════════════════════════════════
+
+def test_secret_in_known_limitations_does_not_persist():
+    proof = generate_production_proof(**_happy_path_kwargs(
+        known_limitations=("db url postgresql://admin:hunter2@host/db not reachable",),
+    ))
+    assert "hunter2" not in proof.known_limitations[0]
+    assert "hunter2" not in canonical_json(proof)
+
+
+def test_secret_in_deployment_metadata_does_not_persist():
+    tainted = DeploymentResult(
+        state=DeploymentState.PRODUCTION_DEPLOYED, revision="rev1",
+        environment_identity="prod token=AKIAABCDEFGHIJKLMNOP", deployed_at="2026-01-01T00:00:00Z",
+        notes="deployed with api_key=abcd1234efgh5678ijkl",
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(deployment=tainted))
+    assert "AKIAABCDEFGHIJKLMNOP" not in proof.deployment.environment_identity
+    assert "abcd1234efgh5678ijkl" not in (proof.deployment.notes or "")
+    assert "AKIAABCDEFGHIJKLMNOP" not in canonical_json(proof)
+
+
+def test_secret_in_tool_metadata_does_not_persist():
+    proof = generate_production_proof(**_happy_path_kwargs(
+        tool_versions={"scanner": "v1 token=Bearer abcdefghij1234567890"},
+    ))
+    assert "abcdefghij1234567890" not in canonical_json(proof)
+
+
+def test_secret_in_rollback_method_does_not_persist():
+    tainted = RollbackResult(
+        strategy_documented=True, procedure_tested=True, proven_for_current_deployment=True,
+        method="git revert (using postgresql://u:hunter3@h/db for state check)",
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(rollback=tainted))
+    assert "hunter3" not in canonical_json(proof)
+
+
+def test_secret_in_regression_notes_does_not_persist():
+    tainted = RegressionResult(
+        baseline_revision="rev0", candidate_revision="rev1", baseline_collected=1, candidate_collected=1,
+        notes="ran with secret=verysecretvalue1234",
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(regression=tainted, release_policy=ReleaseQualificationPolicy(
+        engineering_not_applicable={"integration_tests": "n/a", "e2e_tests": "n/a", "authority": "n/a"},
+    )))
+    assert "verysecretvalue1234" not in canonical_json(proof)
+
+
+def test_secret_never_survives_into_render():
+    proof = generate_production_proof(**_happy_path_kwargs(
+        known_limitations=("postgresql://admin:hunter4@host/db",),
+    ))
+    rendered = render_human_readable(proof)
+    assert "hunter4" not in rendered
+
+
+def test_redact_secrets_scrubs_credentialed_postgres_url():
+    redacted = redact_secrets("output containing postgresql://user:supersecretpassword@db.example.com:5432/mydb")
+    assert "supersecretpassword" not in redacted
+    assert "[REDACTED]" in redacted
+
+
+def test_redact_secrets_handles_none():
+    assert redact_secrets(None) is None
+
+
+# ══════════════════════════════════════════════════════════════════
+# Item 11: regression evidence binding
+# ══════════════════════════════════════════════════════════════════
+
+def test_regression_candidate_revision_mismatch_is_unverified():
+    mismatched = RegressionResult(
+        baseline_revision="rev0", candidate_revision="rev-other", baseline_collected=10, candidate_collected=10,
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(regression=mismatched))
+    assert proof.regression.status is VerificationOutcome.UNVERIFIED
+    assert proof.regression.candidate_revision is None
+
+
+def test_regression_pre_existing_claim_without_baseline_rejected():
+    with pytest.raises(ProductionProofError):
+        RegressionResult(
+            baseline_revision=None, candidate_revision="rev1", baseline_collected=None, candidate_collected=10,
+            known_pre_existing_failures=("tests/test_x.py::test_y",),
+        )
+
+
+def test_regression_not_run_is_unverified():
+    proof = generate_production_proof(**_happy_path_kwargs())
+    assert proof.regression.status is VerificationOutcome.UNVERIFIED
+
+
+def test_regression_new_failure_dominates_when_bound_to_revision():
+    reg = RegressionResult(
+        baseline_revision="rev0", candidate_revision="rev1", baseline_collected=10, candidate_collected=10,
+        new_failures=("tests/test_x.py::test_y",),
+    )
+    proof = generate_production_proof(**_happy_path_kwargs(regression=reg))
+    assert proof.regression.status is VerificationOutcome.FAIL
+
+
+# ══════════════════════════════════════════════════════════════════
+# Item 12: blockers must match release policy
+# ══════════════════════════════════════════════════════════════════
+
+def test_blockers_never_contradict_engineering_ready_state():
+    proof = generate_production_proof(**_happy_path_kwargs())
+    if proof.release_state == "ENGINEERING_READY":
+        for category in ("build", "unit_tests", "security"):
+            status = getattr(proof, category).status
+            assert status is VerificationOutcome.PASS, f"{category} is {status} but release_state is ENGINEERING_READY"
+
+
+def test_blockers_populated_when_not_ready():
+    proof = generate_production_proof(**_happy_path_kwargs(build_records=()))
+    assert proof.release_state == NOT_ENGINEERING_READY
+    assert len(proof.blockers) > 0
+    assert any("build" in b for b in proof.blockers)
+
+
+# ══════════════════════════════════════════════════════════════════
+# Remaining failure-injection matrix items (13, 20-25 numbering follows spec item 13)
+# ══════════════════════════════════════════════════════════════════
 
 def test_missing_scope_for_required_requirement_raises():
     with pytest.raises(ProductionProofError):
         generate_production_proof(**_happy_path_kwargs(required_scopes_by_requirement={}))
 
 
-def test_blank_criterion_id_in_scope_raises():
-    with pytest.raises(ProductionProofError):
-        bad_scope = RequiredVerificationScope(criterion_ids=frozenset({"c1", ""}))
-        # ScopeError itself won't fire for a blank string alongside a real one
-        # (the set is non-empty) -- our own hardening must catch the blank entry.
-        generate_production_proof(**_happy_path_kwargs(required_scopes_by_requirement={"REQ-X-1": bad_scope}))
+def test_stale_revision_record_does_not_satisfy_requirement():
+    stale = _rec(category=CATEGORY_UNIT_TEST, revision="rev0")
+    proof = generate_production_proof(**_happy_path_kwargs(records_by_requirement={"REQ-X-1": (stale,)}))
+    assert "REQ-X-1" not in proof.requirements_satisfied
 
 
-def test_blank_category_in_scope_raises():
-    bad_scope = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST", " "}))
-    with pytest.raises(ProductionProofError):
-        generate_production_proof(**_happy_path_kwargs(required_scopes_by_requirement={"REQ-X-1": bad_scope}))
+def test_cross_mission_record_does_not_satisfy_requirement():
+    other_mission = _rec(category=CATEGORY_UNIT_TEST, mission_id="m2")
+    proof = generate_production_proof(**_happy_path_kwargs(records_by_requirement={"REQ-X-1": (other_mission,)}))
+    assert "REQ-X-1" not in proof.requirements_satisfied
 
 
-def test_collapsing_criterion_and_category_names_raises():
-    bad_scope = RequiredVerificationScope(criterion_ids=frozenset({"UNIT_TEST"}))
-    # This alone wouldn't collapse since keys differ ("UNIT_TEST" vs "category:UNIT_TEST"),
-    # so construct a genuinely colliding pair via both fields sharing a literal name
-    # that, after key-construction, would still be distinguishable -- verify no false positive:
+def test_wrong_requirement_record_does_not_satisfy_requirement():
+    spoofed = _rec(category=CATEGORY_UNIT_TEST, requirement_id="REQ-OTHER")
+    proof = generate_production_proof(**_happy_path_kwargs(records_by_requirement={"REQ-X-1": (spoofed,)}))
+    assert "REQ-X-1" not in proof.requirements_satisfied
+
+
+def test_missing_required_criterion_leaves_requirement_unresolved():
+    c1_only = _rec(criterion_id="c1")
     proof = generate_production_proof(**_happy_path_kwargs(
-        required_scopes_by_requirement={"REQ-X-1": bad_scope},
-        records_by_requirement={"REQ-X-1": (_rec(criterion_id="UNIT_TEST"),)},
+        required_scopes_by_requirement={"REQ-X-1": _CRIT_SCOPE},
+        records_by_requirement={"REQ-X-1": (c1_only,)},
     ))
-    assert proof.requirement_results[0].outcome is VerificationOutcome.PASS
+    assert "REQ-X-1" in proof.requirements_unresolved
+
+
+def test_green_test_suite_plus_critical_blocking_finding_is_not_ready():
+    ev = _ag_evidence(findings=(_finding(severity=Severity.CRITICAL, blocking=True),))
+    proof = generate_production_proof(**_happy_path_kwargs(anti_gaming_evidence=ev))
+    assert proof.unit_tests.status is VerificationOutcome.PASS
+    assert proof.release_state == NOT_ENGINEERING_READY
+
+
+def test_zero_collected_never_becomes_pass():
+    passish = _rec(category=CATEGORY_UNIT_TEST, id_suffix="zc")
+    proof = generate_production_proof(**_happy_path_kwargs(
+        unit_test_records=(passish,),
+        unit_test_stats={"collected": 0, "passed": 0, "failed": 0, "skipped": 0, "errors": 0},
+    ))
+    assert proof.unit_tests.status is not VerificationOutcome.PASS
+
+
+def test_evidence_refs_includes_contributing_records_and_court_decision():
+    proof = generate_production_proof(**_happy_path_kwargs())
+    assert "d1" in proof.evidence_refs
+
+
+def test_hash_deterministic_and_mutation_sensitive():
+    kwargs = _happy_path_kwargs(proof_id="fixed_id", generated_at="2026-01-01T00:00:00Z")
+    p1 = generate_production_proof(**kwargs)
+    p2 = generate_production_proof(**kwargs)
+    assert compute_proof_hash(p1) == compute_proof_hash(p2)
+    kwargs2 = _happy_path_kwargs(proof_id="fixed_id", generated_at="2026-01-01T00:00:00Z", build_records=())
+    p3 = generate_production_proof(**kwargs2)
+    assert compute_proof_hash(p1) != compute_proof_hash(p3)
+
+
+def test_canonical_json_has_no_proof_hash_field():
+    proof = generate_production_proof(**_happy_path_kwargs())
+    assert '"proof_hash"' not in canonical_json(proof)
+
+
+def test_render_agrees_with_typed_fields():
+    proof = generate_production_proof(**_happy_path_kwargs())
+    rendered = render_human_readable(proof)
+    assert proof.proof_id in rendered
+    assert proof.release_state in rendered
+
+
+def test_to_dict_round_trips_through_json():
+    import json
+    proof = generate_production_proof(**_happy_path_kwargs())
+    d = to_dict(proof)
+    assert json.loads(json.dumps(d, sort_keys=True)) == d
 
 
 def test_empty_mission_id_raises():
@@ -166,417 +775,15 @@ def test_underlying_scope_error_still_raised_for_wholly_empty_scope():
         RequiredVerificationScope()
 
 
-# ── Stale / cross-mission / wrong-requirement records (reuse Phase 15.9 invariants) ──
-
-def test_stale_revision_record_does_not_satisfy_requirement():
-    stale = _rec(revision="rev0")
-    proof = generate_production_proof(**_happy_path_kwargs(records_by_requirement={"REQ-X-1": (stale,)}))
-    assert "REQ-X-1" not in proof.requirements_satisfied
-
-
-def test_cross_mission_record_does_not_satisfy_requirement():
-    other_mission = _rec(mission_id="m2")
-    proof = generate_production_proof(**_happy_path_kwargs(records_by_requirement={"REQ-X-1": (other_mission,)}))
-    assert "REQ-X-1" not in proof.requirements_satisfied
-
-
-def test_wrong_requirement_record_does_not_satisfy_requirement():
-    spoofed = _rec(requirement_id="REQ-OTHER")
-    proof = generate_production_proof(**_happy_path_kwargs(records_by_requirement={"REQ-X-1": (spoofed,)}))
-    assert "REQ-X-1" not in proof.requirements_satisfied
-    assert "REQ-X-1" in proof.requirements_unresolved
-
-
-def test_missing_required_criterion_leaves_requirement_unresolved():
-    c1_only = _rec(criterion_id="c1")
-    proof = generate_production_proof(**_happy_path_kwargs(
-        required_scopes_by_requirement={"REQ-X-1": _CRIT_SCOPE},
-        records_by_requirement={"REQ-X-1": (c1_only,)},
-    ))
-    assert "REQ-X-1" in proof.requirements_unresolved
-    result = proof.requirement_results[0]
-    assert "c2" in result.missing_keys
-
-
-# ── Court integration (spec section 7) ───────────────────────────────
-
-def test_court_non_accept_blocks_engineering_ready():
-    proof = generate_production_proof(**_happy_path_kwargs(
-        court_decision=_accept_decision(verdict=CourtVerdict.REJECT),
-    ))
-    assert proof.release_state == NOT_ENGINEERING_READY
-    assert any("Court verdict" in b for b in proof.blockers)
-
-
-def test_no_court_decision_supplied_cannot_be_engineering_ready():
-    kwargs = _happy_path_kwargs()
-    kwargs.pop("court_decision")
-    proof = generate_production_proof(**kwargs)
-    assert proof.cognitive_court.verdict == "NOT_EVALUATED"
-    assert proof.release_state == NOT_ENGINEERING_READY
-
-
-def test_court_snapshot_defaults_non_durable_and_warns():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.cognitive_court.durable is False
-    assert any("not independently durable" in w for w in proof.warnings)
-
-
-def test_court_snapshot_durable_when_caller_asserts_it():
-    proof = generate_production_proof(**_happy_path_kwargs(court_decision_durable=True))
-    assert proof.cognitive_court.durable is True
-
-
-# ── Anti-gaming integration (spec section 8) ─────────────────────────
-
-def test_blocking_anti_gaming_finding_blocks_engineering_ready():
-    proof = generate_production_proof(**_happy_path_kwargs(
-        anti_gaming_findings=(_finding(),),
-    ))
-    assert proof.release_state == NOT_ENGINEERING_READY
-    assert proof.anti_test_gaming.blocking_finding_ids == ("f1",)
-    assert any("blocking anti-gaming" in b for b in proof.blockers)
-
-
-def test_zero_findings_supplied_is_not_proof_analysis_performed():
-    proof = generate_production_proof(**_happy_path_kwargs(
-        anti_gaming_analysis_performed=False, anti_gaming_findings=(),
-    ))
-    assert proof.anti_test_gaming.analysis_performed is False
-    assert proof.release_state == NOT_ENGINEERING_READY
-    assert any("not performed" in w for w in proof.warnings)
-
-
-def test_analysis_performed_with_zero_findings_is_distinct_and_can_be_ready():
-    proof = generate_production_proof(**_happy_path_kwargs(
-        anti_gaming_analysis_performed=True, anti_gaming_findings=(),
-    ))
-    assert proof.anti_test_gaming.analysis_performed is True
-    assert proof.anti_test_gaming.total_findings == 0
-    assert proof.release_state == "ENGINEERING_READY"
-
-
-def test_green_test_suite_plus_critical_blocking_finding_is_not_ready():
-    proof = generate_production_proof(**_happy_path_kwargs(
-        anti_gaming_findings=(_finding(severity=Severity.CRITICAL, blocking=True),),
-    ))
-    assert proof.unit_tests.status is VerificationOutcome.PASS  # green suite
-    assert proof.release_state == NOT_ENGINEERING_READY  # still blocked
-
-
-# ── Test evidence (spec section 10) ──────────────────────────────────
-
-def test_zero_collected_never_becomes_pass():
-    passish = _rec(id="v2")
-    proof = generate_production_proof(**_happy_path_kwargs(
-        unit_test_records=(passish,),
-        unit_test_stats={"collected": 0, "passed": 0, "failed": 0, "skipped": 0, "errors": 0},
-    ))
-    assert proof.unit_tests.status is not VerificationOutcome.PASS
-
-
-def test_no_unit_test_records_is_unverified():
-    proof = generate_production_proof(**_happy_path_kwargs(unit_test_records=(), unit_test_stats={}))
-    assert proof.unit_tests.status is VerificationOutcome.UNVERIFIED
-
-
-def test_integration_and_e2e_not_merged_with_unit():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.integration_tests.status is VerificationOutcome.UNVERIFIED
-    assert proof.e2e_tests.status is VerificationOutcome.UNVERIFIED
-    assert proof.unit_tests.status is VerificationOutcome.PASS  # unaffected by the other two
-
-
-def test_test_failure_is_fail_not_pass():
-    failing = _rec(id="v3", outcome=VerificationOutcome.FAIL, evidence_refs=())
-    proof = generate_production_proof(**_happy_path_kwargs(
-        unit_test_records=(failing,),
-        unit_test_stats={"collected": 1, "passed": 0, "failed": 1, "skipped": 0, "errors": 0},
-    ))
-    assert proof.unit_tests.status is VerificationOutcome.FAIL
-
-
-# ── Security evidence (spec section 12) ──────────────────────────────
-
-def test_security_partial_scope_named_accurately_not_secure():
-    partial = _rec(id="sec1", category="SECURITY")
-    proof = generate_production_proof(**_happy_path_kwargs(security_records=(partial,)))
-    assert proof.security.status is VerificationOutcome.PASS
-    # The category never claims a blanket "SECURE" string anywhere.
-    rendered = render_human_readable(proof)
-    assert "SECURE" not in rendered.upper().replace("INSECURE", "")
-
-
-# ── Deployment / rollback (spec sections 19-21) ──────────────────────
-
-def test_default_deployment_is_not_deployed_not_pass():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.deployment.state is DeploymentState.NOT_DEPLOYED
-
-
-def test_deployment_is_revision_bound():
-    old_deploy = DeploymentResult(
-        state=DeploymentState.PRODUCTION_DEPLOYED, revision="rev0", environment_identity="prod",
-        deployed_at="2026-01-01T00:00:00Z",
-    )
-    proof = generate_production_proof(**_happy_path_kwargs(deployment=old_deploy))
-    # The proof is for rev1 but the deployment evidence given is for rev0 --
-    # the generator does not silently reconcile this; it is surfaced as-is
-    # for the caller/renderer to see the mismatch.
-    assert proof.deployment.revision == "rev0"
-    assert proof.revision == "rev1"
-
-
-def test_rollback_default_is_undocumented_and_unproven():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.rollback.strategy_documented is False
-    assert proof.rollback.procedure_tested is False
-    assert proof.rollback.proven_for_current_deployment is False
-
-
-def test_documented_plan_alone_is_not_tested_rollback():
-    from orca.mission.production_proof import RollbackResult
-    documented_only = RollbackResult(strategy_documented=True, procedure_tested=False, proven_for_current_deployment=False,
-                                       method="git revert / redeploy known-good commit")
-    proof = generate_production_proof(**_happy_path_kwargs(rollback=documented_only))
-    assert proof.rollback.strategy_documented is True
-    assert proof.rollback.proven_for_current_deployment is False
-
-
-# ── Performance / accessibility (spec sections 16-17) ────────────────
-
-def test_performance_required_but_unmeasured_is_unverified():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.performance.status is VerificationOutcome.UNVERIFIED
-
-
-def test_performance_not_applicable_requires_reason():
-    with pytest.raises(ProductionProofError):
-        not_applicable_category("")
-
-
-def test_accessibility_no_ui_can_be_not_applicable_with_reason():
-    cat = not_applicable_category("no user interface exists in this proof target")
-    proof = generate_production_proof(**_happy_path_kwargs(accessibility=cat))
-    assert proof.accessibility.status is VerificationOutcome.NOT_APPLICABLE
-
-
-def test_accessibility_default_is_unverified_not_not_applicable():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.accessibility.status is VerificationOutcome.UNVERIFIED
-
-
-# ── Release-state policy (spec section 22) ───────────────────────────
-
-def test_engineering_ready_reachable_on_full_happy_path():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.release_state == "ENGINEERING_READY"
-
-
-def test_submission_ready_requires_flag():
-    proof = generate_production_proof(**_happy_path_kwargs(submission_ready_satisfied=True))
-    assert proof.release_state == "SUBMISSION_READY"
-
-
-def test_release_candidate_requires_both_flags():
-    proof = generate_production_proof(**_happy_path_kwargs(
-        submission_ready_satisfied=True, release_candidate_satisfied=True,
-    ))
-    assert proof.release_state == "RELEASE_CANDIDATE"
-
-
-def test_published_requires_all_flags_including_external_confirmation():
-    proof = generate_production_proof(**_happy_path_kwargs(
-        submission_ready_satisfied=True, release_candidate_satisfied=True,
-        published_externally_confirmed=True,
-    ))
-    assert proof.release_state == "PUBLISHED"
-
-
-def test_cannot_skip_to_release_candidate_without_submission_ready():
-    proof = generate_production_proof(**_happy_path_kwargs(release_candidate_satisfied=True))
-    assert proof.release_state == "ENGINEERING_READY"
-
-
-def test_no_failure_supplied_does_not_auto_promote_to_published():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.release_state != "PUBLISHED"
-
-
-def test_proof_generated_successfully_even_when_not_ready():
-    proof = generate_production_proof(**_happy_path_kwargs(build_records=()))
-    assert proof.proof_id
-    assert proof.release_state == NOT_ENGINEERING_READY
-    assert len(proof.blockers) > 0
-
-
-# ── Hashing (spec section 24) ─────────────────────────────────────────
-
-def test_same_canonical_payload_yields_same_hash():
-    kwargs = _happy_path_kwargs(proof_id="fixed_id", generated_at="2026-01-01T00:00:00Z")
-    p1 = generate_production_proof(**kwargs)
-    p2 = generate_production_proof(**kwargs)
-    assert compute_proof_hash(p1) == compute_proof_hash(p2)
-    assert p1 == p2
-
-
-def test_material_mutation_changes_hash():
-    kwargs = _happy_path_kwargs(proof_id="fixed_id", generated_at="2026-01-01T00:00:00Z")
-    p1 = generate_production_proof(**kwargs)
-    h1 = compute_proof_hash(p1)
-    kwargs2 = _happy_path_kwargs(proof_id="fixed_id", generated_at="2026-01-01T00:00:00Z", build_records=())
-    p2 = generate_production_proof(**kwargs2)
-    h2 = compute_proof_hash(p2)
-    assert h1 != h2
-
-
-def test_hash_is_deterministic_sha256_hex():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    h = compute_proof_hash(proof)
-    assert len(h) == 64
-    int(h, 16)  # raises ValueError if not valid hex
-
-
-def test_canonical_json_has_no_proof_hash_field_itself():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    payload = canonical_json(proof)
-    assert '"proof_hash"' not in payload
-
-
-# ── Human-readable rendering (spec section 25) ───────────────────────
-
-def test_render_agrees_with_typed_fields():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    rendered = render_human_readable(proof)
-    assert proof.proof_id in rendered
-    assert proof.mission_id in rendered
-    assert proof.revision in rendered
-    assert proof.release_state in rendered
-    for req_id in proof.requirements_satisfied:
-        assert req_id in rendered
-
-
-def test_render_shows_blockers_and_warnings():
-    proof = generate_production_proof(**_happy_path_kwargs(build_records=()))
-    rendered = render_human_readable(proof)
-    for b in proof.blockers:
-        assert b in rendered
-
-
-# ── Secret redaction (spec section 26) ───────────────────────────────
-
-@pytest.mark.parametrize("secret_text", [
-    "postgresql://user:supersecretpassword@db.example.com:5432/mydb",
-    "AKIAABCDEFGHIJKLMNOP",
-    "sk-abcdefghijklmnopqrstuvwxyz0123456789",
-    "api_key=abcd1234efgh5678ijkl",
-    "Authorization: Bearer abcdefghij1234567890",
-])
-def test_redact_secrets_scrubs_known_patterns(secret_text):
-    redacted = redact_secrets(f"some output containing {secret_text} in the middle")
-    assert secret_text not in redacted
-    assert "[REDACTED]" in redacted
-
-
-def test_redact_secrets_handles_none():
-    assert redact_secrets(None) is None
-
-
-def test_no_raw_secret_survives_into_summary_or_render():
-    tainted = _rec(id="v_secret", summary="connected using postgresql://admin:hunter2@host/db")
-    proof = generate_production_proof(**_happy_path_kwargs(build_records=(tainted,)))
-    assert "hunter2" not in proof.build.summary
-    rendered = render_human_readable(proof)
-    assert "hunter2" not in rendered
-
-
-def test_category_from_records_redacts_not_run_summary():
-    cat = category_from_records((), not_run_summary="db url postgresql://u:hunter2@h/db not reachable")
-    assert "hunter2" not in cat.summary
-
-
-# ── Regression evidence (spec section 11) ─────────────────────────────
-
-def test_regression_not_run_is_unverified():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    assert proof.regression.status is VerificationOutcome.UNVERIFIED
-
-
-def test_regression_new_failure_dominates():
-    reg = RegressionResult(
-        baseline_revision="rev0", candidate_revision="rev1", baseline_collected=10, candidate_collected=10,
-        new_failures=("tests/test_x.py::test_y",),
-    )
-    proof = generate_production_proof(**_happy_path_kwargs(regression=reg))
-    assert proof.regression.status is VerificationOutcome.FAIL
-
-
-def test_regression_known_pre_existing_failure_visible_not_erased():
-    reg = RegressionResult(
-        baseline_revision="rev0", candidate_revision="rev1", baseline_collected=10, candidate_collected=10,
-        known_pre_existing_failures=("tests/test_flaky.py::test_z",),
-    )
-    proof = generate_production_proof(**_happy_path_kwargs(regression=reg))
-    assert proof.regression.status is VerificationOutcome.PASS
-    assert "tests/test_flaky.py::test_z" in proof.regression.known_pre_existing_failures
-
-
-# ── evidence_refs traceability ───────────────────────────────────────
-
-def test_evidence_refs_includes_contributing_records_and_court_decision():
-    proof = generate_production_proof(**_happy_path_kwargs())
-    assert "v1" in proof.evidence_refs
-    assert "d1" in proof.evidence_refs
-
-
-def test_to_dict_round_trips_through_json():
-    import json
-    proof = generate_production_proof(**_happy_path_kwargs())
-    d = to_dict(proof)
-    reserialized = json.dumps(d, sort_keys=True)
-    assert json.loads(reserialized) == d
-
-
-# ── LAUNCH gate integration (spec section 23, reuses code_mode.py) ──
-
-def test_launch_evidence_all_true_on_full_happy_path():
+def test_launch_gate_integration_all_true_on_full_happy_path():
     from orca.mission.code_mode import evaluate_launch_gate, launch_gate_passes
     from orca.mission.production_proof import launch_evidence_from_proof
-
     proof = generate_production_proof(**_happy_path_kwargs())
     evidence = launch_evidence_from_proof(proof)
     results = evaluate_launch_gate(evidence, not_applicable=frozenset({
-        "supply_chain", "release_configuration", "deployment_readiness", "rollback_readiness",
-        "regression", "authority",
+        "supply_chain", "release_configuration", "deployment_readiness", "rollback_readiness", "regression", "authority",
     }))
-    # The categories this proof genuinely populated with real evidence pass;
-    # deployment/rollback/supply-chain/release-build are marked N/A for this
-    # narrow proof (not evaluated), matching evaluate_launch_gate()'s own
-    # missing-evidence-never-PASS contract for anything left UNVERIFIED.
     assert results["build_evidence"].value == "PASS"
     assert results["tests"].value == "PASS"
     assert results["security"].value == "PASS"
-    assert results["production_proof_hooks"].value == "PASS"
     assert launch_gate_passes(results) is True
-
-
-def test_launch_evidence_reflects_court_reject():
-    from orca.mission.production_proof import launch_evidence_from_proof
-
-    proof = generate_production_proof(**_happy_path_kwargs(
-        court_decision=_accept_decision(verdict=CourtVerdict.REJECT),
-    ))
-    evidence = launch_evidence_from_proof(proof)
-    assert evidence["production_proof_hooks"] is False
-
-
-def test_launch_evidence_missing_deployment_is_unverified_not_pass():
-    from orca.mission.code_mode import evaluate_launch_gate, launch_gate_passes
-    from orca.mission.production_proof import launch_evidence_from_proof
-
-    proof = generate_production_proof(**_happy_path_kwargs())
-    evidence = launch_evidence_from_proof(proof)
-    assert evidence["deployment_readiness"] is None
-    results = evaluate_launch_gate(evidence)
-    assert results["deployment_readiness"].value == "UNVERIFIED"
-    assert launch_gate_passes(results) is False  # not falsely marked ready

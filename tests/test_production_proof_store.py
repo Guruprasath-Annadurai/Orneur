@@ -2,46 +2,67 @@
 Phase 15.10 -- Production Proof store tests that do not require a live
 database connection: canonical payload round-trip via the store's own
 (de)serialization helpers, and stale-proof detection (spec section
-31). Durable persistence itself (write/reload across a fresh
-connection, append-only history) is qualified against a real
-disposable Neon branch in `tests/test_production_proof_live_neon.py`,
-matching every other Phase 15 durable-store test file's split.
+31), hardened by Phase 15.10.1's decision-context fingerprint. Durable
+persistence itself (write/reload across a fresh connection, append-only
+history, overall_status database integrity) is qualified against a
+real disposable Neon branch in `tests/test_production_proof_live_neon.py`.
 """
 from __future__ import annotations
 
 from orca.mission.cognitive_court import CourtDecision, CourtRole, CourtVerdict, RiskLevel
-from orca.mission.production_proof import compute_proof_hash, generate_production_proof, to_dict
+from orca.mission.production_proof import (
+    AntiGamingAnalysisEvidence,
+    CATEGORY_BUILD,
+    CATEGORY_SECURITY,
+    CATEGORY_UNIT_TEST,
+    ReleaseQualificationPolicy,
+    compute_proof_hash,
+    generate_production_proof,
+    to_dict,
+)
 from orca.mission.production_proof_store import _payload_to_proof, is_proof_stale
 from orca.mission.verification import VerificationOutcome, VerificationRecord
 from orca.mission.verification_aggregation import RequiredVerificationScope
 
 _UNIT_TEST_SCOPE = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST"}))
+_MINIMAL_POLICY = ReleaseQualificationPolicy(
+    engineering_not_applicable={
+        "integration_tests": "n/a", "e2e_tests": "n/a", "regression": "n/a", "authority": "n/a",
+    },
+)
 
 
-def _rec(**overrides):
+def _rec(category, **overrides):
     defaults = dict(
-        id="v1", mission_id="m1", requirement_id="REQ-X-1", criterion_id=None, category="UNIT_TEST",
-        verification_method="UNIT_TEST", verifier_id="UnitTestVerifier", started_at="2026-01-01T00:00:00Z",
-        outcome=VerificationOutcome.PASS, revision="rev1", evidence_refs=("x",),
+        id=f"ver_{category}", mission_id="m1", requirement_id="REQ-X-1" if category == CATEGORY_UNIT_TEST else None,
+        criterion_id=None, category=category, verification_method=category, verifier_id="TestVerifier",
+        started_at="2026-01-01T00:00:00Z", outcome=VerificationOutcome.PASS, revision="rev1",
+        evidence_refs=("x",),
     )
     defaults.update(overrides)
     return VerificationRecord(**defaults)
 
 
 def _proof(**overrides):
-    record = _rec()
+    unit_rec = _rec(CATEGORY_UNIT_TEST)
+    build_rec = _rec(CATEGORY_BUILD, id="ver_build")
+    sec_rec = _rec(CATEGORY_SECURITY, id="ver_sec")
     decision = CourtDecision(
         decision_id="d1", mission_id="m1", revision="rev1", risk_level=RiskLevel.STANDARD,
-        roles_invoked=(CourtRole.ARBITER,), findings_considered=(), verification_refs=(record.id,),
+        roles_invoked=(CourtRole.ARBITER,), findings_considered=(), verification_refs=(unit_rec.id,),
         reasoning_summary="ok", verdict=CourtVerdict.ACCEPT,
+    )
+    ag = AntiGamingAnalysisEvidence(
+        analysis_id="ag1", mission_id="m1", baseline_revision="rev0", candidate_revision="rev1",
+        detector_ids=("detect_x",),
     )
     kwargs = dict(
         mission_id="m1", revision="rev1", required_requirement_ids=("REQ-X-1",),
         required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
-        records_by_requirement={"REQ-X-1": (record,)}, court_decision=decision,
-        anti_gaming_analysis_performed=True, build_records=(record,), unit_test_records=(record,),
+        records_by_requirement={"REQ-X-1": (unit_rec,)}, court_decision=decision,
+        anti_gaming_evidence=ag, build_records=(build_rec,), unit_test_records=(unit_rec,),
         unit_test_stats={"collected": 1, "passed": 1, "failed": 0, "skipped": 0, "errors": 0},
-        security_records=(record,),
+        security_records=(sec_rec,), release_policy=_MINIMAL_POLICY,
     )
     kwargs.update(overrides)
     return generate_production_proof(**kwargs)
@@ -67,7 +88,7 @@ def test_stale_proof_detected_on_scope_change():
     proof = _proof()
     wider_scope = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST", "SECURITY_TEST"}))
     assert is_proof_stale(
-        proof, current_revision="rev1",
+        proof, current_revision="rev1", current_required_requirement_ids=("REQ-X-1",),
         current_required_scopes_by_requirement={"REQ-X-1": wider_scope},
     ) is True
 
@@ -75,14 +96,19 @@ def test_stale_proof_detected_on_scope_change():
 def test_proof_not_stale_when_scope_unchanged():
     proof = _proof()
     assert is_proof_stale(
-        proof, current_revision="rev1",
+        proof, current_revision="rev1", current_required_requirement_ids=("REQ-X-1",),
         current_required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     ) is False
 
 
 def test_stale_proof_cannot_be_reused_to_certify_new_revision():
-    # A caller checking whether an OLD proof can certify a NEW revision
-    # must see it as stale -- this is the exact "proof for revision A
-    # cannot certify revision B" invariant (spec section 31).
     old_proof = _proof(revision="rev1")
     assert is_proof_stale(old_proof, current_revision="rev2") is True
+
+
+def test_stale_proof_detects_new_required_requirement():
+    proof = _proof()
+    assert is_proof_stale(
+        proof, current_revision="rev1", current_required_requirement_ids=("REQ-X-1", "REQ-Y-1"),
+        current_required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE, "REQ-Y-1": _UNIT_TEST_SCOPE},
+    ) is True

@@ -2,14 +2,22 @@
 Phase 15.10 -- LIVE_NEON_TEMP_BRANCH: durable Production Proof
 persistence, fresh-connection reload, hash-integrity preservation,
 mission/revision-binding, and append-only proof-history qualification
-(spec sections 27, 30, 34).
+(spec sections 27, 30, 34), hardened by Phase 15.10.1's category-
+identity binding, typed anti-gaming evidence, and honest
+`overall_status` integrity (item 8).
 
 `_ensure_schema` calls `apply_schema()` on the target branch before
 any test runs, exactly like every other Phase 15 live-Neon test file
--- the `production_proofs` table itself is unchanged from its Phase
-15.2 definition (no migration this closure); this test proves the
-Phase 15.10 STORE CODE reads/writes that existing table correctly
-across a real process boundary.
+-- the `production_proofs` table itself is STILL the Phase 15.2
+definition (the Phase 15.10.1 migration in `orca.mission.production_
+proof_schema` is deliberately NOT wired into `apply_schema()` pending
+explicit owner approval -- see PHASE15_EVIDENCE.md's "PHASE 15.10.1"
+section, which documents that migration's separate disposable-branch
+validation). This means `record_proof()` will correctly REFUSE (raise
+`ProductionProofStoreError`, never silently mislabel) any attempt to
+persist a `NOT_ENGINEERING_READY` proof against the CURRENT schema --
+that refusal is itself the honest, intended behavior this closure
+requires, and is directly tested below.
 
 Skipped when ORNEUR_MISSION_DATABASE_URL(_DIRECT) are unset, matching
 every other Phase 15 live-Neon test file.
@@ -24,8 +32,18 @@ import pytest
 from orca.mission.cognitive_court import CourtDecision, CourtRole, CourtVerdict, RiskLevel
 from orca.mission.db import apply_schema, get_conn
 from orca.mission.mission_store import create_mission
-from orca.mission.production_proof import compute_proof_hash, generate_production_proof
+from orca.mission.production_proof import (
+    CATEGORY_BUILD,
+    CATEGORY_SECURITY,
+    CATEGORY_UNIT_TEST,
+    NOT_ENGINEERING_READY,
+    AntiGamingAnalysisEvidence,
+    ReleaseQualificationPolicy,
+    compute_proof_hash,
+    generate_production_proof,
+)
 from orca.mission.production_proof_store import (
+    ProductionProofStoreError,
     is_proof_stale,
     latest_proof_for_mission,
     proofs_for_mission,
@@ -40,6 +58,11 @@ pytestmark = pytest.mark.skipif(
 )
 
 _UNIT_TEST_SCOPE = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST"}))
+_MINIMAL_POLICY = ReleaseQualificationPolicy(
+    engineering_not_applicable={
+        "integration_tests": "n/a", "e2e_tests": "n/a", "regression": "n/a", "authority": "n/a",
+    },
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -76,12 +99,32 @@ def _seed_mission_and_requirement(conn, mission_id: str, requirement_id: str) ->
     conn.commit()
 
 
-def _pass_record(mission_id: str, requirement_id: str, revision: str = "rev1") -> VerificationRecord:
-    return VerificationRecord(
+def _unit_record(mission_id: str, requirement_id: str, revision: str = "rev1", **overrides) -> VerificationRecord:
+    defaults = dict(
         id=f"ver_{uuid.uuid4().hex[:12]}", mission_id=mission_id, requirement_id=requirement_id,
-        criterion_id=None, category="UNIT_TEST", verification_method="UNIT_TEST", verifier_id="UnitTestVerifier",
+        criterion_id=None, category=CATEGORY_UNIT_TEST, verification_method="UNIT_TEST", verifier_id="UnitTestVerifier",
         started_at="2026-01-01T00:00:00Z", outcome=VerificationOutcome.PASS, revision=revision,
         evidence_refs=("local:pytest",),
+    )
+    defaults.update(overrides)
+    return VerificationRecord(**defaults)
+
+
+def _build_record(mission_id: str, revision: str = "rev1") -> VerificationRecord:
+    return VerificationRecord(
+        id=f"ver_{uuid.uuid4().hex[:12]}", mission_id=mission_id, requirement_id=None, criterion_id=None,
+        category=CATEGORY_BUILD, verification_method="BUILD_VERIFICATION", verifier_id="BuildVerifier",
+        started_at="2026-01-01T00:00:00Z", outcome=VerificationOutcome.PASS, revision=revision,
+        evidence_refs=("local:build",),
+    )
+
+
+def _security_record(mission_id: str, revision: str = "rev1") -> VerificationRecord:
+    return VerificationRecord(
+        id=f"ver_{uuid.uuid4().hex[:12]}", mission_id=mission_id, requirement_id=None, criterion_id=None,
+        category=CATEGORY_SECURITY, verification_method="SECURITY_TEST", verifier_id="SecurityVerifier",
+        started_at="2026-01-01T00:00:00Z", outcome=VerificationOutcome.PASS, revision=revision,
+        evidence_refs=("local:security",),
     )
 
 
@@ -93,22 +136,36 @@ def _accept_decision(mission_id: str, requirement_id: str, revision: str = "rev1
     )
 
 
+def _ag_evidence(mission_id: str, revision: str = "rev1") -> AntiGamingAnalysisEvidence:
+    return AntiGamingAnalysisEvidence(
+        analysis_id=f"ag_{uuid.uuid4().hex[:12]}", mission_id=mission_id, baseline_revision="rev0",
+        candidate_revision=revision, detector_ids=("detect_x",),
+    )
+
+
+def _ready_proof(mission_id: str, requirement_id: str, revision: str):
+    record = _unit_record(mission_id, requirement_id, revision=revision)
+    decision = _accept_decision(mission_id, requirement_id, revision=revision)
+    proof = generate_production_proof(
+        mission_id=mission_id, revision=revision, required_requirement_ids=(requirement_id,),
+        required_scopes_by_requirement={requirement_id: _UNIT_TEST_SCOPE},
+        records_by_requirement={requirement_id: (record,)}, court_decision=decision,
+        anti_gaming_evidence=_ag_evidence(mission_id, revision),
+        build_records=(_build_record(mission_id, revision),), unit_test_records=(record,),
+        unit_test_stats={"collected": 1, "passed": 1, "failed": 0, "skipped": 0, "errors": 0},
+        security_records=(_security_record(mission_id, revision),), release_policy=_MINIMAL_POLICY,
+    )
+    return proof, record, decision
+
+
 def test_production_proof_persists_and_reloads_through_fresh_connection_with_unchanged_hash():
     mission_id = _mid()
     requirement_id = _rid()
     conn_a = _fresh_connection()
     try:
         _seed_mission_and_requirement(conn_a, mission_id, requirement_id)
-        record = _pass_record(mission_id, requirement_id)
-        decision = _accept_decision(mission_id, requirement_id)
-        proof = generate_production_proof(
-            mission_id=mission_id, revision="rev1", required_requirement_ids=(requirement_id,),
-            required_scopes_by_requirement={requirement_id: _UNIT_TEST_SCOPE},
-            records_by_requirement={requirement_id: (record,)}, court_decision=decision,
-            anti_gaming_analysis_performed=True, build_records=(record,), unit_test_records=(record,),
-            unit_test_stats={"collected": 1, "passed": 1, "failed": 0, "skipped": 0, "errors": 0},
-            security_records=(record,),
-        )
+        proof, record, decision = _ready_proof(mission_id, requirement_id, "rev1")
+        assert proof.release_state == "ENGINEERING_READY"
         expected_hash = compute_proof_hash(proof)
         _, written_hash = record_proof(conn_a, proof)
         assert written_hash == expected_hash
@@ -129,67 +186,68 @@ def test_production_proof_persists_and_reloads_through_fresh_connection_with_unc
         conn_b.close()
 
 
-def test_proof_history_is_append_only_across_multiple_revisions():
-    # rev A -> blocked proof (missing evidence); rev B -> ready;
-    # rev C -> regression (blocked again) -- history preserves all
-    # three, never rewriting an earlier proof's outcome.
+def test_blocked_proof_write_raises_until_migration_approved():
+    """Phase 15.10.1 closure item 8: against the CURRENT (unmigrated)
+    schema, `record_proof()` must REFUSE to persist a
+    `NOT_ENGINEERING_READY` proof rather than silently mislabeling its
+    durable row as `ENGINEERING_READY` (the exact defect this closure
+    fixes). This is the intended, honest interim behavior until the
+    disposable-branch-validated migration in
+    `orca.mission.production_proof_schema` is approved and applied."""
     mission_id = _mid()
     requirement_id = _rid()
     conn = _fresh_connection()
     try:
         _seed_mission_and_requirement(conn, mission_id, requirement_id)
-
-        # rev A: blocked -- no verification record at all.
-        proof_a = generate_production_proof(
-            mission_id=mission_id, revision="revA", required_requirement_ids=(requirement_id,),
+        blocked_proof = generate_production_proof(
+            mission_id=mission_id, revision="rev1", required_requirement_ids=(requirement_id,),
             required_scopes_by_requirement={requirement_id: _UNIT_TEST_SCOPE},
             records_by_requirement={requirement_id: ()},
-            anti_gaming_analysis_performed=True,
+            anti_gaming_evidence=_ag_evidence(mission_id, "rev1"), release_policy=_MINIMAL_POLICY,
         )
-        record_proof(conn, proof_a)
+        assert blocked_proof.release_state == NOT_ENGINEERING_READY
+        with pytest.raises(ProductionProofStoreError):
+            record_proof(conn, blocked_proof)
+        conn.rollback()
+        # No row was written for the failed insert:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS c FROM production_proofs WHERE mission_id = %s", (mission_id,))
+            count = cur.fetchone()["c"]
+        conn.commit()
+        assert count == 0
+    finally:
+        conn.close()
 
-        # rev B: ready -- real record + Court ACCEPT.
-        record_b = _pass_record(mission_id, requirement_id, revision="revB")
-        decision_b = _accept_decision(mission_id, requirement_id, revision="revB")
-        proof_b = generate_production_proof(
-            mission_id=mission_id, revision="revB", required_requirement_ids=(requirement_id,),
-            required_scopes_by_requirement={requirement_id: _UNIT_TEST_SCOPE},
-            records_by_requirement={requirement_id: (record_b,)}, court_decision=decision_b,
-            anti_gaming_analysis_performed=True, build_records=(record_b,), unit_test_records=(record_b,),
-            unit_test_stats={"collected": 1, "passed": 1, "failed": 0, "skipped": 0, "errors": 0},
-            security_records=(record_b,),
-        )
-        record_proof(conn, proof_b)
 
-        # rev C: regressed -- a FAIL record.
-        fail_record_c = VerificationRecord(
-            id=f"ver_{uuid.uuid4().hex[:12]}", mission_id=mission_id, requirement_id=requirement_id,
-            criterion_id=None, category="UNIT_TEST", verification_method="UNIT_TEST",
-            verifier_id="UnitTestVerifier", started_at="2026-01-01T00:00:00Z",
-            outcome=VerificationOutcome.FAIL, revision="revC",
-        )
-        proof_c = generate_production_proof(
-            mission_id=mission_id, revision="revC", required_requirement_ids=(requirement_id,),
-            required_scopes_by_requirement={requirement_id: _UNIT_TEST_SCOPE},
-            records_by_requirement={requirement_id: (fail_record_c,)},
-            anti_gaming_analysis_performed=True,
-        )
-        record_proof(conn, proof_c)
+def test_proof_history_is_append_only_across_multiple_representable_revisions():
+    # rev1 -> ready; rev2 -> ready again (a distinct, later revision) --
+    # history preserves both rows in chronological order, neither
+    # rewritten by the other. (A genuinely BLOCKED intermediate proof
+    # cannot be durably written pre-migration -- see the dedicated
+    # test above -- so this history uses only currently-representable
+    # states, per this closure's own honest interim behavior.)
+    mission_id = _mid()
+    requirement_id = _rid()
+    conn = _fresh_connection()
+    try:
+        _seed_mission_and_requirement(conn, mission_id, requirement_id)
+        proof_1, _, _ = _ready_proof(mission_id, requirement_id, "rev1")
+        record_proof(conn, proof_1)
+        proof_2, _, _ = _ready_proof(mission_id, requirement_id, "rev2")
+        record_proof(conn, proof_2)
     finally:
         conn.close()
 
     conn2 = _fresh_connection()
     try:
         history = proofs_for_mission(conn2, mission_id)
-        assert len(history) == 3
+        assert len(history) == 2
         revisions_in_order = [p.revision for p, _ in history]
-        assert revisions_in_order == ["revA", "revB", "revC"]
-        outcomes_in_order = [p.release_state for p, _ in history]
-        assert outcomes_in_order[0] != "ENGINEERING_READY"   # rev A blocked
-        assert outcomes_in_order[1] == "ENGINEERING_READY"   # rev B ready
-        assert outcomes_in_order[2] != "ENGINEERING_READY"   # rev C regressed
-        # rev A's original outcome was NOT rewritten by later revisions:
-        assert history[0][0].release_state != "ENGINEERING_READY"
+        assert revisions_in_order == ["rev1", "rev2"]
+        assert all(p.release_state == "ENGINEERING_READY" for p, _ in history)
+        # rev1's own row is untouched by rev2's later write:
+        assert history[0][0].proof_id == proof_1.proof_id
+        assert history[0][0].revision == "rev1"
     finally:
         conn2.close()
 
@@ -200,16 +258,7 @@ def test_stale_proof_cannot_certify_a_different_revision_after_reload():
     conn = _fresh_connection()
     try:
         _seed_mission_and_requirement(conn, mission_id, requirement_id)
-        record = _pass_record(mission_id, requirement_id, revision="rev1")
-        decision = _accept_decision(mission_id, requirement_id, revision="rev1")
-        proof = generate_production_proof(
-            mission_id=mission_id, revision="rev1", required_requirement_ids=(requirement_id,),
-            required_scopes_by_requirement={requirement_id: _UNIT_TEST_SCOPE},
-            records_by_requirement={requirement_id: (record,)}, court_decision=decision,
-            anti_gaming_analysis_performed=True, build_records=(record,), unit_test_records=(record,),
-            unit_test_stats={"collected": 1, "passed": 1, "failed": 0, "skipped": 0, "errors": 0},
-            security_records=(record,),
-        )
+        proof, _, _ = _ready_proof(mission_id, requirement_id, "rev1")
         record_proof(conn, proof)
     finally:
         conn.close()
@@ -229,18 +278,16 @@ def test_no_raw_secret_persisted_in_stored_proof():
     conn = _fresh_connection()
     try:
         _seed_mission_and_requirement(conn, mission_id, requirement_id)
-        tainted_record = VerificationRecord(
-            id=f"ver_{uuid.uuid4().hex[:12]}", mission_id=mission_id, requirement_id=requirement_id,
-            criterion_id=None, category="UNIT_TEST", verification_method="UNIT_TEST",
-            verifier_id="UnitTestVerifier", started_at="2026-01-01T00:00:00Z",
-            outcome=VerificationOutcome.PASS, revision="rev1", evidence_refs=("x",),
+        tainted_record = _unit_record(
+            mission_id, requirement_id, revision="rev1",
             summary="connected using postgresql://admin:supersecretvalue@host/db",
         )
         proof = generate_production_proof(
             mission_id=mission_id, revision="rev1", required_requirement_ids=(requirement_id,),
             required_scopes_by_requirement={requirement_id: _UNIT_TEST_SCOPE},
             records_by_requirement={requirement_id: (tainted_record,)},
-            anti_gaming_analysis_performed=True, build_records=(tainted_record,),
+            anti_gaming_evidence=_ag_evidence(mission_id, "rev1"),
+            build_records=(tainted_record,), release_policy=_MINIMAL_POLICY,
         )
         record_proof(conn, proof)
     finally:

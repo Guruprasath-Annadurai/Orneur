@@ -1,28 +1,33 @@
 """
 Phase 15.10 -- durable Production Proof persistence, against the
-EXISTING `production_proofs` table defined in `orca/mission/schema.py`
-(Phase 15.2, already applied to production -- no migration needed for
-this closure, spec sections 27-28).
-
-Matches this repository's established raw-psycopg pattern
+`production_proofs` table defined in `orca/mission/schema.py` (Phase
+15.2). Matches this repository's established raw-psycopg pattern
 (`orca/mission/verification_store.py`, `operation_store.py`,
 `mission_store.py`): explicit `conn.commit()`, `%s` placeholders,
 `dict_row` row factory (via `get_conn()`), no ORM.
 
 Proofs are APPEND-ONLY (spec section 30): `record_proof()` always
 INSERTs a new row (a fresh `proof_id`); there is no `update_proof()`.
-A later proof for a newer revision creates a NEW row -- it never
-overwrites or rewrites a prior proof's outcome, even when the project
-later improves (spec section 30's explicit example: rev A blocked,
-rev B ready, rev C regressed, rev D ready again -- all four rows
-remain visible).
 
-The entire typed `ProductionProof` (plus its computed hash) is stored
-as the canonical JSON payload in the existing `categories` column --
-the table's minimal 6-column shape (id, mission_id, revision,
-created_at, categories, overall_status) is sufficient to hold the full
-proof without a schema change; `categories` was already documented as
-free-form JSON in its own column comment.
+PHASE 15.10.1 CLOSURE item 8 (OVERALL-STATUS INTEGRITY): the original
+Phase 15.10 implementation silently mapped `NOT_ENGINEERING_READY` to
+`'ENGINEERING_READY'` for the `overall_status` column, because the
+Phase 15.2 CHECK constraint only allows the 4 canonical `LaunchReadiness`
+values -- a blocked proof's DURABLE ROW claimed the software was
+engineering-ready. This was a hard integrity defect: a durable index
+must never contradict its canonical payload.
+
+`record_proof()` now writes `proof.release_state` EXACTLY, with no
+translation. Against the CURRENT (unmigrated) production schema, this
+means writing a `NOT_ENGINEERING_READY` proof will raise a Postgres
+CHECK-constraint violation rather than silently lying -- this is the
+intended, honest interim behavior until the migration in
+`orca/mission/production_proof_schema.py` (validated on a disposable
+Neon branch, NOT applied to production without explicit owner
+approval -- see PHASE15_EVIDENCE.md's "PHASE 15.10.1" section) is
+approved and applied. `get_proof()`/`proofs_for_mission()` additionally
+detect (and refuse to silently accept) any row whose `overall_status`
+column disagrees with its own JSON payload's `release_state`.
 """
 from __future__ import annotations
 
@@ -39,43 +44,56 @@ from orca.mission.production_proof import (
     RequirementResult,
     RollbackResult,
     TestCategoryResult,
-    NOT_ENGINEERING_READY,
-    canonical_json,
     compute_proof_hash,
+    is_proof_stale,
     to_dict,
 )
 from orca.mission.verification import VerificationOutcome
+
+__all__ = [
+    "ProductionProofStoreError",
+    "record_proof",
+    "get_proof",
+    "proofs_for_mission",
+    "latest_proof_for_mission",
+    "is_proof_stale",
+]
 
 
 class ProductionProofStoreError(Exception):
     pass
 
 
-#: overall_status has a Postgres CHECK constraint limited to these
-#: four values (Phase 15.2 schema) -- NOT_ENGINEERING_READY does not
-#: fit that constraint, so it is stored as ENGINEERING_READY's
-#: predecessor label only inside the JSON payload; the DB column
-#: itself uses the closest allowed value for indexing/filtering
-#: purposes, with the JSON payload remaining the source of truth for
-#: the precise release_state (spec section 22's finer distinction is
-#: preserved in the payload even though the column's CHECK constraint
-#: predates this phase and is not migrated here, per "prefer no
-#: migration when the existing schema is sufficient").
-_COLUMN_ALLOWED_STATUSES = frozenset({"ENGINEERING_READY", "SUBMISSION_READY", "RELEASE_CANDIDATE", "PUBLISHED"})
-
-
-def _column_overall_status(release_state: str) -> str:
-    return release_state if release_state in _COLUMN_ALLOWED_STATUSES else "ENGINEERING_READY"
+#: The Phase 15.2 CHECK constraint's current allowed values. Any
+#: `release_state` outside this set (i.e. `NOT_ENGINEERING_READY`)
+#: cannot be written to the CURRENT schema at all -- see module
+#: docstring. This set is used only to give a clear, actionable error
+#: message before the raw Postgres exception would otherwise surface.
+_CURRENT_SCHEMA_ALLOWED_STATUSES = frozenset({
+    "ENGINEERING_READY", "SUBMISSION_READY", "RELEASE_CANDIDATE", "PUBLISHED",
+})
 
 
 def record_proof(conn, proof: ProductionProof) -> tuple[ProductionProof, str]:
-    """Persists `proof` as a new, append-only row. Returns
-    `(proof, proof_hash)` -- the hash is computed HERE (from the exact
-    canonical payload about to be written) so a caller never has to
-    separately compute and pass it in out of sync with what is stored."""
+    """Persists `proof` as a new, append-only row, writing
+    `proof.release_state` EXACTLY into `overall_status` -- no lying
+    translation (Phase 15.10.1 closure item 8). Returns `(proof,
+    proof_hash)`."""
     proof_hash = compute_proof_hash(proof)
     payload = to_dict(proof)
     payload["proof_hash"] = proof_hash
+    if proof.release_state not in _CURRENT_SCHEMA_ALLOWED_STATUSES:
+        raise ProductionProofStoreError(
+            f"record_proof(): release_state {proof.release_state!r} cannot be written to the "
+            f"CURRENT production_proofs.overall_status CHECK constraint (Phase 15.2 schema, "
+            f"limited to {sorted(_CURRENT_SCHEMA_ALLOWED_STATUSES)!r}). The Phase 15.10.1 "
+            f"migration that widens this constraint has been validated on a disposable Neon "
+            f"branch but NOT applied to production pending explicit owner approval -- see "
+            f"orca/mission/production_proof_schema.py and PHASE15_EVIDENCE.md's 'PHASE 15.10.1' "
+            f"section. This proof cannot be durably persisted with its true release_state until "
+            f"that migration is approved and applied; it is NOT silently mislabeled as "
+            f"ENGINEERING_READY."
+        )
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -84,7 +102,7 @@ def record_proof(conn, proof: ProductionProof) -> tuple[ProductionProof, str]:
             """,
             (
                 proof.proof_id, proof.mission_id, proof.revision, proof.generated_at,
-                json.dumps(payload, sort_keys=True), _column_overall_status(proof.release_state),
+                json.dumps(payload, sort_keys=True), proof.release_state,
             ),
         )
     conn.commit()
@@ -126,12 +144,14 @@ def _court(d: dict) -> CourtSnapshot:
         risk_level=d["risk_level"], roles_invoked=tuple(d["roles_invoked"]), verdict=d["verdict"],
         findings_considered=tuple(d["findings_considered"]), verification_refs=tuple(d["verification_refs"]),
         reasoning_summary=d["reasoning_summary"], durable=d["durable"],
+        evidence_source=d["evidence_source"], context_bound=d["context_bound"],
     )
 
 
 def _anti_gaming(d: dict) -> AntiGamingSnapshot:
     return AntiGamingSnapshot(
-        analysis_performed=d["analysis_performed"], baseline_revision=d["baseline_revision"],
+        analysis_performed=d["analysis_performed"], analysis_id=d.get("analysis_id"),
+        baseline_revision=d["baseline_revision"],
         candidate_revision=d["candidate_revision"], blocking_finding_ids=tuple(d["blocking_finding_ids"]),
         critical_finding_ids=tuple(d["critical_finding_ids"]), total_findings=d["total_findings"],
         detector_ids=tuple(d["detector_ids"]),
@@ -166,6 +186,7 @@ def _payload_to_proof(payload: dict) -> ProductionProof:
         branch=payload["branch"], base_revision=payload["base_revision"], revision=payload["revision"],
         generated_at=payload["generated_at"], proof_schema_version=payload["proof_schema_version"],
         generator_id=payload["generator_id"], generator_version=payload["generator_version"],
+        decision_context_fingerprint=payload["decision_context_fingerprint"],
         required_requirement_ids=tuple(payload["required_requirement_ids"]),
         requirement_results=tuple(_requirement_result(r) for r in payload["requirement_results"]),
         requirements_satisfied=tuple(payload["requirements_satisfied"]),
@@ -191,66 +212,47 @@ def _payload_to_proof(payload: dict) -> ProductionProof:
     )
 
 
+def _row_to_proof(row: dict) -> tuple[ProductionProof, str]:
+    """Phase 15.10.1 closure item 8: detects (and refuses to silently
+    accept) a row whose SQL `overall_status` column disagrees with its
+    own JSON payload's `release_state` -- a durable index must never
+    contradict its canonical payload."""
+    payload = json.loads(row["categories"])
+    stored_hash = payload.pop("proof_hash")
+    proof = _payload_to_proof(payload)
+    if row["overall_status"] != proof.release_state:
+        raise ProductionProofStoreError(
+            f"production_proofs row {row['id']!r}: SQL overall_status "
+            f"{row['overall_status']!r} does not match its own JSON payload's "
+            f"release_state {proof.release_state!r} -- refusing to silently accept "
+            f"contradictory durable state (Phase 15.10.1 closure item 8)."
+        )
+    return proof, stored_hash
+
+
 def get_proof(conn, proof_id: str) -> tuple[ProductionProof, str] | None:
-    """Reloads a proof exactly, plus the hash that was stored
-    alongside it at write time. Returns `(proof, stored_hash)` so a
-    caller can independently recompute `compute_proof_hash(proof)` and
-    assert it equals `stored_hash` -- proving both durability AND
-    hash integrity across a fresh connection (spec sections 27, 34)."""
+    """Reloads a proof exactly, plus the hash that was stored alongside
+    it at write time. Returns `(proof, stored_hash)`."""
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM production_proofs WHERE id = %s", (proof_id,))
         row = cur.fetchone()
     conn.commit()
     if row is None:
         return None
-    payload = json.loads(row["categories"])
-    stored_hash = payload.pop("proof_hash")
-    return _payload_to_proof(payload), stored_hash
+    return _row_to_proof(dict(row))
 
 
 def proofs_for_mission(conn, mission_id: str) -> tuple[tuple[ProductionProof, str], ...]:
-    """Full proof HISTORY for a mission, oldest first -- append-only:
-    every proof ever generated for this mission remains visible, never
-    overwritten (spec section 30)."""
+    """Full proof HISTORY for a mission, oldest first -- append-only."""
     with conn.cursor() as cur:
         cur.execute(
             "SELECT * FROM production_proofs WHERE mission_id = %s ORDER BY created_at ASC", (mission_id,),
         )
         rows = cur.fetchall()
     conn.commit()
-    results = []
-    for row in rows:
-        payload = json.loads(row["categories"])
-        stored_hash = payload.pop("proof_hash")
-        results.append((_payload_to_proof(payload), stored_hash))
-    return tuple(results)
+    return tuple(_row_to_proof(dict(r)) for r in rows)
 
 
 def latest_proof_for_mission(conn, mission_id: str) -> tuple[ProductionProof, str] | None:
     history = proofs_for_mission(conn, mission_id)
     return history[-1] if history else None
-
-
-# ── Stale-proof detection (spec section 31) ──────────────────────────
-
-def is_proof_stale(
-    proof: ProductionProof, *, current_revision: str,
-    current_required_scopes_by_requirement: dict | None = None,
-) -> bool:
-    """A Production Proof is revision-bound: proof for revision A
-    cannot certify revision B. Also considers the required scope for
-    each requirement -- if the scope actually required for a
-    requirement has changed since the proof was generated (a different
-    set of keys), the old proof's requirement result no longer reflects
-    the current decision context and must be treated as stale."""
-    if proof.revision != current_revision:
-        return True
-    if current_required_scopes_by_requirement is None:
-        return False
-    for result in proof.requirement_results:
-        current_scope = current_required_scopes_by_requirement.get(result.requirement_id)
-        if current_scope is None:
-            continue
-        if tuple(sorted(current_scope.keys)) != result.scope_keys:
-            return True
-    return False
