@@ -180,12 +180,22 @@ def evaluate_requirement_completion(
     records: tuple[VerificationRecord, ...], *, requirement_id: str, current_revision: str,
     mission_id: str | None = None, required_criterion_ids: frozenset[str] | None = None,
 ) -> tuple[VerificationOutcome, tuple[VerificationRecord, ...]]:
-    """THE single authoritative function for deciding whether a
-    requirement's verification is complete (Phase 15.9.3 closure item
-    8's "centralized aggregation" -- used by both `arbiter_decide()`
-    and `orca.mission.mission_verification_gate`, and intended for
-    Production Proof to reuse rather than re-implement). Combines
-    every identity dimension that must hold before a PASS may count:
+    """GENERIC/LEGACY requirement-completion aggregation (Phase 15.9.3
+    closure item 8). As of Phase 15.9.4, this function is NO LONGER
+    used by `arbiter_decide()` or `orca.mission.mission_verification_
+    gate` -- an independent audit found its Phase-15.7-registry/
+    whatever-exists fallback to be fail-OPEN on the Court/
+    COMPLETED_VERIFIED path: a separately-started process that never
+    repopulates the in-process `AcceptanceCriterion` registry would
+    silently accept a weaker verification scope than intended. The
+    mission-critical path now calls `evaluate_requirement_completion_
+    for_mission()` below instead, which requires an explicit, already-
+    resolved `RequiredVerificationScope` and never itself queries that
+    registry. THIS function remains available, unchanged, for generic/
+    non-mission-critical callers that are not capable of producing
+    ACCEPT or COMPLETED_VERIFIED -- do not wire it back into either of
+    those paths. Combines every identity dimension that must hold
+    before a PASS may count:
 
       MISSION    -- via `filter_current_context()`'s mission binding.
       REVISION   -- via `filter_current_context()`'s revision binding.
@@ -244,6 +254,145 @@ def evaluate_requirement_completion(
         record = latest.get(key)
         if record is None:
             outcomes.append(VerificationOutcome.UNVERIFIED)  # missing required criterion != PASS
+            continue
+        outcomes.append(record.outcome)
+        if record.outcome is VerificationOutcome.PASS:
+            contributing.append(record)
+    outcome = aggregate_outcomes(tuple(outcomes))
+    if outcome is not VerificationOutcome.PASS:
+        return outcome, ()
+    return outcome, tuple(contributing)
+
+
+# ── Mission-critical authoritative scope (Phase 15.9.4 closure) ─────
+
+class ScopeError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class RequiredVerificationScope:
+    """The EXPLICIT, authoritative statement of which verification
+    keys are required for one requirement on the Court/
+    COMPLETED_VERIFIED mission-critical path (Phase 15.9.4 closure).
+
+    `evaluate_requirement_completion()` (above) is a GENERIC/LEGACY
+    helper: when it has no explicit override, it falls back to either
+    the Phase 15.7 `AcceptanceCriterion` in-process registry or, if
+    that registry has nothing registered either, to "whatever keys
+    happen to be present in the records" -- a fallback that is
+    acceptable for generic, non-mission-critical callers, but was
+    found (Phase 15.9.4 audit) to be a fail-OPEN hole on the Court/
+    completion path: a separately-started process that never
+    repopulates the in-process registry would silently accept a
+    weaker verification scope than the one originally intended, and
+    the decision would depend on accidental in-process state rather
+    than on anything durable or explicitly supplied.
+
+    `RequiredVerificationScope` closes that hole by being the ONLY
+    thing the mission-critical path (`evaluate_requirement_completion_
+    for_mission()` below, and therefore `arbiter_decide()` and
+    `orca.mission.mission_verification_gate`) will accept as
+    authority for what is required -- it never itself queries the
+    Phase 15.7 registry. A caller MAY use that registry (via
+    `expected_keys_for_requirement()`) as a convenient way to BUILD a
+    `RequiredVerificationScope` before calling, but the mission-
+    critical function itself takes only this explicit, already-
+    resolved object -- so a process restart that clears the in-memory
+    registry cannot silently change the ACCEPT/COMPLETED_VERIFIED
+    decision for evidence that was already gathered.
+
+    Expresses BOTH pre-existing verification-key forms (closure item
+    3) -- `criterion_ids` for criterion-backed verification
+    (`record.criterion_id` set to a real Phase 15.7 `AcceptanceCriterion
+    .criterion_id`) and `requirement_level_categories` for the
+    equally-legitimate pre-existing pattern of requirement-level
+    checks with `record.criterion_id is None`, grouped by
+    `record.category` instead -- so no historical requirement-level
+    check needs to be forced into a fake `AcceptanceCriterion` object
+    just to be expressible here.
+
+    The scope itself must be non-empty: at least one of `criterion_ids`
+    / `requirement_level_categories` must be supplied, or construction
+    raises `ScopeError` -- an EMPTY scope can never be treated as "no
+    verification is required," which would be exactly the vacuous-pass
+    hazard this whole closure lineage (Phase 15.9.2 item 1) exists to
+    prevent."""
+    criterion_ids: frozenset[str] = frozenset()
+    requirement_level_categories: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        if not self.criterion_ids and not self.requirement_level_categories:
+            raise ScopeError(
+                "RequiredVerificationScope must declare at least one criterion_id or "
+                "requirement_level_category -- an empty scope can never authorize "
+                "ACCEPT/COMPLETED_VERIFIED (Phase 15.9.4 closure)."
+            )
+
+    @property
+    def keys(self) -> frozenset[str]:
+        """The exact internal aggregation-key convention `_latest_by_
+        key()` already uses (a bare criterion_id, or `category:<name>`
+        for a requirement-level check) -- exposed here so callers never
+        need to construct that magic-string convention themselves."""
+        return self.criterion_ids | frozenset(f"category:{c}" for c in self.requirement_level_categories)
+
+
+def evaluate_requirement_completion_for_mission(
+    records: tuple[VerificationRecord, ...], *, requirement_id: str, current_revision: str,
+    mission_id: str, required_scope: RequiredVerificationScope,
+) -> tuple[VerificationOutcome, tuple[VerificationRecord, ...]]:
+    """THE single authoritative aggregation function for the Court/
+    `COMPLETED_VERIFIED` mission-critical path (Phase 15.9.4 closure
+    item 9's "central truth rule" -- `arbiter_decide()` and
+    `orca.mission.mission_verification_gate` both call this, and any
+    future Production Proof aggregation should too, rather than
+    inventing another truth rule). Requires, and holds, exactly the
+    four identity/scope dimensions that must all agree before a PASS
+    counts:
+
+      MISSION    -- via `filter_current_context()`'s mission binding.
+      REVISION   -- via `filter_current_context()`'s revision binding.
+      REQUIREMENT -- via `filter_current_requirement_context()`'s
+                     requirement-id binding (Phase 15.9.3 closure item
+                     1) -- a record is never trusted merely because a
+                     caller filed it under a matching dict key.
+      EXPECTED VERIFICATION SCOPE -- `required_scope`, an EXPLICIT,
+                     already-resolved `RequiredVerificationScope` the
+                     caller must supply -- this function never
+                     consults the Phase 15.7 in-process registry
+                     itself, so its result cannot change merely
+                     because that registry was or wasn't populated in
+                     this process (Phase 15.9.4 closure item 4's
+                     fail-closed guarantee).
+
+    `mission_id` is required (non-optional, unlike the generic
+    `evaluate_requirement_completion()`) because there is no
+    legitimate unscoped call on this path -- the Court/completion
+    callers already validate this themselves (Phase 15.9.2 closure),
+    but this function enforces it independently too, defense in
+    depth.
+
+    Returns `(aggregated_outcome, records_that_actually_produced_a_
+    PASS_contribution)`, exactly as `evaluate_requirement_completion()`
+    does; `contributing` is always empty when the outcome is not
+    PASS."""
+    if not mission_id:
+        raise ScopeError(
+            "evaluate_requirement_completion_for_mission() requires a non-empty "
+            "mission_id -- there is no legitimate unscoped call on the mission-"
+            "critical path (Phase 15.9.4 closure)."
+        )
+    scoped = filter_current_requirement_context(
+        records, current_revision=current_revision, requirement_id=requirement_id, mission_id=mission_id,
+    )
+    latest = _latest_by_key(scoped)
+    outcomes: list[VerificationOutcome] = []
+    contributing: list[VerificationRecord] = []
+    for key in required_scope.keys:
+        record = latest.get(key)
+        if record is None:
+            outcomes.append(VerificationOutcome.UNVERIFIED)  # missing required scope key != PASS
             continue
         outcomes.append(record.outcome)
         if record.outcome is VerificationOutcome.PASS:

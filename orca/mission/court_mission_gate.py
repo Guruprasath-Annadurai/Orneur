@@ -54,20 +54,27 @@ Verification -> Mission completion path end-to-end found that
 `records_by_requirement` dictionary KEY as authority for a record's
 identity, and could PASS a requirement with evidence for only SOME of
 its required acceptance criteria. Both are fixed inside
-`orca.mission.mission_verification_gate`/`orca.mission
-.verification_aggregation.evaluate_requirement_completion()` --
-this module's own defense-in-depth mission/revision binding above is
-unchanged and still runs first, but the verification gate it then
-consults is now itself requirement-identity- and criterion-complete.
-An optional `required_criteria_by_requirement` parameter passes
-through unchanged to `can_complete_verified()` for a caller that needs
-to supply an explicit criterion scope.
+`orca.mission.mission_verification_gate` -- this module's own
+defense-in-depth mission/revision binding above is unchanged and still
+runs first, but the verification gate it then consults is now itself
+requirement-identity- and criterion-complete.
+
+PHASE 15.9.4 CLOSURE: `can_complete_verified()`'s Phase 15.9.3 fix
+could still fall back to the Phase 15.7 in-process registry or to
+whatever records happened to exist -- fail-OPEN if a separate process
+never repopulated that registry. `required_criteria_by_requirement`
+(optional) is replaced by a MANDATORY `required_scopes_by_requirement`
+parameter: every required requirement must have an explicit
+`RequiredVerificationScope` entry, or `can_complete_verified()` itself
+raises `MissionVerificationGateError` before computing any outcome.
+This module passes it through unchanged.
 """
 from __future__ import annotations
 
 from orca.mission.cognitive_court import CourtDecision, CourtVerdict
 from orca.mission.mission_verification_gate import can_complete_verified
 from orca.mission.verification import VerificationRecord
+from orca.mission.verification_aggregation import RequiredVerificationScope
 
 
 class CourtMissionGateError(Exception):
@@ -78,7 +85,7 @@ def can_proceed_to_completed_verified(
     *, court_decision: CourtDecision,
     records_by_requirement: dict[str, tuple[VerificationRecord, ...]],
     required_requirement_ids: tuple[str, ...], current_revision: str, current_mission_id: str,
-    required_criteria_by_requirement: dict[str, frozenset[str]] | None = None,
+    required_scopes_by_requirement: dict[str, RequiredVerificationScope],
 ) -> tuple[bool, str]:
     """Returns (can_proceed, reason). Only True when the Court
     verdict, the decision's own mission/revision binding, AND the
@@ -122,7 +129,7 @@ def can_proceed_to_completed_verified(
     verification_ok, outcomes = can_complete_verified(
         records_by_requirement, required_requirement_ids=required_requirement_ids,
         current_revision=current_revision, mission_id=current_mission_id,
-        required_criteria_by_requirement=required_criteria_by_requirement,
+        required_scopes_by_requirement=required_scopes_by_requirement,
     )
     if not verification_ok:
         blocking = {rid: o.value for rid, o in outcomes.items() if o.value != "PASS"}

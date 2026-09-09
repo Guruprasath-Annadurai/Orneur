@@ -429,6 +429,7 @@ def test_closure_item_3_security_integration_replaced_by_mock_is_critical_blocki
     # And the Court cannot ACCEPT while this finding exists.
     from orca.mission.cognitive_court import CourtRole, CourtVerdict, CriticConclusion, CriticOutput, RiskLevel, arbiter_decide
     from orca.mission.verification import VerificationOutcome, VerificationRecord
+    from orca.mission.verification_aggregation import RequiredVerificationScope
     pass_record = VerificationRecord(
         id="v1", mission_id="m1", requirement_id="REQ-AUTH-1", criterion_id=None, category="SECURITY",
         verification_method="SECURITY_TEST", verifier_id="SecurityVerifier", started_at="2026-01-01T00:00:00Z",
@@ -440,6 +441,9 @@ def test_closure_item_3_security_integration_replaced_by_mock_is_critical_blocki
         mission_id="m1", revision=candidate, risk_level=RiskLevel.CRITICAL, critic_outputs=all_accept,
         findings=(finding,), required_verification_records={"REQ-AUTH-1": (pass_record,)},
         required_requirement_ids=("REQ-AUTH-1",),
+        required_scopes_by_requirement={
+            "REQ-AUTH-1": RequiredVerificationScope(requirement_level_categories=frozenset({"SECURITY"})),
+        },
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
     assert decision.verdict is CourtVerdict.REJECT

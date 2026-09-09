@@ -26,7 +26,10 @@ from orca.mission.anti_gaming import AntiGamingFinding, critical_findings, has_b
 from orca.mission.providers import ModelProvider, ProviderError, ProviderRequest
 from orca.mission.test_collection_diff import CollectionDelta
 from orca.mission.verification import VerificationOutcome, VerificationRecord
-from orca.mission.verification_aggregation import evaluate_requirement_completion
+from orca.mission.verification_aggregation import (
+    RequiredVerificationScope,
+    evaluate_requirement_completion_for_mission,
+)
 
 
 def _now_iso() -> str:
@@ -305,8 +308,8 @@ def arbiter_decide(
     critic_outputs: tuple[CriticOutput, ...], findings: tuple[AntiGamingFinding, ...],
     required_verification_records: dict[str, tuple[VerificationRecord, ...]],
     required_requirement_ids: tuple[str, ...],
+    required_scopes_by_requirement: dict[str, RequiredVerificationScope],
     owner_approval_required: bool = False,
-    required_criteria_by_requirement: dict[str, frozenset[str]] | None = None,
 ) -> CourtDecision:
     """The ONLY function that produces a final CourtVerdict. Reads
     ONLY deterministic inputs -- no provider narrative is consulted
@@ -351,21 +354,31 @@ def arbiter_decide(
     `required_verification_records[req_id]` was trusted as proof for
     `req_id` purely because of its dict placement -- a record whose
     OWN `requirement_id` field disagreed with the key it was filed
-    under still silently counted. Second, `aggregate_requirement()`
-    could only ever aggregate whichever criterion/category keys
-    happened to be PRESENT in the supplied records -- if a requirement
-    genuinely required two acceptance criteria and only one had
-    evidence, the aggregate was computed over just that one, never
-    detecting the other was silently missing. Both gaps are now closed
-    by delegating to the single, centralized
+    under still silently counted. Second, aggregation could only ever
+    aggregate whichever criterion/category keys happened to be PRESENT
+    in the supplied records -- if a requirement genuinely required two
+    acceptance criteria and only one had evidence, the aggregate was
+    computed over just that one, never detecting the other was
+    silently missing.
+
+    Phase 15.9.4 closure: the Phase 15.9.3 fix could still fall back
+    to the Phase 15.7 in-process `AcceptanceCriterion` registry, or (if
+    that registry had nothing registered either) to whatever records
+    happened to exist -- a fail-OPEN condition, since a separately-
+    started process that never repopulates that in-memory registry
+    would silently accept a weaker verification scope than originally
+    intended. This function now REQUIRES an explicit, already-resolved
+    `RequiredVerificationScope` per required requirement
+    (`required_scopes_by_requirement`) and delegates to
     `orca.mission.verification_aggregation.evaluate_requirement_
-    completion()` (also used by `orca.mission.mission_verification_
-    gate`, Phase 15.9.3 closure item 8) -- it independently re-checks
-    `record.requirement_id` against the expected `req_id` and, when
-    the Phase 15.7 `AcceptanceCriterion` registry has criteria
-    registered for `req_id` (or `required_criteria_by_requirement`
-    supplies an explicit override for it), requires every one of them
-    to have current-context PASS evidence of its own."""
+    completion_for_mission()` (also used by `orca.mission
+    .mission_verification_gate`, Phase 15.9.4 closure item 9's single
+    central truth rule) -- there is no code path left here that
+    consults the in-process registry or infers scope from whatever
+    records happen to be present. A required requirement with no entry
+    in `required_scopes_by_requirement` raises
+    `CourtConfigurationError` immediately, before any `CourtDecision`
+    is constructed -- unknown expected scope fails closed."""
     if not mission_id:
         raise CourtConfigurationError(
             "arbiter_decide() requires a non-empty mission_id for the mission Court "
@@ -383,6 +396,14 @@ def arbiter_decide(
             "arbiter_decide() requires a non-empty required_requirement_ids -- an "
             "empty required set would let a critic-only ACCEPT proceed with zero "
             "verification basis (Phase 15.9.2 closure item 1)."
+        )
+    missing_scopes = [rid for rid in required_requirement_ids if rid not in required_scopes_by_requirement]
+    if missing_scopes:
+        raise CourtConfigurationError(
+            f"arbiter_decide() has no explicit RequiredVerificationScope for: "
+            f"{missing_scopes!r} -- an unknown expected verification scope must never "
+            f"be silently inferred from the AcceptanceCriterion registry or from "
+            f"whatever records happen to exist (Phase 15.9.4 closure)."
         )
 
     roles_invoked = tuple(c.role for c in critic_outputs)
@@ -410,10 +431,10 @@ def arbiter_decide(
     verification_refs: list[str] = []
     for req_id in required_requirement_ids:
         records = required_verification_records.get(req_id, ())
-        explicit_keys = (required_criteria_by_requirement or {}).get(req_id)
-        outcome, contributing = evaluate_requirement_completion(
+        scope = required_scopes_by_requirement[req_id]
+        outcome, contributing = evaluate_requirement_completion_for_mission(
             records, requirement_id=req_id, current_revision=revision, mission_id=mission_id,
-            required_criterion_ids=explicit_keys,
+            required_scope=scope,
         )
         outcomes[req_id] = outcome
         if outcome is VerificationOutcome.PASS:

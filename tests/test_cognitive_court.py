@@ -29,6 +29,10 @@ from orca.mission.cognitive_court import (
 from orca.mission.providers import MockProvider, ProviderFailure
 from orca.mission.test_collection_diff import CollectionDelta
 from orca.mission.verification import VerificationOutcome, VerificationRecord
+from orca.mission.verification_aggregation import RequiredVerificationScope
+
+_UNIT_TEST_SCOPE = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST"}))
+_CRIT_SCOPE = RequiredVerificationScope(criterion_ids=frozenset({"c1", "c2"}))
 
 
 def _finding(**overrides):
@@ -165,6 +169,7 @@ def test_arbiter_blocking_finding_always_rejects_regardless_of_critics():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.CRITICAL, critic_outputs=all_accept,
         findings=(_finding(),), required_verification_records={"REQ-X-1": (_record(),)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.REJECT
     assert decision.verification_refs == ()
@@ -177,6 +182,7 @@ def test_arbiter_unverified_required_verification_blocks_accept():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-X-1": (_record(outcome=VerificationOutcome.UNVERIFIED),)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
     assert decision.verification_refs == ()
@@ -186,6 +192,7 @@ def test_arbiter_owner_approval_required_returns_human_approval_required():
     decision = arbiter_decide(
         mission_id="m1", revision="rev2", risk_level=RiskLevel.HIGH, critic_outputs=(),
         findings=(), required_verification_records={}, required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
         owner_approval_required=True,
     )
     assert decision.verdict is CourtVerdict.HUMAN_APPROVAL_REQUIRED
@@ -199,6 +206,7 @@ def test_arbiter_accepts_when_all_conditions_met():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-X-1": (record,)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.ACCEPT
     # verification_refs is populated with the REAL record id that
@@ -217,6 +225,7 @@ def test_arbiter_disagreement_at_high_risk_escalates_not_averages():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.HIGH, critic_outputs=conflicting,
         findings=(), required_verification_records={"REQ-X-1": (_record(),)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.ESCALATE
 
@@ -228,6 +237,7 @@ def test_arbiter_no_opinions_needs_more_evidence_not_accept():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=only_constructor,
         findings=(), required_verification_records={"REQ-X-1": (_record(),)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
 
@@ -245,6 +255,7 @@ def test_arbiter_stale_revision_record_does_not_support_accept():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-X-1": (stale_record,)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
     assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
@@ -261,6 +272,7 @@ def test_arbiter_cross_mission_record_does_not_support_accept():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-X-1": (other_mission_record,)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
     assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
@@ -279,6 +291,7 @@ def test_arbiter_fabricated_outcome_without_record_cannot_accept():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-X-1": ()},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
     assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
@@ -299,6 +312,7 @@ def test_scenario_9_provider_accept_narrative_cannot_override_critical_finding()
         mission_id="m1", revision="rev2", risk_level=RiskLevel.CRITICAL, critic_outputs=(critic_output,),
         findings=(_finding(),), required_verification_records={"REQ-X-1": (_record(),)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
     assert decision.verdict is CourtVerdict.REJECT
@@ -340,6 +354,7 @@ def test_closure_6a_provider_accept_plus_stale_revision_blocks():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=(critic,),
         findings=(), required_verification_records={"REQ-X-1": (stale_record,)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
 
@@ -355,6 +370,7 @@ def test_closure_6b_provider_accept_plus_security_mock_critical_rejects():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.CRITICAL, critic_outputs=(critic,),
         findings=(mock_finding,), required_verification_records={"REQ-X-1": (_record(),)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.REJECT
 
@@ -369,6 +385,7 @@ def test_closure_6c_provider_accept_plus_deny_to_allow_mutation_rejects():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.CRITICAL, critic_outputs=(critic,),
         findings=(mutation_finding,), required_verification_records={"REQ-X-1": (_record(),)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.REJECT
 
@@ -381,6 +398,7 @@ def test_closure_6d_provider_accept_plus_no_real_record_cannot_accept():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=(critic,),
         findings=(), required_verification_records={"REQ-X-1": ()},  # no record at all
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
     assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
@@ -394,6 +412,7 @@ def test_closure_6e_all_correct_current_revision_evidence_no_blocker_accept_stil
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=(critic,),
         findings=(), required_verification_records={"REQ-X-1": (record,)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.ACCEPT
     assert decision.verification_refs == (record.id,)
@@ -408,6 +427,7 @@ def test_closure_15_9_2_a_empty_required_set_with_accepting_critic_cannot_accept
         arbiter_decide(
             mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
             findings=(), required_verification_records={}, required_requirement_ids=(),
+            required_scopes_by_requirement={},
         )
 
 
@@ -419,6 +439,7 @@ def test_closure_15_9_2_b_empty_required_set_with_accepting_provider_narrative_c
         arbiter_decide(
             mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=(critic,),
             findings=(), required_verification_records={}, required_requirement_ids=(),
+            required_scopes_by_requirement={},
         )
 
 
@@ -430,6 +451,7 @@ def test_closure_15_9_2_c_one_real_required_requirement_with_matching_pass_recor
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-X-1": (record,)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.ACCEPT
     assert decision.verification_refs != ()
@@ -442,6 +464,7 @@ def test_closure_15_9_2_d_one_required_requirement_zero_records_needs_more_evide
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-X-1": ()},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
     assert decision.verification_refs == ()
@@ -460,6 +483,7 @@ def test_closure_15_9_2_accept_decision_verification_refs_never_empty():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-X-1": (record,)},
         required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.ACCEPT
     assert decision.verification_refs != ()
@@ -476,6 +500,7 @@ def test_closure_15_9_2_mission_id_none_cannot_accept():
             mission_id=None, revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
             findings=(), required_verification_records={"REQ-X-1": (record,)},
             required_requirement_ids=("REQ-X-1",),
+            required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
         )
 
 
@@ -488,6 +513,7 @@ def test_closure_15_9_2_mission_id_empty_string_cannot_accept():
             mission_id="", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
             findings=(), required_verification_records={"REQ-X-1": (record,)},
             required_requirement_ids=("REQ-X-1",),
+            required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
         )
 
 
@@ -500,6 +526,7 @@ def test_closure_15_9_2_revision_empty_string_cannot_accept():
             mission_id="m1", revision="", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
             findings=(), required_verification_records={"REQ-X-1": (record,)},
             required_requirement_ids=("REQ-X-1",),
+            required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
         )
 
 
@@ -516,6 +543,7 @@ def test_closure_15_9_3_a_dict_key_spoofing_cannot_support_accept():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-B": (spoofed_record,)},
         required_requirement_ids=("REQ-B",),
+        required_scopes_by_requirement={"REQ-B": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
     assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
@@ -530,6 +558,7 @@ def test_closure_15_9_3_b_correct_dict_key_and_requirement_id_still_accepts():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-B": (real_record,)},
         required_requirement_ids=("REQ-B",),
+        required_scopes_by_requirement={"REQ-B": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is CourtVerdict.ACCEPT
     assert decision.verification_refs == (real_record.id,)
@@ -545,6 +574,7 @@ def test_closure_15_9_3_c_wrong_pass_ignored_correct_fail_dominates():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-B": (correct_fail, wrong_pass)},
         required_requirement_ids=("REQ-B",),
+        required_scopes_by_requirement={"REQ-B": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
     assert decision.verification_refs == ()
@@ -559,6 +589,7 @@ def test_closure_15_9_3_d_provider_accept_narrative_cannot_override_spoofed_reco
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=(critic,),
         findings=(), required_verification_records={"REQ-B": (spoofed_record,)},
         required_requirement_ids=("REQ-B",),
+        required_scopes_by_requirement={"REQ-B": _UNIT_TEST_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
 
@@ -598,6 +629,7 @@ def test_closure_15_9_3_missing_required_criterion_cannot_accept():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-CRIT-X-001": (c1_only,)},
         required_requirement_ids=("REQ-CRIT-X-001",),
+        required_scopes_by_requirement={"REQ-CRIT-X-001": _CRIT_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
     assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
@@ -614,6 +646,7 @@ def test_closure_15_9_3_both_required_criteria_present_can_accept():
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
         findings=(), required_verification_records={"REQ-CRIT-X-001": (c1, c2)},
         required_requirement_ids=("REQ-CRIT-X-001",),
+        required_scopes_by_requirement={"REQ-CRIT-X-001": _CRIT_SCOPE},
     )
     assert decision.verdict is CourtVerdict.ACCEPT
     assert set(decision.verification_refs) == {c1.id, c2.id}
@@ -629,5 +662,154 @@ def test_closure_15_9_3_provider_accept_narrative_cannot_override_missing_criter
         mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=(critic,),
         findings=(), required_verification_records={"REQ-CRIT-X-001": (c1_only,)},
         required_requirement_ids=("REQ-CRIT-X-001",),
+        required_scopes_by_requirement={"REQ-CRIT-X-001": _CRIT_SCOPE},
     )
     assert decision.verdict is not CourtVerdict.ACCEPT
+
+
+# ── Phase 15.9.4 closure: authoritative verification scope must be explicit ──
+# Fail-open fallback closed: arbiter_decide() no longer consults the
+# Phase 15.7 AcceptanceCriterion registry or falls back to whatever
+# records happen to exist -- required_scopes_by_requirement is now the
+# ONLY source of truth for expected verification scope on this path.
+
+def test_closure_15_9_4_a_no_scope_supplied_for_required_requirement_raises():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    record = _record(mission_id="m1", revision="rev2")
+    with pytest.raises(CourtConfigurationError):
+        arbiter_decide(
+            mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+            findings=(), required_verification_records={"REQ-X-1": (record,)},
+            required_requirement_ids=("REQ-X-1",),
+            required_scopes_by_requirement={},  # REQ-X-1 has no entry -- must fail closed
+        )
+
+
+def test_closure_15_9_4_c_registry_populated_but_scope_omitted_still_rejects():
+    # Even though the Phase 15.7 AcceptanceCriterion registry is fully
+    # populated in this process, arbiter_decide() must not secretly
+    # consult it -- omitting the explicit scope must still fail closed.
+    _register_req_with_two_criteria()
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    c1 = _record(requirement_id="REQ-CRIT-X-001", criterion_id="c1", mission_id="m1", revision="rev2")
+    c2 = _record(requirement_id="REQ-CRIT-X-001", criterion_id="c2", mission_id="m1", revision="rev2")
+    with pytest.raises(CourtConfigurationError):
+        arbiter_decide(
+            mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+            findings=(), required_verification_records={"REQ-CRIT-X-001": (c1, c2)},
+            required_requirement_ids=("REQ-CRIT-X-001",),
+            required_scopes_by_requirement={},  # registry HAS c1/c2, but no explicit scope supplied
+        )
+
+
+def test_closure_15_9_4_d_restart_simulated_explicit_scope_both_pass_can_accept():
+    # Simulates a process restart: the AcceptanceCriterion registry is
+    # explicitly reset/empty here (this test never registers c1/c2),
+    # yet ACCEPT is still correctly reachable because the scope is
+    # supplied explicitly -- the decision does not depend on
+    # accidental in-process registry state.
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    c1 = _record(requirement_id="REQ-CRIT-X-001", criterion_id="c1", mission_id="m1", revision="rev2")
+    c2 = _record(requirement_id="REQ-CRIT-X-001", criterion_id="c2", mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-CRIT-X-001": (c1, c2)},
+        required_requirement_ids=("REQ-CRIT-X-001",),
+        required_scopes_by_requirement={"REQ-CRIT-X-001": _CRIT_SCOPE},
+    )
+    assert decision.verdict is CourtVerdict.ACCEPT
+    assert set(decision.verification_refs) == {c1.id, c2.id}
+
+
+def test_closure_15_9_4_e_restart_simulated_explicit_scope_c1_only_is_unverified():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    c1_only = _record(requirement_id="REQ-CRIT-X-001", criterion_id="c1", mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-CRIT-X-001": (c1_only,)},
+        required_requirement_ids=("REQ-CRIT-X-001",),
+        required_scopes_by_requirement={"REQ-CRIT-X-001": _CRIT_SCOPE},
+    )
+    assert decision.verdict is not CourtVerdict.ACCEPT
+    assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
+
+
+def test_closure_15_9_4_f_requirement_level_category_scope_partial_is_unverified():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    unit_only = _record(requirement_id="REQ-CAT-001", mission_id="m1", revision="rev2")  # category=UNIT_TEST
+    scope = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST", "SECURITY_TEST"}))
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-CAT-001": (unit_only,)},
+        required_requirement_ids=("REQ-CAT-001",),
+        required_scopes_by_requirement={"REQ-CAT-001": scope},
+    )
+    assert decision.verdict is not CourtVerdict.ACCEPT
+    assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
+
+
+def test_closure_15_9_4_g_requirement_level_category_scope_complete_can_accept():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    unit_pass = _record(requirement_id="REQ-CAT-001", mission_id="m1", revision="rev2", category="UNIT_TEST")
+    security_pass = _record(requirement_id="REQ-CAT-001", mission_id="m1", revision="rev2",
+                             category="SECURITY_TEST", id="ver_security_pass")
+    scope = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST", "SECURITY_TEST"}))
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-CAT-001": (unit_pass, security_pass)},
+        required_requirement_ids=("REQ-CAT-001",),
+        required_scopes_by_requirement={"REQ-CAT-001": scope},
+    )
+    assert decision.verdict is CourtVerdict.ACCEPT
+    assert set(decision.verification_refs) == {unit_pass.id, security_pass.id}
+
+
+def test_closure_15_9_4_h_unexpected_extra_category_does_not_substitute_for_missing_required():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    unit_pass = _record(requirement_id="REQ-CAT-001", mission_id="m1", revision="rev2", category="UNIT_TEST")
+    extra_pass = _record(requirement_id="REQ-CAT-001", mission_id="m1", revision="rev2",
+                          category="PERFORMANCE_TEST", id="ver_extra_pass")
+    scope = RequiredVerificationScope(requirement_level_categories=frozenset({"UNIT_TEST", "SECURITY_TEST"}))
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-CAT-001": (unit_pass, extra_pass)},
+        required_requirement_ids=("REQ-CAT-001",),
+        required_scopes_by_requirement={"REQ-CAT-001": scope},
+    )
+    assert decision.verdict is not CourtVerdict.ACCEPT
+    assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
+
+
+def test_closure_15_9_4_i_provider_accept_narrative_cannot_override_absent_scope():
+    provider = _accepting_provider()
+    critic = security_critic_review((), provider=provider)
+    assert critic.provider_narrative and "ACCEPT" in critic.provider_narrative
+    record = _record(mission_id="m1", revision="rev2")
+    with pytest.raises(CourtConfigurationError):
+        arbiter_decide(
+            mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=(critic,),
+            findings=(), required_verification_records={"REQ-X-1": (record,)},
+            required_requirement_ids=("REQ-X-1",),
+            required_scopes_by_requirement={},
+        )
+
+
+def test_closure_15_9_4_j_matching_mission_revision_requirement_and_complete_scope_still_accepts():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    record = _record(mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-X-1": (record,)},
+        required_requirement_ids=("REQ-X-1",),
+        required_scopes_by_requirement={"REQ-X-1": _UNIT_TEST_SCOPE},
+    )
+    assert decision.verdict is CourtVerdict.ACCEPT
+    assert decision.verification_refs == (record.id,)
