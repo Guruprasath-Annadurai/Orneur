@@ -708,21 +708,39 @@ def seed_registry() -> None:
         acceptance_criteria=(
             "A test revokes a specific other-device session and confirms that session's "
             "subsequent requests are rejected while the revoking session remains valid.",
-            "A test confirms a Public Device session cannot access raw secrets that a "
-            "Trusted Device session of the same user can.",
+            "A test confirms Public Device Mode cannot access one or more security-sensitive "
+            "Relay capabilities/surfaces permitted to a Trusted Device under policy, while raw "
+            "secret values remain absent from Relay payloads in BOTH modes.",
         ),
     ))
+    # Phase 15.11.2 wording correction: the second acceptance criterion
+    # above previously read "a Public Device session cannot access raw
+    # secrets that a Trusted Device session of the same user can" --
+    # internally contradicting Relay's own canonical invariant that RAW
+    # SECRET VALUES ARE NEVER RELAYED, in ANY mode (spec section 19;
+    # orca.mission.relay_store's own _sanitize()/redact_secrets() pass
+    # applies unconditionally, regardless of RelayMode). That original
+    # wording could be misread as implying Trusted Device mode is
+    # PERMITTED to relay raw secrets -- it is not, and Phase 15.12 must
+    # not implement that. Corrected to describe the REAL intended
+    # distinction: Public vs. Trusted differ in which CAPABILITIES/
+    # SURFACES are reachable (a policy question Phase 15.12 owns), not
+    # in whether raw secrets are ever exposed (they never are, in
+    # either mode). This is a correction of internally-contradictory
+    # acceptance wording, not a completed security feature -- the
+    # requirement's status remains IMPLEMENTED, not VERIFIED, below.
+    #
     # Phase 15.11.1: creation/expiry/device-association/last-seen/
     # revoke-current/revoke-other/revoke-all-others are all genuinely
     # implemented and tested (tests/test_relay_store_live_neon.py). Stops
     # at IMPLEMENTED, deliberately NOT VERIFIED -- this requirement's
-    # second acceptance criterion (Public Device Mode's own SECURITY
-    # distinction from Trusted Device -- i.e. that a Public session
-    # cannot reach raw secrets a Trusted session of the same user can)
-    # is Phase 15.12's Public/Trusted/Mobile capability-enforcement work,
-    # not yet built. Advancing to VERIFIED before that would be exactly
-    # the "requirement is not VERIFIED because a test can call
-    # transition()" mistake this closure exists to fix.
+    # second acceptance criterion (Public Device Mode's own capability/
+    # surface restriction relative to Trusted Device, per the 15.11.2
+    # wording correction above) is Phase 15.12's Public/Trusted/Mobile
+    # capability-enforcement work, not yet built. Advancing to VERIFIED
+    # before that would be exactly the "requirement is not VERIFIED
+    # because a test can call transition()" mistake this closure exists
+    # to fix.
     transition(
         "REQ-DEVICE-REVOCATION-001", RequirementStatus.IMPLEMENTED,
         implementation_files=("orca/mission/relay_store.py",),

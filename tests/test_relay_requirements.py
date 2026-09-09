@@ -39,6 +39,24 @@ def test_canonical_req_relay_state_001_is_verified_with_real_references():
         requirements_module.reset_registry_for_tests()
 
 
+def test_canonical_req_device_revocation_001_acceptance_wording_does_not_permit_raw_secret_relay():
+    """15.11.2 wording correction: the old acceptance criterion ("a
+    Public Device session cannot access raw secrets that a Trusted
+    Device session ... can") could be misread as implying Trusted
+    Device mode is PERMITTED to relay raw secrets. It is not -- raw
+    secret values are never relayed in ANY mode. The corrected wording
+    must describe a capability/surface distinction, not imply raw
+    secrets are ever exposed."""
+    _seed_canonical_registry()
+    try:
+        req = requirements_module.get("REQ-DEVICE-REVOCATION-001")
+        criteria_text = " ".join(req.acceptance_criteria)
+        assert "raw secret values remain absent from Relay payloads in BOTH modes" in criteria_text
+        assert "cannot access raw secrets that a Trusted Device session" not in criteria_text
+    finally:
+        requirements_module.reset_registry_for_tests()
+
+
 def test_canonical_req_device_revocation_001_is_implemented_not_verified():
     """Per the owner's explicit instruction: this requirement spans
     Phase 15.11 + Phase 15.12 and must NOT be marked VERIFIED until

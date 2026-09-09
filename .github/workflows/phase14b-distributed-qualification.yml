@@ -58,6 +58,28 @@ jobs:
         run: |
           pip install --no-cache-dir -e ".[postgres]"
 
+      - name: "Fail closed if a Phase 15 live-Neon mode is selected without mission DB secrets (15.11.2 item 2 -- a green run whose live tests all skipped is NOT a live qualification, per run 34350468007's own discovered gap)"
+        run: |
+          set -euo pipefail
+          case "${{ github.event.inputs.fresh_runner_mode }}" in
+            phase15_4_live_neon_qualification|phase15_5_live_neon_qualification|phase15_6_live_neon_qualification|phase15_6_1_container_sandbox_qualification|phase15_7_live_neon_qualification|phase15_8_live_neon_qualification|phase15_11_relay_live_neon_qualification)
+              missing=""
+              if [ -z "$ORNEUR_MISSION_DATABASE_URL" ]; then missing="$missing ORNEUR_MISSION_DATABASE_URL"; fi
+              if [ -z "$ORNEUR_MISSION_DATABASE_URL_DIRECT" ]; then missing="$missing ORNEUR_MISSION_DATABASE_URL_DIRECT"; fi
+              if [ -n "$missing" ]; then
+                echo "::error::fresh_runner_mode='${{ github.event.inputs.fresh_runner_mode }}' requires a real disposable-Neon-branch connection string in EACH of: ORNEUR_MISSION_DATABASE_URL, ORNEUR_MISSION_DATABASE_URL_DIRECT. Missing/empty:$missing. Refusing to run -- a live-Neon qualification mode must never produce a green run whose live tests silently skipped for lack of credentials (this exact failure mode is what run 34350468007 exposed)."
+                exit 1
+              fi
+              echo "Mission DB secrets present (values not printed) -- live-Neon qualification may proceed."
+              ;;
+            *)
+              echo "fresh_runner_mode='${{ github.event.inputs.fresh_runner_mode }}' does not require mission DB secrets -- preflight is a no-op for this mode."
+              ;;
+          esac
+        env:
+          ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
+          ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}
+
       - name: "Phase 15.4 LIVE_NEON_TEMP_BRANCH qualification -- real application code (orca.mission.mission_store) against a disposable Neon branch, never production"
         if: github.event.inputs.fresh_runner_mode == 'phase15_4_live_neon_qualification'
         run: |
