@@ -144,6 +144,16 @@ jobs:
         env:
           ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
           ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}
+          # Phase 15.12: this job's own top-level env sets
+          # ORNEUR_DEPLOYMENT_PROFILE=DISTRIBUTED for the UNRELATED
+          # Phase 14B/14C Northflank steps -- overridden to SOVEREIGN
+          # (the zero-config default) for JUST this step, so
+          # tests/test_relay_security*.py's real reauthentication
+          # tests can use the isolated local SQLite auth backend
+          # (orca.auth.db) rather than being refused by the
+          # DISTRIBUTED-profile guard that requires a configured
+          # ORNEUR_DATABASE_URL this job never sets.
+          ORNEUR_DEPLOYMENT_PROFILE: SOVEREIGN
 
       - name: Fail closed if required secrets are missing
         if: "!startsWith(github.event.inputs.fresh_runner_mode, 'phase15_')"
