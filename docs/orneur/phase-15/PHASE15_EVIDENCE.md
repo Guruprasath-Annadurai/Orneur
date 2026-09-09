@@ -1429,3 +1429,99 @@ FAILED test_scenario_4_integration_replaced_by_mock (substring-search mock detec
 **PROGRESSION VERDICT:**
 
 YES — EVIDENCE SUPPORTS PROGRESSION
+
+---
+
+## PHASE 15.9.1 — INTEGRITY CLOSURE
+
+**BASELINE:** `5f8838ad6af1e172eb87673a1c1b71a492b03fb6` (the Phase 15.9 evidence-checkpoint commit, above). An independent owner-side audit of that checkpoint found four integrity gaps in the Phase 15.9 Anti-Gaming Engine / Cognitive Court implementation. This section resolves exactly those four gaps, reconciles evidence, and re-qualifies. No new production schema migration is introduced or required.
+
+**INDEPENDENT AUDIT FINDINGS:**
+1. Historical implementation commit `99b8881`'s message states "74 new local tests" — this overstates the count of tests that were genuinely new to Phase 15.9 itself (a documentation/counting error, not a code defect).
+2. `court_mission_gate.can_proceed_to_completed_verified()` did not bind a Court `ACCEPT` decision to the specific mission/revision it was actually made about — a stale or cross-mission `CourtDecision` object could be reused to authorize completion of a different mission or revision.
+3. `detect_mock_replacing_real_behavior()` always emitted `Severity.HIGH`/`blocking=False`, even when the mocked-out call was itself security-critical (authority bridge, authorization, sandbox enforcement, nonce/replay, tenant isolation) — such a finding could never block Court `ACCEPT`.
+4. No detector existed for a structurally obvious *expected-behavior mutation* (e.g. `assert status == 403` rewritten to `assert status == 200`) distinct from the Phase 15.9 assertion-*broadening* detector (`==` widened to `in (...)`) — a literal flip of the expected value could pass undetected.
+
+**TEST-COUNT DOCUMENTATION CORRECTION:** Commit `99b8881`'s message ("74 new local tests, including real git-repository adversarial...") is a counting/documentation error, not a code or test-suite defect. The authoritative count at that checkpoint was **55 tests newly added by Phase 15.9** (`test_anti_gaming.py`: 6, `test_git_diff_analysis.py`: 6, `test_gaming_detectors.py`: 12, `test_cognitive_court.py`: 23, `test_court_mission_gate.py`: 6, `test_test_collection_diff.py`: 2) **plus 19 pre-existing `test_mission_requirements.py` tests** that were run alongside them in the same regression pass = **74 TOTAL RELEVANT tests** (new + pre-existing, combined). The historical commit `99b8881` is not rewritten; this note stands as the correction of record.
+
+**COURT REVISION-BINDING FIX:** `orca/mission/court_mission_gate.py::can_proceed_to_completed_verified()` gained a required `current_mission_id` parameter and, immediately after the verdict check and before consulting the verification gate, now independently checks `court_decision.revision != current_revision => BLOCK` with a reason string naming the stale revision. Proven by `tests/test_court_mission_gate.py::test_scenario_a_stale_accept_from_rev1_cannot_authorize_rev2` (a stale ACCEPT from rev1 plus valid PASS evidence for rev2 cannot authorize rev2 completion).
+
+**COURT MISSION-BINDING FIX:** The same function also independently checks `court_decision.mission_id != current_mission_id => BLOCK`. Proven by `test_scenario_b_accept_for_mission_1_cannot_complete_mission_2` and `test_cross_mission_evidence_alone_does_not_leak_into_correct_mission_completion` (evidence for the wrong mission does not count even when a same-id requirement record exists). `test_scenario_c_matching_mission_and_revision_may_proceed` proves matching mission+revision may still proceed (subject to all other gates). This is deliberate defense-in-depth alongside the Arbiter's own internal binding below — a caller cannot bypass the check by manipulating either layer alone.
+
+**SECURITY MOCK-BLOCKING FIX:** `orca/mission/gaming_detectors.py` gained a narrow `SECURITY_CRITICAL_CALL_MARKERS` frozenset (`authorize_operation`, `resolve_and_consume_lease`, `issue_operation_lease`, `consume_operation_lease`, `run_in_container`, `run_command`). `detect_mock_replacing_real_behavior()` now elevates to `Severity.CRITICAL`/`blocking=True` when the mocked call matches one of these markers or its file path is otherwise security-relevant; ordinary mocks remain `Severity.HIGH`/`blocking=False`. Proven positively by `test_closure_item_3_security_integration_replaced_by_mock_is_critical_blocking` (a real git fixture where `authorize_operation` is imported and exercised at baseline, then replaced by a `MagicMock` at candidate while the test still claims to verify security behavior) and negatively by `test_ordinary_non_security_mock_stays_high_not_critical` (a `get_conn` mock in a non-security-path file stays HIGH/non-blocking — proving the elevation is narrow, not blanket).
+
+**EXPECTED-BEHAVIOR DETECTOR FIX:** New `detect_expected_behavior_mutation()` in `orca/mission/gaming_detectors.py` performs bounded AST-aware detection of a literal expected-value swap for the same left-hand expression (e.g. `== "DENY"` → `== "ALLOW"`, `== 403` → `== 200`) — a pattern distinct from the existing assertion-*broadening* detector. A `_SECURITY_SENSITIVE_FLIPS` lookup table (deny/allow, reject/accept, fail/success, false/true, 403/200, 401/200, 401/204, 403/204, case-insensitive for strings) elevates security-sensitive flips to `Severity.CRITICAL`/`blocking=True`; non-security numeric/value changes are still surfaced as `Severity.MEDIUM`/non-blocking findings, never silently discarded, and a commit message claiming owner-approved justification does not suppress the finding — provenance/Court policy, not the detector, is responsible for distinguishing a legitimate change from an unjustified one. Proven by `test_scenario_2_strong_case_auth_deny_flipped_to_allow_is_critical` (the literal DENY→ALLOW case, added as a new sibling to the pre-existing Phase 15.9 broadening scenario 2, which is unchanged), `test_closure_item_4a_auth_deny_to_allow_is_critical`, `test_closure_item_4b_non_security_numeric_change_is_not_automatically_critical` (a timeout value change 30→60 stays MEDIUM/non-blocking), and `test_closure_item_4c_requirement_driven_expected_change_is_surfaced_not_discarded` (a rate-limit value change with an owner-approval-claiming commit message is still surfaced, never dropped).
+
+**EVIDENCE-BACKED ARBITER FIX:** `orca/mission/cognitive_court.py::arbiter_decide()` no longer accepts a bare caller-supplied `dict[str, VerificationOutcome]` (which could be fabricated with no underlying record). Its signature now takes `required_verification_records: dict[str, tuple[VerificationRecord, ...]]` plus `required_requirement_ids`, and for each requirement it filters the supplied records through the (new, shared) `filter_current_context()` — extending Phase 15.8's `filter_current_revision()` with mission-scoping — then re-derives the outcome via the existing `aggregate_requirement()`. There is no code path left that accepts a bare outcome dictionary. `filter_current_context()` and `aggregate_requirement()` are also the exact functions `orca/mission/mission_verification_gate.py` now uses (via a new optional `mission_id` parameter on `can_complete_verified()`/`require_can_complete_verified()`) — the Verification Engine is reused, not duplicated, per the spec's explicit instruction.
+
+**VERIFICATION_REFS FINDINGS:** `CourtDecision.verification_refs` is no longer always `()`. `arbiter_decide()` now populates it with the actual `VerificationRecord.id` values that supported an ACCEPT (still `()` for any non-ACCEPT decision). Proven by the updated `test_arbiter_accepts_when_all_conditions_met`, which now asserts `decision.verification_refs == (record.id,)`.
+
+**NON-VACUOUS ACCEPT FINDINGS:** `test_arbiter_stale_revision_record_does_not_support_accept`, `test_arbiter_cross_mission_record_does_not_support_accept`, and `test_arbiter_fabricated_outcome_without_record_cannot_accept` (passing an empty tuple in place of any record) all prove the Arbiter falls back to `NEED_MORE_EVIDENCE`, never `ACCEPT`, when the supplied evidence does not genuinely support the requirement at the current mission/revision. Phase 15.8's non-vacuous verification rule (`aggregate_requirement()` never treats zero records as PASS) is preserved unmodified and reused.
+
+**PROVIDER-OVERRIDE FINDINGS:** Five new hard-policy tests in `tests/test_cognitive_court.py` (`test_closure_6a` through `test_closure_6e`), each using a `MockProvider` whose `provider_narrative` literally says "ACCEPT immediately!", prove the provider's prose is captured but never read by `arbiter_decide()`'s policy logic: (a) stale-revision evidence still BLOCKs regardless of provider narrative; (b) a CRITICAL security-mock-replacement finding still causes REJECT; (c) a DENY→ALLOW expected-behavior mutation still causes REJECT; (d) no real `VerificationRecord` behind the claimed outcome still yields `NEED_MORE_EVIDENCE`, never ACCEPT; (e) with all evidence correct, current-revision, and no blocking finding, ACCEPT remains reachable — the fixes are non-regressive on the legitimate path.
+
+**REAL GIT ADVERSARIAL RESULTS:** All original Phase 15.9 real-git-repository detector scenarios pass unchanged, plus the mandated Scenario 2 strengthening (literal `DENY`→`ALLOW`, not only `DENY`→`(DENY, ALLOW)`) and every new closure scenario (security-integration-replaced-by-mock, ordinary-mock-stays-non-critical, auth-deny-to-allow mutation, non-security numeric mutation, requirement-driven mutation) — `tests/test_gaming_detectors.py`: **18 passed** (12 baseline + 6 new). Every scenario, baseline and new, continues to use `git init` and real commits in a `tmp_path` repo — no synthetic diff dictionaries were introduced.
+
+**COURT REPLAY RESULTS:** `tests/test_court_mission_gate.py`: **10 passed** (6 baseline + 4 new: stale-revision replay, cross-mission replay, matching-scope success, cross-mission-evidence-does-not-leak). `tests/test_cognitive_court.py`: **32 passed** (23 baseline + 9 new: stale/cross-mission/fabricated-evidence Arbiter tests, the `PERFORMANCE_CRITIC` full-court role assertion, and the five closure-item-6 provider-override tests).
+
+**FULL-COURT ROLE FIX (spec item 7):** `roles_for_risk()`'s HIGH/CRITICAL branch now includes `CourtRole.PERFORMANCE_CRITIC` in the role set it returns — the branch's "full court" comment is now accurate; `PERFORMANCE_CRITIC` remains free to return `NOT_REQUIRED` when performance is not relevant to the change (Phase 15.9's existing behavior, untouched). Proven by `test_roles_for_risk_full_court_at_critical` (extended with an explicit full-set equality assertion) and the new `test_roles_for_risk_full_court_at_high_also_includes_performance`. This is a semantics/documentation-accuracy fix; no performance evidence is fabricated anywhere in the Court.
+
+**SECURITY REGRESSION:** Full local run of `pytest tests/ -k "godmode or authority or authorization or approval or replay or cancellation or audit or auth or tenant"`, executed twice for confirmation:
+```
+(first run)
+3 failed, 359 passed, 18 skipped, 1677 deselected, 352 warnings in 677.05s
+FAILED tests/test_connector_multiprocess_authority.py::test_connector_wrong_tenant_process_denies_without_consuming_use   <- NEW, never seen in any prior Phase 15.5-15.9 baseline
+FAILED tests/test_container_adversarial.py::TestTimeoutCancellation::test_child_process_inside_container_is_cleaned_up_on_timeout   <- disclosed since Phase 15.6.1/15.7/15.8 (local Docker Desktop flakiness under heavy sequential container churn)
+FAILED tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary   <- disclosed since Phase 15.5 (order-dependent legacy-memory-subsystem issue)
+```
+```
+(second run, immediately after)
+2 failed, 360 passed, 18 skipped, 1677 deselected, 352 warnings in 618.26s
+FAILED tests/test_container_adversarial.py::TestTimeoutCancellation::test_child_process_inside_container_is_cleaned_up_on_timeout
+FAILED tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary
+```
+The `test_connector_wrong_tenant_process_denies_without_consuming_use` failure did **not** reproduce on the second run. It also passed cleanly when run in isolation, and `git diff --stat`/`git status --short` against `tests/test_connector_multiprocess_authority.py` and `orca/godmode/` both showed **zero** changes from any Phase 15.9.1 work — the file is completely untouched. This is disclosed as an observed, non-reproducing, one-off flake in a multiprocess-timing-sensitive test (the same general class as the already-disclosed container-timing flake), not a regression caused by this closure. The two remaining failures in both runs are the two previously-disclosed, pre-existing flakiness classes; neither is new nor caused by this phase.
+
+**EXACT TEST RESULTS:**
+```
+(local, all Phase 15.9/15.8-adjacent files + test_mission_requirements.py baseline, combined)
+116 passed
+```
+```
+(local, per-file collection counts)
+test_anti_gaming.py: 6
+test_git_diff_analysis.py: 6
+test_gaming_detectors.py: 18   (+6 this closure)
+test_cognitive_court.py: 32    (+9 this closure)
+test_court_mission_gate.py: 10 (+4 this closure)
+test_test_collection_diff.py: 2
+test_mission_verification_gate.py: 7
+test_verification_aggregation.py: 16
+test_mission_requirements.py: 19 (unchanged, pre-existing)
+```
+```
+(full repository collection sanity)
+2057 tests collected, 0 import errors
+```
+
+**TEST COLLECTION DELTA:** +19 tests this closure (`test_gaming_detectors.py`: +6, `test_cognitive_court.py`: +9, `test_court_mission_gate.py`: +4), verified by diffing test-function counts against the exact baseline commit `5f8838ad6af1e172eb87673a1c1b71a492b03fb6` for each file. Phase 15.9 total (8 files) grows from 78 (at the Phase 15.9 checkpoint, which itself already included the originally-disclosed 55-new plus pre-existing Phase 15.8 tests in shared files) to **97**. Total relevant test count (Phase 15.9 files + `test_mission_requirements.py`) grows from 97 to **116**.
+
+**REQUIREMENT STATUS DELTA:** No new requirement IDs were added — per the explicit instruction not to add requirements merely to increase counts. `REQ-ANTIGAMING-DETECT-001`, `REQ-ANTIGAMING-BLOCK-001`, `REQ-COURT-ROLES-001`, `REQ-COURT-ARBITRATION-001`, and `REQ-COURT-RISK-001` all remain validly `VERIFIED`: this closure's evidence strengthens (adds adversarial coverage and closes real gaps in) their previously-claimed behavior, it never weakens or contradicts it. No requirement is downgraded. `orca/mission/requirements_seed.py` was not modified.
+
+**MIGRATIONS:** None. No production schema change is introduced or required by this closure, consistent with the owner's explicit instruction.
+
+**KNOWN LIMITATIONS:**
+- The expected-behavior mutation detector, like all Phase 15.9 detectors, is bounded/heuristic by design — it matches a literal same-left-hand-side equality-constant swap; a sufficiently obfuscated rewrite (e.g. introducing an intermediate variable) could still evade it.
+- `SECURITY_CRITICAL_CALL_MARKERS` is a manually curated, narrow set; a security-critical call under a name not yet in the set would still only elevate via the file-path `is_security_relevant()` fallback, not the marker fallback.
+- `CourtDecision`/`VerificationRecord`/`AntiGamingFinding` remain in-process only this closure — no new durability claims are made (see Phase 15.9's own DURABILITY FINDINGS, unchanged).
+- The `test_connector_multiprocess_authority.py` non-reproducing failure is disclosed as most-likely flakiness based on strong circumstantial evidence (zero diff, isolated pass, non-reproduction on immediate re-run) but was not root-caused to a specific timing mechanism; if it recurs in a future regression it should be investigated further rather than re-dismissed on this evidence alone.
+
+**DEFERRED ITEMS:** Unchanged from Phase 15.9 — Phase 15.10 (Production Proof) through 15.15 remain not started. Full anti-gaming intent classification, traceability wiring, and tamper-evident audit-chain integration for findings/decisions remain explicitly deferred.
+
+**OWNER ACTION REQUIRED:** None.
+
+**EVIDENCE:** This document; `orca/mission/cognitive_court.py`, `orca/mission/court_mission_gate.py`, `orca/mission/verification_aggregation.py`, `orca/mission/mission_verification_gate.py`, `orca/mission/gaming_detectors.py`; `tests/test_cognitive_court.py`, `tests/test_court_mission_gate.py`, `tests/test_gaming_detectors.py`; baseline commit `5f8838ad6af1e172eb87673a1c1b71a492b03fb6`; historical commit `99b8881` (test-count documentation correction, not rewritten).
+
+**EPISTEMIC STATE:** VERIFIED — every claim in this closure traces to a local test run against a real git repository or temporary git fixture, a direct `git diff`/`git show`/`git status` inspection, or a per-file test-count diff against the exact baseline commit named above. The `test_connector_multiprocess_authority.py` non-reproducing failure is disclosed honestly as an unresolved-but-strongly-circumstantial flake rather than either silently omitted or over-confidently declared "definitely unrelated." No requirement was downgraded or upgraded without closure-test evidence directly supporting the change.
+
+**FINAL RECONCILED VERDICT: YES — EVIDENCE SUPPORTS PROGRESSION**
