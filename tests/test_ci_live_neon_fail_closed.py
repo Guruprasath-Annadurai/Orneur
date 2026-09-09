@@ -125,50 +125,37 @@ def test_preflight_guard_runs_before_every_live_neon_step():
         )
 
 
-def test_focused_relay_workflow_preflight_exists_before_pytest_steps():
-    """Phase 15.12 item 26: the focused, Northflank-free
-    `phase15-relay-security-qualification.yml` workflow must ALSO
-    fail closed on missing mission DB secrets, ordered before its own
-    pytest steps -- preserving the 15.11.2 invariant in the new,
-    cleaner qualification path."""
-    focused_path = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "phase15-relay-security-qualification.yml"
-    data = yaml.safe_load(focused_path.read_text())
-    steps = data["jobs"]["qualify"]["steps"]
-
-    preflight_idx = next(
-        (i for i, s in enumerate(steps) if "Fail closed if mission DB secrets are missing" in (s.get("name") or "")),
-        None,
-    )
-    assert preflight_idx is not None, "focused workflow must have its own fail-closed preflight step"
-
-    preflight = steps[preflight_idx]
-    assert "if" not in preflight
-    assert "ORNEUR_MISSION_DATABASE_URL" in preflight["run"]
-    assert "ORNEUR_MISSION_DATABASE_URL_DIRECT" in preflight["run"]
-
-    for i, step in enumerate(steps):
-        env = step.get("env") or {}
-        if i == preflight_idx:
-            continue
-        if "ORNEUR_MISSION_DATABASE_URL" in env:
-            assert preflight_idx < i, f"step {step.get('name')!r} runs before the focused workflow's own preflight"
+_NORTHFLANK_STEP_NAME_SUBSTRINGS = (
+    "Fail closed if required secrets are missing",
+    "Authenticate Northflank CLI",
+    "Upload actor script to Host A",
+)
 
 
-def test_focused_relay_workflow_has_no_northflank_step():
-    """The whole point of the focused workflow (item 26) -- it must
-    never actually RUN a Northflank login/deploy step that could make
-    a genuinely successful Relay qualification report a failed whole-
-    job conclusion for an unrelated reason (the exact ambiguity
-    discovered in run 34385145178). Checks the actual step `run`/`env`
-    bodies, not the file's own prose explaining why there isn't one."""
-    focused_path = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "phase15-relay-security-qualification.yml"
-    data = yaml.safe_load(focused_path.read_text())
-    for step in data["jobs"]["qualify"]["steps"]:
-        run_script = step.get("run", "")
-        env = step.get("env") or {}
-        assert "northflank" not in run_script.lower()
-        assert "NORTHFLANK_API_TOKEN" not in env
-        assert "NORTHFLANK_API_TOKEN" not in str(step.get("uses", ""))
+def test_phase15_dispatch_modes_skip_every_unconditional_northflank_step():
+    """Phase 15.12 item 26: a genuinely successful Relay/Phase-15
+    live-Neon qualification must report a meaningful whole-job
+    conclusion -- not `Relay step green + unrelated Northflank-CLI
+    step red` (the exact ambiguity discovered in run 34385145178,
+    caused by these three steps having NO `if:` condition at all, so
+    they always ran regardless of which mode was dispatched). Rather
+    than build a second, separate workflow file (which GitHub cannot
+    dispatch unless it also exists on the default branch), the fix is
+    IN this workflow: each of these previously-unconditional steps now
+    carries `if: "!startsWith(github.event.inputs.fresh_runner_mode,
+    'phase15_')"`, so any `phase15_*` mode skips all three."""
+    steps = _qualify_steps()
+    found = 0
+    for step in steps:
+        name = step.get("name") or ""
+        if any(sub in name for sub in _NORTHFLANK_STEP_NAME_SUBSTRINGS):
+            found += 1
+            condition = step.get("if", "")
+            assert "phase15_" in condition, (
+                f"step {name!r} has no phase15_-mode-skipping condition -- a phase15_* "
+                f"dispatch would still run it and risk an unrelated whole-job failure."
+            )
+    assert found == len(_NORTHFLANK_STEP_NAME_SUBSTRINGS), "expected to find all 3 known unconditional Northflank-dependent steps"
 
 
 def test_workflow_dispatch_options_include_every_gated_mode():

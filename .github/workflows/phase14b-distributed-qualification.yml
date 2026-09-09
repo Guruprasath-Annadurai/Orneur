@@ -136,16 +136,17 @@ jobs:
           ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
           ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}
 
-      - name: "Phase 15.11 / 15.11.1 LIVE_NEON_TEMP_BRANCH qualification -- Relay device/session core (register_device, create_session, build_relay_snapshot, revocation, second-device continuity, snapshot consistency) against a disposable Neon branch, never production -- the actual Python code path, run through a real network-capable environment (this sandbox's own Bash tool cannot resolve Neon hostnames, per every prior Phase 15 live-Neon qualification round's disclosed limitation)"
+      - name: "Phase 15.11 / 15.11.1 / 15.11.2 / 15.12 LIVE_NEON_TEMP_BRANCH qualification -- Relay device/session core PLUS security-mode policy layer (register_device, create_session, build_relay_snapshot, revocation, second-device continuity, snapshot consistency, capability policy, real reauthentication, Mobile Review, authority non-bypass) against a disposable Neon branch, never production -- the actual Python code path, run through a real network-capable environment (this sandbox's own Bash tool cannot resolve Neon hostnames, per every prior Phase 15 live-Neon qualification round's disclosed limitation)"
         if: github.event.inputs.fresh_runner_mode == 'phase15_11_relay_live_neon_qualification'
         run: |
           pip install --no-cache-dir pytest
-          python -m pytest tests/test_relay_store.py tests/test_relay_store_live_neon.py tests/test_relay_requirements.py -v
+          python -m pytest tests/test_relay_store.py tests/test_relay_store_live_neon.py tests/test_relay_requirements.py tests/test_relay_security.py tests/test_relay_security_live_neon.py tests/test_ci_live_neon_fail_closed.py -v
         env:
           ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
           ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}
 
       - name: Fail closed if required secrets are missing
+        if: "!startsWith(github.event.inputs.fresh_runner_mode, 'phase15_')"
         run: |
           for v in ORNEUR_DATABASE_URL ORNEUR_GODMODE_DATABASE_URL ORNEUR_SECURITY_ROOT_DATABASE_URL \
                    ORNEUR_AUDIT_KEY ORNEUR_GODMODE_LEASE_SECRET ORNEUR_AUTH_SECRET NORTHFLANK_API_TOKEN; do
@@ -158,12 +159,14 @@ jobs:
           NORTHFLANK_API_TOKEN: ${{ secrets.NORTHFLANK_API_TOKEN }}
 
       - name: Authenticate Northflank CLI (least-privileged service token, never printed)
+        if: "!startsWith(github.event.inputs.fresh_runner_mode, 'phase15_')"
         run: |
           npx --yes @northflank/cli login --token-login --token "$NORTHFLANK_API_TOKEN" --name phase14b-ci --override
         env:
           NORTHFLANK_API_TOKEN: ${{ secrets.NORTHFLANK_API_TOKEN }}
 
       - name: Upload actor script to Host A (Northflank pod)
+        if: "!startsWith(github.event.inputs.fresh_runner_mode, 'phase15_')"
         run: |
           npx --yes @northflank/cli upload service file \
             --project "$NORTHFLANK_PROJECT" --service "$NORTHFLANK_SERVICE" \
