@@ -1618,3 +1618,110 @@ This is the single previously-disclosed, pre-existing flake (order-dependent leg
 **EPISTEMIC STATE:** VERIFIED -- every claim in this closure traces to a local test run, a direct per-file test-count diff against the exact baseline commit named above, or direct code inspection of the validation logic added to `arbiter_decide()` and `can_proceed_to_completed_verified()`. The security regression's single failure is the same previously-disclosed pre-existing flake seen across multiple prior phases, not a new failure introduced by this closure. No requirement was downgraded or upgraded without closure-test evidence directly supporting the change. The two known limitations above (caller-discipline visibility into the new typed errors, and the revision-check scope extension) are disclosed rather than omitted.
 
 **FINAL RECONCILED VERDICT: YES — EVIDENCE SUPPORTS PROGRESSION**
+
+---
+
+## PHASE 15.9.3 — REQUIREMENT + CRITERION SCOPE INTEGRITY CLOSURE
+
+**BASELINE:** `d307ba180c2db642aec09c5b63e8c2898ebbbb84` (the Phase 15.9.2 evidence-checkpoint commit, above). An independent review confirmed Phase 15.9.2 successfully closed vacuous empty-required-set ACCEPT, unscoped Court mission identity, empty revision identity, and the unscoped mission-completion path. While tracing the hardened Court -> Verification -> Mission completion path end-to-end, one final scope-integrity class was found. No production schema migration is introduced or required.
+
+**INDEPENDENT AUDIT FINDING:**
+1. Both `arbiter_decide()` and `mission_verification_gate.can_complete_verified()` looked up `records_by_requirement.get(req_id, ())` and then filtered/aggregated whatever records that dict KEY returned -- they never checked that a returned record's OWN `requirement_id` field actually matched `req_id`. A caller could file a `VerificationRecord(requirement_id="REQ-A", outcome=PASS, ...)` under `records_by_requirement["REQ-B"]`, and the existing mission/revision filters would not reject it -- the dictionary key was silently trusted as identity.
+2. `aggregate_requirement()` could only ever aggregate whichever criterion/category keys happened to be PRESENT in the records handed to it. If a requirement genuinely required two acceptance criteria (C1, C2) and evidence existed only for C1, aggregation saw only C1's key and could return PASS -- it had no way to know C2 was required and silently absent. Missing required criterion evidence must never equal PASS.
+
+**REQUIREMENT-ID BINDING FIX:** New `orca.mission.verification_aggregation.filter_current_requirement_context()` extends `filter_current_context()` (mission + revision binding) with a THIRD binding dimension: a record's own `requirement_id` must equal the expected `requirement_id`, mirroring the exact `is_evidence_stale()`/`is_evidence_for_other_mission()` pattern with a new `is_evidence_for_other_requirement()`. This is the single function both `arbiter_decide()` and `mission_verification_gate.can_complete_verified()` now use (via the new centralized `evaluate_requirement_completion()`, closure item 8) -- the dictionary key a record happens to be filed under is never itself authority for the record's identity, in any of the three call paths (`arbiter_decide()`, `can_complete_verified()`, `can_proceed_to_completed_verified()`).
+
+**DICTIONARY-KEY SPOOFING RESULTS:** Proven independently through all three entry points named in spec item 4:
+- `arbiter_decide()`: `test_closure_15_9_3_a_dict_key_spoofing_cannot_support_accept` (a PASS record whose own `requirement_id` is `"REQ-A"`, filed under `required_verification_records["REQ-B"]`, yields `NEED_MORE_EVIDENCE` with `verification_refs=()`, never ACCEPT), `test_closure_15_9_3_b_correct_dict_key_and_requirement_id_still_accepts` (the legitimate case, unaffected), `test_closure_15_9_3_c_wrong_pass_ignored_correct_fail_dominates` (a correctly-scoped FAIL plus an incorrectly-filed PASS from another requirement -- the wrong PASS is ignored and the real FAIL dominates), `test_closure_15_9_3_d_provider_accept_narrative_cannot_override_spoofed_record` (an "ACCEPT"-narrating provider changes nothing).
+- `can_complete_verified()`: `test_closure_15_9_3_a_dict_key_spoofing_cannot_pass`, `test_closure_15_9_3_b_correct_dict_key_and_requirement_id_still_completes`, `test_closure_15_9_3_c_mixed_wrong_pass_ignored_correct_fail_dominates` (`tests/test_mission_verification_gate.py`).
+- `can_proceed_to_completed_verified()`: `test_closure_15_9_3_a_dict_key_spoofing_cannot_complete`, `test_closure_15_9_3_b_correct_dict_key_and_requirement_id_still_succeeds` (`tests/test_court_mission_gate.py`) -- proving the spoofing is caught even when the Court's own ACCEPT verdict and mission/revision binding are otherwise perfectly valid.
+- At the aggregation-primitive level (`tests/test_verification_aggregation.py`): `test_filter_current_requirement_context_rejects_record_for_different_requirement`, `test_filter_current_requirement_context_keeps_matching_requirement`, `test_dictionary_key_spoofing_does_not_substitute_for_real_requirement_id`, `test_correctly_scoped_record_still_supports_completion`, `test_mixed_records_wrong_pass_ignored_correct_fail_dominates`.
+
+**EXPECTED CRITERION SCOPE:** New `orca.mission.verification_aggregation.expected_keys_for_requirement()` derives the authoritative required-criterion-key set from the EXISTING Phase 15.7 `AcceptanceCriterion` registry's `criteria_for_requirement()` -- no new criteria registry was invented (per the explicit instruction). It returns `None` (deliberately not an empty set, to distinguish "no scope known" from "zero keys required") when the registry has zero criteria registered for a requirement, so callers can fall back to the legacy whatever-exists aggregation for genuine requirement-level checks that were never modeled as `AcceptanceCriterion` objects. A caller may also supply an explicit `required_criterion_ids`/`required_criteria_by_requirement` override (plumbed through `arbiter_decide()`, `can_complete_verified()`, `require_can_complete_verified()`, and `can_proceed_to_completed_verified()`), which takes precedence over the registry-derived scope.
+
+**MISSING-CRITERION RESULTS:** New `evaluate_requirement_completion()` requires EVERY key in the resolved required-criterion set to have a current-context (mission + revision + requirement-id scoped) PASS record; a required key with zero matching records contributes `UNVERIFIED` to the aggregate, never PASS, and `aggregate_outcomes()`'s existing non-vacuous truth table then correctly yields `UNVERIFIED` (or `FAIL`, if another required key genuinely failed) for the requirement as a whole. Proven by the full scenario matrix from spec item 5, all in `tests/test_verification_aggregation.py` unless noted:
+1. `test_scenario_1_only_c1_evidence_is_unverified_not_pass` -- C1 PASS only, C2 required and absent -> UNVERIFIED, `contributing=()`.
+2. `test_scenario_2_c1_pass_c2_pass_yields_pass` -- both present and PASS -> PASS.
+3. `test_scenario_3_c1_pass_c2_fail_yields_fail` -- C2 FAIL -> FAIL.
+4. `test_scenario_4_c2_stale_pass_yields_unverified_for_current_revision` -- C2's only PASS is for a stale revision -> UNVERIFIED.
+5. `test_scenario_5_c2_pass_from_other_mission_does_not_count` -- C2's only PASS is for a different mission -> UNVERIFIED.
+6. `test_scenario_6_unrelated_c3_pass_does_not_substitute_for_missing_c2` -- an unrelated C3 PASS is never consulted; C2 remains missing -> UNVERIFIED.
+7. `test_scenario_7_record_criterion_id_matches_but_requirement_id_is_wrong` -- a record with `criterion_id="c2"` but `requirement_id` belonging to a DIFFERENT registered requirement -> UNVERIFIED, that record excluded from contribution.
+8. `test_closure_15_9_3_missing_required_criterion_cannot_accept` / `test_closure_15_9_3_provider_accept_narrative_cannot_override_missing_criterion` (`tests/test_cognitive_court.py`) -- an "ACCEPT"-narrating provider cannot override a missing required criterion; `arbiter_decide()` still yields `NEED_MORE_EVIDENCE`.
+
+Additionally, `test_closure_15_9_3_both_required_criteria_present_can_accept` (`tests/test_cognitive_court.py`) proves the legitimate path: with both registered criteria genuinely PASSing, `arbiter_decide()` reaches ACCEPT with `verification_refs` containing both records' ids -- the fix does not overcorrect into blocking a real, complete ACCEPT.
+
+**WRONG-CRITERION RESULTS:** Covered by scenario 7 above and by `test_record_scoped_to_different_criterion_rejected`/`test_record_wrong_requirement_id_rejected` (pre-existing, unmodified, `tests/test_verification_integration.py`) -- `verify_criterion_via_verification_record()`'s existing strict identity binding (spec section 6's reference model: `record.outcome == PASS`, `record.criterion_id == expected`, `record.requirement_id == criterion.requirement_id`) is unweakened and unchanged by this closure; `evaluate_requirement_completion()` independently preserves the same discipline for the Court/mission-gate aggregation path.
+
+**STALE-CRITERION RESULTS:** Scenario 4 above (`test_scenario_4_c2_stale_pass_yields_unverified_for_current_revision`) -- a stale-revision PASS for a required criterion does not satisfy that criterion for the current revision, reusing the existing `filter_current_revision()`/`is_evidence_stale()` logic unchanged, now composed through `filter_current_requirement_context()`.
+
+**CROSS-MISSION CRITERION RESULTS:** Scenario 5 above (`test_scenario_5_c2_pass_from_other_mission_does_not_count`) -- a required criterion's only PASS record for a different mission does not satisfy it for the current mission, reusing the existing `is_evidence_for_other_mission()` logic unchanged.
+
+**REQUIREMENT-LEVEL CHECK POLICY:** Confirmed by inspection that the repository DOES have a legitimate pre-existing pattern of requirement-level verification records with `criterion_id=None`, grouped instead by `f"category:{record.category}"` (used throughout `tests/test_verification_e2e.py`, `tests/test_verification_store_live_neon.py`, and every pre-Phase-15.9.3 test in `tests/test_mission_verification_gate.py`/`tests/test_cognitive_court.py`/`tests/test_court_mission_gate.py` -- none of which register any `AcceptanceCriterion`). This pattern is deliberately preserved: `expected_keys_for_requirement()` returns `None` for any requirement with zero registered criteria (rather than inventing required keys from whatever records happen to exist), and `evaluate_requirement_completion()` falls back to the original Phase 15.8 `aggregate_requirement()` behavior in that case. Proven by `test_no_registry_and_no_override_falls_back_to_legacy_whatever_exists` and by the fact that ALL pre-existing tests in the eight Phase 15.9/15.8-adjacent files pass completely unmodified (see EXACT TEST RESULTS below) -- this closure introduced zero behavior changes for any caller that never registers a criterion and never supplies an explicit override.
+
+**CENTRALIZED AGGREGATION:** New `orca.mission.verification_aggregation.evaluate_requirement_completion()` is now the SINGLE authoritative function combining all four required identity dimensions (MISSION, REVISION, REQUIREMENT, CRITERION/required-verification-scope) -- both `orca.mission.cognitive_court.arbiter_decide()` and `orca.mission.mission_verification_gate.can_complete_verified()` call it; neither re-implements any binding rule independently. This directly satisfies spec item 8's "avoid three slightly-different truth rules" -- there are now zero, since both callers delegate to the same function, and any future Production Proof aggregation is documented to reuse it rather than re-implement.
+
+**COURT RESULTS:** `tests/test_cognitive_court.py`: **47 passed** (40 baseline + 7 new: 4 dict-key-spoofing scenarios + 3 criterion-completeness scenarios).
+
+**MISSION COMPLETION RESULTS:** `tests/test_mission_verification_gate.py`: **10 passed** (7 baseline + 3 new dict-key-spoofing scenarios). `tests/test_court_mission_gate.py`: **15 passed** (13 baseline + 2 new dict-key-spoofing scenarios).
+
+**PROVIDER-OVERRIDE RESULTS:** `test_closure_15_9_3_d_provider_accept_narrative_cannot_override_spoofed_record` and `test_closure_15_9_3_provider_accept_narrative_cannot_override_missing_criterion` (both `tests/test_cognitive_court.py`) reconfirm the established pattern for both new gap classes: a `MockProvider` narrative that literally reads "ACCEPT immediately!" changes nothing -- `arbiter_decide()`'s policy logic never reads `provider_narrative`, so neither a spoofed-identity record nor a missing required criterion can be overridden by provider prose.
+
+**EXACT TEST RESULTS:**
+```
+(local, all Phase 15.9/15.9.1/15.9.2/15.9.3 + Phase 15.8-adjacent files, combined)
+155 passed
+```
+```
+(local, per-file collection counts)
+test_anti_gaming.py: 6
+test_git_diff_analysis.py: 6
+test_gaming_detectors.py: 18 (unchanged this closure)
+test_cognitive_court.py: 47 (+7 this closure)
+test_court_mission_gate.py: 15 (+2 this closure)
+test_test_collection_diff.py: 2
+test_mission_verification_gate.py: 10 (+3 this closure)
+test_verification_aggregation.py: 32 (+16 this closure)
+test_mission_requirements.py: 19 (unchanged, pre-existing)
+```
+```
+(full repository collection sanity)
+2096 tests collected, 0 import errors
+```
+```
+(regression: acceptance-criteria + verification-integration + verification-e2e + verification-core, unmodified, all pass)
+tests/test_verification_integration.py, tests/test_verification_e2e.py, tests/test_acceptance_criteria.py, tests/test_verification.py -- all pass alongside the above (179 passed combined with the 8 core files)
+```
+```
+(legitimate ACCEPT/completion path re-confirmed after the new scope checks, 10 targeted re-runs)
+10 passed -- test_arbiter_accepts_when_all_conditions_met, test_closure_6e_..., test_closure_15_9_2_c_..., test_closure_15_9_3_both_required_criteria_present_can_accept, test_accept_verdict_and_passing_verification_both_required_to_proceed, test_scenario_c_matching_mission_and_revision_may_proceed, test_closure_15_9_2_matching_nonempty_mission_and_revision_still_succeeds, test_closure_15_9_3_b_correct_dict_key_and_requirement_id_still_succeeds, test_all_pass_permits_completion, test_closure_15_9_3_b_correct_dict_key_and_requirement_id_still_completes
+```
+
+**TEST COLLECTION DELTA:** +28 tests this closure (`test_verification_aggregation.py`: +16, `test_cognitive_court.py`: +7, `test_mission_verification_gate.py`: +3, `test_court_mission_gate.py`: +2; `test_gaming_detectors.py` untouched), verified by diffing test-function counts against the exact baseline commit `d307ba180c2db642aec09c5b63e8c2898ebbbb84` for each file. Phase 15.9 total (8 core files) grows from 108 (the Phase 15.9.2 checkpoint) to **136**. Total relevant test count (Phase 15.9 files + `test_mission_requirements.py`) grows from 127 to **155**. Full-repository collection grows from 2068 to **2096** tests, 0 import errors.
+
+**SECURITY REGRESSION:** Full local run of `pytest tests/ -k "godmode or authority or authorization or approval or replay or cancellation or audit or auth or tenant"`:
+```
+2 failed, 360 passed, 18 skipped, 1716 deselected, 352 warnings in 444.00s (0:07:23)
+FAILED tests/test_container_adversarial.py::TestTimeoutCancellation::test_child_process_inside_container_is_cleaned_up_on_timeout
+FAILED tests/test_memory_legacy_authority.py::test_distill_and_save_no_longer_writes_unscoped_summary
+```
+Both are the same previously-disclosed, pre-existing flakes seen across multiple prior phases (container-timing since Phase 15.6.1, legacy-memory-subsystem ordering since Phase 15.5). No new failures. The Phase 15.9.1-investigated `test_connector_multiprocess_authority.py` flake did not reproduce, consistent with its prior "isolated occurrence" classification.
+
+**REQUIREMENT STATUS DELTA:** No new requirement IDs were added. `REQ-VERIFY-AGGREGATION-001`, `REQ-COURT-ARBITRATION-001`, `REQ-ANTIGAMING-BLOCK-001`, `REQ-ANTIGAMING-DETECT-001`, `REQ-COURT-ROLES-001`, and `REQ-COURT-RISK-001` all remain validly `VERIFIED` -- this closure strengthens `REQ-VERIFY-AGGREGATION-001`'s and `REQ-COURT-ARBITRATION-001`'s underlying evidence-integrity guarantees specifically (requirement-identity binding, criterion completeness) and never weakens or contradicts any of their previously-claimed behavior. No requirement is downgraded, and none was found to be over-promoted by this scope hole -- every existing test proving these requirements' claimed behavior continues to pass unmodified. `orca/mission/requirements_seed.py` was not modified.
+
+**MIGRATIONS:** None. `orca/mission/acceptance_criteria.py`'s existing in-process `AcceptanceCriterion` registry (Phase 15.7) is reused as-is via its existing `criteria_for_requirement()` function; no new registry, schema, or durable representation was added. No production schema migration is introduced or required by this closure, consistent with the owner's explicit instruction.
+
+**DURABILITY:** No new durability claims. Per spec item 7: the Phase 15.7 `AcceptanceCriterion` registry consumed by `expected_keys_for_requirement()` is explicitly in-process only (unchanged from Phase 15.7's own disclosure) -- this closure does not claim durable expected-criterion scope. The caller (a mission orchestration layer, or Production Proof in a later phase) is responsible for either (a) ensuring the same process's `AcceptanceCriterion` registry state is populated before calling `evaluate_requirement_completion()`/`arbiter_decide()`/`can_complete_verified()`, or (b) supplying an explicit `required_criterion_ids`/`required_criteria_by_requirement` override sourced from wherever that caller's own durable requirement/criterion definitions actually live. No durable schema currently exists for expected-criterion scope in Phase 15.2/15.8, and none was added here.
+
+**KNOWN LIMITATIONS:**
+- The in-process `AcceptanceCriterion` registry is per-process, non-durable state (see DURABILITY above) -- a caller in a different process (e.g. a separately-deployed Production Proof service) that does not itself populate or query the same registry, and does not supply an explicit override, will silently fall back to the legacy whatever-exists aggregation for that requirement, NOT to a fail-closed criterion-completeness check. This is disclosed as an architectural boundary of reusing Phase 15.7's existing in-process registry rather than introducing new durable schema this closure.
+- `evaluate_requirement_completion()`'s registry-derived mode activates ONLY when at least one `AcceptanceCriterion` is registered for a requirement at call time; a requirement that legitimately has criteria defined in `orca.mission.requirements.Requirement.acceptance_criteria` (the plain-string Phase 15.3 form) but was never additionally registered via `orca.mission.acceptance_criteria.register_criterion()` will still fall back to legacy whatever-exists aggregation -- these are two separate, pre-existing acceptance-criteria representations in this codebase (Phase 15.3's descriptive strings vs. Phase 15.7's typed, independently-verifiable objects) and this closure does not unify them.
+- `contributing` (the second return value of `evaluate_requirement_completion()`) is now guaranteed empty whenever the aggregated outcome is not PASS (tightened during this closure's own test-writing, see EPISTEMIC STATE) -- this is a stricter contract than the function's first draft, disclosed here since it was itself caught and fixed by this closure's own adversarial tests before being committed.
+
+**OWNER ACTION REQUIRED:** None.
+
+**EVIDENCE:** This document; `orca/mission/verification_aggregation.py`, `orca/mission/mission_verification_gate.py`, `orca/mission/cognitive_court.py`, `orca/mission/court_mission_gate.py`; `tests/test_verification_aggregation.py`, `tests/test_cognitive_court.py`, `tests/test_mission_verification_gate.py`, `tests/test_court_mission_gate.py`; baseline commit `d307ba180c2db642aec09c5b63e8c2898ebbbb84`.
+
+**EPISTEMIC STATE:** VERIFIED -- every claim in this closure traces to a local test run, a direct per-file test-count diff against the exact baseline commit named above, or direct code inspection of `evaluate_requirement_completion()` and its callers. One self-caught issue is disclosed rather than hidden: the first draft of `evaluate_requirement_completion()` returned a non-empty `contributing` list even when the aggregate outcome was NOT PASS (e.g. one passing criterion among two required) -- this was caught by this closure's OWN `test_scenario_1_only_c1_evidence_is_unverified_not_pass` test during authoring, before any commit, and fixed by tightening the function to return `contributing=()` whenever the outcome is not PASS. The security regression's two failures are the same previously-disclosed pre-existing flakes seen across multiple prior phases, not new failures introduced by this closure. No requirement was downgraded or upgraded without closure-test evidence directly supporting the change.
+
+**FINAL RECONCILED VERDICT: YES — EVIDENCE SUPPORTS PROGRESSION**
