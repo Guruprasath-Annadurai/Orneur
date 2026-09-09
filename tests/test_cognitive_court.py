@@ -8,6 +8,7 @@ import pytest
 
 from orca.mission.anti_gaming import AntiGamingFinding, FindingCategory, Severity
 from orca.mission.cognitive_court import (
+    CourtConfigurationError,
     CourtError,
     CourtRole,
     CourtVerdict,
@@ -181,7 +182,8 @@ def test_arbiter_unverified_required_verification_blocks_accept():
 def test_arbiter_owner_approval_required_returns_human_approval_required():
     decision = arbiter_decide(
         mission_id="m1", revision="rev2", risk_level=RiskLevel.HIGH, critic_outputs=(),
-        findings=(), required_verification_records={}, owner_approval_required=True,
+        findings=(), required_verification_records={}, required_requirement_ids=("REQ-X-1",),
+        owner_approval_required=True,
     )
     assert decision.verdict is CourtVerdict.HUMAN_APPROVAL_REQUIRED
 
@@ -392,3 +394,107 @@ def test_closure_6e_all_correct_current_revision_evidence_no_blocker_accept_stil
     )
     assert decision.verdict is CourtVerdict.ACCEPT
     assert decision.verification_refs == (record.id,)
+
+
+# ── Phase 15.9.2 closure item 1: empty required set must never vacuously ACCEPT ──
+
+def test_closure_15_9_2_a_empty_required_set_with_accepting_critic_cannot_accept():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    with pytest.raises(CourtConfigurationError):
+        arbiter_decide(
+            mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+            findings=(), required_verification_records={}, required_requirement_ids=(),
+        )
+
+
+def test_closure_15_9_2_b_empty_required_set_with_accepting_provider_narrative_cannot_accept():
+    provider = _accepting_provider()
+    critic = security_critic_review((), provider=provider)
+    assert critic.provider_narrative and "ACCEPT" in critic.provider_narrative
+    with pytest.raises(CourtConfigurationError):
+        arbiter_decide(
+            mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=(critic,),
+            findings=(), required_verification_records={}, required_requirement_ids=(),
+        )
+
+
+def test_closure_15_9_2_c_one_real_required_requirement_with_matching_pass_record_still_accepts():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    record = _record(mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-X-1": (record,)},
+        required_requirement_ids=("REQ-X-1",),
+    )
+    assert decision.verdict is CourtVerdict.ACCEPT
+    assert decision.verification_refs != ()
+
+
+def test_closure_15_9_2_d_one_required_requirement_zero_records_needs_more_evidence():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-X-1": ()},
+        required_requirement_ids=("REQ-X-1",),
+    )
+    assert decision.verdict is CourtVerdict.NEED_MORE_EVIDENCE
+    assert decision.verification_refs == ()
+
+
+def test_closure_15_9_2_accept_decision_verification_refs_never_empty():
+    # Defense-in-depth invariant (spec section 3): any ACCEPT decision
+    # that depended on required verification must carry a non-empty
+    # verification_refs -- an ACCEPT can never be produced with an
+    # empty required set (see test A above), so any ACCEPT this
+    # function returns necessarily has real refs.
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    record = _record(mission_id="m1", revision="rev2")
+    decision = arbiter_decide(
+        mission_id="m1", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+        findings=(), required_verification_records={"REQ-X-1": (record,)},
+        required_requirement_ids=("REQ-X-1",),
+    )
+    assert decision.verdict is CourtVerdict.ACCEPT
+    assert decision.verification_refs != ()
+
+
+# ── Phase 15.9.2 closure item 2: mission Court path must never be unscoped ──
+
+def test_closure_15_9_2_mission_id_none_cannot_accept():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    record = _record(mission_id="m1", revision="rev2")
+    with pytest.raises(CourtConfigurationError):
+        arbiter_decide(
+            mission_id=None, revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+            findings=(), required_verification_records={"REQ-X-1": (record,)},
+            required_requirement_ids=("REQ-X-1",),
+        )
+
+
+def test_closure_15_9_2_mission_id_empty_string_cannot_accept():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    record = _record(mission_id="m1", revision="rev2")
+    with pytest.raises(CourtConfigurationError):
+        arbiter_decide(
+            mission_id="", revision="rev2", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+            findings=(), required_verification_records={"REQ-X-1": (record,)},
+            required_requirement_ids=("REQ-X-1",),
+        )
+
+
+def test_closure_15_9_2_revision_empty_string_cannot_accept():
+    all_accept = (CriticOutput(role=CourtRole.TEST_CRITIC, conclusion=CriticConclusion.SUPPORTS_ACCEPT,
+                                reasoning_summary="fine"),)
+    record = _record(mission_id="m1", revision="rev2")
+    with pytest.raises(CourtConfigurationError):
+        arbiter_decide(
+            mission_id="m1", revision="", risk_level=RiskLevel.STANDARD, critic_outputs=all_accept,
+            findings=(), required_verification_records={"REQ-X-1": (record,)},
+            required_requirement_ids=("REQ-X-1",),
+        )

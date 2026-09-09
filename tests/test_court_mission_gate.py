@@ -1,12 +1,15 @@
 """
 Phase 15.9 -- Court/mission gate integration tests (spec sections 14,
 27-28), including Phase 15.9.1 closure item 2's revision/mission-
-binding adversarial scenarios A-C.
+binding adversarial scenarios A-C, and Phase 15.9.2 closure item 2's
+unscoped-mission-identity rejection scenarios C-D.
 """
 from __future__ import annotations
 
+import pytest
+
 from orca.mission.cognitive_court import CourtDecision, CourtRole, CourtVerdict, RiskLevel
-from orca.mission.court_mission_gate import can_proceed_to_completed_verified
+from orca.mission.court_mission_gate import CourtMissionGateError, can_proceed_to_completed_verified
 from orca.mission.verification import VerificationOutcome, VerificationRecord
 
 
@@ -137,3 +140,36 @@ def test_cross_mission_evidence_alone_does_not_leak_into_correct_mission_complet
     )
     # The only record present is for m2 -- it must not count for m1.
     assert ok is False
+
+
+# ── Phase 15.9.2 closure item 2: completion gate must never be unscoped ─
+
+def test_closure_15_9_2_c_current_mission_id_none_raises_typed_error():
+    matching_decision = _decision(CourtVerdict.ACCEPT, mission_id="m1", revision="rev1")
+    with pytest.raises(CourtMissionGateError):
+        can_proceed_to_completed_verified(
+            court_decision=matching_decision,
+            records_by_requirement={"REQ-A-X-001": (_pass_record("REQ-A-X-001", mission_id="m1", revision="rev1"),)},
+            required_requirement_ids=("REQ-A-X-001",), current_revision="rev1", current_mission_id=None,
+        )
+
+
+def test_closure_15_9_2_d_current_mission_id_empty_string_raises_typed_error():
+    matching_decision = _decision(CourtVerdict.ACCEPT, mission_id="m1", revision="rev1")
+    with pytest.raises(CourtMissionGateError):
+        can_proceed_to_completed_verified(
+            court_decision=matching_decision,
+            records_by_requirement={"REQ-A-X-001": (_pass_record("REQ-A-X-001", mission_id="m1", revision="rev1"),)},
+            required_requirement_ids=("REQ-A-X-001",), current_revision="rev1", current_mission_id="",
+        )
+
+
+def test_closure_15_9_2_matching_nonempty_mission_and_revision_still_succeeds():
+    matching_decision = _decision(CourtVerdict.ACCEPT, mission_id="m9", revision="rev9")
+    ok, reason = can_proceed_to_completed_verified(
+        court_decision=matching_decision,
+        records_by_requirement={"REQ-A-X-001": (_pass_record("REQ-A-X-001", mission_id="m9", revision="rev9"),)},
+        required_requirement_ids=("REQ-A-X-001",), current_revision="rev9", current_mission_id="m9",
+    )
+    assert ok is True
+    assert "satisfied" in reason.lower()

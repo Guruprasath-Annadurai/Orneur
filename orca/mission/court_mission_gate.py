@@ -36,6 +36,17 @@ for the correct mission/revision, and this gate independently checks
 the decision's own declared mission/revision match the caller's
 current context, so a caller cannot bypass the binding by constructing
 or reusing a `CourtDecision` object out of context.
+
+PHASE 15.9.2 CLOSURE (item 2): `current_mission_id` was still typed
+`str | None`, so a caller could pass `None` (or an empty string) and
+`filter_current_context()` would silently treat it as "no mission
+scoping requested" -- exactly the unscoped-verification-query gap the
+Court/COMPLETED_VERIFIED path must never allow, even though that same
+`None` behavior is intentionally correct for generic Phase 15.8
+utility callers of `filter_current_context()` itself (unchanged). This
+mission-completion path now requires a genuine non-empty
+`current_mission_id`, raising `CourtMissionGateError` immediately
+otherwise, rather than silently falling through to an unscoped query.
 """
 from __future__ import annotations
 
@@ -51,7 +62,7 @@ class CourtMissionGateError(Exception):
 def can_proceed_to_completed_verified(
     *, court_decision: CourtDecision,
     records_by_requirement: dict[str, tuple[VerificationRecord, ...]],
-    required_requirement_ids: tuple[str, ...], current_revision: str, current_mission_id: str | None,
+    required_requirement_ids: tuple[str, ...], current_revision: str, current_mission_id: str,
 ) -> tuple[bool, str]:
     """Returns (can_proceed, reason). Only True when the Court
     verdict, the decision's own mission/revision binding, AND the
@@ -61,7 +72,20 @@ def can_proceed_to_completed_verified(
     ALSO always blocks, checked BEFORE the verification gate
     (Phase 15.9.1 closure item 2) -- a `CourtDecision` for
     mission A/revision A can never authorize mission A/revision B
-    or mission B/revision A."""
+    or mission B/revision A.
+
+    Raises `CourtMissionGateError` if `current_mission_id` is missing
+    or empty (Phase 15.9.2 closure item 2) -- this mission-completion
+    path must never silently fall through to an unscoped verification
+    query."""
+    if not current_mission_id:
+        raise CourtMissionGateError(
+            "can_proceed_to_completed_verified() requires a non-empty "
+            "current_mission_id -- a missing/empty mission identity would "
+            "disable cross-mission filtering for the mission-completion path "
+            "(Phase 15.9.2 closure item 2)."
+        )
+
     if court_decision.verdict is not CourtVerdict.ACCEPT:
         return False, f"Court verdict is {court_decision.verdict.value}, not ACCEPT."
 

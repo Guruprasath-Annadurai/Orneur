@@ -74,6 +74,17 @@ class CourtError(Exception):
     pass
 
 
+class CourtConfigurationError(CourtError):
+    """Raised when `arbiter_decide()` is invoked in a configuration
+    that could otherwise allow a vacuous or unscoped ACCEPT -- an
+    empty `required_requirement_ids`, or a missing/empty `mission_id`
+    or `revision` (Phase 15.9.2 closure items 1-2). This is a caller
+    misconfiguration, not a normal Court verdict: it is raised before
+    any `CourtDecision` is constructed, so there is no verdict value
+    that could be misread as ACCEPT."""
+    pass
+
+
 @dataclass(frozen=True)
 class CriticOutput:
     role: CourtRole
@@ -290,10 +301,10 @@ def _try_provider_narrative(provider: ModelProvider | None, fact_summary: str, *
 # ── Arbiter (spec section 23) ────────────────────────────────────────
 
 def arbiter_decide(
-    *, mission_id: str | None, revision: str, risk_level: RiskLevel,
+    *, mission_id: str, revision: str, risk_level: RiskLevel,
     critic_outputs: tuple[CriticOutput, ...], findings: tuple[AntiGamingFinding, ...],
     required_verification_records: dict[str, tuple[VerificationRecord, ...]],
-    required_requirement_ids: tuple[str, ...] = (),
+    required_requirement_ids: tuple[str, ...],
     owner_approval_required: bool = False,
 ) -> CourtDecision:
     """The ONLY function that produces a final CourtVerdict. Reads
@@ -315,7 +326,43 @@ def arbiter_decide(
     outcome is genuinely PASS. Only the real record ids that actually
     supported an ACCEPT are written into `CourtDecision
     .verification_refs` -- a decision that could not ACCEPT always
-    carries `verification_refs=()`."""
+    carries `verification_refs=()`.
+
+    Phase 15.9.2 closure (items 1-2): an independent audit found this
+    function could still be called with `required_requirement_ids=()`
+    (the previous default) or `mission_id=None`/`""`. With an empty
+    required set, `outcomes` and `not_pass` both stay `{}`, so a
+    critic-only SUPPORTS_ACCEPT could fall through to a vacuous ACCEPT
+    with `verification_refs=()` -- zero verification requirements must
+    NEVER vacuously PASS (the exact invariant `aggregate_outcomes(())`
+    already enforces one level down, but the empty-required-SET case
+    bypassed that check entirely by never calling it). And a missing
+    `mission_id` would silently disable `filter_current_context()`'s
+    mission scoping (it treats `mission_id=None` as "no scoping
+    requested" -- correct for generic Phase 15.8 callers, but never
+    correct for the mission Court path). Both are now hard
+    preconditions, checked before any `CourtDecision` is constructed,
+    and the previous `required_requirement_ids=()` default is removed
+    so a caller must always supply the real set explicitly."""
+    if not mission_id:
+        raise CourtConfigurationError(
+            "arbiter_decide() requires a non-empty mission_id for the mission Court "
+            "path -- a missing/empty mission_id would disable cross-mission filtering "
+            "inside filter_current_context() (Phase 15.9.2 closure item 2)."
+        )
+    if not revision:
+        raise CourtConfigurationError(
+            "arbiter_decide() requires a non-empty revision -- a missing/empty "
+            "revision would disable stale-evidence filtering inside "
+            "filter_current_context() (Phase 15.9.2 closure item 3)."
+        )
+    if not required_requirement_ids:
+        raise CourtConfigurationError(
+            "arbiter_decide() requires a non-empty required_requirement_ids -- an "
+            "empty required set would let a critic-only ACCEPT proceed with zero "
+            "verification basis (Phase 15.9.2 closure item 1)."
+        )
+
     roles_invoked = tuple(c.role for c in critic_outputs)
     findings_considered = tuple(f.finding_id for f in findings)
 
