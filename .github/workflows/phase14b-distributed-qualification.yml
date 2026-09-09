@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle", "verify_cloudflare_access", "verify_waf_and_rate_limit", "full_edge_battery", "phase15_4_live_neon_qualification", "phase15_5_live_neon_qualification", "phase15_6_live_neon_qualification", "phase15_6_1_container_sandbox_qualification", "phase15_7_live_neon_qualification", "phase15_8_live_neon_qualification"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle", "verify_cloudflare_access", "verify_waf_and_rate_limit", "full_edge_battery", "phase15_4_live_neon_qualification", "phase15_5_live_neon_qualification", "phase15_6_live_neon_qualification", "phase15_6_1_container_sandbox_qualification", "phase15_7_live_neon_qualification", "phase15_8_live_neon_qualification", "phase15_11_relay_live_neon_qualification"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -110,6 +110,15 @@ jobs:
           docker version
           pip install --no-cache-dir pytest
           python -m pytest tests/test_verification.py tests/test_verification_aggregation.py tests/test_verifiers.py tests/test_verification_integration.py tests/test_mission_verification_gate.py tests/test_verification_e2e.py tests/test_verification_store_live_neon.py -v
+        env:
+          ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
+          ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}
+
+      - name: "Phase 15.11 / 15.11.1 LIVE_NEON_TEMP_BRANCH qualification -- Relay device/session core (register_device, create_session, build_relay_snapshot, revocation, second-device continuity, snapshot consistency) against a disposable Neon branch, never production -- the actual Python code path, run through a real network-capable environment (this sandbox's own Bash tool cannot resolve Neon hostnames, per every prior Phase 15 live-Neon qualification round's disclosed limitation)"
+        if: github.event.inputs.fresh_runner_mode == 'phase15_11_relay_live_neon_qualification'
+        run: |
+          pip install --no-cache-dir pytest
+          python -m pytest tests/test_relay_store.py tests/test_relay_store_live_neon.py tests/test_relay_requirements.py -v
         env:
           ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
           ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}

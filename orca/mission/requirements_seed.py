@@ -674,6 +674,28 @@ def seed_registry() -> None:
             "secret references.",
         ),
     ))
+    # Phase 15.11.1 closure: both acceptance criteria above are genuinely
+    # satisfied -- tests/test_relay_store_live_neon.py::
+    # test_second_device_continuity_asserts_every_governed_domain_individually
+    # asserts every REQ-RELAY-STATE-001 domain (workspace, repository,
+    # branch, revision, mission/step state, requirement/test/verification
+    # progress, Production Proof status, pending approvals/operations,
+    # checkpoints, model/tool activity, authority context) individually
+    # across two independently-created devices/sessions on the SAME
+    # mission; tests/test_relay_store.py and
+    # tests/test_relay_store_live_neon.py::test_snapshot_contains_no_raw_secrets_from_seeded_adversarial_fields
+    # prove no raw secret value survives in a Relay payload. This is why
+    # the canonical registry (not merely an isolated test copy) advances
+    # REQ-RELAY-STATE-001 all the way to VERIFIED here.
+    transition(
+        "REQ-RELAY-STATE-001", RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/relay_store.py",),
+    )
+    transition(
+        "REQ-RELAY-STATE-001", RequirementStatus.VERIFIED,
+        test_files=("tests/test_relay_store_live_neon.py", "tests/test_relay_store.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-15111-relay-state-session-authority-integrity-closure",
+    )
 
     # -- Device Trust + Session Revocation (spec section 25) --
     register(Requirement(
@@ -690,6 +712,21 @@ def seed_registry() -> None:
             "Trusted Device session of the same user can.",
         ),
     ))
+    # Phase 15.11.1: creation/expiry/device-association/last-seen/
+    # revoke-current/revoke-other/revoke-all-others are all genuinely
+    # implemented and tested (tests/test_relay_store_live_neon.py). Stops
+    # at IMPLEMENTED, deliberately NOT VERIFIED -- this requirement's
+    # second acceptance criterion (Public Device Mode's own SECURITY
+    # distinction from Trusted Device -- i.e. that a Public session
+    # cannot reach raw secrets a Trusted session of the same user can)
+    # is Phase 15.12's Public/Trusted/Mobile capability-enforcement work,
+    # not yet built. Advancing to VERIFIED before that would be exactly
+    # the "requirement is not VERIFIED because a test can call
+    # transition()" mistake this closure exists to fix.
+    transition(
+        "REQ-DEVICE-REVOCATION-001", RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/relay_store.py",),
+    )
 
     # -- Reconnect Truthfulness (spec section 26) --
     register(Requirement(

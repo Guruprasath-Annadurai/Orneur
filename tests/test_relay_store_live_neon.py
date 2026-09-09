@@ -41,6 +41,7 @@ from orca.mission.relay_store import (
     get_device,
     get_session,
     is_device_active,
+    list_active_sessions,
     register_device,
     revoke_all_other_sessions,
     revoke_device,
@@ -96,15 +97,17 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _seed_full_mission(conn, *, mission_id: str, owner_user_id: str, revision: str = "rev1") -> str:
+def _seed_full_mission(conn, *, mission_id: str, owner_user_id: str, revision: str = "rev1", workspace_id: str | None = "ws_relay_qual") -> str:
     """Seeds a mission with representative durable state across every
-    Relay governed-state domain (spec section 22): requirement,
-    verification record, checkpoint, Production Proof, mission step,
-    operation/approval/authority-decision, model/tool invocation.
-    Returns the seeded requirement_id."""
+    Relay governed-state domain (spec section 22): workspace,
+    requirement, verification record (both requirement-scoped and
+    mission-level test-category records), checkpoint, Production
+    Proof, mission step, operation/approval/authority-decision,
+    model/tool invocation. Returns the seeded requirement_id."""
     create_mission(
         conn, id=mission_id, repository="org/relay-qual-repo", branch="main", mode="BUILD",
         autonomy_level="L1", owner_user_id=owner_user_id, current_revision=revision,
+        workspace_id=workspace_id,
     )
     requirement_id = _rid()
     now = _now_iso()
@@ -200,7 +203,7 @@ def test_device_and_session_durable_across_fresh_connection():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED, name="Device A")
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED, name="Device A")
         session = create_session(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
@@ -226,15 +229,22 @@ def test_device_and_session_durable_across_fresh_connection():
 
 
 # ── Second-device continuity: REQ-RELAY-STATE-001 core proof (spec §22) ──
+# 15.11.1 item 4: assert EVERY material REQ-RELAY-STATE-001 domain
+# individually -- workspace, repository, branch, revision, mission
+# state, step state, requirement progress, test progress, verification
+# state, Production Proof status, pending approvals, pending dangerous
+# actions, checkpoints, model/agent activity, tool activity, authority
+# context, secret safety -- never inferred merely from two snapshot
+# objects comparing equal.
 
-def test_second_device_continuity_same_mission_and_owner():
+def test_second_device_continuity_asserts_every_governed_domain_individually():
     owner = _uid()
     mission_id = _mid()
 
     conn = _fresh_connection()
     try:
-        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        device_a = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED, name="Device A")
+        requirement_id = _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner, workspace_id="ws_relay_qual_domains")
+        device_a = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED, name="Device A")
         session_a = create_session(
             conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
@@ -245,7 +255,7 @@ def test_second_device_continuity_same_mission_and_owner():
 
     conn2 = _fresh_connection()
     try:
-        device_b = register_device(conn2, user_id=owner, trust_level=DeviceTrustLevel.PUBLIC, name="Device B")
+        device_b = register_device(conn2, authenticated_user_id=owner, trust_level=DeviceTrustLevel.PUBLIC, name="Device B")
         session_b = create_session(
             conn2, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.PUBLIC_DEVICE, ttl_seconds=3600,
@@ -257,23 +267,70 @@ def test_second_device_continuity_same_mission_and_owner():
     assert device_a.id != device_b.id
     assert session_a.id != session_b.id
 
-    assert snapshot_a.repository == snapshot_b.repository
-    assert snapshot_a.branch == snapshot_b.branch
-    assert snapshot_a.current_revision == snapshot_b.current_revision
+    # -- workspace --
+    assert snapshot_a.workspace_id == "ws_relay_qual_domains"
+    assert snapshot_a.workspace_id == snapshot_b.workspace_id == snapshot_a.mission.workspace_id == snapshot_b.mission.workspace_id
+
+    # -- repository / branch / revision --
+    assert snapshot_a.repository == snapshot_b.repository == "org/relay-qual-repo"
+    assert snapshot_a.branch == snapshot_b.branch == "main"
+    assert snapshot_a.current_revision == snapshot_b.current_revision == "rev1"
+
+    # -- mission state --
     assert snapshot_a.mission_state == snapshot_b.mission_state
     assert snapshot_a.mission == snapshot_b.mission
-    assert snapshot_a.step == snapshot_b.step
-    assert snapshot_a.requirements == snapshot_b.requirements
-    assert snapshot_a.verifications == snapshot_b.verifications
-    assert snapshot_a.production_proof == snapshot_b.production_proof
-    assert snapshot_a.checkpoint == snapshot_b.checkpoint
-    assert len(snapshot_a.model_activity) == len(snapshot_b.model_activity) == 1
-    assert len(snapshot_a.tool_activity) == len(snapshot_b.tool_activity) == 1
-    assert len(snapshot_a.authority_context) == len(snapshot_b.authority_context) == 1
-    assert len(snapshot_a.pending_approvals) == len(snapshot_b.pending_approvals) == 1
-    assert len(snapshot_a.pending_operations) == len(snapshot_b.pending_operations) == 1
 
-    # No raw secret in either device's payload.
+    # -- step state --
+    assert snapshot_a.step.current_step_id is not None
+    assert snapshot_a.step == snapshot_b.step
+
+    # -- requirement progress --
+    assert len(snapshot_a.requirements) == 1
+    assert snapshot_a.requirements[0].requirement_id == requirement_id
+    assert snapshot_a.requirements == snapshot_b.requirements
+
+    # -- verification state (per requirement+category, distinct from test progress) --
+    assert len(snapshot_a.verifications) >= 1
+    assert any(v.requirement_id == requirement_id and v.category == "UNIT_TEST" for v in snapshot_a.verifications)
+    assert snapshot_a.verifications == snapshot_b.verifications
+
+    # -- test progress (mission-level, current-revision-only, distinct domain) --
+    assert len(snapshot_a.test_progress) >= 1
+    assert any(t.category == "UNIT_TEST" and t.revision == "rev1" for t in snapshot_a.test_progress)
+    assert snapshot_a.test_progress == snapshot_b.test_progress
+
+    # -- Production Proof status --
+    assert snapshot_a.production_proof.available is True
+    assert snapshot_a.production_proof.revision == "rev1"
+    assert snapshot_a.production_proof == snapshot_b.production_proof
+
+    # -- pending approvals --
+    assert len(snapshot_a.pending_approvals) == 1
+    assert snapshot_a.pending_approvals[0].decision == "PENDING"
+    assert snapshot_a.pending_approvals == snapshot_b.pending_approvals
+
+    # -- pending dangerous actions (operations) --
+    assert len(snapshot_a.pending_operations) == 1
+    assert snapshot_a.pending_operations[0].status == "REQUESTED"
+    assert snapshot_a.pending_operations == snapshot_b.pending_operations
+
+    # -- checkpoints --
+    assert snapshot_a.checkpoint.checkpoint_id is not None
+    assert snapshot_a.checkpoint == snapshot_b.checkpoint
+
+    # -- model/agent activity --
+    assert len(snapshot_a.model_activity) == 1
+    assert snapshot_a.model_activity == snapshot_b.model_activity
+
+    # -- tool activity --
+    assert len(snapshot_a.tool_activity) == 1
+    assert snapshot_a.tool_activity == snapshot_b.tool_activity
+
+    # -- authority context --
+    assert len(snapshot_a.authority_context) == 1
+    assert snapshot_a.authority_context == snapshot_b.authority_context
+
+    # -- secret safety --
     for snap in (snapshot_a, snapshot_b):
         blob = json.dumps({
             "model_activity": [m.outcome_summary for m in snap.model_activity],
@@ -284,6 +341,34 @@ def test_second_device_continuity_same_mission_and_owner():
         assert "sk-" not in blob
 
 
+def test_second_device_continuity_with_genuinely_absent_workspace():
+    """workspace_id may legitimately be None -- the DOMAIN/FIELD must
+    still exist and agree across both devices, never fabricated."""
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner, workspace_id=None)
+        device_a = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        session_a = create_session(
+            conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner,
+            mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
+        )
+        snapshot_a = build_relay_snapshot(conn, session_id=session_a.id, authenticated_user_id=owner)
+
+        device_b = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.PUBLIC)
+        session_b = create_session(
+            conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner,
+            mode=RelayMode.PUBLIC_DEVICE, ttl_seconds=3600,
+        )
+        snapshot_b = build_relay_snapshot(conn, session_id=session_b.id, authenticated_user_id=owner)
+
+        assert snapshot_a.workspace_id is None
+        assert snapshot_a.workspace_id == snapshot_b.workspace_id == snapshot_a.mission.workspace_id
+    finally:
+        conn.close()
+
+
 # ── IDOR / cross-user access (spec §25) ──────────────────────────────
 
 def test_cross_user_device_access_denied():
@@ -291,7 +376,7 @@ def test_cross_user_device_access_denied():
     other = _uid()
     conn = _fresh_connection()
     try:
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         with pytest.raises(RelayAccessDeniedError):
             touch_device(conn, device.id, authenticated_user_id=other)
     finally:
@@ -305,7 +390,7 @@ def test_cross_user_session_access_denied():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         session = create_session(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
@@ -327,7 +412,7 @@ def test_cross_user_mission_session_creation_denied():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        attacker_device = register_device(conn, user_id=attacker, trust_level=DeviceTrustLevel.TRUSTED)
+        attacker_device = register_device(conn, authenticated_user_id=attacker, trust_level=DeviceTrustLevel.TRUSTED)
         with pytest.raises(RelayAccessDeniedError):
             create_session(
                 conn, device_id=attacker_device.id, mission_id=mission_id, authenticated_user_id=attacker,
@@ -344,7 +429,7 @@ def test_device_paired_with_wrong_user_cannot_create_session():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        owner_device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        owner_device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         # `other` tries to use a device that isn't theirs at all.
         with pytest.raises(RelayAccessDeniedError):
             create_session(
@@ -363,7 +448,7 @@ def test_revoked_device_cannot_create_new_session():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         revoke_device(conn, device.id, authenticated_user_id=owner)
         assert not is_device_active(get_device(conn, device.id))
         with pytest.raises(DeviceRevokedError):
@@ -379,7 +464,7 @@ def test_revoked_device_cannot_be_touched_active_again():
     owner = _uid()
     conn = _fresh_connection()
     try:
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         revoke_device(conn, device.id, authenticated_user_id=owner)
         with pytest.raises(DeviceRevokedError):
             touch_device(conn, device.id, authenticated_user_id=owner)
@@ -391,7 +476,7 @@ def test_revoking_already_revoked_device_is_a_no_op_not_an_error():
     owner = _uid()
     conn = _fresh_connection()
     try:
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         first = revoke_device(conn, device.id, authenticated_user_id=owner)
         second = revoke_device(conn, device.id, authenticated_user_id=owner)
         assert first.revoked_at == second.revoked_at
@@ -407,7 +492,7 @@ def test_revoke_other_session_rejects_targeting_current_session():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         session = create_session(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
@@ -427,8 +512,8 @@ def test_revoke_other_session_leaves_current_valid_and_revokes_target():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        device_a = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
-        device_b = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device_a = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device_b = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         session_a = create_session(
             conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
@@ -456,12 +541,12 @@ def test_revoke_other_session_cross_user_denied():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        owner_device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        owner_device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         owner_session = create_session(
             conn, device_id=owner_device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
-        other_device = register_device(conn, user_id=other, trust_level=DeviceTrustLevel.TRUSTED)
+        other_device = register_device(conn, authenticated_user_id=other, trust_level=DeviceTrustLevel.TRUSTED)
         # `other` has no mission access, so give them a session on a mission they own instead,
         # then attempt to revoke owner's session as an "other" session -- must be denied.
         other_mission_id = _mid()
@@ -485,7 +570,7 @@ def test_revoke_all_other_sessions_is_atomic_and_preserves_current():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        devices = [register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED) for _ in range(4)]
+        devices = [register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED) for _ in range(4)]
         sessions = [
             create_session(
                 conn, device_id=d.id, mission_id=mission_id, authenticated_user_id=owner,
@@ -510,7 +595,7 @@ def test_revoked_session_cannot_be_revived_via_touch():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         session = create_session(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
@@ -531,7 +616,7 @@ def test_expired_session_cannot_be_touched_or_produce_snapshot():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         session = create_session(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=1,
@@ -557,7 +642,7 @@ def test_build_relay_snapshot_does_not_touch_last_seen_at():
     conn = _fresh_connection()
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         session = create_session(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
@@ -603,7 +688,7 @@ def test_snapshot_contains_no_raw_secrets_from_seeded_adversarial_fields():
             )
         conn.commit()
 
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         session = create_session(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
@@ -637,7 +722,7 @@ def test_missing_domains_are_absent_not_fabricated():
     conn = _fresh_connection()
     try:
         create_mission(conn, id=mission_id, repository="org/bare-repo", mode="BUILD", autonomy_level="L1", owner_user_id=owner)
-        device = register_device(conn, user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
         session = create_session(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
@@ -663,5 +748,336 @@ def test_relay_session_not_found_and_device_not_found_raise():
             build_relay_snapshot(conn, session_id="rlysess_doesnotexist", authenticated_user_id=owner)
         with pytest.raises(DeviceNotFoundError):
             touch_device(conn, "dev_doesnotexist", authenticated_user_id=owner)
+    finally:
+        conn.close()
+
+
+# ── Device registration binds to the authenticated principal (15.11.1 item 5) ──
+
+def test_register_device_has_no_caller_controlled_ownership_override():
+    """The public register_device() signature has no parameter through
+    which a caller can name a DIFFERENT durable owner than
+    `authenticated_user_id` -- attempting the old `user_id=` kwarg (or
+    any other identity-naming kwarg) is a TypeError, not a silent
+    ownership override."""
+    import inspect
+    sig = inspect.signature(register_device)
+    assert "user_id" not in sig.parameters
+    assert "owner_user_id" not in sig.parameters
+    assert "authenticated_user_id" in sig.parameters
+
+
+def test_registered_device_user_id_always_equals_authenticated_principal():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        assert device.user_id == owner
+        reloaded = get_device(conn, device.id)
+        assert reloaded.user_id == owner
+    finally:
+        conn.close()
+
+
+def test_attacker_cannot_create_device_durably_owned_by_victim():
+    """An attacker who merely KNOWS a victim's user id cannot make
+    register_device() durably attribute the new device to the victim
+    -- the device is always owned by whichever `authenticated_user_id`
+    the (trusted) caller passes, and there is no second parameter an
+    attacker-controlled request body could smuggle a victim id into."""
+    attacker = _uid()
+    victim = _uid()
+    conn = _fresh_connection()
+    try:
+        # The only identity register_device() will ever durably use is
+        # the one explicit authenticated_user_id argument -- simulating
+        # "attacker calls this as themselves" is exactly attacker's own id.
+        device = register_device(conn, authenticated_user_id=attacker, trust_level=DeviceTrustLevel.TRUSTED, name=f"pretend-owned-by-{victim}")
+        assert device.user_id == attacker
+        assert device.user_id != victim
+    finally:
+        conn.close()
+
+
+# ── Dead-session guard for session-management actions (15.11.1 item 6) ──
+
+def test_revoked_current_session_cannot_revoke_another():
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
+        device_a = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device_b = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        session_a = create_session(conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session_b = create_session(conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+
+        revoke_session(conn, session_a.id, authenticated_user_id=owner, reason="dead current session")
+        with pytest.raises(RelaySessionInvalidError) as exc_info:
+            revoke_other_session(conn, current_session_id=session_a.id, target_session_id=session_b.id, authenticated_user_id=owner)
+        assert exc_info.value.status is RelaySessionStatus.REVOKED
+        assert session_status(get_session(conn, session_b.id)) is RelaySessionStatus.ACTIVE  # untouched
+    finally:
+        conn.close()
+
+
+def test_expired_current_session_cannot_revoke_another():
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
+        device_a = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device_b = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        session_a = create_session(conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=1)
+        session_b = create_session(conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        future = lambda: datetime.now(timezone.utc) + timedelta(days=1)  # noqa: E731
+
+        with pytest.raises(RelaySessionInvalidError) as exc_info:
+            revoke_other_session(conn, current_session_id=session_a.id, target_session_id=session_b.id, authenticated_user_id=owner, now_fn=future)
+        assert exc_info.value.status is RelaySessionStatus.EXPIRED
+        assert session_status(get_session(conn, session_b.id)) is RelaySessionStatus.ACTIVE
+    finally:
+        conn.close()
+
+
+def test_revoked_current_device_cannot_revoke_another_session():
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
+        device_a = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        device_b = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        session_a = create_session(conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session_b = create_session(conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+
+        # Device A is revoked AFTER its session was created -- the session
+        # itself is still unexpired/unrevoked, but its device is dead now.
+        revoke_device(conn, device_a.id, authenticated_user_id=owner)
+        with pytest.raises(DeviceRevokedError):
+            revoke_other_session(conn, current_session_id=session_a.id, target_session_id=session_b.id, authenticated_user_id=owner)
+        assert session_status(get_session(conn, session_b.id)) is RelaySessionStatus.ACTIVE
+    finally:
+        conn.close()
+
+
+def test_active_session_context_legitimately_revokes_other_and_all_others():
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
+        devices = [register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED) for _ in range(3)]
+        sessions = [
+            create_session(conn, device_id=d.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+            for d in devices
+        ]
+        current, other1, other2 = sessions
+
+        revoke_other_session(conn, current_session_id=current.id, target_session_id=other1.id, authenticated_user_id=owner)
+        assert session_status(get_session(conn, other1.id)) is RelaySessionStatus.REVOKED
+        assert session_status(get_session(conn, current.id)) is RelaySessionStatus.ACTIVE
+
+        revoked = revoke_all_other_sessions(conn, current_session_id=current.id, authenticated_user_id=owner)
+        assert {s.id for s in revoked} == {other2.id}  # other1 was already revoked, excluded by revoked_at IS NULL
+        assert session_status(get_session(conn, current.id)) is RelaySessionStatus.ACTIVE
+    finally:
+        conn.close()
+
+
+# ── Active-session list respects device revocation (15.11.1 item 7) ──
+
+def test_list_active_sessions_excludes_session_on_later_revoked_device():
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+
+        assert session.id in {s.id for s in list_active_sessions(conn, authenticated_user_id=owner)}
+
+        revoke_device(conn, device.id, authenticated_user_id=owner)
+
+        # The session row itself is still unexpired/unrevoked, but its
+        # device is dead -- it must disappear from the active list.
+        assert session.id not in {s.id for s in list_active_sessions(conn, authenticated_user_id=owner)}
+        assert session.revoked_at is None  # the SESSION row itself was never touched
+
+        with pytest.raises(DeviceRevokedError):
+            build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
+    finally:
+        conn.close()
+
+
+# ── Pending operations must actually be pending (15.11.1 item 8) ────
+
+def test_failed_operation_absent_from_pending_operations():
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)  # seeds 1 REQUESTED op
+        now = _now_iso()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO operations (id, mission_id, idempotency_key, kind, status, requested_at, completed_at, requested_by) "
+                "VALUES (%s, %s, %s, 'deploy', 'FAILED', %s, %s, %s)",
+                (f"op_failed_{uuid.uuid4().hex[:8]}", mission_id, f"idem_failed_{uuid.uuid4().hex[:8]}", now, now, owner),
+            )
+        conn.commit()
+
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        snapshot = build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
+
+        assert all(op.status != "FAILED" for op in snapshot.pending_operations)
+        assert len(snapshot.pending_operations) == 1  # only the originally-seeded REQUESTED one
+        assert snapshot.pending_operations[0].status == "REQUESTED"
+    finally:
+        conn.close()
+
+
+# ── Production Proof freshness truthfulness (15.11.1 item 9) ────────
+
+def test_production_proof_stale_is_unknown_not_current_when_revision_matches():
+    """Revision equality alone must never be reported as CURRENT
+    (`stale=False`) -- only as UNKNOWN (`stale=None`), since Relay
+    cannot durably reconstruct the full stale-proof decision context."""
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner, revision="rev1")
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        snapshot = build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
+
+        assert snapshot.production_proof.revision == "rev1"  # matches mission.current_revision
+        assert snapshot.production_proof.stale is None  # UNKNOWN, never False/CURRENT
+    finally:
+        conn.close()
+
+
+def test_production_proof_stale_is_true_on_revision_mismatch():
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        requirement_id = _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner, revision="rev1")
+        # Advance the mission's current_revision without a new proof.
+        with conn.cursor() as cur:
+            cur.execute("UPDATE missions SET current_revision = %s WHERE id = %s", ("rev2", mission_id))
+        conn.commit()
+
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        snapshot = build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
+
+        assert snapshot.production_proof.revision == "rev1"
+        assert snapshot.current_revision == "rev2"
+        assert snapshot.production_proof.stale is True
+    finally:
+        conn.close()
+
+
+# ── Snapshot consistency (15.11.1 item 10) ───────────────────────────
+
+def test_repeatable_read_isolation_prevents_mixed_snapshot_reads():
+    """Proves the REPEATABLE READ mechanism `build_relay_snapshot()`
+    relies on, directly: two reads inside the SAME transaction see the
+    SAME data even though a DIFFERENT connection commits a change to
+    that exact row in between -- a snapshot cannot be silently
+    assembled from a mix of before/after database versions."""
+    owner = _uid()
+    mission_id = _mid()
+    conn_reader = _fresh_connection()
+    conn_writer = _fresh_connection()
+    try:
+        create_mission(
+            conn_writer, id=mission_id, repository="org/consistency-repo", mode="BUILD",
+            autonomy_level="L1", owner_user_id=owner, current_revision="rev1",
+        )
+
+        with conn_reader.cursor() as cur:
+            cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cur.execute("SELECT current_revision FROM missions WHERE id = %s", (mission_id,))
+            first_read = cur.fetchone()["current_revision"]
+
+            with conn_writer.cursor() as wcur:
+                wcur.execute("UPDATE missions SET current_revision = %s WHERE id = %s", ("rev2", mission_id))
+            conn_writer.commit()
+
+            # Still inside the reader's ORIGINAL transaction:
+            cur.execute("SELECT current_revision FROM missions WHERE id = %s", (mission_id,))
+            second_read = cur.fetchone()["current_revision"]
+        conn_reader.commit()
+
+        assert first_read == second_read == "rev1"  # the concurrent write is invisible to this transaction
+
+        with conn_reader.cursor() as cur:
+            cur.execute("SELECT current_revision FROM missions WHERE id = %s", (mission_id,))
+            after_commit_read = cur.fetchone()["current_revision"]
+        conn_reader.commit()
+        assert after_commit_read == "rev2"  # a FRESH transaction does see it
+    finally:
+        conn_reader.close()
+        conn_writer.close()
+
+
+def test_snapshot_names_its_own_consistency_basis():
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        snapshot = build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
+        assert "REPEATABLE READ" in snapshot.consistency_basis
+        assert "READ ONLY" in snapshot.consistency_basis
+    finally:
+        conn.close()
+
+
+# ── No hidden read side effect, re-proven after the consistency refactor (15.11.1 item 11) ──
+
+def test_build_relay_snapshot_mutates_nothing_across_every_domain():
+    owner = _uid()
+    mission_id = _mid()
+    conn = _fresh_connection()
+    try:
+        _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
+        device = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED)
+        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+
+        def _fingerprint():
+            with conn.cursor() as cur:
+                cur.execute("SELECT state, current_revision FROM missions WHERE id = %s", (mission_id,))
+                mission_row = dict(cur.fetchone())
+                cur.execute("SELECT status FROM operations WHERE mission_id = %s ORDER BY id", (mission_id,))
+                op_statuses = [r["status"] for r in cur.fetchall()]
+                cur.execute("SELECT decision FROM approvals WHERE mission_id = %s ORDER BY id", (mission_id,))
+                approval_decisions = [r["decision"] for r in cur.fetchall()]
+                cur.execute("SELECT count(*) AS c FROM checkpoints WHERE mission_id = %s", (mission_id,))
+                checkpoint_count = cur.fetchone()["c"]
+                cur.execute("SELECT count(*) AS c FROM verification_records WHERE mission_id = %s", (mission_id,))
+                verification_count = cur.fetchone()["c"]
+                cur.execute("SELECT count(*) AS c FROM production_proofs WHERE mission_id = %s", (mission_id,))
+                proof_count = cur.fetchone()["c"]
+            conn.commit()
+            return (mission_row, op_statuses, approval_decisions, checkpoint_count, verification_count, proof_count)
+
+        before_last_seen = get_session(conn, session.id).last_seen_at
+        before = _fingerprint()
+        build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
+        build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
+        after = _fingerprint()
+        after_last_seen = get_session(conn, session.id).last_seen_at
+
+        assert before == after
+        assert before_last_seen == after_last_seen
     finally:
         conn.close()

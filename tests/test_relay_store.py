@@ -16,6 +16,7 @@ from orca.mission.relay_store import (
     AuthorityContextSummary,
     CheckpointSummary,
     DeviceTrustLevel,
+    MissionSummary,
     ModelActivitySummary,
     OperationSummary,
     ProductionProofSummary,
@@ -26,6 +27,7 @@ from orca.mission.relay_store import (
     RelaySnapshot,
     RequirementSummary,
     StepSummary,
+    TestProgressSummary,
     ToolActivitySummary,
     VerificationSummary,
     _sanitize,
@@ -124,13 +126,15 @@ _SYNTHETIC_SECRETS = [
 
 def _snapshot_with_secret_in(field_name: str, secret: str) -> RelaySnapshot:
     kwargs = dict(
-        relay_session_id="rlysess_1", mission_id="mis_1", device_id="dev_1", user_id="u1",
+        relay_session_id="rlysess_1", mission_id="mis_1", workspace_id="ws_1", device_id="dev_1", user_id="u1",
         repository="org/repo", branch="main", current_revision="rev1", mission_state="RUNNING",
         snapshot_generated_at="2026-09-09T00:00:00+00:00", mission_updated_at="2026-09-09T00:00:00+00:00",
+        consistency_basis="single PostgreSQL REPEATABLE READ, READ ONLY transaction",
         mission=None, step=StepSummary(current_step_id=None, completed_step_ids=(), remaining_step_ids=(), failed_step_ids=()),
         requirements=(RequirementSummary(requirement_id="REQ-X-001", status="IMPLEMENTED", statement="ok", evidence_ref=None),),
-        verifications=(VerificationSummary(requirement_id="REQ-X-001", outcome="PASS", revision="rev1", evidence_refs=(), stale=False),),
-        production_proof=ProductionProofSummary(proof_id="p1", revision="rev1", release_state="ENGINEERING_READY", proof_hash="h", generated_at="t", available=True, stale=False),
+        verifications=(VerificationSummary(requirement_id="REQ-X-001", category="UNIT_TEST", outcome="PASS", revision="rev1", verifier_id="V1", evidence_refs=(), stale=False),),
+        test_progress=(TestProgressSummary(category="UNIT_TEST", verification_id="ver1", outcome="PASS", revision="rev1", verifier_id="V1", evidence_refs=()),),
+        production_proof=ProductionProofSummary(proof_id="p1", revision="rev1", release_state="ENGINEERING_READY", proof_hash="h", generated_at="t", available=True, stale=None),
         pending_approvals=(ApprovalSummary(id="a1", operation_id="op1", decision="PENDING", requested_at="t", decided_by=None, reason="normal reason"),),
         pending_operations=(OperationSummary(id="op1", kind="deploy", status="REQUESTED", requested_by="u1", requested_at="t", result_ref=None),),
         checkpoint=CheckpointSummary(checkpoint_id="ckpt1", created_at="t", mission_state="RUNNING", current_step_id=None, current_revision="rev1", diff_ref=None, active_blocker=None, evidence_refs=()),
@@ -138,8 +142,7 @@ def _snapshot_with_secret_in(field_name: str, secret: str) -> RelaySnapshot:
         tool_activity=(ToolActivitySummary(id="t1", tool_name="bash", status="SUCCEEDED", started_at="t", completed_at=None, outcome_summary="ok"),),
         authority_context=(AuthorityContextSummary(id="ad1", operation_id="op1", decision="ALLOW", decided_at="t", detail="normal detail"),),
     )
-    from orca.mission.relay_store import MissionSummary
-    kwargs["mission"] = MissionSummary(mission_id="mis_1", repository="org/repo", branch="main", base_revision="base", current_revision="rev1", mission_state="RUNNING")
+    kwargs["mission"] = MissionSummary(mission_id="mis_1", workspace_id="ws_1", repository="org/repo", branch="main", base_revision="base", current_revision="rev1", mission_state="RUNNING")
 
     # Inject the secret into ONE targeted text field via a fresh object built with it.
     if field_name == "model_outcome_summary":
@@ -205,3 +208,33 @@ def test_sanitize_leaves_enum_members_untouched():
 def test_sanitize_preserves_non_secret_text():
     snap = _sanitize(_snapshot_with_secret_in("model_outcome_summary", "all tests passed, 12 total"))
     assert snap.model_activity[0].outcome_summary == "all tests passed, 12 total"
+
+
+# ── Production Proof freshness truthfulness (15.11.1 item 9) ────────
+
+def test_build_relay_snapshot_sets_repeatable_read_before_any_read():
+    """15.11.1 item 10 (static-shape proof): `build_relay_snapshot()`
+    issues `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ
+    ONLY` as its literal first statement, before any governed-state
+    SELECT. The live mechanism itself (a concurrent write is invisible
+    within that transaction) is proven against real Postgres in
+    tests/test_relay_store_live_neon.py."""
+    import inspect
+    from orca.mission import relay_store
+    source = inspect.getsource(relay_store.build_relay_snapshot)
+    set_txn_pos = source.index("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+    first_select_pos = source.index("SELECT * FROM relay_sessions")
+    assert set_txn_pos < first_select_pos
+
+
+def test_production_proof_summary_never_asserts_stale_false():
+    """This module must never itself claim `stale=False` (CURRENT) --
+    only `True` (definite mismatch) or `None` (unknown, revisions
+    match but full decision context unavailable). `False` is reserved
+    for a future caller that supplies the full stale-proof context."""
+    import inspect
+    from orca.mission import relay_store
+    source = inspect.getsource(relay_store._build_production_proof_summary)
+    assert "stale = False" not in source
+    assert "stale=False" not in source
+
