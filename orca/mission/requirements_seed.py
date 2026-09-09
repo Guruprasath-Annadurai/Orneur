@@ -754,7 +754,7 @@ def seed_registry() -> None:
     transition(
         "REQ-DEVICE-REVOCATION-001", RequirementStatus.VERIFIED,
         test_files=("tests/test_relay_store_live_neon.py", "tests/test_relay_security.py", "tests/test_relay_security_live_neon.py"),
-        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1512-relay-security-modes",
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-15121-reauth-provenance-session-security-enforcement-closure",
     )
 
     # -- Relay Reauthentication Boundary (spec sections 7-8, 13) --
@@ -778,6 +778,32 @@ def seed_registry() -> None:
             "session, and that an expired context is rejected.",
         ),
     ))
+    # Phase 15.12.1 RECONCILIATION (append-only, per the owner's own
+    # instruction -- history is not silently rewritten): an independent
+    # owner audit of the Phase 15.12 checkpoint found the VERIFIED claim
+    # below was OVER-PROMOTED. At that time, `check_capability(...,
+    # reauth_valid=True)` let a caller manufacture ALLOW for a reauth-
+    # gated capability from a plain boolean, and `ReauthContext` was a
+    # publicly-constructible, self-validating dataclass -- a caller
+    # could fabricate one with a fake future `expires_at` and matching
+    # `factors_verified=("password","totp")` WITHOUT ever presenting a
+    # real password or TOTP code, and `is_reauth_context_valid()` would
+    # accept it (it validated only the object's OWN fields). Neither
+    # defect was caught by the 15.12 test suite, because that suite's
+    # own tests used the SAME forgeable pattern. This closure (15.12.1)
+    # removed `reauth_valid` entirely, replaced `ReauthContext` with an
+    # opaque `ReauthGrant` whose only trustable content is a
+    # `secrets.token_urlsafe()` ID looked up in a server-side store
+    # (`_REAUTH_GRANTS`), and added `authorize_relay_capability()` as
+    # the actual authoritative gate (loads real session/device state,
+    # validates a real grant). REQ-RELAY-REAUTH-001 RE-EARNS its
+    # VERIFIED status here, now genuinely satisfied: no boolean reauth
+    # authorization remains, fabricated grants fail
+    # (tests/test_relay_security.py's forged-grant matrix +
+    # tests/test_relay_security_live_neon.py's enrollment-forgery
+    # matrix), real password/TOTP issuance succeeds, user/session
+    # binding succeeds, expiry succeeds, and no caller TTL override
+    # remains.
     transition(
         "REQ-RELAY-REAUTH-001", RequirementStatus.IMPLEMENTED,
         implementation_files=("orca/mission/relay_security.py",),
@@ -785,7 +811,7 @@ def seed_registry() -> None:
     transition(
         "REQ-RELAY-REAUTH-001", RequirementStatus.VERIFIED,
         test_files=("tests/test_relay_security.py", "tests/test_relay_security_live_neon.py"),
-        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1512-relay-security-modes",
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-15121-reauth-provenance-session-security-enforcement-closure",
     )
 
     # -- Mobile Review Reduced Surface (spec sections 5, 18, 23) --
@@ -816,7 +842,7 @@ def seed_registry() -> None:
     transition(
         "REQ-RELAY-MOBILEREVIEW-001", RequirementStatus.VERIFIED,
         test_files=("tests/test_relay_security.py", "tests/test_relay_security_live_neon.py"),
-        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1512-relay-security-modes",
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-15121-reauth-provenance-session-security-enforcement-closure",
     )
 
     # -- Reconnect Truthfulness (spec section 26) --

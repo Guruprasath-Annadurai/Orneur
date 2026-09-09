@@ -1,22 +1,33 @@
 """
-Phase 15.12 -- UNIT tests for orca.mission.relay_security (no mission
-Neon database required): capability-matrix intersection semantics,
-session-security derivation, TTL/inactivity policy, sensitive-file
-policy, security-profile construction, and REAL (non-mocked)
-reauthentication against the existing orca.auth primitives via the
-project's own `isolated_home` fixture (isolated temp SQLite, never the
-developer's real ~/.orca/auth.db).
+Phase 15.12 / 15.12.1 -- UNIT tests for orca.mission.relay_security
+(no mission Neon database required): capability-matrix intersection
+semantics, session-security derivation, TTL/inactivity policy,
+sensitive-file policy, security-profile construction, and REAL
+(non-mocked) reauthentication + REAL server-side grant provenance
+against the existing orca.auth primitives via the project's own
+`isolated_home` fixture (isolated temp SQLite, never the developer's
+real ~/.orca/auth.db).
+
+15.12.1 correction: `check_capability()` no longer accepts a
+`reauth_valid` boolean (removed entirely -- an owner audit found the
+15.12 version let a caller manufacture ALLOW for a reauth-gated
+capability just by passing `True`). `ReauthContext` (a publicly-
+constructible, self-validating dataclass) is replaced by `ReauthGrant`
+-- an opaque handle whose only trustable content is a `grant_id`
+looked up in a server-side store; validation NEVER trusts fields
+present on the object itself.
 
 Live-Neon-dependent behavior (real TRUSTED enrollment against a real
 device row, session creation/security validation against real
-Postgres, Mobile Review state built from a real RelaySnapshot,
-authority non-bypass, and the full secret battery across all 3 modes)
-is covered in tests/test_relay_store_live_neon.py
-(LIVE_NEON_TEMP_BRANCH).
+Postgres, `authorize_relay_capability()`'s full durable-state-loading
+gate, Mobile Review state built from a real RelaySnapshot, authority
+non-bypass, and the full secret battery across all 3 modes) is covered
+in tests/test_relay_security_live_neon.py (LIVE_NEON_TEMP_BRANCH).
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -25,23 +36,24 @@ from orca.mission.relay_security import (
     MOBILE_REVIEW_MAX_SESSION_SECONDS,
     PUBLIC_DEVICE_INACTIVITY_SECONDS,
     PUBLIC_DEVICE_MAX_SESSION_SECONDS,
-    REAUTH_CONTEXT_TTL_SECONDS,
+    REAUTH_GRANT_TTL_SECONDS,
     TRUSTED_DEVICE_INACTIVITY_SECONDS,
     TRUSTED_DEVICE_MAX_SESSION_SECONDS,
     PolicyDecision,
-    ReauthContext,
-    ReauthContextInvalidError,
     ReauthenticationError,
+    ReauthGrant,
+    ReauthGrantInvalidError,
     RelayCapability,
     SecuritySessionStatus,
+    _REAUTH_GRANTS,
     build_security_profile,
     check_capability,
     effective_capabilities,
     evaluate_session_security,
     file_access_capability_for,
-    is_reauth_context_valid,
+    is_reauth_grant_valid,
     is_sensitive_path,
-    require_reauth_context,
+    require_reauth_grant,
     verify_reauthentication,
 )
 from orca.mission.relay_store import DeviceTrustLevel, RelayDevice, RelayMode, RelaySession
@@ -170,17 +182,24 @@ def test_privilege_cannot_increase_through_any_mode_swap_on_a_public_device():
         assert RelayCapability.EDIT_FILES not in effective
 
 
+# ── check_capability() is now a PURE STATIC query -- no reauth_valid (15.12.1 item 1) ──
+
+def test_check_capability_has_no_reauth_valid_parameter():
+    """15.12.1 item 1: the exact parameter that let a caller
+    manufacture ALLOW for a reauth-gated capability is GONE."""
+    import inspect
+    sig = inspect.signature(check_capability)
+    assert "reauth_valid" not in sig.parameters
+
+
 def test_check_capability_marks_deploy_control_requires_reauth_and_authority():
     decision = check_capability(RelayCapability.DEPLOY_CONTROL, device_trust=DeviceTrustLevel.TRUSTED, mode=RelayMode.TRUSTED_DEVICE)
     assert decision.requires_reauthentication is True
     assert decision.requires_authority is True
-
-
-def test_check_capability_deploy_control_allowed_only_with_reauth():
-    without_reauth = check_capability(RelayCapability.DEPLOY_CONTROL, device_trust=DeviceTrustLevel.TRUSTED, mode=RelayMode.TRUSTED_DEVICE, reauth_valid=False)
-    assert without_reauth.allowed is False
-    with_reauth = check_capability(RelayCapability.DEPLOY_CONTROL, device_trust=DeviceTrustLevel.TRUSTED, mode=RelayMode.TRUSTED_DEVICE, reauth_valid=True)
-    assert with_reauth.allowed is True
+    # Statically policy-eligible -- but this does NOT mean currently
+    # authorized; only authorize_relay_capability() (live-Neon tests)
+    # makes that determination, after validating a REAL grant.
+    assert decision.allowed is True
 
 
 def test_check_capability_harmless_read_never_requires_reauth():
@@ -190,9 +209,22 @@ def test_check_capability_harmless_read_never_requires_reauth():
 
 
 def test_check_capability_public_device_deploy_control_requires_trusted_device_approval():
-    decision = check_capability(RelayCapability.DEPLOY_CONTROL, device_trust=DeviceTrustLevel.PUBLIC, mode=RelayMode.PUBLIC_DEVICE, reauth_valid=True)
+    decision = check_capability(RelayCapability.DEPLOY_CONTROL, device_trust=DeviceTrustLevel.PUBLIC, mode=RelayMode.PUBLIC_DEVICE)
     assert decision.allowed is False
     assert decision.requires_trusted_device_approval is True
+
+
+def test_authorize_relay_capability_has_no_reauth_valid_parameter():
+    """The authoritative gate also has no way to accept a boolean --
+    only a real `reauth_grant` object, which is itself validated
+    against the server-side store (see live-Neon tests for the full
+    durable-state-loading behavior)."""
+    import inspect
+    from orca.mission.relay_security import authorize_relay_capability
+    sig = inspect.signature(authorize_relay_capability)
+    assert "reauth_valid" not in sig.parameters
+    assert "device_trust" not in sig.parameters  # never accepted from the caller (15.12.1 item 2)
+    assert "mode" not in sig.parameters  # never accepted from the caller (15.12.1 item 2)
 
 
 # ── Session security validation (spec section 11) ────────────────────
@@ -254,7 +286,7 @@ def test_all_ttl_and_inactivity_constants_are_positive_and_named():
     for value in (
         TRUSTED_DEVICE_MAX_SESSION_SECONDS, PUBLIC_DEVICE_MAX_SESSION_SECONDS, MOBILE_REVIEW_MAX_SESSION_SECONDS,
         TRUSTED_DEVICE_INACTIVITY_SECONDS, PUBLIC_DEVICE_INACTIVITY_SECONDS, MOBILE_REVIEW_INACTIVITY_SECONDS,
-        REAUTH_CONTEXT_TTL_SECONDS,
+        REAUTH_GRANT_TTL_SECONDS,
     ):
         assert isinstance(value, int) and value > 0
 
@@ -267,6 +299,24 @@ def test_create_relay_session_has_no_caller_controlled_ttl_parameter():
     sig = inspect.signature(create_relay_session)
     assert "ttl_seconds" not in sig.parameters
     assert "expires_in" not in sig.parameters
+
+
+def test_verify_reauthentication_has_no_caller_controlled_ttl_parameter():
+    """15.12.1 item 5: the public reauthentication API has no way to
+    request an arbitrary grant lifetime."""
+    import inspect
+    sig = inspect.signature(verify_reauthentication)
+    assert "ttl_seconds" not in sig.parameters
+    assert "expires_in" not in sig.parameters
+
+
+def test_verify_reauthentication_has_no_email_parameter():
+    """15.12.1 item 4: the account is derived from `authenticated_user_id`,
+    never selected independently via an `email` argument."""
+    import inspect
+    sig = inspect.signature(verify_reauthentication)
+    assert "email" not in sig.parameters
+    assert "authenticated_user_id" in sig.parameters
 
 
 # ── Sensitive file policy (spec section 17) ──────────────────────────
@@ -348,90 +398,158 @@ def test_build_security_profile_restricted_capabilities_lists_denied_ones_for_pu
     assert "VIEW_MISSION_STATUS" not in profile.restricted_capabilities
 
 
-# ── Real (non-mocked) reauthentication (spec sections 7-8, 29) ───────
+# ── Real (non-mocked) reauthentication with REAL server-side grant provenance ──
+# (spec sections 7-8, 29; hardened 15.12.1 items 3-5)
 
 def _make_user(store, password="Correct-Horse-Battery-9", totp_enabled=False):
-    email = f"reauth-{id(store)}-{password[:3]}@example.com"
+    import uuid as _uuid
+    email = f"reauth-{_uuid.uuid4().hex[:16]}@example.com"
     user = store.create_user(email, password)
     if totp_enabled:
         from orca.auth.totp import generate_totp_secret
         secret = generate_totp_secret()
         store.set_pending_totp_secret(user.id, secret)
         store.enable_totp(user.id)
-        return user, email, secret
-    return user, email, None
+        return user, secret
+    return user, None
 
 
-def test_correct_password_no_totp_yields_valid_reauth_context(isolated_home):
-    user, email, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9")
-    ctx = verify_reauthentication(email=email, password="Correct-Horse-Battery-9")
-    assert isinstance(ctx, ReauthContext)
-    assert ctx.user_id == user.id
-    assert ctx.factors_verified == ("password",)
+def test_correct_password_no_totp_yields_valid_grant(isolated_home):
+    user, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9")
+    grant = verify_reauthentication(authenticated_user_id=user.id, password="Correct-Horse-Battery-9")
+    assert isinstance(grant, ReauthGrant)
+    assert is_reauth_grant_valid(grant, authenticated_user_id=user.id) is True
 
 
 def test_wrong_password_denies(isolated_home):
-    _, email, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9")
+    user, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9")
     with pytest.raises(ReauthenticationError):
-        verify_reauthentication(email=email, password="totally-wrong-password")
+        verify_reauthentication(authenticated_user_id=user.id, password="totally-wrong-password")
 
 
 def test_totp_enabled_correct_password_and_valid_totp_succeeds(isolated_home):
     from orca.auth.totp import totp_now
-    user, email, secret = _make_user(isolated_home, password="Correct-Horse-Battery-9", totp_enabled=True)
+    user, secret = _make_user(isolated_home, password="Correct-Horse-Battery-9", totp_enabled=True)
     now = datetime.now(timezone.utc)
     code = totp_now(secret, at_time=now.timestamp())
-    ctx = verify_reauthentication(email=email, password="Correct-Horse-Battery-9", totp_code=code, now_fn=lambda: now)
-    assert ctx.factors_verified == ("password", "totp")
+    grant = verify_reauthentication(authenticated_user_id=user.id, password="Correct-Horse-Battery-9", totp_code=code, now_fn=lambda: now)
+    assert is_reauth_grant_valid(grant, authenticated_user_id=user.id, now=now) is True
 
 
 def test_totp_enabled_missing_code_denies(isolated_home):
-    _, email, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9", totp_enabled=True)
+    user, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9", totp_enabled=True)
     with pytest.raises(ReauthenticationError):
-        verify_reauthentication(email=email, password="Correct-Horse-Battery-9")
+        verify_reauthentication(authenticated_user_id=user.id, password="Correct-Horse-Battery-9")
 
 
 def test_totp_enabled_wrong_code_denies(isolated_home):
-    _, email, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9", totp_enabled=True)
+    user, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9", totp_enabled=True)
     with pytest.raises(ReauthenticationError):
-        verify_reauthentication(email=email, password="Correct-Horse-Battery-9", totp_code="000000")
+        verify_reauthentication(authenticated_user_id=user.id, password="Correct-Horse-Battery-9", totp_code="000000")
 
 
-def test_no_credential_values_stored_on_reauth_context(isolated_home):
-    user, email, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9")
-    ctx = verify_reauthentication(email=email, password="Correct-Horse-Battery-9")
-    dumped = repr(ctx)
+def test_no_credential_values_stored_on_grant_record(isolated_home):
+    user, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9")
+    grant = verify_reauthentication(authenticated_user_id=user.id, password="Correct-Horse-Battery-9")
+    dumped = repr(grant)
     assert "Correct-Horse-Battery-9" not in dumped
+    record = _REAUTH_GRANTS[grant.grant_id]
+    assert "Correct-Horse-Battery-9" not in repr(record)
 
 
-# ── Reauth context binding + expiry (spec section 8) ──────────────────
-
-def test_reauth_context_expired_is_invalid():
-    now = datetime(2026, 9, 9, 0, 0, 0, tzinfo=timezone.utc)
-    ctx = ReauthContext(user_id="u1", relay_session_id=None, issued_at=now.isoformat(), expires_at=now.isoformat(), factors_verified=("password",))
-    assert is_reauth_context_valid(ctx, authenticated_user_id="u1", now=now) is False
-
-
-def test_reauth_context_for_user_a_cannot_authorize_user_b():
-    now = datetime(2026, 9, 9, 0, 0, 0, tzinfo=timezone.utc)
-    ctx = ReauthContext(user_id="userA", relay_session_id=None, issued_at=now.isoformat(), expires_at=(now + timedelta(minutes=5)).isoformat(), factors_verified=("password",))
-    assert is_reauth_context_valid(ctx, authenticated_user_id="userB", now=now) is False
-
-
-def test_reauth_context_bound_to_session_a_cannot_apply_to_session_b():
-    now = datetime(2026, 9, 9, 0, 0, 0, tzinfo=timezone.utc)
-    ctx = ReauthContext(user_id="u1", relay_session_id="rlysess_A", issued_at=now.isoformat(), expires_at=(now + timedelta(minutes=5)).isoformat(), factors_verified=("password",))
-    assert is_reauth_context_valid(ctx, authenticated_user_id="u1", relay_session_id="rlysess_B", now=now) is False
-    assert is_reauth_context_valid(ctx, authenticated_user_id="u1", relay_session_id="rlysess_A", now=now) is True
+def test_no_alternate_account_selectable_through_authenticated_user_id_a(isolated_home):
+    """15.12.1 item 4 adversarial case: user A's request cannot
+    reauthenticate as user B merely by knowing B's password -- the
+    account is looked up FROM `authenticated_user_id`, so calling with
+    A's id and B's password fails as A's OWN wrong password, never
+    succeeds as B."""
+    user_a, _ = _make_user(isolated_home, password="Password-For-A-123")
+    user_b, _ = _make_user(isolated_home, password="Password-For-B-456")
+    with pytest.raises(ReauthenticationError):
+        verify_reauthentication(authenticated_user_id=user_a.id, password="Password-For-B-456")
+    # A's own real password still works.
+    grant = verify_reauthentication(authenticated_user_id=user_a.id, password="Password-For-A-123")
+    assert is_reauth_grant_valid(grant, authenticated_user_id=user_a.id) is True
+    assert is_reauth_grant_valid(grant, authenticated_user_id=user_b.id) is False
 
 
-def test_require_reauth_context_raises_on_none():
-    with pytest.raises(ReauthContextInvalidError):
-        require_reauth_context(None, authenticated_user_id="u1")
+# ── Forged/fabricated grant adversarial matrix (15.12.1 item 3) ──────
+
+def test_fabricated_grant_with_random_id_is_rejected():
+    fake = ReauthGrant(grant_id="totally-made-up-id-12345")
+    assert is_reauth_grant_valid(fake, authenticated_user_id="u1") is False
 
 
-def test_require_reauth_context_raises_on_expired():
-    now = datetime(2026, 9, 9, 0, 0, 0, tzinfo=timezone.utc)
-    ctx = ReauthContext(user_id="u1", relay_session_id=None, issued_at=now.isoformat(), expires_at=now.isoformat(), factors_verified=("password",))
-    with pytest.raises(ReauthContextInvalidError):
-        require_reauth_context(ctx, authenticated_user_id="u1", now_fn=lambda: now)
+def test_arbitrary_object_with_grant_id_attribute_is_rejected():
+    fake = SimpleNamespace(grant_id="another-made-up-id")
+    assert is_reauth_grant_valid(fake, authenticated_user_id="u1") is False
+
+
+def test_object_missing_grant_id_entirely_is_rejected_not_crashed():
+    fake = SimpleNamespace(user_id="u1")
+    assert is_reauth_grant_valid(fake, authenticated_user_id="u1") is False
+
+
+def test_none_grant_is_rejected():
+    assert is_reauth_grant_valid(None, authenticated_user_id="u1") is False
+
+
+def test_copied_grant_id_string_but_wrong_type_is_rejected():
+    """A real, currently-valid grant_id string copied out and handed
+    back as a bare string (not wrapped in a ReauthGrant) has no
+    `.grant_id` attribute of its own and must be rejected, not
+    accidentally treated as valid."""
+    assert is_reauth_grant_valid("some-real-looking-grant-id-string", authenticated_user_id="u1") is False
+
+
+def test_real_grant_for_user_a_cannot_authorize_user_b(isolated_home):
+    user_a, _ = _make_user(isolated_home, password="Password-For-A-123")
+    user_b, _ = _make_user(isolated_home, password="Password-For-B-456")
+    grant = verify_reauthentication(authenticated_user_id=user_a.id, password="Password-For-A-123")
+    assert is_reauth_grant_valid(grant, authenticated_user_id=user_b.id) is False
+
+
+def test_real_grant_for_session_a_cannot_authorize_session_b(isolated_home):
+    user, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9")
+    grant = verify_reauthentication(authenticated_user_id=user.id, password="Correct-Horse-Battery-9", relay_session_id="rlysess_A")
+    assert is_reauth_grant_valid(grant, authenticated_user_id=user.id, relay_session_id="rlysess_B") is False
+    assert is_reauth_grant_valid(grant, authenticated_user_id=user.id, relay_session_id="rlysess_A") is True
+
+
+def test_real_grant_expires(isolated_home):
+    base_now = datetime.now(timezone.utc)
+    user, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9")
+    grant = verify_reauthentication(authenticated_user_id=user.id, password="Correct-Horse-Battery-9", now_fn=lambda: base_now)
+    still_valid_time = base_now + timedelta(seconds=REAUTH_GRANT_TTL_SECONDS - 1)
+    expired_time = base_now + timedelta(seconds=REAUTH_GRANT_TTL_SECONDS + 1)
+    assert is_reauth_grant_valid(grant, authenticated_user_id=user.id, now=still_valid_time) is True
+    assert is_reauth_grant_valid(grant, authenticated_user_id=user.id, now=expired_time) is False
+
+
+def test_require_reauth_grant_raises_on_fabricated_grant():
+    fake = ReauthGrant(grant_id="fabricated")
+    with pytest.raises(ReauthGrantInvalidError):
+        require_reauth_grant(fake, authenticated_user_id="u1")
+
+
+def test_require_reauth_grant_raises_on_none():
+    with pytest.raises(ReauthGrantInvalidError):
+        require_reauth_grant(None, authenticated_user_id="u1")
+
+
+def test_grant_store_reset_simulates_process_restart_fails_closed(isolated_home):
+    """spec section 15 item 3: a process restart invalidates every
+    outstanding grant -- fail closed, never fail open. Simulated here
+    by directly clearing the in-process store (the exact effect a
+    real restart would have, since it is an in-process dict)."""
+    user, _ = _make_user(isolated_home, password="Correct-Horse-Battery-9")
+    grant = verify_reauthentication(authenticated_user_id=user.id, password="Correct-Horse-Battery-9")
+    assert is_reauth_grant_valid(grant, authenticated_user_id=user.id) is True
+
+    saved = dict(_REAUTH_GRANTS)
+    try:
+        _REAUTH_GRANTS.clear()
+        assert is_reauth_grant_valid(grant, authenticated_user_id=user.id) is False
+    finally:
+        _REAUTH_GRANTS.clear()
+        _REAUTH_GRANTS.update(saved)

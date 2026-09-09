@@ -427,7 +427,7 @@ def _sanitize(value):
 
 def register_device(
     conn, *, authenticated_user_id: str, trust_level: DeviceTrustLevel, name: str | None = None,
-    now_fn=_default_clock, _trusted_enrollment_proof=None,
+    now_fn=_default_clock,
 ) -> RelayDevice:
     """Creates a durable device row OWNED BY `authenticated_user_id`
     (15.11.1 item 5) -- there is no separate `user_id` parameter a
@@ -436,25 +436,28 @@ def register_device(
     3: 'IDs generated server-side') -- callers never supply or choose
     one.
 
-    15.12 item 6: registering a TRUSTED device requires
-    `_trusted_enrollment_proof` -- an opaque object that only
-    `orca.mission.relay_security.enroll_trusted_device()` can
-    construct, and only after a genuinely fresh, correctly-bound
-    reauthentication. There is no way to reach TRUSTED trust through
-    this function directly; ordinary callers use
-    `relay_security.enroll_public_device()` /
-    `relay_security.enroll_trusted_device()` instead. This keyword is
-    intentionally private (leading underscore) -- it is not part of
-    this function's public contract, only its internal enforcement
-    mechanism."""
+    15.12.1 item 6: this is the ORDINARY PUBLIC registration
+    entrypoint, and it UNCONDITIONALLY rejects `trust_level=TRUSTED` --
+    there is no parameter, proof object, or keyword of any kind that
+    can make this function grant TRUSTED trust. (The 15.12 version of
+    this function accepted a `_trusted_enrollment_proof` keyword whose
+    only real check was `getattr(proof, "user_id", None) ==
+    authenticated_user_id` -- trivially satisfied by
+    `SimpleNamespace(user_id=owner)`, i.e. no real security boundary
+    at all. That parameter is now GONE.) The only way to durably create
+    a TRUSTED device row is `orca.mission.relay_security
+    .enroll_trusted_device()`, which validates a real, server-issued
+    reauthentication grant (looked up in a server-side store, never a
+    caller-constructed object) and then calls this module's private
+    `_insert_trusted_device_row()` -- a function with no public
+    security-relevant parameter to forge, reachable only from that one
+    authorized call site."""
     if trust_level is DeviceTrustLevel.TRUSTED:
-        proof_user_id = getattr(_trusted_enrollment_proof, "user_id", None)
-        if _trusted_enrollment_proof is None or proof_user_id != authenticated_user_id:
-            raise RelayAccessDeniedError(
-                "TRUSTED device enrollment requires a valid fresh-reauthentication proof -- "
-                "use orca.mission.relay_security.enroll_trusted_device() instead of calling "
-                "register_device() directly for TRUSTED trust."
-            )
+        raise RelayAccessDeniedError(
+            "register_device() never grants TRUSTED trust, unconditionally -- "
+            "use orca.mission.relay_security.enroll_trusted_device() after a real, "
+            "server-issued reauthentication grant."
+        )
     device_id = f"dev_{uuid.uuid4().hex[:20]}"
     now = now_fn().isoformat()
     with conn.cursor() as cur:
@@ -464,6 +467,28 @@ def register_device(
             VALUES (%s, %s, %s, %s, %s, %s, NULL)
             """,
             (device_id, authenticated_user_id, name, trust_level.value, now, now),
+        )
+    conn.commit()
+    return get_device(conn, device_id)  # type: ignore[return-value]
+
+
+def _insert_trusted_device_row(conn, *, authenticated_user_id: str, name: str | None = None, now_fn=_default_clock) -> RelayDevice:
+    """PRIVATE. Performs the actual TRUSTED device INSERT with NO
+    validation of its own -- it trusts its caller completely. The
+    real security boundary is architectural, not the leading
+    underscore: this function is called from exactly one place,
+    `orca.mission.relay_security.enroll_trusted_device()`, and only
+    AFTER that function has validated a real reauthentication grant.
+    Never call this directly from ordinary request-handling code."""
+    device_id = f"dev_{uuid.uuid4().hex[:20]}"
+    now = now_fn().isoformat()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO devices (id, user_id, name, trust_level, first_seen_at, last_seen_at, revoked_at)
+            VALUES (%s, %s, %s, 'TRUSTED', %s, %s, NULL)
+            """,
+            (device_id, authenticated_user_id, name, now, now),
         )
     conn.commit()
     return get_device(conn, device_id)  # type: ignore[return-value]
@@ -527,21 +552,24 @@ def is_device_active(device: RelayDevice) -> bool:
 
 # ── Relay session core (spec section 4) ──────────────────────────────
 
-def create_session(
+def _create_session_with_explicit_ttl(
     conn, *, device_id: str, mission_id: str, authenticated_user_id: str, mode: RelayMode,
     ttl_seconds: int, now_fn=_default_clock,
 ) -> RelaySession:
-    """Creates a durable Relay session. The session ID is always
-    generated HERE (anti-fixation, spec section 4). Requires:
-      - the device to exist, belong to `authenticated_user_id`, and not
-        be revoked (DeviceRevokedError otherwise);
-      - the mission to exist and be OWNED by `authenticated_user_id`
-        (the Phase 15.11 V1 access policy -- spec section 2: cross-user
-        mission access is denied, no team-sharing policy is invented
-        here).
-    `ttl_seconds` is supplied by the CALLER's own trusted server
-    policy (spec section 4) -- this function has no built-in default,
-    so no hidden expiry policy is invented inside the store layer."""
+    """INTERNAL / TEST-ONLY primitive (15.12.1 item 7). Accepts an
+    ARBITRARY `ttl_seconds` -- there is deliberately no ordinary,
+    production-facing entrypoint that exposes this parameter. The
+    security-authoritative session-creation entrypoint is
+    `orca.mission.relay_security.create_relay_session()`, which has NO
+    `ttl_seconds` parameter at all and always derives the lifetime from
+    server policy (`_MAX_SESSION_SECONDS_BY_MODE`). This function
+    exists so tests can directly exercise expiry-boundary behavior
+    with a short, deterministic TTL (e.g. `ttl_seconds=1`) without
+    waiting for a real clock -- it is not, and must never become, a
+    normal caller-facing session-creation API. The session ID is still
+    always generated HERE (anti-fixation, spec section 4); the device/
+    mission ownership and revocation checks below are unchanged from
+    the original `create_session()`."""
     device = get_device_for_user(conn, device_id, authenticated_user_id=authenticated_user_id)
     if device.is_revoked:
         raise DeviceRevokedError(f"device {device_id} is revoked and cannot create a new Relay session")
@@ -733,7 +761,9 @@ _ACTIVITY_LIMIT = 25
 _PENDING_OPERATION_STATUSES = ("REQUESTED", "AUTHORIZED", "STARTED")
 
 
-def build_relay_snapshot(conn, *, session_id: str, authenticated_user_id: str, now_fn=_default_clock) -> RelaySnapshot:
+def build_relay_snapshot(
+    conn, *, session_id: str, authenticated_user_id: str, now_fn=_default_clock, extra_validity_check=None,
+) -> RelaySnapshot:
     """Assembles a governed, secret-safe RelaySnapshot for an ACTIVE
     Relay session. Read-only: no mission/step/operation/checkpoint/
     proof state is ever mutated by this function, and it does not even
@@ -750,6 +780,20 @@ def build_relay_snapshot(conn, *, session_id: str, authenticated_user_id: str, n
     fails partway through. `consistency_basis` on the returned
     snapshot names this guarantee explicitly, rather than leaving it
     implicit.
+
+    `extra_validity_check` (15.12.1 item 9): an optional
+    `Callable[[RelaySession, RelayDevice, datetime], None]` invoked
+    INSIDE this same transaction, immediately after `session`/`device`
+    are loaded and before any mission data is read. It should raise on
+    an invalid session (e.g.
+    `orca.mission.relay_security.evaluate_session_security()` finding
+    INACTIVITY_EXPIRED or DEVICE_MODE_MISMATCH) and return `None` on a
+    valid one. This is how the Phase 15.12 security-mode layer plugs
+    its stronger validity rule into snapshot assembly WITHOUT a
+    separate, earlier query -- avoiding the time-of-check/time-of-use
+    gap a two-step 'validate, then build' call pair would introduce,
+    and without this module needing to import
+    `orca.mission.relay_security` (which itself imports this module).
 
     Every access boundary is re-checked here defensively, even though
     `create_session()` already enforced them at session-creation time
@@ -782,6 +826,9 @@ def build_relay_snapshot(conn, *, session_id: str, authenticated_user_id: str, n
                 raise RelayAccessDeniedError(f"device {session.device_id} bound to session {session_id} is not owned by the authenticated user")
             if device.is_revoked:
                 raise DeviceRevokedError(f"device {session.device_id} is revoked; its sessions cannot produce a snapshot")
+
+            if extra_validity_check is not None:
+                extra_validity_check(session, device, now_dt)
 
             cur.execute("SELECT * FROM missions WHERE id = %s", (session.mission_id,))
             mission_row = cur.fetchone()

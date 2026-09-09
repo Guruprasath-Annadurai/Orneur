@@ -1,29 +1,39 @@
 """
-Phase 15.12 -- Relay Security Modes: the server-side capability-policy
-layer that makes `TRUSTED_DEVICE`/`PUBLIC_DEVICE`/`MOBILE_REVIEW`
-technically different, not merely three strings on a row.
+Phase 15.12 / 15.12.1 -- Relay Security Modes: the server-side
+capability-policy layer that makes `TRUSTED_DEVICE`/`PUBLIC_DEVICE`/
+`MOBILE_REVIEW` technically different, not merely three strings on a
+row.
 
 Canonical distinctions this module exists to enforce (owner's own
-closing lines):
+closing lines, both phases):
   - Trusted does not mean ungoverned.
   - Public does not mean useless.
   - Mobile does not mean desktop shrunk onto a phone.
   - Reauthenticated does not mean authorized.
   - Raw secrets are never a Relay capability.
+  - A real password check is not enough if the resulting proof can be
+    forged.
+  - A private-looking keyword is not a security boundary.
+  - A session that already timed out must not become alive because
+    heartbeat ran first.
+  - The authoritative policy must load trust from durable state, not
+    accept trust as an argument from the caller.
 
 Architecture (spec section 0):
 
     AUTHENTICATED PRINCIPAL
             v
-    DEVICE TRUST
+    DEVICE TRUST                <- LOADED FROM DURABLE STATE, never a caller argument
             v
-    RELAY SESSION MODE
+    RELAY SESSION MODE          <- LOADED FROM DURABLE STATE, never a caller argument
             v
-    SESSION VALIDITY
+    SESSION VALIDITY            <- require_security_valid_session()
             v
-    EFFECTIVE CAPABILITY POLICY   <- THIS MODULE
+    EFFECTIVE CAPABILITY POLICY <- effective_capabilities() (static, pure)
             v
-    FRESH REAUTH CHECK where required   <- THIS MODULE (verification only)
+    FRESH REAUTH CHECK where required  <- a real, server-issued ReauthGrant,
+                                            looked up in a server-side store,
+                                            never a caller-constructed object
             v
     EXISTING AUTHORITY ENGINE where required   <- orca.mission.operation_store /
                                                     orca.mission.authority_bridge,
@@ -34,28 +44,53 @@ Architecture (spec section 0):
 `RELAY POLICY PERMITS CAPABILITY` is never conflated with `AUTHORITY
 ENGINE AUTHORIZES OPERATION` -- this module never calls into
 `orca.mission.operation_store`/`orca.mission.authority_bridge`/
-`orca.godmode.*` at all, in either direction. A capability decision
-here can say ALLOW and that changes nothing about whether an actual
-dangerous operation is AUTHORIZED; that remains exclusively Phase
-15.5's job.
+`orca.godmode.*` at all, in either direction.
+
+15.12.1 CORRECTION (owner audit): the 15.12 version of this module let
+an authoritative-looking `check_capability(..., reauth_valid=True)`
+grant ALLOW directly from a caller-supplied boolean, and its
+`ReauthContext` was a plain, publicly-constructible dataclass that
+`is_reauth_context_valid()` validated purely from its OWN field
+values -- meaning any caller could fabricate one
+(`ReauthContext(user_id=me, expires_at=<far future>,
+factors_verified=("password","totp"))`) without ever presenting a
+real password or TOTP code, and it would pass. Both are fixed here:
+- `check_capability()` is now a PURE, STATIC policy query only -- it
+  answers "does this capability exist in this device-trust/mode
+  combination, and would it need reauthentication/authority", and
+  takes no `reauth_valid` parameter at all. It never claims a reauth-
+  gated capability is CURRENTLY authorized.
+- The new `authorize_relay_capability()` is the actual authoritative
+  action gate: it loads the REAL `RelaySession`/`RelayDevice` from
+  durable state (never trusting a caller-supplied `device_trust`/
+  `mode`), and validates any required reauthentication against a REAL
+  server-issued `ReauthGrant` -- an opaque handle whose only trustable
+  content is a `secrets.token_urlsafe()` grant ID; the actual record
+  (user, session, factors, expiry) lives server-side in
+  `_REAUTH_GRANTS`, keyed by that ID. A caller who fabricates a
+  `ReauthGrant` with a made-up ID gets a lookup miss -- fail closed.
 
 No custom cryptography is added: password verification reuses
-`orca.auth.crypto.verify_password` (PBKDF2-SHA256, already in the
-codebase) via `orca.auth.store.authenticate()`, and TOTP verification
-reuses `orca.auth.totp.verify_totp()` (RFC 6238, already in the
-codebase, already clock-injectable). No second authentication system
-is invented -- this module only adds a RELAY-scoped, time-bound,
-session-bound wrapper (`ReauthContext`) around a fresh call to those
-existing primitives.
+`orca.auth.crypto.verify_password` (PBKDF2-SHA256) via
+`orca.auth.store.authenticate()`, TOTP verification reuses
+`orca.auth.totp.verify_totp()` (RFC 6238) -- both already in the
+codebase, already clock-injectable. The grant store's opaque IDs use
+only `secrets.token_urlsafe()` (stdlib CSPRNG), not a bespoke scheme.
+
+Grant store limitation, disclosed per spec section 15 (item 3): this
+is an IN-PROCESS dict. A process restart invalidates every outstanding
+grant -- fail closed (a grant that no longer exists cannot validate),
+never fail open. No credential value (password, TOTP code/secret) is
+ever stored in it.
 """
 from __future__ import annotations
 
 import re
+import secrets as _secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
-from orca.mission.mission_store import Checkpoint  # noqa: F401 -- re-exported context for docstrings only
 from orca.mission.relay_store import (
     DeviceRevokedError,
     DeviceTrustLevel,
@@ -64,7 +99,6 @@ from orca.mission.relay_store import (
     RelayError,
     RelayMode,
     RelaySession,
-    RelaySessionInvalidError,
     RelaySessionNotFoundError,
     RelaySessionStatus,
     RelaySnapshot,
@@ -72,8 +106,13 @@ from orca.mission.relay_store import (
     get_device,
     get_session_for_user,
 )
+from orca.mission.relay_store import _insert_trusted_device_row
 from orca.mission.relay_store import register_device as _register_device_primitive
+from orca.mission.relay_store import revoke_all_other_sessions as _revoke_all_other_sessions_primitive
+from orca.mission.relay_store import revoke_other_session as _revoke_other_session_primitive
+from orca.mission.relay_store import revoke_session as _revoke_session_primitive
 from orca.mission.relay_store import session_status as _session_status
+from orca.mission.relay_store import touch_session as _touch_session_primitive
 
 
 def _default_clock() -> datetime:
@@ -95,20 +134,22 @@ class RelaySecurityError(RelayError):
 
 class ReauthenticationError(RelaySecurityError):
     """Raised when fresh reauthentication genuinely fails (wrong
-    password, wrong/missing TOTP, or an unavailable auth backend) --
-    never raised for a merely-expired PRIOR reauth (see
-    ReauthContextInvalidError for that)."""
+    password, wrong/missing TOTP, or no such account) -- never raised
+    for a merely-expired/unknown PRIOR grant (see
+    ReauthGrantInvalidError for that)."""
 
 
-class ReauthContextInvalidError(RelaySecurityError):
-    """Raised when a previously-issued ReauthContext cannot be used for
-    the requested action: wrong user, wrong Relay session, or expired.
-    A boolean is never accepted in its place."""
+class ReauthGrantInvalidError(RelaySecurityError):
+    """Raised when a `ReauthGrant` cannot be used for the requested
+    action: unknown/fabricated grant ID, wrong user, wrong Relay
+    session, or expired. A boolean or a client-fabricated dataclass is
+    never accepted in its place -- validation always looks up the
+    server-side grant store."""
 
 
 class TrustedEnrollmentDeniedError(RelaySecurityError):
     """Raised when TRUSTED device enrollment is attempted without a
-    valid, correctly-bound ReauthContext."""
+    valid, correctly-bound, server-issued ReauthGrant."""
 
 
 class SessionSecurityInvalidError(RelaySecurityError):
@@ -151,11 +192,11 @@ class RelayCapability(Enum):
     CLIPBOARD_EXPORT = "CLIPBOARD_EXPORT"
 
 
-# Capabilities that are security-sensitive enough to require fresh
-# reauthentication at the RELAY POLICY layer before ALLOW is even
-# considered (spec section 13). This is a Relay-policy gate only --
-# it never substitutes for, and is always followed by, the real
-# Authority Engine for the ones that also require it.
+# Capabilities that are security-sensitive enough to require a REAL,
+# validated reauthentication grant before `authorize_relay_capability()`
+# will actually return ALLOW (spec section 13). This is a Relay-policy
+# gate only -- it never substitutes for, and is always followed by,
+# the real Authority Engine for the ones that also require it.
 _REAUTH_REQUIRED_CAPABILITIES = frozenset({
     RelayCapability.DEPLOY_CONTROL,
     RelayCapability.DANGEROUS_OPERATION_CONTROL,
@@ -237,7 +278,9 @@ def effective_capabilities(*, device_trust: DeviceTrustLevel, mode: RelayMode) -
     device can never gain capability by selecting a more permissive
     RelayMode string, and a genuinely Trusted device that deliberately
     chooses PUBLIC_DEVICE mode gets PUBLIC restrictions, not Trusted
-    capabilities."""
+    capabilities. Pure function -- callers decide where `device_trust`/
+    `mode` come from; see `authorize_relay_capability()` for the
+    authoritative action gate, which loads both from durable state."""
     return _DEVICE_TRUST_CAPABILITIES[device_trust] & _RELAY_MODE_CAPABILITIES[mode]
 
 
@@ -255,14 +298,24 @@ class PolicyDecision:
 
 def check_capability(
     capability: RelayCapability | str, *, device_trust: DeviceTrustLevel, mode: RelayMode,
-    reauth_valid: bool = False,
 ) -> PolicyDecision:
-    """The one Relay-policy capability gate. An unknown capability
-    (anything not a real `RelayCapability` member, e.g. a string a
-    model/provider might invent) always DENIES (spec section 1: 'Unknown
-    capability => DENY'; spec section 9: 'No model/provider text may
-    change security policy' -- a provider can say any string it likes,
-    it is never treated as a capability grant)."""
+    """PURE, STATIC policy query (15.12.1 item 1/2) -- answers "is this
+    capability within the effective policy set for this device-trust/
+    mode combination, and would exercising it require reauthentication
+    and/or the Authority Engine". It takes NO `reauth_valid` parameter
+    and makes NO claim that a reauth-gated capability is CURRENTLY
+    authorized -- `allowed=True` with `requires_reauthentication=True`
+    means "policy-eligible, but a real, validated ReauthGrant is still
+    required before this is actually authorized." The actual
+    authoritative decision -- which also validates a real grant and
+    loads `device_trust`/`mode` from durable session/device state
+    rather than trusting the caller's arguments -- is
+    `authorize_relay_capability()`.
+
+    An unknown capability (anything not a real `RelayCapability`
+    member, e.g. a string a model/provider might invent) always DENIES
+    (spec section 1: 'Unknown capability => DENY'; spec section 9: 'No
+    model/provider text may change security policy')."""
     if not isinstance(capability, RelayCapability):
         try:
             capability = RelayCapability(capability)
@@ -299,14 +352,12 @@ def check_capability(
             effective_mode=mode, device_trust=device_trust, requires_reauthentication=requires_reauth,
             requires_authority=requires_authority, requires_trusted_device_approval=False,
         )
-    if requires_reauth and not reauth_valid:
-        return PolicyDecision(
-            capability=capability, allowed=False, reason=f"{capability.value} requires fresh reauthentication",
-            effective_mode=mode, device_trust=device_trust, requires_reauthentication=True,
-            requires_authority=requires_authority, requires_trusted_device_approval=False,
-        )
     return PolicyDecision(
-        capability=capability, allowed=True, reason="permitted by Relay security policy",
+        capability=capability, allowed=True,
+        reason=(
+            f"{capability.value} is policy-eligible; a validated ReauthGrant is still required before execution"
+            if requires_reauth else "permitted by Relay security policy"
+        ),
         effective_mode=mode, device_trust=device_trust, requires_reauthentication=requires_reauth,
         requires_authority=requires_authority, requires_trusted_device_approval=False,
     )
@@ -350,21 +401,21 @@ _ALLOWED_MODES_BY_DEVICE_TRUST: dict[DeviceTrustLevel, frozenset[RelayMode]] = {
 
 
 def create_relay_session(conn, *, device_id: str, mission_id: str, authenticated_user_id: str, mode: RelayMode, now_fn=_default_clock) -> RelaySession:
-    """The security-authoritative session-creation entrypoint (spec
-    section 9) -- `ttl_seconds` is ALWAYS derived from the server-
-    controlled `_MAX_SESSION_SECONDS_BY_MODE` table for the requested
-    mode, never accepted from a caller/request argument. (The lower-
-    level `orca.mission.relay_store.create_session()` still accepts an
-    explicit `ttl_seconds` and remains available as an internal
-    primitive -- e.g. for tests exercising expiry boundaries directly
-    -- but is no longer the recommended, security-policy-authoritative
-    entrypoint; this function is.)
+    """The security-authoritative, and ONLY normal-production, session-
+    creation entrypoint (spec section 9; hardened 15.12.1 item 7) --
+    `ttl_seconds` is ALWAYS derived from the server-controlled
+    `_MAX_SESSION_SECONDS_BY_MODE` table for the requested mode, never
+    accepted from a caller/request argument, and there is no
+    `ttl_seconds` parameter here at all to accept one. (The lower-
+    level `orca.mission.relay_store._create_session_with_explicit_ttl()`
+    is an internal/test-only primitive, not exported for ordinary use
+    -- see that function's own docstring.)
 
     Also enforces the device/mode compatibility invariant AT CREATION
     TIME (spec section 2), not merely at later read-validation time: a
     PUBLIC device can never be given a TRUSTED_DEVICE-mode session,
     regardless of what the caller requests."""
-    from orca.mission.relay_store import create_session as _create_session_primitive
+    from orca.mission.relay_store import _create_session_with_explicit_ttl
 
     device = get_device(conn, device_id)
     if device is None or device.user_id != authenticated_user_id:
@@ -376,7 +427,7 @@ def create_relay_session(conn, *, device_id: str, mission_id: str, authenticated
         )
 
     ttl_seconds = _MAX_SESSION_SECONDS_BY_MODE[mode]
-    return _create_session_primitive(
+    return _create_session_with_explicit_ttl(
         conn, device_id=device_id, mission_id=mission_id, authenticated_user_id=authenticated_user_id,
         mode=mode, ttl_seconds=ttl_seconds, now_fn=now_fn,
     )
@@ -398,9 +449,9 @@ def evaluate_session_security(
 ) -> SecuritySessionStatus:
     """One shared, non-scattered security-validity check (spec section
     11) -- combines Phase 15.11's own revoked/expired derivation with
-    NEW inactivity and mode/device-trust-compatibility checks. Does
-    NOT weaken any Phase 15.11 invariant: REVOKED and EXPIRED are
-    checked first and take priority exactly as `orca.mission.relay_store
+    inactivity and mode/device-trust-compatibility checks. Does NOT
+    weaken any Phase 15.11 invariant: REVOKED and EXPIRED are checked
+    first and take priority exactly as `orca.mission.relay_store
     .session_status()` already defines them."""
     now = now or _default_clock()
     base_status = _session_status(session, now=now)
@@ -427,7 +478,9 @@ def require_security_valid_session(
     load. Raises `SessionSecurityInvalidError` (carrying the precise
     `SecuritySessionStatus`) for anything short of ACTIVE. An
     inactivity-expired session cannot be revived merely by touching it
-    -- exactly like an absolute-expiry-expired one (spec section 10)."""
+    -- exactly like an absolute-expiry-expired one (spec section 10) --
+    because this function is called BEFORE any touch/heartbeat write
+    is ever issued (see `touch_relay_session_securely()` below)."""
     session = get_session_for_user(conn, session_id, authenticated_user_id=authenticated_user_id)
     device = get_device(conn, session.device_id)
     if device is None or device.user_id != authenticated_user_id:
@@ -440,46 +493,102 @@ def require_security_valid_session(
     return session, device
 
 
-# ── Reauthentication (spec sections 7-8) ─────────────────────────────
-# NEVER a caller-supplied boolean. Always derived from a REAL call to
-# the existing orca.auth primitives (PBKDF2 password verification +
-# RFC 6238 TOTP), never a second/custom crypto scheme.
+def touch_relay_session_securely(conn, session_id: str, *, authenticated_user_id: str, now_fn=_default_clock) -> RelaySession:
+    """The security-authoritative heartbeat entrypoint (15.12.1 item 8)
+    -- validates the FULL Phase 15.12 security status (including
+    inactivity and device/mode compatibility) BEFORE issuing any
+    `last_seen_at` write. An inactivity-expired session's `last_seen_at`
+    is therefore NEVER rewritten by this function -- `require_security_
+    valid_session()` raises first, and the underlying
+    `orca.mission.relay_store.touch_session()` UPDATE is never reached.
+    This closes the exact adversarial scenario the 15.12 evidence had
+    NOT actually proven: T0 create, no touch, T0 + inactivity_timeout +
+    1s, attempt the normal heartbeat path -- must reject, and
+    `last_seen_at` must remain unchanged."""
+    require_security_valid_session(conn, session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn)
+    return _touch_session_primitive(conn, session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn)
 
-REAUTH_CONTEXT_TTL_SECONDS = 5 * 60  # 5 minutes -- short-lived, single-purpose
+
+# ── Reauthentication (spec sections 7-8) -- real provenance ─────────
+# NEVER a caller-supplied boolean, and NEVER a client-fabricatable
+# object (15.12.1 item 3). Always derived from a REAL call to the
+# existing orca.auth primitives (PBKDF2 password verification + RFC
+# 6238 TOTP), and the resulting grant's authoritative record lives
+# SERVER-SIDE, keyed by an opaque `secrets.token_urlsafe()` ID -- never
+# reconstructable from public fields alone.
+
+REAUTH_GRANT_TTL_SECONDS = 5 * 60  # 5 minutes -- short-lived, single-purpose, SERVER-CONTROLLED (no caller override)
 
 
 @dataclass(frozen=True)
-class ReauthContext:
+class ReauthGrant:
+    """The ONLY thing ever handed back to a caller. Carries nothing but
+    an opaque grant ID -- constructing one with a made-up ID (or
+    copying the `grant_id` string incorrectly) produces an object that
+    fails validation, because validation always looks up
+    `_REAUTH_GRANTS[grant_id]` server-side; it never trusts anything
+    about the `ReauthGrant` object itself beyond that one lookup key."""
+    grant_id: str
+
+
+@dataclass(frozen=True)
+class _ReauthGrantRecord:
+    """The REAL authoritative record, held only server-side in
+    `_REAUTH_GRANTS`. Never serialized to a caller, never logged, never
+    placed in Relay evidence. No credential value (password, TOTP
+    code/secret) is ever stored here."""
     user_id: str
     relay_session_id: str | None
     issued_at: str
     expires_at: str
-    factors_verified: tuple[str, ...]  # e.g. ("password",) or ("password", "totp") -- never the credential values themselves
+    factors_verified: tuple[str, ...]
+
+
+# In-process grant store (spec section 15, item 3's Option A). A
+# process restart empties this dict -- every outstanding grant becomes
+# invalid, fail-closed (an unknown grant_id is exactly the same
+# "invalid" outcome as a fabricated one). No durable schema is used or
+# needed for this short-lived, purely server-side concept.
+_REAUTH_GRANTS: dict[str, _ReauthGrantRecord] = {}
 
 
 def verify_reauthentication(
-    *, email: str, password: str, totp_code: str | None = None, relay_session_id: str | None = None,
-    now_fn=_default_clock, ttl_seconds: int = REAUTH_CONTEXT_TTL_SECONDS,
-) -> ReauthContext:
+    *, authenticated_user_id: str, password: str, totp_code: str | None = None,
+    relay_session_id: str | None = None, now_fn=_default_clock,
+) -> ReauthGrant:
     """Performs a REAL fresh reauthentication against the existing
-    `orca.auth` primitives -- `orca.auth.store.authenticate()` (which
-    itself calls `orca.auth.crypto.verify_password()`, PBKDF2-SHA256)
-    and, if the account has TOTP enabled, `orca.auth.totp.verify_totp()`
-    (RFC 6238). Raises `ReauthenticationError` on ANY failure (wrong
-    password, TOTP enabled but code missing/wrong, or no such account)
-    -- never returns a context for a failed check. The password and
-    TOTP code are used ONLY for this verification call; neither is
-    ever stored on the returned `ReauthContext`, logged, or placed in
-    any Relay evidence."""
-    from orca.auth.store import authenticate, get_totp_state
+    `orca.auth` primitives, for `authenticated_user_id` SPECIFICALLY --
+    there is no `email`/alternate-identity parameter through which a
+    caller could reauthenticate as a DIFFERENT account than the one
+    already authenticated for this request (15.12.1 item 4: the
+    account is looked up FROM `authenticated_user_id` via
+    `orca.auth.store.get_user_by_id()`, never selected independently).
+    Verifies the password for THAT user (`orca.auth.store
+    .authenticate()`, which itself calls `orca.auth.crypto
+    .verify_password()`, PBKDF2-SHA256) and, if THAT user's account has
+    TOTP enabled, THAT user's `orca.auth.totp.verify_totp()` (RFC
+    6238). Raises `ReauthenticationError` on ANY failure -- never
+    returns a grant for a failed check.
+
+    On success, issues a NEW server-side `_ReauthGrantRecord` (TTL
+    always `REAUTH_GRANT_TTL_SECONDS` -- there is no `ttl_seconds`
+    parameter here, 15.12.1 item 5) and returns only its opaque
+    `ReauthGrant(grant_id=...)` handle. The password and TOTP code are
+    used ONLY for this verification call; neither is ever stored on
+    the grant record, logged, or placed in any Relay evidence."""
+    from orca.auth.store import authenticate, get_totp_state, get_user_by_id
     from orca.auth.totp import verify_totp
 
-    user = authenticate(email, password)
+    user = get_user_by_id(authenticated_user_id)
     if user is None:
-        raise ReauthenticationError("reauthentication failed: invalid email or password")
+        raise ReauthenticationError("reauthentication failed: no such authenticated user")
+
+    verified = authenticate(user.email, password)
+    if verified is None or verified.id != authenticated_user_id:
+        raise ReauthenticationError("reauthentication failed: invalid password for the authenticated user")
 
     factors = ["password"]
-    totp_state = get_totp_state(user.id)
+    totp_state = get_totp_state(authenticated_user_id)
     if totp_state.get("enabled"):
         if not totp_code or not verify_totp(totp_state["secret"], totp_code, at_time=now_fn().timestamp()):
             raise ReauthenticationError("reauthentication failed: TOTP is enabled for this account and a valid current code is required")
@@ -489,53 +598,99 @@ def verify_reauthentication(
     # honestly rather than silently treated as equally strong.
 
     now_dt = now_fn()
-    return ReauthContext(
-        user_id=user.id, relay_session_id=relay_session_id, issued_at=now_dt.isoformat(),
-        expires_at=(now_dt + timedelta(seconds=ttl_seconds)).isoformat(), factors_verified=tuple(factors),
+    grant_id = _secrets.token_urlsafe(32)
+    _REAUTH_GRANTS[grant_id] = _ReauthGrantRecord(
+        user_id=authenticated_user_id, relay_session_id=relay_session_id, issued_at=now_dt.isoformat(),
+        expires_at=(now_dt + timedelta(seconds=REAUTH_GRANT_TTL_SECONDS)).isoformat(),
+        factors_verified=tuple(factors),
     )
+    return ReauthGrant(grant_id=grant_id)
 
 
-def is_reauth_context_valid(
-    context: ReauthContext, *, authenticated_user_id: str, relay_session_id: str | None = None, now: datetime | None = None,
+def is_reauth_grant_valid(
+    grant, *, authenticated_user_id: str, relay_session_id: str | None = None, now: datetime | None = None,
 ) -> bool:
-    """A fresh reauth result is bound, never a universal magic flag
-    (spec section 8): it must match the calling user, and -- when a
-    Relay session is the action's context -- the EXACT session it was
-    issued for. It also simply expires."""
+    """Validates SOLELY against the server-side `_REAUTH_GRANTS`
+    store -- never against fields present on `grant` itself. `grant`
+    may be an arbitrary object (a real `ReauthGrant`, `None`, a
+    `SimpleNamespace`, a fabricated fake, anything) -- only
+    `getattr(grant, "grant_id", None)` is read from it, and that value
+    is used ONLY as a lookup key. If the key is missing from the
+    store (never issued, already expired-and-any-future-cleanup,
+    wrong ID, or the process restarted since it was issued), this
+    returns `False` -- fail closed, never fail open on a plausible-
+    looking object."""
+    grant_id = getattr(grant, "grant_id", None)
+    if not grant_id or not isinstance(grant_id, str):
+        return False
+    record = _REAUTH_GRANTS.get(grant_id)
+    if record is None:
+        return False
     now = now or _default_clock()
-    if context.user_id != authenticated_user_id:
+    if record.user_id != authenticated_user_id:
         return False
-    if relay_session_id is not None and context.relay_session_id != relay_session_id:
+    if relay_session_id is not None and record.relay_session_id != relay_session_id:
         return False
-    if now >= _parse_iso(context.expires_at):
+    if now >= _parse_iso(record.expires_at):
         return False
     return True
 
 
-def require_reauth_context(
-    context: ReauthContext | None, *, authenticated_user_id: str, relay_session_id: str | None = None, now_fn=_default_clock,
-) -> ReauthContext:
-    if context is None or not is_reauth_context_valid(
-        context, authenticated_user_id=authenticated_user_id, relay_session_id=relay_session_id, now=now_fn(),
-    ):
-        raise ReauthContextInvalidError(
-            "a valid, correctly-bound, unexpired ReauthContext is required for this action"
+def require_reauth_grant(
+    grant, *, authenticated_user_id: str, relay_session_id: str | None = None, now_fn=_default_clock,
+) -> ReauthGrant:
+    if not is_reauth_grant_valid(grant, authenticated_user_id=authenticated_user_id, relay_session_id=relay_session_id, now=now_fn()):
+        raise ReauthGrantInvalidError(
+            "a valid, correctly-bound, unexpired, server-issued ReauthGrant is required for this action"
         )
-    return context
+    return grant
 
 
-# ── Trusted-device enrollment (spec section 6) ───────────────────────
+# ── Authoritative capability action gate (15.12.1 items 1-2) ────────
 
-@dataclass(frozen=True)
-class _TrustedEnrollmentProof:
-    """Opaque, internal-only proof that TRUSTED enrollment was
-    authorized by a genuinely fresh, correctly-bound reauthentication.
-    Only `enroll_trusted_device()` below constructs one -- there is no
-    public way to build one without passing through a real
-    `verify_reauthentication()` call first."""
-    user_id: str
-    issued_at: str
+def authorize_relay_capability(
+    conn, *, session_id: str, authenticated_user_id: str, capability: RelayCapability | str,
+    reauth_grant: ReauthGrant | None = None, now_fn=_default_clock,
+) -> PolicyDecision:
+    """THE authoritative action gate. Unlike `check_capability()`
+    (a pure query over caller-supplied `device_trust`/`mode`), this
+    function:
+      1. Loads the REAL `RelaySession`/`RelayDevice` from durable
+         state via `require_security_valid_session()` -- ownership,
+         revocation, absolute expiry, inactivity, and device/mode
+         compatibility are all enforced here. A caller cannot claim
+         `device_trust=TRUSTED`/`mode=TRUSTED_DEVICE` for a session
+         that durably belongs to a PUBLIC device -- those values are
+         never accepted as arguments at all.
+      2. Computes the static policy decision from the LOADED
+         `device.trust_level`/`session.mode`.
+      3. If that capability requires reauthentication, validates
+         `reauth_grant` against the REAL server-side grant store,
+         bound to this exact `authenticated_user_id` and `session_id`
+         -- a grant issued for a different user or a different
+         session, or a fabricated/expired/unknown one, downgrades the
+         decision to DENY.
+    Raises `SessionSecurityInvalidError`/`RelayAccessDeniedError` (from
+    step 1) for an invalid session -- the same fail-closed behavior as
+    every other security-mode entrypoint."""
+    session, device = require_security_valid_session(
+        conn, session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn,
+    )
+    decision = check_capability(capability, device_trust=device.trust_level, mode=session.mode)
+    if decision.allowed and decision.requires_reauthentication:
+        grant_ok = is_reauth_grant_valid(
+            reauth_grant, authenticated_user_id=authenticated_user_id, relay_session_id=session_id, now=now_fn(),
+        )
+        if not grant_ok:
+            from dataclasses import replace as _replace
+            decision = _replace(
+                decision, allowed=False,
+                reason=f"{decision.capability.value} requires a valid, real, server-issued ReauthGrant -- none was presented or it failed validation",
+            )
+    return decision
 
+
+# ── Trusted-device enrollment (spec section 6; hardened 15.12.1 item 6) ──
 
 def enroll_public_device(conn, *, authenticated_user_id: str, name: str | None = None, now_fn=_default_clock) -> RelayDevice:
     """PUBLIC enrollment remains low-friction (spec section 6) -- no
@@ -547,23 +702,74 @@ def enroll_public_device(conn, *, authenticated_user_id: str, name: str | None =
 
 
 def enroll_trusted_device(
-    conn, *, authenticated_user_id: str, reauth_context: ReauthContext, name: str | None = None, now_fn=_default_clock,
+    conn, *, authenticated_user_id: str, reauth_grant: ReauthGrant, name: str | None = None, now_fn=_default_clock,
 ) -> RelayDevice:
     """The ONLY way to durably create a TRUSTED device row (spec
-    section 6) -- requires a `ReauthContext` that is valid AND bound to
-    `authenticated_user_id` (reauth for user A can never enroll a
-    Trusted device for user B). `orca.mission.relay_store.register_device()`
-    itself has no public parameter that grants TRUSTED trust without
-    going through this function first -- see that module's own
-    `_trusted_enrollment_proof` guard."""
-    if not is_reauth_context_valid(reauth_context, authenticated_user_id=authenticated_user_id, now=now_fn()):
+    section 6, hardened 15.12.1 item 6). Requires `reauth_grant` to
+    validate against the REAL server-side grant store
+    (`is_reauth_grant_valid()`), bound to `authenticated_user_id` --
+    reauth for user A can never enroll a Trusted device for user B.
+    An arbitrary object (a `SimpleNamespace(user_id=owner)`, a fake
+    dataclass, a hand-built `ReauthGrant` with a made-up `grant_id`)
+    fails this check every time, because validation never trusts
+    anything on the object except a grant_id used purely as a lookup
+    key -- `orca.mission.relay_store.register_device()` itself now
+    unconditionally rejects TRUSTED trust, with NO proof-object
+    parameter of any kind to satisfy; the actual INSERT happens only
+    here, via the module-private `_insert_trusted_device_row()`, after
+    this real validation succeeds."""
+    if not is_reauth_grant_valid(reauth_grant, authenticated_user_id=authenticated_user_id, now=now_fn()):
         raise TrustedEnrollmentDeniedError(
-            "TRUSTED device enrollment requires a valid, unexpired reauthentication context bound to the authenticated user"
+            "TRUSTED device enrollment requires a valid, unexpired, real server-issued ReauthGrant bound to the authenticated user"
         )
-    proof = _TrustedEnrollmentProof(user_id=authenticated_user_id, issued_at=now_fn().isoformat())
-    return _register_device_primitive(
-        conn, authenticated_user_id=authenticated_user_id, trust_level=DeviceTrustLevel.TRUSTED, name=name,
-        now_fn=now_fn, _trusted_enrollment_proof=proof,
+    return _insert_trusted_device_row(conn, authenticated_user_id=authenticated_user_id, name=name, now_fn=now_fn)
+
+
+# ── Session-control actions using Phase 15.12 validity (15.12.1 item 10) ──
+
+def revoke_other_relay_session(
+    conn, *, current_session_id: str, target_session_id: str, authenticated_user_id: str,
+    reason: str | None = None, now_fn=_default_clock,
+) -> RelaySession:
+    """The security-authoritative wrapper around
+    `orca.mission.relay_store.revoke_other_session()`: the CURRENT
+    session must pass the FULL Phase 15.12 security-validity check
+    (including inactivity and device/mode compatibility), not merely
+    Phase 15.11's revoked/expired check -- an idle-expired session
+    cannot act as a control context for revoking another session."""
+    require_security_valid_session(conn, current_session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn)
+    return _revoke_other_session_primitive(
+        conn, current_session_id=current_session_id, target_session_id=target_session_id,
+        authenticated_user_id=authenticated_user_id, reason=reason, now_fn=now_fn,
+    )
+
+
+def revoke_all_other_relay_sessions(
+    conn, *, current_session_id: str, authenticated_user_id: str, now_fn=_default_clock,
+) -> tuple[RelaySession, ...]:
+    """Security-authoritative wrapper, same 15.12 validity requirement
+    on the current session as `revoke_other_relay_session()`."""
+    require_security_valid_session(conn, current_session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn)
+    return _revoke_all_other_sessions_primitive(
+        conn, current_session_id=current_session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn,
+    )
+
+
+def revoke_own_relay_session(
+    conn, session_id: str, *, authenticated_user_id: str, reason: str | None = None, now_fn=_default_clock,
+) -> RelaySession:
+    """Self-revocation is deliberately MORE permissive than acting as
+    a control context for another session (spec section 10's own
+    allowance) -- an idle-expired or already-otherwise-invalid
+    session may still revoke ITSELF (e.g. a deliberate logout on a
+    device the user knows was left unattended past the inactivity
+    window). This is a thin, clearly-named wrapper around the
+    ownership-checked `orca.mission.relay_store.revoke_session()`
+    with no additional 15.12 validity requirement -- documented here
+    as the deliberate distinction from `revoke_other_relay_session()`/
+    `revoke_all_other_relay_sessions()`, both of which DO require it."""
+    return _revoke_session_primitive(
+        conn, session_id, authenticated_user_id=authenticated_user_id, reason=reason, now_fn=now_fn,
     )
 
 
@@ -631,7 +837,7 @@ def is_sensitive_path(path: str) -> bool:
 def file_access_capability_for(path: str, *, device_trust: DeviceTrustLevel) -> RelayCapability | None:
     """Returns `None` (deny/mask) for a sensitive path on a PUBLIC
     device; otherwise returns `RelayCapability.VIEW_FILES` for the
-    caller to run through `check_capability()` as normal. On a Trusted
+    caller to run through the policy layer as normal. On a Trusted
     device, a sensitive path is still policy-permitted at the FILE-
     ACCESS layer (spec section 17: 'Trusted may inspect project
     files') -- the separate, absolute raw-secret-VALUE prohibition
@@ -642,7 +848,44 @@ def file_access_capability_for(path: str, *, device_trust: DeviceTrustLevel) -> 
     return RelayCapability.VIEW_FILES
 
 
-# ── Mobile Review state (spec sections 5, 18, 23) ────────────────────
+# ── Mobile Review state / secure snapshot (spec sections 5, 18, 23) ─
+# (15.12.1 item 9: EVERY security-mode state-surface entrypoint now
+# requires the Phase 15.12 security-valid session rule, enforced
+# INSIDE build_relay_snapshot()'s own single REPEATABLE READ
+# transaction via its `extra_validity_check` hook -- never a separate
+# preceding query that could introduce a time-of-check/time-of-use
+# gap.)
+
+def _security_validity_check(session: RelaySession, device: RelayDevice, now: datetime) -> None:
+    status = evaluate_session_security(session, device, now=now)
+    if status is not SecuritySessionStatus.ACTIVE:
+        raise SessionSecurityInvalidError(
+            f"Relay session {session.id} security status is {status.value}, cannot produce a security-mode snapshot",
+            status=status,
+        )
+
+
+def build_security_valid_relay_snapshot(
+    conn, *, session_id: str, authenticated_user_id: str, now_fn=_default_clock,
+) -> RelaySnapshot:
+    """The security-authoritative snapshot entrypoint (15.12.1 item 9)
+    -- identical to `orca.mission.relay_store.build_relay_snapshot()`
+    except that it ALSO enforces the full Phase 15.12
+    `evaluate_session_security()` rule (inactivity,
+    device/mode-mismatch) inside that function's own single
+    REPEATABLE READ transaction, via the `extra_validity_check` hook.
+    An idle-expired Public OR Trusted session, or a corrupted PUBLIC-
+    device/TRUSTED_DEVICE-mode session row, cannot produce a snapshot
+    through this entrypoint. This is now the RECOMMENDED entrypoint for
+    any security-mode-aware caller; the lower-level
+    `relay_store.build_relay_snapshot()` (no `extra_validity_check`)
+    remains available for Phase-15.11-only callers that do not need
+    the stronger rule."""
+    return build_relay_snapshot(
+        conn, session_id=session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn,
+        extra_validity_check=_security_validity_check,
+    )
+
 
 @dataclass(frozen=True)
 class MobileReviewState:
@@ -658,17 +901,19 @@ class MobileReviewState:
 def build_mobile_review_state(
     conn, *, session_id: str, authenticated_user_id: str, now_fn=_default_clock,
 ) -> MobileReviewState:
-    """Built EXCLUSIVELY from the canonical, already-consistent,
-    already-secret-sanitized `RelaySnapshot` (spec section 23) -- never
-    a second, independently-queried representation of mission truth.
-    Requires a genuinely security-valid session (not merely
-    Phase-15.11-ACTIVE) -- inactivity-expired Mobile Review sessions
-    are rejected the same as revoked/expired ones."""
-    session, device = require_security_valid_session(
-        conn, session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn,
+    """Built EXCLUSIVELY from `build_security_valid_relay_snapshot()`
+    (spec section 23) -- never a second, independently-queried
+    representation of mission truth, and never merely
+    Phase-15.11-ACTIVE: inactivity-expired or device/mode-mismatched
+    sessions are rejected the same as revoked/expired ones, checked
+    inside the SAME transaction as the snapshot itself."""
+    now_dt = now_fn()
+    snapshot = build_security_valid_relay_snapshot(
+        conn, session_id=session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn,
     )
-    snapshot = build_relay_snapshot(conn, session_id=session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn)
-    profile = build_security_profile(session, device, now=now_fn())
+    session = get_session_for_user(conn, session_id, authenticated_user_id=authenticated_user_id)
+    device = get_device(conn, session.device_id)
+    profile = build_security_profile(session, device, now=now_dt)
     return MobileReviewState(
         relay_session_id=session.id, mission_id=snapshot.mission_id, security_profile=profile,
         mission_state=snapshot.mission_state, current_revision=snapshot.current_revision,

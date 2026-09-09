@@ -37,7 +37,7 @@ from orca.mission.relay_store import (
     RelaySessionNotFoundError,
     RelaySessionStatus,
     build_relay_snapshot,
-    create_session,
+    _create_session_with_explicit_ttl,
     get_device,
     get_session,
     is_device_active,
@@ -108,10 +108,14 @@ def _uid() -> str:
 
 
 def _reauth_for(owner: str, *, now_fn=None):
+    """Returns a REAL server-issued `ReauthGrant` (15.12.1) -- never a
+    client-fabricatable object. `authenticated_user_id` selects the
+    account (no separate email parameter, 15.12.1 item 4: the account
+    is looked up FROM the authenticated principal)."""
     from orca.mission.relay_security import verify_reauthentication
 
-    email, password = _TEST_USER_CREDENTIALS[owner]
-    kwargs = {"email": email, "password": password}
+    _email, password = _TEST_USER_CREDENTIALS[owner]
+    kwargs = {"authenticated_user_id": owner, "password": password}
     if now_fn is not None:
         kwargs["now_fn"] = now_fn
     return verify_reauthentication(**kwargs)
@@ -122,14 +126,14 @@ def _register_trusted_device(conn, owner: str, name: str | None = None, now_fn=N
     isolated real auth-layer account created by `_uid()`) and then
     enrolls a TRUSTED device through the real, enforced
     `orca.mission.relay_security.enroll_trusted_device()` path -- never
-    a bypass of the Phase 15.12 enrollment boundary."""
+    a bypass of the Phase 15.12.1 enrollment boundary."""
     from orca.mission.relay_security import enroll_trusted_device
 
     reauth_kwargs = {}
     if now_fn is not None:
         reauth_kwargs["now_fn"] = now_fn
-    ctx = _reauth_for(owner, **reauth_kwargs)
-    enroll_kwargs = {"authenticated_user_id": owner, "reauth_context": ctx, "name": name}
+    grant = _reauth_for(owner, **reauth_kwargs)
+    enroll_kwargs = {"authenticated_user_id": owner, "reauth_grant": grant, "name": name}
     if now_fn is not None:
         enroll_kwargs["now_fn"] = now_fn
     return enroll_trusted_device(conn, **enroll_kwargs)
@@ -259,7 +263,7 @@ def test_device_and_session_durable_across_fresh_connection():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device = _register_trusted_device(conn, owner, name="Device A")
-        session = create_session(
+        session = _create_session_with_explicit_ttl(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -300,7 +304,7 @@ def test_second_device_continuity_asserts_every_governed_domain_individually():
     try:
         requirement_id = _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner, workspace_id="ws_relay_qual_domains")
         device_a = _register_trusted_device(conn, owner, name="Device A")
-        session_a = create_session(
+        session_a = _create_session_with_explicit_ttl(
             conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -311,7 +315,7 @@ def test_second_device_continuity_asserts_every_governed_domain_individually():
     conn2 = _fresh_connection()
     try:
         device_b = register_device(conn2, authenticated_user_id=owner, trust_level=DeviceTrustLevel.PUBLIC, name="Device B")
-        session_b = create_session(
+        session_b = _create_session_with_explicit_ttl(
             conn2, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.PUBLIC_DEVICE, ttl_seconds=3600,
         )
@@ -405,14 +409,14 @@ def test_second_device_continuity_with_genuinely_absent_workspace():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner, workspace_id=None)
         device_a = _register_trusted_device(conn, owner)
-        session_a = create_session(
+        session_a = _create_session_with_explicit_ttl(
             conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
         snapshot_a = build_relay_snapshot(conn, session_id=session_a.id, authenticated_user_id=owner)
 
         device_b = register_device(conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.PUBLIC)
-        session_b = create_session(
+        session_b = _create_session_with_explicit_ttl(
             conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.PUBLIC_DEVICE, ttl_seconds=3600,
         )
@@ -446,7 +450,7 @@ def test_cross_user_session_access_denied():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device = _register_trusted_device(conn, owner)
-        session = create_session(
+        session = _create_session_with_explicit_ttl(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -469,7 +473,7 @@ def test_cross_user_mission_session_creation_denied():
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         attacker_device = _register_trusted_device(conn, attacker)
         with pytest.raises(RelayAccessDeniedError):
-            create_session(
+            _create_session_with_explicit_ttl(
                 conn, device_id=attacker_device.id, mission_id=mission_id, authenticated_user_id=attacker,
                 mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
             )
@@ -487,7 +491,7 @@ def test_device_paired_with_wrong_user_cannot_create_session():
         owner_device = _register_trusted_device(conn, owner)
         # `other` tries to use a device that isn't theirs at all.
         with pytest.raises(RelayAccessDeniedError):
-            create_session(
+            _create_session_with_explicit_ttl(
                 conn, device_id=owner_device.id, mission_id=mission_id, authenticated_user_id=other,
                 mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
             )
@@ -507,7 +511,7 @@ def test_revoked_device_cannot_create_new_session():
         revoke_device(conn, device.id, authenticated_user_id=owner)
         assert not is_device_active(get_device(conn, device.id))
         with pytest.raises(DeviceRevokedError):
-            create_session(
+            _create_session_with_explicit_ttl(
                 conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
                 mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
             )
@@ -548,7 +552,7 @@ def test_revoke_other_session_rejects_targeting_current_session():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device = _register_trusted_device(conn, owner)
-        session = create_session(
+        session = _create_session_with_explicit_ttl(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -569,11 +573,11 @@ def test_revoke_other_session_leaves_current_valid_and_revokes_target():
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device_a = _register_trusted_device(conn, owner)
         device_b = _register_trusted_device(conn, owner)
-        session_a = create_session(
+        session_a = _create_session_with_explicit_ttl(
             conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
-        session_b = create_session(
+        session_b = _create_session_with_explicit_ttl(
             conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -597,7 +601,7 @@ def test_revoke_other_session_cross_user_denied():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         owner_device = _register_trusted_device(conn, owner)
-        owner_session = create_session(
+        owner_session = _create_session_with_explicit_ttl(
             conn, device_id=owner_device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -606,7 +610,7 @@ def test_revoke_other_session_cross_user_denied():
         # then attempt to revoke owner's session as an "other" session -- must be denied.
         other_mission_id = _mid()
         _seed_full_mission(conn, mission_id=other_mission_id, owner_user_id=other)
-        other_session = create_session(
+        other_session = _create_session_with_explicit_ttl(
             conn, device_id=other_device.id, mission_id=other_mission_id, authenticated_user_id=other,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -627,7 +631,7 @@ def test_revoke_all_other_sessions_is_atomic_and_preserves_current():
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         devices = [_register_trusted_device(conn, owner) for _ in range(4)]
         sessions = [
-            create_session(
+            _create_session_with_explicit_ttl(
                 conn, device_id=d.id, mission_id=mission_id, authenticated_user_id=owner,
                 mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
             )
@@ -651,7 +655,7 @@ def test_revoked_session_cannot_be_revived_via_touch():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device = _register_trusted_device(conn, owner)
-        session = create_session(
+        session = _create_session_with_explicit_ttl(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -672,7 +676,7 @@ def test_expired_session_cannot_be_touched_or_produce_snapshot():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device = _register_trusted_device(conn, owner)
-        session = create_session(
+        session = _create_session_with_explicit_ttl(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=1,
         )
@@ -698,7 +702,7 @@ def test_build_relay_snapshot_does_not_touch_last_seen_at():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device = _register_trusted_device(conn, owner)
-        session = create_session(
+        session = _create_session_with_explicit_ttl(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -744,7 +748,7 @@ def test_snapshot_contains_no_raw_secrets_from_seeded_adversarial_fields():
         conn.commit()
 
         device = _register_trusted_device(conn, owner)
-        session = create_session(
+        session = _create_session_with_explicit_ttl(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -778,7 +782,7 @@ def test_missing_domains_are_absent_not_fabricated():
     try:
         create_mission(conn, id=mission_id, repository="org/bare-repo", mode="BUILD", autonomy_level="L1", owner_user_id=owner)
         device = _register_trusted_device(conn, owner)
-        session = create_session(
+        session = _create_session_with_explicit_ttl(
             conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
             mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600,
         )
@@ -864,8 +868,8 @@ def test_revoked_current_session_cannot_revoke_another():
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device_a = _register_trusted_device(conn, owner)
         device_b = _register_trusted_device(conn, owner)
-        session_a = create_session(conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
-        session_b = create_session(conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session_a = _create_session_with_explicit_ttl(conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session_b = _create_session_with_explicit_ttl(conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
 
         revoke_session(conn, session_a.id, authenticated_user_id=owner, reason="dead current session")
         with pytest.raises(RelaySessionInvalidError) as exc_info:
@@ -884,8 +888,8 @@ def test_expired_current_session_cannot_revoke_another():
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device_a = _register_trusted_device(conn, owner)
         device_b = _register_trusted_device(conn, owner)
-        session_a = create_session(conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=1)
-        session_b = create_session(conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session_a = _create_session_with_explicit_ttl(conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=1)
+        session_b = _create_session_with_explicit_ttl(conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
         future = lambda: datetime.now(timezone.utc) + timedelta(days=1)  # noqa: E731
 
         with pytest.raises(RelaySessionInvalidError) as exc_info:
@@ -904,8 +908,8 @@ def test_revoked_current_device_cannot_revoke_another_session():
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device_a = _register_trusted_device(conn, owner)
         device_b = _register_trusted_device(conn, owner)
-        session_a = create_session(conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
-        session_b = create_session(conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session_a = _create_session_with_explicit_ttl(conn, device_id=device_a.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session_b = _create_session_with_explicit_ttl(conn, device_id=device_b.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
 
         # Device A is revoked AFTER its session was created -- the session
         # itself is still unexpired/unrevoked, but its device is dead now.
@@ -925,7 +929,7 @@ def test_active_session_context_legitimately_revokes_other_and_all_others():
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         devices = [_register_trusted_device(conn, owner) for _ in range(3)]
         sessions = [
-            create_session(conn, device_id=d.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+            _create_session_with_explicit_ttl(conn, device_id=d.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
             for d in devices
         ]
         current, other1, other2 = sessions
@@ -950,7 +954,7 @@ def test_list_active_sessions_excludes_session_on_later_revoked_device():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device = _register_trusted_device(conn, owner)
-        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session = _create_session_with_explicit_ttl(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
 
         assert session.id in {s.id for s in list_active_sessions(conn, authenticated_user_id=owner)}
 
@@ -985,7 +989,7 @@ def test_failed_operation_absent_from_pending_operations():
         conn.commit()
 
         device = _register_trusted_device(conn, owner)
-        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session = _create_session_with_explicit_ttl(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
         snapshot = build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
 
         assert all(op.status != "FAILED" for op in snapshot.pending_operations)
@@ -1007,7 +1011,7 @@ def test_production_proof_stale_is_unknown_not_current_when_revision_matches():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner, revision="rev1")
         device = _register_trusted_device(conn, owner)
-        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session = _create_session_with_explicit_ttl(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
         snapshot = build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
 
         assert snapshot.production_proof.revision == "rev1"  # matches mission.current_revision
@@ -1028,7 +1032,7 @@ def test_production_proof_stale_is_true_on_revision_mismatch():
         conn.commit()
 
         device = _register_trusted_device(conn, owner)
-        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session = _create_session_with_explicit_ttl(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
         snapshot = build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
 
         assert snapshot.production_proof.revision == "rev1"
@@ -1089,7 +1093,7 @@ def test_snapshot_names_its_own_consistency_basis():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device = _register_trusted_device(conn, owner)
-        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session = _create_session_with_explicit_ttl(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
         snapshot = build_relay_snapshot(conn, session_id=session.id, authenticated_user_id=owner)
         assert "REPEATABLE READ" in snapshot.consistency_basis
         assert "READ ONLY" in snapshot.consistency_basis
@@ -1106,7 +1110,7 @@ def test_build_relay_snapshot_mutates_nothing_across_every_domain():
     try:
         _seed_full_mission(conn, mission_id=mission_id, owner_user_id=owner)
         device = _register_trusted_device(conn, owner)
-        session = create_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
+        session = _create_session_with_explicit_ttl(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE, ttl_seconds=3600)
 
         def _fingerprint():
             with conn.cursor() as cur:
