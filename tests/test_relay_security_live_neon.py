@@ -229,25 +229,39 @@ def test_require_security_valid_session_inactivity_expired_via_injected_clock(is
 
 
 def test_inactivity_expired_session_cannot_be_revived_by_touch(isolated_home):
-    from orca.mission.relay_store import touch_session, RelaySessionInvalidError
+    """Uses a FIXED base timestamp (never a lambda that recomputes
+    `datetime.now()` on every call) so touching the session at T1 and
+    then checking security validity at T2 = T1 + inactivity_timeout
+    produces a REAL idle gap, not two nearly-identical wall-clock
+    reads that cancel each other out."""
+    from orca.mission.relay_store import touch_session
+    from orca.mission.relay_security import (
+        PUBLIC_DEVICE_INACTIVITY_SECONDS,
+        SessionSecurityInvalidError,
+        require_security_valid_session,
+    )
     owner = _real_user(isolated_home)
     conn = _fresh_connection()
     try:
+        base_now = datetime.now(timezone.utc)
         mission_id = _seed_mission(conn, owner)
         device = enroll_public_device(conn, authenticated_user_id=owner)
-        session = create_relay_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.PUBLIC_DEVICE)
-        from orca.mission.relay_security import PUBLIC_DEVICE_INACTIVITY_SECONDS
-        future = lambda: datetime.now(timezone.utc) + timedelta(seconds=PUBLIC_DEVICE_INACTIVITY_SECONDS + 5)  # noqa: E731
+        session = create_relay_session(
+            conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner,
+            mode=RelayMode.PUBLIC_DEVICE, now_fn=lambda: base_now,
+        )
+        still_within_inactivity = lambda: base_now + timedelta(seconds=60)  # noqa: E731
         # Absolute-expiry-based touch_session() still considers this
         # session ACTIVE (2h max lifetime not yet reached) -- it is
         # ONLY the security-layer's inactivity policy that must reject
-        # it, proving the two checks are genuinely additive, not
+        # it later, proving the two checks are genuinely additive, not
         # redundant duplicates of each other.
-        touched = touch_session(conn, session.id, authenticated_user_id=owner, now_fn=future)
+        touched = touch_session(conn, session.id, authenticated_user_id=owner, now_fn=still_within_inactivity)
         assert touched is not None
-        from orca.mission.relay_security import SessionSecurityInvalidError, require_security_valid_session
+
+        past_inactivity_deadline = lambda: base_now + timedelta(seconds=60 + PUBLIC_DEVICE_INACTIVITY_SECONDS + 5)  # noqa: E731
         with pytest.raises(SessionSecurityInvalidError):
-            require_security_valid_session(conn, session.id, authenticated_user_id=owner, now_fn=future)
+            require_security_valid_session(conn, session.id, authenticated_user_id=owner, now_fn=past_inactivity_deadline)
     finally:
         conn.close()
 
