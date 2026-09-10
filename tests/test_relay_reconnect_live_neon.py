@@ -585,7 +585,7 @@ def test_relay_mutation_with_a_valid_session_and_matching_mission_succeeds():
         _advance_to_running(conn, mission)
         _, session = _seed_session(conn, owner, mission)
 
-        precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.RUNNING)
+        precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.RUNNING, expected_revision="rev1")
         result = apply_relay_mission_mutation(
             conn, session_id=session.id, authenticated_user_id=owner,
             precondition=precondition, new_state=MissionState.PAUSED_USER,
@@ -624,7 +624,7 @@ def test_real_two_device_concurrent_mutation_race_is_atomic():
     finally:
         setup_conn.close()
 
-    precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING)
+    precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING, expected_revision="rev1")
     barrier = threading.Barrier(2)
     results = []
     errors = []
@@ -1134,7 +1134,7 @@ def test_mutation_that_commits_first_is_unaffected_by_a_later_revocation():
         _advance_to_running(conn, mission_id)
         device, session = _seed_session(conn, owner, mission_id)
 
-        precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING)
+        precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING, expected_revision="rev1")
         result = apply_relay_mission_mutation(
             conn, session_id=session.id, authenticated_user_id=owner,
             precondition=precondition, new_state=MissionState.PAUSED_USER,
