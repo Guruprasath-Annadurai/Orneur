@@ -236,8 +236,8 @@ def test_concurrent_start_and_execute_from_two_real_connections_executes_exactly
         finally:
             conn.close()
 
-    t1 = threading.Thread(target=_worker)
-    t2 = threading.Thread(target=_worker)
+    t1 = threading.Thread(target=_worker, daemon=True)
+    t2 = threading.Thread(target=_worker, daemon=True)
     t1.start(); t2.start()
     t1.join(timeout=10); t2.join(timeout=10)
 
@@ -311,8 +311,8 @@ def test_two_connections_same_idempotency_key_concurrent_submission_produces_one
         finally:
             conn.close()
 
-    t1 = threading.Thread(target=_worker, args=(f"op_{uuid.uuid4().hex[:12]}",))
-    t2 = threading.Thread(target=_worker, args=(f"op_{uuid.uuid4().hex[:12]}",))
+    t1 = threading.Thread(target=_worker, args=(f"op_{uuid.uuid4().hex[:12]}",), daemon=True)
+    t2 = threading.Thread(target=_worker, args=(f"op_{uuid.uuid4().hex[:12]}",), daemon=True)
     t1.start(); t2.start()
     t1.join(timeout=10); t2.join(timeout=10)
 
@@ -612,8 +612,8 @@ def test_real_two_device_concurrent_mutation_race_is_atomic():
         finally:
             conn.close()
 
-    t1 = threading.Thread(target=_worker, args=(session_a.id, MissionState.PAUSED_USER))
-    t2 = threading.Thread(target=_worker, args=(session_b.id, MissionState.CANCELLED))
+    t1 = threading.Thread(target=_worker, args=(session_a.id, MissionState.PAUSED_USER), daemon=True)
+    t2 = threading.Thread(target=_worker, args=(session_b.id, MissionState.CANCELLED), daemon=True)
     t1.start(); t2.start()
     t1.join(timeout=15); t2.join(timeout=15)
 
