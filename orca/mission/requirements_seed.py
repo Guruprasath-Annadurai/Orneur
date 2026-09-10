@@ -137,6 +137,40 @@ def seed_registry() -> None:
             "recorded point.",
         ),
     ))
+    # Phase 15.14 implements both requirements in
+    # orca/mission/mission_window.py, layered entirely on the
+    # already-proven Phase 15.4 checkpoint_and_pause()/resume_mission()
+    # primitives (no competing checkpoint system, no schema migration).
+    transition(
+        "REQ-WINDOW-DEFAULT-001", RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/mission_window.py",),
+    )
+    # test_default_window_is_six_hours (unit) proves the constant;
+    # test_default_window_start_is_exactly_six_hours (live Neon) proves
+    # a REAL start_autonomous_window() call against real Postgres
+    # produces exactly a 6-hour deadline. Every window test in both
+    # files uses an injected now_fn -- no test waits six real hours.
+    transition(
+        "REQ-WINDOW-DEFAULT-001", RequirementStatus.VERIFIED,
+        test_files=("tests/test_mission_window.py", "tests/test_mission_window_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1514--six-hour-mission-governance",
+    )
+    transition(
+        "REQ-WINDOW-EXPIRY-002", RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/mission_window.py",),
+    )
+    # test_enforce_window_expiry_atomic_pause_and_checkpoint proves the
+    # injected-clock-driven boundary transition to PAUSED_WINDOW_REACHED;
+    # test_window_checkpoint_preserves_full_mission_state proves every
+    # required field is present and non-lossy;
+    # test_resume_after_window_creates_a_new_server_controlled_window
+    # and test_req_ckpt_restore_002_exact_acceptance_proof prove the
+    # mission continues from the exact recorded point after resume.
+    transition(
+        "REQ-WINDOW-EXPIRY-002", RequirementStatus.VERIFIED,
+        test_files=("tests/test_mission_window_live_neon.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1514--six-hour-mission-governance",
+    )
 
     # -- Autonomy Levels (spec section 8) --
     register(Requirement(
@@ -293,6 +327,29 @@ def seed_registry() -> None:
         "REQ-CKPT-RESTORE-002",
         RequirementStatus.IMPLEMENTED,
         implementation_files=("orca/mission/mission_store.py", "orca/mission/operation_store.py"),
+    )
+    # PHASE 15.14 closes the exact gap the comment above identifies:
+    # test_req_ckpt_restore_002_exact_acceptance_proof
+    # (tests/test_mission_window_live_neon.py) drives the full
+    # mission-level path this requirement's acceptance criterion
+    # actually names -- a real mission checkpointed mid-mission (via
+    # the Phase 15.14 window-expiry boundary, itself built on
+    # `checkpoint_and_pause()`), process-state discarded, restored via
+    # a fresh connection, explicitly resumed via
+    # `resume_after_window()`, and the SAME logical operation
+    # (idempotency key K, already SUCCEEDED before the checkpoint) is
+    # re-requested/reconciled through that restored mission -- the
+    # existing SUCCEEDED record is returned, a fresh executor object
+    # is never invoked (`call_count == 0` on retry), and remaining
+    # mission work continues under the newly-started window. VERIFIED
+    # here, genuinely earned against the requirement's own literal
+    # acceptance criterion -- not promoted merely because Phase 15.5's
+    # operation-table idempotency already existed independently.
+    transition(
+        "REQ-CKPT-RESTORE-002",
+        RequirementStatus.VERIFIED,
+        test_files=("tests/test_mission_window_live_neon.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1514--six-hour-mission-governance",
     )
 
     # -- Operation Idempotency (spec section 11) --

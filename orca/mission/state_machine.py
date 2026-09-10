@@ -79,7 +79,13 @@ _ALLOWED_TRANSITIONS: dict[MissionState, frozenset[MissionState]] = {
         S.COURT_REVIEW, S.COMPLETED_VERIFIED, S.COMPLETED_UNVERIFIED,
         S.FAILED, S.BLOCKED, S.PAUSED_WINDOW_REACHED,
     }),
-    S.COURT_REVIEW: frozenset({S.COMPLETED_VERIFIED, S.BLOCKED, S.WAITING_APPROVAL, S.FAILED}),
+    # PAUSED_WINDOW_REACHED added here in Phase 15.14 (spec section 7
+    # item 7): the six-hour autonomous window can genuinely expire
+    # while a mission is in Court Review, and without this edge such a
+    # mission could not be safely checkpointed/paused at its deadline
+    # -- the minimum adjustment needed, not a broadened transition
+    # table.
+    S.COURT_REVIEW: frozenset({S.COMPLETED_VERIFIED, S.BLOCKED, S.WAITING_APPROVAL, S.FAILED, S.PAUSED_WINDOW_REACHED}),
     S.PAUSED_USER: frozenset({S.RUNNING, S.CANCELLED}),
     S.PAUSED_WINDOW_REACHED: frozenset({S.RUNNING, S.CANCELLED}),
     S.BLOCKED: frozenset({S.RUNNING, S.PLANNING, S.FAILED, S.CANCELLED}),
