@@ -223,8 +223,22 @@ def test_concurrent_start_and_execute_from_two_real_connections_executes_exactly
     t1.join(timeout=10); t2.join(timeout=10)
 
     assert len(results) == 2
-    assert all(r["status"] == "SUCCEEDED" for r in results)
+    # The "losing" caller does NOT wait for the winner to finish
+    # executing -- per start_and_execute_operation()'s own contract, it
+    # observes whatever durable state exists at that instant (which may
+    # still be STARTED, not yet SUCCEEDED) and returns immediately
+    # without recalling the executor. Exactly-once is proven by
+    # call_count, not by both in-thread results reading SUCCEEDED.
+    assert all(r["status"] in ("STARTED", "SUCCEEDED") for r in results)
     assert executor.call_count == 1
+
+    final_conn = _fresh_connection()
+    try:
+        from orca.mission.operation_store import get_operation
+        final = get_operation(final_conn, op_id)
+        assert final["status"] == "SUCCEEDED"
+    finally:
+        final_conn.close()
 
 
 # ── Two-device reconciliation + same-key concurrency (sections 11-13) ──
