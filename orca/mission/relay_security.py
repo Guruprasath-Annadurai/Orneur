@@ -493,6 +493,53 @@ def require_security_valid_session(
     return session, device
 
 
+def require_security_valid_session_locked(
+    conn, session_id: str, *, authenticated_user_id: str, now_fn=_default_clock,
+) -> tuple[RelaySession, RelayDevice]:
+    """Phase 15.13.2 -- the TRANSACTION-COMPOSABLE variant of
+    `require_security_valid_session()`. That function's reads
+    (`get_session_for_user()`, `get_device()`) each COMMIT internally
+    -- fine for a standalone caller, but it means a caller that ALSO
+    needs to mutate other durable state (e.g. a mission row) in
+    response to "is this session valid" opens a TOCTOU window: the
+    session/device reads land in one transaction, and if the actual
+    mutation happens in a LATER, separately-transacted call, a
+    revocation that commits in between is invisible to it.
+
+    This function instead locks the Relay session row, then its bound
+    device row (in that deterministic order: session -> device),
+    `SELECT ... FOR UPDATE`, INSIDE THE CALLER's OPEN TRANSACTION --
+    it never calls `conn.commit()` or `conn.rollback()` itself. The
+    caller is responsible for continuing to lock/mutate whatever else
+    it needs (e.g. a mission row, session -> device -> mission is the
+    full deterministic order) and committing ONCE at the end. Reuses
+    the EXACT SAME pure `evaluate_session_security()` rule
+    `require_security_valid_session()` uses -- no security policy
+    semantics are duplicated or re-implemented here."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM relay_sessions WHERE id = %s FOR UPDATE", (session_id,))
+        srow = cur.fetchone()
+        if srow is None:
+            raise RelaySessionNotFoundError(f"No such Relay session: {session_id}")
+        session = RelaySession.from_row(dict(srow))
+        if session.user_id != authenticated_user_id:
+            raise RelayAccessDeniedError(f"Relay session {session_id} does not belong to the authenticated user")
+
+        cur.execute("SELECT * FROM devices WHERE id = %s FOR UPDATE", (session.device_id,))
+        drow = cur.fetchone()
+        if drow is None:
+            raise RelayAccessDeniedError(f"device {session.device_id} bound to session {session_id} does not exist")
+        device = RelayDevice.from_row(dict(drow))
+        if device.user_id != authenticated_user_id:
+            raise RelayAccessDeniedError(f"device {session.device_id} bound to session {session_id} is not owned by the authenticated user")
+
+    now = now_fn()
+    status = evaluate_session_security(session, device, now=now)
+    if status is not SecuritySessionStatus.ACTIVE:
+        raise SessionSecurityInvalidError(f"Relay session {session_id} security status is {status.value}", status=status)
+    return session, device
+
+
 def touch_relay_session_securely(conn, session_id: str, *, authenticated_user_id: str, now_fn=_default_clock) -> RelaySession:
     """The security-authoritative heartbeat entrypoint (15.12.1 item 8)
     -- validates the FULL Phase 15.12 security status (including

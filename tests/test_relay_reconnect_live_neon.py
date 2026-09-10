@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -48,12 +49,13 @@ from orca.mission.relay_reconnect import (
     reconnect_to_mission,
 )
 from orca.mission.relay_security import (
+    SecuritySessionStatus,
     SessionSecurityInvalidError,
     create_relay_session,
     revoke_own_relay_session,
     touch_relay_session_securely,
 )
-from orca.mission.relay_store import DeviceTrustLevel, RelayMode, register_device
+from orca.mission.relay_store import DeviceTrustLevel, RelayMode, register_device, revoke_device
 from orca.mission.state_machine import MissionState
 
 pytestmark = pytest.mark.skipif(
@@ -91,6 +93,35 @@ def _seed_mission(conn, owner_user_id: str) -> str:
         autonomy_level="L1", owner_user_id=owner_user_id, current_revision="rev1", workspace_id="ws_relay_reconnect",
     )
     return mission_id
+
+
+def _seed_mission_no_revision(conn, owner_user_id: str) -> str:
+    """A mission with a genuinely absent current_revision -- for
+    proving the revision-omission enforcement is skipped (never
+    fabricated) when there is nothing durable to compare against."""
+    mission_id = _mid()
+    create_mission(
+        conn, id=mission_id, repository="org/relay-reconnect-qual", branch="main", mode="BUILD",
+        autonomy_level="L1", owner_user_id=owner_user_id, workspace_id="ws_relay_reconnect",
+    )
+    return mission_id
+
+
+def _wait_until_blocked_on_lock(inspect_conn, *, timeout=5.0) -> bool:
+    """Polls pg_stat_activity via a THIRD connection for a session
+    genuinely waiting on a row lock (wait_event_type='Lock'), rather
+    than inferring blocking from thread timing alone -- proves the
+    ordering the concurrency tests below depend on."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with inspect_conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS c FROM pg_stat_activity WHERE wait_event_type = 'Lock'")
+            row = cur.fetchone()
+        inspect_conn.commit()
+        if row["c"] > 0:
+            return True
+        time.sleep(0.1)
+    return False
 
 
 def _advance_to_running(conn, mission_id: str) -> None:
@@ -919,5 +950,409 @@ def test_network_truth_lifecycle_failed_reconnect_stays_offline_and_stale():
         # A failed reconnect must NEVER relabel the cached snapshot CURRENT.
         assert view.connection_state is RelayConnectionState.OFFLINE
         assert view.freshness is RelayFreshness.STALE
+    finally:
+        conn.close()
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Phase 15.13.2 -- Atomic Relay Security + Revision Enforcement Closure
+# ═════════════════════════════════════════════════════════════════════
+
+# ── Section 2: real session-revocation-vs-mutation race ─────────────
+
+def test_committed_session_revocation_denies_a_waiting_mutation():
+    """Proves the exact dangerous ordering the owner specified: a
+    revocation genuinely WINS the row lock and commits BEFORE the
+    mutation's own re-read happens -- the mutation must observe the
+    revoked state and deny, never applying using an earlier, now-stale
+    security read. Ordering is evidenced via a real held row lock
+    (SELECT ... FOR UPDATE from a THIRD, separate transaction) plus a
+    pg_stat_activity poll confirming the mutation is genuinely BLOCKED
+    on that lock before the revocation is allowed to commit -- not
+    inferred from thread timing alone."""
+    owner = _uid()
+    setup_conn = _fresh_connection()
+    try:
+        mission_id = _seed_mission(setup_conn, owner)
+        _advance_to_running(setup_conn, mission_id)
+        device, session = _seed_session(setup_conn, owner, mission_id)
+    finally:
+        setup_conn.close()
+
+    lock_held = threading.Event()
+    release_lock = threading.Event()
+    revoke_conn = _fresh_connection()
+
+    def _revoker():
+        with revoke_conn.cursor() as cur:
+            cur.execute("SELECT * FROM relay_sessions WHERE id = %s FOR UPDATE", (session.id,))
+            cur.fetchone()
+        lock_held.set()
+        release_lock.wait(timeout=10)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with revoke_conn.cursor() as cur:
+            cur.execute(
+                "UPDATE relay_sessions SET revoked_at = %s, revoked_reason = %s WHERE id = %s",
+                (now_iso, "race-test-revocation", session.id),
+            )
+        revoke_conn.commit()
+
+    revoker_thread = threading.Thread(target=_revoker, daemon=True)
+    revoker_thread.start()
+    assert lock_held.wait(timeout=10), "revoker did not acquire the session row lock in time"
+
+    mutation_result = {}
+    mutation_error = {}
+
+    def _mutator():
+        conn = _fresh_connection()
+        try:
+            precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING)
+            mutation_result["value"] = apply_relay_mission_mutation(
+                conn, session_id=session.id, authenticated_user_id=owner,
+                precondition=precondition, new_state=MissionState.PAUSED_USER,
+            )
+        except Exception as e:  # noqa: BLE001
+            mutation_error["value"] = e
+        finally:
+            conn.close()
+
+    mutator_thread = threading.Thread(target=_mutator, daemon=True)
+    mutator_thread.start()
+
+    inspect_conn = _fresh_connection()
+    try:
+        assert _wait_until_blocked_on_lock(inspect_conn, timeout=8), (
+            "the mutator never observed waiting on the session row lock -- "
+            "the race was not genuinely forced"
+        )
+    finally:
+        inspect_conn.close()
+
+    release_lock.set()
+    revoker_thread.join(timeout=10)
+    mutator_thread.join(timeout=10)
+
+    assert "value" in mutation_error, f"expected SessionSecurityInvalidError, got result={mutation_result}"
+    assert isinstance(mutation_error["value"], SessionSecurityInvalidError)
+    assert mutation_error["value"].status is SecuritySessionStatus.REVOKED
+
+    final_conn = _fresh_connection()
+    try:
+        assert get_mission(final_conn, mission_id)["state"] == MissionState.RUNNING.value
+    finally:
+        final_conn.close()
+        revoke_conn.close()
+
+
+def test_committed_device_revocation_denies_a_waiting_mutation():
+    """The device-revocation analogue: the mutator's transaction locks
+    the session row fine (untouched by this test), then blocks trying
+    to lock the DEVICE row (second in the deterministic session ->
+    device -> mission order), which the revoker holds. Same
+    lock-poll-based ordering proof as the session-revocation test."""
+    owner = _uid()
+    setup_conn = _fresh_connection()
+    try:
+        mission_id = _seed_mission(setup_conn, owner)
+        _advance_to_running(setup_conn, mission_id)
+        device, session = _seed_session(setup_conn, owner, mission_id)
+    finally:
+        setup_conn.close()
+
+    lock_held = threading.Event()
+    release_lock = threading.Event()
+    revoke_conn = _fresh_connection()
+
+    def _revoker():
+        with revoke_conn.cursor() as cur:
+            cur.execute("SELECT * FROM devices WHERE id = %s FOR UPDATE", (device.id,))
+            cur.fetchone()
+        lock_held.set()
+        release_lock.wait(timeout=10)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with revoke_conn.cursor() as cur:
+            cur.execute("UPDATE devices SET revoked_at = %s WHERE id = %s", (now_iso, device.id))
+        revoke_conn.commit()
+
+    revoker_thread = threading.Thread(target=_revoker, daemon=True)
+    revoker_thread.start()
+    assert lock_held.wait(timeout=10), "revoker did not acquire the device row lock in time"
+
+    mutation_error = {}
+
+    def _mutator():
+        conn = _fresh_connection()
+        try:
+            precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING)
+            apply_relay_mission_mutation(
+                conn, session_id=session.id, authenticated_user_id=owner,
+                precondition=precondition, new_state=MissionState.PAUSED_USER,
+            )
+        except Exception as e:  # noqa: BLE001
+            mutation_error["value"] = e
+        finally:
+            conn.close()
+
+    mutator_thread = threading.Thread(target=_mutator, daemon=True)
+    mutator_thread.start()
+
+    inspect_conn = _fresh_connection()
+    try:
+        assert _wait_until_blocked_on_lock(inspect_conn, timeout=8), (
+            "the mutator never observed waiting on the device row lock"
+        )
+    finally:
+        inspect_conn.close()
+
+    release_lock.set()
+    revoker_thread.join(timeout=10)
+    mutator_thread.join(timeout=10)
+
+    assert "value" in mutation_error
+    assert isinstance(mutation_error["value"], SessionSecurityInvalidError)
+    assert mutation_error["value"].status is SecuritySessionStatus.DEVICE_REVOKED
+
+    final_conn = _fresh_connection()
+    try:
+        assert get_mission(final_conn, mission_id)["state"] == MissionState.RUNNING.value
+    finally:
+        final_conn.close()
+        revoke_conn.close()
+
+
+def test_mutation_that_commits_first_is_unaffected_by_a_later_revocation():
+    """The opposite, LEGAL ordering: the mutation acquires the session/
+    device/mission locks while the session is genuinely still valid,
+    commits, and only THEN is the session revoked. The already-durably-
+    applied mutation stands -- database serialization order, not
+    wall-clock order, is what governs."""
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission_id)
+        device, session = _seed_session(conn, owner, mission_id)
+
+        precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING)
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.APPLIED
+
+        revoke_own_relay_session(conn, session.id, authenticated_user_id=owner)
+        assert get_mission(conn, mission_id)["state"] == MissionState.PAUSED_USER.value
+    finally:
+        conn.close()
+
+
+# ── Section 3: revision may not be omitted when the mission has one ──
+
+def test_relay_mutation_revision_omission_is_denied_when_durable_revision_exists():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_mission(conn, owner)  # current_revision="rev1"
+        _advance_to_running(conn, mission_id)
+        _, session = _seed_session(conn, owner, mission_id)
+
+        precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING, expected_revision=None)
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.STALE_CONFLICT
+        assert "omit" in result.detail.lower() or "no expected_revision" in result.detail.lower()
+        assert get_mission(conn, mission_id)["state"] == MissionState.RUNNING.value
+    finally:
+        conn.close()
+
+
+def test_relay_mutation_empty_string_revision_is_also_denied():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission_id)
+        _, session = _seed_session(conn, owner, mission_id)
+
+        precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING, expected_revision="")
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.STALE_CONFLICT
+        assert get_mission(conn, mission_id)["state"] == MissionState.RUNNING.value
+    finally:
+        conn.close()
+
+
+def test_relay_mutation_correct_revision_is_eligible():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission_id)
+        _, session = _seed_session(conn, owner, mission_id)
+
+        precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING, expected_revision="rev1")
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.APPLIED
+        assert get_mission(conn, mission_id)["state"] == MissionState.PAUSED_USER.value
+    finally:
+        conn.close()
+
+
+def test_relay_mutation_wrong_revision_is_stale_conflict():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission_id)
+        _, session = _seed_session(conn, owner, mission_id)
+
+        precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING, expected_revision="rev-stale")
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.STALE_CONFLICT
+        assert get_mission(conn, mission_id)["state"] == MissionState.RUNNING.value
+    finally:
+        conn.close()
+
+
+def test_relay_mutation_genuinely_absent_durable_revision_does_not_gate():
+    """When the mission itself was created with no current_revision at
+    all, the revision-omission rule has nothing to compare against --
+    it is skipped (never fabricated as a match), and the ordinary
+    state-only precondition governs eligibility."""
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_mission_no_revision(conn, owner)
+        _advance_to_running(conn, mission_id)
+        _, session = _seed_session(conn, owner, mission_id)
+
+        precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING, expected_revision=None)
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.APPLIED
+        assert get_mission(conn, mission_id)["state"] == MissionState.PAUSED_USER.value
+    finally:
+        conn.close()
+
+
+# ── Section 4: same-target idempotency vs stale revision ────────────
+
+def test_idempotent_no_op_detail_never_claims_revision_was_validated():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission_id)
+        _, session = _seed_session(conn, owner, mission_id)
+
+        precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING, expected_revision="rev1")
+        first = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert first.outcome is RelayMutationOutcome.APPLIED
+
+        # A second, racing request carrying a now-STALE revision, but
+        # targeting the SAME state the mission already reached.
+        stale_precondition = RelayMutationPrecondition(
+            mission_id=mission_id, expected_state=MissionState.RUNNING, expected_revision="rev1",
+        )
+        second = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=stale_precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert second.outcome is RelayMutationOutcome.APPLIED
+        assert "IDEMPOTENT_NO_OP" in second.detail
+        assert "no precondition" in second.detail.lower() or "not validated" in second.detail.lower()
+        assert get_mission(conn, mission_id)["state"] == MissionState.PAUSED_USER.value
+    finally:
+        conn.close()
+
+
+# ── Section 5: every exception path must release the transaction ────
+
+def test_unexpected_exception_after_row_lock_still_releases_it(monkeypatch):
+    """The literal required proof: force a genuine exception AFTER the
+    mission row lock has been acquired (not merely a not-found case
+    where no row is ever locked). `orca.mission.mission_store.transition`
+    -- called only after the row is already locked FOR UPDATE and the
+    state/revision preconditions have already passed -- is monkeypatched
+    to raise an unexpected `RuntimeError` for this one call. The
+    public, committing `apply_mutation_with_precondition()` wrapper's
+    `except Exception: conn.rollback(); raise` must catch this
+    (a type it does not special-case) and roll back, releasing the
+    lock. A SECOND, independent connection then immediately locks and
+    mutates the SAME mission row -- if the first connection had leaked
+    the lock, this would hang or time out."""
+    import orca.mission.mission_store as mission_store_module
+    from orca.mission.mission_store import apply_mutation_with_precondition
+
+    owner = _uid()
+    conn_a = _fresh_connection()
+    mission_id = _seed_mission(conn_a, owner)
+    _advance_to_running(conn_a, mission_id)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("forced-failure-injection: simulated unexpected DB/driver error after row lock")
+
+    monkeypatch.setattr(mission_store_module, "transition", _boom)
+    try:
+        with pytest.raises(RuntimeError, match="forced-failure-injection"):
+            apply_mutation_with_precondition(
+                conn_a, mission_id, expected_state=MissionState.RUNNING, expected_revision="rev1",
+                new_state=MissionState.PAUSED_USER,
+            )
+    finally:
+        monkeypatch.undo()
+        conn_a.close()
+
+    # A SECOND, independent connection immediately locks and mutates
+    # the SAME row -- proves no lock was leaked by the forced failure.
+    conn_b = _fresh_connection()
+    try:
+        outcome, mission_row, detail = apply_mutation_with_precondition(
+            conn_b, mission_id, expected_state=MissionState.RUNNING, expected_revision="rev1",
+            new_state=MissionState.PAUSED_USER,
+        )
+        assert outcome == "APPLIED"
+        assert mission_row["state"] == MissionState.PAUSED_USER.value
+    finally:
+        conn_b.close()
+
+
+def test_not_found_path_also_leaves_connection_immediately_reusable():
+    """The simpler, complementary case: MissionNotFoundError is raised
+    because no row ever matched (so nothing was ever locked). Proves
+    this path ALSO leaves the connection immediately usable for a
+    completely unrelated write -- if the prior call had left an
+    aborted transaction open, this would raise 'current transaction is
+    aborted, commands ignored until end of transaction block'."""
+    from orca.mission.mission_store import MissionNotFoundError, apply_mutation_with_precondition
+
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        with pytest.raises(MissionNotFoundError):
+            apply_mutation_with_precondition(
+                conn, "mis_does_not_exist_at_all",
+                expected_state=MissionState.RUNNING, expected_revision=None,
+                new_state=MissionState.PAUSED_USER,
+            )
+        mission_id = _seed_mission(conn, owner)
+        assert get_mission(conn, mission_id) is not None
     finally:
         conn.close()

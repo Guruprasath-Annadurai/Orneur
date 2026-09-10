@@ -67,6 +67,7 @@ from orca.mission.mission_store import (
     CheckpointNotFoundError,
     MissionNotFoundError,
     MissionStoreError,
+    _apply_mutation_with_precondition_locked,
     apply_mutation_with_precondition,
     get_checkpoint,
     get_mission,
@@ -80,6 +81,7 @@ from orca.mission.relay_security import (
     _default_clock,
     build_security_valid_relay_snapshot,
     require_security_valid_session,
+    require_security_valid_session_locked,
     touch_relay_session_securely,
 )
 from orca.mission.state_machine import MissionState
@@ -280,13 +282,6 @@ class RelayMutationResult:
     detail: str
 
 
-_OUTCOME_DETAIL = {
-    "APPLIED": "mutation applied atomically under a single locked row read (or already at target state -- idempotent no-op)",
-    "STALE_CONFLICT": "caller's expected state/revision did not match the durable row, read atomically under the SAME lock as the mutation attempt",
-    "DENIED": "mutation is illegal per the canonical state machine given the durable (accurately-expected) state",
-}
-
-
 def apply_mission_mutation_precondition(
     conn, precondition: RelayMutationPrecondition, *, new_state: MissionState, evidence_ref: str | None = None,
 ) -> RelayMutationResult:
@@ -300,12 +295,16 @@ def apply_mission_mutation_precondition(
 
     This function is NOT itself a Relay-authorized control boundary --
     it has no `session_id`/`authenticated_user_id` and performs no
-    ownership/session-binding check. It exists as the composable,
-    security-agnostic primitive that `apply_relay_mission_mutation()`
-    (below) wraps with the real Phase 15.12.1 session-security gate.
-    Do not expose this function directly as a Relay control action."""
+    ownership/session-binding check, and -- deliberately, as the
+    lower-level, security-agnostic primitive -- does NOT enforce Phase
+    15.13.2's stronger "revision cannot be omitted when one durably
+    exists" rule (`require_revision_if_present` defaults to `False`
+    here). It exists as the composable primitive that
+    `apply_relay_mission_mutation()` (below) uses as PART of its own
+    larger atomic transaction. Do not expose this function directly as
+    a Relay control action."""
     try:
-        outcome_str, mission = apply_mutation_with_precondition(
+        outcome_str, mission, detail = apply_mutation_with_precondition(
             conn, precondition.mission_id,
             expected_state=precondition.expected_state,
             expected_revision=precondition.expected_revision,
@@ -317,7 +316,7 @@ def apply_mission_mutation_precondition(
         return RelayMutationResult(RelayMutationOutcome.FAILED, None, str(e))
 
     outcome = RelayMutationOutcome(outcome_str)
-    return RelayMutationResult(outcome, mission, _OUTCOME_DETAIL[outcome_str])
+    return RelayMutationResult(outcome, mission, detail)
 
 
 def apply_relay_mission_mutation(
@@ -326,35 +325,76 @@ def apply_relay_mission_mutation(
     evidence_ref: str | None = None, now_fn=_default_clock,
 ) -> RelayMutationResult:
     """THE actual Relay-authorized mutation control boundary (Phase
-    15.13.1 closure). Before any mutation, this function proves via
-    `require_security_valid_session()` (the exact same Phase 15.12.1
-    boundary every other Relay entrypoint uses -- never a duplicated
-    or re-implemented security model):
+    15.13.2 closure: now genuinely ATOMIC end-to-end).
 
-      * the session belongs to `authenticated_user_id` (ownership);
-      * the session is not revoked/expired/idle-expired
-        (`SessionSecurityInvalidError`);
-      * the session's device is not revoked and device/mode
-        compatibility holds (`RelayAccessDeniedError`/
-        `SessionSecurityInvalidError`).
+    Phase 15.13.1's version called `require_security_valid_session()`
+    (whose own reads COMMIT internally) and only LATER, in a separate
+    transaction, locked and mutated the mission row -- a real TOCTOU
+    window: a concurrent session/device revocation could commit in
+    between, and the mutation would still proceed using the earlier,
+    now-stale security read.
 
-    Then, and only then, it proves `session.mission_id ==
-    precondition.mission_id` -- a caller cannot mutate a mission a
-    real, valid session simply is not bound to. A mission ID alone is
-    never proof of Relay authority. Only after both checks pass does
-    it delegate to `apply_mission_mutation_precondition()` for the
-    atomic, revision-aware precondition-and-write."""
-    session, device = require_security_valid_session(
-        conn, session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn,
-    )
-    if session.mission_id != precondition.mission_id:
-        raise RelayReconnectAccessDeniedError(
-            f"relay session {session_id!r} is bound to mission {session.mission_id!r}, not "
-            f"{precondition.mission_id!r} -- a mission ID alone is not proof of Relay authority"
+    Here, ONE transaction establishes a single deterministic lock
+    order -- Relay session -> device -> mission -- and holds every
+    lock until a single final commit:
+
+      1. `require_security_valid_session_locked()` locks the session
+         row, then the bound device row, `FOR UPDATE`, and evaluates
+         the EXACT SAME pure `evaluate_session_security()` rule every
+         other Relay entrypoint uses (ownership, revocation, absolute
+         expiry, inactivity, device revocation, device/mode
+         compatibility) -- without committing.
+      2. `session.mission_id == precondition.mission_id` is verified
+         -- a mission ID alone is never proof of Relay authority.
+      3. `_apply_mutation_with_precondition_locked()` locks the
+         mission row `FOR UPDATE` and evaluates/applies the mutation,
+         with `require_revision_if_present=True` -- the Relay-
+         authoritative path cannot have its optimistic-concurrency
+         check bypassed merely by omitting `expected_revision`.
+      4. ONE commit releases all three locks together.
+
+    Ordering guarantee this closes: if a concurrent revocation's
+    UPDATE commits before this transaction acquires the session-row
+    lock, this transaction's own re-read (after acquiring the lock)
+    observes the revoked state and denies. If this transaction
+    acquires the session-row lock FIRST (session still valid) and
+    commits its mutation, a revocation that comes after is legal and
+    has no bearing on the already-durably-applied mutation -- Postgres
+    serializes the two transactions in whichever order they actually
+    acquire/release the lock, and this function never uses information
+    from a read older than that ordering.
+
+    Any exception -- expected (`SessionSecurityInvalidError`,
+    `RelayAccessDeniedError`, `RelayReconnectAccessDeniedError`) or
+    genuinely unexpected -- rolls back before propagating, except
+    `MissionNotFoundError`/`MissionStoreError`, which convert to a
+    typed `FAILED` result (matching `apply_mission_mutation_precondition()`'s
+    established convention) after rollback."""
+    try:
+        session, device = require_security_valid_session_locked(
+            conn, session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn,
         )
-    return apply_mission_mutation_precondition(
-        conn, precondition, new_state=new_state, evidence_ref=evidence_ref,
-    )
+        if session.mission_id != precondition.mission_id:
+            raise RelayReconnectAccessDeniedError(
+                f"relay session {session_id!r} is bound to mission {session.mission_id!r}, not "
+                f"{precondition.mission_id!r} -- a mission ID alone is not proof of Relay authority"
+            )
+        with conn.cursor() as cur:
+            outcome_str, mission_row, detail = _apply_mutation_with_precondition_locked(
+                cur, precondition.mission_id,
+                expected_state=precondition.expected_state,
+                expected_revision=precondition.expected_revision,
+                new_state=new_state, evidence_ref=evidence_ref,
+                require_revision_if_present=True,
+            )
+    except (MissionNotFoundError, MissionStoreError) as e:
+        conn.rollback()
+        return RelayMutationResult(RelayMutationOutcome.FAILED, None, str(e))
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+    return RelayMutationResult(RelayMutationOutcome(outcome_str), mission_row, detail)
 
 
 # ── Minimal edit/revision-conflict primitive (spec sections 27, 31) ──

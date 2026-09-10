@@ -225,27 +225,42 @@ def resume_mission(conn, mission_id: str, *, evidence_ref: str | None = None) ->
     return transition_mission(conn, mission_id, MissionState.RUNNING, evidence_ref=evidence_ref)
 
 
-def apply_mutation_with_precondition(
-    conn, mission_id: str, *,
+def _apply_mutation_with_precondition_locked(
+    cur, mission_id: str, *,
     expected_state: MissionState | None,
     expected_revision: str | None,
     new_state: MissionState,
     evidence_ref: str | None = None,
-) -> tuple[str, dict]:
-    """Phase 15.13.1 -- atomically, under ONE row lock held for the
-    FULL read-decide-write sequence, closes a real gap the earlier
-    two-step pattern (`get_mission()` in its own transaction, followed
-    LATER by a separate `transition_mission()` call) left open: a
-    concurrent writer could change the row in the window between the
-    precondition read and the write. Here, the precondition
-    comparison and the write share the IDENTICAL locked row read --
-    there is no such window.
+    require_revision_if_present: bool = False,
+) -> tuple[str, dict, str]:
+    """Phase 15.13.2 -- the TRANSACTION-COMPOSABLE core: operates on an
+    ALREADY-OPEN cursor inside the CALLER's transaction. Never commits
+    or rolls back -- so a caller that ALSO needs to lock/validate other
+    durable state first (e.g. a Relay session/device row -- see
+    `orca.mission.relay_security.require_security_valid_session_locked()`)
+    can compose this into ONE larger atomic transaction with a single
+    final commit, rather than this function committing independently
+    and leaving a window between an earlier validation and this write.
 
-    Returns `(outcome, mission_row)` where `outcome` is one of
+    Locks the mission row `FOR UPDATE`, evaluates the caller's
+    `expected_state`/`expected_revision` against that SAME locked
+    read, and -- only if eligible -- performs the `state_machine`-
+    validated transition in the SAME transaction.
+
+    Returns `(outcome, mission_row, detail)` where `outcome` is one of
     `"APPLIED"`, `"STALE_CONFLICT"`, `"DENIED"`:
 
       * Already at `new_state` (a racing, identical, later request):
-        `"APPLIED"`, idempotent no-op, no redundant write.
+        `"APPLIED"`, idempotent no-op, no redundant write -- `detail`
+        explicitly says no precondition (state or revision) was
+        validated, so this can never be misread as "the caller's
+        revision was confirmed current."
+      * `require_revision_if_present=True` and the durable row has a
+        non-empty `current_revision` but the caller supplied none (or
+        an empty string): `"STALE_CONFLICT"` -- optimistic concurrency
+        cannot be bypassed by omitting the revision. Skipped entirely
+        when the durable revision is genuinely absent (nothing to
+        compare against, never fabricated).
       * `expected_state`/`expected_revision` (when supplied) do not
         match the LOCKED, actual, current row: `"STALE_CONFLICT"`.
       * A `new_state` of RUNNING is only reachable from the same
@@ -257,56 +272,96 @@ def apply_mutation_with_precondition(
       * Any other illegal transition per the canonical state machine:
         `"DENIED"`.
 
-    Raises `MissionNotFoundError` if the mission does not exist --
-    callers that want a typed FAILED outcome instead should catch it.
-    `expected_revision=None` skips the revision check entirely (a
-    genuinely absent/unset current_revision is never fabricated)."""
+    Raises `MissionNotFoundError` if the mission does not exist, or
+    `MissionStoreError` if the row changed unexpectedly under the
+    lock -- the caller is responsible for rollback (see
+    `apply_mutation_with_precondition()` below for the standalone,
+    committing wrapper's defensive `except Exception` handling)."""
+    cur.execute("SELECT * FROM missions WHERE id = %s FOR UPDATE", (mission_id,))
+    row = cur.fetchone()
+    if row is None:
+        raise MissionNotFoundError(f"No such mission: {mission_id}")
+    mission_row = dict(row)
+    actual_state = MissionState(mission_row["state"])
+    actual_revision = mission_row.get("current_revision")
+
+    if actual_state is new_state:
+        return "APPLIED", mission_row, (
+            "IDEMPOTENT_NO_OP: mission already durably at the requested target state -- "
+            "no write was performed, and no precondition (state or revision) was validated "
+            "against this specific request"
+        )
+
+    if require_revision_if_present and actual_revision and not expected_revision:
+        return "STALE_CONFLICT", mission_row, (
+            f"durable mission has current_revision={actual_revision!r} but the caller supplied "
+            f"no expected_revision -- optimistic concurrency cannot be bypassed by omitting it"
+        )
+
+    if expected_state is not None and actual_state is not expected_state:
+        return "STALE_CONFLICT", mission_row, (
+            f"caller expected state {expected_state.value!r}, mission is actually {actual_state.value!r}"
+        )
+    if expected_revision is not None and actual_revision != expected_revision:
+        return "STALE_CONFLICT", mission_row, (
+            f"caller expected revision {expected_revision!r}, mission is actually at {actual_revision!r}"
+        )
+
+    if new_state is MissionState.RUNNING and actual_state not in _RESUMABLE_STATES:
+        return "DENIED", mission_row, (
+            f"RUNNING is only reachable from {sorted(s.value for s in _RESUMABLE_STATES)} "
+            f"via this primitive; mission is actually {actual_state.value!r}"
+        )
+
+    try:
+        validated_new = transition(actual_state, new_state, evidence_ref=evidence_ref)
+    except MissionStateError as e:
+        return "DENIED", mission_row, str(e)
+
+    now = _now_iso()
+    cur.execute(
+        "UPDATE missions SET state = %s, updated_at = %s WHERE id = %s AND state = %s",
+        (validated_new.value, now, mission_id, actual_state.value),
+    )
+    if cur.rowcount != 1:
+        raise MissionStoreError(
+            f"Mission {mission_id} state changed unexpectedly during atomic mutation "
+            f"(expected {actual_state.value}); the row lock was not held for the full transaction."
+        )
+    mission_row = dict(mission_row)
+    mission_row["state"] = validated_new.value
+    mission_row["updated_at"] = now
+    return "APPLIED", mission_row, "mutation applied atomically under a single locked row read"
+
+
+def apply_mutation_with_precondition(
+    conn, mission_id: str, *,
+    expected_state: MissionState | None,
+    expected_revision: str | None,
+    new_state: MissionState,
+    evidence_ref: str | None = None,
+    require_revision_if_present: bool = False,
+) -> tuple[str, dict, str]:
+    """Phase 15.13.1/15.13.2 -- the standalone, committing entrypoint:
+    opens its own single transaction around `_apply_mutation_with_
+    precondition_locked()` above and commits once. Any exception --
+    expected (`MissionNotFoundError`, `MissionStoreError`) or
+    genuinely unexpected (a raw database error, etc.) -- rolls back
+    before propagating (Phase 15.13.2 item 5: every exit path must
+    release the row lock; no exception type is swallowed)."""
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM missions WHERE id = %s FOR UPDATE", (mission_id,))
-            row = cur.fetchone()
-            if row is None:
-                raise MissionNotFoundError(f"No such mission: {mission_id}")
-            mission_row = dict(row)
-            actual_state = MissionState(mission_row["state"])
-            actual_revision = mission_row.get("current_revision")
-
-            if actual_state is new_state:
-                conn.commit()  # release the row lock -- nothing to write
-                return "APPLIED", mission_row
-
-            if expected_state is not None and actual_state is not expected_state:
-                conn.commit()
-                return "STALE_CONFLICT", mission_row
-            if expected_revision is not None and actual_revision != expected_revision:
-                conn.commit()
-                return "STALE_CONFLICT", mission_row
-
-            if new_state is MissionState.RUNNING and actual_state not in _RESUMABLE_STATES:
-                conn.commit()
-                return "DENIED", mission_row
-
-            try:
-                validated_new = transition(actual_state, new_state, evidence_ref=evidence_ref)
-            except MissionStateError:
-                conn.commit()
-                return "DENIED", mission_row
-
-            now = _now_iso()
-            cur.execute(
-                "UPDATE missions SET state = %s, updated_at = %s WHERE id = %s AND state = %s",
-                (validated_new.value, now, mission_id, actual_state.value),
+            outcome, mission_row, detail = _apply_mutation_with_precondition_locked(
+                cur, mission_id,
+                expected_state=expected_state, expected_revision=expected_revision,
+                new_state=new_state, evidence_ref=evidence_ref,
+                require_revision_if_present=require_revision_if_present,
             )
-            if cur.rowcount != 1:
-                raise MissionStoreError(
-                    f"Mission {mission_id} state changed unexpectedly during atomic mutation "
-                    f"(expected {actual_state.value}); the row lock was not held for the full transaction."
-                )
-    except (MissionNotFoundError, MissionStoreError):
+    except Exception:
         conn.rollback()
         raise
     conn.commit()
-    return "APPLIED", get_mission(conn, mission_id)
+    return outcome, mission_row, detail
 
 
 # ─────────────────────────────────────────────────────────────────

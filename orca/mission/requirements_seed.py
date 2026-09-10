@@ -962,10 +962,42 @@ def seed_registry() -> None:
         "REQ-RELAY-STALEMUTATION-001", RequirementStatus.IMPLEMENTED,
         implementation_files=("orca/mission/relay_reconnect.py", "orca/mission/mission_store.py"),
     )
+    # PHASE 15.13.2 RECONCILIATION (append-only): a further owner audit
+    # found the 15.13.1 VERIFIED claim (immediately below) still
+    # incomplete on two points -- (1) `apply_relay_mission_mutation()`
+    # called `require_security_valid_session()`, whose own reads
+    # COMMIT internally, and only LATER, in a SEPARATE transaction,
+    # locked and mutated the mission row: a real TOCTOU window in
+    # which a concurrent session/device revocation could commit in
+    # between, and the mutation would still proceed using the earlier,
+    # now-stale security read; (2) `RelayMutationPrecondition.
+    # expected_revision` could simply be omitted (left `None`) even
+    # when the durable mission had a real `current_revision`, silently
+    # opting the caller out of optimistic-concurrency protection.
+    # Neither gap was caught by the 15.13.1 test suite, which never
+    # forced a real session/device-revocation-vs-mutation race with
+    # two separate connections, and never tested omitting
+    # `expected_revision` against a mission that durably has one.
+    # This closure (15.13.2) fixes both: `require_security_valid_
+    # session_locked()` (new, in `relay_security.py`) locks the Relay
+    # session row, then the bound device row, `FOR UPDATE`, inside the
+    # SAME transaction the mission-row lock and mutation now also
+    # share (deterministic lock order: session -> device -> mission,
+    # one final commit); `_apply_mutation_with_precondition_locked()`
+    # gained `require_revision_if_present`, which
+    # `apply_relay_mission_mutation()` always passes as `True` -- a
+    # durable non-empty `current_revision` with an omitted/empty
+    # `expected_revision` is now `STALE_CONFLICT`, never silently
+    # eligible. The requirement registry has no "re-verify" transition
+    # (VERIFIED is terminal, forward-only) -- re-earning is reflected
+    # here by pointing THIS SAME, single VERIFIED transition's
+    # `evidence_ref`/`test_files` at the 15.13.2 evidence section,
+    # append-only, rather than by a second transition call (which the
+    # registry's own state machine would reject).
     transition(
         "REQ-RELAY-STALEMUTATION-001", RequirementStatus.VERIFIED,
         test_files=("tests/test_relay_reconnect_live_neon.py",),
-        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-15131-relay-mutation-atomicity--reconnect-state-closure",
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-15132--atomic-relay-security--revision-enforcement-closure",
     )
 
     # -- Phase 15.7: Product Contract + Requirement Compiler --
