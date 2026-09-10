@@ -569,14 +569,20 @@ def test_relay_mutation_with_a_valid_session_and_matching_mission_succeeds():
 
 def test_real_two_device_concurrent_mutation_race_is_atomic():
     """Two REAL Relay sessions (two devices) for the SAME user/mission
-    race to pause the SAME mission from the SAME observed state,
-    forced to genuine simultaneity via a threading.Barrier across two
-    independent DB connections. Exactly one wins (APPLIED); the other,
-    after acquiring the row lock, observes the ALREADY-CHANGED durable
-    state and reports STALE_CONFLICT -- never applying a stale
-    mutation. This proves the lock and the precondition check observe
-    the SAME row version, not merely that the final state is correct
-    (which sequential calls would also achieve)."""
+    race from the SAME observed state (RUNNING), forced to genuine
+    simultaneity via a threading.Barrier across two independent DB
+    connections -- but toward DIFFERENT target states (PAUSE vs
+    CANCEL), so the loser's read can NEVER coincidentally land on its
+    own idempotent "already at target" shortcut (which is a separate,
+    explicitly-allowed outcome for two IDENTICAL racing requests --
+    see test_simultaneous_identical_pause_requests_reconcile_safely).
+    Exactly one wins (APPLIED); the other, after acquiring the row
+    lock, observes the ALREADY-CHANGED durable state (now neither its
+    own expected_state NOR its own target) and reports STALE_CONFLICT
+    -- never applying a stale mutation. This proves the lock and the
+    precondition check observe the SAME row version, not merely that
+    the final state is correct (which sequential calls would also
+    achieve)."""
     owner = _uid()
     setup_conn = _fresh_connection()
     try:
@@ -592,13 +598,13 @@ def test_real_two_device_concurrent_mutation_race_is_atomic():
     results = []
     errors = []
 
-    def _worker(session_id):
+    def _worker(session_id, target_state):
         conn = _fresh_connection()
         try:
             barrier.wait(timeout=5)
             result = apply_relay_mission_mutation(
                 conn, session_id=session_id, authenticated_user_id=owner,
-                precondition=precondition, new_state=MissionState.PAUSED_USER,
+                precondition=precondition, new_state=target_state,
             )
             results.append(result.outcome)
         except Exception as e:  # noqa: BLE001
@@ -606,8 +612,8 @@ def test_real_two_device_concurrent_mutation_race_is_atomic():
         finally:
             conn.close()
 
-    t1 = threading.Thread(target=_worker, args=(session_a.id,))
-    t2 = threading.Thread(target=_worker, args=(session_b.id,))
+    t1 = threading.Thread(target=_worker, args=(session_a.id, MissionState.PAUSED_USER))
+    t2 = threading.Thread(target=_worker, args=(session_b.id, MissionState.CANCELLED))
     t1.start(); t2.start()
     t1.join(timeout=15); t2.join(timeout=15)
 
@@ -618,7 +624,11 @@ def test_real_two_device_concurrent_mutation_race_is_atomic():
     final_conn = _fresh_connection()
     try:
         final = get_mission(final_conn, mission_id)
-        assert final["state"] == MissionState.PAUSED_USER.value
+        # exactly one target won -- which one is nondeterministic (the
+        # race is genuine), but it must be EXACTLY one of the two
+        # targets attempted, never RUNNING (unmutated) and never a
+        # third value.
+        assert final["state"] in (MissionState.PAUSED_USER.value, MissionState.CANCELLED.value)
     finally:
         final_conn.close()
 
