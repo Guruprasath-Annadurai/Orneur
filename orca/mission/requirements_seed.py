@@ -860,6 +860,66 @@ def seed_registry() -> None:
             "without re-issuing the operation.",
         ),
     ))
+    # Phase 15.13 implements orca/mission/relay_reconnect.py: a typed
+    # RelayOperationTruth model (never confusing connection loss with
+    # operation failure/success) plus reconnect_to_mission()/
+    # reconcile_operation(), layered on the already-proven Phase 15.5
+    # operation_store.py lifecycle unmodified. VERIFIED here against a
+    # REAL live-Neon proof of the exact acceptance criterion above: a
+    # deploy-shaped operation is REQUESTED -> AUTHORIZED -> STARTED ->
+    # executed exactly once (RecordingTestExecutor.call_count == 1) ->
+    # SUCCEEDED, the client's response is simulated lost (never read),
+    # a FRESH connection reconnects and observes RelayOperationTruth.
+    # CONFIRMED, and a deliberate retry of start_and_execute_operation()
+    # still returns SUCCEEDED with executor.call_count still 1 (see
+    # tests/test_relay_reconnect_live_neon.py::
+    # test_lost_successful_response_reconnect_reports_confirmed_executor_count_still_one,
+    # 219/219 passed against a disposable Neon branch, run
+    # 34459590675). The companion FAILED- and STARTED/unknown-outcome
+    # scenarios are proven by the two adjacent tests in the same file.
+    transition(
+        "REQ-RECONNECT-TRUTH-001", RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/relay_reconnect.py",),
+    )
+    transition(
+        "REQ-RECONNECT-TRUTH-001", RequirementStatus.VERIFIED,
+        test_files=("tests/test_relay_reconnect.py", "tests/test_relay_reconnect_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1513--reconnect--idempotency",
+    )
+
+    # -- Multi-Device Stale-Write Conflict (spec sections 15-19, 27) --
+    # No existing requirement captures "a stale device's mission-state
+    # mutation attempt is reported truthfully (STALE_CONFLICT/DENIED),
+    # never silently last-write-wins" -- REQ-RELAY-STATE-001 covers
+    # snapshot/session integrity, not mutation-conflict semantics.
+    register(Requirement(
+        id="REQ-RELAY-STALEMUTATION-001",
+        source_section="spec sections 15-19, 27",
+        statement="A mission-state mutation (pause/resume) attempted by a device whose "
+                   "view of mission state is stale is never silently last-write-wins: it "
+                   "is reported as a typed STALE_CONFLICT, distinct from a DENIED illegal "
+                   "transition and from a successful idempotent no-op when a racing "
+                   "identical request already reached the same target state.",
+        acceptance_criteria=(
+            "A test moves a mission to RUNNING, then attempts a PAUSE precondition whose "
+            "expected_state no longer matches (READY) and confirms STALE_CONFLICT is "
+            "reported without mutating the mission's actual durable state.",
+            "A test issues the same PAUSE precondition twice in a row (simulating a race) "
+            "and confirms the second call reports APPLIED as an idempotent no-op rather "
+            "than an error, against real live Neon.",
+            "A test attempts an illegal transition (resume a DRAFT mission) with an "
+            "accurate expected_state and confirms DENIED, distinct from STALE_CONFLICT.",
+        ),
+    ))
+    transition(
+        "REQ-RELAY-STALEMUTATION-001", RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/relay_reconnect.py",),
+    )
+    transition(
+        "REQ-RELAY-STALEMUTATION-001", RequirementStatus.VERIFIED,
+        test_files=("tests/test_relay_reconnect_live_neon.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1513--reconnect--idempotency",
+    )
 
     # -- Phase 15.7: Product Contract + Requirement Compiler --
     register(Requirement(

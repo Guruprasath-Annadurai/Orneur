@@ -95,16 +95,29 @@ def test_canonical_req_relay_mobilereview_001_is_verified():
         requirements_module.reset_registry_for_tests()
 
 
-def test_canonical_req_reconnect_truth_001_remains_unimplemented():
-    """Untouched -- its lost-response/operation-reconciliation
-    criterion belongs entirely to Phase 15.13."""
+def test_canonical_req_reconnect_truth_001_is_verified_in_phase_15_13():
+    """Phase 15.13: VERIFIED only after a real live-Neon proof of the
+    exact acceptance criterion (canonical lost-successful-response
+    reconnect, exactly-once executor preserved) -- not merely because
+    Phase 15.5 idempotency already existed."""
     _seed_canonical_registry()
     try:
         req = requirements_module.get("REQ-RECONNECT-TRUTH-001")
-        assert req.status is RequirementStatus.UNIMPLEMENTED
-        assert req.implementation_files == ()
-        assert req.test_files == ()
-        assert req.evidence_ref is None
+        assert req.status is RequirementStatus.VERIFIED
+        assert "orca/mission/relay_reconnect.py" in req.implementation_files
+        assert "tests/test_relay_reconnect_live_neon.py" in req.test_files
+        assert req.evidence_ref is not None and req.evidence_ref.strip() != ""
+    finally:
+        requirements_module.reset_registry_for_tests()
+
+
+def test_canonical_req_relay_stalemutation_001_is_verified_in_phase_15_13():
+    _seed_canonical_registry()
+    try:
+        req = requirements_module.get("REQ-RELAY-STALEMUTATION-001")
+        assert req.status is RequirementStatus.VERIFIED
+        assert "orca/mission/relay_reconnect.py" in req.implementation_files
+        assert req.evidence_ref is not None and req.evidence_ref.strip() != ""
     finally:
         requirements_module.reset_registry_for_tests()
 
