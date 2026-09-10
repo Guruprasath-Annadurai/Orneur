@@ -101,9 +101,16 @@ def _seed_l3_mission(conn, owner_user_id: str, *, state: MissionState = MissionS
     return mission_id
 
 
-def _seed_session(conn, owner_user_id: str, mission_id: str):
-    device = register_device(conn, authenticated_user_id=owner_user_id, trust_level=DeviceTrustLevel.PUBLIC, name="dev")
-    session = create_relay_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner_user_id, mode=RelayMode.PUBLIC_DEVICE)
+def _seed_session(conn, owner_user_id: str, mission_id: str, *, now_fn=None):
+    """`now_fn`, when given, seeds the DEVICE and SESSION using THAT
+    same simulated clock -- so a session "created" at a later
+    simulated instant (e.g. a device reconnecting hours into a mission
+    window) is itself still fresh/valid AT that instant, rather than
+    colliding with its own short-lived PUBLIC_DEVICE TTL/inactivity
+    policy (a completely separate concept from the mission window)."""
+    kwargs = {"now_fn": now_fn} if now_fn is not None else {}
+    device = register_device(conn, authenticated_user_id=owner_user_id, trust_level=DeviceTrustLevel.PUBLIC, name="dev", **kwargs)
+    session = create_relay_session(conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner_user_id, mode=RelayMode.PUBLIC_DEVICE, **kwargs)
     return device, session
 
 
@@ -283,8 +290,8 @@ def test_relay_reconnect_does_not_reset_window_deadline():
         mission = start_autonomous_window(conn, mission_id=mission_id, now_fn=lambda: base_now)
         deadline_before = mission["window_deadline_at"]
 
-        _, session = _seed_session(conn, owner, mission_id)
         later = base_now + timedelta(hours=5)
+        _, session = _seed_session(conn, owner, mission_id, now_fn=lambda: later)
         reconnect_to_mission(conn, session_id=session.id, authenticated_user_id=owner, now_fn=lambda: later)
 
         after = get_mission(conn, mission_id)
@@ -546,7 +553,6 @@ def test_window_checkpoint_is_secret_safe_through_relay():
     conn = _fresh_connection()
     try:
         mission_id = _seed_l3_mission(conn, owner)
-        _, session = _seed_session(conn, owner, mission_id)
         base_now = datetime.now(timezone.utc)
         start_autonomous_window(conn, mission_id=mission_id, now_fn=lambda: base_now)
 
@@ -557,6 +563,11 @@ def test_window_checkpoint_is_secret_safe_through_relay():
         after = base_now + timedelta(seconds=DEFAULT_AUTONOMOUS_WINDOW_SECONDS + 1)
         enforce_window_expiry(conn, mission_id=mission_id, now_fn=lambda: after, **leaky_kwargs)
 
+        # A device/session created AROUND the reconnect time (fresh,
+        # valid at that instant) -- proves checkpoint secret-safety
+        # through Relay, independent of the unrelated Relay-session
+        # TTL/inactivity policy.
+        _, session = _seed_session(conn, owner, mission_id, now_fn=lambda: after)
         reconnect_result = reconnect_to_mission(conn, session_id=session.id, authenticated_user_id=owner, now_fn=lambda: after)
         summary = reconnect_result.snapshot.checkpoint
         assert "S3cr3tPassw0rd" not in (summary.diff_ref or "")

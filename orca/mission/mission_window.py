@@ -198,12 +198,19 @@ def start_autonomous_window(
     clock and transitions READY -> RUNNING where applicable, all in
     one transaction with one commit.
 
-    Idempotent, not extending: if the mission ALREADY has a window
-    (`window_started_at`/`window_deadline_at` both already set), this
-    returns the EXISTING, UNCHANGED window -- a second `start()` call
-    never resets the deadline to `now + window_seconds` again (spec
-    section 4 explicitly allows either "return unchanged" or "reject";
-    this module chooses the idempotent-return form)."""
+    Idempotent, not extending: if the mission ALREADY has a STILL-
+    ACTIVE window (`window_started_at`/`window_deadline_at` both set
+    AND the deadline has not yet passed), this returns the EXISTING,
+    UNCHANGED window -- a second `start()` call never resets the
+    deadline to `now + window_seconds` again (spec section 4
+    explicitly allows either "return unchanged" or "reject"; this
+    module chooses the idempotent-return form). A window whose
+    deadline has ALREADY passed is a CLOSED window -- not "still
+    active" -- so an explicit resume (via `resume_after_window()`,
+    which transitions PAUSED_WINDOW_REACHED -> RUNNING and then calls
+    this function) correctly starts a genuinely NEW window with fresh
+    timestamps rather than being blocked by the old, already-expired
+    one still sitting in those columns."""
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM missions WHERE id = %s FOR UPDATE", (mission_id,))
@@ -219,9 +226,17 @@ def start_autonomous_window(
                     f"six-hour autonomous window applies only to L3/L4"
                 )
 
-            if mission_row.get("window_started_at") is not None and mission_row.get("window_deadline_at") is not None:
-                conn.commit()
-                return mission_row
+            now_dt = now_fn()
+            existing_started = mission_row.get("window_started_at")
+            existing_deadline = mission_row.get("window_deadline_at")
+            if existing_started is not None and existing_deadline is not None:
+                try:
+                    still_active = _parse_iso(existing_deadline) > now_dt
+                except (ValueError, TypeError):
+                    still_active = False
+                if still_active:
+                    conn.commit()
+                    return mission_row
 
             current_state = MissionState(mission_row["state"])
             if current_state not in _WINDOW_STARTABLE_STATES:
@@ -230,7 +245,6 @@ def start_autonomous_window(
                     f"not permit beginning an autonomous window (must be READY or RUNNING)"
                 )
 
-            now_dt = now_fn()
             now_iso = now_dt.isoformat()
             deadline_iso = (now_dt + timedelta(seconds=window_seconds)).isoformat()
             cur.execute(
