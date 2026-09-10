@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 import pytest
 
 from orca.mission.db import apply_schema, get_conn
-from orca.mission.mission_store import create_mission, get_mission
+from orca.mission.mission_store import create_checkpoint, create_mission, get_checkpoint, get_mission, transition_mission
 from orca.mission.executor import RecordingTestExecutor
 from orca.mission.operation_store import (
     authorize_operation,
@@ -31,15 +31,28 @@ from orca.mission.operation_store import (
     start_and_execute_operation,
 )
 from orca.mission.relay_reconnect import (
+    CachedRelayView,
+    CheckpointCurrency,
+    RelayConnectionState,
+    RelayFreshness,
     RelayMutationOutcome,
     RelayMutationPrecondition,
     RelayOperationTruth,
     RelayReconnectAccessDeniedError,
+    RevisionCurrency,
     apply_mission_mutation_precondition,
+    apply_relay_mission_mutation,
+    check_checkpoint_currency,
+    check_revision_currency,
     reconcile_operation,
     reconnect_to_mission,
 )
-from orca.mission.relay_security import create_relay_session, touch_relay_session_securely
+from orca.mission.relay_security import (
+    SessionSecurityInvalidError,
+    create_relay_session,
+    revoke_own_relay_session,
+    touch_relay_session_securely,
+)
 from orca.mission.relay_store import DeviceTrustLevel, RelayMode, register_device
 from orca.mission.state_machine import MissionState
 
@@ -78,6 +91,12 @@ def _seed_mission(conn, owner_user_id: str) -> str:
         autonomy_level="L1", owner_user_id=owner_user_id, current_revision="rev1", workspace_id="ws_relay_reconnect",
     )
     return mission_id
+
+
+def _advance_to_running(conn, mission_id: str) -> None:
+    transition_mission(conn, mission_id, MissionState.PLANNING)
+    transition_mission(conn, mission_id, MissionState.READY)
+    transition_mission(conn, mission_id, MissionState.RUNNING)
 
 
 def _seed_session(conn, owner_user_id: str, mission_id: str, *, mode=RelayMode.TRUSTED_DEVICE):
@@ -454,5 +473,441 @@ def test_secret_battery_does_not_survive_into_reconciliation_summary():
 
         summary = reconcile_operation(conn, session_id=session.id, authenticated_user_id=owner, operation_id=op_id)
         assert "S3cr3tPassw0rd" not in (summary.result_ref or "")
+    finally:
+        conn.close()
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Phase 15.13.1 -- Relay Mutation Atomicity + Reconnect-State Closure
+# ═════════════════════════════════════════════════════════════════════
+
+# ── Section 1: Relay mutation must require a security-valid session ──
+
+def test_relay_mutation_for_a_different_mission_is_denied():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_a = _seed_mission(conn, owner)
+        mission_b = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission_a)
+        _, session_bound_to_a = _seed_session(conn, owner, mission_a)
+
+        precondition = RelayMutationPrecondition(mission_id=mission_b, expected_state=MissionState.RUNNING)
+        with pytest.raises(RelayReconnectAccessDeniedError):
+            apply_relay_mission_mutation(
+                conn, session_id=session_bound_to_a.id, authenticated_user_id=owner,
+                precondition=precondition, new_state=MissionState.PAUSED_USER,
+            )
+        # neither mission's durable state was touched
+        assert get_mission(conn, mission_a)["state"] == MissionState.RUNNING.value
+        assert get_mission(conn, mission_b)["state"] == MissionState.DRAFT.value
+    finally:
+        conn.close()
+
+
+def test_relay_mutation_by_a_different_user_is_denied():
+    owner = _uid()
+    other = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission)
+        other_mission = _seed_mission(conn, other)
+        _, other_session = _seed_session(conn, other, other_mission)
+
+        precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.RUNNING)
+        with pytest.raises(RelayReconnectAccessDeniedError):
+            apply_relay_mission_mutation(
+                conn, session_id=other_session.id, authenticated_user_id=other,
+                precondition=precondition, new_state=MissionState.PAUSED_USER,
+            )
+        assert get_mission(conn, mission)["state"] == MissionState.RUNNING.value
+    finally:
+        conn.close()
+
+
+def test_relay_mutation_with_revoked_session_is_denied():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission)
+        _, session = _seed_session(conn, owner, mission)
+        revoke_own_relay_session(conn, session.id, authenticated_user_id=owner)
+
+        precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.RUNNING)
+        with pytest.raises(SessionSecurityInvalidError):
+            apply_relay_mission_mutation(
+                conn, session_id=session.id, authenticated_user_id=owner,
+                precondition=precondition, new_state=MissionState.PAUSED_USER,
+            )
+        assert get_mission(conn, mission)["state"] == MissionState.RUNNING.value
+    finally:
+        conn.close()
+
+
+def test_relay_mutation_with_a_valid_session_and_matching_mission_succeeds():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission)
+        _, session = _seed_session(conn, owner, mission)
+
+        precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.RUNNING)
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.APPLIED
+        assert get_mission(conn, mission)["state"] == MissionState.PAUSED_USER.value
+    finally:
+        conn.close()
+
+
+# ── Section 3: real concurrent stale-write race (atomic precondition) ──
+
+def test_real_two_device_concurrent_mutation_race_is_atomic():
+    """Two REAL Relay sessions (two devices) for the SAME user/mission
+    race to pause the SAME mission from the SAME observed state,
+    forced to genuine simultaneity via a threading.Barrier across two
+    independent DB connections. Exactly one wins (APPLIED); the other,
+    after acquiring the row lock, observes the ALREADY-CHANGED durable
+    state and reports STALE_CONFLICT -- never applying a stale
+    mutation. This proves the lock and the precondition check observe
+    the SAME row version, not merely that the final state is correct
+    (which sequential calls would also achieve)."""
+    owner = _uid()
+    setup_conn = _fresh_connection()
+    try:
+        mission_id = _seed_mission(setup_conn, owner)
+        _advance_to_running(setup_conn, mission_id)
+        device_a, session_a = _seed_session(setup_conn, owner, mission_id)
+        device_b, session_b = _seed_session(setup_conn, owner, mission_id)
+    finally:
+        setup_conn.close()
+
+    precondition = RelayMutationPrecondition(mission_id=mission_id, expected_state=MissionState.RUNNING)
+    barrier = threading.Barrier(2)
+    results = []
+    errors = []
+
+    def _worker(session_id):
+        conn = _fresh_connection()
+        try:
+            barrier.wait(timeout=5)
+            result = apply_relay_mission_mutation(
+                conn, session_id=session_id, authenticated_user_id=owner,
+                precondition=precondition, new_state=MissionState.PAUSED_USER,
+            )
+            results.append(result.outcome)
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+        finally:
+            conn.close()
+
+    t1 = threading.Thread(target=_worker, args=(session_a.id,))
+    t2 = threading.Thread(target=_worker, args=(session_b.id,))
+    t1.start(); t2.start()
+    t1.join(timeout=15); t2.join(timeout=15)
+
+    assert not errors, f"unexpected errors: {errors}"
+    assert len(results) == 2
+    assert sorted(o.value for o in results) == ["APPLIED", "STALE_CONFLICT"]
+
+    final_conn = _fresh_connection()
+    try:
+        final = get_mission(final_conn, mission_id)
+        assert final["state"] == MissionState.PAUSED_USER.value
+    finally:
+        final_conn.close()
+
+
+# ── Section 4: precondition must include revision ────────────────────
+
+def test_revision_matrix_same_state_same_revision_is_eligible():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)  # created with current_revision="rev1"
+        _advance_to_running(conn, mission)
+        _, session = _seed_session(conn, owner, mission)
+
+        precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.RUNNING, expected_revision="rev1")
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.APPLIED
+    finally:
+        conn.close()
+
+
+def test_revision_matrix_same_state_stale_revision_is_conflict():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission)
+        _, session = _seed_session(conn, owner, mission)
+
+        precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.RUNNING, expected_revision="rev0-stale")
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.STALE_CONFLICT
+        assert get_mission(conn, mission)["state"] == MissionState.RUNNING.value
+    finally:
+        conn.close()
+
+
+def test_revision_matrix_different_state_same_revision_is_conflict():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission)
+        _, session = _seed_session(conn, owner, mission)
+
+        precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.READY, expected_revision="rev1")
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.STALE_CONFLICT
+        assert get_mission(conn, mission)["state"] == MissionState.RUNNING.value
+    finally:
+        conn.close()
+
+
+def test_revision_matrix_both_stale_is_conflict():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission)
+        _, session = _seed_session(conn, owner, mission)
+
+        precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.READY, expected_revision="rev0-stale")
+        result = apply_relay_mission_mutation(
+            conn, session_id=session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.STALE_CONFLICT
+        assert get_mission(conn, mission)["state"] == MissionState.RUNNING.value
+    finally:
+        conn.close()
+
+
+# ── Section 5: minimal edit-conflict primitive (check_revision_currency) ──
+
+def test_check_revision_currency_matches_is_current():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _, session = _seed_session(conn, owner, mission)
+        result = check_revision_currency(
+            conn, session_id=session.id, authenticated_user_id=owner, mission_id=mission, expected_revision="rev1",
+        )
+        assert result is RevisionCurrency.CURRENT
+    finally:
+        conn.close()
+
+
+def test_check_revision_currency_mismatch_is_stale_conflict():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _, session = _seed_session(conn, owner, mission)
+        result = check_revision_currency(
+            conn, session_id=session.id, authenticated_user_id=owner, mission_id=mission, expected_revision="rev0-stale",
+        )
+        assert result is RevisionCurrency.STALE_CONFLICT
+    finally:
+        conn.close()
+
+
+def test_check_revision_currency_cross_mission_is_denied():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_a = _seed_mission(conn, owner)
+        mission_b = _seed_mission(conn, owner)
+        _, session_bound_to_a = _seed_session(conn, owner, mission_a)
+        with pytest.raises(RelayReconnectAccessDeniedError):
+            check_revision_currency(
+                conn, session_id=session_bound_to_a.id, authenticated_user_id=owner,
+                mission_id=mission_b, expected_revision="rev1",
+            )
+    finally:
+        conn.close()
+
+
+# ── Section 6: checkpoint currentness ─────────────────────────────────
+
+def test_checkpoint_matching_mission_revision_is_current():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _, session = _seed_session(conn, owner, mission)
+        checkpoint = create_checkpoint(
+            conn, id=f"ckpt_{uuid.uuid4().hex[:12]}", mission_id=mission, mission_state=MissionState.DRAFT,
+            repository="org/relay-reconnect-qual", current_revision="rev1",
+        )
+        result = check_checkpoint_currency(conn, session_id=session.id, authenticated_user_id=owner, checkpoint_id=checkpoint.id)
+        assert result is CheckpointCurrency.CURRENT
+    finally:
+        conn.close()
+
+
+def test_checkpoint_stale_after_mission_advances_but_history_preserved():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _, session = _seed_session(conn, owner, mission)
+        checkpoint = create_checkpoint(
+            conn, id=f"ckpt_{uuid.uuid4().hex[:12]}", mission_id=mission, mission_state=MissionState.DRAFT,
+            repository="org/relay-reconnect-qual", current_revision="rev1",
+        )
+        # Simulate the mission advancing to a new revision (test-only
+        # direct write -- no mission_store function mutates
+        # current_revision after creation, matching the established
+        # "fabricate an adversarial row via raw SQL" pattern used
+        # elsewhere in this test suite for device/mode-mismatch rows).
+        with conn.cursor() as cur:
+            cur.execute("UPDATE missions SET current_revision = %s WHERE id = %s", ("rev2", mission))
+        conn.commit()
+
+        result = check_checkpoint_currency(conn, session_id=session.id, authenticated_user_id=owner, checkpoint_id=checkpoint.id)
+        assert result is CheckpointCurrency.STALE
+
+        # the checkpoint itself is untouched -- still present, still rev1
+        reloaded = get_checkpoint(conn, checkpoint.id)
+        assert reloaded is not None
+        assert reloaded.current_revision == "rev1"
+    finally:
+        conn.close()
+
+
+def test_checkpoint_currency_cross_mission_is_denied():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_a = _seed_mission(conn, owner)
+        mission_b = _seed_mission(conn, owner)
+        _, session_bound_to_b = _seed_session(conn, owner, mission_b)
+        checkpoint = create_checkpoint(
+            conn, id=f"ckpt_{uuid.uuid4().hex[:12]}", mission_id=mission_a, mission_state=MissionState.DRAFT,
+            repository="org/relay-reconnect-qual", current_revision="rev1",
+        )
+        with pytest.raises(RelayReconnectAccessDeniedError):
+            check_checkpoint_currency(conn, session_id=session_bound_to_b.id, authenticated_user_id=owner, checkpoint_id=checkpoint.id)
+    finally:
+        conn.close()
+
+
+# ── Section 7: cancelled-mission stale-control proof ─────────────────
+
+def test_stale_device_cannot_mutate_a_durably_cancelled_mission():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _advance_to_running(conn, mission)
+        _, stale_session = _seed_session(conn, owner, mission)
+
+        # Device B (a separate, real, valid path -- not Relay-mediated
+        # here, matching "durably transitions through a valid path")
+        # cancels the mission.
+        transition_mission(conn, mission, MissionState.CANCELLED)
+        assert get_mission(conn, mission)["state"] == MissionState.CANCELLED.value
+
+        # Device A, still holding its stale RUNNING precondition,
+        # attempts to pause.
+        precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.RUNNING)
+        result = apply_relay_mission_mutation(
+            conn, session_id=stale_session.id, authenticated_user_id=owner,
+            precondition=precondition, new_state=MissionState.PAUSED_USER,
+        )
+        assert result.outcome is RelayMutationOutcome.STALE_CONFLICT
+        assert get_mission(conn, mission)["state"] == MissionState.CANCELLED.value
+
+        # ...and cannot "resume" it either.
+        resume_precondition = RelayMutationPrecondition(mission_id=mission, expected_state=MissionState.PAUSED_USER)
+        resume_result = apply_relay_mission_mutation(
+            conn, session_id=stale_session.id, authenticated_user_id=owner,
+            precondition=resume_precondition, new_state=MissionState.RUNNING,
+        )
+        assert resume_result.outcome is RelayMutationOutcome.STALE_CONFLICT
+        assert get_mission(conn, mission)["state"] == MissionState.CANCELLED.value
+
+        # Reconnect observes CANCELLED as durable truth.
+        reconnect_result = reconnect_to_mission(conn, session_id=stale_session.id, authenticated_user_id=owner)
+        assert reconnect_result.snapshot.mission_state == MissionState.CANCELLED.value
+    finally:
+        conn.close()
+
+
+# ── Section 8: operational network/freshness truth lifecycle ─────────
+
+def test_network_truth_lifecycle_offline_reconnecting_connected():
+    """Drives a REAL CachedRelayView through the canonical simulated
+    flow using a REAL security-valid server read for the successful
+    leg -- not enum membership alone."""
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _, session = _seed_session(conn, owner, mission)
+
+        view = CachedRelayView.initial()
+        assert view.connection_state is RelayConnectionState.OFFLINE
+        assert view.freshness is RelayFreshness.STALE
+
+        view.mark_connection_lost()
+        assert view.connection_state is RelayConnectionState.OFFLINE
+        assert view.freshness is RelayFreshness.STALE
+
+        view.begin_reconnecting()
+        assert view.connection_state is RelayConnectionState.RECONNECTING
+        assert view.freshness is RelayFreshness.STALE
+
+        result = reconnect_to_mission(conn, session_id=session.id, authenticated_user_id=owner)
+        view.apply_successful_reconnect(result)
+        assert view.connection_state is RelayConnectionState.CONNECTED
+        assert view.freshness is RelayFreshness.CURRENT
+    finally:
+        conn.close()
+
+
+def test_network_truth_lifecycle_failed_reconnect_stays_offline_and_stale():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission = _seed_mission(conn, owner)
+        _, session = _seed_session(conn, owner, mission)
+        revoke_own_relay_session(conn, session.id, authenticated_user_id=owner)
+
+        view = CachedRelayView(connection_state=RelayConnectionState.CONNECTED, freshness=RelayFreshness.CURRENT)
+        view.mark_connection_lost()
+        view.begin_reconnecting()
+        assert view.connection_state is RelayConnectionState.RECONNECTING
+
+        try:
+            reconnect_to_mission(conn, session_id=session.id, authenticated_user_id=owner)
+            raised = False
+        except SessionSecurityInvalidError:
+            raised = True
+        assert raised, "a revoked session must not produce a successful reconnect"
+        view.record_failed_reconnect()
+
+        # A failed reconnect must NEVER relabel the cached snapshot CURRENT.
+        assert view.connection_state is RelayConnectionState.OFFLINE
+        assert view.freshness is RelayFreshness.STALE
     finally:
         conn.close()

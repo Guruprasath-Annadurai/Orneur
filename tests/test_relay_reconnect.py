@@ -16,12 +16,18 @@ from __future__ import annotations
 import pytest
 
 from orca.mission.relay_reconnect import (
+    CachedRelayView,
+    CheckpointCurrency,
     OperationReconciliationSummary,
     RelayMutationOutcome,
     RelayReconnectError,
     RelayConnectionState,
     RelayFreshness,
     RelayOperationTruth,
+    RelayReconnectResult,
+    RevisionCurrency,
+    _classify_checkpoint_currency,
+    _classify_revision_currency,
     _summarize_operation_row,
     classify_operation_truth,
 )
@@ -116,3 +122,81 @@ def test_mission_state_running_is_a_real_canonical_state():
     # sanity: the precondition model is built on the real state machine,
     # not a private duplicate enum.
     assert MissionState.RUNNING.value == "RUNNING"
+
+
+# ── Revision-currency pure classification (Phase 15.13.1) ────────────
+
+def test_matching_expected_and_actual_revision_is_current():
+    assert _classify_revision_currency("rev1", "rev1") is RevisionCurrency.CURRENT
+
+
+def test_mismatched_revision_is_stale_conflict():
+    assert _classify_revision_currency("rev1", "rev2") is RevisionCurrency.STALE_CONFLICT
+
+
+def test_absent_actual_revision_is_never_silently_current():
+    # None == None would otherwise coincidentally "match" -- must not
+    # be treated as an honest currentness claim.
+    assert _classify_revision_currency(None, None) is RevisionCurrency.STALE_CONFLICT
+    assert _classify_revision_currency("rev1", None) is RevisionCurrency.STALE_CONFLICT
+
+
+# ── Checkpoint-currency pure classification (Phase 15.13.1) ──────────
+
+def test_matching_checkpoint_and_mission_revision_is_current():
+    assert _classify_checkpoint_currency("rev1", "rev1") is CheckpointCurrency.CURRENT
+
+
+def test_mismatched_checkpoint_revision_is_stale():
+    assert _classify_checkpoint_currency("rev1", "rev2") is CheckpointCurrency.STALE
+
+
+def test_absent_revision_on_either_side_fails_closed_to_stale():
+    assert _classify_checkpoint_currency(None, "rev1") is CheckpointCurrency.STALE
+    assert _classify_checkpoint_currency("rev1", None) is CheckpointCurrency.STALE
+    assert _classify_checkpoint_currency(None, None) is CheckpointCurrency.STALE
+
+
+# ── CachedRelayView client-side lifecycle (Phase 15.13.1) ────────────
+
+def test_initial_view_is_offline_and_stale():
+    view = CachedRelayView.initial()
+    assert view.connection_state is RelayConnectionState.OFFLINE
+    assert view.freshness is RelayFreshness.STALE
+
+
+def test_connection_lost_marks_stale_even_if_previously_current():
+    view = CachedRelayView(connection_state=RelayConnectionState.CONNECTED, freshness=RelayFreshness.CURRENT)
+    view.mark_connection_lost()
+    assert view.connection_state is RelayConnectionState.OFFLINE
+    assert view.freshness is RelayFreshness.STALE
+
+
+def test_begin_reconnecting_does_not_become_current_by_itself():
+    view = CachedRelayView.initial()
+    view.begin_reconnecting()
+    assert view.connection_state is RelayConnectionState.RECONNECTING
+    assert view.freshness is RelayFreshness.STALE  # attempting != succeeding
+
+
+def test_successful_reconnect_applies_the_real_results_state():
+    view = CachedRelayView.initial()
+    view.begin_reconnecting()
+    fake_result = RelayReconnectResult(
+        relay_session_id="rlysess_x", mission_id="mis_x",
+        connection_state=RelayConnectionState.CONNECTED, freshness=RelayFreshness.CURRENT,
+        server_observed_at="2026-01-01T00:00:00+00:00", snapshot=None,  # type: ignore[arg-type]
+        operations=(), warnings=(), requires_reauthentication=False,
+    )
+    view.apply_successful_reconnect(fake_result)
+    assert view.connection_state is RelayConnectionState.CONNECTED
+    assert view.freshness is RelayFreshness.CURRENT
+    assert view.last_good_result is fake_result
+
+
+def test_failed_reconnect_never_relabels_cached_data_current():
+    view = CachedRelayView.initial()
+    view.begin_reconnecting()
+    view.record_failed_reconnect()
+    assert view.connection_state is RelayConnectionState.OFFLINE
+    assert view.freshness is RelayFreshness.STALE

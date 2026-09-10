@@ -225,6 +225,90 @@ def resume_mission(conn, mission_id: str, *, evidence_ref: str | None = None) ->
     return transition_mission(conn, mission_id, MissionState.RUNNING, evidence_ref=evidence_ref)
 
 
+def apply_mutation_with_precondition(
+    conn, mission_id: str, *,
+    expected_state: MissionState | None,
+    expected_revision: str | None,
+    new_state: MissionState,
+    evidence_ref: str | None = None,
+) -> tuple[str, dict]:
+    """Phase 15.13.1 -- atomically, under ONE row lock held for the
+    FULL read-decide-write sequence, closes a real gap the earlier
+    two-step pattern (`get_mission()` in its own transaction, followed
+    LATER by a separate `transition_mission()` call) left open: a
+    concurrent writer could change the row in the window between the
+    precondition read and the write. Here, the precondition
+    comparison and the write share the IDENTICAL locked row read --
+    there is no such window.
+
+    Returns `(outcome, mission_row)` where `outcome` is one of
+    `"APPLIED"`, `"STALE_CONFLICT"`, `"DENIED"`:
+
+      * Already at `new_state` (a racing, identical, later request):
+        `"APPLIED"`, idempotent no-op, no redundant write.
+      * `expected_state`/`expected_revision` (when supplied) do not
+        match the LOCKED, actual, current row: `"STALE_CONFLICT"`.
+      * A `new_state` of RUNNING is only reachable from the same
+        `_RESUMABLE_STATES` set `resume_mission()` itself enforces
+        (PAUSED_USER, PAUSED_WINDOW_REACHED) -- preserved here so this
+        atomic primitive does not silently widen what "resume" means
+        relative to the pre-existing behavior; anything else is
+        `"DENIED"`.
+      * Any other illegal transition per the canonical state machine:
+        `"DENIED"`.
+
+    Raises `MissionNotFoundError` if the mission does not exist --
+    callers that want a typed FAILED outcome instead should catch it.
+    `expected_revision=None` skips the revision check entirely (a
+    genuinely absent/unset current_revision is never fabricated)."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM missions WHERE id = %s FOR UPDATE", (mission_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise MissionNotFoundError(f"No such mission: {mission_id}")
+            mission_row = dict(row)
+            actual_state = MissionState(mission_row["state"])
+            actual_revision = mission_row.get("current_revision")
+
+            if actual_state is new_state:
+                conn.commit()  # release the row lock -- nothing to write
+                return "APPLIED", mission_row
+
+            if expected_state is not None and actual_state is not expected_state:
+                conn.commit()
+                return "STALE_CONFLICT", mission_row
+            if expected_revision is not None and actual_revision != expected_revision:
+                conn.commit()
+                return "STALE_CONFLICT", mission_row
+
+            if new_state is MissionState.RUNNING and actual_state not in _RESUMABLE_STATES:
+                conn.commit()
+                return "DENIED", mission_row
+
+            try:
+                validated_new = transition(actual_state, new_state, evidence_ref=evidence_ref)
+            except MissionStateError:
+                conn.commit()
+                return "DENIED", mission_row
+
+            now = _now_iso()
+            cur.execute(
+                "UPDATE missions SET state = %s, updated_at = %s WHERE id = %s AND state = %s",
+                (validated_new.value, now, mission_id, actual_state.value),
+            )
+            if cur.rowcount != 1:
+                raise MissionStoreError(
+                    f"Mission {mission_id} state changed unexpectedly during atomic mutation "
+                    f"(expected {actual_state.value}); the row lock was not held for the full transaction."
+                )
+    except (MissionNotFoundError, MissionStoreError):
+        conn.rollback()
+        raise
+    conn.commit()
+    return "APPLIED", get_mission(conn, mission_id)
+
+
 # ─────────────────────────────────────────────────────────────────
 #  Checkpoints
 # ─────────────────────────────────────────────────────────────────

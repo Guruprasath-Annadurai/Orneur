@@ -64,12 +64,12 @@ from datetime import datetime
 from enum import Enum
 
 from orca.mission.mission_store import (
+    CheckpointNotFoundError,
     MissionNotFoundError,
-    MissionStateError,
     MissionStoreError,
+    apply_mutation_with_precondition,
+    get_checkpoint,
     get_mission,
-    resume_mission,
-    transition_mission,
 )
 from orca.mission.operation_store import get_operation, list_operations_for_mission
 from orca.mission.production_proof import redact_secrets
@@ -79,6 +79,7 @@ from orca.mission.relay_security import (
     SessionSecurityInvalidError,
     _default_clock,
     build_security_valid_relay_snapshot,
+    require_security_valid_session,
     touch_relay_session_securely,
 )
 from orca.mission.state_machine import MissionState
@@ -269,6 +270,7 @@ class RelayMutationOutcome(Enum):
 class RelayMutationPrecondition:
     mission_id: str
     expected_state: MissionState
+    expected_revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -278,64 +280,218 @@ class RelayMutationResult:
     detail: str
 
 
-def _resolve_new_state(new_state: MissionState) -> callable:
-    if new_state is MissionState.RUNNING:
-        return lambda conn, mission_id, evidence_ref: resume_mission(conn, mission_id, evidence_ref=evidence_ref)
-    return lambda conn, mission_id, evidence_ref: transition_mission(
-        conn, mission_id, new_state, evidence_ref=evidence_ref,
-    )
+_OUTCOME_DETAIL = {
+    "APPLIED": "mutation applied atomically under a single locked row read (or already at target state -- idempotent no-op)",
+    "STALE_CONFLICT": "caller's expected state/revision did not match the durable row, read atomically under the SAME lock as the mutation attempt",
+    "DENIED": "mutation is illegal per the canonical state machine given the durable (accurately-expected) state",
+}
 
 
 def apply_mission_mutation_precondition(
     conn, precondition: RelayMutationPrecondition, *, new_state: MissionState, evidence_ref: str | None = None,
 ) -> RelayMutationResult:
     """Typed, honest outcome for a governed mission-state mutation
-    (pause/resume/cancel) attempted by a possibly-stale reconnecting
-    device. Never silently last-write-wins (spec section 15):
+    (pause/resume) attempted by a possibly-stale device. Never
+    silently last-write-wins (spec section 15) -- see
+    `mission_store.apply_mutation_with_precondition()` for the atomic
+    mechanism (Phase 15.13.1: the precondition READ and the mutation
+    WRITE now share the identical `SELECT ... FOR UPDATE` locked row,
+    closing the earlier two-step get-then-transition race window).
 
-      * If the mission is ALREADY in `new_state` (a second, identical,
-        racing request), reports APPLIED as an idempotent no-op --
-        this is the "simultaneous identical PAUSE requests reconcile
-        safely" requirement (spec section 16) -- without attempting a
-        redundant write.
-      * If the mission's actual current state does not match what the
-        caller expected AND is not yet the target, reports
-        STALE_CONFLICT -- the caller's view of mission state was
-        out of date; it did not durably corrupt anything.
-      * If the caller's expected state was accurate but the mutation
-        is illegal per the canonical state machine (e.g. attempting to
-        resume a durably CANCELLED mission), reports DENIED.
-      * Any other failure (e.g. mission not found) reports FAILED.
-
-    Uses `mission_store`'s existing `SELECT ... FOR UPDATE` row locking
-    for the actual write -- no additive revision/version column is
-    introduced (spec section 31: prefer no migration)."""
+    This function is NOT itself a Relay-authorized control boundary --
+    it has no `session_id`/`authenticated_user_id` and performs no
+    ownership/session-binding check. It exists as the composable,
+    security-agnostic primitive that `apply_relay_mission_mutation()`
+    (below) wraps with the real Phase 15.12.1 session-security gate.
+    Do not expose this function directly as a Relay control action."""
     try:
-        mission = get_mission(conn, precondition.mission_id)
-    except MissionStoreError as e:
-        return RelayMutationResult(RelayMutationOutcome.FAILED, None, str(e))
-    if mission is None:
-        return RelayMutationResult(
-            RelayMutationOutcome.FAILED, None, f"no such mission: {precondition.mission_id}",
+        outcome_str, mission = apply_mutation_with_precondition(
+            conn, precondition.mission_id,
+            expected_state=precondition.expected_state,
+            expected_revision=precondition.expected_revision,
+            new_state=new_state, evidence_ref=evidence_ref,
         )
-
-    actual_state = MissionState(mission["state"])
-    if actual_state is new_state:
-        return RelayMutationResult(
-            RelayMutationOutcome.APPLIED, mission,
-            "mission already in target state -- idempotent no-op, no duplicate write issued",
-        )
-    if actual_state is not precondition.expected_state:
-        return RelayMutationResult(
-            RelayMutationOutcome.STALE_CONFLICT, mission,
-            f"caller expected {precondition.expected_state.value}, mission is actually {actual_state.value}",
-        )
-
-    apply_fn = _resolve_new_state(new_state)
-    try:
-        updated = apply_fn(conn, precondition.mission_id, evidence_ref)
     except MissionNotFoundError as e:
         return RelayMutationResult(RelayMutationOutcome.FAILED, None, str(e))
-    except (MissionStateError, MissionStoreError) as e:
-        return RelayMutationResult(RelayMutationOutcome.DENIED, mission, str(e))
-    return RelayMutationResult(RelayMutationOutcome.APPLIED, updated, "mutation applied")
+    except MissionStoreError as e:
+        return RelayMutationResult(RelayMutationOutcome.FAILED, None, str(e))
+
+    outcome = RelayMutationOutcome(outcome_str)
+    return RelayMutationResult(outcome, mission, _OUTCOME_DETAIL[outcome_str])
+
+
+def apply_relay_mission_mutation(
+    conn, *, session_id: str, authenticated_user_id: str,
+    precondition: RelayMutationPrecondition, new_state: MissionState,
+    evidence_ref: str | None = None, now_fn=_default_clock,
+) -> RelayMutationResult:
+    """THE actual Relay-authorized mutation control boundary (Phase
+    15.13.1 closure). Before any mutation, this function proves via
+    `require_security_valid_session()` (the exact same Phase 15.12.1
+    boundary every other Relay entrypoint uses -- never a duplicated
+    or re-implemented security model):
+
+      * the session belongs to `authenticated_user_id` (ownership);
+      * the session is not revoked/expired/idle-expired
+        (`SessionSecurityInvalidError`);
+      * the session's device is not revoked and device/mode
+        compatibility holds (`RelayAccessDeniedError`/
+        `SessionSecurityInvalidError`).
+
+    Then, and only then, it proves `session.mission_id ==
+    precondition.mission_id` -- a caller cannot mutate a mission a
+    real, valid session simply is not bound to. A mission ID alone is
+    never proof of Relay authority. Only after both checks pass does
+    it delegate to `apply_mission_mutation_precondition()` for the
+    atomic, revision-aware precondition-and-write."""
+    session, device = require_security_valid_session(
+        conn, session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn,
+    )
+    if session.mission_id != precondition.mission_id:
+        raise RelayReconnectAccessDeniedError(
+            f"relay session {session_id!r} is bound to mission {session.mission_id!r}, not "
+            f"{precondition.mission_id!r} -- a mission ID alone is not proof of Relay authority"
+        )
+    return apply_mission_mutation_precondition(
+        conn, precondition, new_state=new_state, evidence_ref=evidence_ref,
+    )
+
+
+# ── Minimal edit/revision-conflict primitive (spec sections 27, 31) ──
+
+class RevisionCurrency(Enum):
+    CURRENT = "CURRENT"
+    STALE_CONFLICT = "STALE_CONFLICT"
+
+
+def _classify_revision_currency(expected_revision: str | None, actual_revision: str | None) -> RevisionCurrency:
+    """Pure classification, independently unit-testable without a
+    database. A genuinely absent revision on either side is never
+    treated as a match by coincidence -- `None == None` would silently
+    call an unrevisioned mission CURRENT for ANY caller, which is not
+    an honest currentness claim, so an absent actual revision is
+    always STALE_CONFLICT regardless of what the caller expected."""
+    if actual_revision is None:
+        return RevisionCurrency.STALE_CONFLICT
+    if expected_revision == actual_revision:
+        return RevisionCurrency.CURRENT
+    return RevisionCurrency.STALE_CONFLICT
+
+
+def check_revision_currency(
+    conn, *, session_id: str, authenticated_user_id: str, mission_id: str,
+    expected_revision: str | None, now_fn=_default_clock,
+) -> RevisionCurrency:
+    """The minimal Relay-bound edit-conflict primitive (spec section
+    27): "a Relay-originating code/edit action based on revision A
+    must not silently apply over revision B." No file merge UI, no
+    new mutation path -- a read-only classification, security-session-
+    bound exactly like every other Relay control boundary."""
+    session, device = require_security_valid_session(
+        conn, session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn,
+    )
+    if session.mission_id != mission_id:
+        raise RelayReconnectAccessDeniedError(
+            f"relay session {session_id!r} is bound to mission {session.mission_id!r}, not {mission_id!r}"
+        )
+    mission = get_mission(conn, mission_id)
+    if mission is None:
+        raise MissionNotFoundError(f"No such mission: {mission_id}")
+    return _classify_revision_currency(expected_revision, mission.get("current_revision"))
+
+
+# ── Checkpoint currentness (spec section 18) ─────────────────────────
+
+class CheckpointCurrency(Enum):
+    CURRENT = "CURRENT"
+    STALE = "STALE"
+
+
+def _classify_checkpoint_currency(checkpoint_revision: str | None, mission_revision: str | None) -> CheckpointCurrency:
+    """Pure classification. Per spec section 18's own "at minimum ...
+    where both revisions exist": when either revision is genuinely
+    absent, currentness cannot be honestly verified, so this fails
+    closed to STALE rather than fabricating a CURRENT claim."""
+    if checkpoint_revision is None or mission_revision is None:
+        return CheckpointCurrency.STALE
+    if checkpoint_revision == mission_revision:
+        return CheckpointCurrency.CURRENT
+    return CheckpointCurrency.STALE
+
+
+def check_checkpoint_currency(
+    conn, *, session_id: str, authenticated_user_id: str, checkpoint_id: str, now_fn=_default_clock,
+) -> CheckpointCurrency:
+    """Determines whether a durable checkpoint is CURRENT for the
+    Relay mission context, without touching checkpoint storage at all
+    (no Phase 15.4 redesign -- `create_checkpoint()`'s append-only
+    history is untouched). A STALE checkpoint remains fully present in
+    history; this function only classifies whether it should be
+    represented/promoted as the current continuation point -- it never
+    deletes, rewrites, or reorders anything."""
+    session, device = require_security_valid_session(
+        conn, session_id, authenticated_user_id=authenticated_user_id, now_fn=now_fn,
+    )
+    checkpoint = get_checkpoint(conn, checkpoint_id)
+    if checkpoint is None:
+        raise CheckpointNotFoundError(f"No such checkpoint: {checkpoint_id}")
+    if checkpoint.mission_id != session.mission_id:
+        raise RelayReconnectAccessDeniedError(
+            f"checkpoint {checkpoint_id!r} belongs to mission {checkpoint.mission_id!r}, "
+            f"not relay session {session_id!r}'s mission {session.mission_id!r}"
+        )
+    mission = get_mission(conn, checkpoint.mission_id)
+    if mission is None:
+        raise MissionNotFoundError(f"No such mission: {checkpoint.mission_id}")
+    return _classify_checkpoint_currency(checkpoint.current_revision, mission.get("current_revision"))
+
+
+# ── Client-side cached-reconnect-view lifecycle (spec section 26) ───
+
+@dataclass
+class CachedRelayView:
+    """A minimal, testable representation of a client's LOCAL view of
+    the Relay reconnect lifecycle -- client-side bookkeeping only, no
+    transport of any kind. This is the SERVICE-LAYER simulation the
+    module docstring promises: it proves the state SEQUENCE a
+    truthful client must follow, without claiming any real
+    WebSocket/TLS/browser-retry behavior (spec section 28)."""
+    connection_state: RelayConnectionState
+    freshness: RelayFreshness
+    last_good_result: RelayReconnectResult | None = None
+
+    @classmethod
+    def initial(cls) -> "CachedRelayView":
+        return cls(connection_state=RelayConnectionState.OFFLINE, freshness=RelayFreshness.STALE)
+
+    def mark_connection_lost(self) -> None:
+        """A real or simulated transport signal that the connection
+        dropped. The cached snapshot -- however recent -- immediately
+        becomes STALE; it is never treated as CURRENT again until a
+        fresh, successful server read succeeds."""
+        self.connection_state = RelayConnectionState.OFFLINE
+        self.freshness = RelayFreshness.STALE
+
+    def begin_reconnecting(self) -> None:
+        """Attempting to reconnect does not, by itself, make the
+        cached data any more current -- freshness stays STALE until a
+        real read actually succeeds."""
+        self.connection_state = RelayConnectionState.RECONNECTING
+
+    def apply_successful_reconnect(self, result: RelayReconnectResult) -> None:
+        """Call ONLY after a real `reconnect_to_mission()` call has
+        genuinely succeeded (that function itself only returns
+        CONNECTED/CURRENT on success, and raises rather than returning
+        a degraded result on failure -- see `record_failed_reconnect()`
+        for the failure path)."""
+        self.connection_state = result.connection_state
+        self.freshness = result.freshness
+        self.last_good_result = result
+
+    def record_failed_reconnect(self) -> None:
+        """A reconnect attempt failed (revoked/expired/idle-expired
+        session, device/mode mismatch, or any other denial). The
+        client stays OFFLINE with its previous cached snapshot still
+        marked STALE -- never silently relabeled CURRENT."""
+        self.connection_state = RelayConnectionState.OFFLINE
+        self.freshness = RelayFreshness.STALE
