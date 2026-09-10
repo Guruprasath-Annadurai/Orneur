@@ -155,6 +155,22 @@ def get_operation_by_idempotency_key(conn, idempotency_key: str) -> dict | None:
     return dict(row) if row else None
 
 
+def list_operations_for_mission(conn, mission_id: str, *, limit: int = 25) -> tuple[dict, ...]:
+    """Read-only, bounded, newest-first operation history for a mission
+    (Phase 15.13 spec section 27: durable operation history must be
+    exposed, never a fake single "current operation"). Never writes.
+    Every prior operation's terminal truth is returned as-recorded --
+    this function has no way to overwrite it."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM operations WHERE mission_id = %s ORDER BY requested_at DESC LIMIT %s",
+            (mission_id, limit),
+        )
+        rows = cur.fetchall()
+    conn.commit()
+    return tuple(dict(row) for row in rows)
+
+
 def _write_operation_transition(conn, operation_id: str, new_status: str, *, result_ref: str | None = None) -> str:
     """Locks the operation row, validates the transition, writes.
     Does NOT commit -- callers control the transaction boundary."""
