@@ -31,14 +31,28 @@ def two_sessions():
 
 
 def test_distill_and_save_no_longer_writes_unscoped_summary(two_sessions):
+    # SemanticMemory's `all_sessions_summary` key is backed by a REAL
+    # on-disk diskcache shared across the whole pytest process (no
+    # per-test isolation exists for it, unlike the session-scoped
+    # `store.delete_scope()` cleanup this fixture already performs) --
+    # a root-caused, genuine test-order flake: a DIFFERENT test
+    # (tests/test_memory_deletion_integration.py) legitimately writes
+    # real content to this SAME shared key as part of its own
+    # deletion-cascade coverage. Rather than assume pristine global
+    # state (which silently depends on run order), explicitly clear
+    # the key first -- the actual property under test is "distill_and_
+    # save() does not WRITE to this key", which this now proves
+    # regardless of what ran before it.
+    sm = SemanticMemory()
+    sm._cache.pop("fact:all_sessions_summary", None)
+
     session_a, _ = two_sessions
     engine = MemoryEngine(session_id=session_a)
     engine.add_turn("user", "I'm building Project Atlas with PostgreSQL")
     engine.add_turn("assistant", "Got it, noted.")
     engine.distill_and_save(_FakeBrain())
 
-    sm = SemanticMemory()
-    assert not sm.recall_fact("all_sessions_summary")  # never written anymore (may be pre-existing empty string from other tests' fixtures, never new content)
+    assert not sm.recall_fact("all_sessions_summary")  # never written by distill_and_save()
 
 
 def test_load_prior_context_never_leaks_across_sessions(two_sessions):

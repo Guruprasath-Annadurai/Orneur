@@ -27,13 +27,24 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install Orca (dev deps, no GPU/Ollama needed)
+      - name: Install Orca (dev + mcp + nvidia extras -- no GPU/Ollama needed)
+        # Phase 15.15 CI truthfulness closure: the deterministic suite
+        # includes tests/test_distill.py (needs `openai`, from the
+        # `nvidia` extra) and tests/test_mcp_fs_server_sandbox.py (a
+        # SECURITY-relevant path-traversal regression, needs `mcp`,
+        # from the `mcp` extra) -- both are lightweight, pure-Python,
+        # no GPU/network/live-service dependency, and must genuinely
+        # execute in this job rather than being silently uncollectable.
+        # tests/test_train_losses.py (needs `torch`) is deliberately
+        # NOT installed here -- it runs in the separate, dedicated
+        # `torch-loss-tests` job below instead of pulling torch into
+        # every regular test run.
         run: |
           pip install uv
-          uv pip install --system -e ".[dev]"
+          uv pip install --system -e ".[dev,mcp,nvidia]"
 
       - name: Run deterministic test suite
-        run: pytest -m "not live_ollama_smoke" -v 2>&1 | tee /tmp/pytest-log.txt
+        run: bash scripts/ci/run_deterministic_tests.sh
 
       - name: Upload test log on failure
         if: failure()
@@ -42,6 +53,42 @@ jobs:
           name: pytest-log-${{ github.run_number }}
           path: /tmp/pytest-log.txt
           retention-days: 14
+
+  torch-loss-tests:
+    name: Training Math Unit Tests (Torch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev) + CPU-only torch
+        # Phase 15.15 CI truthfulness closure: tests/test_train_losses.py
+        # is real, deterministic torch tensor math (no GPU, no network,
+        # no model weights) -- it was previously uncollectable in CI
+        # because torch was never installed anywhere. A dedicated,
+        # bounded job (rather than folding the whole heavyweight `train`
+        # extra -- unsloth/trl/transformers/accelerate/etc. -- into the
+        # main deterministic job) keeps the common case fast while still
+        # making this required and genuinely green. The CPU wheel index
+        # keeps the install small (no CUDA payload) on this GPU-less
+        # runner.
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Run training-math regression
+        run: |
+          set -euo pipefail
+          pytest tests/test_train_losses.py -v
 
   container-build:
     name: Production Container Build + Boot Smoke
@@ -95,7 +142,16 @@ jobs:
           PY
 
   security-audit:
-    name: Dependency Vulnerability Scan
+    # Phase 15.15 item 10: this job's name is explicit about scope --
+    # it audits only the BASE `-e .` install (no dev/mcp/nvidia/train
+    # extras), which is a NARROWER dependency set than a full local
+    # development `.venv` (which typically accumulates extras and
+    # tooling over time). Its finding count is therefore not directly
+    # comparable to a broader environment's pip-audit run -- see
+    # docs/orneur/phase-15/PHASE15_EVIDENCE.md's Phase 15.15 evidence
+    # for that explicit reconciliation. This job remains INFORMATIONAL
+    # (`pip-audit || true`), never silently treated as a security PASS.
+    name: Dependency Vulnerability Scan (informational, base install only)
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
