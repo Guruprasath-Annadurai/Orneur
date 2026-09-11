@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle", "verify_cloudflare_access", "verify_waf_and_rate_limit", "full_edge_battery", "phase15_4_live_neon_qualification", "phase15_5_live_neon_qualification", "phase15_6_live_neon_qualification", "phase15_6_1_container_sandbox_qualification", "phase15_7_live_neon_qualification", "phase15_8_live_neon_qualification", "phase15_11_relay_live_neon_qualification", "phase15_13_reconnect_live_neon_qualification", "phase15_13_1_isolated_diagnostic", "phase15_14_window_live_neon_qualification", "phase15_14_isolated_diagnostic"]
+        options: ["", "write", "read", "health_check", "cancellation", "northflank_inspect", "create_edge_tunnel_service", "verify_tunnel_and_internal_reachability", "patch_edge_tunnel_command", "diagnose_api_a", "configure_api_a_path_ignore", "restart_edge_tunnel", "verify_public_edge", "inspect_api_a_env_keys_only", "configure_api_a_public_edge_env", "verify_edge_auth_tenancy", "configure_api_a_trusted_proxy", "verify_edge_controls_batch2", "secret_scope_review", "secret_leak_scan", "tunnel_outage_recovery", "origin_pod_recycle", "verify_cloudflare_access", "verify_waf_and_rate_limit", "full_edge_battery", "phase15_4_live_neon_qualification", "phase15_5_live_neon_qualification", "phase15_6_live_neon_qualification", "phase15_6_1_container_sandbox_qualification", "phase15_7_live_neon_qualification", "phase15_8_live_neon_qualification", "phase15_11_relay_live_neon_qualification", "phase15_13_reconnect_live_neon_qualification", "phase15_13_1_isolated_diagnostic", "phase15_14_window_live_neon_qualification", "phase15_14_isolated_diagnostic", "phase15_15_isolated_diagnostic", "phase15_15_integrated_qualification"]
       fresh_runner_lease_id:
         description: "Only for fresh_runner_mode=read: the lease_id printed by the prior fresh_runner_mode=write dispatch."
         required: false
@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ github.event.inputs.fresh_runner_mode }}" in
-            phase15_4_live_neon_qualification|phase15_5_live_neon_qualification|phase15_6_live_neon_qualification|phase15_6_1_container_sandbox_qualification|phase15_7_live_neon_qualification|phase15_8_live_neon_qualification|phase15_11_relay_live_neon_qualification|phase15_13_reconnect_live_neon_qualification|phase15_13_1_isolated_diagnostic|phase15_14_window_live_neon_qualification|phase15_14_isolated_diagnostic)
+            phase15_4_live_neon_qualification|phase15_5_live_neon_qualification|phase15_6_live_neon_qualification|phase15_6_1_container_sandbox_qualification|phase15_7_live_neon_qualification|phase15_8_live_neon_qualification|phase15_11_relay_live_neon_qualification|phase15_13_reconnect_live_neon_qualification|phase15_13_1_isolated_diagnostic|phase15_14_window_live_neon_qualification|phase15_14_isolated_diagnostic|phase15_15_isolated_diagnostic|phase15_15_integrated_qualification)
               missing=""
               if [ -z "$ORNEUR_MISSION_DATABASE_URL" ]; then missing="$missing ORNEUR_MISSION_DATABASE_URL"; fi
               if [ -z "$ORNEUR_MISSION_DATABASE_URL_DIRECT" ]; then missing="$missing ORNEUR_MISSION_DATABASE_URL_DIRECT"; fi
@@ -195,6 +195,26 @@ jobs:
         run: |
           pip install --no-cache-dir pytest pytest-timeout
           python -m pytest tests/test_mission_window.py tests/test_mission_window_live_neon.py -v --timeout=60 --timeout-method=thread -p no:cacheprovider
+        env:
+          ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
+          ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}
+          ORNEUR_DEPLOYMENT_PROFILE: SOVEREIGN
+
+      - name: "Phase 15.15 DIAGNOSTIC -- isolated integrated-qualification tests only (fast-fail, matching the established isolated-diagnostic pattern)"
+        if: github.event.inputs.fresh_runner_mode == 'phase15_15_isolated_diagnostic'
+        run: |
+          pip install --no-cache-dir pytest pytest-timeout
+          python -m pytest tests/test_phase15_15_integrated_qualification_live_neon.py -v --timeout=120 --timeout-method=thread -p no:cacheprovider
+        env:
+          ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
+          ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}
+          ORNEUR_DEPLOYMENT_PROFILE: SOVEREIGN
+
+      - name: "Phase 15.15 LIVE_NEON_TEMP_BRANCH INTEGRATED QUALIFICATION -- final Phase 15 gate: integrated story, window/relay/authority composition, no-fake-completion, plus the full Phase 15 regression + container/Docker qualification"
+        if: github.event.inputs.fresh_runner_mode == 'phase15_15_integrated_qualification'
+        run: |
+          pip install --no-cache-dir pytest pytest-timeout
+          python -m pytest tests/test_phase15_15_integrated_qualification_live_neon.py tests/test_mission_window.py tests/test_mission_window_live_neon.py tests/test_mission_store_unit.py tests/test_mission_store_live_neon.py tests/test_operation_store_live_neon.py tests/test_relay_reconnect.py tests/test_relay_reconnect_live_neon.py tests/test_relay_security.py tests/test_relay_security_live_neon.py tests/test_relay_requirements.py tests/test_mission_requirements.py tests/test_mission_state_machine.py tests/test_gaming_detectors.py tests/test_anti_gaming.py tests/test_production_proof_live_neon.py tests/test_production_proof_e2e_fixture.py tests/test_verification_store_live_neon.py tests/test_idea_compiler_live_neon.py tests/test_container_execution_live_neon.py tests/test_container_adversarial.py tests/test_ci_live_neon_fail_closed.py -v --timeout=120 --timeout-method=thread
         env:
           ORNEUR_MISSION_DATABASE_URL: ${{ secrets.ORNEUR_MISSION_DATABASE_URL }}
           ORNEUR_MISSION_DATABASE_URL_DIRECT: ${{ secrets.ORNEUR_MISSION_DATABASE_URL_DIRECT }}
