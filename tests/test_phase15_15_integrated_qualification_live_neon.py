@@ -346,7 +346,7 @@ def test_canonical_end_to_end_story(isolated_home):
         reauth_grant = _reauth_for(owner)
         device = enroll_trusted_device(fresh_conn, authenticated_user_id=owner, reauth_grant=reauth_grant, name="laptop")
         session = create_relay_session(
-            fresh_conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED,
+            fresh_conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED_DEVICE,
         )
         reconnect_result = reconnect_to_mission(fresh_conn, session_id=session.id, authenticated_user_id=owner)
         assert reconnect_result.snapshot.mission_id == mission_id
