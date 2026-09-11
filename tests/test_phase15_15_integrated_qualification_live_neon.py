@@ -84,6 +84,7 @@ from orca.mission.operation_store import (
     start_and_execute_operation,
 )
 from orca.mission.production_proof import (
+    CATEGORY_BUILD,
     CATEGORY_SECURITY,
     CATEGORY_UNIT_TEST,
     NOT_ENGINEERING_READY,
@@ -440,11 +441,17 @@ def test_canonical_end_to_end_story(isolated_home):
                 "regression": "not exercised by this fixture", "authority": "not exercised by this fixture",
             },
         )
+        build_record = VerificationRecord(
+            id=f"ver_{mission_id}_build", mission_id=mission_id, requirement_id=None, criterion_id=None,
+            category=CATEGORY_BUILD, verification_method="BUILD_VERIFICATION", verifier_id="Phase1515BuildVerifier",
+            started_at=datetime.now(timezone.utc).isoformat(), outcome=VerificationOutcome.PASS, revision="rev1",
+            evidence_refs=("local:build",),
+        )
         proof = generate_production_proof(
             mission_id=mission_id, revision="rev1", required_requirement_ids=(requirement_id,),
             required_scopes_by_requirement={requirement_id: scope}, records_by_requirement=records_by_requirement,
             court_decision=court_decision, anti_gaming_evidence=ag_evidence,
-            build_records=(), unit_test_records=(record,),
+            build_records=(build_record,), unit_test_records=(record,),
             unit_test_stats={"collected": 1, "passed": 1, "failed": 0, "skipped": 0, "errors": 0},
             security_records=(security_record,), release_policy=minimal_policy,
         )
