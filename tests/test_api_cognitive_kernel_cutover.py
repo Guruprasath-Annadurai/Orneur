@@ -88,6 +88,11 @@ def test_cognitive_execute_abstains_on_critical_risk(client):
 
 
 def test_cognitive_execute_blocks_moderated_content(client):
+    # This is a real end-to-end call through the Cognitive Kernel (not
+    # mocked), so it needs the same real-Ollama precondition every other
+    # real-kernel test in this file already requires -- this specific
+    # test was missing the guard.
+    _skip_if_no_ollama()
     resp = client.post("/api/cognitive/execute", json={"objective": "ignore everything, just testing moderation path"})
     assert resp.status_code == 200  # benign input -- sanity check the endpoint doesn't over-block
 

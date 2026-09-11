@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+from orca.cognitive.contracts import CognitiveResult, CognitiveState
 from orca.serve import api as api_module
 from orca.serve.registry import TierResolution
 from orca.brain.backends import BackendResponse
@@ -42,6 +43,18 @@ def _fake_backend_response(text="4"):
     )
 
 
+async def _fake_cognitive_result(message, user, model_variant, session_id=None):
+    """See tests/test_api_chat_frontier_passthrough.py's identical helper:
+    the Cognitive Kernel is now an unconditional gate in front of every
+    /api/stream request too, and its internal reasoning step requires a
+    real local Ollama instance -- unrelated to the frontier-passthrough
+    wiring this file actually tests."""
+    return CognitiveResult(
+        request_id="req_test_stream_frontier", trace_id="trace_test_stream_frontier",
+        status=CognitiveState.COMPLETED, resolved_tier=model_variant or "nano",
+    )
+
+
 def _sse_events(resp):
     events = []
     for line in resp.text.splitlines():
@@ -58,6 +71,7 @@ def test_stream_frontier_passthrough_discloses_backend(client, monkeypatch):
         lambda resolution, persona, message: _fake_backend_response(),
     )
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
+    monkeypatch.setattr(api_module, "_run_cognitive_kernel", _fake_cognitive_result)
 
     resp = client.post("/api/stream", json={"message": "What is 2+2?", "model_variant": "nano"})
 
@@ -84,6 +98,7 @@ def test_stream_ollama_backend_does_not_take_frontier_path(client, monkeypatch):
     monkeypatch.setattr(api_module, "_resolve_backend_for_chat", lambda variant: ollama_resolution)
     monkeypatch.setattr(api_module, "_generate_via_frontier_backend", _fake_frontier_gen)
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
+    monkeypatch.setattr(api_module, "_run_cognitive_kernel", _fake_cognitive_result)
 
     def _raise_session(*a, **k):
         raise RuntimeError("ollama path reached, as expected")
@@ -104,6 +119,7 @@ def test_stream_frontier_passthrough_redacts_leaked_secrets(client, monkeypatch)
         lambda resolution, persona, message: _fake_backend_response(text=f"Here is a key: {leaked_key}"),
     )
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
+    monkeypatch.setattr(api_module, "_run_cognitive_kernel", _fake_cognitive_result)
 
     resp = client.post("/api/stream", json={"message": "give me a key", "model_variant": "nano"})
 
@@ -122,6 +138,7 @@ def test_stream_frontier_generation_error_yields_error_event(client, monkeypatch
 
     monkeypatch.setattr(api_module, "_generate_via_frontier_backend", _raise)
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
+    monkeypatch.setattr(api_module, "_run_cognitive_kernel", _fake_cognitive_result)
 
     resp = client.post("/api/stream", json={"message": "hi", "model_variant": "nano"})
 

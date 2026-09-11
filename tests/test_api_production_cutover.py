@@ -343,6 +343,10 @@ def test_malformed_cognitive_metadata_does_not_crash_or_escalate(app_and_client)
     are plain dicts the Kernel never trusts for entitlement -- garbage
     values there must not crash the request or change what tier gets
     used."""
+    # This module's own docstring/pytestmark declares it LIVE_OLLAMA_SMOKE
+    # (requires real local Ollama, auto-skips otherwise) -- this specific
+    # test was missing the guard every other real-kernel test here uses.
+    _skip_if_no_ollama()
     app, client = app_and_client
     _as_user(app, "free")
     resp = client.post("/api/chat", json={

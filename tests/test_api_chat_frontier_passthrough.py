@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+from orca.cognitive.contracts import CognitiveResult, CognitiveState
 from orca.serve import api as api_module
 from orca.serve.registry import TierResolution
 from orca.brain.backends import BackendResponse
@@ -43,6 +44,27 @@ def _fake_backend_response(text="4"):
     )
 
 
+async def _fake_cognitive_result(message, user, model_variant, session_id=None):
+    """Phase 3.1 made the Cognitive Kernel an authoritative, unconditional
+    gate in front of EVERY /api/chat request -- including requests that
+    will ultimately be routed to a frontier backend. The Kernel's own
+    internal reasoning step (`_answer_directly`) resolves a tier via
+    `orca.serve.registry.resolve_tier_backend`, which currently only
+    checks Ollama -- so without a real local Ollama instance, the Kernel
+    itself raises before this file's frontier-passthrough branch is ever
+    reached, regardless of how `_resolve_backend_for_chat`/`_generate_
+    via_frontier_backend` are mocked below. This file's own stated intent
+    ("verifies the actual wiring in orca/serve/api.py" downstream of a
+    successful Kernel decision, not the Kernel's own Ollama-dependent
+    reasoning) is honored by stubbing a successful, non-ABSTAINED Kernel
+    result here -- the frontier-passthrough wiring under test never
+    depended on a specific Kernel implementation to begin with."""
+    return CognitiveResult(
+        request_id="req_test_frontier", trace_id="trace_test_frontier",
+        status=CognitiveState.COMPLETED, resolved_tier=model_variant or "nano",
+    )
+
+
 def test_frontier_passthrough_response_discloses_backend(client, monkeypatch):
     monkeypatch.setattr(api_module, "_resolve_backend_for_chat", lambda variant: _fake_frontier_resolution())
     monkeypatch.setattr(
@@ -50,6 +72,7 @@ def test_frontier_passthrough_response_discloses_backend(client, monkeypatch):
         lambda resolution, persona, message: _fake_backend_response(),
     )
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
+    monkeypatch.setattr(api_module, "_run_cognitive_kernel", _fake_cognitive_result)
 
     resp = client.post("/api/chat", json={"message": "What is 2+2?", "model_variant": "nano"})
 
@@ -79,6 +102,7 @@ def test_ollama_backend_does_not_take_frontier_path(client, monkeypatch):
     monkeypatch.setattr(api_module, "_resolve_backend_for_chat", lambda variant: ollama_resolution)
     monkeypatch.setattr(api_module, "_generate_via_frontier_backend", _fake_frontier_gen)
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
+    monkeypatch.setattr(api_module, "_run_cognitive_kernel", _fake_cognitive_result)
 
     # Force the ollama-path session/agent machinery to fail fast and
     # predictably rather than actually hitting a real Ollama instance —
@@ -108,6 +132,7 @@ def test_frontier_passthrough_redacts_leaked_secrets_from_response(client, monke
         lambda resolution, persona, message: _fake_backend_response(text=f"Here is a key: {leaked_key}"),
     )
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
+    monkeypatch.setattr(api_module, "_run_cognitive_kernel", _fake_cognitive_result)
 
     resp = client.post("/api/chat", json={"message": "give me a key", "model_variant": "nano"})
 
@@ -124,6 +149,7 @@ def test_frontier_generation_error_returns_500_not_crash(client, monkeypatch):
 
     monkeypatch.setattr(api_module, "_generate_via_frontier_backend", _raise)
     monkeypatch.setattr(api_module, "check_input", lambda text: MagicMock(action="allow", flagged_categories=[]))
+    monkeypatch.setattr(api_module, "_run_cognitive_kernel", _fake_cognitive_result)
 
     resp = client.post("/api/chat", json={"message": "hi", "model_variant": "nano"})
 
