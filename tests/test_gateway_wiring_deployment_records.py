@@ -72,7 +72,14 @@ def test_deployment_is_persisted_once_not_on_every_call(tmp_path, monkeypatch):
 def test_persisted_genesis_deployment_is_routable_in_production_by_society(tmp_path, monkeypatch):
     """The real regression this whole change guards against: once a disk
     record exists, Model Society's router must NOT start rejecting
-    Genesis in production (allow_experimental=False) because of it."""
+    Genesis in production (allow_experimental=False) because of it.
+
+    Phase 15.15 CI truthfulness closure: also isolates route()'s
+    checkpoint lookup (the same hermeticity gap fixed in
+    tests/test_worldstate_decision_consumption.py) -- the DEFAULT
+    lookup reads a real CheckpointRecord from
+    ORCA_HOME/registry/checkpoints/, present on a development machine
+    but genuinely absent on a fresh CI checkout."""
     import orca.gateway.deployment as deployment_mod
     monkeypatch.setattr(deployment_mod, "DEPLOYMENT_DIR", tmp_path)
     wiring_mod.reset_for_tests()
@@ -80,7 +87,13 @@ def test_persisted_genesis_deployment_is_routable_in_production_by_society(tmp_p
     wiring_mod.brain_for_tier_resolution(_FakeResolution(tier="nano", backend="ollama", model="orca-nano-v7"))
 
     from orca.society.contracts import CognitiveRole, RoutingRequest
-    from orca.society.router import route
+    from orca.society import router as router_mod
 
-    decision = route(RoutingRequest(role=CognitiveRole.CONSTRUCTOR, allow_experimental=False))
+    class _FakeCheckpointRecord:
+        def is_routable(self) -> bool:
+            return True
+
+    monkeypatch.setattr(router_mod, "_default_checkpoint_lookup", lambda checkpoint_id: _FakeCheckpointRecord())
+
+    decision = router_mod.route(RoutingRequest(role=CognitiveRole.CONSTRUCTOR, allow_experimental=False))
     assert decision.selected_model_id == "orneur-genesis"

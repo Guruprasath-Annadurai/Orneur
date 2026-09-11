@@ -11,6 +11,29 @@ from orca.agent.orchestrator import run_agent_request
 from orca.agent.tool_registry import build_agent_tool_registry
 
 
+class _FakeCheckpointRecord:
+    def is_routable(self) -> bool:
+        return True
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_model_society_routing(monkeypatch):
+    """Phase 15.15 CI truthfulness closure: run_agent_request() ->
+    AgentPlanner.compile_plan() -> resolve_tier_for_role() -> route()
+    resolves its DEFAULT checkpoint_lookup from orca.society.router's
+    own module globals -- a real CheckpointRecord read from
+    ORCA_HOME/registry/checkpoints/, present on a development machine
+    (real historical checkpoint imports) but genuinely absent on a
+    fresh CI checkout, which silently made every role ineligible there
+    (`NO_ELIGIBLE_REASONER`, short-circuiting orchestration before it
+    ever reached the mocked gateway_json_call). Patched module-wide
+    for this file since every test here exercises the same real
+    production routing path."""
+    from orca.society import router as router_mod
+
+    monkeypatch.setattr(router_mod, "_default_checkpoint_lookup", lambda checkpoint_id: _FakeCheckpointRecord())
+
+
 @pytest.mark.asyncio
 async def test_simple_safe_goal_skips_court_review(monkeypatch):
     called = {"n": 0}

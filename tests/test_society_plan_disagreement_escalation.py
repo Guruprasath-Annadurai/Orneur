@@ -8,11 +8,24 @@ from orca.society.escalation import BALANCED, DEEP_REASONING, FAST, decide_escal
 from orca.society.society_plan import build_court_society_plan
 
 
+class _FakeCheckpointRecord:
+    def is_routable(self) -> bool:
+        return True
+
+
 def test_same_model_role_overlap_is_explicit_when_only_one_eligible_model_exists():
     """With Novus not allowed (production default), the only eligible
     model for both Constructor and Falsifier is legacy Genesis -- this
-    must be reported honestly, never hidden (spec §18)."""
-    plan = build_court_society_plan(allow_experimental=False)
+    must be reported honestly, never hidden (spec §18).
+
+    Phase 15.15 CI truthfulness closure: `checkpoint_lookup` is an
+    injectable parameter on build_court_society_plan() specifically
+    for hermetic testing (matching tests/test_society_router.py's
+    discipline) -- this call was previously relying on its DEFAULT,
+    which reads a real CheckpointRecord from ORCA_HOME/registry/
+    checkpoints/, present on a development machine but genuinely
+    absent on a fresh CI checkout."""
+    plan = build_court_society_plan(allow_experimental=False, checkpoint_lookup=lambda checkpoint_id: _FakeCheckpointRecord())
     assert plan.same_model_role_overlap is True
     constructor = plan.assignments[0].routing_decision
     falsifier = plan.assignments[1].routing_decision

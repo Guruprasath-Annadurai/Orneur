@@ -506,7 +506,7 @@ def test_security_root_local_fallback_still_impossible_in_distributed_mode(tmp_p
 # --------------------------------------------------------------- §7: readiness reflects core-db outage
 
 
-def test_readyz_not_ready_when_distributed_core_db_becomes_unavailable():
+def test_readyz_not_ready_when_distributed_core_db_becomes_unavailable(monkeypatch):
     """Spec §7: a worker that started successfully whose shared core
     database becomes unavailable afterward must report NOT_READY, not
     silently stay READY (mirroring the analogous security-root check
@@ -522,6 +522,24 @@ def test_readyz_not_ready_when_distributed_core_db_becomes_unavailable():
     os.environ["ORNEUR_DATABASE_URL"] = "postgresql://nonexistent-host-for-test:5432/nope"
     import orca.godmode.deployment_profile as dp
     importlib.reload(dp)
+    # Phase 15.15 CI truthfulness closure: /readyz's core-database check
+    # imports get_conn() from orca.auth.db, whose BACKEND ("postgres" vs
+    # "sqlite") is a plain module-level constant computed ONCE at first
+    # import -- reading ORNEUR_DATABASE_URL as it stood back then, not
+    # the value just set above. `importlib.reload(orca.auth.db)` is
+    # NOT safe here (unlike the sibling security_root test's reload):
+    # this module runs `init_db()` EAGERLY at import/reload time, which
+    # itself calls get_conn() and attempts a real connection immediately
+    # -- reloading under the bad DSN crashes the reload itself rather
+    # than reaching /readyz's own try/except. Setting the BACKEND
+    # attribute directly (a plain assignment, no re-exec of the
+    # module's other import-time side effects) achieves the same
+    # runtime effect this test actually wants: the NEXT get_conn()
+    # call, made lazily inside the /readyz handler, reads BACKEND at
+    # call time and genuinely attempts (and fails) a postgres
+    # connection to the bad host.
+    import orca.auth.db as auth_db
+    monkeypatch.setattr(auth_db, "BACKEND", "postgres")
 
     import unittest.mock as mock
     with mock.patch.object(api_module, "resolve_tier_model", lambda tier, host=None: "orca-nano"):

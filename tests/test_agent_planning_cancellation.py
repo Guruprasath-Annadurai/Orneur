@@ -26,6 +26,26 @@ async def test_cancel_during_planning_never_produces_a_plan(monkeypatch):
 
     monkeypatch.setattr(llm_mod, "gateway_json_call", slow_gateway_json_call)
 
+    # Phase 15.15 CI truthfulness closure: AgentPlanner.compile_plan()
+    # resolves TOOL_REASONER via resolve_tier_for_role() -> route()
+    # BEFORE ever reaching the mocked gateway_json_call above. Without
+    # this, route()'s DEFAULT checkpoint_lookup (a real CheckpointRecord
+    # read from ORCA_HOME/registry/checkpoints/, present on a
+    # development machine but genuinely absent on a fresh CI checkout)
+    # made every candidate ineligible there, so compile_plan() returned
+    # a NO_ELIGIBLE_REASONER failure SYNCHRONOUSLY -- the task completed
+    # before plan_task.cancel() could ever apply, so
+    # `await plan_task` returned normally instead of raising
+    # CancelledError, and this test's own real cancellation-timing
+    # assertion was never actually exercised in CI.
+    import orca.society.router as router_mod
+
+    class _FakeCheckpointRecord:
+        def is_routable(self) -> bool:
+            return True
+
+    monkeypatch.setattr(router_mod, "_default_checkpoint_lookup", lambda checkpoint_id: _FakeCheckpointRecord())
+
     registry = build_agent_tool_registry()
     planner = AgentPlanner()
     goal = AgentGoal(objective="x", allowed_action_classes=frozenset({SideEffectClass.READ_ONLY}))

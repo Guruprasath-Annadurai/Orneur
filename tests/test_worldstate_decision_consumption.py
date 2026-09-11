@@ -56,12 +56,28 @@ def test_court_excludes_a_worldstate_flagged_unavailable_model_from_routing():
     assert "UNAVAILABLE" in str(case.world_state.variables["orneur-genesis"]["value"])
 
 
-def test_court_without_the_observation_would_have_routed_normally():
+def test_court_without_the_observation_would_have_routed_normally(monkeypatch):
     """Control case: the SAME objective, no unavailability observation --
     proves the difference above is caused by the WorldState observation,
-    not by something else (e.g. missing evidence)."""
-    from orca.society.contracts import CognitiveRole, RoutingRequest
-    from orca.society.router import route
+    not by something else (e.g. missing evidence).
 
-    decision = route(RoutingRequest(role=CognitiveRole.CONSTRUCTOR))
+    Phase 15.15 CI truthfulness closure: this call previously relied on
+    `route()`'s DEFAULT checkpoint_lookup, which reads a REAL
+    CheckpointRecord from `ORCA_HOME/registry/checkpoints/` -- present
+    on a development machine with real historical checkpoint imports,
+    but genuinely absent on a fresh CI checkout, silently making
+    Genesis ineligible there (`selected_model_id` stayed `None`). Fixed
+    per this file's own stated hermeticity discipline (matching
+    tests/test_society_router.py's `_fake_checkpoint_lookup` pattern) --
+    a genuine test defect, not a route()/CognitiveCourt code defect."""
+    from orca.society.contracts import CognitiveRole, RoutingRequest
+    from orca.society import router as router_mod
+
+    class _FakeCheckpointRecord:
+        def is_routable(self) -> bool:
+            return True
+
+    monkeypatch.setattr(router_mod, "_default_checkpoint_lookup", lambda checkpoint_id: _FakeCheckpointRecord())
+
+    decision = router_mod.route(RoutingRequest(role=CognitiveRole.CONSTRUCTOR))
     assert decision.selected_model_id == "orneur-genesis"
