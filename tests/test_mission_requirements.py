@@ -177,6 +177,13 @@ class TestSeedRegistry:
         assert len(areas) >= 10, f"expected broad spec coverage, got areas: {sorted(areas)}"
 
     def test_seed_neon_requirement_reflects_real_phase_15_0_evidence(self):
+        # Phase 15.15's final requirement-registry audit inspected the
+        # actual connection-routing code (orca/mission/db.py) and closed
+        # this requirement's remaining two acceptance criteria with real
+        # tests (see PHASE15_EVIDENCE.md's Phase 15.15 section) -- it is
+        # no longer merely IMPLEMENTED.
         req = get("REQ-STATE-NEON-002")
-        assert req.status is RequirementStatus.IMPLEMENTED
+        assert req.status is RequirementStatus.VERIFIED
         assert req.implementation_files  # non-empty -- points at the real evidence checkpoint
+        assert req.test_files
+        assert req.evidence_ref

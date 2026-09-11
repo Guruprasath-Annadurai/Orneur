@@ -188,3 +188,54 @@ class TestAllStatesReachTerminalOrAreTerminal:
     def test_non_terminal_state_has_outgoing_transitions(self, state):
         from orca.mission.state_machine import _ALLOWED_TRANSITIONS
         assert len(_ALLOWED_TRANSITIONS[state]) > 0, f"{state.value} has no outgoing transitions but isn't terminal"
+
+
+# ── REQ-AUTONOMY-LEVELS-001 (Phase 15.15 closure) ──────────────────────
+
+class TestAutonomyLevelBoundedness:
+    """Exactly four bounded autonomy levels exist (L0 ADVISE, L1 EDIT, L2
+    EXECUTE, L3 AUTONOMOUS MISSION, L4 GOVERNED ENTERPRISE AUTONOMY) --
+    no uncontrolled L5 root autonomy. `missions.autonomy_level` is not a
+    MissionState enum member -- it's a separate durable column with its
+    own DB-level CHECK constraint (orca/mission/schema.py); the app-level
+    boundedness proof lives here (pure, parses the actual schema SQL),
+    the DURABLE-layer proof (a real L5 INSERT rejected by Postgres
+    itself) lives in tests/test_mission_store_live_neon.py."""
+
+    def test_schema_check_constraint_allows_exactly_five_levels_no_l5(self):
+        from orca.mission.schema import SCHEMA_SQL
+        import re
+        match = re.search(r"autonomy_level\s+TEXT NOT NULL CHECK \(autonomy_level IN \(([^)]+)\)\)", SCHEMA_SQL)
+        assert match is not None, "could not locate the autonomy_level CHECK constraint in SCHEMA_SQL"
+        levels = {v.strip().strip("'") for v in match.group(1).split(",")}
+        assert levels == {"L0", "L1", "L2", "L3", "L4"}
+        assert "L5" not in levels
+
+    def test_mission_window_autonomous_levels_are_a_subset_of_l3_l4_only(self):
+        """The six-hour autonomous window (the one mechanism in this
+        codebase that grants genuinely UNSUPERVISED, time-bounded
+        multi-step execution) applies ONLY to L3/L4 -- confirming no
+        code path treats a HIGHER, unbounded level as eligible for it,
+        since no such level can even exist in the durable schema."""
+        from orca.mission.mission_window import _AUTONOMOUS_LEVELS
+        assert _AUTONOMOUS_LEVELS == {"L3", "L4"}
+        assert _AUTONOMOUS_LEVELS.issubset({"L0", "L1", "L2", "L3", "L4"})
+
+    def test_no_level_escalation_path_exists_without_a_new_mission(self):
+        """There is no `update_autonomy_level()`/`escalate_autonomy()`
+        function anywhere in orca.mission -- a mission's autonomy_level
+        is set once, at create_mission() time, and never mutated by any
+        other durable-write path. Escalating a mission's own governance
+        level therefore requires creating a genuinely NEW mission (an
+        explicit, auditable, externally-visible act), never an in-place
+        privilege bump on an existing one."""
+        import inspect
+        from orca.mission import mission_store
+        source = inspect.getsource(mission_store)
+        assert "UPDATE missions SET" in source
+        # Every UPDATE statement against the missions table in this
+        # module targets state/window/revision columns -- never
+        # autonomy_level.
+        for line in source.splitlines():
+            if "UPDATE missions SET" in line:
+                assert "autonomy_level" not in line, f"found an autonomy_level mutation: {line!r}"

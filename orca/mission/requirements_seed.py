@@ -255,6 +255,29 @@ def seed_registry() -> None:
             "explicit, externally-authorized policy change.",
         ),
     ))
+    # Phase 15.15 (final requirement-registry audit) -- closed. The DB-
+    # level CHECK constraint (orca/mission/schema.py) already restricted
+    # autonomy_level to exactly {L0,L1,L2,L3,L4} since Phase 15.2, but no
+    # test proved it at the durable layer (only inferred from reading the
+    # SQL). Now proven at BOTH layers: the app-level enumeration/text
+    # (tests/test_mission_state_machine.py::TestAutonomyLevelBoundedness)
+    # and a real Postgres rejection of an 'L5' INSERT
+    # (tests/test_mission_store_live_neon.py::
+    # test_autonomy_level_l5_is_rejected_by_the_durable_check_constraint).
+    # No code path mutates autonomy_level after create_mission() at all
+    # (grep-verified: no `UPDATE missions SET` statement anywhere in
+    # orca/mission/mission_store.py touches that column) -- escalating a
+    # mission's governance level requires creating a genuinely NEW
+    # mission, an explicit and auditable act, never an in-place bump.
+    transition(
+        "REQ-AUTONOMY-LEVELS-001", RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/schema.py", "orca/mission/mission_store.py", "orca/mission/mission_window.py"),
+    )
+    transition(
+        "REQ-AUTONOMY-LEVELS-001", RequirementStatus.VERIFIED,
+        test_files=("tests/test_mission_state_machine.py", "tests/test_mission_store_live_neon.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1515--integrated-qualification--final-phase-15-gate",
+    )
 
     # -- Durable Mission State (spec section 9) --
     register(Requirement(
@@ -316,6 +339,28 @@ def seed_registry() -> None:
         "REQ-STATE-NEON-002",
         RequirementStatus.IMPLEMENTED,
         implementation_files=("docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-150--baseline",),
+    )
+    # Phase 15.15 (final requirement-registry audit) -- closed. Inspected
+    # the ACTUAL connection-routing code (orca/mission/db.py) rather than
+    # merely confirming both env vars exist: get_conn(direct=True) and
+    # get_conn(direct=False) read DISTINCT environment variables
+    # (ORNEUR_MISSION_DATABASE_URL_DIRECT vs ORNEUR_MISSION_DATABASE_URL)
+    # with no fallback between them -- proven structurally
+    # (test_pooled_and_direct_connections_read_distinct_env_vars) and via
+    # a self-discovering scan confirming every live-Neon test file's own
+    # schema-bootstrap fixture uses direct=True exclusively
+    # (test_every_live_neon_schema_fixture_uses_direct_true_exclusively).
+    # The third criterion (no Neon Auth/Functions/Object Storage/AI
+    # Gateway) is confirmed by a repo-wide structural scan
+    # (test_no_neon_auth_functions_object_storage_or_ai_gateway_capability_enabled).
+    # The first criterion (project/branch identity) was already
+    # confirmed live in Phase 15.0.
+    transition(
+        "REQ-STATE-NEON-002",
+        RequirementStatus.VERIFIED,
+        implementation_files=("orca/mission/db.py",),
+        test_files=("tests/test_mission_store_unit.py",),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1515--integrated-qualification--final-phase-15-gate",
     )
 
     # -- Checkpoint System (spec section 10) --
@@ -745,6 +790,34 @@ def seed_registry() -> None:
             "change and confirms it is NOT blocked.",
         ),
     ))
+    # Phase 15.15 -- the detection engine (orca/mission/gaming_detectors.py:
+    # detect_test_deletions, detect_skip_additions, detect_assertion_
+    # weakening, detect_error_suppression, detect_mock_replacing_real_
+    # behavior, detect_hardcoded_bypass, detect_expected_behavior_mutation,
+    # analyze_revisions) was already fully implemented and tested (24
+    # passing tests across tests/test_anti_gaming.py and tests/
+    # test_gaming_detectors.py) but this requirement was never transitioned
+    # out of its initial UNIMPLEMENTED registration -- a registry-hygiene
+    # gap, not a missing capability. Closed during Phase 15.15's final
+    # requirement-registry audit.
+    transition(
+        "REQ-ANTIGAME-DETECT-001", RequirementStatus.IMPLEMENTED,
+        implementation_files=("orca/mission/anti_gaming.py", "orca/mission/gaming_detectors.py"),
+    )
+    # test_scenario_2_auth_test_weakened_to_expect_success_is_critical
+    # proves the first criterion (a security-relevant assertion weakened
+    # with no linked requirement change is flagged CRITICAL);
+    # test_scenario_6_requirement_driven_change_is_surfaced_not_auto_
+    # rejected proves the second (a requirement-driven change is
+    # surfaced as a finding, never auto-blocked/silently discarded --
+    # justification remains a separate Court/policy decision, per the
+    # detector's own deliberate design, not something this detector
+    # itself adjudicates).
+    transition(
+        "REQ-ANTIGAME-DETECT-001", RequirementStatus.VERIFIED,
+        test_files=("tests/test_gaming_detectors.py", "tests/test_anti_gaming.py"),
+        evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1515--integrated-qualification--final-phase-15-gate",
+    )
 
     # -- No Fake Completion (spec section 17) --
     register(Requirement(

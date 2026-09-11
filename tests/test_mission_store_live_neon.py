@@ -479,3 +479,39 @@ class TestConcurrency:
         assert applied_states.issubset({final_state}), (
             f"lost update detected -- multiple different states were reported as applied: {applied_states}"
         )
+
+
+# ── REQ-AUTONOMY-LEVELS-001 (Phase 15.15): DURABLE-layer L5 rejection ──
+
+def test_autonomy_level_l5_is_rejected_by_the_durable_check_constraint():
+    """The app-level boundedness proof (schema SQL text, mission_window's
+    L3/L4-only autonomous set) lives in tests/test_mission_state_
+    machine.py -- this proves the SAME guarantee holds at the DURABLE
+    layer: Postgres itself, not merely application code, refuses an
+    'L5' autonomy_level."""
+    conn = _fresh_connection()
+    try:
+        mid = _mid("mis_l5")
+        with pytest.raises(Exception) as exc_info:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO missions
+                        (id, repository, mode, autonomy_level, state, owner_user_id, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, now()::text, now()::text)
+                    """,
+                    (mid, "org/l5-qual", "BUILD", "L5", "DRAFT", "user_l5_qual"),
+                )
+        conn.rollback()
+        assert "check" in str(exc_info.value).lower() or "constraint" in str(exc_info.value).lower()
+
+        # And a legal level (L4) DOES insert cleanly on a fresh transaction.
+        legal_mid = _mid("mis_l4")
+        create_mission(
+            conn, id=legal_mid, repository="org/l5-qual", mode="BUILD",
+            autonomy_level="L4", owner_user_id="user_l5_qual",
+        )
+        assert get_mission(conn, legal_mid)["autonomy_level"] == "L4"
+    finally:
+        conn.close()
+
