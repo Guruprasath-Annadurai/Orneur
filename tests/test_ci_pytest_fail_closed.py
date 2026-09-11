@@ -91,16 +91,19 @@ def test_torch_loss_tests_job_is_present_and_required():
     assert "tests/test_train_losses.py" in run_texts
 
 
-def test_deterministic_job_installs_mcp_and_nvidia_extras():
-    """tests/test_distill.py (openai, via the `nvidia` extra) and
-    tests/test_mcp_fs_server_sandbox.py (mcp, via the `mcp` extra) must
-    both be genuinely installable in the main deterministic job -- not
-    silently uncollectable."""
+def test_deterministic_job_installs_mcp_nvidia_and_postgres_extras():
+    """tests/test_distill.py (openai, via the `nvidia` extra),
+    tests/test_mcp_fs_server_sandbox.py (mcp, via the `mcp` extra), and
+    the real number of orca.mission/godmode/auth tests needing
+    `psycopg` (via the `postgres` extra) must all be genuinely
+    installable in the main deterministic job -- not silently
+    uncollectable or import-erroring."""
     steps = _pytest_job_steps()
     install_steps = [s for s in steps if "uv pip install" in s.get("run", "")]
     assert install_steps, "expected an install step using uv pip install"
     install_text = install_steps[0]["run"]
-    assert ".[dev,mcp,nvidia]" in install_text or (".[dev" in install_text and "mcp" in install_text and "nvidia" in install_text)
+    for extra in ("dev", "mcp", "nvidia", "postgres"):
+        assert extra in install_text, f"expected the {extra!r} extra in the deterministic job's install step"
 
 
 # ── Script-level: pipefail declared before the tee pipeline ───────────

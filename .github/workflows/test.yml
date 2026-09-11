@@ -30,18 +30,23 @@ jobs:
       - name: Install Orca (dev + mcp + nvidia extras -- no GPU/Ollama needed)
         # Phase 15.15 CI truthfulness closure: the deterministic suite
         # includes tests/test_distill.py (needs `openai`, from the
-        # `nvidia` extra) and tests/test_mcp_fs_server_sandbox.py (a
+        # `nvidia` extra), tests/test_mcp_fs_server_sandbox.py (a
         # SECURITY-relevant path-traversal regression, needs `mcp`,
-        # from the `mcp` extra) -- both are lightweight, pure-Python,
-        # no GPU/network/live-service dependency, and must genuinely
-        # execute in this job rather than being silently uncollectable.
+        # from the `mcp` extra), and a real number of tests exercising
+        # orca.mission/orca.godmode/orca.auth Postgres-backed code
+        # paths (needs `psycopg`, from the `postgres` extra) -- all
+        # lightweight, pure-Python (or pure-C-extension) at install
+        # time, no GPU/network/live-service dependency, and must
+        # genuinely execute in this job rather than being silently
+        # uncollectable/erroring on import. Discovered ONLY once the CI
+        # pipefail fix (below) stopped masking these as false-green.
         # tests/test_train_losses.py (needs `torch`) is deliberately
         # NOT installed here -- it runs in the separate, dedicated
         # `torch-loss-tests` job below instead of pulling torch into
         # every regular test run.
         run: |
           pip install uv
-          uv pip install --system -e ".[dev,mcp,nvidia]"
+          uv pip install --system -e ".[dev,mcp,nvidia,postgres]"
 
       - name: Run deterministic test suite
         run: bash scripts/ci/run_deterministic_tests.sh
