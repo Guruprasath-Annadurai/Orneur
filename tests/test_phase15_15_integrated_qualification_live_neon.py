@@ -139,12 +139,33 @@ def _mid() -> str:
     return f"mis_{uuid.uuid4().hex[:12]}"
 
 
+_TEST_USER_CREDENTIALS: dict[str, str] = {}
+
+
+def _real_user(store) -> str:
+    """A genuine `orca.auth.store` user -- required for TRUSTED Relay
+    device enrollment (`enroll_trusted_device()` demands a REAL
+    server-issued `ReauthGrant`, which itself requires a real password
+    verification against `orca.auth.store`, not a fabricated user id).
+    Mirrors tests/test_relay_security_live_neon.py's own helper."""
+    email = f"phase1515-{uuid.uuid4().hex[:10]}@example.com"
+    password = f"Pw{uuid.uuid4().hex[:16]}!"
+    user = store.create_user(email, password)
+    _TEST_USER_CREDENTIALS[user.id] = password
+    return user.id
+
+
+def _reauth_for(owner: str):
+    from orca.mission.relay_security import verify_reauthentication
+    return verify_reauthentication(authenticated_user_id=owner, password=_TEST_USER_CREDENTIALS[owner])
+
+
 # ═════════════════════════════════════════════════════════════════════
 # 1. THE CANONICAL END-TO-END STORY (spec section 45)
 # ═════════════════════════════════════════════════════════════════════
 
-def test_canonical_end_to_end_story():
-    owner = _uid()
+def test_canonical_end_to_end_story(isolated_home):
+    owner = _real_user(isolated_home)
     mission_id = _mid()
 
     # ── idea -> Product Contract -> requirements (sections 6-7) ───────
@@ -321,7 +342,9 @@ def test_canonical_end_to_end_story():
             reconnect_conn.close()
 
         # ── Relay: another device observes the same mission ────────────
-        device = register_device(fresh_conn, authenticated_user_id=owner, trust_level=DeviceTrustLevel.TRUSTED, name="laptop")
+        from orca.mission.relay_security import enroll_trusted_device
+        reauth_grant = _reauth_for(owner)
+        device = enroll_trusted_device(fresh_conn, authenticated_user_id=owner, reauth_grant=reauth_grant, name="laptop")
         session = create_relay_session(
             fresh_conn, device_id=device.id, mission_id=mission_id, authenticated_user_id=owner, mode=RelayMode.TRUSTED,
         )
@@ -497,7 +520,12 @@ def test_no_fake_completion_missing_evidence_blocks_verified_and_production_proo
             release_policy=minimal_policy,
         )
         assert proof.release_state == NOT_ENGINEERING_READY
-        assert requirement_id in proof.requirements_failed
+        # No record at all -> UNVERIFIED, not FAIL -- a missing check is
+        # never conflated with an explicit failure (requirements_failed
+        # is reserved for a real VerificationOutcome.FAIL); the missing-
+        # evidence case is tracked separately as unresolved.
+        assert requirement_id not in proof.requirements_failed
+        assert requirement_id in proof.requirements_unresolved
 
         # Attempting COMPLETED_VERIFIED anyway is refused by the state
         # machine's own invariant (VERIFYING is a legal source, but a
