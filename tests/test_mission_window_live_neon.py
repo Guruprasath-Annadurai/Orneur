@@ -918,33 +918,43 @@ def test_direct_start_after_expired_window_is_denied():
 
 
 # ── Item 2: server-controlled window duration, no caller override ─────
+# (Phase 15.14.2 item 1: the underscore-prefixed `_policy` seam was
+# REMOVED outright from both authoritative entrypoints -- a leading
+# underscore is a naming convention, not an authorization boundary.
+# Pure structural/validation checks that need no database live in
+# tests/test_mission_window.py instead; this file covers only the
+# live-Neon-dependent duration proof below.)
 
-def test_start_autonomous_window_has_no_public_duration_parameter():
-    import inspect
-    sig = inspect.signature(start_autonomous_window)
-    assert "window_seconds" not in sig.parameters
-    assert "_policy" in sig.parameters  # internal/test-only seam only
+def test_authoritative_start_cannot_select_a_huge_or_tiny_duration(monkeypatch):
+    """No production call shape exists that lets a caller select 1
+    second, 48 hours, or 1 year -- the ONLY way to change effective
+    duration is to monkeypatch get_mission_window_policy() itself,
+    which is exactly what this test does (a test-only operation, never
+    reachable through start_autonomous_window()'s own signature)."""
+    import orca.mission.mission_window as mw
 
-
-def test_default_policy_is_21600_for_l3_and_l4():
-    from orca.mission.mission_window import get_mission_window_policy
-    policy = get_mission_window_policy()
-    assert policy.duration_seconds("L3") == 21600
-    assert policy.duration_seconds("L4") == 21600
-
-
-def test_test_only_policy_seam_does_not_leak_into_other_calls():
     owner = _uid()
     conn = _fresh_connection()
     try:
         mission_id = _seed_l3_mission(conn, owner)
         base_now = datetime.now(timezone.utc)
-        tiny_policy = MissionWindowPolicy(durations_by_level={"L3": 1, "L4": 1})
-        mission = start_autonomous_window(conn, mission_id=mission_id, now_fn=lambda: base_now, _policy=tiny_policy)
+
+        # Attempting to pass a duration-like kwarg is a TypeError --
+        # there is no parameter to receive it.
+        with pytest.raises(TypeError):
+            start_autonomous_window(conn, mission_id=mission_id, now_fn=lambda: base_now, window_seconds=1)  # type: ignore[call-arg]
+
+        huge_policy = MissionWindowPolicy(durations_by_level={"L3": 48 * 3600, "L4": 48 * 3600})
+        monkeypatch.setattr(mw, "get_mission_window_policy", lambda: huge_policy)
+        mission = start_autonomous_window(conn, mission_id=mission_id, now_fn=lambda: base_now)
         started = datetime.fromisoformat(mission["window_started_at"])
         deadline = datetime.fromisoformat(mission["window_deadline_at"])
-        assert (deadline - started).total_seconds() == 1
+        assert (deadline - started).total_seconds() == 48 * 3600
+        monkeypatch.undo()
 
+        # A SEPARATE mission, started with no monkeypatch in effect,
+        # still gets the real production default -- the test seam on
+        # one call never leaks into another.
         mission_id_2 = _seed_l3_mission(conn, owner)
         mission2 = start_autonomous_window(conn, mission_id=mission_id_2, now_fn=lambda: base_now)
         started2 = datetime.fromisoformat(mission2["window_started_at"])
@@ -952,6 +962,20 @@ def test_test_only_policy_seam_does_not_leak_into_other_calls():
         assert (deadline2 - started2).total_seconds() == DEFAULT_AUTONOMOUS_WINDOW_SECONDS
     finally:
         conn.close()
+
+
+def test_invalid_server_policy_fails_closed():
+    for bad in (
+        {"L3": 0, "L4": 21600},
+        {"L3": -1, "L4": 21600},
+        {"L3": 21600},  # missing L4
+        {"L4": 21600},  # missing L3
+        {"L3": 21600.5, "L4": 21600},  # non-integer
+        {"L3": "21600", "L4": 21600},  # non-integer (str)
+        {"L3": True, "L4": 21600},  # bool is not a valid duration
+    ):
+        with pytest.raises(MissionWindowError):
+            MissionWindowPolicy(durations_by_level=bad)
 
 
 # ── Item 3: NOT_STARTED L3/L4 must not admit autonomous work ──────────
@@ -1607,3 +1631,236 @@ def test_start_vs_expiry_race_start_commits_first_settles_exactly_once():
         assert executor2.call_count == 0
     finally:
         settle_conn.close()
+
+
+# ═════════════════════════════════════════════════════════════════════
+# PHASE 15.14.2 -- Policy Provenance, Idempotency Integrity, and
+# Checkpoint Currentness Closure (owner audit).
+# ═════════════════════════════════════════════════════════════════════
+
+# ── Item 2: same-mission fingerprint integrity is not weakened by ─────
+# the window-aware fast path.
+
+def test_same_mission_same_key_different_fingerprint_conflicts():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_l3_mission(conn, owner)
+        base_now = datetime.now(timezone.utc)
+        start_autonomous_window(conn, mission_id=mission_id, now_fn=lambda: base_now)
+
+        key = f"idem_{uuid.uuid4().hex[:12]}"
+        op1, created1 = request_operation_within_window(
+            conn, id=f"op_{uuid.uuid4().hex[:12]}", idempotency_key=key, kind="deploy",
+            requested_by=owner, mission_id=mission_id, target="prod", parameters={"v": "A"},
+            now_fn=lambda: base_now,
+        )
+        assert created1 is True
+
+        with pytest.raises(OperationConflictError):
+            request_operation_within_window(
+                conn, id=f"op_{uuid.uuid4().hex[:12]}", idempotency_key=key, kind="deploy",
+                requested_by=owner, mission_id=mission_id, target="prod", parameters={"v": "B"},
+                now_fn=lambda: base_now,
+            )
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS c FROM operations WHERE idempotency_key = %s", (key,))
+            count = cur.fetchone()["c"]
+        conn.commit()
+        assert count == 1
+        assert get_operation(conn, op1["id"])["parameters_fingerprint"] == op1["parameters_fingerprint"]
+    finally:
+        conn.close()
+
+
+def test_same_mission_same_key_different_fingerprint_conflicts_after_expiry():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_l3_mission(conn, owner)
+        base_now = datetime.now(timezone.utc)
+        start_autonomous_window(conn, mission_id=mission_id, now_fn=lambda: base_now)
+
+        key = f"idem_{uuid.uuid4().hex[:12]}"
+        op1, created1 = request_operation_within_window(
+            conn, id=f"op_{uuid.uuid4().hex[:12]}", idempotency_key=key, kind="deploy",
+            requested_by=owner, mission_id=mission_id, target="prod", parameters={"v": "A"},
+            now_fn=lambda: base_now,
+        )
+        assert created1 is True
+
+        after = base_now + timedelta(seconds=DEFAULT_AUTONOMOUS_WINDOW_SECONDS + 1)
+        with pytest.raises(OperationConflictError):
+            request_operation_within_window(
+                conn, id=f"op_{uuid.uuid4().hex[:12]}", idempotency_key=key, kind="deploy",
+                requested_by=owner, mission_id=mission_id, target="prod", parameters={"v": "C"},
+                now_fn=lambda: after,
+            )
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS c FROM operations WHERE idempotency_key = %s", (key,))
+            count = cur.fetchone()["c"]
+        conn.commit()
+        assert count == 1
+    finally:
+        conn.close()
+
+
+# ── Item 3: a real concurrent cross-mission ON CONFLICT race never ────
+# leaks/returns the foreign operation.
+
+def test_concurrent_cross_mission_same_key_race_never_returns_foreign_operation():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_a = _seed_l3_mission(conn, owner)
+        mission_b = _seed_l3_mission(conn, owner)
+        base_now = datetime.now(timezone.utc)
+        start_autonomous_window(conn, mission_id=mission_a, now_fn=lambda: base_now)
+        start_autonomous_window(conn, mission_id=mission_b, now_fn=lambda: base_now)
+    finally:
+        conn.close()
+
+    shared_key = f"idem_{uuid.uuid4().hex[:12]}"
+    barrier = threading.Barrier(2)
+    results = {}
+    errors = []
+
+    def _race(mission_id, label):
+        c = _fresh_connection()
+        try:
+            barrier.wait(timeout=5)
+            op, created = request_operation_within_window(
+                c, id=f"op_{uuid.uuid4().hex[:12]}", idempotency_key=shared_key, kind="deploy",
+                requested_by=owner, mission_id=mission_id, target="prod", parameters={"v": "same"},
+                now_fn=lambda: base_now,
+            )
+            results[label] = ("created", op["id"], op["mission_id"])
+        except OperationConflictError:
+            results[label] = ("conflict", None, None)
+        except Exception as e:  # noqa: BLE001
+            errors.append((label, e))
+        finally:
+            c.close()
+
+    t1 = threading.Thread(target=_race, args=(mission_a, "A"), daemon=True)
+    t2 = threading.Thread(target=_race, args=(mission_b, "B"), daemon=True)
+    t1.start(); t2.start()
+    t1.join(timeout=15); t2.join(timeout=15)
+
+    assert not errors, f"unexpected errors: {errors}"
+    assert set(results) == {"A", "B"}
+    outcomes = [results["A"], results["B"]]
+    created = [o for o in outcomes if o[0] == "created"]
+    conflicted = [o for o in outcomes if o[0] == "conflict"]
+    assert len(created) == 1, f"expected exactly one winner, got {outcomes}"
+    assert len(conflicted) == 1, f"expected exactly one loser, got {outcomes}"
+
+    winner_mission = created[0][2]
+    assert winner_mission in (mission_a, mission_b)
+
+    final_conn = _fresh_connection()
+    try:
+        with final_conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS c FROM operations WHERE idempotency_key = %s", (shared_key,))
+            count = cur.fetchone()["c"]
+        final_conn.commit()
+        assert count == 1
+        op = get_operation(final_conn, created[0][1])
+        assert op["mission_id"] == winner_mission
+    finally:
+        final_conn.close()
+
+
+# ── Item 4: resume must verify checkpoint revision currentness ────────
+
+def test_stale_checkpoint_revision_cannot_resume():
+    from orca.mission.mission_window import StaleCheckpointResumeError
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_l3_mission(conn, owner)  # current_revision="rev1"
+        base_now = datetime.now(timezone.utc)
+        start_autonomous_window(conn, mission_id=mission_id, now_fn=lambda: base_now)
+
+        after = base_now + timedelta(seconds=DEFAULT_AUTONOMOUS_WINDOW_SECONDS + 1)
+        result = enforce_window_expiry(conn, mission_id=mission_id, now_fn=lambda: after, **_CKPT_KWARGS)
+        assert result.outcome is WindowEnforcementOutcome.PAUSED
+        checkpoint_id = result.checkpoint.id
+        assert result.checkpoint.current_revision == "rev1"
+
+        # Durable mission revision moves on via a controlled test setup
+        # while the checkpoint (still the latest one) stays at rev1.
+        with conn.cursor() as cur:
+            cur.execute("UPDATE missions SET current_revision = %s WHERE id = %s", ("rev2", mission_id))
+        conn.commit()
+
+        resume_time = after + timedelta(hours=1)
+        with pytest.raises(StaleCheckpointResumeError):
+            resume_after_window(conn, mission_id=mission_id, expected_checkpoint_id=checkpoint_id, now_fn=lambda: resume_time)
+
+        reloaded = get_mission(conn, mission_id)
+        assert reloaded["state"] == MissionState.PAUSED_WINDOW_REACHED.value
+        assert reloaded["window_started_at"] == result.mission["window_started_at"]
+        assert reloaded["window_deadline_at"] == result.mission["window_deadline_at"]
+    finally:
+        conn.close()
+
+
+def test_current_checkpoint_revision_resumes_normally():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_l3_mission(conn, owner)  # current_revision="rev1"
+        base_now = datetime.now(timezone.utc)
+        start_autonomous_window(conn, mission_id=mission_id, now_fn=lambda: base_now)
+
+        after = base_now + timedelta(seconds=DEFAULT_AUTONOMOUS_WINDOW_SECONDS + 1)
+        result = enforce_window_expiry(conn, mission_id=mission_id, now_fn=lambda: after, **_CKPT_KWARGS)
+        assert result.outcome is WindowEnforcementOutcome.PAUSED
+
+        resume_time = after + timedelta(hours=1)
+        new_mission, ckpt = resume_after_window(
+            conn, mission_id=mission_id, expected_checkpoint_id=result.checkpoint.id, now_fn=lambda: resume_time,
+        )
+        assert new_mission["state"] == MissionState.RUNNING.value
+    finally:
+        conn.close()
+
+
+# ── Item 5: secret-bearing dictionary KEYS never enter the checkpoint ─
+
+def test_secret_bearing_dictionary_keys_absent_at_rest_and_via_relay():
+    owner = _uid()
+    conn = _fresh_connection()
+    try:
+        mission_id = _seed_l3_mission(conn, owner)
+        base_now = datetime.now(timezone.utc)
+        start_autonomous_window(conn, mission_id=mission_id, now_fn=lambda: base_now)
+
+        leaky_kwargs = dict(_CKPT_KWARGS)
+        leaky_kwargs["tool_outcomes"] = ({"Bearer sk-abcdefghijklmnopqrstuvwxyz1234567890ABCD": "failed"},)
+        leaky_kwargs["resource_budget_state"] = {"password=VerySecretValue12345678": 1}
+        leaky_kwargs["requirement_states"] = {"token=ghp_abcdefghijklmnopqrstuvwxyz0123456789": "IMPLEMENTED"}
+
+        after = base_now + timedelta(seconds=DEFAULT_AUTONOMOUS_WINDOW_SECONDS + 1)
+        result = enforce_window_expiry(conn, mission_id=mission_id, now_fn=lambda: after, **leaky_kwargs)
+        assert result.outcome is WindowEnforcementOutcome.PAUSED
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM checkpoints WHERE id = %s", (result.checkpoint.id,))
+            row = dict(cur.fetchone())
+        conn.commit()
+        raw_text = str(row)
+        assert "sk-abcdefghijklmnopqrstuvwxyz1234567890" not in raw_text
+        assert "VerySecretValue12345678" not in raw_text
+        assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" not in raw_text
+
+        _, session = _seed_session(conn, owner, mission_id, now_fn=lambda: after)
+        reconnect_result = reconnect_to_mission(conn, session_id=session.id, authenticated_user_id=owner, now_fn=lambda: after)
+        relay_text = str(reconnect_result.snapshot.checkpoint)
+        assert "sk-abcdefghijklmnopqrstuvwxyz1234567890" not in relay_text
+        assert "VerySecretValue12345678" not in relay_text
+        assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" not in relay_text
+    finally:
+        conn.close()

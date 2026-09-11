@@ -51,8 +51,14 @@ originally-accepted Phase 15.14 implementation:
      a public caller-supplied boolean.
   2. Window duration is now sourced from `get_mission_window_policy()`
      (a trusted SERVER policy), never a public caller-supplied
-     integer. Tests inject a policy only via the underscore-prefixed,
-     internal `_policy` seam.
+     integer. Phase 15.14.1 exposed this via an underscore-prefixed
+     `_policy` test seam on the authoritative entrypoints themselves --
+     Phase 15.14.2's own audit found a leading underscore is a naming
+     convention, not an authorization boundary, so that parameter was
+     REMOVED OUTRIGHT from `start_autonomous_window()`/`resume_after_
+     window()`; a test that needs a different duration monkeypatches
+     `get_mission_window_policy()` itself, or calls the private
+     `_begin_window_locked()` helper directly.
   3. NOT_STARTED (an L3/L4 mission with no window ever begun) no
      longer admits new autonomous work.
   4. PAUSED_USER and BLOCKED now explicitly deny new autonomous work,
@@ -61,6 +67,14 @@ originally-accepted Phase 15.14 implementation:
      after window expiry (`start_and_execute_operation_within_
      window()`); already-STARTED work still settles exactly once,
      never replayed.
+  14. (Phase 15.14.2) A same-mission idempotency-key retry no longer
+     bypasses fingerprint integrity, a cross-mission `ON CONFLICT` race
+     can no longer return a foreign mission's operation,
+     `resume_after_window()` now verifies checkpoint REVISION
+     currentness (not merely latest-checkpoint-ID match) under the
+     same resume lock, and the checkpoint sanitizer now redacts
+     dictionary KEYS too (with fail-closed collision detection), not
+     only values.
   7/8/9. New-operation admission and the AUTHORIZED->STARTED boundary
      are now atomic with window/state eligibility -- both hold the
      SAME mission-row `FOR UPDATE` lock `enforce_window_expiry()`
@@ -89,6 +103,7 @@ from orca.mission.mission_store import (
     get_mission,
 )
 from orca.mission.production_proof import redact_secrets
+from orca.mission.relay_reconnect import CheckpointCurrency, _classify_checkpoint_currency
 from orca.mission.state_machine import TERMINAL_STATES, MissionState, MissionStateError, transition
 
 DEFAULT_AUTONOMOUS_WINDOW_SECONDS = 6 * 60 * 60
@@ -146,6 +161,22 @@ class WindowRenewalDeniedError(MissionWindowError):
     `PAUSED_WINDOW_REACHED -> resume_after_window()` path."""
 
 
+class CheckpointSanitizationError(MissionWindowError):
+    """Phase 15.14.2 item 5: raised when sanitizing checkpoint content
+    would collapse two DISTINCT dictionary keys into the same
+    redacted key -- silently overwriting one entry with another would
+    itself be a data-integrity defect, so this fails closed instead of
+    picking a winner."""
+
+
+class StaleCheckpointResumeError(MissionWindowError):
+    """Phase 15.14.2 item 4: raised by `resume_after_window()` when the
+    mission's latest checkpoint is not CURRENT against the mission's
+    own durable `current_revision` (per the existing, reused Phase
+    15.13.1 `_classify_checkpoint_currency()` rule) -- being the
+    LATEST checkpoint is not sufficient; it must also be current."""
+
+
 # ── Typed window status/decision model (spec section 1) ─────────────
 
 class MissionWindowStatus(Enum):
@@ -187,9 +218,33 @@ class MissionWindowPolicy:
     fixed 21,600s (6h) for both L3 and L4 -- no real per-organization
     policy source exists yet, so none is invented. Production
     authoritative code always obtains duration via
-    `get_mission_window_policy()`; a caller can never supply an
-    arbitrary duration directly."""
+    `get_mission_window_policy()`; NO public production entrypoint
+    accepts a `MissionWindowPolicy` (or any duration-affecting value)
+    as a caller-supplied argument (Phase 15.14.2 item 1) -- the ONLY
+    way to change what policy is in effect is to monkeypatch
+    `get_mission_window_policy()` itself, which is a test-only
+    operation, never something reachable through this module's public
+    call signatures.
+
+    Validated EAGERLY at construction (item 1's policy-validation
+    requirement): every autonomous level (L3, L4) must map to a
+    positive `int` (not `bool`, not `float`, not a string) -- a
+    missing level, a non-positive value, or a non-integer value all
+    raise `MissionWindowError` immediately, so an invalid policy can
+    never even be constructed, let alone produce an authoritative
+    window."""
     durations_by_level: dict[str, int]
+
+    def __post_init__(self) -> None:
+        for level in _AUTONOMOUS_LEVELS:
+            value = self.durations_by_level.get(level)
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise MissionWindowError(
+                    f"MissionWindowPolicy is invalid for autonomy_level {level!r}: {value!r} -- "
+                    f"every autonomous level must map to a positive integer duration; refusing "
+                    f"to construct a policy that could produce a non-positive or non-integer "
+                    f"authoritative window"
+                )
 
     def duration_seconds(self, autonomy_level: str) -> int:
         try:
@@ -343,23 +398,26 @@ def _begin_window_locked(
     return mission_row
 
 
-def start_autonomous_window(
-    conn, *, mission_id: str, now_fn=_default_clock, _policy: MissionWindowPolicy | None = None,
-) -> dict:
+def start_autonomous_window(conn, *, mission_id: str, now_fn=_default_clock) -> dict:
     """THE authoritative, production-facing window-start entrypoint.
 
-    Server-controlled duration only: duration comes from
-    `get_mission_window_policy()` (item 2). `_policy` is an
-    underscore-prefixed, INTERNAL/TEST-ONLY seam -- no production call
-    site ever passes it, and it accepts a full trusted `MissionWindowPolicy`
-    object, never a bare caller-supplied integer.
+    Server-controlled duration only: duration comes ENTIRELY from
+    `get_mission_window_policy()` (item 2). This signature has NO
+    policy/duration parameter of any kind -- a leading underscore is a
+    naming convention, not an authorization boundary (Phase 15.14.2
+    item 1), so the previously-exposed `_policy` seam was removed
+    outright rather than merely renamed. A test that needs a different
+    duration monkeypatches `get_mission_window_policy()` itself, or
+    calls the private `_begin_window_locked()` helper directly with an
+    explicit policy object -- neither path is reachable from this
+    public function's own call signature.
 
     Idempotent, not extending: a STILL-ACTIVE existing window is
     returned unchanged. An EXPIRED prior window is NOT renewable by
     this direct call (item 1) -- it raises `WindowRenewalDeniedError`
     and writes nothing; only the explicit `resume_after_window()` path
     may start a genuinely new post-expiry window."""
-    policy = _policy or get_mission_window_policy()
+    policy = get_mission_window_policy()
     now_dt = now_fn()
     try:
         with conn.cursor() as cur:
@@ -442,6 +500,18 @@ def _admit_new_operation_locked(
     existing_row = cur.fetchone()
     assert existing_row is not None
     existing = dict(existing_row)
+    if existing["mission_id"] != mission_id:
+        # Item 3: lost the INSERT race to a DIFFERENT mission's
+        # concurrent request for the SAME key -- an ON CONFLICT loss
+        # does not prove the winning row belongs to THIS mission.
+        # Never return a foreign mission's operation as this caller's
+        # own retry, regardless of whether the fingerprint happens to
+        # match.
+        raise OperationConflictError(
+            f"idempotency_key {idempotency_key!r} lost the insert race to a DIFFERENT "
+            f"mission ({existing['mission_id']!r}, not {mission_id!r}) -- refusing to "
+            f"return a foreign mission's operation as this mission's own retry"
+        )
     if existing["parameters_fingerprint"] != fingerprint:
         raise OperationConflictError(
             f"idempotency_key {idempotency_key!r} was already used with different operation "
@@ -469,8 +539,15 @@ def request_operation_within_window(
     request" ONLY if it belongs to the SAME `mission_id`. A key that
     belongs to a DIFFERENT mission confers no eligibility here -- it is
     a genuine conflict, not a legitimate retry, and this mission's OWN
-    window/state governs regardless of the foreign mission's state."""
-    from orca.mission.operation_store import OperationConflictError
+    window/state governs regardless of the foreign mission's state.
+
+    Same-mission retries are STILL fingerprint-checked (Phase 15.14.2
+    item 2): the window-aware fast path must not weaken the Phase 15.5
+    canonical invariant that the SAME idempotency key reused with
+    DIFFERENT material parameters (kind/target/parameters) is a
+    conflict, not a silent reconciliation -- this holds regardless of
+    window state, including after expiry."""
+    from orca.mission.operation_store import OperationConflictError, compute_fingerprint
 
     try:
         with conn.cursor() as cur:
@@ -486,7 +563,19 @@ def request_operation_within_window(
 
             if existing is not None and existing["mission_id"] == mission_id:
                 # Same-mission retry/reconciliation of already-admitted
-                # work -- never blocked by window expiry.
+                # work -- never blocked by window expiry, but STILL
+                # required to carry the SAME material fingerprint
+                # (item 2): the window dimension never overrides
+                # idempotency-key integrity.
+                incoming_fingerprint = compute_fingerprint(kind=kind, target=target, parameters=parameters)
+                if existing["parameters_fingerprint"] != incoming_fingerprint:
+                    raise OperationConflictError(
+                        f"idempotency_key {idempotency_key!r} was already used with different "
+                        f"operation parameters for mission {mission_id!r} (existing fingerprint "
+                        f"{existing['parameters_fingerprint']!r}, this request's fingerprint "
+                        f"{incoming_fingerprint!r}); the window dimension does not override "
+                        f"idempotency-key integrity"
+                    )
                 conn.commit()
                 return existing, False
 
@@ -605,11 +694,28 @@ def _sanitize_checkpoint_value(value):
     at Relay-display time). Mirrors the same walk `orca.mission.
     relay_store._sanitize()` already uses for Relay snapshots -- reuses
     the same underlying `redact_secrets()` primitive rather than
-    inventing a second sanitizer."""
+    inventing a second sanitizer.
+
+    Dictionary KEYS are sanitized too (Phase 15.14.2 item 5) -- a raw
+    secret can appear as a JSON object key just as easily as a value.
+    Because two DIFFERENT raw keys could redact to the SAME sanitized
+    key, a post-sanitization collision is never silently resolved by
+    overwriting one entry -- it fails closed with
+    `CheckpointSanitizationError` instead."""
     if isinstance(value, str):
         return redact_secrets(value) or ""
     if isinstance(value, dict):
-        return {k: _sanitize_checkpoint_value(v) for k, v in value.items()}
+        sanitized: dict = {}
+        for k, v in value.items():
+            sanitized_key = (redact_secrets(k) or "") if isinstance(k, str) else k
+            if sanitized_key in sanitized:
+                raise CheckpointSanitizationError(
+                    f"sanitizing checkpoint dictionary key {k!r} collides with an "
+                    f"already-sanitized key {sanitized_key!r} -- refusing to silently "
+                    f"overwrite one entry with another"
+                )
+            sanitized[sanitized_key] = _sanitize_checkpoint_value(v)
+        return sanitized
     if isinstance(value, tuple):
         return tuple(_sanitize_checkpoint_value(v) for v in value)
     if isinstance(value, list):
@@ -722,20 +828,32 @@ def enforce_window_expiry(
 
 def resume_after_window(
     conn, *, mission_id: str, expected_checkpoint_id: str, now_fn=_default_clock,
-    _policy: MissionWindowPolicy | None = None,
 ) -> tuple[dict, Checkpoint]:
     """The governed resume path. Requires an EXPLICIT caller action
     (never automatic). Holds ONE mission-row lock across mission-state
-    validation, checkpoint-match validation, the `PAUSED_WINDOW_REACHED
-    -> RUNNING` transition write, AND the fresh window-start write
-    (item 12) -- on ANY failure, the whole transaction rolls back: the
+    validation, checkpoint-match validation, checkpoint REVISION-
+    CURRENTNESS validation (item 4), the `PAUSED_WINDOW_REACHED ->
+    RUNNING` transition write, AND the fresh window-start write (item
+    12) -- on ANY failure, the whole transaction rolls back: the
     mission remains `PAUSED_WINDOW_REACHED`, the old checkpoint remains
     authoritative, and there is no partial `RUNNING`-without-a-window
     state.
 
-    Confirms the mission is genuinely `PAUSED_WINDOW_REACHED` and that
+    Server-controlled duration only, via `get_mission_window_policy()`
+    -- this signature has NO policy/duration parameter (item 1),
+    matching `start_autonomous_window()`.
+
+    Confirms the mission is genuinely `PAUSED_WINDOW_REACHED`, that
     `expected_checkpoint_id` matches the mission's REAL latest
-    checkpoint -- a stale or wrong checkpoint reference is rejected.
+    checkpoint, AND that the checkpoint is genuinely CURRENT against
+    the mission's own durable `current_revision` -- being the LATEST
+    checkpoint is not sufficient; a checkpoint whose revision no
+    longer matches the durable repository revision is refused (item
+    4), reusing `orca.mission.relay_reconnect._classify_checkpoint_
+    currency()`'s existing, already-proven rule rather than inventing
+    a competing interpretation (including its fail-closed-to-STALE
+    handling of a genuinely absent revision on either side).
+
     Starts a genuinely NEW, server-controlled window via `_begin_
     window_locked(..., allow_post_expiry_renewal=True)` -- the ONLY
     place that flag is ever set to True, and only after the state/
@@ -744,7 +862,7 @@ def resume_after_window(
     authority is minted, no approval is granted, no failure/blocker
     history is cleared, nothing about the operation ledger is touched;
     only the mission's own state and window timestamps change."""
-    policy = _policy or get_mission_window_policy()
+    policy = get_mission_window_policy()
     now_dt = now_fn()
 
     try:
@@ -773,6 +891,15 @@ def resume_after_window(
                     f"mission's actual latest checkpoint "
                     f"({checkpoint.id if checkpoint else None!r}) -- refusing a stale/"
                     f"wrong-checkpoint resume"
+                )
+
+            currency = _classify_checkpoint_currency(checkpoint.current_revision, mission_row.get("current_revision"))
+            if currency is not CheckpointCurrency.CURRENT:
+                raise StaleCheckpointResumeError(
+                    f"checkpoint {checkpoint.id!r}'s revision {checkpoint.current_revision!r} "
+                    f"is not current against mission {mission_id!r}'s durable revision "
+                    f"{mission_row.get('current_revision')!r} -- being the latest checkpoint "
+                    f"is not sufficient; refusing a stale-revision resume"
                 )
 
             validated_new = transition(current_state, MissionState.RUNNING, evidence_ref=None)

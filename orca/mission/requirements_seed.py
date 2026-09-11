@@ -162,6 +162,15 @@ def seed_registry() -> None:
     # structurally server-controlled. Closed via `MissionWindowPolicy`
     # / `get_mission_window_policy()` -- see
     # docs/orneur/phase-15/PHASE15_EVIDENCE.md's Phase 15.14.1 section
+    # ("SERVER WINDOW POLICY"). Phase 15.14.2 (further audit) found the
+    # Phase 15.14.1 closure itself insufficient -- the `_policy`
+    # parameter was still caller-injectable despite its underscore
+    # prefix. Now REMOVED outright from both `start_autonomous_
+    # window()` and `resume_after_window()`; duration is sourced
+    # exclusively from `get_mission_window_policy()`, which validates
+    # every policy value eagerly at construction. See PHASE15_EVIDENCE
+    # .md's Phase 15.14.2 section ("POLICY PARAMETER REMOVAL") for the
+    # re-proof.
     # ("SERVER WINDOW POLICY") for the re-proof that no production
     # call site can supply an arbitrary duration.
     transition(
@@ -204,6 +213,33 @@ def seed_registry() -> None:
     # for the full evidence. This requirement's VERIFIED status is
     # retroactively understood to be backed by THAT evidence going
     # forward, not the narrower Phase 15.14 qualification alone.
+    #
+    # Phase 15.14.2 (further owner audit) -- APPEND-ONLY, no backward
+    # transition: four remaining integrity gaps were found and closed:
+    # (1) the Phase 15.14.1 `_policy` seam on `start_autonomous_
+    # window()`/`resume_after_window()` was a caller-injectable
+    # parameter in fact, regardless of its underscore prefix -- REMOVED
+    # outright, both entrypoints now derive duration ONLY from
+    # `get_mission_window_policy()`, which itself now validates every
+    # policy value eagerly at construction (positive integer, L3 and L4
+    # both present); (2) `request_operation_within_window()`'s same-
+    # mission retry-bypass fast path returned the existing operation
+    # WITHOUT re-checking its material fingerprint, weakening the
+    # Phase 15.5 same-key-different-parameters conflict guarantee --
+    # closed, fingerprint mismatch now conflicts regardless of window
+    # state; (3) `_admit_new_operation_locked()`'s post-ON-CONFLICT
+    # lookup did not verify the winning row belonged to the requesting
+    # mission, so a lost insert race to a DIFFERENT mission's
+    # concurrent request for the same key could return that foreign
+    # mission's operation -- closed, cross-mission ownership is now
+    # checked before any row is returned; (4) `resume_after_window()`
+    # validated that its checkpoint was the mission's LATEST but never
+    # that it was CURRENT against the mission's own durable revision --
+    # closed, reusing the existing `orca.mission.relay_reconnect.
+    # _classify_checkpoint_currency()` rule under the same resume lock.
+    # See docs/orneur/phase-15/PHASE15_EVIDENCE.md's
+    # "PHASE 15.14.2 -- FINAL WINDOW-INTEGRITY CLOSURE" section for the
+    # full evidence.
 
     # -- Autonomy Levels (spec section 8) --
     register(Requirement(

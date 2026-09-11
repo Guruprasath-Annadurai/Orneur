@@ -18,8 +18,13 @@ import pytest
 from orca.mission.mission_window import (
     DEFAULT_AUTONOMOUS_WINDOW_SECONDS,
     MissionWindowDecision,
+    MissionWindowError,
+    MissionWindowPolicy,
     MissionWindowStatus,
     evaluate_mission_window,
+    get_mission_window_policy,
+    resume_after_window,
+    start_autonomous_window,
 )
 from orca.mission.state_machine import MissionState
 
@@ -235,3 +240,72 @@ def test_canonical_req_ckpt_restore_002_is_now_verified():
         assert req.evidence_ref is not None and req.evidence_ref.strip() != ""
     finally:
         requirements_module.reset_registry_for_tests()
+
+
+# ── Phase 15.14.2 item 1: NO caller-injectable policy on either ───────
+# authoritative entrypoint; server policy validated eagerly.
+
+def test_start_autonomous_window_has_no_policy_or_duration_parameter():
+    import inspect
+    sig = inspect.signature(start_autonomous_window)
+    for forbidden in ("window_seconds", "duration_seconds", "policy", "_policy", "deadline", "started_at"):
+        assert forbidden not in sig.parameters, f"start_autonomous_window() must not accept {forbidden!r}"
+    assert set(sig.parameters) == {"conn", "mission_id", "now_fn"}
+
+
+def test_resume_after_window_has_no_policy_or_duration_parameter():
+    import inspect
+    sig = inspect.signature(resume_after_window)
+    for forbidden in ("window_seconds", "duration_seconds", "policy", "_policy", "deadline", "started_at"):
+        assert forbidden not in sig.parameters, f"resume_after_window() must not accept {forbidden!r}"
+    assert set(sig.parameters) == {"conn", "mission_id", "expected_checkpoint_id", "now_fn"}
+
+
+def test_default_policy_is_21600_for_l3_and_l4():
+    policy = get_mission_window_policy()
+    assert policy.duration_seconds("L3") == 21600
+    assert policy.duration_seconds("L4") == 21600
+
+
+@pytest.mark.parametrize("bad", [
+    {"L3": 0, "L4": 21600},
+    {"L3": -1, "L4": 21600},
+    {"L3": 21600},  # missing L4
+    {"L4": 21600},  # missing L3
+    {"L3": 21600.5, "L4": 21600},  # non-integer
+    {"L3": "21600", "L4": 21600},  # non-integer (str)
+    {"L3": True, "L4": 21600},  # bool is not a valid duration
+])
+def test_invalid_server_policy_fails_closed_at_construction(bad):
+    with pytest.raises(MissionWindowError):
+        MissionWindowPolicy(durations_by_level=bad)
+
+
+def test_valid_server_policy_constructs_cleanly():
+    policy = MissionWindowPolicy(durations_by_level={"L3": 3600, "L4": 7200})
+    assert policy.duration_seconds("L3") == 3600
+    assert policy.duration_seconds("L4") == 7200
+
+
+# ── Phase 15.14.2 item 5: dictionary KEYS are sanitized too ───────────
+
+def test_sanitizer_redacts_secret_bearing_dict_keys():
+    from orca.mission.mission_window import _sanitize_checkpoint_value
+    sanitized = _sanitize_checkpoint_value({"password=VerySecretValue12345678": "some-value"})
+    assert "VerySecretValue12345678" not in str(sanitized)
+
+
+def test_sanitizer_key_collision_fails_closed():
+    from orca.mission.mission_window import CheckpointSanitizationError, _sanitize_checkpoint_value
+    colliding = {
+        "Bearer sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": 1,
+        "Bearer sk-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": 2,
+    }
+    with pytest.raises(CheckpointSanitizationError):
+        _sanitize_checkpoint_value(colliding)
+
+
+def test_sanitizer_leaves_distinct_non_colliding_keys_untouched():
+    from orca.mission.mission_window import _sanitize_checkpoint_value
+    clean = {"step_1": "a", "step_2": "b"}
+    assert _sanitize_checkpoint_value(clean) == clean
