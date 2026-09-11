@@ -140,13 +140,54 @@ def test_waiting_states_still_count_toward_expiry(state):
 
 
 def test_decision_enum_has_exactly_two_values():
-    assert {d.value for d in MissionWindowDecision} == {"ALLOW_NEW_WORK", "DENY_WINDOW_EXPIRED"}
+    assert {d.value for d in MissionWindowDecision} == {"ALLOW_NEW_WORK", "DENY_NOT_ELIGIBLE"}
 
 
-def test_status_enum_has_exactly_seven_values():
+def test_status_enum_has_exactly_eight_values():
     assert {s.value for s in MissionWindowStatus} == {
-        "NOT_STARTED", "ACTIVE", "EXPIRED", "PAUSED", "TERMINAL", "NOT_APPLICABLE", "INVALID",
+        "NOT_STARTED", "ACTIVE", "EXPIRED", "PAUSED", "BLOCKED", "TERMINAL", "NOT_APPLICABLE", "INVALID",
     }
+
+
+# ── Phase 15.14.1 item 3/4: mission-state governance is STRONGER ────
+# than a still-in-range deadline -- NOT_STARTED, PAUSED_USER, and
+# BLOCKED must never be reported as eligible-for-work regardless of
+# window timestamps.
+
+def test_not_started_l3_is_not_started_not_active():
+    mission = _mission(window_started_at=None, window_deadline_at=None)
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert evaluate_mission_window(mission, now=now) is MissionWindowStatus.NOT_STARTED
+
+
+def test_paused_user_is_paused_even_with_deadline_in_future():
+    started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    deadline = started + timedelta(seconds=DEFAULT_AUTONOMOUS_WINDOW_SECONDS)
+    mission = _mission(
+        state=MissionState.PAUSED_USER.value,
+        window_started_at=started.isoformat(), window_deadline_at=deadline.isoformat(),
+    )
+    now = started + timedelta(hours=1)  # well inside the window
+    assert evaluate_mission_window(mission, now=now) is MissionWindowStatus.PAUSED
+
+
+def test_blocked_is_blocked_even_with_deadline_in_future():
+    started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    deadline = started + timedelta(seconds=DEFAULT_AUTONOMOUS_WINDOW_SECONDS)
+    mission = _mission(
+        state=MissionState.BLOCKED.value,
+        window_started_at=started.isoformat(), window_deadline_at=deadline.isoformat(),
+    )
+    now = started + timedelta(hours=1)
+    assert evaluate_mission_window(mission, now=now) is MissionWindowStatus.BLOCKED
+
+
+def test_require_new_autonomous_work_allowed_eligibility_set_is_active_and_not_applicable_only():
+    """Pure sanity check on the shared eligibility set -- ACTIVE and
+    NOT_APPLICABLE are the ONLY statuses that admit new work; every
+    other status (including NOT_STARTED, PAUSED, BLOCKED) denies."""
+    from orca.mission.mission_window import _WORK_ADMITTING_STATUSES
+    assert _WORK_ADMITTING_STATUSES == {MissionWindowStatus.NOT_APPLICABLE, MissionWindowStatus.ACTIVE}
 
 
 # ── Canonical requirement registry (spec section 20) ─────────────────

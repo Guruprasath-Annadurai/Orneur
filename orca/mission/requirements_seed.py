@@ -155,6 +155,15 @@ def seed_registry() -> None:
         test_files=("tests/test_mission_window.py", "tests/test_mission_window_live_neon.py"),
         evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1514--six-hour-mission-governance",
     )
+    # Phase 15.14.1 -- APPEND-ONLY: VERIFIED is terminal, so no
+    # backward transition is attempted. The owner audit flagged that
+    # "configurable" duration was exposed as a raw caller-supplied
+    # `window_seconds` integer on the authoritative entrypoint, not
+    # structurally server-controlled. Closed via `MissionWindowPolicy`
+    # / `get_mission_window_policy()` -- see
+    # docs/orneur/phase-15/PHASE15_EVIDENCE.md's Phase 15.14.1 section
+    # ("SERVER WINDOW POLICY") for the re-proof that no production
+    # call site can supply an arbitrary duration.
     transition(
         "REQ-WINDOW-EXPIRY-002", RequirementStatus.IMPLEMENTED,
         implementation_files=("orca/mission/mission_window.py",),
@@ -171,6 +180,30 @@ def seed_registry() -> None:
         test_files=("tests/test_mission_window_live_neon.py",),
         evidence_ref="docs/orneur/phase-15/PHASE15_EVIDENCE.md#phase-1514--six-hour-mission-governance",
     )
+    # Phase 15.14.1 (owner audit) -- APPEND-ONLY RECONCILIATION, no
+    # backward transition attempted: VERIFIED is terminal in this
+    # registry's state machine (no outgoing transitions), so the
+    # above VERIFIED call is left exactly as it was written. The
+    # owner-side audit found the Phase 15.14 qualification that earned
+    # it insufficient for the full autonomous-governance boundary this
+    # requirement's statement actually implies: a direct
+    # start_autonomous_window() could silently renew an EXPIRED
+    # window (bypassing the PAUSED_WINDOW_REACHED -> explicit-resume
+    # boundary); NOT_STARTED L3/L4 missions could admit new
+    # discretionary work with no window ever begun; PAUSED_USER and
+    # BLOCKED could be reported eligible while a deadline remained in
+    # range; an AUTHORIZED-but-not-yet-STARTED operation could still
+    # begin STARTED after expiry; window/state eligibility and new-
+    # operation admission were not atomic (a real TOCTOU window
+    # existed between the two); and an idempotency-key retry bypass
+    # was not mission-bound. Every one of these gaps is now closed in
+    # orca/mission/mission_window.py (see module docstring's Phase
+    # 15.14.1 section) and re-proven live against real Postgres --
+    # see docs/orneur/phase-15/PHASE15_EVIDENCE.md's
+    # "PHASE 15.14.1 -- AUTONOMOUS-WINDOW GOVERNANCE CLOSURE" section
+    # for the full evidence. This requirement's VERIFIED status is
+    # retroactively understood to be backed by THAT evidence going
+    # forward, not the narrower Phase 15.14 qualification alone.
 
     # -- Autonomy Levels (spec section 8) --
     register(Requirement(

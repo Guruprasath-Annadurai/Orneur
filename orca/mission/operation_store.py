@@ -317,6 +317,38 @@ def authorize_operation(
     return get_operation(conn, operation_id), allowed  # type: ignore[return-value]
 
 
+def _execute_and_settle(conn, operation_id: str, executor) -> dict:
+    """Runs `executor` for an operation that has JUST been (or already
+    was) transitioned to STARTED, and settles it to SUCCEEDED/FAILED.
+    Factored out of `start_and_execute_operation()` (Phase 15.14.1 item
+    5) so `orca.mission.mission_window.start_and_execute_operation_
+    within_window()` can reuse this exact settlement logic after its
+    own window-gated STARTED write, without duplicating it or touching
+    the operation ledger's generic semantics."""
+    operation = get_operation(conn, operation_id)
+    assert operation is not None
+    from orca.mission.executor import ExecutionFailed  # local import -- avoids a hard dependency for callers who never execute
+
+    try:
+        result_ref = executor.execute(operation_id=operation_id, kind=operation["kind"], mission_id=operation["mission_id"])
+    except ExecutionFailed as e:
+        try:
+            _write_operation_transition(conn, operation_id, "FAILED", result_ref=str(e))
+        except OperationStoreError:
+            conn.rollback()
+            raise
+        conn.commit()
+        return get_operation(conn, operation_id)  # type: ignore[return-value]
+
+    try:
+        _write_operation_transition(conn, operation_id, "SUCCEEDED", result_ref=result_ref)
+    except OperationStoreError:
+        conn.rollback()
+        raise
+    conn.commit()
+    return get_operation(conn, operation_id)  # type: ignore[return-value]
+
+
 def start_and_execute_operation(conn, operation_id: str, executor) -> dict:
     """Starts and executes an AUTHORIZED operation exactly once. If the
     operation is already STARTED, SUCCEEDED, FAILED, or CANCELLED, the
@@ -359,25 +391,4 @@ def start_and_execute_operation(conn, operation_id: str, executor) -> dict:
         raise
     conn.commit()
 
-    operation = get_operation(conn, operation_id)
-    assert operation is not None
-    from orca.mission.executor import ExecutionFailed  # local import -- avoids a hard dependency for callers who never execute
-
-    try:
-        result_ref = executor.execute(operation_id=operation_id, kind=operation["kind"], mission_id=operation["mission_id"])
-    except ExecutionFailed as e:
-        try:
-            _write_operation_transition(conn, operation_id, "FAILED", result_ref=str(e))
-        except OperationStoreError:
-            conn.rollback()
-            raise
-        conn.commit()
-        return get_operation(conn, operation_id)  # type: ignore[return-value]
-
-    try:
-        _write_operation_transition(conn, operation_id, "SUCCEEDED", result_ref=result_ref)
-    except OperationStoreError:
-        conn.rollback()
-        raise
-    conn.commit()
-    return get_operation(conn, operation_id)  # type: ignore[return-value]
+    return _execute_and_settle(conn, operation_id, executor)
