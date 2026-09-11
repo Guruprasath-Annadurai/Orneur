@@ -52,13 +52,13 @@ memory = ["chromadb>=0.5.0"]
 docs   = ["chromadb>=0.5.0", "pypdf>=4.0.0", "python-docx>=1.1.0", "pdfminer.six>=20221105"]
 code   = []   # sandboxed exec uses stdlib only
 voice  = []   # Web Speech API — browser-native, no Python deps
-mcp    = ["mcp>=1.0.0"]
+mcp    = ["mcp>=1.0.0,<2.0.0"]
 stripe = ["stripe>=7.0.0"]
 dev    = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "mypy>=1.10.0"]
 all    = [
     "chromadb>=0.5.0",
     "pypdf>=4.0.0", "python-docx>=1.1.0", "pdfminer.six>=20221105",
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2.0.0",
     "stripe>=7.0.0",
 ]
 train  = [

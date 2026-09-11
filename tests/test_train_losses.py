@@ -8,10 +8,21 @@ and that per-token weighting actually changes the loss the way it should.
 """
 from __future__ import annotations
 
-import torch
-import torch.nn.functional as F
+import pytest
 
-from orca.train.losses import weighted_causal_lm_loss, build_span_weight_mask
+# Phase 15.15: torch is deliberately NOT installed in the main
+# deterministic CI job (it runs instead in the dedicated, required
+# `torch-loss-tests` job -- see .github/workflows/test.yml -- to avoid
+# pulling a large dependency into every regular test run). This is the
+# ONE, explicit, machine-verifiable optional-dependency skip permitted
+# for Torch: `importorskip` produces a legitimate SKIP (not a
+# collection ERROR) when torch is genuinely absent, and the dedicated
+# job -- which DOES install torch -- still runs every test in this
+# file for real and is required for the final Phase 15 gate.
+torch = pytest.importorskip("torch")
+import torch.nn.functional as F  # noqa: E402
+
+from orca.train.losses import weighted_causal_lm_loss, build_span_weight_mask  # noqa: E402
 
 torch.manual_seed(0)
 
