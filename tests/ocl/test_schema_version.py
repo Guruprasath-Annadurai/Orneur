@@ -24,3 +24,12 @@ def test_empty_artifact_id_rejected():
     draft = replace(make_artifact(), artifact_id="")
     with pytest.raises(InvalidArtifactId):
         compile_artifact(draft)
+
+
+def test_version_policy_accepts_current_and_rejects_others():
+    from orneur.intelligence.ocl.version import CURRENT_SCHEMA_VERSION, schema_policy_for
+
+    assert schema_policy_for(CURRENT_SCHEMA_VERSION) == "ACCEPT"
+    assert schema_policy_for("2.0.0") == "REJECT_UNSUPPORTED_VERSION"
+    assert schema_policy_for("1.1.0") == "REJECT_UNSUPPORTED_VERSION"
+    assert schema_policy_for("0.9.0") == "REJECT_UNSUPPORTED_VERSION"

@@ -38,6 +38,55 @@ def test_secret_shaped_evidence_reference_is_rejected():
         create_checkpoint(make_artifact(evidence=(ev,)))
 
 
+def test_secret_in_nested_metadata_is_rejected():
+    atom = make_atom("a1", metadata={"nested": {"note": "key: sk-abcdefghijklmnopqrstuvwx"}})
+    with pytest.raises(SecretContentRejected):
+        create_checkpoint(make_artifact(atoms=(atom,)))
+
+
+def test_secret_in_action_intent_arguments_summary_is_rejected():
+    from orneur.intelligence.ocl.proposals import ActionIntent
+
+    intent = ActionIntent(intent_id="i1", proposed_capability="x", arguments_summary={"token": "sk-abcdefghijklmnopqrstuvwx"})
+    with pytest.raises(SecretContentRejected):
+        create_checkpoint(make_artifact(action_intents=(intent,)))
+
+
+def test_secret_in_verification_contract_proposed_test_is_rejected():
+    from orneur.intelligence.ocl.proposals import VerificationContract
+
+    atom = make_atom("a1")
+    contract = VerificationContract(contract_id="v1", target_atom_ref="a1", proposed_test="curl -H 'Authorization: sk-abcdefghijklmnopqrstuvwx'")
+    with pytest.raises(SecretContentRejected):
+        create_checkpoint(make_artifact(atoms=(atom,), verification_contracts=(contract,)))
+
+
+def test_secret_in_escalation_request_evidence_deficit_is_rejected():
+    from orneur.intelligence.ocl.proposals import EscalationRequest
+
+    esc = EscalationRequest(escalation_id="e1", evidence_deficit="need access via sk-abcdefghijklmnopqrstuvwx")
+    with pytest.raises(SecretContentRejected):
+        create_checkpoint(make_artifact(escalation_requests=(esc,)))
+
+
+def test_secret_in_causal_hypothesis_mechanism_is_rejected():
+    from orneur.intelligence.ocl.causal import CausalHypothesis
+
+    atoms = (make_atom("cause"), make_atom("effect"))
+    hyp = CausalHypothesis(hypothesis_id="h1", cause_atom_ref="cause", mechanism="leaked via sk-abcdefghijklmnopqrstuvwx", predicted_consequence_atom_ref="effect")
+    with pytest.raises(SecretContentRejected):
+        create_checkpoint(make_artifact(atoms=atoms, causal_hypotheses=(hyp,)))
+
+
+def test_secret_in_provenance_invocation_ref_is_rejected():
+    from orneur.intelligence.ocl.enums import ProducerKind
+    from orneur.intelligence.ocl.provenance import Provenance
+
+    prov = Provenance(producer_kind=ProducerKind.DETERMINISTIC_SYSTEM, producer_id="x", invocation_ref="sk-abcdefghijklmnopqrstuvwx")
+    with pytest.raises(SecretContentRejected):
+        create_checkpoint(make_artifact(provenance=prov))
+
+
 def test_ordinary_content_checkpoints_without_rejection():
     atom = make_atom("a1", content="the investigation found no evidence of a regression")
     create_checkpoint(make_artifact(atoms=(atom,)))

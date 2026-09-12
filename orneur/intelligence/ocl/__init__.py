@@ -25,7 +25,7 @@ from orneur.intelligence.ocl.graph import CognitiveAtom, CognitiveRelation
 from orneur.intelligence.ocl.observer import project
 from orneur.intelligence.ocl.proposals import ActionIntent, EscalationRequest, VerificationContract
 from orneur.intelligence.ocl.provenance import ModelIdentityRef, Provenance
-from orneur.intelligence.ocl.transformations import TransformationRecord, validate_conservation
+from orneur.intelligence.ocl.transformations import AtomDisposition, TransformationRecord, validate_conservation
 from orneur.intelligence.ocl.version import CURRENT_SCHEMA_VERSION
 
 __all__ = [
@@ -34,5 +34,5 @@ __all__ = [
     "RelationKind", "SourceClass", "TransformationOperation", "EvidenceAnchor",
     "CognitiveAtom", "CognitiveRelation", "project", "ActionIntent", "EscalationRequest",
     "VerificationContract", "ModelIdentityRef", "Provenance", "TransformationRecord",
-    "validate_conservation", "CURRENT_SCHEMA_VERSION",
+    "AtomDisposition", "validate_conservation", "CURRENT_SCHEMA_VERSION",
 ]

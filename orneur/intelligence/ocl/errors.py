@@ -74,3 +74,59 @@ class InvalidCanonicalForm(OclError):
 
 class SecretContentRejected(OclError):
     code = "SECRET_CONTENT_REJECTED"
+
+
+class DuplicateEvidenceId(OclError):
+    code = "DUPLICATE_EVIDENCE_ID"
+
+
+class DuplicateRelationId(OclError):
+    code = "DUPLICATE_RELATION_ID"
+
+
+class DuplicateActionIntentId(OclError):
+    code = "DUPLICATE_ACTION_INTENT_ID"
+
+
+class DuplicateVerificationContractId(OclError):
+    code = "DUPLICATE_VERIFICATION_CONTRACT_ID"
+
+
+class DuplicateEscalationRequestId(OclError):
+    code = "DUPLICATE_ESCALATION_REQUEST_ID"
+
+
+class DuplicateCausalHypothesisId(OclError):
+    code = "DUPLICATE_CAUSAL_HYPOTHESIS_ID"
+
+
+class DuplicateCounterfactualBranchId(OclError):
+    code = "DUPLICATE_COUNTERFACTUAL_BRANCH_ID"
+
+
+class InvalidStructuredValue(OclError):
+    code = "INVALID_STRUCTURED_VALUE"
+
+
+class InvalidVerificationStatus(OclError):
+    code = "INVALID_VERIFICATION_STATUS"
+
+
+class DuplicateWireKey(OclError):
+    code = "DUPLICATE_WIRE_KEY"
+
+
+class UnknownWireField(OclError):
+    code = "UNKNOWN_WIRE_FIELD"
+
+
+class MissingMandatoryField(OclError):
+    code = "MISSING_MANDATORY_FIELD"
+
+
+class MalformedWireShape(OclError):
+    code = "MALFORMED_WIRE_SHAPE"
+
+
+class ExtensionNamespaceConflict(OclError):
+    code = "EXTENSION_NAMESPACE_CONFLICT"
