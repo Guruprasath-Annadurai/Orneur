@@ -460,3 +460,24 @@ No Neon/database touched, no migration. No compute provider invoked. **GPU spend
 DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 17?
 
 **YES**
+
+---
+
+## FOURTH CLOSURE — DOCUMENTATION-ONLY WORDING CORRECTION (append-only; all content above unchanged)
+
+Owner audit found `PHASE16_REQUIREMENTS.md`'s `REQ-TRAINING-ARCH-002` shorthand "9 new tests
+reproduce the bypass against unmodified code (all failed first)" was inaccurate. This file's own
+earlier third-closure section already recorded the true sequence and remains authoritative:
+initial unfixed run **6 failed / 3 passed**; the CLI test initially passed for an unrelated
+`ImportError` and was strengthened to assert the identity-rejection path, after which it also
+genuinely failed against the unfixed code, for **7 genuine bypass failures** demonstrated before
+implementation, plus **2 intentional non-regression cases** (a canonical family with its correct
+base model, and a generic experiment with an explicit non-reserved base model, both validating
+already-correct behavior). `PHASE16_REQUIREMENTS.md`'s wording is corrected to match. No code,
+test, or VERIFIED status changed by this correction — it is wording-only.
+
+### RE-EARNED FINAL VERDICT (fourth closure)
+
+DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 17?
+
+**YES**
