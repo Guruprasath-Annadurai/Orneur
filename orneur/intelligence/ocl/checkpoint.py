@@ -16,16 +16,21 @@ from orneur.intelligence.ocl.artifact import CognitiveArtifact
 from orneur.intelligence.ocl.canonical import _to_json_safe, compile_ocl_json, to_canonical_json
 from orneur.intelligence.ocl.compiler import compile_artifact
 from orneur.intelligence.ocl.errors import SecretContentRejected
+from orneur.intelligence.ocl.trust import UNTRUSTED, CompilationTrustContext
 
 
 def _walk_strings(value, *, path: str):
     """Yields (path, string) for every string leaf reachable from `value`
-    -- the same recursive shape `canonical._to_json_safe` already produces,
-    reused here so no second traversal scheme has to be kept in sync."""
+    -- INCLUDING dict/mapping KEYS, not only values (a secret-shaped
+    metadata key such as {"sk-...": "harmless"} must be caught just as
+    reliably as a secret-shaped value; this was a real gap in the prior
+    closure's walker, which only visited `value.items()`'s values)."""
     if isinstance(value, str):
         yield path, value
     elif isinstance(value, dict):
         for k, v in value.items():
+            if isinstance(k, str):
+                yield f"{path}.<key>", k
             yield from _walk_strings(v, path=f"{path}.{k}")
     elif isinstance(value, list):
         for i, v in enumerate(value):
@@ -47,14 +52,17 @@ def _scan_for_secrets(artifact: CognitiveArtifact) -> None:
             )
 
 
-def create_checkpoint(draft: CognitiveArtifact) -> str:
+def create_checkpoint(draft: CognitiveArtifact, *, trust_context: CompilationTrustContext = UNTRUSTED) -> str:
     """Compiles `draft`, scans the ENTIRE compiled artifact for secret-
-    shaped content (every string-bearing field, not a hand-picked subset),
-    and returns a canonical JSON checkpoint string. Raises
-    `SecretContentRejected` rather than silently redacting and persisting --
-    matching the Phase 15 curriculum-candidate precedent (reject, don't
-    silently admit)."""
-    compiled = compile_artifact(draft)
+    shaped content (every string-bearing field AND every mapping key, not
+    a hand-picked subset), and returns a canonical JSON checkpoint string.
+    Raises `SecretContentRejected` rather than silently redacting and
+    persisting -- matching the Phase 15 curriculum-candidate precedent
+    (reject, don't silently admit). `trust_context` defaults to
+    `UNTRUSTED_MODEL_OR_WIRE`, same as `compile_artifact()` itself; pass a
+    stronger context only when the caller has independently established
+    the draft's true origin."""
+    compiled = compile_artifact(draft, trust_context=trust_context)
     _scan_for_secrets(compiled)
     return to_canonical_json(compiled)
 

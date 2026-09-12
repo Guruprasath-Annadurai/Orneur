@@ -154,7 +154,39 @@ def _required(d: dict, key: str, *, where: str):
     return d[key]
 
 
+def _require_object(value, *, where: str) -> dict:
+    """No nested JSON value is ever assumed to be an object without
+    checking first -- a malformed shape (e.g. `"provenance": []` or
+    `"provenance": "fake"`) becomes a typed `MalformedWireShape`, never a
+    raw `AttributeError`/`TypeError` escaping to the caller."""
+    if not isinstance(value, dict):
+        raise MalformedWireShape(f"{where}: expected a JSON object, got {type(value).__name__}")
+    return value
+
+
+def _require_array(value, *, where: str) -> list:
+    if not isinstance(value, list):
+        raise MalformedWireShape(f"{where}: expected a JSON array, got {type(value).__name__}")
+    return value
+
+
+def _required_string(d: dict, key: str, *, where: str) -> str:
+    value = _required(d, key, where=where)
+    if not isinstance(value, str):
+        raise MalformedWireShape(f"{where}.{key}: expected a string, got {type(value).__name__}")
+    return value
+
+
+def _optional_string(d: dict, key: str, *, where: str, default=None):
+    value = d.get(key, default)
+    if value is not None and not isinstance(value, str):
+        raise MalformedWireShape(f"{where}.{key}: expected a string or null, got {type(value).__name__}")
+    return value
+
+
 def _safe_enum(enum_cls, raw, *, where: str):
+    if not isinstance(raw, str):
+        raise MalformedWireShape(f"{where}: expected a string enum value, got {type(raw).__name__}")
     try:
         return enum_cls(raw)
     except ValueError:
@@ -196,142 +228,173 @@ def parse_ocl_draft_json(text: str) -> CognitiveArtifact:
         raise MalformedWireShape("top-level wire payload must be a JSON object")
     _reject_unknown_fields(data, _ARTIFACT_FIELDS, where="artifact")
 
+    def _metadata_of(d: dict, *, where: str) -> dict:
+        raw = d.get("metadata", {})
+        return _require_object(raw, where=f"{where}.metadata")
+
+    def _array_of(d: dict, key: str, *, where: str) -> list:
+        raw = d.get(key, [])
+        return _require_array(raw, where=f"{where}.{key}")
+
     def identity_from(d) -> ModelIdentityRef | None:
         if d is None:
             return None
+        d = _require_object(d, where="provenance.model_identity")
         allowed = {f.name for f in dataclasses.fields(ModelIdentityRef)}
         _reject_unknown_fields(d, allowed, where="provenance.model_identity")
         return ModelIdentityRef(**d)
 
     def provenance_from(d) -> Provenance:
+        d = _require_object(d, where="artifact.provenance")
         allowed = {f.name for f in dataclasses.fields(Provenance)}
         _reject_unknown_fields(d, allowed, where="provenance")
         return Provenance(
             producer_kind=_safe_enum(ProducerKind, _required(d, "producer_kind", where="provenance"), where="provenance.producer_kind"),
-            producer_id=_required(d, "producer_id", where="provenance"),
+            producer_id=_required_string(d, "producer_id", where="provenance"),
             model_identity=identity_from(d.get("model_identity")),
-            invocation_ref=d.get("invocation_ref"), schema_version=d.get("schema_version"),
+            invocation_ref=_optional_string(d, "invocation_ref", where="provenance"),
+            schema_version=_optional_string(d, "schema_version", where="provenance"),
         )
 
     def atom_from(d) -> CognitiveAtom:
+        d = _require_object(d, where="atoms[]")
         allowed = {f.name for f in dataclasses.fields(CognitiveAtom)}
         _reject_unknown_fields(d, allowed, where="atom")
         return CognitiveAtom(
-            atom_id=_required(d, "atom_id", where="atom"),
+            atom_id=_required_string(d, "atom_id", where="atom"),
             kind=_safe_enum(AtomKind, _required(d, "kind", where="atom"), where="atom.kind"),
             source_class=_safe_enum(SourceClass, _required(d, "source_class", where="atom"), where="atom.source_class"),
-            content=_required(d, "content", where="atom"),
-            namespace=d.get("namespace", "core"),
-            evidence_refs=tuple(d.get("evidence_refs", ())), metadata=d.get("metadata", {}),
+            content=_required_string(d, "content", where="atom"),
+            namespace=_optional_string(d, "namespace", where="atom", default="core"),
+            evidence_refs=tuple(_array_of(d, "evidence_refs", where="atom")),
+            metadata=_metadata_of(d, where="atom"),
         )
 
     def relation_from(d) -> CognitiveRelation:
+        d = _require_object(d, where="relations[]")
         allowed = {f.name for f in dataclasses.fields(CognitiveRelation)}
         _reject_unknown_fields(d, allowed, where="relation")
         return CognitiveRelation(
-            relation_id=_required(d, "relation_id", where="relation"),
+            relation_id=_required_string(d, "relation_id", where="relation"),
             kind=_safe_enum(RelationKind, _required(d, "kind", where="relation"), where="relation.kind"),
-            source_atom_id=_required(d, "source_atom_id", where="relation"),
-            target_atom_id=_required(d, "target_atom_id", where="relation"),
-            namespace=d.get("namespace", "core"), metadata=d.get("metadata", {}),
+            source_atom_id=_required_string(d, "source_atom_id", where="relation"),
+            target_atom_id=_required_string(d, "target_atom_id", where="relation"),
+            namespace=_optional_string(d, "namespace", where="relation", default="core"),
+            metadata=_metadata_of(d, where="relation"),
         )
 
     def evidence_from(d) -> EvidenceAnchor:
+        d = _require_object(d, where="evidence[]")
         allowed = {f.name for f in dataclasses.fields(EvidenceAnchor)}
         _reject_unknown_fields(d, allowed, where="evidence")
         return EvidenceAnchor(
-            evidence_id=_required(d, "evidence_id", where="evidence"),
+            evidence_id=_required_string(d, "evidence_id", where="evidence"),
             evidence_kind=_safe_enum(EvidenceKind, _required(d, "evidence_kind", where="evidence"), where="evidence.evidence_kind"),
-            issuer=_required(d, "issuer", where="evidence"), reference=_required(d, "reference", where="evidence"),
-            digest=d.get("digest"), observed_at=d.get("observed_at"), locator=d.get("locator"),
-            metadata=d.get("metadata", {}),
+            issuer=_required_string(d, "issuer", where="evidence"), reference=_required_string(d, "reference", where="evidence"),
+            digest=_optional_string(d, "digest", where="evidence"), observed_at=_optional_string(d, "observed_at", where="evidence"),
+            locator=_optional_string(d, "locator", where="evidence"),
+            metadata=_metadata_of(d, where="evidence"),
         )
 
     def action_intent_from(d) -> ActionIntent:
+        d = _require_object(d, where="action_intents[]")
         allowed = {f.name for f in dataclasses.fields(ActionIntent)}
         _reject_unknown_fields(d, allowed, where="action_intent")
         return ActionIntent(
-            intent_id=_required(d, "intent_id", where="action_intent"),
-            proposed_capability=_required(d, "proposed_capability", where="action_intent"),
-            target_reference=d.get("target_reference"), arguments_summary=d.get("arguments_summary", {}),
-            rationale_atom_refs=tuple(d.get("rationale_atom_refs", ())), expected_effect=d.get("expected_effect", ""),
-            preconditions=tuple(d.get("preconditions", ())),
-            verification_requirement_refs=tuple(d.get("verification_requirement_refs", ())),
-            risk_hints=tuple(d.get("risk_hints", ())),
+            intent_id=_required_string(d, "intent_id", where="action_intent"),
+            proposed_capability=_required_string(d, "proposed_capability", where="action_intent"),
+            target_reference=_optional_string(d, "target_reference", where="action_intent"),
+            arguments_summary=_require_object(d.get("arguments_summary", {}), where="action_intent.arguments_summary"),
+            rationale_atom_refs=tuple(_array_of(d, "rationale_atom_refs", where="action_intent")),
+            expected_effect=_optional_string(d, "expected_effect", where="action_intent", default=""),
+            preconditions=tuple(_array_of(d, "preconditions", where="action_intent")),
+            verification_requirement_refs=tuple(_array_of(d, "verification_requirement_refs", where="action_intent")),
+            risk_hints=tuple(_array_of(d, "risk_hints", where="action_intent")),
         )
 
     def verification_contract_from(d) -> VerificationContract:
+        d = _require_object(d, where="verification_contracts[]")
         allowed = {f.name for f in dataclasses.fields(VerificationContract)}
         _reject_unknown_fields(d, allowed, where="verification_contract")
         return VerificationContract(
-            contract_id=_required(d, "contract_id", where="verification_contract"),
-            target_atom_ref=_required(d, "target_atom_ref", where="verification_contract"),
-            required_evidence_kinds=tuple(d.get("required_evidence_kinds", ())),
-            proposed_test=d.get("proposed_test", ""), pass_conditions=tuple(d.get("pass_conditions", ())),
-            fail_conditions=tuple(d.get("fail_conditions", ())),
-            verification_scope_ref=d.get("verification_scope_ref"), status=d.get("status", "UNRESOLVED"),
+            contract_id=_required_string(d, "contract_id", where="verification_contract"),
+            target_atom_ref=_required_string(d, "target_atom_ref", where="verification_contract"),
+            required_evidence_kinds=tuple(_array_of(d, "required_evidence_kinds", where="verification_contract")),
+            proposed_test=_optional_string(d, "proposed_test", where="verification_contract", default=""),
+            pass_conditions=tuple(_array_of(d, "pass_conditions", where="verification_contract")),
+            fail_conditions=tuple(_array_of(d, "fail_conditions", where="verification_contract")),
+            verification_scope_ref=_optional_string(d, "verification_scope_ref", where="verification_contract"),
+            status=_optional_string(d, "status", where="verification_contract", default="UNRESOLVED"),
         )
 
     def escalation_request_from(d) -> EscalationRequest:
+        d = _require_object(d, where="escalation_requests[]")
         allowed = {f.name for f in dataclasses.fields(EscalationRequest)}
         _reject_unknown_fields(d, allowed, where="escalation_request")
         return EscalationRequest(
-            escalation_id=_required(d, "escalation_id", where="escalation_request"),
-            triggering_atom_refs=tuple(d.get("triggering_atom_refs", ())),
-            reason_categories=tuple(d.get("reason_categories", ())),
-            unresolved_conflict_refs=tuple(d.get("unresolved_conflict_refs", ())),
-            requested_capability_type=d.get("requested_capability_type", ""),
-            evidence_deficit=d.get("evidence_deficit", ""),
-            requested_cognitive_role=d.get("requested_cognitive_role"),
+            escalation_id=_required_string(d, "escalation_id", where="escalation_request"),
+            triggering_atom_refs=tuple(_array_of(d, "triggering_atom_refs", where="escalation_request")),
+            reason_categories=tuple(_array_of(d, "reason_categories", where="escalation_request")),
+            unresolved_conflict_refs=tuple(_array_of(d, "unresolved_conflict_refs", where="escalation_request")),
+            requested_capability_type=_optional_string(d, "requested_capability_type", where="escalation_request", default=""),
+            evidence_deficit=_optional_string(d, "evidence_deficit", where="escalation_request", default=""),
+            requested_cognitive_role=_optional_string(d, "requested_cognitive_role", where="escalation_request"),
         )
 
     def causal_hypothesis_from(d) -> CausalHypothesis:
+        d = _require_object(d, where="causal_hypotheses[]")
         allowed = {f.name for f in dataclasses.fields(CausalHypothesis)}
         _reject_unknown_fields(d, allowed, where="causal_hypothesis")
         return CausalHypothesis(
-            hypothesis_id=_required(d, "hypothesis_id", where="causal_hypothesis"),
-            cause_atom_ref=_required(d, "cause_atom_ref", where="causal_hypothesis"),
-            mechanism=_required(d, "mechanism", where="causal_hypothesis"),
-            predicted_consequence_atom_ref=_required(d, "predicted_consequence_atom_ref", where="causal_hypothesis"),
-            observable_test_ref=d.get("observable_test_ref"),
-            observed_evidence_refs=tuple(d.get("observed_evidence_refs", ())),
+            hypothesis_id=_required_string(d, "hypothesis_id", where="causal_hypothesis"),
+            cause_atom_ref=_required_string(d, "cause_atom_ref", where="causal_hypothesis"),
+            mechanism=_required_string(d, "mechanism", where="causal_hypothesis"),
+            predicted_consequence_atom_ref=_required_string(d, "predicted_consequence_atom_ref", where="causal_hypothesis"),
+            observable_test_ref=_optional_string(d, "observable_test_ref", where="causal_hypothesis"),
+            observed_evidence_refs=tuple(_array_of(d, "observed_evidence_refs", where="causal_hypothesis")),
         )
 
     def counterfactual_branch_from(d) -> CounterfactualBranch:
+        d = _require_object(d, where="counterfactual_branches[]")
         allowed = {f.name for f in dataclasses.fields(CounterfactualBranch)}
         _reject_unknown_fields(d, allowed, where="counterfactual_branch")
         return CounterfactualBranch(
-            branch_id=_required(d, "branch_id", where="counterfactual_branch"),
-            causal_hypothesis_ref=_required(d, "causal_hypothesis_ref", where="counterfactual_branch"),
-            condition_atom_ref=_required(d, "condition_atom_ref", where="counterfactual_branch"),
-            predicted_atom_ref=_required(d, "predicted_atom_ref", where="counterfactual_branch"),
+            branch_id=_required_string(d, "branch_id", where="counterfactual_branch"),
+            causal_hypothesis_ref=_required_string(d, "causal_hypothesis_ref", where="counterfactual_branch"),
+            condition_atom_ref=_required_string(d, "condition_atom_ref", where="counterfactual_branch"),
+            predicted_atom_ref=_required_string(d, "predicted_atom_ref", where="counterfactual_branch"),
         )
 
     return _Artifact(
-        artifact_id=_required(data, "artifact_id", where="artifact"),
-        schema_version=_required(data, "schema_version", where="artifact"),
-        request_id=_required(data, "request_id", where="artifact"),
+        artifact_id=_required_string(data, "artifact_id", where="artifact"),
+        schema_version=_required_string(data, "schema_version", where="artifact"),
+        request_id=_required_string(data, "request_id", where="artifact"),
         provenance=provenance_from(_required(data, "provenance", where="artifact")),
-        created_at=_required(data, "created_at", where="artifact"),
-        atoms=tuple(atom_from(a) for a in data.get("atoms", ())),
-        relations=tuple(relation_from(r) for r in data.get("relations", ())),
-        evidence=tuple(evidence_from(e) for e in data.get("evidence", ())),
-        action_intents=tuple(action_intent_from(x) for x in data.get("action_intents", ())),
-        verification_contracts=tuple(verification_contract_from(x) for x in data.get("verification_contracts", ())),
-        escalation_requests=tuple(escalation_request_from(x) for x in data.get("escalation_requests", ())),
-        causal_hypotheses=tuple(causal_hypothesis_from(x) for x in data.get("causal_hypotheses", ())),
-        counterfactual_branches=tuple(counterfactual_branch_from(x) for x in data.get("counterfactual_branches", ())),
-        limitation_atom_refs=tuple(data.get("limitation_atom_refs", ())),
-        metadata=data.get("metadata", {}),
-        parent_artifact_id=data.get("parent_artifact_id"),
-        transformation_id=data.get("transformation_id"),
+        created_at=_required_string(data, "created_at", where="artifact"),
+        atoms=tuple(atom_from(a) for a in _array_of(data, "atoms", where="artifact")),
+        relations=tuple(relation_from(r) for r in _array_of(data, "relations", where="artifact")),
+        evidence=tuple(evidence_from(e) for e in _array_of(data, "evidence", where="artifact")),
+        action_intents=tuple(action_intent_from(x) for x in _array_of(data, "action_intents", where="artifact")),
+        verification_contracts=tuple(verification_contract_from(x) for x in _array_of(data, "verification_contracts", where="artifact")),
+        escalation_requests=tuple(escalation_request_from(x) for x in _array_of(data, "escalation_requests", where="artifact")),
+        causal_hypotheses=tuple(causal_hypothesis_from(x) for x in _array_of(data, "causal_hypotheses", where="artifact")),
+        counterfactual_branches=tuple(counterfactual_branch_from(x) for x in _array_of(data, "counterfactual_branches", where="artifact")),
+        limitation_atom_refs=tuple(_array_of(data, "limitation_atom_refs", where="artifact")),
+        metadata=_metadata_of(data, where="artifact"),
+        parent_artifact_id=_optional_string(data, "parent_artifact_id", where="artifact"),
+        transformation_id=_optional_string(data, "transformation_id", where="artifact"),
     )
 
 
 def compile_ocl_json(text: str) -> CognitiveArtifact:
     """The safe, validated public entry point for untrusted wire input:
-    parse (strictly) THEN compile (fully validate). Prefer this over
-    calling `parse_ocl_draft_json()` directly unless you specifically need
-    the unvalidated draft for inspection."""
+    parse (strictly) THEN compile (fully validate) with the trust context
+    HARDCODED to `UNTRUSTED_MODEL_OR_WIRE` -- no field inside `text` can
+    ever elevate this. A `provenance.producer_kind` claim of
+    "DETERMINISTIC_SYSTEM" inside the payload has zero effect on trust; it
+    remains a mere provenance claim (see trust.py, provenance.py). Prefer
+    this over calling `parse_ocl_draft_json()` directly unless you
+    specifically need the unvalidated draft for inspection."""
     from orneur.intelligence.ocl.compiler import compile_artifact
-    return compile_artifact(parse_ocl_draft_json(text))
+    from orneur.intelligence.ocl.trust import UNTRUSTED
+    return compile_artifact(parse_ocl_draft_json(text), trust_context=UNTRUSTED)

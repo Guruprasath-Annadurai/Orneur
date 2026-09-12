@@ -72,12 +72,28 @@ def test_empty_counterfactual_branch_id_rejected():
         compile_artifact(make_artifact(atoms=atoms, causal_hypotheses=(hyp,), counterfactual_branches=(branch,)))
 
 
-def test_empty_request_id_is_not_separately_validated_but_empty_artifact_id_is():
-    """request_id is documented as a correlation reference and is not
-    itself an OCL-internal identity used for graph resolution -- unlike
-    artifact_id, which gates the whole compile. This test pins that
-    intentional asymmetry rather than leaving it undocumented."""
+def test_empty_request_id_is_rejected():
+    """Phase 17 final closure: request_id is now REQUIRED and non-empty for
+    a canonical artifact -- corporate traceability requires every compiled
+    artifact to carry a correlation reference back to its originating
+    request, matching artifact_id's own non-empty requirement."""
     from dataclasses import replace
 
     draft = replace(make_artifact(), request_id="")
-    compile_artifact(draft)  # does not raise -- request_id emptiness is a caller concern, not OCL's
+    with pytest.raises(InvalidArtifactId):
+        compile_artifact(draft)
+
+
+def test_empty_parent_artifact_id_is_rejected_when_set():
+    from dataclasses import replace
+
+    draft = replace(make_artifact(), parent_artifact_id="")
+    with pytest.raises(InvalidArtifactId):
+        compile_artifact(draft)
+
+
+def test_none_parent_artifact_id_is_valid():
+    from dataclasses import replace
+
+    draft = replace(make_artifact(), parent_artifact_id=None)
+    compile_artifact(draft)  # None means "no parent" -- a valid, common case

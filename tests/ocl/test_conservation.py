@@ -33,8 +33,40 @@ def test_explicit_supersession_is_accepted():
         producer=_transform_producer(), operation=TransformationOperation.SUPERSEDE,
         timestamp=FIXED_TIME, schema_version="1.0.0",
         superseded_atom_ids=("h1",), created_atom_ids=("h2",),
+        justification_refs=("h2 supersedes h1 -- see evidence E4",),
     )
     validate_conservation(parent, child, record)
+
+
+def test_legacy_superseded_id_without_justification_is_rejected():
+    """Phase 17 final closure: the legacy flat-tuple shape is no longer an
+    unjustified bypass -- superseded_atom_ids with NO justification_refs
+    must fail, not silently pass."""
+    parent = make_artifact(artifact_id="p", atoms=(make_atom("h1", kind=AtomKind.HYPOTHESIS),))
+    child = make_artifact(artifact_id="c", atoms=(make_atom("h2", kind=AtomKind.HYPOTHESIS),))
+    record = TransformationRecord(
+        transformation_id="t1", parent_artifact_id="p", child_artifact_id="c",
+        producer=_transform_producer(), operation=TransformationOperation.SUPERSEDE,
+        timestamp=FIXED_TIME, schema_version="1.0.0",
+        superseded_atom_ids=("h1",), created_atom_ids=("h2",),
+        # no justification_refs -- must be rejected
+    )
+    with pytest.raises(ConservationViolation):
+        validate_conservation(parent, child, record)
+
+
+def test_legacy_removed_id_without_justification_is_rejected():
+    parent = make_artifact(artifact_id="p", atoms=(make_atom("h1", kind=AtomKind.ASSUMPTION),))
+    child = make_artifact(artifact_id="c", atoms=())
+    record = TransformationRecord(
+        transformation_id="t1", parent_artifact_id="p", child_artifact_id="c",
+        producer=_transform_producer(), operation=TransformationOperation.REMOVE_WITH_REASON,
+        timestamp=FIXED_TIME, schema_version="1.0.0",
+        removed_atom_ids=("h1",),
+        # no justification_refs -- must be rejected
+    )
+    with pytest.raises(ConservationViolation):
+        validate_conservation(parent, child, record)
 
 
 def test_explicit_removal_with_reason_is_accepted():

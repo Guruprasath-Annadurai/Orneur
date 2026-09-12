@@ -22,9 +22,11 @@ from orneur.intelligence.ocl.canonical import canonicalize, deep_freeze, to_cano
 from orneur.intelligence.ocl.enums import (
     ACYCLIC_RELATION_KINDS,
     AtomKind,
-    AUTHORITATIVE_SOURCE_CLASSES,
+    PRIVILEGED_REFERENCE_SOURCE_CLASSES,
     ProducerKind,
+    SourceClass,
 )
+from orneur.intelligence.ocl.trust import TRUSTED_CONTEXTS, CompilationTrustContext, UNTRUSTED
 from orneur.intelligence.ocl.errors import (
     DanglingRelation,
     DuplicateActionIntentId,
@@ -60,13 +62,6 @@ FORBIDDEN_METADATA_KEYS = frozenset({
     "production_ready", "execution_grant", "authority_lease",
     "policy_decision", "human_approval", "verified_fact", "production_proof",
 })
-
-# Provenance kinds an untrusted (model-controlled) artifact's OWN top-level
-# producer may have. An artifact produced by one of these can never contain
-# an atom claiming an AUTHORITATIVE_SOURCE_CLASSES value -- a model/external
-# provider cannot self-authenticate its own evidence merely by constructing
-# the wire payload (spec section 8: "evidence must not self-authenticate").
-_UNTRUSTED_ARTIFACT_PRODUCER_KINDS = frozenset({ProducerKind.NATIVE_MODEL, ProducerKind.EXTERNAL_PROVIDER})
 
 _JSON_SAFE_SCALAR_TYPES = (str, int, float, bool, type(None))
 
@@ -156,11 +151,11 @@ def _validate_provenance(artifact: CognitiveArtifact) -> None:
             )
 
 
-def _validate_atoms(artifact: CognitiveArtifact, registry_snapshot: dict) -> dict[str, object]:
+def _validate_atoms(
+    artifact: CognitiveArtifact, registry_snapshot: dict, trust_context: CompilationTrustContext,
+) -> dict[str, object]:
     if len(artifact.atoms) > limits.MAX_ATOMS_PER_ARTIFACT:
         raise GraphLimitExceeded(f"artifact has more than {limits.MAX_ATOMS_PER_ARTIFACT} atoms")
-
-    untrusted_artifact = artifact.provenance.producer_kind in _UNTRUSTED_ARTIFACT_PRODUCER_KINDS
 
     by_id: dict[str, object] = {}
     for atom in artifact.atoms:
@@ -175,25 +170,33 @@ def _validate_atoms(artifact: CognitiveArtifact, registry_snapshot: dict) -> dic
         _check_string_limits(atom.content, where=f"atom {atom.atom_id!r}.content")
         validate_structured_value(atom.metadata, where=f"atom {atom.atom_id!r}.metadata")
 
-        if atom.source_class in AUTHORITATIVE_SOURCE_CLASSES:
-            if untrusted_artifact:
+        if atom.source_class in PRIVILEGED_REFERENCE_SOURCE_CLASSES:
+            # THE root fix (Phase 17 final closure): trust is decided ONLY by
+            # `trust_context`, a value the CALLER of compile_artifact() supplies
+            # out-of-band -- never by anything inside `artifact` itself. A wire
+            # payload that self-declares `provenance.producer_kind=
+            # "DETERMINISTIC_SYSTEM"` gets ZERO extra privilege from that claim;
+            # `provenance.producer_kind` remains a mere provenance CLAIM (see
+            # provenance.py), not proof of trust.
+            if trust_context not in TRUSTED_CONTEXTS:
                 raise EvidenceImpersonation(
-                    f"atom {atom.atom_id!r} claims authoritative source_class="
-                    f"{atom.source_class.value} inside an artifact produced by "
-                    f"{artifact.provenance.producer_kind.value} -- a model/external-provider-"
-                    "produced artifact can never self-authenticate its own evidence (spec §8: "
-                    "evidence must not self-authenticate)."
+                    f"atom {atom.atom_id!r} claims privileged source_class="
+                    f"{atom.source_class.value} but this compile call's trust_context is "
+                    f"{trust_context.value} -- privileged reference semantics require an "
+                    "out-of-band trusted compilation context, never the artifact's own "
+                    "self-declared provenance.producer_kind (spec §8: evidence must not "
+                    "self-authenticate)."
                 )
             if atom.kind != AtomKind.OBSERVATION_REFERENCE:
                 raise EvidenceImpersonation(
-                    f"atom {atom.atom_id!r} has kind={atom.kind.value} but claims an authoritative "
+                    f"atom {atom.atom_id!r} has kind={atom.kind.value} but claims a privileged "
                     f"source_class={atom.source_class.value} -- only an OBSERVATION_REFERENCE atom "
-                    "may claim a non-model, non-human authoritative source."
+                    "may claim a non-model, non-human privileged reference."
                 )
             if not atom.evidence_refs:
                 raise EvidenceImpersonation(
                     f"atom {atom.atom_id!r} claims source_class={atom.source_class.value} but cites "
-                    "no evidence_refs -- an authoritative claim must reference a real EvidenceAnchor."
+                    "no evidence_refs -- a privileged reference claim must cite a real EvidenceAnchor."
                 )
 
     return by_id
@@ -348,6 +351,15 @@ def _validate_causal_hypotheses(artifact: CognitiveArtifact, atoms_by_id: dict) 
             raise DanglingRelation(f"causal_hypothesis {hyp.hypothesis_id!r} cause_atom_ref {hyp.cause_atom_ref!r} does not exist")
         if hyp.predicted_consequence_atom_ref not in atoms_by_id:
             raise DanglingRelation(f"causal_hypothesis {hyp.hypothesis_id!r} predicted_consequence_atom_ref {hyp.predicted_consequence_atom_ref!r} does not exist")
+        if hyp.observable_test_ref is not None:
+            if hyp.observable_test_ref not in atoms_by_id:
+                raise DanglingRelation(f"causal_hypothesis {hyp.hypothesis_id!r} observable_test_ref {hyp.observable_test_ref!r} does not exist")
+            if _atom_kind_or_none(atoms_by_id, hyp.observable_test_ref) != AtomKind.TEST_PROPOSAL:
+                raise InvalidRelationShape(
+                    f"causal_hypothesis {hyp.hypothesis_id!r} observable_test_ref {hyp.observable_test_ref!r} "
+                    "is not a TEST_PROPOSAL atom -- observable_test_ref must resolve to the atom "
+                    "describing the proposed test, not an arbitrary reference."
+                )
         for ref in hyp.observed_evidence_refs:
             if ref not in {e.evidence_id for e in artifact.evidence}:
                 raise DanglingRelation(f"causal_hypothesis {hyp.hypothesis_id!r} observed_evidence_refs references unknown evidence_id {ref!r}")
@@ -370,13 +382,26 @@ def _validate_counterfactual_branches(artifact: CognitiveArtifact, atoms_by_id: 
             raise DanglingRelation(f"counterfactual_branch {branch.branch_id!r} predicted_atom_ref {branch.predicted_atom_ref!r} does not exist")
 
 
-def compile_artifact(draft: CognitiveArtifact) -> CognitiveArtifact:
+def compile_artifact(
+    draft: CognitiveArtifact, *, trust_context: CompilationTrustContext = UNTRUSTED,
+) -> CognitiveArtifact:
     """Validate `draft` and return a canonicalized, deeply-immutable
     `CognitiveArtifact`. Raises a typed `OclError` subclass on any
     violation; never partially accepts an invalid artifact. Validates
     EVERY top-level collection -- this is the single acceptance boundary,
-    not a subset of one."""
+    not a subset of one.
+
+    `trust_context` MUST be supplied by the CALLER, established out-of-band
+    -- never parsed from `draft` itself. Defaults to `UNTRUSTED_MODEL_OR_WIRE`
+    (the safe default): only a caller who has independently verified a
+    draft's true origin should pass a stronger `CompilationTrustContext`
+    explicitly (see trust.py)."""
     _require_id(draft.artifact_id, where="artifact.artifact_id")
+    _require_id(draft.request_id, where="artifact.request_id")
+    if draft.parent_artifact_id is not None:
+        _require_id(draft.parent_artifact_id, where="artifact.parent_artifact_id")
+    if draft.transformation_id is not None:
+        _require_id(draft.transformation_id, where="artifact.transformation_id")
     if not is_supported_schema_version(draft.schema_version):
         raise UnsupportedSchemaVersion(
             f"schema_version {draft.schema_version!r} is not supported by this build"
@@ -386,7 +411,7 @@ def compile_artifact(draft: CognitiveArtifact) -> CognitiveArtifact:
 
     registry_snapshot = snapshot_registry()
 
-    atoms_by_id = _validate_atoms(draft, registry_snapshot)
+    atoms_by_id = _validate_atoms(draft, registry_snapshot, trust_context)
     _validate_evidence(draft, atoms_by_id, registry_snapshot)
     _validate_relations(draft, atoms_by_id, registry_snapshot)
     _validate_provenance(draft)

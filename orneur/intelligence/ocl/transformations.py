@@ -102,16 +102,53 @@ class TransformationRecord:
     # legacy tuples above can only express "this ID disappeared."
     atom_dispositions: tuple[AtomDisposition, ...] = field(default_factory=tuple)
 
+    def __post_init__(self) -> None:
+        for name in ("transformation_id", "parent_artifact_id", "child_artifact_id"):
+            if not getattr(self, name):
+                raise ConservationViolation(f"TransformationRecord.{name} must be a non-empty string")
+
+
+def _normalize_legacy_dispositions(transformation: TransformationRecord) -> dict[str, AtomDisposition]:
+    """Phase 17 final closure: the legacy flat-tuple shape
+    (`superseded_atom_ids`/`removed_atom_ids`) is no longer accepted
+    bare -- it MUST be converted into typed, justified `AtomDisposition`
+    records before conservation validation ever sees it. If legacy IDs are
+    present with no non-empty `justification_refs` to back them, this
+    raises immediately: there is no unjustified path left, only a
+    coarser-grained one (one shared justification for the whole legacy
+    list, rather than `atom_dispositions`' one-justification-per-atom)."""
+    legacy_ids = set(transformation.superseded_atom_ids) | set(transformation.removed_atom_ids)
+    if not legacy_ids:
+        return {}
+    shared_justification = next((j for j in transformation.justification_refs if j), None)
+    if shared_justification is None:
+        raise ConservationViolation(
+            "transformation declares superseded_atom_ids/removed_atom_ids but no non-empty "
+            "justification_refs -- every important atom's supersession/removal must be "
+            "auditable, not bare. Provide a shared justification via justification_refs, or "
+            "use atom_dispositions for a per-atom justification instead."
+        )
+    result: dict[str, AtomDisposition] = {}
+    for atom_id in transformation.superseded_atom_ids:
+        result[atom_id] = AtomDisposition(atom_id=atom_id, disposition="SUPERSEDED", justification_ref=shared_justification)
+    for atom_id in transformation.removed_atom_ids:
+        result[atom_id] = AtomDisposition(atom_id=atom_id, disposition="REMOVED", justification_ref=shared_justification)
+    return result
+
 
 def validate_conservation(
     parent: CognitiveArtifact, child: CognitiveArtifact, transformation: TransformationRecord,
 ) -> None:
     """Raises ConservationViolation if an IMPORTANT parent atom silently
     disappears from `child`, or is silently rewritten under the same ID,
-    without being recorded in `transformation`."""
+    without being recorded in `transformation`. Every disposition --
+    whether declared via the legacy tuples or the typed
+    `atom_dispositions` field -- is normalized into an `AtomDisposition`
+    with a non-empty `justification_ref` before this check runs; there is
+    no code path left that accepts an unjustified removal/supersession."""
     child_atoms_by_id = {a.atom_id: a for a in child.atoms}
-    legacy_accounted = set(transformation.superseded_atom_ids) | set(transformation.removed_atom_ids)
-    disposition_by_id = {d.atom_id: d for d in transformation.atom_dispositions}
+    disposition_by_id = _normalize_legacy_dispositions(transformation)
+    disposition_by_id.update({d.atom_id: d for d in transformation.atom_dispositions})
 
     for atom in parent.atoms:
         if atom.kind not in IMPORTANT_ATOM_KINDS:
@@ -132,8 +169,6 @@ def validate_conservation(
             continue
 
         # Atom is entirely absent from the child.
-        if atom.atom_id in legacy_accounted:
-            continue
         disp = disposition_by_id.get(atom.atom_id)
         if disp is not None and disp.disposition in ("SUPERSEDED", "REMOVED"):
             continue

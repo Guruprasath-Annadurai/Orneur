@@ -28,6 +28,17 @@ class ModelIdentityRef:
 
 @dataclass(frozen=True)
 class Provenance:
+    """
+    IMPORTANT (Phase 17 final closure): `producer_kind` (and every other
+    field here) is a CLAIM ABOUT ORIGIN made BY the artifact -- it is NOT
+    authentication, authorization, trust, verification, or human approval.
+    An untrusted wire payload can freely set `producer_kind=
+    "DETERMINISTIC_SYSTEM"`; that claim alone unlocks nothing. Whether
+    privileged reference semantics (see enums.PRIVILEGED_REFERENCE_
+    SOURCE_CLASSES) are honored is decided EXCLUSIVELY by the caller-
+    supplied `trust.CompilationTrustContext` passed to
+    `compiler.compile_artifact()` -- never by reading this dataclass.
+    """
     producer_kind: ProducerKind
     producer_id: str
     model_identity: ModelIdentityRef | None = None

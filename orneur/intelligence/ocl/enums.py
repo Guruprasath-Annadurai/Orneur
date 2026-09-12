@@ -86,15 +86,35 @@ class SourceClass(str, Enum):
     DERIVED_COGNITIVE_PROPOSAL = "DERIVED_COGNITIVE_PROPOSAL"
 
 
-# Only these SourceClass values may ever back a claim of measured/verified
-# truth (used by the compiler's authority-impersonation checks). A
-# MODEL_ASSERTION or DERIVED_COGNITIVE_PROPOSAL atom can never be flagged as
-# authoritative evidence, structurally.
-AUTHORITATIVE_SOURCE_CLASSES = frozenset({
+# IMPORTANT (Phase 17 final closure): SourceClass is a PROVENANCE/REFERENCE
+# classification, NOT an epistemic-truth judgment. None of the values below
+# mean "this is true" -- HUMAN_INPUT is not automatically authoritative
+# truth or approval; EXTERNAL_EVIDENCE_REFERENCE is not automatically
+# verified; MEASURED_EVIDENCE_REFERENCE means a claimed/referenced
+# measurement exists, not that every conclusion drawn from it is correct;
+# DETERMINISTIC_POLICY_REFERENCE may refer to a real deterministic policy
+# fact, but ONLY once an out-of-band trusted resolver (see trust.py's
+# CompilationTrustContext) establishes that reference -- OCL itself never
+# does that resolution. Phase 18 owns actual epistemic states (KNOWN/
+# INFERRED/UNCERTAIN/DISPUTED/UNKNOWN/UNVERIFIABLE); no SourceClass value
+# here is, or should ever be treated as, one of those.
+#
+# PRIVILEGED_REFERENCE_SOURCE_CLASSES (renamed from the earlier
+# "AUTHORITATIVE_SOURCE_CLASSES" -- that name overclaimed what this set
+# means): these three specifically require BOTH an OBSERVATION_REFERENCE
+# atom kind citing a real EvidenceAnchor AND a caller-supplied
+# CompilationTrustContext outside the TRUSTED set (see compiler.py) --
+# never derived from the artifact's own self-declared `producer_kind`.
+# HUMAN_INPUT is deliberately NOT in this set: a human may honestly label
+# any atom kind (assertion, hypothesis, question, ...) as HUMAN_INPUT
+# without that atom needing to look like an evidence reference at all --
+# see the separate, hard invariant in compiler.py that HUMAN_INPUT can
+# never satisfy HUMAN_APPROVAL_REQUIRED, Court approval, or policy
+# authorization through OCL alone.
+PRIVILEGED_REFERENCE_SOURCE_CLASSES = frozenset({
     SourceClass.MEASURED_EVIDENCE_REFERENCE,
     SourceClass.EXTERNAL_EVIDENCE_REFERENCE,
     SourceClass.DETERMINISTIC_POLICY_REFERENCE,
-    SourceClass.HUMAN_INPUT,
 })
 
 

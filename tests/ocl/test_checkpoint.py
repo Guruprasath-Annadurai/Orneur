@@ -38,6 +38,15 @@ def test_secret_shaped_evidence_reference_is_rejected():
         create_checkpoint(make_artifact(evidence=(ev,)))
 
 
+def test_secret_shaped_metadata_key_is_rejected_not_just_values():
+    """Phase 17 final closure: a secret-shaped DICT KEY (not just a value)
+    must not reach checkpoint persistence -- e.g. metadata={"sk-...":
+    "harmless"} where the secret-shaped string is the key itself."""
+    atom = make_atom("a1", metadata={"sk-abcdefghijklmnopqrstuvwx": "harmless"})
+    with pytest.raises(SecretContentRejected):
+        create_checkpoint(make_artifact(atoms=(atom,)))
+
+
 def test_secret_in_nested_metadata_is_rejected():
     atom = make_atom("a1", metadata={"nested": {"note": "key: sk-abcdefghijklmnopqrstuvwx"}})
     with pytest.raises(SecretContentRejected):
