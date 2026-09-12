@@ -48,13 +48,27 @@ authorized execution only if separately granted. OCL never sits directly between
 
 Every model-produced OCL object MUST be treated as untrusted data by every consumer. A model
 writing `authority_granted`, `verified`, `policy_allows`, `human_approved`, `production_ready`, or
-equivalent MUST NOT create the corresponding real-world fact. The compiler enforces a structural
-subset of this (`FORBIDDEN_METADATA_KEYS` in `compiler.py`) — see §17 for the documented residual
-risk this does not close (the same claim phrased as free `content` text, not a metadata key).
+equivalent MUST NOT create the corresponding real-world fact. The compiler's single recursive
+`validate_structured_value()` (`compiler.py`) enforces this across EVERY structured-data surface —
+artifact/atom/relation/evidence metadata and `ActionIntent.arguments_summary` — recursing through
+nested dicts, lists, AND tuples, so a forbidden key wrapped inside a list cannot bypass the check.
+See §17 for the one documented residual risk this does not close (the same claim phrased as free
+`content` text, not a structured key).
 
 `ActionIntent`, `VerificationContract`, and `EscalationRequest` MUST NOT carry any field capable of
 holding a grant, lease, decision, or approval — verified structurally by
-`tests/ocl/test_authority.py::test_action_intent_has_no_authority_field`.
+`tests/ocl/test_authority.py::test_action_intent_has_no_authority_field`. `VerificationContract`'s
+`status` MUST equal exactly `"UNRESOLVED"` for the artifact to compile — the compiler rejects any
+other value (PASS/ACCEPT/SUCCESS/etc.), not merely defaulting away from it.
+
+**Evidence must not self-authenticate** (closure-hardened): an atom may only claim an authoritative
+`SourceClass` (`MEASURED_EVIDENCE_REFERENCE`/`EXTERNAL_EVIDENCE_REFERENCE`/
+`DETERMINISTIC_POLICY_REFERENCE`) when the ARTIFACT's own `provenance.producer_kind` is NOT
+`NATIVE_MODEL` or `EXTERNAL_PROVIDER`. A model or external provider cannot cause its own claimed
+evidence to become authoritative merely by constructing the wire payload — only an artifact
+produced by a trusted system (`DETERMINISTIC_SYSTEM`, `TOOL`, `TRANSFORMATION`, or `HUMAN`) may
+carry such a claim, and even then the referenced evidence's actual resolution remains a consumer
+concern, not something OCL itself authenticates.
 
 ## 6. Core type system
 

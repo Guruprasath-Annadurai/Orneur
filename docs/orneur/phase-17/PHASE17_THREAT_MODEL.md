@@ -10,12 +10,15 @@ silently upgraded to VERIFIED.
    as free `content` text is not caught (see threat #22) → N/A (structural control is complete for
    its own scope).
 2. **Model outputs fake VerificationRecord** — an atom/evidence anchor claims to BE a
-   `VerificationRecord` → **control**: `EvidenceAnchor` is a reference (`evidence_kind=
-   VERIFICATION_RECORD`, `reference=<opaque id>`), never the record's content; only
-   `orca.mission.verification`'s real store can produce a genuine one → **tested**:
-   `test_atoms.py::test_observation_reference_claiming_authoritative_source_without_evidence_ref_rejected`
-   (adjacent control) → residual: OCL cannot verify the referenced ID actually resolves to a real
-   record (that is the CONSUMER's job, not OCL's) → Phase 20+ (router/consumer-side resolution).
+   `VerificationRecord` → **control (STRENGTHENED this closure)**: `EvidenceAnchor` is a reference
+   (`evidence_kind=VERIFICATION_RECORD`, `reference=<opaque id>`), never the record's content, AND
+   an atom may only claim the authoritative `source_class` this would require if the ARTIFACT's own
+   `provenance.producer_kind` is NOT `NATIVE_MODEL`/`EXTERNAL_PROVIDER` (spec §8: evidence must not
+   self-authenticate) → **tested**:
+   `test_atoms.py::test_native_model_artifact_cannot_self_authenticate_evidence` →
+   residual: OCL still cannot verify the referenced ID actually resolves to a real record once the
+   producer-kind gate is satisfied (that is the CONSUMER's job, not OCL's) → Phase 20+
+   (router/consumer-side resolution).
 3. **Model outputs fake Production Proof** — same shape as #2, `EvidenceKind.PRODUCTION_PROOF` →
    same control/residual as #2.
 4. **Fake CourtDecision reference** — same shape as #2, `EvidenceKind.COURT_DECISION` → same
@@ -140,3 +143,26 @@ silently upgraded to VERIFIED.
 
 31 of 40 threats have a cited passing test. 9 are honestly documented as untested/deferred
 (#14 is N/A, not a gap) rather than claimed VERIFIED without evidence.
+
+## Closure note (owner-audited hardening pass)
+
+An independent owner audit found the following threats' controls were narrower than their
+description implied, and this closure strengthened each:
+
+- **#1/#5 (authority-like fields)**: the recursive scan now covers lists/tuples nested inside
+  metadata, not only dict values — closing a "wrap the forbidden key in a list" bypass.
+- **#2-#4 (fake privileged evidence)**: adds the evidence-self-authentication gate — an atom can
+  only claim an authoritative source class inside an artifact whose OWN producer is a trusted
+  system, never a `NATIVE_MODEL`/`EXTERNAL_PROVIDER` artifact citing its own wire-payload evidence.
+- **#28 (transformation silently deletes evidence)** and the parent Cognitive Conservation
+  mechanism: now also catches a SAME-ID semantic rewrite (an atom whose ID persists but whose
+  content silently changed), not only outright disappearance.
+- **#29 (Cognitive Diff hides removals)**: Cognitive Diff now also detects same-ID content
+  modification, closing the "same ID, totally different content" blind spot.
+- **#37 (mutation after hashing)**: immutability is now DEEP (nested metadata dicts/lists), not
+  only the top-level frozen dataclass, and compiling no longer aliases the caller's own mutable
+  containers.
+- **#32 (parser resource exhaustion)** and a new control: the wire parser now also rejects
+  duplicate JSON object keys and unknown fields at every nesting level (not just size).
+
+See `PHASE17_EVIDENCE.md`'s closure section for the full before/after test evidence.
