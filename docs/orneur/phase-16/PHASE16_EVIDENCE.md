@@ -325,7 +325,137 @@ section is written).
 
 No Neon/database touched, no migration. No compute provider invoked. **GPU spend: $0.**
 
-### RE-EARNED FINAL VERDICT (second closure)
+### RE-EARNED FINAL VERDICT (second closure) — superseded by the third closure below
+
+DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 17?
+
+**YES** — see the third closure section, which re-answers this after the canonical-training-identity
+fix.
+
+---
+
+## THIRD CLOSURE SECTION — CANONICAL TRAINING IDENTITY ENFORCEMENT (append-only; all content above preserved unmodified)
+
+### Correction to a prior claim in this file
+
+The second closure section above states `require_base_model()` was "exercised by the real
+family-specific training path" and cites
+`test_require_base_model_is_exercised_by_the_real_family_training_path`. That test was TRUE but
+INCOMPLETE: it proved `require_base_model()` and `train()` both eventually raise for the exact same
+underlying fact (Aeternum's `base_model_status`) by comparing error messages -- it did NOT prove
+`train()` structurally *calls* `require_base_model()` at its own execution boundary, nor did it
+prove anything about a canonical family config whose `base_model` had been manually overridden
+(the bypass this closure fixes). That earlier claim is corrected here (append-only, not deleted)
+now that `test_require_base_model_genuinely_participates_in_the_training_validation_path`
+(monkeypatches `orca.registry.model_spec.require_base_model` itself and observes the spy was
+actually called by `train()`) makes the "genuinely exercised" claim actually true, not merely
+message-compatible.
+
+### Exact bypass reproduced
+
+`TrainingConfig.preset("ultra")` resolves `family="aeternum"`, `base_model=None`. The CLI's
+`orneur train run --preset ultra --model <arbitrary>` (`orca/cli.py::train_run`) then executes
+`if model: cfg.base_model = model` with NO re-validation, so the resulting config keeps
+`family="aeternum"` while `base_model` is now an arbitrary caller-supplied string. Confirmed by
+direct invocation via `typer.testing.CliRunner` before any fix: the CLI printed a Panel showing
+`Base model: some/arbitrary-model` under `Preset: ultra` and only failed afterward, for the WRONG
+reason (`ImportError: Missing training dependencies` -- meaning on any machine with `unsloth`
+actually installed, this would have proceeded to load `some/arbitrary-model` as if it were
+Aeternum). `_run_variant_train` (the `orca train nano/core/ultra` subcommands) was independently
+confirmed to have NO `--model` option at all, so it was never vulnerable to this specific bypass --
+the exposure was scoped to the generic `train run` command only.
+
+### Failing-test evidence (recorded before implementation)
+
+`tests/test_phase16_canonical_training_identity.py`, run against unmodified `b4ed11c`:
+```
+FAILED test_canonical_aeternum_cannot_be_trained_with_a_manually_injected_base_model
+FAILED test_genesis_and_novus_canonical_presets_cannot_silently_substitute_a_model[nano-genesis]
+FAILED test_genesis_and_novus_canonical_presets_cannot_silently_substitute_a_model[core-novus]
+FAILED test_require_base_model_genuinely_participates_in_the_training_validation_path
+FAILED test_cloud_xl_cannot_register_output_under_a_reserved_native_model_name
+FAILED test_reserved_native_model_names_cover_the_three_registered_families
+6 failed, 3 passed
+```
+(The CLI-specific test initially passed for the wrong reason -- an unrelated `ImportError` gave a
+nonzero exit code even though the identity check never ran. Strengthened to assert the specific
+identity-rejection message and absence of "Missing training deps" in the output, at which point it
+also failed against unmodified code, confirmed before implementing the fix.)
+
+### Centralized validator introduced
+
+`orca/train/config.py::validate_training_identity(cfg, *, artifact_name=None)` -- the single
+canonical training-identity boundary:
+- `cfg.family is not None` (canonical): `base_model` must equal exactly
+  `orca.registry.model_spec.require_base_model(cfg.family)` (imported and called via the module
+  object at call time, not a frozen name-import, so it stays monkeypatch-visible and provably
+  "real" per the new participation test) -- any mismatch (including Aeternum's own
+  UNSELECTED_PROVISIONAL case, surfaced by `require_base_model()` itself) raises `ValueError`.
+- `cfg.family is None` (generic/experimental): `base_model` must be explicitly set.
+- Either shape: the artifact name that will actually register the output (defaults to
+  `cfg.model_name`, or an explicit `artifact_name=` for `CloudTrainer`'s own separate
+  Ollama-registration parameter) is rejected if it is in
+  `orca.registry.model_spec.RESERVED_NATIVE_MODEL_NAMES` (new: `orca-nano`, `orca-nano-v4`,
+  `orca-nano-v7`, `orca-core`, `orca-core-dpo`, `orca-core-combined`, `orca-ultra` -- derived from
+  `MODEL_SPECS`'s own `legacy_ollama_names`, not scattered literals) while `family is None`.
+
+Called at both real execution boundaries: `orca/train/finetune.py::train()` (replacing the prior
+closure's narrower `base_model is None` check) and `orca/train/cloud.py::CloudTrainer.__init__`
+(same, plus passing its own separate `model_name` constructor parameter as `artifact_name`).
+
+### Exact CLI override behavior
+
+`orca/cli.py::train_run`'s `--model` option still sets `cfg.base_model = model` (unchanged) --
+enforcement now happens where it belongs, inside `train()`'s call to `validate_training_identity()`,
+which raises before any dependency import. `train_run` gained `except ImportError` and
+`except ValueError` handlers (mirroring `_run_variant_train`'s existing pattern) so the rejection
+is a clean CLI message, not a raw traceback -- confirmed: the CLI output now contains the identity
+rejection text and does NOT contain "Missing training deps" for the reproduced bypass case.
+
+### Reserved-name behavior
+
+`CloudTrainer(ssh="ssh root@1.2.3.4", preset="cloud_xl", model_name="orca-ultra")` now raises
+`ValueError` immediately in `__init__`, before `_parse_ssh`'s result is even used for a real
+connection -- proven with `_ssh_run`/`_rsync_up`/`_rsync_down` monkeypatched to raise
+`AssertionError` if ever called (none were).
+
+### Fail-before-network proof
+
+Same test as above: `_ssh_run`, `_rsync_up`, `_rsync_down` are all patched to explode; the
+`ValueError` fires before any of them execute, for both the UNSELECTED-Aeternum case (prior
+closure) and the reserved-name case (this closure).
+
+### Targeted results
+
+- `tests/test_phase16_canonical_training_identity.py`: **9 passed, 0 failed** (after fixing two
+  test-authoring issues found in the tests themselves: a match pattern too narrow for Aeternum's
+  actual UNSELECTED-path error message, and an assertion checking `result.exception` type when a
+  clean CLI handler correctly converts it to `SystemExit` -- both corrected in the test file, not
+  worked around in production code).
+- Non-regression: `test_phase16_training_fail_closed.py` (8), `test_phase16_court_reconciliation.py`
+  (11), `test_phase16_architecture_invariants.py` (2), `test_registry_model_spec.py` (16),
+  `test_registry.py`/`test_registry_backends.py`/`test_registry_lifecycle.py`/
+  `test_registry_id_sanitization.py`, `test_cli_branding.py`, `test_cognitive_court.py`/
+  `test_court_mission_gate.py`/`test_agent_court_integration.py`: **191 passed, 0 failed** combined.
+
+### Full deterministic regression
+
+Project `.venv` used explicitly (`.venv/bin/python -m pytest`, never the global Homebrew `pytest`),
+invoked pipefail-safe (`bash -c 'set -euo pipefail; ...'`):
+
+**2311 passed, 256 skipped, 43 deselected, 0 failed** (182.68s). Collection: **2610 tests**
+(2601 prior + 9 new `test_phase16_canonical_training_identity.py` tests). 2311+256+43 = 2610,
+matching exactly. No skip or deselection was added to reach this number.
+
+### Fresh GitHub CI run
+
+Recorded in the Final Report below (pushed after this section was written).
+
+### Production mutation status / GPU spend
+
+No Neon/database touched, no migration. No compute provider invoked. **GPU spend: $0.**
+
+### RE-EARNED FINAL VERDICT (third closure)
 
 DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 17?
 
