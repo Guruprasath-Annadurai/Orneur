@@ -248,9 +248,21 @@ remains authoritative only through the existing Phase 15 deterministic logic reg
 
 A checkpoint is a compiled, canonical `CognitiveArtifact` serialized via `to_canonical_json`.
 Because OCL structurally carries no CoT/credential field (§4), the one real residual risk is
-secret-SHAPED content inside `content`/`reference`/`locator` strings — `checkpoint.py` reuses
-`orca.learning.sanitize.sanitize_for_candidate` (no second secrets mechanism) and REJECTS (does not
-silently redact-and-store) any checkpoint attempt containing one.
+secret-SHAPED content inside any string leaf OR mapping key anywhere in the artifact —
+`checkpoint.py` reuses `orca.learning.sanitize.sanitize_for_candidate` (no second secrets mechanism)
+and REJECTS (does not silently redact-and-store) any checkpoint attempt containing one.
+
+**A checkpoint persists COGNITIVE STATE. It does NOT persist or mint compilation trust.** This is
+deliberate. `create_checkpoint(draft, *, trust_context=...)` compiles under whatever trust context
+the caller supplies, but the resulting checkpoint JSON carries no `CompilationTrustContext` value at
+all — trust is never serialized into the OCL payload. `restore_checkpoint(checkpoint_json, *,
+trust_context=UNTRUSTED)` defaults to the same safe `UNTRUSTED_MODEL_OR_WIRE` as everywhere else: a
+checkpoint created under `TRUSTED_DETERMINISTIC_SYSTEM` restored with the default context fails
+closed, by design, exactly like a fresh untrusted artifact would. The RESTORING runtime must
+independently re-establish trust out-of-band (the same way it did at creation time) and pass the
+matching `trust_context` explicitly for the checkpoint's privileged references to compile again. A
+trusted checkpoint restored in an untrusted context — or by a different, less-trusted runtime — must
+never silently regain its original privilege.
 
 ## 22. Authority separation (recap)
 

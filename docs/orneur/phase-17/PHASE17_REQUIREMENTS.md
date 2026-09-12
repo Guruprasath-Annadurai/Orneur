@@ -60,6 +60,22 @@ VERIFIED is used only where a real passing test backs the claim.
 
 ## Totals
 
-55 requirements: **51 VERIFIED**, 2 IMPLEMENTED (OCL-EVIDENCE-001, OCL-ESCALATE-001 — real code
+### Added this closure (acceptance-boundary: checkpoint trust, deep immutability, type safety)
+
+| ID | Statement | Status | Evidence |
+|---|---|---|---|
+| OCL-CHECKPOINT-005 | Checkpoint restore requires the caller to independently re-supply `trust_context`; a checkpoint created under a trusted context does not auto-restore with that trust, and the same trust re-supplied at restore succeeds | VERIFIED | `test_closure2_checkpoint_trust.py` (4 tests) |
+| OCL-AUTHORITY-007 | **CORRECTED again**: deep immutability now covers EVERY dataclass field reachable from a compiled artifact (not only dict-typed metadata fields) — a programmatic caller's plain `list` for a `tuple`-annotated field (e.g. `ActionIntent.preconditions`) is frozen to an immutable tuple too | VERIFIED | `test_closure2_deep_immutability_and_types.py` (9 immutability tests) |
+| OCL-TYPE-001 | `compile_artifact()` validates every scalar/sequence field's Python type before use, independent of the wire parser — a direct programmatic caller cannot bypass type checks via annotation-violating dataclass construction | VERIFIED | `test_closure2_deep_immutability_and_types.py` (12 type-validation tests) |
+| OCL-WIRE-002 | Wire `model_identity` scalar fields (`family`, `lifecycle_state`, `generation`) and every string-array element across all object types are type-checked; no raw exception escapes | VERIFIED | `test_closure2_wire_model_identity_and_arrays.py` (17 tests) |
+| OCL-TRUST-005 | `trust_context` MUST be a genuine `CompilationTrustContext` enum member; a plain string equal to a member's value is rejected (`InvalidTrustContext`) | VERIFIED | `test_closure2_trust_capability_matrix.py` (3 tests) |
+| OCL-TRUST-006 | Trust capability matrix: `TRUSTED_TOOL_ADAPTER` unlocks `MEASURED_EVIDENCE_REFERENCE` only; `TRUSTED_DETERMINISTIC_SYSTEM` additionally unlocks `DETERMINISTIC_POLICY_REFERENCE`; `TRUSTED_HUMAN_INPUT` unlocks neither | VERIFIED | `test_closure2_trust_capability_matrix.py` (5 tests) |
+| OCL-TRUST-007 | EvidenceKind capability matrix: a `TRUSTED_TOOL_ADAPTER` cannot certify `COURT_DECISION`/`PRODUCTION_PROOF`/`DETERMINISTIC_POLICY_FACT`; only `TRUSTED_DETERMINISTIC_SYSTEM` can | VERIFIED | `test_closure2_trust_capability_matrix.py` (2 tests) |
+| OCL-EVIDENCE-004 | `EXTERNAL_EVIDENCE_REFERENCE` removed from `PRIVILEGED_REFERENCE_SOURCE_CLASSES` — a model MAY cite external evidence as an explicitly UNVERIFIED reference on any atom kind, under any trust context, without self-authenticating it | VERIFIED | `test_closure2_trust_capability_matrix.py` (3 tests) |
+| OCL-ID-002 | `AtomDisposition.atom_id` validated non-empty, bounded, and string-typed | VERIFIED | `transformations.py::AtomDisposition.__post_init__` |
+
+## Totals
+
+64 requirements: **60 VERIFIED**, 2 IMPLEMENTED (OCL-EVIDENCE-001, OCL-ESCALATE-001 — real code
 exists but no dedicated test beyond adjacent coverage), 2 DEFERRED_TO_FUTURE_PHASE
 (OCL-AUTHORITY-005, OCL-EXTENSION-002). 0 UNIMPLEMENTED, 0 BLOCKED.

@@ -435,6 +435,162 @@ None. **GPU spend: $0.** **No model training occurred.**
   enforce without becoming an authentication system.
 - `ActionIntent`/`EscalationRequest` still have no real consumer in this codebase (Phase 19+/20).
 
+### RE-EARNED FINAL VERDICT (pre-acceptance-boundary-closure)
+
+DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 18?
+
+**YES** — superseded by the acceptance-boundary closure section below.
+
+---
+
+## ACCEPTANCE-BOUNDARY CLOSURE SECTION — DURABLE TRUST + DEEP IMMUTABILITY + TYPE SAFETY (append-only; all content above unchanged)
+
+### What owner review found
+
+An independent owner audit accepted the out-of-band `CompilationTrustContext` architecture from the
+prior closure but found four remaining correctness gaps, each reproduced live before any fix:
+
+1. **Trusted checkpoint round-trip was impossible.** `restore_checkpoint()` always called
+   `compile_ocl_json()`, which hardcodes `UNTRUSTED_MODEL_OR_WIRE` — so a checkpoint legitimately
+   created under `TRUSTED_DETERMINISTIC_SYSTEM` (containing a real privileged reference) could never
+   be restored again, even by the same trusted system. Reproduced: `create_checkpoint(draft,
+   trust_context=TRUSTED_DETERMINISTIC_SYSTEM)` succeeded, then `restore_checkpoint(cp)` raised
+   `EvidenceImpersonation` unconditionally.
+2. **Deep immutability was incomplete.** `deep_freeze()` only froze dict-typed fields named
+   `metadata`/`arguments_summary`; a programmatic `ActionIntent(preconditions=["p1"])` kept a plain,
+   mutable `list` after compilation. Reproduced:
+   `compiled.action_intents[0].preconditions.append("tamper")` succeeded, mutating the "compiled"
+   artifact.
+3. **Programmatic type validation was missing.** `ModelIdentityRef(family=[])` passed through
+   `_validate_provenance()`'s `family not in MODEL_SPECS` check and raised a raw `TypeError:
+   unhashable type: 'list'` — not a typed `OclError`. The same shape via the JSON wire path produced
+   the identical raw `TypeError`.
+4. **Trust context was not runtime-typed.** `compile_artifact(draft, trust_context=
+   "TRUSTED_DETERMINISTIC_SYSTEM")` (a bare Python string, not the enum) was silently accepted as
+   trusted, because the old check used `trust_context in TRUSTED_CONTEXTS` (a frozenset containing
+   `str`-mixin `Enum` members) — and `str`-Enum equality/hash matches the plain string value.
+
+A fifth, architectural doctrine gap was also addressed: `EXTERNAL_EVIDENCE_REFERENCE` had been left
+in `PRIVILEGED_REFERENCE_SOURCE_CLASSES`, which would have blocked the core Phase 17 intent that "a
+model should be able to cite external evidence without self-authenticating it" — citing something
+externally is not itself a privileged claim.
+
+### What changed, exactly
+
+**`orneur/intelligence/ocl/checkpoint.py`**: `restore_checkpoint(checkpoint_json, *,
+trust_context=UNTRUSTED)` now parses (`parse_ocl_draft_json`) then compiles with the CALLER-supplied
+`trust_context`, instead of unconditionally calling `compile_ocl_json`. `create_checkpoint()`'s
+existing `trust_context` passthrough is unchanged.
+
+**`orneur/intelligence/ocl/canonical.py`**: `freeze_value()`/`deep_freeze()` rewritten to recursively
+walk EVERY dataclass field (rebuilding nested dataclasses via `dataclasses.replace()` with each field
+recursively frozen), not merely fields named `metadata`/`arguments_summary`. A `list` anywhere
+becomes a `tuple`; a `dict` anywhere becomes a fresh `MappingProxyType`.
+
+**`orneur/intelligence/ocl/typecheck.py`** (new module): `require_string`, `require_optional_string`,
+`require_string_sequence`, `require_optional_int` — reusable validators applied throughout
+`compiler.py` to every scalar/sequence field the compiler reads, replacing the narrower, type-unsafe
+`_check_string_limits()`.
+
+**`orneur/intelligence/ocl/compiler.py`**: every validator function (`_validate_provenance`,
+`_validate_atoms`, `_validate_evidence`, `_validate_relations`, `_validate_action_intents`,
+`_validate_verification_contracts`, `_validate_escalation_requests`, `_validate_causal_hypotheses`,
+`_validate_counterfactual_branches`) now validates field types via `typecheck.py` before using them
+-- closing the `ModelIdentityRef(family=[])`-class of gap everywhere, not only for one field.
+`compile_artifact()` now validates `trust_context` via `trust.is_valid_trust_context()`
+(`isinstance(value, CompilationTrustContext)`) before anything else, raising the new
+`InvalidTrustContext` for a bare string. The evidence-impersonation gate now consults
+`trust.SOURCE_CLASS_CAPABILITY_MATRIX` (per-`SourceClass` capability, not a flat trusted/untrusted
+bit) and a new `_validate_evidence_kind_capability()` consults `trust.EVIDENCE_KIND_CAPABILITY_
+MATRIX` (per-`EvidenceKind` capability) as an independent second gate.
+
+**`orneur/intelligence/ocl/trust.py`**: `TRUSTED_CONTEXTS` replaced by `SOURCE_CLASS_CAPABILITY_
+MATRIX` and `EVIDENCE_KIND_CAPABILITY_MATRIX` (`TRUSTED_TOOL_ADAPTER` unlocks only
+`MEASURED_EVIDENCE_REFERENCE` and a narrow evidence-kind set; `TRUSTED_DETERMINISTIC_SYSTEM`
+additionally unlocks `DETERMINISTIC_POLICY_REFERENCE` and `COURT_DECISION`/`PRODUCTION_PROOF`/
+`VERIFICATION_RECORD`/`DETERMINISTIC_POLICY_FACT`; `TRUSTED_HUMAN_INPUT` unlocks neither). Added
+`is_valid_trust_context()` (`isinstance` check, correctly rejecting a bare string).
+
+**`orneur/intelligence/ocl/enums.py`**: `EXTERNAL_EVIDENCE_REFERENCE` removed from
+`PRIVILEGED_REFERENCE_SOURCE_CLASSES` (now 2 members, not 3) — a model may cite it on any atom kind,
+under any trust context, as an explicitly unverified reference.
+
+**`orneur/intelligence/ocl/transformations.py`**: `AtomDisposition.__post_init__` now also validates
+`atom_id` is a non-empty, bounded string.
+
+**`orneur/intelligence/ocl/errors.py`**: added `InvalidTrustContext`.
+
+**Tests**: `test_closure2_checkpoint_trust.py` (4), `test_closure2_deep_immutability_and_types.py`
+(21), `test_closure2_wire_model_identity_and_arrays.py` (17, one genuine new gap found and fixed
+during authoring -- see below), `test_closure2_trust_capability_matrix.py` (13) — 55 new tests total.
+One pre-existing test (`test_limits.py::test_oversized_content_rejected`) updated to expect
+`InvalidStructuredValue` instead of `PayloadLimitExceeded`, since string-length checking is now
+unified inside `typecheck.require_string()`.
+
+### Failing-test evidence (recorded before implementation -- live reproductions, not static inspection)
+
+All four owner-identified bugs were reproduced directly against the unmodified prior code via
+one-off scripts before any fix landed:
+
+```
+Bug 1 (checkpoint trust): create_checkpoint(..., trust_context=TRUSTED_DETERMINISTIC_SYSTEM)
+  succeeded; restore_checkpoint(cp) then raised EvidenceImpersonation unconditionally.
+Bug 2 (deep immutability): compiled.action_intents[0].preconditions.append("tamper") succeeded,
+  producing ['p1', 'tamper'] on the "compiled" artifact.
+Bug 3 (programmatic types): compile_artifact(draft-with-ModelIdentityRef(family=[])) raised
+  "TypeError: unhashable type: 'list'" -- a raw Python exception, not an OclError.
+Bug 4 (wire types): the identical raw TypeError reproduced via compile_ocl_json() on the
+  equivalent JSON payload.
+Bug 5 (trust context typing): compile_artifact(draft, trust_context="TRUSTED_DETERMINISTIC_SYSTEM")
+  (bare string) compiled a privileged atom successfully -- silently accepted as trusted.
+```
+
+A fifth issue was found DURING test authoring, not predicted in advance: while writing the wire
+string-array-element tests, `atom.evidence_refs` containing a non-string element (`[{}]`) was found
+to raise a raw `TypeError: unhashable type: 'dict'` from the `ref not in evidence_by_id` membership
+check inside `_validate_evidence` -- the same class of gap as bugs 3/4 but in a spot not explicitly
+named in the closure instructions. Fixed in the same pass (`require_string_sequence(atom.
+evidence_refs, ...)` added), per the standing "if another bug is discovered while repairing this,
+fix it now" discipline established in earlier phases.
+
+### Verification
+
+- `tests/ocl/` full suite: **260 passed, 0 failed** (up from 205; +55 new tests).
+- Phase 16 regression: **46 passed, 0 failed**.
+- Full deterministic regression, project `.venv`, pipefail-safe: **2571 passed, 256 skipped, 43
+  deselected, 0 failed** (202.05s). Collection: **2870 tests** (2815 prior + 55 new). 2571+256+43 =
+  2870, matching exactly. No new skip/deselect added.
+
+### Performance
+
+Unchanged in character (validate at 1000 atoms remained in the ~0.015-0.022s range across runs on
+this machine; the fully-recursive `deep_freeze()` walk adds a small, expected constant-factor cost
+over the prior field-name-targeted version, well within the existing sanity bounds in
+`test_performance.py`).
+
+### Production mutation / GPU spend / model training
+
+None. **GPU spend: $0.** **No model training occurred.**
+
+### Requirements totals (final)
+
+64 requirements: 60 VERIFIED, 2 IMPLEMENTED, 2 DEFERRED_TO_FUTURE_PHASE, 0 UNIMPLEMENTED, 0 BLOCKED.
+
+### Known remaining limitations
+
+- Unicode normalization still not performed (unchanged).
+- Extension namespaces still have no per-namespace schema-contract enforcement (unchanged, YAGNI).
+- `OCL-AUTHORITY-005` (full indirect Mission-bypass enumeration) remains deferred (unchanged).
+- The trust capability matrices (`SOURCE_CLASS_CAPABILITY_MATRIX`, `EVIDENCE_KIND_CAPABILITY_
+  MATRIX`) are OCL's own policy choice for V1 -- they are not derived from, or validated against, any
+  external authorization system. A future phase embedding OCL may need a richer, configurable
+  capability model; this is deliberately the smallest matrix that satisfies the closure's stated
+  target semantics.
+- `CompilationTrustContext` itself still has no cryptographic authentication -- OCL cannot verify a
+  caller's claim to hold a given trust context is itself genuine (unchanged from the prior closure's
+  documented limitation).
+- `ActionIntent`/`EscalationRequest` still have no real consumer in this codebase (Phase 19+/20).
+
 ### RE-EARNED FINAL VERDICT
 
 DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 18?
