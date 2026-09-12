@@ -197,6 +197,136 @@ append-only log; audit doc and requirements registry corrected/appended as appro
 
 ### RE-EARNED FINAL VERDICT
 
+DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 17? (post first closure, pre-second-closure)
+
+**YES** — superseded again by the second closure section below.
+
+---
+
+## SECOND CLOSURE SECTION — TRAINING FAIL-CLOSED + COURT CONTRACT RECONCILIATION (append-only; all content above preserved unmodified)
+
+### Correction to a prior statement in this file
+
+Section L of the owner's second closure instructions correctly identified that the "Production /
+model-artifact untouched verification" section above states "no GitHub Actions push/dispatch was
+performed for the closure" for the *first* closure — that statement was true for THAT closure at
+the time it was written (nothing CI-relevant had changed yet). It does not describe later state: a
+fresh push-triggered Test Suite run (`34676883725`, head `90b3258005f8a5df45c6cf80063ff631ec419250`,
+conclusion `success`) DID occur immediately afterward, once that closure's commits were pushed. Not
+deleting the earlier statement (append-only); recording the actual sequence here: (1) closure
+commits made and pushed, (2) GitHub's own push-triggered workflow ran automatically as a
+consequence — that is expected behavior, not a separate manual dispatch, and both are true without
+contradiction once read as describing two different points in time.
+
+### What owner review found (this closure)
+
+1. **Aeternum's ModelSpec said UNSELECTED, but live training entry points still exposed the
+   historical 70B/orca-ultra path.** True: `orca/train/config.py`'s `cloud_xl` preset hardcoded
+   `unsloth/Meta-Llama-3.1-70B-Instruct` and named its output `orca-ultra`/`orca-ultra-qlora`
+   (conflating a generic hardware-sizing preset with Aeternum's identity), and neither
+   `orca/train/finetune.py::train()` nor `orca/train/cloud.py::CloudTrainer.__init__` actually
+   consulted `base_model is None` before proceeding — `require_base_model()` existed but was wired
+   into nothing.
+2. **The Phase 16 closure accidentally treated the Deliberation Fabric's 4-state
+   `CourtVerdictState` as canonical**, despite `orca/mission/cognitive_court.py::CourtVerdict`
+   (Phase 15.9) already matching the owner's canonical Phase 15 Court contract
+   (ACCEPT/REJECT/NEED_MORE_EVIDENCE/ESCALATE/HUMAN_APPROVAL_REQUIRED) exactly.
+
+### Root-cause evidence
+
+See `PHASE16_COURT_AND_TRAINING_EVIDENCE_TABLE.md` (new document, this closure) for the full
+SOURCE/CURRENT BEHAVIOR/CANONICAL-OR-LEGACY/RISK/FIX-REQUIRED table covering every search term the
+closure instructions specified (`require_base_model`, `cloud_xl`, `70B`, `orca-ultra`, `Genesis —
+7B`, `CourtVerdictState`, `REVISE`, `INSUFFICIENT_EVIDENCE`, `NEED_MORE_EVIDENCE`, `ESCALATE`,
+`HUMAN_APPROVAL_REQUIRED`, `CognitiveCourt`, `CourtVerdict`), produced BEFORE any implementation.
+
+Key finding: `orca.mission.cognitive_court.CourtVerdict` (introduced Phase 15.9, commit `99b8881`)
+IS the canonical governed contract, matching `docs/orneur/phase-15/ORNEUR_CODE_RELAY_MASTER_SPEC_V1.md`
+and `PHASE15_EVIDENCE.md`'s own "All five canonical outcomes" line exactly.
+`orca.deliberation.contracts.CourtVerdictState` (introduced Phase 6, commit `33ece82`) is a
+genuinely different, legitimate LEGACY/INTERNAL Cognitive-Kernel plan-revision mechanism. No
+renaming of either enum was needed or performed — they were already correctly separate in code
+(`orca/mission/court_mission_gate.py` never imports `orca.deliberation`); only the Phase 16
+*documentation* wrongly conflated them.
+
+### What changed, exactly (this closure)
+
+**Code**:
+- `orca/train/finetune.py::train()`: added a fail-closed `ValueError` guard, checked before
+  `_check_deps()` or any unsloth/transformers import, when `cfg.base_model is None`.
+- `orca/train/cloud.py::CloudTrainer.__init__`: added the same fail-closed guard immediately after
+  resolving `self.base_model`, before any SSH connectivity check, dependency install, rsync, or GPU
+  work in `run()`.
+- `orca/train/config.py`: added `TrainingConfig.family` (canonical family or `None` for a generic
+  hardware preset) and `TrainingConfig.is_legacy_experimental` fields; `cloud_xl` reclassified as
+  LEGACY_EXPERIMENTAL with `model_name`/`output_dir` renamed away from `orca-ultra` so its output
+  can never be mistaken for a canonical Aeternum checkpoint; `nano`/`core`/`ultra` presets now set
+  `family="genesis"/"novus"/"aeternum"` respectively; module docstring rewritten to separate
+  generic hardware-sizing presets from canonical family presets.
+- `orca/train/variants.py`: module docstring's `ultra` line and the `nano` variant's
+  `description` corrected (the latter previously said "Genesis — 7B", self-contradicting its own
+  `base_model` field, which is the canonical 3B target).
+- `orca/cli.py`: `train_ultra`'s docstring corrected; `_run_variant_train` now catches `ValueError`
+  for a clean CLI failure message instead of an unhandled traceback.
+- `orca/personas.py`: Aeternum-persona docstring's stale "Llama-3.1-70B / Qwen2.5-72B fine-tune"
+  claim corrected to state UNSELECTED (this module currently has zero importers -- dead code today,
+  classified LIVE STALE PROSE rather than LEGACY HISTORICAL RECORD since it is still live source).
+- `tests/test_phase16_training_fail_closed.py` (new, 8 tests, TDD) and
+  `tests/test_phase16_court_reconciliation.py` (new, 11 tests, TDD) — written first, several
+  observed failing against the unmodified code (the fail-closed guards did not yet exist), then
+  made to pass by the changes above.
+- `tests/conftest.py`: **a genuine, independently-discovered, pre-existing hermeticity bug fixed
+  in the same closure**, per the "if another bug is discovered while repairing this, fix it now"
+  discipline. The `isolated_home` fixture's own docstring claimed it "reloads the same modules on
+  teardown" — the code never actually did. This left `orca.config.ORCA_HOME` (and anything that
+  later does `from orca.config import ORCA_HOME`, such as `orca/train/config.py`) pointed at the
+  fixture's already-deleted tmp directory for the rest of the pytest session, for any module not
+  yet imported at the point the fixture first ran. This was invisible until a full-suite run
+  triggered the FIRST-EVER lazy import of `orca.train.config`/`orca.train.cloud` (via the new
+  `test_cloud_trainer_fails_before_any_ssh_or_network_call` test) after an `isolated_home`-using
+  test had already run earlier in the same session, producing a real
+  `FileNotFoundError: .../orca_test_.../models`. Root-caused by running the new test in isolation
+  (passed), then reproducing the exact full-suite failure with `pytest -x --tb=long`, tracing the
+  traceback to `TrainingConfig`'s module-level `MODELS_DIR.mkdir(exist_ok=True)`, and finding the
+  fixture's docstring/code mismatch. Fixed by adding the missing four `importlib.reload(...)` calls
+  after the env vars are restored on teardown, matching what the docstring always claimed.
+
+**Documentation**:
+- New `PHASE16_COURT_AND_TRAINING_EVIDENCE_TABLE.md`.
+- `PHASE16_REQUIREMENTS.md`: `REQ-COURT-ARCH-001` corrected again (now scoped to the legacy
+  deliberation enum only); `REQ-COURT-ARCH-002` through `005` and `REQ-TRAINING-ARCH-002`/`003`
+  added, each backed by a specific new test, not by ModelSpec.base_model being None alone.
+
+### Verification
+
+- `tests/test_phase16_court_reconciliation.py`: **11 passed, 0 failed**.
+- `tests/test_phase16_training_fail_closed.py`: **8 passed, 0 failed** (in isolation and in
+  combination with `isolated_home`-using tests, after the conftest.py fix).
+- Neighboring/targeted regression (registry, gateway, society, deliberation, godmode, CLI,
+  cognitive, training-losses — 19 files): **387 passed, 5 skipped, 0 failed**.
+- Full collection: **2601 tests** (2582 prior + 19 new: 11 Court-reconciliation + 8
+  training-fail-closed).
+- Full deterministic regression, project `.venv` used explicitly (never the global Homebrew
+  `pytest` -- confirmed via `which pytest` pointing elsewhere on this machine, same hazard
+  documented in the first closure): **2302 passed, 256 skipped, 43 deselected, 0 failed** (175.65s).
+  2302+256+43 = 2601, matching collection exactly. No deselection or skip was added to reach this
+  number -- the one real failure encountered along the way (`test_cloud_trainer_fails_before_any_
+  ssh_or_network_call`, intermittent, order-dependent) was root-caused to the `conftest.py` bug
+  above and fixed at the source, not worked around.
+- No previously-passing test failed at any point in this closure.
+
+### Fresh GitHub CI run
+
+Commit pushed at the end of this closure; see the Final Report below for the exact run ID, head
+SHA, and conclusion (recorded there rather than duplicated here, since the push happens after this
+section is written).
+
+### Production mutation status / GPU spend
+
+No Neon/database touched, no migration. No compute provider invoked. **GPU spend: $0.**
+
+### RE-EARNED FINAL VERDICT (second closure)
+
 DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 17?
 
 **YES**
