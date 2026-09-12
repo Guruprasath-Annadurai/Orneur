@@ -15,6 +15,7 @@ subset. See PHASE17_EVIDENCE.md's closure section for the gap this closes.
 from __future__ import annotations
 
 import math
+from types import MappingProxyType
 
 from orneur.intelligence.ocl import limits
 from orneur.intelligence.ocl.artifact import CognitiveArtifact
@@ -69,6 +70,7 @@ from orneur.intelligence.ocl.typecheck import (
     require_instance,
     require_optional_int,
     require_optional_string,
+    require_sequence_container,
     require_string,
     require_string_sequence,
     require_structured_mapping,
@@ -96,11 +98,16 @@ def validate_structured_value(value, *, where: str, _depth: int = 0) -> None:
     Recurses into dicts, lists, AND tuples (closing the nested-list
     authority-smuggling gap where only dict values were previously
     scanned) -- a forbidden key nested inside a list of dicts is caught
-    just as reliably as one at the top level."""
+    just as reliably as one at the top level. Accepts `MappingProxyType`
+    identically to `dict` (Phase 17 container-typing closure section 6):
+    a compiled artifact's metadata is a `MappingProxyType` after
+    `deep_freeze()`, so revalidating an already-compiled artifact (
+    `compile_artifact(compile_artifact(draft))`) must not fail merely
+    because the container type changed from mutable to frozen."""
     if _depth > limits.MAX_METADATA_DEPTH:
         raise PayloadLimitExceeded(f"{where}: structured value nesting exceeds {limits.MAX_METADATA_DEPTH}")
 
-    if isinstance(value, dict):
+    if isinstance(value, (dict, MappingProxyType)):
         if len(value) > limits.MAX_METADATA_KEYS:
             raise PayloadLimitExceeded(f"{where}: mapping has more than {limits.MAX_METADATA_KEYS} keys")
         for key, val in value.items():
@@ -136,6 +143,33 @@ def validate_structured_value(value, *, where: str, _depth: int = 0) -> None:
     raise InvalidStructuredValue(f"{where}: disallowed value type {type(value).__name__}")
 
 
+def _validate_top_level_container_types(draft: CognitiveArtifact) -> None:
+    """Phase 17 container-typing closure sections 1A/1B/3/4: every
+    top-level draft sequence field must be a `list` or `tuple` BEFORE it
+    is ever iterated -- not an arbitrary iterable. Without this, `atoms=
+    None`/`42` raise a raw `TypeError: object is not iterable` the moment
+    something tries to loop over them; `atoms={}`/`""` iterate to ZERO
+    elements and would silently "compile as an empty collection" with no
+    error at all; and a generator would be consumed exactly once by
+    whichever validator iterates it first (e.g. `_validate_collection_
+    element_types` below), leaving it exhausted for a later pass that
+    needs to iterate it again (e.g. `len()` in `_validate_atoms`) --
+    `TypeError: object of type 'generator' has no len()` was the exact
+    pre-fix reproduction. Wire parsing already only ever produces list/
+    tuple, so this preserves wire behavior; a programmatic caller's own
+    `list` remains intentionally accepted and becomes a `tuple` via
+    `deep_freeze()` at the end of `compile_artifact()`."""
+    require_sequence_container(draft.atoms, where="artifact.atoms")
+    require_sequence_container(draft.relations, where="artifact.relations")
+    require_sequence_container(draft.evidence, where="artifact.evidence")
+    require_sequence_container(draft.action_intents, where="artifact.action_intents")
+    require_sequence_container(draft.verification_contracts, where="artifact.verification_contracts")
+    require_sequence_container(draft.escalation_requests, where="artifact.escalation_requests")
+    require_sequence_container(draft.causal_hypotheses, where="artifact.causal_hypotheses")
+    require_sequence_container(draft.counterfactual_branches, where="artifact.counterfactual_branches")
+    require_sequence_container(draft.limitation_atom_refs, where="artifact.limitation_atom_refs")
+
+
 def _validate_collection_element_types(draft: CognitiveArtifact) -> None:
     """Phase 17 type-parity closure section 4/8: the acceptance boundary
     must validate object SHAPE, not only field values -- a programmatic
@@ -146,7 +180,10 @@ def _validate_collection_element_types(draft: CognitiveArtifact) -> None:
     received the correct dataclass type; this runs FIRST, before any of
     them touch a single field, so a wrong-type element raises a typed
     `InvalidObjectType` instead of a raw `AttributeError` from the first
-    attribute access."""
+    attribute access. Must run AFTER `_validate_top_level_container_
+    types()` -- a container-type violation should be reported as such,
+    not as a spurious per-element failure from iterating something that
+    was never a valid container to begin with."""
     for atom in draft.atoms:
         require_instance(atom, CognitiveAtom, where="artifact.atoms[]")
     for rel in draft.relations:
@@ -560,11 +597,23 @@ def compile_artifact(
             "even if it matches an enum value's text."
         )
 
+    # THE very first field-independent check: `draft` itself must be a
+    # genuine CognitiveArtifact -- a dict/str/int standing in for it must
+    # never reach `.atoms`/`.artifact_id`/etc, which would raise a raw
+    # AttributeError (Phase 17 container-typing closure section 2/1C).
+    require_instance(draft, CognitiveArtifact, where="artifact")
+
     # Run BEFORE anything else touches a single field of a collection
     # element -- a wrong-type element (e.g. `atoms=(42,)`) must raise a
     # typed InvalidObjectType, not a raw AttributeError from whichever
     # validator happens to read `.atom_id`/`.relation_id`/etc first
-    # (Phase 17 type-parity closure sections 2F/4/8).
+    # (Phase 17 type-parity closure sections 2F/4/8). The container itself
+    # (list/tuple vs. dict/str/generator/None/...) is validated FIRST, so
+    # a wrong container shape is reported as such rather than as a
+    # spurious per-element failure or a raw TypeError from iterating a
+    # non-container or an exhausted generator (Phase 17 container-typing
+    # closure sections 1A/1B/3).
+    _validate_top_level_container_types(draft)
     _validate_collection_element_types(draft)
 
     _require_id(draft.artifact_id, where="artifact.artifact_id")

@@ -97,19 +97,41 @@ class AtomDisposition:
     justification_ref: str
 
     def __post_init__(self) -> None:
+        # Order matters: `disposition`/`justification_ref` are TYPE-checked
+        # before any set/frozenset membership or length check touches them
+        # -- `self.disposition not in _VALID_DISPOSITIONS` on an unhashable
+        # value (e.g. a list) raised a raw `TypeError: unhashable type`
+        # pre-fix (Phase 17 container-typing closure section 5/D).
         if not isinstance(self.atom_id, str) or not self.atom_id:
             raise ConservationViolation("AtomDisposition.atom_id must be a non-empty string")
         if len(self.atom_id) > limits.MAX_STRING_FIELD_LENGTH:
             raise ConservationViolation("AtomDisposition.atom_id exceeds the maximum field length")
+
+        if not isinstance(self.disposition, str):
+            raise ConservationViolation(
+                f"AtomDisposition for {self.atom_id!r} has non-string disposition "
+                f"{type(self.disposition).__name__} -- must be a string, one of "
+                f"{sorted(_VALID_DISPOSITIONS)!r}"
+            )
         if self.disposition not in _VALID_DISPOSITIONS:
             raise ConservationViolation(
                 f"AtomDisposition for {self.atom_id!r} has unknown disposition {self.disposition!r} "
                 f"-- must be one of {sorted(_VALID_DISPOSITIONS)!r}"
             )
+
+        if not isinstance(self.justification_ref, str):
+            raise ConservationViolation(
+                f"AtomDisposition for {self.atom_id!r} has non-string justification_ref "
+                f"{type(self.justification_ref).__name__} -- must be a non-empty, bounded string"
+            )
         if not self.justification_ref:
             raise ConservationViolation(
                 f"AtomDisposition for {self.atom_id!r} requires a non-empty justification_ref -- "
                 "an important atom's supersession/removal/modification must be auditable, not bare."
+            )
+        if len(self.justification_ref) > limits.MAX_STRING_FIELD_LENGTH:
+            raise ConservationViolation(
+                f"AtomDisposition for {self.atom_id!r} justification_ref exceeds the maximum field length"
             )
 
 

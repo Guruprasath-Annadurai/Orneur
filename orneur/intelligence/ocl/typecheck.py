@@ -62,6 +62,23 @@ def require_instance(value, expected_type, *, where: str):
     return value
 
 
+def require_sequence_container(value, *, where: str):
+    """Phase 17 container-typing closure: a top-level draft sequence field
+    (`artifact.atoms`, `.relations`, `.evidence`, ...) must be a `list` or
+    `tuple` -- nothing else. A `dict`/`str` iterates to something silently
+    wrong (an empty dict/string iterates to ZERO elements and would
+    silently "compile as an empty collection" with no error at all); a
+    generator/iterator/set is consumed exactly once, so a validator that
+    iterates it during type-checking would find it exhausted on a later
+    pass that needs to iterate it again (e.g. `len()` or a second loop) --
+    this must be rejected outright, not merely tolerated. Checked BEFORE
+    any iteration of the value, never after a generator has already been
+    partially consumed."""
+    if not isinstance(value, (list, tuple)):
+        raise InvalidStructuredValue(f"{where}: expected a list or tuple, got {type(value).__name__}")
+    return value
+
+
 def require_structured_mapping(value, *, where: str):
     """The wire schema requires every metadata-shaped field to be a JSON
     OBJECT at its root (a bare JSON array/string/number is never a valid
