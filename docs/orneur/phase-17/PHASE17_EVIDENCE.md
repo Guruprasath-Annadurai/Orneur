@@ -591,6 +591,145 @@ None. **GPU spend: $0.** **No model training occurred.**
   documented limitation).
 - `ActionIntent`/`EscalationRequest` still have no real consumer in this codebase (Phase 19+/20).
 
+### RE-EARNED FINAL VERDICT (pre-type-parity-closure)
+
+DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 18?
+
+**YES** — superseded by the acceptance-boundary TYPE PARITY closure section below.
+
+---
+
+## ACCEPTANCE-BOUNDARY TYPE PARITY CLOSURE SECTION (append-only; all content above unchanged)
+
+### What owner review found
+
+An independent owner audit accepted the out-of-band trust architecture, capability matrices, and
+deep-immutability work from the prior closure, but observed that OCL now has TWO construction
+paths into `compile_artifact()` — the strict JSON wire path (`parse_ocl_draft_json`) and direct
+programmatic dataclass construction — and that several compiler code paths still implicitly
+trusted Python's type annotations rather than validating at runtime, meaning a programmatic
+caller could construct an object the wire path could never produce. Root cause: the compiler is
+supposed to be the single canonical acceptance boundary, so any artifact accepted programmatically
+MUST satisfy the same type schema as an equivalent wire-parsed artifact — several places did not.
+
+Each gap was reproduced live (via a one-off script) against unmodified `b8b5abb` before any fix:
+
+```
+A. atom.namespace=[] -> TypeError: unhashable type: 'list'
+   (namespace used in `atom.namespace not in registry_snapshot` before being type-checked)
+B. relation.namespace=[] -> TypeError: unhashable type: 'list'
+   (identical root cause for CognitiveRelation.namespace)
+C1. EvidenceAnchor(evidence_kind="COURT_DECISION", ...) [plain str, unreferenced] -> NO EXCEPTION
+    (a raw string equal to an EvidenceKind member's .value silently accepted)
+C2. Same, cited by a privileged DETERMINISTIC_POLICY_REFERENCE atom under
+    TRUSTED_DETERMINISTIC_SYSTEM -> NO EXCEPTION (the capability-matrix gate itself was bypassed,
+    since `anchor.evidence_kind not in allowed_kinds` matches a str-mixin Enum's value textually)
+D1/D2/D3. CognitiveArtifact(provenance={} | "fake" | 42, ...) ->
+          AttributeError: '<type>' object has no attribute 'model_identity'
+E. Provenance(model_identity={}, ...) ->
+   AttributeError: 'dict' object has no attribute 'family'
+F. atoms=(42,) / relations=("bad",) / evidence=({},) / action_intents=(42,) /
+   verification_contracts=(42,) / escalation_requests=(42,) / causal_hypotheses=(42,) /
+   counterfactual_branches=(42,) -> AttributeError: '<type>' object has no attribute '<id field>'
+   (every one of the eight top-level collections)
+```
+
+### What changed, exactly
+
+**`orneur/intelligence/ocl/typecheck.py`**: added `require_instance(value, expected_type, where)`
+(a generic `isinstance` guard usable for both dataclasses and Enum classes — the same doctrine
+already used for `CompilationTrustContext` in `trust.is_valid_trust_context()`, now applied
+uniformly to `AtomKind`/`SourceClass`/`RelationKind`/`EvidenceKind`/`ProducerKind` and every OCL
+dataclass) and `require_structured_mapping(value, where)` (requires the ROOT of a metadata-shaped
+field to be a mapping, distinct from `validate_structured_value`'s recursive content check which
+deliberately also allows lists — needed for JSON arrays nested INSIDE a valid mapping).
+
+**`orneur/intelligence/ocl/errors.py`**: added `InvalidObjectType` (code `INVALID_OBJECT_TYPE`) for
+wrong-type dataclass/enum values — kept distinct from `InvalidStructuredValue`, which covers
+scalar/sequence/mapping-shape violations.
+
+**`orneur/intelligence/ocl/compiler.py`**:
+- New `_validate_collection_element_types()` runs FIRST inside `compile_artifact()`, before any
+  other validator touches a single field — every element of `atoms`/`relations`/`evidence`/
+  `action_intents`/`verification_contracts`/`escalation_requests`/`causal_hypotheses`/
+  `counterfactual_branches` is `require_instance`-checked against its real OCL dataclass type,
+  closing gap F for all eight collections at once.
+- `_validate_atoms()`/`_validate_relations()`: `namespace` is now `require_string`-checked BEFORE
+  the `registry_snapshot` membership lookup (closing gaps A/B); `atom.metadata`/`rel.metadata`
+  gain a `require_structured_mapping` root check before the existing recursive
+  `validate_structured_value` call.
+- `_validate_evidence()`: `anchor.evidence_kind` is now `isinstance`-checked against `EvidenceKind`
+  before anything else touches it (closing gap C for both the nonprivileged and privileged-
+  reference cases — the latter matters because `_validate_evidence_kind_capability()`'s capability
+  matrix lookup was the exact check a raw string could silently satisfy); `anchor.metadata` gains
+  the same root-mapping check.
+- `_validate_provenance()`: `artifact.provenance` is now `require_instance`-checked against
+  `Provenance` before any field is read, and `prov.model_identity` (when not `None`) is
+  `require_instance`-checked against `ModelIdentityRef` before `.family`/etc are read — closing
+  gaps D and E.
+- `_validate_action_intents()`: `intent.arguments_summary` gains the root-mapping check.
+- `compile_artifact()`: `draft.metadata` gains the root-mapping check; `_validate_collection_
+  element_types(draft)` is called before `_require_id`/schema-version/registry-snapshot work.
+
+**`orneur/intelligence/ocl/transformations.py`**: `TransformationRecord.__post_init__` now also
+validates `.operation` is a genuine `TransformationOperation`, `.producer` is a genuine
+`Provenance`, every ID-sequence field (`affected_atom_ids`, `created_atom_ids`,
+`superseded_atom_ids`, `removed_atom_ids`) contains only non-empty strings, `.atom_dispositions`
+contains only `AtomDisposition` instances, and `.justification_refs` contains only strings (empty
+string permitted — the existing "shared justification" lookup in `_normalize_legacy_dispositions`
+already filters on truthiness itself, so this is type safety only, not a semantics change; no
+change to Cognitive Conservation rules).
+
+**Tests**: `test_closure3_object_type_parity.py` (27 tests: gaps A–F plus the metadata
+root-mapping invariant, including a non-regression check that nested JSON arrays/maps inside a
+valid root mapping still compile), `test_closure3_acceptance_path_parity.py` (9 tests: the OCL
+ACCEPTANCE-PATH PARITY INVARIANT — programmatic compile → canonical JSON → strict-wire reparse →
+recompile with the same `trust_context` produces a semantically equal artifact, across atoms,
+relations, evidence, action intents, verification contracts, escalation requests, causal
+structures, nested metadata, and trusted privileged evidence), `test_closure3_transformation_
+type_parity.py` (10 tests: `TransformationRecord`/`AtomDisposition` type safety) — 46 new tests,
+plus 4 parametrized cases inside them bringing the total new test count to 50.
+
+### Verification
+
+- `tests/ocl/` full suite: **310 passed, 0 failed** (up from 260; +50 new tests).
+- Phase 16 regression (`test_phase16_architecture_invariants.py`, `test_phase16_court_
+  reconciliation.py`, `test_phase16_training_fail_closed.py`, `test_phase16_canonical_training_
+  identity.py`): **30 passed, 0 failed**.
+- Full deterministic regression, project `.venv`, exact CI invocation
+  (`pytest -m "not live_ollama_smoke"`), pipefail-safe: **2621 passed, 256 skipped, 43
+  deselected, 0 failed** (188.97s). Collection: **2920 tests** (2870 prior + 50 new).
+  2621+256+43 = 2920, matching exactly. No new skip/deselect added.
+
+### Performance
+
+No material regression: `test_performance.py` at 1000 atoms measured validate=0.0165s (prior
+closure: 0.0161–0.0168s across runs on this machine) — within existing noise, not a new cost
+center; the added type checks are all O(1) `isinstance` calls per field, not new traversals.
+
+### Production mutation / GPU spend / model training
+
+None. **GPU spend: $0.** **No model training occurred.**
+
+### Requirements totals (final)
+
+70 requirements: 66 VERIFIED, 2 IMPLEMENTED, 2 DEFERRED_TO_FUTURE_PHASE, 0 UNIMPLEMENTED,
+0 BLOCKED.
+
+### Known remaining limitations
+
+- All limitations documented in the prior closure section remain unchanged (Unicode
+  normalization, extension-namespace schema enforcement, `OCL-AUTHORITY-005`, the trust
+  capability matrices being OCL's own V1 policy choice, no cryptographic authentication of a
+  claimed trust context, `ActionIntent`/`EscalationRequest` having no real consumer yet).
+- This closure is schema/type parity ONLY: it does not add cryptography, does not implement
+  Phase 18 epistemic states, does not touch the trust capability matrix's contents, does not
+  implement a router, and does not expand Cognitive Conservation semantics beyond type safety.
+- The acceptance-path parity invariant is proven for the representative shapes exercised by
+  `test_closure3_acceptance_path_parity.py`, not via an exhaustive property-based fuzzer across
+  every possible field combination; this is consistent with this project's existing test style
+  (representative TDD cases, not exhaustive enumeration) and is not claimed to be a formal proof.
+
 ### RE-EARNED FINAL VERDICT
 
 DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 18?

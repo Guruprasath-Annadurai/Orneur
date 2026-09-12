@@ -74,8 +74,19 @@ VERIFIED is used only where a real passing test backs the claim.
 | OCL-EVIDENCE-004 | `EXTERNAL_EVIDENCE_REFERENCE` removed from `PRIVILEGED_REFERENCE_SOURCE_CLASSES` — a model MAY cite external evidence as an explicitly UNVERIFIED reference on any atom kind, under any trust context, without self-authenticating it | VERIFIED | `test_closure2_trust_capability_matrix.py` (3 tests) |
 | OCL-ID-002 | `AtomDisposition.atom_id` validated non-empty, bounded, and string-typed | VERIFIED | `transformations.py::AtomDisposition.__post_init__` |
 
+### Added this closure (acceptance-boundary TYPE PARITY: programmatic/wire schema parity)
+
+| ID | Statement | Status | Evidence |
+|---|---|---|---|
+| OCL-TYPE-002 | Every enum-valued artifact field (`AtomKind`, `SourceClass`, `RelationKind`, `EvidenceKind`, `ProducerKind`) requires a genuine enum member during programmatic compilation — a plain string equal to a member's `.value` (e.g. `evidence_kind="COURT_DECISION"`) is rejected, both in a nonprivileged and a privileged-reference position | VERIFIED | `test_closure3_object_type_parity.py` (4 tests) |
+| OCL-TYPE-003 | Object-valued collections/fields (`artifact.atoms`/`relations`/`evidence`/`action_intents`/`verification_contracts`/`escalation_requests`/`causal_hypotheses`/`counterfactual_branches`, `artifact.provenance`, `provenance.model_identity`) reject a wrong-type element/value with a typed `InvalidObjectType`, never a raw `AttributeError`/`TypeError` | VERIFIED | `test_closure3_object_type_parity.py` (17 tests) |
+| OCL-COMPAT-004 | Programmatic and strict-wire construction paths satisfy acceptance-path parity: `compile_artifact(draft)` → `to_canonical_json` → `parse_ocl_draft_json` → `compile_artifact(parsed, same trust_context)` produces a semantically equal artifact, across atoms/relations/evidence/action intents/verification contracts/escalation requests/causal structures/nested metadata/trusted privileged evidence | VERIFIED | `test_closure3_acceptance_path_parity.py` (9 tests) |
+| OCL-WIRE-003 | Atom/relation `namespace` is type-checked (`require_string`) BEFORE the registry-membership lookup, closing a raw `TypeError: unhashable type` when a caller passes a list | VERIFIED | `test_closure3_object_type_parity.py` (2 tests) |
+| OCL-METADATA-001 | Every metadata-shaped field (`artifact`/`atom`/`relation`/`evidence` `.metadata`, `ActionIntent.arguments_summary`) must be a mapping AT ITS ROOT — a bare list/other value is rejected — while JSON arrays/maps nested INSIDE a valid root mapping remain allowed (no change to `validate_structured_value`'s existing recursive content rules) | VERIFIED | `test_closure3_object_type_parity.py` (7 tests) |
+| OCL-TRANSFORM-001 | `TransformationRecord.operation` must be a genuine `TransformationOperation`; `.producer` must be a genuine `Provenance`; every tuple/list ID field (`affected_atom_ids`, `created_atom_ids`, `superseded_atom_ids`, `removed_atom_ids`, `atom_dispositions`) contains only the correct element type; `justification_refs` contains only strings (empty string permitted, preserving existing "shared justification" filter semantics — no change to Cognitive Conservation rules) | VERIFIED | `test_closure3_transformation_type_parity.py` (10 tests) |
+
 ## Totals
 
-64 requirements: **60 VERIFIED**, 2 IMPLEMENTED (OCL-EVIDENCE-001, OCL-ESCALATE-001 — real code
+70 requirements: **66 VERIFIED**, 2 IMPLEMENTED (OCL-EVIDENCE-001, OCL-ESCALATE-001 — real code
 exists but no dedicated test beyond adjacent coverage), 2 DEFERRED_TO_FUTURE_PHASE
 (OCL-AUTHORITY-005, OCL-EXTENSION-002). 0 UNIMPLEMENTED, 0 BLOCKED.
