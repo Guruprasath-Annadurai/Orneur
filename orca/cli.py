@@ -663,6 +663,13 @@ def train_run(
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
+    except ImportError as e:
+        console.print(f"[red]Missing training deps: {e}[/red]")
+        console.print("Run: [bold]pip install unsloth trl transformers datasets peft bitsandbytes accelerate[/bold]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
 
 
 @train_app.command("status")

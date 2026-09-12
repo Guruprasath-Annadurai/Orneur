@@ -140,6 +140,21 @@ MODEL_SPECS: dict[str, ModelSpec] = {
 }
 
 
+RESERVED_NATIVE_MODEL_NAMES: frozenset[str] = frozenset(
+    name for spec in MODEL_SPECS.values() for name in spec.legacy_ollama_names
+)
+"""
+The set of Ollama/artifact names reserved for the three canonical native
+families (derived from MODEL_SPECS's own legacy_ollama_names, not scattered
+string literals). A generic/legacy/experimental training config must never
+register its output under one of these names -- that would let a
+non-canonical artifact impersonate a canonical Orneur model by naming
+alone. This guard is about naming only; canonical model identity/provenance
+still requires the registry/artifact chain (checksum, lineage), never an
+Ollama alias by itself.
+"""
+
+
 def get_spec(family: str) -> ModelSpec:
     key = family.removeprefix("orneur-").removeprefix("orca-")
     aliases = {"nano": "genesis", "core": "novus", "ultra": "aeternum"}

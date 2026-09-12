@@ -45,15 +45,8 @@ def train(cfg: TrainingConfig, on_log: Callable[[str], None] | None = None) -> d
     """
     log = on_log or print
 
-    if cfg.base_model is None:
-        raise ValueError(
-            "TrainingConfig.base_model is None -- this preset resolves to a model "
-            "family with no selected canonical base model (base_model_status="
-            "UNSELECTED_PROVISIONAL in orca/registry/model_spec.py, e.g. Aeternum "
-            "today). Refusing to load any model, install training dependencies, or "
-            "allocate GPU/VRAM for an unselected base model -- select a concrete "
-            "base_model before calling train()."
-        )
+    from orca.train.config import validate_training_identity
+    validate_training_identity(cfg)
 
     _check_deps()
 

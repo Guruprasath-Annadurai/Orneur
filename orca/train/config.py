@@ -178,3 +178,64 @@ class TrainingConfig:
             cfg.max_seq_length = 8192
             cfg.output_dir = str(MODELS_DIR / "orca-ultra-qlora")
         return cfg
+
+
+def validate_training_identity(cfg: "TrainingConfig", *, artifact_name: str | None = None) -> None:
+    """
+    THE single canonical training-identity validation boundary (Phase 16
+    final closure). Call this at every real execution boundary (before any
+    model load, dependency import, SSH connection, or GPU work) -- never
+    add another ad-hoc `if base_model is None` check elsewhere.
+
+    Two, and only two, valid shapes:
+
+    1. A CANONICAL family config (cfg.family is not None): base_model MUST
+       equal exactly what orca.registry.model_spec.require_base_model()
+       returns for that family. A canonical family's base model comes only
+       from its ModelSpec -- manually overriding it (e.g. the CLI's
+       `--model` option, or direct attribute mutation) must be rejected,
+       not silently honored. This is the direct fix for the bypass where
+       `TrainingConfig.preset("ultra")` (family="aeternum") could have its
+       base_model manually set to an arbitrary string while keeping the
+       Aeternum family identity.
+
+    2. A GENERIC/experimental config (cfg.family is None): base_model must
+       be explicitly set (not None) -- this is an intentionally
+       noncanonical experiment, not a family-identified training run.
+
+    `artifact_name` lets a caller (e.g. CloudTrainer, whose own `model_name`
+    constructor parameter is a SEPARATE Ollama-registration identity from
+    cfg.model_name) check the name that will actually be used to register
+    the trained artifact, rather than only cfg.model_name. Defaults to
+    cfg.model_name when not given.
+    """
+    import orca.registry.model_spec as model_spec_mod
+
+    if cfg.family is not None:
+        expected = model_spec_mod.require_base_model(cfg.family)  # raises if UNSELECTED
+        if cfg.base_model != expected:
+            raise ValueError(
+                f"TrainingConfig.family={cfg.family!r} requires base_model={expected!r} "
+                f"(from orca.registry.model_spec, the single source of truth) -- refusing "
+                f"to train with a manually overridden base_model={cfg.base_model!r}. A "
+                "canonical family config cannot override its selected base. If you need "
+                "an arbitrary experimental base model, use a generic config (family=None) "
+                "instead of overriding a canonical family preset."
+            )
+    else:
+        if cfg.base_model is None:
+            raise ValueError(
+                "TrainingConfig.base_model is None and no family is set -- refusing to "
+                "train with no base model selected and no canonical family to resolve one "
+                "from."
+            )
+
+    name_to_check = artifact_name if artifact_name is not None else cfg.model_name
+    if cfg.family is None and name_to_check in model_spec_mod.RESERVED_NATIVE_MODEL_NAMES:
+        raise ValueError(
+            f"Artifact name {name_to_check!r} is reserved for a canonical native Orneur "
+            "family (see orca.registry.model_spec.RESERVED_NATIVE_MODEL_NAMES) and cannot "
+            "be used to register a generic/legacy/experimental (family=None) training "
+            "artifact -- this would let a non-canonical artifact impersonate a canonical "
+            "Orneur model by naming alone."
+        )

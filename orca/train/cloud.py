@@ -299,22 +299,19 @@ class CloudTrainer:
         rank_map = {g["preset"]: g["lora_rank"] for g in GPU_TIERS}
         self.rank = rank_map.get(preset, 128)
 
-        from orca.train.config import TrainingConfig
+        from orca.train.config import TrainingConfig, validate_training_identity
         cfg = TrainingConfig.preset(preset)
         self.base_model = cfg.base_model
 
         # Fail BEFORE any SSH connection, dependency install, rsync upload, or
         # GPU allocation -- constructing a CloudTrainer for an unselected model
-        # family must never discover the problem only after the remote host is
-        # already being billed (see run()'s own local-file-exists precedent
-        # comment for the same "fail before spending money" discipline).
-        if self.base_model is None:
-            raise ValueError(
-                f"Training preset {preset!r} resolves to no selected base model "
-                "(base_model_status=UNSELECTED_PROVISIONAL, e.g. Aeternum today). "
-                "Refusing to start a paid cloud GPU job for an unselected model "
-                "family -- select a concrete base_model before invoking CloudTrainer."
-            )
+        # family, a tampered canonical family, or a reserved-name-impersonating
+        # generic preset must never discover the problem only after the remote
+        # host is already being billed (see run()'s own local-file-exists
+        # precedent comment for the same "fail before spending money"
+        # discipline). `artifact_name=model_name` checks THIS constructor's own
+        # separate Ollama-registration name, not just cfg.model_name.
+        validate_training_identity(cfg, artifact_name=model_name)
 
     def run(self) -> dict:
         """Full pipeline: setup → upload → train → download → register."""
