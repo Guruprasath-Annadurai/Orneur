@@ -93,11 +93,25 @@ See `docs/orneur/phase-17/PHASE17_OCL_SCHEMA_REFERENCE.md` for the field-level r
 
 Every atom carries a `SourceClass`: `MODEL_ASSERTION`, `MEASURED_EVIDENCE_REFERENCE`,
 `EXTERNAL_EVIDENCE_REFERENCE`, `DETERMINISTIC_POLICY_REFERENCE`, `HUMAN_INPUT`, `UNKNOWN`,
-`DERIVED_COGNITIVE_PROPOSAL`. The three "authoritative" classes
-(`AUTHORITATIVE_SOURCE_CLASSES` minus `HUMAN_INPUT`, which is authoritative but not evidence-shaped)
-MUST only be claimed by an `OBSERVATION_REFERENCE` atom that also cites at least one real
-`EvidenceAnchor` — enforced by `compiler.py`'s `EvidenceImpersonation` check, never by parsing
-prose.
+`DERIVED_COGNITIVE_PROPOSAL`. **`SourceClass` is a provenance/reference classification, NOT an
+epistemic-truth judgment** — `HUMAN_INPUT` is not automatically authoritative truth or approval,
+`EXTERNAL_EVIDENCE_REFERENCE` is not automatically verified, `MEASURED_EVIDENCE_REFERENCE` means a
+claimed/referenced measurement exists (not that every conclusion drawn from it is correct), and
+`DETERMINISTIC_POLICY_REFERENCE` may refer to a real policy fact only once an out-of-band trusted
+resolver establishes it. Phase 18 owns actual epistemic states (KNOWN/INFERRED/UNCERTAIN/DISPUTED/
+UNKNOWN/UNVERIFIABLE); no `SourceClass` value here is, or should ever be treated as, one of those.
+
+`enums.PRIVILEGED_REFERENCE_SOURCE_CLASSES` (three values: `MEASURED_EVIDENCE_REFERENCE`,
+`EXTERNAL_EVIDENCE_REFERENCE`, `DETERMINISTIC_POLICY_REFERENCE` — renamed from an earlier draft's
+overclaiming `AUTHORITATIVE_SOURCE_CLASSES`, and deliberately excluding `HUMAN_INPUT`) MUST only be
+claimed by an `OBSERVATION_REFERENCE` atom that also cites at least one real `EvidenceAnchor`, AND
+ONLY when the compile call's `trust.CompilationTrustContext` is one of the TRUSTED values (see §10)
+— never merely by parsing the artifact's own `provenance.producer_kind`. `HUMAN_INPUT` is not in
+this set at all: a human may honestly label any atom kind (assertion, hypothesis, question, ...) as
+`HUMAN_INPUT` without it needing to look like an evidence reference, and `HUMAN_INPUT`/
+`ProducerKind.HUMAN` can NEVER satisfy `HUMAN_APPROVAL_REQUIRED`, Court approval, policy
+authorization, or Production Proof through OCL alone — those remain exclusively Phase 15's
+deterministic artifacts and paths.
 
 ## 8. Graph semantics
 
@@ -116,12 +130,28 @@ payload. `EvidenceKind` distinguishes measured system data, tool output, source 
 code/test evidence, deterministic policy facts, `VerificationRecord`, Production Proof,
 `CourtDecision`, external retrieval results, and human-supplied artifacts.
 
-## 10. Provenance
+## 10. Provenance and the out-of-band trust boundary
 
 `Provenance.producer_kind` is one of `NATIVE_MODEL`, `EXTERNAL_PROVIDER`, `DETERMINISTIC_SYSTEM`,
-`TOOL`, `HUMAN`, `TRANSFORMATION`. `ModelIdentityRef.family`/`lifecycle_state` MUST resolve against
-the real `orca.registry.model_spec.MODEL_SPECS`/`LifecycleState` vocabulary — OCL introduces no
-second model-lifecycle vocabulary. `EXTERNAL_PROVIDER` MUST NOT claim a native `family`
+`TOOL`, `HUMAN`, `TRANSFORMATION`. **`producer_kind` (and every other `Provenance` field) is a CLAIM
+ABOUT ORIGIN made BY the artifact — it is NOT authentication, authorization, trust, verification, or
+human approval.** An untrusted wire payload can freely set `producer_kind="DETERMINISTIC_SYSTEM"`;
+that claim alone unlocks nothing.
+
+Trust is decided EXCLUSIVELY by `trust.CompilationTrustContext`, a value the CALLER of
+`compiler.compile_artifact()` supplies out-of-band — never parsed from the artifact. `compile_artifact(draft,
+*, trust_context=...)` defaults to `UNTRUSTED_MODEL_OR_WIRE`; the public untrusted-wire entry point
+`canonical.compile_ocl_json()` hardcodes this default with no way for any field inside the parsed
+JSON to elevate it. Only a caller who has independently, out-of-band, established that a draft
+genuinely came from a deterministic system/tool adapter/human may pass a stronger
+`CompilationTrustContext` (`TRUSTED_DETERMINISTIC_SYSTEM`, `TRUSTED_TOOL_ADAPTER`,
+`TRUSTED_HUMAN_INPUT`) directly to `compile_artifact()`. This is the root fix for a real,
+independently-audited bypass: the previous closure derived trust from `provenance.producer_kind`
+itself, which is exactly the in-band data an attacker/model controls.
+
+`ModelIdentityRef.family`/`lifecycle_state` MUST resolve against the real
+`orca.registry.model_spec.MODEL_SPECS`/`LifecycleState` vocabulary — OCL introduces no second
+model-lifecycle vocabulary. `EXTERNAL_PROVIDER` MUST NOT claim a native `family`
 (`InvalidProvenance`) — an external frontier response can never be relabeled native. `NATIVE_MODEL`
 MUST supply a `model_identity` with a `family` set.
 
