@@ -85,8 +85,17 @@ VERIFIED is used only where a real passing test backs the claim.
 | OCL-METADATA-001 | Every metadata-shaped field (`artifact`/`atom`/`relation`/`evidence` `.metadata`, `ActionIntent.arguments_summary`) must be a mapping AT ITS ROOT — a bare list/other value is rejected — while JSON arrays/maps nested INSIDE a valid root mapping remain allowed (no change to `validate_structured_value`'s existing recursive content rules) | VERIFIED | `test_closure3_object_type_parity.py` (7 tests) |
 | OCL-TRANSFORM-001 | `TransformationRecord.operation` must be a genuine `TransformationOperation`; `.producer` must be a genuine `Provenance`; every tuple/list ID field (`affected_atom_ids`, `created_atom_ids`, `superseded_atom_ids`, `removed_atom_ids`, `atom_dispositions`) contains only the correct element type; `justification_refs` contains only strings (empty string permitted, preserving existing "shared justification" filter semantics — no change to Cognitive Conservation rules) | VERIFIED | `test_closure3_transformation_type_parity.py` (10 tests) |
 
+### Added this closure (FINAL container / transformation / compiler-idempotence closure)
+
+| ID | Statement | Status | Evidence |
+|---|---|---|---|
+| OCL-TYPE-004 | Every top-level draft sequence collection (`atoms`, `relations`, `evidence`, `action_intents`, `verification_contracts`, `escalation_requests`, `causal_hypotheses`, `counterfactual_branches`, `limitation_atom_refs`) must be a genuine `list`/`tuple` container, validated BEFORE any iteration — `None`/`dict`/`str`/`int`/`set`/generator are all rejected, closing both a raw `TypeError` (non-iterable) and a silent "empty dict/string compiles as empty collection" gap, and a generator-exhaustion bug where one validator's iteration silently starved a later one | VERIFIED | `test_closure4_container_and_idempotence.py` (18 tests) |
+| OCL-COMPILER-002 | `compile_artifact()` accepts only a genuine `CognitiveArtifact` as its draft object — a `dict`/`str`/`int`/`None` standing in for it raises typed `InvalidObjectType` before any field is read, never a raw `AttributeError` | VERIFIED | `test_closure4_container_and_idempotence.py` (5 tests) |
+| OCL-COMPILER-003 | Compiler revalidation is idempotent for a valid compiled artifact: `compile_artifact(compile_artifact(draft)) == compile_artifact(draft)`, with identical canonical JSON and digest, including nested frozen (`MappingProxyType`) metadata; for a privileged artifact, idempotent revalidation requires the SAME out-of-band `trust_context` to be re-supplied — recompiling with the default `UNTRUSTED` context fails closed, exactly as checkpoint restore does | VERIFIED | `test_closure4_container_and_idempotence.py` (4 tests) |
+| OCL-TRANSFORM-002 | `AtomDisposition.disposition`/`.justification_ref` are string-typed, bounded, and fail with typed `ConservationViolation` — never a raw `TypeError` from an unvalidated frozenset-membership check on a non-string `disposition`, and `justification_ref` is now also rejected when non-string or over the length limit (previously accepted silently) | VERIFIED | `test_closure4_container_and_idempotence.py` (11 tests) |
+
 ## Totals
 
-70 requirements: **66 VERIFIED**, 2 IMPLEMENTED (OCL-EVIDENCE-001, OCL-ESCALATE-001 — real code
+74 requirements: **70 VERIFIED**, 2 IMPLEMENTED (OCL-EVIDENCE-001, OCL-ESCALATE-001 — real code
 exists but no dedicated test beyond adjacent coverage), 2 DEFERRED_TO_FUTURE_PHASE
 (OCL-AUTHORITY-005, OCL-EXTENSION-002). 0 UNIMPLEMENTED, 0 BLOCKED.

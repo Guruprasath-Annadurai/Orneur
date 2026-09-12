@@ -730,6 +730,138 @@ None. **GPU spend: $0.** **No model training occurred.**
   every possible field combination; this is consistent with this project's existing test style
   (representative TDD cases, not exhaustive enumeration) and is not claimed to be a formal proof.
 
+### RE-EARNED FINAL VERDICT (pre-container/idempotence-closure)
+
+DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 18?
+
+**YES** — superseded by the FINAL container/transformation/compiler-idempotence closure section below.
+
+---
+
+## FINAL CONTAINER / TRANSFORMATION / COMPILER-IDEMPOTENCE CLOSURE SECTION (append-only; all content above unchanged)
+
+### What owner review found
+
+An independent owner audit accepted every prior closure's work (out-of-band trust, capability
+matrices, deep immutability, object/enum type parity, acceptance-path parity for valid inputs) but
+identified that the type-parity closure validated collection ELEMENTS without first validating the
+collection CONTAINER itself, that `compile_artifact()` never validated its own top-level `draft`
+argument's type, that `AtomDisposition` still had one unguarded frozenset-membership check, and
+that the compiler was not provably safe to run twice on its own output (a real operational need:
+revalidating an already-compiled artifact, e.g. after deserializing it back out of storage).
+
+Each gap was reproduced live against unmodified `6629130` before any fix:
+
+```
+A. CognitiveArtifact(atoms=None) -> TypeError: 'NoneType' object is not iterable
+   CognitiveArtifact(atoms={})   -> NO EXCEPTION (silently "compiled" as an empty atom list!)
+   CognitiveArtifact(relations="") -> NO EXCEPTION (silently "compiled" as an empty relation list!)
+   CognitiveArtifact(evidence=42) -> TypeError: 'int' object is not iterable
+   CognitiveArtifact(action_intents=42) -> TypeError: 'int' object is not iterable
+B. atoms=<generator expression> -> TypeError: object of type 'generator' has no len()
+   (the generator was silently consumed once by the element-type-check loop, then found
+   exhausted by _validate_atoms()'s later `len(artifact.atoms)` call)
+C. compile_artifact({})     -> AttributeError: 'dict' object has no attribute 'atoms'
+   compile_artifact("fake") -> AttributeError: 'str' object has no attribute 'atoms'
+   compile_artifact(42)     -> AttributeError: 'int' object has no attribute 'atoms'
+D. AtomDisposition(disposition=[], ...) -> TypeError: unhashable type: 'list'
+   (from the unguarded `self.disposition not in _VALID_DISPOSITIONS` frozenset check)
+E. AtomDisposition(justification_ref=42, ...)          -> NO EXCEPTION (silently accepted!)
+   AtomDisposition(justification_ref="x"*30000, ...)   -> NO EXCEPTION (no length bound at all!)
+F. compile_artifact(compile_artifact(draft)) ->
+   InvalidStructuredValue: artifact.metadata: disallowed value type mappingproxy
+   (validate_structured_value only recognized `dict`, not the `MappingProxyType` that
+   deep_freeze() itself produces -- a compiled artifact could not be recompiled)
+```
+
+### What changed, exactly
+
+**`orneur/intelligence/ocl/typecheck.py`**: added `require_sequence_container(value, where)` --
+accepts only `list`/`tuple`; rejects `dict`/`str`/`bytes`/`set`/generator/`None`/`int`/any other
+iterable, checked BEFORE the value is ever iterated (closing gaps A and B at once -- a generator
+is rejected outright rather than partially consumed).
+
+**`orneur/intelligence/ocl/compiler.py`**:
+- New `_validate_top_level_container_types(draft)` runs BEFORE `_validate_collection_element_
+  types()` (which itself runs before every other validator): every one of the nine top-level
+  sequence fields (the eight collections plus `limitation_atom_refs`) is `require_sequence_
+  container`-checked first. This closes gap A for all nine fields (an empty dict/string no longer
+  silently "compiles as empty") and gap B (a generator is rejected before any element is read from
+  it, so it can never be exhausted mid-validation).
+- `compile_artifact()` now calls `require_instance(draft, CognitiveArtifact, where="artifact")` as
+  the very first field-independent check, before any other line touches `draft.atoms`/
+  `.artifact_id`/etc -- closing gap C (a `dict`/`str`/`int`/`None` standing in for the draft now
+  raises `InvalidObjectType`, never a raw `AttributeError`).
+- `validate_structured_value()` now accepts `MappingProxyType` identically to `dict` (`isinstance
+  (value, (dict, MappingProxyType))`), matching `require_structured_mapping()`'s existing dual
+  acceptance and `deep_freeze()`'s own output shape -- closing gap F. `require_structured_mapping`
+  already accepted both types from the prior closure and needed no change.
+
+**`orneur/intelligence/ocl/transformations.py`**: `AtomDisposition.__post_init__` now type-checks
+`disposition` (`isinstance(..., str)`) BEFORE the `_VALID_DISPOSITIONS` frozenset-membership check
+(closing gap D -- an unhashable value like a list no longer reaches the membership test at all),
+and `justification_ref` is now type-checked (`isinstance(..., str)`) and length-bounded
+(`limits.MAX_STRING_FIELD_LENGTH`) in addition to the existing non-empty check (closing gap E --
+neither check previously existed, so a non-string or unbounded-length value was silently
+accepted). No change to Cognitive Conservation semantics: the disposition vocabulary
+(`SUPERSEDED`/`REMOVED`/`MODIFIED`) and the non-empty `justification_ref` requirement are
+unchanged, only made type-safe.
+
+**Tests**: `test_closure4_container_and_idempotence.py` (38 tests: container-type rejection for
+all nine sequence fields including the "empty dict/string ≠ empty collection" invariant and a
+non-regression check that valid list/tuple containers still compile; generator and set rejection;
+wrong top-level draft type rejection; `AtomDisposition.disposition`/`.justification_ref` type/
+bound rejection; compiler idempotence across plain metadata, deeply nested frozen metadata, every
+collection kind at once, and a privileged artifact requiring the same `trust_context` to be
+re-supplied on revalidation -- exactly the checkpoint-restore doctrine, confirmed to fail closed
+under the default `UNTRUSTED` context on the second compile).
+
+### Verification
+
+- `tests/ocl/` full suite: **348 passed, 0 failed** (up from 310; +38 new tests).
+- Phase 16 regression (`test_phase16_architecture_invariants.py`, `test_phase16_court_
+  reconciliation.py`, `test_phase16_training_fail_closed.py`, `test_phase16_canonical_training_
+  identity.py`): **30 passed, 0 failed**.
+- Full deterministic regression, project `.venv`, exact CI invocation
+  (`pytest -m "not live_ollama_smoke"`), pipefail-safe: **2659 passed, 256 skipped, 43
+  deselected, 0 failed** (185.89s). Collection: **2958 tests** (2920 prior + 38 new).
+  2659+256+43 = 2958, matching exactly. No new skip/deselect added.
+
+### Performance
+
+No material regression: `test_performance.py` at 1000 atoms measured validate=0.0168s (prior
+closures: 0.0160–0.0168s across runs on this machine) — within existing noise; the new container-
+type checks are all O(1) `isinstance` calls per field, not new traversals, and run once per
+top-level collection (not per element).
+
+### Production mutation / GPU spend / model training
+
+None. **GPU spend: $0.** **No model training occurred.**
+
+### Requirements totals (final)
+
+74 requirements: 70 VERIFIED, 2 IMPLEMENTED, 2 DEFERRED_TO_FUTURE_PHASE, 0 UNIMPLEMENTED,
+0 BLOCKED.
+
+### Known remaining limitations
+
+- All limitations documented in the prior two closure sections remain unchanged (Unicode
+  normalization, extension-namespace schema enforcement, `OCL-AUTHORITY-005`, the trust
+  capability matrices being OCL's own V1 policy choice, no cryptographic authentication of a
+  claimed trust context, `ActionIntent`/`EscalationRequest` having no real consumer yet, the
+  acceptance-path parity invariant proven for representative shapes rather than exhaustive fuzz).
+- This closure is container/transformation/idempotence type safety ONLY: no cryptography, no
+  Phase 18 epistemic states, no router, no change to trust capability matrix contents, no change
+  to Cognitive Conservation semantics beyond type safety, no OCL redesign.
+- `require_sequence_container` accepts exactly `list`/`tuple` and nothing else (not, e.g., a
+  custom `Sequence` subclass or `range`) -- this is a deliberately narrow, closed acceptance set
+  matching what the wire parser itself ever produces and what `deep_freeze()` ever emits; it is
+  not a general "any sequence-like object" allowance.
+- Compiler idempotence is proven for the representative shapes in `test_closure4_container_and_
+  idempotence.py` (plain metadata, deeply nested frozen metadata, every collection kind, a
+  privileged artifact), not via exhaustive property-based fuzzing across every possible compiled
+  artifact shape.
+
 ### RE-EARNED FINAL VERDICT
 
 DOES EVIDENCE SUPPORT PROGRESSION TO PHASE 18?
