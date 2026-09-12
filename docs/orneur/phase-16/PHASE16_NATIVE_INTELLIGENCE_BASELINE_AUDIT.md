@@ -49,7 +49,7 @@ rewrite). Full table:
 | `orca/cognitive/` | kernel.py, contracts.py, errors.py, state_machine.py (2476) | Control-plane layer converting a CognitiveRequest into a plan; explicitly does NOT call inference/RAG/tools/memory itself | VERIFIED_EXISTING (bounded, contract-only layer) | 58 | REUSE — closest existing precursor to Phase 17 OCL entry contract | Phase 17 (entry contract), Phase 16 (contract review only) |
 | `orca/registry/` | model_spec.py, checkpoint.py, model_registry.py, training_run.py, evaluation_registry.py, dataset_manifest.py, artifact_retention.py (974) | Model identity, checkpoint provenance, lifecycle/promotion state machine, dataset/training-run manifests | VERIFIED_EXISTING — real, enforced promotion gate (`ModelRegistry.promote()` requires a `PROMOTABLE` `EvaluationReport`, refuses otherwise via `PromotionDenied`) | 24 | REUSE — this is Phase 16 §12's Model Identity Contract already substantially built; audit gap documented below, not redesigned | Phase 16 (reconcile), Phase 18/22+ (training/promotion) |
 | `orca/society/` | router.py, profiles.py, lifecycle.py, eval_harness.py, escalation.py, disagreement.py, society_plan.py, role_requirements.py, budget_ledger.py (1527) | Genesis/Novus/Aeternum routing engine; deterministic hard filters + evidence-weighted selection | VERIFIED_EXISTING | 18 | REUSE — routing invariants (§13) validated against this real implementation | Phase 20 (routing implementation extends this) |
-| `orca/deliberation/` | court.py, twin.py, causal.py, counterfactual.py, arbiter.py, worldstate_*.py, hypothesis.py, evidence_clerk.py, budget_market.py, replanning.py, risk_counsel.py, compiler.py (1899) | Cognitive Court: structured verdicts (ACCEPT/REJECT/NEED_MORE_EVIDENCE/ESCALATE/HUMAN_APPROVAL_REQUIRED via `CourtVerdictState`), WorldState, Epistemic Twin | VERIFIED_EXISTING | 22 | REUSE — governance-primitive vs model-orchestration boundary already respected in code (see §17 below) | Phase 24 (Twin Distillation extends `twin.py`) |
+| `orca/deliberation/` | court.py, twin.py, causal.py, counterfactual.py, arbiter.py, worldstate_*.py, hypothesis.py, evidence_clerk.py, budget_market.py, replanning.py, risk_counsel.py, compiler.py (1899) | Cognitive Court: structured verdicts (ACCEPT/REVISE/REJECT/INSUFFICIENT_EVIDENCE (the real orca.deliberation.contracts.CourtVerdictState values -- corrected from an earlier draft that misstated this enum) via `CourtVerdictState`), WorldState, Epistemic Twin | VERIFIED_EXISTING | 22 | REUSE — governance-primitive vs model-orchestration boundary already respected in code (see §17 below) | Phase 24 (Twin Distillation extends `twin.py`) |
 | `orca/gateway/` | gateway.py, wiring.py, deployment.py, circuit_breaker.py, ollama_runtime.py, frontier_runtime.py, contracts.py, errors.py (2129) | Model Gateway: single call point for inference; normalizes Ollama vs frontier (OpenAI/Anthropic) providers | VERIFIED_EXISTING | 37 | REUSE — natural home for native-vs-external-provider distinction (§15) | Phase 17+ inference plane |
 | `orca/agent/` | orchestrator.py, planner.py, contracts.py, capability.py, delegation.py, policy.py, runtime.py, court_hook.py, tool_registry.py, truth_hook.py, memory_hook.py (2196) | Agent runtime: goal→plan compilation, tool execution, capability/policy enforcement | VERIFIED_EXISTING | 31 | REUSE — `policy.py` docstring: "The ONLY thing that may authorize [elevated actions]" — matches Phase 16's governance-boundary requirement | Phase 19+ orchestration |
 | `orca/truth/` | truth_fabric.py, llm.py, verification.py, evidence.py, claims.py, contradiction.py, citation.py, provenance.py, graph.py, decomposition.py, search_provider.py, corrective.py, counter_evidence.py, fetch.py, planner.py, state.py (2435) | Evidence-grounded claim verification, citation, retrieval | VERIFIED_EXISTING | 28 | REUSE | Phase 17 evidence-reference contract |
@@ -94,36 +94,28 @@ No model weights were moved, deleted, or altered during this audit.
   "EXPERIMENTAL, no PROMOTABLE evaluation on record").
 - **Aeternum**: `reg.mark_family_absent("aeternum")` was called deliberately at seed time — "by
   design, not an oversight." No checkpoint, canonical or legacy, exists under any name.
-  `ModelRegistry.lookup_production("aeternum")` returns `None` by construction.
+  `ModelRegistry.lookup_production("aeternum")` returns `None` by construction. **Corrected this
+  closure**: the family's `base_model` is now `None`
+  (`base_model_status="UNSELECTED_PROVISIONAL"` in `orca/registry/model_spec.py`) — the earlier
+  Phase 16 pass incorrectly carried the historical `unsloth/Meta-Llama-3.1-70B-Instruct` literal as
+  if it were the current canonical training target. That plan is legacy/stale; no final base model
+  has been selected, and `~14B` is recorded only as a non-binding provisional research hypothesis
+  (`ModelSpec.provisional_parameter_hypothesis`). `require_base_model("aeternum")` now raises
+  `ValueError` rather than resolving to any base model, selected or stale — verified by
+  `tests/test_registry_model_spec.py::test_require_base_model_fails_closed_for_aeternum`.
 
-## 5. 9-layer architecture map (L0–L8)
+## 5. 9-layer architecture map (L0–L8) — CORRECTED, see canonical architecture doc
 
-```
-L0 Human Sovereignty        — owner approval gates (this conversation's own STOP/APPROVED protocol)
-L1 Deterministic Authority  — orca/godmode (capability leases, elevated-policy evaluation)
-L2 Mission / Operation      — orca/mission (durable state machine, idempotency ledger) [Phase 15]
-L3 Governance Primitives    — orca/deliberation/court.py (ACCEPT/REJECT/NEED_MORE_EVIDENCE/ESCALATE/HUMAN_APPROVAL_REQUIRED)
-L4 Cognitive Protocol       — orca/cognitive (kernel/contracts/state_machine — bounded, no side effects)
-L5 Model Society / Routing  — orca/society (router.py, escalation.py, disagreement.py)
-L6 Model Gateway / Inference— orca/gateway (native Ollama + external frontier passthrough)
-L7 Agent Orchestration      — orca/agent (planner, tool_registry, policy — "ONLY thing that may authorize")
-L8 Evaluation / Promotion   — orca/registry + orca/governance (ModelRegistry.promote(), model cards)
-```
-
-Edges (caller→callee / trust / validation location):
-- L7→L1: `orca/agent/runtime.py` imports `orca.godmode.capability.compute_effective_capabilities`
-  and `orca.godmode.policy.evaluate_elevated_policy` — **read-only consultation**, not mutation.
-  Verified: no `orca.agent`, `orca.society`, `orca.train`, `orca.cognitive`, `orca.deliberation`, or
-  `orca.gateway` module imports `orca.mission` (grep found zero matches) — model/routing/agent code
-  cannot directly touch Mission state.
-- L5→L8: `router.py`'s `_default_checkpoint_lookup` reads `CheckpointRecord` (L8 data) but never
-  writes it; promotion only happens through `ModelRegistry.promote()`.
-- L3 (Court) output flows to L7 only as a **verdict value** (`CourtVerdictState`), never as a
-  direct authorization token — L7's `policy.py` remains the sole authorizer.
-
-**Critical property held (verified, not assumed)**: authority flows downward only through L1/L2/L3
-deterministic mechanisms; no model-facing package (L4–L7) imports or mutates L1–L3 state. This was
-checked by direct grep, not inferred from documentation.
+**Correction notice**: this section originally substituted its own 9-layer breakdown instead of
+the owner's required canonical L0–L8 map, and its authority-boundary claim was worded more
+strongly than the cited evidence proved (import-absence grep alone, not the actual Phase 15 tests
+that prove Court-is-not-authority / stale-authority-cannot-execute / state-machine-cannot-be-
+bypassed). Both are corrected in `PHASE16_CANONICAL_ARCHITECTURE.md`'s "9-layer map" and
+"Dependency-graph and authority-boundary evidence" sections — see that document for the current,
+owner-canonical L0–L8 map (Human Sovereignty / Constitution-Identity-Authority / Mission-Operation-
+Execution-Governance / Evidence-Verification-Production-Proof / Cognitive Protocol / Intelligence
+Router / Model Runtime / Learning Plane / Evaluation-Qualification-Promotion) and the narrowed,
+test-cited authority-boundary evidence. Not duplicated here to avoid two documents drifting apart.
 
 ## 6. Conceptual (non-implemented) stable contracts — Section 11
 
