@@ -1,11 +1,25 @@
 """
 Orca Training Configuration — QLoRA hyperparameters and model selection.
 
-Presets designed for different GPU budgets:
-- "laptop"   : RTX 3060/4060 (8GB VRAM) — 7B model, rank 8
-- "prosumer" : RTX 4090 (24GB VRAM) — 7B model, rank 64
-- "cloud"    : A100 40GB — 13B model, rank 128
-- "cloud_xl" : A100 80GB — 70B model, rank 64
+Generic hardware-sizing presets (VRAM/batch-size/LoRA-rank only -- NOT tied
+to any canonical Orneur model identity; TrainingConfig.family stays None):
+- "laptop"   : RTX 3060/4060 (8GB VRAM)
+- "prosumer" : RTX 4090 (24GB VRAM)
+- "cloud"    : A100 40GB
+- "cloud_xl" : A100 80GB -- LEGACY_EXPERIMENTAL, historical 70B preset kept
+               for backwards compatibility only; does NOT produce a
+               canonical Orneur Aeternum artifact (see its own preset
+               comment below and orca/registry/model_spec.py)
+
+Canonical Orneur family presets (TrainingConfig.family set; base_model
+resolved from orca/registry/model_spec.py's MODEL_SPECS, the single source
+of truth):
+- "nano"  : Genesis
+- "core"  : Novus
+- "ultra" : Aeternum -- base_model resolves to None (UNSELECTED); any
+            actual training attempt fails closed (see orca/train/finetune.py
+            and orca/train/cloud.py) rather than silently substituting a
+            default or legacy base model.
 """
 from __future__ import annotations
 
@@ -40,6 +54,17 @@ class TrainingConfig:
     # at actual training time rather than silently train toward a stale target.
     base_model: str | None = "unsloth/Meta-Llama-3.1-8B-Instruct"
     model_name: str = "orca-8b"
+
+    # Canonical ORNEUR family this config trains, or None for a generic
+    # hardware-sizing preset (laptop/prosumer/cloud/cloud_xl) that is NOT
+    # tied to any Genesis/Novus/Aeternum identity. A compute-sizing preset
+    # (VRAM/batch-size/LoRA-rank) must never be conflated with model
+    # identity -- see orca/registry/model_spec.py for the actual identity.
+    family: str | None = None
+    # True for a historical/experimental preset kept for backwards
+    # compatibility that must NOT be presented as producing a canonical
+    # Orneur model artifact (e.g. "cloud_xl" -- see its own preset comment).
+    is_legacy_experimental: bool = False
 
     # LoRA
     lora: LoRAConfig = field(default_factory=LoRAConfig)
@@ -101,19 +126,30 @@ class TrainingConfig:
             cfg.gradient_accumulation_steps = 2
             cfg.base_model = "unsloth/Meta-Llama-3.1-8B-Instruct"
         elif name == "cloud_xl":
+            # LEGACY_EXPERIMENTAL: a generic A100-80GB hardware-sizing preset,
+            # kept for backwards compatibility, predating orca/registry/
+            # model_spec.py's canonical Aeternum identity. It is NOT resolved
+            # from MODEL_SPECS and must never be presented as producing a
+            # canonical Orneur Aeternum artifact -- Aeternum's own base model
+            # remains UNSELECTED (see preset("ultra") below and
+            # orca/registry/model_spec.py). model_name/output_dir are
+            # deliberately NOT "orca-ultra" so this preset's output can never
+            # be mistaken for a canonical Aeternum checkpoint.
             cfg.base_model = "unsloth/Meta-Llama-3.1-70B-Instruct"
             cfg.lora.r = 64
             cfg.lora.lora_alpha = 128
             cfg.batch_size = 4
             cfg.load_in_4bit = True
-            cfg.model_name = "orca-ultra"
-            cfg.output_dir = str(MODELS_DIR / "orca-ultra-qlora")
+            cfg.model_name = "legacy-cloud-xl-70b-experimental"
+            cfg.is_legacy_experimental = True
+            cfg.output_dir = str(MODELS_DIR / "legacy-cloud-xl-70b-experimental-qlora")
         # ── Orneur named variants ──────────────────────────────────────────────
         elif name == "nano":
             # Resolved from the single source of truth (orca/registry/model_spec.py)
             # -- see docs/orneur/phase-0/GENESIS_MODEL_IDENTITY.md for why this
             # literal must not be duplicated independently again.
             cfg.base_model = MODEL_SPECS["genesis"].base_model
+            cfg.family = "genesis"
             cfg.model_name = "orca-nano"
             cfg.lora.r = 32
             cfg.lora.lora_alpha = 64
@@ -123,6 +159,7 @@ class TrainingConfig:
             cfg.output_dir = str(MODELS_DIR / "orca-nano-qlora")
         elif name == "core":
             cfg.base_model = MODEL_SPECS["novus"].base_model
+            cfg.family = "novus"
             cfg.model_name = "orca-core"
             cfg.lora.r = 64
             cfg.lora.lora_alpha = 128
@@ -132,6 +169,7 @@ class TrainingConfig:
             cfg.output_dir = str(MODELS_DIR / "orca-core-qlora")
         elif name == "ultra":
             cfg.base_model = MODEL_SPECS["aeternum"].base_model
+            cfg.family = "aeternum"
             cfg.model_name = "orca-ultra"
             cfg.lora.r = 64
             cfg.lora.lora_alpha = 128

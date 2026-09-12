@@ -143,4 +143,22 @@ def isolated_home():
     if prev_db_url_orneur is not None:
         os.environ["ORNEUR_DATABASE_URL"] = prev_db_url_orneur
 
+    # Phase 16 closure: the docstring above has long claimed this fixture
+    # "reloads the same modules on teardown" -- it never actually did. That
+    # left `orca.config.ORCA_HOME` (and anything importing the *value*, like
+    # orca/train/config.py's `from orca.config import ORCA_HOME`) pointed at
+    # this fixture's now-deleted tmpdir for the rest of the pytest session,
+    # for any module not yet imported at the point this fixture first ran.
+    # This was undetected until a full-suite run happened to trigger the
+    # FIRST-EVER lazy import of orca.train.config/orca.train.cloud after an
+    # isolated_home-using test, producing a genuine
+    # `FileNotFoundError: .../orca_test_.../models` in an entirely unrelated
+    # test (see tests/test_phase16_training_fail_closed.py) -- the exact
+    # kind of state-isolation gap this project's own anti-test-gaming
+    # discipline requires root-causing rather than working around.
+    importlib.reload(config)
+    importlib.reload(db)
+    importlib.reload(store)
+    importlib.reload(privacy)
+
     shutil.rmtree(tmpdir, ignore_errors=True)

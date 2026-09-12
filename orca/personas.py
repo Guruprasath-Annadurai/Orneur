@@ -11,8 +11,12 @@ A system prompt shapes BEHAVIOR (tone, reasoning discipline, honesty about
 uncertainty). It does NOT add reasoning capability the underlying base model
 doesn't have. Aeternum's prompt asks for "chief scientist" level synthesis —
 whether the actual answer reaches that bar depends entirely on the base
-model (Llama-3.1-70B / Qwen2.5-72B fine-tune) and its eval scores, not on
-how well-written this prompt is. See orca/train/eval.py and
+model and its eval scores, not on how well-written this prompt is.
+Aeternum's base model is currently UNSELECTED (no permanent size or
+architecture lock -- see orca/registry/model_spec.py's
+base_model_status); this persona prompt describes intended BEHAVIOR and
+is not evidence that any specific base model has been chosen or trained.
+See orca/train/eval.py and
 orca/train/redteam.py reports before trusting a persona's claims about itself.
 """
 from __future__ import annotations

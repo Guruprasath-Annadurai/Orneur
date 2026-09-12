@@ -72,7 +72,7 @@ VARIANTS: dict[str, VariantSpec] = {
         temperature=0.7,
         top_p=0.9,
         num_ctx=4096,
-        description="Genesis — 7B, everyday assistant, business + coding + Hindi/English",
+        description="Genesis — 3B canonical target, everyday assistant, business + coding + Hindi/English (legacy orca-nano* Ollama artifacts are a separate 7B-class artifact -- see MODEL_SPECS['genesis'].legacy_note)",
         vram_gb=10,
         preset="prosumer",
     ),

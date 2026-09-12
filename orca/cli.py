@@ -771,6 +771,9 @@ def _run_variant_train(variant_name: str, epochs: int | None, rank: int | None):
         console.print(f"[red]Missing training deps: {e}[/red]")
         console.print("Run: [bold]pip install unsloth trl transformers datasets peft bitsandbytes accelerate[/bold]")
         raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
 
 
 @train_app.command("nano")
@@ -796,7 +799,7 @@ def train_ultra(
     epochs: int = typer.Option(None, "--epochs", "-e"),
     rank:   int = typer.Option(None, "--rank",   "-r"),
 ):
-    """Fine-tune orca-ultra (Llama-3.1-70B) — cloud GPU only (48GB+ VRAM)."""
+    """Fine-tune orca-ultra (Aeternum) — base model currently UNSELECTED; fails closed before any GPU/network work until a canonical base model is chosen. Cloud GPU only when selected (48GB+ VRAM)."""
     from orca.license import gate
     gate("cloud_train")
     _run_variant_train("ultra", epochs, rank)
