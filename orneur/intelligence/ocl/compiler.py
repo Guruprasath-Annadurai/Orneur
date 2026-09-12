@@ -19,11 +19,18 @@ import math
 from orneur.intelligence.ocl import limits
 from orneur.intelligence.ocl.artifact import CognitiveArtifact
 from orneur.intelligence.ocl.canonical import canonicalize, deep_freeze, to_canonical_json
+from orneur.intelligence.ocl.causal import CausalHypothesis, CounterfactualBranch
+from orneur.intelligence.ocl.evidence import EvidenceAnchor
+from orneur.intelligence.ocl.graph import CognitiveAtom, CognitiveRelation
+from orneur.intelligence.ocl.proposals import ActionIntent, EscalationRequest, VerificationContract
+from orneur.intelligence.ocl.provenance import ModelIdentityRef, Provenance
 from orneur.intelligence.ocl.enums import (
     ACYCLIC_RELATION_KINDS,
     AtomKind,
+    EvidenceKind,
     PRIVILEGED_REFERENCE_SOURCE_CLASSES,
     ProducerKind,
+    RelationKind,
     SourceClass,
 )
 from orneur.intelligence.ocl.trust import (
@@ -48,6 +55,7 @@ from orneur.intelligence.ocl.errors import (
     GraphLimitExceeded,
     InvalidArtifactId,
     InvalidNamespace,
+    InvalidObjectType,
     InvalidProvenance,
     InvalidRelationShape,
     InvalidStructuredValue,
@@ -58,10 +66,12 @@ from orneur.intelligence.ocl.errors import (
 )
 from orneur.intelligence.ocl.extensions import snapshot_registry
 from orneur.intelligence.ocl.typecheck import (
+    require_instance,
     require_optional_int,
     require_optional_string,
     require_string,
     require_string_sequence,
+    require_structured_mapping,
 )
 from orneur.intelligence.ocl.version import is_supported_schema_version
 
@@ -126,6 +136,35 @@ def validate_structured_value(value, *, where: str, _depth: int = 0) -> None:
     raise InvalidStructuredValue(f"{where}: disallowed value type {type(value).__name__}")
 
 
+def _validate_collection_element_types(draft: CognitiveArtifact) -> None:
+    """Phase 17 type-parity closure section 4/8: the acceptance boundary
+    must validate object SHAPE, not only field values -- a programmatic
+    caller can put an int/dict/str into any top-level collection where a
+    real OCL dataclass instance belongs (`atoms=(42,)`,
+    `evidence=({},)`, ...). Every per-element validator below (
+    `_validate_atoms`, `_validate_evidence`, etc.) assumes it already
+    received the correct dataclass type; this runs FIRST, before any of
+    them touch a single field, so a wrong-type element raises a typed
+    `InvalidObjectType` instead of a raw `AttributeError` from the first
+    attribute access."""
+    for atom in draft.atoms:
+        require_instance(atom, CognitiveAtom, where="artifact.atoms[]")
+    for rel in draft.relations:
+        require_instance(rel, CognitiveRelation, where="artifact.relations[]")
+    for anchor in draft.evidence:
+        require_instance(anchor, EvidenceAnchor, where="artifact.evidence[]")
+    for intent in draft.action_intents:
+        require_instance(intent, ActionIntent, where="artifact.action_intents[]")
+    for contract in draft.verification_contracts:
+        require_instance(contract, VerificationContract, where="artifact.verification_contracts[]")
+    for esc in draft.escalation_requests:
+        require_instance(esc, EscalationRequest, where="artifact.escalation_requests[]")
+    for hyp in draft.causal_hypotheses:
+        require_instance(hyp, CausalHypothesis, where="artifact.causal_hypotheses[]")
+    for branch in draft.counterfactual_branches:
+        require_instance(branch, CounterfactualBranch, where="artifact.counterfactual_branches[]")
+
+
 def _require_id(value: str, *, where: str) -> None:
     if not value or not isinstance(value, str):
         raise InvalidArtifactId(f"{where}: id must be a non-empty string")
@@ -136,8 +175,11 @@ def _require_id(value: str, *, where: str) -> None:
 def _validate_provenance(artifact: CognitiveArtifact) -> None:
     from orca.registry.model_spec import MODEL_SPECS, LifecycleState
 
+    require_instance(artifact.provenance, Provenance, where="artifact.provenance")
     prov = artifact.provenance
     identity = prov.model_identity
+    if identity is not None:
+        require_instance(identity, ModelIdentityRef, where="provenance.model_identity")
 
     if not isinstance(prov.producer_kind, ProducerKind):
         raise InvalidProvenance(f"provenance.producer_kind must be a ProducerKind, got {type(prov.producer_kind).__name__}")
@@ -185,16 +227,22 @@ def _validate_atoms(
             raise DuplicateAtomId(f"duplicate atom_id {atom.atom_id!r}")
         by_id[atom.atom_id] = atom
 
+        if not isinstance(atom.kind, AtomKind):
+            raise InvalidStructuredValue(f"atom {atom.atom_id!r}.kind must be an AtomKind, got {type(atom.kind).__name__}")
+        if not isinstance(atom.source_class, SourceClass):
+            raise InvalidStructuredValue(f"atom {atom.atom_id!r}.source_class must be a SourceClass, got {type(atom.source_class).__name__}")
+
+        # Type-check namespace BEFORE the registry membership lookup below --
+        # an unhashable value (e.g. a list) used in `in registry_snapshot`
+        # raises a raw TypeError otherwise (Phase 17 type-parity closure).
+        require_string(atom.namespace, where=f"atom {atom.atom_id!r}.namespace")
         if atom.namespace not in registry_snapshot:
             raise InvalidNamespace(f"atom {atom.atom_id!r} uses unregistered namespace {atom.namespace!r}")
 
         require_string(atom.content, where=f"atom {atom.atom_id!r}.content")
         require_string_sequence(atom.evidence_refs, where=f"atom {atom.atom_id!r}.evidence_refs")
+        require_structured_mapping(atom.metadata, where=f"atom {atom.atom_id!r}.metadata")
         validate_structured_value(atom.metadata, where=f"atom {atom.atom_id!r}.metadata")
-        if not isinstance(atom.kind, AtomKind):
-            raise InvalidStructuredValue(f"atom {atom.atom_id!r}.kind must be an AtomKind, got {type(atom.kind).__name__}")
-        if not isinstance(atom.source_class, SourceClass):
-            raise InvalidStructuredValue(f"atom {atom.atom_id!r}.source_class must be a SourceClass, got {type(atom.source_class).__name__}")
 
         if atom.source_class in PRIVILEGED_REFERENCE_SOURCE_CLASSES:
             # THE root fix (Phase 17 final closure): trust is decided ONLY by
@@ -239,11 +287,25 @@ def _validate_evidence(artifact: CognitiveArtifact, atoms_by_id: dict, registry_
         if anchor.evidence_id in evidence_by_id:
             raise DuplicateEvidenceId(f"duplicate evidence_id {anchor.evidence_id!r}")
         evidence_by_id[anchor.evidence_id] = anchor
+        # EvidenceKind is a str-mixin Enum: a plain string equal to a
+        # member's `.value` (e.g. "COURT_DECISION") must NOT be accepted as
+        # equivalent to the real enum member -- that would let a
+        # programmatic caller assert an arbitrarily strong evidence kind
+        # without ever going through the typed vocabulary, silently
+        # bypassing the EVIDENCE_KIND_CAPABILITY_MATRIX gate downstream
+        # (Phase 17 type-parity closure section 7).
+        if not isinstance(anchor.evidence_kind, EvidenceKind):
+            raise InvalidObjectType(
+                f"evidence {anchor.evidence_id!r}.evidence_kind must be a genuine EvidenceKind "
+                f"member, got {type(anchor.evidence_kind).__name__} -- a plain string matching an "
+                "enum value's text is never accepted."
+            )
         require_string(anchor.issuer, where=f"evidence {anchor.evidence_id!r}.issuer")
         require_string(anchor.reference, where=f"evidence {anchor.evidence_id!r}.reference")
         require_optional_string(anchor.digest, where=f"evidence {anchor.evidence_id!r}.digest")
         require_optional_string(anchor.observed_at, where=f"evidence {anchor.evidence_id!r}.observed_at")
         require_optional_string(anchor.locator, where=f"evidence {anchor.evidence_id!r}.locator")
+        require_structured_mapping(anchor.metadata, where=f"evidence {anchor.evidence_id!r}.metadata")
         validate_structured_value(anchor.metadata, where=f"evidence {anchor.evidence_id!r}.metadata")
 
     for atom in artifact.atoms:
@@ -290,12 +352,16 @@ def _validate_relations(artifact: CognitiveArtifact, atoms_by_id: dict, registry
             raise DuplicateRelationId(f"duplicate relation_id {rel.relation_id!r}")
         seen_relation_ids.add(rel.relation_id)
 
-        if rel.namespace not in registry_snapshot:
-            raise InvalidNamespace(f"relation {rel.relation_id!r} uses unregistered namespace {rel.namespace!r}")
-        validate_structured_value(rel.metadata, where=f"relation {rel.relation_id!r}.metadata")
-        from orneur.intelligence.ocl.enums import RelationKind
         if not isinstance(rel.kind, RelationKind):
             raise InvalidRelationShape(f"relation {rel.relation_id!r}.kind must be a RelationKind, got {type(rel.kind).__name__}")
+
+        # Type-check namespace BEFORE the registry membership lookup below,
+        # same rationale as `_validate_atoms` (Phase 17 type-parity closure).
+        require_string(rel.namespace, where=f"relation {rel.relation_id!r}.namespace")
+        if rel.namespace not in registry_snapshot:
+            raise InvalidNamespace(f"relation {rel.relation_id!r} uses unregistered namespace {rel.namespace!r}")
+        require_structured_mapping(rel.metadata, where=f"relation {rel.relation_id!r}.metadata")
+        validate_structured_value(rel.metadata, where=f"relation {rel.relation_id!r}.metadata")
         require_string(rel.source_atom_id, where=f"relation {rel.relation_id!r}.source_atom_id")
         require_string(rel.target_atom_id, where=f"relation {rel.relation_id!r}.target_atom_id")
         if rel.source_atom_id not in atoms_by_id:
@@ -350,6 +416,7 @@ def _validate_action_intents(artifact: CognitiveArtifact, atoms_by_id: dict, con
         require_string(intent.proposed_capability, where=f"action_intent {intent.intent_id!r}.proposed_capability")
         require_optional_string(intent.target_reference, where=f"action_intent {intent.intent_id!r}.target_reference")
         require_string(intent.expected_effect, where=f"action_intent {intent.intent_id!r}.expected_effect")
+        require_structured_mapping(intent.arguments_summary, where=f"action_intent {intent.intent_id!r}.arguments_summary")
         validate_structured_value(intent.arguments_summary, where=f"action_intent {intent.intent_id!r}.arguments_summary")
         require_string_sequence(intent.preconditions, where=f"action_intent {intent.intent_id!r}.preconditions")
         require_string_sequence(intent.risk_hints, where=f"action_intent {intent.intent_id!r}.risk_hints")
@@ -493,6 +560,13 @@ def compile_artifact(
             "even if it matches an enum value's text."
         )
 
+    # Run BEFORE anything else touches a single field of a collection
+    # element -- a wrong-type element (e.g. `atoms=(42,)`) must raise a
+    # typed InvalidObjectType, not a raw AttributeError from whichever
+    # validator happens to read `.atom_id`/`.relation_id`/etc first
+    # (Phase 17 type-parity closure sections 2F/4/8).
+    _validate_collection_element_types(draft)
+
     _require_id(draft.artifact_id, where="artifact.artifact_id")
     _require_id(draft.request_id, where="artifact.request_id")
     if draft.parent_artifact_id is not None:
@@ -506,6 +580,7 @@ def compile_artifact(
             f"schema_version {draft.schema_version!r} is not supported by this build"
         )
 
+    require_structured_mapping(draft.metadata, where="artifact.metadata")
     validate_structured_value(draft.metadata, where="artifact.metadata")
 
     registry_snapshot = snapshot_registry()

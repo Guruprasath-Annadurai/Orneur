@@ -41,6 +41,36 @@ from orneur.intelligence.ocl.enums import AtomKind, TransformationOperation
 from orneur.intelligence.ocl.errors import ConservationViolation
 from orneur.intelligence.ocl.provenance import Provenance
 
+
+def _require_id_string(value, *, where: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise ConservationViolation(f"{where} must be a non-empty string")
+    if len(value) > limits.MAX_STRING_FIELD_LENGTH:
+        raise ConservationViolation(f"{where} exceeds the maximum field length")
+
+
+def _require_id_string_sequence(value, *, where: str) -> None:
+    if not isinstance(value, (list, tuple)):
+        raise ConservationViolation(f"{where} must be a sequence of strings, got {type(value).__name__}")
+    for item in value:
+        _require_id_string(item, where=f"{where}[]")
+
+
+def _require_text_string_sequence(value, *, where: str) -> None:
+    """Like `_require_id_string_sequence` but does not require non-empty
+    entries -- `justification_refs` legitimately allows an empty-string
+    element (the "shared justification" lookup in
+    `_normalize_legacy_dispositions` filters on truthiness itself); this
+    only enforces that every element is a bounded string, never a
+    non-string value (type safety only, no semantics change)."""
+    if not isinstance(value, (list, tuple)):
+        raise ConservationViolation(f"{where} must be a sequence of strings, got {type(value).__name__}")
+    for item in value:
+        if not isinstance(item, str):
+            raise ConservationViolation(f"{where}[]: expected a string, got {type(item).__name__}")
+        if len(item) > limits.MAX_STRING_FIELD_LENGTH:
+            raise ConservationViolation(f"{where}[]: string exceeds the maximum field length")
+
 IMPORTANT_ATOM_KINDS = frozenset({
     AtomKind.ASSERTION,
     AtomKind.HYPOTHESIS,
@@ -108,9 +138,28 @@ class TransformationRecord:
     atom_dispositions: tuple[AtomDisposition, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
-        for name in ("transformation_id", "parent_artifact_id", "child_artifact_id"):
-            if not getattr(self, name):
-                raise ConservationViolation(f"TransformationRecord.{name} must be a non-empty string")
+        for name in ("transformation_id", "parent_artifact_id", "child_artifact_id", "timestamp", "schema_version"):
+            _require_id_string(getattr(self, name), where=f"TransformationRecord.{name}")
+        if not isinstance(self.producer, Provenance):
+            raise ConservationViolation(
+                f"TransformationRecord.producer must be a Provenance, got {type(self.producer).__name__}"
+            )
+        if not isinstance(self.operation, TransformationOperation):
+            raise ConservationViolation(
+                f"TransformationRecord.operation must be a TransformationOperation, got {type(self.operation).__name__}"
+            )
+        for name in ("affected_atom_ids", "created_atom_ids", "superseded_atom_ids", "removed_atom_ids"):
+            _require_id_string_sequence(getattr(self, name), where=f"TransformationRecord.{name}")
+        _require_text_string_sequence(self.justification_refs, where="TransformationRecord.justification_refs")
+        if not isinstance(self.atom_dispositions, (list, tuple)):
+            raise ConservationViolation(
+                f"TransformationRecord.atom_dispositions must be a sequence, got {type(self.atom_dispositions).__name__}"
+            )
+        for disp in self.atom_dispositions:
+            if not isinstance(disp, AtomDisposition):
+                raise ConservationViolation(
+                    f"TransformationRecord.atom_dispositions[] must be an AtomDisposition, got {type(disp).__name__}"
+                )
 
 
 def _normalize_legacy_dispositions(transformation: TransformationRecord) -> dict[str, AtomDisposition]:

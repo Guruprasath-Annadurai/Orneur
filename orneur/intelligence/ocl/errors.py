@@ -134,3 +134,14 @@ class ExtensionNamespaceConflict(OclError):
 
 class InvalidTrustContext(OclError):
     code = "INVALID_TRUST_CONTEXT"
+
+
+class InvalidObjectType(OclError):
+    """Raised when a value that must be a specific OCL dataclass or enum
+    instance (spec Phase 17 type-parity closure) is something else -- a
+    dict, string, int, or wrong-type object standing in for a real
+    CognitiveAtom/CognitiveRelation/EvidenceAnchor/Provenance/
+    ModelIdentityRef/enum member. Never leaks the value's own repr (which
+    could contain sensitive content); only the expected/actual type
+    names."""
+    code = "INVALID_OBJECT_TYPE"
