@@ -43,12 +43,16 @@ class ModelSpec:
     model_id: str            # e.g. "orneur-genesis" -- canonical machine identifier
     display_name: str        # e.g. "Orneur Genesis"
     family: str              # "genesis" | "novus" | "aeternum"
-    role: str                # human-readable cognitive role
-    base_model: str          # HuggingFace model ID used for fine-tuning
-    parameter_class: str     # e.g. "3B", "8B", "70B" -- a class, not a measured count
-    tokenizer: str           # tokenizer identity (same as base_model unless overridden)
+    role: str                # human-readable cognitive specialization -- NOT a size tier
+    base_model: str | None   # HuggingFace model ID used for fine-tuning, or None if UNSELECTED_PROVISIONAL
+    parameter_class: str     # a PROVISIONAL research starting-point class (e.g. "3B", "8B", "~14B"),
+                              # never a permanent ceiling -- scaling beyond it is permitted if empirical
+                              # capability evaluation demonstrates the smaller candidate is insufficient
+    tokenizer: str | None    # tokenizer identity (same as base_model unless overridden); None if unselected
     context_length: int
-    architecture: str        # e.g. "qwen2", "llama"
+    architecture: str | None  # e.g. "qwen2", "llama"; None if unselected
+    base_model_status: str = "SELECTED"  # "SELECTED" | "UNSELECTED_PROVISIONAL"
+    provisional_parameter_hypothesis: str = ""  # only set when base_model_status is UNSELECTED_PROVISIONAL
     legacy_ollama_names: list[str] = field(default_factory=list)  # ORCA-era Ollama tags, for compatibility mapping only
     legacy_note: str = ""    # honest caveat about legacy artifacts under this family, if any
 
@@ -58,9 +62,13 @@ MODEL_SPECS: dict[str, ModelSpec] = {
         model_id="orneur-genesis",
         display_name="Orneur Genesis",
         family="genesis",
-        role="fast cognition — routing, classification, extraction, retrieval planning, "
-             "query rewriting, memory relevance, context compression, claim extraction, "
-             "fast verification, lightweight reasoning",
+        role="Builder / Executor -- Executable Intelligence. Research question: how much "
+             "reliable, verified agency and expert execution can be compressed into a fast "
+             "intelligence? Fast execution, tool use, product building, coding, execution "
+             "planning, repair, verification, consequence awareness, plus routing, "
+             "classification, extraction, retrieval planning, query rewriting, memory "
+             "relevance, context compression, claim extraction -- all on top of broad, "
+             "cross-domain expert knowledge, not instead of it.",
         base_model="unsloth/Qwen2.5-3B-Instruct",
         parameter_class="3B",
         tokenizer="unsloth/Qwen2.5-3B-Instruct",
@@ -79,8 +87,13 @@ MODEL_SPECS: dict[str, ModelSpec] = {
         model_id="orneur-novus",
         display_name="Orneur Novus",
         family="novus",
-        role="operational cognition — complex reasoning, coding, planning, tools, agents, "
-             "multi-hop retrieval, evidence reconciliation, workflow execution",
+        role="Reasoner / Investigator -- Epistemic-Causal Intelligence. Research question: "
+             "can intelligence understand the boundary between what it knows, infers, "
+             "doubts, disputes, and does not know -- and determine what evidence would "
+             "resolve uncertainty? Deep reasoning, diagnosis, architecture, causal "
+             "analysis, competing hypotheses, counterfactual reasoning, evidence seeking, "
+             "uncertainty analysis, difficult debugging -- on top of broad, cross-domain "
+             "expert knowledge, not confined to coding.",
         base_model="unsloth/Meta-Llama-3.1-8B-Instruct",
         parameter_class="8B",
         tokenizer="unsloth/Meta-Llama-3.1-8B-Instruct",
@@ -93,19 +106,35 @@ MODEL_SPECS: dict[str, ModelSpec] = {
         model_id="orneur-aeternum",
         display_name="Orneur Aeternum",
         family="aeternum",
-        role="deep cognition — difficult ambiguity, deep synthesis, complex arbitration, "
-             "cross-domain reasoning, difficult counterfactuals, advanced planning, "
-             "advanced multi-agent coordination",
-        base_model="unsloth/Meta-Llama-3.1-70B-Instruct",
-        parameter_class="70B",
-        tokenizer="unsloth/Meta-Llama-3.1-70B-Instruct",
+        role="Critic / Arbiter / Discoverer -- Adversarial Discovery Intelligence. "
+             "Research question: can intelligence systematically discover what other "
+             "intelligent systems failed to notice? Falsification, adversarial reasoning, "
+             "assumption attack, counterexample generation, arbitration, security review, "
+             "scientific criticism, hypothesis generation, discovery, novel solution "
+             "search -- on top of broad, cross-domain expert knowledge, not merely "
+             "'Novus with more parameters'.",
+        base_model=None,
+        parameter_class="~14B",
+        tokenizer=None,
         context_length=8192,
-        architecture="llama",
+        architecture=None,
+        base_model_status="UNSELECTED_PROVISIONAL",
+        provisional_parameter_hypothesis=(
+            "~14B is a provisional research starting-point hypothesis only, not a "
+            "final or permanent size lock. Scaling beyond ~14B (or landing smaller) is "
+            "explicitly permitted if empirical capability evaluation demonstrates the "
+            "candidate is insufficient or sufficient respectively. No final base model "
+            "has been selected for this family."
+        ),
         legacy_ollama_names=["orca-ultra"],
         legacy_note=(
             "No trained checkpoint exists for this family under any name, legacy "
-            "or canonical -- 'orca-ultra' has never been fine-tuned. Base model "
-            "above is the planned training target, not evidence of an existing run."
+            "or canonical -- 'orca-ultra' has never been fine-tuned. The historical "
+            "Llama-3.1-70B plan is LEGACY/STALE architecture, not the current owner "
+            "architecture, and must not be treated as the canonical Aeternum training "
+            "target. No final base model has been selected; see "
+            "provisional_parameter_hypothesis for the current (non-binding) sizing "
+            "hypothesis."
         ),
     ),
 }
@@ -118,3 +147,22 @@ def get_spec(family: str) -> ModelSpec:
     if key not in MODEL_SPECS:
         raise ValueError(f"Unknown model family '{family}'. Available: {list(MODEL_SPECS)}")
     return MODEL_SPECS[key]
+
+
+def require_base_model(family: str) -> str:
+    """
+    Fail-closed accessor for any future code path that actually needs a
+    concrete base model to train or load (e.g. Phase 18+ training code).
+    Raises rather than silently falling back to a stale/legacy literal --
+    this is the direct fix for the Phase 16 closure finding that Aeternum's
+    old Llama-3.1-70B plan could otherwise be silently treated as canonical.
+    """
+    spec = get_spec(family)
+    if spec.base_model is None:
+        raise ValueError(
+            f"Model family '{spec.family}' has no selected base model "
+            f"(status={spec.base_model_status}). Refusing to silently substitute "
+            "a legacy or default model -- a base model must be explicitly chosen "
+            "before this family can be trained."
+        )
+    return spec.base_model

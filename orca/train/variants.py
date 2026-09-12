@@ -3,7 +3,10 @@ Orneur model variant definitions.
 
 nano  → Qwen2.5-3B-Instruct   — fast, local, minimal VRAM (fits 8GB)
 core  → Llama-3.1-8B-Instruct — balanced default
-ultra → Llama-3.1-70B         — maximum quality, cloud-only
+ultra → UNSELECTED            — Aeternum has no selected base model (see
+                                 orca/registry/model_spec.py's base_model_status;
+                                 the historical Llama-3.1-70B plan is legacy/stale,
+                                 not the current canonical target)
 
 base_model literals are resolved from orca/registry/model_spec.py's
 MODEL_SPECS (the single source of truth) rather than duplicated here --
@@ -38,7 +41,7 @@ MODELS_DIR.mkdir(exist_ok=True)
 class VariantSpec:
     name: str                    # orca-nano | orca-core | orca-ultra
     ollama_name: str             # name used in `ollama run`
-    base_model: str              # HuggingFace model ID for fine-tuning
+    base_model: Optional[str]    # HuggingFace model ID for fine-tuning; None if unselected (see MODEL_SPECS)
     lora_rank: int
     batch_size: int
     gradient_accumulation: int
@@ -99,7 +102,7 @@ VARIANTS: dict[str, VariantSpec] = {
         temperature=0.6,
         top_p=0.95,
         num_ctx=16384,
-        description="Maximum quality 70B — cloud GPU only",
+        description="Aeternum — base model UNSELECTED (legacy 70B plan is stale, not canonical)",
         vram_gb=48,
         preset="cloud_xl",
     ),

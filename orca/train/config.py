@@ -34,8 +34,11 @@ class LoRAConfig:
 
 @dataclass
 class TrainingConfig:
-    # Base model
-    base_model: str = "unsloth/Meta-Llama-3.1-8B-Instruct"
+    # Base model. None means UNSELECTED (see orca/registry/model_spec.py's
+    # base_model_status) -- e.g. preset("ultra") currently resolves to None
+    # because Aeternum has no selected base model, and this must fail loudly
+    # at actual training time rather than silently train toward a stale target.
+    base_model: str | None = "unsloth/Meta-Llama-3.1-8B-Instruct"
     model_name: str = "orca-8b"
 
     # LoRA

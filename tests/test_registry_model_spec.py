@@ -79,3 +79,54 @@ def test_lifecycle_state_enum_has_expected_values():
         "APPROVED", "PRODUCTION", "REJECTED", "RETIRED",
     }
     assert {s.value for s in LifecycleState} == expected
+
+
+def test_aeternum_base_model_is_unselected_not_legacy_70b():
+    """Owner Phase 16 closure correction: the old Llama-3.1-70B plan is
+    legacy/stale, not the current canonical Aeternum training target.
+    Aeternum's base model must be explicitly UNSELECTED (None), not
+    silently defaulted to the historical 70B literal -- fail closed rather
+    than let a future trainer quietly train toward a stale target."""
+    spec = MODEL_SPECS["aeternum"]
+    assert spec.base_model is None
+    assert spec.base_model_status == "UNSELECTED_PROVISIONAL"
+
+
+def test_aeternum_legacy_note_documents_70b_as_stale_not_planned():
+    note = MODEL_SPECS["aeternum"].legacy_note.lower()
+    assert "70b" in note
+    assert "legacy" in note or "stale" in note
+    assert "no trained checkpoint" in note
+
+
+def test_aeternum_has_provisional_size_hypothesis_not_a_lock():
+    spec = MODEL_SPECS["aeternum"]
+    assert "14b" in spec.provisional_parameter_hypothesis.lower()
+    assert "not" in spec.provisional_parameter_hypothesis.lower() or "provisional" in spec.provisional_parameter_hypothesis.lower()
+
+
+def test_genesis_and_novus_base_models_remain_selected():
+    """Only Aeternum's base model is unselected -- Genesis/Novus keep their
+    real, already-in-use V1 exploration targets."""
+    assert MODEL_SPECS["genesis"].base_model_status == "SELECTED"
+    assert MODEL_SPECS["novus"].base_model_status == "SELECTED"
+    assert MODEL_SPECS["genesis"].base_model is not None
+    assert MODEL_SPECS["novus"].base_model is not None
+
+
+def test_require_base_model_fails_closed_for_aeternum():
+    from orca.registry.model_spec import require_base_model
+
+    with pytest.raises(ValueError):
+        require_base_model("aeternum")
+    # Genesis/Novus still resolve normally.
+    assert require_base_model("genesis") == MODEL_SPECS["genesis"].base_model
+
+
+def test_no_family_role_implies_a_permanent_size_ceiling():
+    """Roles must describe cognitive specialization, not a size tier --
+    guards against the 'small/medium/large chatbot' framing the owner
+    explicitly rejected."""
+    for family, spec in MODEL_SPECS.items():
+        role_lower = spec.role.lower()
+        assert "chatbot" not in role_lower
