@@ -57,13 +57,31 @@ def canonicalize(artifact: CognitiveArtifact) -> CognitiveArtifact:
 
 
 def freeze_value(value):
-    """Recursively converts `value` into a deeply-immutable representation:
-    a fresh `MappingProxyType` (never wrapping the caller's own dict) for
-    mappings, a `tuple` for lists/tuples, and scalars unchanged (str/int/
-    float/bool/None are already immutable). Because every container is
-    rebuilt from scratch rather than wrapped in place, the ORIGINAL
-    caller-owned dict/list can be freely mutated afterward with zero effect
-    on the frozen result -- this is the alias-safety guarantee."""
+    """Recursively converts `value` into a deeply-immutable representation
+    -- walking EVERY dataclass field, not merely dict-typed ones (Phase 17
+    final closure section 2: a programmatic caller can pass a plain
+    `list` for a `tuple`-annotated field like `ActionIntent.preconditions`
+    since Python does not enforce type annotations at runtime; the prior
+    version of this function only froze dict-typed fields by name, missing
+    every such list). Rules:
+
+    - a nested dataclass is rebuilt via `dataclasses.replace()` with every
+      field recursively frozen (mapping -> immutable mapping, list/tuple ->
+      tuple of recursively-frozen values, nested dataclass -> recursively
+      rebuilt/frozen dataclass, scalar -> unchanged);
+    - a mapping becomes a fresh `MappingProxyType` over a FRESH dict (never
+      wrapping the caller's own dict);
+    - a list or tuple becomes a tuple of recursively-frozen elements;
+    - a scalar (str/int/float/bool/None/Enum) is returned unchanged.
+
+    Because every container is rebuilt from scratch rather than wrapped in
+    place, the ORIGINAL caller-owned dict/list can be freely mutated
+    afterward with zero effect on the frozen result -- this is the
+    alias-safety guarantee, and it now holds for every field, not only
+    metadata-shaped ones."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        changes = {f.name: freeze_value(getattr(value, f.name)) for f in dataclasses.fields(value)}
+        return dataclasses.replace(value, **changes)
     if isinstance(value, MappingProxyType):
         value = dict(value)
     if isinstance(value, dict):
@@ -73,33 +91,14 @@ def freeze_value(value):
     return value
 
 
-def _freeze_dataclass_metadata_fields(obj):
-    """Returns `obj` with every dict-typed field ('metadata',
-    'arguments_summary') replaced by its frozen form, via
-    `dataclasses.replace` (obj itself is a frozen dataclass already)."""
-    if not dataclasses.is_dataclass(obj) or isinstance(obj, type):
-        return obj
-    changes = {}
-    for f in dataclasses.fields(obj):
-        current = getattr(obj, f.name)
-        if isinstance(current, (dict, MappingProxyType)):
-            changes[f.name] = freeze_value(current)
-    return dataclasses.replace(obj, **changes) if changes else obj
-
-
 def deep_freeze(artifact: CognitiveArtifact) -> CognitiveArtifact:
     """Applied by `compiler.compile_artifact()` as the final step: makes
-    every nested mutable container in the artifact (metadata dicts,
-    ActionIntent.arguments_summary) deeply immutable, with no aliasing to
-    any caller-owned object."""
-    return dataclasses.replace(
-        artifact,
-        metadata=freeze_value(artifact.metadata),
-        atoms=tuple(_freeze_dataclass_metadata_fields(a) for a in artifact.atoms),
-        relations=tuple(_freeze_dataclass_metadata_fields(r) for r in artifact.relations),
-        evidence=tuple(_freeze_dataclass_metadata_fields(e) for e in artifact.evidence),
-        action_intents=tuple(_freeze_dataclass_metadata_fields(x) for x in artifact.action_intents),
-    )
+    every nested mutable container reachable from the artifact deeply
+    immutable, with no aliasing to any caller-owned object -- including
+    list-typed dataclass fields a programmatic caller passed a plain
+    `list` for (`ActionIntent.preconditions`, `VerificationContract.
+    pass_conditions`, etc.), not only dict-typed metadata fields."""
+    return freeze_value(artifact)
 
 
 def _to_json_safe(value):

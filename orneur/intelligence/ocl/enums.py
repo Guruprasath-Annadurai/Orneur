@@ -101,19 +101,30 @@ class SourceClass(str, Enum):
 #
 # PRIVILEGED_REFERENCE_SOURCE_CLASSES (renamed from the earlier
 # "AUTHORITATIVE_SOURCE_CLASSES" -- that name overclaimed what this set
-# means): these three specifically require BOTH an OBSERVATION_REFERENCE
-# atom kind citing a real EvidenceAnchor AND a caller-supplied
-# CompilationTrustContext outside the TRUSTED set (see compiler.py) --
-# never derived from the artifact's own self-declared `producer_kind`.
-# HUMAN_INPUT is deliberately NOT in this set: a human may honestly label
-# any atom kind (assertion, hypothesis, question, ...) as HUMAN_INPUT
-# without that atom needing to look like an evidence reference at all --
-# see the separate, hard invariant in compiler.py that HUMAN_INPUT can
-# never satisfy HUMAN_APPROVAL_REQUIRED, Court approval, or policy
-# authorization through OCL alone.
+# means): these specifically require BOTH an OBSERVATION_REFERENCE atom
+# kind citing a real EvidenceAnchor AND a caller-supplied
+# CompilationTrustContext whose capability matrix (see trust.py's
+# SOURCE_CLASS_CAPABILITY_MATRIX) includes that exact SourceClass -- never
+# derived from the artifact's own self-declared `producer_kind`.
+#
+# EXTERNAL_EVIDENCE_REFERENCE is deliberately NOT in this set (Phase 17
+# final closure section 6): a model MUST be able to cite external evidence
+# as an UNVERIFIED reference without self-authenticating it -- that is
+# exactly the intended doctrine ("models should be able to cite external
+# evidence without self-authenticating it"). Citing something externally
+# is not itself a privileged claim; only MEASURED_EVIDENCE_REFERENCE and
+# DETERMINISTIC_POLICY_REFERENCE claim something stronger (a measurement
+# was actually taken, or a deterministic policy fact is being referenced)
+# and therefore require trust-context capability.
+#
+# HUMAN_INPUT is likewise NOT in this set: a human may honestly label any
+# atom kind (assertion, hypothesis, question, ...) as HUMAN_INPUT without
+# that atom needing to look like an evidence reference at all -- see the
+# separate, hard invariant in compiler.py that HUMAN_INPUT can never
+# satisfy HUMAN_APPROVAL_REQUIRED, Court approval, or policy authorization
+# through OCL alone.
 PRIVILEGED_REFERENCE_SOURCE_CLASSES = frozenset({
     SourceClass.MEASURED_EVIDENCE_REFERENCE,
-    SourceClass.EXTERNAL_EVIDENCE_REFERENCE,
     SourceClass.DETERMINISTIC_POLICY_REFERENCE,
 })
 

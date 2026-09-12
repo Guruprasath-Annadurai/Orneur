@@ -130,3 +130,7 @@ class MalformedWireShape(OclError):
 
 class ExtensionNamespaceConflict(OclError):
     code = "EXTENSION_NAMESPACE_CONFLICT"
+
+
+class InvalidTrustContext(OclError):
+    code = "INVALID_TRUST_CONTEXT"

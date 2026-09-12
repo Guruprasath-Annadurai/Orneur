@@ -26,7 +26,13 @@ from orneur.intelligence.ocl.enums import (
     ProducerKind,
     SourceClass,
 )
-from orneur.intelligence.ocl.trust import TRUSTED_CONTEXTS, CompilationTrustContext, UNTRUSTED
+from orneur.intelligence.ocl.trust import (
+    EVIDENCE_KIND_CAPABILITY_MATRIX,
+    SOURCE_CLASS_CAPABILITY_MATRIX,
+    CompilationTrustContext,
+    UNTRUSTED,
+    is_valid_trust_context,
+)
 from orneur.intelligence.ocl.errors import (
     DanglingRelation,
     DuplicateActionIntentId,
@@ -45,11 +51,18 @@ from orneur.intelligence.ocl.errors import (
     InvalidProvenance,
     InvalidRelationShape,
     InvalidStructuredValue,
+    InvalidTrustContext,
     InvalidVerificationStatus,
     PayloadLimitExceeded,
     UnsupportedSchemaVersion,
 )
 from orneur.intelligence.ocl.extensions import snapshot_registry
+from orneur.intelligence.ocl.typecheck import (
+    require_optional_int,
+    require_optional_string,
+    require_string,
+    require_string_sequence,
+)
 from orneur.intelligence.ocl.version import is_supported_schema_version
 
 # Keys that must never appear (truthy) in any structured-data surface -- a
@@ -113,11 +126,6 @@ def validate_structured_value(value, *, where: str, _depth: int = 0) -> None:
     raise InvalidStructuredValue(f"{where}: disallowed value type {type(value).__name__}")
 
 
-def _check_string_limits(value: str, *, where: str) -> None:
-    if len(value) > limits.MAX_STRING_FIELD_LENGTH:
-        raise PayloadLimitExceeded(f"{where}: string field exceeds {limits.MAX_STRING_FIELD_LENGTH} chars")
-
-
 def _require_id(value: str, *, where: str) -> None:
     if not value or not isinstance(value, str):
         raise InvalidArtifactId(f"{where}: id must be a non-empty string")
@@ -131,22 +139,35 @@ def _validate_provenance(artifact: CognitiveArtifact) -> None:
     prov = artifact.provenance
     identity = prov.model_identity
 
+    if not isinstance(prov.producer_kind, ProducerKind):
+        raise InvalidProvenance(f"provenance.producer_kind must be a ProducerKind, got {type(prov.producer_kind).__name__}")
+    require_string(prov.producer_id, where="provenance.producer_id")
+    require_optional_string(prov.invocation_ref, where="provenance.invocation_ref")
+    require_optional_string(prov.schema_version, where="provenance.schema_version")
+
     if prov.producer_kind == ProducerKind.NATIVE_MODEL:
         if identity is None or not identity.family:
             raise InvalidProvenance(
                 "producer_kind=NATIVE_MODEL requires a model_identity with a family set"
             )
     if identity is not None:
-        if identity.family is not None and identity.family not in MODEL_SPECS:
-            raise InvalidProvenance(f"unknown model family {identity.family!r} -- not in orca.registry.model_spec.MODEL_SPECS")
+        family = require_optional_string(identity.family, where="provenance.model_identity.family")
+        require_optional_string(identity.lifecycle_state, where="provenance.model_identity.lifecycle_state")
+        require_optional_string(identity.checkpoint_id, where="provenance.model_identity.checkpoint_id")
+        require_optional_string(identity.artifact_digest, where="provenance.model_identity.artifact_digest")
+        require_optional_string(identity.provider_id, where="provenance.model_identity.provider_id")
+        require_optional_int(identity.generation, where="provenance.model_identity.generation")
+
+        if family is not None and family not in MODEL_SPECS:
+            raise InvalidProvenance(f"unknown model family {family!r} -- not in orca.registry.model_spec.MODEL_SPECS")
         if identity.lifecycle_state is not None:
             valid = {s.value for s in LifecycleState}
             if identity.lifecycle_state not in valid:
                 raise InvalidProvenance(f"unknown lifecycle_state {identity.lifecycle_state!r}")
-        if prov.producer_kind == ProducerKind.EXTERNAL_PROVIDER and identity.family is not None:
+        if prov.producer_kind == ProducerKind.EXTERNAL_PROVIDER and family is not None:
             raise InvalidProvenance(
                 "producer_kind=EXTERNAL_PROVIDER cannot claim a native model family "
-                f"({identity.family!r}) -- an external frontier response must never be "
+                f"({family!r}) -- an external frontier response must never be "
                 "relabeled as native (Phase 16 §15)."
             )
 
@@ -167,8 +188,13 @@ def _validate_atoms(
         if atom.namespace not in registry_snapshot:
             raise InvalidNamespace(f"atom {atom.atom_id!r} uses unregistered namespace {atom.namespace!r}")
 
-        _check_string_limits(atom.content, where=f"atom {atom.atom_id!r}.content")
+        require_string(atom.content, where=f"atom {atom.atom_id!r}.content")
+        require_string_sequence(atom.evidence_refs, where=f"atom {atom.atom_id!r}.evidence_refs")
         validate_structured_value(atom.metadata, where=f"atom {atom.atom_id!r}.metadata")
+        if not isinstance(atom.kind, AtomKind):
+            raise InvalidStructuredValue(f"atom {atom.atom_id!r}.kind must be an AtomKind, got {type(atom.kind).__name__}")
+        if not isinstance(atom.source_class, SourceClass):
+            raise InvalidStructuredValue(f"atom {atom.atom_id!r}.source_class must be a SourceClass, got {type(atom.source_class).__name__}")
 
         if atom.source_class in PRIVILEGED_REFERENCE_SOURCE_CLASSES:
             # THE root fix (Phase 17 final closure): trust is decided ONLY by
@@ -177,15 +203,19 @@ def _validate_atoms(
             # payload that self-declares `provenance.producer_kind=
             # "DETERMINISTIC_SYSTEM"` gets ZERO extra privilege from that claim;
             # `provenance.producer_kind` remains a mere provenance CLAIM (see
-            # provenance.py), not proof of trust.
-            if trust_context not in TRUSTED_CONTEXTS:
+            # provenance.py), not proof of trust. Capability is per-SourceClass
+            # (SOURCE_CLASS_CAPABILITY_MATRIX): a TRUSTED_TOOL_ADAPTER may
+            # unlock MEASURED_EVIDENCE_REFERENCE but not DETERMINISTIC_POLICY_
+            # REFERENCE, and TRUSTED_HUMAN_INPUT unlocks neither.
+            allowed_classes = SOURCE_CLASS_CAPABILITY_MATRIX.get(trust_context, frozenset())
+            if atom.source_class not in allowed_classes:
                 raise EvidenceImpersonation(
                     f"atom {atom.atom_id!r} claims privileged source_class="
-                    f"{atom.source_class.value} but this compile call's trust_context is "
-                    f"{trust_context.value} -- privileged reference semantics require an "
-                    "out-of-band trusted compilation context, never the artifact's own "
-                    "self-declared provenance.producer_kind (spec §8: evidence must not "
-                    "self-authenticate)."
+                    f"{atom.source_class.value} but this compile call's trust_context "
+                    f"({trust_context.value}) is not capable of unlocking it -- privileged "
+                    "reference semantics require an out-of-band trusted compilation context "
+                    "with the matching capability, never the artifact's own self-declared "
+                    "provenance.producer_kind (spec §8: evidence must not self-authenticate)."
                 )
             if atom.kind != AtomKind.OBSERVATION_REFERENCE:
                 raise EvidenceImpersonation(
@@ -202,21 +232,49 @@ def _validate_atoms(
     return by_id
 
 
-def _validate_evidence(artifact: CognitiveArtifact, atoms_by_id: dict, registry_snapshot: dict) -> set[str]:
-    evidence_ids: set[str] = set()
+def _validate_evidence(artifact: CognitiveArtifact, atoms_by_id: dict, registry_snapshot: dict) -> dict[str, object]:
+    evidence_by_id: dict[str, object] = {}
     for anchor in artifact.evidence:
         _require_id(anchor.evidence_id, where="evidence.evidence_id")
-        if anchor.evidence_id in evidence_ids:
+        if anchor.evidence_id in evidence_by_id:
             raise DuplicateEvidenceId(f"duplicate evidence_id {anchor.evidence_id!r}")
-        evidence_ids.add(anchor.evidence_id)
-        _check_string_limits(anchor.reference, where=f"evidence {anchor.evidence_id!r}.reference")
+        evidence_by_id[anchor.evidence_id] = anchor
+        require_string(anchor.issuer, where=f"evidence {anchor.evidence_id!r}.issuer")
+        require_string(anchor.reference, where=f"evidence {anchor.evidence_id!r}.reference")
+        require_optional_string(anchor.digest, where=f"evidence {anchor.evidence_id!r}.digest")
+        require_optional_string(anchor.observed_at, where=f"evidence {anchor.evidence_id!r}.observed_at")
+        require_optional_string(anchor.locator, where=f"evidence {anchor.evidence_id!r}.locator")
         validate_structured_value(anchor.metadata, where=f"evidence {anchor.evidence_id!r}.metadata")
 
     for atom in artifact.atoms:
         for ref in atom.evidence_refs:
-            if ref not in evidence_ids:
+            if ref not in evidence_by_id:
                 raise DanglingRelation(f"atom {atom.atom_id!r} references unknown evidence_id {ref!r}")
-    return evidence_ids
+    return evidence_by_id
+
+
+def _validate_evidence_kind_capability(
+    artifact: CognitiveArtifact, evidence_by_id: dict, trust_context: CompilationTrustContext,
+) -> None:
+    """Section 7: SourceClass capability alone is not sufficient -- the
+    specific EvidenceKind an atom cites must ALSO be within what this
+    trust_context may certify. A TRUSTED_TOOL_ADAPTER is not equivalent to
+    a Court or Policy system and must not be able to back a
+    COURT_DECISION/PRODUCTION_PROOF reference merely because it is
+    "trusted" in some generic sense."""
+    allowed_kinds = EVIDENCE_KIND_CAPABILITY_MATRIX.get(trust_context, frozenset())
+    for atom in artifact.atoms:
+        if atom.source_class not in PRIVILEGED_REFERENCE_SOURCE_CLASSES:
+            continue
+        for ref in atom.evidence_refs:
+            anchor = evidence_by_id.get(ref)
+            if anchor is not None and anchor.evidence_kind not in allowed_kinds:
+                raise EvidenceImpersonation(
+                    f"atom {atom.atom_id!r} cites evidence {ref!r} of kind "
+                    f"{anchor.evidence_kind.value}, which trust_context {trust_context.value} "
+                    "is not capable of certifying -- e.g. a TRUSTED_TOOL_ADAPTER cannot back a "
+                    "COURT_DECISION/PRODUCTION_PROOF reference (spec §7 evidence-kind capability)."
+                )
 
 
 def _validate_relations(artifact: CognitiveArtifact, atoms_by_id: dict, registry_snapshot: dict) -> None:
@@ -235,6 +293,11 @@ def _validate_relations(artifact: CognitiveArtifact, atoms_by_id: dict, registry
         if rel.namespace not in registry_snapshot:
             raise InvalidNamespace(f"relation {rel.relation_id!r} uses unregistered namespace {rel.namespace!r}")
         validate_structured_value(rel.metadata, where=f"relation {rel.relation_id!r}.metadata")
+        from orneur.intelligence.ocl.enums import RelationKind
+        if not isinstance(rel.kind, RelationKind):
+            raise InvalidRelationShape(f"relation {rel.relation_id!r}.kind must be a RelationKind, got {type(rel.kind).__name__}")
+        require_string(rel.source_atom_id, where=f"relation {rel.relation_id!r}.source_atom_id")
+        require_string(rel.target_atom_id, where=f"relation {rel.relation_id!r}.target_atom_id")
         if rel.source_atom_id not in atoms_by_id:
             raise DanglingRelation(f"relation {rel.relation_id!r} source_atom_id {rel.source_atom_id!r} does not exist")
         if rel.target_atom_id not in atoms_by_id:
@@ -284,9 +347,14 @@ def _validate_action_intents(artifact: CognitiveArtifact, atoms_by_id: dict, con
             raise DuplicateActionIntentId(f"duplicate intent_id {intent.intent_id!r}")
         seen.add(intent.intent_id)
 
-        _check_string_limits(intent.proposed_capability, where=f"action_intent {intent.intent_id!r}.proposed_capability")
-        _check_string_limits(intent.expected_effect, where=f"action_intent {intent.intent_id!r}.expected_effect")
+        require_string(intent.proposed_capability, where=f"action_intent {intent.intent_id!r}.proposed_capability")
+        require_optional_string(intent.target_reference, where=f"action_intent {intent.intent_id!r}.target_reference")
+        require_string(intent.expected_effect, where=f"action_intent {intent.intent_id!r}.expected_effect")
         validate_structured_value(intent.arguments_summary, where=f"action_intent {intent.intent_id!r}.arguments_summary")
+        require_string_sequence(intent.preconditions, where=f"action_intent {intent.intent_id!r}.preconditions")
+        require_string_sequence(intent.risk_hints, where=f"action_intent {intent.intent_id!r}.risk_hints")
+        require_string_sequence(intent.rationale_atom_refs, where=f"action_intent {intent.intent_id!r}.rationale_atom_refs")
+        require_string_sequence(intent.verification_requirement_refs, where=f"action_intent {intent.intent_id!r}.verification_requirement_refs")
 
         for ref in intent.rationale_atom_refs:
             if ref not in atoms_by_id:
@@ -304,8 +372,10 @@ def _validate_verification_contracts(artifact: CognitiveArtifact, atoms_by_id: d
             raise DuplicateVerificationContractId(f"duplicate contract_id {contract.contract_id!r}")
         seen.add(contract.contract_id)
 
+        require_string(contract.target_atom_ref, where=f"verification_contract {contract.contract_id!r}.target_atom_ref")
         if contract.target_atom_ref not in atoms_by_id:
             raise DanglingRelation(f"verification_contract {contract.contract_id!r} target_atom_ref {contract.target_atom_ref!r} does not exist")
+        require_string(contract.status, where=f"verification_contract {contract.contract_id!r}.status")
         if contract.status != "UNRESOLVED":
             raise InvalidVerificationStatus(
                 f"verification_contract {contract.contract_id!r} has status={contract.status!r} -- "
@@ -313,7 +383,11 @@ def _validate_verification_contracts(artifact: CognitiveArtifact, atoms_by_id: d
                 "VerificationContract is a REQUEST, never the VerificationRecord itself; only the "
                 "real Phase 15 verification path may ever record a pass/fail outcome."
             )
-        _check_string_limits(contract.proposed_test, where=f"verification_contract {contract.contract_id!r}.proposed_test")
+        require_string(contract.proposed_test, where=f"verification_contract {contract.contract_id!r}.proposed_test")
+        require_string_sequence(contract.required_evidence_kinds, where=f"verification_contract {contract.contract_id!r}.required_evidence_kinds")
+        require_string_sequence(contract.pass_conditions, where=f"verification_contract {contract.contract_id!r}.pass_conditions")
+        require_string_sequence(contract.fail_conditions, where=f"verification_contract {contract.contract_id!r}.fail_conditions")
+        require_optional_string(contract.verification_scope_ref, where=f"verification_contract {contract.contract_id!r}.verification_scope_ref")
     return seen
 
 
@@ -325,7 +399,12 @@ def _validate_escalation_requests(artifact: CognitiveArtifact, atoms_by_id: dict
             raise DuplicateEscalationRequestId(f"duplicate escalation_id {esc.escalation_id!r}")
         seen.add(esc.escalation_id)
 
-        _check_string_limits(esc.evidence_deficit, where=f"escalation_request {esc.escalation_id!r}.evidence_deficit")
+        require_string(esc.evidence_deficit, where=f"escalation_request {esc.escalation_id!r}.evidence_deficit")
+        require_string(esc.requested_capability_type, where=f"escalation_request {esc.escalation_id!r}.requested_capability_type")
+        require_optional_string(esc.requested_cognitive_role, where=f"escalation_request {esc.escalation_id!r}.requested_cognitive_role")
+        require_string_sequence(esc.reason_categories, where=f"escalation_request {esc.escalation_id!r}.reason_categories")
+        require_string_sequence(esc.triggering_atom_refs, where=f"escalation_request {esc.escalation_id!r}.triggering_atom_refs")
+        require_string_sequence(esc.unresolved_conflict_refs, where=f"escalation_request {esc.escalation_id!r}.unresolved_conflict_refs")
         for ref in esc.triggering_atom_refs:
             if ref not in atoms_by_id:
                 raise DanglingRelation(f"escalation_request {esc.escalation_id!r} triggering_atom_refs references unknown atom_id {ref!r}")
@@ -346,7 +425,11 @@ def _validate_causal_hypotheses(artifact: CognitiveArtifact, atoms_by_id: dict) 
             raise DuplicateCausalHypothesisId(f"duplicate hypothesis_id {hyp.hypothesis_id!r}")
         seen.add(hyp.hypothesis_id)
 
-        _check_string_limits(hyp.mechanism, where=f"causal_hypothesis {hyp.hypothesis_id!r}.mechanism")
+        require_string(hyp.mechanism, where=f"causal_hypothesis {hyp.hypothesis_id!r}.mechanism")
+        require_string(hyp.cause_atom_ref, where=f"causal_hypothesis {hyp.hypothesis_id!r}.cause_atom_ref")
+        require_string(hyp.predicted_consequence_atom_ref, where=f"causal_hypothesis {hyp.hypothesis_id!r}.predicted_consequence_atom_ref")
+        require_optional_string(hyp.observable_test_ref, where=f"causal_hypothesis {hyp.hypothesis_id!r}.observable_test_ref")
+        require_string_sequence(hyp.observed_evidence_refs, where=f"causal_hypothesis {hyp.hypothesis_id!r}.observed_evidence_refs")
         if hyp.cause_atom_ref not in atoms_by_id:
             raise DanglingRelation(f"causal_hypothesis {hyp.hypothesis_id!r} cause_atom_ref {hyp.cause_atom_ref!r} does not exist")
         if hyp.predicted_consequence_atom_ref not in atoms_by_id:
@@ -374,6 +457,9 @@ def _validate_counterfactual_branches(artifact: CognitiveArtifact, atoms_by_id: 
             raise DuplicateCounterfactualBranchId(f"duplicate branch_id {branch.branch_id!r}")
         seen.add(branch.branch_id)
 
+        require_string(branch.causal_hypothesis_ref, where=f"counterfactual_branch {branch.branch_id!r}.causal_hypothesis_ref")
+        require_string(branch.condition_atom_ref, where=f"counterfactual_branch {branch.branch_id!r}.condition_atom_ref")
+        require_string(branch.predicted_atom_ref, where=f"counterfactual_branch {branch.branch_id!r}.predicted_atom_ref")
         if branch.causal_hypothesis_ref not in hypothesis_ids:
             raise DanglingRelation(f"counterfactual_branch {branch.branch_id!r} causal_hypothesis_ref {branch.causal_hypothesis_ref!r} does not exist")
         if branch.condition_atom_ref not in atoms_by_id:
@@ -395,13 +481,26 @@ def compile_artifact(
     -- never parsed from `draft` itself. Defaults to `UNTRUSTED_MODEL_OR_WIRE`
     (the safe default): only a caller who has independently verified a
     draft's true origin should pass a stronger `CompilationTrustContext`
-    explicitly (see trust.py)."""
+    explicitly (see trust.py). `trust_context` MUST be a genuine
+    `CompilationTrustContext` enum member -- a plain string equal to one of
+    its values is REJECTED (`InvalidTrustContext`), even though `str`-mixin
+    `Enum` equality would otherwise let it slip through a naive membership
+    check."""
+    if not is_valid_trust_context(trust_context):
+        raise InvalidTrustContext(
+            f"trust_context must be a genuine CompilationTrustContext member, got "
+            f"{type(trust_context).__name__} {trust_context!r} -- a plain string is never accepted "
+            "even if it matches an enum value's text."
+        )
+
     _require_id(draft.artifact_id, where="artifact.artifact_id")
     _require_id(draft.request_id, where="artifact.request_id")
     if draft.parent_artifact_id is not None:
         _require_id(draft.parent_artifact_id, where="artifact.parent_artifact_id")
     if draft.transformation_id is not None:
         _require_id(draft.transformation_id, where="artifact.transformation_id")
+    require_string(draft.schema_version, where="artifact.schema_version")
+    require_string(draft.created_at, where="artifact.created_at")
     if not is_supported_schema_version(draft.schema_version):
         raise UnsupportedSchemaVersion(
             f"schema_version {draft.schema_version!r} is not supported by this build"
@@ -412,7 +511,8 @@ def compile_artifact(
     registry_snapshot = snapshot_registry()
 
     atoms_by_id = _validate_atoms(draft, registry_snapshot, trust_context)
-    _validate_evidence(draft, atoms_by_id, registry_snapshot)
+    evidence_by_id = _validate_evidence(draft, atoms_by_id, registry_snapshot)
+    _validate_evidence_kind_capability(draft, evidence_by_id, trust_context)
     _validate_relations(draft, atoms_by_id, registry_snapshot)
     _validate_provenance(draft)
 
@@ -422,6 +522,7 @@ def compile_artifact(
     hypothesis_ids = _validate_causal_hypotheses(draft, atoms_by_id)
     _validate_counterfactual_branches(draft, atoms_by_id, hypothesis_ids)
 
+    require_string_sequence(draft.limitation_atom_refs, where="artifact.limitation_atom_refs")
     for ref in draft.limitation_atom_refs:
         if ref not in atoms_by_id:
             raise DanglingRelation(f"limitation_atom_refs references unknown atom_id {ref!r}")

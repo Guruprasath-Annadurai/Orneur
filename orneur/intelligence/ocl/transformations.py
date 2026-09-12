@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from orneur.intelligence.ocl import limits
 from orneur.intelligence.ocl.artifact import CognitiveArtifact
 from orneur.intelligence.ocl.enums import AtomKind, TransformationOperation
 from orneur.intelligence.ocl.errors import ConservationViolation
@@ -66,6 +67,10 @@ class AtomDisposition:
     justification_ref: str
 
     def __post_init__(self) -> None:
+        if not isinstance(self.atom_id, str) or not self.atom_id:
+            raise ConservationViolation("AtomDisposition.atom_id must be a non-empty string")
+        if len(self.atom_id) > limits.MAX_STRING_FIELD_LENGTH:
+            raise ConservationViolation("AtomDisposition.atom_id exceeds the maximum field length")
         if self.disposition not in _VALID_DISPOSITIONS:
             raise ConservationViolation(
                 f"AtomDisposition for {self.atom_id!r} has unknown disposition {self.disposition!r} "

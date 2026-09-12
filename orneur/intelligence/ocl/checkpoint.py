@@ -13,7 +13,7 @@ representation, not a hand-picked subset of fields.
 from __future__ import annotations
 
 from orneur.intelligence.ocl.artifact import CognitiveArtifact
-from orneur.intelligence.ocl.canonical import _to_json_safe, compile_ocl_json, to_canonical_json
+from orneur.intelligence.ocl.canonical import _to_json_safe, parse_ocl_draft_json, to_canonical_json
 from orneur.intelligence.ocl.compiler import compile_artifact
 from orneur.intelligence.ocl.errors import SecretContentRejected
 from orneur.intelligence.ocl.trust import UNTRUSTED, CompilationTrustContext
@@ -67,9 +67,21 @@ def create_checkpoint(draft: CognitiveArtifact, *, trust_context: CompilationTru
     return to_canonical_json(compiled)
 
 
-def restore_checkpoint(checkpoint_json: str) -> CognitiveArtifact:
-    """Parses and re-validates a checkpoint through the full
-    parse-then-compile path (`compile_ocl_json`) -- restoring is not a
-    trusted shortcut around compilation; a tampered or stale checkpoint
-    must still fail the same way a fresh malformed artifact would."""
-    return compile_ocl_json(checkpoint_json)
+def restore_checkpoint(checkpoint_json: str, *, trust_context: CompilationTrustContext = UNTRUSTED) -> CognitiveArtifact:
+    """Parses and re-validates a checkpoint through the full parse-then-
+    compile path -- restoring is not a trusted shortcut around
+    compilation; a tampered or stale checkpoint must still fail the same
+    way a fresh malformed artifact would.
+
+    IMPORTANT: a checkpoint persists COGNITIVE STATE, never compilation
+    TRUST. `trust_context` defaults to `UNTRUSTED_MODEL_OR_WIRE`, same as
+    everywhere else -- a checkpoint created under
+    `TRUSTED_DETERMINISTIC_SYSTEM` does NOT restore itself back into that
+    trust level automatically; nothing inside the checkpoint JSON can
+    supply it. The RESTORING runtime must independently re-establish trust
+    (out-of-band, exactly as at creation time) and pass the matching
+    `trust_context` explicitly if the checkpoint's privileged references
+    are to compile successfully again. A trusted checkpoint restored in an
+    untrusted context fails closed, by design."""
+    draft = parse_ocl_draft_json(checkpoint_json)
+    return compile_artifact(draft, trust_context=trust_context)

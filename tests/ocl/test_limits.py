@@ -4,7 +4,7 @@ import pytest
 
 from orneur.intelligence.ocl import limits
 from orneur.intelligence.ocl.compiler import compile_artifact
-from orneur.intelligence.ocl.errors import GraphLimitExceeded, PayloadLimitExceeded
+from orneur.intelligence.ocl.errors import GraphLimitExceeded, InvalidStructuredValue, PayloadLimitExceeded
 from tests.ocl.conftest import make_artifact, make_atom, make_relation
 
 
@@ -31,8 +31,12 @@ def test_max_relations_limit_enforced():
 
 
 def test_oversized_content_rejected():
+    """Phase 17 final closure: string length + type checking is now
+    unified in typecheck.require_string(), which raises
+    InvalidStructuredValue for both a wrong type AND an oversized value --
+    replacing the narrower, type-unsafe _check_string_limits()."""
     atom = make_atom("a1", content="x" * (limits.MAX_STRING_FIELD_LENGTH + 1))
-    with pytest.raises(PayloadLimitExceeded):
+    with pytest.raises(InvalidStructuredValue):
         compile_artifact(make_artifact(atoms=(atom,)))
 
 
