@@ -1,23 +1,36 @@
-# Orca — 100% Local Private AI
+# ORNEUR — Intelligence, Without End.
 
-> Your hardware. Your data. Your intelligence.  
-> No Anthropic. No OpenAI. No cloud. No telemetry.
+ORNEUR is under active development.
 
-Orca is a fully private AI system that runs entirely on your own hardware using [Ollama](https://ollama.com). It includes a terminal CLI, a professional web UI, a multi-agent Ultra mode, long-term memory, fine-tuning tools, and a self-contained revenue/licensing layer — all 100% local.
+This default branch contains an earlier stable repository state. Current
+engineering work is qualified on the active development branch before
+merge — the product's internal codebase still uses the legacy `orca`
+Python namespace and CLI alias internally during this transition; the
+public product identity is ORNEUR.
+
+> Your hardware. Your data. Your intelligence.
+> No Anthropic. No OpenAI. Core inference runs locally, without a required
+> cloud AI provider. No telemetry.
+>
+> (Optional cloud GPU training via SSH is available separately — see
+> Features below — and license checks/self-update do reach the network;
+> "no cloud" refers to inference, not every network operation.)
+
+ORNEUR is a self-hosted AI system that runs entirely on your own hardware
+using [Ollama](https://ollama.com). It includes a terminal CLI, a web UI,
+a multi-agent Ultra mode, long-term memory, and fine-tuning tools.
 
 ---
 
 ## Quick Install
 
-```bash
-curl -fsSL https://orca.systems/install.sh | bash
-```
-
-Or via pip:
+No package has been published for this branch yet. Install from source:
 
 ```bash
-pip install orca-ai
-orca doctor --wizard
+git clone https://github.com/Guruprasath-Annadurai/Orneur.git
+cd Orneur
+pip install -e .
+orca doctor --wizard   # legacy CLI on this earlier main-branch state, see below
 ```
 
 ---
@@ -31,6 +44,12 @@ orca doctor --wizard
 ---
 
 ## Getting Started
+
+> **Legacy CLI on this earlier main-branch state.** This branch has not
+> yet received the `orneur` primary CLI entrypoint that exists on the
+> active development branch — the commands below use `orca`, this
+> branch's only working entrypoint. This is a legacy compatibility
+> artifact of this specific stale snapshot, not the canonical product CLI.
 
 ```bash
 # First-run setup wizard
@@ -52,6 +71,8 @@ orca ultra run "design a REST API for a todo app"
 ---
 
 ## Commands
+
+Legacy CLI on this earlier main-branch state (see note above).
 
 | Command | Description |
 |---|---|
@@ -103,7 +124,7 @@ orca ultra run "design a REST API for a todo app"
 
 ## Licensing
 
-Orca ships in two tiers:
+ORNEUR ships in three tiers:
 
 | Tier | Price | Features |
 |---|---|---|
@@ -112,7 +133,7 @@ Orca ships in two tiers:
 | **Enterprise** | $199/mo | All features, 5 seats, priority support |
 
 ```bash
-orca activate ORCA-PRO-XXXXX-XXXXX-XXXXX
+orca activate ORCA-PRO-XXXXX-XXXXX-XXXXX   # legacy/stable key-format compatibility, not product branding
 orca license --buy   # show pricing
 ```
 
@@ -121,12 +142,18 @@ orca license --buy   # show pricing
 ## Privacy
 
 - Zero telemetry
-- No external API calls from the core system
-- All data stored in `~/.orca/`
+- Core chat inference runs locally via Ollama, with no required external
+  AI-provider API calls
+- License activation, `orca upgrade` (self-update from PyPI), and optional
+  cloud training via SSH do reach the network — this is not a zero-network
+  claim, only a local-inference-by-default one
+- All data stored in `~/.orca/` (legacy data path on this branch)
 - Inference via Ollama on `localhost:11434`
 
 ---
 
 ## Documentation
 
-[orca.systems/docs](https://orca.systems/docs)
+No verified documentation site exists yet for this branch. See the
+[GitHub repository](https://github.com/Guruprasath-Annadurai/Orneur) for
+current source and docs.
