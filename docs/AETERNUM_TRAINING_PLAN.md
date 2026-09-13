@@ -1,6 +1,32 @@
 # Aeternum (Ultra) Training Plan — Kaggle
 
-Honest premise: this is the biggest remaining lift in Orneur's model lineup.
+> **STATUS: LEGACY / HISTORICAL TRAINING PLAN — SUPERSEDED — NOT CANONICAL.**
+> **DO NOT USE AS CURRENT AETERNUM ARCHITECTURE.**
+>
+> This plan predates the Phase 16 native-intelligence architecture audit and
+> treats `Qwen2.5-14B-Instruct` as a concrete, already-selected base model
+> and "14B" as what "flagship" means for Aeternum. That is stale: per the
+> canonical source of truth —
+> [`orca/registry/model_spec.py`](../orca/registry/model_spec.py) and
+> [`docs/orneur/phase-16/PHASE16_NATIVE_INTELLIGENCE_BASELINE_AUDIT.md`](orneur/phase-16/PHASE16_NATIVE_INTELLIGENCE_BASELINE_AUDIT.md) —
+> **no final Aeternum base model has been selected** (`base_model = None`,
+> `base_model_status = "UNSELECTED_PROVISIONAL"`); **~14B is recorded only
+> as a non-binding, provisional research hypothesis**, not a committed
+> target; the historical Qwen2.5-14B/Kaggle-free-tier path documented below
+> is **not** the current committed architecture; and **model size is
+> evidence-driven, not a prestige hierarchy** — Genesis, Novus, and
+> Aeternum are distinguished by cognitive role (Executable / Epistemic-
+> Causal / Adversarial-Discovery Intelligence), not by "small/medium/large."
+> Paid- vs. free-compute availability does not determine architectural
+> truth. This file is preserved as a historical engineering record (the
+> Kaggle-specific lessons in §1 may still be operationally useful for a
+> future training run on whatever base model is eventually selected) —
+> it is not redesigned or replaced by this closure. A real Aeternum
+> training plan requires its own dedicated future phase.
+
+Honest premise (as originally written; the constraints below reflect the
+free-Kaggle-tier framing that produced this now-superseded plan): this is
+the biggest remaining lift in Orneur's model lineup.
 Genesis (nano) and Novus (core) each went through distillation → format →
 fine-tune → eval → red-team → model card, and each step hit real bugs along
 the way. Aeternum starts from zero — no distilled data, no fine-tune, no

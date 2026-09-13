@@ -56,8 +56,10 @@ not aspirational copy. No parameter counts are used as headline identity.
 
 Aeternum is listed as "in development" everywhere it appears in this
 project — including the pricing page — because that's the truth, not a
-placeholder. See [`docs/AETERNUM_TRAINING_PLAN.md`](docs/AETERNUM_TRAINING_PLAN.md)
-for the real, current plan to get it there.
+placeholder. [`docs/AETERNUM_TRAINING_PLAN.md`](docs/AETERNUM_TRAINING_PLAN.md)
+is a historical Aeternum training-plan record, superseded by the Phase 16
+architecture audit — it predates the current no-final-base-model-selected
+status and must not be read as the current committed plan.
 
 ---
 
@@ -233,4 +235,4 @@ orneur license --buy   # show pricing
 - [Model Cards & the Persona Claim Gate](docs/MODEL_CARDS.md)
 - [Security Audit](docs/SECURITY_AUDIT.md)
 - [Differentiation Strategy](docs/PERPLEXITY_DIFFERENTIATION_PLAN.md)
-- [Aeternum Training Plan](docs/AETERNUM_TRAINING_PLAN.md)
+- [Aeternum Training Plan (historical record, superseded)](docs/AETERNUM_TRAINING_PLAN.md)
