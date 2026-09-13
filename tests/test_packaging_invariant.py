@@ -38,6 +38,11 @@ REQUIRED_WHEEL_PATHS = [
 
 @pytest.fixture(scope="module")
 def built_wheel(tmp_path_factory):
+    try:
+        import build  # noqa: F401  -- the `build` PyPI package, part of the `dev` extra
+    except ImportError:
+        pytest.skip("`build` package not installed (add the `dev` extra: pip install -e '.[dev]')")
+
     out_dir = tmp_path_factory.mktemp("orneur_wheel_build")
     result = subprocess.run(
         [sys.executable, "-m", "build", "--wheel", "--outdir", str(out_dir)],
