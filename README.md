@@ -25,7 +25,7 @@ No package has been published for this branch yet. Install from source:
 git clone https://github.com/Guruprasath-Annadurai/Orneur.git
 cd Orneur
 pip install -e .
-orca doctor --wizard
+orca doctor --wizard   # legacy CLI on this earlier main-branch state, see below
 ```
 
 ---
@@ -39,6 +39,12 @@ orca doctor --wizard
 ---
 
 ## Getting Started
+
+> **Legacy CLI on this earlier main-branch state.** This branch has not
+> yet received the `orneur` primary CLI entrypoint that exists on the
+> active development branch — the commands below use `orca`, this
+> branch's only working entrypoint. This is a legacy compatibility
+> artifact of this specific stale snapshot, not the canonical product CLI.
 
 ```bash
 # First-run setup wizard
@@ -60,6 +66,8 @@ orca ultra run "design a REST API for a todo app"
 ---
 
 ## Commands
+
+Legacy CLI on this earlier main-branch state (see note above).
 
 | Command | Description |
 |---|---|
@@ -111,7 +119,7 @@ orca ultra run "design a REST API for a todo app"
 
 ## Licensing
 
-Orca ships in two tiers:
+ORNEUR ships in two tiers:
 
 | Tier | Price | Features |
 |---|---|---|
@@ -120,7 +128,7 @@ Orca ships in two tiers:
 | **Enterprise** | $199/mo | All features, 5 seats, priority support |
 
 ```bash
-orca activate ORCA-PRO-XXXXX-XXXXX-XXXXX
+orca activate ORCA-PRO-XXXXX-XXXXX-XXXXX   # legacy/stable key-format compatibility, not product branding
 orca license --buy   # show pricing
 ```
 
@@ -130,11 +138,13 @@ orca license --buy   # show pricing
 
 - Zero telemetry
 - No external API calls from the core system
-- All data stored in `~/.orca/`
+- All data stored in `~/.orca/` (legacy data path on this branch)
 - Inference via Ollama on `localhost:11434`
 
 ---
 
 ## Documentation
 
-[orca.systems/docs](https://orca.systems/docs)
+No verified documentation site exists yet for this branch. See the
+[GitHub repository](https://github.com/Guruprasath-Annadurai/Orneur) for
+current source and docs.
