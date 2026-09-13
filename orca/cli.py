@@ -51,7 +51,7 @@ def _app_callback(
         help="Show version and exit.",
     ),
 ):
-    """Orca — apex private intelligence. Your hardware. Your data."""
+    """ORNEUR — Intelligence, Without End. Your hardware. Your data."""
     if ctx.invoked_subcommand is None:
         from orca.doctor import maybe_first_run_hint
         maybe_first_run_hint()
@@ -60,7 +60,7 @@ nano_app  = typer.Typer(help="[cyan]Nano[/cyan]  — fast, precise, terminal-nat
 core_app  = typer.Typer(help="[blue]Core[/blue]  — full intelligence, tools, memory")
 ultra_app = typer.Typer(help="[magenta]Ultra[/magenta] — multi-agent apex orchestration")
 data_app  = typer.Typer(help="[yellow]Data[/yellow]  — collect, curate, format training data")
-train_app = typer.Typer(help="[red]Train[/red]  — fine-tune, evaluate, and export Orca model")
+train_app = typer.Typer(help="[red]Train[/red]  — fine-tune, evaluate, and export Orneur model")
 
 app.add_typer(nano_app,  name="nano")
 app.add_typer(core_app,  name="core")
@@ -220,7 +220,7 @@ def ultra_run(
 
     console.print(Panel(
         f"[bold]Task:[/bold] {task}",
-        title="[magenta]▓ ORCA ULTRA ▓[/magenta]",
+        title="[magenta]▓ ORNEUR ULTRA ▓[/magenta]",
         border_style="magenta",
     ))
 
@@ -261,7 +261,7 @@ def ultra_chat(model: str = typer.Option(None, "--model", "-m")):
 
 @app.command("backend")
 def backend_cmd():
-    """Show which local model Orca is running on."""
+    """Show which local model Orneur is running on."""
     from orca.brain.providers import OrcaBrain
     b = OrcaBrain()
     try:
@@ -270,9 +270,9 @@ def backend_cmd():
         orca_models = [m for m in models if "orca" in m.lower()]
         console.print(Panel(
             f"[bold]Active model:[/bold]    [green]{active}[/green]\n"
-            f"[bold]Your Orca models:[/bold] {', '.join(orca_models) or 'none — run: orca train export ...'}\n"
+            f"[bold]Your Orneur models:[/bold] {', '.join(orca_models) or 'none — run: orneur train export ...'}\n"
             f"[bold]All local models:[/bold] {', '.join(models[:10])}",
-            title="[bold]Orca — Local Brain[/bold]",
+            title="[bold]Orneur — Local Brain[/bold]",
             border_style="cyan",
         ))
     except RuntimeError as e:
@@ -333,7 +333,7 @@ def history_cmd(n: int = typer.Option(20, "--n", help="Number of sessions to sho
 
 @app.command("info")
 def info_cmd():
-    """Show Orca configuration."""
+    """Show Orneur configuration."""
     from orca.config import CONFIG
     console.print(Panel(
         f"[bold]Ollama host:[/bold]   {CONFIG.ollama.host}\n"
@@ -344,7 +344,7 @@ def info_cmd():
         f"[bold]Training data:[/bold] ~/.orca/training/\n"
         f"[bold]Your models:[/bold]   ~/.orca/models/\n\n"
         f"[bold]Tagline:[/bold]       {TAGLINE}",
-        title="[bold cyan]Orca[/bold cyan]",
+        title="[bold cyan]Orneur[/bold cyan]",
         border_style="cyan",
     ))
 
@@ -632,7 +632,7 @@ def train_run(
     rank: int = typer.Option(None, "--rank", "-r"),
     model: str = typer.Option(None, "--model", "-m"),
 ):
-    """Fine-tune Orca via QLoRA. Requires GPU + training deps."""
+    """Fine-tune Orneur via QLoRA. Requires GPU + training deps."""
     from orca.train.config import TrainingConfig
     from orca.train.finetune import train
 
@@ -651,7 +651,7 @@ def train_run(
         f"[bold]LoRA rank:[/bold]  {cfg.lora.r}\n"
         f"[bold]Epochs:[/bold]     {cfg.num_epochs}\n"
         f"[bold]Output:[/bold]     {cfg.output_dir}",
-        title="[bold red]Orca QLoRA Fine-Tune[/bold red]",
+        title="[bold red]Orneur QLoRA Fine-Tune[/bold red]",
         border_style="red",
     ))
 
@@ -1197,10 +1197,10 @@ def train_export(
 
 @app.command("activate")
 def activate_cmd(
-    key: str = typer.Argument(..., help="Your Orca license key  (ORCA-PRO-...)"),
+    key: str = typer.Argument(..., help="Your Orneur license key  (ORCA-PRO-...)"),
     email: str = typer.Option("", "--email", "-e", help="Email address for records"),
 ):
-    """Activate an Orca license key."""
+    """Activate an Orneur license key."""
     from orca.license import validate_key, save_license
 
     with console.status("[dim]Validating key...[/dim]"):
@@ -1249,13 +1249,12 @@ def license_cmd(
     # ── Buy / pricing ────────────────────────────────────────────────────────
     if buy:
         console.print(Panel(
-            "[bold white]ORCA PRICING[/bold white]\n\n"
+            "[bold white]ORNEUR PRICING[/bold white]\n\n"
             "  [bold cyan]Pro[/bold cyan]          $49 / month  ·  $399 / year\n"
             "  [dim]Ultra multi-agent, cloud training, web UI[/dim]\n\n"
             "  [bold cyan]Enterprise[/bold cyan]   $199 / month  ·  $1,499 / year\n"
             "  [dim]5 seats, all features, priority support[/dim]\n\n"
-            "  Purchase: [cyan]https://orca.systems/pricing[/cyan]\n"
-            "  Contact:  [cyan]team@orca.systems[/cyan]",
+            "  See: [cyan]https://github.com/Guruprasath-Annadurai/Orneur[/cyan]",
             border_style="dim",
         ))
         return
@@ -1471,7 +1470,7 @@ def upgrade_cmd(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
     check: bool = typer.Option(False, "--check", "-c", help="Only check, do not upgrade"),
 ):
-    """Check for a newer Orca version and self-update from PyPI."""
+    """Check for a newer Orneur version and self-update from PyPI."""
     from orca.upgrade import is_update_available, self_update, _current_version
 
     with console.status("[dim]Checking PyPI...[/dim]"):
@@ -1488,7 +1487,7 @@ def upgrade_cmd(
 
     if not available:
         console.print(Panel(
-            f"[green]Orca is up to date.[/green]\n\n"
+            f"[green]Orneur is up to date.[/green]\n\n"
             f"  Version: [bold]{current}[/bold]",
             border_style="green",
         ))
@@ -1514,18 +1513,18 @@ def upgrade_cmd(
             console.print("[dim]Cancelled.[/dim]")
             return
 
-    with console.status(f"[dim]Upgrading orca-ai to {latest}...[/dim]"):
+    with console.status(f"[dim]Upgrading orneur to {latest}...[/dim]"):
         try:
             self_update(yes=True)
         except RuntimeError as e:
             console.print(f"[red]Upgrade failed:[/red] {e}")
-            console.print("[dim]Try manually: pip install --upgrade orca-ai[/dim]")
+            console.print("[dim]Try manually: pip install --upgrade orneur[/dim]")
             raise typer.Exit(1)
 
     console.print(Panel(
         f"[bold green]Upgraded to {latest}[/bold green]\n\n"
         f"  Restart the terminal to use the new version.\n"
-        f"  Changes: [dim]https://orca.systems/changelog[/dim]",
+        f"  Changes: [dim]https://github.com/Guruprasath-Annadurai/Orneur/releases[/dim]",
         border_style="green",
     ))
 
@@ -1536,16 +1535,16 @@ def serve(
     port: int = typer.Option(7337, "--port", "-p"),
     open_browser: bool = typer.Option(True, "--open/--no-open"),
 ):
-    """Start the Orca web server — browser-based chat UI."""
+    """Start the Orneur web server — browser-based chat UI."""
     import uvicorn
     from orca.serve.api import create_app
 
     console.print(Panel(
-        f"[bold]Orca Web UI[/bold]\n\n"
+        f"[bold]Orneur Web UI[/bold]\n\n"
         f"  [dim]URL:[/dim]    [cyan bold]http://{host}:{port}[/cyan bold]\n"
         f"  [dim]Model:[/dim]  checking...\n\n"
         f"  Stop: [dim]Ctrl+C[/dim]",
-        title="[bold blue]◈ Orca Server[/bold blue]",
+        title="[bold blue]◈ Orneur Server[/bold blue]",
         border_style="blue",
         expand=False,
     ))

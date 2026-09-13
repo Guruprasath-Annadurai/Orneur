@@ -1,6 +1,7 @@
-# Orneur — The AI Platform That Shows Its Work
+# ORNEUR — Intelligence, Without End.
 
-> Your hardware. Your data. Verified answers, not confident guesses.
+> The AI platform that shows its work. Your hardware. Your data. Verified
+> answers, not confident guesses.
 
 Orneur is a self-hosted AI platform — three model tiers, live web-search
 grounding with enforced citations, cost-aware routing between self-hosted
@@ -57,14 +58,14 @@ for the real, current plan to get it there.
 
 ## Quick Install
 
-```bash
-curl -fsSL https://orca.systems/install.sh | bash
-```
-
-Or via pip:
+ORNEUR has not yet published a package to PyPI (see
+[`docs/orneur/brand/ORNEUR_PACKAGING_MIGRATION.md`](docs/orneur/brand/ORNEUR_PACKAGING_MIGRATION.md)
+for the full investigation) — install from a source checkout for now:
 
 ```bash
-pip install orca-ai
+git clone https://github.com/Guruprasath-Annadurai/Orneur.git
+cd Orneur
+pip install -e .
 orneur doctor --wizard
 ```
 
@@ -204,7 +205,7 @@ Orneur ships in three tiers, matching the real billing code
 | **Enterprise** | Contact us | Unlimited everything, org/team management, dedicated support |
 
 ```bash
-orneur activate ORCA-PRO-XXXXX-XXXXX-XXXXX
+orneur activate ORCA-PRO-XXXXX-XXXXX-XXXXX   # legacy key prefix, kept for compatibility
 orneur license --buy   # show pricing
 ```
 
@@ -228,4 +229,3 @@ orneur license --buy   # show pricing
 - [Security Audit](docs/SECURITY_AUDIT.md)
 - [Differentiation Strategy](docs/PERPLEXITY_DIFFERENTIATION_PLAN.md)
 - [Aeternum Training Plan](docs/AETERNUM_TRAINING_PLAN.md)
-- [orca.systems/docs](https://orca.systems/docs)

@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-#  Orca — One-Line Installer
-#  Usage:  curl -fsSL https://orca.systems/install.sh | bash
+#  ORNEUR — One-Line Installer
+#
+#  NOTE: this script installs the "orneur" PyPI package. As of the ORNEUR
+#  corporate identity closure, that package has not yet been published --
+#  see docs/orneur/brand/ORNEUR_PACKAGING_MIGRATION.md. Until it is, run
+#  this from a cloned repository checkout instead of a hosted URL; there is
+#  no verified ORNEUR download domain yet (the previous "orca.systems" URL
+#  belonged to an unrelated third party, not this project -- see that same
+#  doc for the evidence).
+#  Usage (once published):  curl -fsSL <verified-orneur-domain>/install.sh | bash
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-ORCA_VERSION="${ORCA_VERSION:-latest}"
+ORNEUR_VERSION="${ORNEUR_VERSION:-latest}"
 VENV_DIR="${HOME}/.orca/venv"
 BIN_DIR="${HOME}/.local/bin"
-WRAPPER="${BIN_DIR}/orca"
+WRAPPER="${BIN_DIR}/orneur"
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -18,14 +26,14 @@ else
     BOLD=''; DIM=''; CYAN=''; GREEN=''; RED=''; YELLOW=''; RESET=''
 fi
 
-log()   { echo -e "${CYAN}[orca]${RESET} $*"; }
-ok()    { echo -e "${GREEN}[orca]${RESET} $*"; }
-warn()  { echo -e "${YELLOW}[orca]${RESET} $*"; }
-error() { echo -e "${RED}[orca] ERROR:${RESET} $*" >&2; exit 1; }
+log()   { echo -e "${CYAN}[orneur]${RESET} $*"; }
+ok()    { echo -e "${GREEN}[orneur]${RESET} $*"; }
+warn()  { echo -e "${YELLOW}[orneur]${RESET} $*"; }
+error() { echo -e "${RED}[orneur] ERROR:${RESET} $*" >&2; exit 1; }
 
 # ── Banner ──────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${BOLD}  ▓▓▓ ORCA — 100% Local AI  ▓▓▓${RESET}"
+echo -e "${BOLD}  ▓▓▓ ORNEUR — Intelligence, Without End.  ▓▓▓${RESET}"
 echo -e "${DIM}  Your hardware. Your data. Your intelligence.${RESET}"
 echo ""
 
@@ -36,7 +44,7 @@ log "Detected: ${OS} / ${ARCH}"
 
 case "${OS}" in
     Linux|Darwin) ;;
-    *) error "Unsupported OS: ${OS}. Install manually: pip install orca-ai" ;;
+    *) error "Unsupported OS: ${OS}. Install manually: pip install orneur" ;;
 esac
 
 # ── Python check ────────────────────────────────────────────────────────────
@@ -68,21 +76,21 @@ PYTHON_VENV="${VENV_DIR}/bin/python"
 log "Upgrading pip..."
 "${PYTHON_VENV}" -m pip install --upgrade pip --quiet
 
-# ── Install orca-ai ─────────────────────────────────────────────────────────
-if [ "${ORCA_VERSION}" = "latest" ]; then
-    log "Installing orca-ai (latest)..."
-    "${PIP}" install orca-ai --quiet
+# ── Install orneur ──────────────────────────────────────────────────────────
+if [ "${ORNEUR_VERSION}" = "latest" ]; then
+    log "Installing orneur (latest)..."
+    "${PIP}" install orneur --quiet
 else
-    log "Installing orca-ai==${ORCA_VERSION}..."
-    "${PIP}" install "orca-ai==${ORCA_VERSION}" --quiet
+    log "Installing orneur==${ORNEUR_VERSION}..."
+    "${PIP}" install "orneur==${ORNEUR_VERSION}" --quiet
 fi
-ok "orca-ai installed."
+ok "orneur installed."
 
 # ── Wrapper script ───────────────────────────────────────────────────────────
 mkdir -p "${BIN_DIR}"
 cat > "${WRAPPER}" << WRAPPER_EOF
 #!/usr/bin/env bash
-exec "${VENV_DIR}/bin/orca" "\$@"
+exec "${VENV_DIR}/bin/orneur" "\$@"
 WRAPPER_EOF
 chmod +x "${WRAPPER}"
 ok "Wrapper created at ${WRAPPER}"
@@ -134,12 +142,12 @@ fi
 echo ""
 echo -e "${BOLD}  Installation complete!${RESET}"
 echo ""
-echo -e "  ${CYAN}orca doctor --wizard${RESET}   ${DIM}— first-run setup${RESET}"
-echo -e "  ${CYAN}orca serve${RESET}             ${DIM}— launch the web UI${RESET}"
-echo -e "  ${CYAN}orca core chat${RESET}         ${DIM}— terminal chat${RESET}"
-echo -e "  ${CYAN}orca --help${RESET}            ${DIM}— all commands${RESET}"
+echo -e "  ${CYAN}orneur doctor --wizard${RESET}   ${DIM}— first-run setup${RESET}"
+echo -e "  ${CYAN}orneur serve${RESET}             ${DIM}— launch the web UI${RESET}"
+echo -e "  ${CYAN}orneur core chat${RESET}         ${DIM}— terminal chat${RESET}"
+echo -e "  ${CYAN}orneur --help${RESET}            ${DIM}— all commands${RESET}"
 echo ""
-echo -e "  ${DIM}docs: https://orca.systems/docs${RESET}"
+echo -e "  ${DIM}docs: https://github.com/Guruprasath-Annadurai/Orneur${RESET}"
 echo ""
 
 read -r -p "  Run first-time setup wizard now? [Y/n] " run_wizard

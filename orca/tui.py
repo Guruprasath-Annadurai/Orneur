@@ -1,5 +1,5 @@
 """
-Orca TUI — visual shell components.
+Orneur TUI — visual shell components.
 
 Boot screen · Live dashboard · Session history · Streaming indicators
 """
@@ -30,37 +30,20 @@ console = Console()
 #  ASCII art
 # ─────────────────────────────────────────────────────────────────────────────
 
-ORCA_ASCII = """\
-[white]                ▄█▄                [/white]
-[white]              ▄█████               [/white]
-[white]  ▄▄▄███████████████████████▄▄     [/white]
-[white] ████[/white][dim]░░[/dim][white]████[/white][cyan]◉[/cyan][white]████████████████████▄ [/white]
-[white] █████████████████████████████████[/white]
-[white]  ▀█████████████████████████████▀  [/white]
-[white]      ▀▀████▀▀       ▀▀▀████▀▀     [/white]"""
-
-ORCA_ASCII_COMPACT = """\
-[white]       ▄█▄        [/white]
-[white]     ▄█████       [/white]
-[white] ▄███[cyan]◉[/cyan][white]████████▄  [/white]
-[white] █████████████▌  [/white]
-[white]  ▀███████████▀  [/white]
-[white]     ▀▀▀▀▀▀▀     [/white]"""
-
 LOGO_TEXT = """\
-[bold white]  ██████╗ ██████╗  ██████╗ █████╗ [/bold white]
-[bold white]  ██╔═══██╗██╔══██╗██╔════╝██╔══██╗[/bold white]
-[bold white]  ██║   ██║██████╔╝██║     ███████║[/bold white]
-[bold white]  ██║   ██║██╔══██╗██║     ██╔══██║[/bold white]
-[bold white]  ╚██████╔╝██║  ██║╚██████╗██║  ██║[/bold white]
-[bold white]   ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝[/bold white]"""
+[bold white]  ██████╗ ██████╗ ███╗   ██╗███████╗██╗   ██╗██████╗ [/bold white]
+[bold white] ██╔═══██╗██╔══██╗████╗  ██║██╔════╝██║   ██║██╔══██╗[/bold white]
+[bold white] ██║   ██║██████╔╝██╔██╗ ██║█████╗  ██║   ██║██████╔╝[/bold white]
+[bold white] ██║   ██║██╔══██╗██║╚██╗██║██╔══╝  ██║   ██║██╔══██╗[/bold white]
+[bold white] ╚██████╔╝██║  ██║██║ ╚████║███████╗╚██████╔╝██║  ██║[/bold white]
+[bold white]  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝[/bold white]"""
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Boot screen
 # ─────────────────────────────────────────────────────────────────────────────
 
 def boot_screen(variant: str = "core", model: str = "unknown", animate: bool = True) -> None:
-    """Full-screen boot sequence with ASCII orca art."""
+    """Full-screen boot sequence with the ORNEUR wordmark."""
     variant_colors = {
         "nano":  ("cyan",    "NANO",  "fast · precise · terminal-native"),
         "core":  ("blue",    "CORE",  "full intelligence · memory · tools"),
@@ -69,8 +52,6 @@ def boot_screen(variant: str = "core", model: str = "unknown", animate: bool = T
     color, label, desc = variant_colors.get(variant, ("cyan", "CORE", ""))
 
     lines = [
-        "",
-        ORCA_ASCII,
         "",
         LOGO_TEXT,
         "",

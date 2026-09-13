@@ -7,8 +7,8 @@ covers running it yourself, from a laptop to a real deployment.
 ## Quick start (local, single-user)
 
 ```bash
-git clone https://github.com/Guruprasath-Annadurai/Orca.git
-cd Orca
+git clone https://github.com/Guruprasath-Annadurai/Orneur.git
+cd Orneur
 uv pip install -e .
 
 # Install Ollama and pull a model
