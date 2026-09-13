@@ -1,6 +1,6 @@
 <!--
 Real dependency vulnerability scan (pip-audit), run 2026-07-24, with an
-honest exploitability assessment against Orca's ACTUAL usage of each
+honest exploitability assessment against Orneur's ACTUAL usage of each
 flagged package — not just a raw scanner dump. A CVE that doesn't apply to
 how a package is actually used is a different risk than one that does;
 conflating them either causes false alarm or false confidence.
@@ -12,19 +12,19 @@ conflating them either causes false alarm or false confidence.
 
 `pip-audit` run against the project's `.venv` on 2026-07-24. This checks
 installed packages against the PyPI Advisory Database (PYSEC) — it does not
-scan Orca's own code for vulnerabilities (see `docs/SECURITY_AUDIT.md`'s
+scan Orneur's own code for vulnerabilities (see `docs/SECURITY_AUDIT.md`'s
 sibling work — an OWASP-style code review — as a separate, not-yet-done
 item).
 
 ## Findings, closed
 
 10 known vulnerabilities were found across `pip` and `setuptools` (build
-tooling, not Orca's runtime dependencies) — all had patched versions
+tooling, not Orneur's runtime dependencies) — all had patched versions
 available and have been upgraded:
 - `pip` 24.0 → 26.1.2 (closes PYSEC-2026-196, -1795, -1796, -2875, -2876)
 - `setuptools` 79.0.1 → patched (closes PYSEC-2026-3447)
 
-## Findings, real but assessed as not currently exploitable in Orca's deployment
+## Findings, real but assessed as not currently exploitable in Orneur's deployment
 
 ### chromadb — PYSEC-2026-311 / CVE-2026-45829, CVSS 10.0 (maximum severity)
 
@@ -34,12 +34,12 @@ vulnerability specifically targets chromadb's standalone **FastAPI server
 mode** (`chroma run`) — an attacker-controlled model identifier gets
 executed before any authentication check runs.
 
-**Why this does not currently threaten Orca**: `orca/brain/memory.py` uses
+**Why this does not currently threaten Orneur**: `orca/brain/memory.py` uses
 `chromadb.PersistentClient(...)` — the embedded, local, file-backed client.
 This never starts an HTTP server and never opens a network port. There is
 no unauthenticated network surface for the vulnerability to reach.
 
-**The real constraint this creates, going forward**: Orca must never run
+**The real constraint this creates, going forward**: Orneur must never run
 chromadb in its server mode (`chroma run` / `HttpClient`). If a future
 change introduces multi-machine or networked vector-store access, this CVE
 becomes immediately live and must be re-assessed before shipping — do not
@@ -52,7 +52,7 @@ A real deserialization-of-untrusted-data vulnerability (unsafe `pickle.load`
 in `diskcache.Cache`) — no patched version exists yet. Exploitable only if
 an attacker already has write access to the cache directory.
 
-**Why this is low practical severity for Orca today**: both usages
+**Why this is low practical severity for Orneur today**: both usages
 (`orca/brain/memory.py`'s semantic cache, `orca/lens/queue.py`'s job queue)
 are local, single-machine file caches under `~/.orca/...`, never exposed to
 network input, and never written to based on untrusted remote data.
@@ -68,7 +68,7 @@ this CVE.
 ## Still pending (not done in this audit)
 
 - A code-level security review (OWASP Top 10 style — injection, auth,
-  SSRF, etc.) of Orca's own code, as opposed to this dependency-only scan.
+  SSRF, etc.) of Orneur's own code, as opposed to this dependency-only scan.
 - Secrets-handling audit (confirm no API keys have ever hit git history —
   the `.env`-only pattern is followed by convention, not yet verified by
   a real history scan with a tool like `gitleaks` or `trufflehog`).

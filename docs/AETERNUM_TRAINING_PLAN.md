@@ -1,6 +1,6 @@
 # Aeternum (Ultra) Training Plan — Kaggle
 
-Honest premise: this is the biggest remaining lift in Orca's model lineup.
+Honest premise: this is the biggest remaining lift in Orneur's model lineup.
 Genesis (nano) and Novus (core) each went through distillation → format →
 fine-tune → eval → red-team → model card, and each step hit real bugs along
 the way. Aeternum starts from zero — no distilled data, no fine-tune, no
@@ -118,16 +118,16 @@ Reuse `orca/train/distill.py`'s existing teacher-call infrastructure
 
 ### Phase E — Post-fine-tune eval + red-team (no GPU needed — runs against Ollama)
 
-- `orca train eval --ollama orca-ultra --ci` (generic accuracy)
-- `orca train aeternum_eval --model orca-ultra` (the cross-domain synthesis
+- `orneur train eval --ollama orca-ultra --ci` (generic accuracy)
+- `orneur train aeternum_eval --model orca-ultra` (the cross-domain synthesis
   set — the eval that actually matters for Aeternum's specific claim)
-- `orca train redteam --model orca-ultra --ci` with `--bias-trials 3` (matching
+- `orneur train redteam --model orca-ultra --ci` with `--bias-trials 3` (matching
   the trials-averaging discipline already applied to nano/core, given how much
   single-trial noise this session found in exactly this kind of measurement)
 
 ### Phase F — Model card + persona-claim gate (no GPU needed)
 
-- `orca train card ultra` — this automatically applies
+- `orneur train card ultra` — this automatically applies
   `PERSONA_CLAIM_THRESHOLDS["ultra"]` (80% accuracy, 95% jailbreak block
   rate — the highest bar of the three tiers, appropriately, given Aeternum's
   "flagship" self-description). Expect this **not** to pass on the first

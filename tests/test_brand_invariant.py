@@ -40,6 +40,10 @@ PUBLIC_SURFACES = [
     "orca/serve/web/landing.html",
     "orca/serve/web/trust.html",
     "orca/upgrade.py",
+    "docs/MODEL_CARDS.md",
+    "docs/SECURITY_AUDIT.md",
+    "docs/PERPLEXITY_DIFFERENTIATION_PLAN.md",
+    "docs/AETERNUM_TRAINING_PLAN.md",
 ]
 
 # Patterns that indicate the PRODUCT is being called "Orca" (or Atheris),
@@ -87,7 +91,18 @@ ALLOWLIST: dict[str, list[str]] = {
     "orca/cli.py": [
         "ORCA-PRO-...",  # real, current, stable license-key format shown in --help
     ],
+    "docs/SECURITY_AUDIT.md": [
+        # A factual quote of what the model actually said during a 2026-07
+        # eval run, before the rebrand -- rewriting it would misrepresent
+        # the historical finding, not correct stale branding.
+        '"You are Orca — a powerful,',
+    ],
 }
+
+# Note: lowercase legacy artifact names (orca-core, orca-ultra, orca-nano*,
+# orca_nano_llama3_train_v3_safety.jsonl, orca_core_finetune_kaggle_v2.ipynb)
+# need NO allowlist entry -- FORBIDDEN_PATTERNS only matches the exact-case
+# "Orca" and "ORCA" wordmarks, which these lowercase identifiers never are.
 
 
 def _strip_allowlisted(text: str, relpath: str) -> str:
@@ -134,3 +149,15 @@ def test_upgrade_module_does_not_target_the_squatted_third_party_package():
     upgrade_src = (REPO_ROOT / "orca/upgrade.py").read_text(encoding="utf-8")
     assert '_PACKAGE   = "orca-ai"' not in upgrade_src
     assert '_PACKAGE   = "orneur"' in upgrade_src
+
+
+def test_pyproject_development_status_is_not_overstated():
+    """Development Status :: 5 - Production/Stable is not supported by the
+    current qualification state: unpublished to PyPI, before Phase 18, no
+    canonical Genesis checkpoint trained, no promoted Novus, no trained
+    Aeternum. This must not silently return without an explicit future
+    release-qualification decision changing it deliberately (not as a side
+    effect of an unrelated edit)."""
+    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "Development Status :: 5 - Production/Stable" not in pyproject
+    assert "Development Status :: 3 - Alpha" in pyproject

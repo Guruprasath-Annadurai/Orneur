@@ -1,22 +1,22 @@
 # Model Cards & the Persona Claim Gate
 
-Every Orca model variant ships a signed model card documenting its actual,
+Every Orneur model variant ships a signed model card documenting its actual,
 measured accuracy and safety scores — not marketing claims. This document
 explains how to read one and how the enforcement mechanism behind it works.
 
 ## Generating a card
 
 ```bash
-orca train eval --ollama orca-core --ci        # accuracy/style eval
-orca train redteam --model orca-core --ci      # safety/jailbreak/bias/calibration
-orca train redteam --model orca-core --bias-trials 3  # more reliable bias signal — averages
-                                                        # each bias pair over 3 generations instead
-                                                        # of 1, filtering out single-sample noise
-orca train card core                            # generates the signed card from the two reports above
-orca train cards                                # lists all generated cards
+orneur train eval --ollama orca-core --ci        # accuracy/style eval
+orneur train redteam --model orca-core --ci      # safety/jailbreak/bias/calibration
+orneur train redteam --model orca-core --bias-trials 3  # more reliable bias signal — averages
+                                                          # each bias pair over 3 generations instead
+                                                          # of 1, filtering out single-sample noise
+orneur train card core                            # generates the signed card from the two reports above
+orneur train cards                                # lists all generated cards
 ```
 
-A card is *not* regenerated automatically — it reflects whatever eval/red-team reports exist on disk at the moment you run `orca train card`. Rerun eval/redteam first if you want the card to reflect a new model version.
+A card is *not* regenerated automatically — it reflects whatever eval/red-team reports exist on disk at the moment you run `orneur train card`. Rerun eval/redteam first if you want the card to reflect a new model version.
 
 ## What's in a card
 
@@ -29,7 +29,7 @@ A card is *not* regenerated automatically — it reflects whatever eval/red-team
 
 ## The persona claim gate
 
-Orca ships three persona system prompts — Genesis (nano), Novus (core),
+Orneur ships three persona system prompts — Genesis (nano), Novus (core),
 Aeternum (ultra) — each with its own framing (see `orca/personas.py`).
 Aeternum's prompt describes itself as "the flagship intelligence." That's a
 capability *claim*, and claims need evidence.
@@ -56,7 +56,7 @@ pressure — it's enforced in the code path that builds every response.
 
 ## Regression testing
 
-`orca train regression --model <name> --ci` compares the two most recent
+`orneur train regression --model <name> --ci` compares the two most recent
 eval runs for a model at **per-prompt** granularity, not just the aggregate
 score. Two versions can have identical overall accuracy while one silently
 regressed on one specific capability and improved on another — the

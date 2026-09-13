@@ -1,21 +1,21 @@
 <!--
 Founding-team plan for a real, honest differentiation strategy against
 Perplexity — written from each functional role's perspective, synthesized
-by the CEO. The core insight this plan is built on: Orca cannot currently
+by the CEO. The core insight this plan is built on: Orneur cannot currently
 out-intelligence Perplexity's underlying frontier models, but it CAN
 genuinely win on cost (near-zero marginal cost self-hosted inference vs.
 per-token frontier API costs), verifiable grounding (citations + audit
 trail as a real, code-enforced feature, not a marketing claim), and
 specialization (coding, business). The single biggest missing piece to
-make any of that real is live web-search grounding — Orca currently has
+make any of that real is live web-search grounding — Orneur currently has
 citation discipline for UPLOADED documents only, nothing for live chat.
 -->
 
-# Orca vs. Perplexity — Founding Team Differentiation Plan
+# Orneur vs. Perplexity — Founding Team Differentiation Plan
 
 ## CEO framing, up front, honestly
 
-Before any role's plan below: **we cannot claim Orca is "smarter" than
+Before any role's plan below: **we cannot claim Orneur is "smarter" than
 Perplexity today, and we will not market it that way.** Perplexity's
 answers are backed by frontier models (GPT-4/Claude-class) with a mature
 search index. Genesis and Novus are 7-8B self-hosted fine-tunes that
@@ -25,12 +25,12 @@ hard query through both products.
 
 **What we can honestly claim, and what this plan builds toward:**
 1. **Cost** — Perplexity pays a real per-token frontier-API cost on every
-   query. Orca can route most queries through near-zero-marginal-cost
+   query. Orneur can route most queries through near-zero-marginal-cost
    self-hosted models, reserving frontier-API cost only for queries that
    genuinely need it. This is a real, measurable, defensible cost
    advantage — if we build the routing layer to make it true.
 2. **Verifiable grounding** — "no hallucination" is not a training claim,
-   it's a retrieval-and-citation-discipline claim. Orca has zero live
+   it's a retrieval-and-citation-discipline claim. Orneur has zero live
    web-search grounding today (only document-upload RAG). This is the
    single most important gap this plan closes.
 3. **Transparency as a feature** — the audit trail, model card, and
@@ -43,7 +43,7 @@ hard query through both products.
 **The honest risk to name out loud**: consumer AI search is an extremely
 capital-intensive, crowded category. Perplexity itself has raised very
 large venture rounds and is still establishing durable profitability.
-Going head-to-head there as Orca's PRIMARY bet, without comparable capital,
+Going head-to-head there as Orneur's PRIMARY bet, without comparable capital,
 is risky. This plan treats the consumer product as a brand-awareness and
 data-flywheel play that feeds the enterprise vertical strategy
 (`docs/STARTUP_PLAN.md`), not as a replacement for it.
@@ -131,7 +131,7 @@ search index from scratch is a multi-year, capital-intensive
 infrastructure project — not something to attempt at this stage. The
 right move is **integrating an existing real-time search API** (Brave
 Search API, Bing Search API, or Serper/You.com-style providers) for live
-results, then building Orca's own retrieval-synthesis-citation layer on
+results, then building Orneur's own retrieval-synthesis-citation layer on
 top of those results. This is genuinely buildable now.
 
 **Honest cost note for the "cheaper than Perplexity" claim**: search APIs
@@ -213,7 +213,7 @@ for the majority of traffic, not from search being free.
 - Web search grounding introduces real copyright/fair-use exposure around
   how search results and content snippets are retrieved, cached, and
   displayed — needs review before shipping, same category of concern
-  already flagged for Orca Lens's Seedance/MPA precedent.
+  already flagged for Orneur Lens's Seedance/MPA precedent.
 - Search API providers (Bing/Brave/etc.) typically have their own terms of
   service restricting caching/redistribution of results — review before
   Backend Engineer's semantic caching work ships, not after.
