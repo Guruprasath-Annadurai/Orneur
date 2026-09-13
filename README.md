@@ -43,11 +43,16 @@ can't yet claim): [`docs/PERPLEXITY_DIFFERENTIATION_PLAN.md`](docs/PERPLEXITY_DI
 
 ## The three tiers
 
+Status below matches the model registry (`orca/registry/model_spec.py`,
+`orca/registry/model_registry.py`) as audited in
+[`docs/orneur/phase-16/PHASE16_NATIVE_INTELLIGENCE_BASELINE_AUDIT.md`](docs/orneur/phase-16/PHASE16_NATIVE_INTELLIGENCE_BASELINE_AUDIT.md) —
+not aspirational copy. No parameter counts are used as headline identity.
+
 | Tier | Positioning | Status |
 |---|---|---|
-| **Genesis** (nano) | Everyday assistant — fast, honest, direct | Fine-tuned, evaluated, red-teamed |
-| **Novus** (core) | Deep reasoning partner for complex work | Fine-tuned, evaluated, red-teamed — safety DPO in progress |
-| **Aeternum** (ultra) | Flagship cross-domain synthesis | In development — not yet trained, not yet claimed as available |
+| **Orneur Genesis** (nano) | Builder / Executor — Executable Intelligence | Canonical target exists; **no canonical checkpoint has been trained yet**. The historical `orca-nano*` Ollama artifacts are legacy, marked `RETIRED`, and must not be presented as canonical Genesis. |
+| **Orneur Novus** (core) | Reasoner / Investigator — Epistemic-Causal Intelligence | A real ~8B fine-tuned checkpoint exists and is fine-tuned/evaluated/red-teamed — but its lifecycle state is `EXPERIMENTAL`, with no `PROMOTABLE` evaluation on record. Not production, not promoted. |
+| **Orneur Aeternum** (ultra) | Critic / Arbiter / Discoverer — Adversarial Discovery Intelligence | No trained checkpoint exists under any name. Base model is `UNSELECTED_PROVISIONAL`; a ~14B parameter class is recorded only as a non-binding research hypothesis, not a commitment. |
 
 Aeternum is listed as "in development" everywhere it appears in this
 project — including the pricing page — because that's the truth, not a
