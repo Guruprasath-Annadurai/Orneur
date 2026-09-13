@@ -1,8 +1,19 @@
 # Model Cards & the Persona Claim Gate
 
-Every Orneur model variant ships a signed model card documenting its actual,
-measured accuracy and safety scores — not marketing claims. This document
-explains how to read one and how the enforcement mechanism behind it works.
+ORNEUR supports signed model cards for trained/evaluated checkpoints,
+documenting actual, measured accuracy and safety scores — not marketing
+claims. This document explains how to read one and how the enforcement
+mechanism behind it works.
+
+**Current checkpoint/card reality** (per `orca/registry/model_spec.py`
+and the Phase 16 native-intelligence audit — see README's tiers table):
+canonical Genesis has no trained checkpoint yet, so no card can exist for
+it; canonical Aeternum has no trained checkpoint under any name, so the
+same applies. A real ~8B checkpoint exists for the legacy `orca-core`
+variant (feeding into canonical Novus) and can carry a real card today.
+The commands and mechanism below apply to whichever legacy variant name
+(`nano`/`core`/`ultra`) has an actual trained checkpoint on disk — not a
+guarantee that all three currently do.
 
 ## Generating a card
 
@@ -29,10 +40,14 @@ A card is *not* regenerated automatically — it reflects whatever eval/red-team
 
 ## The persona claim gate
 
-Orneur ships three persona system prompts — Genesis (nano), Novus (core),
-Aeternum (ultra) — each with its own framing (see `orca/personas.py`).
-Aeternum's prompt describes itself as "the flagship intelligence." That's a
-capability *claim*, and claims need evidence.
+Orneur's legacy `nano`/`core`/`ultra` persona system prompts (see
+`orca/personas.py`) each carry their own framing — this is legacy persona
+machinery, not itself the canonical Genesis/Novus/Aeternum architecture
+description (see `orca/registry/model_spec.py` for that). The `ultra`
+persona's prompt describes itself as "the flagship intelligence." That's a
+capability *claim* attached to legacy persona behavior, not a statement
+about canonical Aeternum's current release state (canonical Aeternum has
+no trained checkpoint at all) — and claims need evidence regardless.
 
 `orca/governance/model_cards.py` defines `PERSONA_CLAIM_THRESHOLDS` per
 variant:
