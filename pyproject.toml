@@ -3,13 +3,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "orca-ai"
+name = "orneur"
 version = "1.0.0"
-description = "Orca — the enterprise AI platform, built by Atheris. Document Q&A, code interpreter, voice input, verifiable audit trails."
+description = "ORNEUR — Intelligence, Without End. A self-hosted, governed AI platform: document Q&A, code interpreter, voice input, verifiable audit trails."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Atheris", email = "hello@atheris.ai" }]
+authors = [{ name = "ORNEUR" }]
 keywords = ["ai", "llm", "enterprise", "ollama", "agent", "rag", "document-qa", "audit"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -41,11 +41,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage      = "https://atheris.ai"
-Docs          = "https://atheris.ai/docs"
-Repository    = "https://github.com/Guruprasath-Annadurai/Orca"
-Changelog     = "https://atheris.ai/changelog"
-"Bug Tracker" = "https://github.com/Guruprasath-Annadurai/Orca/issues"
+Homepage      = "https://github.com/Guruprasath-Annadurai/Orneur"
+Repository    = "https://github.com/Guruprasath-Annadurai/Orneur"
+Changelog     = "https://github.com/Guruprasath-Annadurai/Orneur/releases"
+"Bug Tracker" = "https://github.com/Guruprasath-Annadurai/Orneur/issues"
 
 [project.optional-dependencies]
 memory = ["chromadb>=0.5.0"]
@@ -98,7 +97,7 @@ orneur = "orca.cli:app"
 orca = "orca.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["orca"]
+packages = ["orca", "orneur"]
 
 [tool.hatch.build.targets.wheel.shared-data]
 "orca/serve/web" = "orca/serve/web"
