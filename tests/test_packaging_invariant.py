@@ -38,10 +38,11 @@ REQUIRED_WHEEL_PATHS = [
 
 @pytest.fixture(scope="module")
 def built_wheel(tmp_path_factory):
-    try:
-        import build  # noqa: F401  -- the `build` PyPI package, part of the `dev` extra
-    except ImportError:
-        pytest.skip("`build` package not installed (add the `dev` extra: pip install -e '.[dev]')")
+    # A packaging invariant is a release-safety gate, not a nice-to-have --
+    # it must not silently disappear if the `build` dependency regresses
+    # out of the `dev` extra (which is what official CI installs). A
+    # missing `build` package is a FAILURE here, never a skip.
+    import build  # noqa: F401  -- the `build` PyPI package, part of the `dev` extra
 
     out_dir = tmp_path_factory.mktemp("orneur_wheel_build")
     result = subprocess.run(
@@ -74,6 +75,32 @@ def test_wheel_metadata_identifies_as_orneur(built_wheel):
     assert "Orca Systems" not in metadata  # the unrelated third-party PyPI publisher
     assert "atheris.ai" not in metadata.lower()
     assert "github.com/Guruprasath-Annadurai/Orneur" in metadata
+
+
+def test_wheel_metadata_development_status_is_not_overstated(built_wheel):
+    """Development Status :: 5 - Production/Stable is not supported by the
+    current qualification state (unpublished, pre-Phase-18, no canonical
+    Genesis checkpoint, no promoted Novus, no trained Aeternum)."""
+    with zipfile.ZipFile(built_wheel) as z:
+        names = z.namelist()
+        metadata_path = next(n for n in names if n.endswith(".dist-info/METADATA"))
+        metadata = z.read(metadata_path).decode("utf-8")
+
+    assert "Development Status :: 5 - Production/Stable" not in metadata
+    assert "Development Status :: 3 - Alpha" in metadata
+
+
+def test_wheel_metadata_version_matches_runtime_version(built_wheel):
+    import tomllib
+
+    with zipfile.ZipFile(built_wheel) as z:
+        names = z.namelist()
+        metadata_path = next(n for n in names if n.endswith(".dist-info/METADATA"))
+        metadata = z.read(metadata_path).decode("utf-8")
+
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    canonical_version = pyproject["project"]["version"]
+    assert f"Version: {canonical_version}" in metadata
 
 
 def test_wheel_console_scripts_include_orneur_primary_and_orca_alias(built_wheel):

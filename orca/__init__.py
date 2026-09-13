@@ -1,2 +1,2 @@
-"""Orca AI — Nano | Core | Ultra"""
-__version__ = "0.1.0"
+"""Orneur — Genesis | Novus | Aeternum"""
+__version__ = "1.0.0"
