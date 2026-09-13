@@ -9,7 +9,12 @@ Python namespace and CLI alias internally during this transition; the
 public product identity is ORNEUR.
 
 > Your hardware. Your data. Your intelligence.
-> No Anthropic. No OpenAI. No cloud. No telemetry.
+> No Anthropic. No OpenAI. Core inference runs locally, without a required
+> cloud AI provider. No telemetry.
+>
+> (Optional cloud GPU training via SSH is available separately — see
+> Features below — and license checks/self-update do reach the network;
+> "no cloud" refers to inference, not every network operation.)
 
 ORNEUR is a self-hosted AI system that runs entirely on your own hardware
 using [Ollama](https://ollama.com). It includes a terminal CLI, a web UI,
@@ -119,7 +124,7 @@ Legacy CLI on this earlier main-branch state (see note above).
 
 ## Licensing
 
-ORNEUR ships in two tiers:
+ORNEUR ships in three tiers:
 
 | Tier | Price | Features |
 |---|---|---|
@@ -137,7 +142,11 @@ orca license --buy   # show pricing
 ## Privacy
 
 - Zero telemetry
-- No external API calls from the core system
+- Core chat inference runs locally via Ollama, with no required external
+  AI-provider API calls
+- License activation, `orca upgrade` (self-update from PyPI), and optional
+  cloud training via SSH do reach the network — this is not a zero-network
+  claim, only a local-inference-by-default one
 - All data stored in `~/.orca/` (legacy data path on this branch)
 - Inference via Ollama on `localhost:11434`
 
