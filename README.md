@@ -1,22 +1,30 @@
-# Orca — 100% Local Private AI
+# ORNEUR — Intelligence, Without End.
 
-> Your hardware. Your data. Your intelligence.  
+ORNEUR is under active development.
+
+This default branch contains an earlier stable repository state. Current
+engineering work is qualified on the active development branch before
+merge — the product's internal codebase still uses the legacy `orca`
+Python namespace and CLI alias internally during this transition; the
+public product identity is ORNEUR.
+
+> Your hardware. Your data. Your intelligence.
 > No Anthropic. No OpenAI. No cloud. No telemetry.
 
-Orca is a fully private AI system that runs entirely on your own hardware using [Ollama](https://ollama.com). It includes a terminal CLI, a professional web UI, a multi-agent Ultra mode, long-term memory, fine-tuning tools, and a self-contained revenue/licensing layer — all 100% local.
+ORNEUR is a self-hosted AI system that runs entirely on your own hardware
+using [Ollama](https://ollama.com). It includes a terminal CLI, a web UI,
+a multi-agent Ultra mode, long-term memory, and fine-tuning tools.
 
 ---
 
 ## Quick Install
 
-```bash
-curl -fsSL https://orca.systems/install.sh | bash
-```
-
-Or via pip:
+No package has been published for this branch yet. Install from source:
 
 ```bash
-pip install orca-ai
+git clone https://github.com/Guruprasath-Annadurai/Orneur.git
+cd Orneur
+pip install -e .
 orca doctor --wizard
 ```
 
