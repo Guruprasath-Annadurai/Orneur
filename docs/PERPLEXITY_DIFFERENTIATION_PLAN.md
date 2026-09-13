@@ -18,10 +18,15 @@ citation discipline for UPLOADED documents only, nothing for live chat.
 Before any role's plan below: **we cannot claim Orneur is "smarter" than
 Perplexity today, and we will not market it that way.** Perplexity's
 answers are backed by frontier models (GPT-4/Claude-class) with a mature
-search index. Genesis and Novus are 7-8B self-hosted fine-tunes that
-haven't yet beaten their own zero-shot baselines. Claiming raw superiority
-would be false, and it would be discovered the first time a user runs a
-hard query through both products.
+search index. Per the canonical model registry
+(`orca/registry/model_spec.py`, audited in
+`docs/orneur/phase-16/PHASE16_NATIVE_INTELLIGENCE_BASELINE_AUDIT.md`):
+Genesis has no canonical checkpoint trained yet at all; Novus has a real
+~8B self-hosted fine-tune that remains `EXPERIMENTAL`, with no
+`PROMOTABLE` evaluation on record. Neither has beaten its own zero-shot
+baseline in a way that would support a raw-superiority claim. Claiming
+raw superiority would be false, and it would be discovered the first
+time a user runs a hard query through both products.
 
 **What we can honestly claim, and what this plan builds toward:**
 1. **Cost** — Perplexity pays a real per-token frontier-API cost on every
@@ -30,9 +35,11 @@ hard query through both products.
    genuinely need it. This is a real, measurable, defensible cost
    advantage — if we build the routing layer to make it true.
 2. **Verifiable grounding** — "no hallucination" is not a training claim,
-   it's a retrieval-and-citation-discipline claim. Orneur has zero live
-   web-search grounding today (only document-upload RAG). This is the
-   single most important gap this plan closes.
+   it's a retrieval-and-citation-discipline claim. At the time this plan
+   was originally written, Orneur had zero live web-search grounding
+   (only document-upload RAG) — closing that gap was this plan's single
+   most important goal. **That gap is now closed**: see the "Honest
+   status update" section below for the current, verified wiring state.
 3. **Transparency as a feature** — the audit trail, model card, and
    moderation verdict already built can be surfaced per-answer as a trust
    feature Perplexity doesn't offer: "here's exactly which model answered,
@@ -268,11 +275,19 @@ assumed from memory:
   enforcement and a real indirect-prompt-injection sanitization pass
   (flags injection-shaped scraped content and excludes it entirely,
   rather than trying to regex-edit it).
-  **Honest gap remaining**: this module is not yet called from
-  `orca/serve/api.py` or the agent loop — it exists as a real, tested,
-  standalone capability that still needs to be wired into the live chat
-  path before a user actually benefits from it. That wiring is the
-  single highest-leverage remaining task from this whole plan.
+  **Wiring status (corrected)**: an earlier version of this section said
+  this module was "not yet called from `orca/serve/api.py` or the agent
+  loop." That was stale even at authoring time — `orca/tools/__init__.py`'s
+  `build_registry()` registers `search_and_ground` as the `web_search`
+  tool, and `orca/serve/api.py`'s live `_Session._ensure_agent()` (the
+  real chat/stream code path) calls exactly that `build_registry()` to
+  construct the `AgentLoop` used for real requests
+  (`orca/variants/core.py` and `orca/variants/ultra.py` do the same for
+  their sessions). The tool is live-reachable in normal chat requests;
+  whether it actually fires on a given turn is the model's own tool-call
+  decision, same as any agentic tool-use product. See
+  `tests/test_search_grounding_live_wiring.py` for the regression test
+  proving this registration, added when this correction was made.
 - ✅ **Cost-aware routing** — `orca/serve/routing.py` is real, live code:
   opt-in escalation from a self-hosted tier to a frontier backend, gated
   by a data-sovereignty lock, a daily spend cap, and a query-complexity
