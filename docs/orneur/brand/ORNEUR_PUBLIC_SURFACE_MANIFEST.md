@@ -28,7 +28,23 @@ pass by having a regex so broad it excludes half the repository.
 | `docs/MODEL_CARDS.md` | README-linked ("Model Cards & the Persona Claim Gate") |
 | `docs/SECURITY_AUDIT.md` | README-linked ("Security Audit") |
 | `docs/PERPLEXITY_DIFFERENTIATION_PLAN.md` | README-linked ("Differentiation Strategy") |
-| `docs/AETERNUM_TRAINING_PLAN.md` | README-linked ("Aeternum Training Plan") |
+| `docs/AETERNUM_TRAINING_PLAN.md` | README-linked ("Aeternum Training Plan (historical record, superseded)") |
+
+## Document status classification (semantic truth closure)
+
+Brand-string scanning alone doesn't catch a document that uses correct
+ORNEUR branding while asserting stale or contradictory FACTS. Every
+README-linked document is classified below; README must never describe a
+`HISTORICAL_SUPERSEDED` document as current.
+
+| Document | Classification | Rationale |
+|---|---|---|
+| `docs/MODEL_CARDS.md` | **CURRENT_SUPPORTING** | Describes a real, live mechanism (`check_persona_claim_allowed`, `PERSONA_CLAIM_THRESHOLDS`) that runs on every chat request today — accurate as a mechanism description once corrected to not overclaim which variants currently have a checkpoint/card |
+| `docs/SECURITY_AUDIT.md` | **CURRENT_SUPPORTING** | A dated (2026-07-24) point-in-time scan whose findings/remediations remain the live security record; linked from README as the trust source |
+| `docs/PERPLEXITY_DIFFERENTIATION_PLAN.md` | **CURRENT_SUPPORTING** | Contains a mix of original planning prose (some now stale, corrected this closure) and a later "Honest status update" section that is the actual current-truth record — kept as one document since the sections are explicitly dated relative to each other, not asserted as uniformly current |
+| `docs/AETERNUM_TRAINING_PLAN.md` | **HISTORICAL_SUPERSEDED** | Predates the Phase 16 architecture audit; treats `Qwen2.5-14B-Instruct` as a selected base model and "14B" as the definition of "flagship" — both contradicted by `orca/registry/model_spec.py`'s `base_model=None`/`UNSELECTED_PROVISIONAL`. Marked with an explicit STATUS banner this closure; README no longer calls it "the real, current plan" |
+| `README.md` | **CURRENT_CANONICAL** | The top-level entry point; must never assert anything a `HISTORICAL_SUPERSEDED` linked document contradicts |
+| `docs/orneur/phase-16/PHASE16_NATIVE_INTELLIGENCE_BASELINE_AUDIT.md` | **CURRENT_CANONICAL** | The authoritative source of truth for native-model state, per this closure's own instructions — not itself README-linked, but is the document README's tiers table and this manifest defer to |
 
 ## Explicit exclusions (not scanned, with reason)
 
