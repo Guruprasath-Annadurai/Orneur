@@ -286,12 +286,20 @@ assumed from memory:
   the response contains at least one `[S#]` marker when web sources were
   available — marker-presence, not claim-level verification — and
   `orca/brain/agent.py`'s `AgentLoop` records the result as
-  `trace.citation_compliance` on every turn. `/api/chat`
-  (`orca/serve/api.py`) logs a `citation_compliance_failed` audit event
-  and surfaces the compliance report in the response stream, but does
-  **not** block, retry, repair, or abstain the answer solely because
-  compliance failed — the answer is still returned. That is
-  citation-marked grounding with citation-compliance checking, not hard
+  `trace.citation_compliance` on every turn. **Current API reporting
+  boundary**: `orca/serve/api.py`'s current handlers do not consume
+  `trace.citation_compliance` as a blocking gate, and do not presently
+  expose it as the web-citation compliance field. The
+  `citation_compliance_failed` audit-log event and the
+  `citation_compliance` field in `/api/stream`'s response payload that
+  currently exist in `orca/serve/api.py` are computed by the separate
+  `check_citations()` function against the uploaded-document `[D#]`
+  context, not by `check_web_citations()` against the AgentLoop's web
+  `[S#]` report — the two are different checks over different context.
+  Either way, nothing here blocks, retries, repairs, or abstains an
+  answer solely because a citation-compliance check failed. That is
+  citation-marked grounding with citation-compliance computed and
+  recorded (not currently API-surfaced for the web case), not hard
   citation enforcement.
   **Wiring status (corrected)**: an earlier version of this section said
   this module was "not yet called from `orca/serve/api.py` or the agent

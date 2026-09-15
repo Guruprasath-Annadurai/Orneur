@@ -10,15 +10,25 @@ Verified current behavior (traced through the real code, not inferred):
   response used zero [S#] markers.
 - orca/brain/agent.py's AgentLoop records that result as
   trace.citation_compliance on every turn but does not branch on it.
-- orca/serve/api.py's /api/chat logs a citation_compliance_failed audit
-  event and surfaces the report in the response stream, but does not
-  block, retry, repair, or abstain the answer because compliance failed.
+- orca/serve/api.py's current handlers do NOT consume
+  trace.citation_compliance at all -- the web [S#] compliance report is
+  computed and recorded on the AgentTrace but not read anywhere in
+  api.py.
+- The citation_compliance_failed audit-log event and the
+  citation_compliance field in /api/stream's response payload that DO
+  exist in api.py are computed by the separate check_citations()
+  function against the uploaded-document [D#] context (orca/docs/
+  citation_check.py), not by check_web_citations() against the
+  AgentLoop's web [S#] report. These are two different checks over two
+  different kinds of context; do not conflate them.
 
-That is citation-marked grounding with citation-compliance checking, not
-hard citation enforcement. This file guards against public docs drifting
-back to the stronger "enforced citations" claim, and against the
-differentiation doc re-acquiring a stale instruction to wire something
-that is already wired.
+That is citation-marked grounding with citation-compliance computed and
+recorded (not currently API-surfaced for the web case), not hard citation
+enforcement. This file guards against public docs drifting back to the
+stronger "enforced citations" claim, against the differentiation doc
+re-acquiring a stale instruction to wire something that is already
+wired, and against public docs overstating that the web [S#] compliance
+report is logged or surfaced by the API when it currently is not.
 """
 from __future__ import annotations
 
@@ -147,3 +157,48 @@ def test_perplexity_doc_technical_gap_framed_as_historical_not_current():
             "the 'currently-missing technical piece' claim is not framed as "
             "historical even though the search-grounding pipeline has shipped"
         )
+
+
+def test_api_handlers_do_not_currently_consume_trace_citation_compliance():
+    """Ground-truth check for the web-citation reporting boundary: proves
+    with real source inspection (not assumption) that orca/serve/api.py
+    does not read trace.citation_compliance anywhere. If this ever
+    starts failing, the wiring has genuinely been added and every public
+    doc claiming it is NOT API-surfaced needs updating in that same
+    change -- this test is the tripwire for that."""
+    import orca.serve.api as api_module
+
+    api_source = inspect.getsource(api_module)
+    assert "trace.citation_compliance" not in api_source, (
+        "orca/serve/api.py now references trace.citation_compliance -- "
+        "the web-citation reporting boundary documented in README.md and "
+        "docs/PERPLEXITY_DIFFERENTIATION_PLAN.md is stale and must be "
+        "updated in this same change"
+    )
+    # The existing citation_compliance_failed logging and the
+    # citation_compliance response field are real, but they're backed by
+    # the separate document/RAG check_citations() function, not the web
+    # check_web_citations() function.
+    assert "check_citations(" in api_source
+    assert "check_web_citations(" not in api_source
+
+
+_STALE_API_SURFACES_WEB_REPORT_PATTERNS = [
+    re.compile(r"/api/chat[^.\n]{0,80}logs a `?citation_compliance_failed`?[^.\n]{0,80}web", re.IGNORECASE),
+]
+
+
+def test_no_active_public_doc_claims_web_citation_report_is_api_logged():
+    """README/differentiation-doc must not claim the API logs or surfaces
+    the AgentLoop's web [S#] citation_compliance report unless that
+    wiring is genuinely added in a future phase (test above would then
+    need updating too)."""
+    for doc_name, text in PUBLIC_DOCS.items():
+        for pattern in _STALE_API_SURFACES_WEB_REPORT_PATTERNS:
+            assert not pattern.search(text), (
+                f"{doc_name} claims the API logs/surfaces the web citation "
+                f"compliance report, which is not currently true"
+            )
+    diff_doc = PUBLIC_DOCS["docs/PERPLEXITY_DIFFERENTIATION_PLAN.md"]
+    assert re.search(r"do not consume\s+`?trace\.citation_compliance`?", diff_doc) or \
+           "do not presently expose it as the web-citation compliance field" in diff_doc

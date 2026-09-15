@@ -142,10 +142,10 @@ you can hit right now.
 
 ### Core
 - Full multi-turn chat with tool use (web search, code execution, file ops)
-- Live web-search grounding with `[S#]` source markers, a citation-compliance
-  check on every response (marker-presence, not claim-level verification —
-  a non-compliant response is logged, not blocked or retried), and
-  indirect-prompt-injection sanitization
+- Live web-search grounding with `[S#]` source markers; web citation
+  compliance is computed and recorded on the AgentTrace (marker-presence,
+  not claim-level verification) — a non-compliant answer is not blocked
+  or retried — plus indirect-prompt-injection sanitization
 - 4-layer memory: short-term, long-term (ChromaDB), episodic, semantic
 - Self-reflection and reasoning traces
 - Session save/resume
