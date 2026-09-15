@@ -4,9 +4,10 @@
 > answers, not confident guesses.
 
 Orneur is a self-hosted AI platform — three model tiers, live web-search
-grounding with enforced citations, cost-aware routing between self-hosted
-and frontier backends, and a trust layer that tells you plainly when a
-capability claim hasn't been measured yet. It runs on [Ollama](https://ollama.com),
+grounding with source markers and citation-compliance checking, cost-aware
+routing between self-hosted and frontier backends, and a trust layer that
+tells you plainly when a capability claim hasn't been measured yet. It runs
+on [Ollama](https://ollama.com),
 with a terminal CLI, a web UI, a multi-agent Ultra mode, long-term memory,
 and a full fine-tuning pipeline.
 
@@ -141,7 +142,9 @@ you can hit right now.
 
 ### Core
 - Full multi-turn chat with tool use (web search, code execution, file ops)
-- Live web-search grounding with enforced `[S#]` citations and
+- Live web-search grounding with `[S#]` source markers, a citation-compliance
+  check on every response (marker-presence, not claim-level verification —
+  a non-compliant response is logged, not blocked or retried), and
   indirect-prompt-injection sanitization
 - 4-layer memory: short-term, long-term (ChromaDB), episodic, semantic
 - Self-reflection and reasoning traces

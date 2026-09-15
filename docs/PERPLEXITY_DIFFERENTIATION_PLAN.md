@@ -69,9 +69,13 @@ we're just as expensive as they are.
 
 **Priority 2 — retrieval-grounded generation for live chat**, extending
 `orca/docs/citation_check.py`'s existing citation-discipline pattern
-(currently only wired for uploaded documents) to live web search results.
-Same inline `[D1]`/`[S1]`-style citation enforcement, new source: search
-results instead of uploaded docs.
+(at the time this was written, only wired for uploaded documents) to live
+web search results. Same inline `[D1]`/`[S1]`-style marker-presence
+checking, new source: search results instead of uploaded docs.
+**ORIGINAL PLAN — NOW IMPLEMENTED**: this shipped as
+`orca/tools/search_grounding.py` + `check_web_citations()`; see the
+"Honest status update" section below for the current, corrected wiring
+and enforcement-scope description.
 
 **Priority 3 (secondary, opportunistic)** — a genuinely scoped attempt at
 improving coding-domain fine-tuning specifically, since nano's existing
@@ -233,14 +237,17 @@ for the majority of traffic, not from search being free.
 
 ## CEO synthesis and the actual next move
 
-Bringing all of the above together, the real differentiation thesis is:
-**live web-search grounding with enforced citations + cost-aware routing
-between self-hosted and frontier backends + radically honest positioning**
-— not a claim of superior intelligence. The single most important
-currently-missing technical piece is the search-grounding pipeline; the
-single most important currently-missing business piece (per
-`docs/MASTER_PLAN.md`, still true) is real customer/user validation before
-more building.
+**ORIGINAL PLAN — technical piece now implemented; business piece below is
+still the current status.** Bringing all of the above together, the real
+differentiation thesis is: **live web-search grounding with source markers
+and citation-compliance checking + cost-aware routing between self-hosted
+and frontier backends + radically honest positioning** — not a claim of
+superior intelligence. At the time this section was written, the single
+most important currently-missing technical piece was the search-grounding
+pipeline; **that piece has since shipped** (see "Honest status update"
+below). The single most important currently-missing business piece (per
+`docs/MASTER_PLAN.md`, still true today) remains real customer/user
+validation before more building.
 
 **Concrete next 4-6 week sprint, if we proceed:**
 1. Search & Crawling Engineer + AI/ML Engineer pair on the live-search
@@ -268,13 +275,24 @@ Since this plan was written, most of items 1-4 above have actually shipped.
 Verified by reading the real code and running the real test suite, not
 assumed from memory:
 
-- ✅ **Live web-search grounding + citations** —
+- ✅ **Live web-search grounding + citation markers** —
   `orca/tools/search_grounding.py` is real, built, and covered by 9 real
   passing tests (`tests/test_search_grounding.py`). It extends the
-  existing DuckDuckGo `web_search` tool with `[S#]`-style citation
-  enforcement and a real indirect-prompt-injection sanitization pass
-  (flags injection-shaped scraped content and excludes it entirely,
-  rather than trying to regex-edit it).
+  existing DuckDuckGo `web_search` tool with `[S#]`-style source marking
+  and a real indirect-prompt-injection sanitization pass (flags
+  injection-shaped scraped content and excludes it entirely, rather than
+  trying to regex-edit it). **Enforcement scope (corrected)**:
+  `check_web_citations()` (`orca/docs/citation_check.py`) checks whether
+  the response contains at least one `[S#]` marker when web sources were
+  available — marker-presence, not claim-level verification — and
+  `orca/brain/agent.py`'s `AgentLoop` records the result as
+  `trace.citation_compliance` on every turn. `/api/chat`
+  (`orca/serve/api.py`) logs a `citation_compliance_failed` audit event
+  and surfaces the compliance report in the response stream, but does
+  **not** block, retry, repair, or abstain the answer solely because
+  compliance failed — the answer is still returned. That is
+  citation-marked grounding with citation-compliance checking, not hard
+  citation enforcement.
   **Wiring status (corrected)**: an earlier version of this section said
   this module was "not yet called from `orca/serve/api.py` or the agent
   loop." That was stale even at authoring time — `orca/tools/__init__.py`'s
@@ -317,8 +335,10 @@ assumed from memory:
   (real customer conversations) — these remain the actual bottleneck, and
   no amount of further engineering substitutes for them.
 
-**The honest updated next move**: wire `search_grounding.py` into the real
-chat path (the missing link between "we built the differentiator" and "a
-user can experience it"), finish the safety fix already in progress, then
-stop building and go have the real customer conversations this plan's own
-CEO framing already flagged as the actual gate.
+**The honest updated next move (corrected)**: `search_grounding.py` is
+already wired into the real chat path (see "Wiring status (corrected)"
+above) — an earlier version of this section instructed wiring it in, which
+was already stale by the time it was written. The actual remaining next
+move: finish the safety fix already in progress, then stop building and go
+have the real customer conversations this plan's own CEO framing already
+flagged as the actual gate.
