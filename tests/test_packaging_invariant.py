@@ -33,6 +33,10 @@ REQUIRED_WHEEL_PATHS = [
     "orneur/intelligence/ocl/compiler.py",
     "orneur/intelligence/ocl/artifact.py",
     "orneur/intelligence/ocl/canonical.py",
+    "orneur/intelligence/epistemic/",
+    "orneur/intelligence/epistemic/resolver.py",
+    "orneur/intelligence/epistemic/enums.py",
+    "orneur/intelligence/epistemic/canonical.py",
 ]
 
 
@@ -135,6 +139,15 @@ def test_isolated_install_can_import_ocl_and_run_cli(built_wheel):
         )
         assert import_check.returncode == 0, f"isolated import failed:\n{import_check.stdout}\n{import_check.stderr}"
         assert "OK" in import_check.stdout
+
+        epistemic_import_check = subprocess.run(
+            [str(venv_python), "-c", "import orneur.intelligence.epistemic; print('OK')"],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert epistemic_import_check.returncode == 0, (
+            f"isolated epistemic import failed:\n{epistemic_import_check.stdout}\n{epistemic_import_check.stderr}"
+        )
+        assert "OK" in epistemic_import_check.stdout
 
         venv_orneur = venv_dir / "bin" / "orneur"
         help_check = subprocess.run(
