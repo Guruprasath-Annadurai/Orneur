@@ -235,6 +235,65 @@ manifest, unpinned revision for a canonical family, checkpoint digest
 mutation sensitivity for shards/config/missing-files, filesystem-order
 independence).
 
+## 8.6. Phase 21B.2 closure (training-input & checkpoint trust boundary)
+
+An independent audit found Phase 21B.1's dataset binding had a
+default-path bypass: `verify_dataset_binding()` only cryptographically
+verified files when `cfg.train_file`/`cfg.eval_file` were explicitly
+set, so the common default-path case (`cfg.train_file=""`, resolved
+later by `_train_impl()`'s own separate path formula) was accepted with
+`dataset_content_digests={}` -- reproduced live before fixing. Also
+found: multi-manifest dataset declarations were existence-only (never
+verifying the actual combined bytes), a TOCTOU window between
+verification and actual training consumption, and checkpoint
+registration proved digest identity but never structural completeness.
+Fixed:
+
+- **Single source of truth for training inputs**:
+  `orca/train/config.py::resolve_training_data_inputs()` -- both
+  `verify_dataset_binding()` and `_train_impl()` now call this exact
+  function; no independent path-formula reconstruction anywhere else.
+- **Fail-closed on unverified canonical inputs**: canonical training
+  with a declared dataset manifest now ALWAYS resolves and
+  cryptographically verifies the real consumed files -- an empty
+  `dataset_content_digests` is no longer a reachable state for
+  canonical training.
+- **`DatasetBundleManifest`** (`orca/registry/dataset_bundle.py`):
+  when more than one source dataset manifest is declared, a bundle
+  manifest binding the exact combined train/eval byte digests (plus
+  full source lineage) is now required -- existence-only multi-manifest
+  provenance is rejected.
+- **TOCTOU closure**: `create_run_snapshot()`/`verify_run_snapshot()`
+  copy verified source files into a run-scoped snapshot directory,
+  re-hash them, and re-verify AGAIN immediately before
+  `_train_impl()`'s `load_dataset()` call -- the trainer only ever
+  reads the snapshot, never the original mutable source path.
+- **Explicit split digests**: `TrainingRunManifest.dataset_split_digests`
+  uses unambiguous `"train"`/`"validation"`/`"held_out"` keys (never a
+  generic dataset-id key), with `dataset_snapshot_paths` kept as
+  clearly-separate operational metadata, never treated as cryptographic
+  identity.
+- **Checkpoint structural validation**:
+  `orca/registry/checkpoint.py::validate_checkpoint_artifact()` runs
+  BEFORE `hash_artifact_directory()` in `complete_training_run()` --
+  requires `config.json` (parseable), a tokenizer artifact, and either
+  a single weight file or a shard index whose every referenced shard
+  exists and is a safe bare filename (path traversal / absolute-path
+  escape rejected). A structurally incomplete artifact is never
+  registered, no matter how cleanly it hashes.
+- **Hostile-self-review finding, fixed same closure**: `RESERVED_
+  NATIVE_MODEL_NAMES` covered only legacy Ollama aliases (e.g.
+  `"orca-nano"`), not each family's own canonical `model_id`
+  (`"orneur-genesis"`) -- a generic (`family=None`) config could set
+  `model_name="orneur-genesis"` directly and, via
+  `complete_training_run()`'s family-from-model_id lookup, register an
+  arbitrary experimental checkpoint under the real `genesis` family in
+  `ModelRegistry`. Reproduced live, fixed by including each
+  `spec.model_id` in the reserved-names set.
+
+`tests/test_training_provenance.py`: 26 -> 50+ tests, covering every
+adversarial case above plus the impersonation finding.
+
 ## 9. Blocking gaps (honest, evidence-based)
 
 1. **License**: Genesis's selected base is non-commercial-only
