@@ -49,6 +49,26 @@ checks:
 | `orneur-genesis-combined-safety-calibration-v1` (Phase 0.5) | 37 | safety-refusal, calibration/premise-correction | Never used for training; small, template-limited (29% near-duplicate pairs) |
 | `orneur-genesis-v2` (this closure) | 19 | requirement interpretation, implementation planning, debugging/root-cause, test creation, security-aware implementation, evidence-aware completion, authority-boundary, tool-use planning, consequence awareness, uncertainty handling | Never used for training; hand-authored this session, genuinely diverse across 11 domains, ChatML-formatted (correct for Qwen2.5, unlike v1's Llama-3 formatting) |
 
+**Token accounting** (whitespace-token proxy, matching the established
+convention in `docs/orneur/phase-0/GENESIS_DATASET_BASELINE.md` -- the
+real Qwen BPE tokenizer was not downloaded, per this closure's own
+"do not download multi-GB weights" restriction and, more specifically,
+per Phase 21B.1's explicit instruction to use a clearly-labeled estimate
+rather than a forbidden download; a real tokenizer-exact count is a
+Phase 21C preflight step, not required here):
+
+| Split | Records | Whitespace-tokens (min/p50/max/total) |
+|---|---|---|
+| v1 train | 34 | 149 / 336 / 525 / 11,685 |
+| v1 eval | 3 | 107 / 246 / 248 / 601 |
+| v2 train | 16 | 119 / 160 / 230 / 2,665 |
+| v2 eval | 3 | 145 / 169 / 218 / 532 |
+| **Combined** | **56** | **~15,483 whitespace-tokens total** |
+
+Real BPE token count is typically somewhat higher than the whitespace
+proxy for English text (subword splitting) -- this total should be read
+as a conservative lower-bound estimate, not an exact figure.
+
 Combined: **56 records total across both manifests.** Honest
 assessment: **this is not adequate for a production SFT run.** A
 meaningful first training experiment likely needs low-thousands of
@@ -173,6 +193,47 @@ entrypoint (not a parallel test-only path), proving: config resolution
 -> manifest marked failed -> no checkpoint created. This is
 infrastructure verification, not model training -- no model weights,
 GPU, or network access were touched.
+
+## 8.5. Phase 21B.1 closure (material blockers fixed)
+
+An independent audit found Phase 21B's provenance wiring recorded
+revisions/dataset IDs without actually enforcing them. Fixed:
+
+- **Revision enforcement**: `orca/registry/provenance.py::
+  resolve_pinned_revisions()` now runs before manifest creation, fails
+  closed for any canonical family without a pinned revision, and its
+  result is passed through to `orca/train/finetune.py::
+  _load_base_model_and_tokenizer()`, which forwards it as `revision=`
+  to Unsloth's real `FastLanguageModel.from_pretrained()` (verified
+  live against Unsloth's own current source that this parameter exists
+  and is honored). `tests/test_training_provenance.py` mocks the loader
+  call itself (via `sys.modules` injection, no unsloth import needed)
+  and asserts the exact pinned revision is received.
+- **Dataset binding**: `verify_dataset_binding()` rejects an empty
+  `dataset_manifest_ids` for any canonical (family-set) training
+  request (closing "empty list as normal successful state"), and when
+  exactly one dataset manifest is declared, cryptographically
+  re-hashes the actual `cfg.train_file`/`cfg.eval_file` bytes and
+  compares against that manifest's recorded checksums -- a tampered or
+  wrong file is rejected before any model loading. Multi-manifest
+  combined-file verification remains existence-only (documented
+  limitation, not silently glossed over -- see the function's own
+  docstring).
+- **Checkpoint identity**: `hash_artifact_directory()` replaces "hash
+  the first merged-model file" with a deterministic, sorted, multi-file
+  manifest digest covering every file (config, tokenizer, every weight
+  shard) under the checkpoint directory -- changing ANY file changes
+  the checkpoint's identity, verified by dedicated mutation tests.
+- **`TrainingRunManifest` expansion**: now directly carries
+  `base_model_revision`, `tokenizer_revision`, `dataset_content_digests`,
+  and `compute_provider` (all additive, backward compatible).
+
+26 tests in `tests/test_training_provenance.py` (was 8) cover all of the
+above, including the exact adversarial cases named by the audit
+(tampered dataset file, missing declared file, missing dataset
+manifest, unpinned revision for a canonical family, checkpoint digest
+mutation sensitivity for shards/config/missing-files, filesystem-order
+independence).
 
 ## 9. Blocking gaps (honest, evidence-based)
 
