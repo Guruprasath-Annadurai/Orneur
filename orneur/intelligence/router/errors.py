@@ -98,3 +98,20 @@ class IntegrityReceiptBindingInvalid(RouterError):
     source_artifact_digest/source_overlay_digest mismatch)."""
 
     code = "INTEGRITY_RECEIPT_BINDING_INVALID"
+
+
+class DuplicateAssertionIdInReceipt(RouterError):
+    """A receipt's assertion_assessments contains two entries with the
+    same assertion_id -- Phase 19's own contract requires uniqueness
+    (see integrity.errors.DuplicateAssertionId)."""
+
+    code = "DUPLICATE_ASSERTION_ID_IN_RECEIPT"
+
+
+class IntegrityReceiptCanonicalizationFailed(RouterError):
+    """Defense-in-depth: the receipt passed this package's own
+    structural pre-validation but still failed Phase 19's own
+    canonicalization -- wrapped here so no raw Phase-19 exception type
+    (or its base) ever crosses this public boundary unwrapped."""
+
+    code = "INTEGRITY_RECEIPT_CANONICALIZATION_FAILED"

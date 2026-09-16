@@ -80,21 +80,34 @@ class CognitiveRequirementKind(str, Enum):
 
 
 #: Requirement kinds that, by themselves, signal the task is primarily
-#: investigative/reasoning-shaped -- used to prefer a REASONER_INVESTIGATOR
-#: candidate over a BUILDER_EXECUTOR one (behavioral class B).
+#: investigative/reasoning-shaped -- used to derive a preferred
+#: CognitiveRole.REASONER_INVESTIGATOR for primary selection (never a
+#: preferred FAMILY -- see evaluator._select_primary). ARCHITECTURE is
+#: included: architecture/design reasoning is epistemic-causal work,
+#: not implementation, matching Novus's canonical role framing.
 INVESTIGATIVE_REQUIREMENT_KINDS: frozenset[CognitiveRequirementKind] = frozenset({
     CognitiveRequirementKind.INVESTIGATION,
     CognitiveRequirementKind.CAUSAL_REASONING,
     CognitiveRequirementKind.UNCERTAINTY_RESOLUTION,
     CognitiveRequirementKind.CONTRADICTION_RESOLUTION,
     CognitiveRequirementKind.EVIDENCE_SYNTHESIS,
+    CognitiveRequirementKind.ARCHITECTURE,
 })
 
-#: Requirement kinds that signal ordinary implementation/build work.
+#: Requirement kinds that signal ordinary implementation/build work --
+#: used to derive a preferred CognitiveRole.BUILDER_EXECUTOR.
 IMPLEMENTATION_REQUIREMENT_KINDS: frozenset[CognitiveRequirementKind] = frozenset({
     CognitiveRequirementKind.IMPLEMENTATION,
     CognitiveRequirementKind.EXECUTION_PLANNING,
     CognitiveRequirementKind.VERIFICATION,
+})
+
+#: Requirement kinds that are themselves PRIMARY critic/discoverer work
+#: (not a "review of something else" slot signal -- see
+#: _REVIEW_TRIGGER_KINDS in evaluator.py) -- used to derive a preferred
+#: CognitiveRole.CRITIC_ARBITER_DISCOVERER for primary selection.
+DISCOVERY_REQUIREMENT_KINDS: frozenset[CognitiveRequirementKind] = frozenset({
+    CognitiveRequirementKind.DISCOVERY_EXPLORATION,
 })
 
 
@@ -129,6 +142,7 @@ class RoutingReasonCode(str, Enum):
     HIGH_CONSEQUENCE_REQUIRES_REVIEW = "HIGH_CONSEQUENCE_REQUIRES_REVIEW"
     NO_COGNITIVE_REQUIREMENT = "NO_COGNITIVE_REQUIREMENT"
     MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY = "MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY"
+    ROLE_ADEQUACY_NOT_SATISFIED = "ROLE_ADEQUACY_NOT_SATISFIED"
 
 class CapabilityRegistryTrustContext(str, Enum):
     """Out-of-band trust judgment for a CALLER-SUPPLIED capability

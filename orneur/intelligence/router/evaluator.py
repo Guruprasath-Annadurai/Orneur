@@ -37,11 +37,13 @@ from orneur.intelligence.router.contracts import (
 )
 from orneur.intelligence.router.enums import (
     CURRENT_PROTOCOL_VERSION,
+    DISCOVERY_REQUIREMENT_KINDS,
     IMPLEMENTATION_REQUIREMENT_KINDS,
     INVESTIGATIVE_REQUIREMENT_KINDS,
     CapabilityRegistryTrustContext,
     CognitiveFamily,
     CognitiveRequirementKind,
+    CognitiveRole,
     IntegrityReceiptTrustContext,
     RoutingReasonCode,
     RoutingStatus,
@@ -141,12 +143,17 @@ def route_task(
     # a different artifact/overlay must never influence this route.
     receipt_digest_for_decision: str | None = None
     if integrity_receipt is not None:
+        # verify_trusted_receipt() performs its OWN full structural
+        # pre-validation (every nested AssertionAssessment/
+        # DisclosureRequirement/IntegrityViolation record) before ever
+        # computing/comparing a digest -- see receipt_trust.py's module
+        # docstring for the exact required order. Only binding to THIS
+        # artifact/overlay remains this function's responsibility.
         receipt_digest_for_decision = receipt_trust.verify_trusted_receipt(
             integrity_receipt,
             trust_context=integrity_receipt_trust_context,
             expected_receipt_digest=expected_integrity_receipt_digest,
         )
-        _validate_receipt_structure(integrity_receipt)
         _validate_receipt_binding(
             integrity_receipt, artifact=artifact, source_artifact_digest=source_digest, source_overlay_digest=overlay_digest,
         )
@@ -209,16 +216,33 @@ def route_task(
 
     investigative_needed = bool(effective_requirements & INVESTIGATIVE_REQUIREMENT_KINDS)
     implementation_needed = bool(effective_requirements & IMPLEMENTATION_REQUIREMENT_KINDS)
+    discovery_needed = bool(effective_requirements & DISCOVERY_REQUIREMENT_KINDS)
     adversarial_needed = bool(effective_requirements & _REVIEW_TRIGGER_KINDS)
-    core_requirements = effective_requirements - frozenset({CognitiveRequirementKind.ADVERSARIAL_REVIEW})
+
+    # A task whose ENTIRE effective cognitive work is review/adversarial
+    # requirement kinds IS review, not a primary task that additionally
+    # needs an independent reviewer -- the distinction determines both
+    # the preferred primary role and whether ADVERSARIAL_REVIEW itself
+    # counts toward the primary candidate's own capability adequacy.
+    review_only_task = bool(effective_requirements) and effective_requirements.issubset(_REVIEW_TRIGGER_KINDS)
+
+    preferred_role = _derive_preferred_role(
+        investigative_needed=investigative_needed, implementation_needed=implementation_needed,
+        discovery_needed=discovery_needed, review_only_task=review_only_task,
+    )
+
+    core_requirements = (
+        effective_requirements if review_only_task
+        else effective_requirements - frozenset({CognitiveRequirementKind.ADVERSARIAL_REVIEW})
+    )
 
     candidate_evaluations = tuple(
         _evaluate_candidate(entry, core_requirements) for entry in validated_registry
     )
     eligible_by_family = {c.family: c for c in candidate_evaluations if c.eligible}
 
-    primary_family, preference_ignored = _select_primary(
-        eligible_by_family, task.preferred_family, investigative_needed, implementation_needed,
+    primary_family, preference_ignored, role_adequacy_failed = _select_primary(
+        eligible_by_family, task.preferred_family, preferred_role,
     )
 
     reason_codes: set[RoutingReasonCode] = set(epistemic_reason_codes)
@@ -226,29 +250,34 @@ def route_task(
 
     if adversarial_needed:
         reason_codes.add(RoutingReasonCode.ADVERSARIAL_REVIEW_REQUIRED)
-        # A reviewer's eligibility is evaluated independently of the
-        # PRIMARY task's core-requirement coverage (a candidate need not
-        # be able to do the primary work to be a valid reviewer of it) --
-        # only its own lifecycle/runtime eligibility and whether it
-        # supports one of the review-triggering requirement kinds.
-        aeternum_entry = next((e for e in validated_registry if e.family is CognitiveFamily.AETERNUM), None)
-        if (
-            aeternum_entry is not None
-            and registry_module.is_eligible(aeternum_entry)
-            and bool(effective_requirements & _REVIEW_TRIGGER_KINDS & aeternum_entry.supported_requirements)
-        ):
-            mandatory_review_family = CognitiveFamily.AETERNUM
+
+    if adversarial_needed and not review_only_task:
+        # A mixed task (primary work + a distinct mandatory-review
+        # slot): the reviewer is selected by ROLE
+        # (CRITIC_ARBITER_DISCOVERER), never by the literal family name
+        # "AETERNUM" -- a candidate need not be able to do the primary
+        # work to be a valid reviewer of it, only its own lifecycle/
+        # runtime eligibility and review-capability support matter.
+        eligible_critics = sorted(
+            (
+                entry for entry in validated_registry
+                if entry.role is CognitiveRole.CRITIC_ARBITER_DISCOVERER
+                and registry_module.is_eligible(entry)
+                and bool(effective_requirements & _REVIEW_TRIGGER_KINDS & entry.supported_requirements)
+            ),
+            key=lambda e: e.family.value,
+        )
+        distinct_critics = [e for e in eligible_critics if e.family != primary_family]
+        if distinct_critics:
+            mandatory_review_family = distinct_critics[0].family
+        elif eligible_critics:
+            # An eligible reviewer exists but coincides with the
+            # primary family -- never report a structure that
+            # ambiguously implies a family independently reviewed its
+            # own primary work.
+            reason_codes.add(RoutingReasonCode.MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY)
         else:
             reason_codes.add(RoutingReasonCode.ADVERSARIAL_REVIEWER_UNAVAILABLE)
-
-        # A family cannot independently review its own primary work --
-        # never report a structure that ambiguously implies a family
-        # reviewed itself. V1 rule: independent review requires a
-        # DISTINCT eligible reviewer; if the only candidate reviewer
-        # coincides with the primary family, review is NOT satisfied.
-        if mandatory_review_family is not None and mandatory_review_family == primary_family:
-            mandatory_review_family = None
-            reason_codes.add(RoutingReasonCode.MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY)
 
     if preference_ignored:
         reason_codes.add(RoutingReasonCode.PREFERENCE_NOT_ELIGIBLE)
@@ -260,12 +289,24 @@ def route_task(
 
     if primary_family is None:
         status = RoutingStatus.NO_ELIGIBLE_ROUTE
-        reason_codes.add(RoutingReasonCode.NO_CANDIDATE_ELIGIBLE)
+        if role_adequacy_failed:
+            reason_codes.add(RoutingReasonCode.ROLE_ADEQUACY_NOT_SATISFIED)
+        else:
+            reason_codes.add(RoutingReasonCode.NO_CANDIDATE_ELIGIBLE)
+        if review_only_task:
+            # The task itself IS review: no eligible critic means no
+            # reviewing capacity exists at all -- say so explicitly,
+            # not just "no candidate eligible" in the abstract.
+            reason_codes.add(RoutingReasonCode.ADVERSARIAL_REVIEWER_UNAVAILABLE)
     else:
+        # By construction (_select_primary only ever returns a
+        # candidate whose role equals preferred_role), primary_family's
+        # role always matches the task shape here -- no further
+        # family-name inspection is needed to decide status semantics.
         reason_codes.add(RoutingReasonCode.ELIGIBLE_CAPABILITY_MATCH)
-        if adversarial_needed:
+        if adversarial_needed and not review_only_task:
             status = RoutingStatus.REVIEW_REQUIRED
-        elif investigative_needed and primary_family is CognitiveFamily.NOVUS:
+        elif investigative_needed:
             status = RoutingStatus.INVESTIGATION_REQUIRED
         else:
             status = RoutingStatus.SELECTED
@@ -380,51 +421,63 @@ def _evaluate_candidate(
     )
 
 
+def _derive_preferred_role(
+    *, investigative_needed: bool, implementation_needed: bool, discovery_needed: bool, review_only_task: bool,
+) -> CognitiveRole | None:
+    """Cognitive ROLE, never a family name, drives primary selection.
+    Fixed, documented precedence for a mixed task touching more than
+    one shape (smallest conservative V1 rule): investigative work takes
+    priority over implementation, which takes priority over primary
+    discovery work, which takes priority over a review-only task shape.
+    This precedence order is a full partition of every
+    CognitiveRequirementKind (INVESTIGATIVE_REQUIREMENT_KINDS(6) +
+    IMPLEMENTATION_REQUIREMENT_KINDS(3) + DISCOVERY_REQUIREMENT_KINDS(1)
+    + the three review-trigger kinds = 13), so given a non-empty
+    effective_requirements set (the caller already fails closed to
+    NO_COGNITIVE_REQUIREMENT otherwise) this never returns None in
+    practice -- None is kept only as an explicit, fail-closed default."""
+    if investigative_needed:
+        return CognitiveRole.REASONER_INVESTIGATOR
+    if implementation_needed:
+        return CognitiveRole.BUILDER_EXECUTOR
+    if discovery_needed:
+        return CognitiveRole.CRITIC_ARBITER_DISCOVERER
+    if review_only_task:
+        return CognitiveRole.CRITIC_ARBITER_DISCOVERER
+    return None
+
+
 def _select_primary(
     eligible_by_family: dict[CognitiveFamily, RoutingCandidateEvaluation],
     preferred_family: CognitiveFamily | None,
-    investigative_needed: bool,
-    implementation_needed: bool,
-) -> tuple[CognitiveFamily | None, bool]:
-    """Returns (selected_family, preference_was_ignored). Deterministic:
-    a caller preference is honored ONLY if independently eligible
-    (section 16 -- a preference is never capability proof); otherwise
-    role-priority ordering applies, itself deterministic and never
-    dependent on registry iteration/insertion order (candidates are
-    evaluated from the already family-sorted registry)."""
+    preferred_role: CognitiveRole | None,
+) -> tuple[CognitiveFamily | None, bool, bool]:
+    """Returns (selected_family, preference_was_ignored, role_adequacy_failed).
+    Deterministic: a caller preference is honored ONLY if independently
+    eligible AND its role matches `preferred_role` (section 3/6 -- a
+    preference can never bypass role adequacy); otherwise, among
+    eligible candidates whose role equals `preferred_role`, the
+    smallest family.value wins (a stable, documented, family-name-free
+    tie-break -- never a hardcoded family-priority list).
+    `role_adequacy_failed` is True when eligible candidates exist but
+    NONE of them has the required role -- this is never silently
+    treated as a match; the caller fails closed to NO_ELIGIBLE_ROUTE
+    with a dedicated ROLE_ADEQUACY_NOT_SATISFIED reason instead."""
+    role_matched = {family: c for family, c in eligible_by_family.items() if c.role is preferred_role}
+
+    preference_ignored = False
     if preferred_family is not None:
-        if preferred_family in eligible_by_family:
-            return preferred_family, False
+        preferred_candidate = eligible_by_family.get(preferred_family)
+        if preferred_candidate is not None and preferred_candidate.role is preferred_role:
+            return preferred_family, False, False
         preference_ignored = True
-    else:
-        preference_ignored = False
 
-    if investigative_needed:
-        priority = (CognitiveFamily.NOVUS, CognitiveFamily.GENESIS, CognitiveFamily.AETERNUM)
-    elif implementation_needed:
-        priority = (CognitiveFamily.GENESIS, CognitiveFamily.NOVUS, CognitiveFamily.AETERNUM)
-    else:
-        priority = tuple(sorted(CognitiveFamily, key=lambda f: f.value))
+    if role_matched:
+        selected = min(role_matched, key=lambda f: f.value)
+        return selected, preference_ignored, False
 
-    for family in priority:
-        if family in eligible_by_family:
-            return family, preference_ignored
-
-    return None, preference_ignored
-
-
-def _validate_receipt_structure(receipt: IntegrityReceipt) -> None:
-    """A provenance-verified receipt is still just a Python dataclass --
-    dataclasses do not enforce field types at construction. Malformed
-    trusted receipts (e.g. a bare string where IntegrityStatus is
-    expected) must fail with a typed RouterError, never be silently
-    consumed."""
-    require_string(receipt.protocol_version, where="integrity_receipt.protocol_version")
-    require_string(receipt.receipt_id, where="integrity_receipt.receipt_id")
-    require_string(receipt.source_artifact_id, where="integrity_receipt.source_artifact_id")
-    require_string(receipt.source_artifact_digest, where="integrity_receipt.source_artifact_digest")
-    require_string(receipt.source_overlay_digest, where="integrity_receipt.source_overlay_digest")
-    require_enum_member(receipt.integrity_status, IntegrityStatus, where="integrity_receipt.integrity_status")
+    role_adequacy_failed = bool(eligible_by_family) and preferred_role is not None
+    return None, preference_ignored, role_adequacy_failed
 
 
 def _validate_receipt_binding(
