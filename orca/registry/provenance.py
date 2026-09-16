@@ -35,6 +35,45 @@ found in that closure:
     refuses to register a structurally incomplete checkpoint no matter
     how clean its digest is.
 
+Phase 21B.2.1 closes the remaining seams a further independent audit
+found in the 21B.2 closure itself:
+
+  - BUNDLE NOT WIRED THROUGH THE REAL ENTRYPOINT: start_training_run()
+    accepted dataset_bundle_id, but orca.train.finetune.train() (the
+    real public training path) had no parameter to forward one --
+    multi-manifest canonical training could never actually reach the
+    DatasetBundleManifest path except via direct (test-only) calls to
+    start_training_run(). train() now accepts and forwards
+    dataset_bundle_id -- no alternative or hidden path.
+  - BUNDLE LINEAGE NOT ENFORCED: verify_dataset_binding() checked only
+    that a bundle's source-manifest ID *set* matched the declared
+    dataset_manifest_ids -- never that each source DatasetManifest's
+    CURRENT content checksums still matched what the bundle recorded as
+    that source's lineage at bundle-build time. A source manifest could
+    be replaced/mutated under the same ID without invalidating the
+    bundle's lineage claim. _verify_bundle_source_lineage() now
+    re-verifies every lineage entry's checksums against the live source
+    manifest, and rejects duplicate/malformed lineage entries.
+  - CHECKPOINT IDENTITY/INTEGRITY ALGORITHM MISMATCH: hash_artifact_directory()
+    (registration-time identity) lived only here, while
+    CheckpointRecord.verify_integrity() (orca.registry.checkpoint) still
+    called sha256_of_file() on what is, for every merged checkpoint this
+    project produces, a DIRECTORY -- registration and reverification
+    disagreed about the very algorithm used to prove integrity.
+    hash_artifact_directory() now lives in orca.registry.checkpoint (the
+    layer both this module and CheckpointRecord already depend on) and
+    is imported here, not redefined -- there is exactly one canonical
+    directory-checkpoint digest algorithm, and verify_integrity() now
+    branches explicitly on path.is_dir() to use it.
+  - SYMLINK ESCAPE: validate_checkpoint_artifact()'s shard-index checks
+    already resolved paths and rejected escapes, but non-index files
+    (config.json, tokenizer artifacts, an unsharded weight file) were
+    still accepted via Path.is_file(), which follows symlinks. Both
+    validate_checkpoint_artifact() and hash_artifact_directory() now
+    apply one fail-closed policy: ANY symlink anywhere in a canonical
+    checkpoint artifact directory is rejected outright, so the validator
+    and the hasher can never disagree about which bytes are trusted.
+
 Deliberately CPU-safe and import-light (no unsloth/torch/transformers)
 so the full manifest/checkpoint/registry lifecycle -- including every
 trust seam above -- can be unit-tested without a GPU or the heavy
@@ -45,13 +84,18 @@ point.
 from __future__ import annotations
 
 import hashlib
-import json
+import re
 import shutil
 import time
 from pathlib import Path
 
 from orca.config import ORCA_HOME
-from orca.registry.checkpoint import ArtifactAvailability, CheckpointRecord, validate_checkpoint_artifact
+from orca.registry.checkpoint import (
+    ArtifactAvailability,
+    CheckpointRecord,
+    hash_artifact_directory,
+    validate_checkpoint_artifact,
+)
 from orca.registry.dataset_bundle import DatasetBundleManifest
 from orca.registry.dataset_manifest import DatasetManifest, sha256_of_file
 from orca.registry.model_registry import ModelRegistry
@@ -157,7 +201,10 @@ def verify_dataset_binding(
         return {"train": manifest.train_checksum, "validation": manifest.eval_checksum}
 
     # Multiple source manifests declared: existence-only is forbidden --
-    # a DatasetBundleManifest binding the exact combined bytes is required.
+    # a DatasetBundleManifest binding the exact combined bytes, AND a
+    # verified per-source content lineage (see _verify_bundle_source_lineage()),
+    # is required.
+    source_manifests_by_id: dict[str, DatasetManifest] = {}
     for dataset_manifest_id in dataset_manifest_ids:
         dataset_id, _, version = dataset_manifest_id.rpartition("-")
         if not dataset_id or not version:
@@ -165,7 +212,7 @@ def verify_dataset_binding(
                 f"dataset_manifest_id {dataset_manifest_id!r} is not in '<dataset_id>-<version>' form"
             )
         try:
-            DatasetManifest.load(dataset_id, version)
+            source_manifests_by_id[dataset_manifest_id] = DatasetManifest.load(dataset_id, version)
         except FileNotFoundError as exc:
             raise DatasetBindingInvalid(f"No dataset manifest found for {dataset_manifest_id!r}") from exc
 
@@ -183,16 +230,79 @@ def verify_dataset_binding(
     except FileNotFoundError as exc:
         raise DatasetBindingInvalid(f"No dataset bundle manifest found for {dataset_bundle_id!r}") from exc
 
-    bundle_source_ids = {s.dataset_manifest_id for s in bundle.source_manifests}
-    if bundle_source_ids != set(dataset_manifest_ids):
-        raise DatasetBindingInvalid(
-            f"Dataset bundle {dataset_bundle_id!r}'s source lineage {sorted(bundle_source_ids)} does not match "
-            f"the declared dataset_manifest_ids {sorted(dataset_manifest_ids)}"
-        )
+    _verify_bundle_source_lineage(bundle, dataset_manifest_ids, source_manifests_by_id)
     ok, msg = bundle.verify_against_files(resolved.train_path, resolved.eval_path)
     if not ok:
         raise DatasetBindingInvalid(f"Dataset bundle {dataset_bundle_id!r} failed binding verification: {msg}")
     return {"train": bundle.train_checksum, "validation": bundle.eval_checksum}
+
+
+_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _verify_bundle_source_lineage(
+    bundle: DatasetBundleManifest,
+    dataset_manifest_ids: list[str],
+    source_manifests_by_id: dict[str, DatasetManifest],
+) -> None:
+    """Phase 21B.2.1 closure: verify_dataset_binding() previously checked
+    only that the SET of dataset_manifest_ids a bundle's own lineage
+    named matched the SET declared for this run -- it never checked that
+    the CURRENTLY loaded source DatasetManifest for each id still has the
+    same content digests the bundle recorded when it was built (the
+    SourceManifestLineage.train_checksum/eval_checksum fields). That left
+    a bundle's lineage claim spoofable: replace or mutate a source
+    manifest file under the same dataset_id-version on disk after the
+    bundle was built, and nothing would ever notice the bundle's lineage
+    claim no longer reflects reality -- the bundle's OWN combined-file
+    checksum (verify_against_files()) still passes, since that check is
+    only about the combined bytes, not about what built them. This
+    function binds source-manifest IDENTITY, not just combined bytes:
+    every SourceManifestLineage entry's checksums must still match its
+    named DatasetManifest's CURRENT checksums, with no duplicate,
+    missing, or unexpected lineage entries, and no malformed digest
+    values (must be a real 64-hex-char sha256)."""
+    lineage_ids = [s.dataset_manifest_id for s in bundle.source_manifests]
+    if len(lineage_ids) != len(set(lineage_ids)):
+        dupes = sorted({i for i in lineage_ids if lineage_ids.count(i) > 1})
+        raise DatasetBindingInvalid(
+            f"Dataset bundle {bundle.bundle_id}-{bundle.version}'s source lineage has duplicate "
+            f"entries for: {dupes} -- each source dataset_manifest_id must appear at most once."
+        )
+
+    if set(lineage_ids) != set(dataset_manifest_ids):
+        raise DatasetBindingInvalid(
+            f"Dataset bundle {bundle.bundle_id}-{bundle.version}'s source lineage {sorted(set(lineage_ids))} "
+            f"does not match the declared dataset_manifest_ids {sorted(dataset_manifest_ids)}"
+        )
+
+    for source in bundle.source_manifests:
+        for field_name, checksum in (
+            ("train_checksum", source.train_checksum),
+            ("eval_checksum", source.eval_checksum),
+        ):
+            if not isinstance(checksum, str) or not _SHA256_HEX_RE.match(checksum):
+                raise DatasetBindingInvalid(
+                    f"Dataset bundle {bundle.bundle_id}-{bundle.version}'s lineage entry for "
+                    f"{source.dataset_manifest_id!r} has a malformed {field_name} "
+                    f"(must be a 64-character lowercase hex sha256 digest): {checksum!r}"
+                )
+
+        current = source_manifests_by_id[source.dataset_manifest_id]
+        if current.train_checksum != source.train_checksum:
+            raise DatasetBindingInvalid(
+                f"Dataset bundle {bundle.bundle_id}-{bundle.version}'s recorded lineage train_checksum "
+                f"for {source.dataset_manifest_id!r} ({source.train_checksum}) does not match that source "
+                f"manifest's CURRENT train_checksum ({current.train_checksum}) -- the source manifest was "
+                f"replaced or mutated after this bundle was built."
+            )
+        if current.eval_checksum != source.eval_checksum:
+            raise DatasetBindingInvalid(
+                f"Dataset bundle {bundle.bundle_id}-{bundle.version}'s recorded lineage eval_checksum "
+                f"for {source.dataset_manifest_id!r} ({source.eval_checksum}) does not match that source "
+                f"manifest's CURRENT eval_checksum ({current.eval_checksum}) -- the source manifest was "
+                f"replaced or mutated after this bundle was built."
+            )
 
 
 def create_run_snapshot(run_id: str, *, train_path: Path, eval_path: Path | None) -> dict:
@@ -240,26 +350,6 @@ def verify_run_snapshot(snapshot_info: dict) -> None:
                 f"Run-scoped {split} snapshot file was modified after verification: {path} "
                 f"(expected sha256={entry['sha256']}, actual={actual})"
             )
-
-
-def hash_artifact_directory(path: Path) -> dict:
-    """Deterministic, multi-file checkpoint-artifact IDENTITY (distinct
-    from VALIDITY -- see orca.registry.checkpoint.validate_checkpoint_artifact(),
-    always called before this in complete_training_run()). Enumerates
-    every file under `path` (sorted by relative path for determinism --
-    never filesystem traversal order, never mtimes), records
-    {path, size, sha256} for each, then hashes the canonical JSON of
-    that file list. Changing ANY required file's content, adding a
-    file, or removing a file changes the resulting `manifest_digest`."""
-    if not path.exists():
-        raise FileNotFoundError(f"Artifact directory does not exist: {path}")
-    files = []
-    for file_path in sorted(p for p in path.rglob("*") if p.is_file()):
-        rel = file_path.relative_to(path).as_posix()
-        files.append({"path": rel, "size": file_path.stat().st_size, "sha256": sha256_of_file(file_path)})
-    canonical_json = json.dumps(files, sort_keys=True, separators=(",", ":"))
-    manifest_digest = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
-    return {"files": files, "manifest_digest": manifest_digest}
 
 
 def start_training_run(

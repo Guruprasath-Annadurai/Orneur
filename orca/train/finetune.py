@@ -41,6 +41,7 @@ def train(
     cfg: TrainingConfig,
     on_log: Callable[[str], None] | None = None,
     dataset_manifest_ids: list[str] | None = None,
+    dataset_bundle_id: str | None = None,
 ) -> dict:
     """
     Full QLoRA fine-tuning pipeline.
@@ -52,17 +53,31 @@ def train(
     marked complete (with a real CheckpointRecord registered at
     EXPERIMENTAL lifecycle -- never auto-PROMOTABLE/PRODUCTION) or failed
     at every exit path. See orca/registry/provenance.py.
+
+    Phase 21B.2.1: `dataset_bundle_id` is forwarded straight through to
+    start_training_run() -- this is the ONLY path for a multi-manifest
+    canonical run to actually use a DatasetBundleManifest through the
+    real training entrypoint (start_training_run() already accepted this
+    parameter, but this function previously had no way to pass it,
+    making the bundle-provenance path unreachable from real training --
+    see tests/test_training_provenance.py::
+    test_finetune_train_wrapper_forwards_dataset_bundle_id_through_real_entrypoint).
     """
     log = on_log or print
 
     # validate_training_identity() is called by start_training_run() --
     # this is the mandatory first step, before ANY model/dependency work,
     # so a bad config never even gets far enough to create a manifest for
-    # a run that could never have been legitimate.
+    # a run that could never have been legitimate. verify_dataset_binding()
+    # (also inside start_training_run()) similarly runs -- and can raise
+    # DatasetBindingInvalid -- before _check_deps() below is ever reached,
+    # so a multi-manifest run missing its required dataset_bundle_id fails
+    # closed before any dependency/model loading, not merely before training.
     manifest = start_training_run(
         cfg,
         dataset_manifest_ids=dataset_manifest_ids or [],
         hardware_info=f"{platform.system()} {platform.machine()}",
+        dataset_bundle_id=dataset_bundle_id,
     )
 
     try:

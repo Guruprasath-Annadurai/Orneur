@@ -7,6 +7,7 @@ checkpoint a real identity record with checksum-verifiable integrity.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -65,6 +66,25 @@ def validate_checkpoint_artifact(path: Path) -> CheckpointValidationResult:
     if not path.is_dir():
         raise CheckpointStructureInvalid(f"Artifact path is not a directory: {path}")
 
+    # Phase 21B.2.1 (§10-11): fail-closed symlink policy -- a canonical
+    # checkpoint must never gain trusted content by symlink escape outside
+    # its artifact root. Path.is_file() follows symlinks, so a symlinked
+    # config.json/tokenizer.json/weight file would otherwise be silently
+    # accepted as trusted content regardless of where it actually points.
+    # Rather than resolve-and-compare per required file (duplicating the
+    # shard-index escape check below), the simpler fail-closed policy is
+    # applied uniformly: ANY symlink directly in the artifact directory
+    # -- required or not -- rejects the whole checkpoint. This also keeps
+    # the validator and hash_artifact_directory() (which applies the same
+    # policy -- see its docstring) from ever disagreeing about which
+    # bytes belong to the checkpoint.
+    symlink_names = {p.name for p in path.iterdir() if p.is_symlink()}
+    if symlink_names:
+        raise CheckpointStructureInvalid(
+            f"Artifact directory contains symlink(s), which are never trusted checkpoint "
+            f"content (fail-closed symlink policy): {sorted(symlink_names)}"
+        )
+
     entries = {p.name for p in path.iterdir() if p.is_file()}
 
     if "config.json" not in entries:
@@ -119,6 +139,52 @@ def validate_checkpoint_artifact(path: Path) -> CheckpointValidationResult:
         validated |= weight_files
 
     return CheckpointValidationResult(valid=True, files_validated=tuple(sorted(validated)))
+
+
+def hash_artifact_directory(path: Path) -> dict:
+    """Deterministic, multi-file checkpoint-artifact IDENTITY (distinct
+    from VALIDITY -- see validate_checkpoint_artifact() above, always
+    called before this in orca.registry.provenance.complete_training_run()).
+    Enumerates every file under `path` (sorted by relative path for
+    determinism -- never filesystem traversal order, never mtimes),
+    records {path, size, sha256} for each, then hashes the canonical
+    JSON of that file list. Changing ANY required file's content, adding
+    a file, or removing a file changes the resulting `manifest_digest`.
+
+    Phase 21B.2.1 (§8): this is now THE single canonical directory-
+    checkpoint digest algorithm -- previously defined only in
+    orca.registry.provenance (which used it for registration) while
+    CheckpointRecord.verify_integrity() (post-registration reverification)
+    called sha256_of_file() on the same directory path, which is not even
+    a valid operation on a directory and silently disagreed with the
+    registration-time algorithm for every directory-backed checkpoint.
+    Living here (the dependency layer both orca.registry.provenance and
+    CheckpointRecord.verify_integrity() already depend on) means both
+    call this exact function -- no duplicated hashing logic, and no way
+    for registration and reverification to compute different digests for
+    the same bytes. orca.registry.provenance re-exports this name via a
+    plain import for backward-compatible call sites.
+
+    Applies the same fail-closed symlink policy as
+    validate_checkpoint_artifact() -- a symlinked file must never
+    silently contribute its target's bytes to a checkpoint's identity
+    digest, whether or not validate_checkpoint_artifact() happened to run
+    first. This is what makes it safe for the validator and the hasher to
+    never disagree about which bytes belong to the checkpoint (§11)."""
+    if not path.exists():
+        raise FileNotFoundError(f"Artifact directory does not exist: {path}")
+    files = []
+    for file_path in sorted(p for p in path.rglob("*") if p.is_file()):
+        if file_path.is_symlink():
+            raise CheckpointStructureInvalid(
+                f"Artifact directory contains a symlink, which is never trusted checkpoint "
+                f"content (fail-closed symlink policy): {file_path.relative_to(path).as_posix()}"
+            )
+        rel = file_path.relative_to(path).as_posix()
+        files.append({"path": rel, "size": file_path.stat().st_size, "sha256": sha256_of_file(file_path)})
+    canonical_json = json.dumps(files, sort_keys=True, separators=(",", ":"))
+    manifest_digest = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+    return {"files": files, "manifest_digest": manifest_digest}
 
 
 class ArtifactAvailability(str, Enum):
@@ -186,11 +252,27 @@ class CheckpointRecord:
 
     def verify_integrity(self, artifact_path: Path | None = None) -> bool:
         """
-        Re-hashes the actual artifact file (if reachable locally) and compares
+        Re-hashes the actual artifact (if reachable locally) and compares
         against the recorded checksum. Raises CorruptCheckpointError on
         mismatch rather than silently returning False, since a caller that
         forgets to check a bool return is exactly how a corrupt checkpoint
         gets silently loaded.
+
+        Phase 21B.2.1 (§7-9): a merged checkpoint's `artifact_path` is a
+        DIRECTORY (registered via hash_artifact_directory() in
+        orca.registry.provenance.complete_training_run()), never a single
+        file -- calling sha256_of_file() on a directory path here
+        previously either raised IsADirectoryError or (worse, on some
+        platforms) silently mismatched, meaning post-registration
+        integrity verification used a DIFFERENT algorithm than
+        registration for every directory-backed checkpoint this project
+        actually produces. This method now branches explicitly (never
+        guesses from the filename) on `path.is_dir()`: a directory is
+        hashed with the exact same hash_artifact_directory() registration
+        used; a single file (the only kind of checkpoint that existed
+        before Phase 21B introduced directory-backed merged artifacts,
+        preserved here for backward compatibility) is still hashed with
+        sha256_of_file(), unchanged from before.
         """
         path = artifact_path or Path(self.artifact_path)
         if not path.exists():
@@ -199,7 +281,10 @@ class CheckpointRecord:
             # as corrupt. Caller must handle this explicitly.
             self.validation_state = "UNVALIDATED"
             return False
-        actual = sha256_of_file(path)
+        if path.is_dir():
+            actual = hash_artifact_directory(path)["manifest_digest"]
+        else:
+            actual = sha256_of_file(path)
         if actual != self.artifact_checksum:
             self.validation_state = "CORRUPT"
             raise CorruptCheckpointError(
