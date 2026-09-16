@@ -20,7 +20,13 @@ from pathlib import Path
 from typing import Callable
 
 from orca.train.config import TrainingConfig, MODELS_DIR, resolve_training_data_inputs
-from orca.registry.provenance import complete_training_run, fail_training_run, start_training_run, verify_run_snapshot
+from orca.registry.provenance import (
+    SnapshotIntegrityError,
+    complete_training_run,
+    fail_training_run,
+    start_training_run,
+    verify_run_snapshot,
+)
 
 
 def _check_deps():
@@ -122,42 +128,32 @@ def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> di
     log(f"[Train] Loading base model: {cfg.base_model} @ revision={manifest.base_model_revision or 'UNPINNED (generic config)'}")
     log(f"[Train] LoRA rank: {cfg.lora.r} | 4-bit: {cfg.load_in_4bit} | seq_len: {cfg.max_seq_length}")
 
-    # ── Step 1: Load model + tokenizer, at the exact pinned revision ──────────
-    model, tokenizer = _load_base_model_and_tokenizer(cfg, manifest.base_model_revision)
-
-    # ── Step 2: Attach LoRA adapters ──────────────────────────────────────────
-    log("[Train] Attaching LoRA adapters...")
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=cfg.lora.r,
-        target_modules=cfg.lora.target_modules,
-        lora_alpha=cfg.lora.lora_alpha,
-        lora_dropout=cfg.lora.lora_dropout,
-        bias=cfg.lora.bias,
-        use_gradient_checkpointing="unsloth",  # saves VRAM
-        random_state=42,
-    )
-
-    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total = sum(p.numel() for p in model.parameters())
-    log(f"[Train] Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
-
-    # ── Step 3: Load dataset ───────────────────────────────────────────────────
-    # Phase 21B.2: the trainer consumes ONLY the run-scoped snapshot
-    # created by start_training_run() -- never the original (still-
-    # mutable) source path -- and re-verifies the snapshot's digest
-    # immediately before load_dataset(), closing the TOCTOU window
-    # between provenance verification and actual training consumption.
-    if manifest.dataset_snapshot_paths:
+    # ── Step 1: Resolve & verify dataset input -- BEFORE any model loading ─────
+    # Phase 21B.2.2: snapshot integrity must be checked (and the dataset
+    # actually loaded) before FastLanguageModel.from_pretrained() --
+    # never spend GPU memory/model-load time on an input set whose
+    # integrity already fails. For canonical (family-set) training this
+    # MUST use the run-scoped snapshot start_training_run() created --
+    # absence of a snapshot is never inferred as "this must be a generic
+    # experiment": a canonical manifest with no snapshot paths fails
+    # closed here rather than silently falling back to the original
+    # (still-mutable) source files.
+    if cfg.family is not None:
+        required_splits = {"train", "validation"}
+        missing = required_splits - set(manifest.dataset_snapshot_paths)
+        if missing:
+            raise SnapshotIntegrityError(
+                f"Canonical training (family={cfg.family!r}, model_id={manifest.model_id!r}) requires "
+                f"a verified run snapshot for {sorted(required_splits)}, but run {manifest.run_id!r} "
+                f"has no snapshot path(s) for: {sorted(missing)} -- refusing to fall back to mutable "
+                f"source files for canonical training."
+            )
         verify_run_snapshot({
             "train": {"path": manifest.dataset_snapshot_paths["train"], "sha256": manifest.dataset_split_digests["train"]},
-            "eval": (
-                {"path": manifest.dataset_snapshot_paths["validation"], "sha256": manifest.dataset_split_digests["validation"]}
-                if "validation" in manifest.dataset_snapshot_paths else None
-            ),
+            "eval": {"path": manifest.dataset_snapshot_paths["validation"], "sha256": manifest.dataset_split_digests["validation"]},
         })
         train_file = manifest.dataset_snapshot_paths["train"]
-        eval_file = manifest.dataset_snapshot_paths.get("validation")
+        eval_file = manifest.dataset_snapshot_paths["validation"]
     else:
         # Generic (family=None) experimental config -- no canonical
         # dataset binding/snapshot requirement; resolve the same way
@@ -179,6 +175,30 @@ def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> di
 
     dataset = load_dataset("json", data_files=data_files)
     log(f"[Train] Train examples: {len(dataset['train'])}")
+
+    # ── Step 2: Load model + tokenizer, at the exact pinned revision ───────────
+    # Only reached once the dataset this run will actually consume has
+    # been resolved and (for canonical training) its snapshot integrity
+    # re-verified -- a tampered/malformed input never reaches this
+    # expensive step.
+    model, tokenizer = _load_base_model_and_tokenizer(cfg, manifest.base_model_revision)
+
+    # ── Step 3: Attach LoRA adapters ────────────────────────────────────────────
+    log("[Train] Attaching LoRA adapters...")
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r=cfg.lora.r,
+        target_modules=cfg.lora.target_modules,
+        lora_alpha=cfg.lora.lora_alpha,
+        lora_dropout=cfg.lora.lora_dropout,
+        bias=cfg.lora.bias,
+        use_gradient_checkpointing="unsloth",  # saves VRAM
+        random_state=42,
+    )
+
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in model.parameters())
+    log(f"[Train] Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
 
     # ── Step 4: Training arguments ─────────────────────────────────────────────
     output_dir = Path(cfg.output_dir)

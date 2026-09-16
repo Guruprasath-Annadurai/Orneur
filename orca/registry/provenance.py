@@ -74,6 +74,33 @@ found in the 21B.2 closure itself:
     checkpoint artifact directory is rejected outright, so the validator
     and the hasher can never disagree about which bytes are trusted.
 
+Phase 21B.2.2 closes one remaining seam a further independent audit
+found in the 21B.2.1 closure:
+
+  - VERIFIED SOURCE -> SNAPSHOT RACE: verify_dataset_binding() computed
+    a verified digest for the SOURCE file; create_run_snapshot() then
+    independently copied and re-hashed that same source file, with
+    nothing binding the snapshot's digest to the digest that was
+    actually verified. A source mutated in the window between those two
+    steps would be silently copied into the snapshot, re-hashed, and
+    recorded as if it were the verified bytes -- verify_run_snapshot()
+    later would only ever compare the snapshot against ITSELF (a digest
+    computed from the already-mutated copy), never against what
+    verify_dataset_binding() actually verified. create_run_snapshot()
+    now takes expected_split_digests (the just-verified digests) and
+    REQUIRES the freshly-computed snapshot digest to equal them --
+    mismatch deletes the snapshot directory and raises
+    SnapshotIntegrityError before any TrainingRunManifest is
+    constructed or saved. Additionally: canonical (family=None) training
+    could previously pass create_snapshot=False and obtain a "canonical"
+    manifest with verified digests but no protected snapshot at all --
+    now rejected outright for family-set configs; and
+    orca.train.finetune._train_impl() no longer infers "no snapshot ==
+    generic experiment" from absence alone -- a canonical manifest
+    missing snapshot paths fails closed as defense in depth, and
+    snapshot verification (plus dataset loading) is now ordered BEFORE
+    the expensive base-model load, not after.
+
 Deliberately CPU-safe and import-light (no unsloth/torch/transformers)
 so the full manifest/checkpoint/registry lifecycle -- including every
 trust seam above -- can be unit-tested without a GPU or the heavy
@@ -305,7 +332,13 @@ def _verify_bundle_source_lineage(
             )
 
 
-def create_run_snapshot(run_id: str, *, train_path: Path, eval_path: Path | None) -> dict:
+def create_run_snapshot(
+    run_id: str,
+    *,
+    train_path: Path,
+    eval_path: Path | None,
+    expected_split_digests: dict[str, str] | None = None,
+) -> dict:
     """Closes the TOCTOU window between dataset-binding verification and
     actual training consumption: copies the verified source files into
     a run-scoped, uniquely-named snapshot directory and re-hashes them
@@ -313,20 +346,66 @@ def create_run_snapshot(run_id: str, *, train_path: Path, eval_path: Path | None
     the original (still-mutable) source paths. Returns
     {"train": {"path": str, "sha256": str}, "eval": {...} | None} --
     this structure is what verify_run_snapshot() re-checks immediately
-    before load_dataset()."""
+    before load_dataset().
+
+    Phase 21B.2.2: closes a second, narrower TOCTOU window this
+    function itself previously left open -- between
+    verify_dataset_binding() computing a verified digest for the SOURCE
+    file and this function copying that same source file into the
+    snapshot, the source could be mutated, and create_run_snapshot()
+    would happily hash and record the MUTATED bytes as if they were the
+    verified ones (the manifest would then record a "verified" digest
+    that was never actually checked against anything). `expected_split_digests`
+    (keyed "train"/"validation", matching verify_dataset_binding()'s
+    return shape) makes the already-verified source digest the
+    EXPECTATION the snapshot must satisfy, not something the snapshot
+    can silently overwrite: after copying and re-hashing each split,
+    a mismatch against the corresponding expected digest deletes the
+    (partial, untrustworthy) snapshot directory and raises
+    SnapshotIntegrityError -- the caller (start_training_run()) has not
+    yet constructed or saved a TrainingRunManifest at this point, so no
+    runnable manifest is ever persisted for a race that was caught here.
+    Passing None (the default) skips this check entirely -- used only
+    by direct/legacy callers that have no prior verified digest to
+    compare against; the real canonical path (start_training_run())
+    always passes the just-verified digests."""
     snapshot_dir = RUN_SNAPSHOT_DIR / run_id
     snapshot_dir.mkdir(parents=True, exist_ok=True)
 
-    train_snapshot_path = snapshot_dir / "train.jsonl"
-    shutil.copyfile(train_path, train_snapshot_path)
-    info: dict = {"train": {"path": str(train_snapshot_path), "sha256": sha256_of_file(train_snapshot_path)}}
+    def _expect(split_key: str) -> str | None:
+        return expected_split_digests.get(split_key) if expected_split_digests is not None else None
 
-    if eval_path is not None:
-        eval_snapshot_path = snapshot_dir / "eval.jsonl"
-        shutil.copyfile(eval_path, eval_snapshot_path)
-        info["eval"] = {"path": str(eval_snapshot_path), "sha256": sha256_of_file(eval_snapshot_path)}
-    else:
-        info["eval"] = None
+    try:
+        train_snapshot_path = snapshot_dir / "train.jsonl"
+        shutil.copyfile(train_path, train_snapshot_path)
+        train_sha = sha256_of_file(train_snapshot_path)
+        expected_train = _expect("train")
+        if expected_train is not None and train_sha != expected_train:
+            raise SnapshotIntegrityError(
+                f"Run-scoped train snapshot digest ({train_sha}) does not match the previously "
+                f"verified source digest ({expected_train}) for run {run_id!r} -- the source file "
+                f"was mutated between dataset-binding verification and snapshot creation."
+            )
+        info: dict = {"train": {"path": str(train_snapshot_path), "sha256": train_sha}}
+
+        if eval_path is not None:
+            eval_snapshot_path = snapshot_dir / "eval.jsonl"
+            shutil.copyfile(eval_path, eval_snapshot_path)
+            eval_sha = sha256_of_file(eval_snapshot_path)
+            expected_eval = _expect("validation")
+            if expected_eval is not None and eval_sha != expected_eval:
+                raise SnapshotIntegrityError(
+                    f"Run-scoped validation snapshot digest ({eval_sha}) does not match the "
+                    f"previously verified source digest ({expected_eval}) for run {run_id!r} -- the "
+                    f"source file was mutated between dataset-binding verification and snapshot "
+                    f"creation."
+                )
+            info["eval"] = {"path": str(eval_snapshot_path), "sha256": eval_sha}
+        else:
+            info["eval"] = None
+    except SnapshotIntegrityError:
+        shutil.rmtree(snapshot_dir, ignore_errors=True)
+        raise
 
     return info
 
@@ -364,15 +443,35 @@ def start_training_run(
 ) -> TrainingRunManifest:
     """Creates and PERSISTS a TrainingRunManifest BEFORE any expensive
     training work begins. Fails closed via, in order: (1)
-    validate_training_identity(); (2) resolve_pinned_revisions(); (3)
+    validate_training_identity(); (2) canonical create_snapshot=False
+    rejection (see below); (3) resolve_pinned_revisions(); (4)
     verify_dataset_binding() (now always against the resolved, real
-    consumption paths -- see module docstring); (4), when
-    create_snapshot=True (the default, and always true for the real
-    training path), create_run_snapshot() copies the verified files
-    into a run-scoped snapshot and records ITS digests as
-    dataset_split_digests -- the exact bytes orca.train.finetune will
-    be required to re-verify immediately before load_dataset()."""
+    consumption paths -- see module docstring); (5), for canonical
+    training, create_run_snapshot() copies the verified files into a
+    run-scoped snapshot -- passing the just-verified digests as
+    expected_split_digests, so the snapshot is bound to what was
+    actually verified, not merely re-hashed independently -- and
+    records ITS digests as dataset_split_digests -- the exact bytes
+    orca.train.finetune will be required to re-verify immediately
+    before load_dataset().
+
+    Phase 21B.2.2: `create_snapshot=False` is no longer honored for
+    canonical (family-set) training -- a caller could previously obtain
+    a fully "canonical" TrainingRunManifest with verified
+    dataset_content_digests but NO run-scoped snapshot, silently
+    reintroducing the exact TOCTOU window Phase 21B.2 closed (see
+    orca.train.finetune._train_impl(), which now also independently
+    refuses to fall back to mutable source files for a canonical
+    manifest missing snapshot paths, as defense in depth). Only a
+    generic (family=None) experimental config may still pass
+    create_snapshot=False."""
     validate_training_identity(cfg)
+    if cfg.family is not None and not create_snapshot:
+        raise SnapshotIntegrityError(
+            f"Canonical training (family={cfg.family!r}) requires a verified run-scoped dataset "
+            "snapshot -- create_snapshot=False is not permitted for canonical training. Only a "
+            "generic (family=None) experimental config may disable the snapshot."
+        )
     base_model_revision, tokenizer_revision = resolve_pinned_revisions(cfg)
     verified_digests = verify_dataset_binding(
         cfg, dataset_manifest_ids=dataset_manifest_ids, dataset_bundle_id=dataset_bundle_id,
@@ -384,7 +483,10 @@ def start_training_run(
     dataset_snapshot_paths: dict[str, str] = {}
     if cfg.family is not None and create_snapshot:
         resolved = resolve_training_data_inputs(cfg)
-        snapshot_info = create_run_snapshot(resolved_run_id, train_path=resolved.train_path, eval_path=resolved.eval_path)
+        snapshot_info = create_run_snapshot(
+            resolved_run_id, train_path=resolved.train_path, eval_path=resolved.eval_path,
+            expected_split_digests=verified_digests,
+        )
         dataset_snapshot_paths["train"] = snapshot_info["train"]["path"]
         dataset_split_digests["train"] = snapshot_info["train"]["sha256"]
         if snapshot_info["eval"] is not None:
