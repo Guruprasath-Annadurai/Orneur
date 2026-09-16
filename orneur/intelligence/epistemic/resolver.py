@@ -13,10 +13,19 @@ a model, never parsed from a wire payload, never inferred from a field
 that merely happens to be named "verified" or "confidence" inside
 untrusted data. This is what makes self-elevation structurally
 impossible rather than merely discouraged.
+
+Determinism invariant: assess_artifact() takes NO wall-clock reads,
+random values, or process identity anywhere in its default path.
+overlay_id defaults to a value DERIVED from
+(source_artifact_digest, assessment_context_digest, assessed_at) via
+_default_overlay_id() -- never uuid4() -- so two calls with the same
+artifact/evidence/context/assessed_at produce byte-identical canonical
+overlays even when the caller does not explicitly pass overlay_id.
 """
 from __future__ import annotations
 
-import uuid
+import dataclasses
+import hashlib
 from collections import defaultdict
 
 from orneur.intelligence.epistemic import errors, trust
@@ -33,6 +42,7 @@ from orneur.intelligence.epistemic.enums import (
     VerificationFeasibility,
     get_relation_semantics,
 )
+from orneur.intelligence.epistemic.freeze import validate_and_freeze
 from orneur.intelligence.epistemic.graph import compute_evidence_rooted_reachability
 from orneur.intelligence.epistemic.limits import (
     MAX_ATOMS_ASSESSED,
@@ -40,7 +50,7 @@ from orneur.intelligence.epistemic.limits import (
     MAX_FEASIBILITY_RECORDS,
 )
 from orneur.intelligence.epistemic.models import EpistemicAssessment, EpistemicOverlay, ResolvedEvidence, VerificationFeasibilityRecord
-from orneur.intelligence.epistemic.typecheck import require_instance, require_sequence_container, require_string
+from orneur.intelligence.epistemic.typecheck import require_enum_member, require_instance, require_sequence_container, require_string
 from orneur.intelligence.ocl.artifact import CognitiveArtifact
 from orneur.intelligence.ocl.compiler import compile_artifact
 from orneur.intelligence.ocl.enums import RelationKind
@@ -64,9 +74,11 @@ def assess_artifact(
     """Deterministically assess one OCL artifact. Same artifact + same
     evidence/feasibility snapshot + same assessment_context_id +
     same assessed_at => byte-identical canonical overlay (see
-    canonical.digest). Re-validates/recompiles `draft_or_artifact`
-    through OCL's own compile_artifact() at the boundary -- never trusts
-    an object merely because its type is CognitiveArtifact."""
+    canonical.digest), WITHOUT the caller needing to pass an explicit
+    overlay_id -- the default is derived, never random. Re-validates/
+    recompiles `draft_or_artifact` through OCL's own compile_artifact()
+    at the boundary -- never trusts an object merely because its type is
+    CognitiveArtifact."""
     require_instance(ocl_trust_context, CompilationTrustContext, where="ocl_trust_context")
     artifact = compile_artifact(draft_or_artifact, trust_context=ocl_trust_context)
 
@@ -82,14 +94,17 @@ def assess_artifact(
         raise errors.PayloadLimitExceeded("resolved_evidence exceeds MAX_EVIDENCE_RESOLUTIONS")
     if len(feasibility_records) > MAX_FEASIBILITY_RECORDS:
         raise errors.PayloadLimitExceeded("feasibility_records exceeds MAX_FEASIBILITY_RECORDS")
-    for entry in resolved_evidence:
-        require_instance(entry, ResolvedEvidence, where="resolved_evidence[]")
-    for entry in feasibility_records:
-        require_instance(entry, VerificationFeasibilityRecord, where="feasibility_records[]")
+
+    resolved_evidence = tuple(
+        _validate_and_normalize_resolved_evidence(entry) for entry in resolved_evidence
+    )
+    feasibility_records = tuple(
+        _validate_and_normalize_feasibility_record(entry) for entry in feasibility_records
+    )
 
     require_string(assessment_context_id, where="assessment_context_id")
     require_string(assessed_at, where="assessed_at")
-    _validate_iso8601(assessed_at)
+    _validate_iso8601(assessed_at, where="assessed_at", error_cls=errors.InvalidAssessmentContext)
 
     atoms_by_id = {atom.atom_id: atom for atom in artifact.atoms}
     evidence_ids = {e.evidence_id for e in artifact.evidence}
@@ -117,6 +132,7 @@ def assess_artifact(
     _validate_resolution_targets(resolved_evidence, atoms_by_id, evidence_ids)
     _validate_feasibility_targets(feasibility_records, atoms_by_id)
     _reject_conflicting_resolutions(resolved_evidence)
+    _reject_conflicting_feasibility(feasibility_records)
 
     qualified = trust.is_qualified(resolution_trust_context)
     can_mint_unverifiable = trust.can_mint_structurally_unverifiable(resolution_trust_context)
@@ -153,6 +169,9 @@ def assess_artifact(
     unqualified_contradiction_atoms = _unqualified_contradiction_atoms(
         contradicts_pairs, support_reachable, refutation_reachable,
     )
+    qualified_conflict_atoms, cross_contradiction_signal_atoms = _classify_contradicts_pairs(
+        artifact.relations, support_reachable, refutation_reachable,
+    )
 
     assessments = []
     for atom_id in assess_ids:
@@ -166,6 +185,8 @@ def assess_artifact(
                 support_reachable=support_reachable,
                 refutation_reachable=refutation_reachable,
                 is_unqualified_contradiction=atom_id in unqualified_contradiction_atoms,
+                force_disputed=atom_id in qualified_conflict_atoms,
+                cross_contradiction_signal=atom_id in cross_contradiction_signal_atoms,
                 contradiction_atom_refs=contradicts_pairs.get(atom_id, ()),
                 feasibility_record=feasibility_by_atom.get(atom_id),
                 can_mint_unverifiable=can_mint_unverifiable,
@@ -181,7 +202,9 @@ def assess_artifact(
     )
 
     overlay = EpistemicOverlay(
-        overlay_id=overlay_id or str(uuid.uuid4()),
+        overlay_id=overlay_id if overlay_id is not None else _default_overlay_id(
+            source_digest=source_digest, context_digest=context_digest, assessed_at=assessed_at,
+        ),
         schema_version=CURRENT_SCHEMA_VERSION,
         source_artifact_id=artifact.artifact_id,
         source_artifact_digest=source_digest,
@@ -215,19 +238,51 @@ def verify_overlay_binding(overlay: EpistemicOverlay, artifact: CognitiveArtifac
 # ── internal helpers ────────────────────────────────────────────────────
 
 
-def _validate_iso8601(value: str) -> None:
+def _default_overlay_id(*, source_digest: str, context_digest: str, assessed_at: str) -> str:
+    """Deterministic default overlay_id -- NEVER uuid4()/random/wall-clock
+    process state. Derived solely from the same canonical inputs that
+    already determine the overlay's content, so two default-invoked
+    calls with identical inputs produce identical overlay_ids (and thus
+    identical canonical JSON and digests)."""
+    payload = f"epistemic-overlay:{source_digest}:{context_digest}:{assessed_at}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _validate_iso8601(value: str, *, where: str, error_cls: type[errors.EpistemicError]) -> None:
     import datetime
 
     try:
         datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise errors.InvalidAssessmentContext(f"assessed_at is not a valid ISO-8601 timestamp: {exc}") from exc
+        raise error_cls(f"{where} is not a valid ISO-8601 timestamp: {exc}") from exc
+
+
+def _validate_and_normalize_resolved_evidence(entry: object) -> ResolvedEvidence:
+    require_instance(entry, ResolvedEvidence, where="resolved_evidence[]")
+    require_string(entry.evidence_id, where="ResolvedEvidence.evidence_id")
+    require_string(entry.target_atom_id, where="ResolvedEvidence.target_atom_id")
+    require_enum_member(entry.status, EvidenceResolutionStatus, where="ResolvedEvidence.status")
+    require_enum_member(entry.stance, EvidenceStance, where="ResolvedEvidence.stance")
+    require_string(entry.resolver_reference, where="ResolvedEvidence.resolver_reference")
+    require_string(entry.resolved_at, where="ResolvedEvidence.resolved_at")
+    _validate_iso8601(entry.resolved_at, where="ResolvedEvidence.resolved_at", error_cls=errors.InvalidStructuredValue)
+    frozen_metadata = validate_and_freeze(entry.metadata, where="ResolvedEvidence.metadata")
+    return dataclasses.replace(entry, metadata=frozen_metadata)
+
+
+def _validate_and_normalize_feasibility_record(entry: object) -> VerificationFeasibilityRecord:
+    require_instance(entry, VerificationFeasibilityRecord, where="feasibility_records[]")
+    require_string(entry.target_atom_id, where="VerificationFeasibilityRecord.target_atom_id")
+    require_enum_member(entry.feasibility, VerificationFeasibility, where="VerificationFeasibilityRecord.feasibility")
+    require_string(entry.verifier_reference, where="VerificationFeasibilityRecord.verifier_reference")
+    require_string(entry.recorded_at, where="VerificationFeasibilityRecord.recorded_at")
+    _validate_iso8601(entry.recorded_at, where="VerificationFeasibilityRecord.recorded_at", error_cls=errors.InvalidStructuredValue)
+    frozen_metadata = validate_and_freeze(entry.metadata, where="VerificationFeasibilityRecord.metadata")
+    return dataclasses.replace(entry, metadata=frozen_metadata)
 
 
 def _validate_resolution_targets(resolved_evidence, atoms_by_id: dict, evidence_ids: set) -> None:
     for record in resolved_evidence:
-        require_string(record.evidence_id, where="ResolvedEvidence.evidence_id")
-        require_string(record.target_atom_id, where="ResolvedEvidence.target_atom_id")
         if record.evidence_id not in evidence_ids:
             raise errors.UnknownEvidenceReference(f"unknown evidence_id: {record.evidence_id!r}")
         atom = atoms_by_id.get(record.target_atom_id)
@@ -241,7 +296,6 @@ def _validate_resolution_targets(resolved_evidence, atoms_by_id: dict, evidence_
 
 def _validate_feasibility_targets(feasibility_records, atoms_by_id: dict) -> None:
     for record in feasibility_records:
-        require_string(record.target_atom_id, where="VerificationFeasibilityRecord.target_atom_id")
         if record.target_atom_id not in atoms_by_id:
             raise errors.UnknownAtomReference(f"unknown target_atom_id: {record.target_atom_id!r}")
 
@@ -263,6 +317,23 @@ def _reject_conflicting_resolutions(resolved_evidence) -> None:
                 f"duplicate resolution record for atom={record.target_atom_id!r} evidence={record.evidence_id!r}"
             )
         seen[key] = record
+
+
+def _reject_conflicting_feasibility(feasibility_records) -> None:
+    """At most one VerificationFeasibilityRecord per target_atom_id.
+    Any second record for the same atom -- identical or not -- fails
+    closed rather than letting the last one silently win (that would
+    make the result order-dependent, reproduced and closed by this
+    closure)."""
+    seen: dict[str, VerificationFeasibilityRecord] = {}
+    for record in feasibility_records:
+        prior = seen.get(record.target_atom_id)
+        if prior is not None:
+            raise errors.ConflictingVerificationFeasibility(
+                f"more than one VerificationFeasibilityRecord targets atom={record.target_atom_id!r}: "
+                f"{prior.feasibility.value!r} vs {record.feasibility.value!r}"
+            )
+        seen[record.target_atom_id] = record
 
 
 def _unresolved_reason(record: ResolvedEvidence, qualified: bool) -> EpistemicReasonCode:
@@ -290,6 +361,11 @@ def _collect_contradicts(relations) -> dict[str, tuple[str, ...]]:
 
 
 def _unqualified_contradiction_atoms(contradicts_pairs, support_reachable, refutation_reachable) -> set[str]:
+    """Both sides of a CONTRADICTS relation have no qualified basis at
+    all -- mere disagreement, downgrades both to UNCERTAIN, never
+    DISPUTED. Disjoint from _classify_contradicts_pairs's two sets: this
+    only fires when BOTH sides are unestablished; that function only
+    fires when at least one side is established."""
     flagged: set[str] = set()
     for atom_id, others in contradicts_pairs.items():
         atom_established = atom_id in support_reachable or atom_id in refutation_reachable
@@ -299,6 +375,73 @@ def _unqualified_contradiction_atoms(contradicts_pairs, support_reachable, refut
                 flagged.add(atom_id)
                 flagged.add(other_id)
     return flagged
+
+
+def _polarity_of(atom_id: str, support_reachable: dict, refutation_reachable: dict) -> str | None:
+    has_support = atom_id in support_reachable
+    has_refutation = atom_id in refutation_reachable
+    if has_support and has_refutation:
+        return "DISPUTED"
+    if has_support:
+        return "AFFIRMED"
+    if has_refutation:
+        return "REFUTED"
+    return None
+
+
+def _classify_contradicts_pairs(relations, support_reachable, refutation_reachable) -> tuple[set[str], set[str]]:
+    """Qualified CONTRADICTS truth table (see
+    docs/orneur/phase-18/PHASE18_EPISTEMIC_STATE_SPEC.md):
+
+      AFFIRMED + AFFIRMED  -> genuine qualified conflict: both atoms are
+                               forced into DISPUTED, since their
+                               independently-established bases cannot
+                               both be true given the CONTRADICTS
+                               relation between them.
+      AFFIRMED + REFUTED   -> compatible with the relation; no action.
+      REFUTED  + REFUTED   -> compatible; do not invent truth from
+                               CONTRADICTS alone; no action.
+      qualified + None     -> the qualified side is NOT downgraded by
+                               unsupported prose; the unqualified side
+                               gets a CONTRADICTED_BY_QUALIFIED_ATOM
+                               signal (-> UNCERTAIN, not UNKNOWN, since
+                               this is more than a bare unsupported
+                               assertion).
+      None + None          -> handled separately by
+                               _unqualified_contradiction_atoms.
+      anything + DISPUTED  -> DISPUTED atoms are left as already
+                               disputed; only a plain-None partner gets
+                               the cross-signal treatment.
+
+    Returns (qualified_conflict_atoms, cross_contradiction_signal_atoms).
+    """
+    qualified_conflict_atoms: set[str] = set()
+    cross_contradiction_signal_atoms: set[str] = set()
+    seen_pairs: set[tuple[str, str]] = set()
+
+    for relation in relations:
+        if get_relation_semantics(relation.kind).effect is not RelationEffect.CONFLICT:
+            continue
+        a, b = relation.source_atom_id, relation.target_atom_id
+        key = tuple(sorted((a, b)))
+        if key in seen_pairs:
+            continue
+        seen_pairs.add(key)
+
+        pol_a = _polarity_of(a, support_reachable, refutation_reachable)
+        pol_b = _polarity_of(b, support_reachable, refutation_reachable)
+
+        if pol_a == "AFFIRMED" and pol_b == "AFFIRMED":
+            qualified_conflict_atoms.add(a)
+            qualified_conflict_atoms.add(b)
+        elif pol_a is not None and pol_b is None:
+            cross_contradiction_signal_atoms.add(b)
+        elif pol_b is not None and pol_a is None:
+            cross_contradiction_signal_atoms.add(a)
+        # AFFIRMED+REFUTED, REFUTED+AFFIRMED, REFUTED+REFUTED, both None,
+        # or either side already DISPUTED-by-direct-evidence: no action.
+
+    return qualified_conflict_atoms, cross_contradiction_signal_atoms
 
 
 def _assess_one_atom(
@@ -311,6 +454,8 @@ def _assess_one_atom(
     support_reachable: dict,
     refutation_reachable: dict,
     is_unqualified_contradiction: bool,
+    force_disputed: bool,
+    cross_contradiction_signal: bool,
     contradiction_atom_refs: tuple[str, ...],
     feasibility_record: VerificationFeasibilityRecord | None,
     can_mint_unverifiable: bool,
@@ -327,7 +472,7 @@ def _assess_one_atom(
 
     reason_codes: set[EpistemicReasonCode] = set()
 
-    if any_support and any_refutation:
+    if (any_support and any_refutation) or force_disputed:
         state = EpistemicState.DISPUTED
         polarity = EpistemicPolarity.MIXED
         reason_codes.add(EpistemicReasonCode.VERIFIED_CONTRADICTION)
@@ -358,6 +503,8 @@ def _assess_one_atom(
     else:
         if is_unqualified_contradiction:
             reason_codes.add(EpistemicReasonCode.UNQUALIFIED_CONTRADICTION)
+        if cross_contradiction_signal:
+            reason_codes.add(EpistemicReasonCode.CONTRADICTED_BY_QUALIFIED_ATOM)
         reason_codes |= extra_reason_signals
         if reason_codes:
             state = EpistemicState.UNCERTAIN
@@ -389,7 +536,6 @@ def _assessment_context_digest(
     feasibility_records,
     resolution_trust_context: EpistemicResolutionTrustContext,
 ) -> str:
-    import hashlib
     import json
 
     payload = {
@@ -429,7 +575,5 @@ def _assessment_context_digest(
 
 
 def _freeze_metadata(metadata: dict):
-    from types import MappingProxyType
-
     require_instance(metadata, dict, where="metadata")
-    return MappingProxyType(dict(metadata))
+    return validate_and_freeze(metadata, where="metadata")

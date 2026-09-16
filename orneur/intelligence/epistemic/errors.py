@@ -60,6 +60,16 @@ class ConflictingEvidenceResolution(EpistemicError):
     code = "CONFLICTING_EVIDENCE_RESOLUTION"
 
 
+class ConflictingVerificationFeasibility(EpistemicError):
+    """More than one VerificationFeasibilityRecord targets the same
+    atom_id in one assessment. Silently letting the last input record
+    win would make the result order-dependent -- fail closed instead;
+    a caller with a genuine feasibility change should assess separately
+    or reconcile before calling assess_artifact()."""
+
+    code = "CONFLICTING_VERIFICATION_FEASIBILITY"
+
+
 class InvalidAssessmentContext(EpistemicError):
     code = "INVALID_ASSESSMENT_CONTEXT"
 
