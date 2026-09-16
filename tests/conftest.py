@@ -101,22 +101,43 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     # and ~/.orca/training/ directories. Isolating all four here, same
     # tmp_path already used above.
     import orca.registry.checkpoint as checkpoint_mod
+    import orca.registry.dataset_bundle as dataset_bundle_mod
     import orca.registry.dataset_manifest as dataset_manifest_mod
     import orca.registry.evaluation_registry as evaluation_registry_mod
     import orca.registry.model_registry as model_registry_mod
+    import orca.registry.provenance as provenance_mod
     import orca.registry.training_run as training_run_mod
     registry_tmp = tmp_path / "registry"
     checkpoint_dir_tmp = registry_tmp / "checkpoints"
     dataset_dir_tmp = registry_tmp / "datasets"
+    dataset_bundle_dir_tmp = registry_tmp / "dataset_bundles"
     evaluation_dir_tmp = registry_tmp / "evaluations"
     training_run_dir_tmp = registry_tmp / "training_runs"
-    for d in (checkpoint_dir_tmp, dataset_dir_tmp, evaluation_dir_tmp, training_run_dir_tmp, registry_tmp):
+    # Phase 21B.2: run-scoped dataset snapshots (the TOCTOU-closure
+    # mechanism) live under ~/.orca/training/, not ~/.orca/registry/ --
+    # same unisolated-module-constant risk, isolated here too.
+    run_snapshot_dir_tmp = tmp_path / "training" / "run_snapshots"
+    for d in (
+        checkpoint_dir_tmp, dataset_dir_tmp, dataset_bundle_dir_tmp, evaluation_dir_tmp,
+        training_run_dir_tmp, run_snapshot_dir_tmp, registry_tmp,
+    ):
         d.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(checkpoint_mod, "CHECKPOINT_DIR", checkpoint_dir_tmp)
+    monkeypatch.setattr(dataset_bundle_mod, "DATASET_BUNDLE_DIR", dataset_bundle_dir_tmp)
     monkeypatch.setattr(dataset_manifest_mod, "DATASET_MANIFEST_DIR", dataset_dir_tmp)
     monkeypatch.setattr(evaluation_registry_mod, "EVALUATION_REGISTRY_DIR", evaluation_dir_tmp)
     monkeypatch.setattr(model_registry_mod, "REGISTRY_STATE_PATH", registry_tmp / "registry_state.json")
     monkeypatch.setattr(training_run_mod, "TRAINING_RUN_DIR", training_run_dir_tmp)
+    monkeypatch.setattr(provenance_mod, "RUN_SNAPSHOT_DIR", run_snapshot_dir_tmp)
+
+    # Same risk for the default formatted-training-data directory --
+    # orca.train.config.FORMATTED_DIR is a module-level ORCA_HOME-derived
+    # constant a test could otherwise silently read/resolve against the
+    # developer's real ~/.orca/training/formatted/.
+    import orca.train.config as train_config_mod
+    formatted_dir_tmp = tmp_path / "training" / "formatted"
+    formatted_dir_tmp.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(train_config_mod, "FORMATTED_DIR", formatted_dir_tmp)
 
     yield
 

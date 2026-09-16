@@ -19,11 +19,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from orca.train.config import TrainingConfig, MODELS_DIR
-from orca.config import ORCA_HOME
-from orca.registry.provenance import complete_training_run, fail_training_run, start_training_run
-
-FORMATTED_DIR = ORCA_HOME / "training" / "formatted"
+from orca.train.config import TrainingConfig, MODELS_DIR, resolve_training_data_inputs
+from orca.registry.provenance import complete_training_run, fail_training_run, start_training_run, verify_run_snapshot
 
 
 def _check_deps():
@@ -131,8 +128,28 @@ def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> di
     log(f"[Train] Trainable: {trainable:,} / {total:,} ({100*trainable/total:.2f}%)")
 
     # ── Step 3: Load dataset ───────────────────────────────────────────────────
-    train_file = cfg.train_file or str(FORMATTED_DIR / f"orca_{cfg.data_format}_train.jsonl")
-    eval_file = cfg.eval_file or str(FORMATTED_DIR / f"orca_{cfg.data_format}_eval.jsonl")
+    # Phase 21B.2: the trainer consumes ONLY the run-scoped snapshot
+    # created by start_training_run() -- never the original (still-
+    # mutable) source path -- and re-verifies the snapshot's digest
+    # immediately before load_dataset(), closing the TOCTOU window
+    # between provenance verification and actual training consumption.
+    if manifest.dataset_snapshot_paths:
+        verify_run_snapshot({
+            "train": {"path": manifest.dataset_snapshot_paths["train"], "sha256": manifest.dataset_split_digests["train"]},
+            "eval": (
+                {"path": manifest.dataset_snapshot_paths["validation"], "sha256": manifest.dataset_split_digests["validation"]}
+                if "validation" in manifest.dataset_snapshot_paths else None
+            ),
+        })
+        train_file = manifest.dataset_snapshot_paths["train"]
+        eval_file = manifest.dataset_snapshot_paths.get("validation")
+    else:
+        # Generic (family=None) experimental config -- no canonical
+        # dataset binding/snapshot requirement; resolve the same way
+        # verify_dataset_binding() would have, for consistency.
+        resolved = resolve_training_data_inputs(cfg)
+        train_file = str(resolved.train_path)
+        eval_file = str(resolved.eval_path) if resolved.eval_path is not None else None
 
     if not Path(train_file).exists():
         raise FileNotFoundError(
@@ -142,7 +159,7 @@ def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> di
 
     log(f"[Train] Loading dataset: {train_file}")
     data_files = {"train": train_file}
-    if Path(eval_file).exists():
+    if eval_file is not None and Path(eval_file).exists():
         data_files["validation"] = eval_file
 
     dataset = load_dataset("json", data_files=data_files)

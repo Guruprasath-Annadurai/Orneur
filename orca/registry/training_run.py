@@ -57,6 +57,17 @@ class TrainingRunManifest:
     tokenizer_revision: str | None = None
     dataset_content_digests: dict[str, str] = field(default_factory=dict)  # {dataset_manifest_id: verified sha256}
     compute_provider: str | None = None  # e.g. "kaggle" | "colab" | "modal" | "local" | "race-engineering" -- None if unknown/not recorded
+    # Phase 21B.2 additions (all additive, default {}/None, backward
+    # compatible). dataset_split_digests uses EXPLICIT, unambiguous
+    # split keys ("train"/"validation"/"held_out") rather than generic
+    # dataset-id keys, so a run's exact consumed bytes per split are
+    # never ambiguous even when multiple source manifests contributed.
+    # dataset_snapshot_paths is OPERATIONAL metadata only (machine-
+    # local paths to the run-scoped snapshot copies) -- never treated
+    # as cryptographic identity; dataset_split_digests is the identity.
+    dataset_split_digests: dict[str, str] = field(default_factory=dict)  # {"train": sha256, "validation": sha256, "held_out": sha256}
+    dataset_snapshot_paths: dict[str, str] = field(default_factory=dict)  # {"train": path, "validation": path} -- operational only
+    dataset_bundle_id: str | None = None  # "<bundle_id>-<version>" when built from >1 source dataset manifest
 
     def manifest_path(self) -> Path:
         validate_id(self.run_id, "run_id")

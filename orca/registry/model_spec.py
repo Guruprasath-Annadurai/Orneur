@@ -167,17 +167,29 @@ MODEL_SPECS: dict[str, ModelSpec] = {
 
 
 RESERVED_NATIVE_MODEL_NAMES: frozenset[str] = frozenset(
-    name for spec in MODEL_SPECS.values() for name in spec.legacy_ollama_names
+    name for spec in MODEL_SPECS.values() for name in (*spec.legacy_ollama_names, spec.model_id)
 )
 """
 The set of Ollama/artifact names reserved for the three canonical native
-families (derived from MODEL_SPECS's own legacy_ollama_names, not scattered
-string literals). A generic/legacy/experimental training config must never
-register its output under one of these names -- that would let a
-non-canonical artifact impersonate a canonical Orneur model by naming
-alone. This guard is about naming only; canonical model identity/provenance
-still requires the registry/artifact chain (checksum, lineage), never an
-Ollama alias by itself.
+families (derived from MODEL_SPECS's own legacy_ollama_names AND each
+family's own canonical model_id, not scattered string literals). A
+generic/legacy/experimental training config must never register its
+output under one of these names -- that would let a non-canonical
+artifact impersonate a canonical Orneur model by naming alone. This
+guard is about naming only; canonical model identity/provenance still
+requires the registry/artifact chain (checksum, lineage), never a name
+by itself.
+
+Phase 21B.2 hostile-self-review finding: this set previously covered
+only legacy_ollama_names (e.g. "orca-nano"), NOT each family's own
+canonical model_id (e.g. "orneur-genesis") -- a generic (family=None)
+config could set model_name="orneur-genesis" directly, pass
+validate_training_identity() unrejected, and have
+orca.registry.provenance.complete_training_run() register an entirely
+arbitrary experimental checkpoint under the real "genesis" family in
+ModelRegistry (reproduced live and closed by adding each spec.model_id
+here -- see tests/test_training_provenance.py::
+test_generic_config_cannot_impersonate_genesis_via_canonical_model_id).
 """
 
 

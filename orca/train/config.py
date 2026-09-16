@@ -32,6 +32,8 @@ from orca.registry.model_spec import MODEL_SPECS
 MODELS_DIR = ORCA_HOME / "models"
 MODELS_DIR.mkdir(exist_ok=True)
 
+FORMATTED_DIR = ORCA_HOME / "training" / "formatted"
+
 
 @dataclass
 class LoRAConfig:
@@ -239,3 +241,33 @@ def validate_training_identity(cfg: "TrainingConfig", *, artifact_name: str | No
             "artifact -- this would let a non-canonical artifact impersonate a canonical "
             "Orneur model by naming alone."
         )
+
+
+@dataclass(frozen=True)
+class ResolvedDataInputs:
+    """The exact train/eval file paths a training run will consume.
+    Phase 21B.2: THE single source of truth for this resolution --
+    previously orca/train/finetune.py::_train_impl() independently
+    re-derived the same default-path logic AFTER provenance
+    verification had already run against (possibly different, possibly
+    unverified) paths. Both provenance verification and actual dataset
+    loading must now call resolve_training_data_inputs() and use its
+    result, never reconstruct the default path formula separately."""
+    train_path: Path
+    eval_path: Path | None  # None if no eval file was configured AND no default eval file exists on disk
+
+
+def resolve_training_data_inputs(cfg: "TrainingConfig") -> ResolvedDataInputs:
+    """Deterministic: cfg.train_file/eval_file if explicitly set,
+    otherwise the exact default formatted-data path formula
+    orca/train/finetune.py used to compute independently. Eval is
+    optional (None if neither explicitly configured nor present at the
+    default path) -- train is not optional here (a caller that needs
+    train to exist checks `.exists()` itself; this function only
+    resolves the PATH, it does not require the file to already exist,
+    since it is also called before any file may have been created in
+    some callers' flows)."""
+    train_path = Path(cfg.train_file) if cfg.train_file else FORMATTED_DIR / f"orca_{cfg.data_format}_train.jsonl"
+    eval_candidate = Path(cfg.eval_file) if cfg.eval_file else FORMATTED_DIR / f"orca_{cfg.data_format}_eval.jsonl"
+    eval_path = eval_candidate if eval_candidate.exists() else None
+    return ResolvedDataInputs(train_path=train_path, eval_path=eval_path)

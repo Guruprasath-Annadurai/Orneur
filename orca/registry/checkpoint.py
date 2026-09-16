@@ -25,6 +25,102 @@ class CorruptCheckpointError(Exception):
     pass
 
 
+class CheckpointStructureInvalid(ValueError):
+    """A checkpoint artifact directory is structurally incomplete or
+    unsafe -- Phase 21B.2: a deterministic digest of whatever files
+    happen to be present (hash_artifact_directory()) proves identity,
+    never structural completeness. A checkpoint missing its tokenizer,
+    config, or a shard referenced by its own index must never be
+    registered merely because it hashes cleanly."""
+
+
+# A merged HF/safetensors checkpoint's required tokenizer artifact may
+# be named any of these depending on tokenizer type -- at least one
+# must be present.
+_TOKENIZER_CANDIDATE_FILES = frozenset({"tokenizer.json", "tokenizer.model", "tokenizer_config.json"})
+_SHARD_INDEX_FILES = frozenset({"model.safetensors.index.json", "pytorch_model.bin.index.json"})
+_SINGLE_WEIGHT_FILE_CANDIDATES = frozenset({"model.safetensors", "pytorch_model.bin"})
+
+
+@dataclass(frozen=True)
+class CheckpointValidationResult:
+    valid: bool
+    files_validated: tuple[str, ...]
+
+
+def validate_checkpoint_artifact(path: Path) -> CheckpointValidationResult:
+    """Structural completeness check, run BEFORE a checkpoint is hashed
+    and registered (see orca.registry.provenance.complete_training_run()).
+    Raises CheckpointStructureInvalid (never a raw exception) for any of:
+    missing/unparseable config.json, missing tokenizer artifact, no
+    weight file/shard-index found, a shard-index referencing a file that
+    doesn't exist or that escapes the artifact root (path traversal),
+    or a malformed index. Returns the set of files this validator
+    actually inspected and accepted on success -- callers may use this
+    to cross-check against hash_artifact_directory()'s own file list,
+    but this function does not itself compute any digest (identity and
+    validity are deliberately separate concerns)."""
+    if not path.exists():
+        raise CheckpointStructureInvalid(f"Artifact directory does not exist: {path}")
+    if not path.is_dir():
+        raise CheckpointStructureInvalid(f"Artifact path is not a directory: {path}")
+
+    entries = {p.name for p in path.iterdir() if p.is_file()}
+
+    if "config.json" not in entries:
+        raise CheckpointStructureInvalid("Missing required config.json")
+    try:
+        json.loads((path / "config.json").read_text())
+    except json.JSONDecodeError as exc:
+        raise CheckpointStructureInvalid(f"config.json does not parse as JSON: {exc}") from exc
+
+    tokenizer_files = entries & _TOKENIZER_CANDIDATE_FILES
+    if not tokenizer_files:
+        raise CheckpointStructureInvalid(
+            f"Missing required tokenizer artifact -- expected at least one of {sorted(_TOKENIZER_CANDIDATE_FILES)}"
+        )
+
+    validated: set[str] = {"config.json"} | tokenizer_files
+
+    index_files = entries & _SHARD_INDEX_FILES
+    if index_files:
+        for index_name in sorted(index_files):
+            try:
+                index_data = json.loads((path / index_name).read_text())
+            except json.JSONDecodeError as exc:
+                raise CheckpointStructureInvalid(f"{index_name} does not parse as JSON: {exc}") from exc
+            weight_map = index_data.get("weight_map")
+            if not isinstance(weight_map, dict) or not weight_map:
+                raise CheckpointStructureInvalid(f"{index_name} has no (or a malformed) weight_map")
+
+            referenced_shards = set(weight_map.values())
+            resolved_root = path.resolve()
+            for shard in referenced_shards:
+                if not isinstance(shard, str) or "/" in shard or "\\" in shard or ".." in shard:
+                    raise CheckpointStructureInvalid(
+                        f"{index_name} references an unsafe shard path (must be a bare filename): {shard!r}"
+                    )
+                shard_resolved = (path / shard).resolve()
+                if shard_resolved.parent != resolved_root:
+                    raise CheckpointStructureInvalid(
+                        f"{index_name} references a shard path escaping the artifact root: {shard!r}"
+                    )
+                if shard not in entries:
+                    raise CheckpointStructureInvalid(f"{index_name} references a missing shard file: {shard!r}")
+            validated.add(index_name)
+            validated |= referenced_shards
+    else:
+        weight_files = entries & _SINGLE_WEIGHT_FILE_CANDIDATES
+        if not weight_files:
+            raise CheckpointStructureInvalid(
+                f"No weight file or shard index found -- expected one of {sorted(_SINGLE_WEIGHT_FILE_CANDIDATES)} "
+                f"or one of {sorted(_SHARD_INDEX_FILES)}"
+            )
+        validated |= weight_files
+
+    return CheckpointValidationResult(valid=True, files_validated=tuple(sorted(validated)))
+
+
 class ArtifactAvailability(str, Enum):
     """
     Distinct from LifecycleState (orca/registry/model_spec.py) -- lifecycle
