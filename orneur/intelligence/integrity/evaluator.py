@@ -19,9 +19,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 
-from orneur.intelligence.epistemic import EpistemicOverlay, EpistemicPolarity, EpistemicState, verify_overlay_binding
-from orneur.intelligence.epistemic import canonical as epistemic_canonical
-from orneur.intelligence.epistemic.errors import SourceArtifactMismatch
+from orneur.intelligence.epistemic import EpistemicOverlay, EpistemicPolarity, EpistemicState
 from orneur.intelligence.integrity import errors, floor, overlay_trust
 from orneur.intelligence.integrity.freeze import validate_and_freeze
 from orneur.intelligence.integrity.typecheck import require_enum_member, require_instance, require_sequence_container, require_string
@@ -102,30 +100,13 @@ def assess_integrity(
     if receipt_id is not None:
         require_string(receipt_id, where="receipt_id")
 
-    if not overlay_trust.is_valid_overlay_trust_context(overlay_trust_context):
-        raise errors.InvalidOverlayTrustContext(
-            f"overlay_trust_context must be a genuine IntegrityOverlayTrustContext member, "
-            f"got {type(overlay_trust_context).__name__}"
-        )
-    if overlay_trust_context is overlay_trust.UNTRUSTED:
-        raise errors.UntrustedOverlayRejected(
-            "assess_integrity() requires an explicit overlay_trust_context=TRUSTED_PHASE18_RUNTIME "
-            "plus a matching expected_overlay_digest -- an UNTRUSTED overlay cannot be used as "
-            "epistemic authority"
-        )
-    require_string(expected_overlay_digest, where="expected_overlay_digest")
-
-    try:
-        verify_overlay_binding(overlay, artifact)
-    except SourceArtifactMismatch as exc:
-        raise errors.OverlayBindingInvalid(str(exc.detail)) from exc
-
-    overlay_digest = epistemic_canonical.digest(overlay)
-    if overlay_digest != expected_overlay_digest:
-        raise errors.OverlayProvenanceInvalid(
-            "overlay content digest does not match the trusted expected_overlay_digest -- the "
-            "overlay's assessments may have been altered/substituted after being produced"
-        )
+    # Delegates to the shared overlay-trust-boundary seam (see
+    # overlay_trust.verify_trusted_overlay's own docstring for the full
+    # rationale) rather than inlining this security-sensitive logic --
+    # Phase 20's router reuses this exact same function.
+    overlay_digest = overlay_trust.verify_trusted_overlay(
+        overlay, artifact, trust_context=overlay_trust_context, expected_overlay_digest=expected_overlay_digest,
+    )
 
     if policy is not None:
         floor.validate_policy(policy, evaluated_at=evaluated_at)
