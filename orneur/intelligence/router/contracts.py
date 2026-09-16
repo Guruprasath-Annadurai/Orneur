@@ -77,7 +77,8 @@ class RoutingCandidateEvaluation:
 @dataclass(frozen=True)
 class RoutingDecision:
     """The canonical, auditable routing receipt. Grants NO authority --
-    see docs/PHASE20_INTELLIGENCE_ROUTER.md's non-authority doctrine."""
+    see docs/orneur/phase-20/PHASE20_INTELLIGENCE_ROUTER_SPEC.md's
+    non-authority doctrine."""
 
     protocol_version: str
     decision_id: str

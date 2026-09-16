@@ -190,21 +190,56 @@ None` uses the code-defined default registry, trusted by construction
 -- no out-of-band digest needed.
 
 **Integrity receipt trust** (`receipt_trust.verify_trusted_receipt`,
-a NEW Phase-20-owned seam analogous to `overlay_trust`, since Phase 20
-is the consumer of this Phase-19 artifact): a supplied `integrity_receipt`
+a Phase-20-owned seam analogous to `overlay_trust`, since Phase 20 is
+the consumer of this Phase-19 artifact): a supplied `integrity_receipt`
 requires `integrity_receipt_trust_context` (a genuine
 `IntegrityReceiptTrustContext` member -- `UNTRUSTED` fails closed) and
 an `expected_integrity_receipt_digest` supplied out-of-band by the
-trusted Phase-19 caller. Provenance-verified receipts are then
-structurally validated (`_validate_receipt_structure` -- every field
-checked with typed `require_string`/`require_enum_member`, since a
-dataclass does not enforce field types at construction) and finally
-**bound** to the current routing inputs
-(`_validate_receipt_binding`): `receipt.source_artifact_id`,
-`receipt.source_artifact_digest`, and `receipt.source_overlay_digest`
-must all match the artifact/overlay actually being routed, or
-`IntegrityReceiptBindingInvalid` is raised. All three checks happen
-strictly before `receipt.integrity_status` is ever read.
+trusted Phase-19 caller.
+
+**CURRENT/NORMATIVE verification order** (as of the ROLE/STRUCTURE
+closure; see `PHASE20_EVIDENCE.md` &sect;9 and
+`PHASE20_THREAT_MODEL.md` threats 34-35): the receipt is never
+"safe to canonicalize" merely by being an `IntegrityReceipt` instance
+-- canonicalization walks nested tuples of `AssertionAssessment`/
+`DisclosureRequirement`/`IntegrityViolation` records that a dataclass
+constructor never type-checks, so structural pre-validation runs
+BEFORE any digest is ever computed on the receipt:
+
+1. `require_instance(receipt, IntegrityReceipt)`
+2. **full recursive structural pre-validation** of every top-level
+   field and every nested record's every field, via genuine Phase-19
+   enum/type checks (`receipt_trust._validate_receipt_structure` --
+   this is a Phase-20-owned validator living in `receipt_trust.py`,
+   not an evaluator-local helper)
+3. `integrity_receipt_trust_context` is a genuine
+   `IntegrityReceiptTrustContext` member
+4. reject `UNTRUSTED`
+5. require a non-empty `expected_integrity_receipt_digest`
+6. compute the actual canonical receipt digest
+   (`integrity_canonical.digest(receipt)`, wrapped so any Phase-19
+   canonicalization exception is translated to a typed `RouterError`,
+   never left to escape raw)
+7. compare actual vs. expected digest -- `verify_trusted_receipt()`
+   returns the verified digest to `evaluator.route_task()`
+8. `evaluator._validate_receipt_binding()` binds the receipt to the
+   artifact/overlay currently being routed: `receipt.source_artifact_id`,
+   `receipt.source_artifact_digest`, and `receipt.source_overlay_digest`
+   must all match, or `IntegrityReceiptBindingInvalid` is raised
+9. only after provenance AND binding both pass may
+   `receipt.integrity_status` ever influence routing
+
+> **Historical note.** Immediately after the FINAL closure (before the
+> ROLE/STRUCTURE closure), the order was provenance-then-structure --
+> an evaluator-local `_validate_receipt_structure` checked only the six
+> top-level scalar fields (`protocol_version`, `receipt_id`,
+> `source_artifact_id`, `source_artifact_digest`, `source_overlay_digest`,
+> `integrity_status`) *after* `verify_trusted_receipt()` had already
+> computed a digest over the (still only partially-validated) receipt.
+> A malformed nested record (e.g. `assertion_assessments=(object(),)`)
+> reached Phase-19 canonicalization and raised a raw `AttributeError`
+> that escaped `route_task()` entirely -- reproduced live and closed by
+> the ROLE/STRUCTURE closure (see `PHASE20_EVIDENCE.md` &sect;9.2).
 
 **Route identity.** `RoutingDecision` now carries
 `source_integrity_receipt_digest: str | None` (`None` when no receipt

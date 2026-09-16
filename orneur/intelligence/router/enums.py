@@ -18,7 +18,8 @@ from enum import Enum
 class CognitiveFamily(str, Enum):
     """The three canonical ORNEUR native cognitive families. Cognitive
     ROLES, not a size/benchmark ranking -- see
-    docs/PHASE20_INTELLIGENCE_ROUTER.md's "Model-family truth"."""
+    docs/orneur/phase-20/PHASE20_INTELLIGENCE_ROUTER_SPEC.md's
+    "Model-family truth"."""
 
     GENESIS = "GENESIS"
     NOVUS = "NOVUS"

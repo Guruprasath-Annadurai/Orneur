@@ -169,7 +169,13 @@ the mitigation holds.
     bare string) whose provenance digest happens to match is consumed
     without complaint, relying on accidental Python `is not` fail-
     closed behavior rather than an explicit, auditable rejection.**
-    Mitigation: explicit `_validate_receipt_structure()`.
+    Mitigation (as of the FINAL closure): explicit
+    `_validate_receipt_structure()`, at the time an evaluator-local
+    helper checking only the six top-level scalar fields. **Superseded
+    by the ROLE/STRUCTURE closure's threat 34** below: the validator of
+    this name now lives in `receipt_trust.py`, runs BEFORE (not after)
+    digest computation, and covers every top-level field plus every
+    nested record.
     Test: `test_trust_closure.py::test_malformed_receipt_field_type_is_rejected_after_trust_passes`.
 
 26. **Two decisions computed from the same artifact/overlay/task/

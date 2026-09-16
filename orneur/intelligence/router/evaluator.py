@@ -1,7 +1,7 @@
 """
 Phase 20 deterministic evaluator: the single place a RoutingDecision is
-computed. See docs/PHASE20_INTELLIGENCE_ROUTER.md for the full
-normative algorithm.
+computed. See docs/orneur/phase-20/PHASE20_INTELLIGENCE_ROUTER_SPEC.md
+for the full normative algorithm.
 
 Hard invariant: this module never calls a model, a tool, or any network
 endpoint. It is pure deterministic code over already-trusted Phase 18/19
@@ -12,8 +12,8 @@ Phase-18-resolver / Phase-19-evaluator boundary discipline one layer up.
 
 Routing is not authority: a RoutingDecision is DATA. It never grants
 execution/policy/Court/approval/promotion/security authority. See
-docs/PHASE20_INTELLIGENCE_ROUTER.md's "Non-authority doctrine" and
-tests/router/test_no_authority.py.
+docs/orneur/phase-20/PHASE20_INTELLIGENCE_ROUTER_SPEC.md's
+"Non-authority doctrine" and tests/router/test_no_authority.py.
 """
 from __future__ import annotations
 

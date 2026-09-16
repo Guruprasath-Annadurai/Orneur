@@ -4,7 +4,8 @@ trusted configuration/code ONLY -- never from an untrusted request
 payload. `CognitiveTaskProfile`/its `.metadata` are never read to build
 or override a registry entry.
 
-Canonical model truth (see docs/PHASE20_INTELLIGENCE_ROUTER.md's
+Canonical model truth (see
+docs/orneur/phase-20/PHASE20_INTELLIGENCE_ROUTER_SPEC.md's
 "Model-family truth", citing `orca.registry.model_spec` -- not
 imported, this package never imports orca.*):
 
