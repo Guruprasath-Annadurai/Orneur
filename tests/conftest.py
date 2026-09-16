@@ -91,6 +91,33 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(docs_store_mod, "DOCS_DIR", docs_tmp)
     monkeypatch.setattr(docs_store_mod, "_REGISTRY_FILE", docs_tmp / "registry.json")
 
+    # Phase 21A audit finding, closed in Phase 21B: the exact same
+    # unisolated-module-constant leak this fixture already fixed for
+    # DEPLOYMENT_DIR/LEASE_DIR/DOCS_DIR also existed for the model/
+    # dataset/checkpoint/training-run registries -- confirmed live during
+    # the Phase 21A forensic audit, which found real test-run pollution
+    # (fake "force-test"/"v1"/"v2" evaluation records, a "test-model"
+    # redteam file) sitting in the developer's actual ~/.orca/registry/
+    # and ~/.orca/training/ directories. Isolating all four here, same
+    # tmp_path already used above.
+    import orca.registry.checkpoint as checkpoint_mod
+    import orca.registry.dataset_manifest as dataset_manifest_mod
+    import orca.registry.evaluation_registry as evaluation_registry_mod
+    import orca.registry.model_registry as model_registry_mod
+    import orca.registry.training_run as training_run_mod
+    registry_tmp = tmp_path / "registry"
+    checkpoint_dir_tmp = registry_tmp / "checkpoints"
+    dataset_dir_tmp = registry_tmp / "datasets"
+    evaluation_dir_tmp = registry_tmp / "evaluations"
+    training_run_dir_tmp = registry_tmp / "training_runs"
+    for d in (checkpoint_dir_tmp, dataset_dir_tmp, evaluation_dir_tmp, training_run_dir_tmp, registry_tmp):
+        d.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(checkpoint_mod, "CHECKPOINT_DIR", checkpoint_dir_tmp)
+    monkeypatch.setattr(dataset_manifest_mod, "DATASET_MANIFEST_DIR", dataset_dir_tmp)
+    monkeypatch.setattr(evaluation_registry_mod, "EVALUATION_REGISTRY_DIR", evaluation_dir_tmp)
+    monkeypatch.setattr(model_registry_mod, "REGISTRY_STATE_PATH", registry_tmp / "registry_state.json")
+    monkeypatch.setattr(training_run_mod, "TRAINING_RUN_DIR", training_run_dir_tmp)
+
     yield
 
 

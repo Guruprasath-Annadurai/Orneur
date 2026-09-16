@@ -14,12 +14,15 @@ Run:
 from __future__ import annotations
 
 import json
+import platform
 import time
 from pathlib import Path
 from typing import Callable
 
 from orca.train.config import TrainingConfig, MODELS_DIR
 from orca.config import ORCA_HOME
+from orca.registry.dataset_manifest import sha256_of_file
+from orca.registry.provenance import complete_training_run, fail_training_run, start_training_run
 
 FORMATTED_DIR = ORCA_HOME / "training" / "formatted"
 
@@ -38,16 +41,43 @@ def _check_deps():
         )
 
 
-def train(cfg: TrainingConfig, on_log: Callable[[str], None] | None = None) -> dict:
+def train(
+    cfg: TrainingConfig,
+    on_log: Callable[[str], None] | None = None,
+    dataset_manifest_ids: list[str] | None = None,
+) -> dict:
     """
     Full QLoRA fine-tuning pipeline.
     Returns paths to saved model artifacts.
+
+    Phase 21B reproducibility closure: a TrainingRunManifest is created
+    and persisted BEFORE any model/dependency loading begins (so even a
+    dependency-import failure is recorded, not silently lost), and is
+    marked complete (with a real CheckpointRecord registered at
+    EXPERIMENTAL lifecycle -- never auto-PROMOTABLE/PRODUCTION) or failed
+    at every exit path. See orca/registry/provenance.py.
     """
     log = on_log or print
 
-    from orca.train.config import validate_training_identity
-    validate_training_identity(cfg)
+    # validate_training_identity() is called by start_training_run() --
+    # this is the mandatory first step, before ANY model/dependency work,
+    # so a bad config never even gets far enough to create a manifest for
+    # a run that could never have been legitimate.
+    manifest = start_training_run(
+        cfg,
+        dataset_manifest_ids=dataset_manifest_ids or [],
+        hardware_info=f"{platform.system()} {platform.machine()}",
+    )
 
+    try:
+        result = _train_impl(cfg, log, manifest)
+    except Exception as exc:
+        fail_training_run(manifest, f"{type(exc).__name__}: {exc}")
+        raise
+    return result
+
+
+def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> dict:
     _check_deps()
 
     from unsloth import FastLanguageModel
@@ -178,5 +208,22 @@ def train(cfg: TrainingConfig, on_log: Callable[[str], None] | None = None) -> d
     }
     with open(output_dir / "training_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
+
+    # Phase 21B reproducibility closure: register a real CheckpointRecord
+    # for this run (EXPERIMENTAL lifecycle only -- never auto-promoted)
+    # and mark the manifest complete. checkpoint_id reuses cfg.model_name,
+    # matching the existing convention of keeping the legacy/Ollama name
+    # as the checkpoint identity.
+    merged_files = sorted(p for p in merged_path.rglob("*") if p.is_file())
+    artifact_checksum = sha256_of_file(merged_files[0]) if merged_files else "UNAVAILABLE"
+    complete_training_run(
+        manifest,
+        checkpoint_id=cfg.model_name,
+        artifact_path=str(merged_path),
+        artifact_checksum=artifact_checksum,
+        step_or_epoch=f"epoch={cfg.num_epochs}",
+        training_config_summary=f"QLoRA r={cfg.lora.r} alpha={cfg.lora.lora_alpha} seq_len={cfg.max_seq_length}",
+        tokenizer_identity=cfg.base_model,
+    )
 
     return meta
