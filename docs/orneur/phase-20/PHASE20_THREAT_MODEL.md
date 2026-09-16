@@ -123,3 +123,75 @@ the mitigation holds.
     consumer, silently invalidating its own digest/audit trail.**
     Mitigation: frozen dataclass.
     Test: `test_routing_behavior.py::test_routing_decision_is_frozen_plain_data`.
+
+## FINAL closure (trusted registry, receipt binding, route identity)
+
+21. **A caller-supplied `capability_registry` passes only structural
+    validation (`validate_registry()`) and is treated as trusted
+    configuration, letting a caller claim any family is
+    EXPERIMENTAL/AVAILABLE.** Reproduced live: a structurally-valid
+    registry claiming Genesis is EXPERIMENTAL/AVAILABLE was accepted
+    and selected Genesis with zero out-of-band trust check.
+    Mitigation: `registry.verify_trusted_registry()` requires a
+    genuine `CapabilityRegistryTrustContext` (never a bare string) and
+    an out-of-band `expected_registry_digest`.
+    Test: `test_trust_closure.py::test_caller_supplied_available_genesis_without_trust_is_rejected`.
+
+22. **The router internally computes `expected = registry_digest(entries)`
+    from the very registry being evaluated, reintroducing the forged-
+    overlay anti-pattern one artifact type over.**
+    Mitigation: source-text regression.
+    Test: `test_no_authority.py::test_no_router_source_file_reimplements_digest_of_incoming_registry_or_receipt`.
+
+23. **A registry entry's `supported_requirements` is passed as a
+    mutable `set()`; the caller mutates it after validation, silently
+    changing what an already-computed `registry_digest` describes.**
+    Mitigation: every accepted entry is normalized via
+    `dataclasses.replace(entry, supported_requirements=frozenset(...))`.
+    Test: `test_trust_closure.py::test_mutable_supported_requirements_set_is_normalized_to_frozenset`.
+
+24. **An `IntegrityReceipt` referring to a completely unrelated
+    artifact/overlay is accepted merely because `isinstance(receipt,
+    IntegrityReceipt)` holds, incorrectly blocking (or incorrectly
+    clearing) an unrelated route.** Reproduced live: a `BLOCKED`
+    receipt for `"totally-unrelated-artifact-id"` incorrectly blocked
+    a genuinely clean route, and a fabricated `SATISFIED` receipt for
+    the same unrelated artifact was accepted as if the CURRENT route's
+    integrity had been checked.
+    Mitigation: `receipt_trust.verify_trusted_receipt()` (provenance)
+    + `evaluator._validate_receipt_binding()` (binding to the CURRENT
+    artifact/overlay), both strictly before `integrity_status` is read.
+    Tests: `test_trust_closure.py::test_mismatched_artifact_receipt_is_rejected_without_trust`,
+    `::test_mismatched_artifact_receipt_is_rejected_even_with_trust_and_correct_digest`,
+    `::test_fabricated_satisfied_receipt_bound_to_unrelated_artifact_is_rejected`.
+
+25. **A structurally malformed receipt (e.g. `integrity_status` as a
+    bare string) whose provenance digest happens to match is consumed
+    without complaint, relying on accidental Python `is not` fail-
+    closed behavior rather than an explicit, auditable rejection.**
+    Mitigation: explicit `_validate_receipt_structure()`.
+    Test: `test_trust_closure.py::test_malformed_receipt_field_type_is_rejected_after_trust_passes`.
+
+26. **Two decisions computed from the same artifact/overlay/task/
+    registry but different integrity receipts (or receipt vs. no
+    receipt) produce the same `decision_id`, breaking audit
+    distinguishability.**
+    Mitigation: `source_integrity_receipt_digest` field + its inclusion
+    in the default `decision_id` derivation.
+    Tests: `test_trust_closure.py::test_blocked_vs_satisfied_receipt_yield_different_decision_ids`,
+    `::test_receipt_present_vs_absent_yield_different_decision_ids`.
+
+27. **A fully-unspecified task (no explicit or derived requirement)
+    silently selects whichever family happens to be alphabetically
+    first and available, dressing up an arbitrary choice as a
+    capability match.**
+    Mitigation: explicit `NO_ELIGIBLE_ROUTE` / `NO_COGNITIVE_REQUIREMENT`
+    fail-closed path.
+    Test: `test_routing_behavior.py::test_empty_effective_requirements_fails_closed_as_no_cognitive_requirement`.
+
+28. **A task requiring only adversarial review, with an all-eligible
+    registry, selects Aeternum as both `primary_family` and
+    `mandatory_review_family` -- ambiguously implying it reviewed its
+    own primary work.**
+    Mitigation: explicit primary/reviewer equality guard.
+    Test: `test_trust_closure.py::test_mandatory_reviewer_never_equals_primary_family`.

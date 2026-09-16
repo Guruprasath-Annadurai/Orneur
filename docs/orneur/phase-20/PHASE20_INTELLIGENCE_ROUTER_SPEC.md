@@ -52,6 +52,13 @@ The default `build_default_capability_registry()` therefore has exactly
 behavioral classes supply a custom registry, mirroring how Phase 18/19
 tests use synthetic fixtures rather than only production data.
 
+> **Correction (FINAL closure, &sect;9 below).** An earlier revision of
+> this document implied that a caller-supplied `capability_registry`
+> passing `validate_registry()`'s structural checks was thereby usable.
+> **Structural validity is not trusted configuration provenance.** A
+> caller-supplied registry now requires an explicit out-of-band trust
+> boundary -- see &sect;9.
+
 ## 4. Trust boundary: overlay provenance (REUSED, not reimplemented)
 
 Phase 20 reuses `orneur.intelligence.integrity.overlay_trust.
@@ -77,7 +84,13 @@ source-text scanning, not just behavioral testing.
 1. **Integrity status.** If a supplied `IntegrityReceipt.
    integrity_status` is not `SATISFIED`, routing short-circuits to
    `BLOCKED_BY_INTEGRITY` -- no candidate evaluation occurs. Material
-   epistemic factors are still conserved on this path.
+   epistemic factors are still conserved on this path. **Correction
+   (FINAL closure, &sect;9):** an earlier revision consumed
+   `integrity_status` as soon as `isinstance(receipt, IntegrityReceipt)`
+   held. **Instance/type membership is not trusted Phase-19
+   provenance.** The receipt is now verified for provenance (out-of-
+   band digest) and BOUND to the current artifact/overlay before its
+   status is ever read -- see &sect;9.
 2. **Material epistemic state** (Cognitive Conservation). Every atom
    id in `task.material_epistemic_atom_ids` must exist in the trusted
    overlay's assessments (else `UnknownEpistemicAtomReference`) and its
@@ -121,10 +134,12 @@ rather than silently being dropped or silently being granted.
 
 ## 7. Determinism
 
-Same `task` + same trusted `overlay` + same `integrity_receipt` + same
-`capability_registry` => byte-identical `canonical.digest(decision)`,
-and the same default `decision_id` (SHA-256 of the four constituent
-digests -- never `uuid4()`/`random`/wall-clock reads). Candidate
+Same `task` + same trusted `overlay` + same `integrity_receipt` (or
+lack thereof) + same `capability_registry` => byte-identical
+`canonical.digest(decision)`, and the same default `decision_id`
+(SHA-256 of five constituent digests -- source artifact, overlay,
+task, registry, and receipt-or-a-fixed-`"NONE"`-sentinel; never
+`uuid4()`/`random`/wall-clock reads -- see &sect;9). Candidate
 evaluation order never depends on registry insertion order (registry
 entries are validated into a canonical `family.value`-sorted tuple
 before evaluation).
@@ -141,7 +156,69 @@ had access to. Phase 20 deliberately does not import from
 doctrine already established for `orneur.intelligence.epistemic` and
 `orneur.intelligence.integrity`.
 
-## 9. Non-goals
+## 9. FINAL closure: trusted registry, receipt binding, route identity
+
+The initial closure accepted `capability_registry` after only
+structural validation, and consumed a supplied `IntegrityReceipt` after
+only an `isinstance()` check. Neither is a genuine trust boundary --
+both were reproduced live as real self-elevation/binding defects (see
+`PHASE20_EVIDENCE.md`) and closed here.
+
+**Registry trust** (`registry.verify_trusted_registry`, mirroring
+`overlay_trust.verify_trusted_overlay` exactly): a caller-supplied
+`capability_registry` requires `capability_registry_trust_context`
+(a genuine `CapabilityRegistryTrustContext` member -- `UNTRUSTED`,
+the default, always fails closed) and an `expected_registry_digest`
+supplied out-of-band by the trusted router-configuration owner
+*before* the registry crosses into `route_task()`. The registry is
+first normalized (`validate_registry()` -- every entry's
+`supported_requirements` coerced into an immutable `frozenset`, so a
+caller's own mutable `set()` cannot be mutated post-validation to
+retroactively change an already-computed digest or an already-returned
+decision) and only then digested and compared. `capability_registry=
+None` uses the code-defined default registry, trusted by construction
+-- no out-of-band digest needed.
+
+**Integrity receipt trust** (`receipt_trust.verify_trusted_receipt`,
+a NEW Phase-20-owned seam analogous to `overlay_trust`, since Phase 20
+is the consumer of this Phase-19 artifact): a supplied `integrity_receipt`
+requires `integrity_receipt_trust_context` (a genuine
+`IntegrityReceiptTrustContext` member -- `UNTRUSTED` fails closed) and
+an `expected_integrity_receipt_digest` supplied out-of-band by the
+trusted Phase-19 caller. Provenance-verified receipts are then
+structurally validated (`_validate_receipt_structure` -- every field
+checked with typed `require_string`/`require_enum_member`, since a
+dataclass does not enforce field types at construction) and finally
+**bound** to the current routing inputs
+(`_validate_receipt_binding`): `receipt.source_artifact_id`,
+`receipt.source_artifact_digest`, and `receipt.source_overlay_digest`
+must all match the artifact/overlay actually being routed, or
+`IntegrityReceiptBindingInvalid` is raised. All three checks happen
+strictly before `receipt.integrity_status` is ever read.
+
+**Route identity.** `RoutingDecision` now carries
+`source_integrity_receipt_digest: str | None` (`None` when no receipt
+was supplied). The default `decision_id` is SHA-256 of all five
+constituent digests (source artifact, overlay, task, registry, and
+receipt-or-a-fixed-`"NONE"`-sentinel) -- so two otherwise-identical
+routes differing only in which integrity receipt (or none) was
+supplied always produce different `decision_id`s.
+
+**Empty-requirement semantics.** If, after epistemic derivation,
+`effective_requirements` is empty, `route_task()` returns
+`NO_ELIGIBLE_ROUTE` with `NO_COGNITIVE_REQUIREMENT` rather than
+selecting an "available" family with no adequacy signal behind the
+choice. This replaces the prior implicit alphabetical-fallback
+behavior for the fully-unspecified-task case.
+
+**Review honesty.** A family can never be reported as both
+`primary_family` and `mandatory_review_family` in the same decision --
+that would ambiguously imply a family independently reviewed its own
+primary work. If the only otherwise-eligible reviewer coincides with
+the selected primary family, `mandatory_review_family` is cleared to
+`None` and `MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY` is recorded.
+
+## 10. Non-goals
 
 - Not a scheduler, load balancer, or concrete backend/checkpoint
   selector (that remains `orca.society.router`'s and the deployment

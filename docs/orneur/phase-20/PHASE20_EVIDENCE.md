@@ -115,3 +115,99 @@ No model, tool, or network calls were made by any Phase 20 source file
 (confirmed by `test_no_authority.py`'s substring scan and the AST-based
 import scan). All work in this closure was static code authoring, live
 Python execution for reproduction/verification, and `pytest` runs.
+
+---
+
+## 8. FINAL closure -- trusted registry, receipt binding, route identity
+
+### 8.1 Registry self-elevation: reproduced, then fixed
+
+```
+status: RoutingStatus.SELECTED primary: CognitiveFamily.GENESIS
+REPRODUCED: a caller-supplied, merely structurally-valid registry
+claiming Genesis is EXPERIMENTAL/AVAILABLE was accepted and used to
+select Genesis, with no out-of-band trust check at all.
+```
+
+After the fix:
+
+```
+FIXED: untrusted registry rejected -> UntrustedCapabilityRegistryRejected UNTRUSTED_CAPABILITY_REGISTRY_REJECTED
+trusted+correct digest -> status: RoutingStatus.SELECTED primary: CognitiveFamily.GENESIS
+```
+
+### 8.2 Integrity-receipt binding: reproduced, then fixed
+
+```
+unrelated BLOCKED receipt -> status: RoutingStatus.BLOCKED_BY_INTEGRITY
+REPRODUCED (incorrect over-block)
+unrelated SATISFIED receipt -> status: RoutingStatus.SELECTED
+REPRODUCED (fabricated SATISFIED accepted)
+```
+
+After the fix:
+
+```
+FIXED: untrusted receipt rejected -> UntrustedIntegrityReceiptRejected UNTRUSTED_INTEGRITY_RECEIPT_REJECTED
+FIXED: unrelated-artifact receipt rejected via binding check -> IntegrityReceiptBindingInvalid INTEGRITY_RECEIPT_BINDING_INVALID
+```
+
+A genuinely bound, real Phase-19 `SATISFIED` receipt (built via an
+actual `assess_integrity()` call, not a hand-constructed dataclass) is
+correctly accepted and its digest surfaces in
+`RoutingDecision.source_integrity_receipt_digest`.
+
+### 8.3 Test-helper defect found while wiring real receipts
+
+`tests/router/conftest.py`'s `make_blocked_integrity_receipt`/
+`make_satisfied_integrity_receipt` used the literal placeholder string
+`"irrelevant-for-router-tests"` for `source_artifact_digest` -- once
+the binding check was added, this made even the "ordinary trusted
+path" tests fail, because the placeholder digest never matches a real
+artifact's digest. This confirmed the fix was live and exposed the
+test-helper gap named in the closure spec (&sect;12). Fixed by adding
+`make_real_integrity_receipt()`, which drives a genuine
+`assess_integrity()` call (real `IntegrityProposal`/`ProposedAssertion`
+against the real overlay/artifact) so `source_artifact_id`/
+`source_artifact_digest`/`source_overlay_digest` are always genuinely
+correct. A `make_forged_integrity_receipt()` helper was kept
+separately, used only by tests that deliberately exercise the binding
+boundary itself.
+
+### 8.4 Review-honesty collision: confirmed live, not just by assertion
+
+A task requiring only `ADVERSARIAL_REVIEW` against an all-eligible
+registry does reach the collision branch (not a vacuous test):
+
+```
+primary: CognitiveFamily.AETERNUM mandatory_review: None
+reasons: (ADVERSARIAL_REVIEW_REQUIRED, ELIGIBLE_CAPABILITY_MATCH,
+          MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY)
+```
+
+Aeternum is selected as primary via the alphabetical role-priority
+fallback (no investigative/implementation signal is present), and the
+guard correctly clears `mandatory_review_family` rather than reporting
+Aeternum as its own independent reviewer.
+
+### 8.5 Hostile self-review grep sweep (FINAL closure package state)
+
+Same seven checks as &sect;4, rerun against the full updated package
+(now including `receipt_trust.py` and the expanded `registry.py`/
+`evaluator.py`): zero findings across all seven.
+
+### 8.6 Test counts
+
+| Suite | Result |
+|---|---|
+| `tests/router/` (FINAL closure) | 67 passed (was 45) |
+| `tests/integrity/` (Phase 19 regression) | 225 passed, unchanged |
+| `tests/epistemic/` (Phase 18 regression) | 138 passed, unchanged |
+| `tests/ocl/` (Phase 17 regression) | 348 passed, unchanged |
+| `tests/test_packaging_invariant.py` | 8 passed, unchanged |
+| Full deterministic suite | 3155 passed, 256 skipped, 43 deselected |
+
+Reconciliation against the prior Phase 20 baseline (commit `7168557`):
+3389 non-deselected + 22 new trust-closure tests = 3411 non-deselected
+now (3155 passed + 256 skipped = 3411, exact match); deselected
+unchanged at 43.

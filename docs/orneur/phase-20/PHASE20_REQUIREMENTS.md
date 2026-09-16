@@ -48,6 +48,46 @@
     helpers -- never a raw `TypeError`/`KeyError`/`AttributeError`
     escaping to the caller.
 
+## FINAL closure (trusted registry, receipt binding, route identity)
+
+16. A caller-supplied `capability_registry` MUST require a genuine
+    `CapabilityRegistryTrustContext` member (`UNTRUSTED` fails closed)
+    and an out-of-band `expected_registry_digest` -- structural
+    validity alone (`validate_registry()`) MUST NOT be treated as
+    trusted provenance. `capability_registry=None` uses the code-
+    defined default registry, trusted by construction.
+17. Every accepted registry entry's `supported_requirements` MUST be
+    normalized into an immutable `frozenset` (never left as a caller-
+    supplied mutable `set()`), so post-validation caller-side mutation
+    cannot retroactively change a route already computed from it.
+18. A supplied `integrity_receipt` MUST require a genuine
+    `IntegrityReceiptTrustContext` member (`UNTRUSTED` fails closed)
+    and an out-of-band `expected_integrity_receipt_digest` --
+    `isinstance(receipt, IntegrityReceipt)` alone MUST NOT be treated
+    as trusted Phase-19 provenance.
+19. A provenance-verified receipt MUST be structurally validated
+    (every field, via typed `require_string`/`require_enum_member`)
+    and then MUST be bound to the artifact/overlay currently being
+    routed (`source_artifact_id`/`source_artifact_digest`/
+    `source_overlay_digest` all matching) before `integrity_status` is
+    ever consumed. A binding mismatch MUST raise
+    `IntegrityReceiptBindingInvalid`.
+20. `RoutingDecision` MUST carry `source_integrity_receipt_digest`
+    (`None` when no receipt was supplied), and the default
+    `decision_id` MUST incorporate it, so a decision computed with a
+    receipt is never identical to one computed without, and two
+    decisions differing only in which valid receipt was supplied are
+    never identical.
+21. A task with no explicit AND no epistemically-derived cognitive
+    requirement MUST fail closed to `NO_ELIGIBLE_ROUTE` /
+    `NO_COGNITIVE_REQUIREMENT`, never select an arbitrary "available"
+    family.
+22. `mandatory_review_family` MUST NOT equal `primary_family` in any
+    returned decision; if the only otherwise-eligible reviewer
+    coincides with the primary family, `mandatory_review_family` MUST
+    be cleared to `None` and `MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_
+    FAMILY` MUST be recorded.
+
 ## Non-functional
 
 - Payload limits (`limits.py`) bound requirement-set size, material-
