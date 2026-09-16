@@ -37,6 +37,10 @@ REQUIRED_WHEEL_PATHS = [
     "orneur/intelligence/epistemic/resolver.py",
     "orneur/intelligence/epistemic/enums.py",
     "orneur/intelligence/epistemic/canonical.py",
+    "orneur/intelligence/integrity/",
+    "orneur/intelligence/integrity/evaluator.py",
+    "orneur/intelligence/integrity/enums.py",
+    "orneur/intelligence/integrity/canonical.py",
 ]
 
 
@@ -148,6 +152,15 @@ def test_isolated_install_can_import_ocl_and_run_cli(built_wheel):
             f"isolated epistemic import failed:\n{epistemic_import_check.stdout}\n{epistemic_import_check.stderr}"
         )
         assert "OK" in epistemic_import_check.stdout
+
+        integrity_import_check = subprocess.run(
+            [str(venv_python), "-c", "import orneur.intelligence.integrity; print('OK')"],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert integrity_import_check.returncode == 0, (
+            f"isolated integrity import failed:\n{integrity_import_check.stdout}\n{integrity_import_check.stderr}"
+        )
+        assert "OK" in integrity_import_check.stdout
 
         venv_orneur = venv_dir / "bin" / "orneur"
         help_check = subprocess.run(
