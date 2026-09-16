@@ -340,6 +340,44 @@ four seams open. Fixed:
 
 `tests/test_training_provenance.py`: 52 -> 71 tests.
 
+## 8.8. Phase 21B.2.2 closure (verified-bytes snapshot closure)
+
+A further independent audit found one remaining material seam: between
+`verify_dataset_binding()` computing a verified digest for the SOURCE
+file and `create_run_snapshot()` copying that same source file into the
+run-scoped snapshot, nothing bound the snapshot's digest to the digest
+that was actually verified -- a source mutated in that window would be
+silently copied, re-hashed, and recorded as if it were the verified
+bytes. Fixed:
+
+- **Snapshot bound to the verified digest**: `create_run_snapshot()`
+  now takes `expected_split_digests` (the just-verified digests from
+  `verify_dataset_binding()`) and REQUIRES the freshly-computed snapshot
+  digest to equal them for every split -- a mismatch deletes the
+  (partial, untrustworthy) snapshot directory and raises
+  `SnapshotIntegrityError` before any `TrainingRunManifest` is
+  constructed or saved. `start_training_run()` always passes the
+  just-verified digests as this expectation for canonical training.
+- **`create_snapshot=False` no longer honored for canonical training**:
+  a family-set config passing `create_snapshot=False` previously
+  obtained a fully "canonical" manifest with verified digests but no
+  protected run-scoped snapshot -- silently reintroducing the original
+  TOCTOU window. Now rejected outright with `SnapshotIntegrityError`;
+  only a generic (`family=None`) experimental config may still disable
+  the snapshot.
+- **`_train_impl()` no longer infers "no snapshot == generic
+  experiment" from absence alone**: a canonical manifest missing
+  `train`/`validation` snapshot paths now fails closed with
+  `SnapshotIntegrityError` (defense in depth, independent of
+  `start_training_run()`'s own guard above) rather than silently
+  falling back to the original mutable source files.
+- **Reordered training steps**: dataset resolution, canonical snapshot
+  re-verification, and `load_dataset()` now happen BEFORE
+  `FastLanguageModel.from_pretrained()` -- a tampered or malformed
+  input set never reaches the expensive base-model load step.
+
+`tests/test_training_provenance.py`: 71 -> 81 tests.
+
 ## 9. Blocking gaps (honest, evidence-based)
 
 1. **License**: Genesis's selected base is non-commercial-only

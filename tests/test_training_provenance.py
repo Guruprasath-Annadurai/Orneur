@@ -677,6 +677,332 @@ def test_missing_snapshot_file_fails_preload_verification(tmp_path):
         verify_run_snapshot(info)
 
 
+# ── (§2-8) Phase 21B.2.2: verified-source -> snapshot race closure ──────
+
+
+def test_race_source_mutated_between_verification_and_snapshot_copy_is_detected(tmp_path):
+    """(§8) The exact reproduced gap: verify_dataset_binding() computes a
+    verified digest for the source file; the source is THEN mutated;
+    create_run_snapshot() is called with that (now-stale) verified
+    digest as its expectation. The snapshot copy would capture the
+    MUTATED bytes -- must be detected and rejected, not silently
+    recorded as if it were the verified content."""
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    train_path.write_text('{"text": "original-train"}\n')
+    eval_path.write_text('{"text": "original-eval"}\n')
+    _register_genesis_v2_manifest(train_path=train_path, eval_path=eval_path)
+
+    cfg = TrainingConfig.preset("nano")
+    cfg.train_file = str(train_path)
+    cfg.eval_file = str(eval_path)
+
+    # Step 1-3: real binding verification, obtaining the verified digest.
+    verified_digests = verify_dataset_binding(cfg, dataset_manifest_ids=["orneur-genesis-v2-v1"])
+    assert verified_digests["train"] == sha256_of_file(train_path)
+
+    # Step 4: mutate the source BEFORE the snapshot copy happens.
+    train_path.write_text('{"text": "MUTATED AFTER VERIFICATION, BEFORE SNAPSHOT"}\n')
+
+    # Step 5: attempt snapshot creation with the (now-stale) verified digest
+    # as the expectation the snapshot must satisfy.
+    with pytest.raises(SnapshotIntegrityError, match="does not match the previously verified source digest"):
+        create_run_snapshot(
+            "run-race-1", train_path=train_path, eval_path=eval_path,
+            expected_split_digests=verified_digests,
+        )
+
+    # The partial/untrustworthy snapshot directory must not be left behind.
+    assert not (RUN_SNAPSHOT_DIR_FOR_TEST() / "run-race-1").exists()
+
+
+def RUN_SNAPSHOT_DIR_FOR_TEST():
+    from orca.registry.provenance import RUN_SNAPSHOT_DIR
+    return RUN_SNAPSHOT_DIR
+
+
+def test_race_through_real_start_training_run_creates_no_manifest(tmp_path, monkeypatch):
+    """Same race, but exercised through the real start_training_run()
+    path (not a direct create_run_snapshot() call) -- proving no
+    runnable TrainingRunManifest is ever persisted, no CheckpointRecord
+    exists, and no dependency/model loading is reachable, because the
+    exception propagates out of start_training_run() before the
+    manifest object is even constructed."""
+    from orca.train.config import FORMATTED_DIR
+
+    cfg_probe = TrainingConfig.preset("nano")
+    train_path = FORMATTED_DIR / f"orca_{cfg_probe.data_format}_train.jsonl"
+    eval_path = FORMATTED_DIR / f"orca_{cfg_probe.data_format}_eval.jsonl"
+    train_path.write_text('{"text": "original-train"}\n')
+    eval_path.write_text('{"text": "original-eval"}\n')
+    _register_genesis_v2_manifest(train_path=train_path, eval_path=eval_path)
+
+    cfg = TrainingConfig.preset("nano")  # default paths -- resolves to FORMATTED_DIR
+
+    # Monkeypatch create_run_snapshot to mutate the source file the instant
+    # it is called, simulating a real race between verification (already
+    # completed by verify_dataset_binding() inside start_training_run())
+    # and the snapshot copy.
+    import orca.registry.provenance as provenance_mod
+    real_create_run_snapshot = provenance_mod.create_run_snapshot
+
+    def _racing_create_run_snapshot(run_id, *, train_path, eval_path, expected_split_digests=None):
+        Path(train_path).write_text('{"text": "MUTATED DURING THE RACE WINDOW"}\n')
+        return real_create_run_snapshot(
+            run_id, train_path=train_path, eval_path=eval_path,
+            expected_split_digests=expected_split_digests,
+        )
+
+    monkeypatch.setattr(provenance_mod, "create_run_snapshot", _racing_create_run_snapshot)
+
+    from orca.registry.training_run import list_runs
+
+    with pytest.raises(SnapshotIntegrityError):
+        start_training_run(
+            cfg, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+            run_id="run-race-2",
+        )
+
+    assert list_runs("orneur-genesis") == []
+    with pytest.raises(FileNotFoundError):
+        TrainingRunManifest.load("run-race-2")
+    with pytest.raises(FileNotFoundError):
+        CheckpointRecord.load("run-race-2")
+
+
+# ── (§9) canonical-snapshot requirement tests ────────────────────────────
+
+
+def test_canonical_create_snapshot_false_fails_closed(cfg_with_real_dataset):
+    """(§9.A) A canonical (family-set) config explicitly passing
+    create_snapshot=False must be rejected outright -- it can no longer
+    obtain a "canonical" manifest with verified digests but no
+    protected run-scoped snapshot."""
+    with pytest.raises(SnapshotIntegrityError, match="create_snapshot=False is not permitted"):
+        start_training_run(
+            cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+            run_id="run-no-snapshot-canonical", create_snapshot=False,
+        )
+
+
+def _install_fake_training_deps(monkeypatch):
+    """Installs minimal fake modules for the heavy training dependency
+    stack (unsloth/trl/transformers/datasets/peft/bitsandbytes -- never
+    really installed in this CPU-only environment) so a full
+    _train_impl() call can execute past its _check_deps()/import lines.
+    FastLanguageModel.from_pretrained() and datasets.load_dataset()
+    both raise AssertionError if actually called, so a test using this
+    helper positively proves those expensive steps were never reached
+    when it expects an earlier failure."""
+    for name in ("unsloth", "trl", "transformers", "datasets", "peft", "bitsandbytes"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+
+    def _unreachable_model_load(**kwargs):
+        raise AssertionError("FastLanguageModel.from_pretrained() was reached unexpectedly")
+
+    def _unreachable_dataset_load(*args, **kwargs):
+        raise AssertionError("datasets.load_dataset() was reached unexpectedly")
+
+    sys.modules["unsloth"].FastLanguageModel = types.SimpleNamespace(
+        from_pretrained=_unreachable_model_load, get_peft_model=lambda *a, **k: None,
+    )
+    sys.modules["trl"].SFTTrainer = object
+    sys.modules["transformers"].TrainingArguments = object
+    sys.modules["datasets"].load_dataset = _unreachable_dataset_load
+
+
+def test_canonical_manifest_with_empty_snapshot_paths_fails_before_model_load(cfg_with_real_dataset, monkeypatch):
+    """(§9.B) Even if a canonical manifest somehow has empty
+    dataset_snapshot_paths (e.g. constructed directly, bypassing
+    start_training_run()'s own guard), orca.train.finetune._train_impl()
+    must independently refuse to fall back to mutable source files --
+    defense in depth, not merely trusting the constructor-time guard.
+    _install_fake_training_deps() proves this happens BEFORE any model
+    load: FastLanguageModel.from_pretrained() would raise AssertionError
+    if it were ever reached, but SnapshotIntegrityError is raised first."""
+    _install_fake_training_deps(monkeypatch)
+    from orca.train.finetune import _train_impl
+
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id="run-empty-snapshot-paths",
+    )
+    # Simulate a canonical manifest that somehow lost its snapshot paths
+    # (e.g. a future code path that forgets to populate them).
+    manifest.dataset_snapshot_paths = {}
+
+    with pytest.raises(SnapshotIntegrityError, match="requires a verified run snapshot"):
+        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest)
+
+
+def test_dataset_resolution_and_snapshot_verification_precede_base_model_load(cfg_with_real_dataset, monkeypatch):
+    """(§7) Positive ordering proof, not just the fail-closed case above:
+    for a VALID canonical snapshot, _train_impl() must resolve/verify
+    and load the dataset BEFORE calling
+    FastLanguageModel.from_pretrained() on the success path too."""
+    call_order: list[str] = []
+
+    for name in ("unsloth", "trl", "transformers", "datasets", "peft", "bitsandbytes"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+
+    def fake_from_pretrained(**kwargs):
+        call_order.append("model_load")
+        raise RuntimeError("stop here -- ordering proof only, not full training")
+
+    def fake_load_dataset(*args, **kwargs):
+        call_order.append("dataset_load")
+        return {"train": [1, 2], "validation": [1]}
+
+    sys.modules["unsloth"].FastLanguageModel = types.SimpleNamespace(
+        from_pretrained=fake_from_pretrained, get_peft_model=lambda *a, **k: None,
+    )
+    sys.modules["trl"].SFTTrainer = object
+    sys.modules["transformers"].TrainingArguments = object
+    sys.modules["datasets"].load_dataset = fake_load_dataset
+
+    from orca.train.finetune import _train_impl
+
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id="run-ordering-proof",
+    )
+
+    with pytest.raises(RuntimeError, match="stop here"):
+        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest)
+
+    assert call_order == ["dataset_load", "model_load"]
+
+
+def test_canonical_snapshot_with_digest_equal_to_manifest_is_accepted(cfg_with_real_dataset):
+    """(§9.C) The normal, fully-verified canonical path: snapshot digest
+    equals the manifest's own dataset_content_digests -- accepted."""
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id="run-snapshot-matches-manifest",
+    )
+    assert manifest.dataset_split_digests["train"] == manifest.dataset_content_digests["train"]
+    assert manifest.dataset_split_digests["validation"] == manifest.dataset_content_digests["validation"]
+    # verify_run_snapshot() (the pre-load check _train_impl() performs)
+    # must accept this snapshot without raising.
+    verify_run_snapshot({
+        "train": {"path": manifest.dataset_snapshot_paths["train"], "sha256": manifest.dataset_split_digests["train"]},
+        "eval": {"path": manifest.dataset_snapshot_paths["validation"], "sha256": manifest.dataset_split_digests["validation"]},
+    })
+
+
+def test_bundle_digest_equals_source_digest_equals_snapshot_digest(tmp_path):
+    """(§9.D) For a multi-manifest bundle run: bundle digest == verified
+    source digest == snapshot digest, for every consumed split -- the
+    full semantic chain the manifest is supposed to preserve."""
+    manifest_a, manifest_b = _register_two_source_manifests(tmp_path)
+    combined_train = tmp_path / "combined_train.jsonl"
+    combined_eval = tmp_path / "combined_eval.jsonl"
+    combined_train.write_text('{"text": "a-train"}\n{"text": "b-train"}\n')
+    combined_eval.write_text('{"text": "a-eval"}\n{"text": "b-eval"}\n')
+
+    bundle = DatasetBundleManifest(
+        bundle_id="orneur-genesis-bundle", version="v1",
+        source_manifests=[
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-combined-safety-calibration-v1",
+                train_checksum=manifest_a.train_checksum, eval_checksum=manifest_a.eval_checksum,
+            ),
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-v2-v1",
+                train_checksum=manifest_b.train_checksum, eval_checksum=manifest_b.eval_checksum,
+            ),
+        ],
+        train_checksum=sha256_of_file(combined_train), eval_checksum=sha256_of_file(combined_eval),
+        record_count=2, creation_code_sha="test-sha", creation_procedure="concat", seed=42,
+    )
+    bundle.save()
+
+    cfg = TrainingConfig.preset("nano")
+    cfg.train_file = str(combined_train)
+    cfg.eval_file = str(combined_eval)
+
+    manifest = start_training_run(
+        cfg, dataset_manifest_ids=["orneur-genesis-combined-safety-calibration-v1", "orneur-genesis-v2-v1"],
+        hardware_info="test-cpu", run_id="run-bundle-chain", dataset_bundle_id="orneur-genesis-bundle-v1",
+    )
+
+    assert manifest.dataset_content_digests["train"] == bundle.train_checksum
+    assert manifest.dataset_content_digests["validation"] == bundle.eval_checksum
+    assert manifest.dataset_split_digests["train"] == bundle.train_checksum
+    assert manifest.dataset_split_digests["validation"] == bundle.eval_checksum
+
+
+def test_snapshot_train_split_off_by_one_byte_from_verified_source_is_rejected(tmp_path):
+    """(§9.E) The snapshot's train digest differs from the verified
+    source digest by even a single byte of drift -- must be rejected,
+    not merely "close enough"."""
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    train_path.write_text('{"text": "content"}\n')
+    eval_path.write_text('{"text": "eval-content"}\n')
+
+    real_train_digest = sha256_of_file(train_path)
+    real_eval_digest = sha256_of_file(eval_path)
+    # A single-character-different (but still well-formed) fake "verified"
+    # train digest -- simulates the snapshot's actual bytes not matching
+    # what was verified, without needing a real race window.
+    tampered_expected = ("f" if real_train_digest[0] != "f" else "0") + real_train_digest[1:]
+
+    with pytest.raises(SnapshotIntegrityError, match="train snapshot digest"):
+        create_run_snapshot(
+            "run-off-by-one-train", train_path=train_path, eval_path=eval_path,
+            expected_split_digests={"train": tampered_expected, "validation": real_eval_digest},
+        )
+
+
+def test_snapshot_validation_split_off_by_one_byte_from_verified_source_is_rejected(tmp_path):
+    """(§9.F) Same as above, but the validation split's digest is the
+    one that drifts from the verified expectation."""
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    train_path.write_text('{"text": "content"}\n')
+    eval_path.write_text('{"text": "eval-content"}\n')
+
+    real_train_digest = sha256_of_file(train_path)
+    real_eval_digest = sha256_of_file(eval_path)
+    tampered_expected = ("f" if real_eval_digest[0] != "f" else "0") + real_eval_digest[1:]
+
+    with pytest.raises(SnapshotIntegrityError, match="validation snapshot digest"):
+        create_run_snapshot(
+            "run-off-by-one-eval", train_path=train_path, eval_path=eval_path,
+            expected_split_digests={"train": real_train_digest, "validation": tampered_expected},
+        )
+
+
+def test_generic_config_remains_explicitly_noncanonical_and_cannot_register_as_native_family(tmp_path):
+    """(§9.G) A generic (family=None) config may still disable the
+    snapshot (create_snapshot=False) -- explicitly noncanonical, never
+    silently promoted to look like Genesis/Novus/Aeternum. Combined with
+    the pre-existing RESERVED_NATIVE_MODEL_NAMES guard (Phase 21B.2),
+    such a config still cannot register its output under a canonical
+    native model_id."""
+    cfg = TrainingConfig.preset("prosumer")  # family=None
+    assert cfg.family is None
+
+    # A generic config may still disable the snapshot without being
+    # rejected -- this is explicitly permitted (unlike canonical family
+    # configs, which are rejected by test_canonical_create_snapshot_false_fails_closed).
+    manifest = start_training_run(
+        cfg, dataset_manifest_ids=[], hardware_info="test-cpu",
+        run_id="run-generic-no-snapshot", create_snapshot=False,
+    )
+    assert manifest.dataset_snapshot_paths == {}
+    assert manifest.model_id == cfg.model_name  # not a canonical orneur-* model_id
+
+    # And it still cannot impersonate a canonical family by name (Phase
+    # 21B.2 regression, re-verified here in the same no-snapshot context).
+    from orca.train.config import validate_training_identity
+
+    cfg.model_name = "orneur-genesis"
+    with pytest.raises(ValueError, match="reserved"):
+        validate_training_identity(cfg)
+
+
 # ── (§15) multi-manifest / dataset bundle tests ─────────────────────────
 
 
