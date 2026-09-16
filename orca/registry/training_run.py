@@ -45,6 +45,18 @@ class TrainingRunManifest:
     failure_state: str | None = None   # None if still running/succeeded, else an error summary
     resume_parent_run_id: str | None = None
     resume_parent_checkpoint_id: str | None = None
+    # Phase 21B.1 additions (all additive, default None/{}, backward
+    # compatible with every manifest ever saved before this closure).
+    # "Recording a revision is not equivalent to loading that revision"
+    # (Phase 21B.1 audit finding) -- these fields exist so the exact
+    # bytes a run claims to have used are independently checkable
+    # against what orca/train/finetune.py actually passed to the real
+    # model/tokenizer loader, not merely discoverable indirectly from
+    # orca.registry.model_spec at some other point in time.
+    base_model_revision: str | None = None
+    tokenizer_revision: str | None = None
+    dataset_content_digests: dict[str, str] = field(default_factory=dict)  # {dataset_manifest_id: verified sha256}
+    compute_provider: str | None = None  # e.g. "kaggle" | "colab" | "modal" | "local" | "race-engineering" -- None if unknown/not recorded
 
     def manifest_path(self) -> Path:
         validate_id(self.run_id, "run_id")

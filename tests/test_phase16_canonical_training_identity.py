@@ -135,19 +135,41 @@ def test_reserved_native_model_names_cover_the_three_registered_families():
     assert "orca-ultra" in RESERVED_NATIVE_MODEL_NAMES
 
 
-def test_canonical_family_config_with_correct_base_model_still_trains(monkeypatch):
+def test_canonical_family_config_with_correct_base_model_still_trains(tmp_path, monkeypatch):
     """Non-regression: a canonical family config that has NOT been tampered
     with must still reach real training work (not be rejected by the new
     validator) -- proven by letting it proceed past validation into the
-    (mocked) unsloth import boundary."""
+    (mocked) unsloth import boundary.
+
+    Phase 21B.1 note: train() now also requires (and cryptographically
+    verifies) a real dataset_manifest_id before reaching _check_deps() --
+    this test registers one real DatasetManifest against real temp
+    train/eval files so it still exercises the intended boundary
+    (validate_training_identity() + dataset binding both passing) rather
+    than being rejected earlier by the newer, unrelated dataset guard."""
+    from orca.registry.dataset_manifest import DatasetManifest, sha256_of_file
     from orca.train.finetune import train
 
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    train_path.write_text('{"text": "hello"}\n')
+    eval_path.write_text('{"text": "world"}\n')
+    DatasetManifest(
+        dataset_id="orneur-genesis-v2", version="v1", purpose="test fixture", source_paths=["test"],
+        record_count=2, schema='{"text": str}', train_checksum=sha256_of_file(train_path),
+        eval_checksum=sha256_of_file(eval_path), creation_code_sha="test-sha", filters_applied="none",
+        deduplication_result="0 duplicates",
+    ).save()
+
     cfg = TrainingConfig.preset("nano")  # family="genesis", base_model correct, untouched
+    cfg.train_file = str(train_path)
+    cfg.eval_file = str(eval_path)
     with pytest.raises(ImportError):
         # No unsloth installed in this guard -- reaching _check_deps()'s
         # ImportError (not a ValueError) proves validate_training_identity()
-        # passed for a correctly-configured canonical request.
-        train(cfg)
+        # AND dataset binding both passed for a correctly-configured
+        # canonical request.
+        train(cfg, dataset_manifest_ids=["orneur-genesis-v2-v1"])
 
 
 def test_generic_experiment_config_with_explicit_base_model_still_trains():

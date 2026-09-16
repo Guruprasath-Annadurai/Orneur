@@ -21,7 +21,6 @@ from typing import Callable
 
 from orca.train.config import TrainingConfig, MODELS_DIR
 from orca.config import ORCA_HOME
-from orca.registry.dataset_manifest import sha256_of_file
 from orca.registry.provenance import complete_training_run, fail_training_run, start_training_run
 
 FORMATTED_DIR = ORCA_HOME / "training" / "formatted"
@@ -77,6 +76,29 @@ def train(
     return result
 
 
+def _load_base_model_and_tokenizer(cfg: TrainingConfig, base_model_revision: str | None):
+    """Isolated so the exact kwargs passed to Unsloth's real loader can
+    be inspected/mocked in a CPU-safe test without importing unsloth --
+    see tests/test_training_provenance.py::
+    test_load_base_model_and_tokenizer_passes_pinned_revision_to_loader.
+    Phase 21B.1 fix: `revision` is now always passed through (verified
+    live against Unsloth's own from_pretrained() signature, which
+    accepts `revision=None` and resolves it via HF's own revision
+    mechanism) -- never silently resolves the repo's default branch for
+    canonical (family-set) training, since resolve_pinned_revisions()
+    already raised before this function is ever called if a canonical
+    config had no pinned revision."""
+    from unsloth import FastLanguageModel
+
+    return FastLanguageModel.from_pretrained(
+        model_name=cfg.base_model,
+        max_seq_length=cfg.max_seq_length,
+        dtype=None,
+        load_in_4bit=cfg.load_in_4bit,
+        revision=base_model_revision,
+    )
+
+
 def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> dict:
     _check_deps()
 
@@ -85,16 +107,11 @@ def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> di
     from transformers import TrainingArguments
     from datasets import load_dataset
 
-    log(f"[Train] Loading base model: {cfg.base_model}")
+    log(f"[Train] Loading base model: {cfg.base_model} @ revision={manifest.base_model_revision or 'UNPINNED (generic config)'}")
     log(f"[Train] LoRA rank: {cfg.lora.r} | 4-bit: {cfg.load_in_4bit} | seq_len: {cfg.max_seq_length}")
 
-    # ── Step 1: Load model + tokenizer ────────────────────────────────────────
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=cfg.base_model,
-        max_seq_length=cfg.max_seq_length,
-        dtype=None,
-        load_in_4bit=cfg.load_in_4bit,
-    )
+    # ── Step 1: Load model + tokenizer, at the exact pinned revision ──────────
+    model, tokenizer = _load_base_model_and_tokenizer(cfg, manifest.base_model_revision)
 
     # ── Step 2: Attach LoRA adapters ──────────────────────────────────────────
     log("[Train] Attaching LoRA adapters...")
@@ -209,18 +226,19 @@ def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> di
     with open(output_dir / "training_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
 
-    # Phase 21B reproducibility closure: register a real CheckpointRecord
-    # for this run (EXPERIMENTAL lifecycle only -- never auto-promoted)
-    # and mark the manifest complete. checkpoint_id reuses cfg.model_name,
-    # matching the existing convention of keeping the legacy/Ollama name
-    # as the checkpoint identity.
-    merged_files = sorted(p for p in merged_path.rglob("*") if p.is_file())
-    artifact_checksum = sha256_of_file(merged_files[0]) if merged_files else "UNAVAILABLE"
+    # Phase 21B.1: register a real CheckpointRecord for this run
+    # (EXPERIMENTAL lifecycle only -- never auto-promoted) and mark the
+    # manifest complete. checkpoint_id reuses cfg.model_name, matching
+    # the existing convention of keeping the legacy/Ollama name as the
+    # checkpoint identity. artifact_checksum is now a deterministic,
+    # multi-file artifact-manifest digest over the ENTIRE merged_path
+    # directory (config, tokenizer, every weight shard) -- computed
+    # inside complete_training_run() via hash_artifact_directory(),
+    # replacing the prior "hash the first file only" identity.
     complete_training_run(
         manifest,
         checkpoint_id=cfg.model_name,
         artifact_path=str(merged_path),
-        artifact_checksum=artifact_checksum,
         step_or_epoch=f"epoch={cfg.num_epochs}",
         training_config_summary=f"QLoRA r={cfg.lora.r} alpha={cfg.lora.lora_alpha} seq_len={cfg.max_seq_length}",
         tokenizer_identity=cfg.base_model,
