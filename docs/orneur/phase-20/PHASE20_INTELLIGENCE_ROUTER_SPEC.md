@@ -107,17 +107,27 @@ source-text scanning, not just behavioral testing.
    `ADVERSARIAL_REVIEW`, which is a separate review-slot signal, not a
    primary-role requirement).
 4. **Role priority** when multiple candidates are eligible: an
-   investigative signal prefers `REASONER_INVESTIGATOR`, a pure
-   implementation signal prefers `BUILDER_EXECUTOR`; a caller's
-   `preferred_family` is honored only if it is independently eligible
-   (never granted by the request alone -- see &sect;6).
+   investigative signal prefers `CognitiveRole.REASONER_INVESTIGATOR`,
+   a pure implementation signal prefers `CognitiveRole.BUILDER_EXECUTOR`;
+   a caller's `preferred_family` is honored only if it is independently
+   eligible AND holds the role the task shape requires (never granted
+   by the request alone -- see &sect;6). **Correction (ROLE-DRIVEN
+   closure, &sect;10 below):** an earlier revision selected by a
+   hardcoded family-name priority list (e.g. `NOVUS` before `GENESIS`
+   for investigative work) that happened to agree with today's
+   canonical registry -- it was never actually role-driven. Selection
+   is now genuinely a function of `CognitiveRole`, with a stable
+   family-value tie-break among same-role candidates -- see &sect;10.
 5. **Mandatory review.** If `ADVERSARIAL_REVIEW`,
    `SECURITY_SENSITIVE_REASONING`, or `HIGH_CONSEQUENCE_REASONING` is
-   in the effective requirement set, a lifecycle/availability-eligible
-   Aeternum entry with a matching supported requirement becomes
-   `mandatory_review_family`. Unavailability is surfaced honestly via
+   in the effective requirement set (and the task is not itself a
+   review-only task -- see &sect;10), a lifecycle/availability-eligible
+   candidate holding `CognitiveRole.CRITIC_ARBITER_DISCOVERER` with a
+   matching supported requirement becomes `mandatory_review_family`.
+   Unavailability is surfaced honestly via
    `ADVERSARIAL_REVIEWER_UNAVAILABLE` -- never silently treated as
-   "reviewed."
+   "reviewed." **Correction:** an earlier revision searched literally
+   for `family is CognitiveFamily.AETERNUM` -- see &sect;10.
 
 A task whose combined core requirements no single registered family
 covers fails closed to `NO_ELIGIBLE_ROUTE` rather than guessing a
@@ -218,7 +228,75 @@ primary work. If the only otherwise-eligible reviewer coincides with
 the selected primary family, `mandatory_review_family` is cleared to
 `None` and `MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY` is recorded.
 
-## 10. Non-goals
+## 10. ROLE-DRIVEN closure: role, not family name, drives selection
+
+The initial and FINAL closures both selected the primary family and the
+mandatory reviewer via a hardcoded family-priority list
+(`(NOVUS, GENESIS, AETERNUM)` for investigative work, etc.) and a
+literal `family is CognitiveFamily.AETERNUM` check for the reviewer.
+Because today's canonical registry happens to have each role held by
+exactly one family, this produced the right *answer* while being the
+wrong *architecture* -- reproduced live (see `PHASE20_EVIDENCE.md`
+&sect;9) with a synthetic registry where Genesis holds
+`REASONER_INVESTIGATOR` and Novus holds `BUILDER_EXECUTOR`: the old
+code still picked Novus for investigative work and Genesis for
+implementation work, by name, ignoring their actual roles.
+
+**Preferred role derivation** (`evaluator._derive_preferred_role`): a
+full, documented, fixed-precedence partition of every
+`CognitiveRequirementKind` (13 total) into exactly one preferred
+`CognitiveRole`:
+
+| Requirement kinds | Preferred role |
+|---|---|
+| `INVESTIGATION`, `CAUSAL_REASONING`, `UNCERTAINTY_RESOLUTION`, `CONTRADICTION_RESOLUTION`, `EVIDENCE_SYNTHESIS`, `ARCHITECTURE` | `REASONER_INVESTIGATOR` |
+| `IMPLEMENTATION`, `EXECUTION_PLANNING`, `VERIFICATION` | `BUILDER_EXECUTOR` |
+| `DISCOVERY_EXPLORATION` (primary discovery work) | `CRITIC_ARBITER_DISCOVERER` |
+| A task whose ENTIRE effective work is `ADVERSARIAL_REVIEW`/`SECURITY_SENSITIVE_REASONING`/`HIGH_CONSEQUENCE_REASONING` ("review-only") | `CRITIC_ARBITER_DISCOVERER` |
+
+Precedence when a task's shape touches more than one row: investigative
+> implementation > discovery > review-only. `ARCHITECTURE` is
+reclassified investigative (architecture/design reasoning is
+epistemic-causal work, matching Novus's canonical role framing) and
+`DISCOVERY_EXPLORATION` gets its own primary-work grouping (it is
+Aeternum's own "Adversarial Discovery Intelligence" work, not a
+review-of-something-else signal).
+
+**Primary selection** (`evaluator._select_primary`): among registry
+candidates that are BOTH capability-eligible AND hold the preferred
+role, the smallest `family.value` wins (a stable, documented,
+family-name-free tie-break). A caller's `preferred_family` is honored
+only if it is independently eligible AND holds the preferred role --
+a capability-eligible candidate with the WRONG role can never be
+preferred into the primary slot. If eligible candidates exist but NONE
+holds the preferred role, this is never silently treated as a match:
+`NO_ELIGIBLE_ROUTE` with the dedicated `ROLE_ADEQUACY_NOT_SATISFIED`
+reason is returned instead.
+
+**Reviewer selection**: the mandatory-review slot search filters the
+registry by `entry.role is CognitiveRole.CRITIC_ARBITER_DISCOVERER`
+(plus lifecycle/availability eligibility and review-capability
+support), never by family identity. Under today's canonical registry
+this still resolves to Aeternum (the only family holding that role),
+so default real-world behavior is unchanged.
+
+**Review-only task semantics**: a task whose entire effective work is
+review/adversarial requirement kinds IS the review -- not a primary
+task additionally needing an independent reviewer. `ADVERSARIAL_REVIEW`
+is therefore included (not stripped) from the candidate capability
+check for such a task, `primary_family` is the eligible critic,
+`mandatory_review_family` stays `None`, and the mandatory-review-slot
+search is skipped entirely (nothing to search for -- the task itself
+is review). If no eligible critic exists,
+`NO_ELIGIBLE_ROUTE` + `ADVERSARIAL_REVIEWER_UNAVAILABLE` is returned --
+never an arbitrary Novus/Genesis primary. A MIXED task (primary work
+plus a distinct `ADVERSARIAL_REVIEW` requirement) retains the original
+two-slot meaning: `primary_family` is the primary worker,
+`mandatory_review_family` is a DISTINCT eligible critic (never equal to
+`primary_family` -- see &sect;9's review-honesty guard, now expressed
+as the reviewer-slot search excluding the primary family directly).
+
+## 11. Non-goals
 
 - Not a scheduler, load balancer, or concrete backend/checkpoint
   selector (that remains `orca.society.router`'s and the deployment

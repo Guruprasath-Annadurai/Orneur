@@ -195,3 +195,77 @@ the mitigation holds.
     own primary work.**
     Mitigation: explicit primary/reviewer equality guard.
     Test: `test_trust_closure.py::test_mandatory_reviewer_never_equals_primary_family`.
+
+## ROLE-DRIVEN closure (role, not family name, drives selection)
+
+29. **Primary/reviewer selection is actually a hardcoded family-name
+    priority list dressed up as "role priority" -- it happens to agree
+    with today's canonical registry (each role held by exactly one
+    family) but breaks the moment role and family diverge.** Reproduced
+    live with a synthetic registry swapping roles: Genesis holding
+    `REASONER_INVESTIGATOR` and Novus holding `BUILDER_EXECUTOR` still
+    routed investigative work to Novus and implementation work to
+    Genesis, by literal family name.
+    Mitigation: `evaluator._derive_preferred_role()` +
+    `evaluator._select_primary()`, genuinely role-driven with a
+    family-value tie-break.
+    Tests: `test_role_driven_routing.py::test_investigation_swapped_roles_selects_genesis_by_role`,
+    `::test_implementation_swapped_roles_selects_novus_by_role`.
+
+30. **Reviewer selection literally searches `family is
+    CognitiveFamily.AETERNUM` instead of the `CRITIC_ARBITER_DISCOVERER`
+    role, breaking the moment a different family holds that role.**
+    Mitigation: reviewer search filters by role.
+    Test: `test_role_driven_routing.py::test_reviewer_selection_follows_role_not_family_name`.
+
+31. **A capability-eligible candidate with the WRONG role is silently
+    treated as a role match because it's the only eligible candidate.**
+    Mitigation: `NO_ELIGIBLE_ROUTE` + `ROLE_ADEQUACY_NOT_SATISFIED`
+    when eligible candidates exist but none holds the preferred role.
+    Test: `test_role_driven_routing.py::test_role_adequacy_not_satisfied_when_no_eligible_candidate_has_required_role`.
+
+32. **`preferred_family` bypasses role adequacy: a capability-eligible
+    candidate with the wrong role is honored merely because the caller
+    asked for it by name.**
+    Mitigation: preference honored only when role also matches.
+    Test: `test_role_driven_routing.py::test_preferred_family_with_wrong_role_cannot_bypass_role_adequacy`.
+
+33. **A review-only task (its entire effective work is review/
+    adversarial requirement kinds) is treated as a primary task with no
+    core requirements, letting an arbitrary available family (e.g.
+    Novus) be selected as primary while review goes unaddressed, or
+    conversely produces an artificial primary/reviewer collision that
+    doesn't reflect the task's real shape (the task itself IS review).**
+    Mitigation: `review_only_task` detection drives primary role
+    directly to `CRITIC_ARBITER_DISCOVERER`, skips the separate
+    reviewer-slot search entirely, and fails closed with
+    `ADVERSARIAL_REVIEWER_UNAVAILABLE` when no eligible critic exists.
+    Tests: `test_routing_behavior.py::test_review_only_task_with_no_eligible_critic_fails_closed_honestly`,
+    `::test_review_only_task_with_eligible_critic_routes_critic_as_primary`.
+
+34. **A malformed nested `IntegrityReceipt` record (a raw `object()`
+    where an `AssertionAssessment`/`DisclosureRequirement`/
+    `IntegrityViolation` is expected, or a bare string standing in for
+    one of their enum fields) reaches `integrity_canonical.digest()`
+    before Phase 20 validates it, raising a raw `AttributeError` that
+    escapes `route_task()` entirely.** Reproduced live for all three
+    top-level nested-record tuples (`assertion_assessments`,
+    `required_disclosures`, `violations`).
+    Mitigation: comprehensive `receipt_trust._validate_receipt_structure()`,
+    run BEFORE any digest computation, covering every top-level field
+    and every nested record's every field via genuine Phase-19 enum/
+    type checks (never a bare string standing in for an enum member).
+    Tests: `test_receipt_structure.py` (19 cases).
+
+35. **Even after Phase-20 structural pre-validation, Phase-19's own
+    canonicalization could still raise an exception Phase 20 doesn't
+    anticipate, leaking a Phase-19-internal exception type across the
+    Phase-20 public boundary.**
+    Mitigation: `receipt_trust.verify_trusted_receipt()` wraps the
+    `integrity_canonical.digest()` call in a narrow
+    `except integrity_errors.IntegrityError` translator (never a broad
+    `except Exception`), raising the typed
+    `IntegrityReceiptCanonicalizationFailed` instead.
+    Verified via the hostile self-review sweep (no `except Exception`
+    anywhere in the package) plus the structural-validation tests
+    passing without ever reaching this defense-in-depth path.

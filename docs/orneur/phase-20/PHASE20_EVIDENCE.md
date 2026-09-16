@@ -211,3 +211,120 @@ Reconciliation against the prior Phase 20 baseline (commit `7168557`):
 3389 non-deselected + 22 new trust-closure tests = 3411 non-deselected
 now (3155 passed + 256 skipped = 3411, exact match); deselected
 unchanged at 43.
+
+---
+
+## 9. ROLE/STRUCTURE closure -- role-driven selection, receipt structure
+
+### 9.1 Family-name-priority reproduction: reproduced, then fixed
+
+Investigative work, with Genesis given `REASONER_INVESTIGATOR` and
+Novus given `BUILDER_EXECUTOR` (both otherwise capability-eligible):
+
+```
+INVESTIGATION swapped-roles -> primary: CognitiveFamily.NOVUS
+(Genesis has REASONER_INVESTIGATOR role, but selection picked by family name)
+```
+
+Implementation work, with the same swap:
+
+```
+IMPLEMENTATION swapped-roles -> primary: CognitiveFamily.GENESIS
+(Novus has BUILDER_EXECUTOR role, but selection picked by family name)
+```
+
+After the fix (`_derive_preferred_role` + `_select_primary`, both
+genuinely role-driven):
+
+```
+INVESTIGATION swapped-roles -> primary: CognitiveFamily.GENESIS (expect GENESIS, which now holds REASONER_INVESTIGATOR)
+IMPLEMENTATION swapped-roles -> primary: CognitiveFamily.NOVUS (expect NOVUS, which now holds BUILDER_EXECUTOR)
+default registry INVESTIGATION -> primary: CognitiveFamily.NOVUS (expect NOVUS, unchanged default truth)
+```
+
+The third line confirms canonical default-registry behavior is
+unchanged (section 7/21's carry-forward requirement).
+
+### 9.2 Malformed-receipt raw-exception reproduction: reproduced, then fixed
+
+Before the fix, a receipt with `assertion_assessments=(object(),)`,
+provenance-verified (genuine trust context + correct out-of-band
+digest of the malformed receipt itself), reached
+`integrity_canonical.digest()` and raised:
+
+```
+REPRODUCED: builtins AttributeError 'object' object has no attribute 'assertion_id'
+```
+
+The same reproduction for `required_disclosures=(object(),)` and
+`violations=(object(),)`:
+
+```
+required_disclosures REPRODUCED: builtins AttributeError 'object' object has no attribute 'assertion_id'
+violations REPRODUCED: builtins AttributeError 'object' object has no attribute 'reason'
+```
+
+After adding `receipt_trust._validate_receipt_structure()` (run BEFORE
+any digest computation):
+
+```
+assertion_assessments FIXED -> InvalidObjectType INVALID_OBJECT_TYPE
+required_disclosures FIXED -> InvalidObjectType INVALID_OBJECT_TYPE
+violations FIXED -> InvalidObjectType INVALID_OBJECT_TYPE
+```
+
+### 9.3 Hostile self-review sweep (ROLE/STRUCTURE closure package state)
+
+`grep -n "CognitiveFamily\.\(NOVUS\|GENESIS\|AETERNUM\)"` across
+`evaluator.py`: **zero occurrences** (was 4: the old
+`_select_primary`'s two hardcoded priority tuples plus the reviewer
+search's `family is CognitiveFamily.AETERNUM` plus the post-hoc
+collision-clearing check against `primary_family`). The same grep
+against `registry.py` still finds exactly 3 occurrences -- the
+canonical default-registry TRUTH DATA (identity, not selection
+priority), which is expected and correct.
+
+`grep -n "integrity_canonical.digest(receipt)"` in `receipt_trust.py`:
+one call, occurring textually and behaviorally AFTER
+`_validate_receipt_structure(receipt)` in `verify_trusted_receipt()`
+-- confirmed by the reproduction in &sect;9.2 above (once structural
+validation runs first, the raw `AttributeError` from digesting a
+malformed receipt is no longer reachable).
+
+The standard seven-check sweep (uuid/random/wall-clock, `hash(`,
+`except Exception`, `: Any`, `cast(`, `type: ignore`, authority-
+sounding field names): zero findings, unchanged.
+
+### 9.4 Test counts
+
+| Suite | Result |
+|---|---|
+| `tests/router/` (ROLE/STRUCTURE closure) | 94 passed (was 67) |
+| `tests/integrity/` (Phase 19 regression) | 225 passed, unchanged |
+| `tests/epistemic/` (Phase 18 regression) | 138 passed, unchanged |
+| `tests/ocl/` (Phase 17 regression) | 348 passed, unchanged |
+| `tests/test_packaging_invariant.py` | 8 passed, unchanged |
+| Full deterministic suite | 3182 passed, 256 skipped, 43 deselected |
+
+Reconciliation against the prior baseline (commit `a08ec38`): 3411
+non-deselected + 27 new tests (94 - 67) = 3438 non-deselected now
+(3182 passed + 256 skipped = 3438, exact match); deselected unchanged
+at 43.
+
+### 9.5 Limitations, documented honestly (not silently assumed)
+
+- A supplied `IntegrityReceipt` is an optional, conservative signal for
+  the SAME artifact/overlay context Phase 20 is routing -- Phase 20
+  proves the receipt's provenance and its binding to that
+  artifact/overlay, but does **not** prove semantic equivalence between
+  the Phase-19 proposal the receipt was computed for and the
+  Phase-20 `CognitiveTaskProfile` being routed (no formal
+  proposal/task identity link exists yet). This is not integrity
+  permission, and `SATISFIED` must never be read by any future phase as
+  execution authorization.
+- The pure Phase-20 router (no `orca.*` imports) maintains its own
+  trusted router-registry view of model lifecycle/availability,
+  independent of `orca.registry.model_spec`. Training Genesis in a
+  future phase does not, by itself, make it routing-eligible here --
+  any lifecycle/availability change must be reflected through an
+  explicit, evidenced trusted router-registry/configuration update.

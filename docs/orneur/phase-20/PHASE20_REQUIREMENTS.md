@@ -65,10 +65,19 @@
     and an out-of-band `expected_integrity_receipt_digest` --
     `isinstance(receipt, IntegrityReceipt)` alone MUST NOT be treated
     as trusted Phase-19 provenance.
-19. A provenance-verified receipt MUST be structurally validated
-    (every field, via typed `require_string`/`require_enum_member`)
-    and then MUST be bound to the artifact/overlay currently being
-    routed (`source_artifact_id`/`source_artifact_digest`/
+19. A supplied receipt MUST be structurally validated BEFORE any
+    digest is computed on it. **Correction (ROLE/STRUCTURE closure,
+    requirement 29 below):** this requirement previously read "every
+    field" while the implementation at the time validated only the six
+    top-level scalar fields (`protocol_version`, `receipt_id`,
+    `source_artifact_id`, `source_artifact_digest`,
+    `source_overlay_digest`, `integrity_status`) -- an overclaim,
+    corrected here and in the implementation: validation now covers
+    every top-level field AND every nested `AssertionAssessment`/
+    `DisclosureRequirement`/`IntegrityViolation` record (see
+    requirement 29). Only THEN is a provenance-verified, structurally-
+    valid receipt bound to the artifact/overlay currently being routed
+    (`source_artifact_id`/`source_artifact_digest`/
     `source_overlay_digest` all matching) before `integrity_status` is
     ever consumed. A binding mismatch MUST raise
     `IntegrityReceiptBindingInvalid`.
@@ -87,6 +96,43 @@
     coincides with the primary family, `mandatory_review_family` MUST
     be cleared to `None` and `MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_
     FAMILY` MUST be recorded.
+
+## ROLE-DRIVEN closure (role, not family name, drives selection)
+
+23. Primary selection MUST be a function of a derived
+    `CognitiveRole` (via a full, fixed-precedence partition of every
+    `CognitiveRequirementKind`), never a hardcoded family-name priority
+    list, even one that currently agrees with canonical registry truth.
+24. Among capability-eligible candidates whose role matches the
+    preferred role, selection MUST use a stable family-value tie-break.
+25. A caller's `preferred_family` MUST be honored only if independently
+    eligible AND its role matches the preferred role -- role adequacy
+    MUST NOT be bypassable by preference.
+26. If eligible candidates exist but none holds the preferred role,
+    this MUST NOT be silently treated as a match: `NO_ELIGIBLE_ROUTE`
+    with `ROLE_ADEQUACY_NOT_SATISFIED` MUST be returned instead.
+27. Mandatory-reviewer selection MUST filter by
+    `CognitiveRole.CRITIC_ARBITER_DISCOVERER`, never by
+    `family is CognitiveFamily.AETERNUM` or any other literal family
+    check.
+28. A task whose entire effective work is review/adversarial
+    requirement kinds MUST be treated as the review itself: its
+    preferred role MUST be `CRITIC_ARBITER_DISCOVERER`,
+    `mandatory_review_family` MUST stay `None`, and the mandatory-
+    review-slot search MUST be skipped. A MIXED task (primary work +
+    a distinct review requirement) MUST retain the two-slot meaning
+    (distinct primary and reviewer families).
+29. An `IntegrityReceipt` MUST undergo FULL structural pre-validation
+    (every top-level field, and every nested `AssertionAssessment`/
+    `DisclosureRequirement`/`IntegrityViolation` record) BEFORE
+    `integrity_canonical.digest()` is ever called on it -- never after.
+    A structurally malformed receipt MUST fail with a typed
+    `RouterError`, never a raw `AttributeError`/`TypeError`/
+    `KeyError`/`ValueError`.
+30. Any exception `integrity_canonical.digest()` itself raises (defense
+    in depth, in case structural pre-validation has a gap) MUST be
+    caught and translated into a typed `RouterError`, never left to
+    escape `route_task()` unwrapped.
 
 ## Non-functional
 
