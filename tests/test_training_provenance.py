@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from orca.registry.checkpoint import CheckpointRecord, CheckpointStructureInvalid
+from orca.registry.checkpoint import CheckpointRecord, CheckpointStructureInvalid, CorruptCheckpointError
 from orca.registry.dataset_bundle import DatasetBundleManifest, SourceManifestLineage
 from orca.registry.dataset_manifest import DatasetManifest, sha256_of_file
 from orca.registry.model_registry import ModelRegistry
@@ -388,6 +388,107 @@ def test_finetune_train_wrapper_marks_manifest_failed_on_missing_dependencies(cf
     assert runs[0].base_model_revision == "7548fff1f997f57b2e9e8ab1ec7be96949b00ed0"
 
 
+# ── (§2-3) real train() entrypoint bundle wiring ────────────────────────
+
+
+def _cfg_and_valid_bundle_for_two_sources(tmp_path):
+    """Builds two real source DatasetManifests, a combined train/eval
+    file pair, and a DatasetBundleManifest whose lineage checksums
+    exactly match the current source manifests -- the normal, fully-
+    bound multi-manifest success path, returned as
+    (cfg, dataset_manifest_ids, dataset_bundle_id)."""
+    manifest_a, manifest_b = _register_two_source_manifests(tmp_path)
+    combined_train = tmp_path / "combined_train.jsonl"
+    combined_eval = tmp_path / "combined_eval.jsonl"
+    combined_train.write_text('{"text": "a-train"}\n{"text": "b-train"}\n')
+    combined_eval.write_text('{"text": "a-eval"}\n{"text": "b-eval"}\n')
+
+    bundle = DatasetBundleManifest(
+        bundle_id="orneur-genesis-bundle", version="v1",
+        source_manifests=[
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-combined-safety-calibration-v1",
+                train_checksum=manifest_a.train_checksum, eval_checksum=manifest_a.eval_checksum,
+            ),
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-v2-v1",
+                train_checksum=manifest_b.train_checksum, eval_checksum=manifest_b.eval_checksum,
+            ),
+        ],
+        train_checksum=sha256_of_file(combined_train), eval_checksum=sha256_of_file(combined_eval),
+        record_count=2, creation_code_sha="test-sha", creation_procedure="concatenation, seed=42", seed=42,
+    )
+    bundle.save()
+
+    cfg = TrainingConfig.preset("nano")
+    cfg.train_file = str(combined_train)
+    cfg.eval_file = str(combined_eval)
+    dataset_manifest_ids = ["orneur-genesis-combined-safety-calibration-v1", "orneur-genesis-v2-v1"]
+    return cfg, dataset_manifest_ids, "orneur-genesis-bundle-v1"
+
+
+def test_finetune_train_wrapper_forwards_dataset_bundle_id_through_real_entrypoint(tmp_path):
+    """Defect A closure: start_training_run() has always accepted
+    dataset_bundle_id, but orca.train.finetune.train() -- the real
+    public training path -- had no parameter to forward one, so
+    multi-manifest canonical training could never actually reach the
+    DatasetBundleManifest path except via a direct (test-only) call to
+    start_training_run(). This proves the REAL train() entrypoint: a
+    canonical Genesis config + two source manifests + a valid
+    DatasetBundleManifest + dataset_bundle_id reaches provenance
+    creation successfully and fails only at the expected missing heavy
+    training dependency boundary (this CPU test environment genuinely
+    lacks unsloth/trl/datasets/peft/bitsandbytes)."""
+    from orca.registry.training_run import list_runs
+    from orca.train.finetune import train
+
+    cfg, dataset_manifest_ids, dataset_bundle_id = _cfg_and_valid_bundle_for_two_sources(tmp_path)
+
+    with pytest.raises(ImportError, match="Missing training dependencies"):
+        train(
+            cfg, on_log=lambda _msg: None,
+            dataset_manifest_ids=dataset_manifest_ids,
+            dataset_bundle_id=dataset_bundle_id,
+        )
+
+    runs = list_runs("orneur-genesis")
+    assert len(runs) == 1
+    run = runs[0]
+    assert run.dataset_bundle_id == dataset_bundle_id
+    assert set(run.dataset_manifest_ids) == set(dataset_manifest_ids)
+    assert "train" in run.dataset_split_digests
+    assert "validation" in run.dataset_split_digests
+    assert "train" in run.dataset_snapshot_paths
+    assert "validation" in run.dataset_snapshot_paths
+    # The recorded digests are the run-scoped SNAPSHOT's digests (Phase
+    # 21B.2 TOCTOU closure), not merely the bundle's own combined digest
+    # -- verify the snapshot files actually exist and match.
+    assert Path(run.dataset_snapshot_paths["train"]).exists()
+    assert sha256_of_file(Path(run.dataset_snapshot_paths["train"])) == run.dataset_split_digests["train"]
+    # Even on failure, the manifest already recorded what it would have used.
+    assert run.failure_state is not None
+    assert "ImportError" in run.failure_state
+
+
+def test_finetune_train_wrapper_without_bundle_id_fails_before_dependency_loading(tmp_path):
+    """Defect A closure, second half: the SAME multi-manifest call
+    WITHOUT dataset_bundle_id must fail closed inside
+    start_training_run()'s verify_dataset_binding() call -- BEFORE
+    _train_impl()'s _check_deps() is ever reached, i.e. a
+    DatasetBindingInvalid, never an ImportError. No TrainingRunManifest
+    may be persisted for a run that was never even valid enough to
+    start."""
+    from orca.registry.training_run import list_runs
+    from orca.train.finetune import train
+
+    cfg, dataset_manifest_ids, _dataset_bundle_id = _cfg_and_valid_bundle_for_two_sources(tmp_path)
+
+    with pytest.raises(DatasetBindingInvalid, match="dataset_bundle_id"):
+        train(cfg, on_log=lambda _msg: None, dataset_manifest_ids=dataset_manifest_ids)
+
+    assert list_runs("orneur-genesis") == []
+
+
 def test_fail_training_run_never_creates_a_checkpoint(cfg_with_real_dataset):
     """A failure must never leave the registry looking as if a
     checkpoint succeeded -- no CheckpointRecord exists after a failure."""
@@ -732,6 +833,184 @@ def test_bundle_lineage_mismatch_is_rejected(tmp_path):
         )
 
 
+# ── (§4-6) bundle source-manifest lineage checksum enforcement ──────────
+# Distinct from test_bundle_lineage_mismatch_is_rejected above (which
+# covers the SOURCE-ID-SET mismatch case): these tests cover the case
+# where the source ID set matches exactly, but the per-source content
+# CHECKSUMS the bundle recorded no longer match (or never matched) that
+# source manifest's actual current checksums.
+
+
+def _valid_two_source_bundle(tmp_path):
+    """Two real source manifests + a combined file pair + a
+    DatasetBundleManifest whose lineage checksums are, at this point,
+    exactly correct -- the baseline every test below perturbs."""
+    manifest_a, manifest_b = _register_two_source_manifests(tmp_path)
+    combined_train = tmp_path / "combined_train.jsonl"
+    combined_eval = tmp_path / "combined_eval.jsonl"
+    combined_train.write_text('{"text": "a-train"}\n{"text": "b-train"}\n')
+    combined_eval.write_text('{"text": "a-eval"}\n{"text": "b-eval"}\n')
+
+    dataset_manifest_ids = ["orneur-genesis-combined-safety-calibration-v1", "orneur-genesis-v2-v1"]
+    cfg = TrainingConfig.preset("nano")
+    cfg.train_file = str(combined_train)
+    cfg.eval_file = str(combined_eval)
+    return manifest_a, manifest_b, cfg, dataset_manifest_ids, combined_train, combined_eval
+
+
+def test_bundle_lineage_rejects_source_manifest_mutated_after_bundle_built_train_checksum(tmp_path):
+    """(§6.B) Same source ID, but the on-disk source DatasetManifest's
+    train_checksum was replaced/mutated AFTER the bundle recorded its
+    lineage -- must FAIL, proving a source manifest cannot be silently
+    swapped under the same id without invalidating the bundle's lineage
+    claim."""
+    manifest_a, manifest_b, cfg, dataset_manifest_ids, combined_train, combined_eval = (
+        _valid_two_source_bundle(tmp_path)
+    )
+    bundle = DatasetBundleManifest(
+        bundle_id="orneur-genesis-bundle", version="v1",
+        source_manifests=[
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-combined-safety-calibration-v1",
+                train_checksum=manifest_a.train_checksum, eval_checksum=manifest_a.eval_checksum,
+            ),
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-v2-v1",
+                train_checksum=manifest_b.train_checksum, eval_checksum=manifest_b.eval_checksum,
+            ),
+        ],
+        train_checksum=sha256_of_file(combined_train), eval_checksum=sha256_of_file(combined_eval),
+        record_count=2, creation_code_sha="t", creation_procedure="t", seed=42,
+    )
+    bundle.save()
+
+    # Mutate source manifest A's train_checksum on disk AFTER the bundle
+    # was built -- same dataset_id/version, different recorded checksum
+    # (simulates the source manifest being silently replaced/regenerated).
+    manifest_a.train_checksum = "f" * 64
+    manifest_a.save()
+
+    with pytest.raises(DatasetBindingInvalid, match="train_checksum"):
+        verify_dataset_binding(cfg, dataset_manifest_ids=dataset_manifest_ids, dataset_bundle_id="orneur-genesis-bundle-v1")
+
+
+def test_bundle_lineage_rejects_source_manifest_mutated_after_bundle_built_eval_checksum(tmp_path):
+    """(§6.C) Same as above, but the eval_checksum was mutated."""
+    manifest_a, manifest_b, cfg, dataset_manifest_ids, combined_train, combined_eval = (
+        _valid_two_source_bundle(tmp_path)
+    )
+    bundle = DatasetBundleManifest(
+        bundle_id="orneur-genesis-bundle", version="v1",
+        source_manifests=[
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-combined-safety-calibration-v1",
+                train_checksum=manifest_a.train_checksum, eval_checksum=manifest_a.eval_checksum,
+            ),
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-v2-v1",
+                train_checksum=manifest_b.train_checksum, eval_checksum=manifest_b.eval_checksum,
+            ),
+        ],
+        train_checksum=sha256_of_file(combined_train), eval_checksum=sha256_of_file(combined_eval),
+        record_count=2, creation_code_sha="t", creation_procedure="t", seed=42,
+    )
+    bundle.save()
+
+    manifest_b.eval_checksum = "e" * 64
+    manifest_b.save()
+
+    with pytest.raises(DatasetBindingInvalid, match="eval_checksum"):
+        verify_dataset_binding(cfg, dataset_manifest_ids=dataset_manifest_ids, dataset_bundle_id="orneur-genesis-bundle-v1")
+
+
+def test_bundle_lineage_rejects_duplicate_source_entry(tmp_path):
+    """(§6.D) The same dataset_manifest_id appears twice in the bundle's
+    own source_manifests lineage list -- must FAIL regardless of whether
+    the declared dataset_manifest_ids set happens to match."""
+    manifest_a, manifest_b, cfg, dataset_manifest_ids, combined_train, combined_eval = (
+        _valid_two_source_bundle(tmp_path)
+    )
+    bundle = DatasetBundleManifest(
+        bundle_id="orneur-genesis-bundle", version="v1",
+        source_manifests=[
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-combined-safety-calibration-v1",
+                train_checksum=manifest_a.train_checksum, eval_checksum=manifest_a.eval_checksum,
+            ),
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-combined-safety-calibration-v1",
+                train_checksum=manifest_a.train_checksum, eval_checksum=manifest_a.eval_checksum,
+            ),
+        ],  # duplicate entry; "orneur-genesis-v2-v1" never named at all
+        train_checksum=sha256_of_file(combined_train), eval_checksum=sha256_of_file(combined_eval),
+        record_count=2, creation_code_sha="t", creation_procedure="t", seed=42,
+    )
+    bundle.save()
+
+    with pytest.raises(DatasetBindingInvalid, match="duplicate"):
+        verify_dataset_binding(cfg, dataset_manifest_ids=dataset_manifest_ids, dataset_bundle_id="orneur-genesis-bundle-v1")
+
+
+def test_bundle_lineage_rejects_malformed_digest(tmp_path):
+    """(§6.E) A lineage entry's checksum is not a real sha256 hex
+    digest -- must FAIL rather than attempt a (meaningless) comparison."""
+    manifest_a, manifest_b, cfg, dataset_manifest_ids, combined_train, combined_eval = (
+        _valid_two_source_bundle(tmp_path)
+    )
+    bundle = DatasetBundleManifest(
+        bundle_id="orneur-genesis-bundle", version="v1",
+        source_manifests=[
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-combined-safety-calibration-v1",
+                train_checksum="not-a-real-sha256-digest", eval_checksum=manifest_a.eval_checksum,
+            ),
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-v2-v1",
+                train_checksum=manifest_b.train_checksum, eval_checksum=manifest_b.eval_checksum,
+            ),
+        ],
+        train_checksum=sha256_of_file(combined_train), eval_checksum=sha256_of_file(combined_eval),
+        record_count=2, creation_code_sha="t", creation_procedure="t", seed=42,
+    )
+    bundle.save()
+
+    with pytest.raises(DatasetBindingInvalid, match="malformed"):
+        verify_dataset_binding(cfg, dataset_manifest_ids=dataset_manifest_ids, dataset_bundle_id="orneur-genesis-bundle-v1")
+
+
+def test_bundle_lineage_rejects_wrong_digest_even_when_source_id_set_matches(tmp_path):
+    """(§6.F) The bundle's source-ID SET matches the declared
+    dataset_manifest_ids exactly (so the set-equality check alone would
+    pass), but the recorded lineage digest for one source was simply
+    wrong from the start (not a later mutation) -- must still FAIL."""
+    manifest_a, manifest_b, cfg, dataset_manifest_ids, combined_train, combined_eval = (
+        _valid_two_source_bundle(tmp_path)
+    )
+    bundle = DatasetBundleManifest(
+        bundle_id="orneur-genesis-bundle", version="v1",
+        source_manifests=[
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-combined-safety-calibration-v1",
+                train_checksum=manifest_a.train_checksum, eval_checksum=manifest_a.eval_checksum,
+            ),
+            SourceManifestLineage(
+                dataset_manifest_id="orneur-genesis-v2-v1",
+                # Correct ID, but checksums swapped with manifest A's --
+                # same set of IDs, wrong digest lineage.
+                train_checksum=manifest_a.train_checksum, eval_checksum=manifest_a.eval_checksum,
+            ),
+        ],
+        train_checksum=sha256_of_file(combined_train), eval_checksum=sha256_of_file(combined_eval),
+        record_count=2, creation_code_sha="t", creation_procedure="t", seed=42,
+    )
+    bundle.save()
+
+    assert {s.dataset_manifest_id for s in bundle.source_manifests} == set(dataset_manifest_ids)
+
+    with pytest.raises(DatasetBindingInvalid, match="does not match"):
+        verify_dataset_binding(cfg, dataset_manifest_ids=dataset_manifest_ids, dataset_bundle_id="orneur-genesis-bundle-v1")
+
+
 # ── (§16) checkpoint structural completeness tests ──────────────────────
 
 
@@ -924,3 +1203,258 @@ def test_extra_harmless_file_is_accepted_and_documented(tmp_path):
     # not block validation and would still appear in hash_artifact_directory().
     manifest = hash_artifact_directory(d)
     assert any(f["path"] == "README.md" for f in manifest["files"])
+
+
+# ── (§7-13) checkpoint post-registration integrity closure ──────────────
+# Phase 21B.2.1: CheckpointRecord.verify_integrity() previously called
+# sha256_of_file() unconditionally, which disagreed with the directory
+# manifest digest complete_training_run() actually registered for every
+# merged (directory-backed) checkpoint. These tests exercise the real
+# registration -> reload -> verify_integrity() lifecycle end to end, plus
+# the fail-closed symlink-escape policy for every required checkpoint
+# member (config, tokenizer, unsharded weight, shard).
+
+
+def _register_complete_checkpoint(tmp_path, cfg_with_real_dataset, run_id: str):
+    """Registers a real, structurally-complete directory checkpoint via
+    the actual complete_training_run() path and returns
+    (CheckpointRecord, artifact_dir)."""
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id=run_id,
+    )
+    artifact_dir = tmp_path / f"{run_id}-artifact"
+    artifact_dir.mkdir()
+    (artifact_dir / "config.json").write_text("{}")
+    (artifact_dir / "tokenizer.json").write_text("{}")
+    (artifact_dir / "model.safetensors").write_bytes(b"real-weights")
+
+    record = complete_training_run(
+        manifest, checkpoint_id=f"{run_id}-checkpoint", artifact_path=str(artifact_dir),
+        step_or_epoch="epoch=1", training_config_summary="t", tokenizer_identity="t",
+    )
+    return record, artifact_dir
+
+
+def test_registered_directory_checkpoint_reverifies_as_valid(tmp_path, cfg_with_real_dataset):
+    """(§12.A) Register a complete directory checkpoint, reload the
+    CheckpointRecord from disk (a fresh object, not the in-memory one
+    complete_training_run() returned), and verify_integrity() must use
+    the SAME canonical directory-manifest algorithm registration used --
+    proving registration and reverification no longer disagree."""
+    record, artifact_dir = _register_complete_checkpoint(tmp_path, cfg_with_real_dataset, "run-integrity-a")
+
+    reloaded = CheckpointRecord.load(f"{record.checkpoint_id}")
+    assert reloaded.verify_integrity(artifact_dir) is True
+    assert reloaded.validation_state == "VALID"
+    assert reloaded.availability == "LOCAL"
+
+
+def test_registered_directory_checkpoint_detects_mutated_weight_byte(tmp_path, cfg_with_real_dataset):
+    """(§12.B) A single mutated byte in the weight file after
+    registration must be detected as CORRUPT, not silently pass or
+    error out on "can't hash a directory"."""
+    record, artifact_dir = _register_complete_checkpoint(tmp_path, cfg_with_real_dataset, "run-integrity-b")
+    (artifact_dir / "model.safetensors").write_bytes(b"MUTATED-weights")
+
+    reloaded = CheckpointRecord.load(record.checkpoint_id)
+    with pytest.raises(CorruptCheckpointError):
+        reloaded.verify_integrity(artifact_dir)
+    assert reloaded.validation_state == "CORRUPT"
+
+
+def test_registered_directory_checkpoint_detects_mutated_config(tmp_path, cfg_with_real_dataset):
+    """(§12.C) A mutated config.json after registration must also be
+    detected as CORRUPT."""
+    record, artifact_dir = _register_complete_checkpoint(tmp_path, cfg_with_real_dataset, "run-integrity-c")
+    (artifact_dir / "config.json").write_text('{"mutated": true}')
+
+    reloaded = CheckpointRecord.load(record.checkpoint_id)
+    with pytest.raises(CorruptCheckpointError):
+        reloaded.verify_integrity(artifact_dir)
+    assert reloaded.validation_state == "CORRUPT"
+
+
+def test_registered_directory_checkpoint_detects_unexpected_added_file(tmp_path, cfg_with_real_dataset):
+    """(§12.D) A file added to the artifact directory after registration
+    changes the manifest digest -- must be detected as CORRUPT."""
+    record, artifact_dir = _register_complete_checkpoint(tmp_path, cfg_with_real_dataset, "run-integrity-d")
+    (artifact_dir / "unexpected-extra-file.bin").write_bytes(b"not part of the registered checkpoint")
+
+    reloaded = CheckpointRecord.load(record.checkpoint_id)
+    with pytest.raises(CorruptCheckpointError):
+        reloaded.verify_integrity(artifact_dir)
+    assert reloaded.validation_state == "CORRUPT"
+
+
+def test_registered_directory_checkpoint_never_stays_valid_after_tokenizer_removed(tmp_path, cfg_with_real_dataset):
+    """(§12.E) Removing the tokenizer after registration must never
+    leave the checkpoint looking VALID -- the digest no longer matches
+    (a required file is gone), so integrity verification fails closed."""
+    record, artifact_dir = _register_complete_checkpoint(tmp_path, cfg_with_real_dataset, "run-integrity-e")
+    (artifact_dir / "tokenizer.json").unlink()
+
+    reloaded = CheckpointRecord.load(record.checkpoint_id)
+    with pytest.raises(CorruptCheckpointError):
+        reloaded.verify_integrity(artifact_dir)
+    assert reloaded.validation_state != "VALID"
+
+
+def test_registered_directory_checkpoint_survives_filesystem_creation_order(tmp_path, cfg_with_real_dataset):
+    """(§12.K) Deterministic digest invariance under filesystem creation
+    order, exercised through the real registration/reverification path
+    (not just hash_artifact_directory() in isolation, as
+    test_hash_artifact_directory_does_not_depend_on_filesystem_order
+    already covers) -- registering the same file set in a different
+    creation order must still verify as VALID against the same record."""
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id="run-integrity-k",
+    )
+    artifact_dir = tmp_path / "order-artifact"
+    artifact_dir.mkdir()
+    # Deliberately reversed creation order vs _register_complete_checkpoint.
+    (artifact_dir / "model.safetensors").write_bytes(b"real-weights")
+    (artifact_dir / "tokenizer.json").write_text("{}")
+    (artifact_dir / "config.json").write_text("{}")
+
+    record = complete_training_run(
+        manifest, checkpoint_id="run-integrity-k-checkpoint", artifact_path=str(artifact_dir),
+        step_or_epoch="epoch=1", training_config_summary="t", tokenizer_identity="t",
+    )
+    reloaded = CheckpointRecord.load(record.checkpoint_id)
+    assert reloaded.verify_integrity(artifact_dir) is True
+    assert reloaded.validation_state == "VALID"
+
+
+def _artifact_dir_with_symlink(tmp_path, run_label: str, *, symlink_name: str, other_required: dict[str, bytes]):
+    """Builds an otherwise-complete checkpoint artifact directory where
+    ONE required file (`symlink_name`) is a symlink pointing OUTSIDE the
+    artifact root, and every other file in `other_required` is a normal
+    regular file. Returns the artifact directory path."""
+    outside_dir = tmp_path / f"{run_label}-outside"
+    outside_dir.mkdir()
+    outside_target = outside_dir / f"escaped-{symlink_name}"
+    outside_target.write_bytes(b"content living outside the artifact root")
+
+    artifact_dir = tmp_path / f"{run_label}-artifact"
+    artifact_dir.mkdir()
+    for name, content in other_required.items():
+        (artifact_dir / name).write_bytes(content)
+    (artifact_dir / symlink_name).symlink_to(outside_target)
+    return artifact_dir
+
+
+def test_config_symlink_outside_artifact_root_is_rejected(tmp_path, cfg_with_real_dataset):
+    """(§12.F) config.json as a symlink escaping the artifact root must
+    be rejected at registration -- never silently trusted."""
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id="run-symlink-config",
+    )
+    artifact_dir = _artifact_dir_with_symlink(
+        tmp_path, "symlink-config", symlink_name="config.json",
+        other_required={"tokenizer.json": b"{}", "model.safetensors": b"weights"},
+    )
+    with pytest.raises(CheckpointStructureInvalid, match="symlink"):
+        complete_training_run(
+            manifest, checkpoint_id="symlink-config-checkpoint", artifact_path=str(artifact_dir),
+            step_or_epoch="epoch=1", training_config_summary="t", tokenizer_identity="t",
+        )
+    assert ModelRegistry().lookup("symlink-config-checkpoint") is None
+
+
+def test_tokenizer_symlink_outside_artifact_root_is_rejected(tmp_path, cfg_with_real_dataset):
+    """(§12.G) tokenizer.json as an out-of-root symlink must be rejected."""
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id="run-symlink-tokenizer",
+    )
+    artifact_dir = _artifact_dir_with_symlink(
+        tmp_path, "symlink-tokenizer", symlink_name="tokenizer.json",
+        other_required={"config.json": b"{}", "model.safetensors": b"weights"},
+    )
+    with pytest.raises(CheckpointStructureInvalid, match="symlink"):
+        complete_training_run(
+            manifest, checkpoint_id="symlink-tokenizer-checkpoint", artifact_path=str(artifact_dir),
+            step_or_epoch="epoch=1", training_config_summary="t", tokenizer_identity="t",
+        )
+    assert ModelRegistry().lookup("symlink-tokenizer-checkpoint") is None
+
+
+def test_unsharded_weight_symlink_outside_artifact_root_is_rejected(tmp_path, cfg_with_real_dataset):
+    """(§12.H) An unsharded model.safetensors as an out-of-root symlink
+    must be rejected."""
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id="run-symlink-weight",
+    )
+    artifact_dir = _artifact_dir_with_symlink(
+        tmp_path, "symlink-weight", symlink_name="model.safetensors",
+        other_required={"config.json": b"{}", "tokenizer.json": b"{}"},
+    )
+    with pytest.raises(CheckpointStructureInvalid, match="symlink"):
+        complete_training_run(
+            manifest, checkpoint_id="symlink-weight-checkpoint", artifact_path=str(artifact_dir),
+            step_or_epoch="epoch=1", training_config_summary="t", tokenizer_identity="t",
+        )
+    assert ModelRegistry().lookup("symlink-weight-checkpoint") is None
+
+
+def test_shard_symlink_outside_artifact_root_is_rejected(tmp_path, cfg_with_real_dataset):
+    """(§12.I) A shard file referenced by a shard index, itself a
+    symlink escaping the artifact root, must be rejected -- both by the
+    existing resolve()-based shard-escape check AND the blanket
+    fail-closed symlink policy."""
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id="run-symlink-shard",
+    )
+    outside_dir = tmp_path / "symlink-shard-outside"
+    outside_dir.mkdir()
+    outside_shard = outside_dir / "escaped-shard.safetensors"
+    outside_shard.write_bytes(b"shard content living outside the artifact root")
+
+    artifact_dir = tmp_path / "symlink-shard-artifact"
+    artifact_dir.mkdir()
+    (artifact_dir / "config.json").write_text("{}")
+    (artifact_dir / "tokenizer.json").write_text("{}")
+    (artifact_dir / "model-00001-of-00001.safetensors").symlink_to(outside_shard)
+    (artifact_dir / "model.safetensors.index.json").write_text(json.dumps({
+        "weight_map": {"layer1": "model-00001-of-00001.safetensors"}
+    }))
+
+    with pytest.raises(CheckpointStructureInvalid, match="symlink"):
+        complete_training_run(
+            manifest, checkpoint_id="symlink-shard-checkpoint", artifact_path=str(artifact_dir),
+            step_or_epoch="epoch=1", training_config_summary="t", tokenizer_identity="t",
+        )
+    assert ModelRegistry().lookup("symlink-shard-checkpoint") is None
+
+
+def test_valid_ordinary_in_root_files_are_still_accepted_after_symlink_policy(tmp_path, cfg_with_real_dataset):
+    """(§12.J) The new fail-closed symlink policy must not reject a
+    perfectly ordinary checkpoint that contains no symlinks at all --
+    exercised through the real registration path, complementing
+    test_complete_training_run_registers_checkpoint_at_experimental_only."""
+    record, artifact_dir = _register_complete_checkpoint(tmp_path, cfg_with_real_dataset, "run-ordinary-files")
+    assert ModelRegistry().lookup(record.checkpoint_id) is not None
+    reloaded = CheckpointRecord.load(record.checkpoint_id)
+    assert reloaded.verify_integrity(artifact_dir) is True
+
+
+def test_hash_artifact_directory_rejects_symlinks_directly_too(tmp_path):
+    """hash_artifact_directory() applies the same fail-closed symlink
+    policy independently of validate_checkpoint_artifact() -- so the
+    hasher and the validator can never disagree, even if hash_artifact_directory()
+    is ever called on a directory that skipped structural validation."""
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"outside content")
+    d = tmp_path / "ckpt"
+    d.mkdir()
+    (d / "config.json").write_text("{}")
+    (d / "tokenizer.json").write_text("{}")
+    (d / "model.safetensors").symlink_to(outside)
+
+    with pytest.raises(CheckpointStructureInvalid, match="symlink"):
+        hash_artifact_directory(d)

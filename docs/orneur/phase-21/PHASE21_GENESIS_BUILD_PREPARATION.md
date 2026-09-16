@@ -294,6 +294,52 @@ Fixed:
 `tests/test_training_provenance.py`: 26 -> 50+ tests, covering every
 adversarial case above plus the impersonation finding.
 
+## 8.7. Phase 21B.2.1 closure (final provenance & checkpoint trust seams)
+
+A further independent audit found that Phase 21B.2's own closure left
+four seams open. Fixed:
+
+- **Bundle not wired through the real entrypoint**: `start_training_run()`
+  accepted `dataset_bundle_id`, but `orca.train.finetune.train()` -- the
+  real public training path -- had no parameter to forward one, so a
+  multi-manifest canonical run could never actually reach the
+  `DatasetBundleManifest` path except via a direct (test-only) call to
+  `start_training_run()`. `train()` now accepts and forwards
+  `dataset_bundle_id`; no alternative or hidden path exists.
+- **Bundle source lineage not enforced**: `verify_dataset_binding()`
+  checked only that a bundle's source-manifest ID *set* matched the
+  declared `dataset_manifest_ids` -- never that each source
+  `DatasetManifest`'s CURRENT content checksums still matched the
+  `SourceManifestLineage` checksums the bundle recorded at build time. A
+  source manifest could be replaced or mutated under the same ID without
+  invalidating the bundle's lineage claim. `_verify_bundle_source_lineage()`
+  (`orca/registry/provenance.py`) now re-verifies every lineage entry's
+  checksums against the live source manifest, and rejects duplicate or
+  malformed lineage entries.
+- **Checkpoint identity/integrity algorithm mismatch**:
+  `hash_artifact_directory()` (registration-time identity) lived only in
+  `orca.registry.provenance`, while `CheckpointRecord.verify_integrity()`
+  (`orca.registry.checkpoint`) still called `sha256_of_file()` on what
+  is, for every merged checkpoint this project produces, a DIRECTORY --
+  registration and post-registration reverification disagreed about the
+  very algorithm used to prove integrity. `hash_artifact_directory()` now
+  lives in `orca.registry.checkpoint` (the dependency layer both modules
+  already depend on) and is imported, never redefined, by
+  `orca.registry.provenance` -- there is exactly one canonical
+  directory-checkpoint digest algorithm. `verify_integrity()` now
+  branches explicitly on `path.is_dir()` (never guesses from a filename),
+  preserving `sha256_of_file()` for legacy single-file checkpoints.
+- **Symlink escape**: `validate_checkpoint_artifact()`'s shard-index
+  checks already resolved paths and rejected escapes, but non-index
+  files (`config.json`, tokenizer artifacts, an unsharded weight file)
+  were still accepted via `Path.is_file()`, which follows symlinks. Both
+  `validate_checkpoint_artifact()` and `hash_artifact_directory()` now
+  apply one fail-closed policy: ANY symlink anywhere in a canonical
+  checkpoint artifact directory is rejected outright, so the validator
+  and the hasher can never disagree about which bytes are trusted.
+
+`tests/test_training_provenance.py`: 52 -> 71 tests.
+
 ## 9. Blocking gaps (honest, evidence-based)
 
 1. **License**: Genesis's selected base is non-commercial-only
