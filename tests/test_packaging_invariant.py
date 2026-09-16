@@ -63,6 +63,24 @@ def built_wheel(tmp_path_factory):
     return wheels[0]
 
 
+@pytest.fixture(scope="module")
+def built_sdist(tmp_path_factory):
+    """The Phase-19 closure gate explicitly requires BOTH wheel and
+    sdist to be built and inspected -- a prior report admitted the
+    sdist was never separately built. Closing that gap here."""
+    import build  # noqa: F401
+
+    out_dir = tmp_path_factory.mktemp("orneur_sdist_build")
+    result = subprocess.run(
+        [sys.executable, "-m", "build", "--sdist", "--outdir", str(out_dir)],
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=180,
+    )
+    assert result.returncode == 0, f"sdist build failed:\n{result.stdout}\n{result.stderr}"
+    sdists = list(out_dir.glob("*.tar.gz"))
+    assert len(sdists) == 1, f"expected exactly one sdist, got {sdists}"
+    return sdists[0]
+
+
 def test_wheel_contains_both_orca_and_orneur_packages(built_wheel):
     with zipfile.ZipFile(built_wheel) as z:
         names = z.namelist()
@@ -174,3 +192,52 @@ def test_isolated_install_can_import_ocl_and_run_cli(built_wheel):
             [str(venv_orca), "--help"], capture_output=True, text=True, timeout=30,
         )
         assert legacy_check.returncode == 0, f"legacy orca --help failed:\n{legacy_check.stdout}\n{legacy_check.stderr}"
+
+
+def test_sdist_contains_all_three_intelligence_packages(built_sdist):
+    import tarfile
+
+    with tarfile.open(built_sdist, mode="r:gz") as tf:
+        names = tf.getnames()
+    # sdist entries are prefixed with "<project>-<version>/"
+    required_suffixes = [
+        "orneur/intelligence/ocl/compiler.py",
+        "orneur/intelligence/epistemic/resolver.py",
+        "orneur/intelligence/integrity/evaluator.py",
+        "orneur/intelligence/integrity/floor.py",
+        "orneur/intelligence/integrity/canonical.py",
+    ]
+    for suffix in required_suffixes:
+        assert any(n.endswith(suffix) for n in names), (
+            f"sdist is missing required source file ending in {suffix!r}"
+        )
+
+
+def test_isolated_install_from_sdist_can_import_integrity_and_run_cli(built_sdist):
+    """Installs the SDIST (not the wheel) into a fresh virtualenv --
+    proving the source distribution alone (which triggers hatchling's
+    own build-from-source step) produces a working, importable
+    distribution, not just the pre-built wheel."""
+    with tempfile.TemporaryDirectory() as tmp:
+        venv_dir = Path(tmp) / "venv"
+        subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True, timeout=60)
+        venv_python = venv_dir / "bin" / "python"
+
+        install = subprocess.run(
+            [str(venv_python), "-m", "pip", "install", "--quiet", str(built_sdist)],
+            capture_output=True, text=True, timeout=180,
+        )
+        assert install.returncode == 0, f"isolated sdist install failed:\n{install.stdout}\n{install.stderr}"
+
+        import_check = subprocess.run(
+            [str(venv_python), "-c", "import orneur.intelligence.integrity; import orneur.intelligence.epistemic; import orneur.intelligence.ocl; print('OK')"],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert import_check.returncode == 0, f"isolated sdist import failed:\n{import_check.stdout}\n{import_check.stderr}"
+        assert "OK" in import_check.stdout
+
+        venv_orneur = venv_dir / "bin" / "orneur"
+        help_check = subprocess.run(
+            [str(venv_orneur), "--help"], capture_output=True, text=True, timeout=30,
+        )
+        assert help_check.returncode == 0, f"orneur --help (from sdist install) failed:\n{help_check.stdout}\n{help_check.stderr}"

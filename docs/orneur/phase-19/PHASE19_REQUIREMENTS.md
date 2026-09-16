@@ -87,7 +87,7 @@ Nothing here is marked `VERIFIED` without a cited test.
 | EPI-INTEGRITY-IMMUTABILITY-001 | Receipt/assertion metadata deeply frozen (nested dict/list) | `freeze.py::validate_and_freeze` | `test_deep_immutability.py::test_receipt_metadata_deeply_frozen` | VERIFIED |
 | EPI-INTEGRITY-IMMUTABILITY-002 | Caller mutation after construction does not change digest | `freeze.py` (never aliases input) | `test_deep_immutability.py` (2 mutation tests) | VERIFIED |
 | EPI-INTEGRITY-IMMUTABILITY-003 | NaN/Infinity/unsupported types rejected in metadata | `freeze.py::validate_and_freeze` | `test_deep_immutability.py` (2 tests) | VERIFIED |
-| EPI-INTEGRITY-IMMUTABILITY-004 | All contract dataclass fields are immutable types (tuple/MappingProxyType/scalar), never bare dict/list | `contracts.py` | code inspection (section 50 self-review); no `: dict`/`: list` field annotations found | VERIFIED |
+| EPI-INTEGRITY-IMMUTABILITY-004 | Contract *field type annotations* use only immutable types (tuple/MappingProxyType/scalar) -- but this describes annotations, not a runtime guarantee: `IntegrityPolicy`/`ProposedAssertion`/`IntegrityProposal` are RAW/UNTRUSTED input contracts a caller may construct with a plain mutable `dict`/`set`/`list` (the annotation does not enforce it at construction). The actual immutability guarantee applies to the NORMALIZED canonical state the evaluator builds internally (`floor.normalize_policy()` for policy; `evaluator._validate_and_normalize_assertion()` + `freeze.validate_and_freeze()` for proposal/assertion metadata) and to the returned `IntegrityReceipt` (deep-frozen on output). See PHASE19_EPISTEMIC_INTEGRITY_SPEC.md's "Policy normalization" section for the corrected raw-vs-normalized-vs-canonical distinction. | `contracts.py` (annotations), `floor.py::normalize_policy`, `evaluator.py` (assertion/proposal normalization), `canonical.py` (receipt freeze) | `test_policy_normalization_closure.py` (8 tests, including a direct mutation-isolation test), `test_deep_immutability.py` (6 tests, receipt-level) | VERIFIED (corrected this closure -- the original wording overstated a compile-time annotation as a runtime guarantee for raw input contracts) |
 
 ## EPI-INTEGRITY-AUDIT
 
@@ -116,6 +116,24 @@ Nothing here is marked `VERIFIED` without a cited test.
 | EPI-INTEGRITY-COMPAT-002 | All 138 Phase-18 tests remain green | N/A | `tests/epistemic/` — 138 passed | VERIFIED |
 | EPI-INTEGRITY-COMPAT-003 | All 348 OCL tests remain green | N/A | `tests/ocl/` — 348 passed | VERIFIED |
 | EPI-INTEGRITY-COMPAT-004 | Phase 19 package present in built wheel, importable from isolated install | `pyproject.toml` (`packages = ["orca", "orneur"]`, unchanged, already recursive) | `test_packaging_invariant.py` (extended `REQUIRED_WHEEL_PATHS` + isolated-venv import check) | VERIFIED |
+| EPI-INTEGRITY-COMPAT-005 | Phase 19 package present in built **sdist**, importable from an sdist-based isolated install | N/A | `test_packaging_invariant.py::test_sdist_contains_all_three_intelligence_packages`, `::test_isolated_install_from_sdist_can_import_integrity_and_run_cli` (added this closure) | VERIFIED |
+
+## Strict-boundary closure (this session)
+
+| ID | Requirement | Implementation | Test/Evidence | Status |
+|---|---|---|---|---|
+| EPI-INTEGRITY-BOUNDARY-005 | Explicit `receipt_id` of the wrong type rejected, never silently stored | `evaluator.py::assess_integrity` (`require_string`) | `test_input_boundary_closure.py` (5 tests) | VERIFIED |
+| EPI-INTEGRITY-BOUNDARY-006 | Root metadata (receipt/proposal/assertion) must be a mapping, not a scalar | `evaluator.py::_require_mapping_root` | `test_input_boundary_closure.py` (14 tests across all three metadata roots) | VERIFIED |
+| EPI-INTEGRITY-BOUNDARY-007 | `proposal.metadata` validated and deep-frozen (was previously unvalidated and unused) | `evaluator.py::assess_integrity` | `test_input_boundary_closure.py::test_proposal_metadata_nested_unsupported_value_rejected` | VERIFIED |
+| EPI-INTEGRITY-DIGEST-001 | `proposal_digest` binds the complete normalized proposal, including `proposal.metadata` and every `assertion.metadata` | `evaluator.py::_proposal_digest` | `test_proposal_binding_closure.py` (4 tests) | VERIFIED |
+| EPI-INTEGRITY-DIGEST-002 | Metadata key-order permutation yields identical digest | `evaluator.py::_metadata_to_json_safe` + canonical JSON sorting | `test_proposal_binding_closure.py::test_metadata_key_order_permutation_yields_same_digest` | VERIFIED |
+| EPI-INTEGRITY-POLICY-005 | Policy `stricter_permitted_treatments` deep-frozen before any validation/evaluation/digesting reads it | `floor.py::normalize_policy` | `test_policy_normalization_closure.py` (8 tests) | VERIFIED |
+| EPI-INTEGRITY-POLICY-006 | Caller mutation of the original policy dict after a call does not retroactively change that call's already-issued receipt | `floor.py::normalize_policy` (snapshot at call time) | `test_policy_normalization_closure.py::test_caller_mutating_original_dict_after_the_call_does_not_change_a_prior_receipt` | VERIFIED |
+| EPI-INTEGRITY-POLICY-007 | Empty policy override (would make a state permanently unsatisfiable) rejected | `floor.py::normalize_policy` | `test_policy_normalization_closure.py::test_empty_override_set_rejected_as_invalid_policy` | VERIFIED |
+| EPI-INTEGRITY-POLICY-008 | `permitted_maximum_treatment` reflects the ACTIVE policy, not just the unmodified hard floor | `floor.py::effective_maximum_treatment`, `TREATMENT_STRENGTH_ORDER` | `test_policy_normalization_closure.py` (3 maximum-treatment tests) | VERIFIED |
+| EPI-INTEGRITY-FRESHNESS-006 | Offset-naive timestamps in a freshness comparison rejected, never a raw TypeError | `floor.py::parse_aware_iso8601` | `test_freshness_timezone_closure.py` (8 tests) | VERIFIED |
+| EPI-INTEGRITY-FRESHNESS-007 | Equivalent-instant timestamps at different UTC offsets compare correctly | `floor.py::is_overlay_stale` (aware-datetime subtraction) | `test_freshness_timezone_closure.py::test_two_aware_timestamps_different_offsets_same_instant_compare_correctly`, `::test_equivalent_offset_timestamps_produce_deterministic_staleness_result` | VERIFIED |
+| EPI-INTEGRITY-DETERMINISM-005 | The RETURNED `IntegrityReceipt` object (not just its canonical digest) is permutation-deterministic | `evaluator.py::assess_integrity` (sorts `required_disclosures`/`violations` at construction) | `test_receipt_object_determinism_closure.py` (4 tests) | VERIFIED |
 
 ## Deferred / out of scope this phase
 

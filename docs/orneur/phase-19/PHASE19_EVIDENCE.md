@@ -185,3 +185,125 @@ Phase 19 code, tests, and docs were complete and pushed.
   never claimed** — this protocol validates structured cognitive
   assertions only, stated in the spec's own "Non-goal" section and
   enforced structurally (no NLP code exists anywhere in the package).
+
+---
+
+## Closure: strict boundary, immutability, freshness & policy correction (appended, not rewriting the above)
+
+Six genuine gaps were named by an independent audit and reproduced
+live, before any fix.
+
+### 1. Explicit `receipt_id`/root metadata type gaps (reproduced)
+
+```
+BAD receipt_id=123 accepted! receipt_id field: 123 <class 'int'>
+BAD metadata=abc accepted! metadata field: abc <class 'str'>
+BAD proposal.metadata=abc accepted!
+BAD nested proposal metadata object() accepted! proposal_digest computed
+fine, metadata not even touched by freeze
+```
+
+`receipt_id` was stored verbatim regardless of type. `metadata="abc"`
+was accepted at the receipt level because `freeze.validate_and_freeze()`
+correctly treats a bare string as a valid *nested* value but nothing
+enforced the metadata *root* must be a mapping.
+`IntegrityProposal.metadata` was not read by the evaluator **at all**
+before this closure — not validated, not frozen, not bound to the
+digest. **Fix**: `require_string(receipt_id)`;
+`evaluator._require_mapping_root()` enforced at all three metadata entry
+points (receipt/proposal/assertion) before `validate_and_freeze()` runs.
+
+### 2. Proposal digest omitting metadata (reproduced)
+
+Confirmed by direct inspection of `_proposal_digest()`'s payload
+construction: `proposal.metadata` and `assertion.metadata` were both
+absent from the hashed payload. **Fix**: both are now included via
+`_metadata_to_json_safe()`, with metadata key-order permutation tests
+confirming the addition did not introduce a new order-dependence.
+
+### 3. Policy caller-mutation isolation (reproduced)
+
+Confirmed by direct inspection: every existing test (including this
+session's own prior closure's tests) constructed `IntegrityPolicy` with
+a plain mutable `dict`, and `floor.validate_policy()`/
+`effective_permitted_treatments()` read `policy.stricter_permitted_treatments`
+directly — a live reference to the caller's own object. **Fix**:
+`floor.normalize_policy()` deep-freezes a snapshot before any of those
+functions run, called once at the top of `assess_integrity()`.
+
+### 4. Freshness timezone safety (reproduced)
+
+```
+naive evaluated_at accepted, status: ...
+$ python -c "... evaluated_at='2026-06-01T00:00:00' ..."
+TypeError: can't subtract offset-naive and offset-aware datetimes
+```
+
+An offset-aware `overlay.assessed_at` (`...+00:00`, as every Phase 18
+fixture produces) subtracted against an offset-naive `evaluated_at`
+raised a **raw Python `TypeError`** that escaped `assess_integrity()`'s
+public boundary entirely -- a direct violation of "no raw TypeError may
+escape." **Fix**: `floor.parse_aware_iso8601()` rejects any naive
+timestamp with a typed error before any subtraction is attempted;
+applied to `evaluated_at` unconditionally (independent of whether a
+freshness policy is even active) and defensively to
+`overlay.assessed_at` inside `is_overlay_stale()`.
+
+### 5. Policy-aware `permitted_maximum_treatment` (reproduced)
+
+```
+permitted_maximum_treatment under ABSTAIN-only policy: PresentationTreatment.ESTABLISHED
+```
+
+Under a policy narrowing `KNOWN` to `ABSTAIN`-only, the correction hint
+still reported `ESTABLISHED` — a treatment the active policy itself
+forbade. **Fix**: `floor.effective_maximum_treatment()` walks
+`TREATMENT_STRENGTH_ORDER[state]` against the policy-intersected
+permitted set, never the unmodified hard floor alone.
+
+### 6. Receipt object permutation-determinism (reproduced)
+
+```
+required_disclosures ab: (DisclosureRequirement(assertion_id='as1', ...), DisclosureRequirement(assertion_id='as2', ...))
+required_disclosures ba: (DisclosureRequirement(assertion_id='as2', ...), DisclosureRequirement(assertion_id='as1', ...))
+disclosures equal? False
+receipt equal? False
+```
+
+Two permuted-but-semantically-identical proposals produced receipts
+with equal canonical digests but **unequal Python objects** --
+`required_disclosures` retained input order; only `canonical.py`'s
+`canonicalize()` (invoked at serialization time, not construction time)
+sorted it. **Fix**: `assess_integrity()` now sorts
+`required_disclosures`/`violations` at construction, using the same
+stable sort keys `canonical.py` already used for serialization.
+
+### New test files added this closure
+
+`test_input_boundary_closure.py` (20), `test_proposal_binding_closure.py`
+(4), `test_policy_normalization_closure.py` (8),
+`test_freshness_timezone_closure.py` (8),
+`test_receipt_object_determinism_closure.py` (4) -- 44 new tests, all
+passing after the corresponding fix, plus 2 new sdist tests in
+`tests/test_packaging_invariant.py`.
+
+### Regression re-verification after the fix
+
+`tests/integrity/`: 199 passed (155 prior + 44 new), 0 failed.
+`tests/integrity + tests/epistemic + tests/ocl`: 685 passed, 0 failed.
+`tests/test_packaging_invariant.py` (now building and inspecting BOTH
+wheel and sdist): 8 passed, 0 failed. Phase 16 regression: 30 passed, 0
+failed.
+
+### Corrected claim (see PHASE19_REQUIREMENTS.md EPI-INTEGRITY-IMMUTABILITY-004)
+
+The prior closure's requirements doc overstated a compile-time field
+*annotation* ("all contract dataclass fields are immutable types") as a
+runtime guarantee for raw, caller-constructed input contracts
+(`IntegrityPolicy`/`ProposedAssertion`/`IntegrityProposal`), which a
+caller could in fact construct with plain mutable `dict`/`set`/`list`
+values (confirmed by item 3 above). The corrected claim distinguishes
+RAW/UNTRUSTED input (caller-constructed, may be mutable) from
+NORMALIZED canonical internal state (deep-frozen before semantic use)
+from the CANONICAL RECEIPT (deep-frozen on output) -- see
+PHASE19_EPISTEMIC_INTEGRITY_SPEC.md's "Policy normalization" section.
