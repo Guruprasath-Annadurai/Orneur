@@ -91,6 +91,7 @@ class RoutingDecision:
     integrity_status: IntegrityStatus | None = None
     source_artifact_digest: str = ""
     source_overlay_digest: str = ""
+    source_integrity_receipt_digest: str | None = None
     task_digest: str = ""
     registry_digest: str = ""
     metadata: MappingProxyType = field(default_factory=lambda: MappingProxyType({}))

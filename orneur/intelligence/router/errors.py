@@ -54,3 +54,47 @@ class RouterCanonicalizationError(RouterError):
 
 class PayloadLimitExceeded(RouterError):
     code = "PAYLOAD_LIMIT_EXCEEDED"
+
+
+class InvalidCapabilityRegistryTrustContext(RouterError):
+    code = "INVALID_CAPABILITY_REGISTRY_TRUST_CONTEXT"
+
+
+class UntrustedCapabilityRegistryRejected(RouterError):
+    """A caller-supplied capability_registry was presented with the
+    UNTRUSTED trust context (or omitted it) -- always fails closed."""
+
+    code = "UNTRUSTED_CAPABILITY_REGISTRY_REJECTED"
+
+
+class CapabilityRegistryProvenanceInvalid(RouterError):
+    """The registry's canonical digest did not match the caller's
+    out-of-band expected_registry_digest."""
+
+    code = "CAPABILITY_REGISTRY_PROVENANCE_INVALID"
+
+
+class InvalidIntegrityReceiptTrustContext(RouterError):
+    code = "INVALID_INTEGRITY_RECEIPT_TRUST_CONTEXT"
+
+
+class UntrustedIntegrityReceiptRejected(RouterError):
+    """A supplied IntegrityReceipt was presented with the UNTRUSTED
+    trust context (or omitted it) -- always fails closed."""
+
+    code = "UNTRUSTED_INTEGRITY_RECEIPT_REJECTED"
+
+
+class IntegrityReceiptProvenanceInvalid(RouterError):
+    """The receipt's canonical digest did not match the caller's
+    out-of-band expected_integrity_receipt_digest."""
+
+    code = "INTEGRITY_RECEIPT_PROVENANCE_INVALID"
+
+
+class IntegrityReceiptBindingInvalid(RouterError):
+    """A provenance-verified IntegrityReceipt does not correspond to
+    the artifact/overlay currently being routed (source_artifact_id/
+    source_artifact_digest/source_overlay_digest mismatch)."""
+
+    code = "INTEGRITY_RECEIPT_BINDING_INVALID"

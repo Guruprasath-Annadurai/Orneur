@@ -127,5 +127,34 @@ class RoutingReasonCode(str, Enum):
     NO_CANDIDATE_ELIGIBLE = "NO_CANDIDATE_ELIGIBLE"
     PREFERENCE_NOT_ELIGIBLE = "PREFERENCE_NOT_ELIGIBLE"
     HIGH_CONSEQUENCE_REQUIRES_REVIEW = "HIGH_CONSEQUENCE_REQUIRES_REVIEW"
+    NO_COGNITIVE_REQUIREMENT = "NO_COGNITIVE_REQUIREMENT"
+    MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY = "MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY"
+
+class CapabilityRegistryTrustContext(str, Enum):
+    """Out-of-band trust judgment for a CALLER-SUPPLIED capability
+    registry, mirroring Phase 19's IntegrityOverlayTrustContext
+    doctrine one layer up: structural validity (validate_registry())
+    proves only that a registry is well-formed, never that it was
+    genuinely produced by trusted router configuration. UNTRUSTED (or
+    omission) always fails closed. Never satisfied by a bare string
+    equal to a member's .value, and never parsed from registry/task
+    metadata -- see registry.verify_trusted_registry."""
+
+    UNTRUSTED = "UNTRUSTED"
+    TRUSTED_ROUTER_CONFIGURATION = "TRUSTED_ROUTER_CONFIGURATION"
+
+
+class IntegrityReceiptTrustContext(str, Enum):
+    """Out-of-band trust judgment for a CALLER-SUPPLIED Phase-19
+    IntegrityReceipt, mirroring IntegrityOverlayTrustContext one layer
+    up: isinstance(receipt, IntegrityReceipt) proves only that the
+    object is shaped like a receipt, never that it was genuinely
+    produced by a trusted Phase-19 evaluation run for the artifact/
+    overlay currently being routed. UNTRUSTED (or omission) always
+    fails closed -- see receipt_trust.verify_trusted_receipt."""
+
+    UNTRUSTED = "UNTRUSTED"
+    TRUSTED_PHASE19_RUNTIME = "TRUSTED_PHASE19_RUNTIME"
+
 
 CURRENT_PROTOCOL_VERSION = "20.0.0"

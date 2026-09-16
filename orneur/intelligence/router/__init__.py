@@ -37,21 +37,25 @@ from orneur.intelligence.router.enums import (
     CURRENT_PROTOCOL_VERSION,
     IMPLEMENTATION_REQUIREMENT_KINDS,
     INVESTIGATIVE_REQUIREMENT_KINDS,
+    CapabilityRegistryTrustContext,
     CognitiveFamily,
     CognitiveRequirementKind,
     CognitiveRole,
+    IntegrityReceiptTrustContext,
     RoutingReasonCode,
     RoutingStatus,
     RuntimeAvailability,
     RuntimeLifecycleState,
 )
 from orneur.intelligence.router.evaluator import route_task
+from orneur.intelligence.router.receipt_trust import verify_trusted_receipt
 from orneur.intelligence.router.registry import (
     ELIGIBLE_LIFECYCLE_STATES,
     build_default_capability_registry,
     is_eligible,
     registry_digest,
     validate_registry,
+    verify_trusted_registry,
 )
 
 __all__ = [
@@ -59,10 +63,12 @@ __all__ = [
     "ELIGIBLE_LIFECYCLE_STATES",
     "IMPLEMENTATION_REQUIREMENT_KINDS",
     "INVESTIGATIVE_REQUIREMENT_KINDS",
+    "CapabilityRegistryTrustContext",
     "CognitiveFamily",
     "CognitiveRequirementKind",
     "CognitiveRole",
     "CognitiveTaskProfile",
+    "IntegrityReceiptTrustContext",
     "IntelligenceCapabilityProfile",
     "MaterialEpistemicFactor",
     "RoutingCandidateEvaluation",
@@ -79,4 +85,6 @@ __all__ = [
     "route_task",
     "to_canonical_json",
     "validate_registry",
+    "verify_trusted_receipt",
+    "verify_trusted_registry",
 ]

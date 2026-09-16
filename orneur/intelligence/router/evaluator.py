@@ -27,7 +27,7 @@ from orneur.intelligence.integrity import overlay_trust
 from orneur.intelligence.integrity.enums import IntegrityOverlayTrustContext
 from orneur.intelligence.ocl import canonical as ocl_canonical
 from orneur.intelligence.ocl.artifact import CognitiveArtifact
-from orneur.intelligence.router import errors, registry as registry_module
+from orneur.intelligence.router import errors, receipt_trust, registry as registry_module
 from orneur.intelligence.router.contracts import (
     CognitiveTaskProfile,
     IntelligenceCapabilityProfile,
@@ -39,14 +39,18 @@ from orneur.intelligence.router.enums import (
     CURRENT_PROTOCOL_VERSION,
     IMPLEMENTATION_REQUIREMENT_KINDS,
     INVESTIGATIVE_REQUIREMENT_KINDS,
+    CapabilityRegistryTrustContext,
     CognitiveFamily,
     CognitiveRequirementKind,
+    IntegrityReceiptTrustContext,
     RoutingReasonCode,
     RoutingStatus,
 )
 from orneur.intelligence.router.freeze import require_mapping_root, validate_and_freeze
 from orneur.intelligence.router.limits import MAX_MATERIAL_ATOMS_PER_TASK, MAX_REQUIREMENTS_PER_TASK
 from orneur.intelligence.router.typecheck import require_enum_member, require_instance, require_string
+
+_NO_RECEIPT_DIGEST_SENTINEL = "NONE"
 
 _REVIEW_TRIGGER_KINDS = frozenset({
     CognitiveRequirementKind.ADVERSARIAL_REVIEW,
@@ -63,21 +67,29 @@ def route_task(
     overlay_trust_context: IntegrityOverlayTrustContext = overlay_trust.UNTRUSTED,
     expected_overlay_digest: str | None = None,
     integrity_receipt: IntegrityReceipt | None = None,
+    integrity_receipt_trust_context: IntegrityReceiptTrustContext = receipt_trust.UNTRUSTED,
+    expected_integrity_receipt_digest: str | None = None,
     capability_registry: tuple[IntelligenceCapabilityProfile, ...] | None = None,
+    capability_registry_trust_context: CapabilityRegistryTrustContext = registry_module.UNTRUSTED,
+    expected_registry_digest: str | None = None,
     decision_id: str | None = None,
     metadata: dict | None = None,
 ) -> RoutingDecision:
     """Deterministically route `task` given a trusted `overlay`
     (verified via the REUSED Phase-19 `overlay_trust.verify_trusted_overlay`
-    seam -- this function never derives `expected_overlay_digest` from
-    `overlay` itself). Same task + same overlay + same integrity_receipt
-    + same registry => byte-identical canonical decision (see
-    canonical.digest)."""
+    seam), a trusted `integrity_receipt` if supplied (verified via
+    `receipt_trust.verify_trusted_receipt` + a binding check against
+    THIS artifact/overlay), and a trusted `capability_registry` if
+    supplied (verified via `registry.verify_trusted_registry`) --
+    `capability_registry=None` uses the code-defined default registry,
+    trusted by construction. This function never derives an "expected"
+    digest for any of these three inputs from the input itself -- every
+    expected digest is caller-supplied, out-of-band. Same task + same
+    overlay + same integrity_receipt (or lack thereof) + same registry
+    => byte-identical canonical decision (see canonical.digest)."""
     require_instance(task, CognitiveTaskProfile, where="task")
     require_instance(overlay, EpistemicOverlay, where="overlay")
     require_instance(artifact, CognitiveArtifact, where="artifact")
-    if integrity_receipt is not None:
-        require_instance(integrity_receipt, IntegrityReceipt, where="integrity_receipt")
     if decision_id is not None:
         require_string(decision_id, where="decision_id")
 
@@ -90,11 +102,17 @@ def route_task(
     )
 
     task = _validate_and_normalize_task(task)
-    validated_registry = (
-        registry_module.build_default_capability_registry()
-        if capability_registry is None
-        else registry_module.validate_registry(capability_registry)
-    )
+
+    if capability_registry is None:
+        # Code-defined default: trusted by construction, no out-of-band
+        # digest needed.
+        validated_registry = registry_module.build_default_capability_registry()
+    else:
+        validated_registry = registry_module.verify_trusted_registry(
+            capability_registry,
+            trust_context=capability_registry_trust_context,
+            expected_registry_digest=expected_registry_digest,
+        )
 
     assessments_by_atom = {a.atom_id: a for a in overlay.assessments}
     for atom_id in task.material_epistemic_atom_ids:
@@ -114,6 +132,25 @@ def route_task(
     metadata_root = require_mapping_root(metadata if metadata is not None else {}, where="metadata")
     frozen_metadata = validate_and_freeze(metadata_root, where="metadata")
 
+    # A supplied IntegrityReceipt is Phase-19 output -- isinstance()
+    # alone proves nothing about genuine provenance. Verify provenance
+    # (out-of-band expected digest), THEN structural validity, THEN
+    # that the receipt actually corresponds to the CURRENT
+    # artifact/overlay being routed -- all strictly before
+    # `receipt.integrity_status` is ever consumed. A receipt bound to
+    # a different artifact/overlay must never influence this route.
+    receipt_digest_for_decision: str | None = None
+    if integrity_receipt is not None:
+        receipt_digest_for_decision = receipt_trust.verify_trusted_receipt(
+            integrity_receipt,
+            trust_context=integrity_receipt_trust_context,
+            expected_receipt_digest=expected_integrity_receipt_digest,
+        )
+        _validate_receipt_structure(integrity_receipt)
+        _validate_receipt_binding(
+            integrity_receipt, artifact=artifact, source_artifact_digest=source_digest, source_overlay_digest=overlay_digest,
+        )
+
     # Integrity failure blocks routing outright -- an integrity-blocked
     # input is never routed as if it were clean, and Cognitive
     # Conservation still applies: material epistemic factors remain
@@ -122,7 +159,7 @@ def route_task(
         decision = RoutingDecision(
             protocol_version=CURRENT_PROTOCOL_VERSION,
             decision_id=decision_id if decision_id is not None else _default_decision_id(
-                source_digest, overlay_digest, task_dig, registry_dig,
+                source_digest, overlay_digest, task_dig, registry_dig, receipt_digest_for_decision,
             ),
             task_id=task.task_id,
             status=RoutingStatus.BLOCKED_BY_INTEGRITY,
@@ -134,6 +171,7 @@ def route_task(
             integrity_status=integrity_receipt.integrity_status,
             source_artifact_digest=source_digest,
             source_overlay_digest=overlay_digest,
+            source_integrity_receipt_digest=receipt_digest_for_decision,
             task_digest=task_dig,
             registry_digest=registry_dig,
             metadata=frozen_metadata,
@@ -141,6 +179,33 @@ def route_task(
         return decision
 
     effective_requirements, epistemic_reason_codes = _derive_effective_requirements(task.requirements, material_factors)
+
+    # A task with no explicit AND no epistemically-derived cognitive
+    # requirement establishes no adequacy signal at all -- selecting an
+    # "available" family in that void would be an arbitrary choice
+    # dressed up as a capability match. Fail closed instead.
+    if not effective_requirements:
+        decision = RoutingDecision(
+            protocol_version=CURRENT_PROTOCOL_VERSION,
+            decision_id=decision_id if decision_id is not None else _default_decision_id(
+                source_digest, overlay_digest, task_dig, registry_dig, receipt_digest_for_decision,
+            ),
+            task_id=task.task_id,
+            status=RoutingStatus.NO_ELIGIBLE_ROUTE,
+            primary_family=None,
+            mandatory_review_family=None,
+            candidate_evaluations=(),
+            reason_codes=(RoutingReasonCode.NO_COGNITIVE_REQUIREMENT,),
+            material_epistemic_factors=material_factors,
+            integrity_status=integrity_receipt.integrity_status if integrity_receipt is not None else None,
+            source_artifact_digest=source_digest,
+            source_overlay_digest=overlay_digest,
+            source_integrity_receipt_digest=receipt_digest_for_decision,
+            task_digest=task_dig,
+            registry_digest=registry_dig,
+            metadata=frozen_metadata,
+        )
+        return decision
 
     investigative_needed = bool(effective_requirements & INVESTIGATIVE_REQUIREMENT_KINDS)
     implementation_needed = bool(effective_requirements & IMPLEMENTATION_REQUIREMENT_KINDS)
@@ -176,6 +241,15 @@ def route_task(
         else:
             reason_codes.add(RoutingReasonCode.ADVERSARIAL_REVIEWER_UNAVAILABLE)
 
+        # A family cannot independently review its own primary work --
+        # never report a structure that ambiguously implies a family
+        # reviewed itself. V1 rule: independent review requires a
+        # DISTINCT eligible reviewer; if the only candidate reviewer
+        # coincides with the primary family, review is NOT satisfied.
+        if mandatory_review_family is not None and mandatory_review_family == primary_family:
+            mandatory_review_family = None
+            reason_codes.add(RoutingReasonCode.MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY)
+
     if preference_ignored:
         reason_codes.add(RoutingReasonCode.PREFERENCE_NOT_ELIGIBLE)
 
@@ -199,7 +273,7 @@ def route_task(
     decision = RoutingDecision(
         protocol_version=CURRENT_PROTOCOL_VERSION,
         decision_id=decision_id if decision_id is not None else _default_decision_id(
-            source_digest, overlay_digest, task_dig, registry_dig,
+            source_digest, overlay_digest, task_dig, registry_dig, receipt_digest_for_decision,
         ),
         task_id=task.task_id,
         status=status,
@@ -211,6 +285,7 @@ def route_task(
         integrity_status=integrity_receipt.integrity_status if integrity_receipt is not None else None,
         source_artifact_digest=source_digest,
         source_overlay_digest=overlay_digest,
+        source_integrity_receipt_digest=receipt_digest_for_decision,
         task_digest=task_dig,
         registry_digest=registry_dig,
         metadata=frozen_metadata,
@@ -338,6 +413,39 @@ def _select_primary(
     return None, preference_ignored
 
 
+def _validate_receipt_structure(receipt: IntegrityReceipt) -> None:
+    """A provenance-verified receipt is still just a Python dataclass --
+    dataclasses do not enforce field types at construction. Malformed
+    trusted receipts (e.g. a bare string where IntegrityStatus is
+    expected) must fail with a typed RouterError, never be silently
+    consumed."""
+    require_string(receipt.protocol_version, where="integrity_receipt.protocol_version")
+    require_string(receipt.receipt_id, where="integrity_receipt.receipt_id")
+    require_string(receipt.source_artifact_id, where="integrity_receipt.source_artifact_id")
+    require_string(receipt.source_artifact_digest, where="integrity_receipt.source_artifact_digest")
+    require_string(receipt.source_overlay_digest, where="integrity_receipt.source_overlay_digest")
+    require_enum_member(receipt.integrity_status, IntegrityStatus, where="integrity_receipt.integrity_status")
+
+
+def _validate_receipt_binding(
+    receipt: IntegrityReceipt, *, artifact: CognitiveArtifact, source_artifact_digest: str, source_overlay_digest: str,
+) -> None:
+    """A provenance-verified, structurally-valid receipt can still be a
+    genuine receipt for a DIFFERENT artifact/overlay pair. Binding must
+    be checked BEFORE `receipt.integrity_status` is ever consumed --
+    otherwise a receipt for unrelated cognitive work could incorrectly
+    block (or incorrectly clear) the route being computed here."""
+    if (
+        receipt.source_artifact_id != artifact.artifact_id
+        or receipt.source_artifact_digest != source_artifact_digest
+        or receipt.source_overlay_digest != source_overlay_digest
+    ):
+        raise errors.IntegrityReceiptBindingInvalid(
+            "integrity_receipt's source_artifact_id/source_artifact_digest/source_overlay_digest "
+            "does not correspond to the artifact/overlay currently being routed"
+        )
+
+
 def _canonical_json_payload(obj) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False, ensure_ascii=False)
 
@@ -355,6 +463,9 @@ def _task_digest(task: CognitiveTaskProfile) -> str:
     return hashlib.sha256(_canonical_json_payload(payload).encode("utf-8")).hexdigest()
 
 
-def _default_decision_id(source_digest: str, overlay_digest: str, task_digest: str, registry_digest: str) -> str:
-    payload = f"routing-decision:{source_digest}:{overlay_digest}:{task_digest}:{registry_digest}"
+def _default_decision_id(
+    source_digest: str, overlay_digest: str, task_digest: str, registry_digest: str, receipt_digest: str | None,
+) -> str:
+    receipt_component = receipt_digest if receipt_digest is not None else _NO_RECEIPT_DIGEST_SENTINEL
+    payload = f"routing-decision:{source_digest}:{overlay_digest}:{task_digest}:{registry_digest}:{receipt_component}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

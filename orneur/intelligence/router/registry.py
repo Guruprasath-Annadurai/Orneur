@@ -30,9 +30,12 @@ from __future__ import annotations
 import hashlib
 import json
 
+import dataclasses
+
 from orneur.intelligence.router import errors
 from orneur.intelligence.router.contracts import IntelligenceCapabilityProfile
 from orneur.intelligence.router.enums import (
+    CapabilityRegistryTrustContext,
     CognitiveFamily,
     CognitiveRequirementKind,
     CognitiveRole,
@@ -40,7 +43,15 @@ from orneur.intelligence.router.enums import (
     RuntimeLifecycleState,
 )
 from orneur.intelligence.router.limits import MAX_REGISTRY_ENTRIES
-from orneur.intelligence.router.typecheck import require_enum_member, require_instance, require_sequence_container
+from orneur.intelligence.router.typecheck import (
+    require_enum_member,
+    require_instance,
+    require_sequence_container,
+    require_string,
+)
+
+UNTRUSTED = CapabilityRegistryTrustContext.UNTRUSTED
+TRUSTED_ROUTER_CONFIGURATION = CapabilityRegistryTrustContext.TRUSTED_ROUTER_CONFIGURATION
 
 #: Only these lifecycle states are ever routing-eligible. NOT_TRAINED
 #: and RETIRED can never become eligible merely because a request asks
@@ -128,9 +139,53 @@ def validate_registry(entries: object) -> tuple[IntelligenceCapabilityProfile, .
         if entry.family in seen_families:
             raise errors.DuplicateRegistryFamily(f"duplicate registry entry for family: {entry.family.value}")
         seen_families.add(entry.family)
-        validated.append(entry)
+
+        # Normalize into an immutable snapshot: a caller-supplied plain
+        # `set()` (permitted structurally above) is mutable in place,
+        # so without this a validated entry's capability set could be
+        # mutated by the caller AFTER validation/digesting, silently
+        # changing what a previously-computed registry_digest actually
+        # describes. dataclasses.replace() also detaches this entry
+        # from whatever mutable container the caller is still holding.
+        normalized_entry = dataclasses.replace(entry, supported_requirements=frozenset(supported))
+        validated.append(normalized_entry)
 
     return tuple(sorted(validated, key=lambda e: e.family.value))
+
+
+def is_valid_capability_registry_trust_context(value: object) -> bool:
+    return isinstance(value, CapabilityRegistryTrustContext)
+
+
+def verify_trusted_registry(
+    entries: object, *, trust_context: CapabilityRegistryTrustContext, expected_registry_digest: str | None,
+) -> tuple[IntelligenceCapabilityProfile, ...]:
+    """The trust-boundary seam for a CALLER-SUPPLIED capability
+    registry -- structural validity (validate_registry()) proves only
+    that a registry is well-formed, never that it was genuinely
+    produced by trusted router configuration. `expected_registry_digest`
+    MUST be supplied out-of-band by the trusted caller BEFORE the
+    registry crosses into route_task() -- this function computes the
+    ACTUAL digest from the (now-normalized) registry only to COMPARE
+    against that out-of-band expectation, never to manufacture it.
+    Mirrors integrity.overlay_trust.verify_trusted_overlay's doctrine
+    exactly. Returns the normalized, immutable registry snapshot the
+    expected digest was verified against."""
+    if not is_valid_capability_registry_trust_context(trust_context):
+        raise errors.InvalidCapabilityRegistryTrustContext(
+            f"trust_context must be a genuine CapabilityRegistryTrustContext member, got {type(trust_context).__name__}"
+        )
+    if trust_context is UNTRUSTED:
+        raise errors.UntrustedCapabilityRegistryRejected("capability_registry supplied with UNTRUSTED trust context")
+    require_string(expected_registry_digest, where="expected_registry_digest")
+
+    normalized = validate_registry(entries)
+    actual_digest = registry_digest(normalized)
+    if actual_digest != expected_registry_digest:
+        raise errors.CapabilityRegistryProvenanceInvalid(
+            "capability_registry's canonical digest does not match the out-of-band expected_registry_digest"
+        )
+    return normalized
 
 
 def is_eligible(entry: IntelligenceCapabilityProfile) -> bool:
