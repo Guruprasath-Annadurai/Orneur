@@ -46,10 +46,46 @@ class NonAssessedAtomReference(IntegrityError):
 
 class OverlayBindingInvalid(IntegrityError):
     """The supplied EpistemicOverlay is not bound to the supplied
-    CognitiveArtifact (verify_overlay_binding() failed) -- a fabricated,
-    substituted, or stale-relative-to-mutation overlay."""
+    CognitiveArtifact (verify_overlay_binding() failed) -- a wrong or
+    mutated source artifact. Distinct from OverlayProvenanceInvalid:
+    this checks artifact identity/content, not overlay-assessment
+    content."""
 
     code = "OVERLAY_BINDING_INVALID"
+
+
+class InvalidOverlayTrustContext(IntegrityError):
+    """overlay_trust_context is not a genuine
+    IntegrityOverlayTrustContext member -- e.g. a bare string equal to
+    a member's value. Mirrors the isinstance-based (not
+    membership-based) check used throughout OCL/Phase-18's own trust
+    boundaries."""
+
+    code = "INVALID_OVERLAY_TRUST_CONTEXT"
+
+
+class UntrustedOverlayRejected(IntegrityError):
+    """overlay_trust_context is the genuine UNTRUSTED enum member (the
+    default). assess_integrity() cannot consume overlay content as
+    epistemic authority without an explicit trusted invocation
+    boundary -- fails closed rather than silently proceeding."""
+
+    code = "UNTRUSTED_OVERLAY_REJECTED"
+
+
+class OverlayProvenanceInvalid(IntegrityError):
+    """The overlay's actual canonical content digest
+    (epistemic.canonical.digest(overlay)) does not match the trusted,
+    out-of-band expected_overlay_digest supplied by the caller.
+    artifact_id/artifact_digest binding alone (OverlayBindingInvalid)
+    proves which artifact the overlay CLAIMS to assess; it does NOT
+    prove the overlay's own assessment content was not substituted
+    after being produced -- this check closes exactly that gap. This is
+    content-identity verification under a trusted invocation boundary,
+    NOT cryptographic provenance/authentication -- no signature scheme
+    exists in this repository at any layer."""
+
+    code = "OVERLAY_PROVENANCE_INVALID"
 
 
 class InvalidIntegrityPolicy(IntegrityError):

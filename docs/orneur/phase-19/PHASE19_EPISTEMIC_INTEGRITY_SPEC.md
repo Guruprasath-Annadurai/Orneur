@@ -68,19 +68,76 @@ matching `asserted_polarity`; a missing or mismatched polarity is a
 is no single correct answer to assert for an unresolved or MIXED-polarity
 proposition.
 
-## Trust boundary
+## Trust boundary — artifact binding AND content provenance (corrected)
 
-Phase 19 trusts a `EpistemicOverlay` only after
+**Artifact binding is not overlay content authentication.** An earlier
+version of this document conflated the two; this section corrects that.
 `orneur.intelligence.epistemic.verify_overlay_binding(overlay, artifact)`
-succeeds (source-artifact-id AND canonical-digest match). A mismatch is
-caught and re-raised as Phase 19's own `errors.OverlayBindingInvalid` —
-never trusting an object merely because it is shaped like an
-`EpistemicOverlay`. There is no cryptographic/authenticated provenance
-mechanism in this repository; this document does not claim one exists.
-Phase 19's guarantee is precisely: *a correctly validated Phase-18
-overlay bound to the exact source `CognitiveArtifact` supplied to the
-same call*. A digest proves content identity, not authentication (same
-doctrine as OCL/Phase-18's own `digest()` functions).
+checks that `overlay.source_artifact_id`/`source_artifact_digest` match
+the supplied `CognitiveArtifact` — it proves WHICH OCL artifact the
+overlay CLAIMS to assess. It proves **none** of the following:
+
+- that the overlay was actually produced by Phase 18's `assess_artifact()`;
+- that its `EpistemicAssessment`s were not replaced/substituted after
+  being produced;
+- that the state/polarity on each assessment came from a trusted
+  Phase-18 resolver run at all.
+
+A real, reproduced defect demonstrated this: `dataclasses.replace(overlay,
+assessments=(forged_known_affirmed,))` — with `source_artifact_id`/
+`source_artifact_digest` left completely unchanged — passed
+`verify_overlay_binding()` and let `assess_integrity()` return
+`SATISFIED` for a fabricated `ESTABLISHED` claim about an atom that was
+actually `UNKNOWN` (see `test_overlay_provenance_closure.py` and
+`PHASE19_EVIDENCE.md`).
+
+**The fix is a genuine invocation-boundary trust context plus an
+out-of-band content digest**, mirroring the exact doctrine already used
+by OCL's `CompilationTrustContext` and Phase 18's
+`EpistemicResolutionTrustContext`: trust is supplied by the CALLER,
+never parsed from the payload.
+
+- `assess_integrity()` requires `overlay_trust_context:
+  IntegrityOverlayTrustContext` (`UNTRUSTED` | `TRUSTED_PHASE18_RUNTIME`,
+  isinstance-checked via `overlay_trust.is_valid_overlay_trust_context()`
+  — a bare string equal to `"TRUSTED_PHASE18_RUNTIME"` is rejected with
+  `InvalidOverlayTrustContext`).
+- The default is `UNTRUSTED`, and `UNTRUSTED` always fails closed
+  (`UntrustedOverlayRejected`) — an UNTRUSTED overlay can never be used
+  as epistemic authority; there is no silent pass-through.
+- Under `TRUSTED_PHASE18_RUNTIME`, the caller MUST also supply
+  `expected_overlay_digest: str` — the exact
+  `epistemic.canonical.digest(overlay)` value computed by the trusted
+  Phase-18 runtime that produced (or last validated) the overlay,
+  captured **before** the overlay crosses into Phase 19. This value must
+  never be derived from the overlay object being evaluated itself —
+  that would prove nothing (it would always trivially match).
+  `assess_integrity()` recomputes `epistemic.canonical.digest(overlay)`
+  itself and compares; a mismatch raises `OverlayProvenanceInvalid`
+  before any `EpistemicAssessment` is consumed.
+- `overlay.metadata`/`proposal.metadata` self-claims (e.g.
+  `{"trusted": True}`, `{"overlay_trust": "TRUSTED_PHASE18_RUNTIME"}`,
+  `{"verified_overlay": True}`) are never read as a trust signal — there
+  is no code path in the evaluator that inspects either metadata field
+  to decide trust.
+
+**This is content-identity verification under a trusted invocation
+boundary, NOT cryptographic provenance/authentication.** No signature
+scheme exists in this repository at any layer; `expected_overlay_digest`
+proves the overlay's content is byte-identical to what the trusted
+caller last saw, not that a specific cryptographic key produced it.
+Phase 19 does not fabricate an authentication guarantee that does not
+exist.
+
+Malformed overlay structure (forged/duplicate/out-of-artifact
+assessments) is handled by this same mechanism, not by Phase 19
+recomputing epistemic truth from scratch: under `UNTRUSTED` it is
+rejected at the trust boundary before any content is inspected; under a
+`TRUSTED_PHASE18_RUNTIME` context with a correct `expected_overlay_digest`
+it cannot occur (any structural alteration changes the digest); under a
+mismatched `expected_overlay_digest` it is rejected by the provenance
+check regardless of what the malformed content says. Phase 18 remains
+the sole resolver of epistemic truth.
 
 ## Cognitive Conservation (material scope)
 

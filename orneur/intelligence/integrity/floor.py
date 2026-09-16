@@ -164,11 +164,19 @@ def normalize_policy(policy: IntegrityPolicy) -> IntegrityPolicy:
                 f"policy stricter_permitted_treatments[{state.value!r}] must be a frozenset/set/tuple/list "
                 f"of PresentationTreatment members, got {type(declared).__name__}"
             )
+        # Validate every member's TYPE before ever calling frozenset() on
+        # the collection -- frozenset() itself raises a raw, unhelpful
+        # TypeError ("unhashable type") for an unhashable member (a
+        # dict/list), which must never escape this function. Iterating
+        # the raw `declared` container for the type check, rather than a
+        # frozenset built from it, avoids that failure mode entirely.
+        for member in declared:
+            if not isinstance(member, PresentationTreatment):
+                raise errors.InvalidIntegrityPolicy(
+                    f"policy stricter_permitted_treatments[{state.value!r}] contains a non-PresentationTreatment "
+                    f"member: {type(member).__name__}"
+                )
         frozen_declared = frozenset(declared)
-        if not all(isinstance(t, PresentationTreatment) for t in frozen_declared):
-            raise errors.InvalidIntegrityPolicy(
-                f"policy stricter_permitted_treatments[{state.value!r}] contains a non-PresentationTreatment member"
-            )
         if not frozen_declared:
             raise errors.InvalidIntegrityPolicy(
                 f"policy stricter_permitted_treatments[{state.value!r}] is empty -- an empty override would make "

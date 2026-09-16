@@ -22,7 +22,7 @@ import hashlib
 from orneur.intelligence.epistemic import EpistemicOverlay, EpistemicPolarity, EpistemicState, verify_overlay_binding
 from orneur.intelligence.epistemic import canonical as epistemic_canonical
 from orneur.intelligence.epistemic.errors import SourceArtifactMismatch
-from orneur.intelligence.integrity import errors, floor
+from orneur.intelligence.integrity import errors, floor, overlay_trust
 from orneur.intelligence.integrity.freeze import validate_and_freeze
 from orneur.intelligence.integrity.typecheck import require_enum_member, require_instance, require_sequence_container, require_string
 from orneur.intelligence.integrity.contracts import (
@@ -37,6 +37,7 @@ from orneur.intelligence.integrity.contracts import (
 from orneur.intelligence.integrity.enums import (
     BLOCKING_VIOLATION_REASONS,
     CURRENT_PROTOCOL_VERSION,
+    IntegrityOverlayTrustContext,
     IntegrityStatus,
     IntegrityViolationReason,
     PresentationTreatment,
@@ -61,15 +62,34 @@ def assess_integrity(
     *,
     overlay: EpistemicOverlay,
     artifact: CognitiveArtifact,
+    overlay_trust_context: IntegrityOverlayTrustContext = overlay_trust.UNTRUSTED,
+    expected_overlay_digest: str | None = None,
     policy: IntegrityPolicy | None = None,
     evaluated_at: str | None = None,
     receipt_id: str | None = None,
     metadata: dict | None = None,
 ) -> IntegrityReceipt:
     """Deterministically evaluate `proposal` against `overlay`
-    (verified-bound to `artifact`). Same proposal + same overlay + same
-    policy + same evaluated_at => byte-identical canonical receipt (see
-    canonical.digest)."""
+    (verified-bound to `artifact` AND content-verified against a
+    trusted, out-of-band `expected_overlay_digest`). Same proposal +
+    same overlay + same policy + same evaluated_at => byte-identical
+    canonical receipt (see canonical.digest).
+
+    `overlay_trust_context` and `expected_overlay_digest` establish the
+    OVERLAY TRUST BOUNDARY: artifact_id/artifact_digest binding
+    (verify_overlay_binding, checked below) proves which OCL artifact
+    the overlay CLAIMS to assess -- it does NOT prove the overlay was
+    actually produced by Phase 18's assess_artifact() or that its
+    EpistemicAssessments were not substituted afterward. Callers MUST
+    pass `overlay_trust_context=TRUSTED_PHASE18_RUNTIME` plus the exact
+    `epistemic.canonical.digest(overlay)` value computed by the trusted
+    Phase-18 runtime that produced (or last validated) the overlay --
+    never derived from the overlay object itself, which would prove
+    nothing. The default UNTRUSTED context always fails closed: an
+    UNTRUSTED overlay cannot be used as epistemic authority. This is
+    content-identity verification under a trusted invocation boundary,
+    NOT cryptographic provenance/authentication -- no signature scheme
+    exists in this repository at any layer."""
     require_instance(overlay, EpistemicOverlay, where="overlay")
     require_instance(artifact, CognitiveArtifact, where="artifact")
     require_instance(proposal, IntegrityProposal, where="proposal")
@@ -82,10 +102,30 @@ def assess_integrity(
     if receipt_id is not None:
         require_string(receipt_id, where="receipt_id")
 
+    if not overlay_trust.is_valid_overlay_trust_context(overlay_trust_context):
+        raise errors.InvalidOverlayTrustContext(
+            f"overlay_trust_context must be a genuine IntegrityOverlayTrustContext member, "
+            f"got {type(overlay_trust_context).__name__}"
+        )
+    if overlay_trust_context is overlay_trust.UNTRUSTED:
+        raise errors.UntrustedOverlayRejected(
+            "assess_integrity() requires an explicit overlay_trust_context=TRUSTED_PHASE18_RUNTIME "
+            "plus a matching expected_overlay_digest -- an UNTRUSTED overlay cannot be used as "
+            "epistemic authority"
+        )
+    require_string(expected_overlay_digest, where="expected_overlay_digest")
+
     try:
         verify_overlay_binding(overlay, artifact)
     except SourceArtifactMismatch as exc:
         raise errors.OverlayBindingInvalid(str(exc.detail)) from exc
+
+    overlay_digest = epistemic_canonical.digest(overlay)
+    if overlay_digest != expected_overlay_digest:
+        raise errors.OverlayProvenanceInvalid(
+            "overlay content digest does not match the trusted expected_overlay_digest -- the "
+            "overlay's assessments may have been altered/substituted after being produced"
+        )
 
     if policy is not None:
         floor.validate_policy(policy, evaluated_at=evaluated_at)
@@ -191,7 +231,8 @@ def assess_integrity(
     integrity_status = _classify_status(all_violations)
 
     source_digest = ocl_canonical.digest(artifact)
-    overlay_digest = epistemic_canonical.digest(overlay)
+    # overlay_digest was already computed above for the provenance
+    # check -- reused here rather than recomputed.
     proposal_digest = _proposal_digest(proposal, assertions, scope_ids, proposal_metadata)
     policy_digest = _policy_digest(policy)
 
@@ -226,6 +267,8 @@ def require_integrity(
     *,
     overlay: EpistemicOverlay,
     artifact: CognitiveArtifact,
+    overlay_trust_context: IntegrityOverlayTrustContext = overlay_trust.UNTRUSTED,
+    expected_overlay_digest: str | None = None,
     policy: IntegrityPolicy | None = None,
     evaluated_at: str | None = None,
     receipt_id: str | None = None,
@@ -236,8 +279,9 @@ def require_integrity(
     integrity_status is not SATISFIED, instead of returning a receipt
     the caller must remember to check."""
     receipt = assess_integrity(
-        proposal, overlay=overlay, artifact=artifact, policy=policy,
-        evaluated_at=evaluated_at, receipt_id=receipt_id, metadata=metadata,
+        proposal, overlay=overlay, artifact=artifact,
+        overlay_trust_context=overlay_trust_context, expected_overlay_digest=expected_overlay_digest,
+        policy=policy, evaluated_at=evaluated_at, receipt_id=receipt_id, metadata=metadata,
     )
     if receipt.integrity_status is not IntegrityStatus.SATISFIED:
         raise errors.IntegrityRequirementNotSatisfied(

@@ -60,6 +60,24 @@ class IntegrityViolationReason(str, Enum):
     MALFORMED_INPUT = "MALFORMED_INPUT"
 
 
+class IntegrityOverlayTrustContext(str, Enum):
+    """Trust context for the EpistemicOverlay supplied to
+    assess_integrity(), mirroring orneur.intelligence.epistemic.trust's
+    CompilationTrustContext / EpistemicResolutionTrustContext pattern
+    exactly: supplied by the CALLER of assess_integrity(), never parsed
+    from a payload/metadata field. artifact_id/digest binding
+    (verify_overlay_binding) proves which OCL artifact an overlay
+    CLAIMS to assess -- it does NOT prove the overlay was actually
+    produced by Phase 18's assess_artifact() or that its assessments
+    were not substituted afterward. UNTRUSTED overlay input cannot be
+    used as epistemic authority: assess_integrity() fails closed unless
+    the caller supplies TRUSTED_PHASE18_RUNTIME plus a matching
+    out-of-band expected_overlay_digest (see evaluator.py)."""
+
+    UNTRUSTED = "UNTRUSTED"
+    TRUSTED_PHASE18_RUNTIME = "TRUSTED_PHASE18_RUNTIME"
+
+
 class IntegrityStatus(str, Enum):
     """Top-level receipt status. Never a Cognitive Court verdict (ACCEPT/
     REJECT/NEED_MORE_EVIDENCE/ESCALATE/HUMAN_APPROVAL_REQUIRED) -- those
