@@ -27,8 +27,7 @@ from tests.router.conftest import (
     build_disputed_fixture,
     build_known_affirmed_fixture,
     build_unknown_fixture,
-    make_blocked_integrity_receipt,
-    make_satisfied_integrity_receipt,
+    make_real_integrity_receipt,
     route_task_trusted,
 )
 
@@ -169,7 +168,9 @@ def test_capability_mismatch_rejection_reasons_are_recorded_per_candidate():
 # eligibility a trusted registry entry does not independently confer.
 def test_preferred_family_cannot_self_elevate_ineligible_candidate():
     compiled, overlay = build_known_affirmed_fixture()
-    task = CognitiveTaskProfile(task_id="t", preferred_family=CognitiveFamily.AETERNUM)
+    task = CognitiveTaskProfile(
+        task_id="t", requirements=frozenset({CognitiveRequirementKind.INVESTIGATION}), preferred_family=CognitiveFamily.AETERNUM,
+    )
     decision = route_task_trusted(task, overlay=overlay, artifact=compiled)
     assert decision.primary_family is not CognitiveFamily.AETERNUM
     assert RoutingReasonCode.PREFERENCE_NOT_ELIGIBLE in decision.reason_codes
@@ -179,6 +180,7 @@ def test_task_metadata_field_named_like_authority_grants_nothing():
     compiled, overlay = build_known_affirmed_fixture()
     task = CognitiveTaskProfile(
         task_id="t",
+        requirements=frozenset({CognitiveRequirementKind.INVESTIGATION}),
         metadata={"trusted": True, "approved": True, "execution_grant": "full", "lifecycle_state": "PRODUCTION"},
     )
     decision = route_task_trusted(task, overlay=overlay, artifact=compiled)
@@ -191,11 +193,24 @@ def test_task_metadata_field_named_like_authority_grants_nothing():
 def test_no_eligible_candidate_fails_closed():
     compiled, overlay = build_known_affirmed_fixture()
     empty_registry = ()
-    task = CognitiveTaskProfile(task_id="t")
+    task = CognitiveTaskProfile(task_id="t", requirements=frozenset({CognitiveRequirementKind.IMPLEMENTATION}))
     decision = route_task_trusted(task, overlay=overlay, artifact=compiled, capability_registry=empty_registry)
     assert decision.status is RoutingStatus.NO_ELIGIBLE_ROUTE
     assert decision.primary_family is None
     assert RoutingReasonCode.NO_CANDIDATE_ELIGIBLE in decision.reason_codes
+
+
+# A task establishing no cognitive requirement at all (no explicit
+# requirement, no material-atom-derived requirement) fails closed
+# rather than picking an arbitrary available family.
+def test_empty_effective_requirements_fails_closed_as_no_cognitive_requirement():
+    compiled, overlay = build_known_affirmed_fixture()
+    task = CognitiveTaskProfile(task_id="t")
+    decision = route_task_trusted(task, overlay=overlay, artifact=compiled)
+    assert decision.status is RoutingStatus.NO_ELIGIBLE_ROUTE
+    assert decision.primary_family is None
+    assert decision.reason_codes == (RoutingReasonCode.NO_COGNITIVE_REQUIREMENT,)
+    assert decision.candidate_evaluations == ()
 
 
 # I. Determinism: identical input -> byte-identical canonical decision.
@@ -220,25 +235,33 @@ def test_registry_entry_order_does_not_affect_decision():
     assert digest(d1) == digest(d2)
 
 
-# K. Integrity-blocked input is rejected from routing outright.
+# K. Integrity-blocked input is rejected from routing outright. Uses a
+# GENUINE Phase-19 assess_integrity() output (real REQUIRES_REVISION,
+# not a fabricated BLOCKED dataclass) -- any non-SATISFIED status
+# blocks routing.
 def test_integrity_blocked_input_never_routes_as_clean():
-    compiled, overlay = build_known_affirmed_fixture()
-    receipt = make_blocked_integrity_receipt(overlay=overlay, artifact=compiled)
+    compiled, overlay = build_known_affirmed_fixture(atom_id="a1")
+    receipt = make_real_integrity_receipt(overlay=overlay, artifact=compiled, atom_id="a1", satisfied=False)
+    assert receipt.integrity_status is not IntegrityStatus.SATISFIED
     task = CognitiveTaskProfile(task_id="t", requirements=frozenset({CognitiveRequirementKind.IMPLEMENTATION}))
     decision = route_task_trusted(task, overlay=overlay, artifact=compiled, integrity_receipt=receipt, capability_registry=_genesis_eligible_registry())
     assert decision.status is RoutingStatus.BLOCKED_BY_INTEGRITY
     assert decision.primary_family is None
     assert decision.candidate_evaluations == ()
     assert decision.reason_codes == (RoutingReasonCode.INTEGRITY_BLOCKED,)
+    assert decision.source_integrity_receipt_digest is not None
 
 
 def test_satisfied_integrity_receipt_permits_normal_routing():
-    compiled, overlay = build_known_affirmed_fixture()
-    receipt = make_satisfied_integrity_receipt(overlay=overlay, artifact=compiled)
-    task = CognitiveTaskProfile(task_id="t")
+    compiled, overlay = build_known_affirmed_fixture(atom_id="a1")
+    receipt = make_real_integrity_receipt(overlay=overlay, artifact=compiled, atom_id="a1", satisfied=True)
+    assert receipt.integrity_status is IntegrityStatus.SATISFIED
+    task = CognitiveTaskProfile(task_id="t", requirements=frozenset({CognitiveRequirementKind.INVESTIGATION}))
     decision = route_task_trusted(task, overlay=overlay, artifact=compiled, integrity_receipt=receipt)
-    assert decision.status is RoutingStatus.SELECTED
+    assert decision.status is not RoutingStatus.BLOCKED_BY_INTEGRITY
+    assert decision.primary_family is CognitiveFamily.NOVUS
     assert decision.integrity_status is IntegrityStatus.SATISFIED
+    assert decision.source_integrity_receipt_digest is not None
 
 
 # L. Forged overlay content cannot gain routing influence -- exercised

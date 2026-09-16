@@ -121,17 +121,42 @@ def test_metadata_top_level_scalar_via_call_kw_rejected(fixture):
 
 
 def test_capability_registry_entry_wrong_type_rejected(fixture):
+    # A malformed registry is rejected by validate_registry() INSIDE
+    # verify_trusted_registry() strictly before any digest comparison
+    # (registry_digest() itself assumes a validated registry and is not
+    # a public trust-boundary function) -- called directly here rather
+    # than via route_task_trusted, whose convenience wrapper eagerly
+    # computes registry_digest() on the raw input for its own expected-
+    # digest bookkeeping and would raise a raw AttributeError itself.
+    from orneur.intelligence.router.evaluator import route_task
+    from tests.router.conftest import TRUSTED_PHASE18_RUNTIME, TRUSTED_ROUTER_CONFIGURATION
+    from orneur.intelligence.epistemic import canonical as epistemic_canonical
+
     compiled, overlay = fixture
     task = CognitiveTaskProfile(task_id="t")
     with pytest.raises(router_errors.RouterError):
-        route_task_trusted(task, overlay=overlay, artifact=compiled, capability_registry=("not-a-profile",))  # type: ignore[arg-type]
+        route_task(
+            task, overlay=overlay, artifact=compiled,
+            overlay_trust_context=TRUSTED_PHASE18_RUNTIME, expected_overlay_digest=epistemic_canonical.digest(overlay),
+            capability_registry=("not-a-profile",),  # type: ignore[arg-type]
+            capability_registry_trust_context=TRUSTED_ROUTER_CONFIGURATION, expected_registry_digest="irrelevant-fails-before-digest-check",
+        )
 
 
 def test_capability_registry_not_a_sequence_rejected(fixture):
+    from orneur.intelligence.router.evaluator import route_task
+    from tests.router.conftest import TRUSTED_PHASE18_RUNTIME, TRUSTED_ROUTER_CONFIGURATION
+    from orneur.intelligence.epistemic import canonical as epistemic_canonical
+
     compiled, overlay = fixture
     task = CognitiveTaskProfile(task_id="t")
     with pytest.raises(router_errors.RouterError):
-        route_task_trusted(task, overlay=overlay, artifact=compiled, capability_registry="not-a-sequence")  # type: ignore[arg-type]
+        route_task(
+            task, overlay=overlay, artifact=compiled,
+            overlay_trust_context=TRUSTED_PHASE18_RUNTIME, expected_overlay_digest=epistemic_canonical.digest(overlay),
+            capability_registry="not-a-sequence",  # type: ignore[arg-type]
+            capability_registry_trust_context=TRUSTED_ROUTER_CONFIGURATION, expected_registry_digest="irrelevant-fails-before-digest-check",
+        )
 
 
 def test_decision_id_wrong_type_rejected(fixture):

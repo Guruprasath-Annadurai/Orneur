@@ -136,6 +136,39 @@ def test_no_router_source_file_reimplements_digest_of_incoming_overlay():
     assert "epistemic.canonical" not in text
 
 
+def test_no_router_source_file_reimplements_digest_of_incoming_registry_or_receipt():
+    """The identical anti-pattern regression for the Phase-20 FINAL
+    closure's two new trust seams: a `capability_registry` or
+    `integrity_receipt` caller-supplied input must never have its
+    'expected' digest derived from itself inside this package --
+    `expected_registry_digest`/`expected_integrity_receipt_digest` are
+    required PARAMETERS everywhere they appear (verify_trusted_registry,
+    verify_trusted_receipt, route_task), never locally computed
+    assignments."""
+    forbidden_patterns = (
+        re.compile(r"expected_registry_digest\s*=\s*\w*\.?(registry_digest|digest)\("),
+        re.compile(r"expected_integrity_receipt_digest\s*=\s*\w*\.?digest\("),
+        re.compile(r"expected_receipt_digest\s*=\s*\w*\.?digest\("),
+    )
+    py_files = sorted(PACKAGE_ROOT.glob("*.py"))
+    violations = []
+    for py_file in py_files:
+        file_text = py_file.read_text(encoding="utf-8")
+        for pattern in forbidden_patterns:
+            for match in pattern.finditer(file_text):
+                violations.append((py_file.name, match.group(0)))
+    assert violations == [], f"router package appears to self-derive an 'expected' digest: {violations}"
+
+
+def test_router_evaluator_reuses_its_own_registry_and_receipt_trust_seams():
+    """Confirms route_task() delegates to the dedicated seams rather
+    than inlining registry/receipt digest comparison logic."""
+    evaluator_path = PACKAGE_ROOT / "evaluator.py"
+    text = evaluator_path.read_text(encoding="utf-8")
+    assert "registry_module.verify_trusted_registry(" in text
+    assert "receipt_trust.verify_trusted_receipt(" in text
+
+
 def test_router_evaluator_reuses_the_phase19_overlay_trust_seam():
     """Confirms the router imports and calls the SAME function Phase 19
     uses internally, rather than duplicating security-sensitive digest
