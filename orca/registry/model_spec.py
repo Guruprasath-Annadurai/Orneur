@@ -55,6 +55,18 @@ class ModelSpec:
     provisional_parameter_hypothesis: str = ""  # only set when base_model_status is UNSELECTED_PROVISIONAL
     legacy_ollama_names: list[str] = field(default_factory=list)  # ORCA-era Ollama tags, for compatibility mapping only
     legacy_note: str = ""    # honest caveat about legacy artifacts under this family, if any
+    # Phase 21B additions (all additive, default None/"NOT_VERIFIED" -- backward
+    # compatible with every existing family definition). A training run must be
+    # able to answer "exactly which upstream bytes were used?" -- these fields
+    # exist so that answer never silently falls back to "whatever `main` branch
+    # happened to resolve to on the day training ran". See
+    # docs/orneur/phase-21/GENESIS_BASE_MODEL_QUALIFICATION.md for how these
+    # were verified for Genesis (live retrieval from the upstream HF API, not
+    # memory) and require_pinned_revision() below for the fail-closed accessor.
+    base_model_revision: str | None = None   # exact HF commit SHA, not a branch/tag like "main"
+    tokenizer_revision: str | None = None    # usually the same commit as base_model_revision
+    license_name: str | None = None          # e.g. "qwen-research", "apache-2.0"
+    license_commercial_use: str = "NOT_VERIFIED"  # "PERMITTED" | "RESTRICTED" | "NOT_VERIFIED"
 
 
 MODEL_SPECS: dict[str, ModelSpec] = {
@@ -74,6 +86,20 @@ MODEL_SPECS: dict[str, ModelSpec] = {
         tokenizer="unsloth/Qwen2.5-3B-Instruct",
         context_length=4096,
         architecture="qwen2",
+        # Verified live 2026-09-16 against the HF API's own `sha` field for
+        # unsloth/Qwen2.5-3B-Instruct -- see
+        # docs/orneur/phase-21/GENESIS_BASE_MODEL_QUALIFICATION.md.
+        base_model_revision="7548fff1f997f57b2e9e8ab1ec7be96949b00ed0",
+        tokenizer_revision="7548fff1f997f57b2e9e8ab1ec7be96949b00ed0",
+        license_name="qwen-research",
+        # MATERIAL FINDING (Phase 21B qualification): the Qwen RESEARCH
+        # LICENSE AGREEMENT restricts use to non-commercial research/
+        # evaluation purposes only (verified against the license's own
+        # text); commercial use requires a separate license from Alibaba
+        # Cloud. This does not block research/internal training, but it
+        # does block any commercial Genesis release on this exact base
+        # without further owner action -- see the qualification doc.
+        license_commercial_use="RESTRICTED",
         legacy_ollama_names=["orca-nano", "orca-nano-v4", "orca-nano-v7"],
         legacy_note=(
             "All legacy orca-nano* Ollama checkpoints are forensically confirmed "
@@ -181,3 +207,24 @@ def require_base_model(family: str) -> str:
             "before this family can be trained."
         )
     return spec.base_model
+
+
+def require_pinned_revision(family: str) -> tuple[str, str]:
+    """
+    Fail-closed accessor for (base_model_revision, tokenizer_revision).
+    Phase 21B: a real training run must never silently resolve "latest"/
+    "main" for its base model -- that makes the run unreproducible the
+    moment upstream publishes a new commit under the same branch name.
+    Raises if either revision has not been explicitly pinned (e.g. for a
+    family that has not yet undergone base-model qualification -- see
+    docs/orneur/phase-21/GENESIS_BASE_MODEL_QUALIFICATION.md for how
+    Genesis's pinning was verified).
+    """
+    spec = get_spec(family)
+    if spec.base_model_revision is None or spec.tokenizer_revision is None:
+        raise ValueError(
+            f"Model family '{spec.family}' has no pinned base_model_revision/"
+            "tokenizer_revision -- refusing to resolve an unpinned 'latest' "
+            "revision for training. Qualify and pin an exact commit SHA first."
+        )
+    return spec.base_model_revision, spec.tokenizer_revision
