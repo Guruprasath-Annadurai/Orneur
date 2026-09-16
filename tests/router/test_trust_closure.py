@@ -290,15 +290,21 @@ def test_same_exact_inputs_produce_identical_decision_id():
 
 
 def test_mandatory_reviewer_never_equals_primary_family():
-    """A task requesting ONLY adversarial review (no other cognitive
-    signal) against an all-eligible registry must never report Aeternum
-    as both primary_family and mandatory_review_family -- that would
-    ambiguously imply Aeternum independently reviewed itself."""
+    """A MIXED task (primary discovery work + a distinct mandatory-
+    review requirement) where the registry has only ONE eligible
+    CRITIC_ARBITER_DISCOVERER-role family must never report that same
+    family as both primary_family and mandatory_review_family -- that
+    would ambiguously imply it independently reviewed its own primary
+    work. (A pure review-only task no longer reaches this branch at
+    all -- see test_routing_behavior.py::
+    test_review_only_task_with_eligible_critic_routes_critic_as_primary
+    -- because the task itself IS the review in that case.)"""
     compiled, overlay = build_known_affirmed_fixture()
-    task = CognitiveTaskProfile(task_id="t", requirements=frozenset({CognitiveRequirementKind.ADVERSARIAL_REVIEW}))
+    task = CognitiveTaskProfile(
+        task_id="t",
+        requirements=frozenset({CognitiveRequirementKind.DISCOVERY_EXPLORATION, CognitiveRequirementKind.ADVERSARIAL_REVIEW}),
+    )
     decision = route_task_trusted(task, overlay=overlay, artifact=compiled, capability_registry=_all_eligible_registry())
-    if decision.primary_family is CognitiveFamily.AETERNUM:
-        assert decision.mandatory_review_family is None
-        assert RoutingReasonCode.MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY in decision.reason_codes
-    else:
-        assert decision.mandatory_review_family != decision.primary_family
+    assert decision.primary_family is CognitiveFamily.AETERNUM  # the only CRITIC_ARBITER_DISCOVERER-role family
+    assert decision.mandatory_review_family is None
+    assert RoutingReasonCode.MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY in decision.reason_codes

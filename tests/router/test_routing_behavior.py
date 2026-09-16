@@ -128,16 +128,31 @@ def test_disputed_material_atom_surfaces_contradiction_resolution():
     assert decision.material_epistemic_factors[0].epistemic_state is EpistemicState.DISPUTED
 
 
-# E. Adversarial review requirement and its unavailability being
-# surfaced honestly (default registry has no eligible Aeternum).
-def test_adversarial_review_requirement_with_unavailable_reviewer_is_honest():
+# E. A review-ONLY task (its entire effective work is ADVERSARIAL_REVIEW)
+# IS review, not a primary task additionally needing an independent
+# reviewer -- against the default registry (no eligible critic-role
+# family), this must fail closed rather than routing to Novus/Genesis
+# as an arbitrary primary.
+def test_review_only_task_with_no_eligible_critic_fails_closed_honestly():
     compiled, overlay = build_known_affirmed_fixture()
     task = CognitiveTaskProfile(task_id="t", requirements=frozenset({CognitiveRequirementKind.ADVERSARIAL_REVIEW}))
     decision = route_task_trusted(task, overlay=overlay, artifact=compiled)
-    assert decision.status is RoutingStatus.REVIEW_REQUIRED
+    assert decision.status is RoutingStatus.NO_ELIGIBLE_ROUTE
+    assert decision.primary_family is None
     assert decision.mandatory_review_family is None
     assert RoutingReasonCode.ADVERSARIAL_REVIEWER_UNAVAILABLE in decision.reason_codes
     assert RoutingReasonCode.ADVERSARIAL_REVIEW_REQUIRED in decision.reason_codes
+
+
+def test_review_only_task_with_eligible_critic_routes_critic_as_primary():
+    compiled, overlay = build_known_affirmed_fixture()
+    task = CognitiveTaskProfile(task_id="t", requirements=frozenset({CognitiveRequirementKind.ADVERSARIAL_REVIEW}))
+    decision = route_task_trusted(task, overlay=overlay, artifact=compiled, capability_registry=_all_eligible_registry())
+    assert decision.status is RoutingStatus.SELECTED
+    assert decision.primary_family is CognitiveFamily.AETERNUM
+    # The task itself IS review -- no separate reviewer slot is implied.
+    assert decision.mandatory_review_family is None
+    assert RoutingReasonCode.MANDATORY_REVIEWER_CANNOT_BE_PRIMARY_FAMILY not in decision.reason_codes
 
 
 def test_adversarial_review_requirement_with_available_reviewer_is_granted():
