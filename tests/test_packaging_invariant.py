@@ -41,6 +41,10 @@ REQUIRED_WHEEL_PATHS = [
     "orneur/intelligence/integrity/evaluator.py",
     "orneur/intelligence/integrity/enums.py",
     "orneur/intelligence/integrity/canonical.py",
+    "orneur/intelligence/router/",
+    "orneur/intelligence/router/evaluator.py",
+    "orneur/intelligence/router/enums.py",
+    "orneur/intelligence/router/canonical.py",
 ]
 
 
@@ -180,6 +184,15 @@ def test_isolated_install_can_import_ocl_and_run_cli(built_wheel):
         )
         assert "OK" in integrity_import_check.stdout
 
+        router_import_check = subprocess.run(
+            [str(venv_python), "-c", "import orneur.intelligence.router; print('OK')"],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert router_import_check.returncode == 0, (
+            f"isolated router import failed:\n{router_import_check.stdout}\n{router_import_check.stderr}"
+        )
+        assert "OK" in router_import_check.stdout
+
         venv_orneur = venv_dir / "bin" / "orneur"
         help_check = subprocess.run(
             [str(venv_orneur), "--help"], capture_output=True, text=True, timeout=30,
@@ -206,6 +219,9 @@ def test_sdist_contains_all_three_intelligence_packages(built_sdist):
         "orneur/intelligence/integrity/evaluator.py",
         "orneur/intelligence/integrity/floor.py",
         "orneur/intelligence/integrity/canonical.py",
+        "orneur/intelligence/router/evaluator.py",
+        "orneur/intelligence/router/registry.py",
+        "orneur/intelligence/router/canonical.py",
     ]
     for suffix in required_suffixes:
         assert any(n.endswith(suffix) for n in names), (
@@ -230,7 +246,7 @@ def test_isolated_install_from_sdist_can_import_integrity_and_run_cli(built_sdis
         assert install.returncode == 0, f"isolated sdist install failed:\n{install.stdout}\n{install.stderr}"
 
         import_check = subprocess.run(
-            [str(venv_python), "-c", "import orneur.intelligence.integrity; import orneur.intelligence.epistemic; import orneur.intelligence.ocl; print('OK')"],
+            [str(venv_python), "-c", "import orneur.intelligence.integrity; import orneur.intelligence.epistemic; import orneur.intelligence.ocl; import orneur.intelligence.router; print('OK')"],
             capture_output=True, text=True, timeout=30,
         )
         assert import_check.returncode == 0, f"isolated sdist import failed:\n{import_check.stdout}\n{import_check.stderr}"
