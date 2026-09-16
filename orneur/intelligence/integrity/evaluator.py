@@ -75,9 +75,12 @@ def assess_integrity(
     require_instance(proposal, IntegrityProposal, where="proposal")
     if policy is not None:
         require_instance(policy, IntegrityPolicy, where="policy")
+        policy = floor.normalize_policy(policy)
     if evaluated_at is not None:
         require_string(evaluated_at, where="evaluated_at")
-        _validate_iso8601(evaluated_at, where="evaluated_at")
+        floor.parse_aware_iso8601(evaluated_at, where="evaluated_at", error_cls=errors.InvalidStructuredValue)
+    if receipt_id is not None:
+        require_string(receipt_id, where="receipt_id")
 
     try:
         verify_overlay_binding(overlay, artifact)
@@ -98,6 +101,8 @@ def assess_integrity(
     assertions = tuple(_validate_and_normalize_assertion(a) for a in assertions)
     _reject_duplicate_assertion_ids(assertions)
     _reject_duplicate_scope_atoms(scope_ids)
+    proposal_metadata = _require_mapping_root(proposal.metadata, where="proposal.metadata")
+    proposal_metadata = validate_and_freeze(proposal_metadata, where="proposal.metadata")
 
     assessments_by_atom = {a.atom_id: a for a in overlay.assessments}
 
@@ -140,10 +145,14 @@ def assess_integrity(
                 )
 
     if policy is not None and policy.max_overlay_age_seconds is not None:
-        # validate_policy() above already guaranteed evaluated_at is not None here.
+        # validate_policy() above already guaranteed evaluated_at is not
+        # None here, and both timestamps have already been confirmed
+        # offset-aware and well-formed (evaluated_at above; overlay.assessed_at
+        # is re-checked defensively inside is_overlay_stale itself).
+        assert evaluated_at is not None
         if floor.is_overlay_stale(
             overlay_assessed_at=overlay.assessed_at,
-            evaluated_at=evaluated_at,  # type: ignore[arg-type]
+            evaluated_at=evaluated_at,
             max_overlay_age_seconds=policy.max_overlay_age_seconds,
         ):
             proposal_violations.append(
@@ -183,8 +192,11 @@ def assess_integrity(
 
     source_digest = ocl_canonical.digest(artifact)
     overlay_digest = epistemic_canonical.digest(overlay)
-    proposal_digest = _proposal_digest(proposal, assertions, scope_ids)
+    proposal_digest = _proposal_digest(proposal, assertions, scope_ids, proposal_metadata)
     policy_digest = _policy_digest(policy)
+
+    receipt_metadata_root = _require_mapping_root(metadata if metadata is not None else {}, where="metadata")
+    receipt_metadata = validate_and_freeze(receipt_metadata_root, where="metadata")
 
     receipt = IntegrityReceipt(
         protocol_version=CURRENT_PROTOCOL_VERSION,
@@ -199,12 +211,12 @@ def assess_integrity(
         policy_digest=policy_digest,
         evaluated_at=evaluated_at,
         assertion_assessments=tuple(sorted(assertion_assessments, key=lambda a: a.assertion_id)),
-        required_disclosures=required_disclosures,
-        violations=all_violations,
+        required_disclosures=tuple(sorted(required_disclosures, key=_disclosure_sort_key)),
+        violations=tuple(sorted(all_violations, key=_violation_sort_key)),
         material_scope_coverage=tuple(sorted(material_scope_coverage)),
         omitted_scope_atom_ids=tuple(sorted(omitted_scope_atom_ids)),
         integrity_status=integrity_status,
-        metadata=validate_and_freeze(metadata or {}, where="metadata"),
+        metadata=receipt_metadata,
     )
     return receipt
 
@@ -237,13 +249,16 @@ def require_integrity(
 # ── internal helpers ────────────────────────────────────────────────────
 
 
-def _validate_iso8601(value: str, *, where: str) -> None:
-    import datetime
+def _require_mapping_root(value: object, *, where: str) -> object:
+    """Metadata fields are a mapping contract at the ROOT -- a scalar
+    (str/int/bool/...) must never silently pass just because
+    freeze.validate_and_freeze() happens to accept scalars as valid
+    NESTED values. Only dict/MappingProxyType are valid roots."""
+    from types import MappingProxyType
 
-    try:
-        datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise errors.InvalidStructuredValue(f"{where} is not a valid ISO-8601 timestamp: {exc}") from exc
+    if not isinstance(value, (dict, MappingProxyType)):
+        raise errors.InvalidObjectType(f"{where}: expected a mapping, got {type(value).__name__}")
+    return value
 
 
 def _validate_and_normalize_assertion(entry: object) -> ProposedAssertion:
@@ -255,7 +270,8 @@ def _validate_and_normalize_assertion(entry: object) -> ProposedAssertion:
         require_enum_member(entry.asserted_polarity, EpistemicPolarity, where="ProposedAssertion.asserted_polarity")
     if entry.reference is not None:
         require_string(entry.reference, where="ProposedAssertion.reference")
-    frozen_metadata = validate_and_freeze(entry.metadata, where="ProposedAssertion.metadata")
+    metadata_root = _require_mapping_root(entry.metadata, where="ProposedAssertion.metadata")
+    frozen_metadata = validate_and_freeze(metadata_root, where="ProposedAssertion.metadata")
     return dataclasses.replace(entry, metadata=frozen_metadata)
 
 
@@ -296,7 +312,7 @@ def _assess_one_assertion(
     state = assessment.state
     polarity = assessment.polarity
     permitted = floor.effective_permitted_treatments(state, policy)
-    maximum = floor.HARD_FLOOR_MAXIMUM_TREATMENT[state]
+    maximum = floor.effective_maximum_treatment(state, policy)
     obligation = floor.STATE_REQUIRED_OBLIGATION[state]
     obligations = (obligation,) if obligation is not None else ()
 
@@ -329,13 +345,45 @@ def _classify_status(violations: tuple[IntegrityViolation, ...]) -> IntegritySta
     return IntegrityStatus.REQUIRES_REVISION
 
 
+def _disclosure_sort_key(disclosure: DisclosureRequirement) -> tuple[str, str]:
+    return (disclosure.assertion_id, disclosure.obligation.value)
+
+
+def _violation_sort_key(violation: IntegrityViolation) -> tuple[str, str, str]:
+    return (violation.reason.value, violation.assertion_id or "", violation.source_atom_id or "")
+
+
 def _canonical_json_payload(obj: dict) -> str:
     import json
 
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False, ensure_ascii=False)
 
 
-def _proposal_digest(proposal: IntegrityProposal, assertions: tuple[ProposedAssertion, ...], scope_ids: tuple[str, ...]) -> str:
+def _metadata_to_json_safe(value: object) -> object:
+    """Metadata has already passed through freeze.validate_and_freeze(),
+    so it only ever contains MappingProxyType/tuple/str/int/float/bool/
+    None -- no dataclasses or enums to worry about here, unlike
+    canonical.py's fuller _to_json_safe()."""
+    from types import MappingProxyType
+
+    if isinstance(value, (dict, MappingProxyType)):
+        return {str(k): _metadata_to_json_safe(v) for k, v in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_metadata_to_json_safe(item) for item in value]
+    return value
+
+
+def _proposal_digest(
+    proposal: IntegrityProposal,
+    assertions: tuple[ProposedAssertion, ...],
+    scope_ids: tuple[str, ...],
+    proposal_metadata: object,
+) -> str:
+    """Binds the COMPLETE normalized structured proposal -- including
+    proposal.metadata and every assertion.metadata, not just the
+    semantically-load-bearing fields. Both are part of the public
+    contract, so both are bound; a caller changing only metadata must
+    see a different digest/default receipt_id."""
     payload = {
         "proposal_id": proposal.proposal_id,
         "assertions": sorted(
@@ -346,12 +394,14 @@ def _proposal_digest(proposal: IntegrityProposal, assertions: tuple[ProposedAsse
                     "treatment": a.treatment.value,
                     "asserted_polarity": a.asserted_polarity.value if a.asserted_polarity is not None else None,
                     "reference": a.reference,
+                    "metadata": _metadata_to_json_safe(a.metadata),
                 }
                 for a in assertions
             ),
             key=lambda d: d["assertion_id"],
         ),
         "required_scope_atom_ids": sorted(scope_ids),
+        "metadata": _metadata_to_json_safe(proposal_metadata),
     }
     return hashlib.sha256(_canonical_json_payload(payload).encode("utf-8")).hexdigest()
 

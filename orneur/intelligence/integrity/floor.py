@@ -13,6 +13,7 @@ This floor may be NARROWED by an IntegrityPolicy (see
 """
 from __future__ import annotations
 
+import datetime
 from types import MappingProxyType
 
 from orneur.intelligence.epistemic import EpistemicState
@@ -44,17 +45,30 @@ HARD_FLOOR_PERMITTED_TREATMENTS: MappingProxyType[EpistemicState, frozenset[Pres
     EpistemicState.UNVERIFIABLE: frozenset({UNVERIFIABLE, ABSTAIN}),
 })
 
-#: The single strongest treatment permitted for each state -- used both
-#: to classify "stronger than state" violations and as the "permitted
-#: maximum" correction hint on AssertionAssessment (see
-#: PHASE19_EPISTEMIC_INTEGRITY_SPEC.md's "Integrity diff").
+#: Per-state, strongest-to-weakest presentation strength ordering. Each
+#: state's own semantic axis only -- there is no single global ordering
+#: across DISPUTE/UNKNOWN/UNVERIFIABLE since they represent different
+#: KINDS of epistemic condition, not degrees of the same one.
+#: effective_maximum_treatment() walks this ordering and returns the
+#: first entry still permitted under an (optional) narrowing policy, so
+#: the reported "permitted maximum" is always honest relative to the
+#: ACTIVE policy, not just the unmodified hard floor.
+TREATMENT_STRENGTH_ORDER: MappingProxyType[EpistemicState, tuple[PresentationTreatment, ...]] = MappingProxyType({
+    EpistemicState.KNOWN: (ESTABLISHED, INFERENCE, UNCERTAIN, ABSTAIN),
+    EpistemicState.INFERRED: (INFERENCE, UNCERTAIN, ABSTAIN),
+    EpistemicState.UNCERTAIN: (UNCERTAIN, ABSTAIN),
+    EpistemicState.DISPUTED: (DISPUTE, UNCERTAIN, ABSTAIN),
+    EpistemicState.UNKNOWN: (UNKNOWN, ABSTAIN),
+    EpistemicState.UNVERIFIABLE: (UNVERIFIABLE, ABSTAIN),
+})
+
+#: The single strongest treatment permitted for each state UNDER THE
+#: UNMODIFIED HARD FLOOR ONLY. Kept for reference/documentation; callers
+#: computing a correction hint for a specific evaluation MUST use
+#: effective_maximum_treatment(state, policy) instead, which accounts
+#: for any active narrowing policy.
 HARD_FLOOR_MAXIMUM_TREATMENT: MappingProxyType[EpistemicState, PresentationTreatment] = MappingProxyType({
-    EpistemicState.KNOWN: ESTABLISHED,
-    EpistemicState.INFERRED: INFERENCE,
-    EpistemicState.UNCERTAIN: UNCERTAIN,
-    EpistemicState.DISPUTED: DISPUTE,
-    EpistemicState.UNKNOWN: UNKNOWN,
-    EpistemicState.UNVERIFIABLE: UNVERIFIABLE,
+    state: order[0] for state, order in TREATMENT_STRENGTH_ORDER.items()
 })
 
 #: The disclosure obligation inherently attached to a state, independent
@@ -91,13 +105,78 @@ def effective_permitted_treatments(
 ) -> frozenset[PresentationTreatment]:
     """HARD FLOOR intersected with an optional stricter policy -- never
     the policy alone, so a policy can only narrow, by construction."""
-    floor = HARD_FLOOR_PERMITTED_TREATMENTS[state]
+    hard_floor = HARD_FLOOR_PERMITTED_TREATMENTS[state]
     if policy is None:
-        return floor
+        return hard_floor
     override = policy.stricter_permitted_treatments.get(state)
     if override is None:
-        return floor
-    return floor & override
+        return hard_floor
+    return hard_floor & override
+
+
+def effective_maximum_treatment(state: EpistemicState, policy: IntegrityPolicy | None) -> PresentationTreatment:
+    """The strongest treatment actually permitted right now, honoring
+    any active narrowing policy -- NOT just the unmodified hard floor.
+    Always resolves to a real member: validate_policy() rejects any
+    policy override that would leave a state with zero permitted
+    treatments (see PHASE19_EPISTEMIC_INTEGRITY_SPEC.md's "Policy
+    cannot produce an unsatisfiable state"), so this function never
+    faces an empty effective set for a validated policy."""
+    effective = effective_permitted_treatments(state, policy)
+    for treatment in TREATMENT_STRENGTH_ORDER[state]:
+        if treatment in effective:
+            return treatment
+    # Unreachable for any policy that passed validate_policy(); guarded
+    # explicitly rather than silently returning a wrong value.
+    raise errors.InvalidIntegrityPolicy(
+        f"policy leaves state {state.value} with no permitted treatment at all -- "
+        f"this should have been rejected by validate_policy()"
+    )
+
+
+def normalize_policy(policy: IntegrityPolicy) -> IntegrityPolicy:
+    """Returns a NEW IntegrityPolicy whose `stricter_permitted_treatments`
+    is a deeply-frozen MappingProxyType of {EpistemicState: frozenset(...)}
+    -- never the caller's own (possibly still-mutable) mapping/set
+    objects. Must be called before validate_policy()/
+    effective_permitted_treatments()/policy_digest() so evaluation never
+    reads live caller-owned structures a caller could mutate mid-call or
+    between repeated calls with "the same" policy object."""
+    import dataclasses
+
+    if not isinstance(policy.stricter_permitted_treatments, (dict, MappingProxyType)):
+        raise errors.InvalidIntegrityPolicy(
+            f"policy.stricter_permitted_treatments must be a mapping, got "
+            f"{type(policy.stricter_permitted_treatments).__name__}"
+        )
+    if len(policy.stricter_permitted_treatments) > MAX_POLICY_STATE_ENTRIES:
+        raise errors.InvalidIntegrityPolicy("policy declares too many per-state treatment overrides")
+
+    normalized: dict[EpistemicState, frozenset[PresentationTreatment]] = {}
+    for state, declared in policy.stricter_permitted_treatments.items():
+        if not isinstance(state, EpistemicState):
+            raise errors.InvalidIntegrityPolicy(
+                f"policy stricter_permitted_treatments key must be a genuine EpistemicState member, "
+                f"got {type(state).__name__}"
+            )
+        if not isinstance(declared, (frozenset, set, tuple, list)):
+            raise errors.InvalidIntegrityPolicy(
+                f"policy stricter_permitted_treatments[{state.value!r}] must be a frozenset/set/tuple/list "
+                f"of PresentationTreatment members, got {type(declared).__name__}"
+            )
+        frozen_declared = frozenset(declared)
+        if not all(isinstance(t, PresentationTreatment) for t in frozen_declared):
+            raise errors.InvalidIntegrityPolicy(
+                f"policy stricter_permitted_treatments[{state.value!r}] contains a non-PresentationTreatment member"
+            )
+        if not frozen_declared:
+            raise errors.InvalidIntegrityPolicy(
+                f"policy stricter_permitted_treatments[{state.value!r}] is empty -- an empty override would make "
+                f"that state permanently unsatisfiable; declare a specific stricter non-empty set instead"
+            )
+        normalized[state] = frozen_declared
+
+    return dataclasses.replace(policy, stricter_permitted_treatments=MappingProxyType(normalized))
 
 
 def validate_policy(policy: IntegrityPolicy, *, evaluated_at: str | None) -> None:
@@ -106,25 +185,16 @@ def validate_policy(policy: IntegrityPolicy, *, evaluated_at: str | None) -> Non
     set for that state -- i.e. an attempt to add permission beyond the
     floor. Raised as a typed error rather than silently narrowed away,
     so the attempt is observable and testable (see
-    tests/integrity/test_policy_monotonicity.py)."""
-    if len(policy.stricter_permitted_treatments) > MAX_POLICY_STATE_ENTRIES:
-        raise errors.InvalidIntegrityPolicy("policy declares too many per-state treatment overrides")
-
+    tests/integrity/test_policy_monotonicity.py). Callers MUST pass an
+    already-`normalize_policy()`-d policy -- this function assumes
+    `stricter_permitted_treatments` is already a clean
+    {EpistemicState: frozenset[PresentationTreatment]} mapping."""
     for state, declared in policy.stricter_permitted_treatments.items():
-        if not isinstance(state, EpistemicState):
-            raise errors.InvalidIntegrityPolicy(
-                f"policy stricter_permitted_treatments key must be a genuine EpistemicState member, "
-                f"got {type(state).__name__}"
-            )
-        if not isinstance(declared, frozenset) or not all(isinstance(t, PresentationTreatment) for t in declared):
-            raise errors.InvalidIntegrityPolicy(
-                f"policy stricter_permitted_treatments[{state!r}] must be a frozenset of PresentationTreatment members"
-            )
-        floor = HARD_FLOOR_PERMITTED_TREATMENTS[state]
-        if not declared.issubset(floor):
+        hard_floor = HARD_FLOOR_PERMITTED_TREATMENTS[state]
+        if not declared.issubset(hard_floor):
             raise errors.PolicyAttemptedToWeakenHardFloor(
-                f"policy declares {sorted(t.value for t in declared - floor)} for state {state.value}, "
-                f"which the hard floor ({sorted(t.value for t in floor)}) does not permit"
+                f"policy declares {sorted(t.value for t in declared - hard_floor)} for state {state.value}, "
+                f"which the hard floor ({sorted(t.value for t in hard_floor)}) does not permit"
             )
 
     if policy.max_overlay_age_seconds is not None:
@@ -139,16 +209,39 @@ def validate_policy(policy: IntegrityPolicy, *, evaluated_at: str | None) -> Non
             )
 
 
-def is_overlay_stale(*, overlay_assessed_at: str, evaluated_at: str, max_overlay_age_seconds: int) -> bool:
-    """Deterministic comparison of two EXPLICITLY supplied ISO-8601
-    timestamps -- never a wall-clock read, never a universal age
-    heuristic. A negative age (evaluated_at before overlay_assessed_at)
-    is treated as not stale rather than raising -- it is a caller
-    ordering oddity, not evidence of staleness."""
-    import datetime
+def parse_aware_iso8601(value: str, *, where: str, error_cls: type[errors.IntegrityError]) -> datetime.datetime:
+    """Parse an ISO-8601 timestamp that MUST be offset-aware (carry an
+    explicit UTC/offset designator, e.g. 'Z' or '+00:00'). A
+    syntactically valid but offset-naive timestamp (no timezone) is
+    rejected -- comparing a naive and an aware datetime raises a raw
+    TypeError in Python, which must never escape this package's public
+    boundary. Malformed timestamps also fail closed here rather than
+    ever reaching a bare `datetime.fromisoformat` call inside a
+    comparison function."""
+    try:
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise error_cls(f"{where} is not a valid ISO-8601 timestamp: {exc}") from exc
+    if parsed.tzinfo is None:
+        raise error_cls(
+            f"{where}={value!r} is offset-naive -- freshness comparisons require an explicit UTC/offset "
+            f"timestamp (e.g. a trailing 'Z' or '+00:00'), never an ambiguous naive one"
+        )
+    return parsed
 
-    assessed = datetime.datetime.fromisoformat(overlay_assessed_at.replace("Z", "+00:00"))
-    evaluated = datetime.datetime.fromisoformat(evaluated_at.replace("Z", "+00:00"))
+
+def is_overlay_stale(*, overlay_assessed_at: str, evaluated_at: str, max_overlay_age_seconds: int) -> bool:
+    """Deterministic comparison of two EXPLICITLY supplied, offset-aware
+    ISO-8601 timestamps -- never a wall-clock read, never a universal
+    age heuristic, never a raw TypeError from mixing naive/aware
+    datetimes. A negative age (evaluated_at before overlay_assessed_at)
+    is treated as not stale rather than raising -- it is a caller
+    ordering oddity, not evidence of staleness. Two timestamps at
+    different UTC offsets representing the same instant compare equal
+    (Python's aware-datetime subtraction already normalizes offsets
+    correctly)."""
+    assessed = parse_aware_iso8601(overlay_assessed_at, where="overlay.assessed_at", error_cls=errors.InvalidFreshnessConfiguration)
+    evaluated = parse_aware_iso8601(evaluated_at, where="evaluated_at", error_cls=errors.InvalidFreshnessConfiguration)
     age_seconds = (evaluated - assessed).total_seconds()
     if age_seconds <= 0:
         return False

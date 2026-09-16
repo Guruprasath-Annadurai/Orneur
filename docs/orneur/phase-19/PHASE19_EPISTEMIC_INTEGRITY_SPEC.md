@@ -106,16 +106,92 @@ that declares a treatment NOT in the hard floor's set for that state —
 an attempted widening is refused outright rather than silently
 intersected away, so the attempt is observable and testable. The
 evaluator always computes `HARD_FLOOR ∩ POLICY`, never `POLICY` alone.
+An override that would narrow a state to the **empty set** is itself
+rejected (`InvalidIntegrityPolicy`) — an unsatisfiable state is never a
+legitimate policy outcome. `floor.effective_maximum_treatment(state,
+policy)` reports the correction hint (`AssertionAssessment.permitted_maximum_treatment`)
+relative to the **active** policy, not the unmodified hard floor, by
+walking `floor.TREATMENT_STRENGTH_ORDER[state]` (each state's own
+strongest-to-weakest ordering — there is no single ordering across
+`DISPUTE`/`UNKNOWN`/`UNVERIFIABLE`, which are different KINDS of
+epistemic condition, not degrees of the same one) and returning the
+first treatment still permitted.
 
-## Freshness
+## Policy normalization (raw input vs. canonical internal state)
+
+The public API accepts an ordinary, possibly-mutable mapping for
+`IntegrityPolicy.stricter_permitted_treatments` (a plain `dict` of
+`set`/`list`/`tuple`/`frozenset` values) — callers are not required to
+hand-construct `MappingProxyType`/`frozenset` themselves.
+`floor.normalize_policy()` deep-freezes this into a genuine
+`MappingProxyType[EpistemicState, frozenset[PresentationTreatment]]`
+**before** `validate_policy()`, `effective_permitted_treatments()`, or
+`policy_digest()` ever read it. This closes a real gap: without
+normalization, the evaluator would read the caller's own live,
+still-mutable dict/set objects on every call, so mutating that object
+after issuing a policy (or between two calls believed to use "the same"
+policy) could silently change behavior. A caller mutating their
+original policy structure **after** a call returns never changes that
+call's already-issued receipt (the normalized snapshot was taken at
+call time); a caller reusing the same mutated policy object for a
+**new** call is evaluated fresh against its now-current content.
+
+## Freshness — explicit, offset-aware timestamps only
 
 Explicit-policy-only, never a universal age heuristic and never a
 wall-clock read. `IntegrityPolicy.max_overlay_age_seconds` requires the
 caller to also pass `evaluated_at` to `assess_integrity()` — there is
 exactly one source of truth for "now," never two competing timestamp
 fields. If no freshness policy is configured, no staleness check runs
-at all (absence is never silently treated as "fresh"). `floor.is_overlay_stale()`
-is a pure comparison of two explicitly supplied ISO-8601 timestamps.
+at all (absence is never silently treated as "fresh").
+
+`floor.parse_aware_iso8601()` is the single parser used for every
+timestamp entering a freshness comparison (`evaluated_at`, validated
+eagerly whenever supplied — independent of whether a freshness policy
+is even active, for one predictable rule rather than two-tier
+strictness — and `overlay.assessed_at`, re-validated defensively inside
+`is_overlay_stale()`): it requires the timestamp to be **offset-aware**
+(carry an explicit `Z` or `+HH:MM` designator). A syntactically valid
+but offset-**naive** timestamp is rejected with a typed
+`InvalidStructuredValue`/`InvalidFreshnessConfiguration` — never the
+raw Python `TypeError` that mixing a naive and an aware datetime in a
+subtraction would otherwise raise. Two aware timestamps at different
+UTC offsets representing the same instant compare correctly (Python's
+aware-datetime subtraction already normalizes offsets).
+
+## Complete proposal binding
+
+`proposal_digest` binds the **complete normalized structured proposal**
+— `proposal_id`, every assertion's `assertion_id`/`source_atom_id`/
+`treatment`/`asserted_polarity`/`reference`/**`metadata`**,
+`required_scope_atom_ids`, and the proposal's own **`metadata`**. Both
+metadata fields are part of the public `IntegrityProposal`/
+`ProposedAssertion` contract, so both are bound in the digest — a
+caller changing only metadata is reflected in a different
+`proposal_digest` and (for the default path) a different `receipt_id`.
+Metadata key-order permutations of semantically identical content
+produce the *same* digest (canonicalization normalizes key order; it is
+not treated as semantic content). Both metadata fields are validated
+with the same rule as every other metadata field in this repository: a
+**mapping root** is required (a bare string/int/list is rejected before
+`freeze.validate_and_freeze()` ever sees it — that function correctly
+accepts scalars as valid *nested* values, which is not the same as
+accepting a scalar as a metadata *root*).
+
+## Receipt object determinism
+
+Canonical JSON/digest determinism (`canonical.canonicalize()`) is
+necessary but not sufficient: the **returned `IntegrityReceipt` object**
+itself must also be permutation-deterministic, since a caller may
+compare two receipts directly (`receipt_a == receipt_b`) rather than
+via `canonical.digest()`. `evaluator.assess_integrity()` therefore sorts
+`required_disclosures` and `violations` (by stable keys mirroring
+`canonical.py`'s own sort keys) at **construction** time, not only
+during serialization — alongside the pre-existing sorting of
+`assertion_assessments`, `material_scope_coverage`, and
+`omitted_scope_atom_ids`. Two proposals that are permutations of the
+same semantic content now produce `==`-equal `IntegrityReceipt` objects,
+not merely equal digests.
 
 ## Deterministic receipt
 
