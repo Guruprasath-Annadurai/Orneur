@@ -13,7 +13,7 @@ cited test.
 | EPI-STATE-002 | 4-member `EpistemicPolarity`, orthogonal to state | `enums.py::EpistemicPolarity` | `test_epistemic_enums.py::test_epistemic_polarity_has_exactly_four_members`, `test_epistemic_diff.py::test_known_affirmed_to_known_refuted_transition` | VERIFIED |
 | EPI-STATE-003 | `KNOWN` requires direct qualified basis, one-sided | `resolver.py::_assess_one_atom` | `test_direct_assessment.py::test_direct_verified_support_yields_known_affirmed`, `::test_direct_verified_refutation_yields_known_refuted` | VERIFIED |
 | EPI-STATE-004 | `INFERRED` requires evidence-rooted derivation, no direct basis | `resolver.py`, `graph.py` | `test_inference_graph.py::test_supports_chain_from_verified_root_yields_inferred` | VERIFIED |
-| EPI-STATE-005 | `DISPUTED` requires qualified support AND qualified refutation | `resolver.py::_assess_one_atom` | `test_disputes.py::test_direct_support_and_direct_refutation_on_same_atom_yields_disputed` | VERIFIED |
+| EPI-STATE-005 | `DISPUTED` requires qualified support AND qualified refutation, OR a qualified `CONTRADICTS` conflict (both sides independently `AFFIRMED`) | `resolver.py::_assess_one_atom`, `_classify_contradicts_pairs` | `test_disputes.py::test_direct_support_and_direct_refutation_on_same_atom_yields_disputed`, `::test_qualified_a_contradicts_b_both_independently_affirmed_forces_disputed` (this closure) | VERIFIED |
 | EPI-STATE-006 | `UNKNOWN` != false; no basis at all | `resolver.py` | `test_unknown_uncertain.py::test_bare_model_assertion_no_evidence_is_unknown_not_uncertain` | VERIFIED |
 | EPI-STATE-007 | `UNVERIFIABLE` requires trusted structural feasibility record, high bar | `resolver.py`, `trust.py::can_mint_structurally_unverifiable` | `test_unverifiable.py` (4 tests) | VERIFIED |
 | EPI-STATE-008 | `UNCERTAIN` vs `UNKNOWN` distinct decision paths | `resolver.py::_assess_one_atom` | `test_unknown_uncertain.py` (3 tests) | VERIFIED |
@@ -55,7 +55,7 @@ cited test.
 | ID | Requirement | Implementation | Test/Evidence | Status |
 |---|---|---|---|---|
 | EPI-CANON-001 | Deterministic canonical JSON, sorted collections | `canonical.py::to_canonical_json` | `test_canonicalization.py::test_permuted_atom_order_yields_same_digest` | VERIFIED |
-| EPI-CANON-002 | SHA-256 digest, same input → same digest | `canonical.py::digest` | `test_canonicalization.py::test_same_input_same_output_digest` | VERIFIED |
+| EPI-CANON-002 | SHA-256 digest, same input → same digest | `canonical.py::digest` | `test_canonicalization.py::test_same_input_same_output_digest` (pinned `overlay_id`) AND `test_determinism_closure.py::test_two_default_invocations_produce_identical_canonical_json_and_digest` (real default invocation, no `overlay_id` pinning — added this closure after the pinned-only version of this claim was found not to cover the actual production default path, see EPI-DETERMINISM-001) | VERIFIED |
 | EPI-CANON-003 | No NaN/Infinity in canonical output | `canonical.py::to_canonical_json` (`allow_nan=False`) | `test_canonicalization.py::test_no_nan_or_infinity_in_canonical_json` | VERIFIED |
 | EPI-CANON-004 | Overlay bound to exact source artifact (id + digest) | `resolver.py::verify_overlay_binding` | `test_overlay_binding.py` (3 tests), `test_self_elevation_attacks.py::test_overlay_replay_across_different_artifact_is_rejected` | VERIFIED |
 
@@ -92,6 +92,29 @@ cited test.
 | EPI-COMPAT-002 | Phase 17 OCL suite remains 0 failures | N/A | `tests/ocl/` — 348 passed | VERIFIED |
 | EPI-COMPAT-003 | Phase 16 regression suite remains 0 failures | N/A | `test_phase16_*` — 30 passed | VERIFIED |
 | EPI-COMPAT-004 | Phase 18 package present in built wheel, importable from isolated install | `pyproject.toml` `packages = ["orca", "orneur"]` (unchanged, already recursive) | `test_packaging_invariant.py` (extended `REQUIRED_WHEEL_PATHS` + isolated-venv import check) | VERIFIED |
+
+## EPI-DETERMINISM, EPI-FEASIBILITY, EPI-TYPEBOUNDARY, EPI-IMMUTABILITY — correctness closure
+
+Added by "ORNEUR PHASE 18 — DETERMINISM, INPUT-BOUNDARY & QUALIFIED-CONTRADICTION CLOSURE".
+
+| ID | Requirement | Implementation | Test/Evidence | Status |
+|---|---|---|---|---|
+| EPI-DETERMINISM-001 | Default `overlay_id` (no explicit argument) is a pure, deterministic function of canonical inputs, never `uuid4()`/random/wall-clock | `resolver.py::_default_overlay_id` | `test_determinism_closure.py` (8 tests) | VERIFIED |
+| EPI-DETERMINISM-002 | Explicit `overlay_id` argument still overrides the default | `resolver.py::assess_artifact` | `test_determinism_closure.py::test_explicit_overlay_id_still_overrides_the_default` | VERIFIED |
+| EPI-DETERMINISM-003 | Regression proof that the old `uuid4()` default would fail this invariant | N/A (counterfactual demonstration) | `test_determinism_closure.py::test_old_uuid4_default_would_have_failed_this_regression` | VERIFIED |
+| EPI-FEASIBILITY-001 | At most one `VerificationFeasibilityRecord` per `target_atom_id`; duplicate/conflicting records fail closed, not last-wins | `resolver.py::_reject_conflicting_feasibility` | `test_feasibility_conflicts.py` (7 tests) | VERIFIED |
+| EPI-FEASIBILITY-002 | Reversed input order produces identical failure behavior (no order dependence) | `resolver.py::_reject_conflicting_feasibility` | `test_feasibility_conflicts.py::test_reversed_input_order_has_identical_failure_behavior` | VERIFIED |
+| EPI-FEASIBILITY-003 | Assessment-context digest is order-independent for non-conflicting records | `resolver.py::_assessment_context_digest` (sorted payload, pre-existing) | `test_feasibility_conflicts.py::test_assessment_context_digest_is_order_independent_for_feasibility_and_evidence` | VERIFIED |
+| EPI-TYPEBOUNDARY-001 | Every `ResolvedEvidence`/`VerificationFeasibilityRecord` field strictly type-validated before semantic use | `resolver.py::_validate_and_normalize_resolved_evidence`, `_validate_and_normalize_feasibility_record` | `test_type_boundary.py` (32 parametrized tests) | VERIFIED |
+| EPI-TYPEBOUNDARY-002 | Bare strings for closed-enum fields never silently misclassify; always raise | `typecheck.py::require_enum_member` (isinstance-based) | `test_type_boundary.py::test_malformed_evidence_resolution_status_is_rejected[...]`, `::test_malformed_evidence_stance_is_rejected[...]`, `::test_malformed_verification_feasibility_is_rejected[...]` | VERIFIED |
+| EPI-TYPEBOUNDARY-003 | No raw AttributeError/TypeError/KeyError escapes malformed record input | typed `errors.py` hierarchy throughout normalization | `test_type_boundary.py::test_no_raw_exception_types_ever_escape_malformed_input` | VERIFIED |
+| EPI-IMMUTABILITY-001 | Overlay metadata deeply frozen (nested dict/list, not just top level) | `freeze.py::validate_and_freeze` | `test_deep_immutability.py::test_nested_dict_and_list_are_deeply_frozen` | VERIFIED |
+| EPI-IMMUTABILITY-002 | Mutating caller's original metadata after construction does not change overlay digest | `freeze.py::validate_and_freeze` (returns a new structure, never aliases input) | `test_deep_immutability.py::test_mutating_caller_original_metadata_after_construction_does_not_change_digest` | VERIFIED |
+| EPI-IMMUTABILITY-003 | NaN/Infinity and unsupported object types rejected in nested metadata | `freeze.py::validate_and_freeze` | `test_deep_immutability.py::test_nan_infinity_rejected_in_nested_metadata`, `::test_unsupported_object_type_in_metadata_rejected` | VERIFIED |
+| EPI-IMMUTABILITY-004 | Record (`ResolvedEvidence`/`VerificationFeasibilityRecord`) metadata deeply frozen too, not just overlay metadata | `resolver.py::_validate_and_normalize_resolved_evidence`/`_validate_and_normalize_feasibility_record` | `test_deep_immutability.py::test_resolved_evidence_metadata_is_also_deeply_frozen` | VERIFIED |
+| EPI-CONTRADICTS-001 | Qualified `CONTRADICTS` truth table implemented (AFFIRMED+AFFIRMED, AFFIRMED+REFUTED, REFUTED+REFUTED, qualified+unqualified) | `resolver.py::_classify_contradicts_pairs` | `test_disputes.py` (3 new tests this closure) | VERIFIED |
+| EPI-CONTRADICTS-002 | `AFFIRMED`+`AFFIRMED` CONTRADICTS forces both atoms to `DISPUTED` (reproduced defect: previously both stayed `KNOWN`) | `resolver.py::_assess_one_atom` (`force_disputed`) | `test_disputes.py::test_qualified_a_contradicts_b_both_independently_affirmed_forces_disputed` | VERIFIED |
+| EPI-CONTRADICTS-003 | Qualified side never downgraded by an unsupported contradictory atom | `resolver.py::_classify_contradicts_pairs` (cross-signal only touches the unqualified side) | `test_disputes.py::test_qualified_atom_contradicting_unqualified_atom_only_flags_the_unqualified_one` | VERIFIED |
 
 ## Deferred / out of scope this phase
 

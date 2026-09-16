@@ -69,6 +69,13 @@ def test_unsupported_model_assertions_contradicting_each_other_do_not_create_dis
 
 
 def test_qualified_atom_contradicting_unqualified_atom_only_flags_the_unqualified_one():
+    """a1 is qualified (KNOWN); a2 has no evidence of its own but is
+    CONTRADICTED by a1, which IS established. This is not "unsupported
+    disagreement" (test above) -- a1's qualified basis is a real,
+    epistemically relevant signal against a2, so a2 must be UNCERTAIN
+    (with CONTRADICTED_BY_QUALIFIED_ATOM), not UNKNOWN. Critically, a1
+    itself must NOT be downgraded merely because a2 is unsupported
+    prose -- a1 stays KNOWN."""
     artifact = make_artifact(
         atoms=(make_atom(atom_id="a1", evidence_refs=("e1",)), make_atom(atom_id="a2")),
         relations=(make_relation(relation_id="r1", kind=RelationKind.CONTRADICTS, source="a1", target="a2"),),
@@ -80,11 +87,8 @@ def test_qualified_atom_contradicting_unqualified_atom_only_flags_the_unqualifie
         resolution_trust_context=TRUSTED_VERIFIER,
     )
     assert results["a1"].state is EpistemicState.KNOWN
-    # a2 is established (established=False for a2 since it has no
-    # qualified basis itself); a1 is established, so this is NOT an
-    # "unqualified contradiction" (one side IS qualified) -- a2 has no
-    # basis of its own beyond the contradiction signal, so it's UNKNOWN.
-    assert results["a2"].state is EpistemicState.UNKNOWN
+    assert results["a2"].state is EpistemicState.UNCERTAIN
+    assert EpistemicReasonCode.CONTRADICTED_BY_QUALIFIED_ATOM in results["a2"].reason_codes
 
 
 def test_duplicate_evidence_reference_does_not_create_extra_certainty():
@@ -105,6 +109,88 @@ def test_duplicate_evidence_reference_does_not_create_extra_certainty():
             ),
             resolution_trust_context=TRUSTED_VERIFIER,
         )
+
+
+def test_qualified_a_contradicts_b_both_independently_affirmed_forces_disputed():
+    """Reproduced defect: A and B each have independent VERIFIED+SUPPORTS
+    evidence, and A CONTRADICTS B. Prior behavior left both KNOWN/
+    AFFIRMED, silently ignoring the qualified conflict. Correct
+    behavior: both atoms become DISPUTED -- their independently
+    established bases cannot both be true given the CONTRADICTS
+    relation between them, and contradiction must not be hidden by
+    confidence."""
+    artifact = make_artifact(
+        atoms=(
+            make_atom(atom_id="a", evidence_refs=("e1",)),
+            make_atom(atom_id="b", evidence_refs=("e2",)),
+        ),
+        relations=(make_relation(relation_id="r1", kind=RelationKind.CONTRADICTS, source="a", target="b"),),
+        evidence=(make_evidence(evidence_id="e1"), make_evidence(evidence_id="e2")),
+    )
+    results = _assess(
+        artifact,
+        resolved_evidence=(
+            make_resolved_evidence(evidence_id="e1", target_atom_id="a", status=EvidenceResolutionStatus.VERIFIED, stance=EvidenceStance.SUPPORTS),
+            make_resolved_evidence(evidence_id="e2", target_atom_id="b", status=EvidenceResolutionStatus.VERIFIED, stance=EvidenceStance.SUPPORTS),
+        ),
+        resolution_trust_context=TRUSTED_VERIFIER,
+    )
+    assert results["a"].state is EpistemicState.DISPUTED
+    assert results["b"].state is EpistemicState.DISPUTED
+    assert EpistemicReasonCode.VERIFIED_CONTRADICTION in results["a"].reason_codes
+    assert EpistemicReasonCode.VERIFIED_CONTRADICTION in results["b"].reason_codes
+
+
+def test_qualified_a_contradicts_b_one_affirmed_one_refuted_is_compatible_no_dispute():
+    """A AFFIRMED + B REFUTED is logically compatible with A CONTRADICTS
+    B (A true, B false, they contradict -- consistent). Neither should
+    be forced into DISPUTED."""
+    artifact = make_artifact(
+        atoms=(
+            make_atom(atom_id="a", evidence_refs=("e1",)),
+            make_atom(atom_id="b", evidence_refs=("e2",)),
+        ),
+        relations=(make_relation(relation_id="r1", kind=RelationKind.CONTRADICTS, source="a", target="b"),),
+        evidence=(make_evidence(evidence_id="e1"), make_evidence(evidence_id="e2")),
+    )
+    results = _assess(
+        artifact,
+        resolved_evidence=(
+            make_resolved_evidence(evidence_id="e1", target_atom_id="a", status=EvidenceResolutionStatus.VERIFIED, stance=EvidenceStance.SUPPORTS),
+            make_resolved_evidence(evidence_id="e2", target_atom_id="b", status=EvidenceResolutionStatus.VERIFIED, stance=EvidenceStance.REFUTES),
+        ),
+        resolution_trust_context=TRUSTED_VERIFIER,
+    )
+    assert results["a"].state is EpistemicState.KNOWN
+    assert results["a"].polarity is EpistemicPolarity.AFFIRMED
+    assert results["b"].state is EpistemicState.KNOWN
+    assert results["b"].polarity is EpistemicPolarity.REFUTED
+
+
+def test_qualified_a_contradicts_b_both_independently_refuted_invents_no_truth():
+    """A REFUTED + B REFUTED is compatible with CONTRADICTS (both false
+    satisfies "not both true") -- CONTRADICTS must not invent truth
+    about either merely from this relation."""
+    artifact = make_artifact(
+        atoms=(
+            make_atom(atom_id="a", evidence_refs=("e1",)),
+            make_atom(atom_id="b", evidence_refs=("e2",)),
+        ),
+        relations=(make_relation(relation_id="r1", kind=RelationKind.CONTRADICTS, source="a", target="b"),),
+        evidence=(make_evidence(evidence_id="e1"), make_evidence(evidence_id="e2")),
+    )
+    results = _assess(
+        artifact,
+        resolved_evidence=(
+            make_resolved_evidence(evidence_id="e1", target_atom_id="a", status=EvidenceResolutionStatus.VERIFIED, stance=EvidenceStance.REFUTES),
+            make_resolved_evidence(evidence_id="e2", target_atom_id="b", status=EvidenceResolutionStatus.VERIFIED, stance=EvidenceStance.REFUTES),
+        ),
+        resolution_trust_context=TRUSTED_VERIFIER,
+    )
+    assert results["a"].state is EpistemicState.KNOWN
+    assert results["a"].polarity is EpistemicPolarity.REFUTED
+    assert results["b"].state is EpistemicState.KNOWN
+    assert results["b"].polarity is EpistemicPolarity.REFUTED
 
 
 def test_conflicting_resolution_records_fail_closed_not_silently_picked():

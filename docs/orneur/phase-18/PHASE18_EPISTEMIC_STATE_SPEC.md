@@ -112,25 +112,47 @@ even compile — defense in depth, verified in
 
 ## Dispute rules
 
-`DISPUTED` requires a QUALIFIED contradiction: both a qualified support
-basis and a qualified refutation basis (direct or derived) on the same
-atom. Two unsupported model assertions merely linked by a `CONTRADICTS`
+`DISPUTED` arises in two ways:
+
+1. A single atom has both a qualified support basis and a qualified
+   refutation basis (direct or derived) — e.g. one evidence resolution
+   supports it, another refutes it.
+2. A **qualified `CONTRADICTS` conflict**: see the truth table below.
+
+Two unsupported model assertions merely linked by a `CONTRADICTS`
 relation, with neither side qualified, is "mere disagreement" — it
 downgrades both atoms to `UNCERTAIN` with reason code
 `UNQUALIFIED_CONTRADICTION`, never `DISPUTED`.
 
+### Qualified `CONTRADICTS` truth table
+
+For a relation `A CONTRADICTS B`, each side's independently established
+polarity (`AFFIRMED` = qualified support only, `REFUTED` = qualified
+refutation only, `None` = no qualified basis at all,
+`DISPUTED` = already both) determines the outcome
+(`resolver._classify_contradicts_pairs`):
+
+| A | B | Outcome |
+|---|---|---|
+| `AFFIRMED` | `AFFIRMED` | **Genuine qualified conflict** — both A and B are forced to `DISPUTED`/`MIXED` with reason `VERIFIED_CONTRADICTION`. Their independently-established bases cannot both be true given the `CONTRADICTS` relation; contradiction must not be hidden by confidence. |
+| `AFFIRMED` | `REFUTED` | Compatible with the relation (A true, B false, they contradict — consistent). No action; both keep their own state. |
+| `REFUTED` | `REFUTED` | Compatible ("not both true" is satisfied). `CONTRADICTS` must not invent truth about either side merely from the relation. No action. |
+| qualified (`AFFIRMED`/`REFUTED`) | `None` | The qualified side is **not downgraded** merely because the other side is unsupported prose. The unsupported side gets reason `CONTRADICTED_BY_QUALIFIED_ATOM` → `UNCERTAIN` (not `UNKNOWN` — an established atom contradicting it is a real, epistemically relevant signal, unlike a bare unsupported assertion with zero signal). |
+| `None` | `None` | Handled separately by the existing "mere disagreement" rule → `UNCERTAIN` / `UNQUALIFIED_CONTRADICTION` on both. |
+
 ## Precedence
 
 Applied per atom, after computing direct/derived support and refutation
-membership:
+membership and the `CONTRADICTS` classification above:
 
-1. Both support and refutation basis present → `DISPUTED`
+1. Both support and refutation basis present, OR the atom is on the
+   `AFFIRMED`+`AFFIRMED` side of a qualified `CONTRADICTS` pair → `DISPUTED`
 2. Direct support only → `KNOWN` / `AFFIRMED`
 3. Direct refutation only → `KNOWN` / `REFUTED`
 4. Derived support only → `INFERRED` / `AFFIRMED`
 5. Derived refutation only → `INFERRED` / `REFUTED`
 6. Trusted structural feasibility says `STRUCTURALLY_UNVERIFIABLE` and no basis above applies → `UNVERIFIABLE`
-7. Some other relevant-but-insufficient signal exists → `UNCERTAIN`
+7. Some other relevant-but-insufficient signal exists (including `UNQUALIFIED_CONTRADICTION` or `CONTRADICTED_BY_QUALIFIED_ATOM`) → `UNCERTAIN`
 8. Nothing at all → `UNKNOWN`
 
 This exactly matches the normative baseline
@@ -157,7 +179,100 @@ mappings to JSON-safe primitives → `json.dumps(sort_keys=True,
 separators=(",", ":"), allow_nan=False, ensure_ascii=False)` → SHA-256
 hex digest over the UTF-8 bytes. Same semantic input (including
 permuted collection order) always produces the same canonical bytes and
-digest — verified in `test_canonicalization.py`.
+digest — verified in `test_canonicalization.py`, and, critically, also
+verified for the **default, unfixed-`overlay_id` production invocation
+path** in `test_determinism_closure.py` (see below) — the earlier
+version of this claim was only proven for a test that explicitly pinned
+`overlay_id="overlay-fixed"`, which did not exercise the real default
+code path.
+
+## Deterministic default `overlay_id` (closure)
+
+**Reproduced defect**: prior code did
+`overlay_id=overlay_id or str(uuid.uuid4())`. Two calls to
+`assess_artifact()` with byte-identical artifact/evidence/context/
+assessed_at inputs, neither passing `overlay_id`, produced two
+different `overlay_id`s and therefore two different canonical digests —
+a direct violation of the "same input → same overlay" doctrine that the
+existing canonicalization test did not catch, because it always pinned
+`overlay_id` explicitly.
+
+**Fix**: `resolver._default_overlay_id(source_digest, context_digest,
+assessed_at)` — `sha256("epistemic-overlay:{source_digest}:{context_digest}:{assessed_at}")` —
+replaces the `uuid4()` default. It is a pure function of already-canonical
+inputs: no wall-clock read, no randomness, no process identity. An
+explicit `overlay_id` argument still overrides it. Verified in
+`test_determinism_closure.py` (8 tests): identical default calls
+produce identical `overlay_id`/canonical JSON/digest; changing
+`assessment_context_id`, `assessed_at`, or `resolved_evidence` changes
+the derived `overlay_id`; a direct counterfactual test demonstrates
+`uuid4()` is non-deterministic (the exact property that made it unfit
+as a canonical default).
+
+## Feasibility record conflicts (closure)
+
+**Reproduced defect**: prior code did
+`feasibility_by_atom[record.target_atom_id] = record` in a plain loop —
+the *last* `VerificationFeasibilityRecord` for a given atom silently
+won. `[PENDING, STRUCTURALLY_UNVERIFIABLE]` for the same atom resolved
+to `UNVERIFIABLE`; the reversed order `[STRUCTURALLY_UNVERIFIABLE,
+PENDING]` resolved to `UNCERTAIN` — an order-dependent result from an
+identical input *set*, violating fail-closed semantics.
+
+**Fix**: `resolver._reject_conflicting_feasibility()` — at most one
+`VerificationFeasibilityRecord` per `target_atom_id`; a second record
+for the same atom, identical or not, raises
+`errors.ConflictingVerificationFeasibility`. Verified in
+`test_feasibility_conflicts.py` (7 tests), including both input
+orderings failing identically and a same-digest check proving the
+assessment-context canonicalization is itself order-independent for
+non-conflicting records across different atoms.
+
+## Strict field-type validation (closure)
+
+**Reproduced defect**: `ResolvedEvidence`/`VerificationFeasibilityRecord`
+are plain frozen dataclasses with no field-level type enforcement at
+construction. A caller passing bare strings (`status="VERIFIED"`,
+`stance="SUPPORTS"`, `feasibility="PENDING"`) instead of genuine enum
+members did not raise — every `record.status is
+EvidenceResolutionStatus.X` comparison in the resolver is simply
+`False` for a plain string, so the record silently fell through to
+`EpistemicReasonCode.EVIDENCE_INCONCLUSIVE` rather than being rejected.
+
+**Fix**: `resolver._validate_and_normalize_resolved_evidence()` /
+`_validate_and_normalize_feasibility_record()` validate every field
+(`require_string`, `require_enum_member`, ISO-8601 timestamp check)
+before any semantic use, for every record, unconditionally — called at
+the top of `assess_artifact()`. Malformed fields raise
+`errors.InvalidObjectType`/`errors.InvalidStructuredValue`, never a raw
+`AttributeError`/`TypeError`/`KeyError`. Verified in
+`test_type_boundary.py` (32 parametrized tests covering `None`, wrong
+enum type, `int`, `bool`, wrong dataclass type, and malformed
+timestamps for every closed-enum and string field on both record
+types).
+
+## Deep immutability of structured metadata (closure)
+
+**Reproduced defect**: `resolver._freeze_metadata()` did
+`MappingProxyType(dict(metadata))` — a shallow freeze. A nested
+`{"nested": {"items": [1, 2]}}` metadata value left the inner dict and
+list as the caller's own mutable objects; mutating
+`metadata["nested"]["items"]` after `assess_artifact()` returned
+silently changed the resulting overlay's canonical digest.
+
+**Fix**: `freeze.validate_and_freeze()` recursively validates and
+freezes every structured value reachable from overlay metadata AND from
+`ResolvedEvidence`/`VerificationFeasibilityRecord` metadata: `dict` →
+`MappingProxyType`, `list`/`tuple` → `tuple`, strings/ints/bools bounded
+and passed through, non-finite floats and unsupported object types
+rejected, depth/key-count/string-length bounded
+(`limits.MAX_METADATA_DEPTH`/`MAX_METADATA_KEYS`/
+`MAX_STRING_FIELD_LENGTH`). No object reachable from a constructed
+`EpistemicOverlay` is mutable, and `validate_and_freeze()` never mutates
+its input (verified separately). Sets/frozensets are explicitly
+unsupported (fail closed) rather than given an undefined canonical
+ordering. Verified in `test_deep_immutability.py` (8 tests), including
+a direct digest-stability-after-caller-mutation test.
 
 ## Diff
 
