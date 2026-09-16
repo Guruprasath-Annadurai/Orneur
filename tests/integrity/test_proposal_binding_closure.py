@@ -10,8 +10,7 @@ from __future__ import annotations
 from orneur.intelligence.epistemic.enums import EpistemicPolarity
 from orneur.intelligence.integrity.contracts import IntegrityProposal, ProposedAssertion
 from orneur.intelligence.integrity.enums import PresentationTreatment
-from orneur.intelligence.integrity.evaluator import assess_integrity
-from tests.integrity.conftest import build_known_affirmed_fixture
+from tests.integrity.conftest import assess_integrity_trusted as assess_integrity, build_known_affirmed_fixture
 
 
 def test_differing_proposal_metadata_changes_proposal_digest_and_default_receipt_id():

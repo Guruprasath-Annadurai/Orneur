@@ -8,8 +8,8 @@ Nothing here is marked `VERIFIED` without a cited test.
 
 | ID | Requirement | Implementation | Test/Evidence | Status |
 |---|---|---|---|---|
-| EPI-INTEGRITY-BOUNDARY-001 | Overlay must pass `verify_overlay_binding()`; failure raises `OverlayBindingInvalid` | `evaluator.py::assess_integrity` | `test_trust_boundary.py` (7 tests), `test_canonical_cases.py::test_case_j_*` | VERIFIED |
-| EPI-INTEGRITY-BOUNDARY-002 | Fabricated overlay with valid-looking fields still rejected | `verify_overlay_binding` (digest comparison) | `test_trust_boundary.py::test_fabricated_overlay_with_valid_looking_fields_still_rejected` | VERIFIED |
+| EPI-INTEGRITY-BOUNDARY-001 | Overlay must pass `verify_overlay_binding()` (artifact identity/content); failure raises `OverlayBindingInvalid` | `evaluator.py::assess_integrity` | `test_trust_boundary.py` (7 tests), `test_canonical_cases.py::test_case_j_*` | VERIFIED |
+| EPI-INTEGRITY-BOUNDARY-002 | An overlay whose `source_artifact_digest` FIELD is fabricated (does not match the artifact's real digest) is rejected | `verify_overlay_binding` (digest comparison) | `test_trust_boundary.py::test_fabricated_overlay_source_artifact_digest_field_still_rejected` | VERIFIED (renamed/narrowed this closure -- see EPI-INTEGRITY-PROVENANCE-* below for the stronger, previously-missing check that a forged ASSESSMENT with an UNCHANGED, correct artifact binding is also rejected; the original wording of this row implied that stronger guarantee already existed, which it did not) |
 | EPI-INTEGRITY-BOUNDARY-003 | Unknown atom reference (assertion or scope) fails closed | `evaluator.py` (`NonAssessedAtomReference`) | `test_trust_boundary.py::test_unknown_atom_reference_in_assertion_rejected`, `::test_unknown_atom_reference_in_scope_rejected` | VERIFIED |
 | EPI-INTEGRITY-BOUNDARY-004 | Malformed overlay/artifact/proposal/policy type rejected | `typecheck.py::require_instance` | `test_trust_boundary.py`, `test_type_boundary.py` | VERIFIED |
 
@@ -134,6 +134,21 @@ Nothing here is marked `VERIFIED` without a cited test.
 | EPI-INTEGRITY-FRESHNESS-006 | Offset-naive timestamps in a freshness comparison rejected, never a raw TypeError | `floor.py::parse_aware_iso8601` | `test_freshness_timezone_closure.py` (8 tests) | VERIFIED |
 | EPI-INTEGRITY-FRESHNESS-007 | Equivalent-instant timestamps at different UTC offsets compare correctly | `floor.py::is_overlay_stale` (aware-datetime subtraction) | `test_freshness_timezone_closure.py::test_two_aware_timestamps_different_offsets_same_instant_compare_correctly`, `::test_equivalent_offset_timestamps_produce_deterministic_staleness_result` | VERIFIED |
 | EPI-INTEGRITY-DETERMINISM-005 | The RETURNED `IntegrityReceipt` object (not just its canonical digest) is permutation-deterministic | `evaluator.py::assess_integrity` (sorts `required_disclosures`/`violations` at construction) | `test_receipt_object_determinism_closure.py` (4 tests) | VERIFIED |
+
+## Trusted overlay provenance closure (this session)
+
+| ID | Requirement | Implementation | Test/Evidence | Status |
+|---|---|---|---|---|
+| EPI-INTEGRITY-PROVENANCE-001 | `assess_integrity()` requires an explicit `overlay_trust_context: IntegrityOverlayTrustContext`, isinstance-checked, never a bare string | `overlay_trust.py::is_valid_overlay_trust_context`, `evaluator.py::assess_integrity` | `test_overlay_provenance_closure.py::test_bare_string_trust_context_rejected` | VERIFIED |
+| EPI-INTEGRITY-PROVENANCE-002 | Default/explicit `UNTRUSTED` overlay context always fails closed -- cannot be used as epistemic authority | `evaluator.py::assess_integrity` (`UntrustedOverlayRejected`) | `test_overlay_provenance_closure.py::test_untrusted_default_is_rejected_outright`, `::test_untrusted_explicit_is_rejected_outright` | VERIFIED |
+| EPI-INTEGRITY-PROVENANCE-003 | `TRUSTED_PHASE18_RUNTIME` requires a caller-supplied `expected_overlay_digest`, never derived from the overlay object being evaluated | `evaluator.py::assess_integrity` | `test_overlay_provenance_closure.py` (13 tests) | VERIFIED |
+| EPI-INTEGRITY-PROVENANCE-004 | A forged `EpistemicAssessment` (state/polarity content replaced) with UNCHANGED, correct `source_artifact_id`/`source_artifact_digest` is rejected -- the exact reproduced defect this closure fixes | `evaluator.py::assess_integrity` (`OverlayProvenanceInvalid`) | `test_overlay_provenance_closure.py::test_forged_assessment_with_correct_artifact_binding_is_now_rejected`, `::test_mutating_assessment_after_computing_trusted_digest_is_caught` | VERIFIED |
+| EPI-INTEGRITY-PROVENANCE-005 | `verify_overlay_binding()` ALONE (no provenance check) genuinely does not detect this forgery, proving the defect was real | N/A (documents the pre-fix code path directly) | `test_overlay_provenance_closure.py::test_forged_assessment_would_have_been_satisfied_under_the_old_binding_only_check` | VERIFIED |
+| EPI-INTEGRITY-PROVENANCE-006 | A real Phase-18 overlay with a correct trusted digest passes through to normal evaluation | `evaluator.py::assess_integrity` | `test_overlay_provenance_closure.py::test_real_phase18_overlay_with_correct_trusted_digest_passes_through_normally` | VERIFIED |
+| EPI-INTEGRITY-PROVENANCE-007 | `overlay.metadata`/`proposal.metadata` self-claims of trust ("trusted", "verified_overlay", "overlay_trust") have no effect | evaluator never reads either metadata field to decide trust | `test_overlay_provenance_closure.py` (2 self-elevation tests) | VERIFIED |
+| EPI-INTEGRITY-PROVENANCE-008 | Malformed overlay structure (duplicate assessments) is rejected via the trust/digest boundary, not by Phase 19 recomputing epistemic truth | `evaluator.py::assess_integrity` | `test_overlay_provenance_closure.py::test_untrusted_malformed_overlay_rejected_at_trust_boundary_first`, `::test_trusted_context_wrong_expected_digest_rejects_malformed_overlay_too` | VERIFIED |
+| EPI-INTEGRITY-PROVENANCE-009 | No raw exception leakage from any forged/malformed overlay path | typed `errors.py` hierarchy | `test_overlay_provenance_closure.py::test_no_raw_exception_leakage_from_forged_or_malformed_overlay_paths` | VERIFIED |
+| EPI-INTEGRITY-POLICY-009 | `normalize_policy()` validates every collection member's TYPE before ever calling `frozenset()` on it -- no raw `TypeError` for unhashable members (dict/list) | `floor.py::normalize_policy` | `test_policy_type_boundary_closure.py` (13 tests) | VERIFIED |
 
 ## Deferred / out of scope this phase
 

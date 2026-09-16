@@ -15,7 +15,6 @@ from orneur.intelligence.epistemic.enums import EpistemicPolarity, EpistemicReso
 from orneur.intelligence.epistemic.resolver import assess_artifact
 from orneur.intelligence.integrity.contracts import IntegrityProposal, ProposedAssertion
 from orneur.intelligence.integrity.enums import IntegrityStatus, PresentationTreatment
-from orneur.intelligence.integrity.evaluator import assess_integrity
 from orneur.intelligence.ocl.artifact import CognitiveArtifact
 from orneur.intelligence.ocl.compiler import compile_artifact
 from orneur.intelligence.ocl.enums import AtomKind, EvidenceKind, ProducerKind, RelationKind, SourceClass
@@ -24,6 +23,7 @@ from orneur.intelligence.ocl.graph import CognitiveAtom, CognitiveRelation
 from orneur.intelligence.ocl.provenance import ModelIdentityRef, Provenance
 from orneur.intelligence.ocl.trust import CompilationTrustContext
 from orneur.intelligence.ocl.version import CURRENT_SCHEMA_VERSION
+from tests.integrity.conftest import assess_integrity_trusted as assess_integrity
 
 TRUSTED_OCL = CompilationTrustContext.TRUSTED_DETERMINISTIC_SYSTEM
 TRUSTED_VERIFIER = EpistemicResolutionTrustContext.TRUSTED_DETERMINISTIC_VERIFIER

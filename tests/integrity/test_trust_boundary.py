@@ -1,14 +1,18 @@
-"""Section 12/33-C: overlay trust boundary."""
+"""Section 12/33-C: overlay ARTIFACT binding boundary (verify_overlay_binding).
+Distinct from the overlay CONTENT/provenance trust boundary (trust
+context + expected_overlay_digest), covered in
+test_overlay_provenance_closure.py."""
 from __future__ import annotations
 
 import pytest
 
+from orneur.intelligence.epistemic import canonical as epistemic_canonical
 from orneur.intelligence.epistemic.enums import EpistemicPolarity
 from orneur.intelligence.integrity import errors
 from orneur.intelligence.integrity.contracts import IntegrityProposal, ProposedAssertion
 from orneur.intelligence.integrity.enums import PresentationTreatment
 from orneur.intelligence.integrity.evaluator import assess_integrity
-from tests.integrity.conftest import TRUSTED_OCL, build_known_affirmed_fixture, make_artifact, make_atom
+from tests.integrity.conftest import TRUSTED_OCL, TRUSTED_PHASE18_RUNTIME, assess_integrity_trusted, build_known_affirmed_fixture, make_artifact, make_atom
 
 
 def test_wrong_artifact_rejected():
@@ -18,7 +22,7 @@ def test_wrong_artifact_rejected():
     other = compile_artifact(make_artifact(artifact_id="other", atoms=(make_atom(atom_id="a1"),)), trust_context=TRUSTED_OCL)
     proposal = IntegrityProposal(proposal_id="p1", assertions=(ProposedAssertion("as1", "a1", PresentationTreatment.ESTABLISHED, EpistemicPolarity.AFFIRMED),))
     with pytest.raises(errors.OverlayBindingInvalid):
-        assess_integrity(proposal, overlay=overlay, artifact=other)
+        assess_integrity_trusted(proposal, overlay=overlay, artifact=other)
 
 
 def test_mutated_artifact_content_rejected():
@@ -32,46 +36,58 @@ def test_mutated_artifact_content_rejected():
     )
     proposal = IntegrityProposal(proposal_id="p1", assertions=(ProposedAssertion("as1", "a1", PresentationTreatment.ESTABLISHED, EpistemicPolarity.AFFIRMED),))
     with pytest.raises(errors.OverlayBindingInvalid):
-        assess_integrity(proposal, overlay=overlay, artifact=mutated)
+        assess_integrity_trusted(proposal, overlay=overlay, artifact=mutated)
 
 
 def test_unknown_atom_reference_in_assertion_rejected():
     artifact, overlay = build_known_affirmed_fixture()
     proposal = IntegrityProposal(proposal_id="p1", assertions=(ProposedAssertion("as1", "atom-does-not-exist", PresentationTreatment.ESTABLISHED, EpistemicPolarity.AFFIRMED),))
     with pytest.raises(errors.NonAssessedAtomReference):
-        assess_integrity(proposal, overlay=overlay, artifact=artifact)
+        assess_integrity_trusted(proposal, overlay=overlay, artifact=artifact)
 
 
 def test_unknown_atom_reference_in_scope_rejected():
     artifact, overlay = build_known_affirmed_fixture()
     proposal = IntegrityProposal(proposal_id="p1", assertions=(), required_scope_atom_ids=("atom-does-not-exist",))
     with pytest.raises(errors.NonAssessedAtomReference):
-        assess_integrity(proposal, overlay=overlay, artifact=artifact)
+        assess_integrity_trusted(proposal, overlay=overlay, artifact=artifact)
 
 
 def test_malformed_overlay_type_rejected():
     artifact, _overlay = build_known_affirmed_fixture()
     proposal = IntegrityProposal(proposal_id="p1", assertions=())
     with pytest.raises(errors.InvalidObjectType):
-        assess_integrity(proposal, overlay="not an overlay", artifact=artifact)  # type: ignore[arg-type]
+        assess_integrity(
+            proposal, overlay="not an overlay", artifact=artifact,  # type: ignore[arg-type]
+            overlay_trust_context=TRUSTED_PHASE18_RUNTIME, expected_overlay_digest="irrelevant",
+        )
 
 
 def test_malformed_artifact_type_rejected():
     _artifact, overlay = build_known_affirmed_fixture()
     proposal = IntegrityProposal(proposal_id="p1", assertions=())
     with pytest.raises(errors.InvalidObjectType):
-        assess_integrity(proposal, overlay=overlay, artifact={"fake": "artifact"})  # type: ignore[arg-type]
+        assess_integrity(
+            proposal, overlay=overlay, artifact={"fake": "artifact"},  # type: ignore[arg-type]
+            overlay_trust_context=TRUSTED_PHASE18_RUNTIME, expected_overlay_digest="irrelevant",
+        )
 
 
-def test_fabricated_overlay_with_valid_looking_fields_still_rejected():
-    """An externally constructed overlay whose fields merely LOOK right
-    (matching artifact_id, but a digest that doesn't match the real
-    canonical content) must not become trusted merely because the shape
-    is correct."""
+def test_fabricated_overlay_source_artifact_digest_field_still_rejected():
+    """An externally constructed overlay whose source_artifact_digest
+    FIELD merely looks right-shaped (a real-looking hex string) but does
+    not match the artifact's actual canonical digest must not become
+    trusted merely because the shape is correct -- caught by
+    verify_overlay_binding() before the content-provenance check ever
+    runs."""
     import dataclasses
 
     artifact, overlay = build_known_affirmed_fixture()
+    original_digest = epistemic_canonical.digest(overlay)
     fabricated = dataclasses.replace(overlay, source_artifact_digest="0" * 64)
     proposal = IntegrityProposal(proposal_id="p1", assertions=(ProposedAssertion("as1", "a1", PresentationTreatment.ESTABLISHED, EpistemicPolarity.AFFIRMED),))
     with pytest.raises(errors.OverlayBindingInvalid):
-        assess_integrity(proposal, overlay=fabricated, artifact=artifact)
+        assess_integrity(
+            proposal, overlay=fabricated, artifact=artifact,
+            overlay_trust_context=TRUSTED_PHASE18_RUNTIME, expected_overlay_digest=original_digest,
+        )

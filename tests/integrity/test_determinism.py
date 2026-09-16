@@ -8,8 +8,7 @@ from orneur.intelligence.integrity import errors
 from orneur.intelligence.integrity.canonical import digest, to_canonical_json
 from orneur.intelligence.integrity.contracts import IntegrityProposal, ProposedAssertion
 from orneur.intelligence.integrity.enums import PresentationTreatment
-from orneur.intelligence.integrity.evaluator import assess_integrity
-from tests.integrity.conftest import build_disputed_fixture, build_known_affirmed_fixture, make_artifact, make_atom, make_evidence
+from tests.integrity.conftest import assess_integrity_trusted as assess_integrity, build_disputed_fixture, build_known_affirmed_fixture, make_artifact, make_atom, make_evidence
 
 
 def _two_atom_fixture():

@@ -19,9 +19,8 @@ from orneur.intelligence.epistemic.enums import EpistemicPolarity, EpistemicStat
 from orneur.intelligence.integrity import errors
 from orneur.intelligence.integrity.contracts import IntegrityPolicy, IntegrityProposal, ProposedAssertion
 from orneur.intelligence.integrity.enums import IntegrityStatus, PresentationTreatment
-from orneur.intelligence.integrity.evaluator import assess_integrity
 from orneur.intelligence.integrity.floor import normalize_policy
-from tests.integrity.conftest import build_known_affirmed_fixture
+from tests.integrity.conftest import assess_integrity_trusted as assess_integrity, build_known_affirmed_fixture
 
 
 def test_public_api_accepts_a_plain_mutable_dict_for_the_policy():

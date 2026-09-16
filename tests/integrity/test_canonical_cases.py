@@ -7,8 +7,8 @@ from orneur.intelligence.epistemic.enums import EpistemicPolarity
 from orneur.intelligence.integrity import errors
 from orneur.intelligence.integrity.contracts import IntegrityPolicy, IntegrityProposal, ProposedAssertion
 from orneur.intelligence.integrity.enums import IntegrityStatus, IntegrityViolationReason, PresentationTreatment
-from orneur.intelligence.integrity.evaluator import assess_integrity
 from tests.integrity.conftest import (
+    assess_integrity_trusted as assess_integrity,
     build_disputed_fixture,
     build_inferred_affirmed_fixture,
     build_known_affirmed_fixture,

@@ -18,9 +18,8 @@ from orneur.intelligence.epistemic.enums import EvidenceResolutionStatus, Eviden
 from orneur.intelligence.epistemic.resolver import assess_artifact
 from orneur.intelligence.integrity.contracts import IntegrityProposal, ProposedAssertion
 from orneur.intelligence.integrity.enums import PresentationTreatment
-from orneur.intelligence.integrity.evaluator import assess_integrity
 from orneur.intelligence.ocl.compiler import compile_artifact
-from tests.integrity.conftest import ASSESSED_AT, TRUSTED_OCL, make_artifact, make_atom
+from tests.integrity.conftest import assess_integrity_trusted as assess_integrity, ASSESSED_AT, TRUSTED_OCL, make_artifact, make_atom
 
 
 def _two_atom_overlay():

@@ -307,3 +307,116 @@ RAW/UNTRUSTED input (caller-constructed, may be mutable) from
 NORMALIZED canonical internal state (deep-frozen before semantic use)
 from the CANONICAL RECEIPT (deep-frozen on output) -- see
 PHASE19_EPISTEMIC_INTEGRITY_SPEC.md's "Policy normalization" section.
+
+---
+
+## Closure: trusted overlay provenance & policy type-boundary (appended, not rewriting the above)
+
+Two genuine defects were named by an independent audit and reproduced
+live, before any fix.
+
+### 1. Forged overlay content, unchanged artifact binding (reproduced)
+
+```
+original overlay state: EpistemicState.UNKNOWN
+original source_artifact_id: art-1
+original source_artifact_digest: d576487d4cc52b42632624ddc86b0b76c8ae366ab4873a634106a8f0d5a17253
+forged overlay source_artifact_id (unchanged): art-1
+forged overlay source_artifact_digest (unchanged): d576487d4cc52b42632624ddc86b0b76c8ae366ab4873a634106a8f0d5a17253
+forged overlay state: EpistemicState.KNOWN
+verify_overlay_binding: PASSED (no exception) -- binding check does not detect forgery
+Phase19 result with forged overlay: IntegrityStatus.SATISFIED
+```
+
+A real Phase-18 overlay (produced by `assess_artifact()`, genuinely
+`UNKNOWN`) had its single `EpistemicAssessment` replaced via
+`dataclasses.replace(overlay, assessments=(forged,))` with a fabricated
+`KNOWN`/`AFFIRMED` assessment, while `source_artifact_id`/
+`source_artifact_digest` were left completely unchanged.
+`verify_overlay_binding()` -- the ONLY overlay-related check Phase 19
+performed before this closure -- passed without raising, and
+`assess_integrity()` consumed the forged assessment as genuine,
+returning `SATISFIED` for an `ESTABLISHED`/`AFFIRMED` proposal about an
+atom that was actually `UNKNOWN`. This proved artifact binding and
+overlay-content provenance are genuinely different guarantees, and only
+the former existed.
+
+**Fix**: `assess_integrity()` now requires an explicit
+`overlay_trust_context: IntegrityOverlayTrustContext` (isinstance-checked,
+default `UNTRUSTED`, which always fails closed) plus, under
+`TRUSTED_PHASE18_RUNTIME`, a caller-supplied `expected_overlay_digest`
+-- computed by the trusted caller from the overlay BEFORE it crosses
+into Phase 19, never derived from the overlay object being evaluated.
+A mismatch (`epistemic.canonical.digest(overlay) != expected_overlay_digest`)
+raises `OverlayProvenanceInvalid` before any assessment is read.
+Re-running the exact reproduction above after the fix:
+`test_overlay_provenance_closure.py::test_forged_assessment_with_correct_artifact_binding_is_now_rejected`
+confirms `OverlayProvenanceInvalid` is now raised instead of `SATISFIED`
+being returned.
+
+### 2. `normalize_policy()` raw `TypeError` on unhashable members (reproduced)
+
+```
+{} -> TypeError unhashable type: 'dict'
+[] -> TypeError unhashable type: 'list'
+{'x': 1} -> TypeError unhashable type: 'dict'
+```
+
+`IntegrityPolicy(stricter_permitted_treatments={KNOWN: [{}]})` caused
+`frozenset(declared)` to raise a raw Python `TypeError` before any
+member-type validation ran -- a direct violation of "no raw TypeError
+may escape." **Fix**: every member's type is now validated by iterating
+the raw `declared` container FIRST; `frozenset()` is only ever called
+on an already-type-validated collection.
+
+### Test-suite migration (section 11)
+
+Because `assess_integrity()`/`require_integrity()` gained a required
+overlay-trust boundary with a fail-closed `UNTRUSTED` default, every
+existing Phase-19 test call site (16 files, ~199 pre-existing call
+sites) was migrated to supply an explicit trusted invocation. Rather
+than hand-edit every call, `tests/integrity/conftest.py` gained
+`assess_integrity_trusted()`/`require_integrity_trusted()` wrapper
+functions that supply `overlay_trust_context=TRUSTED_PHASE18_RUNTIME`
+and `expected_overlay_digest=epistemic.canonical.digest(overlay)` --
+correct specifically because, in every one of those tests, `overlay` is
+the exact, un-tampered object the test just built via a real
+`assess_artifact()` call (never a value derived from a forged/mutated
+object). Each of the 16 files' imports were mechanically rewritten to
+alias `assess_integrity_trusted as assess_integrity` (and
+`require_integrity_trusted as require_integrity` where used), so no
+individual call site's arguments needed manual editing. Tests that
+specifically exercise the trust boundary itself
+(`test_trust_boundary.py`, `test_overlay_provenance_closure.py`) call
+the REAL `evaluator.assess_integrity()` directly with explicit trust
+arguments instead, so they can exercise `UNTRUSTED`/malformed/forged
+paths the wrapper deliberately cannot produce.
+
+### New test files added this closure
+
+`test_overlay_provenance_closure.py` (13), `test_policy_type_boundary_closure.py`
+(13) -- 26 new tests, all passing after the corresponding fix.
+`test_trust_boundary.py` was also rewritten (7 tests, same count,
+updated to use explicit trust arguments and to add
+`test_fabricated_overlay_source_artifact_digest_field_still_rejected`,
+a more precisely-named replacement for the previous, less specific
+`test_fabricated_overlay_with_valid_looking_fields_still_rejected`).
+
+### Corrected claim (see PHASE19_REQUIREMENTS.md EPI-INTEGRITY-BOUNDARY-002)
+
+The prior closure's row for "fabricated overlay with valid-looking
+fields still rejected" only ever tested changing
+`overlay.source_artifact_digest` to an obviously-wrong value -- a field
+`verify_overlay_binding()` already checked. It did not test (and
+therefore did not prove) that a forged ASSESSMENT with a CORRECT,
+UNCHANGED artifact binding would be rejected -- which, per item 1
+above, it was not. The row is corrected to describe precisely what it
+tests, and the new EPI-INTEGRITY-PROVENANCE-* requirement group covers
+the stronger guarantee this closure actually adds.
+
+### Regression re-verification after the fix
+
+`tests/integrity/`: 225 passed (199 prior + 26 new), 0 failed.
+`tests/integrity + tests/epistemic + tests/ocl`: 711 passed, 0 failed.
+`tests/test_packaging_invariant.py` + Phase 16 regression: 38 passed, 0
+failed.

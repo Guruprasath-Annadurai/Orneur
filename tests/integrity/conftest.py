@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from orneur.intelligence.epistemic import canonical as epistemic_canonical
 from orneur.intelligence.epistemic.enums import EpistemicResolutionTrustContext, EvidenceResolutionStatus, EvidenceStance
 from orneur.intelligence.epistemic.models import ResolvedEvidence
 from orneur.intelligence.epistemic.resolver import assess_artifact
+from orneur.intelligence.integrity.enums import IntegrityOverlayTrustContext
+from orneur.intelligence.integrity.evaluator import assess_integrity as _assess_integrity, require_integrity as _require_integrity
 from orneur.intelligence.ocl.artifact import CognitiveArtifact
 from orneur.intelligence.ocl.enums import AtomKind, EvidenceKind, ProducerKind, RelationKind, SourceClass
 from orneur.intelligence.ocl.evidence import EvidenceAnchor
@@ -17,6 +20,34 @@ EVALUATED_AT = "2026-01-02T00:00:00+00:00"
 
 TRUSTED_OCL = CompilationTrustContext.TRUSTED_DETERMINISTIC_SYSTEM
 TRUSTED_VERIFIER = EpistemicResolutionTrustContext.TRUSTED_DETERMINISTIC_VERIFIER
+TRUSTED_PHASE18_RUNTIME = IntegrityOverlayTrustContext.TRUSTED_PHASE18_RUNTIME
+
+
+def assess_integrity_trusted(proposal, *, overlay, artifact, **kw):
+    """Test convenience wrapper around the REAL evaluator.assess_integrity():
+    supplies overlay_trust_context=TRUSTED_PHASE18_RUNTIME and
+    expected_overlay_digest=epistemic.canonical.digest(overlay) -- i.e. it
+    trusts the overlay because it is the exact, un-tampered object the
+    test just built via a real assess_artifact() call. Tests that
+    exercise the overlay TRUST BOUNDARY ITSELF (forged overlays, a bad
+    trust context, the UNTRUSTED default) must call
+    orneur.intelligence.integrity.evaluator.assess_integrity() directly
+    instead of this wrapper -- see test_overlay_provenance_closure.py."""
+    return _assess_integrity(
+        proposal, overlay=overlay, artifact=artifact,
+        overlay_trust_context=TRUSTED_PHASE18_RUNTIME,
+        expected_overlay_digest=epistemic_canonical.digest(overlay),
+        **kw,
+    )
+
+
+def require_integrity_trusted(proposal, *, overlay, artifact, **kw):
+    return _require_integrity(
+        proposal, overlay=overlay, artifact=artifact,
+        overlay_trust_context=TRUSTED_PHASE18_RUNTIME,
+        expected_overlay_digest=epistemic_canonical.digest(overlay),
+        **kw,
+    )
 
 
 def make_atom(atom_id="a1", kind=AtomKind.ASSERTION, source_class=SourceClass.MODEL_ASSERTION, content="content", evidence_refs=(), **kw):

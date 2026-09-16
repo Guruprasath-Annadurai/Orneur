@@ -14,8 +14,7 @@ from orneur.intelligence.epistemic.resolver import assess_artifact
 from orneur.intelligence.integrity import errors
 from orneur.intelligence.integrity.contracts import IntegrityProposal, ProposedAssertion
 from orneur.intelligence.integrity.enums import IntegrityStatus, PresentationTreatment
-from orneur.intelligence.integrity.evaluator import assess_integrity, require_integrity
-from tests.integrity.conftest import ASSESSED_AT, TRUSTED_OCL, TRUSTED_VERIFIER, build_known_affirmed_fixture, make_artifact, make_atom, make_evidence, make_resolved_evidence
+from tests.integrity.conftest import assess_integrity_trusted as assess_integrity, require_integrity_trusted as require_integrity, ASSESSED_AT, TRUSTED_OCL, TRUSTED_VERIFIER, build_known_affirmed_fixture, make_artifact, make_atom, make_evidence, make_resolved_evidence
 
 N = 500
 

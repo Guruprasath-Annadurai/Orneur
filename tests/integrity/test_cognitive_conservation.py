@@ -4,8 +4,7 @@ from __future__ import annotations
 from orneur.intelligence.epistemic.enums import EpistemicPolarity
 from orneur.intelligence.integrity.contracts import IntegrityProposal, ProposedAssertion
 from orneur.intelligence.integrity.enums import IntegrityStatus, IntegrityViolationReason, PresentationTreatment
-from orneur.intelligence.integrity.evaluator import assess_integrity
-from tests.integrity.conftest import build_known_affirmed_fixture, build_uncertain_fixture, build_unknown_fixture, build_unverifiable_fixture
+from tests.integrity.conftest import assess_integrity_trusted as assess_integrity, build_known_affirmed_fixture, build_uncertain_fixture, build_unknown_fixture, build_unverifiable_fixture
 
 
 def test_omitted_material_uncertain_atom_blocked():
