@@ -15,6 +15,7 @@ import pytest
 from orca.eval.baseline import (
     BaselineFreezeFailed,
     BaselineIntegrityError,
+    DuplicateRunIdError,
     IncompleteResultError,
     record_baseline_and_freeze_suite,
 )
@@ -273,3 +274,129 @@ def test_freeze_reload_verification_failure_rolls_back_staged_result(monkeypatch
 
     with pytest.raises(FileNotFoundError):
         EvaluationResultManifest.load("run-reload-verification-fails")
+
+
+# ── Phase 21B.4.1 (§15) adversarial re-review: real bugs found and fixed ──
+
+
+def test_result_referencing_wrong_suite_is_rejected():
+    """Reproduced live during this closure: a result claiming
+    suite_id="totally-different-suite" was previously accepted and
+    finalized while the CORRECT suite (per the function's own suite_id
+    parameter) was frozen underneath it -- the function never
+    cross-checked result.suite_id/suite_version against its own
+    parameters. Now rejected explicitly."""
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-wrong-suite-ref")
+    result.suite_id = "totally-different-suite"
+    with pytest.raises(BaselineIntegrityError, match="does not match the suite"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+    with pytest.raises(FileNotFoundError):
+        EvaluationResultManifest.load("run-wrong-suite-ref")
+
+
+def test_result_referencing_wrong_suite_version_is_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-wrong-suite-version-ref")
+    result.suite_version = "v99"
+    with pytest.raises(BaselineIntegrityError, match="does not match the suite"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+
+
+def test_duplicate_run_id_across_different_candidates_is_rejected():
+    """Reproduced live during this closure: reusing a run_id across two
+    different candidates silently overwrote the first (already-
+    finalized) result with the second's data, with no error at all."""
+    tasks = _tiny_task_set()
+    result_a, scored_ids_a = _make_result(tasks, run_id="shared-run-id")
+    result_a.candidate = "candidate-A"
+    record_baseline_and_freeze_suite(tasks=tasks, result=result_a, scored_task_ids=scored_ids_a, suite_id="genesis-eval-test")
+
+    result_b, scored_ids_b = _make_result(tasks, run_id="shared-run-id")
+    result_b.candidate = "candidate-B"
+    with pytest.raises(DuplicateRunIdError):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result_b, scored_task_ids=scored_ids_b, suite_id="genesis-eval-test")
+
+    reloaded = EvaluationResultManifest.load("shared-run-id")
+    assert reloaded.candidate == "candidate-A"  # never overwritten
+
+
+def test_pre_existing_malformed_result_file_does_not_corrupt_the_transaction(tmp_path, monkeypatch):
+    """A pre-existing, malformed (not valid JSON) file at the target
+    run_id's path must not crash the transaction in a way that leaves
+    ambiguous state -- EvaluationResultManifest.load() raising a
+    JSONDecodeError should surface clearly, not be silently swallowed."""
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-preexisting-malformed")
+
+    from orca.registry.evaluation_result_manifest import EVALUATION_RESULT_DIR
+
+    malformed_path = EVALUATION_RESULT_DIR / "run-preexisting-malformed.json"
+    malformed_path.write_text("NOT VALID JSON")
+
+    import json
+
+    with pytest.raises(json.JSONDecodeError):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+
+
+def test_pre_existing_malformed_suite_manifest_surfaces_clearly(tmp_path, monkeypatch):
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-malformed-suite")
+
+    from orca.registry.evaluation_suite_manifest import EVALUATION_SUITE_DIR
+
+    malformed_path = EVALUATION_SUITE_DIR / "genesis-eval-test-v1.json"
+    malformed_path.write_text("NOT VALID JSON")
+
+    import json
+
+    with pytest.raises(json.JSONDecodeError):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+
+
+# ── Phase 21B.4.1 (§16) concurrency hardening ──────────────────────────────
+
+
+def test_concurrent_baseline_attempts_never_both_believe_they_froze_first():
+    """Two threads racing to record the FIRST baseline against the same
+    (unfrozen) suite: with the per-suite-version lock, exactly one must
+    succeed with is_first_baseline=True and the other must observe the
+    suite already frozen (is_first_baseline=False) or a clean rejection
+    -- never both succeeding as "first", and never a corrupted suite
+    manifest."""
+    import threading
+
+    tasks = _tiny_task_set()
+    results: dict[str, object] = {}
+    errors: dict[str, Exception] = {}
+
+    def _attempt(label: str, run_id: str):
+        try:
+            result, scored_ids = _make_result(tasks, run_id=run_id)
+            result.suite_id = "genesis-eval-concurrency-test"
+            finalized = record_baseline_and_freeze_suite(
+                tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-concurrency-test",
+            )
+            results[label] = finalized
+        except Exception as exc:  # pragma: no cover - captured for assertion, not swallowed silently
+            errors[label] = exc
+
+    t1 = threading.Thread(target=_attempt, args=("t1", "run-concurrent-1"))
+    t2 = threading.Thread(target=_attempt, args=("t2", "run-concurrent-2"))
+    t1.start()
+    t2.start()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    assert not errors, f"unexpected errors: {errors}"
+    assert len(results) == 2
+    first_baseline_flags = [r.is_first_baseline for r in results.values()]
+    # Exactly one of the two concurrent attempts is the "first baseline"
+    # that actually froze the suite -- never both, never neither.
+    assert sorted(first_baseline_flags) == [False, True]
+
+    from orca.registry.evaluation_suite_manifest import EvaluationSuiteManifest
+
+    suite = EvaluationSuiteManifest.load("genesis-eval-concurrency-test", "v1")
+    assert suite.frozen is True
