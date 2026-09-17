@@ -43,8 +43,12 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from orca.registry.evaluation_suite_manifest import sha256_of_json
+
+if TYPE_CHECKING:
+    from orca.eval.sandbox_backend import SandboxBackend
 
 CATEGORY_NAMES: dict[int, str] = {
     1: "General instruction following / professional / everyday",
@@ -575,11 +579,14 @@ def _extract_code_block(response_text: str) -> str:
     return match.group(1) if match else response_text
 
 
-def score_unit_test(task: EvalTask, response_text: str) -> dict:
-    """Executes untrusted, model-generated code in the STRONG container
-    sandbox (orca.eval.sandbox_docker.run_sandboxed_docker) -- one
-    freshly-created, network-isolated, read-only-root Docker container
-    per test case, never in-process, never a bare subprocess.
+def score_unit_test(task: EvalTask, response_text: str, *, backend: SandboxBackend | None = None) -> dict:
+    """Executes untrusted, model-generated code in a STRONG, isolated
+    sandbox via the orca.eval.sandbox_backend.SandboxBackend contract
+    (Docker today, by default) -- one freshly-created, isolated
+    execution per test case, never in-process, never a bare subprocess.
+    Depends on the isolation CONTRACT (spec section 6), not the literal
+    `docker` binary -- callers may inject an alternative verified
+    backend via `backend=`; this scorer never assumes which one it got.
 
     Phase 21B.4.1 REPLACES orca.eval.sandbox's subprocess-only isolation
     (used briefly in Phase 21B.4) as the path this scorer actually uses,
@@ -612,15 +619,16 @@ def score_unit_test(task: EvalTask, response_text: str) -> dict:
     (orca.eval.runner.run_suite(), via its preflight check) is the
     correct place to refuse to even START a real run when Docker is
     unavailable, rather than this low-level per-task scorer."""
-    from orca.eval.sandbox_docker import SandboxBackendUnavailable, run_sandboxed_docker
+    from orca.eval.sandbox_backend import SandboxBackendUnavailable, get_default_backend
 
+    active_backend = backend or get_default_backend()
     code = _extract_code_block(response_text)
     passed = 0
     total = len(task.unit_test_cases)
     per_case_errors: list[str] = []
     for args, expected in task.unit_test_cases:
         try:
-            result = run_sandboxed_docker(code, task.unit_test_fn_name, args)
+            result = active_backend.run(code, task.unit_test_fn_name, args)
         except SandboxBackendUnavailable as exc:
             per_case_errors.append(f"SANDBOX_BACKEND_UNAVAILABLE: {exc}")
             continue
