@@ -101,6 +101,34 @@ found in the 21B.2.1 closure:
     snapshot verification (plus dataset loading) is now ordered BEFORE
     the expensive base-model load, not after.
 
+Phase 21B.3 closes two carry-forward trust hardenings identified
+alongside the Genesis intelligence-qualification work (dataset/eval
+suite build-out -- see docs/orneur/phase-21/GENESIS_PRETRAINING_QUALIFICATION.md):
+
+  - SINGLE-MANIFEST + BUNDLE-ID DRIFT: verify_dataset_binding()'s
+    single-manifest path returned early without checking whether a
+    dataset_bundle_id had also been supplied -- since
+    start_training_run() forwards dataset_bundle_id to the
+    TrainingRunManifest independently of what verify_dataset_binding()
+    returns, a run manifest could record a bundle_id that was never
+    actually verified against anything. Now rejected outright:
+    dataset_bundle_id must be None on the single-manifest path.
+    Duplicate dataset_manifest_ids are also now rejected -- a
+    provenance record must never name an artifact more than once.
+  - PRACTICAL SNAPSHOT READ-WINDOW HARDENING: create_run_snapshot() now
+    chmod's the snapshot files read-only (0o444) and the snapshot
+    directory read+execute-only (0o555) after successful verification,
+    and orca.train.finetune._train_impl() now re-verifies the snapshot
+    digest a SECOND time immediately after load_dataset() returns (not
+    only before it, as Phase 21B.2 established) -- both pre-load and
+    post-load digests must equal the manifest's recorded expectation.
+    Threat model stated honestly: filesystem permissions and digest
+    re-checks protect against accidental/concurrent mutation; neither
+    claims to defeat a malicious actor with root/filesystem-owner
+    access, who could chmod a file back to writable before modifying it
+    -- the digest re-verification (not the permissions) is what
+    actually catches that case.
+
 Deliberately CPU-safe and import-light (no unsloth/torch/transformers)
 so the full manifest/checkpoint/registry lifecycle -- including every
 trust seam above -- can be unit-tested without a GPU or the heavy
@@ -111,8 +139,10 @@ point.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import shutil
+import stat
 import time
 from pathlib import Path
 
@@ -203,6 +233,13 @@ def verify_dataset_binding(
             "dataset_manifest_id -- refusing to train with no declared dataset provenance."
         )
 
+    if len(dataset_manifest_ids) != len(set(dataset_manifest_ids)):
+        dupes = sorted({m for m in dataset_manifest_ids if dataset_manifest_ids.count(m) > 1})
+        raise DatasetBindingInvalid(
+            f"dataset_manifest_ids contains duplicate entries: {dupes} -- a provenance record must "
+            "never name an artifact more than once or claim participation that isn't distinct."
+        )
+
     resolved = resolve_training_data_inputs(cfg)
     if not resolved.train_path.exists():
         raise DatasetBindingInvalid(f"Resolved training file does not exist: {resolved.train_path}")
@@ -213,6 +250,24 @@ def verify_dataset_binding(
         )
 
     if len(dataset_manifest_ids) == 1:
+        if dataset_bundle_id is not None:
+            # Phase 21B.3 (§3A) carry-forward hardening: a single-manifest
+            # canonical run has no bundle to verify against -- a bundle_id
+            # supplied here would never be checked by anything below, yet
+            # a caller could still have it recorded onto the
+            # TrainingRunManifest (start_training_run() passes
+            # dataset_bundle_id straight through independently of this
+            # function's return value). That is exactly the "provenance
+            # record names an artifact that did not participate in
+            # verification" defect this closes. No current contract
+            # defines a meaningful bundle around a single source, so this
+            # is unconditionally rejected rather than silently ignored.
+            raise DatasetBindingInvalid(
+                f"dataset_bundle_id={dataset_bundle_id!r} was supplied alongside exactly one "
+                f"dataset_manifest_id ({dataset_manifest_ids[0]!r}) -- a single-manifest canonical "
+                "run must not name a bundle, since no bundle verification occurs on this path. "
+                "Pass dataset_bundle_id=None for single-manifest training."
+            )
         dataset_id, _, version = dataset_manifest_ids[0].rpartition("-")
         if not dataset_id or not version:
             raise DatasetBindingInvalid(
@@ -368,7 +423,21 @@ def create_run_snapshot(
     Passing None (the default) skips this check entirely -- used only
     by direct/legacy callers that have no prior verified digest to
     compare against; the real canonical path (start_training_run())
-    always passes the just-verified digests."""
+    always passes the just-verified digests.
+
+    Phase 21B.3 (§3B) hardening: once both splits are copied and pass
+    digest verification, the snapshot files are chmod'd read-only
+    (0o444) and the snapshot directory is chmod'd read+execute-only
+    (0o555, i.e. no write bit -- entries cannot be added, removed, or
+    renamed) before this function returns. THREAT MODEL, stated
+    honestly: this protects against accidental overwrite and ordinary
+    concurrent-process mutation of the snapshot after creation. It is
+    NOT a claim of cryptographic filesystem immutability and does NOT
+    defeat a malicious actor with root/filesystem-owner access, who can
+    always chmod a file back to writable before modifying it -- the
+    only guarantee against that is the digest re-verification
+    (verify_run_snapshot(), now called by orca.train.finetune._train_impl()
+    both immediately before AND immediately after load_dataset())."""
     snapshot_dir = RUN_SNAPSHOT_DIR / run_id
     snapshot_dir.mkdir(parents=True, exist_ok=True)
 
@@ -406,6 +475,13 @@ def create_run_snapshot(
     except SnapshotIntegrityError:
         shutil.rmtree(snapshot_dir, ignore_errors=True)
         raise
+
+    _READONLY_FILE = stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
+    _READONLY_DIR = stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
+    os.chmod(train_snapshot_path, _READONLY_FILE)
+    if eval_path is not None:
+        os.chmod(info["eval"]["path"], _READONLY_FILE)
+    os.chmod(snapshot_dir, _READONLY_DIR)
 
     return info
 
