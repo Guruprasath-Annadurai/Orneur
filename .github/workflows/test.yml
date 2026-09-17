@@ -74,7 +74,7 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install Orca (dev) + CPU-only torch
+      - name: Install Orca (dev) + CPU-only torch + transformers
         # Phase 15.15 CI truthfulness closure: tests/test_train_losses.py
         # is real, deterministic torch tensor math (no GPU, no network,
         # no model weights) -- it was previously uncollectable in CI
@@ -85,15 +85,26 @@ jobs:
         # making this required and genuinely green. The CPU wheel index
         # keeps the install small (no CUDA payload) on this GPU-less
         # runner.
+        # Phase 21B.4.1: `transformers` is added here for the same
+        # reason -- tests/test_transformers_adapter.py mocks
+        # transformers.AutoTokenizer/AutoModelForCausalLM.from_pretrained
+        # (never downloads real weights) but still needs the real
+        # `transformers` module importable for those patch targets to
+        # resolve. This job already carries CPU torch, so adding the
+        # lightweight `transformers` package here -- rather than into
+        # the main deterministic job -- keeps that job's install fast
+        # while still making the adapter's own logic genuinely,
+        # required-ly tested in CI instead of only locally.
         run: |
           pip install uv
           uv pip install --system -e ".[dev]"
           pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install "transformers>=4.45.0"
 
       - name: Run training-math regression
         run: |
           set -euo pipefail
-          pytest tests/test_train_losses.py -v
+          pytest tests/test_train_losses.py tests/test_transformers_adapter.py -v
 
   container-build:
     name: Production Container Build + Boot Smoke

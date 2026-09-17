@@ -6,6 +6,18 @@ passing here is evidence the ADAPTER'S OWN LOGIC (revision forwarding,
 config validation, chat-template rendering, timing capture, failure
 capture, unload behavior) is correct -- it is NEVER evidence that any
 real candidate (Qwen3, Mistral-Nemo, Phi-4) was actually evaluated.
+
+`transformers`/`torch` are deliberately NOT installed in the main
+deterministic CI job (same Phase 15.15 rationale as
+tests/test_train_losses.py -- see .github/workflows/test.yml): patching
+`transformers.AutoTokenizer.from_pretrained` requires the real
+`transformers` module to be importable even though only fakes are ever
+returned, and the fake tokenizer/model helpers below build real
+`torch.Tensor` objects. This file therefore runs for real in the
+dedicated `torch-loss-tests` job (which DOES install both), and
+produces a legitimate SKIP -- never a collection ERROR or FAILURE --
+everywhere else, including this project's own dev machines that may or
+may not have these optional deps installed.
 """
 from __future__ import annotations
 
@@ -13,6 +25,9 @@ import types
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+torch = pytest.importorskip("torch")
+pytest.importorskip("transformers")
 
 from orca.eval.adapters.transformers_adapter import (
     AdapterLoadError,
