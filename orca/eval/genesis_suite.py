@@ -576,30 +576,54 @@ def _extract_code_block(response_text: str) -> str:
 
 
 def score_unit_test(task: EvalTask, response_text: str) -> dict:
-    """Executes untrusted, model-generated code in the hardened
-    subprocess sandbox (orca.eval.sandbox.run_sandboxed) -- one fresh
-    child process per test case, never in-process.
+    """Executes untrusted, model-generated code in the STRONG container
+    sandbox (orca.eval.sandbox_docker.run_sandboxed_docker) -- one
+    freshly-created, network-isolated, read-only-root Docker container
+    per test case, never in-process, never a bare subprocess.
 
-    Phase 21B.4 REPLACES the prior in-process `exec()`-with-restricted-
-    builtins approach after live reproduction during this closure proved
-    it exploitable: `().__class__.__bases__[0].__subclasses__()` walks
-    the live object graph to find `subprocess.Popen` (already loaded in
-    THIS process by unrelated code) and can spawn a real subprocess
-    without ever needing `__import__`, which restricted builtins alone
-    cannot prevent. A second reproduction found no timeout enforcement
-    at all -- a `while True: pass` payload hung indefinitely. See
-    orca.eval.sandbox's module docstring for the full writeup, the fix,
-    and its own honestly-stated limitation (process isolation + resource
-    limits + a network guard, not a hardened container/seccomp
-    boundary)."""
-    from orca.eval.sandbox import run_sandboxed
+    Phase 21B.4.1 REPLACES orca.eval.sandbox's subprocess-only isolation
+    (used briefly in Phase 21B.4) as the path this scorer actually uses,
+    after a live re-audit this closure found real, unclosed gaps in the
+    subprocess-only approach: DNS resolution (`socket.gethostbyname()`)
+    succeeded despite the Python-level network guard (that guard only
+    intercepted `socket.socket()`, not the separate code path
+    `gethostbyname()` uses), `ctypes.CDLL(None)` gave raw libc access
+    (a path no Python-level guard can close, since ctypes can call
+    arbitrary C functions including raw socket syscalls), and generated
+    code could write to this project's own repository directory and the
+    real developer's home directory. A live test against the Docker
+    replacement confirmed all of these are closed: DNS resolution fails
+    with `gaierror` (`--network none` means no network interface exists
+    inside the container AT ALL, a kernel-level fact no in-container
+    code can route around), and the repository path doesn't even exist
+    inside the container (no bind mount, ever) -- see
+    orca.eval.sandbox_docker's module docstring for the full writeup.
+
+    FAILS CLOSED: if Docker is unavailable, EVERY case is reported as
+    failed with error "SANDBOX_BACKEND_UNAVAILABLE" -- this scorer never
+    falls back to the weaker orca.eval.sandbox.run_sandboxed()
+    subprocess-only implementation, and never reports `passed: True`
+    when the strong backend could not run. This is caught (not
+    propagated as a raised exception) specifically to preserve this
+    module's existing invariant that score_task() never raises for any
+    input (see tests/test_genesis_eval_suite.py::
+    test_malformed_response_never_raises_out_of_score_task) -- the
+    orchestration layer that drives REAL candidate baselines
+    (orca.eval.runner.run_suite(), via its preflight check) is the
+    correct place to refuse to even START a real run when Docker is
+    unavailable, rather than this low-level per-task scorer."""
+    from orca.eval.sandbox_docker import SandboxBackendUnavailable, run_sandboxed_docker
 
     code = _extract_code_block(response_text)
     passed = 0
     total = len(task.unit_test_cases)
     per_case_errors: list[str] = []
     for args, expected in task.unit_test_cases:
-        result = run_sandboxed(code, task.unit_test_fn_name, args)
+        try:
+            result = run_sandboxed_docker(code, task.unit_test_fn_name, args)
+        except SandboxBackendUnavailable as exc:
+            per_case_errors.append(f"SANDBOX_BACKEND_UNAVAILABLE: {exc}")
+            continue
         if result.ok and result.fn_result == expected:
             passed += 1
         elif not result.ok:

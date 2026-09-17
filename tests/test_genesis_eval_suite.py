@@ -20,10 +20,22 @@ from orca.eval.genesis_suite import (
     compute_suite_digests,
     score_task,
 )
+from orca.eval.sandbox_docker import is_docker_available
 from orca.registry.evaluation_suite_manifest import (
     EvaluationSuiteFrozenError,
     EvaluationSuiteManifest,
 )
+
+# Phase 21B.4.1: score_unit_test() (categories 4/coding, 5/debugging)
+# now requires the strong Docker sandbox (orca.eval.sandbox_docker) --
+# see that module and tests/test_eval_sandbox_docker.py for the full
+# security rationale. Tests exercising unit_test scoring specifically
+# skip (never fail) if Docker is unavailable in this environment,
+# consistent with spec §17's "IMPLEMENTATION TESTED" vs "SECURITY
+# PROPERTY VERIFIED ON ACTUAL BACKEND" distinction -- this repo's CI
+# (ubuntu-latest) ships Docker by default, and this was verified live,
+# not assumed, in this closure's own development environment.
+requires_docker = pytest.mark.skipif(not is_docker_available(), reason="Docker is not available in this environment")
 
 
 def _load_contamination_scan_module():
@@ -170,6 +182,7 @@ def test_unfrozen_manifest_can_be_overwritten(tmp_path, monkeypatch):
 # ── executable / deterministic scorers ─────────────────────────────────────
 
 
+@requires_docker
 def test_unit_test_scorer_accepts_correct_implementation():
     tasks = {t.task_id: t for t in all_tasks()}
     response = "```python\ndef fizzbuzz(n):\n    if n % 15 == 0: return 'FizzBuzz'\n    if n % 3 == 0: return 'Fizz'\n    if n % 5 == 0: return 'Buzz'\n    return str(n)\n```"
@@ -177,6 +190,7 @@ def test_unit_test_scorer_accepts_correct_implementation():
     assert result["passed"] is True
 
 
+@requires_docker
 def test_unit_test_scorer_rejects_incorrect_implementation():
     tasks = {t.task_id: t for t in all_tasks()}
     response = "```python\ndef fizzbuzz(n):\n    return 'wrong always'\n```"
@@ -212,12 +226,14 @@ def test_schema_match_scorer_requires_all_topics_present():
 # ── malformed output / sandbox escape robustness ───────────────────────────
 
 
+@requires_docker
 def test_unit_test_scorer_fails_closed_on_missing_code_block():
     tasks = {t.task_id: t for t in all_tasks()}
     result = score_task(tasks["cat04-001"], "I refuse to write this function.")
     assert result["passed"] is False
 
 
+@requires_docker
 def test_unit_test_scorer_fails_closed_on_exception_raising_code():
     tasks = {t.task_id: t for t in all_tasks()}
     response = "```python\ndef is_palindrome(s):\n    raise RuntimeError('boom')\n```"
@@ -225,6 +241,7 @@ def test_unit_test_scorer_fails_closed_on_exception_raising_code():
     assert result["passed"] is False
 
 
+@requires_docker
 def test_unit_test_scorer_blocks_import_based_sandbox_escape():
     """Phase 21B.4: a response attempting `import os; os.system(...)` to
     spawn a real process runs in the hardened subprocess sandbox, where
@@ -238,6 +255,7 @@ def test_unit_test_scorer_blocks_import_based_sandbox_escape():
     assert result["passed"] is False
 
 
+@requires_docker
 def test_unit_test_scorer_subprocess_escape_does_not_actually_spawn_a_process(tmp_path):
     """Direct proof (not merely "the score was False"): a payload that
     tries to prove real OS command execution by writing a file via a
