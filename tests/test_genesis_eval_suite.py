@@ -226,15 +226,35 @@ def test_unit_test_scorer_fails_closed_on_exception_raising_code():
 
 
 def test_unit_test_scorer_blocks_import_based_sandbox_escape():
-    """A response attempting `import os` to escape the restricted
-    execution environment must fail to execute (no __import__ available
-    in the restricted builtins), never silently succeed with real OS
-    access."""
+    """Phase 21B.4: a response attempting `import os; os.system(...)` to
+    spawn a real process runs in the hardened subprocess sandbox, where
+    RLIMIT_NPROC=0 blocks the fork -- the malicious function that always
+    returns True regardless of input still fails the task overall
+    (it does not match the "hello" -> False case), proving the escape
+    attempt gains no advantage, never a silent pass."""
     tasks = {t.task_id: t for t in all_tasks()}
     response = "```python\nimport os\ndef is_palindrome(s):\n    os.system('echo pwned')\n    return True\n```"
     result = score_task(tasks["cat04-001"], response)
     assert result["passed"] is False
-    assert "error" in result
+
+
+def test_unit_test_scorer_subprocess_escape_does_not_actually_spawn_a_process(tmp_path):
+    """Direct proof (not merely "the score was False"): a payload that
+    tries to prove real OS command execution by writing a file via a
+    spawned subprocess must find that file absent afterward -- the fork
+    was genuinely blocked, not merely swallowed as a scoring detail."""
+    marker = tmp_path / "sandbox_escape_marker.txt"
+    tasks = {t.task_id: t for t in all_tasks()}
+    response = (
+        "```python\n"
+        "import subprocess\n"
+        f"def is_palindrome(s):\n"
+        f"    subprocess.run(['touch', {str(marker)!r}])\n"
+        "    return s == s[::-1]\n"
+        "```"
+    )
+    score_task(tasks["cat04-001"], response)
+    assert not marker.exists()
 
 
 def test_malformed_response_never_raises_out_of_score_task():

@@ -569,13 +569,6 @@ def category_task_counts(tasks: list[EvalTask]) -> dict[str, int]:
 
 # ── Scorers (deterministic paths only -- llm_judge tasks are never scored here) ──
 
-_SAFE_BUILTINS = {
-    "len": len, "range": range, "sum": sum, "sorted": sorted, "min": min, "max": max,
-    "str": str, "int": int, "float": float, "bool": bool, "list": list, "dict": dict,
-    "set": set, "tuple": tuple, "enumerate": enumerate, "zip": zip, "map": map, "filter": filter,
-    "abs": abs, "round": round, "isinstance": isinstance, "reversed": reversed,
-}
-
 
 def _extract_code_block(response_text: str) -> str:
     match = re.search(r"```(?:python)?\s*\n(.*?)```", response_text, re.DOTALL)
@@ -583,35 +576,38 @@ def _extract_code_block(response_text: str) -> str:
 
 
 def score_unit_test(task: EvalTask, response_text: str) -> dict:
-    """Sandboxed-best-effort execution: restricted builtins (no `open`,
-    `__import__`, `exec`, `eval`, `compile`, no filesystem/network
-    access surfaced), a fresh namespace per call. HONEST LIMITATION: this
-    is best-effort isolation suitable for scoring trusted/expected-shape
-    fixture responses, not a hardened security sandbox -- it does not
-    run in a separate process or contain CPU/memory exhaustion, matching
-    spec section 23's "sandbox-safe" requirement at the level this
-    closure's time budget supports, not a claim of hardened isolation."""
+    """Executes untrusted, model-generated code in the hardened
+    subprocess sandbox (orca.eval.sandbox.run_sandboxed) -- one fresh
+    child process per test case, never in-process.
+
+    Phase 21B.4 REPLACES the prior in-process `exec()`-with-restricted-
+    builtins approach after live reproduction during this closure proved
+    it exploitable: `().__class__.__bases__[0].__subclasses__()` walks
+    the live object graph to find `subprocess.Popen` (already loaded in
+    THIS process by unrelated code) and can spawn a real subprocess
+    without ever needing `__import__`, which restricted builtins alone
+    cannot prevent. A second reproduction found no timeout enforcement
+    at all -- a `while True: pass` payload hung indefinitely. See
+    orca.eval.sandbox's module docstring for the full writeup, the fix,
+    and its own honestly-stated limitation (process isolation + resource
+    limits + a network guard, not a hardened container/seccomp
+    boundary)."""
+    from orca.eval.sandbox import run_sandboxed
+
     code = _extract_code_block(response_text)
-    namespace: dict = {"__builtins__": _SAFE_BUILTINS}
-    try:
-        exec(code, namespace)  # noqa: S102 -- restricted builtins, no I/O surface; see docstring
-    except Exception as exc:
-        return {"passed": False, "error": f"code failed to execute: {exc}", "cases_passed": 0, "cases_total": len(task.unit_test_cases)}
-
-    fn = namespace.get(task.unit_test_fn_name)
-    if fn is None or not callable(fn):
-        return {"passed": False, "error": f"function {task.unit_test_fn_name!r} not defined", "cases_passed": 0, "cases_total": len(task.unit_test_cases)}
-
     passed = 0
-    for args, expected in task.unit_test_cases:
-        try:
-            actual = fn(*args)
-            if actual == expected:
-                passed += 1
-        except Exception:
-            pass
     total = len(task.unit_test_cases)
-    return {"passed": passed == total, "cases_passed": passed, "cases_total": total}
+    per_case_errors: list[str] = []
+    for args, expected in task.unit_test_cases:
+        result = run_sandboxed(code, task.unit_test_fn_name, args)
+        if result.ok and result.fn_result == expected:
+            passed += 1
+        elif not result.ok:
+            per_case_errors.append(result.error or "unknown sandbox failure")
+    outcome = {"passed": passed == total, "cases_passed": passed, "cases_total": total}
+    if per_case_errors:
+        outcome["error"] = per_case_errors[0]
+    return outcome
 
 
 def score_exact_match(task: EvalTask, response_text: str) -> dict:
