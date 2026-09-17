@@ -57,12 +57,73 @@ each):
     to bypass it, and a second candidate's evaluation against an
     already-frozen suite takes a read-only verification path that never
     calls `.save()` on the suite at all.
+
+Phase 21B.4.1 (§15-16) adversarial re-review, with a real ModelAdapter
+now in place, found and fixed two further gaps:
+
+  - A result could reference a DIFFERENT suite_id/suite_version than
+    the one this transaction was actually recording against -- the
+    function used its own `suite_id`/`suite_version` parameters to
+    load/freeze the suite, but never cross-checked them against
+    `result.suite_id`/`result.suite_version`. Reproduced live: a result
+    object claiming `suite_id="totally-different-suite"` was silently
+    accepted and finalized while the real, correct suite was frozen
+    underneath it. Now checked explicitly and rejected
+    (`BaselineIntegrityError`) before anything is touched.
+  - Reusing a `run_id` across two different candidate results silently
+    overwrote the first (already-finalized) result with the second's
+    data, with no error. Reproduced live: candidate A's finalized
+    result was replaced by candidate B's under the same run_id. Now
+    checked explicitly (`DuplicateRunIdError`) before any write.
+  - CONCURRENCY (§16): two processes could race to both observe an
+    unfrozen suite, both stage a result, and both attempt to freeze --
+    whichever's `.save()` lands last silently wins, while the other
+    process's result would still be marked `finalized=True` in memory
+    (and, worse, ALSO on disk, since nothing previously serialized the
+    critical section). `_suite_freeze_lock()` below wraps the entire
+    "load suite -> verify -> stage result -> freeze -> verify reload ->
+    finalize" critical section in a POSIX advisory file lock
+    (`fcntl.flock`, exclusive, blocking) keyed to `(suite_id,
+    suite_version)`, so only one process can be inside that section for
+    a given suite version at a time on a given host. This does not
+    extend across physically separate machines/hosts (no distributed
+    lock service exists in this project) -- stated honestly as the
+    limitation of this mechanism, matching the project's existing
+    single-host registry architecture (ORCA_HOME is a local filesystem
+    tree, not a distributed store).
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
+
+from orca.config import ORCA_HOME
 from orca.eval.genesis_suite import EvalTask, category_task_counts, compute_suite_digests
+from orca.registry._ids import validate_id
 from orca.registry.evaluation_result_manifest import EvaluationResultManifest
 from orca.registry.evaluation_suite_manifest import EvaluationSuiteManifest
+
+_LOCK_DIR = ORCA_HOME / "registry" / "evaluation_locks"
+
+
+@contextlib.contextmanager
+def _suite_freeze_lock(suite_id: str, suite_version: str):
+    """POSIX advisory exclusive lock (fcntl.flock) serializing the
+    baseline<->freeze critical section per (suite_id, suite_version) on
+    THIS host. Blocks (does not fail) if another process on the same
+    host currently holds the lock for the same suite version -- callers
+    racing to become "the first baseline" simply queue, rather than
+    both proceeding concurrently. Does NOT provide cross-host locking."""
+    validate_id(suite_id, "suite_id")
+    validate_id(suite_version, "version")
+    _LOCK_DIR.mkdir(parents=True, exist_ok=True)
+    lock_path = _LOCK_DIR / f"{suite_id}-{suite_version}.lock"
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 class BaselineIntegrityError(ValueError):
@@ -82,6 +143,16 @@ class BaselineFreezeFailed(RuntimeError):
     """The suite-freeze half of the transaction did not complete and
     verify successfully -- any staged result has been rolled back
     (deleted), and the suite was never left in a falsely-frozen state."""
+
+
+class DuplicateRunIdError(ValueError):
+    """A finalized EvaluationResultManifest already exists on disk under
+    this exact run_id -- refusing to silently overwrite a prior
+    candidate's finalized result. Found via adversarial review this
+    closure (spec §15's 'duplicate run IDs' attack): reusing a run_id
+    across two different candidates previously overwrote the first
+    candidate's finalized result with the second's, with no error at
+    all."""
 
 
 def _validate_result_completeness(result: EvaluationResultManifest, task_ids: list[str]) -> None:
@@ -133,9 +204,50 @@ def record_baseline_and_freeze_suite(
     categories), used for the completeness check.
 
     Returns the finalized, persisted result on success. Raises
-    `BaselineIntegrityError`, `IncompleteResultError`, or
-    `BaselineFreezeFailed` on any failure -- in every failure case, no
-    result claiming to be a valid finalized baseline is left on disk."""
+    `BaselineIntegrityError`, `IncompleteResultError`,
+    `DuplicateRunIdError`, or `BaselineFreezeFailed` on any failure -- in
+    every failure case, no result claiming to be a valid finalized
+    baseline is left on disk.
+
+    Phase 21B.4.1 (§16): the entire transaction runs inside
+    `_suite_freeze_lock(suite_id, suite_version)` -- a per-host,
+    per-suite-version exclusive lock, so two concurrent calls for the
+    same suite version can never both believe they froze it first."""
+    with _suite_freeze_lock(suite_id, suite_version):
+        return _record_baseline_and_freeze_suite_locked(
+            tasks=tasks, result=result, scored_task_ids=scored_task_ids,
+            suite_id=suite_id, suite_version=suite_version,
+        )
+
+
+def _record_baseline_and_freeze_suite_locked(
+    *,
+    tasks: list[EvalTask],
+    result: EvaluationResultManifest,
+    scored_task_ids: list[str],
+    suite_id: str,
+    suite_version: str,
+) -> EvaluationResultManifest:
+    """The actual transaction body -- ONLY ever called from inside
+    record_baseline_and_freeze_suite()'s lock. Not exported."""
+    # Phase 21B.4.1 (§15) adversarial-review fixes:
+    if result.suite_id != suite_id or result.suite_version != suite_version:
+        raise BaselineIntegrityError(
+            f"result.suite_id/suite_version ({result.suite_id!r}, {result.suite_version!r}) does not "
+            f"match the suite this transaction is recording against ({suite_id!r}, {suite_version!r}) "
+            "-- refusing to persist a result that would misrepresent which suite it was scored against."
+        )
+    try:
+        existing = EvaluationResultManifest.load(result.run_id)
+        if existing.finalized:
+            raise DuplicateRunIdError(
+                f"A finalized EvaluationResultManifest already exists for run_id={result.run_id!r} "
+                f"(candidate={existing.candidate!r}) -- refusing to silently overwrite it. Use a new, "
+                "unique run_id for each evaluation run."
+            )
+    except FileNotFoundError:
+        pass  # no prior result under this run_id -- normal case
+
     task_ids, content_digest, scoring_digest = compute_suite_digests(tasks)
 
     try:
