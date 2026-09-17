@@ -104,7 +104,9 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     import orca.registry.dataset_bundle as dataset_bundle_mod
     import orca.registry.dataset_manifest as dataset_manifest_mod
     import orca.registry.evaluation_registry as evaluation_registry_mod
+    import orca.registry.evaluation_result_manifest as evaluation_result_manifest_mod
     import orca.registry.evaluation_suite_manifest as evaluation_suite_manifest_mod
+    import orca.eval.runner as eval_runner_mod
     import orca.registry.model_registry as model_registry_mod
     import orca.registry.provenance as provenance_mod
     import orca.registry.training_run as training_run_mod
@@ -119,6 +121,15 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     # per-candidate EvaluationReport RESULTS, not suite definitions) --
     # same unisolated-module-constant risk, isolated here too.
     evaluation_suite_dir_tmp = registry_tmp / "evaluation_suites"
+    # Phase 21B.4: the evaluation RESULT registry (a candidate's full run
+    # against a suite version, coupled to the suite-freeze transaction in
+    # orca.eval.baseline) -- yet another separate directory, same risk.
+    evaluation_result_dir_tmp = registry_tmp / "evaluation_results"
+    # Phase 21B.4: raw model-response storage (orca.eval.runner) -- kept
+    # as ITS OWN module constant specifically so it can be isolated here
+    # directly, rather than derived from evaluation_result_dir_tmp at
+    # import time (which would leak past this fixture's monkeypatch).
+    evaluation_raw_response_dir_tmp = registry_tmp / "evaluation_raw_responses"
     training_run_dir_tmp = registry_tmp / "training_runs"
     # Phase 21B.2: run-scoped dataset snapshots (the TOCTOU-closure
     # mechanism) live under ~/.orca/training/, not ~/.orca/registry/ --
@@ -126,13 +137,16 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     run_snapshot_dir_tmp = tmp_path / "training" / "run_snapshots"
     for d in (
         checkpoint_dir_tmp, dataset_dir_tmp, dataset_bundle_dir_tmp, evaluation_dir_tmp,
-        evaluation_suite_dir_tmp, training_run_dir_tmp, run_snapshot_dir_tmp, registry_tmp,
+        evaluation_suite_dir_tmp, evaluation_result_dir_tmp, evaluation_raw_response_dir_tmp,
+        training_run_dir_tmp, run_snapshot_dir_tmp, registry_tmp,
     ):
         d.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(checkpoint_mod, "CHECKPOINT_DIR", checkpoint_dir_tmp)
     monkeypatch.setattr(dataset_bundle_mod, "DATASET_BUNDLE_DIR", dataset_bundle_dir_tmp)
     monkeypatch.setattr(dataset_manifest_mod, "DATASET_MANIFEST_DIR", dataset_dir_tmp)
     monkeypatch.setattr(evaluation_registry_mod, "EVALUATION_REGISTRY_DIR", evaluation_dir_tmp)
+    monkeypatch.setattr(evaluation_result_manifest_mod, "EVALUATION_RESULT_DIR", evaluation_result_dir_tmp)
+    monkeypatch.setattr(eval_runner_mod, "RAW_RESPONSE_DIR", evaluation_raw_response_dir_tmp)
     monkeypatch.setattr(evaluation_suite_manifest_mod, "EVALUATION_SUITE_DIR", evaluation_suite_dir_tmp)
     monkeypatch.setattr(model_registry_mod, "REGISTRY_STATE_PATH", registry_tmp / "registry_state.json")
     monkeypatch.setattr(training_run_mod, "TRAINING_RUN_DIR", training_run_dir_tmp)
