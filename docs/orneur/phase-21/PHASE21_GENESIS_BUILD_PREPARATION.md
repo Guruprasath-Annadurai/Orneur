@@ -378,6 +378,44 @@ bytes. Fixed:
 
 `tests/test_training_provenance.py`: 71 -> 81 tests.
 
+## 8.9. Phase 21B.3 closure (intelligence qualification: foundation, dataset, evaluation)
+
+Phase 21B.3 shifted focus from training plumbing to Genesis's actual
+qualification: WHAT it should become and HOW to prove its intelligence.
+Full detail lives in the phase's own documents, not duplicated here:
+
+- `GENESIS_FOUNDATION_SHORTLIST_2026.md` -- live-researched (Sept 2026)
+  foundation-model shortlist with primary/second/optional-third
+  finalists, every license/revision claim VERIFIED FACT-labeled against
+  primary sources. Re-confirms the current canonical base
+  (`unsloth/Qwen2.5-3B-Instruct`) is still non-commercial
+  (`qwen-research`), unchanged this closure.
+- `GENESIS_DATASET_V3.md` -- `orneur-genesis-v3`, 84 hand-authored
+  records across 11 broad-domain clusters (vs. v2's 19, safety/coding-
+  only), with real exact/near-duplicate, PII, and token-statistics
+  tooling (`scripts/build_genesis_v3_dataset.py`).
+- `GENESIS_EVALUATION_SUITE_V1.md` / `GENESIS_EVAL_CONTAMINATION_REPORT.md`
+  -- `genesis-eval-v1` grew from 30/~220 tasks (1/17 categories) to
+  90/~220 tasks (all 17 categories, 12/17 with real deterministic/
+  executable scorers), with a versioned, digest-pinned, freeze-capable
+  suite manifest (`orca/registry/evaluation_suite_manifest.py`) and zero
+  known training/eval leakage.
+- `GENESIS_PRETRAINING_QUALIFICATION.md` -- ties the above together plus
+  the regression policy (critical non-regression categories, zero-
+  tolerance failure classes) and honest per-question readiness verdicts.
+- `PHASE21B4_FOUNDATION_BASELINE_SHOOTOUT.md` -- unexecuted runbook for
+  a future empirical finalist comparison against `genesis-eval-v1`.
+
+Also closed two carry-forward trust hardenings identified alongside this
+work (single-manifest + irrelevant bundle-ID rejection, duplicate
+dataset_manifest_ids rejection, snapshot read-only permissions, and a
+second post-load snapshot digest re-verification) -- see
+`orca/registry/provenance.py`'s module docstring for detail.
+
+`tests/test_training_provenance.py`: 81 -> 88 tests. New test files:
+`test_genesis_v3_dataset_builder.py` (21), `test_genesis_eval_suite.py`
+(21), `test_genesis_orneur_behavior.py` (10).
+
 ## 9. Blocking gaps (honest, evidence-based)
 
 1. **License**: Genesis's selected base is non-commercial-only
