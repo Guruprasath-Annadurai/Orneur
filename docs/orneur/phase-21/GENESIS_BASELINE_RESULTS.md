@@ -1,22 +1,25 @@
 # Genesis Foundation Baseline Results
 
-## NO REAL MODEL WAS EXECUTED IN PHASE 21B.4
+## NO REAL MODEL HAS BEEN EXECUTED (THROUGH PHASE 21B.4.1)
 
-**BLOCKED ON OWNER-CONTROLLED COMPUTE RESOURCE -- NO MODEL BASELINE
-EXECUTED.**
+**COMPUTE-READY -- REAL GENESIS BASELINE AWAITS OWNER-AUTHORIZED
+RESOURCE.**
 
 This document exists (per spec §14) specifically to state that fact
 clearly rather than leave the gap silently unaddressed. No section
 below contains, implies, or approximates a real model score.
 
-## Resource gate check (verified live this closure)
+## Resource gate check (re-verified live this closure, Phase 21B.4.1)
 
 ```
 $ nvidia-smi
 command not found
 
 $ system_profiler SPDisplaysDataType
-Apple M4 (integrated GPU, no CUDA)
+Apple M4 (integrated GPU)
+
+$ python -c "import torch; print(torch.cuda.is_available(), torch.backends.mps.is_available())"
+False True
 
 $ env | grep -iE "modal|kaggle|colab|hf_token|huggingface|cuda|gpu"
 (no matches)
@@ -24,33 +27,48 @@ $ env | grep -iE "modal|kaggle|colab|hf_token|huggingface|cuda|gpu"
 $ which modal kaggle
 modal not found
 kaggle not found
-
-$ uname -a
-Darwin ... arm64
 ```
 
-This local development environment has no CUDA-capable GPU and no
-configured credentials for Kaggle, Google Colab, Modal, Race
-Engineering, or any other cloud compute provider named in
-`PHASE21B4_FOUNDATION_BASELINE_SHOOTOUT.md`. Per Phase 21B.4 spec §8,
-this means real model inference cannot and did not happen in this
-closure.
+**Update from Phase 21B.4's finding, stated honestly**: this host has no
+CUDA-capable GPU, but DOES have an Apple M4 GPU visible to PyTorch via
+the MPS backend -- a materially different fact than the prior blanket
+"no GPU" statement. This is a consumer laptop-class integrated GPU, not
+the datacenter-class CUDA resource this project's shootout runbook
+anticipates, and it has not been explicitly authorized by the owner as
+a resource for real Genesis baseline execution. No configured
+credentials exist for Kaggle, Google Colab, Modal, or Race Engineering.
+Per spec §12's two-gate requirement, even full technical readiness
+(which the infrastructure below now achieves) does not by itself
+authorize real inference without a separate, explicit owner resource
+authorization.
 
-## What WAS built and validated this closure
+## What WAS built and validated (Phase 21B.4 + 21B.4.1)
 
 - The full baseline<->freeze transaction
-  (`orca.eval.baseline.record_baseline_and_freeze_suite()`), exercised
-  against 14 real test scenarios (see `PHASE21B4_FOUNDATION_BASELINE_IMPLEMENTATION.md`).
+  (`orca.eval.baseline.record_baseline_and_freeze_suite()`), now
+  concurrency-hardened (a real multi-threaded race test) and
+  adversarially re-reviewed this closure (two real bugs found and fixed:
+  a result could reference the wrong suite, and a duplicate run_id could
+  silently overwrite a finalized result).
 - A provider-neutral evaluation runner (`orca.eval.runner.run_suite()`),
   exercised ONLY against `DryRunAdapter` -- an explicitly-labeled,
   non-real placeholder adapter used solely to validate the runner's own
-  plumbing (denominator integrity, digest wiring, failure capture). Its
-  fixed placeholder response predictably fails most deterministic
-  tasks -- this is a harness-validation artifact, not a model score of
-  any kind, and is not reported as one anywhere in this document.
-- A hardened, subprocess-isolated code-execution sandbox for the
-  coding/debugging categories, replacing a sandbox proven exploitable
-  via live reproduction this closure.
+  plumbing. Not a model score of any kind.
+- A REAL container-isolated code-execution sandbox
+  (`orca.eval.sandbox_docker`), replacing Phase 21B.4's subprocess-only
+  sandbox after this closure found it still had real, unclosed gaps
+  (DNS resolution and raw-libc access both bypassed its network guard;
+  filesystem access remained fully open). Live-verified this closure
+  that the container sandbox closes all of these.
+- The first real `ModelAdapter` implementation
+  (`orca.eval.adapters.transformers_adapter.TransformersModelAdapter`),
+  tested entirely against mocked `transformers` calls -- no real model
+  weights downloaded anywhere in its test suite.
+- An operator-facing execution CLI
+  (`python -m orca.eval.run_genesis_baseline`) with a machine-readable
+  `--preflight` mode, live-verified on this host to correctly report
+  both `READY FOR REAL BASELINE` (for a valid CPU config) and
+  `NOT READY` (for an unpinned revision / unavailable CUDA device).
 
 None of the above constitutes, approximates, or should be read as
 evidence toward a foundation-model capability comparison. `genesis-eval-v1`
