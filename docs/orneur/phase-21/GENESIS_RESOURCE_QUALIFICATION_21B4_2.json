@@ -1,0 +1,110 @@
+{
+  "phase": "21B.4.2",
+  "measured_at_utc": "2026-09-17T16:30:00Z",
+  "host": {
+    "chip": "Apple M4",
+    "cores": {"performance": 4, "efficiency": 6, "total": 10},
+    "unified_memory_bytes": 17179869184,
+    "unified_memory_gb": 16,
+    "macos_version": "27.0 (26A428)",
+    "python_version": "3.11.15",
+    "torch_version": "2.13.0",
+    "transformers_version": "5.14.1",
+    "mps_available": true,
+    "mps_built": true
+  },
+  "memory_snapshot": {
+    "method": "memory_pressure(1) + vm_stat(1) + sysctl vm.swapusage, read live -- not inferred from chip name",
+    "system_wide_free_percentage": 47,
+    "swap_total_mb": 5120.0,
+    "swap_used_mb": 4395.88,
+    "swap_free_mb": 724.12,
+    "note": "swap usage reflects historically-swapped pages from long-running host processes (Antigravity, Claude Code, Docker Desktop, browsers); memory_pressure's free-percentage metric (accounts for reclaimable/compressed memory) is the more reliable live indicator than raw vm_stat free pages, but swap headroom (724MB free) is a real, independently binding constraint."
+  },
+  "disk_snapshot": {
+    "volume": "/System/Volumes/Data",
+    "capacity_gb": 460,
+    "used_percent": 95,
+    "free_gb": 24,
+    "model_cache_location": "~/.cache/huggingface (currently 8.0K, empty)"
+  },
+  "candidates_live_reverification": [
+    {
+      "candidate": "Qwen3-8B",
+      "upstream_repo": "Qwen/Qwen3-8B",
+      "license": "apache-2.0",
+      "gated": false,
+      "exact_revision_sha": "b968826d9c46dd6066d109eabc6255188de91218",
+      "architecture": "Qwen3ForCausalLM",
+      "hidden_size": 4096,
+      "num_hidden_layers": 36,
+      "vocab_size": 151936,
+      "max_position_embeddings": 40960,
+      "repo_download_size_gb": 16.4,
+      "transformers_compatible": true,
+      "resource_verdict": "NOT_QUALIFIED",
+      "resource_verdict_reason": "16.4GB download would leave only ~7.6GB free on an already-95%-full 460GB volume; bf16 weights alone (~16GB) approach or exceed this host's total 16GB unified memory before KV cache/activations/macOS/Docker/ORNEUR overhead are added -- independently disqualifying on both disk and memory grounds, measured live, not inferred from chip name."
+    },
+    {
+      "candidate": "Mistral-Nemo-Instruct-2407",
+      "upstream_repo": "mistralai/Mistral-Nemo-Instruct-2407",
+      "license": "apache-2.0",
+      "gated": false,
+      "exact_revision_sha": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+      "architecture": "MistralForCausalLM",
+      "hidden_size": 5120,
+      "num_hidden_layers": 40,
+      "vocab_size": 131072,
+      "max_position_embeddings": 131072,
+      "repo_download_size_gb": 49.02,
+      "transformers_compatible": true,
+      "resource_verdict": "NOT_QUALIFIED",
+      "resource_verdict_reason": "49.02GB download exceeds the 24GB currently free on disk outright -- cannot even be downloaded, let alone loaded, on this host in its current state."
+    },
+    {
+      "candidate": "Phi-4",
+      "upstream_repo": "microsoft/phi-4",
+      "license": "mit",
+      "gated": false,
+      "exact_revision_sha": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+      "architecture": "Phi3ForCausalLM",
+      "hidden_size": 5120,
+      "num_hidden_layers": 40,
+      "vocab_size": 100352,
+      "max_position_embeddings": 16384,
+      "repo_download_size_gb": 29.33,
+      "transformers_compatible": true,
+      "resource_verdict": "NOT_QUALIFIED",
+      "resource_verdict_reason": "29.33GB download exceeds the 24GB currently free on disk outright -- cannot even be downloaded on this host in its current state."
+    },
+    {
+      "candidate": "Phi-4-mini-instruct",
+      "upstream_repo": "microsoft/Phi-4-mini-instruct",
+      "license": "mit",
+      "gated": false,
+      "exact_revision_sha": "cfbefacb99257ffa30c83adab238a50856ac3083",
+      "architecture": "Phi3ForCausalLM",
+      "hidden_size": 3072,
+      "num_hidden_layers": 32,
+      "vocab_size": 200064,
+      "max_position_embeddings": 131072,
+      "repo_download_size_gb": 7.69,
+      "transformers_compatible": true,
+      "resource_verdict": "QUALIFIED_WITH_LIMITS",
+      "resource_verdict_reason": "7.69GB download leaves ~16GB free on disk (safe margin). ~3.8B-parameter class model; bf16 weights match the 7.69GB download size, so runtime load MUST use 4-bit quantization (bitsandbytes, nf4) to fit safely within this host's real measured headroom (~47% system-wide free per memory_pressure, 724MB free swap). This is a materially smaller model than the 8B/12B finalists and is being selected ONLY as a hardware-constrained first execution/infrastructure baseline -- explicitly NOT a foundation-model-shootout-equivalent comparison and NOT a declaration of Phi-4-mini as the Genesis foundation winner."
+    }
+  ],
+  "conservative_memory_budget_phi4_mini_4bit": {
+    "model_weights_4bit_gb_estimate": 2.2,
+    "kv_cache_activations_gb_estimate": 0.5,
+    "tokenizer_gb_estimate": 0.05,
+    "docker_evaluator_reserve_gb": 0.5,
+    "macos_orneur_existing_load_reserve_gb": "already consumed -- host measured at 47% system-wide free before any model load",
+    "total_estimated_additional_gb": 3.25,
+    "measured_free_reclaimable_gb_before_load": "~7.5 (47% of 16GB per memory_pressure)",
+    "assessment": "plausible to fit without exhausting free+reclaimable memory, but will consume most of the remaining headroom and may increase swap activity -- requires live monitoring during load and generation, abort-on-instability per spec Section 17 if violated"
+  },
+  "overall_qualification": "QUALIFIED_WITH_LIMITS",
+  "selected_first_candidate": "Phi-4-mini-instruct",
+  "selection_label": "HARDWARE-CONSTRAINED FIRST EXECUTION/INFRASTRUCTURE BASELINE -- not a foundation-shootout finalist substitution"
+}
