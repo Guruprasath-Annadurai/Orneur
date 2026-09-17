@@ -10,6 +10,7 @@ entirely on CPU.
 from __future__ import annotations
 
 import json
+import stat
 import sys
 import types
 from pathlib import Path
@@ -218,6 +219,53 @@ def test_verify_dataset_binding_rejects_missing_declared_file(cfg_with_real_data
     Path(cfg_with_real_dataset.train_file).unlink()
     with pytest.raises(DatasetBindingInvalid, match="does not exist"):
         verify_dataset_binding(cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"])
+
+
+# ── Phase 21B.3 (§3A) carry-forward hardening ────────────────────────────
+
+
+def test_verify_dataset_binding_rejects_duplicate_manifest_ids(cfg_with_real_dataset):
+    with pytest.raises(DatasetBindingInvalid, match="duplicate entries"):
+        verify_dataset_binding(
+            cfg_with_real_dataset,
+            dataset_manifest_ids=["orneur-genesis-v2-v1", "orneur-genesis-v2-v1"],
+        )
+
+
+def test_verify_dataset_binding_rejects_bundle_id_on_single_manifest_path(cfg_with_real_dataset):
+    """A single-manifest canonical run has no bundle to verify against --
+    a caller supplying dataset_bundle_id here must be rejected outright,
+    not silently ignored (which would let a TrainingRunManifest record a
+    bundle_id that never participated in any verification, since
+    start_training_run() forwards dataset_bundle_id independently of
+    this function's return value)."""
+    with pytest.raises(DatasetBindingInvalid, match="single-manifest canonical run must not name a bundle"):
+        verify_dataset_binding(
+            cfg_with_real_dataset,
+            dataset_manifest_ids=["orneur-genesis-v2-v1"],
+            dataset_bundle_id="some-irrelevant-bundle-v1",
+        )
+
+
+def test_start_training_run_rejects_duplicate_manifest_ids(cfg_with_real_dataset):
+    with pytest.raises(DatasetBindingInvalid, match="duplicate entries"):
+        start_training_run(
+            cfg_with_real_dataset,
+            dataset_manifest_ids=["orneur-genesis-v2-v1", "orneur-genesis-v2-v1"],
+            hardware_info="test-cpu", run_id="run-dup-manifest-ids",
+        )
+    from orca.registry.training_run import list_runs
+    assert list_runs("orneur-genesis") == []
+
+
+def test_start_training_run_rejects_irrelevant_bundle_on_single_manifest(cfg_with_real_dataset):
+    with pytest.raises(DatasetBindingInvalid, match="must not name a bundle"):
+        start_training_run(
+            cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+            run_id="run-irrelevant-bundle", dataset_bundle_id="phantom-bundle-v1",
+        )
+    from orca.registry.training_run import list_runs
+    assert list_runs("orneur-genesis") == []
 
 
 def test_start_training_run_binds_and_records_verified_dataset_digest(cfg_with_real_dataset):
@@ -634,7 +682,16 @@ def test_toctou_b_mutating_the_snapshot_itself_fails_preload_verification(tmp_pa
     info = create_run_snapshot("run-snap-3", train_path=train_path, eval_path=None)
     verify_run_snapshot(info)  # passes before mutation
 
-    Path(info["train"]["path"]).write_text('{"text": "TAMPERED SNAPSHOT"}\n')
+    # Phase 21B.3 (§3B): the snapshot file/directory are now chmod'd
+    # read-only after creation. That protects against accidental/
+    # concurrent mutation, but explicitly does NOT claim to defeat an
+    # actor able to chmod things back -- restoring write access here is
+    # exactly that honest threat-model boundary, and the digest
+    # re-check below is what actually catches the tamper regardless.
+    snapshot_path = Path(info["train"]["path"])
+    snapshot_path.parent.chmod(0o755)
+    snapshot_path.chmod(0o644)
+    snapshot_path.write_text('{"text": "TAMPERED SNAPSHOT"}\n')
 
     with pytest.raises(SnapshotIntegrityError, match="modified after verification"):
         verify_run_snapshot(info)
@@ -647,8 +704,14 @@ def test_toctou_c_snapshot_failure_persists_and_creates_no_checkpoint(cfg_with_r
         run_id="run-snap-toctou-c",
     )
     # Tamper with the run-scoped snapshot itself (simulating a compromised
-    # or buggy intermediate step) and verify the preload check catches it.
-    Path(manifest.dataset_snapshot_paths["train"]).write_text('{"text": "TAMPERED"}\n')
+    # or buggy intermediate step, which requires explicitly restoring
+    # write access first now that snapshots are chmod'd read-only -- see
+    # create_run_snapshot()'s threat-model docstring) and verify the
+    # preload check catches it.
+    snapshot_path = Path(manifest.dataset_snapshot_paths["train"])
+    snapshot_path.parent.chmod(0o755)
+    snapshot_path.chmod(0o644)
+    snapshot_path.write_text('{"text": "TAMPERED"}\n')
 
     try:
         verify_run_snapshot({
@@ -672,9 +735,96 @@ def test_missing_snapshot_file_fails_preload_verification(tmp_path):
     train_path = tmp_path / "train.jsonl"
     train_path.write_text('{"text": "x"}\n')
     info = create_run_snapshot("run-snap-missing", train_path=train_path, eval_path=None)
-    Path(info["train"]["path"]).unlink()
+    snapshot_path = Path(info["train"]["path"])
+    snapshot_path.parent.chmod(0o755)  # restore write access to unlink, as above
+    snapshot_path.unlink()
     with pytest.raises(SnapshotIntegrityError, match="missing"):
         verify_run_snapshot(info)
+
+
+# ── Phase 21B.3 (§3B) practical snapshot read-window hardening ──────────
+
+
+def test_snapshot_files_and_directory_are_chmod_readonly_after_creation(tmp_path):
+    train_path = tmp_path / "train.jsonl"
+    eval_path = tmp_path / "eval.jsonl"
+    train_path.write_text('{"text": "a"}\n')
+    eval_path.write_text('{"text": "b"}\n')
+
+    info = create_run_snapshot("run-readonly-1", train_path=train_path, eval_path=eval_path)
+    train_snapshot = Path(info["train"]["path"])
+    eval_snapshot = Path(info["eval"]["path"])
+
+    assert not (train_snapshot.stat().st_mode & stat.S_IWUSR)
+    assert not (eval_snapshot.stat().st_mode & stat.S_IWUSR)
+    assert not (train_snapshot.parent.stat().st_mode & stat.S_IWUSR)
+
+    # Documented, honest limitation: read-only permissions can be
+    # reverted by an actor with filesystem-owner access -- they are
+    # defense-in-depth, not a cryptographic guarantee.
+    with pytest.raises(PermissionError):
+        train_snapshot.write_text("attempted mutation without restoring permissions")
+
+
+def test_pre_load_snapshot_digest_is_checked_via_real_train_impl(cfg_with_real_dataset, monkeypatch):
+    """(§39) The pre-load digest check happens through the real
+    _train_impl() path -- a tampered snapshot (write access explicitly
+    restored first, simulating a bypass of the read-only protection)
+    is caught before FastLanguageModel.from_pretrained() is ever called."""
+    _install_fake_training_deps(monkeypatch)
+    from orca.train.finetune import _train_impl
+
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id="run-preload-check",
+    )
+    train_snapshot = Path(manifest.dataset_snapshot_paths["train"])
+    train_snapshot.parent.chmod(0o755)
+    train_snapshot.chmod(0o644)
+    train_snapshot.write_text('{"text": "TAMPERED BEFORE LOAD"}\n')
+
+    with pytest.raises(SnapshotIntegrityError, match="modified after verification"):
+        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest)
+
+
+def test_post_load_snapshot_digest_is_checked_via_real_train_impl(cfg_with_real_dataset, monkeypatch):
+    """(§39) The post-load digest re-check: load_dataset() is allowed to
+    run (a fake that succeeds), but the snapshot is mutated by the fake
+    load_dataset() call itself (simulating a process that mutates the
+    file as a side effect of reading it, or a race that lands exactly
+    in this window) -- the post-load re-verification must still catch
+    it, and FastLanguageModel.from_pretrained() must never be reached."""
+    for name in ("unsloth", "trl", "transformers", "datasets", "peft", "bitsandbytes"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+
+    manifest = start_training_run(
+        cfg_with_real_dataset, dataset_manifest_ids=["orneur-genesis-v2-v1"], hardware_info="test-cpu",
+        run_id="run-postload-check",
+    )
+    train_snapshot = Path(manifest.dataset_snapshot_paths["train"])
+
+    def fake_load_dataset(*args, **kwargs):
+        # Mutate the snapshot AFTER it was verified pre-load but BEFORE
+        # _train_impl()'s post-load re-check runs.
+        train_snapshot.parent.chmod(0o755)
+        train_snapshot.chmod(0o644)
+        train_snapshot.write_text('{"text": "TAMPERED DURING LOAD"}\n')
+        return {"train": [1], "validation": [1]}
+
+    def _unreachable_model_load(**kwargs):
+        raise AssertionError("FastLanguageModel.from_pretrained() was reached unexpectedly")
+
+    sys.modules["unsloth"].FastLanguageModel = types.SimpleNamespace(
+        from_pretrained=_unreachable_model_load, get_peft_model=lambda *a, **k: None,
+    )
+    sys.modules["trl"].SFTTrainer = object
+    sys.modules["transformers"].TrainingArguments = object
+    sys.modules["datasets"].load_dataset = fake_load_dataset
+
+    from orca.train.finetune import _train_impl
+
+    with pytest.raises(SnapshotIntegrityError, match="modified after verification"):
+        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest)
 
 
 # ── (§2-8) Phase 21B.2.2: verified-source -> snapshot race closure ──────

@@ -176,6 +176,24 @@ def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> di
     dataset = load_dataset("json", data_files=data_files)
     log(f"[Train] Train examples: {len(dataset['train'])}")
 
+    # Phase 21B.3 (§3B) hardening: re-verify the snapshot digest AGAIN
+    # immediately after load_dataset() returns, not only before it. The
+    # pre-load check (above) closes the window between snapshot creation
+    # and the start of loading; this post-load check closes the
+    # practical window during which `datasets`/HF caching could itself
+    # have read the file more than once, or another process could have
+    # mutated it while load_dataset() was running. Both checks compare
+    # against the SAME manifest-recorded expectation -- this is
+    # filesystem-permission and re-hash defense in depth, not a claim
+    # of cryptographic filesystem immutability; see create_run_snapshot()'s
+    # docstring for the explicit threat-model limitation (it does not
+    # defeat a malicious OS/root administrator).
+    if cfg.family is not None:
+        verify_run_snapshot({
+            "train": {"path": manifest.dataset_snapshot_paths["train"], "sha256": manifest.dataset_split_digests["train"]},
+            "eval": {"path": manifest.dataset_snapshot_paths["validation"], "sha256": manifest.dataset_split_digests["validation"]},
+        })
+
     # ── Step 2: Load model + tokenizer, at the exact pinned revision ───────────
     # Only reached once the dataset this run will actually consume has
     # been resolved and (for canonical training) its snapshot integrity
