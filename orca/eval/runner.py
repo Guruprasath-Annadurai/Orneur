@@ -105,15 +105,20 @@ def _persist_raw_response(run_id: str, task_id: str, text: str | None) -> str | 
     """Content-addressed raw-response storage, referenced from the
     result manifest by pointer rather than inlining every generation
     into the core manifest (spec §11: 'Raw generations should be
-    persisted separately or by content-addressed reference')."""
+    persisted separately or by content-addressed reference').
+
+    Phase 21B.4.8.1: delegates to orca.eval.generation_artifact's
+    durable, ORCA_HOME-canonical store (not the legacy RAW_RESPONSE_DIR
+    below, kept only so any external reference to that constant doesn't
+    break) -- this is the store an ORCHESTRATOR persists into with text
+    a GPU worker returned to it, not an assumption that a path created
+    on the generation host is readable from wherever scoring runs."""
     if text is None:
         return None
-    digest = _sha256_of_text(text)[:16]
-    run_dir = RAW_RESPONSE_DIR / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    path = run_dir / f"{task_id}-{digest}.txt"
-    path.write_text(text)
-    return str(path)
+    from orca.eval.generation_artifact import persist_raw_response
+
+    ref, _digest, _length = persist_raw_response(run_id, task_id, text)
+    return ref
 
 
 def load_and_verify_suite(suite_id: str = "genesis-eval", suite_version: str = "v1") -> tuple[list[EvalTask], EvaluationSuiteManifest]:
@@ -148,6 +153,8 @@ class GenerationRecord:
     error: str | None
     latency_ms: float
     raw_response_ref: str | None
+    text_sha256: str | None = None
+    byte_length: int | None = None
 
 
 def run_generation_phase(
@@ -158,11 +165,20 @@ def run_generation_phase(
     run_id: str,
 ) -> list[GenerationRecord]:
     """GenerationExecutor: calls `adapter.generate()` for every task and
-    persists raw responses. Does NOT score anything -- never imports or
-    calls orca.eval.genesis_suite.score_task, and therefore never needs
-    a SandboxBackend/Docker. This is the half of run_suite() that is
-    safe to run on a trusted-inference-only machine (e.g. a Modal GPU
-    worker) with no local code-execution sandbox available at all."""
+    persists raw responses into the durable, content-addressed store
+    (orca.eval.generation_artifact.persist_raw_response). Does NOT
+    score anything -- never imports or calls
+    orca.eval.genesis_suite.score_task, and therefore never needs a
+    SandboxBackend/Docker. This is the half of run_suite() that is safe
+    to run on a trusted-inference-only machine (e.g. a Modal GPU
+    worker) with no local code-execution sandbox available at all.
+
+    Each record's text_sha256/byte_length are recorded so a later
+    GenerationArtifactManifest (build_generation_artifact_manifest())
+    can be independently verified before scoring, per Phase 21B.4.8.1's
+    denominator-integrity fix."""
+    from orca.eval.generation_artifact import persist_raw_response
+
     records: list[GenerationRecord] = []
     for task in tasks:
         gen = adapter.generate(task.prompt, system_instruction=candidate_config.system_instruction, config=candidate_config.inference_config)
@@ -172,12 +188,63 @@ def run_generation_phase(
                 text=None, error=gen.error or "no text returned", latency_ms=gen.latency_ms, raw_response_ref=None,
             ))
             continue
-        raw_ref = _persist_raw_response(run_id, task.task_id, gen.text)
+        raw_ref, digest, length = persist_raw_response(run_id, task.task_id, gen.text)
         records.append(GenerationRecord(
             task_id=task.task_id, category=task.category, scoring_type=task.scoring_type,
             text=gen.text, error=None, latency_ms=gen.latency_ms, raw_response_ref=raw_ref,
+            text_sha256=digest, byte_length=length,
         ))
     return records
+
+
+def build_generation_artifact_manifest(
+    records: list[GenerationRecord],
+    candidate_config: CandidateConfig,
+    tasks: list[EvalTask],
+    *,
+    suite_id: str,
+    suite_version: str,
+    content_digest: str,
+    scoring_digest: str,
+    run_id: str,
+    created_at: str,
+):
+    """Builds the durable, serializable GenerationArtifactManifest from
+    a completed generation phase's records -- the artifact that
+    actually crosses the trust/machine boundary (Phase 21B.4.8.1 spec
+    section 3), not a bare list of GenerationRecords with ephemeral
+    paths. Callers running generation and scoring on separate machines
+    should serialize this (to_json()) and transfer/persist it, then
+    call run_scoring_phase_from_artifact() with the deserialized copy
+    on the scoring side."""
+    from orca.eval.generation_artifact import GENERATION_ARTIFACT_SCHEMA_VERSION, GenerationArtifactManifest
+
+    task_ids = tuple(t.task_id for t in tasks)
+    record_dicts = tuple(
+        {
+            "task_id": r.task_id, "category": r.category, "scoring_type": r.scoring_type,
+            "text_sha256": r.text_sha256, "byte_length": r.byte_length, "error": r.error,
+            "latency_ms": r.latency_ms, "raw_response_ref": r.raw_response_ref,
+        }
+        for r in records
+    )
+    generation_config_digest = hashlib.sha256(
+        json.dumps(candidate_config.inference_config, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    return GenerationArtifactManifest(
+        schema_version=GENERATION_ARTIFACT_SCHEMA_VERSION,
+        run_id=run_id, candidate=candidate_config.candidate,
+        upstream_model=candidate_config.upstream_model, artifact_repo=candidate_config.artifact_repo,
+        exact_revision=candidate_config.exact_revision, tokenizer_revision=candidate_config.tokenizer_revision,
+        suite_id=suite_id, suite_version=suite_version,
+        suite_content_digest=content_digest, suite_scoring_contract_digest=scoring_digest,
+        generation_config_digest=f"sha256:{generation_config_digest}",
+        system_instruction_digest=f"sha256:{_sha256_of_text(candidate_config.system_instruction)}",
+        expected_task_ids=task_ids, records=record_dicts,
+        software_commit_sha=_current_git_sha(), backend=candidate_config.backend,
+        hardware=dict(candidate_config.hardware), created_at=created_at,
+    )
 
 
 def run_scoring_phase(
@@ -283,6 +350,64 @@ def run_scoring_phase(
         started_at=started_at, completed_at=completed_at,
     )
     return result, scored_task_ids
+
+
+def run_scoring_phase_from_artifact(
+    manifest,
+    candidate_config: CandidateConfig,
+    tasks: list[EvalTask],
+    *,
+    suite_id: str,
+    suite_version: str,
+    content_digest: str,
+    scoring_digest: str,
+    started_at: str,
+) -> tuple[EvaluationResultManifest, list[str]]:
+    """The cross-machine-safe entry point to scoring (Phase 21B.4.8.1).
+    Unlike run_scoring_phase() (which trusts whatever GenerationRecords
+    it is handed), this function:
+
+      1. Reconciles `manifest` against the live-verified `tasks` FIRST
+         (orca.eval.generation_artifact.verify_against_suite) -- fails
+         closed with GenerationArtifactIntegrityError if any expected
+         task is missing, duplicated, unknown, or category/scoring_type
+         mismatched. This is the fix for the denominator-integrity gap:
+         "expected" comes from the suite, never from whichever records
+         happened to arrive.
+      2. Re-reads and SHA-256-verifies every non-error record's raw
+         response from the durable store before trusting its content
+         (orca.eval.generation_artifact.read_and_verify_raw_response) --
+         detects corruption/truncation/substitution in transit.
+
+    Only after both checks pass does it reconstruct GenerationRecords
+    and delegate to run_scoring_phase()'s existing scoring logic."""
+    from orca.eval.generation_artifact import read_and_verify_raw_response, verify_against_suite
+
+    verify_against_suite(manifest, tasks)
+
+    records: list[GenerationRecord] = []
+    for entry in manifest.records:
+        if entry.get("error") is not None or entry.get("text_sha256") is None:
+            records.append(GenerationRecord(
+                task_id=entry["task_id"], category=entry["category"], scoring_type=entry["scoring_type"],
+                text=None, error=entry.get("error") or "no text returned", latency_ms=entry.get("latency_ms", 0.0),
+                raw_response_ref=None,
+            ))
+            continue
+        verified_text = read_and_verify_raw_response(entry["raw_response_ref"], entry["text_sha256"])
+        records.append(GenerationRecord(
+            task_id=entry["task_id"], category=entry["category"], scoring_type=entry["scoring_type"],
+            text=verified_text, error=None, latency_ms=entry.get("latency_ms", 0.0),
+            raw_response_ref=entry["raw_response_ref"], text_sha256=entry["text_sha256"],
+            byte_length=entry.get("byte_length"),
+        ))
+
+    return run_scoring_phase(
+        records, candidate_config, tasks,
+        suite_id=suite_id, suite_version=suite_version,
+        content_digest=content_digest, scoring_digest=scoring_digest,
+        run_id=manifest.run_id, started_at=started_at,
+    )
 
 
 def run_suite(

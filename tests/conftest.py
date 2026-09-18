@@ -107,6 +107,7 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     import orca.registry.evaluation_result_manifest as evaluation_result_manifest_mod
     import orca.registry.evaluation_suite_manifest as evaluation_suite_manifest_mod
     import orca.eval.baseline as eval_baseline_mod
+    import orca.eval.generation_artifact as generation_artifact_mod
     import orca.eval.runner as eval_runner_mod
     import orca.registry.model_registry as model_registry_mod
     import orca.registry.provenance as provenance_mod
@@ -131,6 +132,10 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     # directly, rather than derived from evaluation_result_dir_tmp at
     # import time (which would leak past this fixture's monkeypatch).
     evaluation_raw_response_dir_tmp = registry_tmp / "evaluation_raw_responses"
+    # Phase 21B.4.8.1: the durable, content-addressed generation-artifact
+    # store (orca.eval.generation_artifact) -- same unisolated-module-
+    # constant risk, isolated here too.
+    generation_artifact_dir_tmp = registry_tmp / "evaluation_generation_artifacts"
     # Phase 21B.4.1: the per-suite-version concurrency lock directory
     # (orca.eval.baseline's fcntl.flock-based freeze-transaction lock) --
     # same risk, isolated here too.
@@ -144,6 +149,7 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
         checkpoint_dir_tmp, dataset_dir_tmp, dataset_bundle_dir_tmp, evaluation_dir_tmp,
         evaluation_suite_dir_tmp, evaluation_result_dir_tmp, evaluation_raw_response_dir_tmp,
         evaluation_lock_dir_tmp, training_run_dir_tmp, run_snapshot_dir_tmp, registry_tmp,
+        generation_artifact_dir_tmp,
     ):
         d.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(checkpoint_mod, "CHECKPOINT_DIR", checkpoint_dir_tmp)
@@ -153,6 +159,7 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(evaluation_result_manifest_mod, "EVALUATION_RESULT_DIR", evaluation_result_dir_tmp)
     monkeypatch.setattr(eval_baseline_mod, "_LOCK_DIR", evaluation_lock_dir_tmp)
     monkeypatch.setattr(eval_runner_mod, "RAW_RESPONSE_DIR", evaluation_raw_response_dir_tmp)
+    monkeypatch.setattr(generation_artifact_mod, "GENERATION_ARTIFACT_DIR", generation_artifact_dir_tmp)
     monkeypatch.setattr(evaluation_suite_manifest_mod, "EVALUATION_SUITE_DIR", evaluation_suite_dir_tmp)
     monkeypatch.setattr(model_registry_mod, "REGISTRY_STATE_PATH", registry_tmp / "registry_state.json")
     monkeypatch.setattr(training_run_mod, "TRAINING_RUN_DIR", training_run_dir_tmp)

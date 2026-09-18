@@ -155,32 +155,50 @@ class DuplicateRunIdError(ValueError):
     all."""
 
 
-def _validate_result_completeness(result: EvaluationResultManifest, task_ids: list[str]) -> None:
-    accounted_for: set[str] = set()
+def _validate_result_completeness(result: EvaluationResultManifest, tasks: list[EvalTask]) -> None:
+    """Phase 21B.4.8.1 fix: 'expected' is derived ONLY from `tasks` (the
+    live-verified suite this transaction is recording against), never
+    from a caller-supplied subset like `scored_task_ids` -- an
+    independent audit found that using the scoring phase's own observed
+    output as the definition of 'what was expected' let a task dropped
+    in cross-machine transfer silently validate itself as complete. This
+    also now explicitly detects DUPLICATE task_id entries, which the
+    prior set-based accounting silently absorbed without ever flagging.
+
+    Every task in `tasks` -- including llm_judge categories, which
+    still receive a per_task_results entry (passed=None, an explicit
+    unscored marker) per orca.eval.runner.run_scoring_phase()'s
+    contract -- must appear in EXACTLY ONE of per_task_results or
+    generation_failures. Missing transport data is an integrity error,
+    never silently treated as equivalent to a generation failure."""
+    expected_task_ids = {t.task_id for t in tasks}
+
+    seen: dict[str, int] = {}
     for entry in result.per_task_results:
         task_id = entry.get("task_id")
         if task_id is None:
             raise IncompleteResultError(f"per_task_results entry missing task_id: {entry!r}")
-        accounted_for.add(task_id)
+        seen[task_id] = seen.get(task_id, 0) + 1
     for entry in result.generation_failures:
         task_id = entry.get("task_id")
         if task_id is None:
             raise IncompleteResultError(f"generation_failures entry missing task_id: {entry!r}")
-        accounted_for.add(task_id)
+        seen[task_id] = seen.get(task_id, 0) + 1
 
-    # Tasks in categories explicitly marked unscored (llm_judge categories
-    # this closure does not execute) are exempt from the completeness
-    # requirement -- they were never expected to have a per-task result.
-    missing = set(task_ids) - accounted_for
+    missing = sorted(expected_task_ids - set(seen.keys()))
+    unknown = sorted(set(seen.keys()) - expected_task_ids)
+    duplicates = sorted(tid for tid, count in seen.items() if count > 1)
+
+    problems = []
     if missing:
-        # Filter out tasks whose category is in unscored_categories --
-        # requires the caller's task list, which this function doesn't
-        # have directly; callers pass task_ids already filtered to only
-        # the tasks that were EXPECTED to be scored (see
-        # orca.eval.runner.run_suite()'s contract).
+        problems.append(f"missing {len(missing)} expected task(s): {missing[:10]}{'...' if len(missing) > 10 else ''}")
+    if duplicates:
+        problems.append(f"{len(duplicates)} duplicate task_id(s): {duplicates[:10]}{'...' if len(duplicates) > 10 else ''}")
+    if unknown:
+        problems.append(f"{len(unknown)} unknown task_id(s) not in the suite: {unknown[:10]}")
+    if problems:
         raise IncompleteResultError(
-            f"Result is missing accounting for {len(missing)} task(s) -- denominator integrity "
-            f"violated: {sorted(missing)[:10]}{'...' if len(missing) > 10 else ''}"
+            "Result failed denominator-integrity validation against the verified suite -- " + "; ".join(problems)
         )
     if result.completed_at is None:
         raise IncompleteResultError("Result has no completed_at timestamp -- evaluation did not finish")
@@ -199,9 +217,17 @@ def record_baseline_and_freeze_suite(
     task list (from `orca.eval.genesis_suite.all_tasks()`); `result` is
     an already-populated, NOT-yet-finalized `EvaluationResultManifest`
     (caller sets `finalized=False`, `is_first_baseline=False` -- this
-    function decides both); `scored_task_ids` is the set of task_ids the
-    caller actually expected to score (i.e. excluding unscored llm_judge
-    categories), used for the completeness check.
+    function decides both); `scored_task_ids` is the caller's own
+    record of which task_ids it deterministically scored (i.e.
+    excluding unscored llm_judge categories) -- retained in the
+    manifest/return value for reporting, but Phase 21B.4.8.1 no longer
+    uses it as the SOURCE OF TRUTH for the completeness check. An
+    independent audit found that doing so let a task dropped in
+    cross-machine transfer silently validate itself as complete, since
+    `scored_task_ids` was itself derived from whatever records the
+    scoring phase happened to receive. The completeness check now
+    derives "what was expected" ONLY from `tasks` directly (see
+    `_validate_result_completeness`).
 
     Returns the finalized, persisted result on success. Raises
     `BaselineIntegrityError`, `IncompleteResultError`,
@@ -276,7 +302,7 @@ def _record_baseline_and_freeze_suite_locked(
             f"match the persisted suite manifest's scoring_contract_digest ({suite_manifest.scoring_contract_digest})"
         )
 
-    _validate_result_completeness(result, scored_task_ids)
+    _validate_result_completeness(result, tasks)
 
     if suite_manifest.frozen:
         # Suite already frozen by an earlier baseline -- this candidate's
