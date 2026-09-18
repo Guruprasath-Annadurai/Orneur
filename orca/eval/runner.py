@@ -132,67 +132,105 @@ def load_and_verify_suite(suite_id: str = "genesis-eval", suite_version: str = "
     return tasks, suite_manifest
 
 
-def run_suite(
+@dataclass(frozen=True)
+class GenerationRecord:
+    """One task's generation OUTCOME -- text plus everything scoring
+    needs, but not yet scored. This is the artifact that crosses the
+    trust/machine boundary (Phase 21B.4.8 spec section 3): a Modal GPU
+    worker can produce a list of these and hand them off (as JSON, a
+    file, a queue message -- transport is the caller's choice) to a
+    completely separate, Docker-equipped machine that never needed a
+    GPU. Model-generated text is untrusted DATA here, never executed."""
+    task_id: str
+    category: int
+    scoring_type: str
+    text: str | None
+    error: str | None
+    latency_ms: float
+    raw_response_ref: str | None
+
+
+def run_generation_phase(
     adapter: ModelAdapter,
     candidate_config: CandidateConfig,
+    tasks: list[EvalTask],
     *,
-    suite_id: str = "genesis-eval",
-    suite_version: str = "v1",
-    run_id: str | None = None,
+    run_id: str,
+) -> list[GenerationRecord]:
+    """GenerationExecutor: calls `adapter.generate()` for every task and
+    persists raw responses. Does NOT score anything -- never imports or
+    calls orca.eval.genesis_suite.score_task, and therefore never needs
+    a SandboxBackend/Docker. This is the half of run_suite() that is
+    safe to run on a trusted-inference-only machine (e.g. a Modal GPU
+    worker) with no local code-execution sandbox available at all."""
+    records: list[GenerationRecord] = []
+    for task in tasks:
+        gen = adapter.generate(task.prompt, system_instruction=candidate_config.system_instruction, config=candidate_config.inference_config)
+        if gen.error is not None or gen.text is None:
+            records.append(GenerationRecord(
+                task_id=task.task_id, category=task.category, scoring_type=task.scoring_type,
+                text=None, error=gen.error or "no text returned", latency_ms=gen.latency_ms, raw_response_ref=None,
+            ))
+            continue
+        raw_ref = _persist_raw_response(run_id, task.task_id, gen.text)
+        records.append(GenerationRecord(
+            task_id=task.task_id, category=task.category, scoring_type=task.scoring_type,
+            text=gen.text, error=None, latency_ms=gen.latency_ms, raw_response_ref=raw_ref,
+        ))
+    return records
+
+
+def run_scoring_phase(
+    generation_records: list[GenerationRecord],
+    candidate_config: CandidateConfig,
+    tasks: list[EvalTask],
+    *,
+    suite_id: str,
+    suite_version: str,
+    content_digest: str,
+    scoring_digest: str,
+    run_id: str,
+    started_at: str,
 ) -> tuple[EvaluationResultManifest, list[str]]:
-    """Executes EVERY task in the persisted, verified suite against
-    `adapter`, producing a NOT-yet-finalized EvaluationResultManifest
-    (caller must pass this to
-    orca.eval.baseline.record_baseline_and_freeze_suite() to finalize
-    it). Returns (result, scored_task_ids) -- scored_task_ids excludes
-    llm_judge tasks, matching record_baseline_and_freeze_suite()'s
-    completeness-check contract.
-
-    Denominator integrity: every task in the suite gets EITHER a
-    per_task_results entry (deterministic categories) or an
-    unscored_categories-tagged entry, OR a generation_failures entry (if
-    generation itself failed) -- never silently dropped."""
-    tasks, suite_manifest = load_and_verify_suite(suite_id, suite_version)
-    task_ids, content_digest, scoring_digest = compute_suite_digests(tasks)
-
-    resolved_run_id = run_id or f"run-{uuid.uuid4().hex[:16]}"
-    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
+    """ScoringExecutor: consumes GenerationRecords (from run_generation_phase,
+    persisted to disk, or received over any transport) and runs
+    orca.eval.genesis_suite.score_task() -- the only place a
+    SandboxBackend/Docker is required. This is the half of run_suite()
+    that must run on a machine with a qualified SandboxBackend
+    available; it never needs a GPU."""
     per_task_results: list[dict] = []
     generation_failures: list[dict] = []
     unscored_categories: set[str] = set()
     scored_task_ids: list[str] = []
+    tasks_by_id = {t.task_id: t for t in tasks}
 
     system_digest = _sha256_of_text(candidate_config.system_instruction)
 
-    for task in tasks:
-        gen = adapter.generate(task.prompt, system_instruction=candidate_config.system_instruction, config=candidate_config.inference_config)
-
-        if gen.error is not None or gen.text is None:
+    for record in generation_records:
+        if record.error is not None or record.text is None:
             generation_failures.append({
-                "task_id": task.task_id, "category": task.category,
-                "reason": gen.error or "no text returned", "latency_ms": gen.latency_ms,
+                "task_id": record.task_id, "category": record.category,
+                "reason": record.error or "no text returned", "latency_ms": record.latency_ms,
             })
             continue
 
-        raw_ref = _persist_raw_response(resolved_run_id, task.task_id, gen.text)
-
-        if task.scoring_type == "llm_judge":
-            unscored_categories.add(str(task.category))
+        if record.scoring_type == "llm_judge":
+            unscored_categories.add(str(record.category))
             per_task_results.append({
-                "task_id": task.task_id, "category": task.category, "passed": None,
-                "scoring_type": task.scoring_type, "note": CANDIDATE_UNSCORED_MARKER,
-                "latency_ms": gen.latency_ms, "raw_response_ref": raw_ref,
+                "task_id": record.task_id, "category": record.category, "passed": None,
+                "scoring_type": record.scoring_type, "note": CANDIDATE_UNSCORED_MARKER,
+                "latency_ms": record.latency_ms, "raw_response_ref": record.raw_response_ref,
             })
             continue
 
-        scorer_output = score_task(task, gen.text)
+        task = tasks_by_id[record.task_id]
+        scorer_output = score_task(task, record.text)
         per_task_results.append({
-            "task_id": task.task_id, "category": task.category, "passed": scorer_output.get("passed"),
-            "scoring_type": task.scoring_type, "scorer_output": scorer_output,
-            "latency_ms": gen.latency_ms, "raw_response_ref": raw_ref,
+            "task_id": record.task_id, "category": record.category, "passed": scorer_output.get("passed"),
+            "scoring_type": record.scoring_type, "scorer_output": scorer_output,
+            "latency_ms": record.latency_ms, "raw_response_ref": record.raw_response_ref,
         })
-        scored_task_ids.append(task.task_id)
+        scored_task_ids.append(record.task_id)
 
     completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -221,7 +259,7 @@ def run_suite(
     }
 
     result = EvaluationResultManifest(
-        run_id=resolved_run_id,
+        run_id=run_id,
         candidate=candidate_config.candidate,
         upstream_model=candidate_config.upstream_model,
         artifact_repo=candidate_config.artifact_repo,
@@ -245,6 +283,50 @@ def run_suite(
         started_at=started_at, completed_at=completed_at,
     )
     return result, scored_task_ids
+
+
+def run_suite(
+    adapter: ModelAdapter,
+    candidate_config: CandidateConfig,
+    *,
+    suite_id: str = "genesis-eval",
+    suite_version: str = "v1",
+    run_id: str | None = None,
+) -> tuple[EvaluationResultManifest, list[str]]:
+    """Executes EVERY task in the persisted, verified suite against
+    `adapter`, producing a NOT-yet-finalized EvaluationResultManifest
+    (caller must pass this to
+    orca.eval.baseline.record_baseline_and_freeze_suite() to finalize
+    it). Returns (result, scored_task_ids) -- scored_task_ids excludes
+    llm_judge tasks, matching record_baseline_and_freeze_suite()'s
+    completeness-check contract.
+
+    Denominator integrity: every task in the suite gets EITHER a
+    per_task_results entry (deterministic categories) or an
+    unscored_categories-tagged entry, OR a generation_failures entry (if
+    generation itself failed) -- never silently dropped.
+
+    Implemented as run_generation_phase() + run_scoring_phase() composed
+    on a single machine (Phase 21B.4.8 spec section 3) -- this function's
+    behavior is unchanged from before that split existed, but the two
+    phases are now independently callable, e.g. from a trusted-GPU-only
+    worker (generation) and a separately Docker-equipped worker
+    (scoring), with GenerationRecords as the artifact that crosses that
+    boundary."""
+    tasks, suite_manifest = load_and_verify_suite(suite_id, suite_version)
+    task_ids, content_digest, scoring_digest = compute_suite_digests(tasks)
+
+    resolved_run_id = run_id or f"run-{uuid.uuid4().hex[:16]}"
+    started_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    generation_records = run_generation_phase(adapter, candidate_config, tasks, run_id=resolved_run_id)
+
+    return run_scoring_phase(
+        generation_records, candidate_config, tasks,
+        suite_id=suite_id, suite_version=suite_version,
+        content_digest=content_digest, scoring_digest=scoring_digest,
+        run_id=resolved_run_id, started_at=started_at,
+    )
 
 
 class DryRunAdapter:

@@ -11,7 +11,16 @@ from __future__ import annotations
 import pytest
 
 from orca.eval.genesis_suite import all_tasks, category_task_counts, compute_suite_digests
-from orca.eval.runner import CandidateConfig, DryRunAdapter, GenerationResult, load_and_verify_suite, run_suite
+from orca.eval.runner import (
+    CandidateConfig,
+    DryRunAdapter,
+    GenerationRecord,
+    GenerationResult,
+    load_and_verify_suite,
+    run_generation_phase,
+    run_scoring_phase,
+    run_suite,
+)
 from orca.registry.evaluation_suite_manifest import EvaluationSuiteManifest
 
 
@@ -148,3 +157,85 @@ def test_run_suite_persists_raw_responses_by_reference_not_inline():
     for e in scored_entries[:3]:
         assert Path(e["raw_response_ref"]).exists()
         assert "DRY_RUN_PLACEHOLDER" in Path(e["raw_response_ref"]).read_text()
+
+
+# ── Phase 21B.4.8: GenerationExecutor / ScoringExecutor split ────────────
+
+
+def test_run_generation_phase_never_calls_score_task(monkeypatch):
+    """The whole point of the split: a trusted-inference-only worker
+    (e.g. a Modal GPU machine with no SandboxBackend available) must be
+    able to run generation without genesis_suite.score_task ever being
+    imported or invoked -- monkeypatch it to raise, and generation must
+    still succeed untouched."""
+    import orca.eval.genesis_suite as genesis_suite_mod
+
+    def _boom(*a, **k):
+        raise AssertionError("score_task must never be called during generation phase")
+
+    monkeypatch.setattr(genesis_suite_mod, "score_task", _boom)
+
+    _register_real_suite_manifest()
+    tasks, _ = load_and_verify_suite()
+    records = run_generation_phase(DryRunAdapter(), _valid_candidate_config(), tasks, run_id="test-gen-only")
+
+    assert len(records) == len(tasks)
+    assert all(isinstance(r, GenerationRecord) for r in records)
+    assert any(r.text is not None for r in records)
+
+
+def test_run_scoring_phase_works_from_manually_built_generation_records():
+    """No adapter, no GPU, nothing GPU-related involved at all -- proves
+    the ScoringExecutor half is independently usable given only
+    GenerationRecords, e.g. ones deserialized from a file a separate
+    trusted-inference worker produced."""
+    _register_real_suite_manifest()
+    tasks, _ = load_and_verify_suite()
+    task_ids, content_digest, scoring_digest = compute_suite_digests(tasks)
+
+    records = [
+        GenerationRecord(
+            task_id=t.task_id, category=t.category, scoring_type=t.scoring_type,
+            text="[DRY_RUN_PLACEHOLDER_RESPONSE -- NOT A REAL MODEL OUTPUT]", error=None,
+            latency_ms=1.0, raw_response_ref=None,
+        )
+        for t in tasks
+    ]
+
+    result, scored_task_ids = run_scoring_phase(
+        records, _valid_candidate_config(), tasks,
+        suite_id="genesis-eval", suite_version="v1",
+        content_digest=content_digest, scoring_digest=scoring_digest,
+        run_id="test-scoring-only", started_at="2026-01-01T00:00:00Z",
+    )
+    assert len(result.per_task_results) + len(result.generation_failures) == len(tasks)
+    assert scored_task_ids
+
+
+def test_split_phases_composed_separately_match_run_suite_directly():
+    """run_generation_phase() + run_scoring_phase(), called as two
+    separate steps (simulating a GPU worker producing records, then a
+    Docker-equipped worker scoring them later), must produce the same
+    EvaluationResultManifest content as calling run_suite() directly
+    with the same adapter/config/run_id -- proving the split is a true
+    decomposition, not a behavior change."""
+    _register_real_suite_manifest()
+    config = _valid_candidate_config()
+
+    direct_result, direct_scored_ids = run_suite(DryRunAdapter(), config, run_id="test-direct")
+
+    tasks, _ = load_and_verify_suite()
+    task_ids, content_digest, scoring_digest = compute_suite_digests(tasks)
+    records = run_generation_phase(DryRunAdapter(), config, tasks, run_id="test-split")
+    split_result, split_scored_ids = run_scoring_phase(
+        records, config, tasks,
+        suite_id="genesis-eval", suite_version="v1",
+        content_digest=content_digest, scoring_digest=scoring_digest,
+        run_id="test-split", started_at="2026-01-01T00:00:00Z",
+    )
+
+    assert split_scored_ids == direct_scored_ids
+    assert split_result.deterministic_summary == direct_result.deterministic_summary
+    assert split_result.per_category_summary == direct_result.per_category_summary
+    assert split_result.unscored_categories == direct_result.unscored_categories
+    assert len(split_result.per_task_results) == len(direct_result.per_task_results)
