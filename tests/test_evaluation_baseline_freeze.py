@@ -38,7 +38,15 @@ def _tiny_task_set() -> list[EvalTask]:
 def _make_result(tasks: list[EvalTask], *, run_id: str, complete: bool = True) -> tuple[EvaluationResultManifest, list[str]]:
     task_ids, content_digest, scoring_digest = compute_suite_digests(tasks)
     scored_task_ids = [t.task_id for t in tasks if t.scoring_type != "llm_judge"]
+    judge_task_ids = [t.task_id for t in tasks if t.scoring_type == "llm_judge"]
+    # Phase 21B.4.8.1: denominator-integrity now requires EVERY suite
+    # task (including llm_judge ones) to appear in per_task_results or
+    # generation_failures -- matching orca.eval.runner.run_scoring_phase()'s
+    # real contract, which adds an explicit unscored-marker entry for
+    # judge tasks rather than omitting them.
     per_task = [{"task_id": tid, "passed": True} for tid in scored_task_ids] if complete else []
+    if complete:
+        per_task += [{"task_id": tid, "passed": None, "note": "UNSCORED_REQUIRES_JUDGE"} for tid in judge_task_ids]
     result = EvaluationResultManifest(
         run_id=run_id, candidate="test-candidate", upstream_model="test/model",
         artifact_repo="test/model", exact_revision="abc123", tokenizer_revision="abc123",
@@ -400,3 +408,58 @@ def test_concurrent_baseline_attempts_never_both_believe_they_froze_first():
 
     suite = EvaluationSuiteManifest.load("genesis-eval-concurrency-test", "v1")
     assert suite.frozen is True
+
+
+# ── Phase 21B.4.8.1: denominator-integrity adversarial tests ────────────
+# "Expected" must come ONLY from the verified suite `tasks`, never from
+# scored_task_ids or whatever records happen to be present -- these
+# prove that dropping/duplicating/adding records is caught BEFORE any
+# baseline can be recorded, regardless of what scored_task_ids claims.
+
+
+def test_missing_deterministic_record_is_rejected_even_if_scored_task_ids_claims_complete():
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-missing-det")
+    # Simulate a dropped record: remove t-002's entry from per_task_results
+    # but leave scored_task_ids claiming both t-001 and t-002 were scored --
+    # exactly the cross-machine-transport-loss scenario the audit found.
+    result.per_task_results = [e for e in result.per_task_results if e["task_id"] != "t-002"]
+    with pytest.raises(IncompleteResultError, match="missing"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+
+
+def test_missing_judge_record_is_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-missing-judge")
+    result.per_task_results = [e for e in result.per_task_results if e["task_id"] != "t-003"]
+    with pytest.raises(IncompleteResultError, match="missing"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+
+
+def test_duplicate_task_record_is_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-duplicate")
+    result.per_task_results = result.per_task_results + [{"task_id": "t-001", "passed": True}]
+    with pytest.raises(IncompleteResultError, match="duplicate"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+
+
+def test_unknown_task_record_is_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-unknown")
+    result.per_task_results = result.per_task_results + [{"task_id": "t-does-not-exist-in-suite", "passed": True}]
+    with pytest.raises(IncompleteResultError, match="unknown"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+
+
+def test_generation_failure_correctly_accounts_for_a_task():
+    """A real generation failure (task attempted, model/backend failed)
+    is legitimate -- it must be accepted as accounting for the task,
+    not treated as a missing/integrity error, since it IS a known,
+    explicit outcome, unlike silently-dropped transport data."""
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-gen-failure")
+    result.per_task_results = [e for e in result.per_task_results if e["task_id"] != "t-002"]
+    result.generation_failures = [{"task_id": "t-002", "category": 1, "reason": "backend timeout", "latency_ms": 5000.0}]
+    finalized = record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+    assert finalized.finalized is True
