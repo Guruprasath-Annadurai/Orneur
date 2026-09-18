@@ -32,12 +32,58 @@ be stored somewhere the accelerators can reach.**
 | MiniMax M3 | 428B | 856GB → **11×** | 428GB → **6×** | 214GB → **3×** |
 | Qwen3.8-Max | 2,400B | 4,800GB → **60×** | 2,400GB → **30×** | 1,200GB → **15×** |
 | **Qwen3.8-27B (dense)** | **27B** | **54GB → 1×** | **27GB → 1×** | **14GB → 1×** |
+| Qwen3.8-Flash-Next (core MoE, 125B) | 125B | 250GB → **4×** | 125GB → **2×** | 62GB → **1×** |
+| Qwen3.8-Flash-Next (full incl. n-gram+MTP, ~180B) | 180B | 360GB → **5×** | 180GB → **3×** | 90GB → **2×** |
+| **Mistral Small 4** | **119B** | 238GB → **3×** | 119GB → **2×** | **60GB → 1×** |
 | Kimi K3 | 2,800B | 5,600GB → **70×** | 2,800GB → **35×** | 1,400GB → **18×** |
 
-KV cache, runtime/allocator overhead, and tensor/expert-parallel
-communication buffers add further headroom on top of these figures
-(typically 10-30% depending on context length and batch size) — not
-included above, since weight storage alone already determines the
+Qwen3.8-Flash-Next is listed twice deliberately: its core sparse-MoE
+architecture (125B total/6B active) is what most vendor benchmark
+claims describe, but Hugging Face's own aggregate repository metadata
+reports up to ~180B when the 51B n-gram embedding and 4B MTP
+components are counted — the LARGER figure is the one that determines
+real deployment VRAM, since those components are also weights that
+must reside in accessible memory. Never quote the smaller "125B" core
+figure as if it were the full weight-storage requirement.
+
+## Practical serving configuration vs. theoretical minimum (spec section 18)
+
+The table above states MINIMUM THEORETICAL WEIGHT STORAGE only. A
+practical serving configuration must add, on top of the weight-storage
+floor:
+
+- **Quantization metadata**: NF4/INT4/FP8 quantized weights carry
+  additional scale/zero-point tensors, typically 5-15% over the raw
+  quantized-weight byte count depending on group size
+- **KV cache**: grows with context length × batch size × layers ×
+  attention heads; for the 1M-context candidates in this landscape
+  (DeepSeek V4.1-Flash, GLM-5.2/5.3, MiniMax M3, Kimi K3), KV cache at
+  anywhere near full context can itself reach many GB per concurrent
+  request, not a rounding error
+- **Runtime workspace / activations**: inference engines (vLLM, SGLang)
+  reserve working memory for attention computation, sampling, and
+  request scheduling — commonly 10-20% of total VRAM in typical
+  configurations
+- **Vision encoder** (where applicable — DeepSeek V4.1-Flash, GLM-5.3-
+  Flash, Mistral Large 3, Mistral Small 4, MiniMax M3, Kimi K3 all
+  claim multimodal input): a separate vision tower with its own weight
+  footprint, typically a few GB to a few tens of GB depending on the
+  encoder, additive to the language-model weight figure above
+  Do not assume this is negligible for models advertising native
+  multimodality
+- **Tensor/expert-parallel communication overhead**: multi-GPU sharding
+  requires inter-GPU communication buffers and introduces real
+  (non-zero) latency/throughput overhead that does not appear in a
+  pure memory calculation at all
+
+**Rule of thumb applied in this document**: treat the theoretical
+minimum weight-storage GPU count in the table above as a hard floor,
+not a target -- a REALISTIC serving configuration for any of these
+candidates should budget at least 20-40% additional VRAM headroom
+beyond that floor (more for the 1M-context candidates specifically,
+given KV cache growth), which in practice often means provisioning one
+additional GPU beyond the theoretical minimum for configurations that
+land close to a GPU-count boundary.
 minimum viable GPU count for every candidate except Qwen3.8-27B.
 
 ## Modal GPU inventory and live rates (2026-09-18/19, authenticated `modal billing rates`)

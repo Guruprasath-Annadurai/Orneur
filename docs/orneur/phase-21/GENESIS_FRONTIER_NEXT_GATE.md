@@ -1,6 +1,25 @@
 # Genesis Frontier — Next Gate
 
-## Where this phase leaves things
+## Phase 21B.4.8.1 update
+
+An independent audit of Phase 21B.4.8 found and this phase closed:
+benchmark-integrity gaps in the generation/scoring split (durable
+cross-machine generation artifacts, fail-closed denominator integrity
+-- see `GENESIS_BENCHMARK_INTEGRITY_CONTRACT.md`), an incomplete
+deployable-frontier landscape (added Qwen3.8-Flash-Next and Mistral
+Small 4, corrected MiniMax M3's license and the Qwen3.8-Max/open-weight
+identity distinction -- see the updated
+`GENESIS_FRONTIER_MODEL_LANDSCAPE_2026_09.md`), and designed (without
+authoring or running) two further specs: a private sealed frontier
+holdout tier (`GENESIS_FRONTIER_HOLDOUT_SPEC.md`) and a multi-layer
+judge protocol (`GENESIS_JUDGE_PROTOCOL_SPEC.md`). Modal's basic GPU
+qualification (Phase 21B.4.8: CUDA/bf16/fp8 confirmed) was extended
+with a real inference-engine runtime qualification this phase -- see
+Section I of this phase's stop report for the live result. No frontier
+model evaluation, no `genesis-eval-v1` execution/freeze, and no
+Genesis training occurred.
+
+## Where Phase 21B.4.8 left things
 
 - Genesis's foundation-model target is now formally
   `FRONTIER-CLASS INTELLIGENCE`, no longer implicitly capped at the

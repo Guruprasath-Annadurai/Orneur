@@ -11,6 +11,13 @@ Every "Independent evidence" field below is explicitly marked as
 vendor/press-aggregated, not ORNEUR-verified, per spec section 5's
 requirement to distinguish the two.
 
+**Phase 21B.4.8.1 correction pass**: an independent audit of the
+original (Phase 21B.4.8) sweep found it missed relevant primary
+sources (Qwen3.8-Flash-Next, Mistral Small 4) and mischaracterized two
+license situations. Those corrections are folded into the relevant
+entries below rather than kept as a separate errata section, with each
+correction flagged inline.
+
 ## Candidates investigated
 
 ### DeepSeek V4.1-Flash
@@ -60,7 +67,7 @@ requirement to distinguish the two.
 - Organization: MiniMax
 - Release date: 2026-06-01
 - Exact repository: `MiniMaxAI/MiniMax-M3` (Hugging Face)
-- License: **CONFLICTING sources** — one source says a custom "minimax-community" license on Hugging Face, another says MIT. NOT RESOLVED this phase; must be checked directly against the HF repo's license file before any commercial-posture decision.
+- License: **CUSTOM LICENSE — REQUIRES TERMS REVIEW.** Phase 21B.4.8.1 correction: the official Hugging Face repository metadata identifies `License: minimax-community`. The earlier MIT claim found in one secondary source is NOT authoritative and is dropped — MIT is not listed as an equally valid alternative. No commercial-posture decision may be made until the actual `minimax-community` license terms are read and reviewed.
 - Total parameters: 428B
 - Active parameters: ~23B
 - Architecture: MoE with "MiniMax Sparse Attention" (MSA) — grouped-query attention variant claimed to cut per-token compute at 1M context to ~1/20 of the prior generation
@@ -71,11 +78,60 @@ requirement to distinguish the two.
 - Of the "true frontier" (100B+ total) tier researched, this is the SMALLEST by total parameters (428B), making it the most plausible frontier-tier candidate to eventually touch with limited compute — still requires ~3x80GB GPUs at INT4 for weight storage alone (see Compute Matrix doc)
 
 ### Qwen3.8 family (Alibaba)
-- Qwen3.8-Max (2.4T-A95B): previewed 2026-07-19, launched 2026-08-03, open weights released 2026-08-12/13 — **the first Max-scale Qwen model to have weights released at all**. 2.4T total parameters, 95B active, hybrid attention, 92 layers, 512 experts (10 routed + 1 shared per token). License: **custom "qwen3.8-max" license**, NOT Apache 2.0 — imposes additional authorization thresholds for hyperscale commercial/MaaS use (a real licensing regression vs. earlier Qwen generations).
-- Qwen3.8-27B: dense (not MoE), multimodal, **27B parameters, Apache 2.0 license** — by far the smallest, most permissively-licensed, most immediately deployable model surfaced in this entire research pass. Fits on a single 80GB GPU at bf16 (~54GB weights) with room for KV cache and activations.
-- Qwen3.8-Flash-Next: also found in search results (6B active parameters) — not deeply investigated this phase, flagged for follow-up.
+
+**Phase 21B.4.8.1 identity correction**: `Qwen/Qwen3.8-2.4T-A95B` (the
+open-weight Hugging Face artifact, what ORNEUR could actually download
+and run) and `qwen3.8-max` (Alibaba's managed API/product name for the
+same underlying model family) are distinguished explicitly below.
+Any feature or behavior claimed only for the managed API product is
+NOT assumed to be a property of the open-weight checkpoint unless the
+open-weight model card itself states it.
+
+- **Qwen3.8-Max / `Qwen/Qwen3.8-2.4T-A95B`** (open-weight artifact):
+  previewed 2026-07-19, launched 2026-08-03, open weights released
+  2026-08-12/13 — the first Max-scale Qwen model to have weights
+  released at all. 2.4T total parameters, 95B active, hybrid
+  attention, 92 layers, 512 experts (10 routed + 1 shared per token).
+  License: custom `qwen3.8-max` license, NOT Apache 2.0 — imposes
+  additional authorization thresholds for hyperscale commercial/MaaS
+  use (a real licensing regression vs. earlier Qwen generations).
+- **Qwen3.8-27B**: dense (not MoE), multimodal, 27B parameters,
+  Apache 2.0 license — by far the smallest, most permissively-
+  licensed, most immediately deployable model surfaced in this entire
+  research pass. Fits on a single 80GB GPU at bf16 (~54GB weights)
+  with room for KV cache and activations.
+- **Qwen3.8-Flash-Next** (`Qwen/Qwen3.8-Flash-Next`, added Phase
+  21B.4.8.1 per audit): released 2026-08-26, an experimental preview
+  of the architecture underpinning the future Qwen4 line. Core sparse
+  MoE: 125B total / 6B active (512 experts, 10 routed + 1 shared),
+  PLUS a 51B-parameter n-gram embedding component and a 4B-parameter
+  MTP (multi-token-prediction) layer — Hugging Face's own aggregate
+  model-size metadata reports figures up to ~177-180B when all
+  components are counted together, which must not be confused with
+  the 125B/6B core architectural MoE figure. License: `qwen-community-1.0`
+  — free to use/deploy commercially, but products exceeding 100M MAU
+  or $20M monthly revenue must display model-name attribution, and
+  Model-as-a-Service/AI-Work-Assistant businesses face additional
+  restrictions (materially more permissive than `qwen3.8-max`'s
+  license, but still not unrestricted Apache 2.0). Compatible with HF
+  Transformers, vLLM, SGLang per its own model card.
+- Independent evidence: NONE gathered this phase for any Qwen3.8 family member
+- Correction to the phase's own earlier-generation assumption: Qwen3-235B is clearly no longer Alibaba's flagship; the family has moved through 3.5 (Feb 2026, 397B, Apache 2.0) → 3.6 (Apr 2026, includes a 35B MoE open-weight variant, Apache 2.0) → 3.8 (Aug 2026, 2.4T flagship + 27B dense sibling + Flash-Next preview, mixed licensing)
+
+### Mistral Small 4 (added Phase 21B.4.8.1 per audit)
+- Organization: Mistral AI
+- Release date: 2026-03-16
+- Exact repository: `mistralai/Mistral-Small-4-119B-2603` (Hugging Face; an NVFP4-quantized sibling `mistralai/Mistral-Small-4-119B-2603-NVFP4` also exists)
+- License: Apache 2.0
+- Total parameters: 119B
+- Active parameters: 6B
+- Architecture: sparse MoE
+- Context: 256K
+- Multimodal: yes — accepts text and image input, text output
+- Reasoning/instruct modes: unifies capabilities Mistral previously shipped as separate models (Magistral for reasoning, Pixtral for multimodal, Devstral for agentic coding) into one model, per vendor description
+- Coding/agentic: includes function-calling support (vendor description); no independent benchmark gathered
 - Independent evidence: NONE gathered this phase
-- Correction to the phase's own earlier-generation assumption: Qwen3-235B is clearly no longer Alibaba's flagship; the family has moved through 3.5 (Feb 2026, 397B, Apache 2.0) → 3.6 (Apr 2026, includes a 35B MoE open-weight variant, Apache 2.0) → 3.8 (Aug 2026, 2.4T flagship + 27B dense sibling, mixed licensing)
+- Significance for Genesis: alongside Qwen3.8-27B, this is one of the two cleanest-licensed, most concretely deployable candidates found across both research passes — smaller weight-storage footprint than the 400B+ "true frontier" tier while still MoE-architected and multimodal. Must be considered in the deployable Genesis candidate pool (spec section 13's explicit requirement).
 
 ### Kimi K3 (Moonshot AI)
 - Organization: Moonshot AI
