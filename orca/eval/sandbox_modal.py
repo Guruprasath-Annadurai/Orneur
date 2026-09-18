@@ -49,12 +49,27 @@ from orca.eval.sandbox_docker import (
 MODAL_SANDBOX_CONTRACT_VERSION = "modal-v1"
 MODAL_SANDBOX_IMAGE_TAG = "python:3.11-slim"
 
+# Live-verified Phase 21B.4.7A: Modal rejects a Sandbox `timeout` outside
+# [10, 86400] seconds with InvalidError("Timeout must be between 10s and
+# 86400s (inclusive)."). DEFAULT_TIMEOUT_SECONDS=8.0 (+2s grace margin =
+# 10, exactly the minimum) happens to be fine on its own, but any caller
+# requesting a shorter timeout_seconds (e.g. 5.0, tested live) produced an
+# unusable value -- another genuine bug found and fixed via live
+# adversarial testing, not a hypothetical.
+MODAL_MIN_TIMEOUT_SECONDS = 10
 DEFAULT_TIMEOUT_SECONDS = 8.0
 DEFAULT_IDLE_TIMEOUT_SECONDS = 10
 DEFAULT_CPU_LIMIT = 1.0        # fractional CPU cores, hard limit
 DEFAULT_CPU_REQUEST = 0.125    # Modal's own documented minimum request per container
 DEFAULT_MEMORY_LIMIT_MIB = 256
-DEFAULT_MEMORY_REQUEST_MIB = 64
+# Live-verified Phase 21B.4.7A against a real Modal Sandbox: Modal rejects
+# memory requests below 128 MiB with InvalidError("Function memory request
+# out of bounds. Must be between 128 and 344064 MiB."). The original 64
+# MiB default was never live-tested and would have failed closed on every
+# real invocation -- this is a genuine bug found and fixed via live
+# adversarial testing, not a hypothetical. See tests/test_sandbox_modal.py's
+# test_memory_request_never_goes_below_modal_minimum for the regression test.
+DEFAULT_MEMORY_REQUEST_MIB = 128
 
 
 @dataclass(frozen=True)
@@ -167,10 +182,17 @@ def run_sandboxed_modal(
             "token/profile is configured) -- refusing to fall back to a weaker "
             "execution path for untrusted candidate-generated code."
         )
+    if memory_limit_mib < DEFAULT_MEMORY_REQUEST_MIB:
+        raise SandboxBackendUnavailable(
+            f"memory_limit_mib={memory_limit_mib} is below Modal's documented minimum "
+            f"request of {DEFAULT_MEMORY_REQUEST_MIB} MiB -- refusing to attempt sandbox "
+            "creation with a request/limit pair Modal will reject (fail closed with a "
+            "clear reason, rather than an opaque provider InvalidError)."
+        )
 
     child_script = _build_child_script(candidate_code, fn_name, args)
     create_kwargs = dict(
-        timeout=int(timeout_seconds) + 2,
+        timeout=max(MODAL_MIN_TIMEOUT_SECONDS, int(timeout_seconds) + 2),
         idle_timeout=idle_timeout_seconds,
         cpu=(DEFAULT_CPU_REQUEST, float(cpu_limit)),
         memory=(DEFAULT_MEMORY_REQUEST_MIB, int(memory_limit_mib)),

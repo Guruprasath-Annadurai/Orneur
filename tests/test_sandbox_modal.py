@@ -90,11 +90,36 @@ def test_run_requests_hard_memory_limit():
     assert captured["kwargs"]["memory"] == (DEFAULT_MEMORY_REQUEST_MIB, 512)
 
 
+def test_memory_request_never_goes_below_modal_minimum():
+    # Live-verified Phase 21B.4.7A: Modal rejects memory requests below
+    # 128 MiB with InvalidError("Function memory request out of bounds.
+    # Must be between 128 and 344064 MiB."). The default MUST be >= 128,
+    # and a caller passing a limit below that must fail closed with a
+    # clear ORNEUR-level error, not an opaque provider exception.
+    assert DEFAULT_MEMORY_REQUEST_MIB >= 128
+    with pytest.raises(SandboxBackendUnavailable):
+        run_sandboxed_modal("def f():\n return 1", "f", (), memory_limit_mib=64, sandbox_factory=lambda *a, **k: None)
+
+
 def test_run_requests_bounded_timeout_and_idle_timeout():
     factory, captured = _ok_factory()
-    run_sandboxed_modal("def f():\n return 1", "f", (), sandbox_factory=factory, timeout_seconds=5.0)
-    assert captured["kwargs"]["timeout"] == 7  # +2s grace margin
+    run_sandboxed_modal("def f():\n return 1", "f", (), sandbox_factory=factory, timeout_seconds=20.0)
+    assert captured["kwargs"]["timeout"] == 22  # +2s grace margin, above Modal's 10s minimum
     assert captured["kwargs"]["idle_timeout"] == pytest.approx(10, abs=0)
+
+
+def test_timeout_never_goes_below_modal_minimum():
+    # Live-verified Phase 21B.4.7A: Modal rejects a Sandbox `timeout`
+    # below 10 seconds with InvalidError("Timeout must be between 10s
+    # and 86400s (inclusive)."). A caller requesting a short
+    # timeout_seconds (e.g. 5.0, the exact value that failed live) must
+    # still produce a valid, clamped `timeout` kwarg, not an unusable one.
+    from orca.eval.sandbox_modal import MODAL_MIN_TIMEOUT_SECONDS
+
+    factory, captured = _ok_factory()
+    run_sandboxed_modal("def f():\n return 1", "f", (), sandbox_factory=factory, timeout_seconds=5.0)
+    assert captured["kwargs"]["timeout"] == MODAL_MIN_TIMEOUT_SECONDS
+    assert captured["kwargs"]["timeout"] >= MODAL_MIN_TIMEOUT_SECONDS
 
 
 def test_run_injects_no_secrets():
@@ -179,7 +204,12 @@ def test_output_over_limit_is_truncated_and_flagged():
     assert result.output_truncated is True
 
 
-def test_provider_error_without_factory_and_no_modal_installed_fails_closed():
+def test_provider_error_without_factory_and_no_modal_installed_fails_closed(monkeypatch):
+    # Explicitly controls is_modal_available() rather than relying on the
+    # ambient environment -- a dev machine that happens to have `modal`
+    # installed and authenticated (e.g. for live Phase 21B.4.7A testing)
+    # must not make this test pass for the wrong reason.
+    monkeypatch.setattr("orca.eval.sandbox_modal.is_modal_available", lambda: False)
     with pytest.raises(SandboxBackendUnavailable):
         run_sandboxed_modal("def f():\n return 1", "f", ())
 
