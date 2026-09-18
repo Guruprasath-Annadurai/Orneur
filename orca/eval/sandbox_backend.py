@@ -74,6 +74,39 @@ class DockerSandboxBackend:
         return current_docker_contract()
 
 
+class ModalSandboxBackend:
+    """Phase 21B.4.6 -- a second SandboxBackend implementation, backed
+    by Modal Sandboxes (gVisor-isolated) instead of Docker. Its adapter
+    correctness (does it REQUEST the right security parameters --
+    block_network=True, hard CPU/memory limits, a bounded timeout, no
+    secrets, no volumes) is covered by tests/test_sandbox_modal.py's
+    mocked-API-boundary tests. That is NOT the same as Modal's live
+    security boundary being independently verified the way Docker's
+    was in Phase 21B.4.1 (live reproduction of the exact filesystem/
+    network/ctypes escape classes against a REAL running sandbox) --
+    no such live re-verification has been performed as of this class's
+    creation. `get_default_backend()` below deliberately still returns
+    DockerSandboxBackend, not this class."""
+
+    def run(self, candidate_code: str, fn_name: str, args: tuple, *, timeout_seconds: float | None = None) -> DockerSandboxResult:
+        from orca.eval.sandbox_modal import DEFAULT_TIMEOUT_SECONDS, run_sandboxed_modal
+
+        kwargs: dict[str, Any] = {}
+        if timeout_seconds is not None:
+            kwargs["timeout_seconds"] = timeout_seconds
+        return run_sandboxed_modal(candidate_code, fn_name, args, **kwargs)
+
+    def contract(self) -> SandboxContract:
+        raise NotImplementedError(
+            "ModalSandboxBackend.contract() intentionally does not return an "
+            "orca.eval.sandbox_contract.SandboxContract -- Modal's isolation "
+            "parameters don't map 1:1 onto Docker's contract shape (e.g. no "
+            "--cap-drop/--security-opt equivalent; gVisor is a structurally "
+            "different mechanism). Use orca.eval.sandbox_modal.current_modal_contract() "
+            "for Modal's own equivalent, versioned contract record instead."
+        )
+
+
 def get_default_backend() -> SandboxBackend:
     """The backend genesis_suite.py uses when none is explicitly
     injected -- Docker today. Changing this default to a different
@@ -85,6 +118,7 @@ def get_default_backend() -> SandboxBackend:
 __all__ = [
     "SandboxBackend",
     "DockerSandboxBackend",
+    "ModalSandboxBackend",
     "SandboxBackendUnavailable",
     "get_default_backend",
 ]
