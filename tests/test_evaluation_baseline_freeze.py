@@ -26,6 +26,7 @@ from orca.eval.generation_artifact import (
     GENERATION_ARTIFACT_SCHEMA_VERSION,
     GenerationArtifactManifest,
     load_and_verify_generation_artifact,
+    persist_raw_response,
     read_sealed_generation_artifact,
     write_sealed_generation_artifact,
 )
@@ -60,17 +61,40 @@ def _seal_matching_artifact(result: EvaluationResultManifest, tasks: list[EvalTa
     tests (which are not specifically about provenance) can exercise
     record_baseline_and_freeze_suite()'s now-mandatory real-provenance
     gate (Phase 21B.4.8.3) without needing a full DryRunAdapter pipeline.
-    `records` is left empty: baseline-level re-verification
-    (_validate_result_generation_provenance) only checks manifest
-    IDENTITY fields against the result's own recorded fields, never
-    per-task record content (that was already verified at SCORING time
-    by score_verified_generation_artifact()). Returns the bundle digest."""
+    `records` is built to match `tasks` exactly (Phase 21B.4.10: the
+    mandatory pre-freeze raw-evidence gate now re-runs
+    verify_against_suite() AND independently re-verifies each
+    successful record's raw-response file at finalization time, so an
+    empty/fabricated records list -- sufficient before that gate existed
+    -- would now correctly be rejected as incomplete). Each task with a
+    per_task_results entry gets a real persisted raw response (content
+    doesn't matter -- baseline-level checks are structural, not content-
+    aware); each task with a generation_failures entry gets an explicit
+    error record. Returns the bundle digest."""
     import hashlib
     import json
 
     generation_config_digest = "sha256:" + hashlib.sha256(
         json.dumps(result.inference_config, sort_keys=True).encode("utf-8")
     ).hexdigest()
+
+    failed_task_ids = {e["task_id"] for e in result.generation_failures}
+    records = []
+    for t in tasks:
+        if t.task_id in failed_task_ids:
+            records.append({
+                "task_id": t.task_id, "category": t.category, "scoring_type": t.scoring_type,
+                "text_sha256": None, "byte_length": None, "error": "simulated backend failure",
+                "latency_ms": 1.0, "raw_response_ref": None,
+            })
+            continue
+        ref, digest, length = persist_raw_response(result.run_id, t.task_id, f"fixture response for {t.task_id}")
+        records.append({
+            "task_id": t.task_id, "category": t.category, "scoring_type": t.scoring_type,
+            "text_sha256": digest, "byte_length": length, "error": None,
+            "latency_ms": 1.0, "raw_response_ref": ref,
+        })
+
     manifest = GenerationArtifactManifest(
         schema_version=GENERATION_ARTIFACT_SCHEMA_VERSION,
         run_id=result.run_id, candidate=result.candidate,
@@ -80,7 +104,7 @@ def _seal_matching_artifact(result: EvaluationResultManifest, tasks: list[EvalTa
         suite_content_digest=result.suite_content_digest, suite_scoring_contract_digest=result.suite_scoring_contract_digest,
         generation_config_digest=generation_config_digest,
         system_instruction_digest=result.system_instruction_digest,
-        expected_task_ids=tuple(t.task_id for t in tasks), records=(),
+        expected_task_ids=tuple(t.task_id for t in tasks), records=tuple(records),
         software_commit_sha=result.software_commit_sha, backend=result.backend,
         hardware=dict(result.hardware), created_at=result.started_at,
     )
