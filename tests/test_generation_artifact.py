@@ -11,6 +11,7 @@ from orca.eval.generation_artifact import (
     GenerationArtifactIdentityMismatchError,
     GenerationArtifactIntegrityError,
     GenerationArtifactManifest,
+    VerifiedGenerationArtifact,
     load_and_verify_generation_artifact,
     persist_raw_response,
     read_and_verify_raw_response,
@@ -30,6 +31,7 @@ from orca.eval.runner import (
     run_generation_phase,
     run_remote_generation_phase,
     run_scoring_phase_from_artifact,
+    score_verified_generation_artifact,
 )
 
 
@@ -361,13 +363,15 @@ def test_full_cross_machine_simulation_different_filesystem_roots(tmp_path, monk
     # the point under test is that the manifest transfer itself required
     # nothing but `serialized` bytes plus the independently-retained
     # digest, and required zero knowledge of any generation-worker path.
-    restored = load_and_verify_generation_artifact(serialized, digest)
-    result, scored_task_ids = run_scoring_phase_from_artifact(
-        restored, config, tasks, suite_id="genesis-eval-test", suite_version="v1",
+    verified = load_and_verify_generation_artifact(serialized, digest)
+    result, scored_task_ids = score_verified_generation_artifact(
+        verified, config, tasks, suite_id="genesis-eval-test", suite_version="v1",
         content_digest="x", scoring_digest="y", started_at="2026-09-19T00:00:00Z",
     )
     assert len(result.per_task_results) == len(tasks)
     assert scored_task_ids
+    assert result.provenance_kind == "real_generation_artifact"
+    assert result.generation_artifact_digest == digest
 
 
 # ── Phase 21B.4.8.2 Blocker 2: identity binding ──────────────────────────
@@ -557,8 +561,28 @@ def test_seal_and_load_verify_round_trip():
     config = _candidate_config()
     manifest = _sealed_manifest_for_scoring(tasks, config, run_id="seal-round-trip")
     serialized, digest = seal_generation_artifact(manifest)
-    restored = load_and_verify_generation_artifact(serialized, digest)
-    assert restored.bundle_digest() == manifest.bundle_digest()
+    verified = load_and_verify_generation_artifact(serialized, digest)
+    assert verified.bundle_digest == digest
+    assert verified.schema_version == manifest.schema_version
+    assert verified.manifest.bundle_digest() == manifest.bundle_digest()
+
+
+def test_load_and_verify_generation_artifact_returns_a_verified_receipt_not_a_bare_manifest():
+    """The receipt type itself (Phase 21B.4.8.3 section 5) -- not a
+    GenerationArtifactManifest, and not directly constructible by a
+    caller without going through load_and_verify_generation_artifact()."""
+    tasks = _tasks()
+    config = _candidate_config()
+    manifest = _sealed_manifest_for_scoring(tasks, config, run_id="seal-receipt-type")
+    serialized, digest = seal_generation_artifact(manifest)
+    verified = load_and_verify_generation_artifact(serialized, digest)
+    assert isinstance(verified, VerifiedGenerationArtifact)
+    assert not isinstance(verified, GenerationArtifactManifest)
+    with pytest.raises(TypeError, match="load_and_verify_generation_artifact"):
+        VerifiedGenerationArtifact(
+            manifest=manifest, bundle_digest=digest, schema_version=manifest.schema_version,
+            verified_at="2026-09-19T00:00:00Z", proof="not a real proof",
+        )
 
 
 def test_write_and_read_sealed_generation_artifact_round_trip():
@@ -570,8 +594,8 @@ def test_write_and_read_sealed_generation_artifact_round_trip():
     assert digest_path.exists()
     serialized, expected_digest = read_sealed_generation_artifact("seal-write-read")
     assert expected_digest == digest
-    restored = load_and_verify_generation_artifact(serialized, expected_digest)
-    assert restored.run_id == manifest.run_id
+    verified = load_and_verify_generation_artifact(serialized, expected_digest)
+    assert verified.manifest.run_id == manifest.run_id
 
 
 def test_attack_13_bundle_json_altered_after_sealing_is_rejected():
