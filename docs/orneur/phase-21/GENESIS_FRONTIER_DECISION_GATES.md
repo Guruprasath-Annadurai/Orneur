@@ -102,61 +102,175 @@ candidates, never a substitute for capability evidence.
 
 ---
 
+## Frontier reference set (registered BEFORE any candidate result exists)
+
+Phase 21B.4.9.1 closes a gap the prior phase left implicit: the set of
+frontier references a candidate is compared against must be REGISTERED
+— fixed in writing — before execution, not assembled or pruned after
+seeing which references make a candidate look better or worse.
+
+**Registered set** (from `GENESIS_FRONTIER_MODEL_LANDSCAPE_2026_09.md`):
+DeepSeek V4.1-Flash, GLM-5.3 (the current flagship — GLM-5.2 is retained
+as a secondary/legacy reference, not required for the primary median
+computation, since carrying both current and prior flagship versions in
+one median would double-count the same lineage), Mistral Large 3,
+MiniMax M3, Qwen3.8-Max (the managed-API flagship reference — distinct
+from the open-weight `Qwen/Qwen3.8-2.4T-A95B` artifact, per
+`GENESIS_FRONTIER_HOLDOUT_SPEC.md`'s mutable-API-model policy), Kimi K3.
+**Six primary references.**
+
+**Eligibility criteria for inclusion** (checked once, at registration,
+not re-litigated per category or per candidate):
+1. Identity is sufficiently recordable (exact revision for open weights;
+   provider model ID + full response metadata + call timestamp for a
+   mutable API, per the existing mutable-API-model policy).
+2. Can be evaluated under the required protocol (common-core config at
+   minimum; reasoning-track and extension runs where the reference
+   supports them).
+3. Access is legally/permissibly available (the reference's own terms
+   permit ORNEUR evaluating it for this purpose).
+4. Evaluation can occur without violating the ₹0 owner-cash constraint
+   (`GENESIS_FRONTIER_COST_PLAN.md` §"Hosted reference cost").
+
+**Once registered for a benchmark version, the set does not change**
+merely because a change would move the frontier threshold. If a
+registered reference becomes unavailable at execution time (API
+discontinued, access revoked, cost constraint newly violated), it is
+recorded as `REFERENCE_UNAVAILABLE` and the pre-declared fallback rule
+applies: **exclude it from the median computation for the affected
+categories only**, computing the median over the remaining available
+references, and flag the report noting the reduced reference-set size
+for that category. A missing reference is never silently replaced with
+a different model chosen after the fact.
+
+## Frontier comparator (LOCKED — one primary, one secondary)
+
+Phase 21B.4.9's documents alternated between "strongest available
+frontier reference" and "frontier-reference median" without picking
+one as primary — closed here:
+
+- **PRIMARY comparator: FRONTIER REFERENCE MEDIAN.** For each paired-
+  bootstrap resample (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5.2), each
+  registered reference's category score is computed over the resampled
+  task IDs, and the MEDIAN across all currently-available references is
+  used as the comparator score for that resample. With the six-reference
+  registered set (an even count), the median is the mean of the 3rd and
+  4th order statistics; with a reduced set (after a `REFERENCE_UNAVAILABLE`
+  exclusion), the median is recomputed over whatever count remains,
+  using the standard definition for that count.
+- **SECONDARY ceiling report: STRONGEST REFERENCE.** The candidate's gap
+  to the single strongest-scoring registered reference (per category, per
+  resample) is also computed and reported (this is exactly the
+  `delta_best_reference` guard below) — but this is a SANITY CHECK, never
+  a swap-in replacement for the median as primary comparator depending on
+  which makes a candidate look better. The primary/secondary designation
+  itself does not change per category or per candidate.
+
 ## Frontier gap metric
 
 **Question:** how much capability does a deployable candidate (class B)
-lose relative to the strongest available frontier reference (class A),
-category by category?
+lose relative to the frontier reference set (class A), category by
+category?
 
-- Computed per-category, never as one blended "gap score" — a
-  candidate might have near-zero gap on reasoning but a large gap on
-  agentic planning, and collapsing that into one number would hide
-  exactly the information the teacher/student decision needs.
+- Computed per-category via the paired-bootstrap framework
+  (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5.2), `D = candidate_score -
+  frontier_median_score`, never as one blended "gap score" — a candidate
+  might have near-zero gap on reasoning but a large gap on agentic
+  planning, and collapsing that into one number would hide exactly the
+  information the teacher/student decision needs.
 - Reported categories at minimum: reasoning gap, coding gap, agentic
   gap, architecture gap, verification gap (mirroring the capability
-  dimensions in §A).
-- **"Material" gap definition (locked before execution, not adjustable
-  after seeing results):** a gap is material if the deployable
-  candidate's category score falls outside the frontier reference's
-  confidence interval (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5) on a
-  CRITICAL category (defined as: reasoning, coding, tool/agent
-  planning, verification, and authority/security — the same categories
-  §A calls out as capability-critical). A gap on a non-critical category
-  is recorded but does not, by itself, block a "frontier-class"
-  determination.
-- **Frontier-class cannot be claimed while a material gap remains open**
-  on any critical category — this is stated explicitly so no execution
-  report can quietly round a real gap down to "comparable."
+  dimensions in §A), each against BOTH the median (primary) and the
+  strongest reference (secondary ceiling report).
+- **"Material" gap definition (LOCKED, `delta_frontier = 0.08`):** on a
+  CRITICAL category (reasoning, coding, tool/agent planning,
+  verification, authority/security — the same categories §A calls out
+  as capability-critical), the gap is:
+  - **NON-INFERIOR** if the lower bound of the 95% CI for `D` is
+    `≥ -0.08`;
+  - **MATERIAL** if the upper bound of the CI is `< -0.08`;
+  - **INCONCLUSIVE** otherwise — and INCONCLUSIVE is never treated as
+    non-inferior (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5.3).
+  A gap on a non-critical category is recorded but does not, by itself,
+  block a "frontier-class" determination.
+- **Frontier-class cannot be claimed while a material OR inconclusive
+  gap remains open** on any critical category — this is stated
+  explicitly so no execution report can quietly round a real or
+  unresolved gap down to "comparable."
 
-## Frontier-class threshold (locked before execution)
+## Best-reference ceiling guard (LOCKED, `delta_best_reference = 0.20`)
+
+The frontier median protects against one anomalously strong reference
+skewing the primary comparator upward, but Genesis must also not be
+dramatically behind the ACTUAL capability ceiling merely because the
+median (averaging in weaker references) is more forgiving. For every
+critical category, using the same paired-bootstrap framework against
+the SECONDARY (strongest-reference) comparator:
+
+- If the upper bound of the 95% CI for `D = candidate_score -
+  strongest_reference_score` is `< -0.20`, the candidate is flagged
+  **DRAMATICALLY BEHIND CEILING** on that category — this flag stands
+  independently of whether the candidate passed the primary median-based
+  non-inferiority check, and a candidate carrying this flag on any
+  critical category **cannot** be called frontier-class regardless of
+  its median-based result. This closes the specific failure mode the
+  audit identified: a candidate must not be labeled frontier-class
+  merely because the reference median happened to be pulled down by
+  weaker references in the registered set.
+
+## Control superiority (LOCKED — replaces the prior CI-overlap check)
+
+**Control comparator (choose one, registered before execution):
+STRONGEST QUALIFIED CONTROL** — of Qwen3-8B, Mistral-Nemo-Instruct-2407,
+and Phi-4, the one scoring highest on each critical category (computed
+per-resample, same as the frontier median/strongest-reference
+comparators) is used as that category's control comparator. This is
+chosen over a control median specifically because "substantially beats
+controls" should mean "beats the best of what ORNEUR already has
+working experience with," not merely "beats an average that a weak
+control could pull down."
+
+Using the §5.2 paired-bootstrap framework, `D = candidate_score -
+strongest_control_score`, per critical category:
+
+- **SUBSTANTIALLY SUPERIOR** (satisfies condition 3 of the frontier-
+  class threshold below) if the lower bound of the 95% CI for `D` is
+  `≥ delta_control_superiority = 0.10`.
+- Otherwise (bound below 0.10, including the CI straddling 0.10) — the
+  condition is **NOT** satisfied; there is no separate INCONCLUSIVE
+  state here because control superiority is itself one of five AND-ed
+  conditions below, and an unresolved condition simply means the overall
+  threshold is not met.
+
+## Frontier-class threshold (LOCKED before execution)
 
 A candidate/strategy may be called **FRONTIER-CLASS FOR GENESIS** only
-if ALL of the following hold. This is evidence-based, not marketing
-language — no candidate is called frontier-class merely because a
-vendor's own materials use the word.
+if ALL of the following hold, evaluated at CATEGORY granularity for
+#1-#3. This is evidence-based, not marketing language — no candidate is
+called frontier-class merely because a vendor's own materials use the
+word, and **INCONCLUSIVE never resolves in the candidate's favor**.
 
-1. **No severe weakness** in any critical Genesis category (§A) — a
-   "severe weakness" is defined as a category score falling within the
-   CONTROL band's confidence interval (i.e., not meaningfully better
-   than Qwen3-8B/Mistral-Nemo/Phi-4) on a critical category.
-2. **Within the pre-defined margin** of the frontier reference median
-   (across all available class-A references for that category) on every
-   critical category — "the margin" is the same material-gap threshold
-   defined above (outside the reference confidence interval = material
-   = threshold failed).
-3. **Beats control baselines by a substantial margin** — defined as: the
-   candidate's confidence interval on a critical category does not
-   overlap the control band's confidence interval on that category.
+1. **No severe weakness** in any critical Genesis category — a "severe
+   weakness" is defined as: the candidate does NOT satisfy the control-
+   superiority condition (above) on that category, i.e. its lower CI
+   bound over the strongest control fails to clear `+0.10`.
+2. **Non-inferior to the frontier reference median** (per the "Frontier
+   gap metric" above) on every critical category, AND not flagged
+   `DRAMATICALLY BEHIND CEILING` by the best-reference guard on any
+   critical category.
+3. **Substantially beats controls** — satisfies the control-superiority
+   condition above on every critical category.
 4. **Passes all hard gates** (§C.hard-gates below) — zero exceptions,
    zero compensation from other categories.
-5. **Meets robustness requirements** — stable performance across the
-   repeat-run policy (`GENESIS_FRONTIER_EXECUTION_PLAN.md` §26); a
-   candidate whose score swings wildly across repeated runs at the same
-   configuration has not demonstrated frontier-class reliability even if
-   its best run looks frontier-class.
+5. **Meets robustness requirements** — no task in the repeat/stability
+   calibration subset is marked `UNSTABLE`
+   (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §8.4) on any critical
+   category; a candidate whose score swings beyond the locked stability
+   threshold across repeated runs at the same configuration has not
+   demonstrated frontier-class reliability even if its best run looks
+   frontier-class.
 
-All five conditions are checked at CATEGORY granularity for #1-#3 — a
-candidate can be frontier-class on some categories and not others, and
+A candidate can be frontier-class on some categories and not others, and
 the execution report states this explicitly rather than resolving it
 into one pass/fail label prematurely. Only when a specific FOUNDATION
 STRATEGY decision is made (a future, separately authorized step) does a

@@ -1,5 +1,67 @@
 # Genesis Frontier — Next Gate
 
+## Phase 21B.4.9.1 update
+
+An independent audit of Phase 21B.4.9 accepted the overall framework
+(candidate classes, tier separation, hardness bands, categories, judge/
+human architecture, reasoning tracks, quantization rounds, provenance
+requirements, failure taxonomy, 10K-serving separation, no-magic-score
+rule) but found three methodology blockers, all now closed, docs-only:
+
+1. **Cost-based capability elimination removed.** The Stage 3→4 (and
+   Stage 6 promotion) gates no longer let credit availability decide
+   which otherwise-eligible candidates receive the decisive sealed
+   holdout / high-precision revalidation — a new `DEFERRED_FOR_COMPUTE`
+   status replaces silent elimination, matching the owner's doctrine
+   that a ₹0 cash constraint may delay evaluation but must never lower
+   the intelligence standard or eliminate an eligible candidate
+   (`GENESIS_FRONTIER_EXECUTION_PLAN.md` Stage 4/Stage 6, corrected).
+2. **Statistical framework corrected and fully locked.** The frontier
+   gap, control-superiority, tie-region, and quantization-regression
+   checks now use one consistent **paired bootstrap over task IDs**
+   (task as sampling unit, 10,000 resamples, 95% CI) rather than
+   comparing standalone confidence intervals for overlap. A registered,
+   pre-declared **frontier reference set** (six references, primary
+   comparator = frontier-reference median, secondary = strongest
+   reference as a ceiling guard) replaces the ambiguous "strongest
+   reference vs. median" wording. Four numeric margins are now locked,
+   before any candidate result exists: `delta_frontier = 0.08`,
+   `delta_best_reference = 0.20`, `delta_control_superiority = 0.10`,
+   `delta_tie = 0.03`, plus `delta_quantization = 0.05` and a normalized
+   `0.15` judge-disagreement threshold
+   (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5, §3, §8.3;
+   `GENESIS_FRONTIER_DECISION_GATES.md`). A worked (conservative)
+   power calculation and a pragmatic 40-60-task-per-critical-category
+   floor are recorded for future holdout sizing
+   (`GENESIS_FRONTIER_EXECUTION_PLAN.md` §"Sample size / power /
+   resolution planning") — INCONCLUSIVE is locked as never resolving in
+   a candidate's favor, at every one of these checks.
+3. **Compute/cost assumptions corrected.** The prior "deployable
+   candidates fit Modal L4" blanket claim is replaced with a
+   candidate-specific compute/cost envelope: only Qwen3.8-27B (at INT4)
+   fits a single L4; Qwen3.8-Flash-Next, Mistral Small 4, and
+   GLM-5.3-Flash all require multi-GPU at every tabulated precision,
+   consistent with `GENESIS_FRONTIER_COMPUTE_MATRIX.md`'s existing
+   TOTAL-parameter-based weight-storage math
+  (`GENESIS_FRONTIER_COST_PLAN.md` §3).
+
+Also locked this phase: the multimodal scope is TEXT/REASONING-FIRST
+and non-decisional unless the owner explicitly changes this before
+execution (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §6.3); reasoning-track
+selection uses a pre-declared product-intent rule, never "whichever
+track scores highest" (§7); a 3-repeat stability policy with an
+explicit `UNSTABLE`/`INCONCLUSIVE` outcome and a locked best-of-N
+prohibition (§8.4); a hosted-frontier-reference zero-cash rule
+(`GENESIS_FRONTIER_COST_PLAN.md` §5) mirroring the compute-deferral rule
+for GPU-hosted candidates. The Phase 21B.4.9 pre-freeze raw-response
+evidence-preservation finding is restated as a HARD implementation
+prerequisite for Phase 21B.4.10, not optional scope
+(`GENESIS_FRONTIER_EXECUTION_PLAN.md`).
+
+No candidate was downloaded, executed, or ranked this phase; no private
+holdout content was authored; `genesis-eval-v1` remains unexecuted and
+unfrozen; Phase 21C remains unauthorized. Docs-only — no code changed.
+
 ## Phase 21B.4.9 update
 
 The benchmark methodology proposed at the end of Phase 21B.4.8.1 (below)

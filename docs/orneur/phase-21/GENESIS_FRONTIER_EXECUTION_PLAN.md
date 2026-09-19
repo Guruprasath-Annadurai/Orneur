@@ -65,23 +65,59 @@ by design, since it demands genuinely difficult content).
 
 ### Stage 4 — Sealed frontier holdout
 
-**Purpose:** Tier-2 (`genesis-frontier-holdout-v1`) execution — reserved
-for candidates that have demonstrated Stage 2/3 capability worth the
-cost of spending sealed, harder-to-replace holdout tasks on them.
+**Purpose:** Tier-2 (`genesis-frontier-holdout-v1`) execution — the
+decisive frontier-discrimination benchmark for the foundation
+comparison.
 
-**Gate (promotion into this stage):** a candidate proceeds to Stage 4
-only if its Stage 2/3 capability matrix shows it is plausibly
-competitive (not already eliminated by a Stage 0 gate, and not already
-showing a hard-gate failure) — this is a COST-EFFICIENCY promotion rule,
-not a capability judgment; the exact promotion cutoff is set at
-execution time based on how many candidates the credit-aware plan
-(`GENESIS_FRONTIER_COST_PLAN.md`) can actually afford to run through the
-more expensive holdout tier, never by pre-guessing which candidate will
-"win."
+**Gate (promotion into this stage) — CORRECTED, Phase 21B.4.9.1:** an
+independent audit found the prior version of this gate let COST/CREDIT
+availability decide which otherwise-eligible candidates received the
+decisive benchmark — this is removed. The owner's doctrine is explicit:
+a ₹0 cash constraint may DELAY an evaluation; it must never LOWER the
+intelligence standard or ELIMINATE an otherwise-eligible candidate
+merely because credits are temporarily insufficient.
 
-**Elimination:** a candidate not promoted past this gate remains fully
-recorded with its Stage 2/3 evidence — it is not scored on Tier-2 tasks
-it never ran, and no inference is drawn about how it would have
+**New rule:** any deployable Genesis candidate (class B), and any
+registered frontier reference or control required by a registered
+comparator (`GENESIS_FRONTIER_DECISION_GATES.md` §"Frontier reference
+set" / §"Control superiority"), that:
+- passes Stage 0 eligibility,
+- completes valid Stage 1-3 evidence, and
+- has no CONFIRMED hard-gate failure,
+
+**remains eligible** for the sealed Tier-2 frontier holdout — full
+stop. Eligibility is never re-litigated based on how "competitive" the
+Stage 2/3 numbers look; that would reintroduce a capability-based
+elimination at a stage this plan reserves for eligibility/hard-gate
+checks only.
+
+**If credits are insufficient to run every eligible candidate through
+Stage 4 immediately:** the affected candidate's status is recorded as
+`DEFERRED_FOR_COMPUTE` — explicitly **not** `ELIMINATED`,
+`NOT_PROMOTED`, or `TOO_EXPENSIVE`. A `DEFERRED_FOR_COMPUTE` candidate:
+- is never treated as having failed or lost the comparison;
+- is never silently replaced with a weaker/cheaper candidate to fill
+  its slot;
+- resumes Stage 4 execution as soon as additional legitimate zero-cash
+  compute becomes available — next-monthly Modal credits, Race FLOPs/
+  free rewards, Lightning AI credits (once separately qualified —
+  currently `NOT_QUALIFIED`, Phase 21B.4.5), startup/research grants, or
+  any other legitimate ₹0-cash-compliant compute source
+  (`GENESIS_FRONTIER_COST_PLAN.md`).
+- if a registered frontier reference or control cannot receive the
+  required holdout tasks for a comparator computation, THAT COMPARISON
+  is marked `INCOMPLETE — REFERENCE/CONTROL DEFERRED_FOR_COMPUTE` rather
+  than silently computed over a smaller or substitute set, mirroring the
+  `REFERENCE_UNAVAILABLE` handling in `GENESIS_FRONTIER_DECISION_GATES.md`.
+
+**Elimination at this stage now occurs ONLY for:**
+- Stage 0 ineligibility (already excluded before reaching Stage 4), or
+- a hard-gate failure CONFIRMED (not merely suspected) through Stage
+  1-3 evidence and human adjudication where required.
+
+A candidate legitimately eliminated (as opposed to deferred) remains
+fully recorded with its Stage 1-3 evidence — it is not scored on Tier-2
+tasks it never ran, and no inference is drawn about how it would have
 performed there.
 
 ### Stage 5 — Judge / human adjudication
@@ -98,16 +134,37 @@ responses.
 ### Stage 6 — High-precision finalist revalidation
 
 **Purpose:** Round B (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §8.2) —
-the finalist set (candidates that passed Stage 4's promotion gate and
-show no hard-gate failure through Stage 5) is re-run at native/BF16
-precision on the full capability matrix, closing the quantization-
-fairness question before any decision is finalized.
+closing the quantization-fairness question before any decision is
+finalized.
+
+**Promotion into Round B — CORRECTED, Phase 21B.4.9.1:** promotion must
+not depend on cost convenience any more than Stage 4's did. Any
+deployable candidate that is, per `GENESIS_FRONTIER_DECISION_GATES.md`'s
+frontier-class threshold:
+- **frontier-non-inferior** on any critical category, OR
+- **INCONCLUSIVE** relative to the frontier threshold on any critical
+  category (§5.3 of the scoring contract — inconclusive is never
+  resolved downward without more evidence), OR
+- flagged as **potentially harmed by Round-A quantization** (its
+  Round-A precision was NOT CERTIFIED for a critical category per
+  `GENESIS_FRONTIER_SCORING_CONTRACT.md` §8.3),
+
+**must receive Round-B high-precision revalidation before final
+exclusion from foundation consideration.** If credits are insufficient,
+the candidate's Round-B status is `DEFERRED_FOR_COMPUTE` (identical
+semantics to Stage 4's rule) — an inconclusive or quantization-suspect
+result is never resolved downward (treated as a failure) merely because
+verifying it costs more compute.
 
 **Gate:** a finalist whose Round B results diverge materially from its
 Round A results (per the quantization regression test,
 `GENESIS_FRONTIER_SCORING_CONTRACT.md` §8.3) has its Round A results
 marked unreliable and Round B treated as authoritative — this can
-change (never silently ignore) which candidates remain competitive.
+change (never silently ignore) which candidates remain competitive. A
+candidate is only finally excluded from foundation consideration at
+this stage if its Round-B (authoritative) results confirm a material
+gap or a hard-gate failure — never on the strength of a Round-A result
+alone once Round-B was owed to it under the rule above.
 
 ### Stage 7 — Serving / operational characterization
 
@@ -134,18 +191,18 @@ and present it for the owner's foundation-strategy decision. **This
 stage does not itself select a winner** — it produces the package a
 human decision is made from.
 
-## Promotion/elimination summary
+## Promotion/elimination summary (CORRECTED — Phase 21B.4.9.1)
 
-| Stage boundary | Eliminates on | Never eliminates on |
-|---|---|---|
-| 0 → 1 | License/identity/runtime ineligibility | Capability |
-| 1 → 2 | Infrastructure/pipeline failure | Capability |
-| 2 → 3 | (none — informational) | — |
-| 3 → 4 | Cost-efficiency promotion cutoff, or a hard-gate failure already evident | Being merely "not the top scorer" at this point |
-| 4 → 5 | (none — scoring resolution only) | — |
-| 5 → 6 | Hard-gate failure confirmed through human adjudication | Capability score alone |
-| 6 → 7 | Quantization-revealed unreliability (reclassifies evidence, does not by itself eliminate) | — |
-| 7 → 8 | Objectively infeasible serving design | Merely higher infrastructure cost |
+| Stage boundary | Eliminates on | Defers on (never eliminates) | Never eliminates on |
+|---|---|---|---|
+| 0 → 1 | License/identity/runtime ineligibility | — | Capability |
+| 1 → 2 | Infrastructure/pipeline failure | — | Capability |
+| 2 → 3 | (none — informational) | — | — |
+| 3 → 4 | Stage 0 ineligibility already excluded; confirmed hard-gate failure | Insufficient compute (`DEFERRED_FOR_COMPUTE`) | Being merely "not the top scorer," or cost/credit availability |
+| 4 → 5 | (none — scoring resolution only) | — | — |
+| 5 → 6 | Hard-gate failure confirmed through human adjudication | — | Capability score alone |
+| 6 → 7 | Round-B-confirmed material gap or hard-gate failure | Insufficient compute for owed Round-B (`DEFERRED_FOR_COMPUTE`) | An inconclusive or quantization-suspect Round-A result alone, before Round-B it is owed |
+| 7 → 8 | Objectively infeasible serving design | — | Merely higher infrastructure cost |
 
 ## Artifact provenance requirement (applies to every real run, every stage)
 
@@ -218,6 +275,77 @@ at read time if anything ever re-reads it, and no automated process
 currently re-reads it after scoring) but must not be left unaddressed
 before real execution begins.
 
+**Restated as a HARD IMPLEMENTATION PREREQUISITE (Phase 21B.4.9.1):**
+Phase 21B.4.10 (the proposed candidate-execution qualification gate,
+not yet started) MUST implement this check before any real candidate
+execution is permitted to call `record_baseline_and_freeze_suite()`
+against `genesis-eval-v1` or any future suite version. This is not
+optional scope for that phase — it is a precondition, exactly as
+carried forward from Phase 21B.4.9's own finding.
+
+## Sample size / power / resolution planning (LOCKED methodology, no tasks authored)
+
+Before any private holdout task is authored, the methodology must be
+sized to actually support the margins locked in
+`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5.4 — authoring tasks first and
+discovering the suite is underpowered would waste the exact scarce,
+hard-to-replace holdout content this tier exists to protect.
+
+**Worked power calculation (methodology only — no candidate data used):**
+for a paired-difference test at 95% confidence (two-sided,
+`z_{0.025} = 1.96`) and 80% power (`z_{0.20} = 0.84`), detecting an
+effect size `delta` against a conservative WORST-CASE per-task paired-
+difference variance of `sigma_D^2 = 0.25` (the maximum possible variance
+for a `[0,1]`-bounded quantity, achieved when task outcomes are
+maximally uncertain — a deliberately conservative, not optimistic,
+assumption), the standard normal-approximation sample-size formula is:
+
+```
+n ≈ (z_{alpha/2} + z_{beta})^2 * sigma_D^2 / delta^2
+```
+
+For `delta = delta_frontier = 0.08`:
+`n ≈ (1.96 + 0.84)^2 * 0.25 / 0.08^2 = 7.84 * 0.25 / 0.0064 ≈ 306`
+independent paired tasks per critical category, under the conservative
+worst-case variance assumption.
+
+**This conservative figure is presented honestly, not hidden** — a
+306-task-per-critical-category holdout is a large authoring commitment
+the owner has explicitly asked not to rush. In practice, well-
+constructed benchmark tasks (especially deterministic/executable ones)
+typically show LOWER paired-difference variance than the worst-case
+bound, so the real required count is usually smaller — but this
+methodology does not simply assume that without evidence.
+
+**Pragmatic floor (methodology-level guidance, not a discovered fact):**
+target a **minimum of 40-60 independent tasks per critical category** in
+the private holdout as a practical floor, understanding that this floor
+may still leave `delta_frontier`-level questions INCONCLUSIVE for
+categories with higher-than-average task-level variance (e.g.
+judge-scored categories, whose resolved per-task score already
+aggregates two judges' assessments and may carry more inherent
+variance than a deterministic exact-match task). **The methodology does
+NOT reduce `delta_frontier` or `delta_control_superiority` merely
+because the authored suite turns out to be smaller than the power
+calculation calls for** — if the authored holdout lacks sufficient
+statistical resolution for a category, the correct, required outcome is
+`INCONCLUSIVE` for that category, reported honestly, with a
+recommendation for more high-quality evaluation evidence (a larger
+holdout revision, more repeat runs, or both) — never a loosened
+threshold to force a resolvable-looking answer out of underpowered data.
+
+**Binary/pass-fail vs. normalized-rubric scoring** changes the required
+count: a binary category's worst-case variance is exactly the `0.25`
+bound used above (achieved at `p=0.5`); a normalized rubric-scored
+category's variance depends on the rubric's own granularity and is
+generally similar in magnitude for a well-designed multi-point rubric,
+so the same worst-case bound is used uniformly here rather than assuming
+a rubric is automatically lower-variance without evidence.
+
+**No private task content is authored this phase** — this section fixes
+the SIZING METHODOLOGY future task authoring must satisfy, not the tasks
+themselves.
+
 ## Release-date / contamination record (§25)
 
 For every candidate eventually evaluated, the evidence package
@@ -245,22 +373,22 @@ postdates the holdout.
 ## Repeated runs / variance policy (§26)
 
 Temperature-0 sampling does not guarantee bit-for-bit determinism across
-GPU kernels, batching, or distributed inference configurations.
+GPU kernels, batching, or distributed inference configurations. The
+exact numeric repeat policy is now LOCKED in
+`GENESIS_FRONTIER_SCORING_CONTRACT.md` §8.4 (3 repeats, on the same
+calibration subset used for the quantization regression test, with an
+explicit `UNSTABLE`/`INCONCLUSIVE` outcome and a locked prohibition on
+best-of-N absent an explicit matching product-runtime decision) — this
+section restates the policy's role in the execution funnel rather than
+re-deriving it:
 
 - **Deterministic-like settings** (common-core config, temperature 0):
-  verify repeat stability on a fixed, representative subset (the same
-  subset used for the quantization regression test, §8.3 of the scoring
-  contract, reused here for efficiency) by running it at least twice and
-  confirming the pass/fail outcome is stable per task. A task whose
-  outcome flips between repeats is flagged as unstable and excluded from
-  that category's point-estimate calculation until investigated (never
-  silently averaged in as if it were stable).
+  the §8.4 stability check runs on the calibration subset for every
+  candidate at both Round A and Round B; an `UNSTABLE` task is excluded
+  from that category's point-estimate calculation until investigated —
+  never silently averaged in as if it were stable.
 - **Stochastic/reasoning-budget tracks**: the number of samples per task
   is fixed and recorded before execution (not chosen after seeing early
-  results). Best-of-N scoring is **not used** to inflate any candidate's
-  score unless (a) every candidate receives the identical best-of-N
-  protocol, AND (b) best-of-N sampling is an explicit, intended part of
-  ORNEUR's actual product runtime for Genesis (i.e., the product itself
-  will sample N times and select — not merely a benchmark-time trick).
-  Absent both conditions, single-sample scoring is used for every
-  candidate.
+  results), per §8.4's best-of-N prohibition — absent an explicit,
+  matching product-runtime decision applied identically to every
+  candidate, single-sample scoring is used for every candidate.

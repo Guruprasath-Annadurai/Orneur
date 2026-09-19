@@ -38,10 +38,14 @@ intelligence ceiling.
 
 ### A. Frontier reference models (capability ceiling, not necessarily deployable)
 
-From the locked landscape research (`GENESIS_FRONTIER_MODEL_LANDSCAPE_2026_09.md`):
-DeepSeek V4.1-Flash, GLM-5.2/5.3 flagship, Mistral Large 3, MiniMax M3,
-the Qwen3.8 flagship/Max reference, Kimi K3. Role: establish the
-contemporary capability ceiling ORNEUR is being measured against. These
+From the locked landscape research (`GENESIS_FRONTIER_MODEL_LANDSCAPE_2026_09.md`),
+now formally REGISTERED as the frontier reference set
+(`GENESIS_FRONTIER_DECISION_GATES.md` §"Frontier reference set", Phase
+21B.4.9.1): DeepSeek V4.1-Flash, GLM-5.3 (current flagship — GLM-5.2
+retained as a secondary/legacy reference only, not part of the primary
+median), Mistral Large 3, MiniMax M3, Qwen3.8-Max (the managed-API
+flagship reference), Kimi K3. Role: establish the contemporary
+capability ceiling ORNEUR is being measured against. These
 may be evaluated via hosted/managed APIs where loading the full weights
 is infrastructurally irrational (see `GENESIS_FRONTIER_COMPUTE_MATRIX.md`).
 **Reference use does not imply teacher/distillation-rights permission**

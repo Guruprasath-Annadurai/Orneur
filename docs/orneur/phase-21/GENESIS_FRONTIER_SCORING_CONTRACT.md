@@ -92,14 +92,30 @@ specific requirements the owner's spec calls for:
   exact call timestamp, and any provider-exposed version identifier —
   never assumed stable across two calls, matching the mutable-API-model
   policy already established in `GENESIS_FRONTIER_HOLDOUT_SPEC.md`.
-- **Conflict handling**: if the two (or more) judges' scores diverge
-  beyond a defined tolerance, the item escalates to human adjudication
-  rather than being resolved by averaging or majority vote — the exact
-  numeric tolerance is set at judge-selection time (a future, separately
-  authorized step; not fixed by this document, since it depends on the
-  actual rubric scale chosen), but the ESCALATION RULE itself (diverge →
-  escalate, never silently average) is locked now and may not be loosened
-  later.
+- **Conflict handling — LOCKED numeric threshold (Phase 21B.4.9.1)**:
+  every rubric, regardless of its native scale, is normalized to `[0,1]`
+  before any cross-judge comparison (§5.1 below) — this is what makes a
+  single numeric tolerance meaningful across different rubrics/judge
+  models chosen later. An item escalates to human adjudication when
+  **any** of:
+  1. the judges disagree on the item's binary pass/fail classification
+     (where the category has one), OR
+  2. the judges' normalized scores differ by **more than 0.15** (15
+     points on the `[0,1]` scale), OR
+  3. either judge flags a potential hard-gate violation (§4;
+     `GENESIS_FRONTIER_DECISION_GATES.md` §C), regardless of the other
+     judge's score.
+
+  This numeric tolerance (0.15) is chosen now, before any judge model is
+  selected or any candidate is judged, specifically so it cannot be
+  tuned to make a particular candidate's disagreements look smaller.
+  It is deliberately tight relative to the `[0,1]` scale: judge
+  agreement within roughly one rubric-grade-band is expected for a
+  well-specified rubric, so a gap this large signals a genuine rubric-
+  interpretation or capability-assessment disagreement, not ordinary
+  scoring noise. Items resolved by agreement (no escalation) use the
+  mean of the judges' normalized scores as the task's resolved score
+  (§5.1) — never a single judge's score, even when they agree exactly.
 - **Human adjudication threshold**: every category-13
   (capability-expansion reflex) item is human-adjudicated regardless of
   judge agreement — this is a hard-gate category
@@ -127,25 +143,146 @@ that candidate's foundation-eligibility to `FAIL` regardless of its
 aggregate or per-category scores elsewhere, and this fact is reported
 independently of (never blended into) the capability matrix.
 
-## 5. Statistical discipline
+## 5. Statistical contract (LOCKED — Phase 21B.4.9.1)
 
-- **Confidence intervals**: for any suite (Tier-1 or Tier-2) with enough
-  tasks per category to support it, report a bootstrap or exact
-  binomial confidence interval around each category's pass rate, not a
-  bare point estimate.
-- **Minimum meaningful difference**: two candidates' scores are treated
-  as **practically equivalent** ("tie region") if their confidence
-  intervals overlap substantially, or if the point-estimate gap is
-  smaller than what the suite's own sample size could reliably
-  distinguish — a 0.3% difference on a 90-task suite is noise, not
-  signal, and must never be reported as a decisive finding.
-- **No overinterpretation**: a foundation decision may not rest on a
-  difference this small. The exact numeric tie-region threshold per
-  suite size is computed (not assumed) at execution time, using the
-  suite's actual task counts — this document fixes the PRINCIPLE
-  (small differences are noise until shown otherwise), not a single
-  universal number, since the right threshold depends on how many
-  tasks each category actually has.
+Phase 21B.4.9's version of this section left the comparison statistic
+as "confidence intervals overlap/don't overlap," which an independent
+audit correctly identified as statistically insufficient: two
+standalone confidence intervals can overlap while their PAIRED
+difference is still significant (and vice versa, in principle), because
+overlap comparisons ignore the correlation between paired measurements
+on the same tasks. This section replaces that with a single, fully
+specified paired-difference framework used everywhere a comparison is
+made — frontier gap, control superiority, tie/practical-equivalence,
+and quantization regression all use exactly this framework, never a
+bespoke variant.
+
+### 5.1 Sampling unit and score normalization
+
+- **The TASK is the sampling unit** — never a judge call. For
+  judge-required categories, the ≥2 machine judges' normalized scores
+  for a given task are first resolved into ONE task-level score (their
+  mean, when they agree within tolerance per §3; the human
+  adjudicator's resolved score, when they don't) BEFORE that task
+  enters any bootstrap or difference computation. Bootstrapping over
+  individual judge calls as if they were independent tasks would
+  understate the true sampling variance and is explicitly prohibited.
+- **Every category's per-task score is normalized to `[0,1]`** before
+  any cross-category or cross-candidate arithmetic: pass/fail becomes
+  `1.0`/`0.0`; a judge rubric's native scale (whatever it turns out to
+  be once a rubric is finalized) is linearly rescaled to `[0,1]`.
+
+### 5.2 Comparison statistic: paired bootstrap over task IDs
+
+For any category-level comparison between a candidate and a comparator
+(a frontier reference, the frontier-reference median, or a control
+comparator — §"Frontier comparator" and `GENESIS_FRONTIER_DECISION_GATES.md`
+§"Control superiority"), the statistic is:
+
+```
+D = candidate_score - comparator_score   (per task, then aggregated)
+```
+
+computed via **paired bootstrap over task IDs**, exactly as follows:
+
+1. For the category's full set of shared task IDs (tasks both the
+   candidate and the comparator were evaluated on — an unpaired task is
+   excluded from this comparison, never imputed), draw a bootstrap
+   resample of task IDs, WITH replacement, of the same size as the
+   original set.
+2. For that resample, compute the candidate's category score (mean of
+   its normalized per-task scores over the resampled IDs).
+3. Compute the registered comparator's score the same way, over the
+   SAME resampled IDs (this is what makes it "paired" — both scores are
+   always computed from the identical resampled task set, preserving
+   the task-level correlation between candidate and comparator
+   performance).
+4. Store `D = candidate_score - comparator_score` for this resample.
+5. Repeat for **10,000 resamples** (a standard count for stable
+   percentile-bootstrap confidence intervals; fixed now so it cannot be
+   adjusted later to narrow or widen an inconvenient interval).
+6. The 95% confidence interval for `D` is the resample distribution's
+   2.5th and 97.5th percentiles (percentile bootstrap method).
+
+**Confidence level: 95%, two-sided, fixed for every comparison in this
+contract.** Not adjusted per comparison, per category, or after seeing
+results.
+
+### 5.3 Interpreting the interval — never resolve uncertainty in the candidate's favor
+
+Every threshold in this contract (§"Frontier comparator" thresholds,
+control-superiority, tie region, quantization regression) is expressed
+as a check against the paired-difference confidence interval from §5.2,
+using the same three-way outcome pattern:
+
+- **Bound clears the threshold** → the favorable classification applies.
+- **Bound clearly fails the threshold** → the unfavorable classification
+  applies.
+- **Interval straddles the threshold** → **INCONCLUSIVE**, which is
+  NEVER treated as a pass. An inconclusive result blocks a frontier-
+  class, control-superiority, or non-inferiority claim exactly as
+  firmly as a confirmed failure would — the correct response to an
+  inconclusive result is more evidence (see §"Sample size" in
+  `GENESIS_FRONTIER_EXECUTION_PLAN.md`), never a loosened threshold or a
+  favorable default.
+
+### 5.4 Locked numeric margins
+
+All four margins below are `[0,1]`-scale numbers, chosen now — before
+any candidate result exists — from general benchmark-methodology
+convention (typical LLM-evaluation task-level noise and standard
+effect-size practice), not from this project's own candidate data
+(there is none yet). They may not be adjusted after seeing results.
+
+| Margin | Value | Used for | Definition |
+|---|---|---|---|
+| `delta_frontier` | **0.08** | Non-inferiority vs. the frontier-reference median, per critical category | See `GENESIS_FRONTIER_DECISION_GATES.md` §"Frontier gap metric" |
+| `delta_best_reference` | **0.20** | Ceiling guard vs. the single strongest reference, per critical category | See `GENESIS_FRONTIER_DECISION_GATES.md` §"Best-reference ceiling guard" |
+| `delta_control_superiority` | **0.10** | Substantial-improvement-over-controls check, per critical category | See `GENESIS_FRONTIER_DECISION_GATES.md` §"Control superiority" |
+| `delta_tie` | **0.03** | Practical-equivalence region for pairwise finalist comparison | §5.5 below |
+
+**Why these specific values**: `delta_frontier` (8 points) requires
+genuine near-parity with frontier capability, not "roughly similar" —
+tighter than typical reported benchmark noise floors (often 3-5 points
+on well-constructed suites), so a candidate clearing this bound has
+cleared a real bar. `delta_best_reference` (20 points) is deliberately
+looser — it is a sanity-check ceiling guard, not the primary bar, and
+exists only to catch a candidate that is dramatically behind the actual
+capability ceiling even while nominally clearing the (possibly lower)
+median. `delta_control_superiority` (10 points) requires a gap larger
+than `delta_frontier` itself, reflecting that "substantially beats a
+much smaller/weaker control" should be an easier bar to clear than
+"is statistically indistinguishable from frontier capability."
+`delta_tie` (3 points) is deliberately tight — two candidates are only
+called practically equivalent when the difference is small enough that
+no reasonable foundation decision would treat it as a discriminator.
+
+### 5.5 Tie / practical-equivalence classification (locked)
+
+For a pairwise finalist comparison, using the same paired-bootstrap
+framework (§5.2) on the finalists' shared task IDs:
+
+- **PRACTICALLY EQUIVALENT**: the 95% CI for `D` lies **wholly inside**
+  `[-delta_tie, +delta_tie]` = `[-0.03, +0.03]`.
+- **INCONCLUSIVE**: the CI crosses zero but extends beyond
+  `[-0.03, +0.03]` on at least one side — this is explicitly **not**
+  the same as a tie, and must never be reported as one. A wide interval
+  that happens to include zero means the comparison lacks the power to
+  distinguish the two candidates, not that they have been shown to be
+  equivalent.
+- **ONE CANDIDATE MEANINGFULLY AHEAD**: the CI lies wholly on one side
+  of zero AND extends beyond `delta_tie` on that side.
+
+### 5.6 No overinterpretation of small samples
+
+A confidence interval computed from too few shared tasks will be wide
+almost by construction — this is a correct, honest reflection of
+insufficient evidence, not a defect in the method. The response to a
+wide interval is never to shrink the reported uncertainty or to fall
+back to a bare point estimate; it is to report INCONCLUSIVE (§5.3) and,
+if the decision genuinely requires resolving it, gather more paired
+task evidence (`GENESIS_FRONTIER_EXECUTION_PLAN.md` §"Sample size /
+power / resolution planning").
 
 ## 6. Inference-configuration fairness
 
@@ -180,6 +317,23 @@ supports the relevant capability. A candidate that does not support a
 track (e.g. no long-context mode) is recorded as **not applicable**, not
 scored zero and not silently excluded from the comparison.
 
+### 6.3 Multimodal scope (LOCKED — Phase 21B.4.9.1)
+
+Closing a gap the prior phase left as an open decision: **unless the
+owner explicitly changes it BEFORE candidate execution begins**, the
+Genesis foundation selection performed under this methodology is
+**TEXT/REASONING-FIRST**. Multimodal capability, if evaluated at all, is
+recorded as its own separate extension track (§6.2) with its own
+reported score — it is **non-decisional** for the Genesis foundation
+result: it never contributes to, blends into, or silently advantages a
+candidate's capability matrix, frontier-gap computation, or hard-gate
+status. This lock exists specifically so a future execution report
+cannot decide, after seeing that one candidate happens to support
+vision and score well on it, that multimodal "should count" — that
+decision, if ever made, must be made and recorded here, in writing,
+before any candidate's text results exist, exactly like every other
+locked rule in this contract.
+
 ## 7. Reasoning-mode fairness
 
 Some candidates expose explicit thinking/reasoning modes with
@@ -200,10 +354,38 @@ prohibited.
   applicable** for that track — never assigned the other track's score
   as a substitute, and never scored as a failure for lacking the
   capability.
-- The foundation decision considers a candidate's **best supported
-  track** for capability purposes, but reports both tracks' costs/
-  latencies separately, since the reasoning-enabled track is typically
-  far more expensive per token.
+- **Track selection for the foundation decision (LOCKED — Phase
+  21B.4.9.1, closing a prior ambiguity):** "best supported track" is
+  **not** simply whichever track scores highest after results exist —
+  that would let a post-hoc choice masquerade as a fair rule. The
+  candidate's track used for the foundation capability matrix is its
+  **product-intended runtime track**, determined by a pre-declared rule
+  applied identically to every candidate, and used ONLY if all of the
+  following hold:
+  1. the track is reproducibly configurable (a fixed, recordable
+     setting — not an opaque server-side default that could silently
+     change between calls);
+  2. if it is the reasoning-enabled track, its reasoning budget is
+     bounded and recorded (never left at the model's own unbounded
+     default, which would make cost/latency and even output-length-
+     driven scoring artifacts incomparable across candidates);
+  3. the same track-selection policy is applied to every candidate in
+     the comparison — never "reasoning-enabled for this candidate,
+     standard-instruct for that one," chosen after seeing which
+     favors which;
+  4. cost/latency for BOTH tracks (whichever is used and whichever is
+     not) remains separately reported regardless of which one feeds
+     the capability matrix.
+
+  The pre-declared default (absent a specific product decision to the
+  contrary, which must itself be made and recorded BEFORE candidate
+  execution, not during it): use the **reasoning-enabled track** for
+  the foundation capability matrix when a candidate supports one (since
+  Genesis's actual product runtime is expected to benefit from
+  reasoning where available), and the standard-instruct track when it
+  does not — this default is itself locked now specifically so no
+  execution-time observer can quietly pick whichever track a specific
+  candidate happens to score better on.
 
 ## 8. Quantization fairness and the regression test
 
@@ -236,33 +418,84 @@ quantized checkpoint instead. This methodology locks the PRINCIPLE:
   actual foundation decision never rests solely on a degraded-precision
   run.
 
-### 8.3 Quantization regression test
+### 8.3 Quantization regression test — LOCKED threshold (Phase 21B.4.9.1)
 
-For any candidate screened below native/BF16 precision, a representative
-calibration subset (a fixed, small cross-category sample, the same
-subset used for every candidate to keep the comparison fair) is run at
-BOTH the screening precision and native/BF16 precision, and the quality
-delta is measured and recorded. **A material quantization-induced drop
-does not, by itself, disqualify a candidate** — Round B's full
-revalidation is the authoritative measurement for any candidate that
-reaches finalist status. The acceptable quantization-loss threshold
-(above which a screening-round result is treated as unreliable rather
-than a genuine capability signal) is defined at execution time, using
-the calibration subset's own measured variance — this document locks
-the requirement to measure and document the delta, not a single
-universal numeric threshold, for the same reason §5's tie-region
-threshold isn't universal: the right number depends on the actual
-suite/precision combination in use.
+For any candidate screened below native/BF16 precision, a
+representative calibration subset (a fixed, small cross-category
+sample, the same subset used for every candidate and REUSED for the
+stability check in §8.4, to keep both the comparison and the execution
+cost efficient) is run at BOTH the screening precision and native/BF16
+precision, and the quality delta is measured using the exact §5.2
+paired-bootstrap framework: `D = native_score - quantized_score` per
+critical category, over the calibration subset's shared task IDs.
+
+**`delta_quantization = 0.05`** (5 points, `[0,1]` scale) — a Round-A
+precision is **CERTIFIED FOR SCREENING**, per critical category, only
+if the 95% CI's upper bound on `D` is `≤ 0.05`. If the upper bound
+exceeds `0.05`, or the interval is too wide to resolve the question
+(INCONCLUSIVE, §5.3), that candidate's Round-A precision is **NOT
+CERTIFIED** for that category — this does **not** disqualify the
+candidate; it escalates it to a higher-precision screening
+configuration for that category (owner spec §13: "never punish a model
+for a bad quantizer"). A material quantization-induced drop never
+disqualifies a candidate on its own — Round B's full native/BF16
+revalidation (§8.2) remains the authoritative measurement for any
+candidate that reaches finalist status regardless of what the
+Round-A certification found.
+
+`delta_quantization` is set tighter than `delta_frontier` (0.08)
+deliberately: a quantization method is expected to preserve capability
+much more closely than the bar for "close enough to frontier
+capability" — a quantizer failing to clear a 5-point bar against the
+SAME model's own native-precision output is a much stronger signal of
+a poor-fit quantizer than an 8-point gap between two DIFFERENT models
+is a signal of a capability gap.
+
+### 8.4 Repeat / stability policy — LOCKED (Phase 21B.4.9.1)
+
+Temperature-0 sampling does not guarantee bit-for-bit determinism
+across GPU kernels, batching, or distributed inference configurations
+(owner spec §26/§14). Locked policy, applied identically to every
+candidate:
+
+- **Subset**: the same fixed calibration subset used for §8.3's
+  quantization regression test (efficiency: one subset serves both
+  checks).
+- **Repeat count**: **3 repeats** per task, under the identical exact
+  model revision, inference config, and hardware class (not merely
+  "the same GPU model" loosely — the same qualified compute resource
+  configuration) as the original run.
+- **Stability metric**: for deterministic/executable tasks, all 3
+  repeats must agree on pass/fail. For continuous/rubric-scored tasks,
+  all 3 repeats' normalized scores must fall within `delta_tie` (0.03,
+  §5.4) of their own mean.
+- **Instability threshold and behavior**: a task failing its stability
+  metric is marked **UNSTABLE** and excluded from that category's point
+  estimate until investigated — never silently averaged in, and never
+  resolved by picking the "best" of the 3 repeats (that would be an
+  undisclosed best-of-N, prohibited below).
+- **Best-of-N is NOT permitted** as a scoring method for any category,
+  for any candidate, **unless** best-of-N sampling is an explicit,
+  intended part of ORNEUR's actual PRODUCT runtime for Genesis (i.e.
+  the deployed product itself will sample N times and select — not
+  merely a benchmark-time trick to inflate a score) AND every candidate
+  in the comparison receives the identical best-of-N protocol. Absent
+  both conditions, single-sample scoring is used for every candidate,
+  and a temperature-0 run that varies beyond the instability threshold
+  is reported as `UNSTABLE / INCONCLUSIVE`, never resolved by cherry-
+  picking the most favorable repeat.
 
 ## 9. What must be locked before any execution begins
 
 Restating the non-negotiable ordering, because it is the single most
 important rule in this contract: category scoring types (§1), the judge
-escalation rule (§3), hard-gate categories (§4), the tie-region
-principle (§5), the common-core config and extension-run boundaries
-(§6), the reasoning-track protocol (§7), and the quantization-round
-structure (§8) are all fixed by this document, in this phase, before any
-candidate's results exist. Any aggregate weighting formula adopted later
-must be committed to this repository, and reviewed, **before** it is
-applied to real results — never derived from or adjusted in response to
-those results.
+escalation rule and its numeric disagreement threshold (§3), hard-gate
+categories (§4), the full statistical contract including all four
+locked margins (§5), the common-core config, extension-run boundaries,
+and the multimodal scope lock (§6), the reasoning-track selection
+protocol (§7), and the quantization-round structure with its locked
+certification threshold and the repeat/stability policy (§8) are all
+fixed by this document, in this phase, before any candidate's results
+exist. Any aggregate weighting formula adopted later must be committed
+to this repository, and reviewed, **before** it is applied to real
+results — never derived from or adjusted in response to those results.

@@ -60,21 +60,46 @@ plan, contains:
 
 ### 2.2 Capability matrix
 
-- Per-category score, confidence interval, and sample size, split by:
+- Per-category score, **95% paired-bootstrap confidence interval**
+  (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5.2), and sample size
+  (shared-task-ID count actually used in the pairing, not merely the
+  candidate's own task count), split by:
   - Tier (Tier-1 public / Tier-2 holdout)
   - Hardness band (basic/control, strong, frontier, extreme)
-  - Track (standard instruct / reasoning-enabled, where applicable)
-  - Precision round (Round A / Round B)
+  - Track (standard instruct / reasoning-enabled, per the locked
+    track-selection rule, `GENESIS_FRONTIER_SCORING_CONTRACT.md` §7)
+  - Precision round (Round A / Round B), with each category's Round-A
+    **quantization certification status**
+    (`CERTIFIED FOR SCREENING` / `NOT CERTIFIED — escalated`, per
+    `GENESIS_FRONTIER_SCORING_CONTRACT.md` §8.3) recorded explicitly
+  - **Stability status** per category (`STABLE` / `UNSTABLE`, per
+    `GENESIS_FRONTIER_SCORING_CONTRACT.md` §8.4) — an `UNSTABLE` task's
+    exclusion from the point estimate is noted, not silently reflected
+    only in a smaller sample count
 - Deterministic total, judge-required results (with every individual
-  judge's raw score retained, not only the resolved/averaged value),
-  hard-task results — all reported separately, never pre-collapsed
-  (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §2).
+  judge's normalized raw score retained, not only the resolved value —
+  §5.6 of the judge protocol), hard-task results — all reported
+  separately, never pre-collapsed (`GENESIS_FRONTIER_SCORING_CONTRACT.md`
+  §2).
+- **Execution status per stage** (`COMPLETED` / `DEFERRED_FOR_COMPUTE` /
+  `INELIGIBLE`), so a reader can immediately distinguish "this candidate
+  has not yet been fully evaluated because compute is pending" from "this
+  candidate scored poorly" — these must never be visually or
+  structurally conflated (`GENESIS_FRONTIER_EXECUTION_PLAN.md`'s
+  corrected Stage 3→4/6 rules).
 
 ### 2.3 Frontier gap report
 
-- Per-category gap versus the strongest available frontier reference,
-  with the material/non-material classification
-  (`GENESIS_FRONTIER_DECISION_GATES.md` §"Frontier gap metric").
+- Per-category gap versus BOTH the **frontier reference median**
+  (primary comparator) and the **strongest registered reference**
+  (secondary ceiling report), with the
+  `NON-INFERIOR` / `MATERIAL` / `INCONCLUSIVE` classification and the
+  `DRAMATICALLY BEHIND CEILING` flag where applicable
+  (`GENESIS_FRONTIER_DECISION_GATES.md` §"Frontier gap metric" /
+  §"Best-reference ceiling guard").
+- Per-reference availability status (`AVAILABLE` / `REFERENCE_UNAVAILABLE`
+  with the reduced-reference-set flag noted for any category where the
+  median was computed over a smaller-than-registered set).
 
 ### 2.4 Hard-gate results
 
