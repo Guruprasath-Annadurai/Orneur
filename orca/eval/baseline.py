@@ -268,15 +268,19 @@ def _validate_result_completeness(result: EvaluationResultManifest, tasks: list[
 _DIGEST_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
+_TEXT_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
 def _verify_raw_evidence_before_freeze(manifest, tasks: list[EvalTask]) -> None:
-    """Phase 21B.4.10 mandatory pre-freeze raw-evidence gate. Called from
-    `_validate_result_generation_provenance()` immediately after the
-    sealed bundle's own bytes and identity have been re-verified, using
-    that SAME already-loaded manifest (never re-reading the sealed
-    artifact a third time) -- as close to the irreversible suite freeze
-    as this transaction's structure allows, inside the suite-freeze
-    lock. Never relies solely on the earlier scoring-time raw-response
-    verification (`score_verified_generation_artifact()`'s
+    """Phase 21B.4.10 mandatory pre-freeze raw-evidence gate, hardened in
+    Phase 21B.4.10.1. Called from `_validate_result_generation_provenance()`
+    immediately after the sealed bundle's own bytes and identity have
+    been re-verified, using that SAME already-loaded manifest (never
+    re-reading the sealed artifact a third time) -- as close to the
+    irreversible suite freeze as this transaction's structure allows,
+    inside the suite-freeze lock. Never relies solely on the earlier
+    scoring-time raw-response verification
+    (`score_verified_generation_artifact()`'s
     `read_and_verify_raw_response()` calls), which happened at a
     different point in time and cannot detect anything that changed
     since.
@@ -285,20 +289,31 @@ def _verify_raw_evidence_before_freeze(manifest, tasks: list[EvalTask]) -> None:
        (`orca.eval.generation_artifact.verify_against_suite`) --
        missing transport evidence is an INTEGRITY FAILURE, never
        silently treated as equivalent to a generation failure.
-    2. For every record with `error is None` (a claimed-successful
-       generation), independently re-verifies: `raw_response_ref`
-       exists; it resolves inside the canonical generation-artifact
-       root (rejecting any path that would escape it, e.g. via a
-       crafted traversal or a symlink pointing elsewhere); the
-       referenced object is a regular file; its exact byte length
-       matches the manifest's recorded `byte_length`; its SHA-256
-       matches the manifest's recorded `text_sha256`; its bytes decode
-       as UTF-8.
-    3. Records with `error` set (an explicit generation failure) are
-       confirmed present and left untouched -- no task may silently
-       disappear from either category, but an explicit failure is a
-       legitimate accounted-for outcome, not something to raw-evidence-
-       check.
+    2. For every record with `error is not None` (an explicit
+       generation failure): requires `raw_response_ref`, `text_sha256`,
+       and `byte_length` to ALL be `None` -- Phase 21B.4.10.1 §13's
+       invariant: a record must never simultaneously claim a generation
+       failure AND carry successful-looking raw-response evidence.
+    3. For every record with `error is None` (a claimed-successful
+       generation), independently re-verifies, ALL MANDATORY (Phase
+       21B.4.10.1 §11: hash and length are no longer optional fields):
+       - `raw_response_ref` is a non-empty string;
+       - `text_sha256` is present and is exactly 64 lowercase hex
+         characters;
+       - `byte_length` is present and is a non-negative integer;
+       - `raw_response_ref` is not a symlink itself (Phase 21B.4.10.1
+         §12: rejects symlink indirection that would make artifact
+         ownership ambiguous);
+       - it resolves to an existing regular file;
+       - it resolves specifically UNDER `GENERATION_ARTIFACT_DIR /
+         manifest.run_id` (Phase 21B.4.10.1 §12: run-specific artifact
+         binding -- a response belonging to a DIFFERENT run's directory
+         is rejected even when its bytes/hash happen to be identical,
+         not merely "somewhere under the global canonical root");
+       - its exact byte length matches the manifest's recorded
+         `byte_length`;
+       - its SHA-256 matches the manifest's recorded `text_sha256`;
+       - its bytes decode as UTF-8.
 
     Raises `GenerationArtifactIntegrityError` (suite-coverage failures,
     from `verify_against_suite`) or `RawEvidencePreservationError`
@@ -308,24 +323,51 @@ def _verify_raw_evidence_before_freeze(manifest, tasks: list[EvalTask]) -> None:
 
     verify_against_suite(manifest, tasks)
 
-    canonical_root = Path(GENERATION_ARTIFACT_DIR).resolve()
+    run_root = (Path(GENERATION_ARTIFACT_DIR) / manifest.run_id).resolve()
 
     for record in manifest.records:
         task_id = record.get("task_id")
-        if record.get("error") is not None:
-            continue  # explicit generation failure -- accounted for, never raw-evidence-checked
-
         raw_ref = record.get("raw_response_ref")
         expected_sha = record.get("text_sha256")
         expected_len = record.get("byte_length")
 
-        if not raw_ref:
+        if record.get("error") is not None:
+            # Phase 21B.4.10.1 §13: an explicit generation failure must
+            # never simultaneously carry successful-looking raw-response
+            # evidence -- that would be a self-contradictory record.
+            if raw_ref is not None or expected_sha is not None or expected_len is not None:
+                raise RawEvidencePreservationError(
+                    f"Task {task_id!r} has error={record.get('error')!r} set (a generation failure) but "
+                    f"also carries raw_response_ref={raw_ref!r}/text_sha256={expected_sha!r}/"
+                    f"byte_length={expected_len!r} -- a record must not simultaneously claim a generation "
+                    "failure and successful raw-response evidence."
+                )
+            continue  # legitimate, accounted-for generation failure -- not raw-evidence-checked
+
+        # ── Successful record: hash and length are now MANDATORY, never optional. ──
+        if not raw_ref or not isinstance(raw_ref, str):
             raise RawEvidencePreservationError(
-                f"Task {task_id!r} has no raw_response_ref recorded despite error=None -- "
-                "missing transport evidence is an integrity failure, not a generation failure."
+                f"Task {task_id!r} has no (or a non-string) raw_response_ref recorded despite error=None "
+                "-- missing transport evidence is an integrity failure, not a generation failure."
+            )
+        if not expected_sha or not isinstance(expected_sha, str) or not _TEXT_SHA256_RE.match(expected_sha):
+            raise RawEvidencePreservationError(
+                f"Task {task_id!r} has text_sha256={expected_sha!r}, which is not a well-formed "
+                "64-character lowercase hex SHA-256 digest -- a successful record must carry a mandatory, "
+                "well-formed hash."
+            )
+        if not isinstance(expected_len, int) or isinstance(expected_len, bool) or expected_len < 0:
+            raise RawEvidencePreservationError(
+                f"Task {task_id!r} has byte_length={expected_len!r}, which is not a non-negative integer "
+                "-- a successful record must carry a mandatory, valid byte_length."
             )
 
         path = Path(raw_ref)
+        if path.is_symlink():
+            raise RawEvidencePreservationError(
+                f"Task {task_id!r} raw_response_ref {raw_ref!r} is itself a symlink -- refusing to trust "
+                "symlink indirection, which would make the artifact's ownership ambiguous."
+            )
         try:
             resolved = path.resolve(strict=True)
         except (FileNotFoundError, RuntimeError) as exc:
@@ -334,11 +376,16 @@ def _verify_raw_evidence_before_freeze(manifest, tasks: list[EvalTask]) -> None:
                 f"resolved) at baseline-finalization time -- present at scoring time, gone now: {exc}"
             ) from exc
 
-        if resolved != canonical_root and canonical_root not in resolved.parents:
+        # Phase 21B.4.10.1 §12: run-specific artifact binding -- must
+        # resolve under THIS run's own subdirectory, not merely anywhere
+        # under the global canonical root (which would let a response
+        # belonging to a different run's directory be reused/confused).
+        if resolved != run_root and run_root not in resolved.parents:
             raise RawEvidencePreservationError(
-                f"Task {task_id!r} raw_response_ref {raw_ref!r} resolves to {resolved}, which is "
-                f"outside the canonical generation-artifact root {canonical_root} -- refusing to "
-                "trust a path that could have been redirected or escaped since scoring time."
+                f"Task {task_id!r} raw_response_ref {raw_ref!r} resolves to {resolved}, which is not "
+                f"under this run's own canonical artifact directory {run_root} -- refusing to trust a "
+                "path belonging to a different run, or one that could have been redirected/escaped "
+                "since scoring time."
             )
         if not resolved.is_file():
             raise RawEvidencePreservationError(
@@ -347,14 +394,14 @@ def _verify_raw_evidence_before_freeze(manifest, tasks: list[EvalTask]) -> None:
             )
 
         data = resolved.read_bytes()
-        if expected_len is not None and len(data) != expected_len:
+        if len(data) != expected_len:
             raise RawEvidencePreservationError(
                 f"Task {task_id!r} raw_response_ref {raw_ref!r} byte length ({len(data)}) no longer "
                 f"matches the manifest's recorded byte_length ({expected_len}) -- altered since "
                 "scoring time."
             )
         actual_sha = hashlib.sha256(data).hexdigest()
-        if expected_sha is not None and actual_sha != expected_sha:
+        if actual_sha != expected_sha:
             raise RawEvidencePreservationError(
                 f"Task {task_id!r} raw_response_ref {raw_ref!r} SHA-256 ({actual_sha}) no longer "
                 f"matches the manifest's recorded hash ({expected_sha}) -- altered or replaced since "
