@@ -41,12 +41,45 @@ Missing transport data is explicitly NOT a generation failure (which
 means "the model was asked and failed to answer") -- it is an
 integrity error (which means "we don't actually know what happened to
 this task's data"), and the two must never be conflated.
+
+Phase 21B.4.8.2 closes three further provenance gaps an independent
+audit found in this module's first version:
+
+3. SEALING: `bundle_digest()` alone is not a verified transfer
+   invariant -- `from_json()` happily deserializes ANY well-formed JSON,
+   including a tampered bundle with a freshly recomputed digest sitting
+   inside the same mutable blob. `seal_generation_artifact()` /
+   `write_sealed_generation_artifact()` produce the canonical bytes and
+   digest as two SEPARATE artifacts (a `.json` file and a sibling
+   `.sha256` file); `load_and_verify_generation_artifact()` requires the
+   expected digest to be supplied independently (never read out of the
+   same blob it is verifying) and hashes the exact received bytes BEFORE
+   any deserialization is attempted.
+
+4. IDENTITY BINDING: `verify_against_suite()` checks task coverage, but
+   never checked that the manifest was actually generated FOR the
+   candidate/revision/suite/config that scoring is about to score it
+   against. `verify_manifest_identity()` closes this: candidate,
+   upstream_model, artifact_repo, exact_revision, tokenizer_revision,
+   backend, suite_id/version/digests, generation_config_digest,
+   system_instruction_digest, and expected_task_ids are all checked
+   against independently-derived values before scoring may proceed.
+
+5. BYTE-EXACT RAW-RESPONSE STORAGE: `persist_raw_response()`/
+   `read_and_verify_raw_response()` now write/read raw bytes
+   (`write_bytes`/`read_bytes`, atomically) rather than locale-dependent
+   text I/O, and verify BOTH `byte_length` and SHA-256 on read -- the
+   hash remains authoritative, but a byte_length mismatch is now also
+   independently detected and reported.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from orca.config import ORCA_HOME
 
@@ -54,6 +87,14 @@ GENERATION_ARTIFACT_SCHEMA_VERSION = "genesis-generation-v1"
 
 GENERATION_ARTIFACT_DIR = ORCA_HOME / "registry" / "evaluation_generation_artifacts"
 GENERATION_ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Phase 21B.4.8.2: where SEALED (bundle-bytes + separately-retained
+# digest) generation artifacts live -- deliberately a different
+# directory from GENERATION_ARTIFACT_DIR (per-task raw-response text)
+# above, since these are whole-manifest bundles, not individual
+# responses.
+GENERATION_ARTIFACT_MANIFEST_DIR = ORCA_HOME / "registry" / "evaluation_generation_artifact_manifests"
+GENERATION_ARTIFACT_MANIFEST_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class GenerationArtifactIntegrityError(Exception):
@@ -65,13 +106,48 @@ class GenerationArtifactIntegrityError(Exception):
     not proceed past this error."""
 
 
+class GenerationArtifactIdentityMismatchError(GenerationArtifactIntegrityError):
+    """A GenerationArtifactManifest's identity fields (candidate, exact
+    revision, tokenizer revision, artifact repo, backend, suite
+    identity/digests, generation-config digest, system-instruction
+    digest, or expected_task_ids) do not match the scoring-side
+    CandidateConfig/suite it is being scored against -- e.g. generation
+    ran candidate A but scoring is being attempted with candidate B's
+    CandidateConfig. Raised BEFORE any scoring occurs; the manifest's
+    identity is never silently rewritten to match the caller's
+    CandidateConfig (Phase 21B.4.8.2 Blocker 2)."""
+
+
 def _sha256_of_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Writes `data` to `path` atomically: temp file in the same
+    directory -> flush -> fsync -> os.replace(). A crash or concurrent
+    reader can never observe a partially-written file at `path` (spec:
+    'Writes should be atomic. Prefer: temporary file -> fsync where
+    reasonable -> atomic replace')."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
 def persist_raw_response(run_id: str, task_id: str, text: str) -> tuple[str, str, int]:
     """Writes `text` into ORCA_HOME's canonical, durable evaluation-
-    artifact tree, content-addressed by SHA-256. Returns
+    artifact tree, content-addressed by SHA-256, using exact UTF-8 bytes
+    (not locale-dependent text I/O) written atomically. Returns
     (raw_response_ref, sha256_hex, byte_length). This is what an
     ORCHESTRATOR calls with text a GPU worker returned to it -- the
     canonical store lives on the orchestrator's own ORCA_HOME, not on
@@ -79,35 +155,45 @@ def persist_raw_response(run_id: str, task_id: str, text: str) -> tuple[str, str
     encoded = text.encode("utf-8")
     digest = hashlib.sha256(encoded).hexdigest()
     run_dir = GENERATION_ARTIFACT_DIR / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
     path = run_dir / f"{task_id}-{digest[:16]}.txt"
-    path.write_text(text)
+    _atomic_write_bytes(path, encoded)
     return str(path), digest, len(encoded)
 
 
-def read_and_verify_raw_response(raw_response_ref: str, expected_sha256: str) -> str:
-    """Reads back a persisted raw response and verifies its SHA-256
-    matches what the GenerationArtifactManifest recorded at generation
-    time -- detects truncation/corruption/substitution in transit or
-    storage. Raises GenerationArtifactIntegrityError on any mismatch or
-    missing file, never silently returns unverified content."""
-    from pathlib import Path
-
+def read_and_verify_raw_response(
+    raw_response_ref: str, expected_sha256: str, expected_byte_length: int | None = None,
+) -> str:
+    """Reads back a persisted raw response (exact bytes, then UTF-8
+    decoded) and verifies its SHA-256 -- and, when `expected_byte_length`
+    is supplied, its byte length too -- match what the
+    GenerationArtifactManifest recorded at generation time. Detects
+    truncation/corruption/substitution in transit or storage. The hash
+    remains authoritative (a byte_length match alone is not sufficient
+    evidence), but a byte_length mismatch is independently reported
+    rather than only surfacing as a hash mismatch. Raises
+    GenerationArtifactIntegrityError on any mismatch or missing file,
+    never silently returns unverified content."""
     path = Path(raw_response_ref)
     if not path.exists():
         raise GenerationArtifactIntegrityError(
             f"raw_response_ref {raw_response_ref!r} does not resolve to an existing file -- "
             "cannot verify or score this task's response."
         )
-    text = path.read_text()
-    actual = _sha256_of_text(text)
+    encoded = path.read_bytes()
+    if expected_byte_length is not None and len(encoded) != expected_byte_length:
+        raise GenerationArtifactIntegrityError(
+            f"raw_response_ref {raw_response_ref!r} byte_length ({len(encoded)}) does not match the "
+            f"GenerationArtifactManifest's recorded byte_length ({expected_byte_length}) -- response was "
+            "truncated or altered in transit."
+        )
+    actual = hashlib.sha256(encoded).hexdigest()
     if actual != expected_sha256:
         raise GenerationArtifactIntegrityError(
             f"raw_response_ref {raw_response_ref!r} content SHA-256 ({actual}) does not match the "
             f"GenerationArtifactManifest's recorded hash ({expected_sha256}) -- response was "
             "corrupted, truncated, or substituted in transit."
         )
-    return text
+    return encoded.decode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -233,3 +319,142 @@ def verify_against_suite(manifest: GenerationArtifactManifest, tasks: list) -> N
             f"GenerationArtifactManifest for run_id={manifest.run_id!r} failed reconciliation against "
             f"the verified suite ({manifest.suite_id}-{manifest.suite_version}): " + "; ".join(problems)
         )
+
+
+def verify_manifest_identity(
+    manifest: GenerationArtifactManifest,
+    candidate_config,
+    tasks: list,
+    *,
+    suite_id: str,
+    suite_version: str,
+    content_digest: str,
+    scoring_digest: str,
+) -> None:
+    """Phase 21B.4.8.2 Blocker 2: checks that `manifest` was actually
+    generated FOR the exact candidate/revision/suite/config combination
+    scoring is about to score it against -- `verify_against_suite()`
+    checks task coverage, but says nothing about whether the manifest
+    belongs to a different candidate, a different pinned revision, a
+    different system instruction, or a different suite version. Every
+    identity field is checked against an INDEPENDENTLY derived expected
+    value (never against another field pulled from the same manifest),
+    and `expected_task_ids` is compared as an ordered tuple against the
+    live-verified suite's own task order -- never trusting the
+    manifest's own list as ground truth, but still rejecting the
+    artifact outright if its claimed list disagrees with truth.
+
+    Raises GenerationArtifactIdentityMismatchError (a
+    GenerationArtifactIntegrityError subclass) on ANY mismatch, before
+    verify_against_suite() or any scoring runs. The manifest's identity
+    is never rewritten to match candidate_config -- a mismatch is always
+    a hard failure, never a silent reconciliation."""
+    expected_generation_config_digest = "sha256:" + hashlib.sha256(
+        json.dumps(candidate_config.inference_config, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    expected_system_instruction_digest = "sha256:" + _sha256_of_text(candidate_config.system_instruction)
+    expected_task_ids = tuple(t.task_id for t in tasks)
+
+    checks = [
+        ("candidate", manifest.candidate, candidate_config.candidate),
+        ("upstream_model", manifest.upstream_model, candidate_config.upstream_model),
+        ("artifact_repo", manifest.artifact_repo, candidate_config.artifact_repo),
+        ("exact_revision", manifest.exact_revision, candidate_config.exact_revision),
+        ("tokenizer_revision", manifest.tokenizer_revision, candidate_config.tokenizer_revision),
+        ("backend", manifest.backend, candidate_config.backend),
+        ("suite_id", manifest.suite_id, suite_id),
+        ("suite_version", manifest.suite_version, suite_version),
+        ("suite_content_digest", manifest.suite_content_digest, content_digest),
+        ("suite_scoring_contract_digest", manifest.suite_scoring_contract_digest, scoring_digest),
+        ("generation_config_digest", manifest.generation_config_digest, expected_generation_config_digest),
+        ("system_instruction_digest", manifest.system_instruction_digest, expected_system_instruction_digest),
+        ("expected_task_ids", manifest.expected_task_ids, expected_task_ids),
+    ]
+    mismatches = [(name, got, want) for name, got, want in checks if got != want]
+    if mismatches:
+        details = "; ".join(f"{name}: manifest={got!r} != expected={want!r}" for name, got, want in mismatches)
+        raise GenerationArtifactIdentityMismatchError(
+            f"GenerationArtifactManifest run_id={manifest.run_id!r} identity does not match the scoring "
+            f"request -- refusing to score outputs generated for a different candidate/revision/config/"
+            f"suite than the one currently being requested: {details}"
+        )
+
+
+# ── sealing / tamper-evident transfer (Phase 21B.4.8.2 Blocker 3) ───────
+
+
+def seal_generation_artifact(manifest: GenerationArtifactManifest) -> tuple[bytes, str]:
+    """Produces the canonical serialized bytes and their SHA-256 digest
+    -- the two values a caller must retain SEPARATELY (never re-deriving
+    the digest from the same blob it is meant to verify) before
+    transferring the bundle anywhere. Returns (serialized_bytes,
+    bundle_sha256_hex)."""
+    serialized = manifest.to_json().encode("utf-8")
+    digest = hashlib.sha256(serialized).hexdigest()
+    return serialized, digest
+
+
+def write_sealed_generation_artifact(manifest: GenerationArtifactManifest) -> tuple[Path, Path, str]:
+    """Atomically persists a sealed generation artifact as TWO separate
+    files under the canonical ORCA_HOME store: `<run_id>.json` (the
+    bundle bytes) and `<run_id>.sha256` (the digest, as a trusted
+    orchestration record retained independently of the JSON blob it
+    verifies). Returns (json_path, digest_path, bundle_sha256_hex)."""
+    serialized, digest = seal_generation_artifact(manifest)
+    json_path = GENERATION_ARTIFACT_MANIFEST_DIR / f"{manifest.run_id}.json"
+    digest_path = GENERATION_ARTIFACT_MANIFEST_DIR / f"{manifest.run_id}.sha256"
+    _atomic_write_bytes(json_path, serialized)
+    _atomic_write_bytes(digest_path, digest.encode("ascii"))
+    return json_path, digest_path, digest
+
+
+def read_sealed_generation_artifact(run_id: str) -> tuple[bytes, str]:
+    """Reads back the two separately-persisted files
+    write_sealed_generation_artifact() wrote for `run_id`. Returns
+    (serialized_bytes, expected_digest) -- pass both to
+    load_and_verify_generation_artifact(). Raises
+    GenerationArtifactIntegrityError if either file is missing (a
+    dropped digest file is exactly as much an integrity failure as a
+    dropped bundle file -- there is no meaningful 'load without
+    verification' path)."""
+    json_path = GENERATION_ARTIFACT_MANIFEST_DIR / f"{run_id}.json"
+    digest_path = GENERATION_ARTIFACT_MANIFEST_DIR / f"{run_id}.sha256"
+    if not json_path.exists() or not digest_path.exists():
+        raise GenerationArtifactIntegrityError(
+            f"Sealed generation artifact for run_id={run_id!r} is incomplete -- "
+            f"json_exists={json_path.exists()}, digest_exists={digest_path.exists()}."
+        )
+    serialized = json_path.read_bytes()
+    expected_digest = digest_path.read_bytes().decode("ascii").strip()
+    return serialized, expected_digest
+
+
+def load_and_verify_generation_artifact(serialized: bytes, expected_digest: str) -> GenerationArtifactManifest:
+    """The verified-load half of the seal/verify flow (Phase 21B.4.8.2
+    Blocker 3). `expected_digest` MUST come from a trusted orchestration
+    record or a separately-retained value (e.g.
+    read_sealed_generation_artifact()'s digest_path, or a value a caller
+    persisted independently at seal time) -- never from a digest field
+    read out of `serialized` itself, which would let a tampered bundle
+    simply carry its own freshly recomputed digest.
+
+    Order of operations, exactly as required:
+      1. hash the received exact bytes;
+      2. compare against expected_digest;
+      3. fail closed (GenerationArtifactIntegrityError) on mismatch;
+      4. only then deserialize (from_json(), which also validates the
+         schema_version);
+      5. semantic identity (candidate/revision/suite/config) and
+         6. raw-response hashes are validated separately by
+         verify_manifest_identity() / read_and_verify_raw_response(),
+         called from run_scoring_phase_from_artifact() -- this function's
+         job ends at 'the bytes are exactly what was sealed, and the
+         schema is one we understand'."""
+    actual_digest = hashlib.sha256(serialized).hexdigest()
+    if actual_digest != expected_digest:
+        raise GenerationArtifactIntegrityError(
+            f"Sealed generation artifact bundle digest mismatch: expected {expected_digest}, got "
+            f"{actual_digest} -- the bundle was tampered with, truncated, or corrupted in transit. "
+            "Refusing to deserialize an unverified bundle."
+        )
+    return GenerationArtifactManifest.from_json(serialized.decode("utf-8"))

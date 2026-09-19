@@ -136,6 +136,11 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     # store (orca.eval.generation_artifact) -- same unisolated-module-
     # constant risk, isolated here too.
     generation_artifact_dir_tmp = registry_tmp / "evaluation_generation_artifacts"
+    # Phase 21B.4.8.2: the SEALED generation-artifact bundle store
+    # (orca.eval.generation_artifact.write_sealed_generation_artifact /
+    # read_sealed_generation_artifact) -- a separate directory from the
+    # per-task raw-response store above, same isolation risk.
+    generation_artifact_manifest_dir_tmp = registry_tmp / "evaluation_generation_artifact_manifests"
     # Phase 21B.4.1: the per-suite-version concurrency lock directory
     # (orca.eval.baseline's fcntl.flock-based freeze-transaction lock) --
     # same risk, isolated here too.
@@ -149,7 +154,7 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
         checkpoint_dir_tmp, dataset_dir_tmp, dataset_bundle_dir_tmp, evaluation_dir_tmp,
         evaluation_suite_dir_tmp, evaluation_result_dir_tmp, evaluation_raw_response_dir_tmp,
         evaluation_lock_dir_tmp, training_run_dir_tmp, run_snapshot_dir_tmp, registry_tmp,
-        generation_artifact_dir_tmp,
+        generation_artifact_dir_tmp, generation_artifact_manifest_dir_tmp,
     ):
         d.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(checkpoint_mod, "CHECKPOINT_DIR", checkpoint_dir_tmp)
@@ -160,6 +165,7 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(eval_baseline_mod, "_LOCK_DIR", evaluation_lock_dir_tmp)
     monkeypatch.setattr(eval_runner_mod, "RAW_RESPONSE_DIR", evaluation_raw_response_dir_tmp)
     monkeypatch.setattr(generation_artifact_mod, "GENERATION_ARTIFACT_DIR", generation_artifact_dir_tmp)
+    monkeypatch.setattr(generation_artifact_mod, "GENERATION_ARTIFACT_MANIFEST_DIR", generation_artifact_manifest_dir_tmp)
     monkeypatch.setattr(evaluation_suite_manifest_mod, "EVALUATION_SUITE_DIR", evaluation_suite_dir_tmp)
     monkeypatch.setattr(model_registry_mod, "REGISTRY_STATE_PATH", registry_tmp / "registry_state.json")
     monkeypatch.setattr(training_run_mod, "TRAINING_RUN_DIR", training_run_dir_tmp)

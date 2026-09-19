@@ -157,6 +157,105 @@ class GenerationRecord:
     byte_length: int | None = None
 
 
+@dataclass(frozen=True)
+class RemoteGenerationRecord:
+    """What a trusted inference worker (e.g. a Modal GPU function) hands
+    back to the ORNEUR orchestrator for one task -- deliberately
+    contains NO raw_response_ref / local-path field of any kind (Phase
+    21B.4.8.2 Blocker 1). The worker must never decide, construct, or
+    return anything resembling a durable artifact path; that
+    responsibility belongs exclusively to the orchestrator's
+    materialize_generation_artifact() step, which runs against the
+    orchestrator's OWN ORCA_HOME, never the worker's ephemeral
+    filesystem."""
+    task_id: str
+    category: int
+    scoring_type: str
+    text: str | None
+    error: str | None
+    latency_ms: float
+    provider_metadata: dict = field(default_factory=dict)
+
+
+def run_remote_generation_phase(
+    adapter: ModelAdapter,
+    candidate_config: CandidateConfig,
+    tasks: list[EvalTask],
+) -> list[RemoteGenerationRecord]:
+    """Calls `adapter.generate()` for every task and returns plain
+    RemoteGenerationRecords -- no persistence, no run_id, no local
+    filesystem path of any kind. This is the function safe to execute
+    ENTIRELY on a trusted-inference-only remote worker (e.g. a Modal GPU
+    function): it never touches ORCA_HOME or any filesystem, so it has
+    no way to produce a "durable artifact path" that could be mistaken
+    for one. The caller/orchestrator is responsible for calling
+    materialize_generation_artifact() with the returned list, on its own
+    machine (Phase 21B.4.8.2 Blocker 1)."""
+    records: list[RemoteGenerationRecord] = []
+    for task in tasks:
+        gen = adapter.generate(task.prompt, system_instruction=candidate_config.system_instruction, config=candidate_config.inference_config)
+        if gen.error is not None or gen.text is None:
+            records.append(RemoteGenerationRecord(
+                task_id=task.task_id, category=task.category, scoring_type=task.scoring_type,
+                text=None, error=gen.error or "no text returned", latency_ms=gen.latency_ms,
+            ))
+            continue
+        records.append(RemoteGenerationRecord(
+            task_id=task.task_id, category=task.category, scoring_type=task.scoring_type,
+            text=gen.text, error=None, latency_ms=gen.latency_ms,
+        ))
+    return records
+
+
+def _validate_remote_records_against_tasks(remote_records: list[RemoteGenerationRecord], tasks: list[EvalTask]) -> None:
+    """The same class of fail-closed reconciliation as
+    orca.eval.generation_artifact.verify_against_suite(), but applied to
+    RemoteGenerationRecords BEFORE any persistence happens (Phase
+    21B.4.8.2 Blocker 1: "orchestrator validates expected task coverage"
+    is a step that must occur before "orchestrator persists response
+    bytes"). Raises GenerationArtifactIntegrityError on any missing,
+    duplicate, unknown, or category/scoring_type-mismatched remote
+    record -- the orchestrator must never start writing into canonical
+    storage from a transport batch it hasn't first confirmed is
+    complete and correct."""
+    from orca.eval.generation_artifact import GenerationArtifactIntegrityError
+
+    suite_by_id = {t.task_id: t for t in tasks}
+    suite_task_ids = set(suite_by_id.keys())
+
+    seen: dict[str, int] = {}
+    unknown: list[str] = []
+    mismatched: list[str] = []
+    for record in remote_records:
+        seen[record.task_id] = seen.get(record.task_id, 0) + 1
+        if record.task_id not in suite_by_id:
+            unknown.append(record.task_id)
+            continue
+        suite_task = suite_by_id[record.task_id]
+        if record.category != suite_task.category or record.scoring_type != suite_task.scoring_type:
+            mismatched.append(record.task_id)
+
+    duplicates = sorted(tid for tid, count in seen.items() if count > 1)
+    missing = sorted(suite_task_ids - set(seen.keys()))
+
+    problems = []
+    if missing:
+        problems.append(f"missing {len(missing)} expected task(s) in remote generation records: {missing[:10]}{'...' if len(missing) > 10 else ''}")
+    if duplicates:
+        problems.append(f"{len(duplicates)} duplicate remote generation record(s): {duplicates[:10]}{'...' if len(duplicates) > 10 else ''}")
+    if unknown:
+        problems.append(f"{len(unknown)} unknown task_id(s) in remote generation records: {sorted(set(unknown))[:10]}")
+    if mismatched:
+        problems.append(f"{len(mismatched)} remote record(s) with category/scoring_type mismatched against the suite: {sorted(mismatched)[:10]}")
+
+    if problems:
+        raise GenerationArtifactIntegrityError(
+            "Remote generation records failed coverage validation against the verified suite BEFORE "
+            "materialization -- refusing to persist a possibly-incomplete or corrupted transport batch: "
+            + "; ".join(problems)
+        )
+
+
 def run_generation_phase(
     adapter: ModelAdapter,
     candidate_config: CandidateConfig,
@@ -164,14 +263,23 @@ def run_generation_phase(
     *,
     run_id: str,
 ) -> list[GenerationRecord]:
-    """GenerationExecutor: calls `adapter.generate()` for every task and
-    persists raw responses into the durable, content-addressed store
-    (orca.eval.generation_artifact.persist_raw_response). Does NOT
-    score anything -- never imports or calls
-    orca.eval.genesis_suite.score_task, and therefore never needs a
-    SandboxBackend/Docker. This is the half of run_suite() that is safe
-    to run on a trusted-inference-only machine (e.g. a Modal GPU
-    worker) with no local code-execution sandbox available at all.
+    """Local/same-machine convenience path: calls `adapter.generate()`
+    for every task and persists raw responses into the durable,
+    content-addressed store (orca.eval.generation_artifact
+    .persist_raw_response). Does NOT score anything -- never imports or
+    calls orca.eval.genesis_suite.score_task, and therefore never needs
+    a SandboxBackend/Docker. This is the half of run_suite() that is
+    safe to run on a trusted-inference-only machine with no local
+    code-execution sandbox available at all.
+
+    Built on top of run_remote_generation_phase() (the same generation-
+    execution implementation the cross-machine-safe path uses) plus a
+    per-record persist step -- there is one generation-execution
+    implementation, not two. Unlike materialize_generation_artifact(),
+    this function does not need an up-front coverage-validation pass:
+    it is itself the `for task in tasks` loop, so it cannot produce a
+    missing/duplicate/unknown record the way a transported batch of
+    RemoteGenerationRecords could.
 
     Each record's text_sha256/byte_length are recorded so a later
     GenerationArtifactManifest (build_generation_artifact_manifest())
@@ -179,19 +287,19 @@ def run_generation_phase(
     denominator-integrity fix."""
     from orca.eval.generation_artifact import persist_raw_response
 
+    remote_records = run_remote_generation_phase(adapter, candidate_config, tasks)
     records: list[GenerationRecord] = []
-    for task in tasks:
-        gen = adapter.generate(task.prompt, system_instruction=candidate_config.system_instruction, config=candidate_config.inference_config)
-        if gen.error is not None or gen.text is None:
+    for rr in remote_records:
+        if rr.error is not None or rr.text is None:
             records.append(GenerationRecord(
-                task_id=task.task_id, category=task.category, scoring_type=task.scoring_type,
-                text=None, error=gen.error or "no text returned", latency_ms=gen.latency_ms, raw_response_ref=None,
+                task_id=rr.task_id, category=rr.category, scoring_type=rr.scoring_type,
+                text=None, error=rr.error or "no text returned", latency_ms=rr.latency_ms, raw_response_ref=None,
             ))
             continue
-        raw_ref, digest, length = persist_raw_response(run_id, task.task_id, gen.text)
+        raw_ref, digest, length = persist_raw_response(run_id, rr.task_id, rr.text)
         records.append(GenerationRecord(
-            task_id=task.task_id, category=task.category, scoring_type=task.scoring_type,
-            text=gen.text, error=None, latency_ms=gen.latency_ms, raw_response_ref=raw_ref,
+            task_id=rr.task_id, category=rr.category, scoring_type=rr.scoring_type,
+            text=rr.text, error=None, latency_ms=rr.latency_ms, raw_response_ref=raw_ref,
             text_sha256=digest, byte_length=length,
         ))
     return records
@@ -244,6 +352,69 @@ def build_generation_artifact_manifest(
         expected_task_ids=task_ids, records=record_dicts,
         software_commit_sha=_current_git_sha(), backend=candidate_config.backend,
         hardware=dict(candidate_config.hardware), created_at=created_at,
+    )
+
+
+def materialize_generation_artifact(
+    remote_records: list[RemoteGenerationRecord],
+    candidate_config: CandidateConfig,
+    tasks: list[EvalTask],
+    *,
+    suite_id: str,
+    suite_version: str,
+    content_digest: str,
+    scoring_digest: str,
+    run_id: str,
+    created_at: str,
+):
+    """THE canonical materialization step (Phase 21B.4.8.2 Blocker 1):
+    the ORNEUR orchestrator calls this -- never the generation worker
+    itself -- with whatever RemoteGenerationRecords a trusted inference
+    worker (e.g. a Modal GPU function) returned. It:
+
+      1. Validates every remote record's task coverage against the
+         live-verified suite BEFORE persisting anything
+         (_validate_remote_records_against_tasks() -- fails closed on
+         missing/duplicate/unknown/category-mismatched records).
+      2. Persists each non-error record's raw text into the
+         orchestrator's own canonical, content-addressed ORCA_HOME
+         store (orca.eval.generation_artifact.persist_raw_response) --
+         never trusts or reconstructs a path from the generation
+         worker's own filesystem.
+      3. Builds and returns the (unsealed) GenerationArtifactManifest
+         via build_generation_artifact_manifest() -- the same manifest-
+         construction logic run_generation_phase()'s local-mode path
+         uses, so there is one manifest-building implementation, not
+         two competing ones.
+
+    Callers should then call
+    orca.eval.generation_artifact.write_sealed_generation_artifact()
+    (or seal_generation_artifact()) to produce the tamper-evident sealed
+    bundle before transferring it to a scoring host."""
+    from orca.eval.generation_artifact import persist_raw_response
+
+    _validate_remote_records_against_tasks(remote_records, tasks)
+
+    generation_records: list[GenerationRecord] = []
+    for rr in remote_records:
+        if rr.error is not None or rr.text is None:
+            generation_records.append(GenerationRecord(
+                task_id=rr.task_id, category=rr.category, scoring_type=rr.scoring_type,
+                text=None, error=rr.error or "no text returned", latency_ms=rr.latency_ms, raw_response_ref=None,
+            ))
+            continue
+        raw_ref, digest, length = persist_raw_response(run_id, rr.task_id, rr.text)
+        generation_records.append(GenerationRecord(
+            task_id=rr.task_id, category=rr.category, scoring_type=rr.scoring_type,
+            text=rr.text, error=None, latency_ms=rr.latency_ms, raw_response_ref=raw_ref,
+            text_sha256=digest, byte_length=length,
+        ))
+
+    return build_generation_artifact_manifest(
+        generation_records, candidate_config, tasks,
+        suite_id=suite_id, suite_version=suite_version,
+        content_digest=content_digest, scoring_digest=scoring_digest,
+        run_id=run_id, created_at=created_at,
     )
 
 
@@ -363,26 +534,47 @@ def run_scoring_phase_from_artifact(
     scoring_digest: str,
     started_at: str,
 ) -> tuple[EvaluationResultManifest, list[str]]:
-    """The cross-machine-safe entry point to scoring (Phase 21B.4.8.1).
-    Unlike run_scoring_phase() (which trusts whatever GenerationRecords
-    it is handed), this function:
+    """The cross-machine-safe entry point to scoring (Phase 21B.4.8.1,
+    hardened in Phase 21B.4.8.2). Unlike run_scoring_phase() (which
+    trusts whatever GenerationRecords it is handed), this function:
 
-      1. Reconciles `manifest` against the live-verified `tasks` FIRST
+      1. Verifies `manifest`'s IDENTITY against `candidate_config` and
+         the suite parameters FIRST (orca.eval.generation_artifact
+         .verify_manifest_identity()) -- fails closed with
+         GenerationArtifactIdentityMismatchError if the manifest was
+         generated for a different candidate, revision, tokenizer
+         revision, artifact repo, backend, suite id/version/digests,
+         generation config, system instruction, or expected task set
+         than what is currently being requested (Phase 21B.4.8.2
+         Blocker 2 -- the manifest is never silently rescored as if it
+         belonged to a different candidate).
+      2. Reconciles `manifest` against the live-verified `tasks`
          (orca.eval.generation_artifact.verify_against_suite) -- fails
          closed with GenerationArtifactIntegrityError if any expected
          task is missing, duplicated, unknown, or category/scoring_type
          mismatched. This is the fix for the denominator-integrity gap:
          "expected" comes from the suite, never from whichever records
          happened to arrive.
-      2. Re-reads and SHA-256-verifies every non-error record's raw
-         response from the durable store before trusting its content
-         (orca.eval.generation_artifact.read_and_verify_raw_response) --
-         detects corruption/truncation/substitution in transit.
+      3. Re-reads and verifies (SHA-256 AND byte_length) every non-error
+         record's raw response from the durable store before trusting
+         its content (orca.eval.generation_artifact
+         .read_and_verify_raw_response) -- detects corruption/
+         truncation/substitution in transit.
 
-    Only after both checks pass does it reconstruct GenerationRecords
-    and delegate to run_scoring_phase()'s existing scoring logic."""
-    from orca.eval.generation_artifact import read_and_verify_raw_response, verify_against_suite
+    Only after all three checks pass does it reconstruct
+    GenerationRecords and delegate to run_scoring_phase()'s existing
+    scoring logic."""
+    from orca.eval.generation_artifact import (
+        read_and_verify_raw_response,
+        verify_against_suite,
+        verify_manifest_identity,
+    )
 
+    verify_manifest_identity(
+        manifest, candidate_config, tasks,
+        suite_id=suite_id, suite_version=suite_version,
+        content_digest=content_digest, scoring_digest=scoring_digest,
+    )
     verify_against_suite(manifest, tasks)
 
     records: list[GenerationRecord] = []
@@ -394,7 +586,9 @@ def run_scoring_phase_from_artifact(
                 raw_response_ref=None,
             ))
             continue
-        verified_text = read_and_verify_raw_response(entry["raw_response_ref"], entry["text_sha256"])
+        verified_text = read_and_verify_raw_response(
+            entry["raw_response_ref"], entry["text_sha256"], entry.get("byte_length"),
+        )
         records.append(GenerationRecord(
             task_id=entry["task_id"], category=entry["category"], scoring_type=entry["scoring_type"],
             text=verified_text, error=None, latency_ms=entry.get("latency_ms", 0.0),

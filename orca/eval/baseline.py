@@ -145,6 +145,21 @@ class BaselineFreezeFailed(RuntimeError):
     (deleted), and the suite was never left in a falsely-frozen state."""
 
 
+class MissingGenerationProvenanceError(ValueError):
+    """Phase 21B.4.8.2 baseline gate: a result declaring
+    `provenance_kind="real_generation_artifact"` has no
+    `generation_artifact_digest` -- a REAL candidate baseline may never
+    be finalized without a trace back to the exact sealed generation
+    bundle it was scored from. Explicitly-marked synthetic/dry-run
+    results ("synthetic_test") and results that predate this field
+    ("unspecified", the default) are not subject to this check -- no
+    real evaluation has occurred yet in this project, so "unspecified"
+    remains backward compatible with every existing harness-validation
+    result, but any FUTURE caller that wants to record a real
+    frontier-candidate baseline must opt in to "real_generation_artifact"
+    and supply real provenance, or this error blocks it."""
+
+
 class DuplicateRunIdError(ValueError):
     """A finalized EvaluationResultManifest already exists on disk under
     this exact run_id -- refusing to silently overwrite a prior
@@ -202,6 +217,33 @@ def _validate_result_completeness(result: EvaluationResultManifest, tasks: list[
         )
     if result.completed_at is None:
         raise IncompleteResultError("Result has no completed_at timestamp -- evaluation did not finish")
+
+
+def _validate_result_provenance(result: EvaluationResultManifest) -> None:
+    """Phase 21B.4.8.2 baseline gate ('BASELINE GATE' / 'No fake
+    provenance'): a result that declares itself a REAL candidate
+    evaluation (`provenance_kind="real_generation_artifact"`) must carry
+    a non-empty `generation_artifact_digest` tracing it back to the
+    exact sealed GenerationArtifactManifest it was scored from -- a
+    caller cannot construct an arbitrary EvaluationResultManifest and
+    claim real provenance without evidence. `"synthetic_test"` and the
+    backward-compatible default `"unspecified"` are exempt (dry-run/
+    harness-validation paths, and every result recorded before this
+    field existed)."""
+    if result.provenance_kind == "real_generation_artifact":
+        if not result.generation_artifact_digest:
+            raise MissingGenerationProvenanceError(
+                f"Result run_id={result.run_id!r} declares provenance_kind='real_generation_artifact' but "
+                "has no generation_artifact_digest -- refusing to finalize a real-candidate baseline that "
+                "cannot be traced back to a sealed generation artifact. Use provenance_kind="
+                "'synthetic_test' for dry-run/harness-validation results, or supply the real digest."
+            )
+    elif result.provenance_kind not in ("synthetic_test", "unspecified"):
+        raise MissingGenerationProvenanceError(
+            f"Result run_id={result.run_id!r} has an unrecognized provenance_kind="
+            f"{result.provenance_kind!r} -- expected 'real_generation_artifact', 'synthetic_test', "
+            "or 'unspecified'."
+        )
 
 
 def record_baseline_and_freeze_suite(
@@ -303,6 +345,7 @@ def _record_baseline_and_freeze_suite_locked(
         )
 
     _validate_result_completeness(result, tasks)
+    _validate_result_provenance(result)
 
     if suite_manifest.frozen:
         # Suite already frozen by an earlier baseline -- this candidate's

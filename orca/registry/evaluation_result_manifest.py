@@ -55,6 +55,19 @@ class EvaluationResultManifest:
     # Phase 21B.4 baseline-freeze transaction fields (see orca.eval.baseline):
     is_first_baseline: bool = False   # True only for the exact run that triggered the suite freeze
     finalized: bool = False           # True only once the coupled freeze transaction fully committed
+    # Phase 21B.4.8.2 (spec "RESULT MANIFEST PROVENANCE"): a finalized
+    # result for a REAL benchmark run must be traceable back to the
+    # exact sealed GenerationArtifactManifest it was scored from.
+    # `provenance_kind` defaults to "unspecified" for backward
+    # compatibility with dry-run/harness-validation results that predate
+    # this field (and with tests that never set it) -- only a result
+    # that explicitly declares itself "real_generation_artifact" is
+    # required (by orca.eval.baseline._validate_result_provenance) to
+    # carry a non-empty generation_artifact_digest. See
+    # orca.eval.baseline.MissingGenerationProvenanceError.
+    provenance_kind: str = "unspecified"  # "unspecified" | "synthetic_test" | "real_generation_artifact"
+    generation_artifact_digest: str | None = None
+    generation_artifact_schema_version: str | None = None
 
     def manifest_path(self) -> Path:
         validate_id(self.run_id, "run_id")
