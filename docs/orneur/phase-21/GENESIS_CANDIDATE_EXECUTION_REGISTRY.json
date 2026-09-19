@@ -1,8 +1,8 @@
 {
-  "schema_version": "genesis-candidate-execution-registry-v1",
-  "phase": "21B.4.10",
+  "schema_version": "genesis-candidate-execution-registry-v2",
+  "phase": "21B.4.10.1",
   "generated_at": "2026-09-19T00:00:00Z",
-  "note": "Stage-0 identity/license/runtime eligibility qualification only. No candidate is declared frontier-class, benchmark-qualified, or Genesis-selected by this registry. All revision/license/parameter data below was retrieved live via the Hugging Face Hub API (metadata only -- no weight shards were downloaded). ELIGIBLE_FOR_RUNTIME_SMOKE means only that a future phase MAY attempt to LOAD that candidate, never that it is qualified, selected, or frontier-class.",
+  "note": "Stage-0 identity/license/runtime eligibility qualification only. No candidate is declared frontier-class, benchmark-qualified, or Genesis-selected by this registry. All revision/license/parameter data below was retrieved live via the Hugging Face Hub API (metadata only -- no weight shards were downloaded). Phase 21B.4.10.1 replaces the v1 conflated 'stage0_status' field on deployable candidates with four separate fields (identity_status, license_status, runtime_qualification_status, runtime_smoke_eligibility) so that 'runtime not yet qualified' (which is exactly what a runtime smoke test exists to resolve) is never confused with 'not eligible to attempt a smoke test'. runtime_smoke_eligibility=ELIGIBLE means only that a future phase MAY attempt to LOAD that candidate, never that it is qualified, selected, or frontier-class.",
   "deployable_candidates": [
     {
       "candidate_class": "DEPLOYABLE_GENESIS_FOUNDATION_CANDIDATE",
@@ -25,7 +25,8 @@
       "official_runtime_formats": ["safetensors (BF16)"],
       "official_quantized_artifacts": "none observed in the repository's safetensors metadata this phase (BF16 only)",
       "license_identifier": "apache-2.0",
-      "license_source": "Hugging Face repository cardData.license (primary source)",
+      "license_source": "Hugging Face repository cardData.license (metadata tag)",
+      "license_repository_source_verified": "YES -- the actual LICENSE file was retrieved live at the pinned revision (https://huggingface.co/Qwen/Qwen3.8-27B/raw/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/LICENSE), confirmed to be the standard Apache License 2.0 full text (11,544 chars, opens 'Apache License / Version 2.0, January 2004') -- not metadata-tag-only evidence",
       "commercial_deployment_status": "GRANTED (Apache 2.0 permits commercial deployment)",
       "fine_tuning_status": "GRANTED (Apache 2.0 permits fine-tuning)",
       "redistribution_status": "GRANTED (Apache 2.0 permits redistribution of derivatives with attribution/license notice)",
@@ -36,7 +37,11 @@
       "theoretical_gpu_count_80gb_class": {"bf16": 1, "fp8": 1, "int4": 1},
       "qualified_practical_topology": "UNQUALIFIED / TBD",
       "zero_cash_access_status": "Modal $0-spend-limit workspace previously verified live (Phase 21B.4.7A) -- candidate-specific smoke run not attempted this phase",
-      "stage0_status": "ELIGIBLE_FOR_RUNTIME_SMOKE"
+      "identity_status": "RESOLVED",
+      "license_status": "CLEAR",
+      "runtime_qualification_status": "UNQUALIFIED",
+      "runtime_smoke_eligibility": "ELIGIBLE",
+      "runtime_smoke_blocked_reason": null
     },
     {
       "candidate_class": "DEPLOYABLE_GENESIS_FOUNDATION_CANDIDATE",
@@ -60,6 +65,7 @@
       "official_quantized_artifacts": "none observed in the repository's safetensors metadata this phase (BF16 only)",
       "license_identifier": "other (qwen-community-1.0, per Phase 21B.4.8.1 landscape research -- Hugging Face's own license TAG for this repo is the generic 'other')",
       "license_source": "Hugging Face repository cardData.license tag ('other') cross-referenced with Phase 21B.4.8.1's prior primary-source review of the qwen-community-1.0 license text (MAU/revenue attribution thresholds)",
+      "license_repository_source_verified": "NOT_APPLICABLE -- remains LICENSE_REVIEW_REQUIRED regardless of repository-file verification; the qwen-community-1.0 text's MAU/revenue-threshold clauses (already reviewed in Phase 21B.4.8.1) are what require terms review, not an absence of a findable license file",
       "commercial_deployment_status": "LICENSE_REVIEW_REQUIRED (custom community license with usage-threshold clauses -- ambiguity is not converted to GRANTED)",
       "fine_tuning_status": "LICENSE_REVIEW_REQUIRED",
       "redistribution_status": "LICENSE_REVIEW_REQUIRED",
@@ -70,7 +76,11 @@
       "theoretical_gpu_count_80gb_class": {"bf16": 5, "fp8": 3, "int4": 2},
       "qualified_practical_topology": "UNQUALIFIED / TBD",
       "zero_cash_access_status": "Modal multi-GPU tensor-parallel Functions are documented (Phase 21B.4.8) but not live-tested at this GPU count -- candidate-specific smoke run not attempted this phase",
-      "stage0_status": "LICENSE_REVIEW_REQUIRED"
+      "identity_status": "RESOLVED",
+      "license_status": "LICENSE_REVIEW_REQUIRED",
+      "runtime_qualification_status": "UNQUALIFIED",
+      "runtime_smoke_eligibility": "BLOCKED",
+      "runtime_smoke_blocked_reason": "License terms (qwen-community-1.0 MAU/revenue attribution thresholds) remain unresolved -- blocked from any GPU/weight-loading runtime smoke test until license review completes, per owner spec section 8. A metadata-only/non-weight compatibility check (tokenizer/config parsing, no model weights loaded) would not be blocked by this reason, but was not performed this phase."
     },
     {
       "candidate_class": "DEPLOYABLE_GENESIS_FOUNDATION_CANDIDATE",
@@ -93,7 +103,8 @@
       "official_runtime_formats": ["safetensors (mixed BF16 + FP8_E4M3)"],
       "official_quantized_artifacts": "YES -- official FP8 checkpoint (quant_method=fp8, modules_to_not_convert=[model.vision_tower, model.multi_modal_projector, lm_head]), confirmed live via Hugging Face Hub API this phase",
       "license_identifier": "apache-2.0",
-      "license_source": "Hugging Face repository cardData.license (primary source)",
+      "license_source": "Hugging Face repository cardData.license (metadata tag)",
+      "license_repository_source_verified": "NO -- no LICENSE/LICENSE.md/LICENSE.txt file exists in the repository at the pinned revision (checked live this phase: all three filenames returned HTTP 404 at https://huggingface.co/mistralai/Mistral-Small-4-119B-2603/raw/a11f36bebf709121056b1dbcc943d1c6afbe494d/); Mistral AI's Apache-2.0 repositories commonly declare license only via metadata/README rather than a repo-root LICENSE file. This is recorded honestly as metadata-tag-only evidence, not upgraded to a stronger verification level merely because Apache-2.0 is normally low-risk -- the same as-published-elsewhere Apache 2.0 text applies by reference, but this phase did not locate it inside this specific repository.",
       "commercial_deployment_status": "GRANTED",
       "fine_tuning_status": "GRANTED",
       "redistribution_status": "GRANTED",
@@ -104,7 +115,11 @@
       "theoretical_gpu_count_80gb_class": {"bf16": 3, "fp8": 2, "int4": 1},
       "qualified_practical_topology": "UNQUALIFIED / TBD",
       "zero_cash_access_status": "candidate-specific smoke run not attempted this phase",
-      "stage0_status": "RUNTIME_SUPPORT_UNQUALIFIED"
+      "identity_status": "RESOLVED",
+      "license_status": "CLEAR",
+      "runtime_qualification_status": "UNQUALIFIED",
+      "runtime_smoke_eligibility": "ELIGIBLE",
+      "runtime_smoke_blocked_reason": null
     },
     {
       "candidate_class": "DEPLOYABLE_GENESIS_FOUNDATION_CANDIDATE",
@@ -127,7 +142,8 @@
       "official_runtime_formats": ["safetensors (mixed BF16 + FP8_E4M3 + F32)"],
       "official_quantized_artifacts": "YES -- official FP8 checkpoint (quant_method=fp8), confirmed live via Hugging Face Hub API this phase",
       "license_identifier": "mit",
-      "license_source": "Hugging Face repository tags (license:mit), primary source",
+      "license_source": "Hugging Face repository tags (license:mit) (metadata tag)",
+      "license_repository_source_verified": "YES -- the actual LICENSE file was retrieved live at the pinned revision (https://huggingface.co/zai-org/GLM-5.3-Flash/raw/eb9eb208eb0d988989d07a6a12d0fdeb5f52574a/LICENSE), confirmed to be the standard MIT License full text (1,070 chars, 'MIT License / Copyright (c) 2026 Z.AI Co., Ltd') -- not metadata-tag-only evidence",
       "commercial_deployment_status": "GRANTED (MIT permits commercial deployment)",
       "fine_tuning_status": "GRANTED",
       "redistribution_status": "GRANTED",
@@ -138,7 +154,11 @@
       "theoretical_gpu_count_80gb_class": {"bf16": 9, "fp8": 5, "int4": 2},
       "qualified_practical_topology": "UNQUALIFIED / TBD -- the 2x INT4 theoretical minimum gives essentially zero runtime headroom (160.7GB weight floor against exactly 160GB of raw VRAM at 2x80GB) and is very unlikely to be practically viable at exactly that count",
       "zero_cash_access_status": "candidate-specific smoke run not attempted this phase",
-      "stage0_status": "RUNTIME_SUPPORT_UNQUALIFIED"
+      "identity_status": "RESOLVED",
+      "license_status": "CLEAR",
+      "runtime_qualification_status": "UNQUALIFIED",
+      "runtime_smoke_eligibility": "ELIGIBLE",
+      "runtime_smoke_blocked_reason": null
     }
   ],
   "controls": [

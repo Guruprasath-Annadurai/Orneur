@@ -1,5 +1,69 @@
 # Genesis Frontier — Next Gate
 
+## Phase 21B.4.10.1 update
+
+An independent audit of Phase 21B.4.10 found four execution-gate
+integrity issues, all closed, still without loading any real candidate:
+
+1. **Fixed the bootstrap estimand.** `orca.eval.frontier_stats.
+   paired_bootstrap_ci()` previously expanded resampled units back into
+   raw task_ids and computed one flat task-weighted mean -- a 10-task
+   cluster had 10x the influence of a singleton unit, directly
+   defeating `statistical_unit_id`'s purpose. Now every unit contributes
+   exactly ONE unit-level mean, resampled and averaged at the unit
+   level ("STATISTICAL UNIT, NOT RAW TASK COUNT, IS THE INFERENCE
+   WEIGHT"), proven by a dedicated test showing a 10-task cluster no
+   longer swamps a disagreeing singleton. Contract version bumped
+   `v1` -> `v2` (`genesis-frontier-stats-v2`) -- no historical result
+   exists under v1, so no conversion is needed.
+2. **Added `validate_statistical_units()`**, failing closed on empty/
+   duplicate unit IDs, task overlap across units, duplicate tasks inside
+   a unit, missing/NaN/infinite/out-of-range scores, and (via an
+   optional `expected_task_ids` parameter) silently omitted or
+   unexpected tasks.
+3. **Implemented the three ACTUAL comparators** the methodology
+   describes but v1 never coded: `bootstrap_frontier_median_ci()`,
+   `bootstrap_best_reference_ci()`, and `bootstrap_control_superiority_ci()`
+   each recompute their comparator (reference median / strongest
+   reference / strongest control) INSIDE every bootstrap resample, over
+   the same sampled units the candidate is scored on -- never a
+   precomputed per-task median/max, which would synthesize a "model" no
+   real reference/control represents.
+4. **Hardened both quorum validators** against fabricated identities:
+   `validate_frontier_reference_quorum()`/`validate_control_quorum()`
+   now check every name/organization pair against a REGISTERED set
+   locked in code, rejecting unknown names, duplicates, and
+   name/organization mismatches outright rather than trusting whatever
+   tuples a caller supplies.
+
+Also this phase: the candidate registry's conflated `stage0_status` for
+deployable candidates is replaced with four separate, structurally-
+validated fields (`identity_status`, `license_status`,
+`runtime_qualification_status`, `runtime_smoke_eligibility`) so
+"runtime not yet qualified" is never confused with "ineligible for a
+smoke test" (schema `genesis-candidate-execution-registry-v2`); every
+registry name set (4 deployable/3 control/6 reference) and every
+revision format (40-hex) is now structurally enforced; two deployable
+candidates' actual LICENSE files were retrieved and confirmed at their
+pinned revisions (Qwen3.8-27B: Apache 2.0 full text; GLM-5.3-Flash: MIT
+full text), while Mistral Small 4's Apache-2.0 status is now honestly
+recorded as metadata-tag-only evidence (no LICENSE file exists in that
+repository); the pre-freeze raw-evidence gate now makes hash/length
+mandatory (never optional), binds a successful record's raw-response
+file to its OWN run's canonical subdirectory (not merely "somewhere
+under the global root"), rejects symlink indirection, and rejects any
+record simultaneously claiming a generation failure and successful
+raw-response evidence (8 new adversarial tests); Qwen3.8-27B's
+corrected smoke-test plan removes the prior INT4 assumption (no official
+INT4 checkpoint exists) in favor of metadata-only checks then an
+official BF16 load; and the zero-cash plan now states explicitly that
+no future phase may launch a GPU on `billed_cost=$0` evidence alone --
+the owner must freshly reconfirm the $0 dashboard spend limit first.
+
+No candidate was downloaded, executed, or loaded on GPU this phase; no
+`genesis-eval-v1` execution; no private holdout content; Phase 21C
+remains unauthorized.
+
 ## Phase 21B.4.10 update
 
 Turned the locked Phase 21B.4.9.x methodology into an enforceable,

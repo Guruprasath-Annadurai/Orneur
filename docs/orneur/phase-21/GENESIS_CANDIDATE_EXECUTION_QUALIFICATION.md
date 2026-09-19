@@ -1,14 +1,23 @@
 # Genesis Candidate Execution Qualification (Stage 0)
 
-**Phase 21B.4.10.** This document summarizes the Stage-0 identity/
-license/runtime eligibility qualification performed against the
-machine-readable registry
+**Phase 21B.4.10, hardened 21B.4.10.1.** This document summarizes the
+Stage-0 identity/license/runtime eligibility qualification performed
+against the machine-readable registry
 [`GENESIS_CANDIDATE_EXECUTION_REGISTRY.json`](GENESIS_CANDIDATE_EXECUTION_REGISTRY.json)
-(schema: `orca/eval/candidate_registry.py`, tests:
-`tests/test_candidate_registry.py`). **No candidate is declared
+(schema `genesis-candidate-execution-registry-v2`: `orca/eval/candidate_registry.py`,
+tests: `tests/test_candidate_registry.py`). **No candidate is declared
 frontier-class, benchmark-qualified, or Genesis-selected here.**
-`ELIGIBLE_FOR_RUNTIME_SMOKE` means only that a future, separately
-authorized phase MAY attempt to LOAD that candidate — nothing more.
+
+**Phase 21B.4.10.1 correction**: deployable candidates' single
+conflated `stage0_status` field is replaced by four separate fields
+(`identity_status`, `license_status`, `runtime_qualification_status`,
+`runtime_smoke_eligibility`) so that "runtime not yet qualified"
+(exactly what a runtime smoke test exists to resolve) is never confused
+with "not eligible to attempt a smoke test." `runtime_smoke_eligibility:
+ELIGIBLE` means only that a future, separately authorized phase MAY
+attempt to LOAD that candidate — nothing more; controls retain the
+simpler `stage0_status` field (`ELIGIBLE_FOR_RUNTIME_SMOKE`), since they
+never suffer this conflation.
 
 ## What Stage 0 actually checked
 
@@ -31,23 +40,28 @@ ONLY small metadata retrieved live from the Hugging Face Hub API
   checkpoint already exists — see below), and the model's
   `architectures` class name.
 
-## Summary table
+## Summary table — deployable candidates (hardened fields, Phase 21B.4.10.1)
 
-| Candidate | Class | Revision (short) | License | Total params | Official FP8 checkpoint? | Stage-0 status |
-|---|---|---|---|---|---|---|
-| Qwen3.8-27B | Deployable | `1d4bf0f2` | apache-2.0 | 27.78B | No (BF16 only) | `ELIGIBLE_FOR_RUNTIME_SMOKE` |
-| Qwen3.8-Flash-Next | Deployable | `de4b8e4d` | other (qwen-community-1.0) | 180.0B | No (BF16 only) | `LICENSE_REVIEW_REQUIRED` |
-| Mistral Small 4 | Deployable | `a11f36be` | apache-2.0 | 119.4B | **Yes** | `RUNTIME_SUPPORT_UNQUALIFIED` |
-| GLM-5.3-Flash | Deployable | `eb9eb208` | mit | 321.3B | **Yes** | `RUNTIME_SUPPORT_UNQUALIFIED` |
-| Qwen3-8B (control) | Control | `b968826d` | apache-2.0 | 8.19B | No | `ELIGIBLE_FOR_RUNTIME_SMOKE` |
-| Mistral-Nemo-Instruct-2407 (control) | Control | `04d8a905` | apache-2.0 | 12.25B | No | `ELIGIBLE_FOR_RUNTIME_SMOKE` |
-| Phi-4 (control) | Control | `2db69c1c` | mit | 14.66B | No | `ELIGIBLE_FOR_RUNTIME_SMOKE` |
-| DeepSeek V4.1-Flash | Reference | `dba1be0a` | mit | ~763B (Phase 21B.4.8) | — | `REFERENCE_EXECUTION_DEFERRED` |
-| GLM-5.3 (flagship) | Reference | `aca966e4` | other | ~743B (Phase 21B.4.8) | — | `REFERENCE_EXECUTION_DEFERRED` |
-| Mistral Large 3 | Reference | `d40f4a01` | apache-2.0 | ~675B (Phase 21B.4.8) | — | `REFERENCE_EXECUTION_DEFERRED` |
-| MiniMax M3 | Reference | `f0e1c1e0` | other (custom, terms review pending) | ~428B (Phase 21B.4.8) | — | `REFERENCE_EXECUTION_DEFERRED` |
-| Qwen3.8-Max | Reference (mutable API) | N/A (managed API) | N/A | N/A | — | `REFERENCE_EXECUTION_DEFERRED` |
-| Kimi K3 | Reference | `f831ab66` | other | ~2.8T (Phase 21B.4.8) | — | `REFERENCE_EXECUTION_DEFERRED` |
+| Candidate | Revision (short) | License | Total params | Official FP8 checkpoint? | Identity | License status | Runtime qual. | Smoke eligibility |
+|---|---|---|---|---|---|---|---|---|
+| Qwen3.8-27B | `1d4bf0f2` | apache-2.0 | 27.78B | No (BF16 only) | RESOLVED | CLEAR | UNQUALIFIED | **ELIGIBLE** |
+| Qwen3.8-Flash-Next | `de4b8e4d` | other (qwen-community-1.0) | 180.0B | No (BF16 only) | RESOLVED | LICENSE_REVIEW_REQUIRED | UNQUALIFIED | **BLOCKED** |
+| Mistral Small 4 | `a11f36be` | apache-2.0 | 119.4B | **Yes** | RESOLVED | CLEAR | UNQUALIFIED | **ELIGIBLE** |
+| GLM-5.3-Flash | `eb9eb208` | mit | 321.3B | **Yes** | RESOLVED | CLEAR | UNQUALIFIED | **ELIGIBLE** |
+
+## Summary table — controls and frontier references
+
+| Candidate | Class | Revision (short) | License | Total params | Status |
+|---|---|---|---|---|---|
+| Qwen3-8B (control) | Control | `b968826d` | apache-2.0 | 8.19B | `ELIGIBLE_FOR_RUNTIME_SMOKE` |
+| Mistral-Nemo-Instruct-2407 (control) | Control | `04d8a905` | apache-2.0 | 12.25B | `ELIGIBLE_FOR_RUNTIME_SMOKE` |
+| Phi-4 (control) | Control | `2db69c1c` | mit | 14.66B | `ELIGIBLE_FOR_RUNTIME_SMOKE` |
+| DeepSeek V4.1-Flash | Reference | `dba1be0a` | mit | ~763B (Phase 21B.4.8) | `REFERENCE_EXECUTION_DEFERRED` |
+| GLM-5.3 (flagship) | Reference | `aca966e4` | other | ~743B (Phase 21B.4.8) | `REFERENCE_EXECUTION_DEFERRED` |
+| Mistral Large 3 | Reference | `d40f4a01` | apache-2.0 | ~675B (Phase 21B.4.8) | `REFERENCE_EXECUTION_DEFERRED` |
+| MiniMax M3 | Reference | `f0e1c1e0` | other (custom, terms review pending) | ~428B (Phase 21B.4.8) | `REFERENCE_EXECUTION_DEFERRED` |
+| Qwen3.8-Max | Reference (mutable API) | N/A (managed API) | N/A | N/A | `REFERENCE_EXECUTION_DEFERRED` |
+| Kimi K3 | Reference | `f831ab66` | other | ~2.8T (Phase 21B.4.8) | `REFERENCE_EXECUTION_DEFERRED` |
 
 Full SHAs, per-dtype parameter breakdowns, and every other Stage-0
 field are in the registry JSON — this table is a summary, not the
@@ -104,17 +118,51 @@ Per owner spec §21: if a future phase attempts runtime smoke tests, the
 smallest/cheapest topology that still tests a REAL deployable candidate
 is a reasonable resource-scheduling order — **this is infrastructure
 sequencing, not a capability judgment, and no intelligence ranking is
-inferred from it**:
+inferred from it**. **Corrected, Phase 21B.4.10.1**: the registry
+records Qwen3.8-27B's official repository as BF16-only (no official
+INT4 checkpoint was observed) — the prior version of this ordering
+incorrectly assumed an L4 INT4 smoke was the lowest-risk first real
+load, which would introduce TWO untested variables at once (runtime
+compatibility AND an unqualified post-hoc quantization path). The
+corrected preferred sequence for Qwen3.8-27B specifically:
 
-1. Qwen3.8-27B (smallest deployable candidate, single-GPU theoretical
-   floor even at INT4) — cheapest real deployable-candidate smoke test.
+**A.** Metadata/config/tokenizer/runtime-parser compatibility check
+using no full weights where possible (config.json parsing, tokenizer
+loading, checking whether the installed/target runtime recognizes the
+`Qwen3_5ForConditionalGeneration` architecture class at all) — this
+resolves real information with zero GPU cost and zero weight download.
+
+**B.** If (A) succeeds: the candidate's OWN OFFICIAL pinned BF16
+checkpoint on an 80GB-class GPU (A100-80GB/H100/H200, or the current
+supported equivalent with sufficient practical headroom) — never a
+custom/ad-hoc INT4 quantization path, which this candidate's official
+repository does not itself provide.
+
+Only after (A) and (B) both succeed would an ad-hoc quantization route
+be evaluated as a SEPARATE, explicitly-labeled experiment — never
+substituted as the "first real load" itself. **This phase does not
+launch (A) or (B)** — this is the corrected plan for a future phase to
+execute.
+
+Full candidate-ordering table:
+
+1. Qwen3.8-27B — Stage A (metadata-only) then Stage B (official BF16 on
+   an 80GB-class GPU) per the correction above; smallest deployable
+   candidate by total parameters.
 2. Mistral Small 4 (2-3 GPU theoretical floor, official FP8 checkpoint
-   simplifies the precision question).
-3. Qwen3.8-Flash-Next (2-5 GPU theoretical floor depending on precision,
-   plus its `LICENSE_REVIEW_REQUIRED` status must resolve first).
-4. GLM-5.3-Flash (largest footprint of the four; its 2×80GB INT4
-   theoretical floor has essentially zero headroom and is the least
-   likely to be practically viable at that exact count).
+   simplifies the precision question — this candidate's own official
+   checkpoint IS FP8, unlike Qwen3.8-27B, so testing its actual
+   published artifact is not an ad-hoc quantization route).
+3. GLM-5.3-Flash (its official FP8 checkpoint likewise avoids ad-hoc
+   quantization; its 2×80GB INT4 theoretical floor has essentially zero
+   headroom and is NOT the recommended first configuration — see
+   `GENESIS_COMPUTE_TOPOLOGY_QUALIFICATION_PLAN.md`'s FP8-first
+   recommendation for this candidate).
+4. Qwen3.8-Flash-Next — currently `runtime_smoke_eligibility: BLOCKED`
+   (license review required); excluded from this ordering until that
+   resolves. It must not be excluded from eventual runtime-smoke
+   consideration merely because its runtime remains unqualified — only
+   the license status blocks it right now.
 
 Controls (Qwen3-8B, Mistral-Nemo-Instruct-2407, Phi-4) remain
 `CONTROL / SMALL BASELINE` throughout — they are never promoted to

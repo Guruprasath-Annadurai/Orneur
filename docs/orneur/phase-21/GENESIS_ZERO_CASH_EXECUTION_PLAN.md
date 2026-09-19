@@ -77,6 +77,20 @@ boundary) unless the owner has separately and legitimately completed
 account access since. No such completion was reported or verified this
 phase — status unchanged.
 
+## Mandatory pre-GPU-launch reconfirmation (LOCKED, Phase 21B.4.10.1)
+
+**Before Phase 21B.4.11 (or any future phase) is authorized to start a
+GPU**, the owner MUST freshly reconfirm, directly in the Modal
+dashboard, that the workspace's Spend limit is still **$0**. This is
+restated as an explicit precondition, not merely background context,
+because the supported billing CLI (`report`/`summary`/`rates`) cannot
+prove that setting either way (§"Spend-limit evidence" above) — a
+`billed_cost: $0.00` reading is consistent with the limit still being
+$0, but it is equally consistent with a much higher, simply-unused
+limit. **No future phase may launch a GPU on the strength of
+`billed_cost=$0` alone** — that figure is necessary but not sufficient
+evidence that the $0 ceiling is still in force.
+
 ## Hard prohibitions this phase honored (restated for the record)
 
 No top-up, no purchase, no wallet-cash spend, no paid-instance creation,
