@@ -99,6 +99,7 @@ import fcntl
 import hashlib
 import json
 import re
+from pathlib import Path
 
 from orca.config import ORCA_HOME
 from orca.eval.genesis_suite import EvalTask, category_task_counts, compute_suite_digests
@@ -189,6 +190,22 @@ class GenerationArtifactMissingError(ValueError):
     passed. Covers both "never existed" and "removed since scoring"."""
 
 
+class RawEvidencePreservationError(ValueError):
+    """Phase 21B.4.10 mandatory pre-freeze gate (carried forward from
+    the Phase 21B.4.8.3 audit finding, restated as a hard prerequisite
+    in Phase 21B.4.9's execution plan): a successful generation record's
+    raw response is no longer intact on disk at baseline-finalization
+    time -- missing, moved outside the canonical artifact root, not a
+    regular file, wrong byte length, wrong SHA-256, or fails to decode
+    as UTF-8. This is a genuine TOCTOU gap `_validate_result_generation_
+    provenance()`'s bundle-level re-hash does not close by itself: the
+    sealed manifest's bundle bytes and each individual raw-response file
+    live in separate content-addressed stores, so re-verifying the
+    bundle proves the manifest's own claims are self-consistent but says
+    nothing about whether every raw-response file it POINTS TO is still
+    intact. The suite must remain unfrozen when this check fails."""
+
+
 class DuplicateRunIdError(ValueError):
     """A finalized EvaluationResultManifest already exists on disk under
     this exact run_id -- refusing to silently overwrite a prior
@@ -251,7 +268,108 @@ def _validate_result_completeness(result: EvaluationResultManifest, tasks: list[
 _DIGEST_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
-def _validate_result_generation_provenance(result: EvaluationResultManifest) -> None:
+def _verify_raw_evidence_before_freeze(manifest, tasks: list[EvalTask]) -> None:
+    """Phase 21B.4.10 mandatory pre-freeze raw-evidence gate. Called from
+    `_validate_result_generation_provenance()` immediately after the
+    sealed bundle's own bytes and identity have been re-verified, using
+    that SAME already-loaded manifest (never re-reading the sealed
+    artifact a third time) -- as close to the irreversible suite freeze
+    as this transaction's structure allows, inside the suite-freeze
+    lock. Never relies solely on the earlier scoring-time raw-response
+    verification (`score_verified_generation_artifact()`'s
+    `read_and_verify_raw_response()` calls), which happened at a
+    different point in time and cannot detect anything that changed
+    since.
+
+    1. Re-reconciles the manifest against the live-verified suite
+       (`orca.eval.generation_artifact.verify_against_suite`) --
+       missing transport evidence is an INTEGRITY FAILURE, never
+       silently treated as equivalent to a generation failure.
+    2. For every record with `error is None` (a claimed-successful
+       generation), independently re-verifies: `raw_response_ref`
+       exists; it resolves inside the canonical generation-artifact
+       root (rejecting any path that would escape it, e.g. via a
+       crafted traversal or a symlink pointing elsewhere); the
+       referenced object is a regular file; its exact byte length
+       matches the manifest's recorded `byte_length`; its SHA-256
+       matches the manifest's recorded `text_sha256`; its bytes decode
+       as UTF-8.
+    3. Records with `error` set (an explicit generation failure) are
+       confirmed present and left untouched -- no task may silently
+       disappear from either category, but an explicit failure is a
+       legitimate accounted-for outcome, not something to raw-evidence-
+       check.
+
+    Raises `GenerationArtifactIntegrityError` (suite-coverage failures,
+    from `verify_against_suite`) or `RawEvidencePreservationError`
+    (raw-response-level failures) -- in either case the caller must not
+    proceed to freeze the suite."""
+    from orca.eval.generation_artifact import GENERATION_ARTIFACT_DIR, verify_against_suite
+
+    verify_against_suite(manifest, tasks)
+
+    canonical_root = Path(GENERATION_ARTIFACT_DIR).resolve()
+
+    for record in manifest.records:
+        task_id = record.get("task_id")
+        if record.get("error") is not None:
+            continue  # explicit generation failure -- accounted for, never raw-evidence-checked
+
+        raw_ref = record.get("raw_response_ref")
+        expected_sha = record.get("text_sha256")
+        expected_len = record.get("byte_length")
+
+        if not raw_ref:
+            raise RawEvidencePreservationError(
+                f"Task {task_id!r} has no raw_response_ref recorded despite error=None -- "
+                "missing transport evidence is an integrity failure, not a generation failure."
+            )
+
+        path = Path(raw_ref)
+        try:
+            resolved = path.resolve(strict=True)
+        except (FileNotFoundError, RuntimeError) as exc:
+            raise RawEvidencePreservationError(
+                f"Task {task_id!r} raw_response_ref {raw_ref!r} does not exist (or could not be "
+                f"resolved) at baseline-finalization time -- present at scoring time, gone now: {exc}"
+            ) from exc
+
+        if resolved != canonical_root and canonical_root not in resolved.parents:
+            raise RawEvidencePreservationError(
+                f"Task {task_id!r} raw_response_ref {raw_ref!r} resolves to {resolved}, which is "
+                f"outside the canonical generation-artifact root {canonical_root} -- refusing to "
+                "trust a path that could have been redirected or escaped since scoring time."
+            )
+        if not resolved.is_file():
+            raise RawEvidencePreservationError(
+                f"Task {task_id!r} raw_response_ref {raw_ref!r} does not resolve to a regular file "
+                "at baseline-finalization time."
+            )
+
+        data = resolved.read_bytes()
+        if expected_len is not None and len(data) != expected_len:
+            raise RawEvidencePreservationError(
+                f"Task {task_id!r} raw_response_ref {raw_ref!r} byte length ({len(data)}) no longer "
+                f"matches the manifest's recorded byte_length ({expected_len}) -- altered since "
+                "scoring time."
+            )
+        actual_sha = hashlib.sha256(data).hexdigest()
+        if expected_sha is not None and actual_sha != expected_sha:
+            raise RawEvidencePreservationError(
+                f"Task {task_id!r} raw_response_ref {raw_ref!r} SHA-256 ({actual_sha}) no longer "
+                f"matches the manifest's recorded hash ({expected_sha}) -- altered or replaced since "
+                "scoring time."
+            )
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise RawEvidencePreservationError(
+                f"Task {task_id!r} raw_response_ref {raw_ref!r} no longer decodes as UTF-8 text at "
+                f"baseline-finalization time: {exc}"
+            ) from exc
+
+
+def _validate_result_generation_provenance(result: EvaluationResultManifest, tasks: list[EvalTask]) -> None:
     """Phase 21B.4.8.3 (spec sections 3-4, 13): a syntactically valid
     digest string is NOT provenance. Called only once
     `result.provenance_kind == "real_generation_artifact"` has already
@@ -283,7 +401,14 @@ def _validate_result_generation_provenance(result: EvaluationResultManifest) -> 
          digests, system_instruction_digest, and an independently
          recomputed generation_config_digest from
          result.inference_config) -- any disagreement is
-         GenerationArtifactMismatchError."""
+         GenerationArtifactMismatchError.
+      6. Phase 21B.4.10: calls `_verify_raw_evidence_before_freeze()` --
+         the mandatory pre-freeze raw-evidence gate re-reconciling the
+         manifest against `tasks` and independently re-verifying every
+         successful record's raw-response file (existence, canonical-
+         root containment, byte_length, SHA-256, UTF-8 decodability) at
+         finalization time, never relying solely on the earlier
+         scoring-time check."""
     from orca.eval.generation_artifact import (
         GENERATION_ARTIFACT_SCHEMA_VERSION,
         GenerationArtifactIntegrityError,
@@ -360,8 +485,10 @@ def _validate_result_generation_provenance(result: EvaluationResultManifest) -> 
             f"disagrees with the actual artifact on disk: {details}"
         )
 
+    _verify_raw_evidence_before_freeze(manifest, tasks)
 
-def _validate_result_provenance(result: EvaluationResultManifest) -> None:
+
+def _validate_result_provenance(result: EvaluationResultManifest, tasks: list[EvalTask]) -> None:
     """Phase 21B.4.8.3 baseline gate (tightened from 21B.4.8.2):
     `record_baseline_and_freeze_suite()` is the REAL baseline/freeze
     transaction, so it now REQUIRES `provenance_kind ==
@@ -388,7 +515,7 @@ def _validate_result_provenance(result: EvaluationResultManifest) -> None:
             "(provenance_kind='unspecified') must never freeze the real evaluation suite -- use a "
             "separate non-freezing persistence path for those."
         )
-    _validate_result_generation_provenance(result)
+    _validate_result_generation_provenance(result, tasks)
 
 
 def record_baseline_and_freeze_suite(
@@ -490,7 +617,7 @@ def _record_baseline_and_freeze_suite_locked(
         )
 
     _validate_result_completeness(result, tasks)
-    _validate_result_provenance(result)
+    _validate_result_provenance(result, tasks)
 
     if suite_manifest.frozen:
         # Suite already frozen by an earlier baseline -- this candidate's
