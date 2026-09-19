@@ -632,3 +632,121 @@ def validate_control_quorum(available_controls: list[str]) -> QuorumStatus:
     if not set(CONTROL_TARGET_SET).issubset(seen.keys()):
         return QuorumStatus.CONTROL_SET_INCOMPLETE
     return QuorumStatus.QUORUM_MET
+
+
+# ── Fail-closed decision-facing composition (Phase 21B.4.11 §5B) ─────────
+#
+# The dedicated comparator functions above (bootstrap_frontier_median_ci,
+# bootstrap_best_reference_ci, bootstrap_control_superiority_ci) and the
+# quorum validators exist as independent building blocks -- nothing
+# structurally stopped a future caller from invoking a comparator
+# directly, computing a CI from a reference/control set that never
+# actually satisfied its registered quorum, and classifying the result
+# as if it were decision-grade evidence. The three functions below are
+# the ONLY sanctioned entry points for a real frontier-class decision:
+# each requires the appropriate quorum to be satisfied FIRST, and raises
+# rather than silently computing an unqualified comparison. This is a
+# pure composition/wrapper addition -- no existing function's behavior,
+# and no locked numeric margin, changes. FRONTIER_STATISTICAL_CONTRACT_
+# VERSION therefore remains "genesis-frontier-stats-v2": nothing about
+# the statistical CONTRACT itself changed, only an additional fail-
+# closed call path was added on top of it.
+#
+# No candidate data is used here; every test exercising these functions
+# uses synthetic fixtures only, and none of them execute a real
+# candidate comparison.
+
+
+class QuorumNotMetError(StatisticalUnitValidationError):
+    """Raised by the decision-facing wrapper functions when the
+    appropriate registered quorum (frontier reference or control) is not
+    met -- a real frontier-class/control-superiority decision may never
+    be computed from an unqualified reference or control set, even if
+    the underlying bootstrap arithmetic would happily produce a number."""
+
+
+def decide_frontier_gap(
+    candidate_scores: dict[str, float],
+    reference_scores_by_name: dict[str, dict[str, float]],
+    units: list[StatisticalUnit],
+    *,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    confidence: float = CONFIDENCE_LEVEL,
+    rng: random.Random | None = None,
+    expected_task_ids: frozenset[str] | None = None,
+) -> tuple[ConfidenceInterval, Classification]:
+    """The sanctioned entry point for a real frontier-gap decision.
+    Requires `validate_frontier_reference_quorum()` to return
+    `QUORUM_MET` for exactly the references present in
+    `reference_scores_by_name` BEFORE calling
+    `bootstrap_frontier_median_ci()` + `classify_frontier_gap()`. Raises
+    `QuorumNotMetError` (a `StatisticalUnitValidationError` subclass) if
+    quorum is not met, or if any reference name isn't registered
+    (`validate_frontier_reference_quorum()` itself raises for that)."""
+    available = [(name, REGISTERED_FRONTIER_REFERENCES.get(name, "<unregistered>")) for name in reference_scores_by_name]
+    status = validate_frontier_reference_quorum(available)
+    if status != QuorumStatus.QUORUM_MET:
+        raise QuorumNotMetError(
+            f"Frontier reference quorum not met ({status.value}) -- refusing to compute a frontier-gap "
+            f"decision from an unqualified reference set (available: {sorted(reference_scores_by_name)})."
+        )
+    ci = bootstrap_frontier_median_ci(
+        candidate_scores, reference_scores_by_name, units,
+        resamples=resamples, confidence=confidence, rng=rng, expected_task_ids=expected_task_ids,
+    )
+    return ci, classify_frontier_gap(ci)
+
+
+def decide_best_reference(
+    candidate_scores: dict[str, float],
+    reference_scores_by_name: dict[str, dict[str, float]],
+    units: list[StatisticalUnit],
+    *,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    confidence: float = CONFIDENCE_LEVEL,
+    rng: random.Random | None = None,
+    expected_task_ids: frozenset[str] | None = None,
+) -> tuple[ConfidenceInterval, Classification]:
+    """The sanctioned entry point for a real best-reference (ceiling-
+    guard) decision -- same quorum-first pattern as
+    `decide_frontier_gap()`, wrapping `bootstrap_best_reference_ci()` +
+    `classify_best_reference()`."""
+    available = [(name, REGISTERED_FRONTIER_REFERENCES.get(name, "<unregistered>")) for name in reference_scores_by_name]
+    status = validate_frontier_reference_quorum(available)
+    if status != QuorumStatus.QUORUM_MET:
+        raise QuorumNotMetError(
+            f"Frontier reference quorum not met ({status.value}) -- refusing to compute a best-reference "
+            f"decision from an unqualified reference set (available: {sorted(reference_scores_by_name)})."
+        )
+    ci = bootstrap_best_reference_ci(
+        candidate_scores, reference_scores_by_name, units,
+        resamples=resamples, confidence=confidence, rng=rng, expected_task_ids=expected_task_ids,
+    )
+    return ci, classify_best_reference(ci)
+
+
+def decide_control_superiority(
+    candidate_scores: dict[str, float],
+    control_scores_by_name: dict[str, dict[str, float]],
+    units: list[StatisticalUnit],
+    *,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    confidence: float = CONFIDENCE_LEVEL,
+    rng: random.Random | None = None,
+    expected_task_ids: frozenset[str] | None = None,
+) -> tuple[ConfidenceInterval, Classification]:
+    """The sanctioned entry point for a real control-superiority
+    decision -- requires `validate_control_quorum()` to return
+    `QUORUM_MET` (all three registered controls present) BEFORE calling
+    `bootstrap_control_superiority_ci()` + `classify_control_superiority()`."""
+    status = validate_control_quorum(list(control_scores_by_name.keys()))
+    if status != QuorumStatus.QUORUM_MET:
+        raise QuorumNotMetError(
+            f"Control quorum not met ({status.value}) -- refusing to compute a control-superiority "
+            f"decision from an unqualified control set (available: {sorted(control_scores_by_name)})."
+        )
+    ci = bootstrap_control_superiority_ci(
+        candidate_scores, control_scores_by_name, units,
+        resamples=resamples, confidence=confidence, rng=rng, expected_task_ids=expected_task_ids,
+    )
+    return ci, classify_control_superiority(ci)

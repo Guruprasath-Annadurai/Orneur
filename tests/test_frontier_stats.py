@@ -37,8 +37,12 @@ from orca.eval.frontier_stats import (
     classify_pairwise_finalist,
     classify_quantization,
     clustered_units,
+    decide_best_reference,
+    decide_control_superiority,
+    decide_frontier_gap,
     independent_units,
     paired_bootstrap_ci,
+    QuorumNotMetError,
     validate_control_quorum,
     validate_frontier_reference_quorum,
     validate_statistical_units,
@@ -481,3 +485,118 @@ def test_dedicated_comparators_validate_units_before_bootstrapping():
     units = independent_units(["t-1", "t-2"])
     with pytest.raises(StatisticalUnitValidationError, match="missing"):
         bootstrap_frontier_median_ci({"t-1": 0.5}, {"ref": {"t-1": 0.5}}, units, resamples=10, rng=random.Random(0))
+
+
+# ── Fail-closed decision-facing composition (Phase 21B.4.11 §5B) ────────
+#
+# All fixtures below are synthetic -- no real candidate, reference, or
+# control data is used. These tests exist to prove the wrapper functions
+# refuse to reach the underlying bootstrap comparator at all when the
+# registered quorum is not met, not merely that they raise afterward.
+
+
+def _four_registered_references_three_lineages():
+    """Four registered reference names spanning >= 3 distinct
+    organizations -- satisfies both FRONTIER_REFERENCE_QUORUM_MIN (4)
+    and FRONTIER_REFERENCE_QUORUM_MIN_LINEAGES (3)."""
+    names = list(REGISTERED_FRONTIER_REFERENCES)
+    orgs = {REGISTERED_FRONTIER_REFERENCES[n] for n in names}
+    assert len(orgs) >= 3
+    return names[:4]
+
+
+def test_decide_frontier_gap_succeeds_when_quorum_met():
+    task_ids = [f"t-{i}" for i in range(10)]
+    units = independent_units(task_ids)
+    candidate_scores = {tid: 0.8 for tid in task_ids}
+    reference_names = _four_registered_references_three_lineages()
+    references = {name: {tid: 0.5 for tid in task_ids} for name in reference_names}
+    ci, classification = decide_frontier_gap(candidate_scores, references, units, resamples=200, rng=random.Random(1))
+    assert isinstance(ci, ConfidenceInterval)
+    assert isinstance(classification, Classification)
+
+
+def test_decide_frontier_gap_raises_without_bootstrapping_when_quorum_not_met(monkeypatch):
+    task_ids = [f"t-{i}" for i in range(10)]
+    units = independent_units(task_ids)
+    candidate_scores = {tid: 0.8 for tid in task_ids}
+    # Only 2 references -- below FRONTIER_REFERENCE_QUORUM_MIN (4).
+    reference_names = list(REGISTERED_FRONTIER_REFERENCES)[:2]
+    references = {name: {tid: 0.5 for tid in task_ids} for name in reference_names}
+
+    called = []
+    monkeypatch.setattr(
+        "orca.eval.frontier_stats.bootstrap_frontier_median_ci",
+        lambda *a, **k: called.append(True) or (_ for _ in ()).throw(AssertionError("bootstrap must not be called")),
+    )
+    with pytest.raises(QuorumNotMetError):
+        decide_frontier_gap(candidate_scores, references, units, resamples=200, rng=random.Random(1))
+    assert called == [], "bootstrap_frontier_median_ci must never be invoked when quorum is not met"
+
+
+def test_decide_best_reference_succeeds_when_quorum_met():
+    task_ids = [f"t-{i}" for i in range(10)]
+    units = independent_units(task_ids)
+    candidate_scores = {tid: 0.8 for tid in task_ids}
+    reference_names = _four_registered_references_three_lineages()
+    references = {name: {tid: 0.5 for tid in task_ids} for name in reference_names}
+    ci, classification = decide_best_reference(candidate_scores, references, units, resamples=200, rng=random.Random(2))
+    assert isinstance(ci, ConfidenceInterval)
+    assert isinstance(classification, Classification)
+
+
+def test_decide_best_reference_raises_without_bootstrapping_when_quorum_not_met(monkeypatch):
+    task_ids = [f"t-{i}" for i in range(10)]
+    units = independent_units(task_ids)
+    candidate_scores = {tid: 0.8 for tid in task_ids}
+    references = {}  # empty -- CONTROL_SET/REFERENCE_SET incomplete
+
+    called = []
+    monkeypatch.setattr(
+        "orca.eval.frontier_stats.bootstrap_best_reference_ci",
+        lambda *a, **k: called.append(True) or (_ for _ in ()).throw(AssertionError("bootstrap must not be called")),
+    )
+    with pytest.raises(QuorumNotMetError):
+        decide_best_reference(candidate_scores, references, units, resamples=200, rng=random.Random(2))
+    assert called == [], "bootstrap_best_reference_ci must never be invoked when quorum is not met"
+
+
+def test_decide_control_superiority_succeeds_when_quorum_met():
+    task_ids = [f"t-{i}" for i in range(10)]
+    units = independent_units(task_ids)
+    candidate_scores = {tid: 0.8 for tid in task_ids}
+    controls = {name: {tid: 0.4 for tid in task_ids} for name in CONTROL_TARGET_SET}
+    ci, classification = decide_control_superiority(candidate_scores, controls, units, resamples=200, rng=random.Random(3))
+    assert isinstance(ci, ConfidenceInterval)
+    assert isinstance(classification, Classification)
+
+
+def test_decide_control_superiority_raises_without_bootstrapping_when_quorum_not_met(monkeypatch):
+    task_ids = [f"t-{i}" for i in range(10)]
+    units = independent_units(task_ids)
+    candidate_scores = {tid: 0.8 for tid in task_ids}
+    # Only 2 of the 3 required controls present.
+    controls = {name: {tid: 0.4 for tid in task_ids} for name in CONTROL_TARGET_SET[:2]}
+
+    called = []
+    monkeypatch.setattr(
+        "orca.eval.frontier_stats.bootstrap_control_superiority_ci",
+        lambda *a, **k: called.append(True) or (_ for _ in ()).throw(AssertionError("bootstrap must not be called")),
+    )
+    with pytest.raises(QuorumNotMetError):
+        decide_control_superiority(candidate_scores, controls, units, resamples=200, rng=random.Random(3))
+    assert called == [], "bootstrap_control_superiority_ci must never be invoked when quorum is not met"
+
+
+def test_decide_frontier_gap_rejects_unregistered_reference_name():
+    """An unregistered reference name must be rejected by the quorum
+    validator itself (via validate_frontier_reference_quorum), before
+    any bootstrap call -- the wrapper must not silently accept it."""
+    task_ids = [f"t-{i}" for i in range(10)]
+    units = independent_units(task_ids)
+    candidate_scores = {tid: 0.8 for tid in task_ids}
+    reference_names = _four_registered_references_three_lineages()
+    references = {name: {tid: 0.5 for tid in task_ids} for name in reference_names}
+    references["Not-A-Real-Reference"] = {tid: 0.5 for tid in task_ids}
+    with pytest.raises(StatisticalUnitValidationError):
+        decide_frontier_gap(candidate_scores, references, units, resamples=200, rng=random.Random(1))
