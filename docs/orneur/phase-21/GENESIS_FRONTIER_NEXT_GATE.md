@@ -1,5 +1,67 @@
 # Genesis Frontier — Next Gate
 
+## Phase 21B.4.10 update
+
+Turned the locked Phase 21B.4.9.x methodology into an enforceable,
+tested, execution-ready gate, WITHOUT evaluating a real Genesis
+candidate:
+
+1. **Mandatory pre-freeze raw-evidence gate implemented**
+   (`orca.eval.baseline._verify_raw_evidence_before_freeze()`, carried
+   forward from the Phase 21B.4.8.3 audit finding): immediately before
+   any real baseline finalizes, every successful generation record's
+   raw response is independently re-verified on disk (existence,
+   canonical-artifact-root containment, byte_length, SHA-256, UTF-8
+   decodability), and the manifest is re-reconciled against the live
+   suite — closing the TOCTOU window where `_validate_result_generation_
+   provenance()`'s bundle-level re-hash alone did not prove every
+   individual raw-response file was still intact. 12 adversarial tests
+   (`tests/test_pre_freeze_raw_evidence.py`) prove the suite remains
+   unfrozen on every attack (deletion, byte modification, truncation,
+   byte-length/hash tampering, missing/unknown/duplicate records, path
+   escape, full replacement) and proceeds when all evidence is intact.
+2. **The locked statistical contract is now executable code**
+   (`orca/eval/frontier_stats.py`, `FRONTIER_STATISTICAL_CONTRACT_VERSION
+   = "genesis-frontier-stats-v1"`): all five locked margins
+   (`delta_frontier`, `delta_best_reference`, `delta_control_superiority`,
+   `delta_tie`, `delta_quantization`), the judge-disagreement threshold,
+   the stability repeat count, and both quorum requirements are single-
+   sourced constants, never scattered magic numbers. A cluster-aware
+   paired bootstrap (`StatisticalUnit`, `paired_bootstrap_ci()`) closes
+   an audit-flagged gap: related task variants (sharing a scenario/
+   source/template/fixture) are resampled together, never as
+   independent observations — proven by a dedicated test showing the
+   clustered treatment yields a correctly wider (more honest) confidence
+   interval than treating the same tasks as independent. 32 tests, all
+   synthetic fixtures, no candidate data.
+3. **Stage-0 identity/license/runtime eligibility performed** for the
+   full candidate pool via live Hugging Face Hub API metadata calls
+   (no weight shards downloaded): `docs/orneur/phase-21/
+   GENESIS_CANDIDATE_EXECUTION_REGISTRY.json` (schema-validated by
+   `orca/eval/candidate_registry.py`, 18 tests) records exact pinned
+   revisions, licenses, architectures, and parameter breakdowns for all
+   4 deployable candidates, 3 controls, and 6 frontier references.
+   Findings: Mistral Small 4 and GLM-5.3-Flash both ship OFFICIAL FP8
+   checkpoints (not a hypothetical conversion); Qwen3.8-Flash-Next
+   remains `LICENSE_REVIEW_REQUIRED`; all four deployable candidates use
+   architecture classes not previously runtime-qualified by this
+   project (`GENESIS_RUNTIME_COMPATIBILITY_MATRIX.md`).
+4. **Zero-cash compute reverified, read-only**: current Modal billing
+   (`billed_cost: $0.00`, unchanged) and GPU rate card reconfirmed live;
+   the workspace's dashboard-set $0 spend limit is explicitly NOT
+   re-claimed as programmatically reverified (the supported CLI does not
+   expose it) — `GENESIS_ZERO_CASH_EXECUTION_PLAN.md` states this
+   distinction plainly. No GPU started, no weights downloaded, no API
+   called, no persistent Volumes created.
+5. **`GENESIS_FRONTIER_HOLDOUT_SPEC.md` extended** with the mandatory
+   `statistical_unit_id` requirement for any future task authoring, so
+   related task-variant families are never bootstrapped as independent
+   observations.
+
+No candidate was evaluated; `genesis-eval-v1` was not executed, inspected,
+or frozen; no private holdout content was authored; no candidate was
+downloaded, loaded, or launched on GPU; Phase 21C remains unauthorized.
+
 ## Phase 21B.4.9.2 update
 
 An independent audit of Phase 21B.4.9.1 found further mathematical and
@@ -189,29 +251,26 @@ Genesis training occurred.
 
 ## Proposed next gate
 
-**Not started this phase.** With the methodology now locked (see the
-Phase 21B.4.9 update above), the next evidence-gathering step, if
-authorized, is the FIRST stage of the execution funnel
-(`GENESIS_FRONTIER_EXECUTION_PLAN.md` Stage 0 — license/identity/
-runtime eligibility) against a resource-scoped subset of the candidate
-pool. `GENESIS_FRONTIER_EXECUTION_PLAN.md` §"Pre-freeze evidence-
-preservation gate" identifies one small, well-scoped code addition
-(re-walking every raw-response file's continued existence/integrity
-immediately before the first real baseline freeze) that the execution
-phase's tooling must add before Stage 8 can produce a trustworthy
-foundation-decision package — this is not implemented yet and is
-explicitly deferred to that phase.
+**Phase 21B.4.10 is now COMPLETE** (see the Phase 21B.4.10 update
+above) — Stage 0 identity/license/runtime eligibility is qualified for
+the full candidate pool, the mandatory pre-freeze raw-evidence gate is
+implemented and tested, and the locked statistical contract is now
+executable code. The next step, if authorized, is a real (still
+non-Genesis, still $0) CPU/GPU-level runtime-compatibility check: does
+any candidate's architecture actually LOAD under a real inference
+engine, and does the license status for `LICENSE_REVIEW_REQUIRED`
+candidates resolve before any compute is spent on them.
 
 Proposed phase name (not authorized, not started):
-`PHASE 21B.4.10 — GENESIS CANDIDATE-EXECUTION QUALIFICATION GATE`
-— to perform Stage 0 (license/identity/runtime eligibility, per
-`GENESIS_FRONTIER_EXECUTION_PLAN.md`) for the deployable-candidate pool
-and controls, add the pre-freeze evidence-preservation check the
-execution plan identifies as a mandatory prerequisite, and confirm the
-$0-cost screening plan (`GENESIS_FRONTIER_COST_PLAN.md`) against live
-Modal billing before any real generation is attempted — still NOT
-authorizing actual candidate execution, `genesis-eval-v1` exposure, or
-any frontier-model evaluation.
+`PHASE 21B.4.11 — GENESIS CANDIDATE RUNTIME SMOKE QUALIFICATION`
+— to attempt a real, minimal, non-Genesis runtime smoke test (loading a
+tiny/cheap proxy checkpoint of each novel architecture class where one
+exists, or the actual smallest deployable candidate — Qwen3.8-27B — at
+INT4 on a single Modal L4, per the ordering in
+`GENESIS_CANDIDATE_EXECUTION_QUALIFICATION.md`) to convert at least one
+`QUALIFIED PRACTICAL GPU TOPOLOGY = UNQUALIFIED / TBD` entry into a
+real, live-tested value — still NOT authorizing `genesis-eval-v1`
+exposure, private holdout content, or any frontier-model evaluation.
 
 ## What remains explicitly locked
 

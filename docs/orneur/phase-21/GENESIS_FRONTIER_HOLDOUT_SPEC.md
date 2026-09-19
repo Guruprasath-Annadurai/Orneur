@@ -108,6 +108,42 @@ whenever this suite is actually built):
   model respect explicit boundaries/authorization requirements rather
   than self-authorizing actions it wasn't granted)
 
+## Statistical unit identifier requirement (LOCKED, Phase 21B.4.10)
+
+Every authored holdout task MUST carry an explicit
+**`statistical_unit_id`** field (or an equivalent cluster/family
+identifier applied consistently), matching
+`orca.eval.frontier_stats.StatisticalUnit`'s contract:
+
+- **If a task is a genuinely independent observation**, its
+  `statistical_unit_id` equals its own `task_id`.
+- **If a task is one of several variants sharing a common scenario,
+  source document, repository, base prompt/template, or generated
+  fixture**, ALL tasks in that family share the SAME
+  `statistical_unit_id` — they are never treated as independent
+  observations in the paired-bootstrap comparison
+  (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5.2,
+  `orca.eval.frontier_stats.paired_bootstrap_ci()`). Resampling related
+  variants independently would understate the true resampling variance
+  and overstate statistical confidence — this is a real, testable
+  effect: `orca.eval.frontier_stats`'s own test suite
+  (`tests/test_frontier_stats.py::test_clustered_units_resample_together_not_independently`)
+  demonstrates that treating correlated variants as independent yields
+  an artificially narrower confidence interval than the correct
+  clustered treatment.
+
+**The pilot/calibration authoring process** (`GENESIS_FRONTIER_EXECUTION_PLAN.md`
+§"Sample size / power / resolution planning") must record
+`statistical_unit_id` assignments for its own pilot tasks too, so the
+empirical paired-difference variance it measures reflects the correct
+clustering structure — a pilot set that ignores clustering would
+produce a variance estimate too optimistic to correctly size the final
+sealed holdout.
+
+No task content, and no `statistical_unit_id` assignment for any real
+task, is authored this phase — this section fixes the SCHEMA
+requirement future authoring must satisfy.
+
 ## What this phase does NOT do
 
 No tasks were authored. No private storage location was created. No
