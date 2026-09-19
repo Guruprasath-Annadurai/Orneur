@@ -257,21 +257,39 @@ much smaller/weaker control" should be an easier bar to clear than
 called practically equivalent when the difference is small enough that
 no reasonable foundation decision would treat it as a discriminator.
 
-### 5.5 Tie / practical-equivalence classification (locked)
+### 5.5 Tie / practical-equivalence classification — CORRECTED four-way partition (LOCKED, Phase 21B.4.9.2)
 
-For a pairwise finalist comparison, using the same paired-bootstrap
-framework (§5.2) on the finalists' shared task IDs:
+For a pairwise finalist comparison `D = A_score - B_score`, using the
+same paired-bootstrap framework (§5.2) on the finalists' shared task
+IDs, with `delta_tie = 0.03`, let `[lower, upper]` be the 95% CI for
+`D`. An independent audit found the prior "meaningfully ahead" wording
+mathematically insufficient (it did not fully specify all four possible
+interval positions relative to the two threshold lines); the exact
+four-way partition, covering every possible interval position with no
+gap or overlap, is locked as follows:
 
-- **PRACTICALLY EQUIVALENT**: the 95% CI for `D` lies **wholly inside**
-  `[-delta_tie, +delta_tie]` = `[-0.03, +0.03]`.
-- **INCONCLUSIVE**: the CI crosses zero but extends beyond
-  `[-0.03, +0.03]` on at least one side — this is explicitly **not**
-  the same as a tie, and must never be reported as one. A wide interval
-  that happens to include zero means the comparison lacks the power to
-  distinguish the two candidates, not that they have been shown to be
-  equivalent.
-- **ONE CANDIDATE MEANINGFULLY AHEAD**: the CI lies wholly on one side
-  of zero AND extends beyond `delta_tie` on that side.
+- **PRACTICALLY EQUIVALENT**: `lower ≥ -0.03` **AND** `upper ≤ +0.03`
+  (the interval lies wholly inside `[-0.03, +0.03]`).
+- **A MEANINGFULLY AHEAD**: `lower > +0.03`.
+- **B MEANINGFULLY AHEAD**: `upper < -0.03`.
+- **INCONCLUSIVE**: every other case (the interval is not wholly inside
+  the equivalence band, and does not clear either threshold outright) —
+  explicitly **not** the same as a tie, and must never be reported as
+  one. A wide interval that happens to include zero, or that overlaps
+  but does not clear a threshold, means the comparison lacks the power
+  to distinguish the two candidates, not that they have been shown to
+  be equivalent.
+
+**Worked examples (locked as the reference cases any implementation
+must reproduce exactly):**
+
+| CI for `D` | Classification | Why |
+|---|---|---|
+| `[+0.04, +0.10]` | A meaningfully ahead | `lower = 0.04 > 0.03` |
+| `[-0.10, -0.04]` | B meaningfully ahead | `upper = -0.04 < -0.03` |
+| `[+0.01, +0.04]` | INCONCLUSIVE | not wholly inside `[-0.03,+0.03]` (`upper=0.04>0.03`), and `lower=0.01` does not clear `+0.03` |
+| `[-0.02, +0.02]` | Practically equivalent | wholly inside `[-0.03,+0.03]` |
+| `[-0.05, +0.01]` | INCONCLUSIVE | not wholly inside (`lower=-0.05<-0.03`), and `upper=0.01` does not clear `-0.03` |
 
 ### 5.6 No overinterpretation of small samples
 

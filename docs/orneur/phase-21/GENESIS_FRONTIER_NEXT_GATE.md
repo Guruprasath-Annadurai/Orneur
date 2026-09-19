@@ -1,5 +1,62 @@
 # Genesis Frontier — Next Gate
 
+## Phase 21B.4.9.2 update
+
+An independent audit of Phase 21B.4.9.1 found further mathematical and
+compute-envelope errors. Closes all, docs-only:
+
+1. **Corrected the paired-difference variance bound.** `D = candidate -
+   comparator` is bounded on `[-1,1]` (not `[0,1]`), so the theoretical
+   worst-case variance is `sigma_D^2 = 1`, not the `0.25` figure the
+   prior phase incorrectly called a worst case (that number is the max
+   variance of a single `[0,1]`-bounded term, not their difference). The
+   corrected worked power calculation now shows `n ≈ 1,225` paired
+   tasks per critical category as the THEORETICAL BOUNDED WORST-CASE
+   planning number (explicitly not a task-authoring target — real
+   variance is expected far lower given candidate/reference performance
+   correlation on shared tasks) (`GENESIS_FRONTIER_EXECUTION_PLAN.md`
+   §"Sample size / power / resolution planning").
+2. **Reclassified the 40-60 task/category floor** from an implied
+   "sufficient for decision" size to an explicit **PILOT / INITIAL
+   EVIDENCE FLOOR only**, and added a required pilot-calibration process
+   (a separate, non-decision task set measures real paired-difference
+   variance, which then sizes the final sealed holdout — never the
+   final holdout's own results used to retroactively justify its size).
+3. **Fixed the tie/practical-equivalence classification** to an exact,
+   gap-free four-way partition (equivalent / A-ahead / B-ahead /
+   inconclusive) with locked worked examples
+   (`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5.5).
+4. **Fixed the best-reference ceiling guard** to a three-state
+   classification (`CEILING-NONINFERIOR` / `DRAMATICALLY BEHIND
+   CEILING` / `INCONCLUSIVE`), closing a gap where an unresolved
+   (straddling) interval could have silently passed as ceiling-
+   noninferior (`GENESIS_FRONTIER_DECISION_GATES.md`).
+5. **Locked a frontier reference quorum** (≥4 of 6 registered
+   references, spanning ≥3 independent organizations/lineages) and a
+   **control comparator quorum** (all 3 registered controls required) —
+   below quorum, the comparison is `REFERENCE_SET_INCOMPLETE` /
+   `CONTROL_SET_INCOMPLETE` and `INCONCLUSIVE/DEFERRED`, never silently
+   computed over a degraded subset.
+6. **Corrected two compute-table arithmetic errors** and separated
+   THEORETICAL from PRACTICAL GPU counts throughout: Qwen3.8-Flash-Next's
+   FP8 minimum is 3×80GB-class GPUs (not 2× — 2×80GB is physically
+   insufficient for its ~180GB weight floor), and GLM-5.3-Flash's INT4
+   minimum is 2×80GB-class GPUs (not 7× — that figure was an erroneous
+   carry-over from an L4-based calculation). Every candidate now carries
+   an explicit `QUALIFIED PRACTICAL GPU TOPOLOGY = UNQUALIFIED / TBD`
+   field until live runtime qualification occurs, and every derived cost
+   figure is tagged `PRELIMINARY / NOT EXECUTION-AUTHORIZED`
+   (`GENESIS_FRONTIER_COST_PLAN.md` §3.1-3.2).
+
+The accepted Phase 21B.4.9.1 rule (compute shortage → `DEFERRED_FOR_COMPUTE`,
+never eliminated) and the mandatory Phase 21B.4.10 pre-freeze
+raw-response evidence-preservation prerequisite are both explicitly
+UNCHANGED and carried forward without regression. No candidate was
+downloaded, executed, or ranked this phase; no GPU was started; no
+private holdout content was authored; `genesis-eval-v1` remains
+unexecuted and unfrozen; Phase 21C remains unauthorized. Docs-only — no
+code changed.
+
 ## Phase 21B.4.9.1 update
 
 An independent audit of Phase 21B.4.9 accepted the overall framework

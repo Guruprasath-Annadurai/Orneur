@@ -93,13 +93,27 @@ plan, contains:
 - Per-category gap versus BOTH the **frontier reference median**
   (primary comparator) and the **strongest registered reference**
   (secondary ceiling report), with the
-  `NON-INFERIOR` / `MATERIAL` / `INCONCLUSIVE` classification and the
-  `DRAMATICALLY BEHIND CEILING` flag where applicable
+  `NON-INFERIOR` / `MATERIAL` / `INCONCLUSIVE` classification (primary)
+  and the **three-state** `CEILING-NONINFERIOR` / `DRAMATICALLY BEHIND
+  CEILING` / `INCONCLUSIVE` classification (secondary ceiling guard —
+  Phase 21B.4.9.2 correction: `INCONCLUSIVE` here blocks frontier-class
+  exactly like a confirmed failure, never silently passes)
   (`GENESIS_FRONTIER_DECISION_GATES.md` §"Frontier gap metric" /
   §"Best-reference ceiling guard").
-- Per-reference availability status (`AVAILABLE` / `REFERENCE_UNAVAILABLE`
-  with the reduced-reference-set flag noted for any category where the
-  median was computed over a smaller-than-registered set).
+- Per-reference availability status (`AVAILABLE` / `REFERENCE_UNAVAILABLE`).
+- **Frontier reference quorum status per category**
+  (`GENESIS_FRONTIER_DECISION_GATES.md` §"Frontier reference quorum"):
+  `QUORUM_MET` (≥4 of 6 registered references available, spanning ≥3
+  independent lineages) or `REFERENCE_SET_INCOMPLETE` — a category
+  carrying `REFERENCE_SET_INCOMPLETE` has its frontier comparison
+  recorded as `INCONCLUSIVE / DEFERRED` and the candidate is not
+  eligible for a frontier-class declaration on that category until the
+  quorum is restored.
+- **Control quorum status per category**
+  (`GENESIS_FRONTIER_DECISION_GATES.md` §"Control comparator quorum"):
+  `QUORUM_MET` (all 3 registered controls available) or
+  `CONTROL_SET_INCOMPLETE` — a category carrying `CONTROL_SET_INCOMPLETE`
+  has its control-superiority condition recorded as unresolved.
 
 ### 2.4 Hard-gate results
 
@@ -132,12 +146,25 @@ plan, contains:
 
 - Time-to-first-token, tokens/sec, generation latency (mean and
   distribution, not only mean), per track/precision round.
-- GPU configuration used (model, count, memory).
-- VRAM actually consumed (peak, not only theoretical).
+- GPU configuration used (model, count, memory), tagged with its
+  **topology qualification status**: `QUALIFIED` (real runtime evidence
+  exists — e.g. Phase 21B.4.8.1/.2's live Modal vLLM qualification) or
+  `UNQUALIFIED / TBD` (theoretical-minimum arithmetic only, per
+  `GENESIS_FRONTIER_COST_PLAN.md` §3.1's corrected two-field structure —
+  Phase 21B.4.9.2). A cost or latency figure derived from an
+  `UNQUALIFIED / TBD` topology is itself tagged
+  `PRELIMINARY / NOT EXECUTION-AUTHORIZED` and must never be presented
+  with the same confidence as a figure measured against a qualified
+  topology.
+- VRAM actually consumed (peak, not only theoretical) — only reportable
+  once a topology is `QUALIFIED`; for `UNQUALIFIED / TBD` topologies this
+  field records the theoretical floor explicitly labeled as such.
 - Quantization precision (cross-referenced with §2.1).
 - Estimated cost per evaluation run (compute-time × the resource's
   actual/effective rate — $0 where covered entirely by credits, per
-  `GENESIS_FRONTIER_COST_PLAN.md`).
+  `GENESIS_FRONTIER_COST_PLAN.md`), inheriting the
+  `PRELIMINARY / NOT EXECUTION-AUTHORIZED` tag from its underlying
+  topology's qualification status.
 
 These fields are recorded for every candidate but **never** enter the
 capability matrix or the frontier-gap computation — they exist for the

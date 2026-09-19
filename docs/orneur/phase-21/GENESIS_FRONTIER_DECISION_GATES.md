@@ -137,11 +137,46 @@ merely because a change would move the frontier threshold. If a
 registered reference becomes unavailable at execution time (API
 discontinued, access revoked, cost constraint newly violated), it is
 recorded as `REFERENCE_UNAVAILABLE` and the pre-declared fallback rule
-applies: **exclude it from the median computation for the affected
-categories only**, computing the median over the remaining available
-references, and flag the report noting the reduced reference-set size
-for that category. A missing reference is never silently replaced with
-a different model chosen after the fact.
+applies: exclude it from the median computation for the affected
+category only, computing the median over the remaining available
+references — **subject to the quorum requirement below**. A missing
+reference is never silently replaced with a different model chosen
+after the fact.
+
+### Frontier reference quorum (LOCKED, Phase 21B.4.9.2 — closes an unbounded-degradation gap)
+
+An independent audit correctly identified that the `REFERENCE_UNAVAILABLE`
+fallback above, unconstrained, could in principle degrade the "frontier
+reference median" down to a one- or two-model computation — which is not
+a median of a frontier-capability CEILING at all, it is just that one or
+two models' scores, and calling it "the frontier reference median" at
+that point would misrepresent what the number actually measures. This is
+now bounded:
+
+`TARGET_REFERENCE_SET` = the six registered primary references above.
+
+**For a given CRITICAL category, the frontier comparator (median AND
+best-reference guard) is VALID only if BOTH:**
+1. **At least 4 of the 6** registered references were successfully
+   evaluated on the shared task set for that category, AND
+2. those available references span **at least 3 meaningfully
+   independent organizations/model lineages** — DeepSeek AI (DeepSeek
+   V4.1-Flash), Zhipu/Z.ai (GLM-5.3), Mistral AI (Mistral Large 3),
+   MiniMax (MiniMax M3), Alibaba (Qwen3.8-Max), and Moonshot AI (Kimi
+   K3) are six DISTINCT organizations, so this condition is satisfied
+   by any 3 (or more) of the available references belonging to
+   different rows of that list — it is stated explicitly because a
+   future registered set might not have this property automatically.
+
+**If the quorum is NOT met for a category:**
+- Status: `REFERENCE_SET_INCOMPLETE`.
+- Frontier comparison for that category: `INCONCLUSIVE / DEFERRED` — not
+  silently computed over whatever subset remains.
+- The candidate is **NOT eligible for a frontier-class declaration** on
+  that category until the quorum is restored (via `DEFERRED_FOR_COMPUTE`
+  references completing evaluation, per `GENESIS_FRONTIER_EXECUTION_PLAN.md`'s
+  deferral rule — never via post-hoc reference substitution, which
+  remains prohibited under all circumstances).
 
 ## Frontier comparator (LOCKED — one primary, one secondary)
 
@@ -198,25 +233,41 @@ category?
   explicitly so no execution report can quietly round a real or
   unresolved gap down to "comparable."
 
-## Best-reference ceiling guard (LOCKED, `delta_best_reference = 0.20`)
+## Best-reference ceiling guard — CORRECTED three-state classification (LOCKED, `delta_best_reference = 0.20`, Phase 21B.4.9.2)
 
 The frontier median protects against one anomalously strong reference
 skewing the primary comparator upward, but Genesis must also not be
 dramatically behind the ACTUAL capability ceiling merely because the
-median (averaging in weaker references) is more forgiving. For every
-critical category, using the same paired-bootstrap framework against
-the SECONDARY (strongest-reference) comparator:
+median (averaging in weaker references) is more forgiving. An
+independent audit found the prior version of this guard specified only
+a single failing threshold, omitting the INCONCLUSIVE state every other
+threshold in this methodology carries — inconsistent with the project's
+own "uncertainty never resolves in the candidate's favor" rule, since a
+two-state guard would let an unresolved (wide, straddling) interval
+silently pass as if it had been shown ceiling-noninferior. Corrected to
+the same three-state pattern used everywhere else:
 
-- If the upper bound of the 95% CI for `D = candidate_score -
-  strongest_reference_score` is `< -0.20`, the candidate is flagged
-  **DRAMATICALLY BEHIND CEILING** on that category — this flag stands
-  independently of whether the candidate passed the primary median-based
-  non-inferiority check, and a candidate carrying this flag on any
-  critical category **cannot** be called frontier-class regardless of
-  its median-based result. This closes the specific failure mode the
-  audit identified: a candidate must not be labeled frontier-class
-  merely because the reference median happened to be pulled down by
-  weaker references in the registered set.
+For every critical category, using the same paired-bootstrap framework
+(`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5.2) against the SECONDARY
+(strongest-reference) comparator, `D_best = candidate_score -
+strongest_reference_score`, with 95% CI `[lower, upper]`:
+
+- **CEILING-NONINFERIOR**: `lower ≥ -0.20`.
+- **DRAMATICALLY BEHIND CEILING**: `upper < -0.20`.
+- **INCONCLUSIVE**: every other case (the interval straddles `-0.20`
+  without clearing it on either side).
+
+**A candidate may be called frontier-class only if it achieves
+CEILING-NONINFERIOR on every critical category.** `INCONCLUSIVE` does
+**not** pass this guard — it blocks a frontier-class determination on
+that category exactly as firmly as a confirmed `DRAMATICALLY BEHIND
+CEILING` would, pending more evidence. This flag/status stands
+independently of whether the candidate passed the primary median-based
+non-inferiority check, and closes the specific failure mode the audit
+identified: a candidate must not be labeled frontier-class merely
+because the reference median happened to be pulled down by weaker
+references in the registered set, NOR merely because the best-reference
+comparison was too underpowered to resolve either way.
 
 ## Control superiority (LOCKED — replaces the prior CI-overlap check)
 
@@ -229,6 +280,23 @@ chosen over a control median specifically because "substantially beats
 controls" should mean "beats the best of what ORNEUR already has
 working experience with," not merely "beats an average that a weak
 control could pull down."
+
+**Control comparator quorum (LOCKED, Phase 21B.4.9.2):** because the
+registered control set is comparatively small (only three models) and
+each is a genuinely distinct architecture ORNEUR has real working
+experience with, **all three** (Qwen3-8B, Mistral-Nemo-Instruct-2407,
+Phi-4) must be successfully evaluated on the shared task set for a
+given category before "strongest qualified control" can be computed for
+it — there is no partial-quorum fallback analogous to the frontier
+reference set's "4 of 6," because dropping even one of only three
+controls would mean the "strongest of three" comparator was actually
+computed as "strongest of two," silently changing what the comparator
+means. If any control cannot be evaluated for a category: status =
+`CONTROL_SET_INCOMPLETE`, and the control-superiority condition for that
+category remains **unresolved** (not silently passed, not silently
+failed) until all three are available — never redefine the control
+comparator (e.g. quietly falling back to "strongest of the two
+available") after results exist.
 
 Using the §5.2 paired-bootstrap framework, `D = candidate_score -
 strongest_control_score`, per critical category:
@@ -255,9 +323,10 @@ word, and **INCONCLUSIVE never resolves in the candidate's favor**.
    superiority condition (above) on that category, i.e. its lower CI
    bound over the strongest control fails to clear `+0.10`.
 2. **Non-inferior to the frontier reference median** (per the "Frontier
-   gap metric" above) on every critical category, AND not flagged
-   `DRAMATICALLY BEHIND CEILING` by the best-reference guard on any
-   critical category.
+   gap metric" above) on every critical category, AND achieves
+   `CEILING-NONINFERIOR` (not merely "not flagged behind" —
+   `INCONCLUSIVE` does not satisfy this either) on the best-reference
+   ceiling guard on every critical category.
 3. **Substantially beats controls** — satisfies the control-superiority
    condition above on every critical category.
 4. **Passes all hard gates** (§C.hard-gates below) — zero exceptions,

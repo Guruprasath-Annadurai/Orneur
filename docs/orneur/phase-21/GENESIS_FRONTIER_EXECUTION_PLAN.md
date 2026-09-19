@@ -291,60 +291,121 @@ sized to actually support the margins locked in
 discovering the suite is underpowered would waste the exact scarce,
 hard-to-replace holdout content this tier exists to protect.
 
-**Worked power calculation (methodology only — no candidate data used):**
-for a paired-difference test at 95% confidence (two-sided,
+### Theoretical bounded worst-case variance — CORRECTED (Phase 21B.4.9.2)
+
+An independent audit correctly identified a mathematical error in the
+prior version of this section: it called `sigma_D^2 = 0.25` "the
+maximum possible variance" for the paired difference `D`. That is
+wrong. Each per-task score is normalized to `[0,1]`
+(`GENESIS_FRONTIER_SCORING_CONTRACT.md` §5.1), so `D = candidate_score -
+comparator_score` ranges over `[-1, 1]`, not `[0,1]` — `0.25` is the
+maximum variance of a SINGLE `[0,1]`-bounded Bernoulli variable
+(achieved at `p=0.5`), not of their DIFFERENCE. The correct theoretical
+bound for a variable confined to `[-1,1]` is `Var(D) ≤ 1` (achieved in
+the degenerate case where `D` places all its probability mass at the
+two endpoints `±1`).
+
+**Worked power calculation, corrected (methodology only — no candidate
+data used):** for a paired-difference test at 95% confidence (two-sided,
 `z_{0.025} = 1.96`) and 80% power (`z_{0.20} = 0.84`), detecting an
-effect size `delta` against a conservative WORST-CASE per-task paired-
-difference variance of `sigma_D^2 = 0.25` (the maximum possible variance
-for a `[0,1]`-bounded quantity, achieved when task outcomes are
-maximally uncertain — a deliberately conservative, not optimistic,
-assumption), the standard normal-approximation sample-size formula is:
+effect size `delta` against the THEORETICAL BOUNDED WORST-CASE variance
+`sigma_D^2 = 1`:
 
 ```
 n ≈ (z_{alpha/2} + z_{beta})^2 * sigma_D^2 / delta^2
 ```
 
 For `delta = delta_frontier = 0.08`:
-`n ≈ (1.96 + 0.84)^2 * 0.25 / 0.08^2 = 7.84 * 0.25 / 0.0064 ≈ 306`
-independent paired tasks per critical category, under the conservative
-worst-case variance assumption.
+`n ≈ (1.96 + 0.84)^2 * 1 / 0.08^2 = 7.84 * 1 / 0.0064 ≈ 1225` paired
+tasks per critical category, under the theoretical bounded worst-case
+variance assumption.
 
-**This conservative figure is presented honestly, not hidden** — a
-306-task-per-critical-category holdout is a large authoring commitment
-the owner has explicitly asked not to rush. In practice, well-
-constructed benchmark tasks (especially deterministic/executable ones)
-typically show LOWER paired-difference variance than the worst-case
-bound, so the real required count is usually smaller — but this
-methodology does not simply assume that without evidence.
+**This is a THEORETICAL BOUNDED-WORST-CASE PLANNING NUMBER, not a
+recommendation that ORNEUR must author 1,225 tasks per category.** The
+bound `sigma_D^2 = 1` is achieved only when the paired difference is
+maximally spread between its two extreme values on every task — an
+extreme, unrealistic case. Actual paired-difference variance is
+expected to be MATERIALLY LOWER in practice for two structural reasons:
+(1) each individual term is itself `[0,1]`-bounded with its own
+realistic variance well below the single-variable maximum of `0.25` for
+most well-constructed tasks (tasks are rarely exactly 50/50 coin-flips);
+and (2) — the more important reason — candidate and comparator
+performance on the SAME task is genuinely CORRELATED (both a strong
+candidate and a strong reference tend to succeed on easy tasks and
+struggle on the same hard tasks), and `Var(A - B) = Var(A) + Var(B) -
+2·Cov(A,B)` shrinks as that positive covariance grows. This correlation
+is exactly why the paired-bootstrap design (§5.2 of the scoring
+contract) is used in the first place, rather than treating candidate
+and comparator as independent samples — and it means the realistic
+required sample size is expected to be well below the 1,225-task
+theoretical ceiling, though this methodology does not simply assert a
+specific lower number without evidence (see the pilot/calibration
+policy below).
 
-**Pragmatic floor (methodology-level guidance, not a discovered fact):**
-target a **minimum of 40-60 independent tasks per critical category** in
-the private holdout as a practical floor, understanding that this floor
-may still leave `delta_frontier`-level questions INCONCLUSIVE for
-categories with higher-than-average task-level variance (e.g.
-judge-scored categories, whose resolved per-task score already
-aggregates two judges' assessments and may carry more inherent
-variance than a deterministic exact-match task). **The methodology does
-NOT reduce `delta_frontier` or `delta_control_superiority` merely
-because the authored suite turns out to be smaller than the power
-calculation calls for** — if the authored holdout lacks sufficient
-statistical resolution for a category, the correct, required outcome is
-`INCONCLUSIVE` for that category, reported honestly, with a
-recommendation for more high-quality evaluation evidence (a larger
-holdout revision, more repeat runs, or both) — never a loosened
-threshold to force a resolvable-looking answer out of underpowered data.
+### Holdout sizing policy — pilot evidence, not a decision-capable claim (Phase 21B.4.9.2)
 
-**Binary/pass-fail vs. normalized-rubric scoring** changes the required
-count: a binary category's worst-case variance is exactly the `0.25`
-bound used above (achieved at `p=0.5`); a normalized rubric-scored
-category's variance depends on the rubric's own granularity and is
-generally similar in magnitude for a well-designed multi-point rubric,
-so the same worst-case bound is used uniformly here rather than assuming
-a rubric is automatically lower-variance without evidence.
+The prior version of this document implied a **40-60 task per critical
+category** figure could serve as a practical floor for resolving the
+locked `delta_frontier = 0.08` non-inferiority question. An independent
+audit correctly rejected this: a range roughly 10-30× smaller than even
+a realistically-improved sample-size estimate cannot be presented as
+sufficient to prove an 8-point non-inferiority margin, and doing so
+would let benchmark discrimination quietly loosen without ever changing
+the (correctly locked) numeric threshold itself. **40-60 tasks per
+category is reclassified as a PILOT / INITIAL EVIDENCE FLOOR only — NOT
+a decision-capable holdout size.** A holdout authored to only this size
+should expect `INCONCLUSIVE` results on `delta_frontier`-level questions
+for most critical categories, and that expectation is itself useful
+pilot information, not a discovered fact this document can currently
+assert as sufficient.
+
+**Required process before final private holdout authoring (methodology
+only — no tasks authored this phase or by this process):**
+
+1. Author (in a future, separately authorized phase) a **separate,
+   NON-DECISION pilot/calibration task set** — smaller, explicitly
+   never used for an actual frontier-class determination — to estimate
+   the REAL, empirical paired-difference variance for each critical
+   category, using early candidate/reference/control evidence. This
+   set is spent specifically so its consumption does not deplete the
+   sealed final holdout's own discriminating power.
+2. From the pilot set's measured `Var(D)` per critical category
+   (expected, per the correlation argument above, to be well below the
+   theoretical `sigma_D^2 = 1` ceiling, but measured rather than
+   assumed), recompute the required final-holdout sample size using the
+   SAME formula and the SAME locked margins/confidence/power targets
+   (`delta_frontier = 0.08`, 95% confidence, 80% power) — never a
+   loosened margin or a lowered confidence/power target substituted to
+   make a smaller number "work."
+3. **Round the resulting sample size upward conservatively** (not down,
+   and not to the nearest convenient/cheap number) when translating it
+   into an actual authored task count.
+4. **Never estimate the required sample size from the FINAL candidate
+   results themselves, after seeing them** — that would let observed
+   variance be reverse-engineered into whatever sample size makes an
+   already-known outcome look adequately powered, which is exactly the
+   kind of post-hoc statistical manipulation this methodology exists to
+   prevent.
+
+**If, despite this process, the actually-available evidence remains
+underpowered for a given category:** the result is `INCONCLUSIVE` for
+that category. `delta_frontier` (or any other locked margin) is NEVER
+loosened to manufacture a resolvable-looking answer from underpowered
+data — this restates, with the corrected math, the same rule the prior
+phase locked.
+
+**Binary/pass-fail vs. normalized-rubric scoring** still changes the
+per-term contribution to variance (a rubric's own granularity affects
+its individual-term variance, per-task, before pairing), but the
+CORRECTED overall bounding logic above (worst case `sigma_D^2 = 1` for
+the paired difference, refined downward only by measured pilot
+evidence, never by assumption) applies uniformly to both scoring types
+— no scoring type is assumed lower-variance without the pilot-
+calibration evidence in step 2 above to support it.
 
 **No private task content is authored this phase** — this section fixes
-the SIZING METHODOLOGY future task authoring must satisfy, not the tasks
-themselves.
+the SIZING METHODOLOGY (and its correct underlying mathematics) future
+task authoring must satisfy, not the tasks themselves.
 
 ## Release-date / contamination record (§25)
 

@@ -64,78 +64,98 @@ quantization metadata, KV cache, runtime workspace, and — per
 `GENESIS_FRONTIER_COMPUTE_MATRIX.md`'s existing 20-40%+ headroom rule of
 thumb — real serving margin on top of the theoretical floor).
 
-### 3.1 Per-candidate compute envelope (L4 = 24GB; theoretical weight-storage GPU count against L4 specifically, not the 80GB-class figures already tabulated in `GENESIS_FRONTIER_COMPUTE_MATRIX.md`)
+### 3.1 Per-candidate compute envelope — CORRECTED (Phase 21B.4.9.2): theoretical weight-storage math is NOT a practical topology claim
 
-| Candidate | Total params | Active params (NOT the storage driver) | BF16 weight bytes | FP8 weight bytes | INT4 weight bytes | Fits single L4 (24GB) at any precision? |
+**Correction note:** the prior version of this table computed a
+"practical GPU count" purely by dividing theoretical weight bytes by a
+GPU's VRAM (`ceil(weight_GB / GPU_VRAM_GB)`) and, in two cases, even got
+that arithmetic wrong by carrying over the wrong precision column. An
+independent audit correctly rejected both the arithmetic errors and the
+underlying method: dividing weight bytes by VRAM gives only a
+THEORETICAL MINIMUM — it says nothing about whether a real inference
+runtime can actually shard that model across that many GPUs, whether
+enough VRAM remains for KV cache/workspace once the weights are loaded,
+or whether the architecture's own tensor/expert-parallelism support
+covers that GPU count at all. Every candidate row below now carries TWO
+explicitly separate fields: **MINIMUM THEORETICAL GPU COUNT** (weight
+bytes only, arithmetic floor) and **QUALIFIED PRACTICAL GPU TOPOLOGY**
+(real runtime evidence) — the latter is `UNQUALIFIED / TBD` for every
+candidate until a future phase actually qualifies it against live
+runtime/architecture support, exactly as Phase 21B.4.8.1/.2 qualified
+vLLM on a real Modal L4 GPU before claiming it worked.
+
+| Candidate | Total params | BF16 floor | FP8 floor | INT4 floor | MINIMUM THEORETICAL GPU count (80GB-class, from `GENESIS_FRONTIER_COMPUTE_MATRIX.md`'s own table — the authoritative source; L4-derived counts are NOT interchanged with this column) | QUALIFIED PRACTICAL GPU TOPOLOGY |
 |---|---|---|---|---|---|---|
-| Qwen3.8-27B (dense) | 27B | 27B (dense — all params active) | 54GB → 3×L4 | 27GB → **2×L4** (exceeds 24GB alone) | 14GB → **1×L4 (fits)** | **Yes, INT4 only** |
-| Qwen3.8-Flash-Next (full, ~180B — the correct figure per `GENESIS_FRONTIER_COMPUTE_MATRIX.md`, never the smaller 125B core-only figure) | 180B | 6B core-MoE active | 360GB → 15×L4 | 180GB → 8×L4 | 90GB → 4×L4 | **No, at any precision tabulated** |
-| Mistral Small 4 | 119B | ~6.5B | 238GB → 10×L4 | 119GB → 5×L4 | 60GB → 3×L4 | **No, at any precision tabulated** |
-| GLM-5.3-Flash | 320B | (MoE, active count not separately re-verified this phase) | 640GB → 27×L4 | 320GB → 14×L4 | 160GB → 7×L4 | **No, at any precision tabulated** |
-| Qwen3-8B (control) | 8B | 8B (dense) | 16GB → **1×L4 (fits)** | 8GB → 1×L4 | 4GB → 1×L4 | **Yes, BF16/FP8/INT4 all fit** |
-| Mistral-Nemo-Instruct-2407 (control) | 12B | 12B (dense) | 24GB → borderline 1×L4 (no headroom for KV cache/workspace at BF16) | 12GB → 1×L4 | 6GB → 1×L4 | **Yes, FP8/INT4 comfortably; BF16 only with no serving headroom** |
-| Phi-4 (control) | 14B | 14B (dense) | 28GB → 2×L4 | 14GB → 1×L4 | 7GB → 1×L4 | **Yes, FP8/INT4** |
+| Qwen3.8-27B (dense) | 27B | 54GB | 27GB | 14GB | BF16: 1×; FP8: 1×; INT4: 1× | `UNQUALIFIED / TBD` — plausible at 1×L4 (24GB) for INT4 given the 14GB floor, but load + KV/workspace overhead is not yet qualified live; **QUALIFICATION REQUIRED** before treating 1×L4 as practical |
+| Qwen3.8-Flash-Next (full, ~180B — the correct total figure, never the smaller 125B core-only figure) | 180B | BF16: 360GB → 5× | FP8: 180GB → **3×** (CORRECTED — 2×80GB=160GB is physically insufficient even for weights alone; the prior version's "2×" was an error) | INT4: 90GB → 2× | 5× / 3× / 2× (BF16/FP8/INT4 respectively) | `UNQUALIFIED / TBD` — even the corrected 3× FP8 minimum leaves only 60GB of headroom above the 180GB weight floor across 3 GPUs combined, which architecture/runtime parallelism support has not been qualified against |
+| Mistral Small 4 (119B total / ~6.5B active — active parameters are explicitly NOT the storage driver) | 119B | BF16: 238GB → 3× | FP8: 119GB → 2× | INT4: 60GB → 1× | 3× / 2× / 1× | `UNQUALIFIED / TBD` — 2×80GB (FP8) provides theoretical capacity with zero measured margin for runtime/KV/workspace overhead; **QUALIFICATION REQUIRED** |
+| GLM-5.3-Flash | 320B | BF16: 640GB → 8× | FP8: 320GB → 4× | INT4: 160GB → **2×** (CORRECTED — the prior version's "7×" was an erroneous carry-over from the L4-count calculation, not this 80GB-class column) | 8× / 4× / 2× | `UNQUALIFIED / TBD` — the corrected 2× INT4 minimum gives EXACTLY 160GB against a 160GB floor, i.e. ZERO runtime headroom; this is very unlikely to be practically viable at exactly 2 GPUs, and the actual practical count (likely 3+) is not yet qualified |
+| Qwen3-8B (control) | 8B | 16GB | 8GB | 4GB | 1× at every precision (80GB-class) | `UNQUALIFIED / TBD` for L4-class specifically, though plausible given ample headroom at any precision |
+| Mistral-Nemo-Instruct-2407 (control) | 12B | 24GB | 12GB | 6GB | 1× at every precision (80GB-class) | `UNQUALIFIED / TBD` — BF16's 24GB floor leaves no L4-class headroom; FP8/INT4 more plausible pending qualification |
+| Phi-4 (control) | 14B | 28GB → 2× | 14GB → 1× | 7GB → 1× | 2× (BF16) / 1× (FP8, INT4) | `UNQUALIFIED / TBD` |
 
-**Corrected conclusion:** of the four deployable candidates, only
-**Qwen3.8-27B** fits a single L4 GPU, and only at INT4 precision (the
-theoretical 27GB FP8 figure alone already exceeds L4's 24GB, before any
-KV-cache/runtime-workspace overhead is added). Qwen3.8-Flash-Next,
-Mistral Small 4, and GLM-5.3-Flash all require **multi-GPU** (or a
-larger single-GPU class, e.g. 80GB-class per `GENESIS_FRONTIER_COMPUTE_MATRIX.md`'s
-existing table) at every tabulated precision — this is stated plainly so
-no execution report can implicitly assume single-L4 screening was ever
-uniformly viable across the deployable pool. All three controls fit a
-single L4 comfortably at FP8/INT4.
+**Do not read the "MINIMUM THEORETICAL GPU count" column as a
+deployment recommendation.** It is exactly what its name says: a floor
+computed from weight bytes alone. The "QUALIFIED PRACTICAL GPU
+TOPOLOGY" column is the one that matters for actually running
+anything, and it is `UNQUALIFIED / TBD` for every single candidate in
+this table as of this phase — Phase 21B.4.10 is where that
+qualification work belongs (§3.2 below).
 
-**Theoretical vs. practical, restated for this table specifically:** the
-byte figures above are the weight-storage FLOOR only. A PRACTICAL
-Round-A screening configuration for any candidate in this table must add
-`GENESIS_FRONTIER_COMPUTE_MATRIX.md`'s already-documented overhead
-(quantization metadata, KV cache, runtime workspace, 20-40%+ headroom
-rule of thumb) — meaning even Qwen3.8-27B's "fits 1×L4 at INT4" result
-has little to no serving headroom left over, and should be treated as a
-tight fit requiring careful KV-cache/context-length budgeting, not a
-comfortable margin.
+### 3.2 Candidate-specific cost envelope — PRELIMINARY, NOT EXECUTION-AUTHORIZED (Phase 21B.4.9.2)
 
-### 3.2 Candidate-specific cost envelope (Round-A screening, Modal rates from `GENESIS_FRONTIER_COMPUTE_MATRIX.md`'s live rate card)
+**Every dollar figure below is marked `PRELIMINARY / NOT
+EXECUTION-AUTHORIZED`** because it is derived from a GPU topology that
+is itself `UNQUALIFIED / TBD` (§3.1) — an independent audit correctly
+identified that retaining false precision (e.g. "$2.50-$5.00") for a
+candidate whose actual GPU count and runtime behavior have not been
+qualified would misrepresent planning-stage arithmetic as an executable
+budget. These figures exist only to give the owner order-of-magnitude
+awareness before Phase 21B.4.10's live requalification — they are NOT a
+number Phase 21B.4.10 or any later phase may treat as a pre-approved
+spend ceiling.
 
-Per-candidate estimates, NOT a blanket "low dollars per candidate"
-figure. Exact live prices are to be reverified in Phase 21B.4.10, not
-assumed frozen from this phase's research:
+| Candidate | Illustrative GPU class × count (theoretical floor, NOT qualified) | Rate/hr (per GPU, from the existing live rate card — subject to reverification) | Illustrative runtime | Cost figure |
+|---|---|---|---|---|
+| Qwen3.8-27B | 1× L4 (INT4, theoretical) | $0.80 | ~20-40 min | `PRELIMINARY / NOT EXECUTION-AUTHORIZED` — illustrative range ~$0.30-0.55 |
+| Qwen3.8-Flash-Next | 3× A100-80GB (FP8, corrected theoretical floor) | $2.50 | ~30-60 min | `PRELIMINARY / NOT EXECUTION-AUTHORIZED` — illustrative range ~$3.75-7.50 |
+| Mistral Small 4 | 2× A100-80GB (FP8, theoretical floor) | $2.50 | ~30-60 min | `PRELIMINARY / NOT EXECUTION-AUTHORIZED` — illustrative range ~$2.50-5.00 |
+| GLM-5.3-Flash | 2× A100-80GB (INT4, corrected theoretical floor — zero headroom, likely not the real practical count) | $2.50 | ~30-60 min | `PRELIMINARY / NOT EXECUTION-AUTHORIZED` — illustrative range ~$2.50-5.00 AT THE THEORETICAL FLOOR ONLY; the real practical count is expected higher once qualified, and this figure should not be quoted without that caveat |
+| Qwen3-8B (control) | 1× L4 | $0.80 | ~15-30 min | `PRELIMINARY / NOT EXECUTION-AUTHORIZED` — illustrative range ~$0.20-0.40 |
+| Mistral-Nemo-Instruct-2407 (control) | 1× L4 | $0.80 | ~15-30 min | `PRELIMINARY / NOT EXECUTION-AUTHORIZED` — illustrative range ~$0.20-0.40 |
+| Phi-4 (control) | 1× L4 | $0.80 | ~15-30 min | `PRELIMINARY / NOT EXECUTION-AUTHORIZED` — illustrative range ~$0.20-0.40 |
 
-| Candidate | GPU class (practical, incl. headroom) | GPU count | Rate/hr (per GPU) | Est. load+90-task Tier-1 runtime | Est. cost envelope |
-|---|---|---|---|---|---|
-| Qwen3.8-27B | L4 (INT4) | 1 | $0.80 | ~20-40 min (model load + 90 short-context generations) | **~$0.30-0.55** |
-| Qwen3.8-Flash-Next | A100-80GB or similar (FP8, 2× per the 80GB-class table) | 2 | $2.50 | ~30-60 min | **~$2.50-5.00** |
-| Mistral Small 4 | A100-80GB (FP8, 2× per the 80GB-class table) | 2 | $2.50 | ~30-60 min | **~$2.50-5.00** |
-| GLM-5.3-Flash | A100-80GB (INT4, 7× per the 80GB-class table — the cheapest tabulated precision still needs 7 GPUs at this size) | 7 | $2.50 | ~30-60 min | **~$8.75-17.50** |
-| Qwen3-8B (control) | L4 | 1 | $0.80 | ~15-30 min | **~$0.20-0.40** |
-| Mistral-Nemo-Instruct-2407 (control) | L4 | 1 | $0.80 | ~15-30 min | **~$0.20-0.40** |
-| Phi-4 (control) | L4 | 1 | $0.80 | ~15-30 min | **~$0.20-0.40** |
+**Phase 21B.4.10 must reverify, live, before any executable credit
+envelope may be locked:**
+- current Modal GPU inventory;
+- current rates (this phase's rate card may have changed);
+- supported GPU counts for multi-GPU tensor/expert-parallel Functions;
+- architecture/runtime compatibility for each candidate's actual model
+  class (MoE routing, custom attention, etc.);
+- quantized-checkpoint support (whether a suitable pre-quantized
+  checkpoint exists, or ORNEUR must quantize one itself, which is a
+  materially different cost/complexity profile); and
+- the practical load topology (GPU count, parallelism strategy) that
+  actually works for each candidate, replacing every `UNQUALIFIED / TBD`
+  entry in §3.1 with a real, live-tested value.
 
-These are order-of-magnitude planning estimates built from
-`GENESIS_FRONTIER_COMPUTE_MATRIX.md`'s existing live rate card and
-Phase 21B.4.8.1's own small-model load/generate timing evidence,
-extrapolated (not re-measured) to larger models' longer expected load
-times — no compute was started this phase to verify them. GLM-5.3-Flash
-is notably the most expensive deployable candidate to screen even at
-its cheapest tabulated precision, a direct consequence of its 320B
-total-parameter footprint; this is recorded plainly rather than
-smoothed into an average that would hide it.
+Only after that reverification may an executable credit envelope be
+locked. Owner cash remains **₹0** throughout.
 
 - **Frontier reference models** (DeepSeek V4.1-Flash, GLM-5.3 flagship,
   Mistral Large 3, MiniMax M3, Qwen3.8-Max, Kimi K3) are, per
   `GENESIS_FRONTIER_COMPUTE_MATRIX.md`, largely compute-prohibitive to
   self-host even at Round-A precision (each requires 8-70 GPUs at the
-  80GB class, per that document's table). The methodology's answer (owner
-  spec §33's "use hosted references when loading flagship weights is
-  irrational") is to evaluate these via their own hosted/managed API
-  endpoints where available (§6 below governs exactly when this is
-  permitted under the ₹0 constraint), recording the exact provider-
-  returned model identifier and call metadata per
-  `GENESIS_FRONTIER_HOLDOUT_SPEC.md`'s mutable-API-model policy. Exact
-  provider/pricing research for hosted access is NOT performed in this
-  phase.
+  80GB class, per that document's table — itself a theoretical-floor
+  figure, subject to the same practical-qualification caveat as §3.1).
+  The methodology's answer (owner spec §33's "use hosted references
+  when loading flagship weights is irrational") is to evaluate these
+  via their own hosted/managed API endpoints where available (§5 below
+  governs exactly when this is permitted under the ₹0 constraint),
+  recording the exact provider-returned model identifier and call
+  metadata per `GENESIS_FRONTIER_HOLDOUT_SPEC.md`'s mutable-API-model
+  policy. Exact provider/pricing research for hosted access is NOT
+  performed in this phase.
 
 ## 4. Expected finalist cost (Stage 4-7) — CORRECTED for the removed cost-based elimination (Phase 21B.4.9.1)
 
