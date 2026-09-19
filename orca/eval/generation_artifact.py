@@ -429,14 +429,58 @@ def read_sealed_generation_artifact(run_id: str) -> tuple[bytes, str]:
     return serialized, expected_digest
 
 
-def load_and_verify_generation_artifact(serialized: bytes, expected_digest: str) -> GenerationArtifactManifest:
+class _VerificationProof:
+    """Phase 21B.4.8.3 Blocker/section 5: an unforgeable-in-practice
+    marker object minted ONLY inside load_and_verify_generation_artifact()
+    after it has independently hashed the received bytes and compared
+    them to a separately-supplied expected digest.
+    VerifiedGenerationArtifact.__post_init__ requires an instance of
+    this EXACT class (not merely a truthy value), so a caller cannot
+    fabricate "verified" status by passing True/1/any ordinary object --
+    they would have to deliberately import this underscore-prefixed,
+    documented-as-internal class and knowingly construct one themselves.
+    Python offers no true private constructors, so this is a best-effort
+    misuse-resistance mechanism, not a cryptographic guarantee (see this
+    module's ARTIFACT STORE TRUST MODEL note below)."""
+    __slots__ = ()
+
+
+@dataclass(frozen=True)
+class VerifiedGenerationArtifact:
+    """A RECEIPT that specific serialized bytes were checked against an
+    independently-retained expected digest BEFORE deserialization --
+    never an ordinary wrapper around a GenerationArtifactManifest.
+    Only load_and_verify_generation_artifact() may construct one (see
+    `proof`). The real production scoring entry point
+    (orca.eval.runner.score_verified_generation_artifact()) accepts
+    ONLY this type, never a bare GenerationArtifactManifest -- closing
+    the gap where a caller could pass a hand-built or merely-
+    deserialized (never digest-verified) manifest into the real
+    benchmark path."""
+    manifest: GenerationArtifactManifest
+    bundle_digest: str
+    schema_version: str
+    verified_at: str
+    proof: _VerificationProof
+
+    def __post_init__(self):
+        if not isinstance(self.proof, _VerificationProof):
+            raise TypeError(
+                "VerifiedGenerationArtifact may only be produced by "
+                "load_and_verify_generation_artifact() -- its 'proof' field must be a genuine "
+                "_VerificationProof instance minted after independent digest verification, never "
+                "constructed directly."
+            )
+
+
+def load_and_verify_generation_artifact(serialized: bytes, expected_digest: str) -> VerifiedGenerationArtifact:
     """The verified-load half of the seal/verify flow (Phase 21B.4.8.2
-    Blocker 3). `expected_digest` MUST come from a trusted orchestration
-    record or a separately-retained value (e.g.
-    read_sealed_generation_artifact()'s digest_path, or a value a caller
-    persisted independently at seal time) -- never from a digest field
-    read out of `serialized` itself, which would let a tampered bundle
-    simply carry its own freshly recomputed digest.
+    Blocker 3, hardened in Phase 21B.4.8.3). `expected_digest` MUST come
+    from a trusted orchestration record or a separately-retained value
+    (e.g. read_sealed_generation_artifact()'s digest_path, or a value a
+    caller persisted independently at seal time) -- never from a digest
+    field read out of `serialized` itself, which would let a tampered
+    bundle simply carry its own freshly recomputed digest.
 
     Order of operations, exactly as required:
       1. hash the received exact bytes;
@@ -447,9 +491,13 @@ def load_and_verify_generation_artifact(serialized: bytes, expected_digest: str)
       5. semantic identity (candidate/revision/suite/config) and
          6. raw-response hashes are validated separately by
          verify_manifest_identity() / read_and_verify_raw_response(),
-         called from run_scoring_phase_from_artifact() -- this function's
-         job ends at 'the bytes are exactly what was sealed, and the
-         schema is one we understand'."""
+         called from orca.eval.runner.score_verified_generation_artifact()
+         -- this function's job ends at 'the bytes are exactly what was
+         sealed, and the schema is one we understand'.
+
+    Returns a VerifiedGenerationArtifact (never a bare manifest) -- the
+    receipt proving this verification actually happened, which the real
+    scoring entry point requires as its input type."""
     actual_digest = hashlib.sha256(serialized).hexdigest()
     if actual_digest != expected_digest:
         raise GenerationArtifactIntegrityError(
@@ -457,4 +505,32 @@ def load_and_verify_generation_artifact(serialized: bytes, expected_digest: str)
             f"{actual_digest} -- the bundle was tampered with, truncated, or corrupted in transit. "
             "Refusing to deserialize an unverified bundle."
         )
-    return GenerationArtifactManifest.from_json(serialized.decode("utf-8"))
+    manifest = GenerationArtifactManifest.from_json(serialized.decode("utf-8"))
+    from datetime import datetime, timezone
+
+    return VerifiedGenerationArtifact(
+        manifest=manifest, bundle_digest=actual_digest, schema_version=manifest.schema_version,
+        verified_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), proof=_VerificationProof(),
+    )
+
+
+# ── ARTIFACT STORE TRUST MODEL (Phase 21B.4.8.3 section 11) ─────────────
+#
+# The `.json` + `.sha256` sidecar pair (write_sealed_generation_artifact /
+# read_sealed_generation_artifact) provides CORRUPTION/TAMPER-IN-TRANSIT
+# detection ONLY, and only under the assumption that the expected digest
+# was obtained through a trusted orchestration channel independent of
+# the artifact store itself. This is an INTEGRITY DIGEST / CHAIN-OF-
+# CUSTODY DIGEST, not a cryptographic signature: if an attacker has
+# write access to BOTH files (e.g. arbitrary filesystem access to
+# GENERATION_ARTIFACT_MANIFEST_DIR), they can simply rewrite the bundle
+# and recompute a matching sidecar digest, and this module has no way to
+# detect that. No signing infrastructure (asymmetric keys, a trusted
+# timestamping authority, etc.) exists in this project as of Phase
+# 21B.4.8.3, and none is introduced here -- closing that gap would
+# require a genuinely separate trust root (e.g. a value recorded in a
+# system the artifact-writer cannot also modify), which is out of scope
+# for this phase. Everything in this module should be read as "detects
+# accidental or in-transit corruption, and requires deliberate two-file
+# tampering to defeat" -- never as "cryptographically authenticates the
+# artifact's origin."

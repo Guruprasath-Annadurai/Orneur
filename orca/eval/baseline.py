@@ -96,6 +96,9 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import hashlib
+import json
+import re
 
 from orca.config import ORCA_HOME
 from orca.eval.genesis_suite import EvalTask, category_task_counts, compute_suite_digests
@@ -146,18 +149,44 @@ class BaselineFreezeFailed(RuntimeError):
 
 
 class MissingGenerationProvenanceError(ValueError):
-    """Phase 21B.4.8.2 baseline gate: a result declaring
-    `provenance_kind="real_generation_artifact"` has no
-    `generation_artifact_digest` -- a REAL candidate baseline may never
-    be finalized without a trace back to the exact sealed generation
-    bundle it was scored from. Explicitly-marked synthetic/dry-run
-    results ("synthetic_test") and results that predate this field
-    ("unspecified", the default) are not subject to this check -- no
-    real evaluation has occurred yet in this project, so "unspecified"
-    remains backward compatible with every existing harness-validation
-    result, but any FUTURE caller that wants to record a real
-    frontier-candidate baseline must opt in to "real_generation_artifact"
-    and supply real provenance, or this error blocks it."""
+    """Phase 21B.4.8.2 baseline gate, TIGHTENED in Phase 21B.4.8.3: a
+    real baseline may never be finalized without a trace back to the
+    exact sealed generation bundle it was scored from. Independent audit
+    found that the 21B.4.8.2 version of this gate only required a digest
+    WHEN a caller happened to declare provenance_kind=
+    "real_generation_artifact" -- leaving "unspecified" (the field's
+    backward-compatible default) as a silent bypass, since nothing
+    forced a real evaluation to declare itself at all.
+    record_baseline_and_freeze_suite() now REQUIRES provenance_kind ==
+    "real_generation_artifact" outright (see `_validate_result_provenance`)
+    -- "unspecified" and "synthetic_test" are both rejected here. Legacy
+    stored manifests with provenance_kind="unspecified" may still be
+    LOADED/read (EvaluationResultManifest.load() is unaffected); this
+    error only ever blocks a NEW call to the freeze transaction."""
+
+
+class GenerationArtifactMismatchError(ValueError):
+    """Phase 21B.4.8.3 (spec section 4/13): the result's declared
+    generation-artifact provenance (digest, or the identity fields
+    re-derived from the actual sealed artifact on disk) does not match
+    what is actually being finalized -- e.g. a syntactically valid-
+    looking digest that does not correspond to any real sealed artifact
+    for this run_id, a digest that belongs to a DIFFERENT run_id's
+    artifact, or an artifact whose candidate/revision/suite/config
+    identity disagrees with the result claiming to have been scored from
+    it. This is also the TOCTOU re-verification failure: the sealed
+    artifact is re-read and re-verified at FINALIZATION time, never
+    trusted solely from an earlier scoring-time check, so bytes altered
+    or replaced between scoring and finalization are caught here too."""
+
+
+class GenerationArtifactMissingError(ValueError):
+    """Phase 21B.4.8.3 (spec section 13): no sealed generation artifact
+    (or its independently-retained sidecar digest) could be found on
+    disk for the result's run_id at baseline-finalization time -- a real
+    baseline can never be finalized without being able to independently
+    re-verify its provenance, even if an earlier scoring-time check
+    passed. Covers both "never existed" and "removed since scoring"."""
 
 
 class DuplicateRunIdError(ValueError):
@@ -219,31 +248,147 @@ def _validate_result_completeness(result: EvaluationResultManifest, tasks: list[
         raise IncompleteResultError("Result has no completed_at timestamp -- evaluation did not finish")
 
 
-def _validate_result_provenance(result: EvaluationResultManifest) -> None:
-    """Phase 21B.4.8.2 baseline gate ('BASELINE GATE' / 'No fake
-    provenance'): a result that declares itself a REAL candidate
-    evaluation (`provenance_kind="real_generation_artifact"`) must carry
-    a non-empty `generation_artifact_digest` tracing it back to the
-    exact sealed GenerationArtifactManifest it was scored from -- a
-    caller cannot construct an arbitrary EvaluationResultManifest and
-    claim real provenance without evidence. `"synthetic_test"` and the
-    backward-compatible default `"unspecified"` are exempt (dry-run/
-    harness-validation paths, and every result recorded before this
-    field existed)."""
-    if result.provenance_kind == "real_generation_artifact":
-        if not result.generation_artifact_digest:
-            raise MissingGenerationProvenanceError(
-                f"Result run_id={result.run_id!r} declares provenance_kind='real_generation_artifact' but "
-                "has no generation_artifact_digest -- refusing to finalize a real-candidate baseline that "
-                "cannot be traced back to a sealed generation artifact. Use provenance_kind="
-                "'synthetic_test' for dry-run/harness-validation results, or supply the real digest."
-            )
-    elif result.provenance_kind not in ("synthetic_test", "unspecified"):
-        raise MissingGenerationProvenanceError(
-            f"Result run_id={result.run_id!r} has an unrecognized provenance_kind="
-            f"{result.provenance_kind!r} -- expected 'real_generation_artifact', 'synthetic_test', "
-            "or 'unspecified'."
+_DIGEST_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _validate_result_generation_provenance(result: EvaluationResultManifest) -> None:
+    """Phase 21B.4.8.3 (spec sections 3-4, 13): a syntactically valid
+    digest string is NOT provenance. Called only once
+    `result.provenance_kind == "real_generation_artifact"` has already
+    been confirmed by `_validate_result_provenance`. Performs, in order:
+
+      1. Format-validates `generation_artifact_digest` (64-char lowercase
+         hex) and `generation_artifact_schema_version` (must equal the
+         one supported schema version) -- rejects a malformed or
+         arbitrary-looking digest before touching disk at all.
+      2. RE-READS the canonical sealed artifact for `result.run_id` from
+         disk (orca.eval.generation_artifact
+         .read_sealed_generation_artifact()) -- never trusts a digest
+         string alone. Missing artifact or sidecar ->
+         GenerationArtifactMissingError.
+      3. Requires `result.generation_artifact_digest` to equal the
+         sidecar's OWN independently-retained expected digest -- a
+         mismatch means the result claims provenance from a DIFFERENT
+         artifact than what is actually on disk for this run_id.
+      4. Calls `load_and_verify_generation_artifact()` -- hashes the
+         ACTUAL bytes on disk against that same expected digest AGAIN,
+         at finalization time, not merely trusting an earlier scoring-
+         time check. This closes the TOCTOU window: if the artifact was
+         altered or replaced after scoring but before baseline
+         finalization, this re-hash catches it here.
+      5. Cross-checks the re-verified manifest's identity fields against
+         the result's OWN recorded fields (run_id, candidate,
+         upstream_model, artifact_repo, exact_revision,
+         tokenizer_revision, backend, suite_id, suite_version, suite
+         digests, system_instruction_digest, and an independently
+         recomputed generation_config_digest from
+         result.inference_config) -- any disagreement is
+         GenerationArtifactMismatchError."""
+    from orca.eval.generation_artifact import (
+        GENERATION_ARTIFACT_SCHEMA_VERSION,
+        GenerationArtifactIntegrityError,
+        load_and_verify_generation_artifact,
+        read_sealed_generation_artifact,
+    )
+
+    digest = result.generation_artifact_digest
+    if not digest or not _DIGEST_HEX_RE.match(digest):
+        raise GenerationArtifactMismatchError(
+            f"Result run_id={result.run_id!r} generation_artifact_digest={digest!r} is not a "
+            "well-formed 64-character lowercase hex SHA-256 digest -- a syntactically valid-looking "
+            "digest is not provenance."
         )
+    if result.generation_artifact_schema_version != GENERATION_ARTIFACT_SCHEMA_VERSION:
+        raise GenerationArtifactMismatchError(
+            f"Result run_id={result.run_id!r} generation_artifact_schema_version="
+            f"{result.generation_artifact_schema_version!r} does not match the supported schema "
+            f"{GENERATION_ARTIFACT_SCHEMA_VERSION!r}."
+        )
+
+    try:
+        serialized, sidecar_expected_digest = read_sealed_generation_artifact(result.run_id)
+    except GenerationArtifactIntegrityError as exc:
+        raise GenerationArtifactMissingError(
+            f"No sealed generation artifact could be re-read for run_id={result.run_id!r} at baseline "
+            f"finalization time -- a real baseline can never be finalized without independently "
+            f"re-verifying its provenance, even if an earlier scoring-time check passed: {exc}"
+        ) from exc
+
+    if digest != sidecar_expected_digest:
+        raise GenerationArtifactMismatchError(
+            f"Result run_id={result.run_id!r} generation_artifact_digest ({digest}) does not match "
+            f"the canonical sealed artifact's independently-retained sidecar digest "
+            f"({sidecar_expected_digest}) -- the result claims provenance from a different artifact "
+            "than what is actually on disk for this run_id."
+        )
+
+    try:
+        verified = load_and_verify_generation_artifact(serialized, sidecar_expected_digest)
+    except GenerationArtifactIntegrityError as exc:
+        raise GenerationArtifactMismatchError(
+            f"Sealed generation artifact for run_id={result.run_id!r} failed re-verification at "
+            f"baseline-finalization time -- its bytes on disk no longer match the retained digest "
+            f"(TOCTOU: altered or replaced since scoring time): {exc}"
+        ) from exc
+
+    manifest = verified.manifest
+    expected_generation_config_digest = "sha256:" + hashlib.sha256(
+        json.dumps(result.inference_config, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    checks = [
+        ("run_id", manifest.run_id, result.run_id),
+        ("candidate", manifest.candidate, result.candidate),
+        ("upstream_model", manifest.upstream_model, result.upstream_model),
+        ("artifact_repo", manifest.artifact_repo, result.artifact_repo),
+        ("exact_revision", manifest.exact_revision, result.exact_revision),
+        ("tokenizer_revision", manifest.tokenizer_revision, result.tokenizer_revision),
+        ("backend", manifest.backend, result.backend),
+        ("suite_id", manifest.suite_id, result.suite_id),
+        ("suite_version", manifest.suite_version, result.suite_version),
+        ("suite_content_digest", manifest.suite_content_digest, result.suite_content_digest),
+        ("suite_scoring_contract_digest", manifest.suite_scoring_contract_digest, result.suite_scoring_contract_digest),
+        ("system_instruction_digest", manifest.system_instruction_digest, result.system_instruction_digest),
+        ("generation_config_digest", manifest.generation_config_digest, expected_generation_config_digest),
+    ]
+    mismatches = [(n, g, w) for n, g, w in checks if g != w]
+    if mismatches:
+        details = "; ".join(f"{n}: artifact={g!r} != result={w!r}" for n, g, w in mismatches)
+        raise GenerationArtifactMismatchError(
+            f"Re-verified sealed generation artifact for run_id={result.run_id!r} does not match the "
+            f"result being finalized -- refusing to freeze a baseline whose claimed provenance "
+            f"disagrees with the actual artifact on disk: {details}"
+        )
+
+
+def _validate_result_provenance(result: EvaluationResultManifest) -> None:
+    """Phase 21B.4.8.3 baseline gate (tightened from 21B.4.8.2):
+    `record_baseline_and_freeze_suite()` is the REAL baseline/freeze
+    transaction, so it now REQUIRES `provenance_kind ==
+    "real_generation_artifact"` outright -- `"unspecified"` (the field's
+    backward-compatible default, kept only so historical manifests can
+    still be READ) and `"synthetic_test"` (harness/dry-run results, e.g.
+    from `run_suite()` or the legacy `run_scoring_phase_from_artifact()`)
+    are both REJECTED here. An independent audit found that only
+    requiring a digest WHEN a caller happened to declare
+    "real_generation_artifact" left "unspecified" as a silent bypass,
+    since nothing forced a real evaluation to declare itself at all.
+
+    Once `provenance_kind` is confirmed real, delegates to
+    `_validate_result_generation_provenance()` to re-verify the actual
+    sealed artifact on disk -- a bare digest string is never sufficient
+    evidence on its own."""
+    if result.provenance_kind != "real_generation_artifact":
+        raise MissingGenerationProvenanceError(
+            f"Result run_id={result.run_id!r} has provenance_kind={result.provenance_kind!r} -- "
+            "record_baseline_and_freeze_suite() only finalizes results with provenance_kind="
+            "'real_generation_artifact' (produced exclusively by "
+            "orca.eval.runner.score_verified_generation_artifact()). Synthetic/dry-run/harness "
+            "results (provenance_kind='synthetic_test') and results with unset/legacy provenance "
+            "(provenance_kind='unspecified') must never freeze the real evaluation suite -- use a "
+            "separate non-freezing persistence path for those."
+        )
+    _validate_result_generation_provenance(result)
 
 
 def record_baseline_and_freeze_suite(

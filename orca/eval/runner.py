@@ -523,7 +523,7 @@ def run_scoring_phase(
     return result, scored_task_ids
 
 
-def run_scoring_phase_from_artifact(
+def _score_manifest_common(
     manifest,
     candidate_config: CandidateConfig,
     tasks: list[EvalTask],
@@ -534,36 +534,30 @@ def run_scoring_phase_from_artifact(
     scoring_digest: str,
     started_at: str,
 ) -> tuple[EvaluationResultManifest, list[str]]:
-    """The cross-machine-safe entry point to scoring (Phase 21B.4.8.1,
-    hardened in Phase 21B.4.8.2). Unlike run_scoring_phase() (which
-    trusts whatever GenerationRecords it is handed), this function:
+    """The ONE security-relevant verification+scoring implementation
+    shared by both scoring entry points (Phase 21B.4.8.3 section 7:
+    "do not maintain parallel security semantics"). Given a raw
+    GenerationArtifactManifest (already unwrapped from a
+    VerifiedGenerationArtifact by the real entry point, or passed
+    directly by the legacy/harness entry point):
 
       1. Verifies `manifest`'s IDENTITY against `candidate_config` and
-         the suite parameters FIRST (orca.eval.generation_artifact
+         the suite parameters (orca.eval.generation_artifact
          .verify_manifest_identity()) -- fails closed with
-         GenerationArtifactIdentityMismatchError if the manifest was
-         generated for a different candidate, revision, tokenizer
-         revision, artifact repo, backend, suite id/version/digests,
-         generation config, system instruction, or expected task set
-         than what is currently being requested (Phase 21B.4.8.2
-         Blocker 2 -- the manifest is never silently rescored as if it
-         belonged to a different candidate).
+         GenerationArtifactIdentityMismatchError on any mismatch.
       2. Reconciles `manifest` against the live-verified `tasks`
          (orca.eval.generation_artifact.verify_against_suite) -- fails
-         closed with GenerationArtifactIntegrityError if any expected
-         task is missing, duplicated, unknown, or category/scoring_type
-         mismatched. This is the fix for the denominator-integrity gap:
-         "expected" comes from the suite, never from whichever records
-         happened to arrive.
+         closed with GenerationArtifactIntegrityError on any missing/
+         duplicate/unknown/category-mismatched record.
       3. Re-reads and verifies (SHA-256 AND byte_length) every non-error
          record's raw response from the durable store before trusting
-         its content (orca.eval.generation_artifact
-         .read_and_verify_raw_response) -- detects corruption/
-         truncation/substitution in transit.
+         its content.
 
     Only after all three checks pass does it reconstruct
-    GenerationRecords and delegate to run_scoring_phase()'s existing
-    scoring logic."""
+    GenerationRecords and delegate to run_scoring_phase(). Callers of
+    THIS function are responsible for deciding what provenance_kind the
+    returned result gets stamped with -- this function never stamps
+    provenance itself."""
     from orca.eval.generation_artifact import (
         read_and_verify_raw_response,
         verify_against_suite,
@@ -604,6 +598,101 @@ def run_scoring_phase_from_artifact(
     )
 
 
+def score_verified_generation_artifact(
+    verified_artifact,
+    candidate_config: CandidateConfig,
+    tasks: list[EvalTask],
+    *,
+    suite_id: str,
+    suite_version: str,
+    content_digest: str,
+    scoring_digest: str,
+    started_at: str,
+) -> tuple[EvaluationResultManifest, list[str]]:
+    """THE real-benchmark scoring entry point (Phase 21B.4.8.3). Accepts
+    ONLY an orca.eval.generation_artifact.VerifiedGenerationArtifact --
+    proof that the exact serialized bytes were checked against an
+    independently-retained expected digest BEFORE deserialization
+    (produced exclusively by
+    orca.eval.generation_artifact.load_and_verify_generation_artifact()).
+    A bare/hand-built/merely-deserialized GenerationArtifactManifest is
+    rejected outright with TypeError -- it is not accepted here under
+    any circumstance, closing the "raw manifest passed directly to real
+    scoring" gap an independent audit found.
+
+    Runs the same identity/coverage/raw-response verification as the
+    legacy path (_score_manifest_common()) -- there is one security
+    implementation, not two -- then AUTOMATICALLY stamps the returned
+    EvaluationResultManifest with:
+
+      provenance_kind = "real_generation_artifact"
+      generation_artifact_digest = verified_artifact.bundle_digest
+      generation_artifact_schema_version = verified_artifact.schema_version
+
+    The caller never manually fills these fields -- closing the "a
+    syntactically valid digest string is not provenance" gap: the ONLY
+    way to get a result stamped provenance_kind="real_generation_artifact"
+    is to go through this function with a genuinely verified artifact."""
+    from orca.eval.generation_artifact import VerifiedGenerationArtifact
+
+    if not isinstance(verified_artifact, VerifiedGenerationArtifact):
+        raise TypeError(
+            f"score_verified_generation_artifact() requires a VerifiedGenerationArtifact, got "
+            f"{type(verified_artifact).__name__} instead -- use "
+            "orca.eval.generation_artifact.load_and_verify_generation_artifact() to produce one. "
+            "A bare GenerationArtifactManifest is never accepted by the real scoring entry point."
+        )
+
+    result, scored_task_ids = _score_manifest_common(
+        verified_artifact.manifest, candidate_config, tasks,
+        suite_id=suite_id, suite_version=suite_version,
+        content_digest=content_digest, scoring_digest=scoring_digest, started_at=started_at,
+    )
+    result.provenance_kind = "real_generation_artifact"
+    result.generation_artifact_digest = verified_artifact.bundle_digest
+    result.generation_artifact_schema_version = verified_artifact.schema_version
+    return result, scored_task_ids
+
+
+def run_scoring_phase_from_artifact(
+    manifest,
+    candidate_config: CandidateConfig,
+    tasks: list[EvalTask],
+    *,
+    suite_id: str,
+    suite_version: str,
+    content_digest: str,
+    scoring_digest: str,
+    started_at: str,
+) -> tuple[EvaluationResultManifest, list[str]]:
+    """LEGACY/harness-only entry point (Phase 21B.4.8.1, restricted in
+    Phase 21B.4.8.3). Accepts a raw (unsealed) GenerationArtifactManifest
+    directly and runs the EXACT same identity/coverage/raw-response
+    verification as the real path (_score_manifest_common() -- there is
+    no security downgrade for those checks), but the returned result is
+    ALWAYS stamped provenance_kind="synthetic_test" (never
+    "real_generation_artifact"), regardless of what the input manifest
+    claims -- nothing here proves the manifest's bytes were ever checked
+    against an independently-retained digest, so it can never be trusted
+    as a real baseline.
+    orca.eval.baseline.record_baseline_and_freeze_suite() unconditionally
+    rejects any non-"real_generation_artifact" provenance_kind, so a
+    result from this function can never freeze genesis-eval-v1.
+
+    Existing tests and harness-validation callers may keep using this
+    entry point; a REAL cross-machine evaluation MUST use
+    score_verified_generation_artifact() instead."""
+    result, scored_task_ids = _score_manifest_common(
+        manifest, candidate_config, tasks,
+        suite_id=suite_id, suite_version=suite_version,
+        content_digest=content_digest, scoring_digest=scoring_digest, started_at=started_at,
+    )
+    result.provenance_kind = "synthetic_test"
+    result.generation_artifact_digest = None
+    result.generation_artifact_schema_version = None
+    return result, scored_task_ids
+
+
 def run_suite(
     adapter: ModelAdapter,
     candidate_config: CandidateConfig,
@@ -612,26 +701,30 @@ def run_suite(
     suite_version: str = "v1",
     run_id: str | None = None,
 ) -> tuple[EvaluationResultManifest, list[str]]:
-    """Executes EVERY task in the persisted, verified suite against
-    `adapter`, producing a NOT-yet-finalized EvaluationResultManifest
-    (caller must pass this to
-    orca.eval.baseline.record_baseline_and_freeze_suite() to finalize
-    it). Returns (result, scored_task_ids) -- scored_task_ids excludes
+    """Local/same-machine HARNESS path -- NOT the real-benchmark path
+    (Phase 21B.4.8.3 section 8). Executes EVERY task in the persisted,
+    verified suite against `adapter`, producing a NOT-yet-finalized
+    EvaluationResultManifest ALWAYS stamped provenance_kind=
+    "synthetic_test" (regardless of which ModelAdapter is used, including
+    a real one) -- run_suite() never goes through the sealed-artifact
+    materialize/seal/verify pipeline, so nothing here proves any
+    provenance, and orca.eval.baseline.record_baseline_and_freeze_suite()
+    will always reject its output. A REAL frontier-candidate baseline
+    MUST use the canonical pipeline instead: run_remote_generation_phase()
+    (or run_generation_phase() locally) -> materialize_generation_artifact()
+    -> write_sealed_generation_artifact() -> transfer -> read_sealed_
+    generation_artifact() + load_and_verify_generation_artifact() ->
+    score_verified_generation_artifact(). There is no easier real-
+    evaluation path that bypasses provenance -- run_suite() exists solely
+    for local harness/dry-run validation of the runner's own plumbing
+    (denominator integrity, failure capture, digest wiring).
+
+    Returns (result, scored_task_ids) -- scored_task_ids excludes
     llm_judge tasks, matching record_baseline_and_freeze_suite()'s
     completeness-check contract.
 
-    Denominator integrity: every task in the suite gets EITHER a
-    per_task_results entry (deterministic categories) or an
-    unscored_categories-tagged entry, OR a generation_failures entry (if
-    generation itself failed) -- never silently dropped.
-
     Implemented as run_generation_phase() + run_scoring_phase() composed
-    on a single machine (Phase 21B.4.8 spec section 3) -- this function's
-    behavior is unchanged from before that split existed, but the two
-    phases are now independently callable, e.g. from a trusted-GPU-only
-    worker (generation) and a separately Docker-equipped worker
-    (scoring), with GenerationRecords as the artifact that crosses that
-    boundary."""
+    on a single machine (Phase 21B.4.8 spec section 3)."""
     tasks, suite_manifest = load_and_verify_suite(suite_id, suite_version)
     task_ids, content_digest, scoring_digest = compute_suite_digests(tasks)
 
@@ -640,12 +733,16 @@ def run_suite(
 
     generation_records = run_generation_phase(adapter, candidate_config, tasks, run_id=resolved_run_id)
 
-    return run_scoring_phase(
+    result, scored_task_ids = run_scoring_phase(
         generation_records, candidate_config, tasks,
         suite_id=suite_id, suite_version=suite_version,
         content_digest=content_digest, scoring_digest=scoring_digest,
         run_id=resolved_run_id, started_at=started_at,
     )
+    result.provenance_kind = "synthetic_test"
+    result.generation_artifact_digest = None
+    result.generation_artifact_schema_version = None
+    return result, scored_task_ids
 
 
 class DryRunAdapter:
