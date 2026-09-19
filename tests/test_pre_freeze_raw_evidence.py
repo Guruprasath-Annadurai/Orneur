@@ -316,7 +316,7 @@ def test_attack_10_path_escaping_canonical_artifact_root(tmp_path):
     _serialized2, new_digest = read_sealed_generation_artifact("preflight-path-escape")
     result.generation_artifact_digest = new_digest
 
-    with pytest.raises(RawEvidencePreservationError, match="outside the canonical"):
+    with pytest.raises(RawEvidencePreservationError, match="not under this run's own canonical artifact directory"):
         record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-preflight-test")
     _assert_suite_unfrozen("genesis-eval-preflight-test")
 
@@ -349,3 +349,177 @@ def test_attack_12_all_evidence_intact_baseline_proceeds():
     assert finalized.finalized is True
     suite = EvaluationSuiteManifest.load("genesis-eval-preflight-test", "v1")
     assert suite.frozen is True
+
+
+# ── Phase 21B.4.10.1 hardening: mandatory hash/length, run-specific binding,
+# symlink rejection, failure-record invariant ─────────────────────────────
+
+
+def test_successful_record_missing_hash_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _real_pipeline_result(tasks, run_id="preflight-missing-hash")
+    serialized, expected_digest = read_sealed_generation_artifact("preflight-missing-hash")
+    manifest = load_and_verify_generation_artifact(serialized, expected_digest).manifest
+    new_records = tuple(
+        {**r, "text_sha256": None} if r["raw_response_ref"] else r for r in manifest.records
+    )
+    _reseal_records("preflight-missing-hash", new_records)
+    _serialized2, new_digest = read_sealed_generation_artifact("preflight-missing-hash")
+    result.generation_artifact_digest = new_digest
+
+    with pytest.raises(RawEvidencePreservationError, match="well-formed"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-preflight-test")
+    _assert_suite_unfrozen("genesis-eval-preflight-test")
+
+
+def test_successful_record_malformed_hash_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _real_pipeline_result(tasks, run_id="preflight-malformed-hash")
+    serialized, expected_digest = read_sealed_generation_artifact("preflight-malformed-hash")
+    manifest = load_and_verify_generation_artifact(serialized, expected_digest).manifest
+    new_records = tuple(
+        {**r, "text_sha256": "not-a-real-hash"} if r["raw_response_ref"] else r for r in manifest.records
+    )
+    _reseal_records("preflight-malformed-hash", new_records)
+    _serialized2, new_digest = read_sealed_generation_artifact("preflight-malformed-hash")
+    result.generation_artifact_digest = new_digest
+
+    with pytest.raises(RawEvidencePreservationError, match="well-formed"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-preflight-test")
+    _assert_suite_unfrozen("genesis-eval-preflight-test")
+
+
+def test_successful_record_missing_byte_length_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _real_pipeline_result(tasks, run_id="preflight-missing-length")
+    serialized, expected_digest = read_sealed_generation_artifact("preflight-missing-length")
+    manifest = load_and_verify_generation_artifact(serialized, expected_digest).manifest
+    new_records = tuple(
+        {**r, "byte_length": None} if r["raw_response_ref"] else r for r in manifest.records
+    )
+    _reseal_records("preflight-missing-length", new_records)
+    _serialized2, new_digest = read_sealed_generation_artifact("preflight-missing-length")
+    result.generation_artifact_digest = new_digest
+
+    with pytest.raises(RawEvidencePreservationError, match="non-negative integer"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-preflight-test")
+    _assert_suite_unfrozen("genesis-eval-preflight-test")
+
+
+def test_successful_record_negative_byte_length_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _real_pipeline_result(tasks, run_id="preflight-negative-length")
+    serialized, expected_digest = read_sealed_generation_artifact("preflight-negative-length")
+    manifest = load_and_verify_generation_artifact(serialized, expected_digest).manifest
+    new_records = tuple(
+        {**r, "byte_length": -5} if r["raw_response_ref"] else r for r in manifest.records
+    )
+    _reseal_records("preflight-negative-length", new_records)
+    _serialized2, new_digest = read_sealed_generation_artifact("preflight-negative-length")
+    result.generation_artifact_digest = new_digest
+
+    with pytest.raises(RawEvidencePreservationError, match="non-negative integer"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-preflight-test")
+    _assert_suite_unfrozen("genesis-eval-preflight-test")
+
+
+def test_successful_record_path_under_another_run_id_rejected():
+    """Phase 21B.4.10.1 §12: a response genuinely persisted for a
+    DIFFERENT run_id, with byte-identical content and a correctly
+    matching hash/length, must still be rejected -- artifact ownership
+    is bound to the specific run_id, not merely 'somewhere under the
+    global canonical root'."""
+    tasks = _tiny_task_set()
+    result, scored_ids = _real_pipeline_result(tasks, run_id="preflight-run-a")
+    # A second, unrelated run persists a byte-identical response under ITS OWN run directory.
+    from orca.eval.generation_artifact import persist_raw_response
+
+    other_ref, other_digest, other_length = persist_raw_response(
+        "preflight-run-b-unrelated", "t-001", "fixture response for t-001",
+    )
+
+    serialized, expected_digest = read_sealed_generation_artifact("preflight-run-a")
+    manifest = load_and_verify_generation_artifact(serialized, expected_digest).manifest
+    new_records = tuple(
+        {**r, "raw_response_ref": other_ref, "text_sha256": other_digest, "byte_length": other_length}
+        if r["task_id"] == "t-001" else r
+        for r in manifest.records
+    )
+    _reseal_records("preflight-run-a", new_records)
+    _serialized2, new_digest = read_sealed_generation_artifact("preflight-run-a")
+    result.generation_artifact_digest = new_digest
+
+    with pytest.raises(RawEvidencePreservationError, match="not under this run's own canonical artifact directory"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-preflight-test")
+    _assert_suite_unfrozen("genesis-eval-preflight-test")
+
+
+def test_successful_record_symlink_ambiguity_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _real_pipeline_result(tasks, run_id="preflight-symlink")
+    from pathlib import Path
+
+    ref = _first_successful_raw_ref("preflight-symlink")
+    real_path = Path(ref)
+    original_bytes = real_path.read_bytes()
+    symlink_path = real_path.with_name(real_path.name + ".symlink")
+    symlink_path.symlink_to(real_path)
+
+    serialized, expected_digest = read_sealed_generation_artifact("preflight-symlink")
+    manifest = load_and_verify_generation_artifact(serialized, expected_digest).manifest
+    import hashlib
+
+    digest = hashlib.sha256(original_bytes).hexdigest()
+    new_records = tuple(
+        {**r, "raw_response_ref": str(symlink_path), "text_sha256": digest, "byte_length": len(original_bytes)}
+        if r["raw_response_ref"] == ref else r
+        for r in manifest.records
+    )
+    _reseal_records("preflight-symlink", new_records)
+    _serialized2, new_digest = read_sealed_generation_artifact("preflight-symlink")
+    result.generation_artifact_digest = new_digest
+
+    with pytest.raises(RawEvidencePreservationError, match="symlink"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-preflight-test")
+    _assert_suite_unfrozen("genesis-eval-preflight-test")
+
+
+def test_failure_record_carrying_raw_response_ref_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _real_pipeline_result(tasks, run_id="preflight-failure-with-ref")
+    serialized, expected_digest = read_sealed_generation_artifact("preflight-failure-with-ref")
+    manifest = load_and_verify_generation_artifact(serialized, expected_digest).manifest
+    # Turn one successful record into a self-contradictory one: claims
+    # error AND still carries its raw_response_ref/hash/length.
+    new_records = tuple(
+        {**r, "error": "simulated failure"} if r["raw_response_ref"] else r
+        for r in manifest.records
+    )
+    _reseal_records("preflight-failure-with-ref", new_records)
+    _serialized2, new_digest = read_sealed_generation_artifact("preflight-failure-with-ref")
+    result.generation_artifact_digest = new_digest
+
+    with pytest.raises(RawEvidencePreservationError, match="must not simultaneously claim"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-preflight-test")
+    _assert_suite_unfrozen("genesis-eval-preflight-test")
+
+
+def test_failure_record_carrying_hash_and_length_rejected():
+    """Same invariant, isolated to just the hash/length fields (not the
+    raw_response_ref) -- a failure record must not carry ANY of the
+    three success-evidence fields."""
+    tasks = _tiny_task_set()
+    result, scored_ids = _real_pipeline_result(tasks, run_id="preflight-failure-with-hash")
+    serialized, expected_digest = read_sealed_generation_artifact("preflight-failure-with-hash")
+    manifest = load_and_verify_generation_artifact(serialized, expected_digest).manifest
+    new_records = tuple(
+        {**r, "error": "simulated failure", "raw_response_ref": None} if r["raw_response_ref"] else r
+        for r in manifest.records
+    )
+    _reseal_records("preflight-failure-with-hash", new_records)
+    _serialized2, new_digest = read_sealed_generation_artifact("preflight-failure-with-hash")
+    result.generation_artifact_digest = new_digest
+
+    with pytest.raises(RawEvidencePreservationError, match="must not simultaneously claim"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-preflight-test")
+    _assert_suite_unfrozen("genesis-eval-preflight-test")
