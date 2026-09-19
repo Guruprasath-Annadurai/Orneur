@@ -1,5 +1,30 @@
 # Genesis Frontier — Next Gate
 
+## Phase 21B.4.9 update
+
+The benchmark methodology proposed at the end of Phase 21B.4.8.1 (below)
+is now DESIGNED, not yet executed. Six new documents lock the rules a
+future execution phase must follow: `GENESIS_FRONTIER_BENCHMARK_METHODOLOGY.md`
+(candidate classes, two-tier structure, category framework, hardness
+bands, code/long-context/agentic/multimodal tracks), `GENESIS_FRONTIER_SCORING_CONTRACT.md`
+(scoring types, judge protocol extensions, no-magic-number aggregate
+rule, inference/reasoning-mode/quantization fairness, statistical
+discipline), `GENESIS_FRONTIER_DECISION_GATES.md` (the six-dimension
+foundation rubric, frontier-gap metric, frontier-class threshold, hard
+gates, teacher/student evidence requirements), `GENESIS_FRONTIER_EXECUTION_PLAN.md`
+(the 9-stage funnel with explicit promotion/elimination rules, the
+artifact-provenance chain requirement, the pre-freeze evidence-
+preservation gate carried forward from Phase 21B.4.8.3's audit note,
+contamination and repeat-run policy), `GENESIS_FRONTIER_EVIDENCE_SCHEMA.md`
+(the failure taxonomy and the full per-candidate evidence record every
+finalist's package must contain), and `GENESIS_FRONTIER_COST_PLAN.md`
+(₹0 out-of-pocket strategy, screen-cheaply-reserve-expensive-runs-for-
+finalists discipline, zero spend this phase). No candidate was
+downloaded, executed, or ranked; no aggregate weighting formula was
+chosen; no judge model was selected; no private holdout content was
+authored; `genesis-eval-v1` remains unexecuted and unfrozen; Phase 21C
+remains unauthorized.
+
 ## Phase 21B.4.8.1 update
 
 An independent audit of Phase 21B.4.8 found and this phase closed:
@@ -45,24 +70,29 @@ Genesis training occurred.
 
 ## Proposed next gate
 
-**Not started this phase.** The next evidence-gathering step, if
-authorized, would be a resource-scoped, evidence-based comparison
-among the smallest/most tractable credible candidates this research
-surfaced — most plausibly **Qwen3.8-27B (dense, Apache 2.0)** as the
-first real deployable-candidate touch, given it is the only frontier-
-lineage model in this research pass that fits realistic Modal GPU
-compute within the owner's included-credit budget without immediately
-exhausting it. This would NOT be a frontier-giant evaluation (those
-remain compute-prohibitive per the Compute Matrix doc) — it would be a
-first real look at whether a small, permissively-licensed sibling of a
-credibly frontier-tier flagship shows measurably strong capability on
-ORNEUR's own evaluation methodology, still to be designed.
+**Not started this phase.** With the methodology now locked (see the
+Phase 21B.4.9 update above), the next evidence-gathering step, if
+authorized, is the FIRST stage of the execution funnel
+(`GENESIS_FRONTIER_EXECUTION_PLAN.md` Stage 0 — license/identity/
+runtime eligibility) against a resource-scoped subset of the candidate
+pool. `GENESIS_FRONTIER_EXECUTION_PLAN.md` §"Pre-freeze evidence-
+preservation gate" identifies one small, well-scoped code addition
+(re-walking every raw-response file's continued existence/integrity
+immediately before the first real baseline freeze) that the execution
+phase's tooling must add before Stage 8 can produce a trustworthy
+foundation-decision package — this is not implemented yet and is
+explicitly deferred to that phase.
 
 Proposed phase name (not authorized, not started):
-`PHASE 21B.4.9 — GENESIS DEPLOYABLE-CANDIDATE BENCHMARK METHODOLOGY DESIGN`
-— to design a fair, evidence-based comparison methodology appropriate
-to whichever candidates the owner ultimately authorizes for real
-evaluation, BEFORE exposing `genesis-eval-v1` to any of them.
+`PHASE 21B.4.10 — GENESIS CANDIDATE-EXECUTION QUALIFICATION GATE`
+— to perform Stage 0 (license/identity/runtime eligibility, per
+`GENESIS_FRONTIER_EXECUTION_PLAN.md`) for the deployable-candidate pool
+and controls, add the pre-freeze evidence-preservation check the
+execution plan identifies as a mandatory prerequisite, and confirm the
+$0-cost screening plan (`GENESIS_FRONTIER_COST_PLAN.md`) against live
+Modal billing before any real generation is attempted — still NOT
+authorizing actual candidate execution, `genesis-eval-v1` exposure, or
+any frontier-model evaluation.
 
 ## What remains explicitly locked
 
@@ -70,3 +100,6 @@ evaluation, BEFORE exposing `genesis-eval-v1` to any of them.
 - Canonical Genesis base change
 - Any model promotion or "winner" declaration
 - `genesis-eval-v1` execution, inspection, or freezing
+- Any real candidate download or evaluation
+- Private frontier-holdout task authoring
+- Any aggregate scoring formula or judge-model selection
