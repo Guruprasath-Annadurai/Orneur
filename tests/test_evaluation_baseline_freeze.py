@@ -17,6 +17,7 @@ from orca.eval.baseline import (
     BaselineIntegrityError,
     DuplicateRunIdError,
     IncompleteResultError,
+    MissingGenerationProvenanceError,
     record_baseline_and_freeze_suite,
 )
 from orca.eval.genesis_suite import EvalTask, all_tasks, compute_suite_digests
@@ -461,5 +462,51 @@ def test_generation_failure_correctly_accounts_for_a_task():
     result, scored_ids = _make_result(tasks, run_id="run-gen-failure")
     result.per_task_results = [e for e in result.per_task_results if e["task_id"] != "t-002"]
     result.generation_failures = [{"task_id": "t-002", "category": 1, "reason": "backend timeout", "latency_ms": 5000.0}]
+    finalized = record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+    assert finalized.finalized is True
+
+
+# ── Phase 21B.4.8.2: baseline generation-provenance gate ────────────────
+# A result claiming provenance_kind="real_generation_artifact" must
+# carry a generation_artifact_digest or be rejected -- no fake
+# provenance for a real candidate baseline. Backward-compatible defaults
+# ("unspecified") and explicit synthetic/dry-run results remain exempt.
+
+
+def test_real_result_without_generation_artifact_digest_is_rejected():
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-fake-provenance")
+    result.provenance_kind = "real_generation_artifact"
+    result.generation_artifact_digest = None
+    with pytest.raises(MissingGenerationProvenanceError, match="generation_artifact_digest"):
+        record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+
+
+def test_real_result_with_generation_artifact_digest_is_accepted():
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-real-provenance")
+    result.provenance_kind = "real_generation_artifact"
+    result.generation_artifact_digest = "a" * 64
+    result.generation_artifact_schema_version = "genesis-generation-v1"
+    finalized = record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+    assert finalized.finalized is True
+    assert finalized.generation_artifact_digest == "a" * 64
+
+
+def test_synthetic_test_provenance_kind_is_exempt_from_digest_requirement():
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-synthetic-provenance")
+    result.provenance_kind = "synthetic_test"
+    finalized = record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
+    assert finalized.finalized is True
+
+
+def test_default_unspecified_provenance_kind_remains_backward_compatible():
+    """Every result constructed before this field existed (and every
+    existing test's _make_result()) never sets provenance_kind -- must
+    keep working exactly as before."""
+    tasks = _tiny_task_set()
+    result, scored_ids = _make_result(tasks, run_id="run-default-provenance")
+    assert result.provenance_kind == "unspecified"
     finalized = record_baseline_and_freeze_suite(tasks=tasks, result=result, scored_task_ids=scored_ids, suite_id="genesis-eval-test")
     assert finalized.finalized is True
