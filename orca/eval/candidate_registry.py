@@ -58,6 +58,13 @@ EXPECTED_REFERENCE_NAMES = frozenset({
     "MiniMax M3", "Qwen3.8-Max", "Kimi K3",
 })
 
+# Phase 21B.4.11 §5A hardening: the expected candidate_class value per
+# section -- a deployable candidate accidentally tagged with the
+# control class (or vice versa) is a wiring bug, not a legitimate data
+# variation.
+EXPECTED_DEPLOYABLE_CANDIDATE_CLASS = "DEPLOYABLE_GENESIS_FOUNDATION_CANDIDATE"
+EXPECTED_CONTROL_CANDIDATE_CLASS = "CONTROL_SMALL_BASELINE"
+
 DEPLOYABLE_REQUIRED_FIELDS = (
     "candidate_class", "canonical_candidate_name", "organization", "artifact_repository",
     "exact_immutable_revision", "tokenizer_repository", "tokenizer_revision",
@@ -163,7 +170,14 @@ def _require_hex40_revision(revision, label: str) -> None:
 def _validate_deployable(entry: dict) -> None:
     _require_fields(entry, DEPLOYABLE_REQUIRED_FIELDS, "deployable_candidates")
     name = entry["canonical_candidate_name"]
+    if entry["candidate_class"] != EXPECTED_DEPLOYABLE_CANDIDATE_CLASS:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} has candidate_class={entry['candidate_class']!r}, expected "
+            f"{EXPECTED_DEPLOYABLE_CANDIDATE_CLASS!r} -- a deployable candidate tagged with the wrong "
+            "class is a wiring bug, not a legitimate data variation."
+        )
     _require_hex40_revision(entry["exact_immutable_revision"], f"deployable candidate {name!r}")
+    _require_hex40_revision(entry["tokenizer_revision"], f"deployable candidate {name!r} tokenizer_revision")
 
     if entry["identity_status"] not in VALID_IDENTITY_STATUSES:
         raise RegistrySchemaError(f"deployable candidate {name!r} has unrecognized identity_status={entry['identity_status']!r}")
@@ -254,9 +268,33 @@ def _validate(data: dict) -> None:
     for entry in data["controls"]:
         _require_fields(entry, CONTROL_REQUIRED_FIELDS, "controls")
         name = entry["canonical_candidate_name"]
+        if entry["candidate_class"] != EXPECTED_CONTROL_CANDIDATE_CLASS:
+            raise RegistrySchemaError(
+                f"control {name!r} has candidate_class={entry['candidate_class']!r}, expected "
+                f"{EXPECTED_CONTROL_CANDIDATE_CLASS!r} -- a control tagged with the wrong class is a "
+                "wiring bug, not a legitimate data variation."
+            )
         _require_hex40_revision(entry["exact_immutable_revision"], f"control {name!r}")
+        _require_hex40_revision(entry["tokenizer_revision"], f"control {name!r} tokenizer_revision")
         if entry["stage0_status"] not in VALID_STAGE0_STATUSES:
             raise RegistrySchemaError(f"control {name!r} has unrecognized stage0_status={entry['stage0_status']!r}")
+
+    # Phase 21B.4.11 §5A: reject accidental duplicate/cross-wired
+    # candidate identities -- two different candidates (deployable or
+    # control) must never share the same artifact_repository, and no
+    # deployable candidate may accidentally reuse a control's identity
+    # or vice versa.
+    repo_owners: dict[str, str] = {}
+    for section, key in (("deployable_candidates", "canonical_candidate_name"), ("controls", "canonical_candidate_name")):
+        for entry in data[section]:
+            repo = entry["artifact_repository"]
+            name = entry[key]
+            if repo in repo_owners:
+                raise RegistrySchemaError(
+                    f"artifact_repository {repo!r} is claimed by both {repo_owners[repo]!r} and {name!r} -- "
+                    "a duplicate or cross-wired candidate identity."
+                )
+            repo_owners[repo] = name
 
     for entry in data["frontier_references"]:
         _require_fields(entry, REFERENCE_REQUIRED_FIELDS, "frontier_references")

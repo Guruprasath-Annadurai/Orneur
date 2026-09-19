@@ -270,3 +270,54 @@ def test_unrecognized_runtime_smoke_eligibility_value_rejected():
     entry["runtime_smoke_eligibility"] = "MAYBE"
     with pytest.raises(RegistrySchemaError, match="unrecognized runtime_smoke_eligibility"):
         CandidateExecutionRegistry.from_dict(data)
+
+
+# ── Phase 21B.4.11 §5A: candidate_class, tokenizer_revision, cross-wiring ──
+
+
+def test_deployable_wrong_candidate_class_rejected():
+    data = _valid_data()
+    entry = _deployable(data, "Qwen3.8-27B")
+    entry["candidate_class"] = "CONTROL_SMALL_BASELINE"  # a control's class, wrongly applied
+    with pytest.raises(RegistrySchemaError, match="candidate_class"):
+        CandidateExecutionRegistry.from_dict(data)
+
+
+def test_control_wrong_candidate_class_rejected():
+    data = _valid_data()
+    data["controls"][0]["candidate_class"] = "DEPLOYABLE_GENESIS_FOUNDATION_CANDIDATE"
+    with pytest.raises(RegistrySchemaError, match="candidate_class"):
+        CandidateExecutionRegistry.from_dict(data)
+
+
+def test_deployable_malformed_tokenizer_revision_rejected():
+    data = _valid_data()
+    entry = _deployable(data, "Qwen3.8-27B")
+    entry["tokenizer_revision"] = "not-a-real-revision"
+    with pytest.raises(RegistrySchemaError, match="tokenizer_revision"):
+        CandidateExecutionRegistry.from_dict(data)
+
+
+def test_control_malformed_tokenizer_revision_rejected():
+    data = _valid_data()
+    data["controls"][0]["tokenizer_revision"] = "abc123"
+    with pytest.raises(RegistrySchemaError, match="tokenizer_revision"):
+        CandidateExecutionRegistry.from_dict(data)
+
+
+def test_duplicate_artifact_repository_across_deployable_and_control_rejected():
+    """Simulates a wiring bug: a control accidentally claims the same
+    artifact_repository as a deployable candidate."""
+    data = _valid_data()
+    qwen27b_repo = _deployable(data, "Qwen3.8-27B")["artifact_repository"]
+    data["controls"][0]["artifact_repository"] = qwen27b_repo
+    with pytest.raises(RegistrySchemaError, match="cross-wired"):
+        CandidateExecutionRegistry.from_dict(data)
+
+
+def test_duplicate_artifact_repository_across_two_deployables_rejected():
+    data = _valid_data()
+    repo_a = data["deployable_candidates"][0]["artifact_repository"]
+    data["deployable_candidates"][1]["artifact_repository"] = repo_a
+    with pytest.raises(RegistrySchemaError, match="cross-wired"):
+        CandidateExecutionRegistry.from_dict(data)
