@@ -109,10 +109,23 @@ def test_real_registry_runtime_unqualified_candidates_are_still_eligible():
     status=UNQUALIFIED must never, by itself, block runtime_smoke_
     eligibility -- that would make runtime qualification unresolvable."""
     registry = CandidateExecutionRegistry.load(REGISTRY_PATH)
-    for name in ("Qwen3.8-27B", "Mistral Small 4", "GLM-5.3-Flash"):
+    for name in ("Mistral Small 4", "GLM-5.3-Flash"):
         entry = registry.find_deployable(name)
         assert entry["runtime_qualification_status"] == "UNQUALIFIED"
         assert entry["runtime_smoke_eligibility"] == "ELIGIBLE"
+
+
+def test_real_registry_qwen3_8_27b_runtime_qualified_phase_21b_4_11():
+    """Phase 21B.4.11 live H200 smoke qualified Qwen3.8-27B for runtime
+    LOAD COMPATIBILITY (native Transformers) -- not FRONTIER_CLASS,
+    BENCHMARK_QUALIFIED, or GENESIS_SELECTED, which this registry schema
+    does not even have fields for."""
+    registry = CandidateExecutionRegistry.load(REGISTRY_PATH)
+    entry = registry.find_deployable("Qwen3.8-27B")
+    assert entry["runtime_qualification_status"] == "QUALIFIED"
+    assert entry["runtime_smoke_eligibility"] == "ELIGIBLE"
+    assert "H200" in entry["qualified_practical_topology"]
+    assert "Transformers" in entry["qualified_runtime"]
 
 
 # ── synthetic invalid fixtures proving each validation rule fires ────────
