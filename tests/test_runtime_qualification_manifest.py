@@ -251,6 +251,45 @@ def test_valid_strict_failed_before_generation_bundle_passes():
     validate_manifest(_failed_before_generation_manifest())  # must not raise
 
 
+@pytest.mark.parametrize("field", ["peak_allocated_vram_gb", "peak_reserved_vram_gb", "load_time_seconds"])
+def test_failed_result_may_record_not_captured_for_unmeasured_load_metrics(field):
+    """Phase 21B.4.12.1 §2/§3/§4: a non-QUALIFIED attempted run (e.g.
+    RUNTIME_QUALIFICATION_FAILED) may honestly record NOT_CAPTURED for
+    peak_allocated_vram_gb/peak_reserved_vram_gb/load_time_seconds when
+    the metric was never actually, correctly observed -- this must not
+    raise even though load_attempt_count > 0."""
+    data = _failed_before_generation_manifest()
+    data[field] = NOT_CAPTURED
+    data["evidence_strength"][field] = NOT_CAPTURED
+    validate_manifest(data)  # must not raise
+
+
+@pytest.mark.parametrize("field", ["peak_allocated_vram_gb", "peak_reserved_vram_gb", "load_time_seconds"])
+def test_qualified_result_still_strictly_requires_real_load_metrics(field):
+    """Phase 21B.4.12.1 §4: QUALIFIED executions still require these
+    three fields to be genuinely-captured real numbers -- the
+    FAILED-only sentinel relaxation must not weaken the QUALIFIED
+    invariant."""
+    data = _strict_manifest()  # qualification_type == RUNTIME_LOAD_COMPATIBILITY_QUALIFIED
+    data[field] = NOT_CAPTURED
+    data["evidence_strength"][field] = NOT_CAPTURED
+    with pytest.raises(RuntimeQualificationManifestError, match=field):
+        validate_manifest(data)
+
+
+def test_vram_capacity_gb_still_strictly_required_for_any_attempted_load():
+    """vram_capacity_gb is a topology/hardware fact, not a runtime
+    measurement -- Phase 21B.4.12.1's sentinel relaxation for
+    peak_allocated/reserved_vram_gb and load_time_seconds must not
+    extend to it. A FAILED result still must not set it to
+    NOT_CAPTURED while load_attempt_count > 0."""
+    data = _failed_before_generation_manifest()
+    data["vram_capacity_gb"] = NOT_CAPTURED
+    data["evidence_strength"]["vram_capacity_gb"] = NOT_CAPTURED
+    with pytest.raises(RuntimeQualificationManifestError, match="vram_capacity_gb"):
+        validate_manifest(data)
+
+
 def test_wrong_schema_version_rejected():
     data = _valid_manifest()
     data["schema_version"] = "some-other-version"
@@ -1278,14 +1317,19 @@ def test_end_to_end_verifier_rejects_unqualified_candidate_by_default():
 
 def test_end_to_end_verifier_allows_unqualified_inspection_when_explicitly_requested():
     """A non-acceptance inspection workflow may opt out of the
-    fail-closed default explicitly."""
+    fail-closed default explicitly. Phase 21B.4.12.1 §5: for a
+    candidate that DOES carry manifest-linkage metadata (like Mistral
+    Small 4's RUNTIME_QUALIFICATION_FAILED record), the inspection path
+    returns the fully-verified manifest, not None -- None is reserved
+    for a candidate that was genuinely never smoke-tested at all."""
     from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
     entry, manifest = verify_candidate_qualification_end_to_end(
         REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT, require_qualified=False
     )
     assert entry["canonical_candidate_name"] == "Mistral Small 4"
     assert entry["runtime_qualification_status"] != "QUALIFIED"
-    assert manifest is None
+    assert manifest is not None
+    assert manifest["qualification_type"] == "RUNTIME_QUALIFICATION_FAILED"
 
 
 def test_end_to_end_verifier_rejects_registry_digest_mismatch(tmp_path):
@@ -1391,7 +1435,41 @@ def test_real_mistral_manifest_load_evidence_is_real():
     data = load_manifest(MISTRAL_MANIFEST_PATH)
     assert data["gpu_count"] == 2
     assert data["weight_file_shards"] == 3
-    assert data["load_time_seconds"] > 0
+
+
+def test_real_mistral_manifest_load_time_not_captured_but_elapsed_preserved():
+    """Phase 21B.4.12.1 §3: no durable log line proved exact
+    model-weight-load completion time, so load_time_seconds is honestly
+    NOT_CAPTURED -- the ~1076s figure is preserved separately as
+    attempt_elapsed_seconds (total elapsed-to-failure), never mislabeled
+    as a load-time measurement."""
+    data = load_manifest(MISTRAL_MANIFEST_PATH)
+    assert data["load_time_seconds"] == NOT_CAPTURED
+    assert data["evidence_strength"]["load_time_seconds"] == NOT_CAPTURED
+    assert data["attempt_elapsed_seconds"] == pytest.approx(1075.9235696792603)
+
+
+def test_real_mistral_manifest_vram_metrics_not_captured():
+    """Phase 21B.4.12.1 §2: the originally captured 0.0 values came from
+    the parent Modal Function process, not the vLLM tensor-parallel
+    worker processes that actually held the model in GPU memory -- a
+    measurement from the wrong process is not honest evidence of the
+    real magnitude, so both fields must now be NOT_CAPTURED."""
+    data = load_manifest(MISTRAL_MANIFEST_PATH)
+    assert data["peak_allocated_vram_gb"] == NOT_CAPTURED
+    assert data["peak_reserved_vram_gb"] == NOT_CAPTURED
+    assert data["evidence_strength"]["peak_allocated_vram_gb"] == NOT_CAPTURED
+    assert data["evidence_strength"]["peak_reserved_vram_gb"] == NOT_CAPTURED
+
+
+def test_real_mistral_manifest_does_not_overclaim_runtime_defect():
+    """Phase 21B.4.12.1 §6: the manifest must not claim the CUDA failure
+    proves there is no vLLM/runtime defect -- only the immediate root
+    cause actually observed."""
+    data = load_manifest(MISTRAL_MANIFEST_PATH)
+    detail = data["attempt_2_failure_detail"]
+    assert "Observed immediate root cause" in detail
+    assert "No model defect or topology insufficiency was demonstrated" in detail
 
 
 def test_real_mistral_manifest_billing_gate_confirmed_for_executed_run():
@@ -1419,9 +1497,114 @@ def test_registry_mistral_entry_links_manifest_by_matching_digest():
 
 
 def test_mistral_still_unqualified_and_inspectable_end_to_end():
+    """Phase 21B.4.12.1 §5: a linked RUNTIME_QUALIFICATION_FAILED
+    manifest must be returned fully verified, not treated as absent --
+    the inspection path never returns manifest=None for a failure
+    record that genuinely carries manifest-linkage metadata."""
     from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
     entry, manifest = verify_candidate_qualification_end_to_end(
         REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT, require_qualified=False
     )
     assert entry["runtime_qualification_status"] == "UNQUALIFIED"
-    assert manifest is None  # UNQUALIFIED candidates are never manifest-linked by the acceptance path
+    assert manifest is not None
+    assert manifest["qualification_type"] == "RUNTIME_QUALIFICATION_FAILED"
+    assert manifest["candidate"] == "Mistral Small 4"
+    assert sha256_of_manifest(manifest) == entry["qualification_manifest_digest_sha256"]
+
+
+def test_verify_recorded_manifest_linkage_returns_real_manifest_for_failed_result():
+    from orca.eval.candidate_registry import verify_recorded_manifest_linkage
+
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    mistral = next(
+        e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Mistral Small 4"
+    )
+    manifest = verify_recorded_manifest_linkage(mistral, REPO_ROOT)
+    assert manifest is not None
+    assert manifest["qualification_type"] == "RUNTIME_QUALIFICATION_FAILED"
+
+
+def test_verify_recorded_manifest_linkage_returns_none_when_never_smoke_tested():
+    from orca.eval.candidate_registry import verify_recorded_manifest_linkage
+
+    entry = {
+        "canonical_candidate_name": "Never-Smoke-Tested",
+        "runtime_qualification_status": "UNQUALIFIED",
+        "qualification_type": None,
+        "qualification_manifest_path": None,
+        "qualification_manifest_digest_sha256": None,
+    }
+    assert verify_recorded_manifest_linkage(entry, REPO_ROOT) is None
+
+
+def test_tampered_failed_manifest_digest_mismatch_fails_closed(tmp_path):
+    """Phase 21B.4.12.1 §8: a tampered FAILED manifest (content changed
+    after its digest was recorded) must fail closed via the
+    status-independent verifier, exactly like a tampered QUALIFIED one."""
+    from orca.eval.candidate_registry import verify_recorded_manifest_linkage
+
+    manifest = _failed_before_generation_manifest()
+    manifest["candidate"] = "Mistral Small 4"
+    manifest["artifact_repository"] = "mistralai/Mistral-Small-4-119B-2603"
+    manifest["exact_revision"] = "a11f36bebf709121056b1dbcc943d1c6afbe494d"
+    manifest["tokenizer_repository"] = "mistralai/Mistral-Small-4-119B-2603"
+    manifest["tokenizer_revision"] = "a11f36bebf709121056b1dbcc943d1c6afbe494d"
+    root = _write_evidence_bundle(tmp_path, manifest)
+    digest = sha256_of_manifest(manifest)
+
+    manifest_rel_path = "synthetic_failed_manifest.json"
+    (root / manifest_rel_path).write_text(json.dumps(manifest))
+
+    entry = {
+        "canonical_candidate_name": "Mistral Small 4",
+        "artifact_repository": manifest["artifact_repository"],
+        "exact_immutable_revision": manifest["exact_revision"],
+        "runtime_qualification_status": "UNQUALIFIED",
+        "qualification_type": manifest["qualification_type"],
+        "qualification_manifest_path": manifest_rel_path,
+        "qualification_manifest_digest_sha256": digest,
+    }
+
+    # Tamper with the on-disk manifest content AFTER the digest was
+    # recorded -- content still parses/validates, but no longer matches
+    # the registry's declared digest.
+    tampered = dict(manifest)
+    tampered["attempt_1_failure_class"] = "SOMETHING_ELSE"
+    (root / manifest_rel_path).write_text(json.dumps(tampered))
+
+    with pytest.raises(RegistrySchemaError, match="manifest digest mismatch"):
+        verify_recorded_manifest_linkage(entry, root)
+
+
+def test_tampered_failed_manifest_artifact_bytes_fail_closed(tmp_path):
+    """Phase 21B.4.12.1 §8: tampering with a FAILED manifest's declared
+    evidence-artifact bytes (after the manifest itself was finalized)
+    must fail closed via the status-independent verifier."""
+    from orca.eval.candidate_registry import verify_recorded_manifest_linkage
+
+    manifest = _failed_before_generation_manifest()
+    manifest["candidate"] = "Mistral Small 4"
+    manifest["artifact_repository"] = "mistralai/Mistral-Small-4-119B-2603"
+    manifest["exact_revision"] = "a11f36bebf709121056b1dbcc943d1c6afbe494d"
+    manifest["tokenizer_repository"] = "mistralai/Mistral-Small-4-119B-2603"
+    manifest["tokenizer_revision"] = "a11f36bebf709121056b1dbcc943d1c6afbe494d"
+    root = _write_evidence_bundle(tmp_path, manifest)
+    digest = sha256_of_manifest(manifest)
+
+    manifest_rel_path = "synthetic_failed_manifest.json"
+    (root / manifest_rel_path).write_text(json.dumps(manifest))
+
+    entry = {
+        "canonical_candidate_name": "Mistral Small 4",
+        "artifact_repository": manifest["artifact_repository"],
+        "exact_immutable_revision": manifest["exact_revision"],
+        "runtime_qualification_status": "UNQUALIFIED",
+        "qualification_type": manifest["qualification_type"],
+        "qualification_manifest_path": manifest_rel_path,
+        "qualification_manifest_digest_sha256": digest,
+    }
+
+    (root / manifest["evidence_artifacts"]["execution_log"]["path"]).write_bytes(b"tampered after the fact")
+
+    with pytest.raises(RegistrySchemaError, match="strict evidence-artifact verification failed"):
+        verify_recorded_manifest_linkage(entry, root)

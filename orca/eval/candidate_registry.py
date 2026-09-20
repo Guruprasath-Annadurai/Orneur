@@ -383,6 +383,105 @@ def _derive_manifest_root(registry_path: Path) -> Path:
     )
 
 
+def _verify_manifest_linkage(entry: dict, manifest_root: Path) -> dict:
+    """Shared linkage-verification body (Phase 21B.4.11.2 §4, hardened
+    21B.4.12.1 §5): resolves and fully verifies whatever manifest a
+    registry entry declares -- schema-valid, identity-matching,
+    digest-matching, and (for a STRICT_RUNTIME_SMOKE_V2 manifest) with
+    every declared evidence artifact byte-verified against its declared
+    hash. Deliberately status-agnostic: it verifies exactly the same
+    integrity chain whether the linked manifest's own
+    `qualification_type` is a QUALIFIED type or
+    RUNTIME_QUALIFICATION_FAILED -- a failed-result manifest is never
+    "less verified" than a qualified one, only differently interpreted
+    by its caller. Callers are responsible for deciding, from the
+    entry's `runtime_qualification_status` and `qualification_type`,
+    whether verified linkage should be treated as acceptance."""
+    # Imported locally to avoid a module-level import cycle risk and to
+    # keep this registry module's top-level import surface unchanged
+    # for callers that never touch manifest linkage.
+    from orca.eval.runtime_qualification_manifest import (
+        RuntimeQualificationManifestError,
+        VALID_QUALIFICATION_TYPES,
+        load_manifest,
+        require_candidate_manifest,
+        sha256_of_manifest,
+        verify_evidence_artifacts_bytes,
+    )
+
+    name = entry["canonical_candidate_name"]
+
+    for field in ("qualification_type", "qualification_manifest_path", "qualification_manifest_digest_sha256"):
+        if not entry.get(field):
+            raise RegistrySchemaError(
+                f"deployable candidate {name!r} is missing required manifest-linkage field {field!r}"
+            )
+
+    qualification_type = entry["qualification_type"]
+    if qualification_type not in VALID_QUALIFICATION_TYPES:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} has unrecognized qualification_type {qualification_type!r}"
+        )
+
+    digest = entry["qualification_manifest_digest_sha256"]
+    if not _HEX64_RE.match(digest):
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} has a malformed qualification_manifest_digest_sha256 "
+            f"(must be exactly 64 lowercase hex characters): {digest!r}"
+        )
+
+    manifest_root = Path(manifest_root).resolve()
+    raw_path = entry["qualification_manifest_path"]
+    candidate_path = (manifest_root / raw_path).resolve()
+    try:
+        candidate_path.relative_to(manifest_root)
+    except ValueError:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} qualification_manifest_path {raw_path!r} resolves "
+            "outside the repository-controlled manifest root -- rejected as a path-escape/symlink-ambiguity risk."
+        )
+    if not candidate_path.is_file():
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} qualification_manifest_path {raw_path!r} does not exist"
+        )
+
+    try:
+        manifest_data = load_manifest(candidate_path)
+    except RuntimeQualificationManifestError as e:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} qualification manifest failed schema validation: {e}"
+        ) from e
+
+    try:
+        require_candidate_manifest(
+            manifest_data,
+            candidate=name,
+            repository=entry["artifact_repository"],
+            revision=entry["exact_immutable_revision"],
+            qualification_type=qualification_type,
+        )
+    except RuntimeQualificationManifestError as e:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} qualification manifest identity mismatch: {e}"
+        ) from e
+
+    recomputed_digest = sha256_of_manifest(manifest_data)
+    if recomputed_digest != digest:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} manifest digest mismatch: registry records "
+            f"{digest!r}, recomputed {recomputed_digest!r} from the manifest's current content."
+        )
+
+    try:
+        verify_evidence_artifacts_bytes(manifest_data, manifest_root)
+    except RuntimeQualificationManifestError as e:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} strict evidence-artifact verification failed: {e}"
+        ) from e
+
+    return manifest_data
+
+
 def verify_qualified_manifest_linkage(entry: dict, manifest_root: Path) -> dict | None:
     """Phase 21B.4.11.2 §4: a generic (non-Qwen-specific) enforcement
     that every QUALIFIED deployable candidate links to a real,
@@ -399,91 +498,34 @@ def verify_qualified_manifest_linkage(entry: dict, manifest_root: Path) -> dict 
     evidence-artifact path) must resolve underneath -- a path that
     escapes it (via `..` or a symlink) is rejected outright rather than
     silently followed."""
-    # Imported locally to avoid a module-level import cycle risk and to
-    # keep this registry module's top-level import surface unchanged
-    # for callers that never touch manifest linkage.
-    from orca.eval.runtime_qualification_manifest import (
-        RuntimeQualificationManifestError,
-        VALID_QUALIFICATION_TYPES,
-        load_manifest,
-        require_candidate_manifest,
-        sha256_of_manifest,
-        verify_evidence_artifacts_bytes,
-    )
-
-    name = entry["canonical_candidate_name"]
     if entry.get("runtime_qualification_status") != "QUALIFIED":
         return None
+    return _verify_manifest_linkage(entry, manifest_root)
 
-    for field in ("qualification_type", "qualification_manifest_path", "qualification_manifest_digest_sha256"):
-        if not entry.get(field):
-            raise RegistrySchemaError(
-                f"QUALIFIED deployable candidate {name!r} is missing required manifest-linkage field {field!r}"
-            )
 
-    qualification_type = entry["qualification_type"]
-    if qualification_type not in VALID_QUALIFICATION_TYPES:
-        raise RegistrySchemaError(
-            f"QUALIFIED deployable candidate {name!r} has unrecognized qualification_type {qualification_type!r}"
-        )
-
-    digest = entry["qualification_manifest_digest_sha256"]
-    if not _HEX64_RE.match(digest):
-        raise RegistrySchemaError(
-            f"QUALIFIED deployable candidate {name!r} has a malformed qualification_manifest_digest_sha256 "
-            f"(must be exactly 64 lowercase hex characters): {digest!r}"
-        )
-
-    manifest_root = Path(manifest_root).resolve()
-    raw_path = entry["qualification_manifest_path"]
-    candidate_path = (manifest_root / raw_path).resolve()
-    try:
-        candidate_path.relative_to(manifest_root)
-    except ValueError:
-        raise RegistrySchemaError(
-            f"QUALIFIED deployable candidate {name!r} qualification_manifest_path {raw_path!r} resolves "
-            "outside the repository-controlled manifest root -- rejected as a path-escape/symlink-ambiguity risk."
-        )
-    if not candidate_path.is_file():
-        raise RegistrySchemaError(
-            f"QUALIFIED deployable candidate {name!r} qualification_manifest_path {raw_path!r} does not exist"
-        )
-
-    try:
-        manifest_data = load_manifest(candidate_path)
-    except RuntimeQualificationManifestError as e:
-        raise RegistrySchemaError(
-            f"QUALIFIED deployable candidate {name!r} qualification manifest failed schema validation: {e}"
-        ) from e
-
-    try:
-        require_candidate_manifest(
-            manifest_data,
-            candidate=name,
-            repository=entry["artifact_repository"],
-            revision=entry["exact_immutable_revision"],
-            qualification_type=qualification_type,
-        )
-    except RuntimeQualificationManifestError as e:
-        raise RegistrySchemaError(
-            f"QUALIFIED deployable candidate {name!r} qualification manifest identity mismatch: {e}"
-        ) from e
-
-    recomputed_digest = sha256_of_manifest(manifest_data)
-    if recomputed_digest != digest:
-        raise RegistrySchemaError(
-            f"QUALIFIED deployable candidate {name!r} manifest digest mismatch: registry records "
-            f"{digest!r}, recomputed {recomputed_digest!r} from the manifest's current content."
-        )
-
-    try:
-        verify_evidence_artifacts_bytes(manifest_data, manifest_root)
-    except RuntimeQualificationManifestError as e:
-        raise RegistrySchemaError(
-            f"QUALIFIED deployable candidate {name!r} strict evidence-artifact verification failed: {e}"
-        ) from e
-
-    return manifest_data
+def verify_recorded_manifest_linkage(entry: dict, manifest_root: Path) -> dict | None:
+    """Phase 21B.4.12.1 §5: a status-independent counterpart to
+    `verify_qualified_manifest_linkage` for candidates whose registry
+    entry records a manifest linkage without being QUALIFIED -- most
+    notably a RUNTIME_QUALIFICATION_FAILED result (a failed live smoke
+    is still a real, fully-evidenced execution that deserves complete
+    verification, not a bare inspection). Runs the identical integrity
+    chain as the QUALIFIED path (schema validation, candidate-identity
+    match, canonical-digest match, and byte-verified evidence
+    artifacts) regardless of the linked manifest's own
+    `qualification_type`. Returns the verified manifest dict whenever
+    the entry carries any manifest-linkage metadata at all, or `None`
+    only when the entry has genuinely never been smoke-tested (no
+    `qualification_type`/`qualification_manifest_path`/
+    `qualification_manifest_digest_sha256` recorded) -- never `None`
+    for a linked failure record."""
+    has_linkage = any(
+        entry.get(field)
+        for field in ("qualification_type", "qualification_manifest_path", "qualification_manifest_digest_sha256")
+    )
+    if not has_linkage:
+        return None
+    return _verify_manifest_linkage(entry, manifest_root)
 
 
 def verify_candidate_qualification_end_to_end(
@@ -538,11 +580,16 @@ def verify_candidate_qualification_end_to_end(
     Returns `(registry_entry, manifest_data)`. With the default
     `require_qualified=True`, `manifest_data` is always a real manifest
     dict (never `None`) because a non-QUALIFIED candidate raises before
-    returning. With `require_qualified=False`, `manifest_data` is
-    `None` for an UNQUALIFIED candidate, which has no manifest to
-    return. Raises `RegistrySchemaError` on any failure (including "not
-    QUALIFIED" when acceptance was requested), or `KeyError` if no
-    candidate with that name exists in the registry."""
+    returning. With `require_qualified=False`, `manifest_data` is the
+    fully-verified manifest dict for ANY candidate that records a
+    manifest linkage -- including a RUNTIME_QUALIFICATION_FAILED result
+    (Phase 21B.4.12.1 §5: a failed live smoke's evidence is verified in
+    full, not treated as absent) -- and `None` only for a candidate that
+    has genuinely never been smoke-tested at all. Raises
+    `RegistrySchemaError` on any failure (including "not QUALIFIED" when
+    acceptance was requested, or a tampered/mismatched linked manifest
+    regardless of qualification_type), or `KeyError` if no candidate
+    with that name exists in the registry."""
     registry = CandidateExecutionRegistry.load(registry_path, manifest_root=manifest_root)
     entry = registry.find_deployable(canonical_candidate_name)
     if require_qualified and entry.get("runtime_qualification_status") != "QUALIFIED":
@@ -553,5 +600,8 @@ def verify_candidate_qualification_end_to_end(
             "accepted. Pass require_qualified=False explicitly for a non-acceptance inspection workflow."
         )
     root = Path(manifest_root).resolve() if manifest_root is not None else _derive_manifest_root(Path(registry_path))
-    manifest_data = verify_qualified_manifest_linkage(entry, root)
+    if require_qualified:
+        manifest_data = verify_qualified_manifest_linkage(entry, root)
+    else:
+        manifest_data = verify_recorded_manifest_linkage(entry, root)
     return entry, manifest_data

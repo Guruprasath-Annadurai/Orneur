@@ -217,10 +217,27 @@ _SENTINEL_ELIGIBLE_FIELDS = frozenset({
     "decoded_response_sha256",
 })
 
-# Load-phase fields: legitimately NOT_CAPTURED only when zero load
-# attempts were made at all (DEFERRED_FOR_COMPUTE with load_attempt_count==0).
+# vram_capacity_gb is a topology/hardware fact (the provisioned GPU's
+# published capacity) independent of whether the load attempt itself
+# succeeded or where in the process any measurement was taken from --
+# required whenever a load was attempted at all, regardless of
+# qualification_type.
+_LOAD_PHASE_ALWAYS_REQUIRED_NUMERIC_FIELDS = ("vram_capacity_gb",)
+
+# These three are genuinely-measured runtime metrics that can only
+# honestly be reported when something actually observed them from the
+# right vantage point. Phase 21B.4.12.1: a non-QUALIFIED attempted run
+# (RUNTIME_QUALIFICATION_FAILED) may legitimately record NOT_CAPTURED
+# for these -- e.g. the Mistral Small 4 smoke's peak_allocated/
+# reserved_vram_gb were only ever observed from the wrong process (the
+# parent Modal Function, not vLLM's tensor-parallel worker subprocesses
+# that actually held the GPU memory), and its load_time_seconds had no
+# durable log line proving exact model-weight-load completion -- only a
+# total elapsed-to-failure duration, which is not the same measurement
+# and must not be mislabeled as one. A QUALIFIED result, by contrast,
+# must have genuinely captured all three -- they remain strictly
+# required (no sentinel) whenever qualification_type is QUALIFIED.
 _LOAD_PHASE_NUMERIC_FIELDS = (
-    "vram_capacity_gb",
     "peak_allocated_vram_gb",
     "peak_reserved_vram_gb",
     "load_time_seconds",
@@ -437,16 +454,27 @@ def validate_manifest(data: dict) -> None:
     # could invent a real-looking value for a phase that never ran, as
     # long as it also (falsely) tagged evidence_strength to match.
     if zero_attempts:
-        for field in ("gpu_count",) + _LOAD_PHASE_NUMERIC_FIELDS + _LOAD_PHASE_INT_FIELDS + _RUNTIME_SPECIFIC_OPTIONAL_INT_FIELDS:
+        for field in (
+            ("gpu_count",)
+            + _LOAD_PHASE_ALWAYS_REQUIRED_NUMERIC_FIELDS
+            + _LOAD_PHASE_NUMERIC_FIELDS
+            + _LOAD_PHASE_INT_FIELDS
+            + _RUNTIME_SPECIFIC_OPTIONAL_INT_FIELDS
+        ):
             if data[field] != NOT_CAPTURED:
                 raise RuntimeQualificationManifestError(
                     f"{field} must be {NOT_CAPTURED!r} when load_attempt_count==0 -- no load was ever attempted"
                 )
     else:
         _require_int_at_least(data, "gpu_count", 1)
-        _require_number(data, "vram_capacity_gb", strictly_positive=True)
-        for field in _LOAD_PHASE_NUMERIC_FIELDS[1:]:  # peak_allocated/reserved, load_time
-            _require_number(data, field)
+        for field in _LOAD_PHASE_ALWAYS_REQUIRED_NUMERIC_FIELDS:
+            _require_number(data, field, strictly_positive=True)
+        for field in _LOAD_PHASE_NUMERIC_FIELDS:  # peak_allocated/reserved, load_time
+            # Phase 21B.4.12.1: strictly required (no sentinel) only for
+            # a QUALIFIED result -- a non-QUALIFIED attempted run may
+            # honestly record NOT_CAPTURED when the metric was never
+            # actually, correctly observed (see the constant's comment).
+            _require_number(data, field, allow_sentinel=not_qualified)
         for field in _LOAD_PHASE_INT_FIELDS:
             _require_int_at_least(data, field, 1)
         for field in _RUNTIME_SPECIFIC_OPTIONAL_INT_FIELDS:
