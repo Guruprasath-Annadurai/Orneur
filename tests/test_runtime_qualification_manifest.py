@@ -22,16 +22,20 @@ from orca.eval.candidate_registry import (
     verify_qualified_manifest_linkage,
 )
 from orca.eval.runtime_qualification_manifest import (
+    EVIDENCE_ARTIFACT_KEYS,
     EVIDENCE_BEARING_FIELDS,
     EVIDENCE_PROTOCOL_LEGACY,
     EVIDENCE_PROTOCOL_STRICT,
     MANIFEST_SCHEMA_VERSION,
+    NOT_CAPTURED,
     RuntimeQualificationManifestError,
     canonical_json_bytes,
     load_manifest,
     require_candidate_manifest,
     sha256_of_manifest,
     validate_manifest,
+    verify_evidence_artifacts_bytes,
+    verify_runtime_qualification_bundle,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +44,16 @@ QWEN_MANIFEST_PATH = REPO_ROOT / "docs/orneur/phase-21/GENESIS_RUNTIME_QUALIFICA
 
 _VALID_HEX40 = "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
 _VALID_HEX64 = "a" * 64
+
+# In the base fixture below, cuda_version/ttft_seconds are the only
+# evidence-bearing fields whose VALUE is the NOT_CAPTURED sentinel --
+# their evidence_strength entries must therefore also read NOT_CAPTURED
+# (Phase 21B.4.11.3 §6 consistency rule) rather than the generic
+# REPORTED_BY_CLAUDE used for every other (real-valued) field.
+_EVIDENCE_STRENGTH_DEFAULTS = {
+    field: (NOT_CAPTURED if field in ("cuda_version", "ttft_seconds") else "REPORTED_BY_CLAUDE")
+    for field in EVIDENCE_BEARING_FIELDS
+}
 
 
 def _base_manifest() -> dict:
@@ -56,11 +70,12 @@ def _base_manifest() -> dict:
         "tokenizer_revision": _VALID_HEX40,
         "license_identifier": "apache-2.0",
         "qualification_type": "RUNTIME_LOAD_COMPATIBILITY_QUALIFIED",
+        "deferral_reason": None,
         "runtime": "native-transformers",
         "runtime_versions": {"transformers": "5.17.0"},
         "python_version": "3.11",
         "pytorch_version": "2.14.0",
-        "cuda_version": "NOT_CAPTURED",
+        "cuda_version": NOT_CAPTURED,
         "transformers_version": "5.17.0",
         "trust_remote_code": True,
         "gpu_provider": "Modal",
@@ -84,7 +99,7 @@ def _base_manifest() -> dict:
         "input_tokens": 5,
         "output_tokens": 5,
         "generation_latency_seconds": 1.0,
-        "ttft_seconds": "NOT_CAPTURED",
+        "ttft_seconds": NOT_CAPTURED,
         "tokens_per_second": 5.0,
         "benchmark_prompt_exposed": False,
         "genesis_eval_executed": False,
@@ -104,7 +119,7 @@ def _base_manifest() -> dict:
             "owner_billed_result": "$0.00 REPORTED",
             "financial_impact": "NO_OWNER_CHARGE_OBSERVED",
         },
-        "evidence_strength": {field: "REPORTED_BY_CLAUDE" for field in EVIDENCE_BEARING_FIELDS},
+        "evidence_strength": dict(_EVIDENCE_STRENGTH_DEFAULTS),
     }
 
 
@@ -112,7 +127,7 @@ def _legacy_manifest() -> dict:
     data = _base_manifest()
     data["evidence_protocol_generation"] = EVIDENCE_PROTOCOL_LEGACY
     data["created_at"] = "2026-01-01"
-    data["execution_time"] = "NOT_CAPTURED"
+    data["execution_time"] = NOT_CAPTURED
     data["raw_execution_log_artifact"] = "NOT_PRESERVED"
     return data
 
@@ -122,8 +137,76 @@ def _strict_manifest() -> dict:
     data["evidence_protocol_generation"] = EVIDENCE_PROTOCOL_STRICT
     data["created_at"] = "2026-01-01T12:00:00+00:00"
     data["execution_time"] = "2026-01-01T12:00:00+00:00"
-    data["raw_execution_log_artifact"] = "docs/orneur/phase-21/logs/test-fixture-log.txt"
+    data["raw_execution_log_artifact"] = "logs/test-fixture-log.txt"
     data["raw_execution_log_sha256"] = _VALID_HEX64
+    data["evidence_artifacts"] = {
+        key: {"path": f"evidence/{key}.json", "sha256": _VALID_HEX64} for key in EVIDENCE_ARTIFACT_KEYS
+    }
+    return data
+
+
+def _write_evidence_bundle(tmp_path: Path, manifest: dict) -> Path:
+    """Writes real files under tmp_path matching every path/sha256 pair
+    a STRICT manifest declares (raw_execution_log_artifact +
+    evidence_artifacts), recomputes the actual SHA-256 of each file's
+    real content, and patches the manifest's declared hashes to match
+    -- so tests can exercise `verify_evidence_artifacts_bytes` against
+    genuinely matching bytes, not merely format-valid placeholder hashes."""
+    import hashlib
+
+    def _write_and_hash(rel_path: str, content: bytes) -> str:
+        path = tmp_path / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return hashlib.sha256(content).hexdigest()
+
+    manifest["raw_execution_log_sha256"] = _write_and_hash(
+        manifest["raw_execution_log_artifact"], b"synthetic test execution log content\n"
+    )
+    for key in EVIDENCE_ARTIFACT_KEYS:
+        entry = manifest["evidence_artifacts"][key]
+        entry["sha256"] = _write_and_hash(entry["path"], f"synthetic {key} evidence\n".encode())
+    return tmp_path
+
+
+def _deferred_manifest() -> dict:
+    """A STRICT DEFERRED_FOR_COMPUTE bundle: zero load attempts, zero
+    GPU allocation, no generation -- every load/generation-phase field
+    is honestly NOT_CAPTURED rather than a fabricated zero."""
+    data = _strict_manifest()
+    data["qualification_type"] = "DEFERRED_FOR_COMPUTE"
+    data["deferral_reason"] = "Owner Modal $0 usage-limit dashboard evidence was not yet confirmed at execution time."
+    data["load_attempt_count"] = 0
+    data["attempt_1_result"] = "NOT_ATTEMPTED"
+    data["attempt_1_failure_class"] = None
+    data["attempt_2_result"] = "NOT_ATTEMPTED"
+    data["attempt_2_failure_class"] = None
+    for field in ("gpu_count", "vram_capacity_gb", "peak_allocated_vram_gb", "peak_reserved_vram_gb",
+                  "load_time_seconds", "weight_file_shards", "runtime_materialized_tensor_count",
+                  "input_tokens", "output_tokens", "generation_latency_seconds", "tokens_per_second",
+                  "synthetic_prompt_sha256", "decoded_response_sha256"):
+        data[field] = NOT_CAPTURED
+        if field in EVIDENCE_BEARING_FIELDS:
+            data["evidence_strength"][field] = NOT_CAPTURED
+    return data
+
+
+def _failed_before_generation_manifest() -> dict:
+    """A STRICT RUNTIME_QUALIFICATION_FAILED bundle: one real load
+    attempt happened (so GPU/load-phase fields ARE real), but it failed
+    before ever reaching generation -- generation-phase fields are
+    honestly NOT_CAPTURED, not a fabricated response hash."""
+    data = _strict_manifest()
+    data["qualification_type"] = "RUNTIME_QUALIFICATION_FAILED"
+    data["attempt_1_result"] = "FAILED"
+    data["attempt_1_failure_class"] = "MODEL_ARCHITECTURE_UNSUPPORTED"
+    data["cleanup_status"] = "CONFIRMED_ZERO_ACTIVE_RESOURCES"
+    data["active_resources_after"] = "NONE"
+    for field in ("input_tokens", "output_tokens", "generation_latency_seconds", "tokens_per_second",
+                  "synthetic_prompt_sha256", "decoded_response_sha256"):
+        data[field] = NOT_CAPTURED
+        if field in EVIDENCE_BEARING_FIELDS:
+            data["evidence_strength"][field] = NOT_CAPTURED
     return data
 
 
@@ -137,6 +220,14 @@ def test_valid_legacy_manifest_passes():
 
 def test_valid_strict_manifest_passes():
     validate_manifest(_strict_manifest())  # must not raise
+
+
+def test_valid_strict_deferred_bundle_passes():
+    validate_manifest(_deferred_manifest())  # must not raise
+
+
+def test_valid_strict_failed_before_generation_bundle_passes():
+    validate_manifest(_failed_before_generation_manifest())  # must not raise
 
 
 def test_wrong_schema_version_rejected():
@@ -710,3 +801,311 @@ def test_qualified_candidate_missing_qualification_type_rejected():
 def test_qualified_candidate_valid_manifest_passes():
     entry = _qwen_entry()
     verify_qualified_manifest_linkage(entry, REPO_ROOT)  # must not raise
+
+
+# ── Phase 21B.4.11.3 §1: ordinary (no-optional-arg) registry load is fail-closed ──
+
+
+def test_ordinary_registry_load_auto_verifies_manifest_linkage():
+    CandidateExecutionRegistry.load(str(REGISTRY_PATH))  # must not raise, no manifest_root passed
+
+
+def test_ordinary_registry_load_fails_if_manifest_missing(tmp_path, monkeypatch):
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
+    qwen["qualification_manifest_path"] = "docs/orneur/phase-21/DOES_NOT_EXIST.json"
+    broken_registry = tmp_path / "registry.json"
+    broken_registry.write_text(json.dumps(registry_data))
+    monkeypatch.setattr(
+        "orca.eval.candidate_registry._derive_manifest_root", lambda p: REPO_ROOT
+    )
+    with pytest.raises(RegistrySchemaError, match="does not exist"):
+        CandidateExecutionRegistry.load(str(broken_registry))
+
+
+def test_ordinary_registry_load_fails_on_digest_mismatch(tmp_path, monkeypatch):
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
+    qwen["qualification_manifest_digest_sha256"] = "c" * 64
+    broken_registry = tmp_path / "registry.json"
+    broken_registry.write_text(json.dumps(registry_data))
+    monkeypatch.setattr(
+        "orca.eval.candidate_registry._derive_manifest_root", lambda p: REPO_ROOT
+    )
+    with pytest.raises(RegistrySchemaError, match="digest mismatch"):
+        CandidateExecutionRegistry.load(str(broken_registry))
+
+
+def test_ordinary_registry_load_fails_on_path_escape(tmp_path, monkeypatch):
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
+    qwen["qualification_manifest_path"] = "../../../etc/passwd"
+    broken_registry = tmp_path / "registry.json"
+    broken_registry.write_text(json.dumps(registry_data))
+    monkeypatch.setattr(
+        "orca.eval.candidate_registry._derive_manifest_root", lambda p: REPO_ROOT
+    )
+    with pytest.raises(RegistrySchemaError, match="escape"):
+        CandidateExecutionRegistry.load(str(broken_registry))
+
+
+def test_ordinary_registry_load_fails_on_identity_mismatch(tmp_path, monkeypatch):
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
+    qwen["exact_immutable_revision"] = "0" * 40
+    broken_registry = tmp_path / "registry.json"
+    broken_registry.write_text(json.dumps(registry_data))
+    monkeypatch.setattr(
+        "orca.eval.candidate_registry._derive_manifest_root", lambda p: REPO_ROOT
+    )
+    with pytest.raises(RegistrySchemaError, match="identity mismatch"):
+        CandidateExecutionRegistry.load(str(broken_registry))
+
+
+def test_from_dict_rejects_qualified_candidate_missing_manifest_metadata():
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
+    del qwen["qualification_manifest_path"]
+    with pytest.raises(RegistrySchemaError, match="missing required manifest-linkage"):
+        CandidateExecutionRegistry.from_dict(registry_data)
+
+
+def test_from_dict_rejects_qualified_candidate_with_malformed_digest():
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
+    qwen["qualification_manifest_digest_sha256"] = "not-hex"
+    with pytest.raises(RegistrySchemaError, match="malformed qualification_manifest_digest_sha256"):
+        CandidateExecutionRegistry.from_dict(registry_data)
+
+
+# ── Phase 21B.4.11.3 §2/§8: strict artifact byte verification ───────────
+
+
+def test_strict_bundle_bytes_verify_when_files_match(tmp_path):
+    manifest = _strict_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    validate_manifest(manifest)
+    verify_evidence_artifacts_bytes(manifest, root)  # must not raise
+
+
+def test_strict_bundle_missing_log_file_rejected(tmp_path):
+    manifest = _strict_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    (root / manifest["raw_execution_log_artifact"]).unlink()
+    validate_manifest(manifest)
+    with pytest.raises(RuntimeQualificationManifestError, match="not a regular file or does not exist"):
+        verify_evidence_artifacts_bytes(manifest, root)
+
+
+def test_strict_bundle_log_hash_mismatch_rejected(tmp_path):
+    manifest = _strict_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    (root / manifest["raw_execution_log_artifact"]).write_bytes(b"tampered content")
+    validate_manifest(manifest)
+    with pytest.raises(RuntimeQualificationManifestError, match="byte hash mismatch"):
+        verify_evidence_artifacts_bytes(manifest, root)
+
+
+def test_strict_bundle_artifact_path_escape_rejected(tmp_path):
+    manifest = _strict_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    manifest["evidence_artifacts"]["billing_before"]["path"] = "../outside.json"
+    validate_manifest(manifest)
+    with pytest.raises(RuntimeQualificationManifestError, match="escape"):
+        verify_evidence_artifacts_bytes(manifest, root)
+
+
+@pytest.mark.parametrize("missing_key", EVIDENCE_ARTIFACT_KEYS)
+def test_strict_bundle_missing_evidence_artifact_entry_rejected(missing_key):
+    manifest = _strict_manifest()
+    del manifest["evidence_artifacts"][missing_key]
+    with pytest.raises(RuntimeQualificationManifestError, match="missing required entries"):
+        validate_manifest(manifest)
+
+
+def test_strict_bundle_artifact_byte_mismatch_for_one_of_the_six_rejected(tmp_path):
+    manifest = _strict_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    (root / manifest["evidence_artifacts"]["cleanup"]["path"]).write_bytes(b"tampered")
+    validate_manifest(manifest)
+    with pytest.raises(RuntimeQualificationManifestError, match="evidence_artifacts.cleanup"):
+        verify_evidence_artifacts_bytes(manifest, root)
+
+
+# ── Phase 21B.4.11.3 §8: the single fail-closed high-level verifier ──────
+
+
+def test_high_level_verifier_accepts_valid_strict_bundle(tmp_path):
+    manifest = _strict_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    verify_runtime_qualification_bundle(
+        manifest,
+        candidate="Test-Candidate",
+        repository="Org/Test-Candidate",
+        revision=_VALID_HEX40,
+        qualification_type="RUNTIME_LOAD_COMPATIBILITY_QUALIFIED",
+        evidence_root=root,
+    )  # must not raise
+
+
+def test_high_level_verifier_refuses_strict_bundle_without_evidence_root():
+    """Proves a caller cannot accidentally accept a QUALIFIED STRICT
+    bundle by skipping byte verification (e.g. forgetting evidence_root)
+    -- schema/identity checks alone are not enough for a strict manifest."""
+    manifest = _strict_manifest()
+    with pytest.raises(RuntimeQualificationManifestError, match="require evidence_root"):
+        verify_runtime_qualification_bundle(
+            manifest,
+            candidate="Test-Candidate",
+            repository="Org/Test-Candidate",
+            revision=_VALID_HEX40,
+            qualification_type="RUNTIME_LOAD_COMPATIBILITY_QUALIFIED",
+        )
+
+
+def test_high_level_verifier_rejects_strict_bundle_with_tampered_bytes(tmp_path):
+    manifest = _strict_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    (root / manifest["evidence_artifacts"]["model_identity"]["path"]).write_bytes(b"tampered")
+    with pytest.raises(RuntimeQualificationManifestError, match="byte hash mismatch"):
+        verify_runtime_qualification_bundle(
+            manifest,
+            candidate="Test-Candidate",
+            repository="Org/Test-Candidate",
+            revision=_VALID_HEX40,
+            qualification_type="RUNTIME_LOAD_COMPATIBILITY_QUALIFIED",
+            evidence_root=root,
+        )
+
+
+def test_high_level_verifier_accepts_legacy_bundle_without_evidence_root():
+    """The legacy Qwen-style bundle has no durable artifacts to
+    byte-verify -- the high-level verifier must not demand evidence_root
+    for it."""
+    manifest = _legacy_manifest()
+    verify_runtime_qualification_bundle(
+        manifest,
+        candidate="Test-Candidate",
+        repository="Org/Test-Candidate",
+        revision=_VALID_HEX40,
+        qualification_type="RUNTIME_LOAD_COMPATIBILITY_QUALIFIED",
+    )  # must not raise
+
+
+# ── Phase 21B.4.11.3 §4: state-discriminated field requirements ─────────
+
+
+def test_deferred_forced_to_invent_gpu_rejected():
+    data = _deferred_manifest()
+    data["gpu_count"] = 1  # a real GPU value contradicts zero load attempts
+    with pytest.raises(RuntimeQualificationManifestError, match="gpu_count"):
+        validate_manifest(data)
+
+
+def test_deferred_forced_to_invent_response_hash_rejected():
+    data = _deferred_manifest()
+    data["decoded_response_sha256"] = _VALID_HEX64
+    data["evidence_strength"]["decoded_response_sha256"] = "OBSERVED_LIVE"
+    with pytest.raises(RuntimeQualificationManifestError, match="decoded_response_sha256 must be"):
+        validate_manifest(data)
+
+
+def test_failed_load_forced_to_invent_decoded_response_rejected():
+    data = _failed_before_generation_manifest()
+    data["decoded_response_sha256"] = _VALID_HEX64
+    data["evidence_strength"]["decoded_response_sha256"] = "OBSERVED_LIVE"
+    with pytest.raises(RuntimeQualificationManifestError, match="decoded_response_sha256 must be"):
+        validate_manifest(data)
+
+
+def test_qualified_run_missing_real_response_evidence_rejected():
+    """A QUALIFIED manifest may never claim NOT_CAPTURED for its
+    decoded_response_sha256 -- success implies a real response existed."""
+    data = _strict_manifest()
+    data["decoded_response_sha256"] = NOT_CAPTURED
+    with pytest.raises(RuntimeQualificationManifestError, match="decoded_response_sha256"):
+        validate_manifest(data)
+
+
+def test_deferred_without_deferral_reason_rejected():
+    data = _deferred_manifest()
+    data["deferral_reason"] = None
+    with pytest.raises(RuntimeQualificationManifestError, match="deferral_reason"):
+        validate_manifest(data)
+
+
+def test_non_deferred_with_deferral_reason_rejected():
+    data = _legacy_manifest()
+    data["deferral_reason"] = "should not be set for a QUALIFIED manifest"
+    with pytest.raises(RuntimeQualificationManifestError, match="deferral_reason"):
+        validate_manifest(data)
+
+
+def test_deferred_with_nonzero_attempts_but_deferred_type_rejected():
+    """DEFERRED_FOR_COMPUTE must not carry a SUCCEEDED attempt even if
+    load_attempt_count is nonzero."""
+    data = _deferred_manifest()
+    data["load_attempt_count"] = 1
+    data["attempt_1_result"] = "SUCCEEDED"
+    data["gpu_count"] = 1
+    data["vram_capacity_gb"] = 80
+    data["peak_allocated_vram_gb"] = 10
+    data["peak_reserved_vram_gb"] = 10
+    data["load_time_seconds"] = 5
+    data["weight_file_shards"] = 3
+    data["runtime_materialized_tensor_count"] = 50
+    with pytest.raises(RuntimeQualificationManifestError, match="must not have any SUCCEEDED attempt"):
+        validate_manifest(data)
+
+
+# ── Phase 21B.4.11.3 §6: evidence-strength / actual-value consistency ───
+
+
+def test_evidence_strength_not_captured_with_real_value_rejected():
+    data = _legacy_manifest()
+    data["evidence_strength"]["weight_file_shards"] = NOT_CAPTURED  # value is 5, a real number
+    with pytest.raises(RuntimeQualificationManifestError, match="carries a real value"):
+        validate_manifest(data)
+
+
+def test_weight_file_shards_zero_rejected():
+    data = _legacy_manifest()
+    data["weight_file_shards"] = 0
+    with pytest.raises(RuntimeQualificationManifestError, match="weight_file_shards"):
+        validate_manifest(data)
+
+
+def test_weight_file_shards_negative_rejected():
+    data = _legacy_manifest()
+    data["weight_file_shards"] = -1
+    with pytest.raises(RuntimeQualificationManifestError, match="weight_file_shards"):
+        validate_manifest(data)
+
+
+def test_weight_file_shards_bool_rejected():
+    data = _legacy_manifest()
+    data["weight_file_shards"] = True
+    with pytest.raises(RuntimeQualificationManifestError, match="weight_file_shards"):
+        validate_manifest(data)
+
+
+def test_runtime_materialized_tensor_count_invalid_rejected():
+    data = _legacy_manifest()
+    data["runtime_materialized_tensor_count"] = -5
+    with pytest.raises(RuntimeQualificationManifestError, match="runtime_materialized_tensor_count"):
+        validate_manifest(data)
+
+
+# ── Phase 21B.4.11.3 §9: legacy Qwen digest was recomputed honestly ──────
+
+
+def test_real_qwen_manifest_has_deferral_reason_null():
+    data = load_manifest(QWEN_MANIFEST_PATH)
+    assert data["deferral_reason"] is None
+
+
+def test_real_qwen_manifest_digest_matches_registry_after_migration():
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
+    manifest_data = load_manifest(QWEN_MANIFEST_PATH)
+    assert sha256_of_manifest(manifest_data) == qwen["qualification_manifest_digest_sha256"]

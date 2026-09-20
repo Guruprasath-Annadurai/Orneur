@@ -45,7 +45,7 @@
       "qualified_runtime": "Native Hugging Face Transformers 5.17.0 (RUNTIME LOAD COMPATIBILITY QUALIFIED, not a production serving runtime), AutoModelForImageTextToText, trust_remote_code=True, torch 2.14.0, BF16, single NVIDIA H200",
       "qualification_type": "RUNTIME_LOAD_COMPATIBILITY_QUALIFIED",
       "qualification_manifest_path": "docs/orneur/phase-21/GENESIS_RUNTIME_QUALIFICATION_MANIFEST_QWEN3_8_27B.json",
-      "qualification_manifest_digest_sha256": "281ee5a6a224727e71bd41d20cfb6367b8c910a661a505dd2e2f4994d8f50942",
+      "qualification_manifest_digest_sha256": "1d2093dc9af16c082a9e411ff4d27f114cc9596d46c6df3e5373792e60700feb",
       "qualification_evidence": "See qualification_manifest_path (Phase 21B.4.11.1 versioned, machine-validated evidence artifact; digest above is the SHA-256 of the manifest's canonical JSON). Summary: pinned revision 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0 loaded successfully on a single Modal H200 (86.1s load time), synthetic non-benchmark prompt generated a non-empty response ending in 'READY' (60 input / 37 output tokens, 8.55s generation), no OOM/NaN/Inf, clean teardown, zero active GPU resources/volumes after. Candidate capability remains UNPROVEN BY ORNEUR -- no benchmark, frontier comparison, or Genesis selection was performed. Raw execution logs were NOT durably preserved for this first smoke (see manifest raw_execution_log_artifact field and Phase 21B.4.11.1 for the future-smoke evidence standard)."
     },
     {

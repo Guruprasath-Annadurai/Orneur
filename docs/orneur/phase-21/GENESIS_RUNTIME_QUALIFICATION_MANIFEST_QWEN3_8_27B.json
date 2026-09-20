@@ -10,6 +10,7 @@
   "tokenizer_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
   "license_identifier": "apache-2.0",
   "qualification_type": "RUNTIME_LOAD_COMPATIBILITY_QUALIFIED",
+  "deferral_reason": null,
   "runtime": "native-transformers",
   "runtime_versions": {
     "transformers": "5.17.0",

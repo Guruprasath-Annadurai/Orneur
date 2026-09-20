@@ -130,19 +130,28 @@ class CandidateExecutionRegistry:
 
     @classmethod
     def load(cls, path: Path, manifest_root: Path | None = None) -> "CandidateExecutionRegistry":
-        """Loads and schema-validates the registry. If `manifest_root`
-        is given, additionally enforces (Phase 21B.4.11.2 §4) that every
-        QUALIFIED deployable candidate links to a real, schema-valid,
-        digest-matching runtime qualification manifest rooted under
-        `manifest_root` -- `from_dict()` alone (used by synthetic-fixture
-        tests with no real filesystem backing) does not perform this
-        check, since it has no directory to resolve manifest paths
-        against."""
-        data = json.loads(Path(path).read_text())
+        """Loads and schema-validates the registry, then (Phase
+        21B.4.11.3 §1) ALWAYS enforces that every QUALIFIED deployable
+        candidate links to a real, schema-valid, digest-matching
+        runtime qualification manifest -- this is not optional and
+        cannot be silently skipped by a caller who forgets to pass
+        `manifest_root`. When `manifest_root` is omitted, it is derived
+        from the registry file's own location via
+        `_derive_manifest_root()` (the nearest ancestor directory
+        containing `.git`); pass it explicitly only to override that
+        default (e.g. in a test fixture with its own throwaway repo
+        layout). `from_dict()` alone (used by synthetic-fixture tests
+        with no real filesystem backing) still does not perform this
+        filesystem-backed check, since it has no directory to resolve
+        manifest paths against -- but `from_dict()`/`_validate_deployable`
+        DO structurally require a QUALIFIED entry to carry its
+        manifest-linkage metadata regardless."""
+        path = Path(path)
+        data = json.loads(path.read_text())
         registry = cls.from_dict(data)
-        if manifest_root is not None:
-            for entry in registry.deployable_candidates:
-                verify_qualified_manifest_linkage(entry, manifest_root)
+        root = Path(manifest_root).resolve() if manifest_root is not None else _derive_manifest_root(path)
+        for entry in registry.deployable_candidates:
+            verify_qualified_manifest_linkage(entry, root)
         return registry
 
     @classmethod
@@ -236,6 +245,29 @@ def _validate_deployable(entry: dict) -> None:
     if entry["runtime_smoke_eligibility"] == "BLOCKED" and not entry.get("runtime_smoke_blocked_reason"):
         raise RegistrySchemaError(f"deployable candidate {name!r} is BLOCKED but has no runtime_smoke_blocked_reason")
 
+    # Phase 21B.4.11.3 §1: a structural (filesystem-free) check that
+    # runs even for synthetic from_dict() fixtures -- a QUALIFIED
+    # candidate must carry its manifest-linkage metadata, or the
+    # registry itself is internally inconsistent regardless of whether
+    # any file actually exists on disk. Filesystem-backed verification
+    # (does the manifest exist, does its digest match) happens
+    # separately in verify_qualified_manifest_linkage(), which
+    # CandidateExecutionRegistry.load() now always calls for every
+    # file-backed load.
+    if entry.get("runtime_qualification_status") == "QUALIFIED":
+        for field in ("qualification_type", "qualification_manifest_path", "qualification_manifest_digest_sha256"):
+            if not entry.get(field):
+                raise RegistrySchemaError(
+                    f"deployable candidate {name!r} is QUALIFIED but missing required manifest-linkage "
+                    f"field {field!r}"
+                )
+        digest = entry["qualification_manifest_digest_sha256"]
+        if not _HEX64_RE.match(digest):
+            raise RegistrySchemaError(
+                f"deployable candidate {name!r} has a malformed qualification_manifest_digest_sha256 "
+                f"(must be exactly 64 lowercase hex characters): {digest!r}"
+            )
+
 
 def _validate(data: dict) -> None:
     if data.get("schema_version") != REGISTRY_SCHEMA_VERSION:
@@ -328,6 +360,27 @@ def _validate(data: dict) -> None:
                 )
         else:  # OPEN_WEIGHT
             _require_hex40_revision(entry["exact_immutable_revision"], f"frontier reference {name!r}")
+
+
+def _derive_manifest_root(registry_path: Path) -> Path:
+    """Phase 21B.4.11.3 §1: derive the repository-controlled manifest
+    root from the registry file's own location, so `load()` never needs
+    a caller-supplied security-relevant argument to perform manifest
+    verification by default. Walks up from the registry file looking
+    for the nearest ancestor containing a `.git` directory (the
+    repository root marker) -- fails closed (raises) rather than
+    silently guessing a wrong root if none is found."""
+    current = Path(registry_path).resolve().parent
+    for _ in range(15):
+        if (current / ".git").exists():
+            return current
+        if current.parent == current:
+            break
+        current = current.parent
+    raise RegistrySchemaError(
+        f"could not derive a repository-controlled manifest root from registry path {registry_path!r} "
+        "(no ancestor directory containing .git was found) -- pass manifest_root explicitly"
+    )
 
 
 def verify_qualified_manifest_linkage(entry: dict, manifest_root: Path) -> None:
