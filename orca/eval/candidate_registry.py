@@ -383,16 +383,22 @@ def _derive_manifest_root(registry_path: Path) -> Path:
     )
 
 
-def verify_qualified_manifest_linkage(entry: dict, manifest_root: Path) -> None:
+def verify_qualified_manifest_linkage(entry: dict, manifest_root: Path) -> dict | None:
     """Phase 21B.4.11.2 §4: a generic (non-Qwen-specific) enforcement
     that every QUALIFIED deployable candidate links to a real,
     schema-valid, identity-matching, digest-matching runtime
-    qualification manifest. UNQUALIFIED candidates do not need a
-    qualification manifest and this function returns immediately for
-    them. `manifest_root` is the repository-controlled root that every
-    `qualification_manifest_path` must resolve underneath -- a path
-    that escapes it (via `..` or a symlink) is rejected outright rather
-    than silently followed."""
+    qualification manifest -- and (Phase 21B.4.11.4 §5/§6), for a
+    STRICT_RUNTIME_SMOKE_V2 manifest, that its declared evidence
+    artifacts' actual bytes match their declared hashes, using
+    `manifest_root` as the evidence root as well (the same
+    repository-controlled directory both are resolved under). Returns
+    the loaded, fully-verified manifest dict for QUALIFIED candidates
+    (or `None` for UNQUALIFIED ones, which need no manifest at all).
+    `manifest_root` is the repository-controlled root that every
+    `qualification_manifest_path` (and, for STRICT manifests, every
+    evidence-artifact path) must resolve underneath -- a path that
+    escapes it (via `..` or a symlink) is rejected outright rather than
+    silently followed."""
     # Imported locally to avoid a module-level import cycle risk and to
     # keep this registry module's top-level import surface unchanged
     # for callers that never touch manifest linkage.
@@ -402,11 +408,12 @@ def verify_qualified_manifest_linkage(entry: dict, manifest_root: Path) -> None:
         load_manifest,
         require_candidate_manifest,
         sha256_of_manifest,
+        verify_evidence_artifacts_bytes,
     )
 
     name = entry["canonical_candidate_name"]
     if entry.get("runtime_qualification_status") != "QUALIFIED":
-        return
+        return None
 
     for field in ("qualification_type", "qualification_manifest_path", "qualification_manifest_digest_sha256"):
         if not entry.get(field):
@@ -468,3 +475,61 @@ def verify_qualified_manifest_linkage(entry: dict, manifest_root: Path) -> None:
             f"QUALIFIED deployable candidate {name!r} manifest digest mismatch: registry records "
             f"{digest!r}, recomputed {recomputed_digest!r} from the manifest's current content."
         )
+
+    try:
+        verify_evidence_artifacts_bytes(manifest_data, manifest_root)
+    except RuntimeQualificationManifestError as e:
+        raise RegistrySchemaError(
+            f"QUALIFIED deployable candidate {name!r} strict evidence-artifact verification failed: {e}"
+        ) from e
+
+    return manifest_data
+
+
+def verify_candidate_qualification_end_to_end(
+    registry_path: Path,
+    canonical_candidate_name: str,
+    *,
+    manifest_root: Path | None = None,
+) -> tuple[dict, dict | None]:
+    """Phase 21B.4.11.4 §5: the SINGLE public acceptance API for a
+    candidate's runtime-qualification claim. One call establishes:
+
+      1.  the registry itself is structurally valid (schema, name sets,
+          candidate_class, revision formats, cross-wiring checks --
+          everything `CandidateExecutionRegistry.load()` already does);
+      2.  the named candidate exists in the registry;
+      3.  if QUALIFIED, its qualification-linkage metadata is present
+          and well-formed;
+      4.  `qualification_manifest_path` exists and is contained under
+          `manifest_root` (no path escape/symlink ambiguity);
+      5.  the manifest's bytes parse and pass full schema validation
+          (`validate_manifest` -- qualification-state invariants,
+          zero-owner-cash billing invariants, billing-gate-for-executed-
+          runs invariant, cleanup invariant, all included);
+      6.  the manifest's canonical SHA-256 equals the registry's
+          `qualification_manifest_digest_sha256`;
+      7.  the manifest's candidate/repository/revision/qualification_type
+          match the registry entry's own fields;
+      8.  for a STRICT_RUNTIME_SMOKE_V2 manifest, every declared
+          evidence-artifact file (including `billing_gate`) exists under
+          `manifest_root` and its actual bytes hash to the declared
+          SHA-256.
+
+    A caller needing "is this candidate's qualification acceptable"
+    never has to separately remember `CandidateExecutionRegistry.load()`
+    plus `verify_runtime_qualification_bundle()` -- this single call
+    performs the entire chain (steps 1-4 and 6-8 by delegating to
+    `CandidateExecutionRegistry.load()` and `verify_qualified_manifest_
+    linkage()`, which this function does not duplicate; step 5 happens
+    inside manifest loading, which those call transitively).
+
+    Returns `(registry_entry, manifest_data)` -- `manifest_data` is
+    `None` for an UNQUALIFIED candidate, which has no manifest to
+    return. Raises `RegistrySchemaError` on any failure, or `KeyError`
+    if no candidate with that name exists in the registry."""
+    registry = CandidateExecutionRegistry.load(registry_path, manifest_root=manifest_root)
+    entry = registry.find_deployable(canonical_candidate_name)
+    root = Path(manifest_root).resolve() if manifest_root is not None else _derive_manifest_root(Path(registry_path))
+    manifest_data = verify_qualified_manifest_linkage(entry, root)
+    return entry, manifest_data

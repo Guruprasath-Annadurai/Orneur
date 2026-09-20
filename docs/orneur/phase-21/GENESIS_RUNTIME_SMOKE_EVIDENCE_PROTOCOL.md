@@ -11,10 +11,25 @@ Every future candidate smoke must use
 enforces this evidence lifecycle. **No candidate may be marked
 `QUALIFIED` before every step below has completed.**
 
+## Freshness rule (Phase 21B.4.11.4 §4)
+
+The owner's $0 spend-limit confirmation proves the workspace
+configuration only at the moment it was captured. It is **never** an
+indefinitely reusable authorization artifact. Every future GPU
+candidate phase (starting with Phase 21B.4.12) must obtain its own
+fresh billing-gate evidence immediately before that phase's GPU
+execution and persist it as that manifest's own
+`evidence_artifacts.billing_gate` entry -- a prior phase's billing-gate
+evidence file (e.g.
+`docs/orneur/phase-21/evidence/MODAL_BILLING_GATE_CURRENT_2026-09-20.json`)
+must not be silently cited as current if execution occurs materially
+later.
+
 ## Locked execution order
 
 1. Billing hard-limit owner evidence obtained (fresh, independently
-   checkable -- never inferred, never reused from a prior phase).
+   checkable -- never inferred, never reused from a prior phase). This
+   becomes the manifest's `evidence_artifacts.billing_gate` artifact.
 2. Billing-before snapshot persisted (metered/billed cost, GPU
    rate/inventory) via supported Modal tooling only.
 3. Model identity artifact persisted (repository, exact pinned
@@ -68,6 +83,18 @@ enforces this evidence lifecycle. **No candidate may be marked
   and 64-hex `raw_execution_log_sha256` are mandatory, and `created_at`/
   `execution_time` must be real timezone-aware timestamps, not
   `NOT_CAPTURED`.
+- Under `STRICT_RUNTIME_SMOKE_V2`, `evidence_artifacts` must bind all
+  seven categories (`billing_gate`, `billing_before`, `model_identity`,
+  `runtime_environment`, `execution_log`, `cleanup`, `billing_after`),
+  each byte-verified against a real file, not merely a format-valid
+  filename/hash pair.
+- Any `STRICT_RUNTIME_SMOKE_V2` manifest with `load_attempt_count > 0`
+  (an executed GPU run) requires
+  `billing_gate_reconciliation.billing_gate_at_time_of_execution ==
+  "CONFIRMED_ZERO_SPEND_LIMIT"` with
+  `evidence_strength["billing_gate_at_time_of_execution"] ==
+  "OWNER_SCREENSHOT_VERIFIED"` -- `REPORTED_BY_CLAUDE`, `DERIVED`, and
+  `NOT_CAPTURED` may never authorize a GPU execution.
 
 ## Qualification-type semantics (never conflated)
 

@@ -22,6 +22,7 @@ from orca.eval.candidate_registry import (
     verify_qualified_manifest_linkage,
 )
 from orca.eval.runtime_qualification_manifest import (
+    BILLING_GATE_CONFIRMED_ZERO,
     EVIDENCE_ARTIFACT_KEYS,
     EVIDENCE_BEARING_FIELDS,
     EVIDENCE_PROTOCOL_LEGACY,
@@ -133,6 +134,10 @@ def _legacy_manifest() -> dict:
 
 
 def _strict_manifest() -> dict:
+    """A STRICT manifest with load_attempt_count > 0 (inherited from
+    _base_manifest's load_attempt_count=1) -- an EXECUTED run, so it
+    must carry a positively-confirmed, owner-verified $0 billing gate
+    (Phase 21B.4.11.4 §2)."""
     data = _base_manifest()
     data["evidence_protocol_generation"] = EVIDENCE_PROTOCOL_STRICT
     data["created_at"] = "2026-01-01T12:00:00+00:00"
@@ -142,6 +147,12 @@ def _strict_manifest() -> dict:
     data["evidence_artifacts"] = {
         key: {"path": f"evidence/{key}.json", "sha256": _VALID_HEX64} for key in EVIDENCE_ARTIFACT_KEYS
     }
+    data["billing_gate_reconciliation"] = {
+        "billing_gate_at_time_of_execution": BILLING_GATE_CONFIRMED_ZERO,
+        "owner_billed_result": "$0.00 REPORTED",
+        "financial_impact": "NO_OWNER_CHARGE_OBSERVED",
+    }
+    data["evidence_strength"]["billing_gate_at_time_of_execution"] = "OWNER_SCREENSHOT_VERIFIED"
     return data
 
 
@@ -176,6 +187,15 @@ def _deferred_manifest() -> dict:
     data = _strict_manifest()
     data["qualification_type"] = "DEFERRED_FOR_COMPUTE"
     data["deferral_reason"] = "Owner Modal $0 usage-limit dashboard evidence was not yet confirmed at execution time."
+    # Deferred precisely BECAUSE the billing gate was not confirmed --
+    # honestly reflect that rather than inheriting _strict_manifest()'s
+    # CONFIRMED_ZERO_SPEND_LIMIT (which would contradict the deferral).
+    data["billing_gate_reconciliation"] = {
+        "billing_gate_at_time_of_execution": "NOT_INDEPENDENTLY_PROVEN",
+        "owner_billed_result": "$0.00 REPORTED",
+        "financial_impact": "NO_OWNER_CHARGE_OBSERVED",
+    }
+    data["evidence_strength"]["billing_gate_at_time_of_execution"] = NOT_CAPTURED
     data["load_attempt_count"] = 0
     data["attempt_1_result"] = "NOT_ATTEMPTED"
     data["attempt_1_failure_class"] = None
@@ -1109,3 +1129,173 @@ def test_real_qwen_manifest_digest_matches_registry_after_migration():
     qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
     manifest_data = load_manifest(QWEN_MANIFEST_PATH)
     assert sha256_of_manifest(manifest_data) == qwen["qualification_manifest_digest_sha256"]
+
+
+# ── Phase 21B.4.11.4 §1/§2/§7: billing-gate artifact binding ─────────────
+
+
+def test_strict_executed_run_missing_billing_gate_artifact_rejected():
+    data = _strict_manifest()
+    del data["evidence_artifacts"]["billing_gate"]
+    with pytest.raises(RuntimeQualificationManifestError, match="missing required entries"):
+        validate_manifest(data)
+
+
+def test_strict_billing_gate_artifact_wrong_hash_rejected(tmp_path):
+    manifest = _strict_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    (root / manifest["evidence_artifacts"]["billing_gate"]["path"]).write_bytes(b"tampered")
+    validate_manifest(manifest)
+    with pytest.raises(RuntimeQualificationManifestError, match="evidence_artifacts.billing_gate"):
+        verify_evidence_artifacts_bytes(manifest, root)
+
+
+def test_strict_billing_gate_path_escape_rejected(tmp_path):
+    manifest = _strict_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    manifest["evidence_artifacts"]["billing_gate"]["path"] = "../../outside-billing-gate.json"
+    validate_manifest(manifest)
+    with pytest.raises(RuntimeQualificationManifestError, match="escape"):
+        verify_evidence_artifacts_bytes(manifest, root)
+
+
+def test_executed_strict_run_with_billing_gate_reported_by_claude_rejected():
+    data = _strict_manifest()
+    data["evidence_strength"]["billing_gate_at_time_of_execution"] = "REPORTED_BY_CLAUDE"
+    with pytest.raises(RuntimeQualificationManifestError, match="OWNER_SCREENSHOT_VERIFIED"):
+        validate_manifest(data)
+
+
+def test_executed_strict_run_with_billing_gate_derived_rejected():
+    data = _strict_manifest()
+    data["evidence_strength"]["billing_gate_at_time_of_execution"] = "DERIVED"
+    with pytest.raises(RuntimeQualificationManifestError, match="OWNER_SCREENSHOT_VERIFIED"):
+        validate_manifest(data)
+
+
+def test_executed_strict_run_with_billing_gate_not_captured_rejected():
+    data = _strict_manifest()
+    data["evidence_strength"]["billing_gate_at_time_of_execution"] = NOT_CAPTURED
+    with pytest.raises(RuntimeQualificationManifestError, match="OWNER_SCREENSHOT_VERIFIED"):
+        validate_manifest(data)
+
+
+def test_executed_strict_run_claiming_non_confirmed_spend_ceiling_rejected():
+    data = _strict_manifest()
+    data["billing_gate_reconciliation"]["billing_gate_at_time_of_execution"] = "NOT_INDEPENDENTLY_PROVEN"
+    with pytest.raises(RuntimeQualificationManifestError, match="CONFIRMED_ZERO_SPEND_LIMIT"):
+        validate_manifest(data)
+
+
+def test_deferred_zero_attempt_bundle_does_not_require_billing_gate_confirmation():
+    """A run deferred BECAUSE the billing gate was unconfirmed must not
+    be forced to fabricate owner authorization just to validate."""
+    data = _deferred_manifest()
+    assert data["billing_gate_reconciliation"]["billing_gate_at_time_of_execution"] == "NOT_INDEPENDENTLY_PROVEN"
+    validate_manifest(data)  # must not raise
+
+
+def test_strict_synthetic_successful_bundle_with_real_billing_gate_artifact(tmp_path):
+    manifest = _strict_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    validate_manifest(manifest)
+    verify_evidence_artifacts_bytes(manifest, root)  # must not raise
+
+
+def test_strict_failed_bundle_where_execution_was_properly_authorized(tmp_path):
+    manifest = _failed_before_generation_manifest()
+    root = _write_evidence_bundle(tmp_path, manifest)
+    validate_manifest(manifest)
+    verify_evidence_artifacts_bytes(manifest, root)  # must not raise
+
+
+# ── Phase 21B.4.11.4 §5: the single end-to-end acceptance verifier ───────
+
+
+def _write_broken_registry(tmp_path: Path, mutate) -> Path:
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
+    mutate(qwen)
+    broken = tmp_path / "registry.json"
+    broken.write_text(json.dumps(registry_data))
+    return broken
+
+
+def test_end_to_end_verifier_accepts_real_qwen_candidate():
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+    entry, manifest = verify_candidate_qualification_end_to_end(REGISTRY_PATH, "Qwen3.8-27B", manifest_root=REPO_ROOT)
+    assert entry["canonical_candidate_name"] == "Qwen3.8-27B"
+    assert manifest["candidate"] == "Qwen3.8-27B"
+
+
+def test_end_to_end_verifier_rejects_registry_digest_mismatch(tmp_path):
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+    broken = _write_broken_registry(tmp_path, lambda q: q.__setitem__("qualification_manifest_digest_sha256", "b" * 64))
+    with pytest.raises(RegistrySchemaError, match="digest mismatch"):
+        verify_candidate_qualification_end_to_end(broken, "Qwen3.8-27B", manifest_root=REPO_ROOT)
+
+
+def test_end_to_end_verifier_rejects_registry_manifest_path_mismatch(tmp_path):
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+    broken = _write_broken_registry(
+        tmp_path, lambda q: q.__setitem__("qualification_manifest_path", "docs/orneur/phase-21/DOES_NOT_EXIST.json")
+    )
+    with pytest.raises(RegistrySchemaError, match="does not exist"):
+        verify_candidate_qualification_end_to_end(broken, "Qwen3.8-27B", manifest_root=REPO_ROOT)
+
+
+def test_end_to_end_verifier_rejects_manifest_identity_mismatch(tmp_path):
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+    broken = _write_broken_registry(tmp_path, lambda q: q.__setitem__("exact_immutable_revision", "0" * 40))
+    with pytest.raises(RegistrySchemaError, match="identity mismatch"):
+        verify_candidate_qualification_end_to_end(broken, "Qwen3.8-27B", manifest_root=REPO_ROOT)
+
+
+def test_end_to_end_verifier_rejects_valid_manifest_but_invalid_registry_linkage(tmp_path):
+    """The manifest file itself is untouched and would validate fine on
+    its own, but the registry's own recorded identity no longer matches
+    it -- the end-to-end verifier must still fail closed."""
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+    broken = _write_broken_registry(tmp_path, lambda q: q.__setitem__("artifact_repository", "Qwen/Wrong-Repo"))
+    # The real manifest on disk is fine in isolation:
+    load_manifest(QWEN_MANIFEST_PATH)
+    with pytest.raises(RegistrySchemaError, match="identity mismatch"):
+        verify_candidate_qualification_end_to_end(broken, "Qwen3.8-27B", manifest_root=REPO_ROOT)
+
+
+def test_end_to_end_verifier_rejects_valid_registry_linkage_but_tampered_strict_bytes(tmp_path):
+    """Registry linkage (identity/digest) is fine, but a STRICT
+    manifest's declared evidence-artifact bytes have been tampered --
+    the end-to-end verifier must still fail closed via byte
+    verification, not just schema/digest checks. Uses the real registry
+    (so every other structural requirement -- exact name sets, all
+    required fields -- is already satisfied) but repoints Qwen's
+    manifest linkage at a synthetic STRICT manifest + evidence bundle."""
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+
+    manifest = _strict_manifest()
+    manifest["candidate"] = "Qwen3.8-27B"
+    manifest["artifact_repository"] = "Qwen/Qwen3.8-27B"
+    manifest["exact_revision"] = "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+    manifest["tokenizer_repository"] = "Qwen/Qwen3.8-27B"
+    manifest["tokenizer_revision"] = "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+    root = _write_evidence_bundle(tmp_path, manifest)
+    manifest_rel_path = "synthetic_manifest.json"
+    (root / manifest_rel_path).write_text(json.dumps(manifest))
+    digest = sha256_of_manifest(manifest)
+
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
+    qwen["qualification_manifest_path"] = manifest_rel_path
+    qwen["qualification_manifest_digest_sha256"] = digest
+    qwen["qualification_type"] = manifest["qualification_type"]
+    registry_path = root / "registry.json"
+    registry_path.write_text(json.dumps(registry_data))
+
+    # Tamper with one evidence-artifact file's bytes AFTER the manifest
+    # (and its digest) were finalized -- registry linkage/digest still
+    # matches the manifest content, but the declared bytes no longer do.
+    (root / manifest["evidence_artifacts"]["execution_log"]["path"]).write_bytes(b"tampered after the fact")
+
+    with pytest.raises(RegistrySchemaError, match="strict evidence-artifact verification failed"):
+        verify_candidate_qualification_end_to_end(registry_path, "Qwen3.8-27B", manifest_root=root)

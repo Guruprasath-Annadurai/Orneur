@@ -3,14 +3,15 @@
   "evidence_strength": "OWNER_SCREENSHOT_VERIFIED",
   "recorded_date": "2026-09-20",
   "recorded_time": "NOT_CAPTURED",
-  "source": "Owner-provided Modal Dashboard screenshot, inspected by independent ChatGPT audit and relayed to the ORNEUR execution agent in this conversation (Phase 21B.4.11.3).",
-  "dashboard_path": "Modal Dashboard -> Usage & billing -> Usage limit",
+  "source": "Owner-provided Modal Dashboard screenshot, inspected by independent ChatGPT audit and relayed to the ORNEUR execution agent in this conversation (Phase 21B.4.11.3, dashboard-location wording corrected in Phase 21B.4.11.4).",
+  "dashboard_path": "Modal Dashboard -> Usage & billing -> Overview",
   "reported_values": {
     "spend_limit_usd": 0,
     "usage_limit_usd_including_credits": 42.5,
     "total_spend_shown_usd": 0.0
   },
-  "scope_note": "This evidence confirms the workspace's CURRENT Modal usage/spend-limit configuration as of the recorded_date above. It does NOT retroactively prove the configuration in effect during any prior execution (e.g. the Phase 21B.4.11 Qwen3.8-27B smoke) -- that historical gate remains recorded as NOT_INDEPENDENTLY_PROVEN in GENESIS_RUNTIME_QUALIFICATION_MANIFEST_QWEN3_8_27B.json and is not rewritten by this artifact. A future STRICT_RUNTIME_SMOKE_V2 manifest's evidence_artifacts.billing_before entry should reference a fresh, re-verified snapshot at that manifest's own execution time, not silently reuse this file as if it were current at some later date.",
+  "freshness_rule": "Phase 21B.4.11.4 §4: this artifact proves the workspace configuration ONLY at recorded_date above. It is NOT an indefinitely reusable authorization. Every future GPU candidate phase (starting with Phase 21B.4.12) MUST obtain and persist its OWN fresh billing_gate evidence_artifacts entry immediately before GPU execution -- this file must never be silently reused as that phase's billing_gate artifact if its own execution occurs materially later than recorded_date.",
+  "scope_note": "This evidence confirms the workspace's CURRENT Modal usage/spend-limit configuration as of the recorded_date above. It does NOT retroactively prove the configuration in effect during any prior execution (e.g. the Phase 21B.4.11 Qwen3.8-27B smoke) -- that historical gate remains recorded as NOT_INDEPENDENTLY_PROVEN in GENESIS_RUNTIME_QUALIFICATION_MANIFEST_QWEN3_8_27B.json and is not rewritten by this artifact.",
   "no_secrets_present": true,
   "no_account_identifiers_present": true
 }

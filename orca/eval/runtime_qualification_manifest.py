@@ -76,6 +76,7 @@ _NOT_PRESERVED_LOG_VALUES = frozenset({None, "", "NOT_PRESERVED", "NONE"})
 # STRICT_RUNTIME_SMOKE_V2 manifest must bind to real, byte-verified
 # files before a candidate may be marked QUALIFIED.
 EVIDENCE_ARTIFACT_KEYS = (
+    "billing_gate",
     "billing_before",
     "model_identity",
     "runtime_environment",
@@ -83,6 +84,14 @@ EVIDENCE_ARTIFACT_KEYS = (
     "cleanup",
     "billing_after",
 )
+
+# Phase 21B.4.11.4 §2: the ONLY value of billing_gate_at_time_of_execution
+# that authorizes a STRICT executed (load_attempt_count > 0) run. Any
+# other value -- including the historical NOT_INDEPENDENTLY_PROVEN --
+# means the owner-paid spend ceiling was not confirmed at $0 for this
+# specific execution, and a GPU run may not be accepted as QUALIFIED
+# (or FAILED-after-a-real-attempt) on that basis.
+BILLING_GATE_CONFIRMED_ZERO = "CONFIRMED_ZERO_SPEND_LIMIT"
 
 REQUIRED_TOP_LEVEL_FIELDS = (
     "schema_version",
@@ -512,8 +521,32 @@ def validate_manifest(data: dict) -> None:
     gate = data["billing_gate_reconciliation"]
     _require_fields(gate, ("billing_gate_at_time_of_execution", "owner_billed_result", "financial_impact"))
 
-    # ── Phase 21B.4.11.2 §1/§2, hardened 21B.4.11.3 §3: protocol-generation-gated rules ──
+    # ── Phase 21B.4.11.4 §2: a STRICT manifest that actually executed a
+    # load attempt (load_attempt_count > 0) must be backed by a
+    # positively-confirmed, owner-verified $0 spend ceiling -- never
+    # merely a Claude-reported, derived, or absent claim. This is
+    # checked here (independent of the artifact-bytes section below)
+    # because it is a schema-level authorization requirement, not
+    # merely a file-existence one.
     protocol = data["evidence_protocol_generation"]
+    if protocol == EVIDENCE_PROTOCOL_STRICT and not zero_attempts:
+        if gate["billing_gate_at_time_of_execution"] != BILLING_GATE_CONFIRMED_ZERO:
+            raise RuntimeQualificationManifestError(
+                "a STRICT_RUNTIME_SMOKE_V2 manifest with load_attempt_count>0 requires "
+                f"billing_gate_reconciliation.billing_gate_at_time_of_execution == {BILLING_GATE_CONFIRMED_ZERO!r} "
+                f"(got {gate['billing_gate_at_time_of_execution']!r}) -- an executed GPU run may never be "
+                "accepted without a positively confirmed owner $0 spend ceiling."
+            )
+        billing_gate_strength = evidence_strength.get("billing_gate_at_time_of_execution")
+        if billing_gate_strength != "OWNER_SCREENSHOT_VERIFIED":
+            raise RuntimeQualificationManifestError(
+                "a STRICT_RUNTIME_SMOKE_V2 manifest with load_attempt_count>0 requires "
+                "evidence_strength['billing_gate_at_time_of_execution'] == 'OWNER_SCREENSHOT_VERIFIED' "
+                f"(got {billing_gate_strength!r}) -- REPORTED_BY_CLAUDE, DERIVED, and NOT_CAPTURED may "
+                "never authorize a GPU execution."
+            )
+
+    # ── Phase 21B.4.11.2 §1/§2, hardened 21B.4.11.3 §3, 21B.4.11.4 §1: protocol-generation-gated rules ──
     if protocol not in VALID_EVIDENCE_PROTOCOL_GENERATIONS:
         raise RuntimeQualificationManifestError(f"unrecognized evidence_protocol_generation {protocol!r}")
 
