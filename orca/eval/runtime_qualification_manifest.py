@@ -225,7 +225,19 @@ _LOAD_PHASE_NUMERIC_FIELDS = (
     "peak_reserved_vram_gb",
     "load_time_seconds",
 )
-_LOAD_PHASE_INT_FIELDS = ("weight_file_shards", "runtime_materialized_tensor_count")
+# weight_file_shards is a repository fact (obtainable from the model's
+# own weight index via a metadata-only API call, independent of which
+# runtime executes the load) and is required whenever a load was
+# attempted at all. runtime_materialized_tensor_count is a genuinely
+# runtime-specific, best-effort metric -- it was originally observed
+# via native Transformers' own from_pretrained() progress counter
+# (Phase 21B.4.11's Qwen smoke), but not every runtime exposes an
+# equivalent (e.g. vLLM's multiprocess tensor-parallel loader does not
+# surface a simple per-tensor count to the parent process the way
+# Transformers does) -- it may legitimately be NOT_CAPTURED even for an
+# attempted load, independent of zero_attempts.
+_LOAD_PHASE_INT_FIELDS = ("weight_file_shards",)
+_RUNTIME_SPECIFIC_OPTIONAL_INT_FIELDS = ("runtime_materialized_tensor_count",)
 
 # Generation-phase fields: legitimately NOT_CAPTURED whenever the
 # qualification_type isn't one of the QUALIFIED types (a FAILED attempt
@@ -425,7 +437,7 @@ def validate_manifest(data: dict) -> None:
     # could invent a real-looking value for a phase that never ran, as
     # long as it also (falsely) tagged evidence_strength to match.
     if zero_attempts:
-        for field in ("gpu_count",) + _LOAD_PHASE_NUMERIC_FIELDS + _LOAD_PHASE_INT_FIELDS:
+        for field in ("gpu_count",) + _LOAD_PHASE_NUMERIC_FIELDS + _LOAD_PHASE_INT_FIELDS + _RUNTIME_SPECIFIC_OPTIONAL_INT_FIELDS:
             if data[field] != NOT_CAPTURED:
                 raise RuntimeQualificationManifestError(
                     f"{field} must be {NOT_CAPTURED!r} when load_attempt_count==0 -- no load was ever attempted"
@@ -437,6 +449,11 @@ def validate_manifest(data: dict) -> None:
             _require_number(data, field)
         for field in _LOAD_PHASE_INT_FIELDS:
             _require_int_at_least(data, field, 1)
+        for field in _RUNTIME_SPECIFIC_OPTIONAL_INT_FIELDS:
+            # Optional even for an attempted load -- not every runtime
+            # exposes an equivalent metric (see the constant's comment).
+            if data[field] != NOT_CAPTURED:
+                _require_int_at_least(data, field, 1)
 
     if not_qualified:
         for field in _GENERATION_PHASE_NUMERIC_FIELDS + _GENERATION_PHASE_HASH_FIELDS:

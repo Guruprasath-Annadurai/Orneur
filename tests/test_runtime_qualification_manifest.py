@@ -42,6 +42,7 @@ from orca.eval.runtime_qualification_manifest import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = REPO_ROOT / "docs/orneur/phase-21/GENESIS_CANDIDATE_EXECUTION_REGISTRY.json"
 QWEN_MANIFEST_PATH = REPO_ROOT / "docs/orneur/phase-21/GENESIS_RUNTIME_QUALIFICATION_MANIFEST_QWEN3_8_27B.json"
+MISTRAL_MANIFEST_PATH = REPO_ROOT / "docs/orneur/phase-21/GENESIS_RUNTIME_QUALIFICATION_MANIFEST_MISTRAL_SMALL_4.json"
 
 _VALID_HEX40 = "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
 _VALID_HEX64 = "a" * 64
@@ -737,6 +738,29 @@ def test_real_qwen_manifest_shard_terminology_corrected():
     assert data["runtime_materialized_tensor_count"] == 1184
 
 
+def test_runtime_materialized_tensor_count_may_be_not_captured_even_with_attempted_load():
+    """Phase 21B.4.12: not every runtime exposes an equivalent metric
+    to Transformers' own per-tensor loading progress counter (e.g.
+    vLLM's multiprocess tensor-parallel loader) -- this one metric may
+    honestly be NOT_CAPTURED even when load_attempt_count > 0, unlike
+    weight_file_shards (a repository fact, always obtainable)."""
+    data = _failed_before_generation_manifest()
+    data["runtime_materialized_tensor_count"] = NOT_CAPTURED
+    data["evidence_strength"]["runtime_materialized_tensor_count"] = NOT_CAPTURED
+    validate_manifest(data)  # must not raise
+    assert data["load_attempt_count"] > 0
+    assert data["weight_file_shards"] != NOT_CAPTURED  # still required to be real
+
+
+def test_weight_file_shards_still_required_even_when_tensor_count_not_captured():
+    data = _failed_before_generation_manifest()
+    data["runtime_materialized_tensor_count"] = NOT_CAPTURED
+    data["evidence_strength"]["runtime_materialized_tensor_count"] = NOT_CAPTURED
+    data["weight_file_shards"] = NOT_CAPTURED
+    with pytest.raises(RuntimeQualificationManifestError, match="weight_file_shards"):
+        validate_manifest(data)
+
+
 def test_registry_no_longer_calls_1184_a_shard_count():
     registry_text = REGISTRY_PATH.read_text()
     assert "1184 weight shards" not in registry_text
@@ -1335,3 +1359,69 @@ def test_end_to_end_verifier_rejects_valid_registry_linkage_but_tampered_strict_
 
     with pytest.raises(RegistrySchemaError, match="strict evidence-artifact verification failed"):
         verify_candidate_qualification_end_to_end(registry_path, "Qwen3.8-27B", manifest_root=root)
+
+
+# ── Phase 21B.4.12: the real, committed Mistral Small 4 FAILED manifest ──
+
+
+def test_real_mistral_manifest_validates():
+    data = load_manifest(MISTRAL_MANIFEST_PATH)
+    require_candidate_manifest(
+        data,
+        candidate="Mistral Small 4",
+        repository="mistralai/Mistral-Small-4-119B-2603",
+        revision="a11f36bebf709121056b1dbcc943d1c6afbe494d",
+        qualification_type="RUNTIME_QUALIFICATION_FAILED",
+    )
+
+
+def test_real_mistral_manifest_bytes_verify():
+    data = load_manifest(MISTRAL_MANIFEST_PATH)
+    verify_evidence_artifacts_bytes(data, REPO_ROOT)  # must not raise
+
+
+def test_real_mistral_manifest_no_generation_evidence_fabricated():
+    data = load_manifest(MISTRAL_MANIFEST_PATH)
+    assert data["decoded_response_sha256"] == NOT_CAPTURED
+    assert data["synthetic_prompt_sha256"] == NOT_CAPTURED
+    assert data["output_tokens"] == NOT_CAPTURED
+
+
+def test_real_mistral_manifest_load_evidence_is_real():
+    data = load_manifest(MISTRAL_MANIFEST_PATH)
+    assert data["gpu_count"] == 2
+    assert data["weight_file_shards"] == 3
+    assert data["load_time_seconds"] > 0
+
+
+def test_real_mistral_manifest_billing_gate_confirmed_for_executed_run():
+    data = load_manifest(MISTRAL_MANIFEST_PATH)
+    assert data["billing_gate_reconciliation"]["billing_gate_at_time_of_execution"] == BILLING_GATE_CONFIRMED_ZERO
+    assert data["evidence_strength"]["billing_gate_at_time_of_execution"] == "OWNER_SCREENSHOT_VERIFIED"
+    assert data["owner_billed_delta_usd"] == 0
+
+
+def test_real_mistral_manifest_two_distinct_failure_classes_recorded():
+    data = load_manifest(MISTRAL_MANIFEST_PATH)
+    assert data["attempt_1_failure_class"] == "RUNTIME_VERSION_MISMATCH"
+    assert data["attempt_2_failure_class"] == "CUDA_KERNEL_FAILURE"
+    assert data["load_attempt_count"] == 2
+
+
+def test_registry_mistral_entry_links_manifest_by_matching_digest():
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    mistral = next(
+        e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Mistral Small 4"
+    )
+    manifest_data = load_manifest(REPO_ROOT / mistral["qualification_manifest_path"])
+    assert sha256_of_manifest(manifest_data) == mistral["qualification_manifest_digest_sha256"]
+    assert mistral["runtime_qualification_status"] == "UNQUALIFIED"  # a FAILED attempt never becomes QUALIFIED
+
+
+def test_mistral_still_unqualified_and_inspectable_end_to_end():
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+    entry, manifest = verify_candidate_qualification_end_to_end(
+        REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT, require_qualified=False
+    )
+    assert entry["runtime_qualification_status"] == "UNQUALIFIED"
+    assert manifest is None  # UNQUALIFIED candidates are never manifest-linked by the acceptance path
