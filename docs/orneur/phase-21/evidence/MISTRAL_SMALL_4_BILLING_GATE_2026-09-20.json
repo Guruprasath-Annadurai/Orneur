@@ -1,0 +1,23 @@
+{
+  "evidence_type": "MODAL_USAGE_AND_BILLING_LIMIT_CONFIRMATION",
+  "evidence_strength": "OWNER_SCREENSHOT_VERIFIED",
+  "dashboard_path": "Modal Dashboard -> Usage & billing -> Overview",
+  "captured_date": "2026-09-20",
+  "captured_time": "approximately 23:37 owner-local time -- exact timezone offset was not independently preserved and is not invented here; the owner-stated 'owner local time' wall-clock reading is recorded as-is.",
+  "spend_limit_usd": 0,
+  "usage_limit_usd_including_credits": 42.5,
+  "total_spend_shown_usd": 0.0,
+  "total_usage_shown_usd": 0.45,
+  "credits_applied_usd": -0.45,
+  "usage_breakdown_shown": {
+    "h200_usd": 0.38,
+    "cpu_usd": 0.04,
+    "l4_usd": 0.03,
+    "network_egress_gib": 1.87,
+    "estimated_network_charge_usd": 0.0
+  },
+  "scope": "THIS PHASE 21B.4.12 MISTRAL SMALL 4 EXECUTION ONLY",
+  "historical_qwen_gate_rewritten": false,
+  "no_secrets_present": true,
+  "no_account_identifiers_present": true
+}

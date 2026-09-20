@@ -1,0 +1,42 @@
+{
+  "evidence_type": "MODEL_IDENTITY_VERIFICATION",
+  "verification_method": "Live HTTP requests to the Hugging Face Hub API and raw repository file endpoints, metadata-only -- no weight shards downloaded during this verification step",
+  "repository": "mistralai/Mistral-Small-4-119B-2603",
+  "revision": "a11f36bebf709121056b1dbcc943d1c6afbe494d",
+  "revision_matches_registry": true,
+  "tokenizer_repository": "mistralai/Mistral-Small-4-119B-2603",
+  "tokenizer_revision": "a11f36bebf709121056b1dbcc943d1c6afbe494d",
+  "architecture": "Mistral3ForConditionalGeneration",
+  "model_type": "mistral3",
+  "architecture_notes": "MoE (moe_intermediate_size, first_k_dense_replace present) with MLA-style attention (kv_lora_rank present) and a vision tower (vision_config present) -- multimodal, hybrid dense/MoE.",
+  "published_precision": "FP8 (E4M3, static activation scaling) for the main MoE weights; BF16 retained for model.vision_tower, model.multi_modal_projector, and lm_head (quantization_config.modules_to_not_convert)",
+  "quantization_config": {
+    "quant_method": "fp8",
+    "activation_scheme": "static",
+    "dequantize": false,
+    "modules_to_not_convert": ["model.vision_tower", "model.multi_modal_projector", "lm_head"]
+  },
+  "parameter_count": {
+    "total": 119401317952,
+    "fp8_e4m3_params": 117879865344,
+    "bf16_params": 1521452032
+  },
+  "weight_index_total_size_bytes": 120922770560,
+  "weight_file_shards": 3,
+  "transformers_version_floor_declared_in_config": "5.3.0.dev0",
+  "license_identifier": "apache-2.0",
+  "license_source": "Hugging Face repository cardData.license (metadata tag) ONLY",
+  "license_repository_source_verified": "NO -- no LICENSE/LICENSE.md/LICENCE/LICENSE.txt file was found in the repository at this revision (all returned 404). This is weaker evidence than the Qwen3.8-27B candidate's verified LICENSE file; the apache-2.0 claim rests on the metadata tag alone.",
+  "runtime_support_evidence": {
+    "vllm": "Explicitly recommended in the model's own README ('vLLM (Recommended)' section) with an official launch command: vllm serve mistralai/Mistral-Small-4-119B-2603 --max-model-len 262144 --tensor-parallel-size 2 --attention-backend FLASH_ATTN_MLA --tool-call-parser mistral --enable-auto-tool-choice --reasoning-parser mistral --max_num_batched_tokens 16384 --max_num_seqs 128 --gpu_memory_utilization 0.8",
+    "native_transformers": "README explicitly states: 'you need to install the main branch of Transformers to use Mistral Small 4' (git+https://github.com/huggingface/transformers.git) -- the current stable PyPI release (5.17.0) is NOT confirmed sufficient for native load. This is why vLLM, not native Transformers, was selected as the runtime for this candidate.",
+    "sglang": "Listed as a supported deployment option in the README; not selected this phase.",
+    "trust_remote_code": "Not mentioned as required anywhere in the README or the official vLLM launch command."
+  },
+  "current_package_versions_checked_live": {
+    "vllm_pypi_latest": "0.29.0",
+    "mistral_common_pypi_latest": "1.11.7",
+    "transformers_pypi_latest": "5.17.0"
+  },
+  "verification_timestamp": "2026-09-20"
+}

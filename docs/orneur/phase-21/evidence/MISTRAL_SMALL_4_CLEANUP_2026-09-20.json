@@ -1,0 +1,12 @@
+{
+  "evidence_type": "CLEANUP_CONFIRMATION",
+  "source": "modal app list / modal container list / modal volume list (supported CLI), executed live after both attempts completed",
+  "phase_created_apps": [
+    {"app_id": "ap-Fj6oYBxK5bypFA48a5tbL7", "description": "orneur-p21b412-mistral-small4-smoke (attempt 1)", "state": "stopped", "tasks": 0},
+    {"app_id": "ap-22K84a5IApJkfbc5kAgulp", "description": "orneur-p21b412-mistral-small4-smoke (attempt 2)", "state": "stopped", "tasks": 0}
+  ],
+  "active_containers_count": 0,
+  "persistent_volumes_created_by_phase": 0,
+  "cleanup_confirmed": true,
+  "note": "Both ephemeral apps created by this phase's two live attempts show state=stopped with 0 running tasks. No persistent Modal Volume was ever declared by either attempt's image/app definition. The two long-standing apps from earlier phases (ap-3SsUyZqsrF40kCD1LqgGl8, ap-DZEWfb4YcEE2s2bXh7ifnD) are unrelated pre-existing deployed apps with 0 running tasks, not created by this phase."
+}

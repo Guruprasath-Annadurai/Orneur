@@ -1,0 +1,14 @@
+{
+  "evidence_type": "MODAL_BILLING_SNAPSHOT_BEFORE_GPU_LAUNCH",
+  "source": "modal billing summary (supported CLI), executed live immediately before GPU allocation",
+  "metered_cost_usd": 0.45,
+  "billed_cost_usd": 0.0,
+  "credits_applied_usd": -0.45,
+  "active_apps": [
+    {"app_id": "ap-3SsUyZqsrF40kCD1LqgGl8", "state": "deployed", "tasks": 0},
+    {"app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD", "state": "deployed", "tasks": 0}
+  ],
+  "active_containers_count": 0,
+  "persistent_volumes_count": 0,
+  "note": "Both listed apps are pre-existing deployed apps from earlier phases with 0 running tasks (idle, not consuming GPU) -- unrelated to this Mistral Small 4 smoke."
+}

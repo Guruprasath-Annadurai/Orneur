@@ -1,0 +1,14 @@
+{
+  "evidence_type": "MODAL_BILLING_SNAPSHOT_AFTER_CLEANUP",
+  "source": "modal billing summary (supported CLI), executed live after both attempts completed and cleanup was confirmed",
+  "metered_cost_usd": 3.69,
+  "billed_cost_usd": 0.0,
+  "metered_delta_usd_this_phase": 3.24,
+  "billed_delta_usd_this_phase": 0.0,
+  "owner_billed_delta_usd": 0.0,
+  "active_apps_after": 2,
+  "active_apps_after_note": "Both are the same pre-existing idle deployed apps present before this phase (0 tasks each); zero phase-created apps remain active.",
+  "active_containers_count": 0,
+  "persistent_volumes_count": 0,
+  "note": "Total metered delta of ~$3.24 across both live attempts (attempt 1: brief failure before weight download, ~$0.12; attempt 2: ~18 minutes on 2x H200 including a full ~121GB weight download before the profiling-stage crash, ~$3.12) was covered entirely by included/promotional credit. Owner billed amount remained exactly $0.00 throughout."
+}

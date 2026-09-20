@@ -1,0 +1,31 @@
+{
+  "evidence_type": "RUNTIME_ENVIRONMENT_RECORD",
+  "gpu_provider": "Modal",
+  "gpu_model": "NVIDIA H200",
+  "gpu_count": 2,
+  "tensor_parallel_size": 2,
+  "precision": "FP8 (E4M3, static activation scaling, as published) with BF16 vision/projector/lm_head components",
+  "trust_remote_code": false,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "vllm_version": "0.29.0",
+      "transformers_version": "5.17.0 (auto-resolved by pip from vllm==0.29.0's loose 'transformers>=5.10.4' constraint)",
+      "torch_version": "2.13.0+cu130",
+      "outcome": "FAILED -- RUNTIME_VERSION_MISMATCH before weight download began"
+    },
+    {
+      "attempt_number": 2,
+      "vllm_version": "0.29.0",
+      "transformers_version": "5.10.4 (explicitly pinned as corrective action -- vLLM 0.29.0's own stated minimum-tested floor)",
+      "torch_version": "2.13.0+cu130",
+      "tokenizers_version": "0.22.2 (downgraded transitively by the transformers==5.10.4 pin)",
+      "outcome": "FAILED -- CUDA_KERNEL_FAILURE during model profiling, after successful weight load"
+    }
+  ],
+  "vllm_serve_command": "vllm serve mistralai/Mistral-Small-4-119B-2603 --revision a11f36bebf709121056b1dbcc943d1c6afbe494d --tokenizer-revision a11f36bebf709121056b1dbcc943d1c6afbe494d --tensor-parallel-size 2 --attention-backend FLASH_ATTN_MLA --max-model-len 4096 --max-num-seqs 8 --max-num-batched-tokens 4096 --gpu-memory-utilization 0.85 --port 8000",
+  "runtime_flags_note": "--max-model-len/--max-num-seqs/--max-num-batched-tokens were reduced from the model's own officially documented values (262144/128/16384) since this is a trivial compatibility smoke, not a production capacity test. --tensor-parallel-size 2 and --attention-backend FLASH_ATTN_MLA were kept identical to the model's own documented launch command (evidence-based topology, not inflated or under-provisioned).",
+  "topology_calculation": "Published weight footprint: 117,879,865,344 FP8 params (~117.9GB at 1 byte/param) + 1,521,452,032 BF16 params (~3.0GB at 2 bytes/param) = ~120.9GB total, per the repository's own model.safetensors.index.json (total_size=120922770560 bytes). A single H200 (141GB) would leave only ~20GB headroom for CUDA context, KV cache, and vLLM's own profiling/graph-capture overhead -- the model's own officially documented vLLM launch command specifies --tensor-parallel-size 2, which was adopted directly as the evidence-based topology rather than guessed.",
+  "vram_measurement_limitation": "peak_allocated_vram_gb/peak_reserved_vram_gb in the manifest reflect only the Modal Function's own (API-server) process CUDA context, which is 0.0 on both GPUs -- vLLM's tensor-parallel executor spawns separate OS worker subprocesses (Worker_TP0, Worker_TP1) that hold the actual GPU memory allocations for the loaded weights, and those subprocess-level CUDA statistics were not captured by the parent process before the crash. This is an honest measurement gap, not a fabricated zero: real GPU memory was allocated (weight load succeeded in attempt 2 before the profiling-stage crash), but its magnitude was not observed by any process this smoke queried.",
+  "verification_timestamp": "2026-09-20"
+}
