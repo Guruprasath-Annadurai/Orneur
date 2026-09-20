@@ -43,6 +43,7 @@ from pathlib import Path
 REGISTRY_SCHEMA_VERSION = "genesis-candidate-execution-registry-v2"
 
 _HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 
 # Locked registered name sets (Phase 21B.4.10.1 §9) -- mirrors
 # orca.eval.frontier_stats.REGISTERED_FRONTIER_REFERENCES /
@@ -128,9 +129,21 @@ class CandidateExecutionRegistry:
     frontier_references: tuple[dict, ...]
 
     @classmethod
-    def load(cls, path: Path) -> "CandidateExecutionRegistry":
+    def load(cls, path: Path, manifest_root: Path | None = None) -> "CandidateExecutionRegistry":
+        """Loads and schema-validates the registry. If `manifest_root`
+        is given, additionally enforces (Phase 21B.4.11.2 §4) that every
+        QUALIFIED deployable candidate links to a real, schema-valid,
+        digest-matching runtime qualification manifest rooted under
+        `manifest_root` -- `from_dict()` alone (used by synthetic-fixture
+        tests with no real filesystem backing) does not perform this
+        check, since it has no directory to resolve manifest paths
+        against."""
         data = json.loads(Path(path).read_text())
-        return cls.from_dict(data)
+        registry = cls.from_dict(data)
+        if manifest_root is not None:
+            for entry in registry.deployable_candidates:
+                verify_qualified_manifest_linkage(entry, manifest_root)
+        return registry
 
     @classmethod
     def from_dict(cls, data: dict) -> "CandidateExecutionRegistry":
@@ -315,3 +328,90 @@ def _validate(data: dict) -> None:
                 )
         else:  # OPEN_WEIGHT
             _require_hex40_revision(entry["exact_immutable_revision"], f"frontier reference {name!r}")
+
+
+def verify_qualified_manifest_linkage(entry: dict, manifest_root: Path) -> None:
+    """Phase 21B.4.11.2 §4: a generic (non-Qwen-specific) enforcement
+    that every QUALIFIED deployable candidate links to a real,
+    schema-valid, identity-matching, digest-matching runtime
+    qualification manifest. UNQUALIFIED candidates do not need a
+    qualification manifest and this function returns immediately for
+    them. `manifest_root` is the repository-controlled root that every
+    `qualification_manifest_path` must resolve underneath -- a path
+    that escapes it (via `..` or a symlink) is rejected outright rather
+    than silently followed."""
+    # Imported locally to avoid a module-level import cycle risk and to
+    # keep this registry module's top-level import surface unchanged
+    # for callers that never touch manifest linkage.
+    from orca.eval.runtime_qualification_manifest import (
+        RuntimeQualificationManifestError,
+        VALID_QUALIFICATION_TYPES,
+        load_manifest,
+        require_candidate_manifest,
+        sha256_of_manifest,
+    )
+
+    name = entry["canonical_candidate_name"]
+    if entry.get("runtime_qualification_status") != "QUALIFIED":
+        return
+
+    for field in ("qualification_type", "qualification_manifest_path", "qualification_manifest_digest_sha256"):
+        if not entry.get(field):
+            raise RegistrySchemaError(
+                f"QUALIFIED deployable candidate {name!r} is missing required manifest-linkage field {field!r}"
+            )
+
+    qualification_type = entry["qualification_type"]
+    if qualification_type not in VALID_QUALIFICATION_TYPES:
+        raise RegistrySchemaError(
+            f"QUALIFIED deployable candidate {name!r} has unrecognized qualification_type {qualification_type!r}"
+        )
+
+    digest = entry["qualification_manifest_digest_sha256"]
+    if not _HEX64_RE.match(digest):
+        raise RegistrySchemaError(
+            f"QUALIFIED deployable candidate {name!r} has a malformed qualification_manifest_digest_sha256 "
+            f"(must be exactly 64 lowercase hex characters): {digest!r}"
+        )
+
+    manifest_root = Path(manifest_root).resolve()
+    raw_path = entry["qualification_manifest_path"]
+    candidate_path = (manifest_root / raw_path).resolve()
+    try:
+        candidate_path.relative_to(manifest_root)
+    except ValueError:
+        raise RegistrySchemaError(
+            f"QUALIFIED deployable candidate {name!r} qualification_manifest_path {raw_path!r} resolves "
+            "outside the repository-controlled manifest root -- rejected as a path-escape/symlink-ambiguity risk."
+        )
+    if not candidate_path.is_file():
+        raise RegistrySchemaError(
+            f"QUALIFIED deployable candidate {name!r} qualification_manifest_path {raw_path!r} does not exist"
+        )
+
+    try:
+        manifest_data = load_manifest(candidate_path)
+    except RuntimeQualificationManifestError as e:
+        raise RegistrySchemaError(
+            f"QUALIFIED deployable candidate {name!r} qualification manifest failed schema validation: {e}"
+        ) from e
+
+    try:
+        require_candidate_manifest(
+            manifest_data,
+            candidate=name,
+            repository=entry["artifact_repository"],
+            revision=entry["exact_immutable_revision"],
+            qualification_type=qualification_type,
+        )
+    except RuntimeQualificationManifestError as e:
+        raise RegistrySchemaError(
+            f"QUALIFIED deployable candidate {name!r} qualification manifest identity mismatch: {e}"
+        ) from e
+
+    recomputed_digest = sha256_of_manifest(manifest_data)
+    if recomputed_digest != digest:
+        raise RegistrySchemaError(
+            f"QUALIFIED deployable candidate {name!r} manifest digest mismatch: registry records "
+            f"{digest!r}, recomputed {recomputed_digest!r} from the manifest's current content."
+        )

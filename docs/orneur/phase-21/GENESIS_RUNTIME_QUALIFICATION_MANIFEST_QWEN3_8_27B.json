@@ -1,5 +1,7 @@
 {
   "schema_version": "genesis-runtime-qualification-manifest-v1",
+  "evidence_protocol_generation": "LEGACY_RECONCILED_V1",
+  "evidence_protocol_generation_note": "Phase 21B.4.11.2 §1: this is the ONE narrow grandfathered exception -- the historical live `modal run` execution log genuinely no longer exists and is not fabricated here. Every candidate smoke executed AFTER this manifest must use evidence_protocol_generation=STRICT_RUNTIME_SMOKE_V2, which requires a durably preserved raw_execution_log_artifact and its SHA-256 before the candidate may be marked QUALIFIED at all.",
   "qualification_id": "phase-21b.4.11-qwen3.8-27b-h200-20260919",
   "candidate": "Qwen3.8-27B",
   "artifact_repository": "Qwen/Qwen3.8-27B",
@@ -38,6 +40,7 @@
   "attempt_1_failure_class": "OTHER",
   "attempt_1_failure_detail": "Not a model/runtime incompatibility. Model weights loaded successfully; the smoke script's own chat-template result-extraction code raised AttributeError (tokenizer.apply_chat_template returned a BatchEncoding rather than a raw tensor, and the script accessed .shape on it directly). Root-caused and fixed before attempt 2.",
   "attempt_2_result": "SUCCEEDED",
+  "attempt_2_failure_class": null,
   "load_time_seconds": 86.1179428100586,
   "synthetic_prompt_class": "TRIVIAL_SYNTHETIC_NON_BENCHMARK",
   "synthetic_prompt_sha256": "6496a817310b22a974cfbcf819808469dbf5e0fcf7304b34efc12666e52a02d2",
@@ -60,6 +63,8 @@
   "cleanup_status": "CONFIRMED_ZERO_ACTIVE_RESOURCES",
   "active_resources_after": "NONE -- both ephemeral apps (ap-7aLzcavYEUkXYlugXXwils, ap-vVL4iSijNrIy2gincX2HKk) reported state=stopped, 0 active containers via `modal container list`, 0 volumes via `modal volume list`",
   "created_at": "2026-09-19",
+  "execution_time": "NOT_CAPTURED",
+  "execution_time_note": "The exact wall-clock time of the live smoke was not preserved as durable evidence at execution time (Phase 21B.4.11) -- only the calendar date is known with confidence. Not invented here per Phase 21B.4.11.2 §8; permitted only under evidence_protocol_generation=LEGACY_RECONCILED_V1.",
   "source_repo_sha": "961ffebae6c0cfac7bb269a77b34e99b039bee2f",
   "billing_gate_reconciliation": {
     "billing_gate_at_time_of_execution": "NOT_INDEPENDENTLY_PROVEN",
