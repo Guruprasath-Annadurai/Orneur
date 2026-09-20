@@ -491,9 +491,20 @@ def verify_candidate_qualification_end_to_end(
     canonical_candidate_name: str,
     *,
     manifest_root: Path | None = None,
+    require_qualified: bool = True,
 ) -> tuple[dict, dict | None]:
-    """Phase 21B.4.11.4 §5: the SINGLE public acceptance API for a
-    candidate's runtime-qualification claim. One call establishes:
+    """Phase 21B.4.11.4 §5, hardened 21B.4.12 §2: the SINGLE public
+    acceptance API for a candidate's runtime-qualification claim. By
+    default (`require_qualified=True`, the fail-closed default) this
+    function ALSO requires `runtime_qualification_status == "QUALIFIED"`
+    and raises `RegistrySchemaError` otherwise -- an UNQUALIFIED,
+    BLOCKED, or otherwise-not-yet-qualified candidate can never be
+    returned as if it were accepted. A caller that genuinely needs to
+    *inspect* a candidate's registry entry without asserting
+    acceptance (e.g. a status dashboard, not a go/no-go gate) must pass
+    `require_qualified=False` explicitly -- there is no default that
+    silently allows an UNQUALIFIED candidate to look like an accepted
+    one. One call establishes:
 
       1.  the registry itself is structurally valid (schema, name sets,
           candidate_class, revision formats, cross-wiring checks --
@@ -524,12 +535,23 @@ def verify_candidate_qualification_end_to_end(
     linkage()`, which this function does not duplicate; step 5 happens
     inside manifest loading, which those call transitively).
 
-    Returns `(registry_entry, manifest_data)` -- `manifest_data` is
+    Returns `(registry_entry, manifest_data)`. With the default
+    `require_qualified=True`, `manifest_data` is always a real manifest
+    dict (never `None`) because a non-QUALIFIED candidate raises before
+    returning. With `require_qualified=False`, `manifest_data` is
     `None` for an UNQUALIFIED candidate, which has no manifest to
-    return. Raises `RegistrySchemaError` on any failure, or `KeyError`
-    if no candidate with that name exists in the registry."""
+    return. Raises `RegistrySchemaError` on any failure (including "not
+    QUALIFIED" when acceptance was requested), or `KeyError` if no
+    candidate with that name exists in the registry."""
     registry = CandidateExecutionRegistry.load(registry_path, manifest_root=manifest_root)
     entry = registry.find_deployable(canonical_candidate_name)
+    if require_qualified and entry.get("runtime_qualification_status") != "QUALIFIED":
+        raise RegistrySchemaError(
+            f"candidate {canonical_candidate_name!r} is not QUALIFIED "
+            f"(runtime_qualification_status={entry.get('runtime_qualification_status')!r}) -- "
+            "the qualification-acceptance API refuses to return a non-accepted candidate as if it were "
+            "accepted. Pass require_qualified=False explicitly for a non-acceptance inspection workflow."
+        )
     root = Path(manifest_root).resolve() if manifest_root is not None else _derive_manifest_root(Path(registry_path))
     manifest_data = verify_qualified_manifest_linkage(entry, root)
     return entry, manifest_data

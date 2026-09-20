@@ -532,6 +532,20 @@ def test_attempt_count_two_requires_attempt_2_not_not_attempted():
         validate_manifest(data)
 
 
+def test_attempt_count_three_rejected():
+    """Phase 21B.4.12 §1: no blind retry loops -- the manifest schema
+    itself caps live model-load attempts at 2, mirroring the original
+    Phase 21B.4.11 §9 policy."""
+    data = _valid_manifest()
+    data["load_attempt_count"] = 3
+    data["attempt_1_result"] = "FAILED"
+    data["attempt_1_failure_class"] = "OTHER"
+    data["attempt_2_result"] = "FAILED"
+    data["attempt_2_failure_class"] = "OTHER"
+    with pytest.raises(RuntimeQualificationManifestError, match="load_attempt_count must be <= 2"):
+        validate_manifest(data)
+
+
 def test_qualified_result_with_no_successful_attempt_rejected():
     data = _valid_manifest()
     data["attempt_1_result"] = "FAILED"
@@ -1226,6 +1240,28 @@ def test_end_to_end_verifier_accepts_real_qwen_candidate():
     entry, manifest = verify_candidate_qualification_end_to_end(REGISTRY_PATH, "Qwen3.8-27B", manifest_root=REPO_ROOT)
     assert entry["canonical_candidate_name"] == "Qwen3.8-27B"
     assert manifest["candidate"] == "Qwen3.8-27B"
+    assert manifest is not None  # require_qualified=True default never returns a null manifest
+
+
+def test_end_to_end_verifier_rejects_unqualified_candidate_by_default():
+    """Phase 21B.4.12 §2: the acceptance API must never return
+    (UNQUALIFIED entry, None) as if it were a successful acceptance --
+    it must raise instead."""
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+    with pytest.raises(RegistrySchemaError, match="is not QUALIFIED"):
+        verify_candidate_qualification_end_to_end(REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT)
+
+
+def test_end_to_end_verifier_allows_unqualified_inspection_when_explicitly_requested():
+    """A non-acceptance inspection workflow may opt out of the
+    fail-closed default explicitly."""
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+    entry, manifest = verify_candidate_qualification_end_to_end(
+        REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT, require_qualified=False
+    )
+    assert entry["canonical_candidate_name"] == "Mistral Small 4"
+    assert entry["runtime_qualification_status"] != "QUALIFIED"
+    assert manifest is None
 
 
 def test_end_to_end_verifier_rejects_registry_digest_mismatch(tmp_path):

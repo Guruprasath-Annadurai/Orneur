@@ -372,9 +372,17 @@ def validate_manifest(data: dict) -> None:
     if data["persistent_volume_used"] is not False:
         raise RuntimeQualificationManifestError("persistent_volume_used must be false")
 
-    # ── Phase 21B.4.11.3 §4: load_attempt_count, gated by DEFERRED ────
+    # ── Phase 21B.4.11.3 §4, bounded 21B.4.12 §1: load_attempt_count ──
+    # Section 9 of the original Phase 21B.4.11 spec caps live model-load
+    # attempts at 2 ("no blind retry loops") -- the manifest schema must
+    # enforce that ceiling too, not just the executing agent's own
+    # discipline.
     min_attempts = 0 if qualification_type == DEFERRED_TYPE else 1
     _require_int_at_least(data, "load_attempt_count", min_attempts)
+    if data["load_attempt_count"] > 2:
+        raise RuntimeQualificationManifestError(
+            f"load_attempt_count must be <= 2 (got {data['load_attempt_count']!r}) -- no blind retry loops"
+        )
     load_attempt_count = data["load_attempt_count"]
     zero_attempts = load_attempt_count == 0
     not_qualified = qualification_type not in QUALIFIED_TYPES
