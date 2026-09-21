@@ -107,12 +107,35 @@ def test_real_registry_qwen_flash_next_is_blocked_by_license():
 def test_real_registry_runtime_unqualified_candidates_are_still_eligible():
     """The Phase 21B.4.10.1 fix in one assertion: runtime_qualification_
     status=UNQUALIFIED must never, by itself, block runtime_smoke_
-    eligibility -- that would make runtime qualification unresolvable."""
+    eligibility -- that would make runtime qualification unresolvable.
+    Mistral Small 4 became QUALIFIED via its Phase 21B.4.12.3 live
+    retry, so only GLM-5.3-Flash (still genuinely UNQUALIFIED and
+    ELIGIBLE) is checked here; Mistral's QUALIFIED state is covered
+    separately by
+    test_real_registry_mistral_small_4_runtime_qualified_phase_21b_4_12_3
+    below. (Qwen3.8-Flash-Next is UNQUALIFIED but BLOCKED for an
+    unrelated identity/license reason, so it does not fit this
+    assertion either.)"""
     registry = CandidateExecutionRegistry.load(REGISTRY_PATH)
-    for name in ("Mistral Small 4", "GLM-5.3-Flash"):
-        entry = registry.find_deployable(name)
-        assert entry["runtime_qualification_status"] == "UNQUALIFIED"
-        assert entry["runtime_smoke_eligibility"] == "ELIGIBLE"
+    entry = registry.find_deployable("GLM-5.3-Flash")
+    assert entry["runtime_qualification_status"] == "UNQUALIFIED"
+    assert entry["runtime_smoke_eligibility"] == "ELIGIBLE"
+
+
+def test_real_registry_mistral_small_4_runtime_qualified_phase_21b_4_12_3():
+    """Phase 21B.4.12.3 live retry qualified Mistral Small 4 for
+    production-serving runtime compatibility (vLLM server, official
+    image, real synthetic request/response) -- not FRONTIER_CLASS,
+    BENCHMARK_QUALIFIED, or GENESIS_SELECTED, which this registry
+    schema does not even have fields for. The historical Phase
+    21B.4.12 FAILED attempt is preserved as an immutable, separate
+    manifest on disk (see tests/test_runtime_qualification_manifest.py)
+    and is not erased by this later success."""
+    registry = CandidateExecutionRegistry.load(REGISTRY_PATH)
+    entry = registry.find_deployable("Mistral Small 4")
+    assert entry["runtime_qualification_status"] == "QUALIFIED"
+    assert entry["qualification_type"] == "PRODUCTION_SERVING_RUNTIME_QUALIFIED"
+    assert entry["runtime_smoke_eligibility"] == "ELIGIBLE"
 
 
 def test_real_registry_qwen3_8_27b_runtime_qualified_phase_21b_4_11():

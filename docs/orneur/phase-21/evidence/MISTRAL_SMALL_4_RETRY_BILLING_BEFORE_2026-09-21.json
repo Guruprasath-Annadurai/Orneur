@@ -1,0 +1,13 @@
+{
+  "evidence_type": "MODAL_BILLING_SNAPSHOT_BEFORE_GPU_ALLOCATION",
+  "source": "modal billing summary (supported CLI), executed live immediately before GPU allocation for this retry",
+  "metered_cost_usd": 3.39,
+  "billed_cost_usd": 0.0,
+  "credits_usd": -3.39,
+  "active_apps_before": 2,
+  "active_apps_before_note": "Both are the same pre-existing idle deployed apps present before this phase (0 tasks each); the two CPU-only preflight apps from this phase (ap-nvJeMFdExP081VfQS3IZFz, ap-njul8E75ycZUZSWk8oKSz4) are already stopped with 0 tasks -- zero phase-created apps remain active before GPU allocation.",
+  "active_containers_count": 0,
+  "persistent_volumes_count": 0,
+  "captured_at": "2026-09-21T06:28:09+00:00",
+  "note": "CPU-only preflight (image pull + entrypoint clearing + environment inspection) consumed a small metered delta of approximately $0.01 above the retry billing gate's captured total_usage_shown_usd=3.38, fully covered by included/promotional credit. Owner billed amount remains exactly $0.00. This is a distinct, fresh billing-before snapshot for this retry -- it does not reuse the historical Phase 21B.4.12 billing_before artifact."
+}

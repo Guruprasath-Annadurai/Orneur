@@ -1,0 +1,65 @@
+{
+  "evidence_type": "RUNTIME_ENVIRONMENT_RECORD",
+  "gpu_provider": "Modal",
+  "gpu_model": "NVIDIA H200",
+  "gpu_count": 2,
+  "tensor_parallel_size": 2,
+  "precision": "FP8 (E4M3, static activation scaling, as published) with BF16 vision_tower/multi_modal_projector/lm_head components",
+  "trust_remote_code": false,
+  "image": {
+    "repository": "vllm/vllm-openai",
+    "tag": "v0.29.0",
+    "resolved_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
+    "digest_resolution_source": "Docker Hub API (https://hub.docker.com/v2/repositories/vllm/vllm-openai/tags/v0.29.0), retrieved live 2026-09-21. This is the linux/amd64 platform-specific manifest digest (Modal images must be linux/amd64); the multi-arch manifest-list digest is sha256:c2914767605584b6d8f45686b82de173ecc99e781897aa3d0a66dacd72c51ae1.",
+    "reference_used_for_pull": "vllm/vllm-openai@sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b (digest-qualified reference, not the tag alone -- Modal's Image.from_registry() accepted the standard OCI repo@digest syntax directly)",
+    "entrypoint_cleared": true,
+    "entrypoint_verification": "Confirmed live via /proc/1/cmdline inside a CPU-only preflight container: PID 1 was Modal's own container entrypoint wrapper ('/bin/dumb-init -- python -u -R --check-hash-based-pycs never -m modal._container_entrypoint'), not 'vllm serve' -- the image's inherited ENTRYPOINT ['vllm','serve'] did not launch automatically."
+  },
+  "baked_environment_decision": "CPU-only preflight (before any GPU billing) inspected the official image's baked package versions: transformers 5.16.1, vllm 0.29.0, torch 2.13.0+cu130, tokenizers 0.23.2, flashinfer-python 0.6.18. Per Phase 21B.4.12.3 section 6's instruction not to blindly downgrade before inspecting the effective environment: transformers 5.16.1 is NOT the broken 5.17.0 that caused Phase 21B.4.12 attempt 1's PixtralRotaryEmbedding import failure, so the official image's own tested dependency set was preserved as-is for this retry's attempt 1 -- no transformers override was applied. This decision was validated by the live outcome: attempt 1 succeeded without any import/version error.",
+  "preflight_versions_confirmed_before_gpu": {
+    "python_version": "Python 3.12.3",
+    "torch_version": "2.13.0+cu130",
+    "vllm_version": "0.29.0",
+    "transformers_version": "5.16.1",
+    "tokenizers_version": "0.23.2",
+    "flashinfer_version": "flashinfer-python 0.6.18",
+    "nvcc_path": "/usr/local/cuda/bin/nvcc",
+    "nvcc_version": "release 13.0, V13.0.88",
+    "cuda_dir_exists": true,
+    "torch_cuda_version": "13.0"
+  },
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "vllm_version": "0.29.0",
+      "transformers_version": "5.16.1 (official image's own baked version, not overridden)",
+      "torch_version": "2.13.0+cu130",
+      "tokenizers_version": "0.23.2",
+      "flashinfer_version": "flashinfer-python 0.6.18",
+      "server_init_elapsed_seconds": 661.0494439601898,
+      "load_time_seconds_vllm_reported": 26.49,
+      "outcome": "SUCCEEDED -- server reached ready state, GET /v1/models (200) and a real streaming POST /v1/chat/completions (200) succeeded with decoded response 'READY'. However, the streaming request did not include stream_options.include_usage, so input_tokens/output_tokens/tokens_per_second were NOT_CAPTURED for this attempt -- an evidence-completeness gap, not a functional failure. This is the corrective reason attempt 2 was run: the harness's chat request was fixed to include stream_options={'include_usage': true} so genuine token counts could be captured, not because attempt 1's load, serving, or generation actually failed."
+    },
+    {
+      "attempt_number": 2,
+      "vllm_version": "0.29.0",
+      "transformers_version": "5.16.1 (official image's own baked version, not overridden -- unchanged from attempt 1)",
+      "torch_version": "2.13.0+cu130",
+      "tokenizers_version": "0.23.2",
+      "flashinfer_version": "flashinfer-python 0.6.18",
+      "server_init_elapsed_seconds": 960.5670170783997,
+      "load_time_seconds_vllm_reported": 27.67,
+      "outcome": "SUCCEEDED -- identical functional outcome to attempt 1 (server ready, GET /v1/models 200, decoded response 'READY', identical decoded_response_sha256, confirming deterministic behavior at temperature=0), this time with stream_options.include_usage=true correctly capturing genuine input_tokens=24, output_tokens=3, tokens_per_second~=15.82. This is the canonical, fully-evidenced attempt this manifest's qualification claim is based on."
+    }
+  ],
+  "canonical_attempt_for_qualification": 2,
+  "nvidia_smi_before_load": "Captured live inside the GPU function immediately before vLLM launch, both attempts: 2x NVIDIA H200, driver 580.95.05, CUDA Version 13.0, 4MiB/143771MiB used on each GPU (idle baseline), no running processes -- confirming the exact provisioned topology before any weight load began. Full text preserved verbatim in the execution log artifacts (both attempts).",
+  "vllm_serve_command": "vllm serve mistralai/Mistral-Small-4-119B-2603 --revision a11f36bebf709121056b1dbcc943d1c6afbe494d --tokenizer-revision a11f36bebf709121056b1dbcc943d1c6afbe494d --tensor-parallel-size 2 --attention-backend FLASH_ATTN_MLA --max-model-len 4096 --max-num-seqs 8 --max-num-batched-tokens 4096 --gpu-memory-utilization 0.85 --port 8000",
+  "runtime_flags_note": "Identical to Phase 21B.4.12's original launch command -- --max-model-len/--max-num-seqs/--max-num-batched-tokens reduced from the model's own officially documented production values for a conservative smoke-only footprint; --tensor-parallel-size 2 and --attention-backend FLASH_ATTN_MLA kept identical to the model's own documented launch command.",
+  "topology_calculation": "Unchanged from Phase 21B.4.12: published weight footprint ~120.9GB per the repository's own model.safetensors.index.json (independently re-verified live this retry, see model_identity evidence), leaving thin single-GPU headroom on a 141GB H200; the model's own officially documented vLLM launch command specifies --tensor-parallel-size 2, adopted directly as the evidence-based topology.",
+  "weight_file_layout_observed_live": "IMPORTANT CORRECTION vs. the model_identity evidence's HF-index-based figure, consistent across BOTH attempts: the live execution logs show vLLM loading the model via 7 files ('Parse safetensors files: 0/7'...'Loading safetensors checkpoint shards: 7/7', with the log line 'Inferred from consolidated*.safetensors files torch.bfloat16 dtype'), NOT the 3-shard model-0000X-of-00003.safetensors layout described by the repository's model.safetensors.index.json. The repository evidently publishes both a native Mistral 'consolidated*.safetensors' checkpoint format (7 files) and a separate HF-transformers-style sharded-index format (3 files); vLLM's loader selected the 7-file consolidated format. This manifest records weight_file_shards=7 as the genuinely observed value for this execution's actual loading path, honestly differing from Phase 21B.4.12's manifest (which recorded 3, sourced only from the HF index metadata and never contradicted by a completed live load in that phase, since attempt 2 of that phase crashed before this information would have been directly observable).",
+  "gpu_memory_usage_observed_live": "Genuinely observed worker-level GPU memory usage from the live vLLM worker logs, IDENTICAL in both attempts (both Worker_TP0 and Worker_TP1 reported identically each time): 'Free memory on device (137.63/139.8 GiB) on startup... Actual usage is 57.45 GiB for consumed memory (weights + non-torch), 0.54 GiB for peak activation, and 0.08 GiB for CUDAGraph memory.' Total per-GPU consumption during the smoke: approximately 58.07 GiB (57.45 + 0.54 + 0.08). This is a genuinely observed worker-level measurement, unlike Phase 21B.4.12's parent-process-only 0.0 GiB figures -- this retry's harness captured the vLLM worker's own self-reported memory accounting from its log output rather than relying solely on the parent process's torch.cuda calls (which again returned 0.0/0.0 in both attempts, preserved in the manifest as peak_allocated_vram_gb/peak_reserved_vram_gb, with this worker-level figure recorded as supplemental evidence in this artifact since the manifest schema's numeric fields are specifically the parent-process torch.cuda measurement).",
+  "architecture_note": "The live logs' model config-resolution step logged 'Resolved architecture: PixtralForConditionalGeneration' during vision-tower component resolution (both attempts) -- this is an internal vLLM multimodal-component resolution log line, not a contradiction of the top-level model architecture (Mistral3ForConditionalGeneration, per config.json's architectures field, independently re-verified via the Hugging Face API this retry). No architecture substitution occurred; the model loaded and served successfully as Mistral Small 4.",
+  "production_server_exercise": "In both attempts, a genuine OpenAI-compatible vLLM production server was started ('Starting vLLM server on http://0.0.0.0:8000', full route table logged including /v1/chat/completions), reached 'Application startup complete', served a real GET /v1/models request (200 OK) and a real streaming POST /v1/chat/completions request (200 OK) that returned a decoded, non-empty response ('READY', identical decoded_response_sha256 both times, consistent with temperature=0 determinism), then was cleanly shut down by the harness. This is the production-relevant vLLM server path, not merely a Transformers load+generate call.",
+  "verification_timestamp": "2026-09-21"
+}

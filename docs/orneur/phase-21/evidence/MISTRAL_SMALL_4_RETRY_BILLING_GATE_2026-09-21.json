@@ -1,0 +1,17 @@
+{
+  "evidence_type": "MODAL_USAGE_AND_BILLING_LIMIT_CONFIRMATION",
+  "evidence_strength": "OWNER_SCREENSHOT_VERIFIED",
+  "dashboard_path": "Modal Dashboard -> Usage & billing -> Overview",
+  "captured_date": "2026-09-21",
+  "captured_time": "approximately 11:40 owner-local time",
+  "spend_limit_usd": 0,
+  "total_spend_shown_usd": 0.00,
+  "total_usage_shown_usd": 3.38,
+  "credits_applied_usd": -3.38,
+  "usage_limit_usd_including_credits": 42.50,
+  "credits_remaining_shown_usd": "approximately 26.62",
+  "scope": "THIS PHASE 21B.4.12.3 MISTRAL SMALL 4 RETRY ONLY",
+  "historical_gate_reused": false,
+  "no_secrets_present": true,
+  "note": "Fresh owner-provided Modal dashboard screenshot, independently inspected by ChatGPT audit, showed spend_limit_usd=0, total_spend_shown_usd=0.00, total_usage_shown_usd=3.38, credits_applied_usd=-3.38, usage_limit_usd_including_credits=42.50, credits_remaining_shown_usd~=26.62 at approximately 2026-09-21 11:40 owner-local time, immediately before this retry's authorization. Live `modal billing summary` executed at the start of this phase (before any GPU work) independently reported Metered Cost 3.38, Credits -3.38, Billed Cost $0.00 -- matching the owner screenshot's total_usage_shown_usd and total_spend_shown_usd exactly. This gate does NOT reuse or alter the historical Phase 21B.4.12 billing-gate artifact (MISTRAL_SMALL_4_BILLING_GATE_2026-09-20.json), which remains an immutable historical record."
+}

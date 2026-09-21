@@ -1,0 +1,15 @@
+{
+  "evidence_type": "MODAL_BILLING_SNAPSHOT_AFTER_CLEANUP",
+  "source": "modal billing summary (supported CLI), executed live after both attempts completed and cleanup was confirmed",
+  "metered_cost_usd": 8.32,
+  "billed_cost_usd": 0.0,
+  "metered_delta_usd_this_phase": 4.94,
+  "billed_delta_usd_this_phase": 0.0,
+  "owner_billed_delta_usd": 0.0,
+  "active_apps_after": 2,
+  "active_apps_after_note": "Both are the same pre-existing idle deployed apps present before this phase (0 tasks each); zero phase-created apps remain active.",
+  "active_containers_count": 0,
+  "persistent_volumes_count": 0,
+  "captured_at": "2026-09-21T07:02:27+00:00",
+  "note": "Total metered delta of approximately $4.94 across this phase (two brief CPU-only preflight apps plus two successful GPU attempts on 2x H200, each server-ready within ~11-16 minutes plus a real synthetic request) was covered entirely by included/promotional credit. Owner billed amount remained exactly $0.00 throughout -- confirmed identical before and after ($0.00 == $0.00)."
+}

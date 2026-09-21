@@ -43,6 +43,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = REPO_ROOT / "docs/orneur/phase-21/GENESIS_CANDIDATE_EXECUTION_REGISTRY.json"
 QWEN_MANIFEST_PATH = REPO_ROOT / "docs/orneur/phase-21/GENESIS_RUNTIME_QUALIFICATION_MANIFEST_QWEN3_8_27B.json"
 MISTRAL_MANIFEST_PATH = REPO_ROOT / "docs/orneur/phase-21/GENESIS_RUNTIME_QUALIFICATION_MANIFEST_MISTRAL_SMALL_4.json"
+MISTRAL_RETRY_MANIFEST_PATH = REPO_ROOT / "docs/orneur/phase-21/GENESIS_RUNTIME_QUALIFICATION_MANIFEST_MISTRAL_SMALL_4_RETRY.json"
 
 _VALID_HEX40 = "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
 _VALID_HEX64 = "a" * 64
@@ -1309,27 +1310,30 @@ def test_end_to_end_verifier_accepts_real_qwen_candidate():
 def test_end_to_end_verifier_rejects_unqualified_candidate_by_default():
     """Phase 21B.4.12 §2: the acceptance API must never return
     (UNQUALIFIED entry, None) as if it were a successful acceptance --
-    it must raise instead."""
+    it must raise instead. Phase 21B.4.12.3: Mistral Small 4 became
+    QUALIFIED via its live retry, so GLM-5.3-Flash (still genuinely
+    UNQUALIFIED, no manifest linkage at all) is used here instead."""
     from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
     with pytest.raises(RegistrySchemaError, match="is not QUALIFIED"):
-        verify_candidate_qualification_end_to_end(REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT)
+        verify_candidate_qualification_end_to_end(REGISTRY_PATH, "GLM-5.3-Flash", manifest_root=REPO_ROOT)
 
 
 def test_end_to_end_verifier_allows_unqualified_inspection_when_explicitly_requested():
     """A non-acceptance inspection workflow may opt out of the
-    fail-closed default explicitly. Phase 21B.4.12.1 §5: for a
-    candidate that DOES carry manifest-linkage metadata (like Mistral
-    Small 4's RUNTIME_QUALIFICATION_FAILED record), the inspection path
-    returns the fully-verified manifest, not None -- None is reserved
-    for a candidate that was genuinely never smoke-tested at all."""
+    fail-closed default explicitly. GLM-5.3-Flash has never been
+    smoke-tested at all (no qualification_type/manifest linkage
+    recorded), so the inspection path correctly returns None -- see
+    test_verify_recorded_manifest_linkage_returns_real_manifest_for_failed_result
+    below for the "linked FAILED record returns a real manifest, not
+    None" case, using Mistral Small 4's historical Phase 21B.4.12
+    FAILED manifest directly."""
     from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
     entry, manifest = verify_candidate_qualification_end_to_end(
-        REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT, require_qualified=False
+        REGISTRY_PATH, "GLM-5.3-Flash", manifest_root=REPO_ROOT, require_qualified=False
     )
-    assert entry["canonical_candidate_name"] == "Mistral Small 4"
+    assert entry["canonical_candidate_name"] == "GLM-5.3-Flash"
     assert entry["runtime_qualification_status"] != "QUALIFIED"
-    assert manifest is not None
-    assert manifest["qualification_type"] == "RUNTIME_QUALIFICATION_FAILED"
+    assert manifest is None
 
 
 def test_end_to_end_verifier_rejects_registry_digest_mismatch(tmp_path):
@@ -1472,6 +1476,92 @@ def test_real_mistral_manifest_does_not_overclaim_runtime_defect():
     assert "No model defect or topology insufficiency was demonstrated" in detail
 
 
+# ── Phase 21B.4.12.3: the real, committed Mistral Small 4 QUALIFIED retry manifest ──
+
+
+def test_real_mistral_retry_manifest_validates():
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    require_candidate_manifest(
+        data,
+        candidate="Mistral Small 4",
+        repository="mistralai/Mistral-Small-4-119B-2603",
+        revision="a11f36bebf709121056b1dbcc943d1c6afbe494d",
+        qualification_type="PRODUCTION_SERVING_RUNTIME_QUALIFIED",
+    )
+
+
+def test_real_mistral_retry_manifest_bytes_verify():
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    verify_evidence_artifacts_bytes(data, REPO_ROOT)  # must not raise
+
+
+def test_real_mistral_retry_manifest_generation_evidence_is_real():
+    """Unlike the historical FAILED manifest, this QUALIFIED retry
+    manifest must carry genuinely-captured generation-phase evidence --
+    no NOT_CAPTURED sentinels for input/output tokens, latency, or
+    response hash."""
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data["input_tokens"] == 24
+    assert data["output_tokens"] == 3
+    assert data["generation_latency_seconds"] > 0
+    assert data["tokens_per_second"] > 0
+    assert data["decoded_response_sha256"] != NOT_CAPTURED
+    assert data["synthetic_prompt_sha256"] != NOT_CAPTURED
+
+
+def test_real_mistral_retry_manifest_two_successful_attempts_recorded():
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data["load_attempt_count"] == 2
+    assert data["attempt_1_result"] == "SUCCEEDED"
+    assert data["attempt_2_result"] == "SUCCEEDED"
+    assert data["attempt_1_failure_class"] is None
+    assert data["attempt_2_failure_class"] is None
+
+
+def test_real_mistral_retry_manifest_image_digest_resolved_not_invented():
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    env = json.loads((REPO_ROOT / data["evidence_artifacts"]["runtime_environment"]["path"]).read_text())
+    assert env["image"]["repository"] == "vllm/vllm-openai"
+    assert env["image"]["tag"] == "v0.29.0"
+    assert env["image"]["resolved_digest"].startswith("sha256:")
+    assert env["image"]["entrypoint_cleared"] is True
+
+
+def test_real_mistral_retry_manifest_billing_gate_fresh_and_confirmed():
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data["billing_gate_reconciliation"]["billing_gate_at_time_of_execution"] == BILLING_GATE_CONFIRMED_ZERO
+    assert data["evidence_strength"]["billing_gate_at_time_of_execution"] == "OWNER_SCREENSHOT_VERIFIED"
+    assert data["owner_billed_delta_usd"] == 0
+    assert data["billed_before_usd"] == 0
+    assert data["billed_after_usd"] == 0
+
+
+def test_real_mistral_retry_manifest_load_time_from_durable_vllm_log_line():
+    """Phase 21B.4.12.1's NOT_CAPTURED load_time_seconds correction was
+    specifically because no durable log line existed in the historical
+    FAILED attempt -- this retry's harness captured vLLM's own durable
+    'Loading weights took X seconds' log line, so load_time_seconds
+    must now be a genuinely-sourced real number, not NOT_CAPTURED."""
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data["load_time_seconds"] == pytest.approx(27.67)
+    assert data["evidence_strength"]["load_time_seconds"] == "OBSERVED_LIVE"
+
+
+def test_real_mistral_retry_manifest_source_repo_sha_matches_phase_start():
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data["source_repo_sha"] == "eb693e66794751aa18735b3c7506ed4b77b7e733"
+
+
+def test_registry_mistral_retry_manifest_digest_matches_registry_linkage():
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    mistral = next(
+        e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Mistral Small 4"
+    )
+    retry_data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert sha256_of_manifest(retry_data) == mistral["qualification_manifest_digest_sha256"]
+    assert mistral["qualification_manifest_path"].endswith("MISTRAL_SMALL_4_RETRY.json")
+
+
 def test_real_mistral_manifest_billing_gate_confirmed_for_executed_run():
     data = load_manifest(MISTRAL_MANIFEST_PATH)
     assert data["billing_gate_reconciliation"]["billing_gate_at_time_of_execution"] == BILLING_GATE_CONFIRMED_ZERO
@@ -1487,39 +1577,66 @@ def test_real_mistral_manifest_two_distinct_failure_classes_recorded():
 
 
 def test_registry_mistral_entry_links_manifest_by_matching_digest():
+    """Phase 21B.4.12.3: the registry now links Mistral Small 4 to its
+    successful RETRY manifest (QUALIFIED), not the original FAILED
+    manifest -- the historical FAILED manifest is preserved on disk
+    (see the test_real_mistral_manifest_* tests above, which load it
+    directly by its own fixed path) but is no longer the registry's
+    current linkage target."""
     registry_data = json.loads(REGISTRY_PATH.read_text())
     mistral = next(
         e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Mistral Small 4"
     )
     manifest_data = load_manifest(REPO_ROOT / mistral["qualification_manifest_path"])
     assert sha256_of_manifest(manifest_data) == mistral["qualification_manifest_digest_sha256"]
-    assert mistral["runtime_qualification_status"] == "UNQUALIFIED"  # a FAILED attempt never becomes QUALIFIED
+    assert mistral["runtime_qualification_status"] == "QUALIFIED"
+    assert mistral["qualification_type"] == "PRODUCTION_SERVING_RUNTIME_QUALIFIED"
+    assert "RETRY" in mistral["qualification_manifest_path"]
 
 
-def test_mistral_still_unqualified_and_inspectable_end_to_end():
-    """Phase 21B.4.12.1 §5: a linked RUNTIME_QUALIFICATION_FAILED
-    manifest must be returned fully verified, not treated as absent --
-    the inspection path never returns manifest=None for a failure
-    record that genuinely carries manifest-linkage metadata."""
+def test_mistral_now_qualified_and_inspectable_end_to_end():
+    """Phase 21B.4.12.3: Mistral Small 4's live retry succeeded --
+    the registry now links to the QUALIFIED retry manifest, verifiable
+    via both the require_qualified=True acceptance path and the
+    require_qualified=False inspection path (which returns the same
+    manifest for a QUALIFIED candidate, not just a non-QUALIFIED one)."""
     from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
     entry, manifest = verify_candidate_qualification_end_to_end(
         REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT, require_qualified=False
     )
-    assert entry["runtime_qualification_status"] == "UNQUALIFIED"
+    assert entry["runtime_qualification_status"] == "QUALIFIED"
     assert manifest is not None
-    assert manifest["qualification_type"] == "RUNTIME_QUALIFICATION_FAILED"
+    assert manifest["qualification_type"] == "PRODUCTION_SERVING_RUNTIME_QUALIFIED"
     assert manifest["candidate"] == "Mistral Small 4"
     assert sha256_of_manifest(manifest) == entry["qualification_manifest_digest_sha256"]
 
+    entry2, manifest2 = verify_candidate_qualification_end_to_end(
+        REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT, require_qualified=True
+    )
+    assert manifest2 is not None
+    assert sha256_of_manifest(manifest2) == sha256_of_manifest(manifest)
 
-def test_verify_recorded_manifest_linkage_returns_real_manifest_for_failed_result():
+
+def test_verify_recorded_manifest_linkage_returns_real_manifest_for_historical_failed_result():
+    """Phase 21B.4.12.1 §5 behavior (a linked RUNTIME_QUALIFICATION_FAILED
+    manifest returns fully verified, not None) is still exercised here
+    using Mistral Small 4's historical Phase 21B.4.12 FAILED manifest
+    directly -- that manifest and its evidence bundle remain byte-
+    identical and independently verifiable on disk even though the
+    registry's current linkage now points at the later successful
+    retry (Phase 21B.4.12.3) instead."""
     from orca.eval.candidate_registry import verify_recorded_manifest_linkage
 
-    registry_data = json.loads(REGISTRY_PATH.read_text())
-    mistral = next(
-        e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Mistral Small 4"
-    )
-    manifest = verify_recorded_manifest_linkage(mistral, REPO_ROOT)
+    historical_manifest = load_manifest(MISTRAL_MANIFEST_PATH)
+    entry = {
+        "canonical_candidate_name": "Mistral Small 4",
+        "artifact_repository": historical_manifest["artifact_repository"],
+        "exact_immutable_revision": historical_manifest["exact_revision"],
+        "qualification_type": "RUNTIME_QUALIFICATION_FAILED",
+        "qualification_manifest_path": "docs/orneur/phase-21/GENESIS_RUNTIME_QUALIFICATION_MANIFEST_MISTRAL_SMALL_4.json",
+        "qualification_manifest_digest_sha256": sha256_of_manifest(historical_manifest),
+    }
+    manifest = verify_recorded_manifest_linkage(entry, REPO_ROOT)
     assert manifest is not None
     assert manifest["qualification_type"] == "RUNTIME_QUALIFICATION_FAILED"
 

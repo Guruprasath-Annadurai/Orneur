@@ -1,0 +1,22 @@
+{
+  "evidence_type": "MODEL_IDENTITY_RECORD",
+  "repository": "mistralai/Mistral-Small-4-119B-2603",
+  "revision": "a11f36bebf709121056b1dbcc943d1c6afbe494d",
+  "revision_verification": "Re-verified live via Hugging Face Hub API (GET /api/models/mistralai/Mistral-Small-4-119B-2603/revision/a11f36bebf709121056b1dbcc943d1c6afbe494d), retrieved 2026-09-21. Response sha field matches the pinned revision exactly. gated=false, private=false, disabled=false -- no material change from Phase 21B.4.12's original identity verification.",
+  "tokenizer_repository": "mistralai/Mistral-Small-4-119B-2603",
+  "tokenizer_revision": "a11f36bebf709121056b1dbcc943d1c6afbe494d",
+  "architecture": "Mistral3ForConditionalGeneration",
+  "model_type": "mistral3",
+  "license_identifier": "apache-2.0",
+  "license_source": "cardData.license metadata tag (no LICENSE/LICENSE.md file in the repository at this revision, consistent with Phase 21B.4.12's original finding -- unchanged)",
+  "quantization_config": {
+    "quant_method": "fp8",
+    "modules_to_not_convert": ["model.vision_tower", "model.multi_modal_projector", "lm_head"]
+  },
+  "weight_index_verification": "Re-fetched model.safetensors.index.json live at this revision, retrieved 2026-09-21: metadata.total_parameters=119401317952, metadata.total_size=120922770560 bytes (~120.9GB) -- identical to Phase 21B.4.12's original findings, confirming no material change to the published weight footprint since the prior phase.",
+  "weight_file_shards": 3,
+  "total_parameters": 119401317952,
+  "total_size_bytes": 120922770560,
+  "no_material_contradiction_found": true,
+  "verification_timestamp": "2026-09-21"
+}

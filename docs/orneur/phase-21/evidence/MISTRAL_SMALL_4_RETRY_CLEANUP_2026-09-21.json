@@ -1,0 +1,14 @@
+{
+  "evidence_type": "CLEANUP_CONFIRMATION",
+  "source": "modal app list / modal container list / modal volume list (supported CLI), executed live after both attempts completed",
+  "phase_created_apps": [
+    {"app_id": "ap-njul8E75ycZUZSWk8oKSz4", "description": "orneur-p21b4123-mistral-retry-preflight (initial, failed CPU python-version detection)", "state": "stopped", "tasks": 0},
+    {"app_id": "ap-nvJeMFdExP081VfQS3IZFz", "description": "orneur-p21b4123-mistral-retry-preflight (corrected, succeeded)", "state": "stopped", "tasks": 0},
+    {"app_id": "ap-1LRQ165VR580pBsLs2qq8m", "description": "orneur-p21b4123-mistral-retry-attempt1", "state": "stopped", "tasks": 0},
+    {"app_id": "ap-jQWsp16QbCvvrzbtrTmHN9", "description": "orneur-p21b4123-mistral-retry-attempt2", "state": "stopped", "tasks": 0}
+  ],
+  "active_containers_count": 0,
+  "persistent_volumes_created_by_phase": 0,
+  "cleanup_confirmed": true,
+  "note": "All four ephemeral apps created by this retry (two CPU-only preflight apps and both GPU attempt apps) show state=stopped with 0 running tasks. No persistent Modal Volume was ever declared by any app/image definition this phase. The two long-standing apps from earlier phases (ap-3SsUyZqsrF40kCD1LqgGl8, ap-DZEWfb4YcEE2s2bXh7ifnD) are unrelated pre-existing deployed apps with 0 running tasks, not created by this phase. Both GPU attempts succeeded functionally; attempt 2 was run as a corrective action to capture complete generation-phase token-usage evidence (not because attempt 1 failed), staying within the 2-attempt budget."
+}
