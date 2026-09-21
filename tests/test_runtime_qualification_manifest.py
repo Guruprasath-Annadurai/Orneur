@@ -29,8 +29,11 @@ from orca.eval.runtime_qualification_manifest import (
     EVIDENCE_PROTOCOL_STRICT,
     MANIFEST_SCHEMA_VERSION,
     NOT_CAPTURED,
+    PRODUCTION_SERVING_TYPE,
     RUNTIME_LOADED_WEIGHT_FILES_FIELD,
     RUNTIME_WORKER_MEMORY_FIELD,
+    SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD,
+    SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD,
     RuntimeQualificationManifestError,
     canonical_json_bytes,
     load_manifest,
@@ -1743,6 +1746,134 @@ def test_mistral_retry_end_to_end_verifier_passes_after_reconciliation():
     assert manifest["qualification_type"] == "PRODUCTION_SERVING_RUNTIME_QUALIFIED"
     assert manifest["weight_file_shards"] == 3
     assert manifest[RUNTIME_LOADED_WEIGHT_FILES_FIELD] == 7
+
+
+# ── Phase 21B.4.12.5: generation-evidence binding closure ──
+
+MISTRAL_RETRY_GENERATION_RESULT_PATH = (
+    REPO_ROOT / "docs/orneur/phase-21/evidence/MISTRAL_SMALL_4_RETRY_ATTEMPT2_GENERATION_RESULT_2026-09-21.json"
+)
+
+
+def test_real_mistral_generation_result_artifact_exists_and_is_valid_json():
+    assert MISTRAL_RETRY_GENERATION_RESULT_PATH.is_file()
+    data = json.loads(MISTRAL_RETRY_GENERATION_RESULT_PATH.read_text())
+    assert data["evidence_type"] == "LIVE_HARNESS_GENERATION_RESULT"
+    assert data["source"] == "ORIGINAL_PHASE_21B_4_12_3_ATTEMPT2_HARNESS_OUTPUT"
+    assert data["evidence_strength"] == "OBSERVED_LIVE"
+    assert "original_harness_result" in data
+
+
+def test_real_mistral_generation_result_byte_hash_matches_manifest():
+    manifest = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    actual_bytes = MISTRAL_RETRY_GENERATION_RESULT_PATH.read_bytes()
+    import hashlib
+    assert hashlib.sha256(actual_bytes).hexdigest() == manifest[SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD]
+    assert manifest[SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD].endswith(
+        "MISTRAL_SMALL_4_RETRY_ATTEMPT2_GENERATION_RESULT_2026-09-21.json"
+    )
+
+
+def test_real_mistral_generation_result_values_match_manifest_claims_exactly():
+    """The manifest's claimed generation metrics/hashes must exactly
+    match the original, verbatim harness result's own fields -- this is
+    the binding the whole phase exists to establish."""
+    manifest = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    original = json.loads(MISTRAL_RETRY_GENERATION_RESULT_PATH.read_text())["original_harness_result"]
+    assert original["synthetic_prompt_sha256"] == manifest["synthetic_prompt_sha256"]
+    assert original["decoded_response_sha256"] == manifest["decoded_response_sha256"]
+    assert original["input_tokens"] == manifest["input_tokens"]
+    assert original["output_tokens"] == manifest["output_tokens"]
+    assert original["generation_latency_seconds"] == manifest["generation_latency_seconds"]
+    assert original["ttft_seconds"] == manifest["ttft_seconds"]
+    assert original["tokens_per_second"] == manifest["tokens_per_second"]
+    assert original["server_ready"] is True
+    assert original["chat_endpoint_status"] == 200
+    assert original["models_endpoint_status"] == 200
+    assert original["generation_succeeded"] is True
+
+
+def test_tampered_generation_result_fails_closed(tmp_path):
+    """A synthetic PRODUCTION_SERVING_RUNTIME_QUALIFIED bundle whose
+    supplementary_generation_result bytes are tampered AFTER the
+    manifest's declared hash was finalized must fail closed via the
+    public verify_evidence_artifacts_bytes entry point -- the same
+    integrity guarantee as the other six evidence artifacts."""
+    import hashlib
+
+    data = _strict_manifest()
+    data["qualification_type"] = PRODUCTION_SERVING_TYPE
+    root = _write_evidence_bundle(tmp_path, data)
+    gen_content = b"genuine synthetic generation result\n"
+    gen_path = root / "evidence" / "gen_result.json"
+    gen_path.parent.mkdir(parents=True, exist_ok=True)
+    gen_path.write_bytes(gen_content)
+    data[SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD] = "evidence/gen_result.json"
+    data[SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD] = hashlib.sha256(gen_content).hexdigest()
+    validate_manifest(data)
+    verify_evidence_artifacts_bytes(data, root)  # genuinely matching bytes: must not raise
+
+    # Tamper AFTER the declared hash was finalized.
+    gen_path.write_bytes(b"tampered generation result, not the original bytes")
+    with pytest.raises(RuntimeQualificationManifestError, match="supplementary_generation_result"):
+        verify_evidence_artifacts_bytes(data, root)
+
+
+def test_production_serving_qualified_without_generation_result_fails_closed():
+    """Deleting the required supplementary_generation_result binding
+    from a PRODUCTION_SERVING_RUNTIME_QUALIFIED STRICT manifest must be
+    rejected -- the claimed generation metrics/hashes would otherwise be
+    unsubstantiated by the canonical raw execution log alone."""
+    data = _strict_manifest()
+    data["qualification_type"] = PRODUCTION_SERVING_TYPE
+    with pytest.raises(RuntimeQualificationManifestError, match=SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD):
+        validate_manifest(data)
+
+    data2 = _strict_manifest()
+    data2["qualification_type"] = PRODUCTION_SERVING_TYPE
+    data2[SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD] = "evidence/gen_result.json"
+    with pytest.raises(RuntimeQualificationManifestError, match=SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD):
+        validate_manifest(data2)
+
+
+def test_production_serving_qualified_with_valid_generation_result_binding_passes():
+    data = _strict_manifest()
+    data["qualification_type"] = PRODUCTION_SERVING_TYPE
+    data[SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD] = "evidence/gen_result.json"
+    data[SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD] = _VALID_HEX64
+    validate_manifest(data)  # must not raise
+
+
+def test_runtime_load_compatibility_qualified_does_not_require_generation_result_binding():
+    """The binding requirement is scoped narrowly to
+    PRODUCTION_SERVING_RUNTIME_QUALIFIED -- a RUNTIME_LOAD_COMPATIBILITY_
+    QUALIFIED manifest (e.g. Qwen's native-Transformers smoke) is
+    unaffected."""
+    data = _strict_manifest()  # qualification_type == RUNTIME_LOAD_COMPATIBILITY_QUALIFIED
+    validate_manifest(data)  # must not raise, no generation-result fields needed
+
+
+def test_real_mistral_runtime_loaded_weight_files_provenance_is_observed_live():
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data[f"{RUNTIME_LOADED_WEIGHT_FILES_FIELD}_provenance"] == "OBSERVED_LIVE"
+    assert data[RUNTIME_WORKER_MEMORY_FIELD]["provenance"] == "OBSERVED_LIVE"
+    assert data[RUNTIME_WORKER_MEMORY_FIELD]["source"] == "VLLM_WORKER_LOG"
+
+
+def test_real_mistral_manifest_still_production_serving_qualified_after_closure():
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data["qualification_type"] == PRODUCTION_SERVING_TYPE
+
+
+def test_real_mistral_manifest_all_eight_artifacts_verify_after_closure():
+    """All seven original Phase 21B.4.12.3 strict evidence artifacts
+    plus the new supplementary generation-result artifact must verify
+    together -- no historical bytes were disturbed by adding the new
+    binding."""
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    verify_evidence_artifacts_bytes(data, REPO_ROOT)  # must not raise
+    assert len(data["evidence_artifacts"]) == 7
+    assert SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD in data
 
 
 def test_real_mistral_manifest_billing_gate_confirmed_for_executed_run():

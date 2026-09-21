@@ -1,0 +1,76 @@
+{
+  "evidence_type": "LIVE_HARNESS_GENERATION_RESULT",
+  "source": "ORIGINAL_PHASE_21B_4_12_3_ATTEMPT2_HARNESS_OUTPUT",
+  "evidence_strength": "OBSERVED_LIVE",
+  "provenance_note": "This is the verbatim JSON result object emitted by the live Modal harness (mistral_retry_attempt.py local_entrypoint print block) during the actual Phase 21B.4.12.3 attempt 2 execution on 2026-09-21, captured unmodified in the harness invocation stdout at /tmp/mistral_retry_attempt2.output between the ===ORNEUR_ATTEMPT_RESULT_JSON=== and ===ORNEUR_ATTEMPT_RESULT_END=== markers. Not reconstructed, not re-derived from the manifest -- persisted losslessly as originally emitted. The manifest's generation-phase claims (synthetic_prompt_sha256, decoded_response_sha256, input_tokens, output_tokens, generation_latency_seconds, ttft_seconds, tokens_per_second) are bound to and must exactly match the corresponding fields inside original_harness_result below.",
+  "captured_at": "2026-09-21",
+  "original_harness_result": {
+    "model_repo": "mistralai/Mistral-Small-4-119B-2603",
+    "revision": "a11f36bebf709121056b1dbcc943d1c6afbe494d",
+    "image_ref": "vllm/vllm-openai@sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
+    "gpu_name": "NVIDIA H200",
+    "gpu_count": 2,
+    "vllm_version": "0.29.0",
+    "transformers_version": "5.16.1",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "nvidia_smi_before_load": "Mon Sep 21 06:45:48 2026       \n+-----------------------------------------------------------------------------------------+\n| NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |\n+-----------------------------------------+------------------------+----------------------+\n| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\n| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\n|                                         |                        |               MIG M. |\n|=========================================+========================+======================|\n|   0  NVIDIA H200                    On  |   00000000:96:00.0 Off |                    0 |\n| N/A   29C    P0             75W /  700W |       4MiB / 143771MiB |      0%      Default |\n|                                         |                        |             Disabled |\n+-----------------------------------------+------------------------+----------------------+\n|   1  NVIDIA H200                    On  |   00000000:97:00.0 Off |                    0 |\n| N/A   29C    P0             77W /  700W |       4MiB / 143771MiB |      0%      Default |\n|                                         |                        |             Disabled |\n+-----------------------------------------+------------------------+----------------------+\n\n+-----------------------------------------------------------------------------------------+\n| Processes:                                                                              |\n|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |\n|        ID   ID                                                               Usage      |\n|=========================================================================================|\n|  No running processes found                                                             |\n+-----------------------------------------------------------------------------------------+",
+    "nvcc_version_on_gpu_host": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Wed_Aug_20_01:58:59_PM_PDT_2025\nCuda compilation tools, release 13.0, V13.0.88\nBuild cuda_13.0.r13.0/compiler.36424714_0",
+    "vllm_serve_command": "vllm serve mistralai/Mistral-Small-4-119B-2603 --revision a11f36bebf709121056b1dbcc943d1c6afbe494d --tokenizer-revision a11f36bebf709121056b1dbcc943d1c6afbe494d --tensor-parallel-size 2 --attention-backend FLASH_ATTN_MLA --max-model-len 4096 --max-num-seqs 8 --max-num-batched-tokens 4096 --gpu-memory-utilization 0.85 --port 8000",
+    "server_init_elapsed_seconds": 960.5670170783997,
+    "server_ready": true,
+    "server_process_exited_early": false,
+    "load_succeeded": true,
+    "models_endpoint_status": 200,
+    "models_endpoint_body": {
+      "object": "list",
+      "data": [
+        {
+          "id": "mistralai/Mistral-Small-4-119B-2603",
+          "object": "model",
+          "created": 1789974109,
+          "owned_by": "vllm",
+          "root": "mistralai/Mistral-Small-4-119B-2603",
+          "parent": null,
+          "max_model_len": 4096,
+          "permission": [
+            {
+              "id": "modelperm-99b165e463747ec7",
+              "object": "model_permission",
+              "created": 1789974109,
+              "allow_create_engine": false,
+              "allow_sampling": true,
+              "allow_logprobs": true,
+              "allow_search_indices": false,
+              "allow_view": true,
+              "allow_fine_tuning": false,
+              "organization": "*",
+              "group": null,
+              "is_blocking": false
+            }
+          ]
+        }
+      ]
+    },
+    "synthetic_prompt": "Reply with exactly the single word READY.",
+    "synthetic_prompt_sha256": "6496a817310b22a974cfbcf819808469dbf5e0fcf7304b34efc12666e52a02d2",
+    "chat_endpoint_status": 200,
+    "generation_latency_seconds": 0.1896529197692871,
+    "ttft_seconds": 0.17918872833251953,
+    "decoded_response": "READY",
+    "decoded_response_sha256": "c2e3ac47f4a325469c1a2d5f117e463ec943c721986d5d9f09ac4540b7d80526",
+    "input_tokens": 24,
+    "output_tokens": 3,
+    "tokens_per_second": 15.818369702135362,
+    "generation_succeeded": true,
+    "peak_allocated_gb_per_gpu_parent_process_only": [
+      0.0,
+      0.0
+    ],
+    "peak_reserved_gb_per_gpu_parent_process_only": [
+      0.0,
+      0.0
+    ],
+    "log_line_count": 345
+  }
+}

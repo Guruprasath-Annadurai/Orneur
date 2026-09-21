@@ -33,6 +33,7 @@
   "peak_vram_measurement_note": "The Modal parent Function process's torch.cuda.max_memory_allocated/reserved calls returned 0.0/0.0 in both attempts because the parent process never itself held the model -- vLLM's tensor-parallel worker subprocesses (Worker_TP0, Worker_TP1) did. A value genuinely observed from the wrong process is not honest evidence of the real peak_allocated/peak_reserved magnitude, so these fields are recorded NOT_CAPTURED rather than the misleading 0.0. See runtime_worker_memory below for genuine, differently-measured worker-level evidence from vLLM's own self-reported log accounting -- this is why this manifest's NOT_CAPTURED is accepted for a QUALIFIED result under the schema's alternate-evidence rule.",
   "runtime_worker_memory": {
     "source": "VLLM_WORKER_LOG",
+    "provenance": "OBSERVED_LIVE",
     "per_gpu": {
       "consumed_memory_gib": 57.45,
       "peak_activation_gib": 0.54,
@@ -44,6 +45,7 @@
   },
   "weight_file_shards": 3,
   "runtime_loaded_weight_files": 7,
+  "runtime_loaded_weight_files_provenance": "OBSERVED_LIVE",
   "runtime_loaded_weight_files_note": "Repository fact (weight_file_shards=3, from model.safetensors.index.json's weight_map, REPOSITORY_VERIFIED) vs. runtime-observed fact (runtime_loaded_weight_files=7, OBSERVED_LIVE): the repository publishes BOTH a 3-shard HF-transformers-style sharded-index layout (model-0000X-of-00003.safetensors) AND a separate native 7-file 'consolidated*.safetensors' checkpoint format. vLLM's loader selected the 7-file consolidated format for both attempts ('Parse safetensors files: 0/7'...'7/7', 'Loading safetensors checkpoint shards: 7/7', 'Inferred from consolidated*.safetensors files torch.bfloat16 dtype'). Both facts are true and are not conflated: weight_file_shards records what the repository's own index declares; runtime_loaded_weight_files records what this specific runtime actually read off disk.",
   "runtime_materialized_tensor_count": "NOT_CAPTURED",
   "load_attempt_count": 2,
@@ -88,6 +90,9 @@
   "raw_execution_log_sha256": "f35dddc74be4b934834b49d10a59ca5c7a5d481a1557e012f492da87f143876d",
   "supplementary_attempt_1_log_path": "docs/orneur/phase-21/evidence/logs/MISTRAL_SMALL_4_RETRY_ATTEMPT1_EXECUTION_LOG_2026-09-21.txt",
   "supplementary_attempt_1_log_sha256": "fce798685cd2792c604697f7b3222ba09a12fb84200acb3de7771619d5cd8730",
+  "supplementary_generation_result_path": "docs/orneur/phase-21/evidence/MISTRAL_SMALL_4_RETRY_ATTEMPT2_GENERATION_RESULT_2026-09-21.json",
+  "supplementary_generation_result_sha256": "63c8d7226e3521e84eda565a9d344c8f0e16ec9fe9562a44a370fce1739f5a11",
+  "supplementary_generation_result_note": "Phase 21B.4.12.5: this manifest's generation-phase claims (synthetic_prompt_sha256, decoded_response_sha256, input_tokens, output_tokens, generation_latency_seconds, ttft_seconds, tokens_per_second) are not present in vLLM's own server stdout log (the canonical raw_execution_log_artifact) -- they are client-side measurements the harness derived from the HTTP response. This field binds them, byte-for-byte, to the verbatim original result JSON the live harness emitted during the actual Phase 21B.4.12.3 attempt 2 execution (not reconstructed, not re-derived from this manifest).",
   "evidence_artifacts": {
     "billing_gate": {
       "path": "docs/orneur/phase-21/evidence/MISTRAL_SMALL_4_RETRY_BILLING_GATE_2026-09-21.json",

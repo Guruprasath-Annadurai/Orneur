@@ -50,6 +50,23 @@ VALID_QUALIFICATION_TYPES = (
 QUALIFIED_TYPES = ("RUNTIME_LOAD_COMPATIBILITY_QUALIFIED", "PRODUCTION_SERVING_RUNTIME_QUALIFIED")
 DEFERRED_TYPE = "DEFERRED_FOR_COMPUTE"
 FAILED_TYPE = "RUNTIME_QUALIFICATION_FAILED"
+PRODUCTION_SERVING_TYPE = "PRODUCTION_SERVING_RUNTIME_QUALIFIED"
+
+# Phase 21B.4.12.5 §5/§6: a PRODUCTION_SERVING_RUNTIME_QUALIFIED claim
+# under STRICT_RUNTIME_SMOKE_V2 involves genuine client-side generation
+# metrics (token counts, latency, TTFT, tokens/sec, prompt/response
+# hashes) that vLLM's own server stdout log never prints -- they only
+# ever existed in the harness's own HTTP-response-derived result. Unlike
+# the six/seven `evidence_artifacts` (each independently, structurally
+# required by EVIDENCE_ARTIFACT_KEYS), this pair is optional at the
+# schema level in general (a RUNTIME_LOAD_COMPATIBILITY_QUALIFIED
+# manifest, e.g. Qwen's native-Transformers smoke, has no equivalent
+# need) but becomes REQUIRED specifically for PRODUCTION_SERVING_RUNTIME_
+# QUALIFIED, to bind those exact claimed values to a real, byte-verified,
+# originally-emitted harness result rather than leaving them
+# unsubstantiated by the raw log alone.
+SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD = "supplementary_generation_result_path"
+SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD = "supplementary_generation_result_sha256"
 
 VALID_ATTEMPT_RESULTS = ("SUCCEEDED", "FAILED", "NOT_ATTEMPTED")
 
@@ -391,6 +408,11 @@ def _validate_runtime_worker_memory(value) -> None:
         raise RuntimeQualificationManifestError(
             f"{RUNTIME_WORKER_MEMORY_FIELD}.workers_observed must be an integer >= 1"
         )
+    provenance = value.get("provenance")
+    if provenance is not None and provenance not in VALID_EVIDENCE_STRENGTHS:
+        raise RuntimeQualificationManifestError(
+            f"{RUNTIME_WORKER_MEMORY_FIELD}.provenance, if present, must be one of {VALID_EVIDENCE_STRENGTHS}"
+        )
 
 
 def _require_tzaware_iso8601(value, *, field: str) -> None:
@@ -588,6 +610,11 @@ def validate_manifest(data: dict) -> None:
 
         if RUNTIME_LOADED_WEIGHT_FILES_FIELD in data and data[RUNTIME_LOADED_WEIGHT_FILES_FIELD] != NOT_CAPTURED:
             _require_int_at_least(data, RUNTIME_LOADED_WEIGHT_FILES_FIELD, 1)
+        loaded_files_provenance = data.get(f"{RUNTIME_LOADED_WEIGHT_FILES_FIELD}_provenance")
+        if loaded_files_provenance is not None and loaded_files_provenance not in VALID_EVIDENCE_STRENGTHS:
+            raise RuntimeQualificationManifestError(
+                f"{RUNTIME_LOADED_WEIGHT_FILES_FIELD}_provenance, if present, must be one of {VALID_EVIDENCE_STRENGTHS}"
+            )
 
     if not_qualified:
         for field in _GENERATION_PHASE_NUMERIC_FIELDS + _GENERATION_PHASE_HASH_FIELDS:
@@ -753,6 +780,25 @@ def validate_manifest(data: dict) -> None:
                 raise RuntimeQualificationManifestError(
                     f"evidence_artifacts.{key}.sha256 must be exactly 64 lowercase hex characters"
                 )
+
+        # Phase 21B.4.12.5 §5/§6: a PRODUCTION_SERVING_RUNTIME_QUALIFIED
+        # claim's client-side generation metrics/hashes are never present
+        # in vLLM's own server stdout log -- they must be bound to a
+        # real, byte-verified, originally-emitted harness result.
+        if qualification_type == PRODUCTION_SERVING_TYPE:
+            gen_path = data.get(SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD)
+            if not isinstance(gen_path, str) or not gen_path:
+                raise RuntimeQualificationManifestError(
+                    f"{PRODUCTION_SERVING_TYPE} under {EVIDENCE_PROTOCOL_STRICT} requires "
+                    f"{SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD!r} as a non-empty string binding the claimed "
+                    "generation metrics/hashes to a real, originally-emitted harness result"
+                )
+            gen_hash = data.get(SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD)
+            if not isinstance(gen_hash, str) or not _HEX64_RE.match(gen_hash):
+                raise RuntimeQualificationManifestError(
+                    f"{PRODUCTION_SERVING_TYPE} under {EVIDENCE_PROTOCOL_STRICT} requires "
+                    f"{SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD!r} as exactly 64 lowercase hex characters"
+                )
     else:
         _require_legacy_created_at(data["created_at"])
 
@@ -796,6 +842,17 @@ def verify_evidence_artifacts_bytes(data: dict, evidence_root: Path) -> None:
     for key in EVIDENCE_ARTIFACT_KEYS:
         entry = data["evidence_artifacts"][key]
         _verify_artifact_bytes(entry["path"], entry["sha256"], evidence_root=evidence_root, label=f"evidence_artifacts.{key}")
+    # Phase 21B.4.12.5 §5/§6: byte-verify the supplementary generation-
+    # result binding whenever present (validate_manifest already made it
+    # mandatory for PRODUCTION_SERVING_RUNTIME_QUALIFIED, but this check
+    # runs unconditionally on presence so any manifest that includes it
+    # gets the same byte-level guarantee).
+    if SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD in data:
+        _verify_artifact_bytes(
+            data[SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD],
+            data[SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD],
+            evidence_root=evidence_root, label="supplementary_generation_result",
+        )
 
 
 def load_manifest(path: str | Path) -> dict:
