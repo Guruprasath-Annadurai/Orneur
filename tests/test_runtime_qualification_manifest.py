@@ -29,6 +29,8 @@ from orca.eval.runtime_qualification_manifest import (
     EVIDENCE_PROTOCOL_STRICT,
     MANIFEST_SCHEMA_VERSION,
     NOT_CAPTURED,
+    RUNTIME_LOADED_WEIGHT_FILES_FIELD,
+    RUNTIME_WORKER_MEMORY_FIELD,
     RuntimeQualificationManifestError,
     canonical_json_bytes,
     load_manifest,
@@ -289,6 +291,119 @@ def test_vram_capacity_gb_still_strictly_required_for_any_attempted_load():
     data["evidence_strength"]["vram_capacity_gb"] = NOT_CAPTURED
     with pytest.raises(RuntimeQualificationManifestError, match="vram_capacity_gb"):
         validate_manifest(data)
+
+
+# ── Phase 21B.4.12.4: QUALIFIED-multiprocess peak-VRAM alternate evidence ──
+
+_VALID_RUNTIME_WORKER_MEMORY = {
+    "source": "VLLM_WORKER_LOG",
+    "per_gpu": {
+        "consumed_memory_gib": 57.45,
+        "peak_activation_gib": 0.54,
+        "cudagraph_memory_gib": 0.08,
+        "kv_cache_memory_gib": 60.84,
+    },
+    "workers_observed": 2,
+}
+
+
+def _qualified_manifest_with_not_captured_peak_vram() -> dict:
+    """A QUALIFIED (attempted, successful) manifest with peak_allocated/
+    reserved_vram_gb set to NOT_CAPTURED plus valid alternate
+    runtime_worker_memory evidence -- the fixture this whole battery of
+    tests mutates away from validity."""
+    data = _strict_manifest()  # qualification_type == RUNTIME_LOAD_COMPATIBILITY_QUALIFIED
+    data["peak_allocated_vram_gb"] = NOT_CAPTURED
+    data["peak_reserved_vram_gb"] = NOT_CAPTURED
+    data["evidence_strength"]["peak_allocated_vram_gb"] = NOT_CAPTURED
+    data["evidence_strength"]["peak_reserved_vram_gb"] = NOT_CAPTURED
+    data[RUNTIME_WORKER_MEMORY_FIELD] = json.loads(json.dumps(_VALID_RUNTIME_WORKER_MEMORY))
+    return data
+
+
+def test_qualified_multiprocess_not_captured_peak_vram_allowed_with_valid_alternate_evidence():
+    validate_manifest(_qualified_manifest_with_not_captured_peak_vram())  # must not raise
+
+
+def test_qualified_not_captured_peak_vram_rejected_without_alternate_evidence():
+    """Deleting the alternate worker-memory evidence must cause
+    rejection -- a QUALIFIED manifest must never leave peak GPU memory
+    entirely unevidenced."""
+    data = _qualified_manifest_with_not_captured_peak_vram()
+    del data[RUNTIME_WORKER_MEMORY_FIELD]
+    with pytest.raises(RuntimeQualificationManifestError, match="peak_allocated_vram_gb"):
+        validate_manifest(data)
+
+
+@pytest.mark.parametrize(
+    "mutate,match",
+    [
+        (lambda d: d.__setitem__(RUNTIME_WORKER_MEMORY_FIELD, "not-a-mapping"), "must be a mapping"),
+        (lambda d: d[RUNTIME_WORKER_MEMORY_FIELD].pop("source"), "source"),
+        (lambda d: d[RUNTIME_WORKER_MEMORY_FIELD].__setitem__("source", ""), "source"),
+        (lambda d: d[RUNTIME_WORKER_MEMORY_FIELD].__setitem__("per_gpu", "nope"), "per_gpu"),
+        (lambda d: d[RUNTIME_WORKER_MEMORY_FIELD]["per_gpu"].pop("kv_cache_memory_gib"), "per_gpu"),
+        (lambda d: d[RUNTIME_WORKER_MEMORY_FIELD].pop("workers_observed"), "workers_observed"),
+        (lambda d: d[RUNTIME_WORKER_MEMORY_FIELD].__setitem__("workers_observed", 0), "workers_observed"),
+        (lambda d: d[RUNTIME_WORKER_MEMORY_FIELD].__setitem__("workers_observed", 1.5), "workers_observed"),
+    ],
+)
+def test_malformed_runtime_worker_memory_rejected(mutate, match):
+    data = _qualified_manifest_with_not_captured_peak_vram()
+    mutate(data)
+    with pytest.raises(RuntimeQualificationManifestError, match=match):
+        validate_manifest(data)
+
+
+@pytest.mark.parametrize("field", ["consumed_memory_gib", "peak_activation_gib", "cudagraph_memory_gib", "kv_cache_memory_gib"])
+@pytest.mark.parametrize("bad_value", [-1.0, float("nan"), float("inf"), "57.45"])
+def test_negative_or_non_finite_worker_memory_values_rejected(field, bad_value):
+    data = _qualified_manifest_with_not_captured_peak_vram()
+    data[RUNTIME_WORKER_MEMORY_FIELD]["per_gpu"][field] = bad_value
+    with pytest.raises(RuntimeQualificationManifestError, match=field):
+        validate_manifest(data)
+
+
+def test_qualified_manifest_still_strictly_requires_real_load_time_seconds():
+    """Phase 21B.4.12.4 §5: the alternate-evidence relaxation for
+    peak_allocated/reserved_vram_gb must NOT extend to load_time_seconds
+    -- a QUALIFIED manifest still requires a genuine measurement there,
+    with or without runtime_worker_memory present."""
+    data = _qualified_manifest_with_not_captured_peak_vram()
+    data["load_time_seconds"] = NOT_CAPTURED
+    data["evidence_strength"]["load_time_seconds"] = NOT_CAPTURED
+    with pytest.raises(RuntimeQualificationManifestError, match="load_time_seconds"):
+        validate_manifest(data)
+
+
+def test_runtime_worker_memory_and_loaded_weight_files_forbidden_when_zero_attempts():
+    data = _deferred_manifest()
+    data[RUNTIME_WORKER_MEMORY_FIELD] = json.loads(json.dumps(_VALID_RUNTIME_WORKER_MEMORY))
+    with pytest.raises(RuntimeQualificationManifestError, match=RUNTIME_WORKER_MEMORY_FIELD):
+        validate_manifest(data)
+
+    data2 = _deferred_manifest()
+    data2[RUNTIME_LOADED_WEIGHT_FILES_FIELD] = 7
+    with pytest.raises(RuntimeQualificationManifestError, match=RUNTIME_LOADED_WEIGHT_FILES_FIELD):
+        validate_manifest(data2)
+
+
+def test_runtime_loaded_weight_files_must_be_positive_int_when_present():
+    data = _strict_manifest()
+    data[RUNTIME_LOADED_WEIGHT_FILES_FIELD] = 0
+    with pytest.raises(RuntimeQualificationManifestError, match=RUNTIME_LOADED_WEIGHT_FILES_FIELD):
+        validate_manifest(data)
+
+
+def test_runtime_loaded_weight_files_distinct_from_repository_weight_file_shards():
+    """weight_file_shards (a repository fact) and runtime_loaded_weight_
+    files (a runtime-observed fact) must be independently settable and
+    never conflated -- a manifest may legitimately record different
+    values for each, as Mistral Small 4's real retry manifest does."""
+    data = _strict_manifest()
+    data["weight_file_shards"] = 3
+    data[RUNTIME_LOADED_WEIGHT_FILES_FIELD] = 7
+    validate_manifest(data)  # must not raise -- both values coexist honestly
 
 
 def test_wrong_schema_version_rejected():
@@ -1560,6 +1675,74 @@ def test_registry_mistral_retry_manifest_digest_matches_registry_linkage():
     retry_data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
     assert sha256_of_manifest(retry_data) == mistral["qualification_manifest_digest_sha256"]
     assert mistral["qualification_manifest_path"].endswith("MISTRAL_SMALL_4_RETRY.json")
+
+
+# ── Phase 21B.4.12.4: qualified-evidence semantics reconciliation ──
+
+
+def test_real_mistral_retry_manifest_weight_file_shards_is_repository_fact():
+    """Phase 21B.4.12.4 §6: weight_file_shards must reflect the
+    repository's own published weight index (3), not the runtime's
+    on-disk file selection (7) -- restored after Phase 21B.4.12.3
+    mistakenly recorded the runtime-observed count in this field."""
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data["weight_file_shards"] == 3
+    assert data["evidence_strength"]["weight_file_shards"] == "REPOSITORY_VERIFIED"
+
+
+def test_real_mistral_retry_manifest_runtime_loaded_weight_files_is_separate_fact():
+    """Phase 21B.4.12.4 §7: the runtime-observed 7-file consolidated
+    checkpoint load is recorded in its own field, never conflated with
+    the repository's 3-shard HF index fact."""
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data[RUNTIME_LOADED_WEIGHT_FILES_FIELD] == 7
+    assert data["weight_file_shards"] != data[RUNTIME_LOADED_WEIGHT_FILES_FIELD]
+
+
+def test_real_mistral_retry_manifest_peak_vram_not_captured_with_alternate_evidence():
+    """Phase 21B.4.12.4 §3/§4: peak_allocated/reserved_vram_gb are
+    NOT_CAPTURED (not a misleading wrong-process 0.0), justified by
+    genuine structured runtime_worker_memory evidence sourced verbatim
+    from the canonical attempt-2 log."""
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data["peak_allocated_vram_gb"] == NOT_CAPTURED
+    assert data["peak_reserved_vram_gb"] == NOT_CAPTURED
+    assert data["evidence_strength"]["peak_allocated_vram_gb"] == NOT_CAPTURED
+    assert data["evidence_strength"]["peak_reserved_vram_gb"] == NOT_CAPTURED
+    worker_mem = data[RUNTIME_WORKER_MEMORY_FIELD]
+    assert worker_mem["per_gpu"]["consumed_memory_gib"] == 57.45
+    assert worker_mem["per_gpu"]["peak_activation_gib"] == 0.54
+    assert worker_mem["per_gpu"]["cudagraph_memory_gib"] == 0.08
+    assert worker_mem["per_gpu"]["kv_cache_memory_gib"] == 60.84
+    assert worker_mem["workers_observed"] == 2
+
+
+def test_real_mistral_retry_manifest_still_production_serving_qualified():
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data["qualification_type"] == "PRODUCTION_SERVING_RUNTIME_QUALIFIED"
+    assert data["load_time_seconds"] == pytest.approx(27.67)
+
+
+def test_real_mistral_retry_manifest_all_seven_historical_artifacts_unchanged():
+    """All seven Phase 21B.4.12.3 evidence-artifact files, plus the
+    canonical execution log, must still byte-verify unchanged after the
+    Phase 21B.4.12.4 semantics-only corrections -- no historical
+    evidence bytes were touched."""
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert len(data["evidence_artifacts"]) == len(EVIDENCE_ARTIFACT_KEYS)
+    verify_evidence_artifacts_bytes(data, REPO_ROOT)  # must not raise
+
+
+def test_mistral_retry_end_to_end_verifier_passes_after_reconciliation():
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+
+    entry, manifest = verify_candidate_qualification_end_to_end(
+        REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT, require_qualified=True
+    )
+    assert entry["runtime_qualification_status"] == "QUALIFIED"
+    assert manifest["qualification_type"] == "PRODUCTION_SERVING_RUNTIME_QUALIFIED"
+    assert manifest["weight_file_shards"] == 3
+    assert manifest[RUNTIME_LOADED_WEIGHT_FILES_FIELD] == 7
 
 
 def test_real_mistral_manifest_billing_gate_confirmed_for_executed_run():

@@ -224,24 +224,60 @@ _SENTINEL_ELIGIBLE_FIELDS = frozenset({
 # qualification_type.
 _LOAD_PHASE_ALWAYS_REQUIRED_NUMERIC_FIELDS = ("vram_capacity_gb",)
 
-# These three are genuinely-measured runtime metrics that can only
-# honestly be reported when something actually observed them from the
-# right vantage point. Phase 21B.4.12.1: a non-QUALIFIED attempted run
-# (RUNTIME_QUALIFICATION_FAILED) may legitimately record NOT_CAPTURED
-# for these -- e.g. the Mistral Small 4 smoke's peak_allocated/
-# reserved_vram_gb were only ever observed from the wrong process (the
-# parent Modal Function, not vLLM's tensor-parallel worker subprocesses
-# that actually held the GPU memory), and its load_time_seconds had no
-# durable log line proving exact model-weight-load completion -- only a
-# total elapsed-to-failure duration, which is not the same measurement
-# and must not be mislabeled as one. A QUALIFIED result, by contrast,
-# must have genuinely captured all three -- they remain strictly
-# required (no sentinel) whenever qualification_type is QUALIFIED.
-_LOAD_PHASE_NUMERIC_FIELDS = (
-    "peak_allocated_vram_gb",
-    "peak_reserved_vram_gb",
-    "load_time_seconds",
+# load_time_seconds is a genuinely-measured runtime metric that can
+# only honestly be reported when something actually observed it (e.g.
+# vLLM's own durable "Loading weights took X seconds" log line).
+# Phase 21B.4.12.1: a non-QUALIFIED attempted run (RUNTIME_QUALIFICATION_
+# FAILED) may legitimately record NOT_CAPTURED here when no durable
+# timestamp exists (only a total elapsed-to-failure duration, which is
+# not the same measurement and must not be mislabeled as one). A
+# QUALIFIED result, by contrast, must have a genuinely-captured value
+# -- it remains strictly required (no sentinel) whenever
+# qualification_type is QUALIFIED.
+_LOAD_PHASE_STRICT_NUMERIC_FIELDS = ("load_time_seconds",)
+
+# peak_allocated_vram_gb / peak_reserved_vram_gb are specifically the
+# torch.cuda peak-allocated/peak-reserved caching-allocator measurements
+# -- a genuinely-observed value from the WRONG process (e.g. a Modal
+# parent Function process that never itself held the model, while
+# vLLM's tensor-parallel worker subprocesses did) is not honest evidence
+# of the real magnitude, regardless of qualification_type. Phase
+# 21B.4.12.1 allowed a non-QUALIFIED attempted run to record NOT_CAPTURED
+# here freely. Phase 21B.4.12.4 hardens this further for QUALIFIED
+# manifests specifically: NOT_CAPTURED is allowed for a QUALIFIED,
+# multiprocess runtime ONLY when genuine alternate worker-level memory
+# evidence (see `runtime_worker_memory` / _validate_runtime_worker_memory)
+# is present and structurally valid -- an unqualified/unjustified
+# NOT_CAPTURED that leaves the reader with no memory evidence at all is
+# rejected. A QUALIFIED manifest may still record a genuine torch.cuda
+# real number here instead, if that vantage point genuinely was correct.
+_LOAD_PHASE_CONDITIONAL_NUMERIC_FIELDS = ("peak_allocated_vram_gb", "peak_reserved_vram_gb")
+
+# Phase 21B.4.12.4 §4/§5: structured supplemental evidence for
+# multiprocess runtimes (e.g. vLLM's tensor-parallel worker subprocesses)
+# whose own self-reported memory accounting is a genuinely-observed,
+# differently-measured alternative to torch.cuda's peak_allocated/
+# peak_reserved semantics -- present only when a runtime actually
+# surfaced this information in its own logs.
+RUNTIME_WORKER_MEMORY_FIELD = "runtime_worker_memory"
+_RUNTIME_WORKER_MEMORY_PER_GPU_SUBFIELDS = (
+    "consumed_memory_gib",
+    "peak_activation_gib",
+    "cudagraph_memory_gib",
+    "kv_cache_memory_gib",
 )
+
+# Phase 21B.4.12.4 §7: the count of files a specific runtime actually
+# read off disk while loading the model -- a RUNTIME-OBSERVED fact,
+# independent of (and not to be conflated with) weight_file_shards,
+# which remains strictly a REPOSITORY fact obtainable from the model's
+# own published weight index regardless of which runtime later loads
+# it. A repository may publish more than one on-disk weight layout
+# (e.g. a native "consolidated*.safetensors" runtime format alongside a
+# separate HF-transformers-style sharded-index format); a runtime
+# selecting one of them does not change what the repository's own
+# index itself declares.
+RUNTIME_LOADED_WEIGHT_FILES_FIELD = "runtime_loaded_weight_files"
 # weight_file_shards is a repository fact (obtainable from the model's
 # own weight index via a metadata-only API call, independent of which
 # runtime executes the load) and is required whenever a load was
@@ -318,6 +354,42 @@ def _require_hash(data: dict, field: str, *, allow_sentinel: bool = False) -> No
         raise RuntimeQualificationManifestError(
             f"{field} must be exactly 64 lowercase hex characters (SHA-256)"
             + (f", or {NOT_CAPTURED!r}" if allow_sentinel else "")
+        )
+
+
+def _validate_runtime_worker_memory(value) -> None:
+    """Phase 21B.4.12.4 §5: structural validation for the optional
+    `runtime_worker_memory` supplemental-evidence field. Rejects a
+    missing/wrong-typed `source`, a missing/wrong-typed `per_gpu`
+    mapping, any missing or non-finite/negative per_gpu sub-metric, and
+    a missing/invalid `workers_observed` count. Called unconditionally
+    whenever the field is present, regardless of whether a manifest
+    actually relies on it to justify a NOT_CAPTURED peak_allocated/
+    reserved_vram_gb -- malformed alternate evidence is never silently
+    accepted."""
+    if not isinstance(value, dict):
+        raise RuntimeQualificationManifestError(f"{RUNTIME_WORKER_MEMORY_FIELD} must be a mapping")
+    source = value.get("source")
+    if not isinstance(source, str) or not source:
+        raise RuntimeQualificationManifestError(f"{RUNTIME_WORKER_MEMORY_FIELD}.source must be a non-empty string")
+    per_gpu = value.get("per_gpu")
+    if not isinstance(per_gpu, dict):
+        raise RuntimeQualificationManifestError(f"{RUNTIME_WORKER_MEMORY_FIELD}.per_gpu must be a mapping")
+    missing = [f for f in _RUNTIME_WORKER_MEMORY_PER_GPU_SUBFIELDS if f not in per_gpu]
+    if missing:
+        raise RuntimeQualificationManifestError(
+            f"{RUNTIME_WORKER_MEMORY_FIELD}.per_gpu missing required field(s): {missing}"
+        )
+    for field in _RUNTIME_WORKER_MEMORY_PER_GPU_SUBFIELDS:
+        v = per_gpu[field]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0:
+            raise RuntimeQualificationManifestError(
+                f"{RUNTIME_WORKER_MEMORY_FIELD}.per_gpu.{field} must be a finite number >= 0"
+            )
+    workers_observed = value.get("workers_observed")
+    if isinstance(workers_observed, bool) or not isinstance(workers_observed, int) or workers_observed < 1:
+        raise RuntimeQualificationManifestError(
+            f"{RUNTIME_WORKER_MEMORY_FIELD}.workers_observed must be an integer >= 1"
         )
 
 
@@ -457,7 +529,8 @@ def validate_manifest(data: dict) -> None:
         for field in (
             ("gpu_count",)
             + _LOAD_PHASE_ALWAYS_REQUIRED_NUMERIC_FIELDS
-            + _LOAD_PHASE_NUMERIC_FIELDS
+            + _LOAD_PHASE_STRICT_NUMERIC_FIELDS
+            + _LOAD_PHASE_CONDITIONAL_NUMERIC_FIELDS
             + _LOAD_PHASE_INT_FIELDS
             + _RUNTIME_SPECIFIC_OPTIONAL_INT_FIELDS
         ):
@@ -465,16 +538,46 @@ def validate_manifest(data: dict) -> None:
                 raise RuntimeQualificationManifestError(
                     f"{field} must be {NOT_CAPTURED!r} when load_attempt_count==0 -- no load was ever attempted"
                 )
+        for optional_field in (RUNTIME_WORKER_MEMORY_FIELD, RUNTIME_LOADED_WEIGHT_FILES_FIELD):
+            if optional_field in data:
+                raise RuntimeQualificationManifestError(
+                    f"{optional_field} must not be present when load_attempt_count==0 -- no load was ever attempted"
+                )
     else:
         _require_int_at_least(data, "gpu_count", 1)
         for field in _LOAD_PHASE_ALWAYS_REQUIRED_NUMERIC_FIELDS:
             _require_number(data, field, strictly_positive=True)
-        for field in _LOAD_PHASE_NUMERIC_FIELDS:  # peak_allocated/reserved, load_time
+        for field in _LOAD_PHASE_STRICT_NUMERIC_FIELDS:  # load_time_seconds
             # Phase 21B.4.12.1: strictly required (no sentinel) only for
             # a QUALIFIED result -- a non-QUALIFIED attempted run may
             # honestly record NOT_CAPTURED when the metric was never
             # actually, correctly observed (see the constant's comment).
             _require_number(data, field, allow_sentinel=not_qualified)
+
+        worker_memory_present = RUNTIME_WORKER_MEMORY_FIELD in data
+        if worker_memory_present:
+            _validate_runtime_worker_memory(data[RUNTIME_WORKER_MEMORY_FIELD])
+
+        for field in _LOAD_PHASE_CONDITIONAL_NUMERIC_FIELDS:  # peak_allocated/reserved
+            if not_qualified:
+                # Phase 21B.4.12.1: a non-QUALIFIED attempted run may
+                # honestly record NOT_CAPTURED when the metric was never
+                # actually, correctly observed.
+                _require_number(data, field, allow_sentinel=True)
+            elif data[field] == NOT_CAPTURED:
+                # Phase 21B.4.12.4 §3/§5: for a QUALIFIED manifest,
+                # NOT_CAPTURED is accepted here ONLY when genuine
+                # alternate worker-level memory evidence is present and
+                # structurally valid -- a QUALIFIED multiprocess runtime
+                # must never leave peak GPU memory entirely unevidenced.
+                if not worker_memory_present:
+                    raise RuntimeQualificationManifestError(
+                        f"{field} may be {NOT_CAPTURED!r} for a QUALIFIED manifest only when "
+                        f"{RUNTIME_WORKER_MEMORY_FIELD!r} alternate worker-memory evidence is present and valid"
+                    )
+            else:
+                _require_number(data, field)
+
         for field in _LOAD_PHASE_INT_FIELDS:
             _require_int_at_least(data, field, 1)
         for field in _RUNTIME_SPECIFIC_OPTIONAL_INT_FIELDS:
@@ -482,6 +585,9 @@ def validate_manifest(data: dict) -> None:
             # exposes an equivalent metric (see the constant's comment).
             if data[field] != NOT_CAPTURED:
                 _require_int_at_least(data, field, 1)
+
+        if RUNTIME_LOADED_WEIGHT_FILES_FIELD in data and data[RUNTIME_LOADED_WEIGHT_FILES_FIELD] != NOT_CAPTURED:
+            _require_int_at_least(data, RUNTIME_LOADED_WEIGHT_FILES_FIELD, 1)
 
     if not_qualified:
         for field in _GENERATION_PHASE_NUMERIC_FIELDS + _GENERATION_PHASE_HASH_FIELDS:
