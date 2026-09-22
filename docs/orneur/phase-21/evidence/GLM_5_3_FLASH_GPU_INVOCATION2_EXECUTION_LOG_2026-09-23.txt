@@ -1,0 +1,741 @@
+W0922 18:31:02.102000 14 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W0922 18:31:02.102000 14 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W0922 18:31:02.103000 14 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+(APIServer pid=14) INFO 09-22 18:31:40 [api_utils.py:347] 
+(APIServer pid=14) INFO 09-22 18:31:40 [api_utils.py:347]        █     █     █▄   ▄█
+(APIServer pid=14) INFO 09-22 18:31:40 [api_utils.py:347]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.29.1rc1.dev513+g0961bbae2.d20260922
+(APIServer pid=14) INFO 09-22 18:31:40 [api_utils.py:347]   █▄█▀ █     █     █     █  model   zai-org/GLM-5.3-Flash
+(APIServer pid=14) INFO 09-22 18:31:40 [api_utils.py:347]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=14) INFO 09-22 18:31:40 [api_utils.py:347] 
+(APIServer pid=14) INFO 09-22 18:31:40 [api_utils.py:286] non-default args: {'model_tag': 'zai-org/GLM-5.3-Flash', 'model': 'zai-org/GLM-5.3-Flash', 'revision': 'eb9eb208eb0d988989d07a6a12d0fdeb5f52574a', 'tokenizer_revision': 'eb9eb208eb0d988989d07a6a12d0fdeb5f52574a', 'max_model_len': 4096, 'served_model_name': ['zai-org/GLM-5.3-Flash'], 'tensor_parallel_size': 4, 'gpu_memory_utilization': 0.85, 'max_num_batched_tokens': 4096, 'max_num_seqs': 8, 'enable_flashinfer_autotune': False}
+(APIServer pid=14) Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(APIServer pid=14) INFO 09-22 18:32:02 [model.py:692] Resolved architecture: Glm5NextForConditionalGeneration
+(APIServer pid=14) INFO 09-22 18:32:02 [model.py:2097] Using max model len 4096
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418] Module nixl_ep was found but failed to import
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418] Traceback (most recent call last):
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/vllm/utils/import_utils.py", line 416, in _has_module
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]     importlib.import_module(module_name)
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 51, in <module>
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]     _pkg = sys.modules[_load_ep_module()]
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]                        ^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 31, in _load_ep_module
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]     return importlib.import_module(mod_name).__name__
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep_cu13/__init__.py", line 51, in <module>
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]     _nixl_ep_cpp = importlib.import_module(
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]                    ^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+(APIServer pid=14) WARNING 09-22 18:32:04 [import_utils.py:418] ModuleNotFoundError: No module named 'nixl_ep_cu13.nixl_ep_cpp_torch215'
+(APIServer pid=14) INFO 09-22 18:32:10 [scheduler.py:298] Chunked prefill is enabled with max_num_batched_tokens=4096.
+(APIServer pid=14) INFO 09-22 18:32:10 [config.py:625] Mamba cache mode is set to 'align' for Glm5NextForConditionalGeneration by default when prefix caching is enabled
+(APIServer pid=14) INFO 09-22 18:32:10 [vllm.py:785] Auto-enabling VLLM_USE_BREAKABLE_CUDAGRAPH=1. Set VLLM_USE_BREAKABLE_CUDAGRAPH=0 to opt out.
+(APIServer pid=14) INFO 09-22 18:32:10 [kernel.py:408] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(APIServer pid=14) INFO 09-22 18:32:14 [compilation.py:331] Enabled custom fusions: norm_quant, act_quant, allreduce_rms
+(APIServer pid=14) [transformers] The following generation flags are not valid and may be ignored: ['top_p']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+W0922 18:32:21.379000 174 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W0922 18:32:21.380000 174 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W0922 18:32:21.381000 174 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+WARNING 09-22 18:32:31 [import_utils.py:418] Module nixl_ep was found but failed to import
+WARNING 09-22 18:32:31 [import_utils.py:418] Traceback (most recent call last):
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/vllm/utils/import_utils.py", line 416, in _has_module
+WARNING 09-22 18:32:31 [import_utils.py:418]     importlib.import_module(module_name)
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:32:31 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:32:31 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 51, in <module>
+WARNING 09-22 18:32:31 [import_utils.py:418]     _pkg = sys.modules[_load_ep_module()]
+WARNING 09-22 18:32:31 [import_utils.py:418]                        ^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 31, in _load_ep_module
+WARNING 09-22 18:32:31 [import_utils.py:418]     return importlib.import_module(mod_name).__name__
+WARNING 09-22 18:32:31 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:32:31 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:32:31 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep_cu13/__init__.py", line 51, in <module>
+WARNING 09-22 18:32:31 [import_utils.py:418]     _nixl_ep_cpp = importlib.import_module(
+WARNING 09-22 18:32:31 [import_utils.py:418]                    ^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:32:31 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:32:31 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:32:31 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+WARNING 09-22 18:32:31 [import_utils.py:418] ModuleNotFoundError: No module named 'nixl_ep_cu13.nixl_ep_cpp_torch215'
+(EngineCore pid=174) INFO 09-22 18:32:32 [core.py:129] Initializing a V1 LLM engine (v0.29.1rc1.dev513+g0961bbae2.d20260922) with config: model='zai-org/GLM-5.3-Flash', speculative_config=None, tokenizer='zai-org/GLM-5.3-Flash', skip_tokenizer_init=False, tokenizer_mode=auto, revision=eb9eb208eb0d988989d07a6a12d0fdeb5f52574a, tokenizer_revision=eb9eb208eb0d988989d07a6a12d0fdeb5f52574a, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=4096, download_dir=None, load_format=auto, tensor_parallel_size=4, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=fp8, quantization_config=None, enforce_eager=False, aux_output_config=AuxOutputConfig(enable_return_routed_experts=False, max_bytes=None), kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, per_request_spec_decode_metrics='none', kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=zai-org/GLM-5.3-Flash, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['+quant_fp8', 'all', '+quant_fp8'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [256, 4096], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': True, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 16, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native']), enable_flashinfer_autotune=False, enable_cutedsl_warmup=True, enable_jit_warmup=True, moe_backend='auto', sparse_indexer_topk_backend='auto', linear_backend='auto', linear_backend_per_quant=None)
+(EngineCore pid=174) INFO 09-22 18:32:32 [multiproc_executor.py:153] DP group leader: node_rank=0, node_rank_within_dp=0, master_addr=127.0.0.1, mq_connect_ip=172.20.15.47 (local), world_size=4, local_world_size=4
+(APIServer pid=14) INFO 09-22 18:32:34 [base.py:251] Multi-modal warmup completed in 4.318s
+W0922 18:32:35.516000 203 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W0922 18:32:35.516000 203 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W0922 18:32:35.517000 203 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+WARNING 09-22 18:32:50 [import_utils.py:418] Module nixl_ep was found but failed to import
+WARNING 09-22 18:32:50 [import_utils.py:418] Traceback (most recent call last):
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/vllm/utils/import_utils.py", line 416, in _has_module
+WARNING 09-22 18:32:50 [import_utils.py:418]     importlib.import_module(module_name)
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:32:50 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:32:50 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 51, in <module>
+WARNING 09-22 18:32:50 [import_utils.py:418]     _pkg = sys.modules[_load_ep_module()]
+WARNING 09-22 18:32:50 [import_utils.py:418]                        ^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 31, in _load_ep_module
+WARNING 09-22 18:32:50 [import_utils.py:418]     return importlib.import_module(mod_name).__name__
+WARNING 09-22 18:32:50 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:32:50 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:32:50 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep_cu13/__init__.py", line 51, in <module>
+WARNING 09-22 18:32:50 [import_utils.py:418]     _nixl_ep_cpp = importlib.import_module(
+WARNING 09-22 18:32:50 [import_utils.py:418]                    ^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:32:50 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:32:50 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:32:50 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+WARNING 09-22 18:32:50 [import_utils.py:418] ModuleNotFoundError: No module named 'nixl_ep_cu13.nixl_ep_cpp_torch215'
+(Worker pid=203) INFO 09-22 18:32:51 [parallel_state.py:1817] world_size=4 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_af023f6ce883425187b46a8d5d3c8ae5 backend=nccl
+W0922 18:32:51.914000 218 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W0922 18:32:51.915000 218 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W0922 18:32:51.916000 218 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+WARNING 09-22 18:33:09 [import_utils.py:418] Module nixl_ep was found but failed to import
+WARNING 09-22 18:33:09 [import_utils.py:418] Traceback (most recent call last):
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/vllm/utils/import_utils.py", line 416, in _has_module
+WARNING 09-22 18:33:09 [import_utils.py:418]     importlib.import_module(module_name)
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:33:09 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:33:09 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 51, in <module>
+WARNING 09-22 18:33:09 [import_utils.py:418]     _pkg = sys.modules[_load_ep_module()]
+WARNING 09-22 18:33:09 [import_utils.py:418]                        ^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 31, in _load_ep_module
+WARNING 09-22 18:33:09 [import_utils.py:418]     return importlib.import_module(mod_name).__name__
+WARNING 09-22 18:33:09 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:33:09 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:33:09 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep_cu13/__init__.py", line 51, in <module>
+WARNING 09-22 18:33:09 [import_utils.py:418]     _nixl_ep_cpp = importlib.import_module(
+WARNING 09-22 18:33:09 [import_utils.py:418]                    ^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:33:09 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:33:09 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:33:09 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+WARNING 09-22 18:33:09 [import_utils.py:418] ModuleNotFoundError: No module named 'nixl_ep_cu13.nixl_ep_cpp_torch215'
+(Worker pid=218) INFO 09-22 18:33:10 [parallel_state.py:1817] world_size=4 rank=1 local_rank=1 distributed_init_method=file:///tmp/vllm_dist_af023f6ce883425187b46a8d5d3c8ae5 backend=nccl
+W0922 18:33:10.474000 248 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W0922 18:33:10.475000 248 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W0922 18:33:10.475000 248 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+WARNING 09-22 18:33:30 [import_utils.py:418] Module nixl_ep was found but failed to import
+WARNING 09-22 18:33:30 [import_utils.py:418] Traceback (most recent call last):
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/vllm/utils/import_utils.py", line 416, in _has_module
+WARNING 09-22 18:33:30 [import_utils.py:418]     importlib.import_module(module_name)
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:33:30 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:33:30 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 51, in <module>
+WARNING 09-22 18:33:30 [import_utils.py:418]     _pkg = sys.modules[_load_ep_module()]
+WARNING 09-22 18:33:30 [import_utils.py:418]                        ^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 31, in _load_ep_module
+WARNING 09-22 18:33:30 [import_utils.py:418]     return importlib.import_module(mod_name).__name__
+WARNING 09-22 18:33:30 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:33:30 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:33:30 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep_cu13/__init__.py", line 51, in <module>
+WARNING 09-22 18:33:30 [import_utils.py:418]     _nixl_ep_cpp = importlib.import_module(
+WARNING 09-22 18:33:30 [import_utils.py:418]                    ^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:33:30 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:33:30 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:33:30 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+WARNING 09-22 18:33:30 [import_utils.py:418] ModuleNotFoundError: No module named 'nixl_ep_cu13.nixl_ep_cpp_torch215'
+(Worker pid=248) INFO 09-22 18:33:31 [parallel_state.py:1817] world_size=4 rank=2 local_rank=2 distributed_init_method=file:///tmp/vllm_dist_af023f6ce883425187b46a8d5d3c8ae5 backend=nccl
+W0922 18:33:31.984000 277 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W0922 18:33:31.985000 277 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W0922 18:33:31.986000 277 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+WARNING 09-22 18:33:54 [import_utils.py:418] Module nixl_ep was found but failed to import
+WARNING 09-22 18:33:54 [import_utils.py:418] Traceback (most recent call last):
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/vllm/utils/import_utils.py", line 416, in _has_module
+WARNING 09-22 18:33:54 [import_utils.py:418]     importlib.import_module(module_name)
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:33:54 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:33:54 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 51, in <module>
+WARNING 09-22 18:33:54 [import_utils.py:418]     _pkg = sys.modules[_load_ep_module()]
+WARNING 09-22 18:33:54 [import_utils.py:418]                        ^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 31, in _load_ep_module
+WARNING 09-22 18:33:54 [import_utils.py:418]     return importlib.import_module(mod_name).__name__
+WARNING 09-22 18:33:54 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:33:54 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:33:54 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep_cu13/__init__.py", line 51, in <module>
+WARNING 09-22 18:33:54 [import_utils.py:418]     _nixl_ep_cpp = importlib.import_module(
+WARNING 09-22 18:33:54 [import_utils.py:418]                    ^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+WARNING 09-22 18:33:54 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+WARNING 09-22 18:33:54 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+WARNING 09-22 18:33:54 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+WARNING 09-22 18:33:54 [import_utils.py:418] ModuleNotFoundError: No module named 'nixl_ep_cu13.nixl_ep_cpp_torch215'
+(Worker pid=277) INFO 09-22 18:33:55 [parallel_state.py:1817] world_size=4 rank=3 local_rank=3 distributed_init_method=file:///tmp/vllm_dist_af023f6ce883425187b46a8d5d3c8ae5 backend=nccl
+(Worker pid=203) INFO 09-22 18:33:59 [pynccl.py:148] vLLM is using nccl==2.30.7
+(Worker pid=203) INFO 09-22 18:34:01 [cuda_communicator.py:326] Using ['FLASHINFER', 'CUSTOM', 'SYMM_MEM', 'PYNCCL'] all-reduce backends (in dispatch order) for group 'tp:0' out of potential backends: ['FLASHINFER_PCIE_IPC', 'FLASHINFER', 'NCCL_SYMM_MEM', 'QUICK_REDUCE', 'AITER_CUSTOM', 'CUSTOM', 'SYMM_MEM', 'PYNCCL'].
+(Worker pid=203) INFO 09-22 18:34:03 [cuda_communicator.py:326] Using ['PYNCCL'] all-reduce backends (in dispatch order) for group 'ep:0' out of potential backends: ['FLASHINFER_PCIE_IPC', 'FLASHINFER', 'NCCL_SYMM_MEM', 'QUICK_REDUCE', 'AITER_CUSTOM', 'CUSTOM', 'SYMM_MEM', 'PYNCCL'].
+(Worker pid=203) INFO 09-22 18:34:03 [parallel_state.py:2261] rank 0 in world size 4 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, ETP rank 0, EP rank 0, EPLB rank N/A
+(Worker pid=203) INFO 09-22 18:34:03 [gpu_worker.py:474] Using V2 Model Runner
+(Worker_TP0 pid=203) INFO 09-22 18:34:04 [model_runner.py:376] Loading model from scratch...
+(Worker_TP0 pid=203) INFO 09-22 18:34:04 [cuda.py:595] Using backend AttentionBackendEnum.FLASH_ATTN for vit attention
+(Worker_TP0 pid=203) INFO 09-22 18:34:04 [mm_encoder_attention.py:372] Using AttentionBackendEnum.FLASH_ATTN for MMEncoderAttention.
+(Worker_TP0 pid=203) INFO 09-22 18:34:04 [kernel.py:408] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(Worker_TP0 pid=203) INFO 09-22 18:34:04 [compilation.py:331] Enabled custom fusions: norm_quant, act_quant, allreduce_rms
+(Worker_TP1 pid=218) INFO 09-22 18:34:04 [kernel.py:408] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(Worker_TP0 pid=203) INFO 09-22 18:34:04 [__init__.py:730] Selected FlashInferFp8DeepGEMMDynamicBlockScaledKernel for Fp8LinearMethod
+(Worker_TP0 pid=203) INFO 09-22 18:34:04 [deep_gemm.py:197] deep_gemm not found in site-packages, trying vendored vllm.third_party.deep_gemm
+(Worker_TP3 pid=277) INFO 09-22 18:34:04 [kernel.py:408] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(Worker_TP2 pid=248) INFO 09-22 18:34:05 [kernel.py:408] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(Worker_TP0 pid=203) INFO 09-22 18:34:05 [deep_gemm.py:224] DeepGEMM PDL enabled on vllm.third_party.deep_gemm.
+(Worker_TP0 pid=203) INFO 09-22 18:34:05 [deep_gemm.py:136] DeepGEMM E8M0 enabled on current platform.
+(Worker_TP0 pid=203) INFO 09-22 18:34:08 [cuda.py:536] Using FLASHINFER_MLA_SPARSE_SM90 attention backend out of potential backends: ['FLASHINFER_MLA_SPARSE_SM90', 'FLASH_ATTN_MLA_SPARSE'].
+(Worker_TP0 pid=203) INFO 09-22 18:34:08 [selector.py:197] Using FLASH_ATTN MLA prefill backend.
+(Worker_TP0 pid=203) INFO 09-22 18:34:08 [fp8.py:522] Using TRITON Fp8 MoE backend out of potential backends: ['TRITON', 'AITER', 'FLASHINFER_TRTLLM', 'FLASHINFER_CUTLASS', 'DEEPGEMM', 'MARLIN', 'HUMMING', 'BATCHED_DEEPGEMM', 'BATCHED_TRITON', 'XPU', 'CPU_W8A8', 'CPU', 'HPC'].
+(Worker_TP0 pid=203) Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(Worker_TP0 pid=203) INFO 09-22 18:55:13 [weight_utils.py:559] Time spent downloading weights for zai-org/GLM-5.3-Flash: 1264.352458 seconds
+(Worker_TP0 pid=203) INFO 09-22 18:55:13 [weight_utils.py:900] Filesystem type for checkpoints: OVERLAY. Checkpoint size: 305.79 GiB. Available RAM: 1009.12 GiB.
+(Worker_TP0 pid=203) INFO 09-22 18:55:13 [weight_utils.py:923] Auto-prefetch is disabled because the filesystem (OVERLAY) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:   0% Completed | 0/62 [00:00<?, ?it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:   2% Completed | 1/62 [00:03<03:13,  3.17s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:   3% Completed | 2/62 [00:06<03:16,  3.28s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:   5% Completed | 3/62 [00:10<03:35,  3.66s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:   6% Completed | 4/62 [00:15<04:11,  4.33s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:   8% Completed | 5/62 [00:19<03:57,  4.17s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  10% Completed | 6/62 [00:22<03:31,  3.77s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  11% Completed | 7/62 [00:25<03:06,  3.39s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  13% Completed | 8/62 [00:28<02:48,  3.13s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  15% Completed | 9/62 [00:32<03:00,  3.41s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  16% Completed | 10/62 [00:35<02:53,  3.33s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  18% Completed | 11/62 [00:38<02:42,  3.18s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  19% Completed | 12/62 [00:39<02:15,  2.71s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  21% Completed | 13/62 [00:41<02:00,  2.47s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  23% Completed | 14/62 [00:43<01:43,  2.16s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  24% Completed | 15/62 [00:44<01:35,  2.04s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  26% Completed | 16/62 [00:46<01:27,  1.89s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  27% Completed | 17/62 [00:47<01:21,  1.80s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  29% Completed | 18/62 [00:49<01:14,  1.69s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  31% Completed | 19/62 [00:50<01:10,  1.64s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  32% Completed | 20/62 [00:52<01:14,  1.77s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  34% Completed | 21/62 [00:54<01:11,  1.74s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  35% Completed | 22/62 [00:56<01:11,  1.79s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  37% Completed | 23/62 [00:57<01:01,  1.59s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  39% Completed | 24/62 [00:58<00:53,  1.42s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  40% Completed | 25/62 [01:00<00:55,  1.49s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  42% Completed | 26/62 [01:02<00:57,  1.60s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  44% Completed | 27/62 [01:04<01:06,  1.90s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  45% Completed | 28/62 [01:07<01:11,  2.11s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  47% Completed | 29/62 [01:08<01:02,  1.89s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  48% Completed | 30/62 [01:10<00:55,  1.72s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  50% Completed | 31/62 [01:11<00:51,  1.65s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  52% Completed | 32/62 [01:13<00:54,  1.81s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  53% Completed | 33/62 [01:14<00:44,  1.55s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  55% Completed | 34/62 [01:15<00:37,  1.35s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  56% Completed | 35/62 [01:16<00:35,  1.32s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  58% Completed | 36/62 [01:17<00:32,  1.24s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  60% Completed | 37/62 [01:19<00:31,  1.25s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  61% Completed | 38/62 [01:20<00:30,  1.27s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  63% Completed | 39/62 [01:21<00:27,  1.18s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  65% Completed | 40/62 [01:23<00:29,  1.36s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  66% Completed | 41/62 [01:24<00:27,  1.33s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  68% Completed | 42/62 [01:25<00:23,  1.20s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  69% Completed | 43/62 [01:26<00:20,  1.09s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  71% Completed | 44/62 [01:27<00:18,  1.01s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  73% Completed | 45/62 [01:27<00:16,  1.06it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  74% Completed | 46/62 [01:29<00:16,  1.05s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  76% Completed | 47/62 [01:29<00:14,  1.02it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  77% Completed | 48/62 [01:30<00:13,  1.06it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  79% Completed | 49/62 [01:31<00:11,  1.10it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  81% Completed | 50/62 [01:32<00:10,  1.13it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  82% Completed | 51/62 [01:33<00:09,  1.13it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  84% Completed | 52/62 [01:34<00:08,  1.13it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  85% Completed | 53/62 [01:35<00:09,  1.01s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  87% Completed | 54/62 [01:36<00:07,  1.05it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  89% Completed | 55/62 [01:37<00:06,  1.06it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  90% Completed | 56/62 [01:38<00:05,  1.08it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  92% Completed | 57/62 [01:39<00:04,  1.10it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  94% Completed | 58/62 [01:39<00:03,  1.12it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  95% Completed | 59/62 [01:41<00:03,  1.01s/it]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  97% Completed | 60/62 [01:42<00:01,  1.04it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards:  98% Completed | 61/62 [01:42<00:00,  1.08it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards: 100% Completed | 62/62 [01:43<00:00,  1.41it/s]
+(Worker_TP0 pid=203) 
+Loading safetensors checkpoint shards: 100% Completed | 62/62 [01:43<00:00,  1.66s/it]
+(Worker_TP0 pid=203) 
+(Worker_TP0 pid=203) INFO 09-22 18:56:56 [default_loader.py:430] Loading weights took 103.10 seconds
+(Worker_TP0 pid=203) INFO 09-22 18:57:06 [fp8.py:838] Using MoEPrepareAndFinalizeNoDPEPModular
+(Worker_TP1 pid=218) INFO 09-22 18:57:07 [model_runner.py:408] Model loading took 75.97 GiB memory and 1383.189908 seconds
+(Worker_TP1 pid=218) INFO 09-22 18:57:07 [interface.py:621] Setting kv cache block size to 64 for DEEPSEEK_V32_INDEXER backend.
+(Worker_TP1 pid=218) INFO 09-22 18:57:07 [interface.py:918] Setting attention block size to 1152 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP1 pid=218) INFO 09-22 18:57:07 [interface.py:942] Padding mamba page size by 8.68% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP3 pid=277) INFO 09-22 18:57:07 [model_runner.py:408] Model loading took 75.97 GiB memory and 1383.351191 seconds
+(Worker_TP3 pid=277) INFO 09-22 18:57:07 [interface.py:621] Setting kv cache block size to 64 for DEEPSEEK_V32_INDEXER backend.
+(Worker_TP3 pid=277) INFO 09-22 18:57:07 [interface.py:918] Setting attention block size to 1152 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP3 pid=277) INFO 09-22 18:57:07 [interface.py:942] Padding mamba page size by 8.68% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP2 pid=248) INFO 09-22 18:57:07 [model_runner.py:408] Model loading took 75.97 GiB memory and 1383.446764 seconds
+(Worker_TP2 pid=248) INFO 09-22 18:57:07 [interface.py:621] Setting kv cache block size to 64 for DEEPSEEK_V32_INDEXER backend.
+(Worker_TP2 pid=248) INFO 09-22 18:57:07 [interface.py:918] Setting attention block size to 1152 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP2 pid=248) INFO 09-22 18:57:07 [interface.py:942] Padding mamba page size by 8.68% to ensure that mamba page size and attention page size are exactly equal.
+(Worker_TP0 pid=203) INFO 09-22 18:57:07 [model_runner.py:408] Model loading took 75.97 GiB memory and 1383.442842 seconds
+(Worker_TP0 pid=203) INFO 09-22 18:57:07 [topk_topp_sampler.py:114] Using FlashInfer for top-p & top-k sampling.
+(Worker_TP0 pid=203) INFO 09-22 18:57:07 [interface.py:621] Setting kv cache block size to 64 for DEEPSEEK_V32_INDEXER backend.
+(Worker_TP0 pid=203) INFO 09-22 18:57:07 [interface.py:918] Setting attention block size to 1152 tokens to ensure that attention page size is >= mamba page size.
+(Worker_TP0 pid=203) INFO 09-22 18:57:07 [interface.py:942] Padding mamba page size by 8.68% to ensure that mamba page size and attention page size are exactly equal.
+(EngineCore pid=174) WARNING 09-22 18:57:07 [torch_utils.py:274] OMP_NUM_THREADS=4 is set; leaving Torch threads at 4 for serving. Multi-threaded torch CPU ops during serving can degrade performance through spin-wait contention and cgroup CPU-quota throttling.
+(EngineCore pid=174) INFO 09-22 18:57:07 [utils.py:320] Using LBHNC KV cache layout.
+(Worker_TP3 pid=277) Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(Worker_TP1 pid=218) Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(Worker_TP2 pid=248) Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(Worker_TP0 pid=203) INFO 09-22 18:57:13 [encoder_runner.py:131] Encoder cache will be initialized with a budget of 32242 tokens, and profiled with 1 video items of the maximum feature size.
+(Worker_TP0 pid=203) /usr/local/lib/python3.12/dist-packages/triton/language/core.py:2625: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+(Worker_TP0 pid=203)   warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+(Worker_TP3 pid=277) /usr/local/lib/python3.12/dist-packages/triton/language/core.py:2625: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+(Worker_TP3 pid=277)   warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+(Worker_TP2 pid=248) /usr/local/lib/python3.12/dist-packages/triton/language/core.py:2625: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+(Worker_TP2 pid=248)   warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+(Worker_TP1 pid=218) /usr/local/lib/python3.12/dist-packages/triton/language/core.py:2625: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+(Worker_TP1 pid=218)   warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+[18:57:33] : Warning: T.vectorized loop over `i_hci` with extent 4 is lowered as a serial loop because TileLang could not find a valid vectorization plan. Scalar accumulator updates inside the loop are a common cause; move reductions to T.unroll or T.serial if this is intended.
+[18:57:33] : Warning: T.vectorized loop over `i_hci` with extent 4 is lowered as a serial loop because TileLang could not find a valid vectorization plan. Scalar accumulator updates inside the loop are a common cause; move reductions to T.unroll or T.serial if this is intended.
+[18:57:33] : Warning: T.vectorized loop over `i_hci` with extent 4 is lowered as a serial loop because TileLang could not find a valid vectorization plan. Scalar accumulator updates inside the loop are a common cause; move reductions to T.unroll or T.serial if this is intended.
+[18:57:33] : Warning: T.vectorized loop over `i_hci` with extent 4 is lowered as a serial loop because TileLang could not find a valid vectorization plan. Scalar accumulator updates inside the loop are a common cause; move reductions to T.unroll or T.serial if this is intended.
+(Worker_TP0 pid=203) 2026-09-22 18:57:20  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP0 pid=203) 2026-09-22 18:57:31  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP0 pid=203) 2026-09-22 18:57:33  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_post_tilelang` with `out_idx=None`
+(Worker_TP0 pid=203) 2026-09-22 18:57:36  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_post_tilelang`
+(Worker_TP0 pid=203) WARNING 09-22 18:58:00 [fused_moe.py:1163] Using default MoE config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/fused_moe/configs/E=288,N=512,device_name=NVIDIA_H200,dtype=fp8_w8a8,block_shape=[128,128].json
+(Worker_TP0 pid=203) INFO 09-22 18:58:04 [indexer.py:896] DSA indexer decode path: use_flattening=False supports_varlen=False (next_n=1, use_fp4_cache=False)
+(Worker_TP0 pid=203) INFO 09-22 18:58:04 [breakable_cudagraph.py:293] Breakable CUDA graph enabled
+(Worker_TP2 pid=248) 2026-09-22 18:57:20  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP2 pid=248) 2026-09-22 18:57:31  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP2 pid=248) 2026-09-22 18:57:33  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_post_tilelang` with `out_idx=None`
+(Worker_TP2 pid=248) 2026-09-22 18:57:36  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_post_tilelang`
+(Worker_TP0 pid=203) 
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/5 [00:00<?, ?it/s](EngineCore pid=174) INFO 09-22 18:58:08 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(Worker_TP3 pid=277) 2026-09-22 18:57:20  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP3 pid=277) 2026-09-22 18:57:31  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP3 pid=277) 2026-09-22 18:57:33  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_post_tilelang` with `out_idx=None`
+(Worker_TP3 pid=277) 2026-09-22 18:57:36  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_post_tilelang`
+(Worker_TP1 pid=218) 2026-09-22 18:57:20  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP1 pid=218) 2026-09-22 18:57:31  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP1 pid=218) 2026-09-22 18:57:33  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_post_tilelang` with `out_idx=None`
+(Worker_TP1 pid=218) 2026-09-22 18:57:36  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_post_tilelang`
+
+                                                                        
+
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/5 [00:23<?, ?it/s]
+                                                                        
+
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/5 [00:33<?, ?it/s](Worker_TP0 pid=203) 2026-09-22 18:58:27  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP0 pid=203) 2026-09-22 18:58:37  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP0 pid=203) INFO 09-22 18:58:40 [flashinfer_all_reduce.py:216] Initialized FlashInfer Allreduce norm fusion workspace with backend=mnnvl
+
+                                                                        
+
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/5 [00:36<?, ?it/s]
+                                                                        
+
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/5 [00:39<?, ?it/s]
+                                                                        
+
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/5 [00:40<?, ?it/s]
+                                                                        
+
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/5 [00:51<?, ?it/s](EngineCore pid=174) INFO 09-22 18:59:08 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+
+Capturing CUDA graphs (PIECEWISE):  20%|██        | 1/5 [01:10<04:43, 70.76s/it]
+                                                                                
+
+Capturing CUDA graphs (PIECEWISE):  20%|██        | 1/5 [01:14<04:43, 70.76s/it]
+                                                                                
+
+Capturing CUDA graphs (PIECEWISE):  20%|██        | 1/5 [01:17<04:43, 70.76s/it]
+Capturing CUDA graphs (PIECEWISE):  40%|████      | 2/5 [01:20<01:43, 34.58s/it]
+Capturing CUDA graphs (PIECEWISE):  60%|██████    | 3/5 [01:21<00:39, 19.56s/it]
+Capturing CUDA graphs (PIECEWISE):  80%|████████  | 4/5 [01:22<00:12, 12.11s/it]
+Capturing CUDA graphs (PIECEWISE): 100%|██████████| 5/5 [01:25<00:00,  8.73s/it]
+Capturing CUDA graphs (PIECEWISE): 100%|██████████| 5/5 [01:25<00:00, 17.03s/it]
+(Worker_TP0 pid=203) 2026-09-22 18:58:40  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_fused_tilelang` with `out_idx=None`
+(Worker_TP0 pid=203) 2026-09-22 18:58:43  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_fused_tilelang`
+(Worker_TP0 pid=203) 2026-09-22 18:58:45  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP0 pid=203) 2026-09-22 18:58:55  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP0 pid=203) 2026-09-22 18:59:19  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_fused_tilelang` with `out_idx=None`
+(Worker_TP0 pid=203) 2026-09-22 18:59:21  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_fused_tilelang`
+(Worker_TP0 pid=203) 
+Capturing CUDA graphs (FULL):   0%|          | 0/2 [00:00<?, ?it/s]
+Capturing CUDA graphs (FULL):  50%|█████     | 1/2 [00:04<00:04,  4.65s/it]
+Capturing CUDA graphs (FULL): 100%|██████████| 2/2 [00:04<00:00,  2.08s/it]
+Capturing CUDA graphs (FULL): 100%|██████████| 2/2 [00:04<00:00,  2.47s/it]
+(Worker_TP0 pid=203) INFO 09-22 18:59:34 [model_runner.py:1059] Graph capturing finished in 91 secs, took 0.65 GiB
+(Worker_TP2 pid=248) 2026-09-22 18:58:27  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP2 pid=248) 2026-09-22 18:58:38  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP2 pid=248) 2026-09-22 18:58:40  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_fused_tilelang` with `out_idx=None`
+(Worker_TP2 pid=248) 2026-09-22 18:58:43  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_fused_tilelang`
+(Worker_TP2 pid=248) 2026-09-22 18:58:45  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP2 pid=248) 2026-09-22 18:58:55  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP2 pid=248) 2026-09-22 18:59:19  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_fused_tilelang` with `out_idx=None`
+(Worker_TP2 pid=248) 2026-09-22 18:59:22  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_fused_tilelang`
+(Worker_TP2 pid=248) INFO 09-22 18:59:35 [model_runner.py:1059] Graph capturing finished in 92 secs, took 0.65 GiB
+(Worker_TP3 pid=277) 2026-09-22 18:58:27  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP3 pid=277) 2026-09-22 18:58:38  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP3 pid=277) 2026-09-22 18:58:40  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_fused_tilelang` with `out_idx=None`
+(Worker_TP3 pid=277) 2026-09-22 18:58:43  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_fused_tilelang`
+(Worker_TP3 pid=277) 2026-09-22 18:58:44  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP3 pid=277) 2026-09-22 18:58:55  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP3 pid=277) 2026-09-22 18:59:19  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_fused_tilelang` with `out_idx=None`
+(Worker_TP3 pid=277) 2026-09-22 18:59:21  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_fused_tilelang`
+(Worker_TP3 pid=277) INFO 09-22 18:59:35 [model_runner.py:1059] Graph capturing finished in 92 secs, took 0.65 GiB
+(Worker_TP1 pid=218) 2026-09-22 18:58:27  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP1 pid=218) 2026-09-22 18:58:38  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP1 pid=218) 2026-09-22 18:58:40  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_fused_tilelang` with `out_idx=None`
+(Worker_TP1 pid=218) 2026-09-22 18:58:43  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_fused_tilelang`
+(Worker_TP1 pid=218) 2026-09-22 18:58:45  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_pre_big_fuse_with_norm_tilelang` with `out_idx=None`
+(Worker_TP1 pid=218) 2026-09-22 18:58:55  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_pre_big_fuse_with_norm_tilelang`
+(Worker_TP1 pid=218) 2026-09-22 18:59:19  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:129): TileLang begins to compile kernel `mhc_fused_tilelang` with `out_idx=None`
+(Worker_TP1 pid=218) 2026-09-22 18:59:21  [TileLang:tilelang.jit.kernel:INFO] (kernel.py:137): TileLang completes to compile kernel `mhc_fused_tilelang`
+(Worker_TP1 pid=218) INFO 09-22 18:59:35 [model_runner.py:1059] Graph capturing finished in 91 secs, took 0.65 GiB
+(Worker_TP0 pid=203) INFO 09-22 18:59:35 [gpu_worker.py:674] Available KV cache memory: 40.51 GiB
+(Worker_TP0 pid=203) INFO 09-22 18:59:35 [gpu_worker.py:689] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.8500 is equivalent to --gpu-memory-utilization=0.8450 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.8550. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(Worker_TP2 pid=248) INFO 09-22 18:59:35 [gpu_worker.py:689] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.8500 is equivalent to --gpu-memory-utilization=0.8450 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.8550. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(Worker_TP3 pid=277) INFO 09-22 18:59:35 [gpu_worker.py:689] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.8500 is equivalent to --gpu-memory-utilization=0.8450 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.8550. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(Worker_TP1 pid=218) INFO 09-22 18:59:35 [gpu_worker.py:689] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.8500 is equivalent to --gpu-memory-utilization=0.8450 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.8550. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(EngineCore pid=174) INFO 09-22 18:59:35 [kv_cache_utils.py:2432] GPU KV cache size: 1,023,054 tokens, Maximum concurrency for 4,096 tokens per request: 249.77x
+(Worker_TP2 pid=248) INFO 09-22 18:59:35 [kernel_warmup.py:171] JIT kernel warmup starting.
+(Worker_TP3 pid=277) INFO 09-22 18:59:35 [kernel_warmup.py:171] JIT kernel warmup starting.
+(Worker_TP0 pid=203) INFO 09-22 18:59:35 [kernel_warmup.py:171] JIT kernel warmup starting.
+(Worker_TP1 pid=218) INFO 09-22 18:59:35 [kernel_warmup.py:171] JIT kernel warmup starting.
+(Worker_TP0 pid=203) 
+JIT kernel warmup (25 compile keys):   0%|          | 0/4 [00:00<?, ?kernel/s](EngineCore pid=174) INFO 09-22 19:00:36 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(EngineCore pid=174) INFO 09-22 19:01:36 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+(EngineCore pid=174) INFO 09-22 19:02:36 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+
+JIT kernel warmup (25 compile keys):  50%|█████     | 2/4 [03:31<03:31, 105.88s/kernel, MhcPreBigFuseTileLangKernel (21 keys)]
+JIT kernel warmup (25 compile keys):  75%|███████▌  | 3/4 [03:32<01:01, 61.88s/kernel, MhcPostTileLangKernel (1 keys)]        (Worker_TP2 pid=248) INFO 09-22 19:03:08 [kernel_warmup.py:184] JIT kernel warmup finished in 212.27s.
+(Worker_TP3 pid=277) INFO 09-22 19:03:08 [kernel_warmup.py:184] JIT kernel warmup finished in 212.28s.
+(Worker_TP3 pid=277) INFO 09-22 19:03:08 [mamba_triton_warmup.py:42] Warmed Mamba batch_memcpy_kernel.
+(Worker_TP2 pid=248) INFO 09-22 19:03:08 [mamba_triton_warmup.py:42] Warmed Mamba batch_memcpy_kernel.
+
+JIT kernel warmup (25 compile keys): 100%|██████████| 4/4 [03:32<00:00, 38.95s/kernel, MhcFusedTileLangKernel (2 keys)]
+JIT kernel warmup (25 compile keys): 100%|██████████| 4/4 [03:32<00:00, 53.12s/kernel, MhcFusedTileLangKernel (2 keys)]
+(Worker_TP0 pid=203) INFO 09-22 19:03:08 [kernel_warmup.py:184] JIT kernel warmup finished in 212.54s.
+(Worker_TP1 pid=218) INFO 09-22 19:03:08 [kernel_warmup.py:184] JIT kernel warmup finished in 212.59s.
+(Worker_TP0 pid=203) INFO 09-22 19:03:08 [mamba_triton_warmup.py:42] Warmed Mamba batch_memcpy_kernel.
+(Worker_TP1 pid=218) INFO 09-22 19:03:08 [mamba_triton_warmup.py:42] Warmed Mamba batch_memcpy_kernel.
+(Worker_TP0 pid=203) INFO 09-22 19:03:09 [kernel_warmup.py:94] Warming up ll_bf16 router GEMM kernels for shapes: ((4096, 288),).
+(Worker_TP0 pid=203) 
+DeepGEMM warmup:   0%|          | 0/680 [00:00<?, ?it/s]
+DeepGEMM warmup:   0%|          | 1/680 [00:07<1:22:40,  7.31s/it]
+DeepGEMM warmup:   1%|          | 6/680 [00:11<17:47,  1.58s/it]  
+DeepGEMM warmup:   1%|▏         | 9/680 [00:14<15:49,  1.42s/it]
+DeepGEMM warmup:   2%|▏         | 14/680 [00:20<13:53,  1.25s/it]
+DeepGEMM warmup:   3%|▎         | 19/680 [00:24<12:08,  1.10s/it](EngineCore pid=174) INFO 09-22 19:03:36 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+
+DeepGEMM warmup:   4%|▎         | 24/680 [00:30<12:01,  1.10s/it]
+DeepGEMM warmup:   5%|▍         | 31/680 [00:34<09:49,  1.10it/s]
+DeepGEMM warmup:   6%|▌         | 42/680 [00:41<08:09,  1.30it/s]
+DeepGEMM warmup:   8%|▊         | 52/680 [00:46<06:42,  1.56it/s]
+DeepGEMM warmup:   9%|▉         | 62/680 [00:50<05:46,  1.78it/s]
+DeepGEMM warmup:  10%|█         | 68/680 [00:56<07:01,  1.45it/s]
+DeepGEMM warmup:  16%|█▋        | 111/680 [01:01<02:41,  3.53it/s]
+DeepGEMM warmup:  30%|███       | 204/680 [01:08<01:06,  7.17it/s]
+DeepGEMM warmup:  31%|███       | 209/680 [01:12<01:21,  5.81it/s]
+DeepGEMM warmup:  31%|███       | 211/680 [01:16<01:41,  4.61it/s]
+DeepGEMM warmup:  32%|███▏      | 216/680 [01:19<02:04,  3.74it/s]
+DeepGEMM warmup:  32%|███▏      | 220/680 [01:25<02:45,  2.77it/s](EngineCore pid=174) INFO 09-22 19:04:36 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+
+DeepGEMM warmup:  33%|███▎      | 224/680 [01:28<03:16,  2.33it/s]
+DeepGEMM warmup:  34%|███▎      | 229/680 [01:32<03:40,  2.05it/s]
+DeepGEMM warmup:  34%|███▍      | 234/680 [01:38<04:31,  1.64it/s]
+DeepGEMM warmup:  35%|███▌      | 238/680 [01:42<05:06,  1.44it/s]
+DeepGEMM warmup:  36%|███▌      | 243/680 [01:46<05:10,  1.41it/s]
+DeepGEMM warmup:  37%|███▋      | 249/680 [01:53<06:19,  1.13it/s]
+DeepGEMM warmup:  38%|███▊      | 255/680 [02:00<06:39,  1.06it/s]
+DeepGEMM warmup:  38%|███▊      | 261/680 [02:04<05:57,  1.17it/s]
+DeepGEMM warmup:  40%|███▉      | 270/680 [02:09<05:01,  1.36it/s]
+DeepGEMM warmup:  41%|████      | 277/680 [02:13<04:38,  1.45it/s]
+DeepGEMM warmup:  41%|████▏     | 282/680 [02:20<05:50,  1.14it/s](EngineCore pid=174) INFO 09-22 19:05:36 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+
+DeepGEMM warmup:  42%|████▏     | 288/680 [02:27<06:10,  1.06it/s]
+DeepGEMM warmup:  44%|████▍     | 299/680 [02:32<04:36,  1.38it/s]
+DeepGEMM warmup:  57%|█████▊    | 391/680 [02:36<00:44,  6.54it/s]
+DeepGEMM warmup:  58%|█████▊    | 396/680 [02:39<00:53,  5.29it/s]
+DeepGEMM warmup:  59%|█████▊    | 398/680 [02:43<01:09,  4.08it/s]
+DeepGEMM warmup:  59%|█████▉    | 403/680 [02:47<01:24,  3.28it/s]
+DeepGEMM warmup:  60%|█████▉    | 406/680 [02:51<01:46,  2.57it/s]
+DeepGEMM warmup:  60%|██████    | 409/680 [02:54<02:08,  2.11it/s]
+DeepGEMM warmup:  61%|██████    | 412/680 [02:58<02:36,  1.72it/s]
+DeepGEMM warmup:  61%|██████    | 415/680 [03:03<03:22,  1.31it/s]
+DeepGEMM warmup:  62%|██████▏   | 419/680 [03:08<03:39,  1.19it/s]
+DeepGEMM warmup:  62%|██████▏   | 421/680 [03:12<04:22,  1.02s/it]
+DeepGEMM warmup:  62%|██████▏   | 423/680 [03:16<05:03,  1.18s/it]
+DeepGEMM warmup:  63%|██████▎   | 426/680 [03:20<05:10,  1.22s/it]
+DeepGEMM warmup:  64%|██████▎   | 433/680 [03:25<04:04,  1.01it/s](EngineCore pid=174) INFO 09-22 19:06:36 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+
+DeepGEMM warmup:  65%|██████▍   | 439/680 [03:29<03:27,  1.16it/s]
+DeepGEMM warmup:  65%|██████▌   | 442/680 [03:33<03:49,  1.04it/s]
+DeepGEMM warmup:  66%|██████▋   | 451/680 [03:37<02:43,  1.40it/s]
+DeepGEMM warmup:  66%|██████▋   | 452/680 [03:45<04:33,  1.20s/it]
+DeepGEMM warmup:  67%|██████▋   | 455/680 [03:48<04:26,  1.18s/it]
+DeepGEMM warmup:  68%|██████▊   | 462/680 [03:55<03:58,  1.09s/it]
+DeepGEMM warmup:  69%|██████▉   | 468/680 [04:00<03:34,  1.01s/it]
+DeepGEMM warmup:  69%|██████▉   | 472/680 [04:04<03:26,  1.01it/s]
+DeepGEMM warmup:  73%|███████▎  | 494/680 [04:10<01:36,  1.92it/s]
+DeepGEMM warmup:  73%|███████▎  | 499/680 [04:13<01:40,  1.81it/s]
+DeepGEMM warmup:  74%|███████▎  | 501/680 [04:17<02:00,  1.49it/s]
+DeepGEMM warmup:  74%|███████▍  | 506/680 [04:21<01:58,  1.46it/s]
+DeepGEMM warmup:  75%|███████▌  | 510/680 [04:25<02:09,  1.31it/s](EngineCore pid=174) INFO 09-22 19:07:36 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+
+DeepGEMM warmup:  76%|███████▌  | 514/680 [04:28<02:10,  1.27it/s]
+DeepGEMM warmup:  76%|███████▋  | 519/680 [04:32<02:01,  1.33it/s]
+DeepGEMM warmup:  77%|███████▋  | 524/680 [04:36<02:03,  1.26it/s]
+DeepGEMM warmup:  78%|███████▊  | 528/680 [04:40<02:03,  1.23it/s]
+DeepGEMM warmup:  78%|███████▊  | 533/680 [04:43<01:53,  1.29it/s]
+DeepGEMM warmup:  79%|███████▉  | 539/680 [04:47<01:41,  1.39it/s]
+DeepGEMM warmup:  80%|███████▉  | 541/680 [04:51<02:11,  1.06it/s]
+DeepGEMM warmup:  80%|████████  | 545/680 [04:55<02:09,  1.05it/s]
+DeepGEMM warmup:  81%|████████  | 551/680 [04:59<01:45,  1.22it/s]
+DeepGEMM warmup:  82%|████████▏ | 560/680 [05:03<01:17,  1.55it/s]
+DeepGEMM warmup:  83%|████████▎ | 567/680 [05:06<01:08,  1.64it/s]
+DeepGEMM warmup:  84%|████████▍ | 572/680 [05:11<01:16,  1.41it/s]
+DeepGEMM warmup:  85%|████████▌ | 578/680 [05:16<01:13,  1.39it/s]
+DeepGEMM warmup:  87%|████████▋ | 589/680 [05:20<00:51,  1.78it/s]
+DeepGEMM warmup: 100%|██████████| 680/680 [05:20<00:00,  2.12it/s]
+(Worker_TP0 pid=203) INFO 09-22 19:08:30 [kernel_warmup.py:254] Skipping FlashInfer autotune because it is disabled.
+(Worker_TP0 pid=203) 
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/5 [00:00<?, ?it/s]
+Capturing CUDA graphs (PIECEWISE):  20%|██        | 1/5 [00:00<00:01,  2.96it/s]
+Capturing CUDA graphs (PIECEWISE):  40%|████      | 2/5 [00:00<00:00,  3.31it/s]
+Capturing CUDA graphs (PIECEWISE):  60%|██████    | 3/5 [00:00<00:00,  3.46it/s]
+Capturing CUDA graphs (PIECEWISE):  80%|████████  | 4/5 [00:01<00:00,  3.51it/s](EngineCore pid=174) INFO 09-22 19:08:36 [shm_broadcast.py:812] No available shared memory broadcast block found in 60 seconds. This typically happens when some processes are hanging or doing some time-consuming work (e.g. compilation, weight/kv cache quantization).
+
+Capturing CUDA graphs (PIECEWISE): 100%|██████████| 5/5 [00:01<00:00,  3.53it/s]
+Capturing CUDA graphs (PIECEWISE): 100%|██████████| 5/5 [00:01<00:00,  3.45it/s]
+(Worker_TP0 pid=203) 
+Capturing CUDA graphs (FULL):   0%|          | 0/4 [00:00<?, ?it/s]
+Capturing CUDA graphs (FULL):  25%|██▌       | 1/4 [00:00<00:00,  3.35it/s]
+Capturing CUDA graphs (FULL):  50%|█████     | 2/4 [00:00<00:00,  3.52it/s]
+Capturing CUDA graphs (FULL):  75%|███████▌  | 3/4 [00:00<00:00,  3.29it/s]
+Capturing CUDA graphs (FULL): 100%|██████████| 4/4 [00:01<00:00,  3.43it/s]
+Capturing CUDA graphs (FULL): 100%|██████████| 4/4 [00:01<00:00,  3.41it/s]
+(Worker_TP0 pid=203) INFO 09-22 19:08:38 [model_runner.py:1059] Graph capturing finished in 4 secs, took 0.08 GiB
+(Worker_TP0 pid=203) INFO 09-22 19:08:38 [gpu_worker.py:857] CUDA graph pool memory: 0.08 GiB (actual), 0.7 GiB (estimated), difference: 0.62 GiB (772.0%).
+(Worker_TP0 pid=203) INFO 09-22 19:08:38 [gpu_worker.py:920] Free memory on device (133.7/139.8 GiB) on startup. Desired GPU memory utilization is (0.85, 118.83 GiB). Actual usage is 76.59 GiB for consumed memory (weights + non-torch), 1.73 GiB for peak activation, and 0.08 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=43252738868` (40.28 GiB) to fit into requested memory, or `--kv-cache-memory=59218130944` (55.15 GiB) to fully utilize gpu memory. Current kv cache memory in use is 40.51 GiB.
+(Worker_TP0 pid=203) INFO 09-22 19:08:38 [jit_monitor.py:84] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
+(Worker_TP1 pid=218) INFO 09-22 19:08:38 [model_runner.py:1059] Graph capturing finished in 4 secs, took 0.08 GiB
+(Worker_TP1 pid=218) INFO 09-22 19:08:38 [gpu_worker.py:857] CUDA graph pool memory: 0.08 GiB (actual), 0.7 GiB (estimated), difference: 0.62 GiB (772.0%).
+(Worker_TP1 pid=218) INFO 09-22 19:08:38 [gpu_worker.py:920] Free memory on device (135.24/139.8 GiB) on startup. Desired GPU memory utilization is (0.85, 118.83 GiB). Actual usage is 76.59 GiB for consumed memory (weights + non-torch), 1.73 GiB for peak activation, and 0.08 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=43254836020` (40.28 GiB) to fit into requested memory, or `--kv-cache-memory=60873504768` (56.69 GiB) to fully utilize gpu memory. Current kv cache memory in use is 40.51 GiB.
+(Worker_TP1 pid=218) INFO 09-22 19:08:38 [jit_monitor.py:84] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
+(Worker_TP3 pid=277) INFO 09-22 19:08:38 [model_runner.py:1059] Graph capturing finished in 4 secs, took 0.08 GiB
+(Worker_TP3 pid=277) INFO 09-22 19:08:38 [gpu_worker.py:857] CUDA graph pool memory: 0.08 GiB (actual), 0.7 GiB (estimated), difference: 0.62 GiB (772.0%).
+(Worker_TP3 pid=277) INFO 09-22 19:08:38 [gpu_worker.py:920] Free memory on device (135.24/139.8 GiB) on startup. Desired GPU memory utilization is (0.85, 118.83 GiB). Actual usage is 76.59 GiB for consumed memory (weights + non-torch), 1.73 GiB for peak activation, and 0.08 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=43254836020` (40.28 GiB) to fit into requested memory, or `--kv-cache-memory=60873504768` (56.69 GiB) to fully utilize gpu memory. Current kv cache memory in use is 40.51 GiB.
+(Worker_TP3 pid=277) INFO 09-22 19:08:38 [jit_monitor.py:84] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
+(Worker_TP2 pid=248) INFO 09-22 19:08:38 [model_runner.py:1059] Graph capturing finished in 4 secs, took 0.08 GiB
+(Worker_TP2 pid=248) INFO 09-22 19:08:38 [gpu_worker.py:857] CUDA graph pool memory: 0.08 GiB (actual), 0.7 GiB (estimated), difference: 0.62 GiB (772.0%).
+(Worker_TP2 pid=248) INFO 09-22 19:08:38 [gpu_worker.py:920] Free memory on device (135.24/139.8 GiB) on startup. Desired GPU memory utilization is (0.85, 118.83 GiB). Actual usage is 76.59 GiB for consumed memory (weights + non-torch), 1.73 GiB for peak activation, and 0.08 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=43254836020` (40.28 GiB) to fit into requested memory, or `--kv-cache-memory=60873504768` (56.69 GiB) to fully utilize gpu memory. Current kv cache memory in use is 40.51 GiB.
+(Worker_TP2 pid=248) INFO 09-22 19:08:38 [jit_monitor.py:84] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
+(Worker_TP0 pid=203) WARNING 09-22 19:08:39 [torch_utils.py:274] OMP_NUM_THREADS=4 is set; leaving Torch threads at 4 for serving. Multi-threaded torch CPU ops during serving can degrade performance through spin-wait contention and cgroup CPU-quota throttling.
+(EngineCore pid=174) INFO 09-22 19:08:39 [core.py:383] init engine (profile, create kv cache, warmup model) took 691.62 s
+(EngineCore pid=174) INFO 09-22 19:08:42 [kv_cache_utils.py:762] kv cache group sizes [1152, 4, 1152, 1152, 1152, 1152]
+(EngineCore pid=174) INFO 09-22 19:08:42 [kv_cache_utils.py:763] kv lcm block sizes 1152
+(EngineCore pid=174) Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(EngineCore pid=174) INFO 09-22 19:08:45 [kernel.py:408] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(EngineCore pid=174) INFO 09-22 19:08:46 [compilation.py:331] Enabled custom fusions: norm_quant, act_quant, allreduce_rms
+(APIServer pid=14) INFO 09-22 19:08:46 [entry.py:132] Supported tasks: ['generate']
+(APIServer pid=14) INFO 09-22 19:08:46 [factories.py:76] Scale-out endpoints are disabled. Set --enable-scale-out to enable them.
+(APIServer pid=14) INFO 09-22 19:08:49 [hf.py:642] Detected the chat template content format to be 'openai'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=14) WARNING 09-22 19:08:49 [model.py:1838] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'temperature': 1.0, 'top_p': 0.95}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(APIServer pid=14) INFO 09-22 19:08:49 [entry.py:136] Starting vLLM server on http://0.0.0.0:8000
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:60] Available routes are:
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /docs, Methods: GET, HEAD
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /redoc, Methods: GET, HEAD
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /load, Methods: GET
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /version, Methods: GET
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /kv_event_sources, Methods: GET
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /health, Methods: GET
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /metrics, Methods: GET
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /tokenize, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /detokenize, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /v1/models, Methods: GET
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /ping, Methods: GET
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /ping, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /invocations, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /v1/responses, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /v1/completions, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /v1/messages, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /generative_scoring, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=14) INFO 09-22 19:08:49 [launcher.py:69] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=14) INFO:     Started server process [14]
+(APIServer pid=14) INFO:     Waiting for application startup.
+(APIServer pid=14) INFO:     Application startup complete.
+(APIServer pid=14) INFO:     127.0.0.1:20130 - "GET /v1/models HTTP/1.1" 200 OK
+(APIServer pid=14) INFO:     127.0.0.1:19695 - "GET /v1/models HTTP/1.1" 200 OK
+(APIServer pid=14) INFO:     127.0.0.1:46428 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(Worker_TP0 pid=203) WARNING 09-22 19:08:50 [jit_monitor.py:140] Triton kernel JIT compilation during inference: BuildPrefillChunkMetadataKernel.kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(Worker_TP0 pid=203) WARNING 09-22 19:08:50 [jit_monitor.py:140] Triton kernel JIT compilation during inference: _kpool_tail_seed_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+(Worker_TP0 pid=203) WARNING 09-22 19:08:51 [jit_monitor.py:140] Triton kernel JIT compilation during inference: fused_moe_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.

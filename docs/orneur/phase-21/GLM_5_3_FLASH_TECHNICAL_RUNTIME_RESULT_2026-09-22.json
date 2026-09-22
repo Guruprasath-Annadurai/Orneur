@@ -1,0 +1,63 @@
+{
+  "schema_note": "This is NOT a STRICT_RUNTIME_SMOKE_V2 accepted qualification manifest and is not validated against orca.eval.runtime_qualification_manifest's schema. It is a plain descriptive technical-result record. It must never be linked as an accepted qualification_manifest_path in the candidate registry.",
+  "candidate": "GLM-5.3-Flash",
+  "artifact_repository": "zai-org/GLM-5.3-Flash",
+  "pinned_revision": "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
+  "record_date": "2026-09-22",
+
+  "technical_runtime_result": "SUCCESS",
+  "production_server_path_observed": true,
+  "server_ready": true,
+  "models_endpoint_success": true,
+  "chat_endpoint_success": true,
+  "generation_success": true,
+  "topology": "4x NVIDIA H200 / TP4",
+
+  "formal_runtime_qualification": "NOT_ACCEPTED",
+  "formal_acceptance_blocker": "ZERO_OWNER_CASH_FINANCIAL_GATE_VIOLATION",
+  "owner_billed_delta_usd": 3.52,
+
+  "candidate_eliminated": false,
+  "runtime_defect_demonstrated": false,
+  "capability_status": "UNPROVEN BY ORNEUR",
+  "frontier_status": "UNPROVEN BY ORNEUR",
+  "phase_21c_authorized": false,
+
+  "gpu_execution_history": {
+    "invocation_1": {
+      "classification": "HARNESS_CURTAILED_BEFORE_MODEL_LOAD",
+      "model_load_attempts_consumed": 0,
+      "reason": "harness's failure detector false-triggered on a benign WARNING-level optional-module (nixl_ep) traceback and sent SIGTERM before weight loading began",
+      "evidence": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION1_HARNESS_CURTAILED_2026-09-22.json"
+    },
+    "invocation_2": {
+      "classification": "TECHNICAL_SUCCESS_FINANCIAL_GATE_VIOLATION",
+      "model_load_attempts_consumed": 1,
+      "server_ready_after_seconds": 2271.23,
+      "total_wall_seconds": 2282.28,
+      "within_55_minute_hard_ceiling": true,
+      "weight_download_seconds": 1264.35,
+      "weight_load_seconds": 103.10,
+      "owner_billed_delta_usd": 3.52,
+      "evidence": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION2_SUCCESSFUL_RUN_RESULT_2026-09-23.json"
+    }
+  },
+
+  "evidence_index": {
+    "billing_gate": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_BILLING_GATE_2026-09-22.json",
+    "billing_before": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_BILLING_BEFORE_2026-09-23.json",
+    "billing_after": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_BILLING_AFTER_2026-09-23.json",
+    "model_identity": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_MODEL_IDENTITY_2026-09-22.json",
+    "runtime_environment": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_RUNTIME_ENVIRONMENT_2026-09-22.json",
+    "generation_result": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GENERATION_RESULT_2026-09-23.json",
+    "cleanup": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_CLEANUP_2026-09-23.json",
+    "invocation_1_harness_curtailed": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION1_HARNESS_CURTAILED_2026-09-22.json",
+    "invocation_1_execution_log": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION1_EXECUTION_LOG_2026-09-22.txt",
+    "invocation_2_successful_run_result": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION2_SUCCESSFUL_RUN_RESULT_2026-09-23.json",
+    "invocation_2_execution_log": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION2_EXECUTION_LOG_2026-09-23.txt",
+    "compute_cost_incident": "docs/orneur/phase-21/GLM_5_3_FLASH_COMPUTE_COST_INCIDENT_2026-09-23.md",
+    "future_guardrail_spec": "docs/orneur/phase-21/GLM_5_3_FLASH_FUTURE_ZERO_CASH_GPU_GUARDRAIL_2026-09-23.md"
+  },
+
+  "path_to_formal_qualification": "A future, separately authorized GPU execution invocation, run under a corrected harness that enforces BOTH a wall-clock ceiling AND a live monetary-credit ceiling (see the future-guardrail spec above), using the SAME verified image digest, pinned revision, and serving configuration, ending with owner_billed_delta_usd == 0, would be eligible to produce an accepted STRICT_RUNTIME_SMOKE_V2 PRODUCTION_SERVING_RUNTIME_QUALIFIED manifest. This technical-result record does not itself confer qualification and must not be cited as if it does."
+}

@@ -1,0 +1,24 @@
+{
+  "evidence_type": "MODEL_IDENTITY_VERIFICATION",
+  "evidence_strength": "LIVE_PRIMARY_SOURCE_VERIFIED",
+  "candidate": "GLM-5.3-Flash",
+  "organization": "Zhipu AI / Z.ai",
+  "artifact_repository": "zai-org/GLM-5.3-Flash",
+  "exact_immutable_revision": "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
+  "tokenizer_repository": "zai-org/GLM-5.3-Flash",
+  "tokenizer_revision": "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
+  "architecture": "Glm5NextForConditionalGeneration",
+  "model_type": "glm5_next",
+  "total_parameters": 321323031390,
+  "parameters_by_dtype": {
+    "BF16": 6926096640,
+    "F8_E4M3": 314396639232,
+    "F32": 295518
+  },
+  "license_identifier": "mit",
+  "hf_last_modified": "2026-09-07T12:13:47.000Z",
+  "verification_method": "Live Hugging Face Hub API call (huggingface.co/api/models/zai-org/GLM-5.3-Flash) and live AutoConfig.from_pretrained metadata-only resolution at the pinned revision, executed during this phase's CPU-only preflight and re-confirmed via live GET during GPU execution invocation #2 (HF revision sha matched pinned value exactly).",
+  "vllm_recipe_source": "https://recipes.vllm.ai/zai-org/GLM-5.3-Flash",
+  "vllm_recipe_retrieved": "2026-09-22",
+  "note": "Resolved image tag used: vllm/vllm-openai@sha256:4cc4c4532e7d935777a62ba49027fbb38d6b866dafd4ac56608f1853d933551e (a cu134-nightly build), NOT the phase spec's originally-assumed 'vllm/vllm-openai:glm53-flash' tag, which does not exist -- corrected against the live official recipe before any GPU allocation."
+}

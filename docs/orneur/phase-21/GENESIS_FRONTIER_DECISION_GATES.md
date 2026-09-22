@@ -5,6 +5,60 @@ gates, and thresholds a future foundation decision must be checked
 against. No candidate is scored against them in this phase — there are
 no candidates with real results yet.
 
+## Fail-closed foundation-freeze statement (LOCKED, added Phase 21B.4.13.1)
+
+A deployable candidate reaching runtime qualification (or even a
+technically-successful-but-not-formally-accepted runtime result, as
+GLM-5.3-Flash produced in Phase 21B.4.13) is infrastructure evidence,
+not intelligence evidence. The two must never be conflated into an
+implicit "good enough, let's proceed" decision:
+
+> ORNEUR Genesis shall not enter foundation freeze or Phase 21C merely
+> because a deployable candidate exists. Foundation freeze requires
+> empirical evidence under the locked Genesis evaluation protocol that
+> the selected architecture satisfies the required frontier-class
+> capability gates, control-superiority gates, hard gates, stability
+> requirements, and production feasibility requirements. If those
+> conditions are not met, foundation selection remains unresolved.
+
+Current wording, to be used verbatim in any status report until the
+final evaluation proves otherwise:
+
+- **GENESIS TARGET:** FRONTIER-CLASS
+- **GENESIS FOUNDATION:** NOT YET SELECTED
+- **GENESIS FRONTIER STATUS:** UNPROVEN
+
+No report may claim "GENESIS IS FRONTIER CLASS" before the final
+evaluation, run under every gate in this document (frontier reference
+quorum, frontier gap, best-reference ceiling guard, control
+superiority, hard gates, stability, precision escalation, private
+holdout, no-post-hoc-changes), actually proves it.
+
+### Compute must follow intelligence
+
+"We do not choose the model that fits the compute. We obtain the
+compute required to evaluate and serve the model that earns selection."
+
+Concretely, this means:
+
+- No shrinking the foundation target because free GPU credits expired.
+- No selecting a control model (e.g. Qwen3-8B, Phi-4, Mistral-Nemo) as
+  the Genesis foundation merely because it is cheaper to run — controls
+  exist to be beaten, never to become the foundation by default (see
+  "Control superiority" above).
+- No skipping frontier references because APIs/GPUs are inconvenient.
+- No lowering evaluation sample size to force a conclusion.
+- No training before foundation confidence is sufficient.
+
+If no candidate currently satisfies the locked frontier-selection
+gates, the correct report is exactly:
+
+**NO FOUNDATION HAS YET EARNED GENESIS SELECTION.**
+
+— never a default pick of "best available," and never a quiet
+substitution of infrastructure readiness (a candidate that merely
+loads and serves) for the actual evidence this document requires.
+
 ## A. Capability dimensions
 
 Reported per candidate, per category, never pre-collapsed into one

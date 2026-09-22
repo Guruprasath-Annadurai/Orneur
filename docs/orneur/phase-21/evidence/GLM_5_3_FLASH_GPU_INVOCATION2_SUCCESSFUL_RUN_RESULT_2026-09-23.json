@@ -1,0 +1,115 @@
+{
+  "evidence_type": "GLM_5_3_FLASH_GPU_INVOCATION2_RAW_HARNESS_RESULT",
+  "source": "ORIGINAL_PHASE_21B_4_13_GPUINVOCATION2_HARNESS_OUTPUT",
+  "evidence_strength": "OBSERVED_LIVE",
+  "note": "Genuine, unmodified structured result returned by the corrected GPU harness (scripts/phase21b_4_13_glm_gpu_run2.py) for GPU execution invocation #2. This is the FIRST genuine model-load attempt (invocation #1 was harness-curtailed before any weight loading began -- see GLM_5_3_FLASH_GPU_INVOCATION1_HARNESS_CURTAILED evidence file). This run achieved full technical production-serving success but is NOT accepted as a formal STRICT_RUNTIME_SMOKE_V2 qualification because the zero-owner-cash financial gate was violated (owner_billed_delta_usd = 3.52). See GLM_5_3_FLASH_TECHNICAL_RUNTIME_RESULT_2026-09-22.json for the non-acceptance record.",
+  "candidate": "GLM-5.3-Flash",
+  "artifact_repository": "zai-org/GLM-5.3-Flash",
+  "pinned_revision": "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
+  "tokenizer_revision": "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
+  "image_digest": "vllm/vllm-openai@sha256:4cc4c4532e7d935777a62ba49027fbb38d6b866dafd4ac56608f1853d933551e",
+  "gpu_preflight": {
+    "nvidia_smi_returncode": 0,
+    "nvidia_smi_output": "name, driver_version, memory.used [MiB], memory.total [MiB]\nNVIDIA H200, 580.95.05, 4 MiB, 143771 MiB\nNVIDIA H200, 580.95.05, 4 MiB, 143771 MiB\nNVIDIA H200, 580.95.05, 4 MiB, 143771 MiB\nNVIDIA H200, 580.95.05, 4 MiB, 143771 MiB",
+    "gpu_count_detected": 4,
+    "gpu_names": [
+      "NVIDIA H200, 580.95.05, 4 MiB, 143771 MiB",
+      "NVIDIA H200, 580.95.05, 4 MiB, 143771 MiB",
+      "NVIDIA H200, 580.95.05, 4 MiB, 143771 MiB",
+      "NVIDIA H200, 580.95.05, 4 MiB, 143771 MiB"
+    ],
+    "h200_count_confirmed": 4,
+    "nvcc_version": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Mon_Aug_03_13:24:11_PDT_2026\nCuda compilation tools, release 13.4, V13.4.59\nBuild cuda_13.4.r13.4/compiler.38657139_0",
+    "cuda_path_exists": true,
+    "torch_cuda_available": true,
+    "torch_cuda_device_count": 4,
+    "torch_version_cuda_build": "13.4",
+    "gpu_preflight_passed": true,
+    "idle_baseline_memory_per_gpu": "4 MiB\n4 MiB\n4 MiB\n4 MiB"
+  },
+  "launch_flags": [
+    "vllm",
+    "serve",
+    "zai-org/GLM-5.3-Flash",
+    "--revision",
+    "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
+    "--tokenizer-revision",
+    "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
+    "--tensor-parallel-size",
+    "4",
+    "--max-model-len",
+    "4096",
+    "--max-num-seqs",
+    "8",
+    "--max-num-batched-tokens",
+    "4096",
+    "--gpu-memory-utilization",
+    "0.85",
+    "--no-enable-flashinfer-autotune",
+    "--served-model-name",
+    "zai-org/GLM-5.3-Flash",
+    "--port",
+    "8000"
+  ],
+  "server_pid": 14,
+  "model_load_attempted": true,
+  "server_ready": true,
+  "seconds_to_ready_or_giveup": 2271.226665496826,
+  "process_exited_early": false,
+  "concrete_failure_detected": null,
+  "models_endpoint": {
+    "status": 200,
+    "response_body": "{\"object\":\"list\",\"data\":[{\"id\":\"zai-org/GLM-5.3-Flash\",\"object\":\"model\",\"created\":1790104130,\"owned_by\":\"vllm\",\"root\":\"zai-org/GLM-5.3-Flash\",\"parent\":null,\"max_model_len\":4096,\"permission\":[{\"id\":\"modelperm-a9c8300d9c426834\",\"object\":\"model_permission\",\"created\":1790104130,\"allow_create_engine\":false,\"allow_sampling\":true,\"allow_logprobs\":true,\"allow_search_indices\":false,\"allow_view\":true,\"allow_fine_tuning\":false,\"organization\":\"*\",\"group\":null,\"is_blocking\":false}]}]}"
+  },
+  "chat_endpoint_status": 200,
+  "generation_result": {
+    "evidence_type": "LIVE_HARNESS_GENERATION_RESULT",
+    "source": "ORIGINAL_PHASE_21B_4_13_GPUINVOCATION2_HARNESS_OUTPUT",
+    "evidence_strength": "OBSERVED_LIVE",
+    "original_harness_result": {
+      "server_ready": true,
+      "models_endpoint_status": 200,
+      "chat_endpoint_status": 200,
+      "generation_succeeded": true,
+      "synthetic_prompt": "Reply with exactly the single word READY.",
+      "synthetic_prompt_sha256": "6496a817310b22a974cfbcf819808469dbf5e0fcf7304b34efc12666e52a02d2",
+      "decoded_response": "The user wants me to reply with exactly the single word \"READY\". This is a simple instruction-following request. I should just output the word READY with nothing else.</think>READY",
+      "decoded_response_sha256": "550b2097f34806de35a8262704b2bbe11e2722a576426fd988918f6726842fda",
+      "input_tokens": 20,
+      "output_tokens": 37,
+      "generation_latency_seconds": 1.7444210052490234,
+      "ttft_seconds": 1.4644527435302734,
+      "tokens_per_second": 21.210476076970934
+    }
+  },
+  "worker_memory_log_lines": [
+    "(Worker_TP0 pid=203) INFO 09-22 19:08:38 [gpu_worker.py:920] Free memory on device (133.7/139.8 GiB) on startup. Desired GPU memory utilization is (0.85, 118.83 GiB). Actual usage is 76.59 GiB for consumed memory (weights + non-torch), 1.73 GiB for peak activation, and 0.08 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=43252738868` (40.28 GiB) to fit into requested memory, or `--kv-cache-memory=59218130944` (55.15 GiB) to fully utilize gpu memory. Current kv cache memory in use is 40.51 GiB.",
+    "(Worker_TP1 pid=218) INFO 09-22 19:08:38 [gpu_worker.py:920] Free memory on device (135.24/139.8 GiB) on startup. Desired GPU memory utilization is (0.85, 118.83 GiB). Actual usage is 76.59 GiB for consumed memory (weights + non-torch), 1.73 GiB for peak activation, and 0.08 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=43254836020` (40.28 GiB) to fit into requested memory, or `--kv-cache-memory=60873504768` (56.69 GiB) to fully utilize gpu memory. Current kv cache memory in use is 40.51 GiB.",
+    "(Worker_TP3 pid=277) INFO 09-22 19:08:38 [gpu_worker.py:920] Free memory on device (135.24/139.8 GiB) on startup. Desired GPU memory utilization is (0.85, 118.83 GiB). Actual usage is 76.59 GiB for consumed memory (weights + non-torch), 1.73 GiB for peak activation, and 0.08 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=43254836020` (40.28 GiB) to fit into requested memory, or `--kv-cache-memory=60873504768` (56.69 GiB) to fully utilize gpu memory. Current kv cache memory in use is 40.51 GiB.",
+    "(Worker_TP2 pid=248) INFO 09-22 19:08:38 [gpu_worker.py:920] Free memory on device (135.24/139.8 GiB) on startup. Desired GPU memory utilization is (0.85, 118.83 GiB). Actual usage is 76.59 GiB for consumed memory (weights + non-torch), 1.73 GiB for peak activation, and 0.08 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=43254836020` (40.28 GiB) to fit into requested memory, or `--kv-cache-memory=60873504768` (56.69 GiB) to fully utilize gpu memory. Current kv cache memory in use is 40.51 GiB."
+  ],
+  "weight_load_log_lines": [
+    "(Worker_TP0 pid=203) INFO 09-22 18:55:13 [weight_utils.py:559] Time spent downloading weights for zai-org/GLM-5.3-Flash: 1264.352458 seconds",
+    "(Worker_TP0 pid=203) INFO 09-22 18:56:56 [default_loader.py:430] Loading weights took 103.10 seconds"
+  ],
+  "weight_file_log_lines": [
+    "Loading safetensors checkpoint shards:   0% Completed | 0/62 [00:00<?, ?it/s]",
+    "Loading safetensors checkpoint shards:   2% Completed | 1/62 [00:03<03:13,  3.17s/it]",
+    "Loading safetensors checkpoint shards:   3% Completed | 2/62 [00:06<03:16,  3.28s/it]",
+    "Loading safetensors checkpoint shards:   5% Completed | 3/62 [00:10<03:35,  3.66s/it]",
+    "Loading safetensors checkpoint shards:   6% Completed | 4/62 [00:15<04:11,  4.33s/it]",
+    "Loading safetensors checkpoint shards:   8% Completed | 5/62 [00:19<03:57,  4.17s/it]",
+    "Loading safetensors checkpoint shards:  10% Completed | 6/62 [00:22<03:31,  3.77s/it]",
+    "Loading safetensors checkpoint shards:  11% Completed | 7/62 [00:25<03:06,  3.39s/it]"
+  ],
+  "cleanup": {
+    "cleanup_confirmed": true,
+    "server_final_returncode": 0,
+    "post_cleanup_gpu_memory": "4 MiB\n4 MiB\n4 MiB\n4 MiB"
+  },
+  "total_wall_seconds": 2282.275144815445,
+  "result_state_as_reported_by_harness": "PRODUCTION_SERVING_RUNTIME_QUALIFIED",
+  "full_execution_log_path": "GLM_5_3_FLASH_GPU_INVOCATION2_EXECUTION_LOG_2026-09-23.txt",
+  "full_execution_log_sha256": "08c3a594f1afa1018953470d25a93d1eaf0e432b6533156bd4b6e0090654aad0",
+  "full_execution_log_length_chars": 86105
+}

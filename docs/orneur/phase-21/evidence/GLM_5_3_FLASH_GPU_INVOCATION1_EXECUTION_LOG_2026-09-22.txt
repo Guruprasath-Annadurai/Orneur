@@ -1,0 +1,51 @@
+W0922 18:13:59.356000 14 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W0922 18:13:59.357000 14 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W0922 18:13:59.357000 14 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+(APIServer pid=14) INFO 09-22 18:14:40 [api_utils.py:347] 
+(APIServer pid=14) INFO 09-22 18:14:40 [api_utils.py:347]        █     █     █▄   ▄█
+(APIServer pid=14) INFO 09-22 18:14:40 [api_utils.py:347]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.29.1rc1.dev513+g0961bbae2.d20260922
+(APIServer pid=14) INFO 09-22 18:14:40 [api_utils.py:347]   █▄█▀ █     █     █     █  model   zai-org/GLM-5.3-Flash
+(APIServer pid=14) INFO 09-22 18:14:40 [api_utils.py:347]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=14) INFO 09-22 18:14:40 [api_utils.py:347] 
+(APIServer pid=14) INFO 09-22 18:14:40 [api_utils.py:286] non-default args: {'model_tag': 'zai-org/GLM-5.3-Flash', 'model': 'zai-org/GLM-5.3-Flash', 'revision': 'eb9eb208eb0d988989d07a6a12d0fdeb5f52574a', 'tokenizer_revision': 'eb9eb208eb0d988989d07a6a12d0fdeb5f52574a', 'max_model_len': 4096, 'served_model_name': ['zai-org/GLM-5.3-Flash'], 'tensor_parallel_size': 4, 'gpu_memory_utilization': 0.85, 'max_num_batched_tokens': 4096, 'max_num_seqs': 8, 'enable_flashinfer_autotune': False}
+(APIServer pid=14) INFO 09-22 18:15:00 [model.py:692] Resolved architecture: Glm5NextForConditionalGeneration
+(APIServer pid=14) INFO 09-22 18:15:00 [model.py:2097] Using max model len 4096
+(APIServer pid=14) Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418] Module nixl_ep was found but failed to import
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418] Traceback (most recent call last):
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/vllm/utils/import_utils.py", line 416, in _has_module
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]     importlib.import_module(module_name)
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 51, in <module>
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]     _pkg = sys.modules[_load_ep_module()]
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]                        ^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep/__init__.py", line 31, in _load_ep_module
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]     return importlib.import_module(mod_name).__name__
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "/usr/local/lib/python3.12/dist-packages/nixl_ep_cu13/__init__.py", line 51, in <module>
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]     _nixl_ep_cpp = importlib.import_module(
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]                    ^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]     return _bootstrap._gcd_import(name[level:], package, level)
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418]   File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+(APIServer pid=14) WARNING 09-22 18:15:02 [import_utils.py:418] ModuleNotFoundError: No module named 'nixl_ep_cu13.nixl_ep_cpp_torch215'

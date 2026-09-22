@@ -1,0 +1,20 @@
+{
+  "evidence_type": "CLEANUP_CONFIRMATION",
+  "evidence_strength": "OBSERVED_LIVE",
+  "candidate": "GLM-5.3-Flash",
+  "gpu_execution_invocation_2": {
+    "server_terminated": true,
+    "server_final_returncode": 0,
+    "post_cleanup_gpu_memory_per_device": "4 MiB\n4 MiB\n4 MiB\n4 MiB",
+    "idle_baseline_before_load": "4 MiB\n4 MiB\n4 MiB\n4 MiB",
+    "modal_app_id": "ap-ZQdarRn0ImPH8s1bgKyK4H",
+    "modal_app_state_after": "stopped",
+    "modal_app_tasks_after": 0
+  },
+  "post_phase_full_app_list_check": {
+    "note": "Confirmed via `modal app list --json` after invocation #2 completed: all phase-created apps (CPU preflight, flag-verification checks x4, GPU invocation #1, GPU invocation #2) show state=stopped, tasks=0. Only the two pre-existing, unrelated deployed apps from 2026-09-18 (orca-genesis-eval-sandbox, orca-genesis-eval-sandbox-v2, both with 0 tasks, untouched by this phase) remain in 'deployed' state, as they were before this phase began.",
+    "phase_active_containers": 0,
+    "phase_active_apps": 0,
+    "persistent_volumes": 0
+  }
+}

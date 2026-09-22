@@ -1,0 +1,17 @@
+{
+  "evidence_type": "MODAL_USAGE_AND_BILLING_LIMIT_CONFIRMATION",
+  "evidence_strength": "OWNER_SCREENSHOT_VERIFIED",
+  "dashboard_path": "Modal Dashboard -> Usage & billing -> Overview",
+  "captured_date": "2026-09-22",
+  "captured_time": "approximately 22:27 owner-local time",
+  "spend_limit_usd": 0,
+  "total_spend_shown_usd": 0.00,
+  "total_usage_shown_usd": 7.74,
+  "credits_applied_usd": -7.74,
+  "usage_limit_usd_including_credits": 42.50,
+  "credits_remaining_shown_usd": "approximately 22.26",
+  "scope": "THIS PHASE 21B.4.13 GLM-5.3-FLASH RUNTIME QUALIFICATION ONLY",
+  "historical_gate_reused": false,
+  "no_secrets_present": true,
+  "note": "Fresh owner-provided Modal dashboard screenshot, independently inspected by ChatGPT audit, immediately before this phase's authorization. Live `modal billing summary` executed at the start of this phase (before any GPU work) independently reported Metered Cost 7.74, Credits -7.74, Billed Cost $0.00 -- matching the owner screenshot's total_usage_shown_usd and total_spend_shown_usd exactly. This gate correctly showed the ZERO-OWNER-CASH BILLING GATE as CONFIRMED at authorization time. The subsequent GPU execution invocation #2 later exhausted the full credit pool (total credits available = $30.00 exactly, confirmed only in retrospect) mid-run, producing owner_billed_delta_usd = 3.52 -- see GLM_5_3_FLASH_BILLING_AFTER_2026-09-23.json and GLM_5_3_FLASH_COMPUTE_COST_INCIDENT_2026-09-23.md. This gate's own reading was accurate; the violation occurred later, not at this gate."
+}

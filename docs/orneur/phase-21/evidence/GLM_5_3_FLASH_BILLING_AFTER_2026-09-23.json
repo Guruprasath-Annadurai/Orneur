@@ -1,0 +1,13 @@
+{
+  "evidence_type": "MODAL_BILLING_SNAPSHOT_AFTER_GPU_ALLOCATION",
+  "source": "modal billing summary --json (supported CLI), executed live immediately after GPU execution invocation #2 completed and cleanup was confirmed",
+  "metered_cost_usd": 33.52,
+  "billed_cost_usd": 3.52,
+  "credits_usd": -30.00,
+  "billed_before_usd": 0.0,
+  "billed_after_usd": 3.52,
+  "owner_billed_delta_usd": 3.52,
+  "captured_at_local_label": "2026-09-23 approx 00:40 IST, immediately after GPU execution invocation #2 returned and app ap-ZQdarRn0ImPH8s1bgKyK4H was confirmed stopped with 0 tasks",
+  "zero_cash_gate_result": "VIOLATED",
+  "note": "The full promotional/free credit pool available to this Modal workspace was exactly $30.00 (credits_usd == -30.00 is the observed ceiling -- credits stopped increasing in magnitude past this point even though metered_cost continued rising). GPU execution invocation #2's total wall time (2282.28 seconds, ~38 minutes) stayed within the owner-authorized 55-minute hard ceiling and the harness's own 49-minute internal soft deadline, but its cumulative metered cost (driven primarily by a 1264-second/~21-minute weight download of the 306 GiB FP8 checkpoint, running for the full duration across 4x H200 GPUs) crossed the $30.00 credit ceiling before the run completed. The excess, $3.52, was billed to the owner as real cost. This is recorded as a genuine violation of the pre-declared owner_billed_delta_usd == 0 invariant and is NOT reinterpreted, minimized, or retroactively excused. See GLM_5_3_FLASH_COMPUTE_COST_INCIDENT_2026-09-23.md for root-cause classification and the required future guardrail."
+}

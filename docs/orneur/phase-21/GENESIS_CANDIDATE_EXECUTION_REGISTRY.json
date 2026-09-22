@@ -18,11 +18,15 @@
       "total_parameters": 27781427952,
       "active_parameters": 27781427952,
       "parameters_note": "dense model -- all parameters active per token",
-      "parameters_by_dtype": {"BF16": 27781427952},
+      "parameters_by_dtype": {
+        "BF16": 27781427952
+      },
       "context_limits": "NOT independently re-verified this phase (deferred -- see GENESIS_RUNTIME_COMPATIBILITY_MATRIX.md)",
       "reasoning_mode_support": "UNRESOLVED_THIS_PHASE",
       "multimodal_support": "pipeline_tag=image-text-to-text on Hugging Face -- multimodal input capability indicated, not independently re-verified this phase",
-      "official_runtime_formats": ["safetensors (BF16)"],
+      "official_runtime_formats": [
+        "safetensors (BF16)"
+      ],
       "official_quantized_artifacts": "none observed in the repository's safetensors metadata this phase (BF16 only)",
       "license_identifier": "apache-2.0",
       "license_source": "Hugging Face repository cardData.license (metadata tag)",
@@ -33,8 +37,16 @@
       "distillation_teacher_use_status": "NOT_APPLICABLE (this candidate is being evaluated as a foundation base, not a teacher)",
       "runtime_support": "Native Hugging Face Transformers (AutoModelForImageTextToText, trust_remote_code=True) live-qualified for LOAD COMPATIBILITY on Modal H200 in Phase 21B.4.11 -- this is a load-compatibility qualification only, NOT a production-serving-runtime qualification. vLLM (>=0.17.0 per the model's own recipe page) and SGLang (single-GPU H200 documented in the model's own cookbook page) remain the officially documented production-serving candidates but were not live-tested this phase.",
       "minimum_runtime_versions_known": "transformers==5.17.0 (floor per config.json: transformers_version>=5.8.0.dev0), torch==2.14.0, safetensors==0.8.0, tokenizers==0.23.2, accelerate==1.15.0 -- live-qualified for load-compatibility only, Phase 21B.4.11",
-      "weight_storage_envelope": {"bf16_gb": 55.6, "fp8_gb": 27.8, "int4_gb": 13.9},
-      "theoretical_gpu_count_80gb_class": {"bf16": 1, "fp8": 1, "int4": 1},
+      "weight_storage_envelope": {
+        "bf16_gb": 55.6,
+        "fp8_gb": 27.8,
+        "int4_gb": 13.9
+      },
+      "theoretical_gpu_count_80gb_class": {
+        "bf16": 1,
+        "fp8": 1,
+        "int4": 1
+      },
       "qualified_practical_topology": "1x NVIDIA H200 (Modal, single GPU) -- BF16 full weights, peak allocated VRAM ~54.9GB, peak reserved VRAM ~54.95GB, live-proven Phase 21B.4.11. Weight artifact is 18 safetensors shard files per the repository's own weight index; the runtime's own weight-loading progress counter (1184) reflects individual tensors/state-dict entries, not shard files -- see the qualification manifest.",
       "zero_cash_access_status": "Live GPU smoke completed in Phase 21B.4.11 with OWNER BILLED $0.00 observed throughout (included/promotional credit only, ~$0.52 of the $5.00 phase ceiling consumed). Phase 21B.4.11.1 reconciliation: the workspace's configured Usage & billing -> Usage limit value itself was NOT independently proven at execution time -- no supported Modal CLI/API exposes that setting, and no independently-checkable owner evidence of that specific dashboard page was available to the executing agent at the time. This does not change the observed $0.00 billed result; it means the upstream hard-limit guarantee is unverified for this specific execution, not that a charge occurred.",
       "identity_status": "RESOLVED",
@@ -62,11 +74,16 @@
       "total_parameters": 179999981459,
       "active_parameters": "~6,000,000,000 (core sparse-MoE active path; NOT the storage driver -- see GENESIS_FRONTIER_COMPUTE_MATRIX.md)",
       "parameters_note": "full aggregate figure (core MoE + n-gram embedding + MTP layer) is the correct total for weight-storage purposes, per Phase 21B.4.8.1's explicit correction -- the smaller ~125B core-only figure must never be quoted as the full weight-storage requirement",
-      "parameters_by_dtype": {"BF16": 179999981424, "I64": 35},
+      "parameters_by_dtype": {
+        "BF16": 179999981424,
+        "I64": 35
+      },
       "context_limits": "UNRESOLVED_THIS_PHASE",
       "reasoning_mode_support": "UNRESOLVED_THIS_PHASE",
       "multimodal_support": "pipeline_tag=image-text-to-text on Hugging Face -- not independently re-verified this phase",
-      "official_runtime_formats": ["safetensors (BF16)"],
+      "official_runtime_formats": [
+        "safetensors (BF16)"
+      ],
       "official_quantized_artifacts": "none observed in the repository's safetensors metadata this phase (BF16 only)",
       "license_identifier": "other (qwen-community-1.0, per Phase 21B.4.8.1 landscape research -- Hugging Face's own license TAG for this repo is the generic 'other')",
       "license_source": "Hugging Face repository cardData.license tag ('other') cross-referenced with Phase 21B.4.8.1's prior primary-source review of the qwen-community-1.0 license text (MAU/revenue attribution thresholds)",
@@ -77,8 +94,16 @@
       "distillation_teacher_use_status": "NOT_APPLICABLE (evaluated as a foundation base, not a teacher)",
       "runtime_support": "Qwen4ExpForConditionalGeneration is a September-2026 architecture class -- vLLM 0.6.3.post1 (the only version this project has live-qualified, Phase 21B.4.8.1/.2) almost certainly predates it; NOT independently re-verified this phase",
       "minimum_runtime_versions_known": "UNRESOLVED_THIS_PHASE -- see GENESIS_RUNTIME_COMPATIBILITY_MATRIX.md",
-      "weight_storage_envelope": {"bf16_gb": 335.5, "fp8_gb": 167.7, "int4_gb": 83.9},
-      "theoretical_gpu_count_80gb_class": {"bf16": 5, "fp8": 3, "int4": 2},
+      "weight_storage_envelope": {
+        "bf16_gb": 335.5,
+        "fp8_gb": 167.7,
+        "int4_gb": 83.9
+      },
+      "theoretical_gpu_count_80gb_class": {
+        "bf16": 5,
+        "fp8": 3,
+        "int4": 2
+      },
       "qualified_practical_topology": "UNQUALIFIED / TBD",
       "zero_cash_access_status": "Modal multi-GPU tensor-parallel Functions are documented (Phase 21B.4.8) but not live-tested at this GPU count -- candidate-specific smoke run not attempted this phase",
       "identity_status": "RESOLVED",
@@ -101,11 +126,16 @@
       "total_parameters": 119401317952,
       "active_parameters": "~6,500,000,000 (NOT the storage driver)",
       "parameters_note": "official repository already ships an FP8 quantized checkpoint (see official_quantized_artifacts) -- this is the actual as-published weight format, not a hypothetical conversion",
-      "parameters_by_dtype": {"BF16": 1521452032, "F8_E4M3": 117879865344},
+      "parameters_by_dtype": {
+        "BF16": 1521452032,
+        "F8_E4M3": 117879865344
+      },
       "context_limits": "256K per Phase 21B.4.8.1 landscape research -- not independently re-verified this phase",
       "reasoning_mode_support": "UNRESOLVED_THIS_PHASE",
       "multimodal_support": "yes, per Phase 21B.4.8.1 landscape research (unifies Magistral/Pixtral/Devstral capabilities) -- vision_tower present in quantization_config's modules_to_not_convert, confirming a vision component exists in this checkpoint",
-      "official_runtime_formats": ["safetensors (mixed BF16 + FP8_E4M3)"],
+      "official_runtime_formats": [
+        "safetensors (mixed BF16 + FP8_E4M3)"
+      ],
       "official_quantized_artifacts": "YES -- official FP8 checkpoint (quant_method=fp8, modules_to_not_convert=[model.vision_tower, model.multi_modal_projector, lm_head]), confirmed live via Hugging Face Hub API this phase",
       "license_identifier": "apache-2.0",
       "license_source": "Hugging Face repository cardData.license (metadata tag)",
@@ -116,8 +146,17 @@
       "distillation_teacher_use_status": "NOT_APPLICABLE (evaluated as a foundation base, not a teacher)",
       "runtime_support": "Phase 21B.4.12.3 live retry CONFIRMED vLLM 0.29.0 as a working production runtime using the official vllm/vllm-openai:v0.29.0 image (resolved digest sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b, entrypoint cleared) instead of an ad-hoc pip-only image -- the official image already bundles a full CUDA development toolkit (nvcc) and the officially-tested transformers 5.16.1, resolving Phase 21B.4.12's CUDA_KERNEL_FAILURE root cause. Native Transformers still requires installing an UNRELEASED git-main branch per the model's own README and was not attempted as a runtime.",
       "minimum_runtime_versions_known": "Phase 21B.4.12.3 CONFIRMED via 2 successful live attempts: vllm==0.29.0 + the official image's baked transformers==5.16.1 + torch==2.13.0+cu130 + tokenizers==0.23.2 + flashinfer-python==0.6.18, on a CUDA 13.0 toolkit (nvcc 13.0.88), all loaded and served successfully with zero import/version errors. Historical note preserved from Phase 21B.4.12: vllm==0.29.0 + transformers==5.17.0 fails (PixtralRotaryEmbedding ImportError); FlashInfer JIT compilation for the FLASH_ATTN_MLA attention backend requires a full CUDA development toolkit (nvcc), which a bare pip-only torch/vLLM environment does not provide by default -- this is exactly what the official vllm/vllm-openai image supplies and Phase 21B.4.12's ad-hoc image lacked.",
-      "weight_storage_envelope": {"bf16_gb": 238.8, "fp8_gb": 119.4, "int4_gb": 59.7, "note": "official FP8 checkpoint IS the fp8_gb figure -- no conversion assumed"},
-      "theoretical_gpu_count_80gb_class": {"bf16": 3, "fp8": 2, "int4": 1},
+      "weight_storage_envelope": {
+        "bf16_gb": 238.8,
+        "fp8_gb": 119.4,
+        "int4_gb": 59.7,
+        "note": "official FP8 checkpoint IS the fp8_gb figure -- no conversion assumed"
+      },
+      "theoretical_gpu_count_80gb_class": {
+        "bf16": 3,
+        "fp8": 2,
+        "int4": 1
+      },
       "qualified_practical_topology": "QUALIFIED -- 2x NVIDIA H200 (tensor-parallel-size=2, matching the model's own official vLLM launch command), CONFIRMED live in Phase 21B.4.12.3: both attempts reached full server-ready state and served a real synthetic inference request successfully. Genuinely observed worker-level GPU memory usage: ~58.07 GiB per GPU (57.45 GiB weights+non-torch consumed memory, 0.54 GiB peak activation, 0.08 GiB CUDAGraph pool), out of 140.4 GiB total capacity per H200 -- comfortable headroom, no topology insufficiency at any point across either phase's attempts.",
       "zero_cash_access_status": "Phase 21B.4.12.3 live 2-attempt retry completed under a freshly owner-confirmed $0 Modal spend-limit gate (captured 2026-09-21, independent of Phase 21B.4.12's gate) -- OWNER BILLED $0.00 throughout (~$4.93 of included/promotional credit consumed across both retry attempts plus preflight).",
       "identity_status": "RESOLVED",
@@ -144,11 +183,17 @@
       "total_parameters": 321323031390,
       "active_parameters": "UNRESOLVED_THIS_PHASE (MoE architecture; active-parameter count not independently confirmed -- NOT the storage driver regardless)",
       "parameters_note": "official repository already ships an FP8 quantized checkpoint -- the actual as-published weight format",
-      "parameters_by_dtype": {"BF16": 6926096640, "F8_E4M3": 314396639232, "F32": 295518},
+      "parameters_by_dtype": {
+        "BF16": 6926096640,
+        "F8_E4M3": 314396639232,
+        "F32": 295518
+      },
       "context_limits": "UNRESOLVED_THIS_PHASE",
       "reasoning_mode_support": "UNRESOLVED_THIS_PHASE",
       "multimodal_support": "pipeline_tag=image-text-to-text on Hugging Face -- not independently re-verified this phase",
-      "official_runtime_formats": ["safetensors (mixed BF16 + FP8_E4M3 + F32)"],
+      "official_runtime_formats": [
+        "safetensors (mixed BF16 + FP8_E4M3 + F32)"
+      ],
       "official_quantized_artifacts": "YES -- official FP8 checkpoint (quant_method=fp8), confirmed live via Hugging Face Hub API this phase",
       "license_identifier": "mit",
       "license_source": "Hugging Face repository tags (license:mit) (metadata tag)",
@@ -157,17 +202,26 @@
       "fine_tuning_status": "GRANTED",
       "redistribution_status": "GRANTED",
       "distillation_teacher_use_status": "NOT_APPLICABLE (evaluated as a foundation base, not a teacher)",
-      "runtime_support": "Glm5NextForConditionalGeneration is a custom, very recent architecture class; vLLM/Transformers support NOT independently re-verified this phase",
-      "minimum_runtime_versions_known": "UNRESOLVED_THIS_PHASE",
-      "weight_storage_envelope": {"bf16_gb": 642.6, "fp8_gb": 321.3, "int4_gb": 160.7, "note": "official FP8 checkpoint IS the fp8_gb figure -- no conversion assumed; corrected per Phase 21B.4.9.2 (prior phase erroneously computed 7x GPUs at INT4 by carrying over an L4-count calculation into the 80GB-class column)"},
-      "theoretical_gpu_count_80gb_class": {"bf16": 9, "fp8": 5, "int4": 2},
-      "qualified_practical_topology": "UNQUALIFIED / TBD -- the 2x INT4 theoretical minimum gives essentially zero runtime headroom (160.7GB weight floor against exactly 160GB of raw VRAM at 2x80GB) and is very unlikely to be practically viable at exactly that count",
-      "zero_cash_access_status": "candidate-specific smoke run not attempted this phase",
+      "runtime_support": "CONFIRMED LIVE this phase: Glm5NextForConditionalGeneration is recognized by vLLM 0.29.1rc1.dev513+g0961bbae2.d20260922.cu134 (image vllm/vllm-openai@sha256:4cc4c4532e7d935777a62ba49027fbb38d6b866dafd4ac56608f1853d933551e, a cu134-nightly build) and by transformers 5.17.0 (model_type='glm5_next'). A live 4x H200 TP4 vLLM OpenAI-compatible server reached ready state, served GET /v1/models (200) and POST /v1/chat/completions (200) with a successful non-empty generation (Phase 21B.4.13 GPU execution invocation #2). This is genuine technical runtime evidence but is NOT a formally accepted STRICT_RUNTIME_SMOKE_V2 qualification -- see docs/orneur/phase-21/GLM_5_3_FLASH_TECHNICAL_RUNTIME_RESULT_2026-09-22.json.",
+      "minimum_runtime_versions_known": "vLLM >= a nightly build containing the GLM-5.3-Flash integration (no stable public release tag as of 2026-09-22; official recipe requires a nightly Docker build); FlashInfer >= 0.6.18 (observed 0.6.18.post1, clears both the recipe's 0.6.17 prerequisite and its 0.6.18 troubleshooting threshold); transformers >= 5.17.0 (observed, recognizes glm5_next model_type).",
+      "weight_storage_envelope": {
+        "bf16_gb": 642.6,
+        "fp8_gb": 321.3,
+        "int4_gb": 160.7,
+        "note": "official FP8 checkpoint IS the fp8_gb figure -- no conversion assumed; corrected per Phase 21B.4.9.2 (prior phase erroneously computed 7x GPUs at INT4 by carrying over an L4-count calculation into the 80GB-class column)"
+      },
+      "theoretical_gpu_count_80gb_class": {
+        "bf16": 9,
+        "fp8": 5,
+        "int4": 2
+      },
+      "qualified_practical_topology": "4x NVIDIA H200 / TP4 -- TECHNICALLY DEMONSTRATED LIVE (server reached ready, HTTP generation succeeded, weight download 1264s + weight load 103s for the 306 GiB FP8 checkpoint, cleanup confirmed clean) but NOT formally qualified: the run's owner_billed_delta_usd (3.52) violated the zero-owner-cash acceptance gate, so this remains UNQUALIFIED under the accepted strict protocol pending a future compliant re-run. See docs/orneur/phase-21/GLM_5_3_FLASH_TECHNICAL_RUNTIME_RESULT_2026-09-22.json.",
+      "zero_cash_access_status": "Phase 21B.4.13 attempted a live 4x H200 zero-cash smoke run; the run itself completed within the wall-clock budget but exhausted the available Modal credit pool ($30.00) partway through, producing owner_billed_delta_usd=3.52 -- a zero-cash gate VIOLATION, not a zero-cash SUCCESS. See docs/orneur/phase-21/GLM_5_3_FLASH_COMPUTE_COST_INCIDENT_2026-09-23.md.",
       "identity_status": "RESOLVED",
       "license_status": "CLEAR",
       "runtime_qualification_status": "UNQUALIFIED",
       "runtime_smoke_eligibility": "ELIGIBLE",
-      "runtime_smoke_blocked_reason": null
+      "runtime_smoke_blocked_reason": "ZERO_CASH_COMPUTE_REQUIRED_FOR_FORMAL_REQUALIFICATION"
     }
   ],
   "controls": [
@@ -183,12 +237,22 @@
       "architecture": "Qwen3ForCausalLM",
       "total_parameters": 8190735360,
       "active_parameters": 8190735360,
-      "parameters_by_dtype": {"BF16": 8190735360},
+      "parameters_by_dtype": {
+        "BF16": 8190735360
+      },
       "license_identifier": "apache-2.0",
       "license_source": "Hugging Face repository cardData.license",
       "runtime_support": "Qwen3ForCausalLM -- a mainstream, widely-supported architecture class; plausibly already supported by the Phase 21B.4.8.1/.2-qualified vLLM 0.6.3.post1, not independently re-confirmed this phase",
-      "weight_storage_envelope": {"bf16_gb": 16.4, "fp8_gb": 8.2, "int4_gb": 4.1},
-      "theoretical_gpu_count_l4_class_24gb": {"bf16": 1, "fp8": 1, "int4": 1},
+      "weight_storage_envelope": {
+        "bf16_gb": 16.4,
+        "fp8_gb": 8.2,
+        "int4_gb": 4.1
+      },
+      "theoretical_gpu_count_l4_class_24gb": {
+        "bf16": 1,
+        "fp8": 1,
+        "int4": 1
+      },
       "qualified_practical_topology": "UNQUALIFIED / TBD",
       "stage0_status": "ELIGIBLE_FOR_RUNTIME_SMOKE",
       "role": "CONTROL / SMALL BASELINE -- never a candidate finalist"
@@ -205,12 +269,22 @@
       "architecture": "MistralForCausalLM",
       "total_parameters": 12247782400,
       "active_parameters": 12247782400,
-      "parameters_by_dtype": {"BF16": 12247782400},
+      "parameters_by_dtype": {
+        "BF16": 12247782400
+      },
       "license_identifier": "apache-2.0",
       "license_source": "Hugging Face repository cardData.license",
       "runtime_support": "MistralForCausalLM -- a mainstream, widely-supported architecture class; not independently re-confirmed against the exact qualified vLLM version this phase",
-      "weight_storage_envelope": {"bf16_gb": 24.5, "fp8_gb": 12.2, "int4_gb": 6.1},
-      "theoretical_gpu_count_l4_class_24gb": {"bf16": "borderline -- 24.5GB floor exceeds a 24GB L4's raw capacity, no headroom", "fp8": 1, "int4": 1},
+      "weight_storage_envelope": {
+        "bf16_gb": 24.5,
+        "fp8_gb": 12.2,
+        "int4_gb": 6.1
+      },
+      "theoretical_gpu_count_l4_class_24gb": {
+        "bf16": "borderline -- 24.5GB floor exceeds a 24GB L4's raw capacity, no headroom",
+        "fp8": 1,
+        "int4": 1
+      },
       "qualified_practical_topology": "UNQUALIFIED / TBD",
       "stage0_status": "ELIGIBLE_FOR_RUNTIME_SMOKE",
       "role": "CONTROL / SMALL BASELINE -- never a candidate finalist"
@@ -227,12 +301,22 @@
       "architecture": "Phi3ForCausalLM",
       "total_parameters": 14659507200,
       "active_parameters": 14659507200,
-      "parameters_by_dtype": {"BF16": 14659507200},
+      "parameters_by_dtype": {
+        "BF16": 14659507200
+      },
       "license_identifier": "mit",
       "license_source": "Hugging Face repository cardData.license",
       "runtime_support": "Phi3ForCausalLM -- a mainstream, widely-supported architecture class; not independently re-confirmed against the exact qualified vLLM version this phase",
-      "weight_storage_envelope": {"bf16_gb": 29.3, "fp8_gb": 14.7, "int4_gb": 7.3},
-      "theoretical_gpu_count_l4_class_24gb": {"bf16": 2, "fp8": 1, "int4": 1},
+      "weight_storage_envelope": {
+        "bf16_gb": 29.3,
+        "fp8_gb": 14.7,
+        "int4_gb": 7.3
+      },
+      "theoretical_gpu_count_l4_class_24gb": {
+        "bf16": 2,
+        "fp8": 1,
+        "int4": 1
+      },
       "qualified_practical_topology": "UNQUALIFIED / TBD",
       "stage0_status": "ELIGIBLE_FOR_RUNTIME_SMOKE",
       "role": "CONTROL / SMALL BASELINE -- never a candidate finalist"
@@ -289,7 +373,12 @@
       "identity_type": "MUTABLE_HOSTED_API",
       "artifact_repository": "NOT_APPLICABLE -- managed API product, distinct from the open-weight Qwen/Qwen3.8-2.4T-A95B artifact per GENESIS_FRONTIER_HOLDOUT_SPEC.md's mutable-API-model policy",
       "exact_immutable_revision": "NOT_AVAILABLE -- mutable API identity; per-call provider model identifier and version metadata must be recorded at time of any future call, never assumed stable across two calls",
-      "required_provider_metadata_for_future_call": ["provider's own returned model identifier", "full response metadata", "exact call timestamp", "any provider-exposed version identifier"],
+      "required_provider_metadata_for_future_call": [
+        "provider's own returned model identifier",
+        "full response metadata",
+        "exact call timestamp",
+        "any provider-exposed version identifier"
+      ],
       "license_identifier": "N/A (managed API terms govern use, not a redistributable weight license)",
       "zero_cash_access_status": "Modal's own pay-per-token Shared Endpoint for Qwen/Qwen3.8-2.4T-A95B was discovered live in Phase 21B.4.8 -- a legitimate zero-cash-covered access path IF still within the $0 spend-limit workspace's included credit; API NOT called this phase (owner spec explicitly prohibits calling any paid/frontier API this phase)",
       "availability_status": "REFERENCE_EXECUTION_DEFERRED"

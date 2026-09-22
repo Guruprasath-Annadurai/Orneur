@@ -1,0 +1,22 @@
+{
+  "evidence_type": "LIVE_HARNESS_GENERATION_RESULT",
+  "source": "ORIGINAL_PHASE_21B_4_13_GPUINVOCATION2_HARNESS_OUTPUT",
+  "evidence_strength": "OBSERVED_LIVE",
+  "original_harness_result": {
+    "server_ready": true,
+    "models_endpoint_status": 200,
+    "chat_endpoint_status": 200,
+    "generation_succeeded": true,
+    "synthetic_prompt": "Reply with exactly the single word READY.",
+    "synthetic_prompt_sha256": "6496a817310b22a974cfbcf819808469dbf5e0fcf7304b34efc12666e52a02d2",
+    "decoded_response": "The user wants me to reply with exactly the single word \"READY\". This is a simple instruction-following request. I should just output the word READY with nothing else.</think>READY",
+    "decoded_response_sha256": "550b2097f34806de35a8262704b2bbe11e2722a576426fd988918f6726842fda",
+    "input_tokens": 20,
+    "output_tokens": 37,
+    "generation_latency_seconds": 1.7444210052490234,
+    "ttft_seconds": 1.4644527435302734,
+    "tokens_per_second": 21.210476076970934
+  },
+  "candidate": "GLM-5.3-Flash",
+  "note": "Genuine, unmodified generation-result content from GPU execution invocation #2's live harness. This artifact reflects a technically successful generation, but is NOT bound into an accepted STRICT_RUNTIME_SMOKE_V2 manifest because the run's owner_billed_delta_usd (3.52) violates the zero-owner-cash acceptance gate. Preserved for evidentiary completeness only."
+}
