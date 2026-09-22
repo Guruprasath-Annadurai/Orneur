@@ -1793,30 +1793,207 @@ def test_real_mistral_generation_result_values_match_manifest_claims_exactly():
     assert original["generation_succeeded"] is True
 
 
+def _build_valid_generation_artifact(manifest_data: dict) -> dict:
+    return {
+        "evidence_type": "LIVE_HARNESS_GENERATION_RESULT",
+        "source": "ORIGINAL_TEST_FIXTURE_ATTEMPT1_HARNESS_OUTPUT",
+        "evidence_strength": "OBSERVED_LIVE",
+        "original_harness_result": {
+            "synthetic_prompt_sha256": manifest_data["synthetic_prompt_sha256"],
+            "decoded_response_sha256": manifest_data["decoded_response_sha256"],
+            "input_tokens": manifest_data["input_tokens"],
+            "output_tokens": manifest_data["output_tokens"],
+            "generation_latency_seconds": manifest_data["generation_latency_seconds"],
+            "ttft_seconds": manifest_data["ttft_seconds"],
+            "tokens_per_second": manifest_data["tokens_per_second"],
+            "server_ready": True,
+            "generation_succeeded": True,
+            "models_endpoint_status": 200,
+            "chat_endpoint_status": 200,
+        },
+    }
+
+
+def _write_generation_result_artifact(root: Path, data: dict, artifact: dict) -> None:
+    import hashlib
+    gen_path = root / "evidence" / "gen_result.json"
+    gen_path.parent.mkdir(parents=True, exist_ok=True)
+    content = json.dumps(artifact).encode()
+    gen_path.write_bytes(content)
+    data[SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD] = "evidence/gen_result.json"
+    data[SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD] = hashlib.sha256(content).hexdigest()
+
+
+def _production_serving_fixture(tmp_path):
+    """A synthetic, fully valid PRODUCTION_SERVING_RUNTIME_QUALIFIED
+    bundle (manifest + all evidence_artifacts + a matching supplemental
+    generation-result artifact) that passes both byte and semantic
+    verification -- the base fixture every adversarial test below
+    mutates away from validity."""
+    data = _strict_manifest()
+    data["qualification_type"] = PRODUCTION_SERVING_TYPE
+    root = _write_evidence_bundle(tmp_path, data)
+    artifact = _build_valid_generation_artifact(data)
+    _write_generation_result_artifact(root, data, artifact)
+    return data, root, artifact
+
+
+def test_production_serving_real_bundle_passes_byte_and_semantic_verification(tmp_path):
+    data, root, _artifact = _production_serving_fixture(tmp_path)
+    validate_manifest(data)
+    verify_evidence_artifacts_bytes(data, root)  # must not raise
+
+
 def test_tampered_generation_result_fails_closed(tmp_path):
     """A synthetic PRODUCTION_SERVING_RUNTIME_QUALIFIED bundle whose
     supplementary_generation_result bytes are tampered AFTER the
     manifest's declared hash was finalized must fail closed via the
     public verify_evidence_artifacts_bytes entry point -- the same
     integrity guarantee as the other six evidence artifacts."""
-    import hashlib
+    data, root, _artifact = _production_serving_fixture(tmp_path)
+    validate_manifest(data)
+    verify_evidence_artifacts_bytes(data, root)  # genuinely matching bytes: must not raise
 
+    # Tamper AFTER the declared hash was finalized (hash now stale).
+    gen_path = root / "evidence" / "gen_result.json"
+    gen_path.write_bytes(b"tampered generation result, not the original bytes")
+    with pytest.raises(RuntimeQualificationManifestError, match="supplementary_generation_result"):
+        verify_evidence_artifacts_bytes(data, root)
+
+
+@pytest.mark.parametrize(
+    "field,new_value",
+    [
+        ("input_tokens", 999),
+        ("decoded_response_sha256", "f" * 64),
+        ("generation_latency_seconds", 0.000001),
+        ("ttft_seconds", 999.0),
+    ],
+)
+def test_semantic_mismatch_with_matching_byte_hash_rejected(tmp_path, field, new_value):
+    """Phase 21B.4.12.6 §7 B/C/D -- the important adversarial case: the
+    supplemental artifact's own content is changed AND its declared hash
+    is updated to match (so byte verification alone would pass), but the
+    artifact's original_harness_result now disagrees with the manifest's
+    still-unchanged claim -- the semantic verifier must still reject."""
+    data, root, artifact = _production_serving_fixture(tmp_path)
+    artifact["original_harness_result"][field] = new_value
+    _write_generation_result_artifact(root, data, artifact)  # rewrites content AND hash together
+    validate_manifest(data)
+    with pytest.raises(RuntimeQualificationManifestError, match=field):
+        verify_evidence_artifacts_bytes(data, root)
+
+
+def test_server_ready_false_rejected(tmp_path):
+    data, root, artifact = _production_serving_fixture(tmp_path)
+    artifact["original_harness_result"]["server_ready"] = False
+    _write_generation_result_artifact(root, data, artifact)
+    validate_manifest(data)
+    with pytest.raises(RuntimeQualificationManifestError, match="server_ready"):
+        verify_evidence_artifacts_bytes(data, root)
+
+
+def test_generation_succeeded_false_rejected(tmp_path):
+    data, root, artifact = _production_serving_fixture(tmp_path)
+    artifact["original_harness_result"]["generation_succeeded"] = False
+    _write_generation_result_artifact(root, data, artifact)
+    validate_manifest(data)
+    with pytest.raises(RuntimeQualificationManifestError, match="generation_succeeded"):
+        verify_evidence_artifacts_bytes(data, root)
+
+
+@pytest.mark.parametrize("endpoint_field", ["models_endpoint_status", "chat_endpoint_status"])
+def test_endpoint_status_not_200_rejected(tmp_path, endpoint_field):
+    data, root, artifact = _production_serving_fixture(tmp_path)
+    artifact["original_harness_result"][endpoint_field] = 500
+    _write_generation_result_artifact(root, data, artifact)
+    validate_manifest(data)
+    with pytest.raises(RuntimeQualificationManifestError, match=endpoint_field):
+        verify_evidence_artifacts_bytes(data, root)
+
+
+def test_malformed_original_harness_result_rejected(tmp_path):
+    data, root, artifact = _production_serving_fixture(tmp_path)
+    artifact["original_harness_result"] = "not-a-mapping"
+    _write_generation_result_artifact(root, data, artifact)
+    validate_manifest(data)
+    with pytest.raises(RuntimeQualificationManifestError, match="original_harness_result"):
+        verify_evidence_artifacts_bytes(data, root)
+
+
+def test_missing_original_harness_result_rejected(tmp_path):
+    data, root, artifact = _production_serving_fixture(tmp_path)
+    del artifact["original_harness_result"]
+    _write_generation_result_artifact(root, data, artifact)
+    validate_manifest(data)
+    with pytest.raises(RuntimeQualificationManifestError, match="original_harness_result"):
+        verify_evidence_artifacts_bytes(data, root)
+
+
+@pytest.mark.parametrize(
+    "mutate,match",
+    [
+        (lambda a: a.__setitem__("evidence_type", "SOMETHING_ELSE"), "evidence_type"),
+        (lambda a: a.__setitem__("source", ""), "source"),
+        (lambda a: a.__setitem__("source", "NOT_A_RECOGNIZED_SOURCE"), "source"),
+        (lambda a: a.__setitem__("evidence_strength", "REPORTED_BY_CLAUDE"), "evidence_strength"),
+    ],
+)
+def test_bad_evidence_type_or_strength_or_source_rejected(tmp_path, mutate, match):
+    data, root, artifact = _production_serving_fixture(tmp_path)
+    mutate(artifact)
+    _write_generation_result_artifact(root, data, artifact)
+    validate_manifest(data)
+    with pytest.raises(RuntimeQualificationManifestError, match=match):
+        verify_evidence_artifacts_bytes(data, root)
+
+
+def test_non_json_generation_result_rejected(tmp_path):
     data = _strict_manifest()
     data["qualification_type"] = PRODUCTION_SERVING_TYPE
     root = _write_evidence_bundle(tmp_path, data)
-    gen_content = b"genuine synthetic generation result\n"
+    import hashlib
+    gen_content = b"not valid json at all"
     gen_path = root / "evidence" / "gen_result.json"
     gen_path.parent.mkdir(parents=True, exist_ok=True)
     gen_path.write_bytes(gen_content)
     data[SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD] = "evidence/gen_result.json"
     data[SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD] = hashlib.sha256(gen_content).hexdigest()
     validate_manifest(data)
-    verify_evidence_artifacts_bytes(data, root)  # genuinely matching bytes: must not raise
-
-    # Tamper AFTER the declared hash was finalized.
-    gen_path.write_bytes(b"tampered generation result, not the original bytes")
-    with pytest.raises(RuntimeQualificationManifestError, match="supplementary_generation_result"):
+    with pytest.raises(RuntimeQualificationManifestError, match="not valid JSON"):
         verify_evidence_artifacts_bytes(data, root)
+
+
+def test_semantic_verification_wired_into_real_acceptance_path(tmp_path):
+    """Item 6: verify_candidate_qualification_end_to_end (the real
+    acceptance path, not a test-only assertion) must transitively fail
+    when the supplemental artifact's content disagrees with the
+    manifest, even though the artifact is valid JSON and its byte hash
+    matches the manifest's declared hash."""
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+
+    data, root, artifact = _production_serving_fixture(tmp_path)
+    data["candidate"] = "Qwen3.8-27B"
+    data["artifact_repository"] = "Qwen/Qwen3.8-27B"
+    data["exact_revision"] = "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+    data["tokenizer_repository"] = "Qwen/Qwen3.8-27B"
+    data["tokenizer_revision"] = "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"
+    artifact["original_harness_result"]["input_tokens"] = 999999  # disagree with manifest's real value
+    _write_generation_result_artifact(root, data, artifact)
+    manifest_rel_path = "synthetic_manifest.json"
+    (root / manifest_rel_path).write_text(json.dumps(data))
+    digest = sha256_of_manifest(data)
+
+    registry_data = json.loads(REGISTRY_PATH.read_text())
+    qwen = next(e for e in registry_data["deployable_candidates"] if e["canonical_candidate_name"] == "Qwen3.8-27B")
+    qwen["qualification_manifest_path"] = manifest_rel_path
+    qwen["qualification_manifest_digest_sha256"] = digest
+    qwen["qualification_type"] = data["qualification_type"]
+    registry_path = root / "registry.json"
+    registry_path.write_text(json.dumps(registry_data))
+
+    with pytest.raises(RegistrySchemaError, match="input_tokens"):
+        verify_candidate_qualification_end_to_end(registry_path, "Qwen3.8-27B", manifest_root=root)
 
 
 def test_production_serving_qualified_without_generation_result_fails_closed():
@@ -1871,9 +2048,34 @@ def test_real_mistral_manifest_all_eight_artifacts_verify_after_closure():
     together -- no historical bytes were disturbed by adding the new
     binding."""
     data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
-    verify_evidence_artifacts_bytes(data, REPO_ROOT)  # must not raise
+    verify_evidence_artifacts_bytes(data, REPO_ROOT)  # must not raise (byte AND semantic, Phase 21B.4.12.6)
     assert len(data["evidence_artifacts"]) == 7
     assert SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD in data
+
+
+def test_real_mistral_manifest_generation_values_pinned_exactly():
+    """Phase 21B.4.12.6 §7 J: the real Mistral manifest's generation
+    claims must remain exactly these values -- a regression here would
+    mean either the manifest or its bound supplemental artifact drifted."""
+    data = load_manifest(MISTRAL_RETRY_MANIFEST_PATH)
+    assert data["input_tokens"] == 24
+    assert data["output_tokens"] == 3
+    assert data["generation_latency_seconds"] == 0.1896529197692871
+    assert data["ttft_seconds"] == 0.17918872833251953
+    assert data["tokens_per_second"] == 15.818369702135362
+
+
+def test_real_mistral_bundle_passes_semantic_generation_verification():
+    """Explicit end-to-end proof (Phase 21B.4.12.6 §7 A) that the real,
+    committed Mistral bundle passes both byte AND content-semantic
+    verification, wired through the real acceptance path."""
+    from orca.eval.candidate_registry import verify_candidate_qualification_end_to_end
+
+    entry, manifest = verify_candidate_qualification_end_to_end(
+        REGISTRY_PATH, "Mistral Small 4", manifest_root=REPO_ROOT, require_qualified=True
+    )
+    assert entry["runtime_qualification_status"] == "QUALIFIED"
+    assert manifest["qualification_type"] == PRODUCTION_SERVING_TYPE
 
 
 def test_real_mistral_manifest_billing_gate_confirmed_for_executed_run():

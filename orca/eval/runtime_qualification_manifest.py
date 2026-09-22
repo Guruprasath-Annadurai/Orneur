@@ -803,7 +803,11 @@ def validate_manifest(data: dict) -> None:
         _require_legacy_created_at(data["created_at"])
 
 
-def _verify_artifact_bytes(path_str: str, expected_sha256: str, *, evidence_root: Path, label: str) -> None:
+def _resolve_evidence_path(path_str: str, *, evidence_root: Path, label: str) -> Path:
+    """Shared path-safety resolution used by both byte-hash verification
+    and (Phase 21B.4.12.6) content-semantic verification: rejects
+    symlinks and any path that escapes `evidence_root`, and requires a
+    real regular file."""
     root = Path(evidence_root).resolve()
     raw_candidate = root / path_str
     if raw_candidate.is_symlink():
@@ -818,11 +822,114 @@ def _verify_artifact_bytes(path_str: str, expected_sha256: str, *, evidence_root
         )
     if not candidate.is_file():
         raise RuntimeQualificationManifestError(f"{label} artifact {path_str!r} is not a regular file or does not exist")
+    return candidate
+
+
+def _verify_artifact_bytes(path_str: str, expected_sha256: str, *, evidence_root: Path, label: str) -> None:
+    candidate = _resolve_evidence_path(path_str, evidence_root=evidence_root, label=label)
     actual = hashlib.sha256(candidate.read_bytes()).hexdigest()
     if actual != expected_sha256:
         raise RuntimeQualificationManifestError(
             f"{label} artifact byte hash mismatch: manifest declares {expected_sha256!r}, actual content hashes to {actual!r}"
         )
+
+
+# Phase 21B.4.12.6 §4: the supplemental generation-result artifact's
+# `source` field must be a non-empty, recognized original-live-harness
+# provenance string -- reusable across future candidates/phases (not
+# hardcoded to the Mistral Phase 21B.4.12.3 literal), while still
+# rejecting an empty, placeholder, or unrelated value.
+_LIVE_HARNESS_RESULT_SOURCE_RE = re.compile(r"^ORIGINAL_.+_HARNESS_OUTPUT$")
+
+# Phase 21B.4.12.6 §5: generation-phase manifest fields whose values
+# must exactly (not approximately) equal the corresponding field inside
+# the supplemental artifact's original_harness_result -- both were
+# serialized from the very same preserved live-harness result, so any
+# divergence means the artifact's content was altered independently of
+# the manifest (even if its declared byte hash was updated to match).
+_GENERATION_RESULT_EXACT_MATCH_FIELDS = (
+    "synthetic_prompt_sha256",
+    "decoded_response_sha256",
+    "input_tokens",
+    "output_tokens",
+    "generation_latency_seconds",
+    "ttft_seconds",
+    "tokens_per_second",
+)
+
+
+def _verify_generation_result_semantics(data: dict, evidence_root: Path) -> None:
+    """Phase 21B.4.12.6: byte-matching alone proves the artifact's bytes
+    weren't tampered with AFTER the manifest's declared hash was
+    finalized -- it does NOT prove the artifact's CONTENT actually
+    agrees with what the manifest claims (an adversary could update both
+    the artifact and its declared hash together). For
+    PRODUCTION_SERVING_RUNTIME_QUALIFIED under STRICT_RUNTIME_SMOKE_V2,
+    parse the supplemental artifact and require its
+    original_harness_result to semantically match the manifest's own
+    generation-phase fields exactly, carry recognized provenance, and
+    show a genuinely successful serving/generation outcome. Called only
+    after `_verify_artifact_bytes` has already confirmed the byte hash
+    matches, so this function trusts the file's existence/safety but
+    re-parses its content for meaning."""
+    candidate = _resolve_evidence_path(
+        data[SUPPLEMENTARY_GENERATION_RESULT_PATH_FIELD],
+        evidence_root=evidence_root, label="supplementary_generation_result",
+    )
+    try:
+        artifact = json.loads(candidate.read_text())
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise RuntimeQualificationManifestError(
+            f"supplementary_generation_result artifact is not valid JSON: {e}"
+        ) from e
+    if not isinstance(artifact, dict):
+        raise RuntimeQualificationManifestError("supplementary_generation_result artifact must be a JSON object")
+
+    if artifact.get("evidence_type") != "LIVE_HARNESS_GENERATION_RESULT":
+        raise RuntimeQualificationManifestError(
+            "supplementary_generation_result.evidence_type must be 'LIVE_HARNESS_GENERATION_RESULT'"
+        )
+    source = artifact.get("source")
+    if not isinstance(source, str) or not _LIVE_HARNESS_RESULT_SOURCE_RE.match(source):
+        raise RuntimeQualificationManifestError(
+            "supplementary_generation_result.source must be a non-empty, recognized original-live-harness "
+            "provenance string matching ORIGINAL_<...>_HARNESS_OUTPUT"
+        )
+    if artifact.get("evidence_strength") != "OBSERVED_LIVE":
+        raise RuntimeQualificationManifestError(
+            "supplementary_generation_result.evidence_strength must be 'OBSERVED_LIVE'"
+        )
+    original = artifact.get("original_harness_result")
+    if not isinstance(original, dict):
+        raise RuntimeQualificationManifestError(
+            "supplementary_generation_result.original_harness_result must be a mapping"
+        )
+
+    for field in _GENERATION_RESULT_EXACT_MATCH_FIELDS:
+        manifest_value = data[field]
+        artifact_value = original.get(field)
+        if artifact_value != manifest_value:
+            raise RuntimeQualificationManifestError(
+                f"supplementary_generation_result.original_harness_result.{field} "
+                f"({artifact_value!r}) does not match manifest {field} ({manifest_value!r})"
+            )
+
+    if original.get("server_ready") is not True:
+        raise RuntimeQualificationManifestError(
+            "supplementary_generation_result.original_harness_result.server_ready must be true"
+        )
+    if original.get("generation_succeeded") is not True:
+        raise RuntimeQualificationManifestError(
+            "supplementary_generation_result.original_harness_result.generation_succeeded must be true"
+        )
+
+    if data["qualification_type"] == PRODUCTION_SERVING_TYPE:
+        for endpoint_field in ("models_endpoint_status", "chat_endpoint_status"):
+            if original.get(endpoint_field) != 200:
+                raise RuntimeQualificationManifestError(
+                    f"supplementary_generation_result.original_harness_result.{endpoint_field} must be 200 "
+                    f"for {PRODUCTION_SERVING_TYPE}"
+                )
 
 
 def verify_evidence_artifacts_bytes(data: dict, evidence_root: Path) -> None:
@@ -853,6 +960,14 @@ def verify_evidence_artifacts_bytes(data: dict, evidence_root: Path) -> None:
             data[SUPPLEMENTARY_GENERATION_RESULT_SHA256_FIELD],
             evidence_root=evidence_root, label="supplementary_generation_result",
         )
+        # Phase 21B.4.12.6 §3/§6: byte-matching alone is not sufficient
+        # for a PRODUCTION_SERVING_RUNTIME_QUALIFIED claim -- the
+        # artifact's CONTENT must also semantically agree with the
+        # manifest's own generation-phase claims. Wired into the real
+        # acceptance path (not test-only): this function is called
+        # transitively by verify_candidate_qualification_end_to_end.
+        if data["qualification_type"] == PRODUCTION_SERVING_TYPE:
+            _verify_generation_result_semantics(data, evidence_root)
 
 
 def load_manifest(path: str | Path) -> dict:
