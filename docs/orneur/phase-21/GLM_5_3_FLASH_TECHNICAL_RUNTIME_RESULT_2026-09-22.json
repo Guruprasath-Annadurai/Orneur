@@ -56,8 +56,17 @@
     "invocation_2_successful_run_result": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION2_SUCCESSFUL_RUN_RESULT_2026-09-23.json",
     "invocation_2_execution_log": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION2_EXECUTION_LOG_2026-09-23.txt",
     "compute_cost_incident": "docs/orneur/phase-21/GLM_5_3_FLASH_COMPUTE_COST_INCIDENT_2026-09-23.md",
-    "future_guardrail_spec": "docs/orneur/phase-21/GLM_5_3_FLASH_FUTURE_ZERO_CASH_GPU_GUARDRAIL_2026-09-23.md"
+    "future_guardrail_spec": "docs/orneur/phase-21/GLM_5_3_FLASH_FUTURE_ZERO_CASH_GPU_GUARDRAIL_2026-09-23.md",
+    "evidence_sha256_index": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_EVIDENCE_SHA256_INDEX_2026-09-23.json"
   },
 
-  "path_to_formal_qualification": "A future, separately authorized GPU execution invocation, run under a corrected harness that enforces BOTH a wall-clock ceiling AND a live monetary-credit ceiling (see the future-guardrail spec above), using the SAME verified image digest, pinned revision, and serving configuration, ending with owner_billed_delta_usd == 0, would be eligible to produce an accepted STRICT_RUNTIME_SMOKE_V2 PRODUCTION_SERVING_RUNTIME_QUALIFIED manifest. This technical-result record does not itself confer qualification and must not be cited as if it does."
+  "historical_gpu_harnesses": {
+    "note": "Phase 21B.4.13.2 containment: the two historical GPU launch scripts that produced this evidence (gpu=\"H200:4\" Modal functions) have been removed from the active scripts/ execution namespace so they cannot be accidentally re-run as if approved. Byte-identical archived copies are preserved below; their SHA-256 hashes are also recorded in the evidence SHA-256 index linked above. The CPU-only preflight script (no gpu= parameter, structurally incapable of GPU allocation) remains in scripts/ as historical/preflight tooling.",
+    "attempt1_archived_path": "docs/orneur/phase-21/evidence/harnesses/HISTORICAL_PHASE21B_4_13_GLM_GPU_ATTEMPT1.py",
+    "run2_archived_path": "docs/orneur/phase-21/evidence/harnesses/HISTORICAL_PHASE21B_4_13_GLM_GPU_RUN2.py",
+    "cpu_preflight_archived_path": "docs/orneur/phase-21/evidence/harnesses/HISTORICAL_PHASE21B_4_13_GLM_CPU_PREFLIGHT.py",
+    "cpu_preflight_still_active_at": "scripts/phase21b_4_13_glm_cpu_preflight.py"
+  },
+
+  "path_to_formal_qualification": "A future, separately authorized GPU execution invocation, run under a corrected harness that enforces BOTH a wall-clock ceiling AND a live monetary-credit ceiling (see the future-guardrail spec above), using the SAME verified image digest, pinned revision, and serving configuration, ending with owner_billed_delta_usd == 0, would be eligible to produce an accepted STRICT_RUNTIME_SMOKE_V2 PRODUCTION_SERVING_RUNTIME_QUALIFIED manifest. This technical-result record does not itself confer qualification and must not be cited as if it does. No new GPU runner has been implemented as of Phase 21B.4.13.2 -- a future runner requires separate authorization."
 }

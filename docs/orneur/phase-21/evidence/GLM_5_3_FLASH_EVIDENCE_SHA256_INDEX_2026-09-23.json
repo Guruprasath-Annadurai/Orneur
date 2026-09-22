@@ -1,0 +1,92 @@
+{
+  "evidence_type": "GLM_5_3_FLASH_EVIDENCE_INTEGRITY_INDEX",
+  "created": "2026-09-23",
+  "phase": "21B.4.13.2",
+  "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative. Verified via a dedicated test (test_glm_evidence_integrity_index) that re-hashes each file and asserts an exact match.",
+  "entries": [
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_BILLING_GATE_2026-09-22.json",
+      "sha256": "fb9748a30d334abc15b2c3a06edca8b4c61e4379d70480b72f9143211ae52a46",
+      "evidence_role": "billing_gate",
+      "size_bytes": 1541
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_BILLING_BEFORE_2026-09-23.json",
+      "sha256": "78dc08f54f263b7ace04e814f65bb04c935639010f33d81a867193d031282a6e",
+      "evidence_role": "billing_before",
+      "size_bytes": 765
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_BILLING_AFTER_2026-09-23.json",
+      "sha256": "e29cb64710b155b62bc73945f817fd44c523a25a0af9e37faee8c26016d00767",
+      "evidence_role": "billing_after",
+      "size_bytes": 1639
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_MODEL_IDENTITY_2026-09-22.json",
+      "sha256": "9e391de1d85e56509f9c6cc5ad4d8b0a2ad4ee758a6b0e175a367db6eb8846d0",
+      "evidence_role": "model_identity",
+      "size_bytes": 1513
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_RUNTIME_ENVIRONMENT_2026-09-22.json",
+      "sha256": "9994c908ec6c4204cad1dd530878d98224a194374aae37c402024f99b79e0481",
+      "evidence_role": "runtime_environment",
+      "size_bytes": 1721
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GENERATION_RESULT_2026-09-23.json",
+      "sha256": "d33ba1671c6ebe2cc31c75ddb1d27ca0bed4aacae744c769b39aefdd64ccccce",
+      "evidence_role": "generation_result",
+      "size_bytes": 1398
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_CLEANUP_2026-09-23.json",
+      "sha256": "3caad61e3ae2702795e93bb9e9c5489ee40425e921901a3ca5f266ea14690a68",
+      "evidence_role": "cleanup",
+      "size_bytes": 1063
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION1_HARNESS_CURTAILED_2026-09-22.json",
+      "sha256": "9e39b982fce962319fa5b298298020b577ae59e3fb20bbbfc2c87bc23ccc39e2",
+      "evidence_role": "invocation1_structured_result",
+      "size_bytes": 2567
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION1_EXECUTION_LOG_2026-09-22.txt",
+      "sha256": "24846cd649c6dd13d456e0e61a0f1bcf12236bba679ce6f583b4de667f5772c2",
+      "evidence_role": "invocation1_execution_log",
+      "size_bytes": 6802
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION2_SUCCESSFUL_RUN_RESULT_2026-09-23.json",
+      "sha256": "33ea5ebaafb68118b30cff1bb5dbcfde3526d44801469f6b30834adf582d5427",
+      "evidence_role": "invocation2_structured_successful_result",
+      "size_bytes": 8449
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLASH_GPU_INVOCATION2_EXECUTION_LOG_2026-09-23.txt",
+      "sha256": "08c3a594f1afa1018953470d25a93d1eaf0e432b6533156bd4b6e0090654aad0",
+      "evidence_role": "invocation2_execution_log",
+      "size_bytes": 87317
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/harnesses/HISTORICAL_PHASE21B_4_13_GLM_GPU_ATTEMPT1.py",
+      "sha256": "d143fc0c4bdaf596a7b9f7ebd8703b498a46989b2d18b4e04d4d510ffe958c80",
+      "evidence_role": "archived_historical_gpu_harness_attempt1",
+      "size_bytes": 13442
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/harnesses/HISTORICAL_PHASE21B_4_13_GLM_GPU_RUN2.py",
+      "sha256": "a05c2738579755dc8cf4460ad27c17746d20c37028105471101ddd96000fd186",
+      "evidence_role": "archived_historical_gpu_harness_run2",
+      "size_bytes": 13937
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/harnesses/HISTORICAL_PHASE21B_4_13_GLM_CPU_PREFLIGHT.py",
+      "sha256": "e3cc38cf26f30df19689e77c8c27be665102a82feaa1dc8e2977468c6852e231",
+      "evidence_role": "archived_cpu_preflight_harness",
+      "size_bytes": 7101
+    }
+  ]
+}

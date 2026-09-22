@@ -4,6 +4,13 @@
 
 Not a model defect. Not a Modal defect. Not a vLLM defect.
 
+*Phase 21B.4.13.2 wording correction: two passages below originally
+stated general claims about how Modal's $0 spend limit is designed to
+behave, without a primary Modal source confirming that behavior. They
+have been rewritten to state only what was directly observed in this
+execution. The root-cause classification itself (ORNEUR COMPUTE-COST
+GUARDRAIL DEFECT) is unchanged.*
+
 ## What happened
 
 GPU execution invocation #2 (the corrected model-load-detection harness,
@@ -41,27 +48,31 @@ runtime could — and did — exceed the credit ceiling well before the
 time ceiling was reached, because the two ceilings are independent
 quantities and only one was being enforced.
 
-The account's Modal Workspace spend limit is configured to $0, which is
-the mechanism that keeps runs from spending real money in the general
-case — but it does not retroactively prevent already-authorized
-billable GPU-second usage, already metered during a run in progress,
-from converting into owner-billed cost once the credit pool underneath
-it is exhausted. The $0 spend limit blocks *new* chargeable actions
-once credits are gone; it does not roll back or refuse to bill for
-GPU-seconds a running job has already consumed while credits were still
-available moment-to-moment. By the time credits ran out mid-run, the
-job was already mid-flight consuming GPU-seconds that had to be
-accounted for somehow, and the accounting resolved as real billed cost
-for the shortfall.
+The account's Modal Workspace spend limit is configured to $0. **Observed
+in this execution:** despite that configured limit, the run's metered
+cost ($33.52) exceeded the available credit balance ($30.00) and the
+shortfall ($3.52) was billed to the owner (`billed_cost` moved from
+$0.00 to $3.52, confirmed live via `modal billing summary` before and
+after the run). No current primary Modal documentation was consulted to
+confirm the general mechanics of how a $0 spend limit interacts with an
+already-in-flight job's metered-but-not-yet-settled usage once credits
+are exhausted — the paragraph above described a plausible mechanism,
+not a documented one, and is corrected here. **The incident evidence is
+consistent with** the $0 spend limit not preventing this specific
+already-metered overage from resolving as owner-billed cost, in this
+one observed instance; it should not be read as an established general
+claim about Modal's billing semantics.
 
 ## What this incident is not
 
 - **Not a model defect.** GLM-5.3-Flash's runtime behavior was correct
   in every observed respect.
-- **Not a Modal defect.** Modal billed exactly what was metered, exactly
-  as its billing model is documented to work; the $0 spend limit did
-  what it is designed to do (block new spend once credits and any
-  further allowance are gone), not something broader.
+- **Not a Modal defect.** Observed in this execution: Modal billed
+  exactly what was metered ($33.52 metered, $30.00 credits applied,
+  $3.52 billed — the arithmetic is exact and consistent). No claim is
+  made here about whether this is Modal's intended or documented
+  billing behavior in general; only the exact observed numbers for
+  this one run are asserted as fact.
 - **Not evidence the zero-owner-cash rule is impractical.** The rule
   itself (`owner_billed_delta_usd == 0`) remains correct and is
   preserved unweakened — see

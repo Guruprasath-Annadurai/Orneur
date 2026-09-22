@@ -1,14 +1,4 @@
 """
-HISTORICAL / PREFLIGHT TOOLING (Phase 21B.4.13.2 containment note):
-this script contains no `gpu=` parameter anywhere and cannot allocate
-GPU compute -- confirmed structurally, not just by convention. It is
-retained in the active scripts/ namespace for that reason. Its sibling
-GPU launch scripts (phase21b_4_13_glm_gpu_attempt1.py,
-phase21b_4_13_glm_gpu_run2.py) have been removed from scripts/ and
-archived, byte-identical, under
-docs/orneur/phase-21/evidence/harnesses/ -- see
-docs/orneur/phase-21/evidence/GLM_5_3_FLASH_EVIDENCE_SHA256_INDEX_2026-09-23.json.
-
 Phase 21B.4.13 GLM-5.3-Flash -- CPU-ONLY image/config preflight.
 
 NO GPU. NO model weight download (306 GiB checkpoint). NO inference.
