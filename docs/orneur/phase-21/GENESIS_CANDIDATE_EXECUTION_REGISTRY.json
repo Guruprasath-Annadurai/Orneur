@@ -514,7 +514,7 @@
       "private_holdout_status": "BLOCKED",
       "access_path_identified": true,
       "model_identity_attributable": true,
-      "non_financial_blocker_status": "PRIVATE_HOLDOUT_CONFIDENTIALITY_UNRESOLVED,SELF_HOST_COMPUTE_PROHIBITIVE,WRITTEN_PROVIDER_CLARIFICATION_REQUIRED",
+      "non_financial_blocker_status": "PROVIDER_TRAINING_ON_INPUTS,SELF_HOST_COMPUTE_PROHIBITIVE,WRITTEN_PROVIDER_CLARIFICATION_REQUIRED",
       "full_protocol_access_validation": "FAILED"
     }
   ],

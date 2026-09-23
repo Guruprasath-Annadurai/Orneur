@@ -52,6 +52,7 @@ from orca.eval.frontier_reference_admission_quorum import (
     MINIMUM_USABLE_REFERENCES,
     TARGET_REFERENCES,
     AccessReadinessError,
+    FrontierReferenceQuorumReport,
     _entry_passes_full_protocol_validation,
     compute_admission_quorum,
     compute_public_eval_ready_count,
@@ -341,7 +342,8 @@ def test_quorum_report_matches_registry_evidence(registry):
     §10/§6: report the truth, QUORUM_BLOCKED remains acceptable)."""
     report = compute_admission_quorum(list(registry.frontier_references))
     assert report.admitted_reference_count == 3  # DeepSeek, Mistral Large 3, Kimi K3
-    assert report.access_preflight_ready_count == 0  # no reference is full-protocol ready
+    assert report.raw_access_status_claim_count == 0  # no reference even claims a counting status
+    assert report.validated_access_preflight_ready_count == 0  # no reference is full-protocol ready
     assert report.quorum_counting_count == 0
     assert report.quorum_counting_references == ()
     assert report.independent_lineage_count == 0
@@ -1061,3 +1063,152 @@ def test_phase_21c_still_not_authorized():
     text = (REPO_ROOT / "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_BLOCKER_MATRIX_2026-09-24.md").read_text()
     assert "PHASE 21C" in text
     assert "NOT AUTHORIZED" in text
+
+
+# =========================================================================
+# Phase 21B.4.18.1: canonical-state reconciliation + validated ready-count
+# hardening. See orca/eval/frontier_reference_admission_quorum.py's Phase
+# 21B.4.18.1 docstring addendum for the full design rationale.
+# =========================================================================
+
+
+# ── §8: ready-count tamper tests ─────────────────────────────────────────
+
+
+def test_ready_count_A_forged_status_without_evidence():
+    forged = {
+        "reference_name": "Forged", "organization": "ForgedOrg",
+        "reference_evaluation_admission_status": "ADMITTED",
+        "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION",
+    }
+    report = compute_admission_quorum([forged])
+    assert report.validated_access_preflight_ready_count == 0
+    assert report.quorum_counting_count == 0
+    # the raw claim count DOES reflect the naked string -- proving the
+    # two metrics are genuinely distinct, not that raw is trusted.
+    assert report.raw_access_status_claim_count == 1
+
+
+def test_ready_count_B_status_claims_ready_but_holdout_review_required():
+    entry = _passing_evidence(private_holdout_status="REVIEW_REQUIRED")
+    report = compute_admission_quorum([entry])
+    assert report.validated_access_preflight_ready_count == 0
+
+
+def test_ready_count_C_status_claims_ready_but_unresolved_blocker():
+    entry = _passing_evidence(non_financial_blocker_status="SOME_BLOCKER")
+    report = compute_admission_quorum([entry])
+    assert report.validated_access_preflight_ready_count == 0
+
+
+def test_ready_count_D_only_zero_cash_unresolved_still_counts():
+    entry = _passing_evidence(access_preflight_status="PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK")
+    report = compute_admission_quorum([entry])
+    assert report.validated_access_preflight_ready_count == 1
+    assert report.quorum_counting_count == 1
+
+
+def test_raw_claim_count_field_is_unmistakably_labeled_raw():
+    """§7: no field on the report may be named as if it were validated
+    while actually representing an unvalidated raw claim."""
+    import dataclasses
+    field_names = {f.name for f in dataclasses.fields(FrontierReferenceQuorumReport)}
+    assert "access_preflight_ready_count" not in field_names
+    assert "raw_access_status_claim_count" in field_names
+    assert "validated_access_preflight_ready_count" in field_names
+
+
+# ── §9: canonical-state reconciliation tests ─────────────────────────────
+
+
+def test_minimax_clarification_state_is_internally_consistent(registry):
+    """MiniMax cannot simultaneously say terms are resolved / clarification
+    NO while carrying COMMERCIAL_USE_AMBIGUITY -- registry, blocker
+    matrix, and provider-clarifications artifact must all agree
+    (Option A: applicability still ambiguous)."""
+    minimax = next(r for r in registry.frontier_references if r["reference_name"] == "MiniMax M3")
+    assert minimax["license_or_terms_status"] == "REVIEW_REQUIRED"
+    assert minimax["reference_evaluation_admission_status"] == "REVIEW_REQUIRED"
+    assert "COMMERCIAL_USE_AMBIGUITY" in minimax["non_financial_blocker_status"]
+
+    blocker_text = (REPO_ROOT / "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_BLOCKER_MATRIX_2026-09-24.md").read_text()
+    minimax_section = blocker_text.split("### Priority 5 — MiniMax M3")[1].split("### Priority 6")[0]
+    assert "Clarification required:** YES" in minimax_section
+
+    clarifications_text = (REPO_ROOT / "docs/orneur/phase-21/evidence/GENESIS_FRONTIER_REFERENCE_PROVIDER_CLARIFICATIONS_2026-09-24.md").read_text()
+    minimax_clar_section = clarifications_text.split("## 5. MiniMax")[1].split("## 6. Alibaba Cloud")[0]
+    assert "applicability" in minimax_clar_section.lower()
+
+
+def test_kimi_blocker_taxonomy_reflects_confirmed_training_not_unresolved(registry):
+    kimi = next(r for r in registry.frontier_references if r["reference_name"] == "Kimi K3")
+    assert kimi["private_holdout_status"] == "BLOCKED"
+    assert kimi["non_financial_blocker_status"] == (
+        "PROVIDER_TRAINING_ON_INPUTS,SELF_HOST_COMPUTE_PROHIBITIVE,WRITTEN_PROVIDER_CLARIFICATION_REQUIRED"
+    )
+    # the old "unresolved" taxonomy token must not be used for Kimi's
+    # confirmed-BLOCKED condition anymore.
+    assert "PRIVATE_HOLDOUT_CONFIDENTIALITY_UNRESOLVED" not in kimi["non_financial_blocker_status"]
+    assert kimi["reference_evaluation_admission_status"] == "ADMITTED"
+    assert kimi["access_preflight_status"] == "UNQUALIFIED"
+
+
+def test_kimi_written_agreement_route_not_characterized_as_absent():
+    text = (REPO_ROOT / "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_BLOCKER_MATRIX_2026-09-24.md").read_text()
+    kimi_section = text.split("### Priority 2 — Kimi K3")[1].split("### Priority 3")[0]
+    assert "WRITTEN_PROVIDER_CLARIFICATION_REQUIRED" in kimi_section
+    assert "enterprise written-agreement route exists" in kimi_section or "route exists" in kimi_section
+
+
+def test_mistral_retention_duration_not_asserted_without_source(registry):
+    """Mistral's ordinary (non-ZDR) API retention duration must not be
+    asserted as an exact number this phase -- the Privacy Policy's own
+    scope clause excludes ORNEUR's business-context use."""
+    text = (REPO_ROOT / "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_BLOCKER_MATRIX_2026-09-24.md").read_text()
+    mistral_section = text.split("### Priority 1 — Mistral Large 3")[1].split("### Priority 2")[0]
+    assert "NOT PRECISELY ESTABLISHED IN THIS PHASE" in mistral_section
+    assert "Data Processing Addendum" in mistral_section
+
+    mistral = next(r for r in registry.frontier_references if r["reference_name"] == "Mistral Large 3")
+    assert mistral["access_preflight_status"] == "UNQUALIFIED"
+    assert mistral["private_holdout_status"] == "REVIEW_REQUIRED"
+
+
+def test_mistral_training_optout_and_zdr_remain_separate_concepts():
+    text = (REPO_ROOT / "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_BLOCKER_MATRIX_2026-09-24.md").read_text()
+    mistral_section = text.split("### Priority 1 — Mistral Large 3")[1].split("### Priority 2")[0]
+    assert "Zero Data Retention" in mistral_section
+    assert "training opt-out" in mistral_section.lower() or "training-use control" in mistral_section.lower()
+
+
+# ── §10: preserved provider findings ─────────────────────────────────────
+
+
+def test_qwen_private_holdout_permitted_preserved(registry):
+    qwen_max = next(r for r in registry.frontier_references if r["reference_name"] == "Qwen3.8-Max")
+    assert qwen_max["private_holdout_status"] == "PERMITTED"
+    assert qwen_max["automated_evaluation_status"] == "REVIEW_REQUIRED"
+    assert qwen_max["model_identity_attributable"] is False
+    assert qwen_max["access_preflight_status"] == "UNQUALIFIED"
+
+
+def test_deepseek_and_glm_states_preserved(registry):
+    deepseek = next(r for r in registry.frontier_references if r["reference_name"] == "DeepSeek V4.1-Flash")
+    assert deepseek["reference_evaluation_admission_status"] == "ADMITTED"
+    assert deepseek["access_preflight_status"] == "UNQUALIFIED"
+    assert deepseek["private_holdout_status"] == "REVIEW_REQUIRED"
+
+    glm = next(r for r in registry.frontier_references if r["reference_name"] == "GLM-5.3 (flagship)")
+    assert glm["reference_evaluation_admission_status"] == "REVIEW_REQUIRED"
+    assert glm["access_preflight_status"] == "UNQUALIFIED"
+
+
+# ── quorum/program state unchanged by this reconciliation patch ─────────
+
+
+def test_quorum_still_blocked_after_canonical_state_reconciliation(registry):
+    report = compute_admission_quorum(list(registry.frontier_references))
+    assert report.quorum_counting_count == 0
+    assert report.independent_lineage_count == 0
+    assert report.quorum_status == "QUORUM_BLOCKED"
+    assert report.validated_access_preflight_ready_count == 0

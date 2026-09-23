@@ -26,14 +26,26 @@ holdout prompts, secrets, or unnecessary product-confidential detail.
 **Source reviewed:** `help.mistral.ai/en/articles/455207` (opt-out
 mechanism), `help.mistral.ai/en/articles/347617` (training-use
 defaults), `help.mistral.ai/en/articles/347612` (Zero Data Retention),
-`legal.mistral.ai/terms/privacy-policy` §5 (retention periods).
+`legal.mistral.ai/terms/privacy-policy` §5 (retention periods — re-
+verified Phase 21B.4.18.1). Note: the Privacy Policy's own scope
+clause states it "does not apply if you use our Mistral AI Products to
+process personal data in the context of your business activities" —
+exactly ORNEUR's use case — so its §5 retention figures (including the
+stated 30-day API figure) are not safely citable as governing ORNEUR's
+actual use; the Data Processing Addendum
+(`legal.mistral.ai/terms/data-processing-addendum/`) is the more likely
+governing document but its specific retention terms were not located
+this phase.
 
 **Unresolved question:** Does the Admin-panel "Anonymous improvement
 data" opt-out toggle, once disabled, create a prospective guarantee that
 API inputs/outputs submitted afterward are never used for model
 training — and is this independent of, or does it require pairing with,
 Zero Data Retention (ZDR) to also satisfy confidentiality for sealed
-evaluation prompts?
+evaluation prompts? Separately: what retention duration applies to
+ordinary (non-ZDR) API inputs/outputs for a business/API customer under
+the Data Processing Addendum, as distinct from the consumer-scoped
+Privacy Policy?
 
 **Why it matters:** ORNEUR needs to know whether disabling that single
 toggle is sufficient, on its own, to treat submitted prompts as
@@ -56,7 +68,7 @@ be sent.
 > development. We are not currently making any API calls under this
 > use case.
 >
-> We have two precise questions:
+> We have three precise questions:
 >
 > 1. May we use the Mistral La Plateforme API solely as an automated
 >    internal benchmark/reference — i.e., programmatically submitting
@@ -69,6 +81,12 @@ be sent.
 >    used for training or improving Mistral's models — and is Zero Data
 >    Retention (ZDR) also required to treat that submitted content as
 >    confidential?
+> 3. As a business/API customer, our understanding is that the Privacy
+>    Policy's retention terms (including a stated 30-day figure) do not
+>    apply to our use, since that policy's own scope clause excludes
+>    "the context of your business activities." What retention duration
+>    applies to our ordinary (non-ZDR) API inputs and outputs under the
+>    Data Processing Addendum instead?
 >
 > We are not asking you to review any confidential material — this is a
 > terms-of-use scope question only.
@@ -77,7 +95,9 @@ be sent.
 
 **Required yes/no confirmation:** (1) automated-internal-evaluation use
 is permitted; (2) the training opt-out toggle alone is sufficient for a
-prospective no-training guarantee (or ZDR is additionally required).
+prospective no-training guarantee (or ZDR is additionally required);
+(3) the applicable ordinary (non-ZDR) retention duration under the Data
+Processing Addendum for a business/API customer.
 
 **What registry status could change if confirmed:** `automated_
 evaluation_status` → `CLEAR`; `private_holdout_status` → `PERMITTED`
@@ -89,9 +109,13 @@ evaluation_status` → `CLEAR`; `private_holdout_status` → `PERMITTED`
 
 **Model:** Kimi K3 (hosted API, `platform.kimi.ai` / `api.moonshot.ai`)
 
-**Exact blocker:** `PRIVATE_HOLDOUT_CONFIDENTIALITY_UNRESOLVED`
-(confirmed BLOCKED for the hosted path), `WRITTEN_PROVIDER_
-CLARIFICATION_REQUIRED`
+**Exact blocker (corrected Phase 21B.4.18.1):** `PROVIDER_TRAINING_ON_
+INPUTS` (confirmed — the hosted path trains on Customer Content by
+default, per Moonshot's own ToS §4, quoted below; `private_holdout_
+status=BLOCKED` in the registry, not merely unresolved),
+`SELF_HOST_COMPUTE_PROHIBITIVE`, `WRITTEN_PROVIDER_CLARIFICATION_
+REQUIRED` (the enterprise written-agreement route below is the
+identified path to resolution)
 
 **Source reviewed:** `platform.kimi.ai/docs/agreement/modeluse` §4
 "Content" (live-fetched this phase, last updated 2026-07-30).
@@ -264,23 +288,58 @@ the specific confirming evidence supports it).
 
 ## 5. MiniMax
 
-**Model:** MiniMax M3 (weight license; commercial-use compliance path)
+**Model:** MiniMax M3 (weight license; Commercial Use applicability)
 
-**Exact blocker:** `COMMERCIAL_USE_AMBIGUITY` (already substantially
-resolved — see below), `ACCESS_PATH_UNVERIFIED` (hosted API)
+**Exact blocker:** `COMMERCIAL_USE_AMBIGUITY` (genuinely open
+applicability question — see Phase 21B.4.18.1 canonical-state
+reconciliation in the blocker matrix), `ACCESS_PATH_UNVERIFIED` (hosted
+API)
 
 **Source reviewed:** `huggingface.co/MiniMaxAI/MiniMax-M3/raw/main/
-LICENSE` (re-confirmed live this phase).
+LICENSE` (re-confirmed live in Phase 21B.4.18).
 
-**Note:** this is not really an open *question* — the license already
-specifies the exact compliance path (attribution + a one-time notice
-below $20M/yr revenue). What remains is executing that notice, which is
-a provider-facing action this phase does not perform. The draft below
-is the notice itself, prepared but not sent, for completeness.
+**Note (corrected Phase 21B.4.18.1):** this IS an open applicability
+question, not merely a compliance-mechanics question. The license's
+clause 3 "Commercial Use" standard ("primarily intended for commercial
+advantage or monetary compensation") does not, on its own text, resolve
+whether a purely-internal, non-redistributed evaluation/reference
+benchmark use — while ORNEUR separately develops an unrelated
+commercial product — actually falls under that standard. Two drafts are
+prepared below: (1) a genuine clarification question asking MiniMax to
+confirm applicability, and (2) the conditional compliance notice that
+would only be sent if Commercial Use is confirmed or ORNEUR elects to
+treat it as such. Neither has been sent.
 
 **Suggested recipient:** `api@minimax.io`.
 
-**Draft message (a compliance notice, not a question):**
+**Draft 1 — clarification question (applicability):**
+
+> Subject: M3 licensing — applicability of Commercial Use to
+> internal-only evaluation
+>
+> Hello,
+>
+> We are ORNEUR. We are evaluating MiniMax M3 as a reference/comparison
+> model in an internal, automated evaluation pipeline for our own AI
+> system under development — the model is used only for
+> internal comparison/scoring and is not incorporated into, or
+> redistributed as part of, any product we ship. We are separately
+> developing an unrelated commercial AI product.
+>
+> Under the MiniMax Community License's clause 3, "Commercial Use" is
+> defined as any use "primarily intended for commercial advantage or
+> monetary compensation." We would like to confirm: does a purely
+> internal, non-redistributed evaluation/benchmark use of this kind
+> constitute Commercial Use under your license, given that our broader
+> business is commercial but this specific use is not itself a
+> product, service, or API offered to any third party?
+>
+> We are not submitting any confidential material with this inquiry.
+>
+> Thank you.
+
+**Draft 2 — conditional compliance notice (only if Commercial Use
+applies):**
 
 > Subject: M3 licensing — notice
 >
@@ -291,19 +350,22 @@ is the notice itself, prepared but not sent, for completeness.
 > evaluation/reference model while developing our own AI system. Our
 > aggregate yearly revenue is below the $20,000,000 threshold requiring
 > prior written authorization, so we understand a one-time notice is
-> sufficient. We will include the required "Built with MiniMax M3"
-> attribution wherever applicable.
+> sufficient if this use is Commercial Use. We will include the
+> required "Built with MiniMax M3" attribution wherever applicable.
 >
 > Thank you.
 
-**Required confirmation:** none required by the license itself below
-the revenue threshold — this is a notice, not a request. Sending it
-(and adding attribution) is what would resolve
-`COMMERCIAL_USE_AMBIGUITY`.
+**Required confirmation:** whether the described internal-only
+evaluation use constitutes Commercial Use at all (Draft 1). Draft 2 is
+conditional and would only be sent after that applicability question is
+resolved (by MiniMax's answer, or by ORNEUR electing the conservative
+reading).
 
-**What registry status could change if confirmed (i.e. once sent and
-attribution added):** `license_or_terms_status` → `CLEAR`;
-`reference_evaluation_admission_status` → `ADMITTED` (pending the
+**What registry status could change if confirmed:** `license_or_
+terms_status` → `CLEAR` either way (a confirmed NON-commercial reading
+clears it directly; a confirmed Commercial Use reading clears it once
+Draft 2 is sent and attribution added); `reference_evaluation_
+admission_status` → `ADMITTED` in either resolved case (pending the
 still-separate hosted-API access-path terms, which remain unverified
 this phase).
 
@@ -379,9 +441,9 @@ verifiable identifier is confirmed).
 | Moonshot AI | 1 | NO |
 | DeepSeek AI | 1 | NO |
 | Z.ai | 1 | NO |
-| MiniMax | 1 (compliance notice) | NO |
+| MiniMax | 2 (clarification question + conditional compliance notice) | NO |
 | Alibaba Cloud | 1 | NO |
 
-**Total: 6 drafts prepared. 0 sent.** Sending any of these, or making
+**Total: 7 drafts prepared. 0 sent.** Sending any of these, or making
 any provider account-setting change (e.g. Mistral's opt-out toggle),
 remains a separately-authorized future action.

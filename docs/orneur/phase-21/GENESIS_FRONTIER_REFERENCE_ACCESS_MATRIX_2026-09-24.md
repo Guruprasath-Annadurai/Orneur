@@ -1,4 +1,4 @@
-# Genesis Frontier Reference Access Matrix — Phase 21B.4.18 update
+# Genesis Frontier Reference Access Matrix — Phase 21B.4.18 update (reconciled 21B.4.18.1)
 
 **PRIMARY-SOURCE RESEARCH + CPU/METADATA ONLY. No GPU, no frontier
 inference, no paid API call, no benchmark. Metadata/docs/terms only.**
@@ -71,6 +71,57 @@ PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK`) is accepted as counting
 — proving the state carries its intended, narrow meaning. See
 `tests/test_genesis_frontier_reference_admission.py`'s Phase 21B.4.18
 tamper tests for the full proof set.
+
+## Phase 21B.4.18.1 canonical-state reconciliation
+
+Independent audit passed Phase 21B.4.18's architecture but found three
+internal inconsistencies between the delivered final report and the
+underlying registry/evidence. This file (and the blocker matrix and
+provider clarification artifacts) were corrected in place; no legal
+conclusion was invented, no reference was promoted, and no quorum
+metric changed as a result of these corrections.
+
+1. **MiniMax M3 — commercial-use applicability.** The Phase 21B.4.18
+   final report incorrectly framed MiniMax's commercial-use question as
+   already-resolved ("clarification required: NO"), while the registry
+   itself correctly carried `license_or_terms_status=REVIEW_REQUIRED`
+   and `non_financial_blocker_status` including
+   `COMMERCIAL_USE_AMBIGUITY`. The registry state was already correct
+   (OPTION A of the reconciliation instructions: applicability remains
+   genuinely ambiguous); the blocker matrix and provider-clarification
+   artifacts are now corrected to match it — `clarification required:
+   YES`, with a genuine applicability question drafted (not sent)
+   alongside the conditional compliance-notice draft. No registry field
+   changed.
+2. **Kimi K3 — blocker taxonomy.** `private_holdout_status=BLOCKED` was
+   already correct in the registry, but its `non_financial_blocker_
+   status` used `PRIVATE_HOLDOUT_CONFIDENTIALITY_UNRESOLVED` — a token
+   meaning "unknown," when the evidence (Moonshot's own live-refetched
+   ToS §4) actually CONFIRMS default training-on-content. This is now
+   corrected to `PROVIDER_TRAINING_ON_INPUTS` (a confirmed-condition
+   taxonomy token), with `WRITTEN_PROVIDER_CLARIFICATION_REQUIRED`
+   retained to reflect that the enterprise written-agreement route is a
+   real, identified (if unexercised) path — Kimi is not characterized
+   as having no route at all.
+3. **Mistral Large 3 — retention claim.** The Phase 21B.4.18 final
+   report asserted "30 rolling days for abuse monitoring unless ZDR
+   activated" without noting that Mistral's own Privacy Policy (the
+   source of that figure) scopes itself OUT of exactly ORNEUR's
+   business/API use case ("does not apply if you use our Mistral AI
+   Products to process personal data in the context of your business
+   activities"). Re-verified live this phase against the same primary
+   source. The canonical statement is now: ordinary (non-ZDR) API
+   retention duration for a business/API customer is **NOT PRECISELY
+   ESTABLISHED IN THIS PHASE** (the Data Processing Addendum, not the
+   Privacy Policy, is the more likely governing document, and its
+   specific retention terms were not located); ZDR remains available
+   for eligible supported stateless API calls, independent of this open
+   question.
+
+None of these three corrections changed any `access_preflight_status`,
+promoted any reference, or altered `quorum_counting_count` /
+`quorum_status` — all remain exactly as Phase 21B.4.18 left them (see
+below).
 
 ## Program state (unchanged)
 

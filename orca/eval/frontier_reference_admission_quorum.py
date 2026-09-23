@@ -57,6 +57,21 @@ a naked status string, a REVIEW_REQUIRED terms/retention/automated-
 evaluation/private-holdout field, an unattributable model identity, a
 missing access path, or a non-NONE unresolved non-financial blocker
 can never force a reference into the counting set.
+
+Phase 21B.4.18.1 §6/§7 ready-count semantics fix: `FrontierReference
+QuorumReport.access_preflight_ready_count` used to be derived from the
+RAW `access_preflight_status` string alone, before any evidence
+validation -- a forged/stale `QUALIFIED_FOR_FUTURE_EXECUTION` could
+inflate that field even though it correctly failed to inflate
+`quorum_counting_count`. That field is renamed to
+`raw_access_status_claim_count` (unmistakably labeled as an unvalidated
+raw claim, kept only for debugging/comparison) and replaced, as the
+trusted metric, by `validated_access_preflight_ready_count` -- the
+count of references whose access status is a counting status AND whose
+underlying evidence actually passes `_entry_passes_full_protocol_
+validation()`. No metric on this report can be inflated by a naked
+status string after this fix; see the Phase 21B.4.18.1 ready-count
+tamper tests in `tests/test_genesis_frontier_reference_admission.py`.
 """
 from __future__ import annotations
 
@@ -76,7 +91,16 @@ VALID_QUORUM_STATUSES = ("TARGET_READY", "MINIMUM_QUORUM_READY", "QUORUM_INCOMPL
 @dataclass(frozen=True)
 class FrontierReferenceQuorumReport:
     admitted_reference_count: int
-    access_preflight_ready_count: int
+    # Phase 21B.4.18.1: renamed from `access_preflight_ready_count` --
+    # this is an UNVALIDATED raw claim derived from access_preflight_
+    # status alone, kept only for debugging/comparison. Never treat this
+    # as a trusted readiness metric; use
+    # `validated_access_preflight_ready_count` instead.
+    raw_access_status_claim_count: int
+    # Phase 21B.4.18.1: the trusted count -- access status is a counting
+    # status AND the reference's own evidence fields actually pass
+    # `_entry_passes_full_protocol_validation()`.
+    validated_access_preflight_ready_count: int
     quorum_counting_count: int
     quorum_counting_references: tuple[str, ...]
     independent_lineage_count: int
@@ -116,13 +140,19 @@ def compute_admission_quorum(frontier_references: list[dict]) -> FrontierReferen
     and -- Phase 21B.4.18 -- the promotion-gate evidence fields consumed
     by `_entry_passes_full_protocol_validation()`).
 
-    Returns a report distinguishing three counts that must never be
-    conflated (per phase §27):
+    Returns a report distinguishing four counts that must never be
+    conflated (per phase §27, extended Phase 21B.4.18.1 §6):
       - admitted_reference_count: ADMITTED regardless of access path.
-      - access_preflight_ready_count: access-path-ready regardless of
-        admission status (a reference could theoretically have a ready
-        access path while still license-REVIEW_REQUIRED).
-      - quorum_counting_count: references satisfying BOTH conditions AND
+      - raw_access_status_claim_count: access-path-ready per the RAW
+        access_preflight_status string alone, regardless of admission
+        status or evidence validity -- UNVALIDATED, debugging/
+        comparison only. Never treat this as a trusted metric: a
+        forged or stale status string inflates this field exactly as
+        easily as a genuine one.
+      - validated_access_preflight_ready_count: the trusted counterpart
+        -- access status is a counting status AND the reference's own
+        evidence fields actually pass live re-validation.
+      - quorum_counting_count: references satisfying BOTH admission AND
         (Phase 21B.4.18) passing live re-validation against their own
         evidence fields -- this is the only count that determines
         quorum_status. A naked `access_preflight_status` string alone
@@ -130,7 +160,12 @@ def compute_admission_quorum(frontier_references: list[dict]) -> FrontierReferen
         `_entry_passes_full_protocol_validation()`.
     """
     admitted = [r for r in frontier_references if r.get("reference_evaluation_admission_status") == "ADMITTED"]
-    access_ready = [r for r in frontier_references if r.get("access_preflight_status") in _COUNTING_ACCESS_PREFLIGHT_STATUSES]
+    raw_access_status_claims = [r for r in frontier_references if r.get("access_preflight_status") in _COUNTING_ACCESS_PREFLIGHT_STATUSES]
+    validated_access_ready = [
+        r for r in frontier_references
+        if r.get("access_preflight_status") in _COUNTING_ACCESS_PREFLIGHT_STATUSES
+        and _entry_passes_full_protocol_validation(r)
+    ]
     quorum_counting = [
         r for r in frontier_references
         if r.get("reference_evaluation_admission_status") == "ADMITTED"
@@ -160,7 +195,8 @@ def compute_admission_quorum(frontier_references: list[dict]) -> FrontierReferen
 
     return FrontierReferenceQuorumReport(
         admitted_reference_count=len(admitted),
-        access_preflight_ready_count=len(access_ready),
+        raw_access_status_claim_count=len(raw_access_status_claims),
+        validated_access_preflight_ready_count=len(validated_access_ready),
         quorum_counting_count=quorum_counting_count,
         quorum_counting_references=quorum_counting_names,
         independent_lineage_count=independent_lineage_count,

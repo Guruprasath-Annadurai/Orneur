@@ -57,11 +57,35 @@ independent lineages**. Substitutions: **NONE**.
   Separately, Zero Data Retention (ZDR) is available as an independent
   control (`help.mistral.ai/en/articles/347612`) — distinct from the
   training opt-out.
+- **Retention duration (corrected Phase 21B.4.18.1):** the Privacy
+  Policy's own §5 ("How long do we keep your personal data?") states,
+  verbatim, that "except for specific APIs, we keep your Input and
+  Output for the period necessary to generate the Output and then for
+  thirty (30) rolling days to monitor abuse (unless zero data retention
+  is activated)." However, that same Privacy Policy's own scope clause
+  states: *"This Privacy Policy does not apply if you use our Mistral
+  AI Products to process personal data in the context of your business
+  activities. In this case, you are the data controller, and Mistral AI
+  is the data processor processing on your behalf."* ORNEUR's intended
+  use (automated internal evaluation while developing a commercial
+  product) is exactly "the context of your business activities," which
+  this Privacy Policy explicitly scopes itself OUT of — directing
+  instead to a separate Data Processing Addendum
+  (`legal.mistral.ai/terms/data-processing-addendum/`), which this
+  phase did not locate a specific retention-duration figure within.
+  **Canonical retention statement:** RETENTION WITHOUT ZDR: NOT PRECISELY ESTABLISHED IN THIS PHASE
+  — the 30-day figure exists in the
+  Privacy Policy text but that policy scopes itself out of exactly
+  ORNEUR's business-context use case, so it is not safely citable as
+  the governing figure. ZDR: AVAILABLE FOR ELIGIBLE SUPPORTED
+  STATELESS API CALLS, independent of this open question.
 - **What would resolve it:** (a) exercising the Admin-panel training
   opt-out toggle before any evaluation traffic (a provider account
   setting change — not authorized this phase); (b) written confirmation
   from Mistral that automated internal benchmarking is an explicitly
-  permitted use case under the General Terms of Use.
+  permitted use case under the General Terms of Use; (c) locating and
+  reviewing the Data Processing Addendum's own retention-duration terms
+  for business/API customers.
 - **Clarification required:** YES (see provider clarifications artifact).
 
 ### Priority 2 — Kimi K3
@@ -69,10 +93,18 @@ independent lineages**. Substitutions: **NONE**.
 - **Evaluation admission:** ADMITTED (Kimi K3 License §4 internal-use
   carve-out, unchanged).
 - **Full-protocol access:** UNQUALIFIED.
-- **Remaining blockers:** `PRIVATE_HOLDOUT_CONFIDENTIALITY_UNRESOLVED`
-  (hosted API only — confirmed `BLOCKED`, not merely unresolved);
-  `SELF_HOST_COMPUTE_PROHIBITIVE` (2.8T params, largest of the six);
-  `WRITTEN_PROVIDER_CLARIFICATION_REQUIRED`.
+- **Remaining blockers (corrected Phase 21B.4.18.1):**
+  `PROVIDER_TRAINING_ON_INPUTS` (hosted API path — the ordinary hosted
+  API confirmed to train on Customer Content by default; this is a
+  CONFIRMED condition, not merely "unresolved" — `PRIVATE_HOLDOUT_
+  CONFIDENTIALITY_UNRESOLVED` was the wrong taxonomy entry for this
+  reference and has been replaced); `SELF_HOST_COMPUTE_PROHIBITIVE`
+  (2.8T params, largest of the six — the self-host path is unaffected
+  by the training clause but is not currently a real access path);
+  `WRITTEN_PROVIDER_CLARIFICATION_REQUIRED` (the enterprise written-
+  agreement route exists per Moonshot's own ToS and remains the one
+  identified path to resolution — Moonshot has NOT been characterized
+  as lacking any route at all).
 - **Key finding:** Live re-fetch of `platform.kimi.ai/docs/agreement/
   modeluse` (Terms of Service for Kimi OpenPlatform, last updated
   2026-07-30) §4 "Content": *"We may use Content to provide, maintain,
@@ -149,28 +181,48 @@ independent lineages**. Substitutions: **NONE**.
 ### Priority 5 — MiniMax M3
 
 - **Evaluation admission:** REVIEW_REQUIRED (unchanged).
+- **License/terms status:** REVIEW_REQUIRED (unchanged).
 - **Full-protocol access:** UNQUALIFIED.
-- **Remaining blockers:** `COMMERCIAL_USE_AMBIGUITY`;
-  `ACCESS_PATH_UNVERIFIED` (hosted API terms not fetched this phase —
-  `platform.minimaxi.com` redirects to a `.cn` domain); `WRITTEN_
-  PROVIDER_CLARIFICATION_REQUIRED`.
-- **Key finding:** the MiniMax Community License's compliance path is
-  now precisely characterized (re-confirmed live this phase from
-  `huggingface.co/MiniMaxAI/MiniMax-M3/raw/main/LICENSE`): if ORNEUR's
-  use is treated as Commercial Use (a defensible reading, since ORNEUR
-  is developing a commercial product), the license requires only (a)
-  attribution ("Built with MiniMax M3") and (b) a one-time notice email
-  to `api@minimax.io` with subject "M3 licensing — notice" — prior
-  written authorization is required only above $20M/yr revenue. This is
-  a comparatively light compliance path, but sending that notice is a
-  provider-facing action this phase does not perform (§3: "Claude may
-  PREPARE clarification drafts. Claude must NOT send them.").
-- **What would resolve it:** sending the one-time notice email (a
-  provider-facing action, not authorized this phase) plus adding the
-  required attribution.
-- **Clarification required:** NO (the license terms are already
-  sufficiently clear; what remains is executing the notice, not asking
-  a question).
+- **Canonical classification (Phase 21B.4.18.1 reconciliation — OPTION
+  A, applicability still ambiguous):** the repository cannot
+  conclusively determine, from the license text alone, whether ORNEUR's
+  intended use — running MiniMax M3 purely as an internal, non-
+  redistributed evaluation/reference benchmark while separately
+  developing a commercial ORNEUR product — meets the MiniMax Community
+  License's clause 3 "Commercial Use" standard ("any use... primarily
+  intended for commercial advantage or monetary compensation," with
+  non-exhaustive examples). This is a genuinely open applicability
+  question, not a resolved compliance-path question: it remains
+  possible ORNEUR's use does NOT trigger Commercial Use at all (a
+  purely internal, non-productized benchmark use is a materially
+  different fact pattern from the license's own examples, e.g.
+  fee-based third-party products, commercial API resale, commercial
+  deployment of a fine-tuned derivative).
+- **Remaining blockers:** `COMMERCIAL_USE_AMBIGUITY` (applicability, not
+  merely compliance-path uncertainty); `ACCESS_PATH_UNVERIFIED` (hosted
+  API terms not fetched this phase — `platform.minimaxi.com` redirects
+  to a `.cn` domain); `WRITTEN_PROVIDER_CLARIFICATION_REQUIRED`.
+- **Key finding:** the MiniMax Community License's compliance path IF
+  Commercial Use applies is precisely characterized (re-confirmed live
+  in Phase 21B.4.18 from `huggingface.co/MiniMaxAI/MiniMax-M3/raw/main/
+  LICENSE`): attribution ("Built with MiniMax M3") plus a one-time
+  notice email to `api@minimax.io` (subject "M3 licensing — notice")
+  below $20M/yr revenue, prior written authorization only above that
+  threshold. This compliance path is conditional on the applicability
+  question above being resolved (or ORNEUR conservatively electing to
+  treat the use as Commercial Use) — it is not itself proof that
+  Commercial Use applies, and the notice is not sent this phase (§3:
+  "Claude may PREPARE clarification drafts. Claude must NOT send
+  them.").
+- **What would resolve it:** either (a) written confirmation from
+  MiniMax of whether a purely-internal, non-redistributed evaluation
+  benchmark use (while separately developing an unrelated commercial
+  product) constitutes Commercial Use under clause 3, or (b) ORNEUR
+  conservatively electing to treat the use as Commercial Use and
+  completing the notice + attribution compliance path above.
+- **Clarification required:** YES (the underlying applicability
+  question, not merely the compliance mechanics, remains genuinely
+  open).
 
 ### Priority 6 — Qwen3.8-Max
 
