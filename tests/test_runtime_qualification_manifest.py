@@ -644,11 +644,45 @@ def test_inconsistent_metered_delta_rejected():
         validate_manifest(data)
 
 
-def test_nonzero_billed_before_rejected():
+def test_inconsistent_billed_delta_rejected():
+    """Arithmetic mismatch, independent of whether the mismatched delta
+    happens to still be 0 -- billed_after_usd - billed_before_usd must
+    equal the declared owner_billed_delta_usd exactly."""
     data = _valid_manifest()
-    data["billed_before_usd"] = 0.01
-    data["billed_after_usd"] = 0.01  # keep the delta arithmetic consistent (==0) so only the >0 check fires
+    data["billed_before_usd"] = 3.52
+    data["billed_after_usd"] = 4.52
+    data["owner_billed_delta_usd"] = 0.0  # actual arithmetic delta is 1.00, not 0
+    with pytest.raises(RuntimeQualificationManifestError, match="owner_billed_delta_usd"):
+        validate_manifest(data)
+
+
+def test_nonzero_baseline_with_zero_delta_accepted():
+    """Phase 21B.4.15.2: the zero-owner-cash invariant is DELTA-based, not
+    absolute-zero-account-history-based. A nonzero billed_before_usd left
+    by a prior, separately-recorded billing incident must NOT by itself
+    reject a later execution that caused no further owner cost."""
+    data = _valid_manifest()
+    data["billed_before_usd"] = 3.52
+    data["billed_after_usd"] = 3.52
     data["owner_billed_delta_usd"] = 0.0
+    validate_manifest(data)  # must not raise
+
+
+def test_nonzero_baseline_with_nonzero_delta_still_rejected():
+    """A nonzero historical baseline does not exempt a run from the
+    owner_billed_delta_usd == 0 requirement -- only a genuinely zero
+    incremental cost is accepted."""
+    data = _valid_manifest()
+    data["billed_before_usd"] = 3.52
+    data["billed_after_usd"] = 3.53
+    data["owner_billed_delta_usd"] = 0.01
+    with pytest.raises(RuntimeQualificationManifestError, match="owner_billed_delta_usd must be exactly 0"):
+        validate_manifest(data)
+
+
+def test_billed_values_must_be_non_negative():
+    data = _valid_manifest()
+    data["billed_before_usd"] = -1.0
     with pytest.raises(RuntimeQualificationManifestError, match="billed_before_usd"):
         validate_manifest(data)
 

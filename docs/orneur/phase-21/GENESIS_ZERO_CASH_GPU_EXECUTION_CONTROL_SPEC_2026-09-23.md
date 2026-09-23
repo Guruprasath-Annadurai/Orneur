@@ -39,8 +39,16 @@ qualification run — Qwen3.8-27B included — must never rely only on:
    whatever provider is used) executed in the same session, immediately
    before GPU allocation — never a stale or remembered figure from an
    earlier phase or an earlier point in the same session.
-2. **`owner_billed_delta_usd == 0` acceptance invariant confirmed at
-   this fresh check** — `billed_before_usd` must be exactly `$0.00`.
+2. **Capture the fresh authoritative billed-cost baseline as observed —
+   do not assume it is zero.** Record `billed_before_usd` exactly as
+   the live billing query reports it (Phase 21B.4.15.2 correction: a
+   prior, separately-recorded billing incident — e.g. GLM-5.3-Flash's
+   Phase 21B.4.13 $3.52 violation — can leave the account's billed
+   total permanently nonzero; that historical fact does not by itself
+   block a later execution). The acceptance invariant this run must
+   satisfy is `owner_billed_delta_usd == 0` (equivalently,
+   `billed_after_usd == billed_before_usd`), never `billed_before_usd
+   == 0`.
 3. **Known remaining credit**, read from the live billing state where
    the provider exposes it, or from the most recent authoritative
    owner-provided figure cross-checked against live `metered_cost`/
@@ -75,7 +83,14 @@ qualification run — Qwen3.8-27B included — must never rely only on:
 
 ### After allocation
 
-9. **Cleanup verification**: GPU process terminated, resources released,
+9. **Canonical post-run acceptance (Phase 21B.4.15.2):** capture
+   `billed_after_usd` from a fresh live billing query and require
+   `billed_after_usd == billed_before_usd` (equivalently,
+   `owner_billed_delta_usd == 0`) — never `billed_after_usd == 0`. A
+   nonzero shared baseline that did not increase is a PASS; any
+   increase, however small, is a FAIL, regardless of what the baseline
+   was.
+9a. **Cleanup verification**: GPU process terminated, resources released,
    `nvidia-smi` (or equivalent) confirms return to idle baseline, no
    lingering phase-created cloud resources (apps/containers/volumes).
 10. **No automatic retry that could duplicate spend.** A failed,

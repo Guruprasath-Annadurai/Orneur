@@ -1,16 +1,16 @@
 {
   "evidence_type": "QWEN3_8_27B_SERVING_PREFLIGHT_EVIDENCE_INTEGRITY_INDEX",
   "created": "2026-09-23",
-  "reconciled": "2026-09-23 (Phase 21B.4.15.1)",
-  "phase": "21B.4.15 / 21B.4.15.1",
+  "reconciled": "2026-09-23 (Phase 21B.4.15.1, further corrected Phase 21B.4.15.2)",
+  "phase": "21B.4.15 / 21B.4.15.1 / 21B.4.15.2",
   "candidate": "Qwen3.8-27B",
   "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative. No GPU, no inference, no weight download performed to produce any indexed file. The CPU-only parser-registry preflight (script + raw output) added in Phase 21B.4.15.1 is included here.",
   "entries": [
     {
       "path": "docs/orneur/phase-21/evidence/QWEN3_8_27B_CURRENT_SERVING_PRIMARY_SOURCES_2026-09-23.json",
-      "sha256": "12c7503703a8764581d464cd4628b90dd42b1f509b31ef2cae5715d2bd8a99d1",
+      "sha256": "901b7513a8b78db8ab7600a78acc76fe8528974f0a970648652637a12c6b41a9",
       "evidence_role": "current_serving_primary_sources",
-      "size_bytes": 17201
+      "size_bytes": 17664
     },
     {
       "path": "docs/orneur/phase-21/evidence/QWEN3_8_27B_RUNTIME_SUPPORT_MATRIX_2026-09-23.json",
@@ -32,9 +32,9 @@
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_ZERO_CASH_GPU_EXECUTION_CONTROL_SPEC_2026-09-23.md",
-      "sha256": "48436af20745ae99f5e674d04dc02d6e4ea4e41382e99542aff653705b673173",
+      "sha256": "8985ce7eba7ec87e45c9aaa8dcc7b35ba272c65b7253b6d1029eb13cf6223c85",
       "evidence_role": "zero_cash_execution_control_spec",
-      "size_bytes": 7381
+      "size_bytes": 8275
     },
     {
       "path": "scripts/phase21b_4_15_1_qwen38_27b_cpu_preflight.py",

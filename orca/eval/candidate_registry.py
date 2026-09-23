@@ -152,6 +152,18 @@ VALID_PRODUCTION_SERVING_STATUSES = (
 VALID_FINANCIAL_ACCEPTANCE_STATUSES = (
     "NOT_APPLICABLE", "NOT_TESTED", "ZERO_OWNER_CASH_PASSED", "ZERO_OWNER_CASH_FAILED", "DEFERRED",
 )
+# Phase 21B.4.15.2 §10 semantics note: ZERO_OWNER_CASH_PASSED means the
+# qualifying EXECUTION produced no incremental owner-billed cost
+# (owner_billed_delta_usd == 0 for that run's manifest) -- it does NOT
+# mean the provider account has never had any billed cost in its
+# history. A candidate whose qualifying run achieved a zero delta on an
+# account that separately carries a nonzero historical baseline (from an
+# unrelated prior incident, e.g. GLM-5.3-Flash's Phase 21B.4.13 $3.52
+# violation) is still ZERO_OWNER_CASH_PASSED. Conversely,
+# ZERO_OWNER_CASH_FAILED records that THIS candidate's own qualifying
+# execution caused new owner cost, independent of the account's prior
+# history. These two facts (account history vs. per-execution delta)
+# are deliberately not conflated into one field.
 VALID_CAPABILITY_STATUSES = (
     "UNPROVEN", "EVALUATED", "FRONTIER_CLASS_ON_LOCKED_PROTOCOL", "FAILED_FRONTIER_GATE", "INCONCLUSIVE",
 )

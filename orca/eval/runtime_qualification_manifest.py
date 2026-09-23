@@ -23,6 +23,19 @@ given a controlled evidence root, ACTUAL ARTIFACT-BYTE verification
 (`verify_evidence_artifacts_bytes`) -- it makes no capability, license,
 or frontier-class judgment, and it does not execute anything itself.
 Nothing here downloads a model, starts a GPU, or runs inference.
+
+Phase 21B.4.15.2: the zero-owner-cash billing invariant is DELTA-based,
+not absolute-zero-account-history-based. `owner_billed_delta_usd == 0`
+(equivalently, `billed_after_usd == billed_before_usd`, enforced via the
+existing arithmetic cross-check) is what an accepted manifest requires
+-- `billed_before_usd`/`billed_after_usd` themselves may be any real,
+finite, non-negative number, including a nonzero historical baseline
+left by a prior, separately-recorded billing incident (e.g. GLM-5.3-
+Flash's Phase 21B.4.13 $3.52 violation, which remains permanently
+recorded and NOT retroactively qualified). The invariant answers "did
+THIS execution cause new owner cost," not "has this account ever had
+any billed cost" -- those are different facts, and only the first is
+what ORNEUR's zero-owner-cash acceptance policy actually requires.
 """
 from __future__ import annotations
 
@@ -654,11 +667,27 @@ def validate_manifest(data: dict) -> None:
         raise RuntimeQualificationManifestError(
             "owner_billed_delta_usd must be exactly 0 for accepted runtime-smoke evidence"
         )
-    if data["billed_before_usd"] != 0 or data["billed_after_usd"] != 0:
-        raise RuntimeQualificationManifestError(
-            "billed_before_usd and billed_after_usd must both be exactly 0 -- ORNEUR's zero-owner-cash "
-            "policy applies to every accepted qualification manifest, not only QUALIFIED ones"
-        )
+    # Phase 21B.4.15.2: ORNEUR's zero-owner-cash policy is a DELTA
+    # invariant -- this execution must have attributed zero INCREMENTAL
+    # owner-billed cost -- not an absolute-zero-account-history
+    # invariant. A prior, separately-recorded incident (e.g. the GLM-
+    # 5.3-Flash Phase 21B.4.13 $3.52 violation) can leave a Modal
+    # account's billed total permanently nonzero; a later execution that
+    # causes no further owner charge (billed_before_usd == billed_after_usd,
+    # both equal to that same nonzero historical baseline) must be able
+    # to satisfy this invariant. Requiring billed_before_usd == 0
+    # absolutely would make EVERY future execution on that account fail
+    # this check forever, regardless of whether the execution itself
+    # cost anything -- which conflates "this account has ever had a
+    # billing incident" with "this execution caused new owner cost".
+    # Those are different facts; only the second is what this invariant
+    # exists to verify. billed_before_usd/billed_after_usd remain
+    # required to be real, finite, non-negative numbers (via
+    # _require_number above) and the arithmetic cross-check above
+    # already guarantees billed_after_usd - billed_before_usd ==
+    # owner_billed_delta_usd == 0, i.e. billed_before_usd ==
+    # billed_after_usd exactly -- no separate absolute-zero assertion is
+    # needed or correct.
 
     # ── Phase 21B.4.11.2 §7: QUALIFIED result invariants ──────────────
     if qualification_type in QUALIFIED_TYPES:
