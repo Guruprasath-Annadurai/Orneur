@@ -17,8 +17,12 @@
       "license": "mit (plain, unmodified; confirmed via LICENSE file + README's own License section)",
       "teacher_distillation_evidence": "DeepSeek Open Platform ToS §4.2 explicitly names 'training other models (such as model distillation)' as a permitted use case -- strongest teacher-rights evidence found among all six references.",
       "automated_evaluation_allowed": "CLEAR (corrected 21B.4.17.1) -- ToS §4.2's broad affirmative grant already names more expansive uses (derivative product development, distillation) than plain automated evaluation, which is a strict subset.",
+      "public_evaluation_compatibility": "PERMITTED (21B.4.17.2)",
+      "private_holdout_compatibility": "REVIEW_REQUIRED (21B.4.17.2) -- DeepSeek's Privacy Policy states Personal Data including User Input may be used 'to train and improve our technology'; only an unexercised opt-out right exists, no confirmed Open-Platform-specific no-training/confidentiality carve-out found",
+      "model_release_vs_exact_revision": "model_release_identity=MATCHES_DEEPSEEK_V4_1_FLASH (API docs link the deepseek-flash model to the HF release by name); exact_hosted_revision=NOT_PROVIDER_EXPOSED (the pinned commit is never claimed as provider-exposed)",
       "reference_evaluation_admission_status": "ADMITTED",
-      "access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK"
+      "access_preflight_status": "UNQUALIFIED (corrected 21B.4.17.2, was PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK) -- full-protocol readiness requires PERMITTED private-holdout compatibility, which is not yet established",
+      "public_eval_access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK"
     },
     "GLM-5.3 (flagship)": {
       "admission_evidence_path": "docs/orneur/phase-21/evidence/GLM_5_3_FLAGSHIP_REFERENCE_ADMISSION_2026-09-23.json",
@@ -78,16 +82,18 @@
   },
 
   "quorum_summary": {
-    "correction_note": "Phase 21B.4.17.1 corrected three evidence/status inconsistencies independent audit found: (1) DeepSeek's automated_evaluation_allowed was REVIEW_REQUIRED merely because the literal word 'benchmark' was absent from the ToS, while its access_preflight_status was already PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK -- re-evaluated against the actual broad affirmative grant and corrected to CLEAR; (2) MiniMax M3 was marked CLEAR/ADMITTED/PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK based on an unsupported 'internal use == non-commercial use' inference and a self-host path that is actually compute-prohibitive with no identified compute grant -- corrected to REVIEW_REQUIRED/UNQUALIFIED; (3) Mistral Large 3's teacher_use_status was ADMITTED based solely on Apache-2.0's derivative-works grant, which licenses the weights, not generated outputs -- corrected to NOT_EVALUATED. Each per-reference gate label was also corrected so no ADMITTED-but-access-UNQUALIFIED reference claims to count toward quorum.",
+    "correction_note": "Phase 21B.4.17.1 corrected three evidence/status inconsistencies: DeepSeek's automated-evaluation status (-> CLEAR), MiniMax M3's commercial-use classification (-> REVIEW_REQUIRED/UNQUALIFIED), and Mistral Large 3's teacher-use status (-> NOT_EVALUATED). Phase 21B.4.17.2 closes a further, DIFFERENT gap: the quorum semantics documented here now explicitly mean FULL GENESIS FRONTIER PROTOCOL EXECUTION QUORUM (which ultimately includes the sealed private holdout), not merely public/internal evaluation. DeepSeek's private-holdout compatibility, previously PERMITTED_IN_PRINCIPLE on the insufficient basis of 'nothing requires publication,' was re-evaluated against DeepSeek's actual Privacy Policy (which states Personal Data including User Input may be used to train DeepSeek's own models, with only an unexercised opt-out right and no confirmed Open-Platform-specific no-training carve-out) and corrected to REVIEW_REQUIRED. Because full-protocol quorum counting requires PERMITTED private-holdout compatibility, DeepSeek's access_preflight_status is corrected to UNQUALIFIED for full-protocol purposes -- it remains PUBLIC_EVAL_READY (a separate, informational, non-quorum-determining count) via public_eval_access_preflight_status=PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK.",
     "admitted_reference_count": 3,
     "admitted_references": ["DeepSeek V4.1-Flash", "Mistral Large 3", "Kimi K3"],
-    "access_preflight_ready_or_pending_count": 1,
-    "access_preflight_ready_or_pending_references": ["DeepSeek V4.1-Flash"],
-    "quorum_counting_references_admitted_and_access_ready": ["DeepSeek V4.1-Flash"],
-    "quorum_counting_count": 1,
-    "independent_organizations_among_quorum_counting": ["DeepSeek AI"],
-    "independent_organization_count": 1,
-    "quorum_status": "QUORUM_INCOMPLETE",
-    "quorum_status_rationale": "Per phase §15, a reference counts toward quorum only when BOTH reference_evaluation_admission_status=ADMITTED AND access_preflight_status is QUALIFIED_FOR_FUTURE_EXECUTION or PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK. After the Phase 21B.4.17.1 corrections, only DeepSeek V4.1-Flash satisfies both conditions (1 reference, 1 organization) -- well below MINIMUM_USABLE_REFERENCES=4 and MINIMUM_INDEPENDENT_ORGANIZATIONS=3. Mistral Large 3 and Kimi K3 remain license-ADMITTED but their access paths are UNQUALIFIED; GLM-5.3, MiniMax M3, and Qwen3.8-Max remain REVIEW_REQUIRED on license/terms. This is a smaller, but more honest, count than the prior (incorrect) 2-reference figure -- no reference was promoted or preserved merely to keep quorum higher."
+    "public_eval_ready_count": 1,
+    "public_eval_ready_references": ["DeepSeek V4.1-Flash"],
+    "access_preflight_ready_or_pending_count": 0,
+    "access_preflight_ready_or_pending_references": [],
+    "quorum_counting_references_admitted_and_access_ready": [],
+    "quorum_counting_count": 0,
+    "independent_organizations_among_quorum_counting": [],
+    "independent_organization_count": 0,
+    "quorum_status": "QUORUM_BLOCKED",
+    "quorum_status_rationale": "Per phase §15/§6, a reference counts toward the FULL-PROTOCOL execution quorum only when BOTH reference_evaluation_admission_status=ADMITTED AND access_preflight_status is QUALIFIED_FOR_FUTURE_EXECUTION or PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK -- and access_preflight_status here represents readiness to receive the sealed private holdout, not merely public evaluation. After the Phase 21B.4.17.2 correction, ZERO references satisfy this (0 references, 0 organizations) -- DeepSeek V4.1-Flash is the only reference that is PUBLIC_EVAL_READY, but its private-holdout compatibility remains REVIEW_REQUIRED, so it does not count toward full-protocol quorum. This is a smaller, but more honest, count than the prior (still-too-generous) 1-reference figure -- no reference was promoted or preserved merely to keep quorum higher."
   }
 }

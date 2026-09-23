@@ -375,9 +375,11 @@
       "reference_evaluation_admission_status": "ADMITTED",
       "teacher_use_status": "ADMITTED",
       "teacher_use_evidence_reference": "DeepSeek Open Platform Terms of Service \u00a74.2 (https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html)",
-      "access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
+      "access_preflight_status": "UNQUALIFIED",
       "evidence_retention_status": "PERMITTED",
-      "mutable_identity_status": "FIXED_IMMUTABLE"
+      "mutable_identity_status": "FIXED_IMMUTABLE",
+      "public_eval_access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
+      "private_holdout_compatibility_status": "REVIEW_REQUIRED"
     },
     {
       "reference_name": "GLM-5.3 (flagship)",

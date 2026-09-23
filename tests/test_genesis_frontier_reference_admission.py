@@ -51,7 +51,10 @@ from orca.eval.frontier_reference_admission_quorum import (
     MINIMUM_INDEPENDENT_ORGANIZATIONS,
     MINIMUM_USABLE_REFERENCES,
     TARGET_REFERENCES,
+    AccessReadinessError,
     compute_admission_quorum,
+    compute_public_eval_ready_count,
+    validate_full_protocol_access_readiness,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -327,21 +330,34 @@ def test_quorum_constants_locked():
 
 
 def test_quorum_report_matches_registry_evidence(registry):
-    """Phase 21B.4.17.1: after correcting DeepSeek's automated-evaluation
-    status, MiniMax M3's commercial-use classification, and Mistral
-    Large 3's teacher-use status, the honest quorum-counting count drops
-    from the prior (incorrect) 2 to 1 -- only DeepSeek V4.1-Flash
-    satisfies both admission AND access-preflight-readiness. This test
-    intentionally does NOT preserve the old numbers merely because a
-    prior phase reported them (per phase instruction §10: report the
-    truth, QUORUM_INCOMPLETE remains acceptable)."""
+    """Phase 21B.4.17.2 (K): after correcting DeepSeek's
+    access_preflight_status to reflect that FULL-PROTOCOL readiness
+    requires PERMITTED private-holdout compatibility (which DeepSeek
+    does not yet have -- REVIEW_REQUIRED), the full-protocol
+    quorum-counting count drops from the prior (still-too-generous) 1
+    to 0. This test intentionally does NOT preserve the old number
+    merely because a prior phase reported it (per phase instruction
+    §10/§6: report the truth, QUORUM_BLOCKED remains acceptable)."""
     report = compute_admission_quorum(list(registry.frontier_references))
     assert report.admitted_reference_count == 3  # DeepSeek, Mistral Large 3, Kimi K3
-    assert report.access_preflight_ready_count == 1  # DeepSeek only
-    assert report.quorum_counting_count == 1
-    assert report.quorum_counting_references == ("DeepSeek V4.1-Flash",)
-    assert report.independent_lineage_count == 1
-    assert report.quorum_status == "QUORUM_INCOMPLETE"
+    assert report.access_preflight_ready_count == 0  # no reference is full-protocol ready
+    assert report.quorum_counting_count == 0
+    assert report.quorum_counting_references == ()
+    assert report.independent_lineage_count == 0
+    assert report.quorum_status == "QUORUM_BLOCKED"
+
+
+def test_public_eval_ready_count_is_separate_and_nonzero(registry):
+    """(C/§9) DeepSeek is public-eval-ready even though it is not
+    full-protocol quorum-ready -- these are separate, both-tracked
+    counts, and the narrower one is never conflated with the
+    quorum-determining one."""
+    refs = list(registry.frontier_references)
+    public_count = compute_public_eval_ready_count(refs)
+    full_protocol_count = compute_admission_quorum(refs).quorum_counting_count
+    assert public_count == 1
+    assert full_protocol_count == 0
+    assert public_count != full_protocol_count
 
 
 def test_quorum_requires_four_admitted_and_access_ready():
@@ -542,16 +558,65 @@ def test_deepseek_automated_evaluation_now_clear():
     assert data["I_automated_evaluation_allowed"]["status"] == "CLEAR"
 
 
-def test_access_ready_requires_automated_evaluation_not_review_required():
-    """Tamper test: if DeepSeek's automated-evaluation status were still
-    REVIEW_REQUIRED, its access_preflight_status could not honestly be
-    PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK -- this is a property
-    of the evidence file's own internal consistency, checked directly."""
+def _deepseek_current_readiness_kwargs():
+    """Build the real kwargs for validate_full_protocol_access_readiness
+    from DeepSeek's actual current (corrected) evidence file -- used as
+    the baseline that tamper tests below mutate in memory."""
     data = json.loads(REFERENCE_ADMISSION_FILES["DeepSeek V4.1-Flash"].read_text())
-    if data["I_automated_evaluation_allowed"]["status"] == "REVIEW_REQUIRED":
-        assert data["final_state"]["access_preflight_status"] != "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK"
-    else:
-        assert data["I_automated_evaluation_allowed"]["status"] == "CLEAR"
+    fs = data["final_state"]
+    return dict(
+        reference_evaluation_admission_status=fs["reference_evaluation_admission_status"],
+        license_or_terms_status=fs["license_or_terms_status"],
+        evidence_retention_status=fs["evidence_retention_status"],
+        automated_evaluation_status=data["I_automated_evaluation_allowed"]["status"],
+        private_holdout_status=data["H_private_holdout_compatibility"]["private_holdout_compatibility"]["status"],
+        access_path_identified=True,
+        model_identity_attributable=True,
+    )
+
+
+def test_deepseek_current_state_is_internally_consistent():
+    """DeepSeek's real current final_state (access_preflight_status=
+    UNQUALIFIED for full-protocol purposes) must not trip the gate --
+    it does not claim readiness in the first place."""
+    kwargs = _deepseek_current_readiness_kwargs()
+    validate_full_protocol_access_readiness("UNQUALIFIED", **kwargs)  # no-op, must not raise
+
+
+def test_access_ready_requires_automated_evaluation_not_review_required():
+    """(A/E) Real fail-closed tamper test: claim a counting access
+    status while automated-evaluation is REVIEW_REQUIRED, in an
+    IN-MEMORY copy of DeepSeek's real evidence values -- must raise.
+    Committed evidence is never mutated."""
+    kwargs = _deepseek_current_readiness_kwargs()
+    kwargs["automated_evaluation_status"] = "REVIEW_REQUIRED"  # tamper, in-memory only
+    with pytest.raises(AccessReadinessError, match="automated_evaluation_status"):
+        validate_full_protocol_access_readiness("PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK", **kwargs)
+
+
+def test_private_holdout_review_required_fails_full_protocol_gate():
+    """(B/F) Real fail-closed tamper test: claim a counting access
+    status while private-holdout compatibility is REVIEW_REQUIRED --
+    must raise, proving REVIEW_REQUIRED holdout status cannot count
+    toward full-protocol quorum even if every other gate is satisfied."""
+    kwargs = _deepseek_current_readiness_kwargs()
+    kwargs["private_holdout_status"] = "REVIEW_REQUIRED"  # this IS DeepSeek's real current value
+    with pytest.raises(AccessReadinessError, match="private_holdout_status"):
+        validate_full_protocol_access_readiness("QUALIFIED_FOR_FUTURE_EXECUTION", **kwargs)
+    # and confirm PERMITTED would pass every other real gate (sanity check
+    # that the function isn't trivially always-raising)
+    kwargs["private_holdout_status"] = "PERMITTED"
+    validate_full_protocol_access_readiness("QUALIFIED_FOR_FUTURE_EXECUTION", **kwargs)  # must not raise
+
+
+def test_non_counting_status_never_triggers_the_gate():
+    """A reference not claiming readiness at all (UNQUALIFIED, BLOCKED,
+    NOT_TESTED) is never checked -- there's nothing to validate."""
+    kwargs = _deepseek_current_readiness_kwargs()
+    kwargs["automated_evaluation_status"] = "REVIEW_REQUIRED"
+    kwargs["private_holdout_status"] = "REVIEW_REQUIRED"
+    for status in ("UNQUALIFIED", "BLOCKED", "NOT_TESTED"):
+        validate_full_protocol_access_readiness(status, **kwargs)  # must not raise
 
 
 # ── B: MiniMax cannot be access-ready solely because a repo exists ─────
@@ -629,7 +694,13 @@ def test_no_admitted_but_unqualified_reference_claims_quorum_counting():
                 f"{name}: ADMITTED-but-access-UNQUALIFIED reference must not claim to count toward quorum "
                 f"in its gate string -- got {gate!r}"
             )
-            assert "DOES_NOT_CURRENTLY_COUNT_TOWARD_EXECUTION_QUORUM" in gate, name
+            # Phase 21B.4.17.2: DeepSeek's gate uses the dedicated
+            # public-eval/full-protocol-split wording (§11); every other
+            # reference uses the plain "DOES_NOT_CURRENTLY_COUNT_TOWARD_EXECUTION_QUORUM" form.
+            assert (
+                "DOES_NOT_CURRENTLY_COUNT_TOWARD_EXECUTION_QUORUM" in gate
+                or "DOES_NOT_CURRENTLY_COUNT_TOWARD_FULL_PROTOCOL_EXECUTION_QUORUM" in gate
+            ), name
 
 
 def test_review_required_gate_never_claims_counting():
@@ -647,3 +718,73 @@ def test_glm_5_3_remains_review_required(registry):
     assert glm["license_or_terms_status"] == "REVIEW_REQUIRED"
     assert glm["reference_evaluation_admission_status"] == "REVIEW_REQUIRED"
     assert glm["access_preflight_status"] == "UNQUALIFIED"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Phase 21B.4.17.2: Frontier Private-Holdout + Access-Gate Fail-Closed
+# Closure (remaining letters). J (no API/GPU/inference execution) and L
+# (Phase 21C unauthorized) are already proven by
+# test_no_frontier_api_call_code_introduced /
+# test_no_gpu_allocation_code_introduced /
+# test_no_model_weight_download_code_introduced and
+# test_phase_21c_still_unauthorized_and_frontier_lock_present above.
+# ═══════════════════════════════════════════════════════════════════════
+
+
+# ── C: public-eval vs private-holdout separately represented ───────────
+
+
+def test_deepseek_public_and_private_compatibility_separately_represented():
+    data = json.loads(REFERENCE_ADMISSION_FILES["DeepSeek V4.1-Flash"].read_text())
+    h = data["H_private_holdout_compatibility"]
+    assert "public_evaluation_compatibility" in h
+    assert "private_holdout_compatibility" in h
+    assert h["public_evaluation_compatibility"]["status"] == "PERMITTED"
+    assert h["private_holdout_compatibility"]["status"] == "REVIEW_REQUIRED"
+    assert h["public_evaluation_compatibility"]["status"] != h["private_holdout_compatibility"]["status"]
+
+
+# ── D: model-release identity vs exact HF revision kept distinct ───────
+
+
+def test_deepseek_api_model_identity_distinguishes_release_from_exact_revision():
+    data = json.loads(REFERENCE_ADMISSION_FILES["DeepSeek V4.1-Flash"].read_text())
+    identity = data["K_access_paths"]["first_party_api"]["model_identity_precision"]
+    assert identity["model_release_identity"].startswith("MATCHES_DEEPSEEK_V4_1_FLASH")
+    assert identity["exact_hosted_revision"].startswith("NOT_PROVIDER_EXPOSED")
+    # must NOT claim the pinned HF revision itself is what the phrase asserts as exposed
+    assert "is exposed" not in identity["exact_hosted_revision"].lower()
+    assert "provider exposes" not in identity["exact_hosted_revision"].lower()
+
+
+# ── G: MiniMax correction remains unchanged ─────────────────────────────
+
+
+def test_minimax_correction_still_in_place(registry):
+    minimax = next(r for r in registry.frontier_references if r["reference_name"] == "MiniMax M3")
+    assert minimax["license_or_terms_status"] == "REVIEW_REQUIRED"
+    assert minimax["reference_evaluation_admission_status"] == "REVIEW_REQUIRED"
+    assert minimax["access_preflight_status"] == "UNQUALIFIED"
+
+
+# ── H: Mistral teacher correction remains unchanged ─────────────────────
+
+
+def test_mistral_teacher_correction_still_in_place(registry):
+    mistral = next(r for r in registry.frontier_references if r["reference_name"] == "Mistral Large 3")
+    assert mistral["reference_evaluation_admission_status"] == "ADMITTED"
+    assert mistral["teacher_use_status"] == "NOT_EVALUATED"
+    assert mistral["access_preflight_status"] == "UNQUALIFIED"
+
+
+# ── I: GLM/Qwen/Kimi states remain unchanged ────────────────────────────
+
+
+def test_qwen_and_kimi_states_unchanged(registry):
+    qwen_max = next(r for r in registry.frontier_references if r["reference_name"] == "Qwen3.8-Max")
+    assert qwen_max["reference_evaluation_admission_status"] == "REVIEW_REQUIRED"
+    assert qwen_max["access_preflight_status"] == "UNQUALIFIED"
+
+    kimi = next(r for r in registry.frontier_references if r["reference_name"] == "Kimi K3")
+    assert kimi["reference_evaluation_admission_status"] == "ADMITTED"
+    assert kimi["access_preflight_status"] == "UNQUALIFIED"

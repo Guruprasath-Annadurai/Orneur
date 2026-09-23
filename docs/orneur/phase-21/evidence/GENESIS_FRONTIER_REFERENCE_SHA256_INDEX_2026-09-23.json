@@ -1,20 +1,20 @@
 {
   "evidence_type": "GENESIS_FRONTIER_REFERENCE_EVIDENCE_INTEGRITY_INDEX",
   "created": "2026-09-23",
-  "phase": "21B.4.17.1",
-  "note": "SHA-256 hashes computed live from actual file bytes. Every path is repo-relative. No GPU, no frontier inference, no paid API call performed to produce any indexed file. Recomputed in full for Phase 21B.4.17.1's terms/access/quorum reconciliation corrections -- no stale hashes.",
+  "phase": "21B.4.17.2",
+  "note": "SHA-256 hashes computed live from actual file bytes. Every path is repo-relative. No GPU, no frontier inference, no paid API call performed to produce any indexed file. Recomputed in full for Phase 21B.4.17.1's terms/access/quorum reconciliation corrections -- no stale hashes. Recomputed for Phase 21B.4.17.2's private-holdout and access-gate closure -- no stale hashes.",
   "entries": [
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_FRONTIER_REFERENCE_PRIMARY_SOURCES_2026-09-23.json",
-      "sha256": "3bdbe681e0778217eec117affd3f518f31b7ce6c6f92c926d748d36cfc263b8f",
+      "sha256": "43b0a8263a91eecb8e27de92bed739aff7fb3f16c0e995e38fae884dbdcd7a32",
       "evidence_role": "frontier_reference_primary_sources",
-      "size_bytes": 9842
+      "size_bytes": 11117
     },
     {
       "path": "docs/orneur/phase-21/evidence/DEEPSEEK_V4_1_FLASH_REFERENCE_ADMISSION_2026-09-23.json",
-      "sha256": "90364c24b19dff0af665bf590d526d2973cb2859d3ea151c8ff0055f5469cbca",
+      "sha256": "dcfe8887b8efc12654dd38ff6b04cf1c00862174a37b32b7d5b6dfd3f6761b4e",
       "evidence_role": "deepseek_v4_1_flash_admission",
-      "size_bytes": 10856
+      "size_bytes": 16985
     },
     {
       "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLAGSHIP_REFERENCE_ADMISSION_2026-09-23.json",
@@ -48,9 +48,9 @@
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_ACCESS_MATRIX_2026-09-23.md",
-      "sha256": "522071fb51c82028bfe32e7e635e27f1f2b18a4ca300d95fcf0ee24c83bca023",
+      "sha256": "a6ce3ee24310e5a9604be4a96c03503a73b8e678b3e116cd1b19d30642851eba",
       "evidence_role": "access_matrix",
-      "size_bytes": 6411
+      "size_bytes": 8092
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_TERMS_MATRIX_2026-09-23.md",

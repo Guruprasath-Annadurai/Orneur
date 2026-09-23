@@ -71,8 +71,20 @@
   },
 
   "H_private_holdout_compatibility": {
-    "status": "PERMITTED_IN_PRINCIPLE",
-    "rationale": "No holdout prompts authored this phase. Nothing in the MIT license or the fetched ToS §4.2 requires publication or prohibits confidential internal test material."
+    "public_evaluation_compatibility": {
+      "status": "PERMITTED",
+      "rationale": "No holdout prompts authored this phase. Nothing in the MIT license or the fetched ToS §4.2 requires publication or prohibits internal, non-sealed evaluation material -- output ownership, evidence retention, and automated-evaluation permission are all independently CLEAR/PERMITTED (see D/F/I)."
+    },
+    "private_holdout_compatibility": {
+      "status": "REVIEW_REQUIRED",
+      "status_correction_note": "Phase 21B.4.17.2 correction (was PERMITTED_IN_PRINCIPLE): the prior reasoning ('nothing requires publication') answered the wrong question. Output ownership, stateless-API behavior, absence of a forced-publication clause, and MIT weight licensing all govern DIFFERENT rights (redistribution, IP ownership) than whether DeepSeek itself uses submitted API Input as training data for its own models -- which is the actual confidentiality-relevant question for SEALED private holdout material.",
+      "authoritative_evidence_found": "DeepSeek's current Privacy Policy (https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html, fetched 2026-09-23) states, under 'How We Use Personal Data': 'To improve and develop the Services and to train and improve our technology, such as our machine learning models and algorithms. Including by monitoring interactions and usage across your devices, analyzing how people are using it, and training and improving our technology.' This applies to 'Personal Data You Provide' including 'User Input.' The policy's carve-out ('processing rules for Personal Data collected from END USERS when accessing downstream systems or applications developed by developers using our open platform services are not covered by this privacy policy') exempts a developer's OWN end users, not the developer's own direct API traffic to DeepSeek -- confirmed by the same policy's Payment Personal Data section explicitly referencing 'when you use paid services in our open platform,' i.e. the Open Platform/API relationship IS governed by this policy. The only mitigation found is an affirmative USER right: 'the right to opt-out of using your Personal Data for training our models or optimizing our technologies' -- this is an opt-out RIGHT a user must exercise, not a default no-training posture, and no first-party documentation was found confirming (a) how/whether this opt-out applies specifically to Open Platform/API traffic as opposed to consumer chat-app usage, (b) any enterprise or zero-data-retention API tier, or (c) any Open-Platform-specific no-training/confidentiality guarantee in the Open Platform Terms of Service itself (fetched and searched this phase -- no such clause found).",
+      "sources_checked": [
+        "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html",
+        "https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html"
+      ],
+      "conclusion": "No current authoritative first-party evidence establishes that API prompts sent through the DeepSeek Open Platform are treated as confidential sealed material exempt from DeepSeek's own model-training/improvement use. The Privacy Policy's affirmative training-use statement, combined with only an unexercised opt-out right and no confirmed Open-Platform-specific carve-out, means private holdout compatibility for this access path is REVIEW_REQUIRED, not PERMITTED. This is a genuine non-financial blocker distinct from (and not resolved by) the automated_evaluation_allowed=CLEAR finding in I -- that finding concerns whether ORNEUR may USE this reference for evaluation at all, not whether DeepSeek may retain/train on what ORNEUR sends it."
+    }
   },
 
   "I_automated_evaluation_allowed": {
@@ -93,6 +105,11 @@
       "official_status": "AUTHORIZED (documented first-party endpoint)",
       "model_identity_exposed": true,
       "api_model_name": "deepseek-flash (maps to DeepSeek-V4.1-Flash per api-docs.deepseek.com/quick_start/pricing)",
+      "model_identity_precision": {
+        "model_release_identity": "MATCHES_DEEPSEEK_V4_1_FLASH -- the DeepSeek API docs' September 10 release announcement (api-docs.deepseek.com/news/news260910) explicitly links the 'deepseek-flash' API model to the open release, quoting: 'V4.1-Flash is now live on the DeepSeek API... Set your model to deepseek-flash' and directly citing 'Model: https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash' as the corresponding artifact.",
+        "exact_hosted_revision": "NOT_PROVIDER_EXPOSED -- the release announcement links to the HF repository by name/URL only; it does not state or expose the exact Git commit revision served ('dba1be0a40aa45a94ad051997016db3960a90277' or any other). No claim is made that the hosted API serves that exact pinned commit -- only that it serves the DeepSeek-V4.1-Flash model release.",
+        "reproducibility_implication": "A real, documented limitation: future evaluation calls to deepseek-flash can be attributed to the 'DeepSeek-V4.1-Flash release' with high confidence, but NOT to the exact pinned HF revision used for this reference's OPEN-WEIGHT identity elsewhere in this evidence file. This is not treated as a blocker by itself, but must be recorded, not silently elided."
+      },
       "pricing": "Cache-hit input $0.003/$0.006 per 1M tokens (off-peak/peak), cache-miss input $0.15/$0.3, output $0.6/$1.2 (off-peak/peak); peak = 01:00-04:00 and 06:00-10:00 UTC Mon-Fri excluding Chinese holidays.",
       "free_tier": "NOT DOCUMENTED on the pricing page fetched",
       "rate_limits": "Concurrency limit 2500 for deepseek-flash (per api-docs.deepseek.com/quick_start/rate_limit); capacity-expansion requests available at no extra cost.",
@@ -106,8 +123,12 @@
       "status": "COMPUTE_PROHIBITIVE",
       "basis": "GENESIS_FRONTIER_COMPUTE_MATRIX.md: 763B params -> 20x 80GB-class GPUs at BF16, 10x at FP8, 5x at INT4 -- THEORETICAL_WEIGHT_FIT only, not PRACTICAL_FRONTIER_EVALUATION_SERVING."
     },
-    "access_preflight_status_overall": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
-    "access_preflight_rationale": "The first-party API is a documented, official, OpenAI-compatible, model-identity-exposing path with clear terms -- but it is a paid, metered product with no confirmed free tier, so any future call requires a fresh zero-cash feasibility check before execution."
+    "public_eval_access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
+    "public_eval_access_preflight_rationale": "For PUBLIC (non-sealed) evaluation use, the first-party API is a documented, official, OpenAI-compatible, model-identity-exposing path with clear terms, permitted retention, and CLEAR automated-evaluation permission -- only a fresh zero-cash feasibility check remains before execution.",
+    "full_protocol_access_preflight_status": "UNQUALIFIED",
+    "full_protocol_access_preflight_rationale": "Phase 21B.4.17.2: the LOCKED Genesis frontier protocol's execution quorum requires a reference to be capable of receiving the SEALED PRIVATE HOLDOUT, not merely public/internal evaluation. Because private_holdout_compatibility is REVIEW_REQUIRED (see H), a genuine non-financial blocker remains for the full-protocol path even though every other gate (identity, terms, retention, automated evaluation) is satisfied. This reference is therefore PUBLIC_EVAL_READY but NOT full-protocol quorum-ready this phase.",
+    "access_preflight_status_overall": "UNQUALIFIED",
+    "access_preflight_rationale": "Phase 21B.4.17.2 correction (was PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK, unconditionally): that status is now split into public-eval and full-protocol variants above. The overall/legacy field is set to the more conservative full-protocol result (UNQUALIFIED) because the registry's single access_preflight_status field is used for full-protocol execution-quorum counting -- see the public_eval_access_preflight_status field above for the (READY) public-evaluation-only result."
   },
 
   "L_zero_owner_cash_classification": "CREDIT_DEPENDENT",
@@ -131,11 +152,12 @@
     "reference_evaluation_admission_status": "ADMITTED",
     "teacher_use_status": "ADMITTED",
     "teacher_use_evidence_reference": "DeepSeek Open Platform Terms of Service §4.2 (https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html)",
-    "access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
+    "access_preflight_status": "UNQUALIFIED",
+    "public_eval_access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
     "evidence_retention_status": "PERMITTED",
     "mutable_identity_status": "FIXED_IMMUTABLE",
     "availability_status": "REFERENCE_EXECUTION_DEFERRED"
   },
 
-  "gate": "REFERENCE_EVALUATION_ADMITTED -- COUNTS_TOWARD_EXECUTION_QUORUM"
+  "gate": "REFERENCE_EVALUATION_ADMITTED -- PUBLIC_EVAL_READY, PRIVATE_HOLDOUT_REVIEW_REQUIRED, DOES_NOT_CURRENTLY_COUNT_TOWARD_FULL_PROTOCOL_EXECUTION_QUORUM"
 }
