@@ -86,11 +86,11 @@
       ],
       "official_quantized_artifacts": "none observed in the repository's safetensors metadata this phase (BF16 only)",
       "license_identifier": "other (qwen-community-1.0, per Phase 21B.4.8.1 landscape research -- Hugging Face's own license TAG for this repo is the generic 'other')",
-      "license_source": "Hugging Face repository cardData.license tag ('other') cross-referenced with Phase 21B.4.8.1's prior primary-source review of the qwen-community-1.0 license text (MAU/revenue attribution thresholds)",
-      "license_repository_source_verified": "NOT_APPLICABLE -- remains LICENSE_REVIEW_REQUIRED regardless of repository-file verification; the qwen-community-1.0 text's MAU/revenue-threshold clauses (already reviewed in Phase 21B.4.8.1) are what require terms review, not an absence of a findable license file",
-      "commercial_deployment_status": "LICENSE_REVIEW_REQUIRED (custom community license with usage-threshold clauses -- ambiguity is not converted to GRANTED)",
-      "fine_tuning_status": "LICENSE_REVIEW_REQUIRED",
-      "redistribution_status": "LICENSE_REVIEW_REQUIRED",
+      "license_source": "Live primary-source retrieval this phase (21B.4.14) of the actual repository LICENSE file at both https://huggingface.co/Qwen/Qwen3.8-Flash-Next/raw/main/LICENSE and the pinned revision -- byte-identical, sha256 a0dc422560841fd68e06d974907f8b4c709bca44a67daad2b528437bdf676c08. Full clause-by-clause analysis: docs/orneur/phase-21/evidence/QWEN3_8_FLASH_NEXT_LICENSE_ANALYSIS_2026-09-23.md",
+      "license_repository_source_verified": "YES -- the actual LICENSE file text was retrieved live at both main and the pinned revision this phase (identical bytes, confirming main has not moved past the pinned revision). License name self-identifies as 'Qwen Community License 1.0'. Remains LICENSE_REVIEW_REQUIRED because the retrieved text's Model as a Service / AI Work Assistant definitions are genuinely ambiguous as applied to ORNEUR's currently-described (not yet finalized) product facts -- see docs/orneur/phase-21/evidence/QWEN3_8_FLASH_NEXT_PRODUCT_CLASSIFICATION_2026-09-23.json",
+      "commercial_deployment_status": "LICENSE_REVIEW_REQUIRED (Condition 2 MaaS/AI Work Assistant classification unresolved -- ambiguity not converted to permission)",
+      "fine_tuning_status": "EXPLICITLY_GRANTED by the license's general grant clause, but exercising it commercially remains gated by the same unresolved Condition 2 classification as deployment",
+      "redistribution_status": "EXPLICITLY_GRANTED by the license's general grant clause, subject to the same unresolved Condition 2 gate",
       "distillation_teacher_use_status": "NOT_APPLICABLE (evaluated as a foundation base, not a teacher)",
       "runtime_support": "Qwen4ExpForConditionalGeneration is a September-2026 architecture class -- vLLM 0.6.3.post1 (the only version this project has live-qualified, Phase 21B.4.8.1/.2) almost certainly predates it; NOT independently re-verified this phase",
       "minimum_runtime_versions_known": "UNRESOLVED_THIS_PHASE -- see GENESIS_RUNTIME_COMPATIBILITY_MATRIX.md",
@@ -110,7 +110,7 @@
       "license_status": "LICENSE_REVIEW_REQUIRED",
       "runtime_qualification_status": "UNQUALIFIED",
       "runtime_smoke_eligibility": "BLOCKED",
-      "runtime_smoke_blocked_reason": "License terms (qwen-community-1.0 MAU/revenue attribution thresholds) remain unresolved -- blocked from any GPU/weight-loading runtime smoke test until license review completes, per owner spec section 8. A metadata-only/non-weight compatibility check (tokenizer/config parsing, no model weights loaded) would not be blocked by this reason, but was not performed this phase."
+      "runtime_smoke_blocked_reason": "QWEN_COMMUNITY_LICENSE_COMMERCIAL_CLASSIFICATION_UNRESOLVED"
     },
     {
       "candidate_class": "DEPLOYABLE_GENESIS_FOUNDATION_CANDIDATE",

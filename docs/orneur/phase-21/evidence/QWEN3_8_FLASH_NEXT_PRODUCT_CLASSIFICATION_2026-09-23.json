@@ -1,0 +1,122 @@
+{
+  "evidence_type": "QWEN3_8_FLASH_NEXT_LICENSE_PRODUCT_CLASSIFICATION",
+  "candidate": "Qwen3.8-Flash-Next",
+  "artifact_repository": "Qwen/Qwen3.8-Flash-Next",
+  "pinned_revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+  "license_name": "Qwen Community License 1.0",
+  "license_primary_source_path": "docs/orneur/phase-21/evidence/QWEN3_8_FLASH_NEXT_LICENSE_PRIMARY_SOURCE_2026-09-23.txt",
+  "license_primary_source_sha256": "a0dc422560841fd68e06d974907f8b4c709bca44a67daad2b528437bdf676c08",
+  "analysis_date": "2026-09-23",
+
+  "clause_mapping": [
+    {
+      "license_term": "General 'Use' grant (use/copy/modify/merge/publish/distribute/sublicense/sell/deploy/host/fine-tune/derivative-works)",
+      "exact_language": "to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, sell, deploy, host, fine-tune, and create derivative works from (collectively, \"Use\" or \"Using\") copies of the Software",
+      "orneur_fact": "ORNEUR intends to host, fine-tune, and create derivative works from candidate foundation models for its commercial platform.",
+      "match": "MATCH",
+      "rationale": "Every specific right ORNEUR needs (hosting, fine-tuning, derivative works, distribution, sublicensing) is explicitly named in the grant clause. This right is granted, but is expressly 'subject to the following conditions' -- see Condition 1 and Condition 2 entries below.",
+      "confidence": "HIGH",
+      "source": "LICENSE, grant clause"
+    },
+    {
+      "license_term": "Condition 1 -- commercial-scale attribution (MAU/revenue threshold)",
+      "exact_language": "If the Software (or any derivative works thereof) is Used for any of the licensee's commercial products or services that have more than 100,000,000 monthly active users or US$ 20,000,000 (or equivalent in other currencies) monthly revenue, respective model name must be prominently displayed on the user interface of such product or service",
+      "orneur_fact": "ORNEUR is a pre-scale commercial platform today, nowhere near 100M MAU or US$20M/month revenue. Its long-term goal is to become a large-scale successful AI platform.",
+      "match": "NO_MATCH_TODAY / FUTURE_MATCH_IF_SCALE_ACHIEVED",
+      "rationale": "This is not a separate-license trigger -- it is a UI attribution obligation that activates automatically once either threshold is crossed, and applies to derivative works as well as the base model. Not currently triggered, but must be tracked as ORNEUR scales.",
+      "confidence": "HIGH",
+      "source": "LICENSE, Condition 1"
+    },
+    {
+      "license_term": "Condition 2 -- Model as a Service separate-license gate",
+      "exact_language": "If the licensee or any of its affiliates conducts a Model as a Service or AI Work Assistant business, the licensee shall obtain a separate license from Qwen before Using the Software or its derivative works for any commercial purpose.",
+      "orneur_fact": "ORNEUR is a commercial AI web application/platform in which end users interact with ORNEUR models, including Genesis, via conversational inference, reasoning, coding, research, tool use, and agentic execution; APIs or hosted access are possible depending on product evolution.",
+      "match": "AMBIGUOUS",
+      "rationale": "Whether ORNEUR's end-user-facing product satisfies the MaaS definition below turns on an unresolved interpretive question (see next entry). The internal-use carve-out explicitly does NOT apply, since ORNEUR's planned use exposes the Software's inference to third parties (its own end users) by design.",
+      "confidence": "MEDIUM",
+      "source": "LICENSE, Condition 2"
+    },
+    {
+      "license_term": "\"Model as a Service\" definition",
+      "exact_language": "\"Model as a Service\" means giving a third party access to language model inference or fine-tuning (e.g., via API or a hosted endpoint) in a manner that allows such third parties to exercise meaningful control over the inputs, parameters, or training data. This does not include the mere relaying of requests to models hosted by other third parties.",
+      "orneur_fact": "ORNEUR gives end users (third parties) access to language model inference via a hosted web interface. End users fully control the text they input as prompts. ORNEUR has not finalized whether it will expose a public/partner API with parameter-level control, or whether it will allow user-influenced fine-tuning/training data.",
+      "match": "AMBIGUOUS",
+      "rationale": "The definition disjunctively lists 'inputs, parameters, or training data' -- satisfying ANY ONE suffices. A broad reading treats ordinary end-user prompt text as 'meaningful control over the inputs,' which would make essentially any commercial hosted chat product MaaS. A narrow reading limits 'meaningful control' to parameter/training-data-level access (the license's own example is 'via API or a hosted endpoint'), which a locked-down consumer chat UI might not satisfy. The license text does not resolve which reading governs. Per phase instruction, this ambiguity is NOT converted to permission and is flagged as a MATERIAL LICENSE RISK. If ORNEUR exposes an API with parameter control, this resolves unambiguously to MATCH.",
+      "confidence": "LOW",
+      "source": "LICENSE, Condition 2 definitions",
+      "material_license_risk": true,
+      "business_fact_required": "Will ORNEUR expose a public/partner API giving third parties programmatic access with parameter control (temperature, system prompts, etc.), or allow user-influenced fine-tuning/training data?"
+    },
+    {
+      "license_term": "\"AI Work Assistant\" definition",
+      "exact_language": "\"AI Work Assistant\" means an independent AI-powered product primarily designed for AI-assisted coding or office productivity (e.g., Qoder and QwenWork). It does not include: (a) a single-purpose AI tool...; (b) an AI assistant primarily designed for a domain other than coding or office productivity...; or (c) an AI assistant that is a feature of a product whose primary purpose is not AI-assisted coding or office productivity.",
+      "orneur_fact": "ORNEUR's planned functionality spans conversational inference, reasoning, coding, research, tool use, agentic execution, and project/work workflows -- coding and work-workflow capabilities are present but are listed alongside several non-coding, non-office-productivity capabilities (general conversation, reasoning, research).",
+      "match": "AMBIGUOUS_LEANING_NO_MATCH",
+      "rationale": "ORNEUR is not described as 'primarily designed for' coding or office productivity specifically (unlike the named examples Qoder/QwenWork) -- it reads as a general-purpose multi-capability platform. However, the explicit inclusion of coding and work-workflow capabilities among ORNEUR's stated functions means this cannot be called a clean NO_MATCH without a firmer statement of ORNEUR's actual primary design purpose.",
+      "confidence": "MEDIUM",
+      "source": "LICENSE, Condition 2 definitions",
+      "business_fact_required": "Will ORNEUR's stated primary design purpose be coding/office-productivity-centric, or general-purpose multi-domain AI?"
+    },
+    {
+      "license_term": "Fine-tuning / LoRA / QLoRA / continued pretraining / preference optimization / RL post-training",
+      "exact_language": "the rights to use, copy, modify, ... fine-tune, and create derivative works from ... copies of the Software",
+      "orneur_fact": "ORNEUR intends to post-train candidate foundation models via one or more of these techniques as part of Genesis.",
+      "match": "MATCH",
+      "rationale": "All named post-training techniques fall within the broad 'modify'/'fine-tune'/'create derivative works' grant. Subject to Condition 2 if the resulting commercial deployment constitutes MaaS/AI Work Assistant (unresolved, see above).",
+      "confidence": "HIGH",
+      "source": "LICENSE, grant clause"
+    },
+    {
+      "license_term": "Redistribution / hosted serving / sublicensing",
+      "exact_language": "the rights to ... distribute, sublicense, ... deploy, host, ... copies of the Software",
+      "orneur_fact": "ORNEUR intends to host a derivative/fine-tuned checkpoint and serve it to end users.",
+      "match": "MATCH",
+      "rationale": "Explicitly named in the grant clause. Subject to Condition 2 exactly as above.",
+      "confidence": "HIGH",
+      "source": "LICENSE, grant clause"
+    },
+    {
+      "license_term": "Distillation / synthetic-data generation / training a separate student model from outputs",
+      "exact_language": "(not addressed by name anywhere in the license; only 'create derivative works from ... the Software' and the 'AS IS' clause's reference to 'any output and results therefrom')",
+      "orneur_fact": "Genesis may later use a teacher/student or hybrid architecture strategy involving this candidate.",
+      "match": "AMBIGUOUS",
+      "rationale": "The license does not clearly extend its 'derivative works FROM the Software' grant to a wholly separate, differently-architected model trained on this model's outputs -- that is a different act than modifying or deriving from 'the Software' itself. No permission is invented from silence.",
+      "confidence": "LOW",
+      "source": "LICENSE, grant clause + AS IS clause",
+      "recorded_as": "DISTILLATION_RIGHTS_UNRESOLVED"
+    },
+    {
+      "license_term": "Output rights / ownership / downstream-use restriction",
+      "exact_language": "THE SOFTWARE AND ANY OUTPUT AND RESULTS THEREFROM ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND... THE USE OF THE SOFTWARE MUST COMPLY WITH APPLICABLE LAWS AND REGULATIONS, AND MUST NOT INFRINGE THE INTELLECTUAL PROPERTY RIGHTS OF ANY THIRD PARTY.",
+      "orneur_fact": "ORNEUR intends to serve model outputs (generated text/code/etc.) to end users as its core product.",
+      "match": "NO_MATCH",
+      "rationale": "No clause grants Qwen ownership of outputs or restricts downstream use of outputs beyond the general warranty disclaimer and generic legal-compliance obligation (which applies to any use, not outputs specifically). Nothing here blocks ORNEUR's planned use of outputs.",
+      "confidence": "HIGH",
+      "source": "LICENSE, AS IS clause"
+    },
+    {
+      "license_term": "Internal-use carve-out from Condition 2",
+      "exact_language": "The foregoing requirement shall not apply to the licensee's internal Use of the Software, provided that such Use does not make the Software, its outputs, or its underlying model capabilities available to any third party.",
+      "orneur_fact": "ORNEUR's planned use is explicitly third-party-facing (end users interacting with ORNEUR models via a commercial platform), not internal-only.",
+      "match": "NO_MATCH (carve-out does not apply to ORNEUR)",
+      "rationale": "ORNEUR cannot rely on this carve-out to avoid Condition 2 analysis, since its planned product by definition makes the Software's outputs/capabilities available to third parties (its end users).",
+      "confidence": "HIGH",
+      "source": "LICENSE, Condition 2"
+    }
+  ],
+
+  "material_license_risks": [
+    "MaaS 'inputs' prong is disjunctive and could sweep in an ordinary commercial chat product under a broad reading; not resolved by the text; flagged rather than resolved in ORNEUR's favor.",
+    "Any future public/partner API exposure with parameter-level control would unambiguously satisfy the MaaS definition's own stated example ('via API or a hosted endpoint')."
+  ],
+
+  "business_facts_required": [
+    "Will ORNEUR expose a public/partner API giving third parties programmatic access with parameter control (temperature, system prompts, etc.)?",
+    "Will ORNEUR allow users/partners to fine-tune or otherwise influence training data via the platform?",
+    "Is ORNEUR's stated primary design purpose coding/office-productivity-centric, or general-purpose multi-domain AI?",
+    "Will there be a B2B/enterprise hosted-inference offering distinct from the consumer-facing chat product?"
+  ],
+
+  "determination": "LICENSE_UNRESOLVED",
+  "determination_rationale": "Neither Outcome A (clearly not triggering Condition 2) nor Outcome B (clearly triggering Condition 2) is established by the primary-source text as applied to ORNEUR's currently-described, not-yet-finalized product facts. Ambiguity is not converted to permission, and no capability rejection results from this determination."
+}

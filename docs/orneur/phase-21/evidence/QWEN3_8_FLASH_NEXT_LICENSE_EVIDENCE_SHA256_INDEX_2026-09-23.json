@@ -1,0 +1,33 @@
+{
+  "evidence_type": "QWEN3_8_FLASH_NEXT_LICENSE_EVIDENCE_INTEGRITY_INDEX",
+  "created": "2026-09-23",
+  "phase": "21B.4.14",
+  "candidate": "Qwen3.8-Flash-Next",
+  "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative.",
+  "entries": [
+    {
+      "path": "docs/orneur/phase-21/evidence/QWEN3_8_FLASH_NEXT_LICENSE_PRIMARY_SOURCE_2026-09-23.txt",
+      "sha256": "a0dc422560841fd68e06d974907f8b4c709bca44a67daad2b528437bdf676c08",
+      "evidence_role": "license_primary_source",
+      "size_bytes": 3235
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/QWEN3_8_FLASH_NEXT_LICENSE_ANALYSIS_2026-09-23.md",
+      "sha256": "5b49956a67f20adda1f8795c90812af829df0807aa42146b8a81cf1b70fb9eee",
+      "evidence_role": "license_analysis",
+      "size_bytes": 20147
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/QWEN3_8_FLASH_NEXT_PRODUCT_CLASSIFICATION_2026-09-23.json",
+      "sha256": "e087e0c166f3cf20e992a7970a9bcb94a8b7189919a6499c405ab49b901ea5c1",
+      "evidence_role": "product_classification",
+      "size_bytes": 12469
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/QWEN3_8_FLASH_NEXT_QWEN_CLEARANCE_REQUEST_DRAFT_2026-09-23.md",
+      "sha256": "213132e12f8f55e50eda60ffe260175e1b4c701d680f6a1f2a007660b3f9cf28",
+      "evidence_role": "clearance_request_draft",
+      "size_bytes": 4097
+    }
+  ]
+}
