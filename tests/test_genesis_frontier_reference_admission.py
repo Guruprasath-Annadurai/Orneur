@@ -52,6 +52,7 @@ from orca.eval.frontier_reference_admission_quorum import (
     MINIMUM_USABLE_REFERENCES,
     TARGET_REFERENCES,
     AccessReadinessError,
+    _entry_passes_full_protocol_validation,
     compute_admission_quorum,
     compute_public_eval_ready_count,
     validate_full_protocol_access_readiness,
@@ -360,11 +361,35 @@ def test_public_eval_ready_count_is_separate_and_nonzero(registry):
     assert public_count != full_protocol_count
 
 
+# Phase 21B.4.18 §22: a synthetic fixture must carry FULLY-PASSING
+# evidence for `_entry_passes_full_protocol_validation()` -- a naked
+# reference_evaluation_admission_status/access_preflight_status pair is
+# no longer sufficient to count toward quorum. These threshold-logic
+# tests are about the 4/3/6 counting rules, not the evidence gate
+# itself (which has its own dedicated tamper tests below), so every
+# fixture entry that is meant to count gets a fully-valid evidence
+# overlay via this helper.
+def _counting_entry(name: str, organization: str, access_preflight_status: str) -> dict:
+    return {
+        "reference_name": name,
+        "organization": organization,
+        "reference_evaluation_admission_status": "ADMITTED",
+        "access_preflight_status": access_preflight_status,
+        "license_or_terms_status": "CLEAR",
+        "evidence_retention_status": "PERMITTED",
+        "automated_evaluation_status": "CLEAR",
+        "private_holdout_status": "PERMITTED",
+        "access_path_identified": True,
+        "model_identity_attributable": True,
+        "non_financial_blocker_status": "NONE",
+    }
+
+
 def test_quorum_requires_four_admitted_and_access_ready():
     fixture = [
-        {"reference_name": "A", "organization": "OrgA", "reference_evaluation_admission_status": "ADMITTED", "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION"},
-        {"reference_name": "B", "organization": "OrgB", "reference_evaluation_admission_status": "ADMITTED", "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION"},
-        {"reference_name": "C", "organization": "OrgC", "reference_evaluation_admission_status": "ADMITTED", "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION"},
+        _counting_entry("A", "OrgA", "QUALIFIED_FOR_FUTURE_EXECUTION"),
+        _counting_entry("B", "OrgB", "QUALIFIED_FOR_FUTURE_EXECUTION"),
+        _counting_entry("C", "OrgC", "QUALIFIED_FOR_FUTURE_EXECUTION"),
         {"reference_name": "D", "organization": "OrgD", "reference_evaluation_admission_status": "REVIEW_REQUIRED", "access_preflight_status": "UNQUALIFIED"},
     ]
     report = compute_admission_quorum(fixture)
@@ -376,9 +401,7 @@ def test_quorum_requires_three_independent_organizations():
     """4 admitted+ready references but only 2 distinct organizations
     must NOT satisfy MINIMUM_QUORUM_READY."""
     fixture = [
-        {"reference_name": n, "organization": "OrgA" if i < 2 else "OrgB",
-         "reference_evaluation_admission_status": "ADMITTED",
-         "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION"}
+        _counting_entry(n, "OrgA" if i < 2 else "OrgB", "QUALIFIED_FOR_FUTURE_EXECUTION")
         for i, n in enumerate(["A", "B", "C", "D"])
     ]
     report = compute_admission_quorum(fixture)
@@ -389,10 +412,10 @@ def test_quorum_requires_three_independent_organizations():
 
 def test_minimum_quorum_ready_when_four_refs_three_orgs():
     fixture = [
-        {"reference_name": "A", "organization": "OrgA", "reference_evaluation_admission_status": "ADMITTED", "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION"},
-        {"reference_name": "B", "organization": "OrgB", "reference_evaluation_admission_status": "ADMITTED", "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION"},
-        {"reference_name": "C", "organization": "OrgC", "reference_evaluation_admission_status": "ADMITTED", "access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK"},
-        {"reference_name": "D", "organization": "OrgC", "reference_evaluation_admission_status": "ADMITTED", "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION"},
+        _counting_entry("A", "OrgA", "QUALIFIED_FOR_FUTURE_EXECUTION"),
+        _counting_entry("B", "OrgB", "QUALIFIED_FOR_FUTURE_EXECUTION"),
+        _counting_entry("C", "OrgC", "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK"),
+        _counting_entry("D", "OrgC", "QUALIFIED_FOR_FUTURE_EXECUTION"),
     ]
     report = compute_admission_quorum(fixture)
     assert report.quorum_counting_count == 4
@@ -401,12 +424,7 @@ def test_minimum_quorum_ready_when_four_refs_three_orgs():
 
 
 def test_target_ready_requires_all_six():
-    fixture = [
-        {"reference_name": n, "organization": f"Org{n}",
-         "reference_evaluation_admission_status": "ADMITTED",
-         "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION"}
-        for n in "ABCDEF"
-    ]
+    fixture = [_counting_entry(n, f"Org{n}", "QUALIFIED_FOR_FUTURE_EXECUTION") for n in "ABCDEF"]
     report = compute_admission_quorum(fixture)
     assert report.quorum_status == "TARGET_READY"
 
@@ -513,6 +531,19 @@ def test_frontier_reference_evidence_sha256_index_hashes_exactly():
         assert len(actual_bytes) == entry["size_bytes"]
 
 
+def test_frontier_reference_evidence_sha256_index_2026_09_24_hashes_exactly():
+    index_path = EVIDENCE_DIR / "GENESIS_FRONTIER_REFERENCE_SHA256_INDEX_2026-09-24.json"
+    index = json.loads(index_path.read_text())
+    entries = index["entries"]
+    assert len(entries) == 3
+    for entry in entries:
+        path = REPO_ROOT / entry["path"]
+        assert path.is_file(), f"missing: {entry['path']}"
+        actual_bytes = path.read_bytes()
+        assert hashlib.sha256(actual_bytes).hexdigest() == entry["sha256"], f"hash mismatch for {entry['path']}"
+        assert len(actual_bytes) == entry["size_bytes"]
+
+
 def test_terms_matrix_separates_evaluation_and_teacher_admission():
     text = TERMS_MATRIX_PATH.read_text()
     assert "independent decisions" in text.lower() or "SEPARATE from evaluation admission" in text
@@ -522,7 +553,7 @@ def test_terms_matrix_separates_evaluation_and_teacher_admission():
 
 
 def test_schema_version_bumped_to_v5():
-    assert REGISTRY_SCHEMA_VERSION == "genesis-candidate-execution-registry-v5"
+    assert REGISTRY_SCHEMA_VERSION == "genesis-candidate-execution-registry-v6"
     data = json.loads(REGISTRY_PATH.read_text())
     assert data["schema_version"] == REGISTRY_SCHEMA_VERSION
 
@@ -788,3 +819,245 @@ def test_qwen_and_kimi_states_unchanged(registry):
     kimi = next(r for r in registry.frontier_references if r["reference_name"] == "Kimi K3")
     assert kimi["reference_evaluation_admission_status"] == "ADMITTED"
     assert kimi["access_preflight_status"] == "UNQUALIFIED"
+
+
+# =========================================================================
+# Phase 21B.4.18: quorum-recovery blocker research + machine-enforced
+# promotion gate hardening. See orca/eval/frontier_reference_admission_
+# quorum.py's Phase 21B.4.18 docstring addendum and candidate_registry.py's
+# matching addendum for the full design rationale.
+# =========================================================================
+
+
+def _passing_evidence(**overrides) -> dict:
+    base = {
+        "reference_name": "Synthetic",
+        "organization": "SyntheticOrg",
+        "reference_evaluation_admission_status": "ADMITTED",
+        "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION",
+        "license_or_terms_status": "CLEAR",
+        "evidence_retention_status": "PERMITTED",
+        "automated_evaluation_status": "CLEAR",
+        "private_holdout_status": "PERMITTED",
+        "access_path_identified": True,
+        "model_identity_attributable": True,
+        "non_financial_blocker_status": "NONE",
+    }
+    base.update(overrides)
+    return base
+
+
+# ── F: naked access status string alone cannot force quorum counting ────
+
+
+def test_naked_status_string_without_evidence_cannot_count():
+    """A dict claiming QUALIFIED_FOR_FUTURE_EXECUTION with no supporting
+    evidence fields at all must not count -- compute_admission_quorum()
+    must never trust the status string alone."""
+    forged = {
+        "reference_name": "Forged",
+        "organization": "ForgedOrg",
+        "reference_evaluation_admission_status": "ADMITTED",
+        "access_preflight_status": "QUALIFIED_FOR_FUTURE_EXECUTION",
+    }
+    report = compute_admission_quorum([forged])
+    assert report.quorum_counting_count == 0
+    assert report.quorum_counting_references == ()
+    assert not _entry_passes_full_protocol_validation(forged)
+
+
+# ── G: terms REVIEW_REQUIRED cannot count ────────────────────────────────
+
+
+def test_terms_review_required_cannot_count():
+    entry = _passing_evidence(license_or_terms_status="REVIEW_REQUIRED")
+    report = compute_admission_quorum([entry])
+    assert report.quorum_counting_count == 0
+
+
+# ── H: evidence-retention REVIEW_REQUIRED cannot count ──────────────────
+
+
+def test_evidence_retention_review_required_cannot_count():
+    entry = _passing_evidence(evidence_retention_status="REVIEW_REQUIRED")
+    report = compute_admission_quorum([entry])
+    assert report.quorum_counting_count == 0
+
+
+# ── I: unattributable model identity cannot count ───────────────────────
+
+
+def test_unattributable_model_identity_cannot_count():
+    entry = _passing_evidence(model_identity_attributable=False)
+    report = compute_admission_quorum([entry])
+    assert report.quorum_counting_count == 0
+
+
+# ── J: missing access path cannot count ──────────────────────────────────
+
+
+def test_missing_access_path_cannot_count():
+    entry = _passing_evidence(access_path_identified=False)
+    report = compute_admission_quorum([entry])
+    assert report.quorum_counting_count == 0
+
+
+# ── additional evidence-dimension tamper coverage ────────────────────────
+
+
+def test_automated_evaluation_not_clear_cannot_count():
+    entry = _passing_evidence(automated_evaluation_status="REVIEW_REQUIRED")
+    report = compute_admission_quorum([entry])
+    assert report.quorum_counting_count == 0
+
+
+def test_private_holdout_not_permitted_cannot_count():
+    entry = _passing_evidence(private_holdout_status="REVIEW_REQUIRED")
+    report = compute_admission_quorum([entry])
+    assert report.quorum_counting_count == 0
+
+
+def test_unresolved_non_financial_blocker_cannot_count():
+    entry = _passing_evidence(non_financial_blocker_status="TERMS_AMBIGUITY")
+    report = compute_admission_quorum([entry])
+    assert report.quorum_counting_count == 0
+
+
+# ── K: only zero-cash unresolved MAY still allow READY_PENDING ──────────
+
+
+def test_only_zero_cash_unresolved_still_counts():
+    """A reference passing EVERY non-financial dimension, with only the
+    status itself expressing 'pending a fresh zero-cash check', must
+    still be accepted as counting -- that is exactly what
+    PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK means."""
+    entry = _passing_evidence(access_preflight_status="PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK")
+    report = compute_admission_quorum([entry])
+    assert report.quorum_counting_count == 1
+    assert _entry_passes_full_protocol_validation(entry)
+
+
+# ── registry-level: schema rejects a forged counting status ─────────────
+
+
+def test_registry_rejects_reference_claiming_readiness_without_evidence():
+    """Phase 21B.4.18 §7: a reference cannot even LOAD into a valid
+    registry while claiming a counting access_preflight_status unless
+    its own recorded evidence actually supports it."""
+    data = json.loads(REGISTRY_PATH.read_text())
+    tampered = json.loads(json.dumps(data))
+    deepseek = next(r for r in tampered["frontier_references"] if r["reference_name"] == "DeepSeek V4.1-Flash")
+    deepseek["access_preflight_status"] = "QUALIFIED_FOR_FUTURE_EXECUTION"
+    # private_holdout_status is left REVIEW_REQUIRED -- this must fail.
+    with pytest.raises(RegistrySchemaError, match="full-protocol access validation"):
+        CandidateExecutionRegistry.from_dict(tampered)
+
+
+def test_registry_rejects_full_protocol_access_validation_mismatch():
+    """A reference honestly UNQUALIFIED must never carry
+    full_protocol_access_validation=PASSED -- the audit field must agree
+    with the status it accompanies."""
+    data = json.loads(REGISTRY_PATH.read_text())
+    tampered = json.loads(json.dumps(data))
+    deepseek = next(r for r in tampered["frontier_references"] if r["reference_name"] == "DeepSeek V4.1-Flash")
+    assert deepseek["access_preflight_status"] == "UNQUALIFIED"
+    deepseek["full_protocol_access_validation"] = "PASSED"
+    with pytest.raises(RegistrySchemaError, match="full_protocol_access_validation"):
+        CandidateExecutionRegistry.from_dict(tampered)
+
+
+# ── Phase 21B.4.18 promotion-gate evidence fields present on all six ────
+
+
+def test_all_six_references_carry_promotion_gate_evidence_fields(registry):
+    required = (
+        "automated_evaluation_status", "private_holdout_status",
+        "access_path_identified", "model_identity_attributable",
+        "non_financial_blocker_status", "full_protocol_access_validation",
+    )
+    for entry in registry.frontier_references:
+        for field in required:
+            assert field in entry, f"{entry['reference_name']} missing {field}"
+
+
+def test_schema_version_bumped_to_v6():
+    assert REGISTRY_SCHEMA_VERSION == "genesis-candidate-execution-registry-v6"
+
+
+# ── Phase 21B.4.18 quorum-recovery research: no reference was fake-promoted ──
+
+
+def test_no_reference_promoted_to_counting_status_this_phase(registry):
+    """§20/§28: none of the six references may claim a counting
+    access_preflight_status this phase -- research narrowed blockers but
+    did not resolve any reference's full non-financial evidence set."""
+    for entry in registry.frontier_references:
+        assert entry["access_preflight_status"] in ("UNQUALIFIED", "BLOCKED", "NOT_TESTED"), entry["reference_name"]
+        assert entry["full_protocol_access_validation"] == "FAILED", entry["reference_name"]
+    report = compute_admission_quorum(list(registry.frontier_references))
+    assert report.quorum_counting_count == 0
+    assert report.quorum_status == "QUORUM_BLOCKED"
+
+
+def test_qwen_private_holdout_improved_with_primary_source_evidence(registry):
+    """Phase 21B.4.18 §14: strong direct primary-source evidence
+    (Alibaba Cloud Model Studio's own 'Customer data policy' and FAQ
+    page) narrows Qwen3.8-Max's private-holdout blocker, even though the
+    reference does not reach full-protocol counting this phase (terms
+    ambiguity and mutable identity remain unresolved)."""
+    qwen_max = next(r for r in registry.frontier_references if r["reference_name"] == "Qwen3.8-Max")
+    assert qwen_max["private_holdout_status"] == "PERMITTED"
+    assert qwen_max["reference_evaluation_admission_status"] == "REVIEW_REQUIRED"
+    assert qwen_max["model_identity_attributable"] is False
+
+
+def test_kimi_hosted_api_private_holdout_confirmed_blocked(registry):
+    """Phase 21B.4.18 §10: live re-verification of platform.kimi.ai's own
+    Terms of Service §4 (Content) confirms the hosted API trains on
+    Customer Content by default with no self-service opt-out -- only a
+    negotiated enterprise arrangement, which this phase does not pursue."""
+    kimi = next(r for r in registry.frontier_references if r["reference_name"] == "Kimi K3")
+    assert kimi["private_holdout_status"] == "BLOCKED"
+    assert "WRITTEN_PROVIDER_CLARIFICATION_REQUIRED" in kimi["non_financial_blocker_status"]
+
+
+def test_mistral_holdout_path_resolvable_by_provider_setting_not_exercised(registry):
+    """Phase 21B.4.18 §9: Mistral's own help-center article establishes an
+    Admin-panel opt-out toggle exists for API/Studio training use, but
+    this phase does not exercise it (no provider account action
+    authorized) -- private_holdout_status stays REVIEW_REQUIRED."""
+    mistral = next(r for r in registry.frontier_references if r["reference_name"] == "Mistral Large 3")
+    assert mistral["private_holdout_status"] == "REVIEW_REQUIRED"
+    assert "PROVIDER_ACCOUNT_SETTING_REQUIRED" in mistral["non_financial_blocker_status"]
+
+
+# ── Phase 21B.4.18 blocker/clarification artifacts exist ────────────────
+
+
+def test_blocker_matrix_artifact_exists():
+    path = REPO_ROOT / "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_BLOCKER_MATRIX_2026-09-24.md"
+    assert path.is_file()
+    text = path.read_text()
+    for name in EXPECTED_REFERENCE_NAMES:
+        assert name in text
+
+
+def test_provider_clarification_artifact_exists_and_sends_nothing():
+    path = REPO_ROOT / "docs/orneur/phase-21/evidence/GENESIS_FRONTIER_REFERENCE_PROVIDER_CLARIFICATIONS_2026-09-24.md"
+    assert path.is_file()
+    text = path.read_text()
+    assert "NO message is sent" in text or "Messages sent: NO" in text or "not sent" in text.lower()
+
+
+def test_access_matrix_v2_artifact_exists():
+    path = REPO_ROOT / "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_ACCESS_MATRIX_2026-09-24.md"
+    assert path.is_file()
+
+
+# ── Phase 21C / Genesis program-state regression lock ────────────────────
+
+
+def test_phase_21c_still_not_authorized():
+    text = (REPO_ROOT / "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_BLOCKER_MATRIX_2026-09-24.md").read_text()
+    assert "PHASE 21C" in text
+    assert "NOT AUTHORIZED" in text

@@ -1,5 +1,5 @@
 {
-  "schema_version": "genesis-candidate-execution-registry-v5",
+  "schema_version": "genesis-candidate-execution-registry-v6",
   "phase": "21B.4.10.1",
   "generated_at": "2026-09-19T00:00:00Z",
   "note": "Stage-0 identity/license/runtime eligibility qualification only. No candidate is declared frontier-class, benchmark-qualified, or Genesis-selected by this registry. All revision/license/parameter data below was retrieved live via the Hugging Face Hub API (metadata only -- no weight shards were downloaded). Phase 21B.4.10.1 replaces the v1 conflated 'stage0_status' field on deployable candidates with four separate fields (identity_status, license_status, runtime_qualification_status, runtime_smoke_eligibility) so that 'runtime not yet qualified' (which is exactly what a runtime smoke test exists to resolve) is never confused with 'not eligible to attempt a smoke test'. runtime_smoke_eligibility=ELIGIBLE means only that a future phase MAY attempt to LOAD that candidate, never that it is qualified, selected, or frontier-class.",
@@ -379,7 +379,13 @@
       "evidence_retention_status": "PERMITTED",
       "mutable_identity_status": "FIXED_IMMUTABLE",
       "public_eval_access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
-      "private_holdout_compatibility_status": "REVIEW_REQUIRED"
+      "private_holdout_compatibility_status": "REVIEW_REQUIRED",
+      "automated_evaluation_status": "CLEAR",
+      "private_holdout_status": "REVIEW_REQUIRED",
+      "access_path_identified": true,
+      "model_identity_attributable": true,
+      "non_financial_blocker_status": "PRIVATE_HOLDOUT_CONFIDENTIALITY_UNRESOLVED,WRITTEN_PROVIDER_CLARIFICATION_REQUIRED",
+      "full_protocol_access_validation": "FAILED"
     },
     {
       "reference_name": "GLM-5.3 (flagship)",
@@ -398,7 +404,13 @@
       "teacher_use_evidence_reference": null,
       "access_preflight_status": "UNQUALIFIED",
       "evidence_retention_status": "REVIEW_REQUIRED",
-      "mutable_identity_status": "FIXED_IMMUTABLE"
+      "mutable_identity_status": "FIXED_IMMUTABLE",
+      "automated_evaluation_status": "REVIEW_REQUIRED",
+      "private_holdout_status": "REVIEW_REQUIRED",
+      "access_path_identified": true,
+      "model_identity_attributable": true,
+      "non_financial_blocker_status": "TERMS_AMBIGUITY,AUTOMATED_EVALUATION_UNRESOLVED,PRIVATE_HOLDOUT_CONFIDENTIALITY_UNRESOLVED,PROVIDER_ACCOUNT_SETTING_REQUIRED",
+      "full_protocol_access_validation": "FAILED"
     },
     {
       "reference_name": "Mistral Large 3",
@@ -417,7 +429,13 @@
       "teacher_use_evidence_reference": null,
       "access_preflight_status": "UNQUALIFIED",
       "evidence_retention_status": "PERMITTED",
-      "mutable_identity_status": "FIXED_IMMUTABLE"
+      "mutable_identity_status": "FIXED_IMMUTABLE",
+      "automated_evaluation_status": "REVIEW_REQUIRED",
+      "private_holdout_status": "REVIEW_REQUIRED",
+      "access_path_identified": true,
+      "model_identity_attributable": true,
+      "non_financial_blocker_status": "AUTOMATED_EVALUATION_UNRESOLVED,PRIVATE_HOLDOUT_CONFIDENTIALITY_UNRESOLVED,PROVIDER_ACCOUNT_SETTING_REQUIRED",
+      "full_protocol_access_validation": "FAILED"
     },
     {
       "reference_name": "MiniMax M3",
@@ -436,7 +454,13 @@
       "teacher_use_evidence_reference": null,
       "access_preflight_status": "UNQUALIFIED",
       "evidence_retention_status": "REVIEW_REQUIRED",
-      "mutable_identity_status": "FIXED_IMMUTABLE"
+      "mutable_identity_status": "FIXED_IMMUTABLE",
+      "automated_evaluation_status": "REVIEW_REQUIRED",
+      "private_holdout_status": "REVIEW_REQUIRED",
+      "access_path_identified": false,
+      "model_identity_attributable": true,
+      "non_financial_blocker_status": "COMMERCIAL_USE_AMBIGUITY,ACCESS_PATH_UNVERIFIED,WRITTEN_PROVIDER_CLARIFICATION_REQUIRED",
+      "full_protocol_access_validation": "FAILED"
     },
     {
       "reference_name": "Qwen3.8-Max",
@@ -460,7 +484,13 @@
       "teacher_use_evidence_reference": null,
       "access_preflight_status": "UNQUALIFIED",
       "evidence_retention_status": "REVIEW_REQUIRED",
-      "mutable_identity_status": "MUTABLE_REFERENCE_IDENTITY"
+      "mutable_identity_status": "MUTABLE_REFERENCE_IDENTITY",
+      "automated_evaluation_status": "REVIEW_REQUIRED",
+      "private_holdout_status": "PERMITTED",
+      "access_path_identified": true,
+      "model_identity_attributable": false,
+      "non_financial_blocker_status": "TERMS_AMBIGUITY,AUTOMATED_EVALUATION_UNRESOLVED,MODEL_IDENTITY_INSUFFICIENT",
+      "full_protocol_access_validation": "FAILED"
     },
     {
       "reference_name": "Kimi K3",
@@ -479,7 +509,13 @@
       "teacher_use_evidence_reference": null,
       "access_preflight_status": "UNQUALIFIED",
       "evidence_retention_status": "PERMITTED",
-      "mutable_identity_status": "FIXED_IMMUTABLE"
+      "mutable_identity_status": "FIXED_IMMUTABLE",
+      "automated_evaluation_status": "CLEAR",
+      "private_holdout_status": "BLOCKED",
+      "access_path_identified": true,
+      "model_identity_attributable": true,
+      "non_financial_blocker_status": "PRIVATE_HOLDOUT_CONFIDENTIALITY_UNRESOLVED,SELF_HOST_COMPUTE_PROHIBITIVE,WRITTEN_PROVIDER_CLARIFICATION_REQUIRED",
+      "full_protocol_access_validation": "FAILED"
     }
   ],
   "quorum_status": {

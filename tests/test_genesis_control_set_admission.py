@@ -415,7 +415,7 @@ def test_control_parity_spec_exists_and_states_no_execution():
 
 
 def test_schema_version_bumped_to_v4():
-    assert REGISTRY_SCHEMA_VERSION == "genesis-candidate-execution-registry-v5"
+    assert REGISTRY_SCHEMA_VERSION == "genesis-candidate-execution-registry-v6"
     data = json.loads(REGISTRY_PATH.read_text())
     assert data["schema_version"] == REGISTRY_SCHEMA_VERSION
 

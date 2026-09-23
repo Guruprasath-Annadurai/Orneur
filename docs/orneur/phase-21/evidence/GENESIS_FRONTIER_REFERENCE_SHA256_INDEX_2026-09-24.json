@@ -1,0 +1,26 @@
+{
+  "evidence_type": "GENESIS_FRONTIER_REFERENCE_EVIDENCE_INTEGRITY_INDEX",
+  "created": "2026-09-24",
+  "phase": "21B.4.18",
+  "note": "SHA-256 hashes computed live from actual file bytes. Every path is repo-relative. No GPU, no frontier inference, no paid API call performed to produce any indexed file. This index is ADDITIVE to docs/orneur/phase-21/evidence/GENESIS_FRONTIER_REFERENCE_SHA256_INDEX_2026-09-23.json (preserved unmodified) -- it covers only the NEW Phase 21B.4.18 closure artifacts (blocker matrix, provider clarification drafts, access matrix update). The six per-reference *_REFERENCE_ADMISSION_2026-09-23.json evidence files, the consolidated primary-sources index, and the 2026-09-23 access/terms matrices were not modified this phase and remain covered by the 2026-09-23 index.",
+  "entries": [
+    {
+      "path": "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_BLOCKER_MATRIX_2026-09-24.md",
+      "sha256": "83d0b98e02e2cffdfa73089ecbf2443f79dbcbbaee21305a7e7f5395b6144442",
+      "evidence_role": "quorum_recovery_blocker_matrix",
+      "size_bytes": 13061
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_FRONTIER_REFERENCE_PROVIDER_CLARIFICATIONS_2026-09-24.md",
+      "sha256": "68dca278930e668ec75a9af1fa48fe3fb29e571fb81685461f87d5428115007e",
+      "evidence_role": "provider_clarification_drafts_not_sent",
+      "size_bytes": 15405
+    },
+    {
+      "path": "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_ACCESS_MATRIX_2026-09-24.md",
+      "sha256": "8163d15648ce8c8ad5b85542844cdb731aa07871195c521f25c58d0d36f3080d",
+      "evidence_role": "access_matrix_delta",
+      "size_bytes": 4813
+    }
+  ]
+}

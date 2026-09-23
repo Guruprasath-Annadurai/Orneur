@@ -34,6 +34,29 @@ public/internal evaluation. `compute_public_eval_ready_count()` below
 exposes that narrower, informational count separately -- only the main
 report's `quorum_status` may ever satisfy `MINIMUM_QUORUM_READY` for
 the locked Genesis selection process.
+
+Phase 21B.4.18 §7/§22 hardening: independent audit noted that
+`compute_admission_quorum()` still trusted a reference's
+`access_preflight_status` string at face value -- a forged or stale
+status could silently count toward quorum even if the reference's own
+underlying evidence (terms, retention, automated-evaluation permission,
+private-holdout compatibility, access-path identification, model-
+identity attributability, or non-financial blockers) did not actually
+support it. `compute_admission_quorum()` now re-derives full-protocol
+readiness from each reference's own evidence fields via
+`validate_full_protocol_access_readiness()` (the SAME fail-closed
+function `candidate_registry._validate_reference()` uses at load time)
+before counting it -- a reference whose evidence does not validate is
+silently excluded from `quorum_counting`, never crashes the whole
+computation. `full_protocol_access_validation` in the registry (or a
+plain dict) is NEVER read for this decision -- it is written for human/
+audit readability only and can never itself force a count. See
+`_entry_passes_full_protocol_validation()` and the quorum tamper tests
+in `tests/test_genesis_frontier_reference_admission.py` for proof that
+a naked status string, a REVIEW_REQUIRED terms/retention/automated-
+evaluation/private-holdout field, an unattributable model identity, a
+missing access path, or a non-NONE unresolved non-financial blocker
+can never force a reference into the counting set.
 """
 from __future__ import annotations
 
@@ -61,10 +84,37 @@ class FrontierReferenceQuorumReport:
     quorum_status: str
 
 
+def _entry_passes_full_protocol_validation(entry: dict) -> bool:
+    """Phase 21B.4.18 §22: re-derive full-protocol readiness from a
+    reference's own evidence fields via the fail-closed validator --
+    never trust `access_preflight_status` (or any recorded
+    `full_protocol_access_validation` audit field) at face value. A
+    reference whose evidence does not validate returns `False` here and
+    is silently excluded from quorum counting; this never raises out of
+    `compute_admission_quorum()`."""
+    try:
+        validate_full_protocol_access_readiness(
+            entry.get("access_preflight_status"),
+            reference_evaluation_admission_status=entry.get("reference_evaluation_admission_status"),
+            license_or_terms_status=entry.get("license_or_terms_status"),
+            evidence_retention_status=entry.get("evidence_retention_status"),
+            automated_evaluation_status=entry.get("automated_evaluation_status"),
+            private_holdout_status=entry.get("private_holdout_status"),
+            access_path_identified=bool(entry.get("access_path_identified", False)),
+            model_identity_attributable=bool(entry.get("model_identity_attributable", False)),
+            non_financial_blocker_status=entry.get("non_financial_blocker_status", "NONE"),
+        )
+    except AccessReadinessError:
+        return False
+    return True
+
+
 def compute_admission_quorum(frontier_references: list[dict]) -> FrontierReferenceQuorumReport:
     """`frontier_references`: the registry's `frontier_references` list
     (each entry a dict with at least `reference_name`, `organization`,
-    `reference_evaluation_admission_status`, `access_preflight_status`).
+    `reference_evaluation_admission_status`, `access_preflight_status`,
+    and -- Phase 21B.4.18 -- the promotion-gate evidence fields consumed
+    by `_entry_passes_full_protocol_validation()`).
 
     Returns a report distinguishing three counts that must never be
     conflated (per phase §27):
@@ -72,8 +122,12 @@ def compute_admission_quorum(frontier_references: list[dict]) -> FrontierReferen
       - access_preflight_ready_count: access-path-ready regardless of
         admission status (a reference could theoretically have a ready
         access path while still license-REVIEW_REQUIRED).
-      - quorum_counting_count: references satisfying BOTH conditions --
-        this is the only count that determines quorum_status.
+      - quorum_counting_count: references satisfying BOTH conditions AND
+        (Phase 21B.4.18) passing live re-validation against their own
+        evidence fields -- this is the only count that determines
+        quorum_status. A naked `access_preflight_status` string alone
+        can never produce a counting reference; see
+        `_entry_passes_full_protocol_validation()`.
     """
     admitted = [r for r in frontier_references if r.get("reference_evaluation_admission_status") == "ADMITTED"]
     access_ready = [r for r in frontier_references if r.get("access_preflight_status") in _COUNTING_ACCESS_PREFLIGHT_STATUSES]
@@ -81,6 +135,7 @@ def compute_admission_quorum(frontier_references: list[dict]) -> FrontierReferen
         r for r in frontier_references
         if r.get("reference_evaluation_admission_status") == "ADMITTED"
         and r.get("access_preflight_status") in _COUNTING_ACCESS_PREFLIGHT_STATUSES
+        and _entry_passes_full_protocol_validation(r)
     ]
 
     quorum_counting_names = tuple(sorted(r["reference_name"] for r in quorum_counting))
@@ -130,10 +185,11 @@ def validate_full_protocol_access_readiness(
     private_holdout_status: str,
     access_path_identified: bool,
     model_identity_attributable: bool,
+    non_financial_blocker_status: str = "NONE",
 ) -> None:
-    """Phase 21B.4.17.2 §8: a REAL fail-closed gate, not merely an enum
-    membership check. If `access_preflight_status` claims a counting
-    status (`QUALIFIED_FOR_FUTURE_EXECUTION` or
+    """Phase 21B.4.17.2 §8 (extended Phase 21B.4.18 §8): a REAL fail-closed
+    gate, not merely an enum membership check. If `access_preflight_status`
+    claims a counting status (`QUALIFIED_FOR_FUTURE_EXECUTION` or
     `PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK`), every one of the
     following non-financial preconditions must actually hold, or this
     raises `AccessReadinessError` naming the first failing precondition:
@@ -146,6 +202,10 @@ def validate_full_protocol_access_readiness(
         is merely public-eval-ready must not pass this check)
       - an identified access path is real
       - model identity is sufficiently attributable
+      - no unresolved non-financial blocker remains (Phase 21B.4.18 §8:
+        `non_financial_blocker_status` must be exactly `"NONE"` --
+        defaults to `"NONE"` so existing callers that never pass this
+        kwarg are unaffected)
 
     A status outside the counting set is not checked -- there is
     nothing to validate when readiness isn't being claimed."""
@@ -180,6 +240,12 @@ def validate_full_protocol_access_readiness(
         raise AccessReadinessError(f"access_preflight_status={access_preflight_status!r} claimed but no identified access path")
     if not model_identity_attributable:
         raise AccessReadinessError(f"access_preflight_status={access_preflight_status!r} claimed but model identity is not sufficiently attributable")
+    if non_financial_blocker_status != "NONE":
+        raise AccessReadinessError(
+            f"access_preflight_status={access_preflight_status!r} claimed but "
+            f"non_financial_blocker_status={non_financial_blocker_status!r} != NONE -- an unresolved "
+            "non-financial blocker must block full-protocol readiness."
+        )
 
 
 def compute_public_eval_ready_count(frontier_references: list[dict]) -> int:

@@ -102,6 +102,35 @@ must be `FIXED_IMMUTABLE` for OPEN_WEIGHT references and
 `MUTABLE_REFERENCE_IDENTITY` for MUTABLE_HOSTED_API references (a
 hosted API can never claim a fixed immutable identity it does not
 provider-expose).
+
+Phase 21B.4.18 hardening (schema v5 -> v6): independent audit of Phase
+21B.4.17.2 noted that `compute_admission_quorum()` and this module's own
+`_validate_reference()` could still trust a reference's
+`access_preflight_status` string without machine-proving the underlying
+evidence -- a forged or stale status string could silently count toward
+the locked Genesis frontier execution quorum. Six new required fields
+close this: `automated_evaluation_status`, `private_holdout_status`,
+`access_path_identified`, `model_identity_attributable`,
+`non_financial_blocker_status`, `full_protocol_access_validation`. The
+smallest robust fix (deliberately not a schema redesign) is that
+`_validate_reference()` now calls the SAME fail-closed function the
+quorum engine uses,
+`orca.eval.frontier_reference_admission_quorum.validate_full_protocol_
+access_readiness()`, against these six fields (plus the four already-
+required admission fields) whenever `access_preflight_status` claims a
+counting status (`QUALIFIED_FOR_FUTURE_EXECUTION` or
+`PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK`) -- a reference cannot
+even load into a valid registry claiming readiness its own recorded
+evidence does not support. `full_protocol_access_validation` is an
+audit-trail field only (PASSED/FAILED/NOT_ATTEMPTED); it must agree with
+live re-validation (PASSED only when access_preflight_status claims a
+counting status AND validation actually passes) but is NEVER itself
+trusted as the source of truth -- `compute_admission_quorum()` always
+re-derives readiness from the underlying evidence fields at count time,
+so a hand-edited `full_protocol_access_validation=PASSED` with no
+supporting evidence can never inflate the quorum (see
+`frontier_reference_admission_quorum.py`'s Phase 21B.4.18 docstring
+addendum and its quorum tamper tests).
 """
 from __future__ import annotations
 
@@ -110,7 +139,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-REGISTRY_SCHEMA_VERSION = "genesis-candidate-execution-registry-v5"
+REGISTRY_SCHEMA_VERSION = "genesis-candidate-execution-registry-v6"
 
 _HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -198,6 +227,12 @@ REFERENCE_REQUIRED_FIELDS = (
     "reference_evaluation_admission_status", "teacher_use_status",
     "teacher_use_evidence_reference", "access_preflight_status",
     "evidence_retention_status", "mutable_identity_status",
+    # Phase 21B.4.18 §7/§8: machine-enforced promotion-gate evidence
+    # dimensions -- see the module docstring addendum for why a naked
+    # access_preflight_status string is no longer sufficient by itself.
+    "automated_evaluation_status", "private_holdout_status",
+    "access_path_identified", "model_identity_attributable",
+    "non_financial_blocker_status", "full_protocol_access_validation",
 )
 
 VALID_IDENTITY_TYPES = ("OPEN_WEIGHT", "MUTABLE_HOSTED_API")
@@ -227,6 +262,13 @@ VALID_EVIDENCE_RETENTION_STATUSES = ("PERMITTED", "PROHIBITED", "REVIEW_REQUIRED
 # same underlying model (§8). This does not by itself disqualify a
 # reference; it changes reproducibility treatment.
 VALID_MUTABLE_IDENTITY_STATUSES = ("FIXED_IMMUTABLE", "MUTABLE_REFERENCE_IDENTITY")
+
+# Phase 21B.4.18 §7/§8: promotion-gate evidence dimension enums.
+VALID_AUTOMATED_EVALUATION_STATUSES = ("CLEAR", "BLOCKED", "REVIEW_REQUIRED", "NOT_EVALUATED")
+VALID_PRIVATE_HOLDOUT_STATUSES = ("PERMITTED", "REVIEW_REQUIRED", "BLOCKED", "NOT_EVALUATED")
+# Audit-trail only -- never trusted as the source of truth for quorum
+# counting. See the module docstring's Phase 21B.4.18 addendum.
+VALID_FULL_PROTOCOL_ACCESS_VALIDATION_STATUSES = ("PASSED", "FAILED", "NOT_ATTEMPTED")
 
 VALID_IDENTITY_STATUSES = ("RESOLVED", "IDENTITY_UNRESOLVED")
 VALID_LICENSE_STATUSES = ("CLEAR", "LICENSE_REVIEW_REQUIRED", "SEPARATE_LICENSE_REQUIRED")
@@ -693,6 +735,31 @@ def _validate_reference(entry: dict) -> None:
         raise RegistrySchemaError(
             f"frontier reference {name!r} has unrecognized mutable_identity_status={entry['mutable_identity_status']!r}"
         )
+    if entry["automated_evaluation_status"] not in VALID_AUTOMATED_EVALUATION_STATUSES:
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has unrecognized automated_evaluation_status="
+            f"{entry['automated_evaluation_status']!r}"
+        )
+    if entry["private_holdout_status"] not in VALID_PRIVATE_HOLDOUT_STATUSES:
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has unrecognized private_holdout_status={entry['private_holdout_status']!r}"
+        )
+    if not isinstance(entry["access_path_identified"], bool):
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has non-boolean access_path_identified={entry['access_path_identified']!r}"
+        )
+    if not isinstance(entry["model_identity_attributable"], bool):
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has non-boolean model_identity_attributable="
+            f"{entry['model_identity_attributable']!r}"
+        )
+    if not entry.get("non_financial_blocker_status"):
+        raise RegistrySchemaError(f"frontier reference {name!r} has empty non_financial_blocker_status")
+    if entry["full_protocol_access_validation"] not in VALID_FULL_PROTOCOL_ACCESS_VALIDATION_STATUSES:
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has unrecognized full_protocol_access_validation="
+            f"{entry['full_protocol_access_validation']!r}"
+        )
 
     revision = str(entry["exact_immutable_revision"])
     if entry["identity_type"] == "MUTABLE_HOSTED_API":
@@ -758,6 +825,52 @@ def _validate_reference(entry: dict) -> None:
         raise RegistrySchemaError(
             f"frontier reference {name!r} is teacher_use_status=ADMITTED but has no "
             "teacher_use_evidence_reference -- teacher/distillation admission must cite explicit permission evidence."
+        )
+
+    # Phase 21B.4.18 §7/§8: a reference cannot even LOAD into a valid
+    # registry while claiming a counting access_preflight_status unless
+    # its own recorded evidence fields actually pass the same fail-closed
+    # validator the quorum engine uses. This is a schema-level defense in
+    # depth on top of compute_admission_quorum()'s own independent
+    # re-validation (which never trusts this field either) -- see the
+    # module docstring's Phase 21B.4.18 addendum.
+    from orca.eval.frontier_reference_admission_quorum import (
+        _COUNTING_ACCESS_PREFLIGHT_STATUSES,
+        AccessReadinessError,
+        validate_full_protocol_access_readiness,
+    )
+
+    claims_counting_status = entry["access_preflight_status"] in _COUNTING_ACCESS_PREFLIGHT_STATUSES
+    if claims_counting_status:
+        try:
+            validate_full_protocol_access_readiness(
+                entry["access_preflight_status"],
+                reference_evaluation_admission_status=entry["reference_evaluation_admission_status"],
+                license_or_terms_status=entry["license_or_terms_status"],
+                evidence_retention_status=entry["evidence_retention_status"],
+                automated_evaluation_status=entry["automated_evaluation_status"],
+                private_holdout_status=entry["private_holdout_status"],
+                access_path_identified=entry["access_path_identified"],
+                model_identity_attributable=entry["model_identity_attributable"],
+                non_financial_blocker_status=entry["non_financial_blocker_status"],
+            )
+        except AccessReadinessError as e:
+            raise RegistrySchemaError(
+                f"frontier reference {name!r} claims access_preflight_status="
+                f"{entry['access_preflight_status']!r} but fails full-protocol access validation against its "
+                f"own recorded evidence fields: {e}"
+            ) from e
+        if entry["full_protocol_access_validation"] != "PASSED":
+            raise RegistrySchemaError(
+                f"frontier reference {name!r} claims a counting access_preflight_status and validates, but "
+                f"full_protocol_access_validation={entry['full_protocol_access_validation']!r} != PASSED -- "
+                "the recorded audit-trail field must agree with live validation."
+            )
+    elif entry["full_protocol_access_validation"] == "PASSED":
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has access_preflight_status={entry['access_preflight_status']!r} "
+            "(not a counting status) but full_protocol_access_validation=PASSED -- PASSED must never be "
+            "recorded for a reference that does not claim full-protocol readiness."
         )
 
 
