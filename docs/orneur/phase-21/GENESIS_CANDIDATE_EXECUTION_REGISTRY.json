@@ -1,5 +1,5 @@
 {
-  "schema_version": "genesis-candidate-execution-registry-v4",
+  "schema_version": "genesis-candidate-execution-registry-v5",
   "phase": "21B.4.10.1",
   "generated_at": "2026-09-19T00:00:00Z",
   "note": "Stage-0 identity/license/runtime eligibility qualification only. No candidate is declared frontier-class, benchmark-qualified, or Genesis-selected by this registry. All revision/license/parameter data below was retrieved live via the Hugging Face Hub API (metadata only -- no weight shards were downloaded). Phase 21B.4.10.1 replaces the v1 conflated 'stage0_status' field on deployable candidates with four separate fields (identity_status, license_status, runtime_qualification_status, runtime_smoke_eligibility) so that 'runtime not yet qualified' (which is exactly what a runtime smoke test exists to resolve) is never confused with 'not eligible to attempt a smoke test'. runtime_smoke_eligibility=ELIGIBLE means only that a future phase MAY attempt to LOAD that candidate, never that it is qualified, selected, or frontier-class.",
@@ -369,7 +369,15 @@
       "revision_timestamp": "2026-09-10T08:18:10.000Z",
       "license_identifier": "mit",
       "zero_cash_access_status": "self-hosting is compute-prohibitive per GENESIS_FRONTIER_COMPUTE_MATRIX.md (~763B total params, 10-20x 80GB-class GPUs even at FP8/INT4); no confirmed zero-cash hosted-API access researched this phase",
-      "availability_status": "REFERENCE_EXECUTION_DEFERRED"
+      "availability_status": "REFERENCE_EXECUTION_DEFERRED",
+      "identity_status": "RESOLVED",
+      "license_or_terms_status": "CLEAR",
+      "reference_evaluation_admission_status": "ADMITTED",
+      "teacher_use_status": "ADMITTED",
+      "teacher_use_evidence_reference": "DeepSeek Open Platform Terms of Service \u00a74.2 (https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html)",
+      "access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
+      "evidence_retention_status": "PERMITTED",
+      "mutable_identity_status": "FIXED_IMMUTABLE"
     },
     {
       "reference_name": "GLM-5.3 (flagship)",
@@ -380,7 +388,15 @@
       "revision_timestamp": "2026-09-04T06:41:23.000Z",
       "license_identifier": "other (custom -- LICENSE_REVIEW_REQUIRED per Hugging Face's generic 'other' tag; not converted to GRANTED)",
       "zero_cash_access_status": "self-hosting compute-prohibitive per GENESIS_FRONTIER_COMPUTE_MATRIX.md; Modal's own pay-per-token Shared Endpoint for zai-org/GLM-5.3 was discovered live in Phase 21B.4.8 -- a legitimate zero-cash-covered access path IF still within the $0 spend-limit workspace's included credit; not called this phase",
-      "availability_status": "REFERENCE_EXECUTION_DEFERRED"
+      "availability_status": "REFERENCE_EXECUTION_DEFERRED",
+      "identity_status": "RESOLVED",
+      "license_or_terms_status": "REVIEW_REQUIRED",
+      "reference_evaluation_admission_status": "REVIEW_REQUIRED",
+      "teacher_use_status": "NOT_EVALUATED",
+      "teacher_use_evidence_reference": null,
+      "access_preflight_status": "UNQUALIFIED",
+      "evidence_retention_status": "REVIEW_REQUIRED",
+      "mutable_identity_status": "FIXED_IMMUTABLE"
     },
     {
       "reference_name": "Mistral Large 3",
@@ -391,7 +407,15 @@
       "revision_timestamp": "2025-12-19T16:44:12.000Z",
       "license_identifier": "apache-2.0",
       "zero_cash_access_status": "self-hosting compute-prohibitive per GENESIS_FRONTIER_COMPUTE_MATRIX.md (~675B total params); no confirmed zero-cash hosted-API access researched this phase",
-      "availability_status": "REFERENCE_EXECUTION_DEFERRED"
+      "availability_status": "REFERENCE_EXECUTION_DEFERRED",
+      "identity_status": "RESOLVED",
+      "license_or_terms_status": "CLEAR",
+      "reference_evaluation_admission_status": "ADMITTED",
+      "teacher_use_status": "ADMITTED",
+      "teacher_use_evidence_reference": "Apache License 2.0 full text (https://www.apache.org/licenses/LICENSE-2.0.txt)",
+      "access_preflight_status": "UNQUALIFIED",
+      "evidence_retention_status": "PERMITTED",
+      "mutable_identity_status": "FIXED_IMMUTABLE"
     },
     {
       "reference_name": "MiniMax M3",
@@ -402,7 +426,15 @@
       "revision_timestamp": "2026-07-23T04:25:20.000Z",
       "license_identifier": "other (CUSTOM LICENSE -- REQUIRES TERMS REVIEW, per the Phase 21B.4.8.1 license correction; the prior erroneous MIT claim remains corrected)",
       "zero_cash_access_status": "self-hosting compute-prohibitive per GENESIS_FRONTIER_COMPUTE_MATRIX.md (~428B total params); no confirmed zero-cash hosted-API access researched this phase",
-      "availability_status": "REFERENCE_EXECUTION_DEFERRED"
+      "availability_status": "REFERENCE_EXECUTION_DEFERRED",
+      "identity_status": "RESOLVED",
+      "license_or_terms_status": "CLEAR",
+      "reference_evaluation_admission_status": "ADMITTED",
+      "teacher_use_status": "NOT_EVALUATED",
+      "teacher_use_evidence_reference": null,
+      "access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
+      "evidence_retention_status": "PERMITTED",
+      "mutable_identity_status": "FIXED_IMMUTABLE"
     },
     {
       "reference_name": "Qwen3.8-Max",
@@ -417,8 +449,16 @@
         "any provider-exposed version identifier"
       ],
       "license_identifier": "N/A (managed API terms govern use, not a redistributable weight license)",
-      "zero_cash_access_status": "Modal's own pay-per-token Shared Endpoint for Qwen/Qwen3.8-2.4T-A95B was discovered live in Phase 21B.4.8 -- a legitimate zero-cash-covered access path IF still within the $0 spend-limit workspace's included credit; API NOT called this phase (owner spec explicitly prohibits calling any paid/frontier API this phase)",
-      "availability_status": "REFERENCE_EXECUTION_DEFERRED"
+      "zero_cash_access_status": "CREDIT_DEPENDENT -- Phase 21B.4.17 correction: the prior wording named 'Qwen/Qwen3.8-2.4T-A95B' as this reference's zero-cash access path, which was an incorrect silent substitution (per phase 21B.4.17 \u00a723, Qwen3.8-Max the API product and Qwen/Qwen3.8-2.4T-A95B the open-weight artifact are DISTINCT_REFERENCE_IDENTITIES -- no official Alibaba documentation proves an equivalence). Qwen3.8-Max's own access path is the Alibaba Cloud Model Studio API (paid, metered, $2-$9.9 per M tokens depending on tier/variant; a generic 90-day free-quota console mechanism exists but is not confirmed active for this model). No live billing check performed or authorized this phase.",
+      "availability_status": "REFERENCE_EXECUTION_DEFERRED",
+      "identity_status": "RESOLVED",
+      "license_or_terms_status": "REVIEW_REQUIRED",
+      "reference_evaluation_admission_status": "REVIEW_REQUIRED",
+      "teacher_use_status": "BLOCKED",
+      "teacher_use_evidence_reference": null,
+      "access_preflight_status": "UNQUALIFIED",
+      "evidence_retention_status": "REVIEW_REQUIRED",
+      "mutable_identity_status": "MUTABLE_REFERENCE_IDENTITY"
     },
     {
       "reference_name": "Kimi K3",
@@ -429,7 +469,15 @@
       "revision_timestamp": "2026-09-02T02:22:41.000Z",
       "license_identifier": "other (custom -- LICENSE_REVIEW_REQUIRED per Hugging Face's generic 'other' tag; not converted to GRANTED)",
       "zero_cash_access_status": "self-hosting compute-prohibitive per GENESIS_FRONTIER_COMPUTE_MATRIX.md (~2.8T total params, the largest in the registered set); Modal's own pay-per-token Shared Endpoint for moonshotai/Kimi-K3 was discovered live in Phase 21B.4.8 -- a legitimate zero-cash-covered access path IF still within the $0 spend-limit workspace's included credit; not called this phase",
-      "availability_status": "REFERENCE_EXECUTION_DEFERRED"
+      "availability_status": "REFERENCE_EXECUTION_DEFERRED",
+      "identity_status": "RESOLVED",
+      "license_or_terms_status": "CLEAR",
+      "reference_evaluation_admission_status": "ADMITTED",
+      "teacher_use_status": "NOT_EVALUATED",
+      "teacher_use_evidence_reference": null,
+      "access_preflight_status": "UNQUALIFIED",
+      "evidence_retention_status": "PERMITTED",
+      "mutable_identity_status": "FIXED_IMMUTABLE"
     }
   ],
   "quorum_status": {

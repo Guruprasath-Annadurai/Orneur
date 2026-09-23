@@ -1,0 +1,144 @@
+{
+  "evidence_type": "GENESIS_FRONTIER_REFERENCE_ADMISSION_EVIDENCE",
+  "phase": "21B.4.17",
+  "reference_name": "GLM-5.3 (flagship)",
+  "record_date": "2026-09-23",
+  "note": "GLM-5.3 (flagship, zai-org/GLM-5.3) is a DISTINCT reference from GLM-5.3-Flash (a separately-researched, smaller deployable candidate). No evidence, license text, or status from the GLM-5.3-Flash phases is reused here -- this reference was independently re-verified from scratch.",
+
+  "A_identity": {
+    "organization": "Zhipu AI / Z.ai",
+    "artifact_repository": "zai-org/GLM-5.3",
+    "pinned_revision": "aca966e4e02791568aa6a4ced368624b3d897f42",
+    "current_upstream_main_sha": "aca966e4e02791568aa6a4ced368624b3d897f42",
+    "upstream_drift": "NO",
+    "architecture": "GlmMoeDsaForCausalLM",
+    "model_type": "glm_moe_dsa",
+    "revision_timestamp": "2026-09-04T06:41:23.000Z",
+    "identity_status": "RESOLVED",
+    "config_summary": {
+      "hidden_size": 6144, "num_hidden_layers": 78, "num_attention_heads": 64,
+      "n_routed_experts": 256, "n_shared_experts": 1, "num_experts_per_tok": 8,
+      "vocab_size": 154880, "max_position_embeddings": 1048576, "dtype": "bfloat16",
+      "quantization_config": {"quant_method": "fp8", "fmt": "e4m3", "weight_block_size": [128, 128]}
+    }
+  },
+
+  "B_current_availability": {
+    "hf_repository_accessible": true,
+    "gated": false,
+    "total_parameters_approx": "753B (model card; exact active-parameter count not directly stated -- MoE with 256 routed + 1 shared experts, 8 active per token)",
+    "weight_formats_available": "141 safetensors shards; BF16, FP8 (e4m3), and F32 tensor types present in the repository"
+  },
+
+  "C_immutable_identity_strategy": {
+    "mutable_identity_status": "FIXED_IMMUTABLE",
+    "strategy": "OPEN_WEIGHT -- the registered pinned revision is used for all future evaluation, never 'main'. Drift is monitored (re-verified NO this phase) but the registered pin does not move without a separately authorized repinning decision."
+  },
+
+  "D_license_or_terms": {
+    "license_identifier": "glm-5.3 (Z.ai custom license, HF tag category 'other')",
+    "actual_license_file_exists": true,
+    "license_url": "https://huggingface.co/zai-org/GLM-5.3/raw/aca966e4e02791568aa6a4ced368624b3d897f42/LICENSE",
+    "commercial_use": "PERMITTED below a $10B/12mo aggregate MaaS revenue threshold for the licensee and affiliates; above that threshold, a Z.AI security review is required before commercial use.",
+    "evaluation_use": "NOT ADDRESSED in the license text -- no explicit carve-out or restriction. Per phase instruction §9, permission is NOT inferred from this silence where the intended use is materially ambiguous.",
+    "hosting": "Permitted under the general grant to run/deploy the Software.",
+    "redistribution": "Permitted, conditioned on including the copyright notice and permission notice in all copies/substantial portions.",
+    "fine_tuning": "Explicitly permitted -- grant language includes the right to run, deploy, fine-tune, or otherwise modify the Software and create derivative works.",
+    "derivative_work": "Explicitly permitted (see fine_tuning).",
+    "output_storage": "NOT ADDRESSED -- only a general AS-IS/no-warranty disclaimer covering the Software and any output/results therefrom.",
+    "output_display_to_judges": "NOT ADDRESSED.",
+    "synthetic_data_use": "NOT ADDRESSED.",
+    "distillation_teacher_use": "NOT ADDRESSED -- no explicit prohibition or permission regarding use as a distillation teacher or synthetic-data generator. This is a genuine license gap, distinct from and not resolved by the evaluation-use silence above.",
+    "license_or_terms_status": "REVIEW_REQUIRED",
+    "status_rationale": "The commercial-use and fine-tuning/derivative-work clauses are clear, but evaluation use, output storage/retention, and teacher/distillation use are all unaddressed by the license text. Per phase instruction, this ambiguity is recorded as REVIEW_REQUIRED, not resolved by inference."
+  },
+
+  "E_reference_evaluation_admission": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "License/terms status is REVIEW_REQUIRED (evaluation use unaddressed), which structurally blocks ADMITTED per the schema's cross-field invariant (admission requires license_or_terms_status=CLEAR). Not BLOCKED outright -- the gap is an unaddressed license term, not an explicit prohibition, so a future phase obtaining written clarification (e.g. via glmlicense@z.ai, the license's own listed contact) could resolve this to CLEAR."
+  },
+
+  "F_evidence_retention": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "The license's silence on output storage/retention, combined with no ToS page found addressing evaluation-record retention, means ORNEUR cannot yet confirm it may durably retain prompts/outputs/metadata from this reference for internal audit evidence."
+  },
+
+  "G_output_display_to_judges": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "Not addressed by the license or the docs pages fetched this phase."
+  },
+
+  "H_private_holdout_compatibility": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "No holdout prompts are authored this phase (per phase instruction). Compatibility cannot be confirmed while evaluation-use and retention terms remain unresolved -- a private holdout prompt sent to this reference would inherit the same open evaluation-use question."
+  },
+
+  "I_automated_evaluation_allowed": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "docs.z.ai's GLM-5.3 guide and pricing pages (fetched this phase) do not address automated benchmarking/evaluation ToS."
+  },
+
+  "J_commercial_product_evaluation_allowed": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "Distinct from internal evaluation admission -- the license's $10B/12mo commercial-MaaS-revenue threshold is a real constraint on commercial product use specifically, independent of the evaluation-use gap above."
+  },
+
+  "K_access_paths": {
+    "first_party_api": {
+      "provider": "Z.ai",
+      "endpoint": "https://api.z.ai/api/coding/paas/v4 (OpenAI Chat Completion Protocol-compatible, per docs.z.ai/guides/llm/glm-5.3)",
+      "official_status": "AUTHORIZED (documented first-party endpoint)",
+      "model_identity_exposed": true,
+      "pricing": "$1.40/M input tokens, $4.40/M output tokens, $0.26/M cached-input tokens (cached-input storage currently free 'for a limited time') -- per docs.z.ai/guides/overview/pricing",
+      "free_tier": "NOT DOCUMENTED on the pages fetched this phase",
+      "rate_limits": "NOT DOCUMENTED on the pages fetched this phase",
+      "context_limit": "1,048,576 tokens input; 128K max output",
+      "reasoning_mode": "ALWAYS-ON -- disabling reasoning is not supported; three effort levels (low/high/max)",
+      "structured_output": "NOT INDEPENDENTLY CONFIRMED this phase",
+      "openai_compatible_interface": true,
+      "automated_benchmarking_tos": "NOT FOUND in the docs pages fetched -- unresolved, not assumed permitted",
+      "output_retention_permitted": "NOT FOUND -- unresolved"
+    },
+    "domestic_endpoint": {
+      "provider": "Zhipu (open.bigmodel.cn)",
+      "official_status": "EXISTS but geo-restricted/unverified from this research session -- not independently fetched"
+    },
+    "third_party_shared_endpoint": {
+      "claim": "A Modal pay-per-token Shared Endpoint for zai-org/GLM-5.3 was discovered live in Phase 21B.4.8",
+      "access_path_status": "UNQUALIFIED",
+      "rationale": "Per phase instruction §12, this claim was explicitly NOT tested/verified/called this phase (would require compute/cost). It cannot be counted as a qualified access path until revalidated: model-identity-serving confirmation, non-substitution evidence, and reproducibility evidence are all currently absent for this specific claim."
+    },
+    "self_host": {
+      "status": "COMPUTE_PROHIBITIVE",
+      "basis": "GENESIS_FRONTIER_COMPUTE_MATRIX.md: 743B params -> 19x 80GB-class GPUs at BF16, 10x at FP8, 5x at INT4 -- THEORETICAL_WEIGHT_FIT only, not PRACTICAL_FRONTIER_EVALUATION_SERVING. Compute matrix not redesigned this phase (no material evidence change)."
+    }
+  },
+
+  "L_zero_owner_cash_classification": "CREDIT_DEPENDENT",
+  "L_zero_owner_cash_rationale": "The first-party Z.ai API is a paid, metered product with no documented free tier -- not zero-cash by default. The Modal Shared Endpoint claim from Phase 21B.4.8 is UNQUALIFIED this phase (not revalidated) and would in any case depend on remaining workspace credit, which is not assumed carried forward from prior phases. No live billing check was performed or authorized this phase.",
+
+  "M_rate_limit_quota_implications": "NOT DOCUMENTED on the pages fetched this phase -- unresolved.",
+
+  "N_reproducibility_limitations": "Reasoning is always-on with only effort-level control (low/high/max), no full disable -- future evaluation runs must record the exact effort level used. Open-weight pin is fixed (FIXED_IMMUTABLE), so reproducibility of the underlying model identity itself is strong; the limitation is entirely on the hosted-API serving side (undocumented rate limits, unconfirmed determinism/seed control).",
+
+  "O_mutable_api_identity_requirements": "NOT_APPLICABLE -- OPEN_WEIGHT reference with a fixed immutable revision.",
+
+  "P_teacher_distillation_synthetic_data_rights": {
+    "status": "NOT_EVALUATED",
+    "rationale": "The license does not address teacher/distillation/synthetic-data use at all (see D_license_or_terms). Per phase instruction §10, teacher rights are never inferred merely because evaluation use might be permitted -- and here even evaluation use itself remains REVIEW_REQUIRED. No teacher_use_evidence_reference exists."
+  },
+
+  "final_state": {
+    "identity_status": "RESOLVED",
+    "license_or_terms_status": "REVIEW_REQUIRED",
+    "reference_evaluation_admission_status": "REVIEW_REQUIRED",
+    "teacher_use_status": "NOT_EVALUATED",
+    "teacher_use_evidence_reference": null,
+    "access_preflight_status": "UNQUALIFIED",
+    "evidence_retention_status": "REVIEW_REQUIRED",
+    "mutable_identity_status": "FIXED_IMMUTABLE",
+    "availability_status": "REFERENCE_EXECUTION_DEFERRED"
+  },
+
+  "gate": "REVIEW_REQUIRED -- does not count toward quorum this phase"
+}

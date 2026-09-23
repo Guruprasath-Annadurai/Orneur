@@ -1,0 +1,149 @@
+{
+  "evidence_type": "GENESIS_FRONTIER_REFERENCE_ADMISSION_EVIDENCE",
+  "phase": "21B.4.17",
+  "reference_name": "Qwen3.8-Max",
+  "record_date": "2026-09-23",
+  "note": "SPECIAL CASE per phase §23: this is a managed API product (Alibaba Cloud Model Studio / DashScope), not an open-weight artifact. It must NOT be equated with the separate open-weight repository Qwen/Qwen3.8-2.4T-A95B unless official provider documentation proves an exact relationship. No such statement was found this phase -- see A below.",
+
+  "A_identity": {
+    "organization": "Alibaba / Qwen",
+    "product_type": "Managed API product -- Alibaba Cloud Model Studio (DashScope)",
+    "artifact_repository": "NOT_APPLICABLE -- no public weight repository",
+    "api_model_ids_documented": ["qwen3.8-max", "qwen3.8-max-0902 (dated snapshot)", "qwen3.8-max-prime (fast-mode variant)"],
+    "documentation_sources": [
+      "https://www.alibabacloud.com/help/en/model-studio/models",
+      "https://www.alibabacloud.com/help/en/model-studio/text-generation"
+    ],
+    "identity_status": "RESOLVED",
+    "identity_status_rationale": "RESOLVED means the API PRODUCT identity itself is clearly documented (model IDs, endpoint, response schema) -- distinct from having a pinned artifact revision, which a mutable hosted API structurally cannot have (see C)."
+  },
+
+  "A2_relationship_to_qwen3_8_2_4t_a95b": {
+    "distinctness_policy": "DISTINCT_REFERENCE_IDENTITIES per phase §23 -- no official Alibaba Model Studio documentation (models catalog, text-generation guide, billing page) was found stating any equivalence between the 'qwen3.8-max' API product and the open-weight repository Qwen/Qwen3.8-2.4T-A95B. Explicit searches for 'open source', 'open-weight', and 'checkpoint' on the text-generation doc page returned zero matches.",
+    "qwen3_8_2_4t_a95b_confirmed_real_and_separate": {
+      "repository": "Qwen/Qwen3.8-2.4T-A95B",
+      "sha": "207bd685a7e3696cfaff12ded7c6a7ea0f88c996",
+      "lastModified": "2026-08-12T10:24:04.000Z",
+      "architecture": "Qwen3_5MoeForCausalLM",
+      "total_params_approx": "~2.4T (512 total experts, 10 activated per token, 213 safetensor files)",
+      "confirmed_via": "https://huggingface.co/api/models/Qwen/Qwen3.8-2.4T-A95B (HTTP 200, exists, publicly accessible)"
+    },
+    "circumstantial_data_point_flagged_not_acted_on": "The Qwen3.8-2.4T-A95B repository's own cardData carries license_name='qwen3.8-max' -- a naming/branding tag suggestive of SOME relationship, but this is a tag set by the HF repo's own metadata, not a statement from Alibaba's official Model Studio API documentation. Per phase instruction, this is recorded as a flagged data point for a future compliance reviewer, NOT treated as proof of identity equivalence. No silent substitution performed."
+  },
+
+  "B_current_availability": {
+    "api_product_live": true,
+    "region_note": "Endpoints observed as region-varying (e.g. ap-southeast-1/Singapore in documentation examples)."
+  },
+
+  "C_immutable_identity_strategy": {
+    "mutable_identity_status": "MUTABLE_REFERENCE_IDENTITY",
+    "exact_immutable_revision": "NOT_AVAILABLE -- no provider-exposed immutable version identifier found for 'qwen3.8-max' in official documentation.",
+    "required_provider_metadata_for_any_future_call": [
+      "exact requested provider model name (e.g. 'qwen3.8-max' vs. the dated snapshot 'qwen3.8-max-0902')",
+      "provider-returned response 'model' field",
+      "complete response metadata: 'id', 'created'/'created_at', 'object', 'usage' (prompt/completion/total tokens), 'system_fingerprint' (OpenAI-compatible path) or 'request_id' (native DashScope path)",
+      "exact UTC call timestamp",
+      "endpoint/workspace region used",
+      "reasoning mode (enable_thinking flag -- enabled by default for the Qwen3.6+/3.8 series per documentation)",
+      "temperature/top-p and other sampling parameters",
+      "tool state",
+      "the specific model ID variant called (base 'qwen3.8-max', dated snapshot, or 'qwen3.8-max-prime' fast-mode)"
+    ],
+    "policy_statement": "Two calls to 'qwen3.8-max' at different times CANNOT be assumed to use the same underlying model unless the dated-snapshot variant ('qwen3.8-max-0902') is used explicitly and Alibaba confirms that snapshot itself never changes. This does not disqualify Qwen3.8-Max as a reference -- it changes reproducibility treatment per phase §8."
+  },
+
+  "D_license_or_terms": {
+    "license_identifier": "N/A -- managed API terms govern use, not a redistributable weight license",
+    "governing_document": "Alibaba Cloud International Website Product Terms of Service v3.8.0 (https://www.alibabacloud.com/help/en/legal/latest/alibaba-cloud-international-website-product-terms-of-service-v-3-8-0)",
+    "output_ownership": "'Model Studio does not claim ownership of any Intellectual Property Rights in the Output. You may use the Input and Output, provided your use complies with applicable laws, the Agreement, and our rules.'",
+    "training_on_customer_content": "Alibaba Cloud will NOT use Member Content to develop/train/improve its AI models unless the customer separately and expressly consents (opt-in default) -- the OPPOSITE default from Moonshot/Kimi K3's opt-out default. This is favorable for ORNEUR's own content confidentiality when sending prompts to this API.",
+    "anti_competing_product_clause": "Prohibits using Model Studio, AI models provided through it (including any Output of such AI models) to 'train or develop products or services that compete with Alibaba Cloud and/or its affiliates' products and services, unless expressly authorised.' This clause is scoped to competing products/services, not a blanket ban on all synthetic-data/teacher use.",
+    "unverified_holdout_relevant_clause": "A separately WebSearch-reported (NOT independently fetched/verified this phase) clause states that content generated through 'model trials' may only be used to evaluate model performance and may not be used for other purposes including commercial use, and may not be provided to third parties. Direct fetch of the source page (help.aliyun.com/en/model-studio/bailian-service-notes) failed this phase (connection timeout; mirror path 404'd). Flagged as UNVERIFIED -- not relied upon as evidence either way, and its scope (free trial only, vs. all paid usage) is unclear.",
+    "automated_benchmarking_tos": "No 'benchmark' keyword found anywhere in the verified ToS text fetched this phase -- neither explicit permission nor explicit prohibition.",
+    "context_window_and_rate_limits": "NOT CONFIRMED -- not published in the pages reachable without authenticated console access.",
+    "license_or_terms_status": "REVIEW_REQUIRED",
+    "status_rationale": "Real, unresolved gaps remain: (1) the holdout-relevant free-trial-content clause could not be independently verified, (2) automated-benchmarking permission is not explicitly confirmed, (3) context window/rate limits are unconfirmed. Per phase §9, this is recorded honestly as REVIEW_REQUIRED rather than resolved by inference from the generally favorable output-ownership and non-training-on-content clauses alone."
+  },
+
+  "E_reference_evaluation_admission": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "license_or_terms_status=REVIEW_REQUIRED structurally blocks ADMITTED per the schema's cross-field invariant. Not BLOCKED outright -- the verified terms (output ownership, non-training-on-content default) are favorable; the gap is unverified/unconfirmed detail, not an explicit prohibition."
+  },
+
+  "F_evidence_retention": {
+    "status": "PERMITTED",
+    "rationale": "'Model Studio does not claim ownership of any Intellectual Property Rights in the Output. You may use the Input and Output, provided your use complies with applicable laws, the Agreement, and our rules' -- a reasonably clear grant covering internal retention of prompts/outputs/metadata as evaluation evidence, distinct from the separate, still-unresolved automated-benchmarking-ToS and unverified free-trial-content-restriction questions above."
+  },
+
+  "G_output_display_to_judges": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "Not separately addressed; inherits the same overall REVIEW_REQUIRED posture as E pending the unresolved clauses in D."
+  },
+
+  "H_private_holdout_compatibility": {
+    "status": "FAVORABLE_BUT_UNVERIFIED",
+    "rationale": "Alibaba's opt-in-only (not opt-out) default for training on customer content is structurally favorable for confidential holdout material compared to Kimi K3's opt-out default. However, the unverified free-trial-content-restriction clause (if it turns out to apply broadly, not just to free trials) could materially affect holdout compatibility -- this cannot be confirmed or denied until that source page is successfully fetched in a future phase."
+  },
+
+  "I_automated_evaluation_allowed": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "No 'benchmark' keyword found in the verified ToS text; not explicitly confirmed either way."
+  },
+
+  "J_commercial_product_evaluation_allowed": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "Same overall unresolved-terms posture as E/D."
+  },
+
+  "K_access_paths": {
+    "first_party_api": {
+      "provider": "Alibaba Cloud Model Studio (DashScope)",
+      "endpoint": "OpenAI-compatible: https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1 (region-varying); native DashScope REST: https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
+      "official_status": "AUTHORIZED (documented first-party endpoint), supports both the OpenAI-compatible Chat Completions/Responses APIs and native DashScope format",
+      "model_identity_exposed": "PARTIAL -- API responses include 'model' field and (OpenAI-compatible path) 'system_fingerprint', or (native DashScope path) a distinct 'request_id'; no provider-exposed immutable model-version identifier beyond the dated-snapshot naming convention (see C).",
+      "pricing": "qwen3.8-max (International tier): Input $2/M tokens, Output $6/M tokens; (Global tier, reflecting batch/cache discounts): Input $1.65/M, Output $4.951/M; 'qwen3.8-max-prime' fast-mode: Input $3.301/M, Output $9.902/M. qwen3.8-max-0902 (dated snapshot): same pricing as base. Per alibabacloud.com/help/en/model-studio/billing-for-model-studio.",
+      "free_tier": "A per-model 'Free Quota Only' console toggle exists, valid for 90 days from Model Studio activation/model release/application approval (whichever is later) -- generic mechanism; NOT confirmed to be actively available for qwen3.8-max specifically at this time.",
+      "rate_limits": "NOT CONFIRMED -- requires authenticated console access.",
+      "context_limit": "NOT CONFIRMED in the pages reachable without console authentication.",
+      "reasoning_mode": "enable_thinking parameter; documentation states reasoning enabled by default for the Qwen3.6+ series including 3.8.",
+      "structured_output": "NOT INDEPENDENTLY CONFIRMED this phase.",
+      "openai_compatible_interface": true,
+      "automated_benchmarking_tos": "NOT CONFIRMED -- see D.",
+      "output_retention_permitted": "PERMITTED per output-ownership clause -- see F."
+    },
+    "access_preflight_status_overall": "UNQUALIFIED",
+    "access_preflight_rationale": "The endpoint and pricing are documented, but license/terms status is REVIEW_REQUIRED (unresolved holdout-relevant clause, unconfirmed automated-benchmarking permission, unconfirmed rate limits/context window) -- an access path cannot be QUALIFIED_FOR_FUTURE_EXECUTION or PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK while its governing terms remain partially unverified."
+  },
+
+  "L_zero_owner_cash_classification": "CREDIT_DEPENDENT",
+  "L_zero_owner_cash_rationale": "Paid, metered API ($2-$9.9 per M tokens depending on tier/variant) with only a generic, unconfirmed-for-this-model free-quota mechanism. The Phase 21B.4.8 Modal Shared Endpoint claim (previously, and incorrectly, associated in the registry with the DISTINCT Qwen/Qwen3.8-2.4T-A95B open-weight artifact -- see §23 note) is NOT relied upon here as evidence for the Qwen3.8-Max API product specifically, since that would repeat the exact silent-substitution error this phase's §23 explicitly forbids. No live billing check performed or authorized.",
+
+  "M_rate_limit_quota_implications": "NOT CONFIRMED this phase.",
+
+  "N_reproducibility_limitations": "MUTABLE_REFERENCE_IDENTITY -- the single largest reproducibility limitation among all six references. No immutable version identifier is exposed for the base 'qwen3.8-max' model ID; only the dated snapshot 'qwen3.8-max-0902' offers any temporal pinning, and even that is not confirmed by Alibaba to be permanently frozen. Every future call must capture the full required_provider_metadata_for_any_future_call list above.",
+
+  "O_mutable_api_identity_requirements": {
+    "classification": "MUTABLE_REFERENCE_IDENTITY",
+    "full_requirements": "See C_immutable_identity_strategy.required_provider_metadata_for_any_future_call above -- this is the authoritative list."
+  },
+
+  "P_teacher_distillation_synthetic_data_rights": {
+    "status": "BLOCKED",
+    "rationale": "The Alibaba ToS's anti-competing-product clause prohibits using Model Studio outputs to 'train or develop products or services that compete with Alibaba Cloud and/or its affiliates' products and services, unless expressly authorised.' ORNEUR's Genesis program's explicit purpose is to train its own frontier-class foundation model -- a highly plausible reading of 'compete with Alibaba Cloud's AI model services.' Given this genuine, material risk (not mere silence -- an explicit conditional restriction whose applicability to Genesis's specific training purpose is a real legal question), teacher/distillation use is recorded as BLOCKED rather than ADMITTED or even NOT_EVALUATED, pending explicit written authorization from Alibaba if this reference is ever considered for a teacher role (distinct from its pure evaluation-reference role, which carries no such training-a-competing-product implication)."
+  },
+
+  "final_state": {
+    "identity_status": "RESOLVED",
+    "license_or_terms_status": "REVIEW_REQUIRED",
+    "reference_evaluation_admission_status": "REVIEW_REQUIRED",
+    "teacher_use_status": "BLOCKED",
+    "teacher_use_evidence_reference": null,
+    "access_preflight_status": "UNQUALIFIED",
+    "evidence_retention_status": "REVIEW_REQUIRED",
+    "mutable_identity_status": "MUTABLE_REFERENCE_IDENTITY",
+    "availability_status": "REFERENCE_EXECUTION_DEFERRED"
+  },
+
+  "gate": "REVIEW_REQUIRED -- does not count toward quorum this phase"
+}

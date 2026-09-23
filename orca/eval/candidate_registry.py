@@ -81,6 +81,27 @@ linkage fields) and must carry the exact locked `role` text -- both
 checks exist specifically so a control can never be structurally
 misread as a deployable Genesis foundation candidate, a frontier
 reference, or a selected Genesis foundation.
+
+Phase 21B.4.17 hardening (schema v4 -> v5): frontier-reference entries
+gain eight new required fields (`identity_status`,
+`license_or_terms_status`, `reference_evaluation_admission_status`,
+`teacher_use_status`, `teacher_use_evidence_reference`,
+`access_preflight_status`, `evidence_retention_status`,
+`mutable_identity_status`) validated by `_validate_reference()`. The
+central design decision is that REFERENCE-EVALUATION admission and
+TEACHER/DISTILLATION admission are separate, independently-tracked
+decisions -- a reference may be permitted to participate in Genesis
+frontier COMPARISON while being blocked from use as a distillation
+teacher, and the schema must never let one imply the other. Cross-field
+invariants: `reference_evaluation_admission_status=ADMITTED` requires
+`identity_status=RESOLVED` AND `license_or_terms_status=CLEAR` AND
+acceptable `evidence_retention_status` AND a non-BLOCKED
+`access_preflight_status`; `teacher_use_status=ADMITTED` requires a
+non-empty `teacher_use_evidence_reference`; `mutable_identity_status`
+must be `FIXED_IMMUTABLE` for OPEN_WEIGHT references and
+`MUTABLE_REFERENCE_IDENTITY` for MUTABLE_HOSTED_API references (a
+hosted API can never claim a fixed immutable identity it does not
+provider-expose).
 """
 from __future__ import annotations
 
@@ -89,7 +110,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-REGISTRY_SCHEMA_VERSION = "genesis-candidate-execution-registry-v4"
+REGISTRY_SCHEMA_VERSION = "genesis-candidate-execution-registry-v5"
 
 _HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -168,9 +189,44 @@ REFERENCE_REQUIRED_FIELDS = (
     "reference_name", "organization", "identity_type", "artifact_repository",
     "exact_immutable_revision", "license_identifier", "zero_cash_access_status",
     "availability_status",
+    # Phase 21B.4.17 §21: the smallest robust extension needed to
+    # distinguish reference-evaluation admission from teacher/
+    # distillation admission, and to make evidence-retention and
+    # access-preflight status machine-checkable rather than implied by
+    # prose in zero_cash_access_status/availability_status.
+    "identity_status", "license_or_terms_status",
+    "reference_evaluation_admission_status", "teacher_use_status",
+    "teacher_use_evidence_reference", "access_preflight_status",
+    "evidence_retention_status", "mutable_identity_status",
 )
 
 VALID_IDENTITY_TYPES = ("OPEN_WEIGHT", "MUTABLE_HOSTED_API")
+
+# Phase 21B.4.17 §21/§22: frontier-reference-specific status enums.
+# Deliberately NOT copied from the deployable/control schemas verbatim
+# -- a frontier reference is neither a deployable finalist nor a
+# control, and conflating "this reference may be COMPARED against" with
+# "this reference may be used to TRAIN/distill a candidate" would be a
+# real compliance defect (§10: these are separate decisions with
+# separate evidence requirements).
+VALID_REFERENCE_TERMS_STATUSES = ("CLEAR", "REVIEW_REQUIRED", "SEPARATE_PERMISSION_REQUIRED")
+VALID_REFERENCE_EVALUATION_ADMISSION_STATUSES = ("ADMITTED", "BLOCKED", "REVIEW_REQUIRED")
+VALID_TEACHER_USE_STATUSES = ("ADMITTED", "BLOCKED", "NOT_EVALUATED")
+VALID_ACCESS_PREFLIGHT_STATUSES = (
+    "QUALIFIED_FOR_FUTURE_EXECUTION",
+    "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
+    "UNQUALIFIED",
+    "BLOCKED",
+    "NOT_TESTED",
+)
+VALID_EVIDENCE_RETENTION_STATUSES = ("PERMITTED", "PROHIBITED", "REVIEW_REQUIRED", "NOT_APPLICABLE")
+# FIXED_IMMUTABLE: identity is a pinned artifact revision that never
+# changes underneath ORNEUR (OPEN_WEIGHT references only).
+# MUTABLE_REFERENCE_IDENTITY: no provider-exposed immutable version
+# exists -- two calls at different times cannot be assumed to hit the
+# same underlying model (§8). This does not by itself disqualify a
+# reference; it changes reproducibility treatment.
+VALID_MUTABLE_IDENTITY_STATUSES = ("FIXED_IMMUTABLE", "MUTABLE_REFERENCE_IDENTITY")
 
 VALID_IDENTITY_STATUSES = ("RESOLVED", "IDENTITY_UNRESOLVED")
 VALID_LICENSE_STATUSES = ("CLEAR", "LICENSE_REVIEW_REQUIRED", "SEPARATE_LICENSE_REQUIRED")
@@ -596,6 +652,115 @@ def _validate_control(entry: dict) -> None:
         )
 
 
+def _validate_reference(entry: dict) -> None:
+    """Phase 21B.4.17 §21/§22: frontier-reference admission and access
+    fail-closed cross-field invariants. Reference-evaluation admission
+    and teacher/distillation admission are deliberately independent
+    decisions (§10) -- a reference may be REFERENCE_EVALUATION_ADMITTED
+    while TEACHER_USE_BLOCKED, and this function must never let one
+    imply the other."""
+    _require_fields(entry, REFERENCE_REQUIRED_FIELDS, "frontier_references")
+    name = entry["reference_name"]
+
+    if entry["identity_type"] not in VALID_IDENTITY_TYPES:
+        raise RegistrySchemaError(f"frontier reference {name!r} has unrecognized identity_type={entry['identity_type']!r}")
+    if entry["availability_status"] not in VALID_AVAILABILITY_STATUSES:
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has unrecognized availability_status={entry['availability_status']!r}"
+        )
+    if entry["identity_status"] not in VALID_IDENTITY_STATUSES:
+        raise RegistrySchemaError(f"frontier reference {name!r} has unrecognized identity_status={entry['identity_status']!r}")
+    if entry["license_or_terms_status"] not in VALID_REFERENCE_TERMS_STATUSES:
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has unrecognized license_or_terms_status={entry['license_or_terms_status']!r}"
+        )
+    if entry["reference_evaluation_admission_status"] not in VALID_REFERENCE_EVALUATION_ADMISSION_STATUSES:
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has unrecognized reference_evaluation_admission_status="
+            f"{entry['reference_evaluation_admission_status']!r}"
+        )
+    if entry["teacher_use_status"] not in VALID_TEACHER_USE_STATUSES:
+        raise RegistrySchemaError(f"frontier reference {name!r} has unrecognized teacher_use_status={entry['teacher_use_status']!r}")
+    if entry["access_preflight_status"] not in VALID_ACCESS_PREFLIGHT_STATUSES:
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has unrecognized access_preflight_status={entry['access_preflight_status']!r}"
+        )
+    if entry["evidence_retention_status"] not in VALID_EVIDENCE_RETENTION_STATUSES:
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has unrecognized evidence_retention_status={entry['evidence_retention_status']!r}"
+        )
+    if entry["mutable_identity_status"] not in VALID_MUTABLE_IDENTITY_STATUSES:
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} has unrecognized mutable_identity_status={entry['mutable_identity_status']!r}"
+        )
+
+    revision = str(entry["exact_immutable_revision"])
+    if entry["identity_type"] == "MUTABLE_HOSTED_API":
+        if "NOT_AVAILABLE" not in revision:
+            raise RegistrySchemaError(
+                f"frontier reference {name!r} is identity_type=MUTABLE_HOSTED_API but claims a "
+                f"real-looking pinned revision ({revision!r}) -- a mutable hosted API can never have "
+                "an immutable execution identity."
+            )
+        # §22.D: a mutable hosted API can never claim a fixed immutable
+        # identity unless the provider actually exposes one -- which,
+        # for a MUTABLE_HOSTED_API entry, is precisely what the branch
+        # above already established is not the case here.
+        if entry["mutable_identity_status"] != "MUTABLE_REFERENCE_IDENTITY":
+            raise RegistrySchemaError(
+                f"frontier reference {name!r} is identity_type=MUTABLE_HOSTED_API but mutable_identity_status="
+                f"{entry['mutable_identity_status']!r} -- must be MUTABLE_REFERENCE_IDENTITY unless the "
+                "provider actually exposes an immutable version identifier."
+            )
+    else:  # OPEN_WEIGHT
+        # §22.E: an open-weight reference must have a valid pinned
+        # immutable revision -- and, symmetrically, cannot claim the
+        # mutable-identity status a hosted API alone is permitted.
+        _require_hex40_revision(entry["exact_immutable_revision"], f"frontier reference {name!r}")
+        if entry["mutable_identity_status"] != "FIXED_IMMUTABLE":
+            raise RegistrySchemaError(
+                f"frontier reference {name!r} is identity_type=OPEN_WEIGHT but mutable_identity_status="
+                f"{entry['mutable_identity_status']!r} -- must be FIXED_IMMUTABLE."
+            )
+
+    # §22.A/§22.B: REFERENCE_EVALUATION_ADMITTED requires identity
+    # resolved AND terms clear AND evidence-retention acceptable AND
+    # access-preflight not blocked. license/terms REVIEW_REQUIRED (or
+    # SEPARATE_PERMISSION_REQUIRED) can never coexist with an ADMITTED
+    # evaluation-admission claim -- this is enforced structurally, not
+    # left to prose.
+    if entry["reference_evaluation_admission_status"] == "ADMITTED":
+        if entry["identity_status"] != "RESOLVED":
+            raise RegistrySchemaError(
+                f"frontier reference {name!r} is reference_evaluation_admission_status=ADMITTED but "
+                f"identity_status={entry['identity_status']!r} -- admission requires resolved identity."
+            )
+        if entry["license_or_terms_status"] != "CLEAR":
+            raise RegistrySchemaError(
+                f"frontier reference {name!r} is reference_evaluation_admission_status=ADMITTED but "
+                f"license_or_terms_status={entry['license_or_terms_status']!r} -- admission requires clear terms."
+            )
+        if entry["evidence_retention_status"] not in ("PERMITTED", "NOT_APPLICABLE"):
+            raise RegistrySchemaError(
+                f"frontier reference {name!r} is reference_evaluation_admission_status=ADMITTED but "
+                f"evidence_retention_status={entry['evidence_retention_status']!r} -- admission requires "
+                "acceptable evidence-retention terms."
+            )
+        if entry["access_preflight_status"] == "BLOCKED":
+            raise RegistrySchemaError(
+                f"frontier reference {name!r} is reference_evaluation_admission_status=ADMITTED but "
+                "access_preflight_status=BLOCKED -- admission requires a non-blocked access path."
+            )
+
+    # §22.C: teacher/distillation admission requires explicit evidence,
+    # never inferred merely because evaluation use is permitted.
+    if entry["teacher_use_status"] == "ADMITTED" and not entry.get("teacher_use_evidence_reference"):
+        raise RegistrySchemaError(
+            f"frontier reference {name!r} is teacher_use_status=ADMITTED but has no "
+            "teacher_use_evidence_reference -- teacher/distillation admission must cite explicit permission evidence."
+        )
+
+
 def _validate(data: dict) -> None:
     if data.get("schema_version") != REGISTRY_SCHEMA_VERSION:
         raise RegistrySchemaError(
@@ -658,24 +823,7 @@ def _validate(data: dict) -> None:
             repo_owners[repo] = name
 
     for entry in data["frontier_references"]:
-        _require_fields(entry, REFERENCE_REQUIRED_FIELDS, "frontier_references")
-        name = entry["reference_name"]
-        if entry["identity_type"] not in VALID_IDENTITY_TYPES:
-            raise RegistrySchemaError(f"frontier reference {name!r} has unrecognized identity_type={entry['identity_type']!r}")
-        if entry["availability_status"] not in VALID_AVAILABILITY_STATUSES:
-            raise RegistrySchemaError(
-                f"frontier reference {name!r} has unrecognized availability_status={entry['availability_status']!r}"
-            )
-        revision = str(entry["exact_immutable_revision"])
-        if entry["identity_type"] == "MUTABLE_HOSTED_API":
-            if "NOT_AVAILABLE" not in revision:
-                raise RegistrySchemaError(
-                    f"frontier reference {name!r} is identity_type=MUTABLE_HOSTED_API but claims a "
-                    f"real-looking pinned revision ({revision!r}) -- a mutable hosted API can never have "
-                    "an immutable execution identity."
-                )
-        else:  # OPEN_WEIGHT
-            _require_hex40_revision(entry["exact_immutable_revision"], f"frontier reference {name!r}")
+        _validate_reference(entry)
 
 
 def _derive_manifest_root(registry_path: Path) -> Path:

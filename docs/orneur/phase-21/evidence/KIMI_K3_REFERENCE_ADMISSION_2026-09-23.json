@@ -1,0 +1,142 @@
+{
+  "evidence_type": "GENESIS_FRONTIER_REFERENCE_ADMISSION_EVIDENCE",
+  "phase": "21B.4.17",
+  "reference_name": "Kimi K3",
+  "record_date": "2026-09-23",
+
+  "A_identity": {
+    "organization": "Moonshot AI",
+    "artifact_repository": "moonshotai/Kimi-K3",
+    "pinned_revision": "f831ab66814297da540d832a5235f8e904f29d06",
+    "current_upstream_main_sha": "f831ab66814297da540d832a5235f8e904f29d06",
+    "upstream_drift": "NO",
+    "architecture": "KimiK3ForConditionalGeneration",
+    "model_type": "kimi_k3",
+    "revision_timestamp": "2026-09-02T02:22:41.000Z",
+    "identity_status": "RESOLVED",
+    "config_summary": {
+      "moe": "896 experts, 16 selected + 2 shared per token, Stable LatentMoE",
+      "hidden_size": 7168, "vocab_size": 160000, "max_position_embeddings": 1048576,
+      "vision_encoder": "MoonViT-V2, 401M params", "quantization": "MXFP4 weights / MXFP8 activations (QAT)"
+    }
+  },
+
+  "B_current_availability": {
+    "hf_repository_accessible": true,
+    "gated": false,
+    "total_parameters_exact": "2.8T total / 104B activated (MoE, 16 of 896 experts + 2 shared active per token) -- confirms and corrects prior phase's approximate note",
+    "shard_count": 96
+  },
+
+  "C_immutable_identity_strategy": {
+    "mutable_identity_status": "FIXED_IMMUTABLE",
+    "strategy": "OPEN_WEIGHT -- registered pinned revision used for all future evaluation. Confirmed via /refs endpoint this phase: main branch HEAD == pinned revision exactly. No drift."
+  },
+
+  "D_license_or_terms": {
+    "license_identifier": "other (custom -- 'Kimi K3 License', license_name tag 'kimi-k3')",
+    "actual_license_file_exists": true,
+    "license_url": "https://huggingface.co/moonshotai/Kimi-K3/raw/f831ab66814297da540d832a5235f8e904f29d06/LICENSE",
+    "base_grant": "MIT-style: free use/copy/modify/merge/publish/distribute/sublicense/sell, including fine-tuning and derivative works, subject to the conditions below.",
+    "maas_clause": "§2: if Licensee's 'Model as a Service' business aggregate revenue exceeds US$20M over any trailing 12 months, a separate agreement with Moonshot AI is required for further commercial MaaS use.",
+    "attribution_clause": "§3: if used in a product/service with >100M MAU or >US$20M monthly revenue, 'Kimi K3' must be prominently displayed in the UI.",
+    "internal_use_carveout": "§4: §2/§3 explicitly do NOT apply to (a) internal use not exposing the model/outputs to third parties, or (b) use via Moonshot's own official products/certified inference partners. ORNEUR's internal Genesis evaluation use falls squarely within carve-out (a) -- not a MaaS business, no third-party exposure of the model itself.",
+    "commercial_use": "CLEAR for internal use per §4; MaaS-threshold/attribution conditions apply only if ORNEUR later operates a qualifying commercial MaaS product.",
+    "evaluation_use": "CLEAR -- internal evaluation is not third-party model/output exposure, squarely within the §4 carve-out.",
+    "hosting": "CLEAR for internal, non-third-party-exposing use.",
+    "redistribution": "Governed by the base MIT-style grant (permitted, subject to standard conditions); not separately restricted for outputs.",
+    "fine_tuning": "CLEAR -- explicitly named in the base grant.",
+    "derivative_work": "CLEAR -- explicitly named in the base grant.",
+    "output_storage": "NOT ADDRESSED explicitly, but no restriction found; falls within the general permissive grant for internal use.",
+    "output_display_to_judges": "NOT ADDRESSED explicitly for internal display; not contradicted by any clause.",
+    "synthetic_data_use": "NOT ADDRESSED as a standalone term.",
+    "distillation_teacher_use": "NOT ADDRESSED -- no clause names distillation or synthetic-data generation as a teacher model. A genuine license gap, distinct from the evaluation-use carve-out found above (which covers a different, narrower question).",
+    "license_or_terms_status": "CLEAR",
+    "status_rationale": "CLEAR specifically for ORNEUR's actual intended use (internal, non-third-party-exposing evaluation/comparison) under the explicit §4 carve-out -- not a general blanket CLEAR for all possible uses (MaaS/commercial thresholds remain real conditions if ORNEUR's use profile changes)."
+  },
+
+  "E_reference_evaluation_admission": {
+    "status": "ADMITTED",
+    "rationale": "Identity resolved, license CLEAR for ORNEUR's specific internal-evaluation use under §4's carve-out, evidence retention not restricted, self-host access path exists in principle (though compute-prohibitive -- see K)."
+  },
+
+  "F_evidence_retention": {
+    "status": "PERMITTED",
+    "rationale": "No license clause restricts retaining internally-generated evaluation records (prompts/outputs/metadata); falls within the §4 internal-use carve-out."
+  },
+
+  "G_output_display_to_judges": {
+    "status": "PERMITTED",
+    "rationale": "Internal display to ORNEUR judges is internal, non-third-party-exposing use per §4."
+  },
+
+  "H_private_holdout_compatibility": {
+    "status": "PATH_DEPENDENT",
+    "self_host_path": "PERMITTED_IN_PRINCIPLE -- the weight license's §4 carve-out does not require publication or prohibit confidential internal test material for self-hosted inference.",
+    "hosted_api_path": "REVIEW_REQUIRED / LIKELY_BLOCKED_WITHOUT_ENTERPRISE_ARRANGEMENT -- Moonshot's platform ToS §4 ('Content/training use') states Moonshot 'may use Content to provide, maintain, develop, support, and improve the Services,' i.e. trains on submitted content by default unless the customer separately negotiates an enterprise opt-out. Sending confidential private holdout prompts to the hosted API without such an arrangement would expose that confidential material to Moonshot's own model-improvement pipeline -- a real incompatibility with the locked private-holdout confidentiality requirement (§20) for that specific access path.",
+    "rationale": "This distinction matters precisely because the phase instruction requires NOT claiming confidentiality beyond provider terms -- the self-host weight license and the hosted API's default content-training practice are governed by different terms with different holdout compatibility."
+  },
+
+  "I_automated_evaluation_allowed": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "Moonshot's platform ToS (platform.kimi.ai/docs/agreement/modeluse) contains no 'benchmark' or 'automated evaluation' keyword anywhere -- no explicit prohibition found, but also no explicit permission; recorded as unresolved for the hosted-API path specifically. Self-host is not restricted by this ToS at all (governed by the HF weight license only, which is CLEAR for internal use)."
+  },
+
+  "J_commercial_product_evaluation_allowed": {
+    "status": "SEPARATE_PERMISSION_REQUIRED",
+    "rationale": "If ORNEUR's evaluation use later supports a commercial MaaS product exceeding the $20M/12mo threshold, §2's separate-agreement requirement applies."
+  },
+
+  "K_access_paths": {
+    "first_party_api": {
+      "provider": "Moonshot AI",
+      "endpoint": "https://api.moonshot.ai/v1 (OpenAI-compatible); Anthropic-Messages-compatible at /anthropic. platform.moonshot.ai 301-redirects to platform.kimi.ai.",
+      "official_status": "AUTHORIZED (documented first-party endpoint)",
+      "model_identity_exposed": true,
+      "pricing": "kimi-k3: Input $3.00/M tokens, Output $15.00/M tokens, Cached input $0.30/M, Cache write (5-min TTL) $3.00/M, Cache write (1-hr TTL) $6.00/M -- per platform.kimi.ai/docs/pricing",
+      "free_tier": "NOT CONFIRMED this phase",
+      "rate_limits": "NOT CONFIRMED this phase (would require authenticated-console check)",
+      "context_limit": "1,048,576 tokens",
+      "content_training_default": "Moonshot trains on submitted Content by default per platform ToS §4 unless an enterprise opt-out is separately negotiated -- see H above.",
+      "competing_model_restriction": "§3.2(5): prohibits developing/serving models with 'potential competitive possibilities' with Moonshot's Services without authorization -- scoped to competing with Moonshot's own service, not a blanket teacher-use ban.",
+      "reverse_engineering_restriction": "§3.2(4): prohibits reverse engineering to discover source code/models/algorithms/underlying components.",
+      "openai_compatible_interface": true,
+      "automated_benchmarking_tos": "NOT explicitly addressed -- see I above.",
+      "output_retention_permitted": "Not separately restricted by the platform ToS beyond the general terms."
+    },
+    "self_host": {
+      "status": "COMPUTE_PROHIBITIVE",
+      "basis": "GENESIS_FRONTIER_COMPUTE_MATRIX.md: 2,800B params -> 70x 80GB-class GPUs at BF16, 35x at FP8, 18x at INT4 -- the largest compute requirement of all six references. THEORETICAL_WEIGHT_FIT only, not PRACTICAL_FRONTIER_EVALUATION_SERVING."
+    },
+    "access_preflight_status_overall": "UNQUALIFIED",
+    "access_preflight_rationale": "Self-host is the most compute-prohibitive of all six references. The hosted API is viable license-wise for non-holdout evaluation but has an unresolved automated-benchmarking ToS gap and a real content-training-default incompatibility with confidential holdout material (see H) -- neither path cleanly qualifies this phase."
+  },
+
+  "L_zero_owner_cash_classification": "CREDIT_DEPENDENT",
+  "L_zero_owner_cash_rationale": "Hosted API is a paid, metered product ($3/$15 per M tokens) with no confirmed free tier. Self-host is compute-prohibitive regardless of cost model. The Phase 21B.4.8 Modal Shared Endpoint claim was NOT revalidated this phase per instruction. No live billing check performed or authorized.",
+
+  "M_rate_limit_quota_implications": "NOT CONFIRMED this phase.",
+
+  "N_reproducibility_limitations": "Open-weight pin is fixed (FIXED_IMMUTABLE) -- strong reproducibility for model identity. Multimodal (vision encoder present) -- future harness must confirm text-only compatibility if needed. MXFP4/MXFP8 QAT quantization is the native released format, not a lossy post-hoc conversion -- relevant to any future precision-fidelity discussion.",
+
+  "O_mutable_api_identity_requirements": "NOT_APPLICABLE -- OPEN_WEIGHT reference with a fixed immutable revision.",
+
+  "P_teacher_distillation_synthetic_data_rights": {
+    "status": "NOT_EVALUATED",
+    "rationale": "The weight license is silent on distillation/synthetic-data teacher use specifically (see D). Per §10, teacher rights are never inferred merely because evaluation use is permitted -- and here evaluation-use permission rests on a narrower internal-use carve-out (§4) that does not itself speak to training other models from this model's outputs. No teacher_use_evidence_reference exists."
+  },
+
+  "final_state": {
+    "identity_status": "RESOLVED",
+    "license_or_terms_status": "CLEAR",
+    "reference_evaluation_admission_status": "ADMITTED",
+    "teacher_use_status": "NOT_EVALUATED",
+    "teacher_use_evidence_reference": null,
+    "access_preflight_status": "UNQUALIFIED",
+    "evidence_retention_status": "PERMITTED",
+    "mutable_identity_status": "FIXED_IMMUTABLE",
+    "availability_status": "REFERENCE_EXECUTION_DEFERRED"
+  },
+
+  "gate": "REFERENCE_EVALUATION_ADMITTED -- counts toward quorum (access preflight UNQUALIFIED, pending future ToS/holdout-compatibility resolution)"
+}

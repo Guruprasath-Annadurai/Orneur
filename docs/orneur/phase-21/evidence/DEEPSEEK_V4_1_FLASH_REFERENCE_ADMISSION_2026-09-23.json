@@ -1,0 +1,140 @@
+{
+  "evidence_type": "GENESIS_FRONTIER_REFERENCE_ADMISSION_EVIDENCE",
+  "phase": "21B.4.17",
+  "reference_name": "DeepSeek V4.1-Flash",
+  "record_date": "2026-09-23",
+
+  "A_identity": {
+    "organization": "DeepSeek AI",
+    "artifact_repository": "deepseek-ai/DeepSeek-V4.1-Flash",
+    "pinned_revision": "dba1be0a40aa45a94ad051997016db3960a90277",
+    "current_upstream_main_sha": "dba1be0a40aa45a94ad051997016db3960a90277",
+    "upstream_drift": "NO",
+    "architecture": "DeepseekV41ForCausalLM",
+    "model_type": "deepseek_v41",
+    "revision_timestamp": "2026-09-10T08:18:10.000Z",
+    "identity_status": "RESOLVED",
+    "config_summary": {
+      "hidden_size": 5120, "num_hidden_layers": 40, "n_routed_experts": 384,
+      "num_experts_per_tok": 6, "max_position_embeddings": 1048576,
+      "quantization_config": {"quant_method": "fp8", "weight_block_size": [32, 32]}
+    }
+  },
+
+  "B_current_availability": {
+    "hf_repository_accessible": true,
+    "gated": false,
+    "total_parameters_exact": 763205315794,
+    "parameters_by_dtype": {"BF16": 1976441856, "F32": 42307282, "F8_E4M3": 204015223296, "I8": 557171343360},
+    "used_storage_bytes": 510311613821,
+    "shard_count": 48,
+    "model_card_backbone_note": "README states 552B backbone parameters + 196B sparsely-accessed 'Engram conditional memory' parameters, reconciling approximately to the ~763B total safetensors parameter count. MoE activates only 8B params/token at prefill, 16B/token at decode (384 routed + 1 shared expert, 6 experts/token)."
+  },
+
+  "C_immutable_identity_strategy": {
+    "mutable_identity_status": "FIXED_IMMUTABLE",
+    "strategy": "OPEN_WEIGHT -- registered pinned revision used for all future evaluation. Confirmed this phase: repo's own /refs endpoint shows main branch HEAD == pinned revision exactly. No drift."
+  },
+
+  "D_license_or_terms": {
+    "license_identifier": "mit",
+    "actual_license_file_exists": true,
+    "license_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/raw/dba1be0a40aa45a94ad051997016db3960a90277/LICENSE",
+    "license_md_checked": "HTTP 404 -- only a plain LICENSE file exists, no LICENSE.md",
+    "license_text_note": "Plain, unmodified MIT License, Copyright (c) 2023 DeepSeek -- no DeepSeek-specific addendum found. README.md's own License section explicitly reiterates: 'This repository and the model weights are licensed under the MIT License.'",
+    "commercial_use": "CLEAR -- MIT, unrestricted.",
+    "evaluation_use": "CLEAR -- MIT, unrestricted.",
+    "hosting": "CLEAR -- MIT, unrestricted.",
+    "redistribution": "CLEAR -- MIT, with copyright/license notice retained.",
+    "fine_tuning": "CLEAR -- MIT, unrestricted.",
+    "derivative_work": "CLEAR -- MIT, unrestricted.",
+    "output_storage": "CLEAR under the separate DeepSeek Open Platform Terms of Service (governs API outputs specifically, distinct from the HF weight license) -- see teacher/distillation clause below, which assigns output rights/title/interest to the user.",
+    "output_display_to_judges": "CLEAR -- same basis as output_storage.",
+    "synthetic_data_use": "CLEAR -- covered by the same ToS §4.2 grant.",
+    "distillation_teacher_use": "EXPLICITLY PERMITTED -- DeepSeek Open Platform Terms of Service (https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html) §4.2 states verbatim: 'You may apply the Inputs and Outputs of the Services to a wide range of use cases, including personal use, academic research, derivative product development, training other models (such as model distillation), etc.' This is the strongest, most explicit teacher-use permission found among all six references this phase -- it names 'model distillation' directly, not inferred from silence or a general permissive grant.",
+    "license_or_terms_status": "CLEAR"
+  },
+
+  "E_reference_evaluation_admission": {
+    "status": "ADMITTED",
+    "rationale": "Identity resolved, license MIT (unambiguously CLEAR for evaluation use), evidence retention permitted (ToS §4.2 output-rights assignment), no access-path blocker."
+  },
+
+  "F_evidence_retention": {
+    "status": "PERMITTED",
+    "rationale": "DeepSeek Open Platform ToS §4.2: 'We assign any rights, title, and interests -- if any -- in the Outputs of the Services to you,' consistent with retaining prompts/outputs/metadata as durable internal evaluation evidence."
+  },
+
+  "G_output_display_to_judges": {
+    "status": "PERMITTED",
+    "rationale": "Same ToS §4.2 output-rights assignment; MIT weight license imposes no display restriction either."
+  },
+
+  "H_private_holdout_compatibility": {
+    "status": "PERMITTED_IN_PRINCIPLE",
+    "rationale": "No holdout prompts authored this phase. Nothing in the MIT license or the fetched ToS §4.2 requires publication or prohibits confidential internal test material."
+  },
+
+  "I_automated_evaluation_allowed": {
+    "status": "REVIEW_REQUIRED",
+    "rationale": "No clause explicitly naming 'benchmarking' or 'automated evaluation' was found in the fetched ToS text -- not prohibited, but the broad §4.2 grant ('a wide range of use cases... derivative product development') was not read as an unambiguous, name-specific authorization either. Recorded as unresolved rather than assumed."
+  },
+
+  "J_commercial_product_evaluation_allowed": {
+    "status": "CLEAR",
+    "rationale": "MIT license places no restriction on commercial use, and ToS §4.2's broad use-case grant covers derivative product development."
+  },
+
+  "K_access_paths": {
+    "first_party_api": {
+      "provider": "DeepSeek AI",
+      "endpoint": "https://api.deepseek.com (OpenAI-compatible); separate Anthropic-format endpoint at https://api.deepseek.com/anthropic",
+      "official_status": "AUTHORIZED (documented first-party endpoint)",
+      "model_identity_exposed": true,
+      "api_model_name": "deepseek-flash (maps to DeepSeek-V4.1-Flash per api-docs.deepseek.com/quick_start/pricing)",
+      "pricing": "Cache-hit input $0.003/$0.006 per 1M tokens (off-peak/peak), cache-miss input $0.15/$0.3, output $0.6/$1.2 (off-peak/peak); peak = 01:00-04:00 and 06:00-10:00 UTC Mon-Fri excluding Chinese holidays.",
+      "free_tier": "NOT DOCUMENTED on the pricing page fetched",
+      "rate_limits": "Concurrency limit 2500 for deepseek-flash (per api-docs.deepseek.com/quick_start/rate_limit); capacity-expansion requests available at no extra cost.",
+      "context_limit": "1,048,576 tokens input, up to 384K max output",
+      "reasoning_mode": "Thinking mode supported",
+      "openai_compatible_interface": true,
+      "automated_benchmarking_tos": "Not explicitly named -- see I above.",
+      "output_retention_permitted": true
+    },
+    "self_host": {
+      "status": "COMPUTE_PROHIBITIVE",
+      "basis": "GENESIS_FRONTIER_COMPUTE_MATRIX.md: 763B params -> 20x 80GB-class GPUs at BF16, 10x at FP8, 5x at INT4 -- THEORETICAL_WEIGHT_FIT only, not PRACTICAL_FRONTIER_EVALUATION_SERVING."
+    },
+    "access_preflight_status_overall": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
+    "access_preflight_rationale": "The first-party API is a documented, official, OpenAI-compatible, model-identity-exposing path with clear terms -- but it is a paid, metered product with no confirmed free tier, so any future call requires a fresh zero-cash feasibility check before execution."
+  },
+
+  "L_zero_owner_cash_classification": "CREDIT_DEPENDENT",
+  "L_zero_owner_cash_rationale": "DeepSeek's official API pricing (even at off-peak cache-hit rates) is a real, non-zero cost per token with no documented free tier. No live billing check performed or authorized this phase.",
+
+  "M_rate_limit_quota_implications": "Concurrency limit 2500 (generous relative to other references' documented limits, e.g. deepseek-v4-pro's 500) -- would not itself be a practical blocker for a bounded evaluation run, cost remains the primary constraint.",
+
+  "N_reproducibility_limitations": "Open-weight pin is fixed (FIXED_IMMUTABLE) -- strong reproducibility for model identity. Off-peak/peak pricing tiers do not affect model behavior, only cost -- no reproducibility impact from that. Thinking mode must be explicitly recorded per future call.",
+
+  "O_mutable_api_identity_requirements": "NOT_APPLICABLE -- OPEN_WEIGHT reference with a fixed immutable revision.",
+
+  "P_teacher_distillation_synthetic_data_rights": {
+    "status": "ADMITTED",
+    "rationale": "DeepSeek Open Platform ToS §4.2 explicitly names 'training other models (such as model distillation)' as a permitted use case of API Inputs and Outputs -- the strongest, most direct teacher/distillation permission evidence found among the six references. This is independent of, and does not conflate with, the reference-evaluation-admission decision above (§10) -- both happen to be ADMITTED here because the evidence for each was independently found sufficient.",
+    "teacher_use_evidence_reference": "DeepSeek Open Platform Terms of Service §4.2 (https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html), fetched 2026-09-23"
+  },
+
+  "final_state": {
+    "identity_status": "RESOLVED",
+    "license_or_terms_status": "CLEAR",
+    "reference_evaluation_admission_status": "ADMITTED",
+    "teacher_use_status": "ADMITTED",
+    "teacher_use_evidence_reference": "DeepSeek Open Platform Terms of Service §4.2 (https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html)",
+    "access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
+    "evidence_retention_status": "PERMITTED",
+    "mutable_identity_status": "FIXED_IMMUTABLE",
+    "availability_status": "REFERENCE_EXECUTION_DEFERRED"
+  },
+
+  "gate": "REFERENCE_EVALUATION_ADMITTED -- counts toward quorum"
+}
