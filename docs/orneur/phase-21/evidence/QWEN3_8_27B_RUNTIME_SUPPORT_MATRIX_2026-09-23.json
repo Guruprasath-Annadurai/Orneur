@@ -21,9 +21,18 @@
         "repository": "vllm/vllm-openai",
         "tag": "v0.30.0-cu129",
         "linux_amd64_digest": "sha256:58fdb6bb123a81aa53f46fa4652ad8cc87e817bd1077c9832c6258ef12c1c688",
-        "pushed": "2026-09-22T02:11:40Z"
+        "pushed": "2026-09-22T02:11:40Z",
+        "note": "generic stable release tag, resolved independently of the recipe's own image pin"
       },
-      "architecture_support_confirmed": "via recipe page's own documented, measured launch commands for Qwen3_5ForConditionalGeneration. Phase 21B.4.15.1 attempted a CPU-only preflight against the resolved digest to independently re-verify inside the actual image; the attempt was INCONCLUSIVE (architecture-registry check failed with an unrelated torchvision/torch version mismatch -- 'operator torchvision::nms does not exist' -- inside the CPU-only container; no GPU/weights involved). Recorded honestly as inconclusive, not resolved.",
+      "recipe_pinned_image": {
+        "repository": "vllm/vllm-openai",
+        "tag": "qwen38",
+        "linux_amd64_digest": "sha256:d392f621bb3e372ecc09f0b0cb88099afe9fa05d37a0450de45eeb8c12b6787e",
+        "pushed": "2026-08-12T14:56:21Z",
+        "source": "model.docker_image field in the official structured recipe YAML (Phase 21B.4.15.3)",
+        "note": "the runs behind the official recipe's own measured results all used this pinned image ('a fork build in the 0.27 range' per the YAML's inline comment) -- this is the officially recommended image, more specific than the generic stable tag above. NOT pulled or executed this phase (metadata-only, resolved via Docker Hub API)."
+      },
+      "architecture_support_confirmed": "via recipe page's own documented, measured launch commands for Qwen3_5ForConditionalGeneration. Phase 21B.4.15.1 attempted a CPU-only preflight against the resolved v0.30.0-cu129 digest to independently re-verify inside the actual image; the attempt was INCONCLUSIVE (architecture-registry check failed with an unrelated torchvision/torch version mismatch -- 'operator torchvision::nms does not exist' -- inside the CPU-only container; no GPU/weights involved). Recorded honestly as inconclusive, not resolved. A future preflight should target the recipe-pinned qwen38 image instead, since that is the image the recipe's own measured results actually used.",
       "reasoning_parser": "qwen3 -- registry confirmation attempted via CPU-only preflight, came back as an empty list (registration may be lazy/plugin-based and not triggered by a bare import); inconclusive, not a negative result.",
       "tool_call_parser": "qwen3_xml (NVFP4-variant-repo examples) / qwen3_coder (Ascend examples) -- see PRIMARY_SOURCE_CONFIGURATION_DIVERGENCE in the primary-sources evidence file; unresolved this phase, CPU-only registry check attempted but the relevant module path ('vllm.entrypoints.openai.tool_parsers') does not exist in this vLLM version, so the check could not run.",
       "known_gap": "No official plain-BF16 single-Hopper-GPU (H100/H200) full launch-flag example exists in the current recipe -- flags must be composed from documented building blocks, not copied verbatim from one official example."
@@ -100,13 +109,13 @@
   "dependency_versions": {
     "base_serving_version_guidance": {
       "transformers_minimum": ">=5.8.0",
-      "vllm_base_minimum": "NOT PUBLISHED -- re-verified Phase 21B.4.15.1, no general vLLM floor exists in the current recipe text",
+      "vllm_base_minimum": ">=0.17.0 (Phase 21B.4.15.3 correction -- published in the structured recipe YAML's model.min_vllm_version field, not in the rendered prose page Phases 21B.4.15/.15.1/.15.2 searched; rationale: this is where Qwen3_5ForConditionalGeneration is registered)",
       "sglang_base_minimum": "NOT PUBLISHED as a single floor; measured recipes pinned to v0.5.19"
     },
     "optional_feature_version_requirements": {
-      "vllm_dflash2_speculative_path": ">=0.28.0 (vllm#52816) -- DFlash2-specific, not a base-serving requirement"
+      "vllm_dflash2_speculative_path": ">=0.28.0 (vllm#52816) -- DFlash2-specific, distinct from and NOT to be conflated with the >=0.17.0 base-serving floor above"
     },
-    "vllm_resolved_stable_tag": "v0.30.0-cu129",
+    "vllm_resolved_stable_tag": "v0.30.0-cu129 (generic); vllm/vllm-openai:qwen38 (recipe-pinned, see engines.vllm.recipe_pinned_image above)",
     "sglang_resolved_stable_tag": "v0.5.20 (cookbook's own measured recipes: v0.5.19)",
     "flashattention_flashinfer": "not explicitly itemized as a separate dependency in the retrieved vLLM recipe text (unlike GLM-5.3-Flash's explicit FlashInfer >=0.6.18 requirement) -- UNRESOLVED_THIS_PHASE whether a specific FlashInfer/FlashAttention version floor applies to this architecture"
   }

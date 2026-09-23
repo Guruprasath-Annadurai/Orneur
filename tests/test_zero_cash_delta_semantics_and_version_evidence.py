@@ -137,30 +137,54 @@ def test_no_candidate_capability_upgraded():
         assert entry["capability_status"] == "UNPROVEN"
 
 
-# ── vLLM version evidence: re-verification result, NOT a fabricated correction ──
+# ── vLLM version evidence (Phase 21B.4.15.3 correction) ─────────────────
 
 
-def test_vllm_base_version_floor_still_not_published_per_live_reverification():
-    """Phase 21B.4.15.2 was asked to record a 'vLLM 0.17.0+' base-serving
-    floor if the current primary source still states it. Live
-    re-verification this phase (fetching https://recipes.vllm.ai/Qwen/
-    Qwen3.8-27B fresh and searching its full text) found NO such
-    statement anywhere on the page -- the Prerequisites section still
-    lists only transformers>=5.8.0, and the only explicit vLLM version
-    floor on the entire page remains the DFlash2-specific >=0.28.0
-    figure. The requested correction is NOT applied because it would
-    introduce a claim the primary source does not support. This is
-    recorded explicitly rather than silently ignored."""
+def test_vllm_base_version_floor_is_0_17_0_per_structured_recipe_source():
+    """Phase 21B.4.15.3: Phases 21B.4.15/.15.1/.15.2 searched only the
+    RENDERED recipes.vllm.ai prose page and correctly found no base-floor
+    statement there (the prose genuinely omits it). The official
+    STRUCTURED recipe source (vllm-project/recipes GitHub,
+    models/Qwen/Qwen3.8-27B.yaml, model.min_vllm_version field)
+    explicitly publishes "0.17.0" as the base floor. This is now
+    correctly recorded as a real, primary-source-backed value -- not
+    fabricated, and not the same figure as the DFlash2-specific
+    optional-feature requirement."""
     sources = json.loads(PRIMARY_SOURCES_PATH.read_text())
     base = sources["dependency_and_version_facts"]["base_serving_version_guidance"]["vllm_base_minimum"]
-    assert "NOT explicitly published" in base
-    assert "0.17.0" not in base or "re-verified" in base.lower() or "Phase 21B.4.15.2" in base
+    assert "0.17.0" in base
+    assert "structured recipe" in base.lower() or "min_vllm_version" in base
 
 
-def test_optional_dflash2_floor_still_separate_from_base():
+def test_optional_dflash2_floor_remains_separate_from_base_floor():
     sources = json.loads(PRIMARY_SOURCES_PATH.read_text())
-    optional = sources["dependency_and_version_facts"]["optional_feature_version_requirements"]
-    assert "0.28.0" in optional["vllm_dflash2_speculative_path"]
+    facts = sources["dependency_and_version_facts"]
+    base = facts["base_serving_version_guidance"]["vllm_base_minimum"]
+    optional = facts["optional_feature_version_requirements"]["vllm_dflash2_speculative_path"]
+    assert "0.17.0" in base
+    assert "0.28.0" in optional
+    # the two concepts must remain textually distinct, not merged into one field
+    assert base != optional
+
+
+def test_structured_recipe_source_evidence_file_exists_and_hashes_exactly():
+    yaml_path = REPO_ROOT / "docs/orneur/phase-21/evidence/QWEN3_8_27B_VLLM_RECIPE_STRUCTURED_SOURCE_2026-09-23.yaml"
+    assert yaml_path.is_file()
+    import hashlib
+    actual_sha256 = hashlib.sha256(yaml_path.read_bytes()).hexdigest()
+    sources = json.loads(PRIMARY_SOURCES_PATH.read_text())
+    structured_source = next(
+        s for s in sources["sources"] if "STRUCTURED recipe source" in s["source_name"]
+    )
+    assert actual_sha256 == structured_source["persisted_sha256"]
+
+
+def test_structured_source_contains_min_vllm_version_field():
+    """Sanity check against the actual persisted primary-source bytes,
+    not just the JSON evidence file's transcription of them."""
+    yaml_path = REPO_ROOT / "docs/orneur/phase-21/evidence/QWEN3_8_27B_VLLM_RECIPE_STRUCTURED_SOURCE_2026-09-23.yaml"
+    text = yaml_path.read_text()
+    assert 'min_vllm_version: "0.17.0"' in text
 
 
 def test_registry_still_loads_and_validates_end_to_end():

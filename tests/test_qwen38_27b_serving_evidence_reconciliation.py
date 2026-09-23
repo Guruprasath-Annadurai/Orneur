@@ -165,19 +165,27 @@ def test_version_guidance_separates_base_from_optional():
     assert "optional_feature_version_requirements" in facts
     # the DFlash2-specific floor must live under optional, not base
     assert "0.28.0" in facts["optional_feature_version_requirements"]["vllm_dflash2_speculative_path"]
-    assert "0.28.0" not in facts["base_serving_version_guidance"]["vllm_base_minimum"]
+    # the base floor's own asserted value must be 0.17.0, not 0.28.0 --
+    # "0.28.0" may still appear in a cross-reference sentence distinguishing
+    # the two, so check the asserted value directly rather than banning the substring
+    assert facts["base_serving_version_guidance"]["vllm_base_minimum"].startswith("vLLM >= 0.17.0")
 
 
-def test_base_vllm_version_floor_not_fabricated():
-    """Re-verified: no general vLLM base-serving version floor is
-    published by the current recipe -- this must be stated honestly as
-    absent, not invented (e.g. as '0.17.0+')."""
+def test_base_vllm_version_floor_backed_by_primary_source_not_fabricated():
+    """Superseded by Phase 21B.4.15.3: the base vLLM version floor (0.17.0)
+    IS published, in the official STRUCTURED recipe source
+    (vllm-project/recipes YAML), which Phases 21B.4.15/.15.1/.15.2 missed
+    because they only searched the rendered prose page. This test now
+    asserts the value is present AND traceable to that specific,
+    persisted, hash-verified primary source -- never asserted from
+    memory or invented."""
     sources = json.loads(PRIMARY_SOURCES_PATH.read_text())
     base = sources["dependency_and_version_facts"]["base_serving_version_guidance"]["vllm_base_minimum"]
-    assert "NOT explicitly published" in base
-    # "0.17.0" may appear only inside a negation (explaining no such floor
-    # exists), never asserted as an actual value
-    assert not base.startswith("0.17.0") and ">=0.17.0" not in base
+    assert "0.17.0" in base
+    assert "structured recipe" in base.lower() or "min_vllm_version" in base
+    yaml_path = REPO_ROOT / "docs/orneur/phase-21/evidence/QWEN3_8_27B_VLLM_RECIPE_STRUCTURED_SOURCE_2026-09-23.yaml"
+    assert yaml_path.is_file()
+    assert 'min_vllm_version: "0.17.0"' in yaml_path.read_text()
 
 
 # ── K: SHA-256 index integrity ───────────────────────────────────────────
@@ -186,7 +194,7 @@ def test_base_vllm_version_floor_not_fabricated():
 def test_serving_preflight_index_hashes_final_bytes_exactly():
     index = json.loads(INDEX_PATH.read_text())
     entries = index["entries"]
-    assert len(entries) == 7
+    assert len(entries) == 8
     for entry in entries:
         path = REPO_ROOT / entry["path"]
         assert path.is_file(), f"missing: {entry['path']}"

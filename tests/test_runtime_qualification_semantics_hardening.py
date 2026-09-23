@@ -219,7 +219,7 @@ def test_no_new_gpu_allocating_script_this_phase():
 def test_serving_preflight_sha256_index_hashes_exactly():
     index = json.loads(PREFLIGHT_INDEX_PATH.read_text())
     entries = index["entries"]
-    assert len(entries) == 7  # 5 original (Phase 21B.4.15) + 2 added by Phase 21B.4.15.1's CPU preflight
+    assert len(entries) == 8  # 5 original + 2 Phase 21B.4.15.1 CPU preflight + 1 Phase 21B.4.15.3 structured recipe source
     for entry in entries:
         path = REPO_ROOT / entry["path"]
         assert path.is_file(), f"missing: {entry['path']}"
