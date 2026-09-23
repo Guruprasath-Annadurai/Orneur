@@ -95,12 +95,38 @@ that only settles cost well after the fact), that limitation must be
 recorded explicitly in the execution's evidence, and the harness must
 compensate with a MORE conservative safety reserve and a SHORTER polling
 interval — never by treating an unenforceable monetary guardrail as if
-it were hard enforcement. Modal's own $0 account spend limit was shown
-by the GLM incident to prevent only NEW chargeable actions once credits
-are exhausted, not to retroactively prevent an in-flight job's
-already-metered usage from resolving into real billed cost — this
-specific limitation must be re-stated in any future Modal-based
-execution's control documentation, not silently assumed fixed.
+it were hard enforcement.
+
+**What was actually observed in the Phase 21B.4.13 GLM-5.3-Flash
+incident (evidence-bounded, not a claim about Modal's internal
+mechanism):**
+
+- The configured Modal workspace spend limit was $0.
+- Immediately before the successful GLM run, owner billed cost was
+  $0.00 (confirmed live).
+- Promotional/free credits were available on the account.
+- The live job remained within its authorized wall-clock ceiling (55
+  minutes authorized; actual run 38 minutes).
+- After the run, cumulative metered cost exceeded the available credit
+  balance.
+- The owner billed delta was $3.52 — i.e. a real charge occurred despite
+  the $0 spend limit being configured throughout.
+
+**Therefore:** ORNEUR must not rely on a configured $0 spend limit,
+by itself, as sufficient zero-cash protection for future long-running
+GPU work — this is a fact directly supported by what was observed.
+
+**What remains unverified:** the EXACT provider-side mechanism by which
+this occurred — how Modal internally treats already-in-flight,
+already-metered, pending, or newly-requested usage once a $0 spend
+limit's headroom is exhausted — was not established from authoritative
+Modal documentation, and this document does not claim to know it.
+Observed behavior in this incident was consistent with the configured
+spend limit not preventing this particular billed overage; the exact
+provider-side mechanism was not established. Any future Modal-based
+execution's control documentation should re-state this same
+observed-fact/unverified-mechanism distinction rather than assert a
+specific internal billing mechanism as fact.
 
 ## Applicability
 

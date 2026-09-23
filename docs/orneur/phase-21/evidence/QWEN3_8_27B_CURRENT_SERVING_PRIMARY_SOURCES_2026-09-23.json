@@ -4,7 +4,8 @@
   "artifact_repository": "Qwen/Qwen3.8-27B",
   "pinned_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
   "retrieval_date": "2026-09-23",
-  "note": "CPU-only / metadata-only research phase. No GPU, no weight download, no inference.",
+  "reconciliation_date": "2026-09-23 (Phase 21B.4.15.1)",
+  "note": "CPU-only / metadata-only research phase. No GPU, no weight download, no inference. Phase 21B.4.15.1 corrects Phase 21B.4.15's understatement of SGLang's official evidence -- a dedicated SGLang cookbook page for this exact model was found on re-check and had been missed.",
 
   "identity_reverification": {
     "hf_api_current_main_sha": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
@@ -47,6 +48,13 @@
       "url": "https://hub.docker.com/v2/repositories/lmsysorg/sglang/tags/v0.5.20",
       "retrieved": "2026-09-23",
       "content_summary": "Resolved stable, versioned release tag v0.5.20, linux/amd64 digest sha256:b27fce60bc5494c118c4910702812bcfa8cee67abcdd1ff8b0902f21647552f4, pushed 2026-09-18T09:33:02Z."
+    },
+    {
+      "source_name": "SGLang official Qwen3.8-27B Cookbook (Phase 21B.4.15.1 correction -- missed in Phase 21B.4.15)",
+      "url": "https://docs.sglang.io/cookbook/autoregressive/Qwen/Qwen3.8-27B",
+      "retrieved": "2026-09-23",
+      "linked_from": "the official Qwen3.8-27B README's own Quickstart section: '[SGLang](https://www.sglang.io/): [Qwen3.8 Cookbook](https://docs.sglang.io/cookbook/autoregressive/Qwen/Qwen3.8-27B)'",
+      "content_summary": "A DEDICATED, extensively measured cookbook page directly comparable in depth to vLLM's own recipe page -- not a thin evidence base as Phase 21B.4.15 incorrectly characterized it. Contents: model introduction confirming the SGLang-served architecture is identical to Qwen3.6-27B (context 262,144 native, extensible to 1,000,000; thinking on by default; reasoning_effort/preserve_thinking supported); a launch-command generator covering H200, RTX PRO 6000, RTX 5090, and DGX Spark (single-GPU on every supported card); every generated recipe carries '--reasoning-parser qwen3 --tool-call-parser qwen3_coder' by default (both are opt-out, not opt-in); an explicit technical rationale for qwen3_coder specifically matching this checkpoint's chat template ('<function=...>/<parameter=...>' nested in '<tool_call></tool_call>', distinct from the Hermes parser's bare-JSON payload); a Mamba/GDN-state memory-sizing formula and calculator; H200-specific notes (BF16 and FP8 only -- no FP4 tensor cores, so NVFP4 falls back to Marlin W4A16; 32768-token prefill chunks; BF16 checkpoint takes ~6.5 minutes to load its 18 shards from NVMe); measured on SGLang v0.5.19 across 202 cells, each scored on the full 1319-question GSM8K (93.18-95.15%); agent-harness integration guidance (OpenAI-compatible '/v1' endpoint, an Anthropic-compatible '/v1/messages' endpoint for Claude Code -- explicitly noted as outside Anthropic's own tested/supported scope for non-Claude models)."
     }
   ],
 
@@ -62,14 +70,19 @@
   },
 
   "dependency_and_version_facts": {
-    "transformers_minimum": ">=5.8.0 (matches config.json's writer version; vLLM parses via its own Qwen3_5Config, so this is really about the Qwen3-VL processor per the recipe's own wording)",
-    "vllm_minimum_for_dflash2_speculative_path": ">=0.28.0 (vllm#52816)",
-    "vllm_minimum_for_base_serving": "not explicitly pinned by the official recipe for plain BF16 serving; only the DFlash2-specific >=0.28.0 figure is stated",
+    "base_serving_version_guidance": {
+      "transformers_minimum": ">=5.8.0 (matches config.json's writer version; vLLM parses via its own Qwen3_5Config, so this is really about the Qwen3-VL processor per the recipe's own wording)",
+      "vllm_base_minimum": "NOT explicitly published by the official vLLM recipe for plain BF16 serving -- the recipe's Prerequisites section states only transformers>=5.8.0. Re-verified in Phase 21B.4.15.1: no base vLLM version floor (e.g. a general '0.17.0+' style statement) exists in the current recipe text. This is honestly recorded as absent, not assumed.",
+      "sglang_base_minimum": "NOT explicitly published as a single number either -- the SGLang cookbook's install instructions pull the current package with no pinned floor version stated; its measured recipes are pinned to v0.5.19 specifically (see sglang_qwen3_5_architecture_support_confirmed_via_cookbook below), which functions as the de facto evidence-backed floor for a reproducible qualification run."
+    },
+    "optional_feature_version_requirements": {
+      "vllm_dflash2_speculative_path": ">=0.28.0 (vllm#52816) -- this is a DFlash2-speculative-decoding-specific requirement, separate from and not to be conflated with any base-serving floor."
+    },
     "vllm_resolved_stable_release": "v0.30.0-cu129, linux/amd64 digest sha256:58fdb6bb123a81aa53f46fa4652ad8cc87e817bd1077c9832c6258ef12c1c688",
-    "sglang_resolved_stable_release": "v0.5.20, linux/amd64 digest sha256:b27fce60bc5494c118c4910702812bcfa8cee67abcdd1ff8b0902f21647552f4",
+    "sglang_resolved_stable_release": "v0.5.20, linux/amd64 digest sha256:b27fce60bc5494c118c4910702812bcfa8cee67abcdd1ff8b0902f21647552f4 (Docker Hub latest stable tag; the SGLang cookbook's own measured recipes are specifically pinned to v0.5.19, one patch version earlier -- both facts recorded, not conflated)",
     "sglang_qwen3_5_architecture_support_confirmed_via_recipe": false,
-    "sglang_qwen3_5_architecture_support_confirmed_via_readme_long_context_syntax": true,
-    "note": "The README's official SGLang long-context override syntax for this exact model is evidence SGLang officially supports Qwen3.8-27B, but no SGLang-specific recipe page equivalent to vLLM's dedicated recipe was found -- SGLang's official support evidence is thinner (one override snippet) than vLLM's (a full multi-configuration recipe with measured KV-pool/throughput numbers)."
+    "sglang_qwen3_5_architecture_support_confirmed_via_cookbook": true,
+    "phase_21b_4_15_1_correction": "Phase 21B.4.15 stated SGLang's evidence was thinner than vLLM's, based only on the README's long-context override snippet, and missed the README's own link to a dedicated SGLang Cookbook page (docs.sglang.io/cookbook/autoregressive/Qwen/Qwen3.8-27B). That cookbook page is a full, measured, model-specific recipe (202 cells on SGLang v0.5.19, GSM8K-scored, explicit H200 support, explicit standard reasoning/tool-call parser flags) -- comparable in depth to, and in some respects (breadth of measured hardware/precision combinations) exceeding, vLLM's own recipe. The 'SGLang evidence is thin' characterization was INACCURATE and is corrected here."
   },
 
   "thinking_reasoning_mode": {
@@ -84,13 +97,16 @@
   },
 
   "tool_calling": {
-    "official_tool_call_parser_general": "qwen3_xml (seen paired with --enable-auto-tool-choice in the NVFP4 low-latency and 2xRTX5090 vLLM recipe examples)",
-    "official_tool_call_parser_ascend_variant": "qwen3_coder (seen in the Huawei Ascend 950PR recipe examples only)",
+    "vllm_tool_call_parser_nvfp4_examples": "qwen3_xml (seen paired with --enable-auto-tool-choice in the NVFP4 low-latency and 2xRTX5090 vLLM recipe examples -- both are quantized-variant third-party repos, Inferact/unsloth, not the base Qwen/Qwen3.8-27B repository)",
+    "vllm_tool_call_parser_ascend_variant": "qwen3_coder (seen in the Huawei Ascend 950PR recipe examples, which DO target the base-equivalent checkpoint families)",
+    "sglang_tool_call_parser": "qwen3_coder -- EXPLICITLY confirmed as standard for every recipe on the official SGLang cookbook page for this exact model, with a detailed technical rationale: this checkpoint's chat template instructs the model to reply with an inner '<function=...>/<parameter=...>' block nested in '<tool_call></tool_call>', which is exactly what the qwen3_coder parser decodes; the Hermes parser reads a different (bare-JSON) payload and would silently fail to parse tool calls from this checkpoint.",
+    "primary_source_configuration_divergence": "PRIMARY_SOURCE_CONFIGURATION_DIVERGENCE -- vLLM's own recipe uses qwen3_xml for the quantized NVFP4 variant repos but qwen3_coder for the Ascend examples; SGLang's cookbook uses qwen3_coder universally for the base architecture family and gives a specific chat-template-based justification for why qwen3_coder (not qwen3_xml, not hermes) is correct for this checkpoint. This is a genuine divergence in what different official sources recommend for materially the same underlying model, not a settled question this phase can resolve by picking one source over the other.",
+    "resolution_status": "TOOL_CALL_PARSER_SELECTION_REQUIRES_CPU_PREFLIGHT -- attempted in Phase 21B.4.15.1 via a CPU-only Modal function against the resolved vLLM v0.30.0-cu129 image, inspecting vllm.entrypoints.openai.tool_parsers.ToolParserManager. The attempt was INCONCLUSIVE: the import path 'vllm.entrypoints.openai.tool_parsers' does not exist in this vLLM version (module reorganized, exact new path not determined this phase), and the model-architecture-registry check separately failed with 'operator torchvision::nms does not exist' (an unrelated torchvision/torch version mismatch in the CPU-only container, blocking that specific check without touching GPU/weights). No GPU was used; the inconclusive result is recorded honestly rather than treated as resolution. The parser choice remains open and must be resolved either by a corrected CPU-only preflight (finding the right import path for this vLLM version) or, failing that, deferred to the actual GPU qualification run itself -- see the updated qualification spec.",
     "auto_tool_choice_supported": true,
     "auto_tool_choice_flag": "--enable-auto-tool-choice",
     "openai_compatible_request_format": true,
     "parallel_tool_calls": "not explicitly documented one way or the other in the retrieved sources -- UNRESOLVED_THIS_PHASE",
-    "vllm_vs_sglang_difference": "Not independently verified this phase for SGLang (no SGLang-specific tool-call-parser example was found in the retrieved sources); only vLLM's tool-call-parser flags were directly observed."
+    "vllm_vs_sglang_difference": "SGLang's tool-calling support is now confirmed via its own dedicated cookbook page (corrects Phase 21B.4.15's claim that it was unverified) -- SGLang and vLLM both officially document '--reasoning-parser qwen3' plus a tool-call parser, differing only in which exact tool-call-parser name each source's examples use, per the divergence recorded above."
   },
 
   "multimodal_status": {

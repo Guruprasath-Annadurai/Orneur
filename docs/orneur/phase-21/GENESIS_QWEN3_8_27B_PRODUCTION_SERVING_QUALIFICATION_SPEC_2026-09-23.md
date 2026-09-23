@@ -1,8 +1,15 @@
-# Qwen3.8-27B Production-Serving Qualification Specification — Phase 21B.4.15
+# Qwen3.8-27B Production-Serving Qualification Specification — Phase 21B.4.15 (corrected Phase 21B.4.15.1)
 
 **This spec is executable LATER. It does not execute now. No GPU, no
 weight download, no inference, no benchmark occurs in producing this
 document.**
+
+**Phase 21B.4.15.1 correction notice:** the tool-call-parser flag in §B
+below is no longer frozen at `qwen3_xml` — independent audit found the
+official SGLang Cookbook for this exact model explicitly recommends
+`qwen3_coder` with a checkpoint-specific rationale, creating a genuine
+primary-source divergence with vLLM's own NVFP4-variant examples. See
+§B's inline note for the full resolution requirement.
 
 Governed by `GENESIS_ZERO_CASH_GPU_EXECUTION_CONTROL_SPEC_2026-09-23.md`
 (monetary guardrail, mandatory precondition) and by the strict
@@ -38,7 +45,7 @@ type).
     --max-num-seqs 8 \
     --gpu-memory-utilization 0.85 \
     --reasoning-parser qwen3 \
-    --enable-auto-tool-choice --tool-call-parser qwen3_xml \
+    --enable-auto-tool-choice --tool-call-parser <TOOL_CALL_PARSER> \
     --served-model-name Qwen/Qwen3.8-27B \
     --port 8000
   ```
@@ -51,6 +58,28 @@ type).
   required for a bounded BF16 TP1 smoke; add only if CPU-only preflight
   or the live GPU preflight demonstrates a concrete need). No
   speculative decoding, no long-context YaRN override.
+
+  **`<TOOL_CALL_PARSER>` is deliberately NOT frozen (Phase 21B.4.15.1
+  correction).** Current primary sources disagree: vLLM's own recipe
+  uses `qwen3_xml` for its NVFP4-quantized-variant examples but
+  `qwen3_coder` for its Ascend examples; the official SGLang Cookbook
+  for this exact model uses `qwen3_coder` universally, with an explicit
+  technical rationale tied to this checkpoint's own chat template (see
+  `QWEN3_8_27B_CURRENT_SERVING_PRIMARY_SOURCES_2026-09-23.json`'s
+  `tool_calling.primary_source_configuration_divergence`). A Phase
+  21B.4.15.1 CPU-only preflight attempted to resolve this by inspecting
+  vLLM's own tool-parser registry and was inconclusive (the expected
+  `vllm.entrypoints.openai.tool_parsers` module path does not exist in
+  the resolved vLLM v0.30.0+cu129 build). **The future qualification run
+  must use whichever parser configuration (a) passes a corrected
+  CPU-only registry preflight against the exact resolved image at
+  execution time, or (b) failing that, is confirmed to actually parse
+  tool calls correctly during the live GPU run itself** — never a value
+  frozen prematurely by this document. Given the evidence currently
+  available (SGLang's explicit, checkpoint-specific rationale, and that
+  `qwen3_coder` is also what vLLM's own Ascend examples use), `qwen3_coder`
+  is the better-evidenced starting hypothesis, but this is a hypothesis
+  to verify at execution time, not a frozen decision.
 
 ## C. Server readiness (required)
 
@@ -99,7 +128,8 @@ type).
 - No external side effect. No real tool action taken. A single
   synthetic tool schema (e.g. a trivial `get_weather`-style stub) used
   only to prove the server parses and returns tool-call-shaped output
-  when `--enable-auto-tool-choice --tool-call-parser qwen3_xml` is
+  when `--enable-auto-tool-choice --tool-call-parser <TOOL_CALL_PARSER>`
+  (the parser resolved per §B above, not frozen as `qwen3_xml`) is
   active — not to evaluate whether the model chooses correctly.
 
 ## G. Multimodal smoke (excluded unless separately authorized)

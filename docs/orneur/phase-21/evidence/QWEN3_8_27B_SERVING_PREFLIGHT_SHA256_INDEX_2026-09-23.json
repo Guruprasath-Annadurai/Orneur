@@ -1,39 +1,52 @@
 {
   "evidence_type": "QWEN3_8_27B_SERVING_PREFLIGHT_EVIDENCE_INTEGRITY_INDEX",
   "created": "2026-09-23",
-  "phase": "21B.4.15",
+  "reconciled": "2026-09-23 (Phase 21B.4.15.1)",
+  "phase": "21B.4.15 / 21B.4.15.1",
   "candidate": "Qwen3.8-27B",
-  "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative. No GPU, no inference, no weight download performed to produce any indexed file.",
+  "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative. No GPU, no inference, no weight download performed to produce any indexed file. The CPU-only parser-registry preflight (script + raw output) added in Phase 21B.4.15.1 is included here.",
   "entries": [
     {
       "path": "docs/orneur/phase-21/evidence/QWEN3_8_27B_CURRENT_SERVING_PRIMARY_SOURCES_2026-09-23.json",
-      "sha256": "675ee8441f3da5c984e2a9e1f073fb751abb65d38596f8ec2d1aa38121ea3fa9",
+      "sha256": "12c7503703a8764581d464cd4628b90dd42b1f509b31ef2cae5715d2bd8a99d1",
       "evidence_role": "current_serving_primary_sources",
-      "size_bytes": 11231
+      "size_bytes": 17201
     },
     {
       "path": "docs/orneur/phase-21/evidence/QWEN3_8_27B_RUNTIME_SUPPORT_MATRIX_2026-09-23.json",
-      "sha256": "c548202504ea6dfa2718d7630e4e1dd2815cba4a3288b173da85a6c455f2d630",
+      "sha256": "7b866144c31298574e57577bc924eab63e5032868485330e20d918bbaa33dbef",
       "evidence_role": "runtime_support_matrix",
-      "size_bytes": 7167
+      "size_bytes": 9621
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_QWEN3_8_27B_PRODUCTION_SERVING_ENGINE_DECISION_2026-09-23.md",
-      "sha256": "dbe73c8c73b947e0707baa7a9d05656f81bcc528e7c1acc4a29eca0f66bf55af",
+      "sha256": "d0e898e9c8a19fab2c2d4b47c948b9c49c327a5923c6a8e7d402570be3244364",
       "evidence_role": "engine_decision",
-      "size_bytes": 6524
+      "size_bytes": 11588
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_QWEN3_8_27B_PRODUCTION_SERVING_QUALIFICATION_SPEC_2026-09-23.md",
-      "sha256": "c8619801ac8f6055adc50f6fec31c48283a47853a8d8ba86f69443c1f5089048",
+      "sha256": "b003a46efc03d7848408d0ceb7df17b69b55cd602b2496a96831132c8acd408a",
       "evidence_role": "future_qualification_spec",
-      "size_bytes": 10394
+      "size_bytes": 12369
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_ZERO_CASH_GPU_EXECUTION_CONTROL_SPEC_2026-09-23.md",
-      "sha256": "791efcfd066b3f8276c38fee0026d3d2e03eef39146d9fd26b0ab8b5961aa6e7",
+      "sha256": "48436af20745ae99f5e674d04dc02d6e4ea4e41382e99542aff653705b673173",
       "evidence_role": "zero_cash_execution_control_spec",
-      "size_bytes": 6154
+      "size_bytes": 7381
+    },
+    {
+      "path": "scripts/phase21b_4_15_1_qwen38_27b_cpu_preflight.py",
+      "sha256": "0bac090dc07e9729ef210c363dc546b777138d042f954677c1fe600959282ee4",
+      "evidence_role": "cpu_preflight_parser_registry_script",
+      "size_bytes": 3323
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/QWEN3_8_27B_CPU_PREFLIGHT_PARSER_REGISTRY_ATTEMPT_2026-09-23.txt",
+      "sha256": "ed4540297cad119a194acecfb549a9e485d70800be30d742a5c2f504088d9127",
+      "evidence_role": "cpu_preflight_parser_registry_output",
+      "size_bytes": 5272
     }
   ]
 }

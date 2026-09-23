@@ -23,26 +23,27 @@
         "linux_amd64_digest": "sha256:58fdb6bb123a81aa53f46fa4652ad8cc87e817bd1077c9832c6258ef12c1c688",
         "pushed": "2026-09-22T02:11:40Z"
       },
-      "architecture_support_confirmed": "via recipe page's own documented, measured launch commands for Qwen3_5ForConditionalGeneration -- not independently re-verified this phase inside the actual image (would require a CPU-only preflight against the resolved digest, not performed this phase)",
-      "reasoning_parser": "qwen3",
-      "tool_call_parser": "qwen3_xml (general) / qwen3_coder (seen only in Ascend-specific examples)",
+      "architecture_support_confirmed": "via recipe page's own documented, measured launch commands for Qwen3_5ForConditionalGeneration. Phase 21B.4.15.1 attempted a CPU-only preflight against the resolved digest to independently re-verify inside the actual image; the attempt was INCONCLUSIVE (architecture-registry check failed with an unrelated torchvision/torch version mismatch -- 'operator torchvision::nms does not exist' -- inside the CPU-only container; no GPU/weights involved). Recorded honestly as inconclusive, not resolved.",
+      "reasoning_parser": "qwen3 -- registry confirmation attempted via CPU-only preflight, came back as an empty list (registration may be lazy/plugin-based and not triggered by a bare import); inconclusive, not a negative result.",
+      "tool_call_parser": "qwen3_xml (NVFP4-variant-repo examples) / qwen3_coder (Ascend examples) -- see PRIMARY_SOURCE_CONFIGURATION_DIVERGENCE in the primary-sources evidence file; unresolved this phase, CPU-only registry check attempted but the relevant module path ('vllm.entrypoints.openai.tool_parsers') does not exist in this vLLM version, so the check could not run.",
       "known_gap": "No official plain-BF16 single-Hopper-GPU (H100/H200) full launch-flag example exists in the current recipe -- flags must be composed from documented building blocks, not copied verbatim from one official example."
     },
     "sglang": {
       "official_support": true,
-      "evidence_strength": "CURRENT_PRIMARY_SOURCE_DOCUMENTED_THINNER_THAN_VLLM",
-      "evidence": "Official Qwen README explicitly lists SGLang as a recommended production serving engine and gives an official long-context YaRN override command for it. No dedicated SGLang-specific recipe page equivalent to vLLM's was found.",
+      "evidence_strength": "CURRENT_PRIMARY_SOURCE_DOCUMENTED_COMPARABLE_TO_VLLM",
+      "evidence": "PHASE 21B.4.15.1 CORRECTION: a dedicated, extensively measured official SGLang Cookbook page exists for this exact model (docs.sglang.io/cookbook/autoregressive/Qwen/Qwen3.8-27B, linked directly from the Qwen README's own Quickstart section) -- 202 measured cells across H200/RTX PRO 6000/RTX 5090/DGX Spark and multiple precisions, each GSM8K-scored on SGLang v0.5.19, with explicit H200 BF16/FP8 support and explicit standard reasoning/tool-call parser flags. Phase 21B.4.15's prior characterization of SGLang's evidence as thinner than vLLM's was based on missing this page and is corrected.",
       "production_oriented": true,
       "resolved_stable_image": {
         "repository": "lmsysorg/sglang",
         "tag": "v0.5.20",
         "linux_amd64_digest": "sha256:b27fce60bc5494c118c4910702812bcfa8cee67abcdd1ff8b0902f21647552f4",
-        "pushed": "2026-09-18T09:33:02Z"
+        "pushed": "2026-09-18T09:33:02Z",
+        "note": "the cookbook's own 202 measured cells are pinned specifically to v0.5.19, one patch version earlier than this resolved Docker Hub tag -- both versions recorded, not conflated"
       },
-      "architecture_support_confirmed": "via the README's own official long-context override syntax for this exact model -- weaker evidence than vLLM's dedicated multi-config recipe with measured numbers",
-      "reasoning_parser": "not independently confirmed this phase (no SGLang-specific parser flag example retrieved)",
-      "tool_call_parser": "not independently confirmed this phase (no SGLang-specific parser flag example retrieved)",
-      "known_gap": "No SGLang launch-command example with topology/parser/context flags was retrieved -- only the long-context override snippet exists in the current evidence base."
+      "architecture_support_confirmed": "via the SGLang Cookbook's own measured, GSM8K-scored H200/RTX-class recipes for this exact model -- strong, model-specific evidence, comparable in depth to vLLM's recipe",
+      "reasoning_parser": "qwen3 -- explicitly standard in every cookbook recipe",
+      "tool_call_parser": "qwen3_coder -- explicitly standard in every cookbook recipe, with a documented technical rationale (matches this checkpoint's '<function=.../><parameter=...>' chat-template structure; the Hermes parser reads a different, incompatible payload)",
+      "known_gap": "The exact full launch-command STRING (topology + precision + parser flags together) is generated dynamically by an interactive command-builder widget on the cookbook page rather than shown as static example text -- the individual flag values are documented in prose, but a single copy-pasteable H200 BF16 command was not directly extractable from the retrieved page content this phase."
     },
     "tokenspeed": {
       "official_support": true,
@@ -59,14 +60,15 @@
     "default": "thinking ON (enable_thinking=true, preserve_thinking=true)",
     "adaptive_levels": ["xhigh (default)", "medium", "low"],
     "non_thinking_available": true,
-    "parser_required": "--reasoning-parser qwen3 (vLLM); not independently confirmed for SGLang/TokenSpeed this phase",
+    "parser_required": "--reasoning-parser qwen3 -- confirmed standard for BOTH vLLM and SGLang (corrected: SGLang confirmation was missing in Phase 21B.4.15, now confirmed via the SGLang Cookbook)",
     "response_field_separation": "reasoning_content (delta.reasoning in streaming) vs content (delta.content) -- confirmed from the official README client example"
   },
 
   "tool_calling": {
     "auto_tool_choice": true,
-    "parser_general": "qwen3_xml",
-    "parser_ascend_variant": "qwen3_coder",
+    "vllm_parser": "qwen3_xml (NVFP4 examples) / qwen3_coder (Ascend examples) -- PRIMARY_SOURCE_CONFIGURATION_DIVERGENCE, unresolved",
+    "sglang_parser": "qwen3_coder -- confirmed standard, with documented chat-template-based rationale",
+    "resolution_status": "TOOL_CALL_PARSER_SELECTION_REQUIRES_CPU_PREFLIGHT -- attempted, inconclusive (see engines.vllm.tool_call_parser above); deferred to a corrected future CPU-only preflight or the GPU qualification run itself",
     "openai_compatible": true,
     "parallel_tool_calls": "UNRESOLVED_THIS_PHASE"
   },
@@ -96,10 +98,16 @@
   },
 
   "dependency_versions": {
-    "transformers_minimum": ">=5.8.0",
-    "vllm_minimum_confirmed": ">=0.28.0 (for the DFlash2 speculative-decoding path specifically; no separate minimum stated for base serving)",
+    "base_serving_version_guidance": {
+      "transformers_minimum": ">=5.8.0",
+      "vllm_base_minimum": "NOT PUBLISHED -- re-verified Phase 21B.4.15.1, no general vLLM floor exists in the current recipe text",
+      "sglang_base_minimum": "NOT PUBLISHED as a single floor; measured recipes pinned to v0.5.19"
+    },
+    "optional_feature_version_requirements": {
+      "vllm_dflash2_speculative_path": ">=0.28.0 (vllm#52816) -- DFlash2-specific, not a base-serving requirement"
+    },
     "vllm_resolved_stable_tag": "v0.30.0-cu129",
-    "sglang_resolved_stable_tag": "v0.5.20",
+    "sglang_resolved_stable_tag": "v0.5.20 (cookbook's own measured recipes: v0.5.19)",
     "flashattention_flashinfer": "not explicitly itemized as a separate dependency in the retrieved vLLM recipe text (unlike GLM-5.3-Flash's explicit FlashInfer >=0.6.18 requirement) -- UNRESOLVED_THIS_PHASE whether a specific FlashInfer/FlashAttention version floor applies to this architecture"
   }
 }

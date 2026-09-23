@@ -1,0 +1,92 @@
+✓ Initialized. View run at 
+https://modal.com/apps/guruprasath-annadurai/main/ap-ety9O1wJyBcMtGPiaW1jEF
+Building image im-KyN3Oe8IoSdBlvyEfMNKdq
+
+=> Step 0: FROM vllm/vllm-openai@sha256:58fdb6bb123a81aa53f46fa4652ad8cc87e817bd1077c9832c6258ef12c1c688
+Getting image source signatures
+Copying blob sha256:f58a37218eaf50f3ca53a85dadd0d78cef132bc5927ce0b74aad05e455ddfb9d
+Copying blob sha256:02559cd4bc8db240554ff3a4e38df5909d4745846b3e3a4df865d102f0a6d0d9
+Copying blob sha256:50cb274a10d2b54b10bf900b0f0c4781b9cc691f8e206d9bd6cfa421bf2b699e
+Copying blob sha256:4d69e5e89920db8df094d03da8e99d04965d43e2ad6b421c98765542e84bb90a
+Copying blob sha256:6e8af4fd0a071982e528b634ba99dec2474c21147f99748be708f36e10e3f4c2
+Copying blob sha256:2cd52cbb1ebefad9b697ee1c60a7ba7ce8293404a1ad596fd257efdf0e9ec8d6
+Copying blob sha256:3efb22611abb739b063f24683657c79597f26a2c01e67decc4d6697d5706e9b4
+Copying blob sha256:e87500e698966458d9dfc34df84602985c9821f39666619792fe6282aa6df5d4
+Copying blob sha256:991905452d33123938a24985bd758412fa1296fa8604fb621e8da2695f4a524a
+Copying blob sha256:8c6e5a2a1e241ba8c6eeb41cb416a2879961ff10e909c5867ed3b20fd30bad3e
+Copying blob sha256:f7b0ae6af8786530fd9e0ad262d1b1999a525ec59285b6b95082d107205e0860
+Copying blob sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1
+Copying blob sha256:5d016e36bdc275fb919939b243b626c5dd582f674b1a90c85381fdb7849651b5
+Copying blob sha256:644e9b20358325501941bab7efe2465969b1101fd546be263fc7c2d12d2d8c6c
+Copying blob sha256:8f94f44856b44b23134f05ce1da6b07825d4f6245a253066aefdd7ee76171b46
+Copying blob sha256:f58a37218eaf50f3ca53a85dadd0d78cef132bc5927ce0b74aad05e455ddfb9d
+Copying blob sha256:eba6979b0b7df1ab0d29bb5cd969b399ab21bb652a256e855360013d26b5f5bd
+Copying blob sha256:17bda5a17549243f41ba441693b5ee0b3ff4b171144fea9199c6754f6a51be54
+Copying blob sha256:34df56123bb40bcc7ce41125c9ea3980d9c717748181672d057df4d41e9a74e0
+Copying blob sha256:b174c03082d18b201aeb1b2ad360d089ae3f3dd830144abd29648c73053079ed
+Copying blob sha256:d13898a3712e84d3327417196bac3df3cd6d864eb4728f2b0f3d56adb0e41697
+Copying blob sha256:e917fc5429f4d6200dbac34c52f0c6e54d9250a7ac7df5da5d5f5c9f472b8828
+Copying blob sha256:5d1b8d68192f42d521599322f96db3f34aacfd5ba4a0b7fabbfdb6ed04b8272a
+Copying blob sha256:e82f30f65ceab196bea413e806bce14c2369187b461520aa259edebe522e17e1
+Copying blob sha256:e79094cbc01c0f4477b6b41303589c6262ebf997c8fe604e49341c8aa6834a25
+Copying blob sha256:7e3ff5ad9529e64c17a695c509317aa0d67f6e6c9ca3584419058f6befce80c7
+Copying blob sha256:4f4fb700ef54461cfa02571ae0db9a0dc1e0cdb5577484a6d75e68dc38e8acc1
+Copying blob sha256:08169afa0f9ba2ffa8027651529783f46557ef4522208832a5c367e85908d585
+Copying blob sha256:e8264e0e9e28eda362a654d7e6447fdbde06b67a94c851a5b0a935280b366d78
+Copying blob sha256:b084c0dbecb7a05a86c33402229e1ad306123b130691eb6a14abf48503379896
+Copying blob sha256:a25596dba32403c9078a86e04ada871e1a8b1932823b896eff9eddca057b0c3b
+Copying blob sha256:c2fe90252044debcdec6e58d06208909711c0c136bd655fd3cdfb799fe0e6022
+Copying blob sha256:d07415d601b64f552ddde98a48c89cc0bba58acc9fd2a609de99337a68b4b108
+Copying blob sha256:ce529cdf8303bbb4e664a186811c6164fc1889551cafb3780d2bba0b1a0fa09b
+Copying blob sha256:98ab8f09fc878110446b6dbc37e7c78dbd63e310500420183a6a8123f5644409
+Copying blob sha256:22baec0351dc80f7100282a6232af1af9bff3973c43c95df1f2d7c56d6e70ee4
+Copying blob sha256:6a5e014152f6f9d2761b5d2ec1496e8381caf8ba01800c433bd511b7f1aff2f3
+Copying config sha256:cecd27385cbfc4e6d867c755689b05a2dc52c3540429b5ce02d3a302f51f8b12
+Writing manifest to image destination
+Unpacking OCI image
+   • unpacking rootfs ...     
+   • ... done                 
+   • unpacked image rootfs: /tmp/task-data/ta-01M36NADTHA3NS3GQRE3KRC92B/registry-unpackGY8Jdm
+Copied image in 6.47s
+
+=> Step 1: RUN which python || ln -s $(which python3) /usr/local/bin/python
+Saving image...
+Image saved, took 9.37s
+
+Built image im-KyN3Oe8IoSdBlvyEfMNKdq in 206.81s
+
+
+Building image im-IDBildy77LT0xdyymv2woH
+
+=> Step 0: FROM base
+
+=> Step 1: ENTRYPOINT []
+Saving image...
+Image saved, took 2.00s
+
+Built image im-IDBildy77LT0xdyymv2woH in 3.34s
+
+
+✓ Created objects.
+├── 🔨 Created mount 
+│   /Users/ag/orca/scripts/phase21b_4_15_1_qwen38_27b_cpu_preflight.py
+└── 🔨 Created function cpu_preflight.
+W0923 08:19:04.831000 2 torch/_opaque_base.py:6] torch._opaque_base is deprecated, use torch._custom_class_base instead
+W0923 08:19:04.832000 2 torch/_library/opaque_object.py:288] register_opaque_type is deprecated, use register_custom_class instead
+W0923 08:19:04.833000 2 torch/_library/opaque_object.py:211] typ='value' is deprecated, use typ='constant' instead
+{
+  "vllm_version": "0.30.0+cu129",
+  "transformers_version": "5.17.0",
+  "torch_version": "2.14.0",
+  "torch_version_cuda_build": "13.0",
+  "qwen3_5_architecture_recognized": null,
+  "architecture_registry_error": "operator torchvision::nms does not exist",
+  "reasoning_parsers_registered": [],
+  "qwen3_reasoning_parser_registered": false,
+  "tool_parsers_registered": null,
+  "tool_parser_registry_error": "No module named 'vllm.entrypoints.openai.tool_parsers'"
+}
+Stopping app - local entrypoint completed.
+✓ App completed. View run at 
+https://modal.com/apps/guruprasath-annadurai/main/ap-ety9O1wJyBcMtGPiaW1jEF
+EXIT:0
