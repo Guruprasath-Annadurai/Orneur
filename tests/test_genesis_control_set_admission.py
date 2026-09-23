@@ -586,25 +586,165 @@ def test_qwen3_8b_pinned_chat_and_thinking_evidence_present():
 # ── K: runtime_preflight_status=READY requires all mandatory evidence ──
 
 
-def test_runtime_preflight_ready_requires_all_mandatory_evidence_fields(registry):
+def test_runtime_preflight_ready_requires_identity_license_and_pinned_revision(registry):
+    """(K, narrowed) The generic identity/license/revision portion of the
+    READY gate. The weight, chat/tokenizer, and runtime-support portions
+    are each their own real (non-vacuous) gate test below -- Phase
+    21B.4.16.2 replaced a single test containing two fail-open escape
+    hatches (`or True`, and a Mistral-Nemo model-name bypass) with these
+    separate, individually falsifiable gates."""
+    import re
     for c in registry.controls:
         if c["runtime_preflight_status"] != "READY":
             continue
         name = c["canonical_candidate_name"]
         assert c["identity_status"] == "RESOLVED", name
         assert c["license_status"] == "CLEAR", name
-        # reproducible pinned artifact
-        import re
         assert re.match(r"^[0-9a-f]{40}$", c["exact_immutable_revision"]), name
-        # actual weight-layout evidence (Mistral closed in 21B.4.16, others in 21B.4.16.1)
-        admission = json.loads(ADMISSION_EVIDENCE_FILES[name].read_text())
-        assert "exact_total_bytes_one_model_representation" in admission["F_weight_layout"] or name == "Mistral-Nemo-Instruct-2407", name
-        # known chat/template/tokenizer path
-        assert "H_chat_template" in admission
-        # at least one evidence-supported future runtime path
-        assert admission["J_current_runtime_support"]["vllm"]["official_recipe_exists"] or True  # architecture-level evidence also counts; see O_engine_decision
-        assert "O_engine_decision" in admission
-        assert admission["O_engine_decision"]["primary_future_runtime_engine"]
+
+
+# ── Phase 21B.4.16.2 §3: real runtime-support gate (no `or True`) ──────
+
+
+def test_qwen3_8b_ready_requires_real_vllm_architecture_and_model_evidence(registry):
+    c = next(x for x in registry.controls if x["canonical_candidate_name"] == "Qwen3-8B")
+    if c["runtime_preflight_status"] != "READY":
+        pytest.skip("Qwen3-8B is not READY -- runtime-support gate not applicable")
+    text = VLLM_SUPPORTED_MODELS_PATH.read_text()
+    assert "Qwen3ForCausalLM" in text, "official vLLM support evidence must name the Qwen3ForCausalLM architecture"
+    assert "Qwen/Qwen3-8B" in text, "official vLLM support evidence must name Qwen/Qwen3-8B by exact model"
+    admission = json.loads(ADMISSION_EVIDENCE_FILES["Qwen3-8B"].read_text())
+    assert admission["J_current_runtime_support"]["vllm"]["official_recipe_exists"] is True
+    assert admission["O_engine_decision"]["primary_future_runtime_engine"] == "vLLM"
+
+
+def test_phi4_ready_requires_real_vllm_architecture_and_model_evidence(registry):
+    c = next(x for x in registry.controls if x["canonical_candidate_name"] == "Phi-4")
+    if c["runtime_preflight_status"] != "READY":
+        pytest.skip("Phi-4 is not READY -- runtime-support gate not applicable")
+    text = VLLM_SUPPORTED_MODELS_PATH.read_text()
+    assert "Phi3ForCausalLM" in text, "official vLLM support evidence must name the Phi3ForCausalLM architecture"
+    assert "microsoft/Phi-4" in text, "official vLLM support evidence must name microsoft/Phi-4 by exact model"
+    admission = json.loads(ADMISSION_EVIDENCE_FILES["Phi-4"].read_text())
+    assert admission["O_engine_decision"]["primary_future_runtime_engine"] == "vLLM"
+
+
+def test_mistral_nemo_ready_requires_architecture_and_repository_level_evidence(registry):
+    """Mistral-Nemo-Instruct-2407 is NOT named by exact model in the
+    official vLLM supported-models table -- this gate requires the
+    weaker, honestly-labeled architecture-level + repository-level
+    evidence combination actually used for this control, and must NOT
+    pretend the exact model is named."""
+    c = next(x for x in registry.controls if x["canonical_candidate_name"] == "Mistral-Nemo-Instruct-2407")
+    if c["runtime_preflight_status"] != "READY":
+        pytest.skip("Mistral-Nemo-Instruct-2407 is not READY -- runtime-support gate not applicable")
+    assert c["architecture"] == "MistralForCausalLM"
+
+    text = VLLM_SUPPORTED_MODELS_PATH.read_text()
+    assert "MistralForCausalLM" in text, "official vLLM support evidence must name the MistralForCausalLM architecture"
+    mistral_row = next(
+        line for line in text.splitlines() if line.strip().startswith("| `MistralForCausalLM`")
+    )
+    assert "mistralai/Mistral-Nemo-Instruct-2407" not in mistral_row, (
+        "the MistralForCausalLM table ROW must NOT name this exact model -- "
+        "it genuinely does not, and the gate must not silently upgrade that "
+        "(prose elsewhere in the file discussing this absence is expected and fine)"
+    )
+
+    admission = json.loads(ADMISSION_EVIDENCE_FILES["Mistral-Nemo-Instruct-2407"].read_text())
+    assert admission["J_current_runtime_support"]["vllm"]["library_name_tag"] == "vllm", (
+        "repository's own first-party metadata must identify vllm as the library/expected serving path"
+    )
+    assert admission["O_engine_decision"]["primary_future_runtime_engine"] == "vLLM"
+
+
+# ── Phase 21B.4.16.2 §4: real weight-evidence gate (no name bypass) ────
+
+
+def test_qwen3_8b_ready_requires_real_pinned_weight_evidence(registry):
+    c = next(x for x in registry.controls if x["canonical_candidate_name"] == "Qwen3-8B")
+    if c["runtime_preflight_status"] != "READY":
+        pytest.skip("Qwen3-8B is not READY -- weight-evidence gate not applicable")
+    assert RUNTIME_PREFLIGHT_CLOSURE_FILES["Qwen3-8B"].is_file()
+    data = json.loads(RUNTIME_PREFLIGHT_CLOSURE_FILES["Qwen3-8B"].read_text())
+    weight = data["A_weight_layout"]
+    assert weight["weight_layout_evidence_status"] == "COMPLETE"
+    files = weight["safetensors_files"]
+    assert len(files) == 5
+    assert sum(f["bytes"] for f in files) == 16381516776
+    assert weight["exact_total_bytes_one_model_representation"] == 16381516776
+
+
+def test_mistral_nemo_ready_requires_real_pinned_weight_evidence(registry):
+    c = next(x for x in registry.controls if x["canonical_candidate_name"] == "Mistral-Nemo-Instruct-2407")
+    if c["runtime_preflight_status"] != "READY":
+        pytest.skip("Mistral-Nemo-Instruct-2407 is not READY -- weight-evidence gate not applicable")
+    assert RUNTIME_PREFLIGHT_CLOSURE_FILES["Mistral-Nemo-Instruct-2407"].is_file()
+    data = json.loads(RUNTIME_PREFLIGHT_CLOSURE_FILES["Mistral-Nemo-Instruct-2407"].read_text())
+    weight = data["A_weight_layout_reconfirmation"]
+    assert "COMPLETE" in weight["weight_layout_evidence_status"]
+    assert weight["consolidated_safetensors_bytes"] == 24495604224
+    shard_map = weight["hf_5shard_representation_bytes"]
+    assert shard_map["sum_bytes"] == 24495607104
+    assert sum(v for k, v in shard_map.items() if k != "sum_bytes") == 24495607104
+    assert weight["torch_dtype"] == "bfloat16"
+
+
+def test_phi4_ready_requires_real_pinned_weight_evidence(registry):
+    c = next(x for x in registry.controls if x["canonical_candidate_name"] == "Phi-4")
+    if c["runtime_preflight_status"] != "READY":
+        pytest.skip("Phi-4 is not READY -- weight-evidence gate not applicable")
+    assert RUNTIME_PREFLIGHT_CLOSURE_FILES["Phi-4"].is_file()
+    data = json.loads(RUNTIME_PREFLIGHT_CLOSURE_FILES["Phi-4"].read_text())
+    weight = data["A_weight_layout"]
+    assert weight["weight_layout_evidence_status"] == "COMPLETE"
+    files = weight["safetensors_files"]
+    assert len(files) == 6
+    assert sum(f["bytes"] for f in files) == 29319042992
+    assert weight["exact_total_bytes_one_model_representation"] == 29319042992
+
+
+# ── Phase 21B.4.16.2 §5: real chat/tokenizer gate ───────────────────────
+
+
+def test_qwen3_8b_ready_requires_real_chat_tokenizer_evidence(registry):
+    c = next(x for x in registry.controls if x["canonical_candidate_name"] == "Qwen3-8B")
+    if c["runtime_preflight_status"] != "READY":
+        pytest.skip("Qwen3-8B is not READY -- chat/tokenizer gate not applicable")
+    data = json.loads(RUNTIME_PREFLIGHT_CLOSURE_FILES["Qwen3-8B"].read_text())
+    tok = data["B_tokenizer_and_chat_template"]
+    assert tok["chat_tokenizer_evidence_status"] == "COMPLETE"
+    assert tok["tokenizer_config_chat_template_present"] is True
+    assert "enable_thinking" in tok["tokenizer_config_chat_template_thinking_mode_evidence"]
+
+
+def test_mistral_nemo_ready_requires_real_chat_tokenizer_evidence(registry):
+    c = next(x for x in registry.controls if x["canonical_candidate_name"] == "Mistral-Nemo-Instruct-2407")
+    if c["runtime_preflight_status"] != "READY":
+        pytest.skip("Mistral-Nemo-Instruct-2407 is not READY -- chat/tokenizer gate not applicable")
+    data = json.loads(RUNTIME_PREFLIGHT_CLOSURE_FILES["Mistral-Nemo-Instruct-2407"].read_text())
+    tok = data["B_tokenizer_and_chat_template"]
+    assert tok["chat_tokenizer_evidence_status"] == "COMPLETE"
+    assert tok["tokenizer_config_json_exists"] is True
+    assert tok["tokenizer_config_json_chat_template_present"] is True
+    assert tok["bos_token"] and tok["eos_token"]
+    assert "dual_config_path_confirmed" in tok
+    assert "hf_transformers_path" in tok["dual_config_path_confirmed"]
+    assert "mistral_native_path" in tok["dual_config_path_confirmed"]
+
+
+def test_phi4_ready_requires_real_chat_tokenizer_evidence(registry):
+    c = next(x for x in registry.controls if x["canonical_candidate_name"] == "Phi-4")
+    if c["runtime_preflight_status"] != "READY":
+        pytest.skip("Phi-4 is not READY -- chat/tokenizer gate not applicable")
+    data = json.loads(RUNTIME_PREFLIGHT_CLOSURE_FILES["Phi-4"].read_text())
+    tok = data["B_tokenizer_and_chat_template"]
+    assert tok["chat_tokenizer_evidence_status"] == "COMPLETE"
+    assert tok["tokenizer_config_chat_template_present"] is True
+    assert tok["eos_token"]
+    assert tok["generation_config_json"]["eos_token_id"]
+    assert tok["trust_remote_code_required"] is False
+    assert "trust_remote_code_source" in tok
 
 
 def test_vllm_supported_models_primary_source_file_exists_and_cites_all_three():

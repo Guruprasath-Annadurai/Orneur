@@ -1,8 +1,8 @@
 {
   "evidence_type": "GENESIS_CONTROL_SET_EVIDENCE_INTEGRITY_INDEX",
   "created": "2026-09-23",
-  "phase": "21B.4.16.1",
-  "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative. No GPU, no inference, no weight download performed to produce any indexed file. Recomputed in full this phase (21B.4.16.1) to reflect evidence-closure edits to modified files and the addition of the three RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE files plus the vLLM supported_models.md primary-source excerpt -- no stale hashes.",
+  "phase": "21B.4.16.2",
+  "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative. No GPU, no inference, no weight download performed to produce any indexed file. Recomputed in full this phase (21B.4.16.1) to reflect evidence-closure edits to modified files and the addition of the three RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE files plus the vLLM supported_models.md primary-source excerpt -- no stale hashes. Phase 21B.4.16.2: recomputed again after the runtime-preflight doc gained a fail-closed-gates section -- no stale hashes.",
   "entries": [
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_SET_PRIMARY_SOURCES_2026-09-23.json",
@@ -48,9 +48,9 @@
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_SET_RUNTIME_PREFLIGHT_2026-09-23.md",
-      "sha256": "04362b4f1622bf3ecf93bbb26ca9861a4edff5e7426a4c55282f8834bfd4266a",
+      "sha256": "0836034fedf325e2280ea5bc16f798d8863d8a65195bf699bcde467c70b18f34",
       "evidence_role": "control_set_runtime_preflight",
-      "size_bytes": 11519
+      "size_bytes": 13532
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_PARITY_SPEC_2026-09-23.md",

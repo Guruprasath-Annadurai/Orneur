@@ -1,4 +1,4 @@
-# Genesis Control Set Runtime Preflight — Phase 21B.4.16 (evidence closed in 21B.4.16.1)
+# Genesis Control Set Runtime Preflight — Phase 21B.4.16 (evidence closed in 21B.4.16.1, fail-closed gates hardened in 21B.4.16.2)
 
 **CPU / metadata / API-only. No GPU, no inference, no weight download, no
 benchmark, no engine startup.**
@@ -194,3 +194,35 @@ phase's evidence closure:
 `runtime_qualification_status` remains `NOT_TESTED` for all three —
 `READY` preflight status is not, and must never be conflated with, a
 runtime qualification claim.
+
+## Fail-closed evidence gates (Phase 21B.4.16.2)
+
+Independent audit found that the single Phase 21B.4.16.1 test asserting
+this table (`test_runtime_preflight_ready_requires_all_mandatory_evidence_fields`)
+contained two fail-open escape hatches: an `assert ... or True` clause
+(permanently true, verified nothing) on the runtime-support check, and a
+Mistral-Nemo-specific `or name == "Mistral-Nemo-Instruct-2407"` bypass on
+the weight-evidence check. Both are removed. In their place, nine
+separate, individually falsifiable gate tests now exist in
+`tests/test_genesis_control_set_admission.py` — three runtime-support
+gates, three weight-evidence gates, and three chat/tokenizer gates, one
+per control per category — each requiring the actual evidence file
+content to satisfy specific, checkable conditions with no unconditional
+`True` fallback and no model-name exemption. Each was tamper-tested
+during this phase (evidence value corrupted, gate confirmed to fail,
+evidence restored) to confirm it is genuinely fail-closed rather than
+merely well-worded.
+
+**Machine evidence linkage:** `runtime_preflight_status = READY` in the
+registry JSON currently carries no machine-readable pointer to its
+supporting evidence file(s) — the linkage is enforced by the test suite
+(via the hardcoded `ADMISSION_EVIDENCE_FILES` / `RUNTIME_PREFLIGHT_CLOSURE_FILES`
+path maps in the test file), not by a registry schema field. Adding a
+`runtime_preflight_evidence_reference` field to the control-admission
+schema was considered and explicitly deferred this phase —
+**MACHINE_LINKAGE_DEFERRED** — because it would require a schema
+version bump and `_validate_control()` change that is out of scope for
+this fail-closed-test-hardening micro-phase (per its own instruction not
+to redesign the schema merely for cosmetic reasons, and not to perform a
+broader migration in a micro-phase). The explicit fail-closed test
+mapping above is the interim substitute and remains in force.
