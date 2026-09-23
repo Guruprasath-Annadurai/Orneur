@@ -1,0 +1,126 @@
+{
+  "evidence_type": "GENESIS_CONTROL_ADMISSION_EVIDENCE",
+  "phase": "21B.4.16",
+  "control": "Phi-4",
+  "record_date": "2026-09-23",
+  "role": "CONTROL / SMALL BASELINE -- never a candidate finalist",
+
+  "A_identity": {
+    "artifact_repository": "microsoft/phi-4",
+    "pinned_revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+    "current_upstream_head": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+    "upstream_drift": "NO",
+    "tokenizer_repository": "microsoft/phi-4",
+    "tokenizer_revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+    "architecture": "Phi3ForCausalLM",
+    "identity_status": "RESOLVED"
+  },
+
+  "B_license": {
+    "license_identifier": "mit",
+    "actual_license_file_exists": true,
+    "evidence_path": "docs/orneur/phase-21/evidence/PHI4_LICENSE_PRIMARY_SOURCE_2026-09-23.txt",
+    "evidence_sha256": "c49419617a6070bcb197cfe272f7007fdec3e790dbb529cb995473bd69c0bd51",
+    "commercial_use": "CLEAR",
+    "evaluation_use": "CLEAR",
+    "hosting": "CLEAR",
+    "redistribution": "CLEAR",
+    "fine_tuning": "CLEAR",
+    "derivative_work": "CLEAR",
+    "license_status": "CLEAR",
+    "note": "Standard MIT License full text confirmed at the pinned revision ('Microsoft. Copyright (c) Microsoft Corporation. MIT License ...'). No custom/additional terms present."
+  },
+
+  "C_admission": {
+    "commercial_evaluation_use_admissibility": "CLEAR -- MIT permits evaluation use without restriction",
+    "control_admission_status": "ADMITTED"
+  },
+
+  "D_tokenizer_identity": {
+    "bos_token_id": 100257,
+    "eos_token_id": 100265,
+    "note": "Tokenizer identity pinned at the same repository revision."
+  },
+
+  "E_architecture_config_identity": {
+    "hidden_size": 5120,
+    "intermediate_size": 17920
+  },
+
+  "F_weight_layout": {
+    "total_parameters": 14659507200,
+    "parameters_by_dtype": {"BF16": 14659507200},
+    "weight_storage_bf16_gb": 29.3,
+    "note": "Matches the existing registry entry -- re-confirmed live via config.json identity checks this phase (not re-derived from a fresh blobs=true weight-file listing)."
+  },
+
+  "G_context_window": {
+    "config_max_position_embeddings": 16384,
+    "note": "16384 native context, confirmed directly from config.json at the pinned revision -- notably smaller than both other controls (Qwen3-8B: 40960, Mistral-Nemo: 131072). Recorded as an accurate architectural fact only, no capability judgment."
+  },
+
+  "H_chat_template": {
+    "note": "Not independently deep-inspected this phase beyond identity/config confirmation; Phi-4 is documented upstream as using a ChatML-style template in general Microsoft/HF documentation, not independently re-verified against the pinned tokenizer_config.json content this phase."
+  },
+
+  "I_reasoning_thinking_mode": {
+    "applicable": false,
+    "note": "Phi-4 (the base instruct release, distinct from later Phi-4-reasoning variants not in scope here) is a standard instruct model -- no reasoning/thinking-mode parser requirement expected for this exact pinned artifact."
+  },
+
+  "J_current_runtime_support": {
+    "vllm": {
+      "official_recipe_exists": false,
+      "http_status_checked": 404,
+      "note": "No dedicated recipe page -- consistent with Phi3ForCausalLM being a mainstream, long-established architecture in vLLM (supported since the Phi-3 family's original release)."
+    },
+    "sglang": {
+      "official_recipe_confirmed_this_phase": false
+    },
+    "transformers": {
+      "supported": true,
+      "note": "Phi3ForCausalLM is a mainstream, long-established architecture class."
+    }
+  },
+
+  "K_likely_future_topology": {
+    "minimum_plausible_native_precision_topology": "THEORETICAL -- a single 24GB-class GPU (L4/L40/A10G) fits the ~29.3 GB BF16 weight set only with meaningfully reduced KV-cache headroom (close to the raw card capacity); a larger card gives more comfortable margin, matching the registry's own theoretical_gpu_count_l4_class_24gb.bf16=2 figure as the SAFER multi-GPU option.",
+    "safer_qualification_topology": "THEORETICAL -- either 2x 24GB-class GPUs (TP2, per the registry's existing theoretical figure) or 1x 80GB+-class single GPU for comfortable single-GPU headroom",
+    "quantized_topology_options": "THEORETICAL -- FP8 (~14.7 GB) and INT4 (~7.3 GB) both fit comfortably on a single 24GB-class GPU by weight size alone; no official quantized artifact confirmed this phase"
+  },
+
+  "L_precision_options": {
+    "native_precision_artifact": "BF16 (this repository)",
+    "official_quantized_artifacts_confirmed_this_phase": false,
+    "third_party_quantized_artifacts_confirmed_this_phase": false
+  },
+
+  "M_special_requirements": {
+    "trust_remote_code_required": "NOT CONFIRMED_THIS_PHASE",
+    "stop_token_handling": "eos_token_id=100265 confirmed from config.json; no special multi-EOS or structured-output limitation independently investigated this phase"
+  },
+
+  "N_zero_owner_cash_classification": {
+    "zero_owner_cash_runtime_path": "POTENTIALLY_AVAILABLE",
+    "rationale": "No GPU execution was performed to determine this. The 29.3 GB BF16 weight footprint is tight on a single 24GB-class GPU and comfortable on a larger card; a future zero-cash smoke is plausible but not confirmed AVAILABLE_NOW absent a live credit-availability check. No promotional credits, account balance, or prior-phase credit state is assumed."
+  },
+
+  "O_engine_decision": {
+    "primary_future_runtime_engine": "vLLM",
+    "fallback_engine": "native Transformers (load-compatibility-only smoke)",
+    "rationale": "Phi3ForCausalLM is a mainstream, well-supported vLLM architecture with no confirmed model-specific blockers; ORNEUR's existing validated vLLM harness experience is a real implementation-risk advantage. SGLang not selected as fallback due to no confirmed official support evidence for this control this phase."
+  },
+
+  "final_state": {
+    "identity": "RESOLVED",
+    "license_status": "CLEAR",
+    "control_admission_status": "ADMITTED",
+    "runtime_preflight_status": "READY",
+    "runtime_qualification_status": "NOT_TESTED",
+    "runtime_smoke_eligibility": "ELIGIBLE",
+    "runtime_smoke_blocked_reason": null,
+    "blocker": "NONE"
+  },
+
+  "gate": "ADMITTED_FOR_FUTURE_RUNTIME_QUALIFICATION"
+}

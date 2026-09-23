@@ -55,6 +55,32 @@ alongside a failed financial gate, etc.). `verify_candidate_qualification_
 end_to_end()` gained a `require_production_serving` parameter (default
 `False`, backwards compatible) for callers that specifically need
 production-serving acceptance rather than any qualified type.
+
+Phase 21B.4.16 hardening (schema v3 -> v4): controls gain their own,
+deliberately SMALLER admission-dimension set (they are never production-
+serving-qualified foundation candidates, so they get no
+`production_serving_status`/`financial_acceptance_status`/
+`capability_status`): `identity_status`, `license_status` (both reusing
+the deployable enums), `control_admission_status` (ADMITTED/BLOCKED/
+REVIEW_REQUIRED), `runtime_preflight_status` (READY/BLOCKED/
+INCONCLUSIVE/NOT_TESTED), `runtime_qualification_status` (its own
+smaller enum: NOT_TESTED/QUALIFIED/FAILED/INCONCLUSIVE -- distinct from
+the deployable one), `runtime_smoke_eligibility`/
+`runtime_smoke_blocked_reason` (reusing the deployable enum/pattern).
+`stage0_status` is RETAINED for backwards compatibility (existing
+`VALID_STAGE0_STATUSES` values, still validated) but its semantics are
+now documented as a coarse LEGACY summary field, never the canonical
+source of truth -- the new dimensions above are canonical.
+`_validate_control()` enforces the same admission-follows-identity/
+license discipline as deployable candidates, PLUS a structural
+invariant unique to controls: a control entry may never carry any
+deployable-only field (`qualification_type`,
+`load_compatibility_status`, `production_serving_status`,
+`financial_acceptance_status`, `capability_status`, or the manifest-
+linkage fields) and must carry the exact locked `role` text -- both
+checks exist specifically so a control can never be structurally
+misread as a deployable Genesis foundation candidate, a frontier
+reference, or a selected Genesis foundation.
 """
 from __future__ import annotations
 
@@ -63,7 +89,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-REGISTRY_SCHEMA_VERSION = "genesis-candidate-execution-registry-v3"
+REGISTRY_SCHEMA_VERSION = "genesis-candidate-execution-registry-v4"
 
 _HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -110,7 +136,33 @@ CONTROL_REQUIRED_FIELDS = (
     "candidate_class", "canonical_candidate_name", "organization", "artifact_repository",
     "exact_immutable_revision", "tokenizer_repository", "tokenizer_revision",
     "architecture", "total_parameters", "license_identifier", "stage0_status", "role",
+    # Phase 21B.4.16 §9: explicit control-admission dimensions, mirroring
+    # the deployable-candidate hardening from Phase 21B.4.15 but kept
+    # deliberately smaller -- controls are never production-serving-
+    # qualified foundation candidates, so they get no
+    # production_serving_status/financial_acceptance_status/
+    # capability_status fields at all (§10: a control entry must never be
+    # structurally capable of being read as a deployable finalist).
+    "identity_status", "license_status", "control_admission_status",
+    "runtime_preflight_status", "runtime_qualification_status",
+    "runtime_smoke_eligibility", "runtime_smoke_blocked_reason",
 )
+
+# Fields that only ever belong on a DEPLOYABLE_GENESIS_FOUNDATION_CANDIDATE
+# entry. Phase 21B.4.16 §10 structural invariant: a control entry must
+# never carry any of these, which would let it be misread as a
+# deployable finalist despite candidate_class/role saying otherwise.
+_DEPLOYABLE_ONLY_FIELDS = (
+    "qualification_type", "qualification_manifest_path", "qualification_manifest_digest_sha256",
+    "load_compatibility_status", "production_serving_status",
+    "financial_acceptance_status", "capability_status",
+)
+
+VALID_CONTROL_ADMISSION_STATUSES = ("ADMITTED", "BLOCKED", "REVIEW_REQUIRED")
+VALID_RUNTIME_PREFLIGHT_STATUSES = ("READY", "BLOCKED", "INCONCLUSIVE", "NOT_TESTED")
+VALID_CONTROL_RUNTIME_QUALIFICATION_STATUSES = ("NOT_TESTED", "QUALIFIED", "FAILED", "INCONCLUSIVE")
+
+REQUIRED_CONTROL_ROLE_TEXT = "CONTROL / SMALL BASELINE -- never a candidate finalist"
 
 REFERENCE_REQUIRED_FIELDS = (
     "reference_name", "organization", "identity_type", "artifact_repository",
@@ -438,6 +490,112 @@ def _validate_deployable(entry: dict) -> None:
             )
 
 
+def _validate_control(entry: dict) -> None:
+    """Phase 21B.4.16 §9/§10: control-admission dimensions and the
+    structural invariant that a control entry can never be misread as a
+    deployable Genesis foundation candidate, a frontier reference, or a
+    selected Genesis foundation."""
+    _require_fields(entry, CONTROL_REQUIRED_FIELDS, "controls")
+    name = entry["canonical_candidate_name"]
+    if entry["candidate_class"] != EXPECTED_CONTROL_CANDIDATE_CLASS:
+        raise RegistrySchemaError(
+            f"control {name!r} has candidate_class={entry['candidate_class']!r}, expected "
+            f"{EXPECTED_CONTROL_CANDIDATE_CLASS!r} -- a control tagged with the wrong class is a "
+            "wiring bug, not a legitimate data variation."
+        )
+    if entry.get("role") != REQUIRED_CONTROL_ROLE_TEXT:
+        raise RegistrySchemaError(
+            f"control {name!r} has role={entry.get('role')!r}, expected exactly "
+            f"{REQUIRED_CONTROL_ROLE_TEXT!r} -- a control's role text is a structural guard against it "
+            "being misread as a candidate finalist, not free-form prose."
+        )
+    for forbidden_field in _DEPLOYABLE_ONLY_FIELDS:
+        if forbidden_field in entry:
+            raise RegistrySchemaError(
+                f"control {name!r} carries deployable-only field {forbidden_field!r} -- a control entry "
+                "must never be structurally capable of being read as a deployable finalist (Phase "
+                "21B.4.16 §10)."
+            )
+    _require_hex40_revision(entry["exact_immutable_revision"], f"control {name!r}")
+    _require_hex40_revision(entry["tokenizer_revision"], f"control {name!r} tokenizer_revision")
+    if entry["stage0_status"] not in VALID_STAGE0_STATUSES:
+        raise RegistrySchemaError(f"control {name!r} has unrecognized stage0_status={entry['stage0_status']!r}")
+
+    if entry["identity_status"] not in VALID_IDENTITY_STATUSES:
+        raise RegistrySchemaError(f"control {name!r} has unrecognized identity_status={entry['identity_status']!r}")
+    if entry["license_status"] not in VALID_LICENSE_STATUSES:
+        raise RegistrySchemaError(f"control {name!r} has unrecognized license_status={entry['license_status']!r}")
+    if entry["control_admission_status"] not in VALID_CONTROL_ADMISSION_STATUSES:
+        raise RegistrySchemaError(
+            f"control {name!r} has unrecognized control_admission_status="
+            f"{entry['control_admission_status']!r}"
+        )
+    if entry["runtime_preflight_status"] not in VALID_RUNTIME_PREFLIGHT_STATUSES:
+        raise RegistrySchemaError(
+            f"control {name!r} has unrecognized runtime_preflight_status="
+            f"{entry['runtime_preflight_status']!r}"
+        )
+    if entry["runtime_qualification_status"] not in VALID_CONTROL_RUNTIME_QUALIFICATION_STATUSES:
+        raise RegistrySchemaError(
+            f"control {name!r} has unrecognized runtime_qualification_status="
+            f"{entry['runtime_qualification_status']!r}"
+        )
+    if entry["runtime_smoke_eligibility"] not in VALID_RUNTIME_SMOKE_ELIGIBILITY:
+        raise RegistrySchemaError(
+            f"control {name!r} has unrecognized runtime_smoke_eligibility="
+            f"{entry['runtime_smoke_eligibility']!r}"
+        )
+
+    # Cross-field invariants -- mirror the deployable-candidate discipline
+    # from Phase 21B.4.10.1/21B.4.15: admission/eligibility must follow
+    # deterministically from identity/license, never be set independently.
+    if entry["license_status"] == "LICENSE_REVIEW_REQUIRED":
+        if entry["control_admission_status"] == "ADMITTED":
+            raise RegistrySchemaError(
+                f"control {name!r} has license_status=LICENSE_REVIEW_REQUIRED but "
+                "control_admission_status=ADMITTED -- an unresolved license can never admit a control."
+            )
+        if entry["runtime_smoke_eligibility"] != "BLOCKED":
+            raise RegistrySchemaError(
+                f"control {name!r} has license_status=LICENSE_REVIEW_REQUIRED but "
+                f"runtime_smoke_eligibility={entry['runtime_smoke_eligibility']!r} -- an unresolved "
+                "license must block runtime smoke eligibility."
+            )
+    if entry["identity_status"] != "RESOLVED":
+        if entry["control_admission_status"] == "ADMITTED":
+            raise RegistrySchemaError(
+                f"control {name!r} has identity_status={entry['identity_status']!r} (not RESOLVED) but "
+                "control_admission_status=ADMITTED -- unresolved identity can never admit a control."
+            )
+        if entry["runtime_smoke_eligibility"] != "BLOCKED":
+            raise RegistrySchemaError(
+                f"control {name!r} has identity_status={entry['identity_status']!r} (not RESOLVED) but "
+                f"runtime_smoke_eligibility={entry['runtime_smoke_eligibility']!r} -- unresolved identity "
+                "must block runtime smoke eligibility."
+            )
+    if entry["control_admission_status"] == "BLOCKED" and not entry.get("runtime_smoke_blocked_reason"):
+        raise RegistrySchemaError(
+            f"control {name!r} is control_admission_status=BLOCKED but has no runtime_smoke_blocked_reason"
+        )
+    if entry["control_admission_status"] == "ADMITTED" and entry["runtime_smoke_eligibility"] != "ELIGIBLE":
+        raise RegistrySchemaError(
+            f"control {name!r} has control_admission_status=ADMITTED but "
+            f"runtime_smoke_eligibility={entry['runtime_smoke_eligibility']!r} -- an admitted control must "
+            "be eligible for a future runtime smoke."
+        )
+    # Phase 21B.4.16 §25.I: no control is runtime-qualified by THIS phase
+    # -- a data-fact assertion about the current registry content, not a
+    # permanent code-level ban (a future, separately-authorized runtime
+    # phase may legitimately set this to QUALIFIED/FAILED once real GPU
+    # evidence exists).
+    if entry["runtime_qualification_status"] != "NOT_TESTED" and not entry.get("runtime_qualification_evidence_reference"):
+        raise RegistrySchemaError(
+            f"control {name!r} has runtime_qualification_status="
+            f"{entry['runtime_qualification_status']!r} but no runtime_qualification_evidence_reference -- "
+            "a non-NOT_TESTED runtime qualification claim must cite the evidence that established it."
+        )
+
+
 def _validate(data: dict) -> None:
     if data.get("schema_version") != REGISTRY_SCHEMA_VERSION:
         raise RegistrySchemaError(
@@ -480,18 +638,7 @@ def _validate(data: dict) -> None:
         _validate_deployable(entry)
 
     for entry in data["controls"]:
-        _require_fields(entry, CONTROL_REQUIRED_FIELDS, "controls")
-        name = entry["canonical_candidate_name"]
-        if entry["candidate_class"] != EXPECTED_CONTROL_CANDIDATE_CLASS:
-            raise RegistrySchemaError(
-                f"control {name!r} has candidate_class={entry['candidate_class']!r}, expected "
-                f"{EXPECTED_CONTROL_CANDIDATE_CLASS!r} -- a control tagged with the wrong class is a "
-                "wiring bug, not a legitimate data variation."
-            )
-        _require_hex40_revision(entry["exact_immutable_revision"], f"control {name!r}")
-        _require_hex40_revision(entry["tokenizer_revision"], f"control {name!r} tokenizer_revision")
-        if entry["stage0_status"] not in VALID_STAGE0_STATUSES:
-            raise RegistrySchemaError(f"control {name!r} has unrecognized stage0_status={entry['stage0_status']!r}")
+        _validate_control(entry)
 
     # Phase 21B.4.11 §5A: reject accidental duplicate/cross-wired
     # candidate identities -- two different candidates (deployable or

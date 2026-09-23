@@ -1,5 +1,5 @@
 {
-  "schema_version": "genesis-candidate-execution-registry-v3",
+  "schema_version": "genesis-candidate-execution-registry-v4",
   "phase": "21B.4.10.1",
   "generated_at": "2026-09-19T00:00:00Z",
   "note": "Stage-0 identity/license/runtime eligibility qualification only. No candidate is declared frontier-class, benchmark-qualified, or Genesis-selected by this registry. All revision/license/parameter data below was retrieved live via the Hugging Face Hub API (metadata only -- no weight shards were downloaded). Phase 21B.4.10.1 replaces the v1 conflated 'stage0_status' field on deployable candidates with four separate fields (identity_status, license_status, runtime_qualification_status, runtime_smoke_eligibility) so that 'runtime not yet qualified' (which is exactly what a runtime smoke test exists to resolve) is never confused with 'not eligible to attempt a smoke test'. runtime_smoke_eligibility=ELIGIBLE means only that a future phase MAY attempt to LOAD that candidate, never that it is qualified, selected, or frontier-class.",
@@ -271,7 +271,14 @@
       },
       "qualified_practical_topology": "UNQUALIFIED / TBD",
       "stage0_status": "ELIGIBLE_FOR_RUNTIME_SMOKE",
-      "role": "CONTROL / SMALL BASELINE -- never a candidate finalist"
+      "role": "CONTROL / SMALL BASELINE -- never a candidate finalist",
+      "identity_status": "RESOLVED",
+      "license_status": "CLEAR",
+      "control_admission_status": "ADMITTED",
+      "runtime_preflight_status": "READY",
+      "runtime_qualification_status": "NOT_TESTED",
+      "runtime_smoke_eligibility": "ELIGIBLE",
+      "runtime_smoke_blocked_reason": null
     },
     {
       "candidate_class": "CONTROL_SMALL_BASELINE",
@@ -303,7 +310,14 @@
       },
       "qualified_practical_topology": "UNQUALIFIED / TBD",
       "stage0_status": "ELIGIBLE_FOR_RUNTIME_SMOKE",
-      "role": "CONTROL / SMALL BASELINE -- never a candidate finalist"
+      "role": "CONTROL / SMALL BASELINE -- never a candidate finalist",
+      "identity_status": "RESOLVED",
+      "license_status": "CLEAR",
+      "control_admission_status": "ADMITTED",
+      "runtime_preflight_status": "READY",
+      "runtime_qualification_status": "NOT_TESTED",
+      "runtime_smoke_eligibility": "ELIGIBLE",
+      "runtime_smoke_blocked_reason": null
     },
     {
       "candidate_class": "CONTROL_SMALL_BASELINE",
@@ -335,7 +349,14 @@
       },
       "qualified_practical_topology": "UNQUALIFIED / TBD",
       "stage0_status": "ELIGIBLE_FOR_RUNTIME_SMOKE",
-      "role": "CONTROL / SMALL BASELINE -- never a candidate finalist"
+      "role": "CONTROL / SMALL BASELINE -- never a candidate finalist",
+      "identity_status": "RESOLVED",
+      "license_status": "CLEAR",
+      "control_admission_status": "ADMITTED",
+      "runtime_preflight_status": "READY",
+      "runtime_qualification_status": "NOT_TESTED",
+      "runtime_smoke_eligibility": "ELIGIBLE",
+      "runtime_smoke_blocked_reason": null
     }
   ],
   "frontier_references": [

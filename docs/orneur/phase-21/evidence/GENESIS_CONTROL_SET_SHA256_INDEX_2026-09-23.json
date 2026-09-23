@@ -1,0 +1,62 @@
+{
+  "evidence_type": "GENESIS_CONTROL_SET_EVIDENCE_INTEGRITY_INDEX",
+  "created": "2026-09-23",
+  "phase": "21B.4.16",
+  "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative. No GPU, no inference, no weight download performed to produce any indexed file.",
+  "entries": [
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_SET_PRIMARY_SOURCES_2026-09-23.json",
+      "sha256": "ed46c1410d1a2b545ebd4dd0bcc9e53e7b92ac0bfaa3237b2e2802f3e1519d9f",
+      "evidence_role": "control_set_primary_sources",
+      "size_bytes": 10712
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/QWEN3_8B_ADMISSION_EVIDENCE_2026-09-23.json",
+      "sha256": "279c617aa4cf62fe6214542b407f01ca757d390a9d5c3c8ea30c64f17532a9fb",
+      "evidence_role": "qwen3_8b_admission_evidence",
+      "size_bytes": 6529
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/MISTRAL_NEMO_2407_ADMISSION_EVIDENCE_2026-09-23.json",
+      "sha256": "5b4e140af502345e0fc4cafc1a05c41d85e9774ec9c95ae69ebac07aa5badc6a",
+      "evidence_role": "mistral_nemo_2407_admission_evidence",
+      "size_bytes": 8248
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/PHI4_ADMISSION_EVIDENCE_2026-09-23.json",
+      "sha256": "52f7d153ca16b49bebe37dcfb4f302100eccc8ee29586a71017d4dec09e6b358",
+      "evidence_role": "phi4_admission_evidence",
+      "size_bytes": 6195
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/QWEN3_8B_LICENSE_PRIMARY_SOURCE_2026-09-23.txt",
+      "sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+      "evidence_role": "qwen3_8b_license_primary_source",
+      "size_bytes": 11343
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/PHI4_LICENSE_PRIMARY_SOURCE_2026-09-23.txt",
+      "sha256": "c49419617a6070bcb197cfe272f7007fdec3e790dbb529cb995473bd69c0bd51",
+      "evidence_role": "phi4_license_primary_source",
+      "size_bytes": 1105
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/MISTRAL_NEMO_2407_README_PRIMARY_SOURCE_2026-09-23.md",
+      "sha256": "445377992e7404021555e689a5df79b90a3293c38829ec1dcaa9dfed5b7526b0",
+      "evidence_role": "mistral_nemo_2407_readme_primary_source",
+      "size_bytes": 10518
+    },
+    {
+      "path": "docs/orneur/phase-21/GENESIS_CONTROL_SET_RUNTIME_PREFLIGHT_2026-09-23.md",
+      "sha256": "574bcf0da6d898175309cc8991925ee7f83f51799ca71cf96f7a28cabe95f228",
+      "evidence_role": "control_set_runtime_preflight",
+      "size_bytes": 7040
+    },
+    {
+      "path": "docs/orneur/phase-21/GENESIS_CONTROL_PARITY_SPEC_2026-09-23.md",
+      "sha256": "82f41827e4da23377dced6dd474bfbd169da924290effd93e971e51497349605",
+      "evidence_role": "control_parity_spec",
+      "size_bytes": 4742
+    }
+  ]
+}

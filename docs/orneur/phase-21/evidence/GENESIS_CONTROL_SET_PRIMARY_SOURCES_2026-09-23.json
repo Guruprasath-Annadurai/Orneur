@@ -1,0 +1,162 @@
+{
+  "evidence_type": "GENESIS_CONTROL_SET_PRIMARY_SOURCE_RESEARCH",
+  "phase": "21B.4.16",
+  "retrieval_date": "2026-09-23",
+  "note": "CPU / metadata / API-only research. No GPU, no weight download, no inference, no benchmark. All identity/config/license facts re-verified live against primary sources, not assumed from the existing registry.",
+
+  "controls": {
+    "Qwen3-8B": {
+      "artifact_repository": "Qwen/Qwen3-8B",
+      "registered_pinned_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "identity_reverification": {
+        "hf_api_current_main_sha": "b968826d9c46dd6066d109eabc6255188de91218",
+        "matches_registered_pin": true,
+        "drift": "NO",
+        "lastModified": "2025-07-26T03:49:13.000Z",
+        "config_architectures": ["Qwen3ForCausalLM"],
+        "config_model_type": "qwen3"
+      },
+      "config_json": {
+        "url": "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/config.json",
+        "hidden_size": 4096,
+        "num_hidden_layers": 36,
+        "num_attention_heads": 32,
+        "num_key_value_heads": 8,
+        "head_dim": 128,
+        "vocab_size": 151936,
+        "max_position_embeddings": 40960,
+        "rope_scaling": null,
+        "rope_theta": 1000000,
+        "torch_dtype": "bfloat16",
+        "transformers_version_written_by": "4.51.0",
+        "tie_word_embeddings": false
+      },
+      "tokenizer_config_json": {
+        "url": "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/tokenizer_config.json",
+        "eos_token": "<|im_end|>",
+        "pad_token": "<|endoftext|>",
+        "model_max_length": 131072,
+        "note": "model_max_length is a tokenizer-level nominal cap, not necessarily the architecturally-trained context -- config.json's max_position_embeddings=40960 is the authoritative architectural limit for this revision.",
+        "chat_template_supports_enable_thinking": true,
+        "chat_template_evidence": "template contains 'enable_thinking is defined and enable_thinking is false' branch that injects an empty <think></think> block -- confirms hybrid thinking/non-thinking mode support at the template level, matching the Qwen3 family convention."
+      },
+      "license": {
+        "url": "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/LICENSE",
+        "persisted_at": "docs/orneur/phase-21/evidence/QWEN3_8B_LICENSE_PRIMARY_SOURCE_2026-09-23.txt",
+        "persisted_sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+        "identifier": "Apache License 2.0",
+        "actual_license_file_exists_in_repo": true
+      },
+      "vllm_recipe": {
+        "url": "https://recipes.vllm.ai/Qwen/Qwen3-8B",
+        "exists": true,
+        "content_summary": "A DEDICATED but CPU-only recipe: 'Qwen3-8B is a dense Qwen3 model with hybrid thinking and non-thinking modes. This recipe includes an Intel Xeon 6 CPU configuration validated with BF16 serving.' Prerequisites: 2x Xeon 6 CPUs, vLLM >= 0.8.5. Launch command: 'vllm serve Qwen/Qwen3-8B --max-num-batched-tokens 16384 --gpu-memory-utilization 0.8' (CPU path; the --gpu-memory-utilization flag name is retained by vLLM's CPU backend for a different resource-budget purpose). Docker variant uses image vllm/vllm-openai-cpu:latest-x86_64 with '--tensor-parallel-size 1 --enable-auto-tool-choice --tool-call-parser hermes --reasoning-parser qwen3'. No GPU-specific section exists in this recipe.",
+        "reasoning_parser": "qwen3",
+        "tool_call_parser": "hermes",
+        "min_vllm_version_stated": ">=0.8.5 (this recipe's own stated Prerequisites; distinct architecture generation from the Qwen3.5/3.8 hybrid-attention family, so this is NOT the same 0.17.0 floor recorded for Qwen3.8-27B)"
+      },
+      "sglang_recipe": {
+        "exists_confirmed_this_phase": false,
+        "note": "No dedicated SGLang cookbook page was checked/found this phase for Qwen3-8B specifically -- SGLang's general, broad support for the well-established Qwen3ForCausalLM architecture is expected but not independently confirmed via a model-specific official page this phase."
+      }
+    },
+
+    "Mistral-Nemo-Instruct-2407": {
+      "artifact_repository": "mistralai/Mistral-Nemo-Base-2407 (base) / mistralai/Mistral-Nemo-Instruct-2407 (this control)",
+      "registered_pinned_revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+      "identity_reverification": {
+        "hf_api_current_main_sha": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+        "matches_registered_pin": true,
+        "drift": "NO",
+        "lastModified": "2025-07-28T17:16:02.000Z",
+        "config_architectures": ["MistralForCausalLM"],
+        "config_model_type": "mistral"
+      },
+      "config_json": {
+        "url": "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/raw/04d8a90549d23fc6bd7f642064003592df51e9b3/config.json",
+        "hidden_size": 5120,
+        "num_hidden_layers": 40,
+        "num_attention_heads": 32,
+        "head_dim": 128,
+        "intermediate_size": 14336,
+        "max_position_embeddings": 131072,
+        "torch_dtype": "not captured in this fetch -- UNRESOLVED_THIS_PHASE, safetensors metadata independently confirms BF16"
+      },
+      "weight_layout_evidence": {
+        "source": "https://huggingface.co/api/models/mistralai/Mistral-Nemo-Instruct-2407?blobs=true",
+        "gated": false,
+        "usedStorage_bytes": 49044606999,
+        "safetensors_total_parameters": 12247782400,
+        "safetensors_parameters_by_dtype": {"BF16": 12247782400},
+        "dual_weight_format_confirmed": true,
+        "note": "The repository stores the SAME BF16 12.25B-parameter weights in TWO redundant formats: a single-file 'consolidated.safetensors' (24,495,604,224 bytes, ~22.8 GiB) for Mistral's own inference stack, AND a standard 5-shard HF-sharded set (model-00001..00005-of-00005.safetensors, summing to approximately the same ~22.8 GiB) for transformers/vLLM. usedStorage (49.04 GB) reflects both formats combined, not a single ~45GB weight set -- the actual model is ~22.8 GiB in either format, matching the registry's bf16_gb=24.5 figure closely (24.5 GB vs 22.8 GiB, consistent within GB/GiB unit rounding)."
+      },
+      "license": {
+        "url_checked_LICENSE": "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/raw/04d8a90549d23fc6bd7f642064003592df51e9b3/LICENSE",
+        "url_checked_LICENSE_result": "HTTP 404 -- does not exist",
+        "url_checked_LICENSE_md": "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/raw/04d8a90549d23fc6bd7f642064003592df51e9b3/LICENSE.md",
+        "url_checked_LICENSE_md_result": "HTTP 404 -- does not exist",
+        "actual_license_file_exists_in_repo": false,
+        "only_evidence_source": "README.md YAML frontmatter, 'license: apache-2.0' -- a metadata tag, NOT a persisted standalone LICENSE file with full legal text",
+        "persisted_at": "docs/orneur/phase-21/evidence/MISTRAL_NEMO_2407_README_PRIMARY_SOURCE_2026-09-23.md",
+        "persisted_sha256": "445377992e7404021555e689a5df79b90a3293c38829ec1dcaa9dfed5b7526b0",
+        "extra_gated_description_present": true,
+        "extra_gated_description_content": "If you want to learn more about how we process your personal data, please read our Privacy Policy (https://mistral.ai/terms/).",
+        "gated_flag": false,
+        "note": "The extra_gated_description is informational (a Privacy Policy link), NOT an access-gate condition -- the API's own 'gated' field is false, confirming no genuine gated-access restriction exists on this repository. The license itself (Apache-2.0) is a well-known, unambiguous standard license whose canonical text is fixed and publicly available regardless of whether this specific repository hosts a local copy of it -- the absence of a repo-local LICENSE file is an evidentiary gap worth recording honestly, but does not itself cast doubt on which license terms apply."
+      },
+      "library_name_tag": "vllm",
+      "mistral_common_tag_present": true,
+      "vllm_recipe": {
+        "url": "https://recipes.vllm.ai/mistralai/Mistral-Nemo-Instruct-2407",
+        "exists": false,
+        "http_status": 404,
+        "note": "No dedicated recipe page -- consistent with a mainstream, long-established architecture (MistralForCausalLM, supported in vLLM since shortly after the model's July 2024 release) not requiring a special model-specific recipe."
+      },
+      "sglang_recipe": {
+        "exists_confirmed_this_phase": false,
+        "note": "Not checked/found this phase."
+      }
+    },
+
+    "Phi-4": {
+      "artifact_repository": "microsoft/phi-4",
+      "registered_pinned_revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+      "identity_reverification": {
+        "hf_api_current_main_sha": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+        "matches_registered_pin": true,
+        "drift": "NO",
+        "lastModified": "2026-07-14T14:22:25.000Z",
+        "config_architectures": ["Phi3ForCausalLM"],
+        "config_model_type": "phi3"
+      },
+      "config_json": {
+        "url": "https://huggingface.co/microsoft/phi-4/raw/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/config.json",
+        "hidden_size": 5120,
+        "intermediate_size": 17920,
+        "max_position_embeddings": 16384,
+        "bos_token_id": 100257,
+        "eos_token_id": 100265,
+        "note": "16384 native context -- notably smaller than both Qwen3-8B (40960) and Mistral-Nemo (131072). This is an accurate, unweakened architectural fact, recorded without capability judgment per phase instruction."
+      },
+      "license": {
+        "url": "https://huggingface.co/microsoft/phi-4/raw/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/LICENSE",
+        "persisted_at": "docs/orneur/phase-21/evidence/PHI4_LICENSE_PRIMARY_SOURCE_2026-09-23.txt",
+        "persisted_sha256": "c49419617a6070bcb197cfe272f7007fdec3e790dbb529cb995473bd69c0bd51",
+        "identifier": "MIT License",
+        "actual_license_file_exists_in_repo": true,
+        "note": "License text begins 'Microsoft. Copyright (c) Microsoft Corporation. MIT License' -- standard MIT terms, full text persisted."
+      },
+      "vllm_recipe": {
+        "url": "https://recipes.vllm.ai/microsoft/phi-4",
+        "exists": false,
+        "http_status": 404,
+        "note": "No dedicated recipe page -- consistent with a mainstream, long-established architecture (Phi3ForCausalLM, supported in vLLM since the Phi-3 family's initial release well before Phi-4's Dec 2024 publication) not requiring a special model-specific recipe."
+      },
+      "sglang_recipe": {
+        "exists_confirmed_this_phase": false,
+        "note": "Not checked/found this phase."
+      }
+    }
+  }
+}

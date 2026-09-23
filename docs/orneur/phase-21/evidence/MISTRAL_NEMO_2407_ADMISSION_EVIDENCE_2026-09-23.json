@@ -1,0 +1,132 @@
+{
+  "evidence_type": "GENESIS_CONTROL_ADMISSION_EVIDENCE",
+  "phase": "21B.4.16",
+  "control": "Mistral-Nemo-Instruct-2407",
+  "record_date": "2026-09-23",
+  "role": "CONTROL / SMALL BASELINE -- never a candidate finalist",
+
+  "A_identity": {
+    "artifact_repository": "mistralai/Mistral-Nemo-Instruct-2407",
+    "pinned_revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+    "current_upstream_head": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+    "upstream_drift": "NO",
+    "tokenizer_repository": "mistralai/Mistral-Nemo-Instruct-2407",
+    "tokenizer_revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+    "architecture": "MistralForCausalLM",
+    "identity_status": "RESOLVED"
+  },
+
+  "B_license": {
+    "license_identifier": "apache-2.0",
+    "actual_license_file_exists": false,
+    "evidence_source": "README.md YAML frontmatter tag only -- no standalone LICENSE/LICENSE.md file exists in the repository (both checked, both HTTP 404 at the pinned revision)",
+    "evidence_path": "docs/orneur/phase-21/evidence/MISTRAL_NEMO_2407_README_PRIMARY_SOURCE_2026-09-23.md",
+    "evidence_sha256": "445377992e7404021555e689a5df79b90a3293c38829ec1dcaa9dfed5b7526b0",
+    "commercial_use": "CLEAR",
+    "evaluation_use": "CLEAR",
+    "hosting": "CLEAR",
+    "redistribution": "CLEAR",
+    "fine_tuning": "CLEAR",
+    "derivative_work": "CLEAR",
+    "license_status": "CLEAR",
+    "note": "Apache-2.0 is declared unambiguously via the repository's own cardData.license metadata field (a real, structured HF API field, not a blog-post inference), and Apache-2.0's canonical text is a fixed, universally known standard document -- its rights are identified accurately even though this specific repository does not host a local copy of the full legal text. The repository's 'extra_gated_description' is informational only (a Privacy Policy link) and the API's own 'gated' field confirms false -- no genuine access restriction exists. This evidentiary gap (metadata tag vs. persisted license file) is recorded honestly per phase instruction, and does not change the license determination given the tag names a well-known, unambiguous standard license."
+  },
+
+  "C_admission": {
+    "commercial_evaluation_use_admissibility": "CLEAR -- Apache-2.0 permits evaluation use without restriction",
+    "control_admission_status": "ADMITTED"
+  },
+
+  "D_tokenizer_identity": {
+    "note": "Tokenizer identity pinned at the same repository revision. Repository carries a 'mistral-common' tag, indicating the official Mistral tokenizer/chat-formatting package (mistral-common) may be required or recommended for fully correct chat-template behavior, distinct from a plain transformers AutoTokenizer path.",
+    "mistral_common_package_relevant": true
+  },
+
+  "E_architecture_config_identity": {
+    "hidden_size": 5120,
+    "num_hidden_layers": 40,
+    "num_attention_heads": 32,
+    "head_dim": 128,
+    "intermediate_size": 14336
+  },
+
+  "F_weight_layout": {
+    "total_parameters": 12247782400,
+    "parameters_by_dtype": {"BF16": 12247782400},
+    "weight_storage_bf16_gb": 24.5,
+    "actual_repository_weight_layout": "DUAL FORMAT -- both a single-file 'consolidated.safetensors' (24,495,604,224 bytes) AND a standard 5-shard HF set (model-00001..00005-of-00005.safetensors) storing the SAME BF16 weights redundantly. Real per-format size is ~22.8 GiB; the API's usedStorage figure (49.04 GB) reflects both formats combined, not double the actual model size.",
+    "note": "Matches the registry's existing bf16_gb=24.5 figure closely, confirmed via live blobs=true metadata this phase (not merely re-stated)."
+  },
+
+  "G_context_window": {
+    "config_max_position_embeddings": 131072,
+    "note": "131072 (128K) native context, confirmed directly from config.json at the pinned revision -- substantially larger than both other controls."
+  },
+
+  "H_chat_template": {
+    "note": "Official chat template / serving path relies on Mistral's own conventions; 'mistral-common' tag suggests the canonical chat-formatting path is the mistral-common package rather than (or in addition to) a plain transformers chat_template.jinja file. Not independently deep-inspected this phase beyond confirming the tag's presence."
+  },
+
+  "I_reasoning_thinking_mode": {
+    "applicable": false,
+    "note": "Mistral-Nemo-Instruct-2407 is a standard instruct model, not part of a hybrid-thinking family -- no reasoning/thinking-mode parser requirement expected."
+  },
+
+  "J_current_runtime_support": {
+    "vllm": {
+      "official_recipe_exists": false,
+      "http_status_checked": 404,
+      "library_name_tag": "vllm",
+      "note": "No dedicated recipe page exists, but the repository's own HF metadata declares library_name='vllm' -- a structural signal that vLLM is the officially expected/canonical serving path for this repository, even without a dedicated recipe write-up."
+    },
+    "sglang": {
+      "official_recipe_confirmed_this_phase": false
+    },
+    "transformers": {
+      "supported": true,
+      "note": "MistralForCausalLM is a mainstream, long-established architecture class."
+    }
+  },
+
+  "K_likely_future_topology": {
+    "minimum_plausible_native_precision_topology": "THEORETICAL -- a single 24GB-class GPU (L4/L40/A10G) is BORDERLINE for BF16: the ~22.8 GiB weight floor leaves little to no headroom for runtime/KV-cache overhead once actual engine memory usage is accounted for, matching the existing registry's own 'borderline -- no headroom' assessment. A single H100/H200-class GPU (80GB+) comfortably fits BF16 with real headroom.",
+    "safer_qualification_topology": "THEORETICAL -- 1x H100/H200-class GPU (80GB+) is the safer minimum for a bounded BF16 production-serving smoke, given the borderline fit on a 24GB card",
+    "quantized_topology_options": "THEORETICAL -- FP8 (~12.2 GB) and INT4 (~6.1 GB) both fit comfortably on a single 24GB-class GPU by weight size alone; no official quantized artifact confirmed this phase"
+  },
+
+  "L_precision_options": {
+    "native_precision_artifact": "BF16 (this repository, in dual on-disk format)",
+    "official_quantized_artifacts_confirmed_this_phase": false,
+    "third_party_quantized_artifacts_confirmed_this_phase": false,
+    "note": "Per phase instruction: a quantized derivative, if used in a future execution, must not be treated as the same registered control identity unless the locked evaluation protocol explicitly authorizes that precision/artifact -- this control's registered identity is the BF16 repository above."
+  },
+
+  "M_special_requirements": {
+    "mistral_common_package": "Relevant per the repository's own 'mistral-common' tag -- a future runtime harness should verify whether mistral-common is required for correct chat-template/tokenizer behavior, or whether the standard transformers/vLLM path suffices.",
+    "trust_remote_code_required": "NOT CONFIRMED_THIS_PHASE"
+  },
+
+  "N_zero_owner_cash_classification": {
+    "zero_owner_cash_runtime_path": "POTENTIALLY_AVAILABLE",
+    "rationale": "No GPU execution was performed to determine this. The BF16 weight footprint is borderline on a 24GB-class GPU and safer on an 80GB+-class GPU; a future zero-cash smoke is plausible but not confirmed AVAILABLE_NOW absent a live credit-availability check. No promotional credits, account balance, or prior-phase credit state is assumed."
+  },
+
+  "O_engine_decision": {
+    "primary_future_runtime_engine": "vLLM",
+    "fallback_engine": "native Transformers (load-compatibility-only smoke)",
+    "rationale": "The repository's own library_name='vllm' metadata tag is a direct, structural signal of the officially expected serving path, even absent a dedicated recipe page. ORNEUR's existing validated vLLM harness experience is a real implementation-risk advantage. SGLang not selected as fallback due to no confirmed official support evidence for this control this phase."
+  },
+
+  "final_state": {
+    "identity": "RESOLVED",
+    "license_status": "CLEAR",
+    "control_admission_status": "ADMITTED",
+    "runtime_preflight_status": "READY",
+    "runtime_qualification_status": "NOT_TESTED",
+    "runtime_smoke_eligibility": "ELIGIBLE",
+    "runtime_smoke_blocked_reason": null,
+    "blocker": "NONE"
+  },
+
+  "gate": "ADMITTED_FOR_FUTURE_RUNTIME_QUALIFICATION"
+}

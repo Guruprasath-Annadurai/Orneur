@@ -266,7 +266,7 @@ def test_future_qualification_spec_excludes_capability_benchmarks():
 
 
 def test_schema_version_bumped_and_enforced():
-    assert REGISTRY_SCHEMA_VERSION == "genesis-candidate-execution-registry-v3"
+    assert REGISTRY_SCHEMA_VERSION == "genesis-candidate-execution-registry-v4"  # bumped again in Phase 21B.4.16
     data = json.loads(REGISTRY_PATH.read_text())
     assert data["schema_version"] == REGISTRY_SCHEMA_VERSION
 

@@ -1,0 +1,139 @@
+{
+  "evidence_type": "GENESIS_CONTROL_ADMISSION_EVIDENCE",
+  "phase": "21B.4.16",
+  "control": "Qwen3-8B",
+  "record_date": "2026-09-23",
+  "role": "CONTROL / SMALL BASELINE -- never a candidate finalist",
+
+  "A_identity": {
+    "artifact_repository": "Qwen/Qwen3-8B",
+    "pinned_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "current_upstream_head": "b968826d9c46dd6066d109eabc6255188de91218",
+    "upstream_drift": "NO",
+    "tokenizer_repository": "Qwen/Qwen3-8B",
+    "tokenizer_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "architecture": "Qwen3ForCausalLM",
+    "identity_status": "RESOLVED"
+  },
+
+  "B_license": {
+    "license_identifier": "apache-2.0",
+    "actual_license_file_exists": true,
+    "evidence_path": "docs/orneur/phase-21/evidence/QWEN3_8B_LICENSE_PRIMARY_SOURCE_2026-09-23.txt",
+    "evidence_sha256": "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e",
+    "commercial_use": "CLEAR",
+    "evaluation_use": "CLEAR",
+    "hosting": "CLEAR",
+    "redistribution": "CLEAR",
+    "fine_tuning": "CLEAR",
+    "derivative_work": "CLEAR",
+    "license_status": "CLEAR",
+    "note": "Standard, unmodified Apache License 2.0 full text confirmed at the pinned revision. No custom/additional terms present."
+  },
+
+  "C_admission": {
+    "commercial_evaluation_use_admissibility": "CLEAR -- Apache-2.0 permits evaluation use without restriction",
+    "control_admission_status": "ADMITTED"
+  },
+
+  "D_tokenizer_identity": {
+    "eos_token": "<|im_end|>",
+    "pad_token": "<|endoftext|>",
+    "chat_template_present": true,
+    "supports_enable_thinking": true
+  },
+
+  "E_architecture_config_identity": {
+    "hidden_size": 4096,
+    "num_hidden_layers": 36,
+    "num_attention_heads": 32,
+    "num_key_value_heads": 8,
+    "vocab_size": 151936,
+    "torch_dtype": "bfloat16"
+  },
+
+  "F_weight_layout": {
+    "total_parameters": 8190735360,
+    "parameters_by_dtype": {"BF16": 8190735360},
+    "weight_storage_bf16_gb": 16.4,
+    "note": "Matches the existing registry entry exactly -- re-confirmed live, not re-derived independently this phase (no fresh blobs=true fetch was performed for this control; total_parameters cross-checked against the existing registry record, which itself was HF-API-sourced)."
+  },
+
+  "G_context_window": {
+    "config_max_position_embeddings": 40960,
+    "tokenizer_model_max_length": 131072,
+    "note": "40960 is the architecturally-trained limit per config.json; 131072 is only the tokenizer's nominal cap and should not be treated as a proven serving context without further verification.",
+    "rope_scaling": null
+  },
+
+  "H_chat_template": {
+    "supports_system_user_assistant_roles": true,
+    "im_start_im_end_format": true,
+    "note": "Standard ChatML-style (<|im_start|>/<|im_end|>) template, consistent with the Qwen family convention."
+  },
+
+  "I_reasoning_thinking_mode": {
+    "hybrid_thinking_nonthinking": true,
+    "enable_thinking_flag_in_template": true,
+    "reasoning_parser_documented": "qwen3 (per the official vLLM recipe)"
+  },
+
+  "J_current_runtime_support": {
+    "vllm": {
+      "official_recipe_exists": true,
+      "url": "https://recipes.vllm.ai/Qwen/Qwen3-8B",
+      "scope": "CPU (Intel Xeon 6) only -- no GPU-specific section documented in this recipe",
+      "min_version_stated": ">=0.8.5",
+      "reasoning_parser": "qwen3",
+      "tool_call_parser": "hermes"
+    },
+    "sglang": {
+      "official_recipe_confirmed_this_phase": false
+    },
+    "transformers": {
+      "supported": true,
+      "note": "Qwen3ForCausalLM is a mainstream, long-established architecture class in transformers."
+    }
+  },
+
+  "K_likely_future_topology": {
+    "minimum_plausible_native_precision_topology": "THEORETICAL -- 1x 24GB-class GPU (L4/L40/A10G) or any single modern datacenter GPU comfortably fits the 16.4 GB BF16 weight set with substantial headroom for KV cache at a bounded context",
+    "safer_qualification_topology": "DOCUMENTED (CPU) / THEORETICAL (GPU) -- the only official recipe evidence documents a 2x Xeon 6 CPU configuration; no GPU topology has been live-proven or officially recipe-documented for this control",
+    "quantized_topology_options": "THEORETICAL -- FP8 (~8.2 GB) and INT4 (~4.1 GB) both fit trivially on any single modern GPU by weight size alone; no official quantized artifact confirmed this phase"
+  },
+
+  "L_precision_options": {
+    "native_precision_artifact": "BF16 (this repository)",
+    "official_quantized_artifacts_confirmed_this_phase": false,
+    "third_party_quantized_artifacts_confirmed_this_phase": false
+  },
+
+  "M_special_requirements": {
+    "trust_remote_code_required": "NOT CONFIRMED_THIS_PHASE -- not independently checked",
+    "special_parser_requirements": "--reasoning-parser qwen3 --tool-call-parser hermes --enable-auto-tool-choice, per the official vLLM recipe's Docker/CPU example"
+  },
+
+  "N_zero_owner_cash_classification": {
+    "zero_owner_cash_runtime_path": "POTENTIALLY_AVAILABLE",
+    "rationale": "No GPU execution was performed to determine this. The model's small BF16 weight footprint (16.4 GB) and mainstream architecture make a future zero-cash GPU smoke plausible on a single modest GPU, but no live evidence, credit-availability check, or GPU-specific recipe exists yet to call it AVAILABLE_NOW. No promotional credits, account balance, or prior-phase credit state is assumed."
+  },
+
+  "O_engine_decision": {
+    "primary_future_runtime_engine": "vLLM",
+    "fallback_engine": "native Transformers (for a load-compatibility-only smoke, mirroring the Qwen3.8-27B/Mistral Small 4 historical pattern) -- SGLang not selected as fallback due to no confirmed official support evidence for this specific control this phase",
+    "rationale": "vLLM has a dedicated (if CPU-scoped) official recipe naming exact reasoning/tool-call parser flags for this model, and ORNEUR already has validated vLLM production-serving harness experience from prior phases -- a real implementation-risk advantage. Not forced past the evidence: if a future phase finds stronger official GPU-specific support elsewhere, this decision should be revisited with that evidence."
+  },
+
+  "final_state": {
+    "identity": "RESOLVED",
+    "license_status": "CLEAR",
+    "control_admission_status": "ADMITTED",
+    "runtime_preflight_status": "READY",
+    "runtime_qualification_status": "NOT_TESTED",
+    "runtime_smoke_eligibility": "ELIGIBLE",
+    "runtime_smoke_blocked_reason": null,
+    "blocker": "NONE"
+  },
+
+  "gate": "ADMITTED_FOR_FUTURE_RUNTIME_QUALIFICATION"
+}
