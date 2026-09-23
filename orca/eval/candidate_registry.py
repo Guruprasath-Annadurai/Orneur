@@ -32,6 +32,29 @@ Phase 21B.4.10.1 hardening (schema v1 -> v2):
   control `exact_immutable_revision` must be exactly 40 lowercase hex
   characters (a real Git commit SHA) -- a value like `"abc123"` no
   longer passes merely for being nonempty and not `"main"`.
+
+Phase 21B.4.15 hardening (schema v2 -> v3): `runtime_qualification_status`
+is RETAINED (many callers and manifest-linkage checks depend on it as
+"does this candidate have ANY accepted, manifest-linked qualification
+record") but is now explicitly DEPRECATED for direct interpretation as
+"production-serving qualified" -- it is true for both a candidate that
+merely loaded and generated through native Transformers
+(RUNTIME_LOAD_COMPATIBILITY_QUALIFIED) and one actually served through a
+production inference engine over a real network/API path
+(PRODUCTION_SERVING_RUNTIME_QUALIFIED), and a reader who only checks this
+one field cannot tell those apart. Four new, separately-validated fields
+make every qualification dimension explicit: `load_compatibility_status`,
+`production_serving_status`, `financial_acceptance_status`,
+`capability_status` (valid values: `VALID_LOAD_COMPATIBILITY_STATUSES`,
+`VALID_PRODUCTION_SERVING_STATUSES`, `VALID_FINANCIAL_ACCEPTANCE_STATUSES`,
+`VALID_CAPABILITY_STATUSES`). `_validate_deployable` enforces cross-field
+invariants tying these to `qualification_type` and to each other (a
+candidate can never claim `production_serving_status=QUALIFIED` without a
+linked `PRODUCTION_SERVING_RUNTIME_QUALIFIED` manifest, never claim it
+alongside a failed financial gate, etc.). `verify_candidate_qualification_
+end_to_end()` gained a `require_production_serving` parameter (default
+`False`, backwards compatible) for callers that specifically need
+production-serving acceptance rather than any qualified type.
 """
 from __future__ import annotations
 
@@ -40,7 +63,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-REGISTRY_SCHEMA_VERSION = "genesis-candidate-execution-registry-v2"
+REGISTRY_SCHEMA_VERSION = "genesis-candidate-execution-registry-v3"
 
 _HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -76,6 +99,11 @@ DEPLOYABLE_REQUIRED_FIELDS = (
     "qualified_practical_topology", "zero_cash_access_status",
     "identity_status", "license_status", "runtime_qualification_status",
     "runtime_smoke_eligibility", "runtime_smoke_blocked_reason",
+    # Phase 21B.4.15 §6: explicit, separately-validated qualification
+    # dimensions -- see the module docstring addendum below for why
+    # runtime_qualification_status alone is not sufficient.
+    "load_compatibility_status", "production_serving_status",
+    "financial_acceptance_status", "capability_status",
 )
 
 CONTROL_REQUIRED_FIELDS = (
@@ -93,9 +121,40 @@ REFERENCE_REQUIRED_FIELDS = (
 VALID_IDENTITY_TYPES = ("OPEN_WEIGHT", "MUTABLE_HOSTED_API")
 
 VALID_IDENTITY_STATUSES = ("RESOLVED", "IDENTITY_UNRESOLVED")
-VALID_LICENSE_STATUSES = ("CLEAR", "LICENSE_REVIEW_REQUIRED")
+VALID_LICENSE_STATUSES = ("CLEAR", "LICENSE_REVIEW_REQUIRED", "SEPARATE_LICENSE_REQUIRED")
 VALID_RUNTIME_QUALIFICATION_STATUSES = ("UNQUALIFIED", "QUALIFIED")
 VALID_RUNTIME_SMOKE_ELIGIBILITY = ("ELIGIBLE", "BLOCKED")
+
+# Phase 21B.4.15 §6: explicit qualification dimensions. These exist
+# because `runtime_qualification_status == "QUALIFIED"` alone is
+# dangerously coarse -- it is true for BOTH a candidate that merely
+# loaded and generated through native Transformers
+# (RUNTIME_LOAD_COMPATIBILITY_QUALIFIED) AND one actually served through
+# a production inference engine over a real network/API path
+# (PRODUCTION_SERVING_RUNTIME_QUALIFIED). A reader (or a caller of
+# `verify_candidate_qualification_end_to_end`) who only checks
+# `runtime_qualification_status` cannot tell those apart. These four
+# fields make that distinction explicit and machine-validated; see
+# `_validate_deployable`'s cross-field invariants below for how they are
+# kept consistent with `qualification_type` and each other.
+VALID_LOAD_COMPATIBILITY_STATUSES = ("NOT_TESTED", "QUALIFIED", "FAILED", "INCONCLUSIVE")
+VALID_PRODUCTION_SERVING_STATUSES = (
+    "NOT_TESTED", "QUALIFIED", "FAILED", "INCONCLUSIVE", "DEFERRED",
+    # Phase 21B.4.15: a distinct, honest state for GLM-5.3-Flash's exact
+    # situation -- the serving path was genuinely technically successful
+    # (server ready, real HTTP generation) but formal acceptance was
+    # blocked by a hard, unrelated financial-gate violation. Neither
+    # FAILED (implies a technical/model/runtime defect, which did not
+    # occur) nor DEFERRED (implies the attempt simply hasn't happened
+    # yet) honestly describes this. Never implies QUALIFIED.
+    "TECHNICALLY_SUCCEEDED_FINANCIAL_GATE_FAILED",
+)
+VALID_FINANCIAL_ACCEPTANCE_STATUSES = (
+    "NOT_APPLICABLE", "NOT_TESTED", "ZERO_OWNER_CASH_PASSED", "ZERO_OWNER_CASH_FAILED", "DEFERRED",
+)
+VALID_CAPABILITY_STATUSES = (
+    "UNPROVEN", "EVALUATED", "FRONTIER_CLASS_ON_LOCKED_PROTOCOL", "FAILED_FRONTIER_GATE", "INCONCLUSIVE",
+)
 
 # Owner spec's example set is illustrative, not exhaustive -- any status
 # a control record uses must be one of these.
@@ -266,6 +325,104 @@ def _validate_deployable(entry: dict) -> None:
             raise RegistrySchemaError(
                 f"deployable candidate {name!r} has a malformed qualification_manifest_digest_sha256 "
                 f"(must be exactly 64 lowercase hex characters): {digest!r}"
+            )
+
+    # ── Phase 21B.4.15 §6/§23: explicit qualification-dimension fields ──
+    # and the cross-field invariants that make it structurally
+    # impossible to confuse load compatibility with production serving,
+    # or to claim acceptance a candidate's actual evidence does not
+    # support.
+    if entry["load_compatibility_status"] not in VALID_LOAD_COMPATIBILITY_STATUSES:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} has unrecognized load_compatibility_status="
+            f"{entry['load_compatibility_status']!r}"
+        )
+    if entry["production_serving_status"] not in VALID_PRODUCTION_SERVING_STATUSES:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} has unrecognized production_serving_status="
+            f"{entry['production_serving_status']!r}"
+        )
+    if entry["financial_acceptance_status"] not in VALID_FINANCIAL_ACCEPTANCE_STATUSES:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} has unrecognized financial_acceptance_status="
+            f"{entry['financial_acceptance_status']!r}"
+        )
+    if entry["capability_status"] not in VALID_CAPABILITY_STATUSES:
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} has unrecognized capability_status={entry['capability_status']!r}"
+        )
+
+    qualification_type = entry.get("qualification_type")
+
+    # Invalid state (§23): production_serving_status=QUALIFIED without an
+    # actual PRODUCTION_SERVING_RUNTIME_QUALIFIED linked manifest. This is
+    # the exact ambiguity this phase exists to close -- a candidate that
+    # only achieved RUNTIME_LOAD_COMPATIBILITY_QUALIFIED (e.g. Qwen3.8-27B)
+    # can never claim production_serving_status=QUALIFIED.
+    if entry["production_serving_status"] == "QUALIFIED":
+        from orca.eval.runtime_qualification_manifest import PRODUCTION_SERVING_TYPE
+
+        if qualification_type != PRODUCTION_SERVING_TYPE:
+            raise RegistrySchemaError(
+                f"deployable candidate {name!r} has production_serving_status=QUALIFIED but "
+                f"qualification_type={qualification_type!r} (must be {PRODUCTION_SERVING_TYPE!r}) -- "
+                "production-serving qualification can never be claimed without a linked, accepted "
+                "PRODUCTION_SERVING_RUNTIME_QUALIFIED manifest."
+            )
+        if entry.get("runtime_qualification_status") != "QUALIFIED":
+            raise RegistrySchemaError(
+                f"deployable candidate {name!r} has production_serving_status=QUALIFIED but "
+                f"runtime_qualification_status={entry.get('runtime_qualification_status')!r} -- "
+                "production serving qualification requires an accepted, manifest-linked runtime "
+                "qualification record."
+            )
+
+    # Invalid state (§23): load_compatibility_status=QUALIFIED without any
+    # qualifying evidence linkage at all.
+    if entry["load_compatibility_status"] == "QUALIFIED" and not entry.get("qualification_manifest_path"):
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} has load_compatibility_status=QUALIFIED but no "
+            "qualification_manifest_path -- load compatibility can never be claimed without linked evidence."
+        )
+
+    # A TECHNICALLY_SUCCEEDED_FINANCIAL_GATE_FAILED production-serving
+    # result (GLM-5.3-Flash's exact situation) must never simultaneously
+    # claim financial acceptance passed, and must never claim formal
+    # production-serving QUALIFIED -- those would directly contradict
+    # the whole reason this state exists.
+    if entry["production_serving_status"] == "TECHNICALLY_SUCCEEDED_FINANCIAL_GATE_FAILED":
+        if entry["financial_acceptance_status"] != "ZERO_OWNER_CASH_FAILED":
+            raise RegistrySchemaError(
+                f"deployable candidate {name!r} has production_serving_status="
+                "TECHNICALLY_SUCCEEDED_FINANCIAL_GATE_FAILED but financial_acceptance_status="
+                f"{entry['financial_acceptance_status']!r} (must be ZERO_OWNER_CASH_FAILED) -- this "
+                "state exists specifically to record a financial-gate failure."
+            )
+
+    # Invalid state (§23): financial_acceptance_status=ZERO_OWNER_CASH_FAILED
+    # can never coexist with production_serving_status=QUALIFIED -- a
+    # candidate cannot be formally production-serving qualified while its
+    # own financial gate is recorded as failed.
+    if (
+        entry["financial_acceptance_status"] == "ZERO_OWNER_CASH_FAILED"
+        and entry["production_serving_status"] == "QUALIFIED"
+    ):
+        raise RegistrySchemaError(
+            f"deployable candidate {name!r} has financial_acceptance_status=ZERO_OWNER_CASH_FAILED and "
+            "production_serving_status=QUALIFIED simultaneously -- a failed zero-owner-cash gate can "
+            "never coexist with formal production-serving acceptance."
+        )
+
+    # Invalid state (§23): capability escalated beyond UNPROVEN without a
+    # recorded evidence reference for that claim -- no such evaluation
+    # evidence system exists yet in this registry, so no candidate may
+    # currently claim anything beyond UNPROVEN/INCONCLUSIVE without one.
+    if entry["capability_status"] in ("EVALUATED", "FRONTIER_CLASS_ON_LOCKED_PROTOCOL", "FAILED_FRONTIER_GATE"):
+        if not entry.get("capability_evidence_reference"):
+            raise RegistrySchemaError(
+                f"deployable candidate {name!r} has capability_status={entry['capability_status']!r} but no "
+                "capability_evidence_reference -- a capability claim beyond UNPROVEN/INCONCLUSIVE must cite "
+                "the locked evaluation evidence that established it."
             )
 
 
@@ -534,6 +691,7 @@ def verify_candidate_qualification_end_to_end(
     *,
     manifest_root: Path | None = None,
     require_qualified: bool = True,
+    require_production_serving: bool = False,
 ) -> tuple[dict, dict | None]:
     """Phase 21B.4.11.4 §5, hardened 21B.4.12 §2: the SINGLE public
     acceptance API for a candidate's runtime-qualification claim. By
@@ -589,7 +747,21 @@ def verify_candidate_qualification_end_to_end(
     `RegistrySchemaError` on any failure (including "not QUALIFIED" when
     acceptance was requested, or a tampered/mismatched linked manifest
     regardless of qualification_type), or `KeyError` if no candidate
-    with that name exists in the registry."""
+    with that name exists in the registry.
+
+    `require_production_serving` (Phase 21B.4.15, default `False` for
+    backwards compatibility): when `True`, ALSO requires
+    `production_serving_status == "QUALIFIED"` (which, via
+    `_validate_deployable`'s cross-field invariant, can only be true
+    alongside `qualification_type == PRODUCTION_SERVING_RUNTIME_QUALIFIED`).
+    This closes the exact ambiguity `runtime_qualification_status` alone
+    cannot: `require_qualified=True` by itself accepts ANY qualified
+    type, including a candidate that only achieved
+    RUNTIME_LOAD_COMPATIBILITY_QUALIFIED (e.g. Qwen3.8-27B) -- a caller
+    that specifically needs "this candidate has been production-serving
+    qualified" must pass `require_production_serving=True` explicitly;
+    there is no default that silently treats load-compatibility evidence
+    as production-serving acceptance."""
     registry = CandidateExecutionRegistry.load(registry_path, manifest_root=manifest_root)
     entry = registry.find_deployable(canonical_candidate_name)
     if require_qualified and entry.get("runtime_qualification_status") != "QUALIFIED":
@@ -598,6 +770,12 @@ def verify_candidate_qualification_end_to_end(
             f"(runtime_qualification_status={entry.get('runtime_qualification_status')!r}) -- "
             "the qualification-acceptance API refuses to return a non-accepted candidate as if it were "
             "accepted. Pass require_qualified=False explicitly for a non-acceptance inspection workflow."
+        )
+    if require_production_serving and entry.get("production_serving_status") != "QUALIFIED":
+        raise RegistrySchemaError(
+            f"candidate {canonical_candidate_name!r} is not production-serving qualified "
+            f"(production_serving_status={entry.get('production_serving_status')!r}) -- "
+            "load-compatibility evidence alone is never treated as production-serving acceptance."
         )
     root = Path(manifest_root).resolve() if manifest_root is not None else _derive_manifest_root(Path(registry_path))
     if require_qualified:

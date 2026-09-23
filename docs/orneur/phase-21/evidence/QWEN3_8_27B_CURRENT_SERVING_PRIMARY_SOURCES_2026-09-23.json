@@ -1,0 +1,111 @@
+{
+  "evidence_type": "QWEN3_8_27B_CURRENT_SERVING_PRIMARY_SOURCE_RESEARCH",
+  "candidate": "Qwen3.8-27B",
+  "artifact_repository": "Qwen/Qwen3.8-27B",
+  "pinned_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "retrieval_date": "2026-09-23",
+  "note": "CPU-only / metadata-only research phase. No GPU, no weight download, no inference.",
+
+  "identity_reverification": {
+    "hf_api_current_main_sha": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+    "matches_pinned_revision": true,
+    "lastModified": "2026-08-14T15:00:01.000Z",
+    "config_architectures": ["Qwen3_5ForConditionalGeneration"],
+    "config_model_type": "qwen3_5",
+    "note": "Current main HEAD equals the registry's pinned revision exactly -- no drift."
+  },
+
+  "sources": [
+    {
+      "source_name": "vLLM official recipe",
+      "url": "https://recipes.vllm.ai/Qwen/Qwen3.8-27B",
+      "retrieved": "2026-09-23",
+      "revision_or_commit": "not versioned/dated on the page itself; content current as of retrieval",
+      "content_summary": "Full dedicated recipe: architecture overview (dense 27B, hybrid attention -- 16/64 layers full attention, 48/64 linear attention with constant recurrent state; multimodal architecture, config.json carries vision_config, but this recipe covers and verifies text serving only), prerequisites, multiple launch-command variants (RTX5090 NVFP4, 2xRTX5090 NVFP4, GB300 FP8 TP4, Huawei Ascend 950PR w8a8 and native FP8, DFlash2 speculative decoding), thinking-mode client usage, long-context (YaRN) handling."
+    },
+    {
+      "source_name": "Qwen3.8-27B Hugging Face README (model card)",
+      "url": "https://huggingface.co/Qwen/Qwen3.8-27B/raw/main/README.md",
+      "retrieved": "2026-09-23",
+      "revision": "main (== pinned revision, see identity_reverification)",
+      "content_summary": "Official Quickstart section: 'Qwen3.8 can be deployed with popular inference frameworks, e.g. [SGLang, vLLM, TokenSpeed]'; official OpenAI-compatible client usage example showing chat_template_kwargs (enable_thinking, preserve_thinking) and reasoning_effort; official Long-Context YaRN override syntax given for all three frameworks (vLLM --hf-overrides, SGLang --json-model-override-args, TokenSpeed --hf-overrides)."
+    },
+    {
+      "source_name": "Hugging Face Hub API (model metadata)",
+      "url": "https://huggingface.co/api/models/Qwen/Qwen3.8-27B",
+      "retrieved": "2026-09-23",
+      "content_summary": "Live identity/config confirmation (sha, lastModified, architectures, model_type)."
+    },
+    {
+      "source_name": "Docker Hub -- vllm/vllm-openai tags",
+      "url": "https://hub.docker.com/v2/repositories/vllm/vllm-openai/tags/v0.30.0-cu129",
+      "retrieved": "2026-09-23",
+      "content_summary": "Resolved stable, versioned (non-nightly) release tag v0.30.0-cu129, linux/amd64 digest sha256:58fdb6bb123a81aa53f46fa4652ad8cc87e817bd1077c9832c6258ef12c1c688, pushed 2026-09-22T02:11:40Z."
+    },
+    {
+      "source_name": "Docker Hub -- lmsysorg/sglang tags",
+      "url": "https://hub.docker.com/v2/repositories/lmsysorg/sglang/tags/v0.5.20",
+      "retrieved": "2026-09-23",
+      "content_summary": "Resolved stable, versioned release tag v0.5.20, linux/amd64 digest sha256:b27fce60bc5494c118c4910702812bcfa8cee67abcdd1ff8b0902f21647552f4, pushed 2026-09-18T09:33:02Z."
+    }
+  ],
+
+  "exact_relevant_commands_observed": {
+    "vllm_low_latency_nvfp4_tp1": "vllm serve Inferact/Qwen3.8-27B-NVFP4 --tensor-parallel-size 1 --max-model-len 262144 --kv-cache-dtype fp8 --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_xml",
+    "vllm_fp8_gb300_tp4": "vllm serve Qwen/Qwen3.8-27B-FP8 --tensor-parallel-size 4 --max-model-len 262144 --kv-cache-dtype fp8 --reasoning-parser qwen3",
+    "vllm_dflash2_base_bf16_no_topology_flags_shown": "vllm serve Qwen/Qwen3.8-27B --speculative-config '{\"method\":\"dflash\",\"model\":\"incoai/Qwen3.8-27B-DFlash2\",\"num_speculative_tokens\":7}'",
+    "vllm_2x_rtx5090_nvfp4_tp2": "vllm serve unsloth/Qwen3.8-27B-NVFP4 --tensor-parallel-size 2 --max-model-len 262144 --kv-cache-dtype fp8 --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_xml",
+    "vllm_long_context_1m_yarn_override": "VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 vllm serve ... --hf-overrides '{\"text_config\": {\"rope_parameters\": {\"mrope_interleaved\": true, \"mrope_section\": [11, 11, 10], \"rope_type\": \"yarn\", \"rope_theta\": 10000000, \"partial_rotary_factor\": 0.25, \"factor\": 4.0, \"original_max_position_embeddings\": 262144}}}' --max-model-len 1000000",
+    "sglang_long_context_1m_yarn_override": "SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1 python -m sglang.launch_server ... --json-model-override-args '{\"text_config\": {\"rope_parameters\": {...same as vllm...}}}' --context-length 1000000",
+    "tokenspeed_long_context_1m_yarn_override": "TOKENSPEED_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1 tokenspeed serve ... --hf-overrides '{\"text_config\": {\"rope_parameters\": {...same...}}}' --max-model-len 1000000",
+    "note": "No dedicated official plain-BF16 single-Hopper-GPU (H100/H200) launch command with full flag set was found on the vLLM recipe page -- the recipe's non-quantized example (DFlash2) shows only the speculative-decoding flag, omitting topology/context/parser flags entirely. A future qualification run's exact flags must be constructed from the documented building blocks (reasoning-parser qwen3, tool-call-parser qwen3_xml, native 262144 context) rather than copied verbatim from a single official BF16-H200 example, because none exists in the current primary sources."
+  },
+
+  "dependency_and_version_facts": {
+    "transformers_minimum": ">=5.8.0 (matches config.json's writer version; vLLM parses via its own Qwen3_5Config, so this is really about the Qwen3-VL processor per the recipe's own wording)",
+    "vllm_minimum_for_dflash2_speculative_path": ">=0.28.0 (vllm#52816)",
+    "vllm_minimum_for_base_serving": "not explicitly pinned by the official recipe for plain BF16 serving; only the DFlash2-specific >=0.28.0 figure is stated",
+    "vllm_resolved_stable_release": "v0.30.0-cu129, linux/amd64 digest sha256:58fdb6bb123a81aa53f46fa4652ad8cc87e817bd1077c9832c6258ef12c1c688",
+    "sglang_resolved_stable_release": "v0.5.20, linux/amd64 digest sha256:b27fce60bc5494c118c4910702812bcfa8cee67abcdd1ff8b0902f21647552f4",
+    "sglang_qwen3_5_architecture_support_confirmed_via_recipe": false,
+    "sglang_qwen3_5_architecture_support_confirmed_via_readme_long_context_syntax": true,
+    "note": "The README's official SGLang long-context override syntax for this exact model is evidence SGLang officially supports Qwen3.8-27B, but no SGLang-specific recipe page equivalent to vLLM's dedicated recipe was found -- SGLang's official support evidence is thinner (one override snippet) than vLLM's (a full multi-configuration recipe with measured KV-pool/throughput numbers)."
+  },
+
+  "thinking_reasoning_mode": {
+    "default_behavior": "Thinking is ON by default (enable_thinking: true, preserve_thinking: true, both defaulted true per the README's own client example)",
+    "adaptive_effort_levels": ["xhigh (default)", "medium", "low"],
+    "requested_via": "OpenAI-compatible request field reasoning_effort, or per-request chat_template_kwargs.enable_thinking/reasoning_effort, or server-wide via --default-chat-template-kwargs",
+    "non_thinking_mode_exists": true,
+    "non_thinking_mode_config": "chat_template_kwargs: {\"enable_thinking\": false}",
+    "response_separation": "Reasoning and final answer are returned as SEPARATE fields in the streaming response: reasoning is delivered via delta.reasoning (accumulated as reasoning_content), the final answer via delta.content (accumulated as answer_content) -- confirmed directly from the README's own working Python client example.",
+    "orneur_implication": "ORNEUR's future serving integration must read reasoning_content and content as distinct fields and must never present reasoning_content to end users as if it were the final answer, nor discard it silently if ORNEUR's UI wants to show a 'thinking' indicator.",
+    "parser_requirement": "--reasoning-parser qwen3 is described by the vLLM recipe as 'not optional in practice': the chat template opens every assistant turn with <think>, so without the parser flag the entire reasoning block lands in message.content and a large token budget (recipe cites up to 2048 tokens observed) can be spent before the visible answer starts."
+  },
+
+  "tool_calling": {
+    "official_tool_call_parser_general": "qwen3_xml (seen paired with --enable-auto-tool-choice in the NVFP4 low-latency and 2xRTX5090 vLLM recipe examples)",
+    "official_tool_call_parser_ascend_variant": "qwen3_coder (seen in the Huawei Ascend 950PR recipe examples only)",
+    "auto_tool_choice_supported": true,
+    "auto_tool_choice_flag": "--enable-auto-tool-choice",
+    "openai_compatible_request_format": true,
+    "parallel_tool_calls": "not explicitly documented one way or the other in the retrieved sources -- UNRESOLVED_THIS_PHASE",
+    "vllm_vs_sglang_difference": "Not independently verified this phase for SGLang (no SGLang-specific tool-call-parser example was found in the retrieved sources); only vLLM's tool-call-parser flags were directly observed."
+  },
+
+  "multimodal_status": {
+    "repository_pipeline_tag": "image-text-to-text",
+    "config_carries_vision_config": true,
+    "vllm_recipe_own_statement": "'Unlike the 2.4T this is a multimodal model: the architecture is Qwen3_5ForConditionalGeneration and config.json carries a vision_config. Text serving is what this recipe covers and what has been verified.'",
+    "production_multimodal_readiness_assumed_from_metadata_alone": false,
+    "note": "The vLLM recipe explicitly scopes itself to TEXT serving only and states multimodal has not been verified by that recipe. Per phase instruction, multimodal remains NON-DECISIONAL for Genesis frontier selection and is NOT included in the future production-serving qualification spec's required evidence unless separately authorized."
+  },
+
+  "context_length": {
+    "native_default": 262144,
+    "extended_documented": 1000000,
+    "extension_mechanism": "Static YaRN RoPE override via --hf-overrides (vLLM) / --json-model-override-args (SGLang) / --hf-overrides (TokenSpeed), exact JSON payload documented in the README (see exact_relevant_commands_observed above)",
+    "official_warning": "All notable open-source frameworks implement STATIC YaRN -- the scaling factor remains constant regardless of input length, potentially impacting performance on shorter texts. The model card advises adjusting the rope_parameters factor for workloads shorter than the full 1M target (example given: halve the factor to 2.0 for a ~524K workload).",
+    "future_qualification_topology_implication": "The future production-serving qualification smoke should use the NATIVE 262144 default (or an even smaller --max-model-len for a bounded smoke, per phase instruction to minimize unnecessary compute) rather than the 1M extended-context override -- extended context is not needed to prove a genuine production-serving path and adds unnecessary KV-cache memory and complexity to a first qualification run."
+  }
+}

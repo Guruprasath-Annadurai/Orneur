@@ -1,0 +1,105 @@
+{
+  "evidence_type": "QWEN3_8_27B_RUNTIME_SUPPORT_MATRIX",
+  "candidate": "Qwen3.8-27B",
+  "generated": "2026-09-23",
+  "note": "CPU-only / metadata-only. Derived entirely from QWEN3_8_27B_CURRENT_SERVING_PRIMARY_SOURCES_2026-09-23.json -- no GPU, no inference performed to produce this matrix.",
+
+  "engines": {
+    "huggingface_transformers": {
+      "official_support": true,
+      "evidence_strength": "HISTORICAL_LIVE_VERIFIED",
+      "evidence": "Phase 21B.4.11 historical live run: full BF16 model loaded on 1x NVIDIA H200 (~55 GB weight VRAM), non-empty generation, no OOM/NaN/Inf, clean teardown, owner billed delta $0. See GENESIS_RUNTIME_QUALIFICATION_MANIFEST_QWEN3_8_27B.json.",
+      "production_oriented": false,
+      "note": "Proves RUNTIME_LOAD_COMPATIBILITY only -- Transformers offline generation is not a production-serving engine with a network/API path."
+    },
+    "vllm": {
+      "official_support": true,
+      "evidence_strength": "CURRENT_PRIMARY_SOURCE_DOCUMENTED",
+      "evidence": "Dedicated official recipe page (recipes.vllm.ai) with multiple verified launch-command variants, measured KV-pool/throughput figures for several topologies, and explicit reasoning-parser/tool-call-parser guidance.",
+      "production_oriented": true,
+      "resolved_stable_image": {
+        "repository": "vllm/vllm-openai",
+        "tag": "v0.30.0-cu129",
+        "linux_amd64_digest": "sha256:58fdb6bb123a81aa53f46fa4652ad8cc87e817bd1077c9832c6258ef12c1c688",
+        "pushed": "2026-09-22T02:11:40Z"
+      },
+      "architecture_support_confirmed": "via recipe page's own documented, measured launch commands for Qwen3_5ForConditionalGeneration -- not independently re-verified this phase inside the actual image (would require a CPU-only preflight against the resolved digest, not performed this phase)",
+      "reasoning_parser": "qwen3",
+      "tool_call_parser": "qwen3_xml (general) / qwen3_coder (seen only in Ascend-specific examples)",
+      "known_gap": "No official plain-BF16 single-Hopper-GPU (H100/H200) full launch-flag example exists in the current recipe -- flags must be composed from documented building blocks, not copied verbatim from one official example."
+    },
+    "sglang": {
+      "official_support": true,
+      "evidence_strength": "CURRENT_PRIMARY_SOURCE_DOCUMENTED_THINNER_THAN_VLLM",
+      "evidence": "Official Qwen README explicitly lists SGLang as a recommended production serving engine and gives an official long-context YaRN override command for it. No dedicated SGLang-specific recipe page equivalent to vLLM's was found.",
+      "production_oriented": true,
+      "resolved_stable_image": {
+        "repository": "lmsysorg/sglang",
+        "tag": "v0.5.20",
+        "linux_amd64_digest": "sha256:b27fce60bc5494c118c4910702812bcfa8cee67abcdd1ff8b0902f21647552f4",
+        "pushed": "2026-09-18T09:33:02Z"
+      },
+      "architecture_support_confirmed": "via the README's own official long-context override syntax for this exact model -- weaker evidence than vLLM's dedicated multi-config recipe with measured numbers",
+      "reasoning_parser": "not independently confirmed this phase (no SGLang-specific parser flag example retrieved)",
+      "tool_call_parser": "not independently confirmed this phase (no SGLang-specific parser flag example retrieved)",
+      "known_gap": "No SGLang launch-command example with topology/parser/context flags was retrieved -- only the long-context override snippet exists in the current evidence base."
+    },
+    "tokenspeed": {
+      "official_support": true,
+      "evidence_strength": "CURRENT_PRIMARY_SOURCE_DOCUMENTED_MINIMAL",
+      "evidence": "Official Qwen README lists TokenSpeed as a recommended production serving engine and gives an official long-context override command for it.",
+      "production_oriented": true,
+      "resolved_stable_image": "UNRESOLVED_FOR_FUTURE_EXECUTION -- no Docker Hub / container registry lookup was performed for TokenSpeed this phase",
+      "architecture_support_confirmed": "via the README's override syntax only",
+      "note": "Weakest evidence base of the three named production engines -- treated as informational only, not a serious candidate for the future qualification engine decision given the sparse evidence."
+    }
+  },
+
+  "reasoning_mode": {
+    "default": "thinking ON (enable_thinking=true, preserve_thinking=true)",
+    "adaptive_levels": ["xhigh (default)", "medium", "low"],
+    "non_thinking_available": true,
+    "parser_required": "--reasoning-parser qwen3 (vLLM); not independently confirmed for SGLang/TokenSpeed this phase",
+    "response_field_separation": "reasoning_content (delta.reasoning in streaming) vs content (delta.content) -- confirmed from the official README client example"
+  },
+
+  "tool_calling": {
+    "auto_tool_choice": true,
+    "parser_general": "qwen3_xml",
+    "parser_ascend_variant": "qwen3_coder",
+    "openai_compatible": true,
+    "parallel_tool_calls": "UNRESOLVED_THIS_PHASE"
+  },
+
+  "multimodal": {
+    "repository_tag": "image-text-to-text",
+    "vllm_recipe_scope": "text serving only -- multimodal explicitly NOT verified by the vLLM recipe itself",
+    "decisional_for_genesis_frontier_selection": false,
+    "included_in_future_qualification_spec_required_evidence": false
+  },
+
+  "context_length": {
+    "native_default": 262144,
+    "extended_max_documented": 1000000,
+    "extension_requires": "static YaRN RoPE override, exact JSON payload documented per-engine",
+    "future_qualification_topology_choice": "native 262144 default, or smaller for a bounded smoke -- extended context deliberately excluded from the minimum qualification run"
+  },
+
+  "topology": {
+    "historical_proven_load_topology": "1x NVIDIA H200 (BF16 Transformers load, ~55 GB weight VRAM) -- Phase 21B.4.11",
+    "official_recipe_topologies_observed": [
+      "TP1 (RTX5090 NVFP4, Ascend 950PR)",
+      "TP2 (2x RTX5090 NVFP4)",
+      "TP4 (GB300 tray, FP8, for largest KV cache)"
+    ],
+    "note": "TP4 in the official recipe is used for maximizing KV-cache pool size on a specific tray configuration (GB300), NOT because TP4 is required to serve the base model at all -- per phase instruction, TP4 must not be inferred as mandatory merely because one official recipe variant uses it. The historical 1x H200 BF16 load result strongly suggests a single-GPU (TP1) production-serving smoke is a realistic minimum qualification topology, since the full weight set already fits on one H200 with substantial VRAM headroom (H200 has 141 GiB; historical weight usage was ~55 GB)."
+  },
+
+  "dependency_versions": {
+    "transformers_minimum": ">=5.8.0",
+    "vllm_minimum_confirmed": ">=0.28.0 (for the DFlash2 speculative-decoding path specifically; no separate minimum stated for base serving)",
+    "vllm_resolved_stable_tag": "v0.30.0-cu129",
+    "sglang_resolved_stable_tag": "v0.5.20",
+    "flashattention_flashinfer": "not explicitly itemized as a separate dependency in the retrieved vLLM recipe text (unlike GLM-5.3-Flash's explicit FlashInfer >=0.6.18 requirement) -- UNRESOLVED_THIS_PHASE whether a specific FlashInfer/FlashAttention version floor applies to this architecture"
+  }
+}

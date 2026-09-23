@@ -1,0 +1,39 @@
+{
+  "evidence_type": "QWEN3_8_27B_SERVING_PREFLIGHT_EVIDENCE_INTEGRITY_INDEX",
+  "created": "2026-09-23",
+  "phase": "21B.4.15",
+  "candidate": "Qwen3.8-27B",
+  "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative. No GPU, no inference, no weight download performed to produce any indexed file.",
+  "entries": [
+    {
+      "path": "docs/orneur/phase-21/evidence/QWEN3_8_27B_CURRENT_SERVING_PRIMARY_SOURCES_2026-09-23.json",
+      "sha256": "675ee8441f3da5c984e2a9e1f073fb751abb65d38596f8ec2d1aa38121ea3fa9",
+      "evidence_role": "current_serving_primary_sources",
+      "size_bytes": 11231
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/QWEN3_8_27B_RUNTIME_SUPPORT_MATRIX_2026-09-23.json",
+      "sha256": "c548202504ea6dfa2718d7630e4e1dd2815cba4a3288b173da85a6c455f2d630",
+      "evidence_role": "runtime_support_matrix",
+      "size_bytes": 7167
+    },
+    {
+      "path": "docs/orneur/phase-21/GENESIS_QWEN3_8_27B_PRODUCTION_SERVING_ENGINE_DECISION_2026-09-23.md",
+      "sha256": "dbe73c8c73b947e0707baa7a9d05656f81bcc528e7c1acc4a29eca0f66bf55af",
+      "evidence_role": "engine_decision",
+      "size_bytes": 6524
+    },
+    {
+      "path": "docs/orneur/phase-21/GENESIS_QWEN3_8_27B_PRODUCTION_SERVING_QUALIFICATION_SPEC_2026-09-23.md",
+      "sha256": "c8619801ac8f6055adc50f6fec31c48283a47853a8d8ba86f69443c1f5089048",
+      "evidence_role": "future_qualification_spec",
+      "size_bytes": 10394
+    },
+    {
+      "path": "docs/orneur/phase-21/GENESIS_ZERO_CASH_GPU_EXECUTION_CONTROL_SPEC_2026-09-23.md",
+      "sha256": "791efcfd066b3f8276c38fee0026d3d2e03eef39146d9fd26b0ab8b5961aa6e7",
+      "evidence_role": "zero_cash_execution_control_spec",
+      "size_bytes": 6154
+    }
+  ]
+}
