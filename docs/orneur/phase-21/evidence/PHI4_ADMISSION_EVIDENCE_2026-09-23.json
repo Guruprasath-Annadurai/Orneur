@@ -51,7 +51,11 @@
     "total_parameters": 14659507200,
     "parameters_by_dtype": {"BF16": 14659507200},
     "weight_storage_bf16_gb": 29.3,
-    "note": "Matches the existing registry entry -- re-confirmed live via config.json identity checks this phase (not re-derived from a fresh blobs=true weight-file listing)."
+    "exact_total_bytes_one_model_representation": 29319042992,
+    "exact_bytes_source": "HF tree API file listing at the pinned revision (6 safetensors shards, real on-disk file sizes summed) -- see docs/orneur/phase-21/evidence/PHI4_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json for the full per-shard byte breakdown, the model.safetensors.index.json cross-check, and the reproduction methodology.",
+    "shard_count": 6,
+    "duplicate_or_alternative_format_present": false,
+    "note": "Phase 21B.4.16.1 closure: exact per-shard byte sizes freshly derived this phase from pinned-revision repository file metadata (not from parameter_count x 2 arithmetic and not merely re-confirmed via config.json identity checks)."
   },
 
   "G_context_window": {
@@ -60,7 +64,13 @@
   },
 
   "H_chat_template": {
-    "note": "Not independently deep-inspected this phase beyond identity/config confirmation; Phi-4 is documented upstream as using a ChatML-style template in general Microsoft/HF documentation, not independently re-verified against the pinned tokenizer_config.json content this phase."
+    "chat_template_present_in_pinned_tokenizer_config": true,
+    "chat_template_length_chars": 462,
+    "chat_template_format": "<|im_start|>role<|im_sep|>content<|im_end|> -- ChatML-style with a distinct <|im_sep|> separator token (not vanilla ChatML's plain newline). Confirmed directly from the pinned tokenizer_config.json.",
+    "trust_remote_code_required": false,
+    "trust_remote_code_source": "config.json auto_map is null at the pinned revision -- standard Phi3ForCausalLM architecture, no custom remote modeling class.",
+    "evidence_path": "docs/orneur/phase-21/evidence/PHI4_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json",
+    "note": "Phase 21B.4.16.1 closure: independently inspected directly from the pinned tokenizer_config.json, special_tokens_map.json, and generation_config.json this phase, replacing the prior phase's reliance on general Phi-family convention."
   },
 
   "I_reasoning_thinking_mode": {
@@ -72,21 +82,34 @@
     "vllm": {
       "official_recipe_exists": false,
       "http_status_checked": 404,
-      "note": "No dedicated recipe page -- consistent with Phi3ForCausalLM being a mainstream, long-established architecture in vLLM (supported since the Phi-3 family's original release)."
+      "note": "No dedicated recipes.vllm.ai page, but vLLM's official supported-models documentation names 'microsoft/Phi-4' explicitly as an Example HF Model for the Phi3ForCausalLM architecture (docs/orneur/phase-21/evidence/GENESIS_CONTROL_SET_VLLM_SUPPORTED_MODELS_PRIMARY_SOURCE_2026-09-23.md) -- this upgrades the prior 'mainstream, long-established architecture' framing into concrete, model-specific, cited primary-source evidence."
     },
     "sglang": {
       "official_recipe_confirmed_this_phase": false
     },
     "transformers": {
       "supported": true,
-      "note": "Phi3ForCausalLM is a mainstream, long-established architecture class."
+      "note": "Phi3ForCausalLM confirmed as a supported architecture in vLLM's own official supported-models documentation; production-serving support and native-Transformers load-compatibility support are recorded as distinct claims."
     }
   },
 
   "K_likely_future_topology": {
-    "minimum_plausible_native_precision_topology": "THEORETICAL -- a single 24GB-class GPU (L4/L40/A10G) fits the ~29.3 GB BF16 weight set only with meaningfully reduced KV-cache headroom (close to the raw card capacity); a larger card gives more comfortable margin, matching the registry's own theoretical_gpu_count_l4_class_24gb.bf16=2 figure as the SAFER multi-GPU option.",
-    "safer_qualification_topology": "THEORETICAL -- either 2x 24GB-class GPUs (TP2, per the registry's existing theoretical figure) or 1x 80GB+-class single GPU for comfortable single-GPU headroom",
-    "quantized_topology_options": "THEORETICAL -- FP8 (~14.7 GB) and INT4 (~7.3 GB) both fit comfortably on a single 24GB-class GPU by weight size alone; no official quantized artifact confirmed this phase"
+    "raw_weight_fit_1x_24gb_class_gpu": "NO",
+    "raw_weight_fit_note": "29.3 GB (29,319,042,992 bytes exact) BF16 weight footprint EXCEEDS a 24GB-class GPU's raw capacity by weight size alone -- a GPU marketed as 24 GB does not provide >29.3 billion bytes of usable model memory. The prior phase's statement that a single 24GB card 'fits ... with meaningfully reduced KV-cache headroom' was incorrect and is corrected here: there is no raw fit at all, not merely reduced headroom.",
+    "production_serving_qualification": "NOT_TESTED",
+    "production_serving_qualification_note": "No topology is claimed as qualified regardless of raw fit.",
+    "minimum_plausible_native_precision_topology": {
+      "evidence_level": "THEORETICAL",
+      "statement": "A single 24GB-class GPU does NOT raw-fit the ~29.3 GB BF16 weight set. A minimum plausible native-BF16 topology requires either 2x 24GB-class GPUs (aggregate raw capacity only -- TP2 support for this exact runtime/architecture combination has not been confirmed, see safer_qualification_topology) or 1x 80GB+-class single GPU."
+    },
+    "safer_qualification_topology": {
+      "evidence_level": "THEORETICAL",
+      "statement": "1x 80GB+-class single GPU is the safer minimum topology for a bounded BF16 production-serving smoke, since it avoids relying on unconfirmed tensor-parallel (TP2) support for this exact architecture/runtime combination. A 2x 24GB-class TP2 topology remains theoretically possible by aggregate memory alone, but TP topology support has NOT been confirmed for Phi3ForCausalLM on vLLM this phase -- it is not inferred merely because two GPUs have enough combined memory."
+    },
+    "quantized_topology_options": {
+      "evidence_level": "THEORETICAL",
+      "statement": "FP8 (~14.7 GB) and INT4 (~7.3 GB) both raw-fit a single 24GB-class GPU by weight size alone; no official quantized artifact confirmed this phase."
+    }
   },
 
   "L_precision_options": {

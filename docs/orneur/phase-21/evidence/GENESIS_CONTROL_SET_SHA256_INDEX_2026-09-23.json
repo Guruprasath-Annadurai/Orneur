@@ -1,32 +1,32 @@
 {
   "evidence_type": "GENESIS_CONTROL_SET_EVIDENCE_INTEGRITY_INDEX",
   "created": "2026-09-23",
-  "phase": "21B.4.16",
-  "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative. No GPU, no inference, no weight download performed to produce any indexed file.",
+  "phase": "21B.4.16.1",
+  "note": "SHA-256 hashes computed live from actual file bytes at commit time. Every path is repo-relative. No GPU, no inference, no weight download performed to produce any indexed file. Recomputed in full this phase (21B.4.16.1) to reflect evidence-closure edits to modified files and the addition of the three RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE files plus the vLLM supported_models.md primary-source excerpt -- no stale hashes.",
   "entries": [
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_SET_PRIMARY_SOURCES_2026-09-23.json",
-      "sha256": "ed46c1410d1a2b545ebd4dd0bcc9e53e7b92ac0bfaa3237b2e2802f3e1519d9f",
+      "sha256": "92044c0c55412a401ee2bb467b1a40ee274fbf61b0bd0792efc8c62ae3725f7a",
       "evidence_role": "control_set_primary_sources",
-      "size_bytes": 10712
+      "size_bytes": 13931
     },
     {
       "path": "docs/orneur/phase-21/evidence/QWEN3_8B_ADMISSION_EVIDENCE_2026-09-23.json",
-      "sha256": "279c617aa4cf62fe6214542b407f01ca757d390a9d5c3c8ea30c64f17532a9fb",
+      "sha256": "0da87f604009598a0d793fca4e4568cd2241904e5a984b9892d58a2ed7df7f77",
       "evidence_role": "qwen3_8b_admission_evidence",
-      "size_bytes": 6529
+      "size_bytes": 8508
     },
     {
       "path": "docs/orneur/phase-21/evidence/MISTRAL_NEMO_2407_ADMISSION_EVIDENCE_2026-09-23.json",
-      "sha256": "5b4e140af502345e0fc4cafc1a05c41d85e9774ec9c95ae69ebac07aa5badc6a",
+      "sha256": "5bfda67dcd8b1f7dafde47a9e9450f107b1936b468f964009a70cdc3196a3dc0",
       "evidence_role": "mistral_nemo_2407_admission_evidence",
-      "size_bytes": 8248
+      "size_bytes": 10888
     },
     {
       "path": "docs/orneur/phase-21/evidence/PHI4_ADMISSION_EVIDENCE_2026-09-23.json",
-      "sha256": "52f7d153ca16b49bebe37dcfb4f302100eccc8ee29586a71017d4dec09e6b358",
+      "sha256": "5be74322e193a26aa80a4285e021f387d9c564d2d8b6d811210b4d9cc5fe2638",
       "evidence_role": "phi4_admission_evidence",
-      "size_bytes": 6195
+      "size_bytes": 8880
     },
     {
       "path": "docs/orneur/phase-21/evidence/QWEN3_8B_LICENSE_PRIMARY_SOURCE_2026-09-23.txt",
@@ -48,15 +48,39 @@
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_SET_RUNTIME_PREFLIGHT_2026-09-23.md",
-      "sha256": "574bcf0da6d898175309cc8991925ee7f83f51799ca71cf96f7a28cabe95f228",
+      "sha256": "04362b4f1622bf3ecf93bbb26ca9861a4edff5e7426a4c55282f8834bfd4266a",
       "evidence_role": "control_set_runtime_preflight",
-      "size_bytes": 7040
+      "size_bytes": 11519
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_PARITY_SPEC_2026-09-23.md",
       "sha256": "82f41827e4da23377dced6dd474bfbd169da924290effd93e971e51497349605",
       "evidence_role": "control_parity_spec",
       "size_bytes": 4742
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/QWEN3_8B_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json",
+      "sha256": "d3f9fee3df6cfd57b5a7118e0064cc7ea48ca0bb0366623fcc2f7465bedc1d28",
+      "evidence_role": "qwen3_8b_runtime_preflight_evidence_closure",
+      "size_bytes": 6274
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/PHI4_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json",
+      "sha256": "6c8655f20adc9f30934a2bec3b6a82884d841018dbc9587f0997cc517e0629e2",
+      "evidence_role": "phi4_runtime_preflight_evidence_closure",
+      "size_bytes": 6933
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/MISTRAL_NEMO_2407_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json",
+      "sha256": "eab57740e83a43618b8c779e671e2eb1c9857b977e7b075c64fc8dd10bf2e678",
+      "evidence_role": "mistral_nemo_2407_runtime_preflight_evidence_closure",
+      "size_bytes": 4632
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_SET_VLLM_SUPPORTED_MODELS_PRIMARY_SOURCE_2026-09-23.md",
+      "sha256": "173425124d8b2edb7e16face1c63616b1a3fb3d805f17556798f3d2abf574cab",
+      "evidence_role": "vllm_supported_models_primary_source",
+      "size_bytes": 2634
     }
   ]
 }

@@ -1,0 +1,51 @@
+{
+  "evidence_type": "GENESIS_CONTROL_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE",
+  "phase": "21B.4.16.1",
+  "control": "Mistral-Nemo-Instruct-2407",
+  "artifact_repository": "mistralai/Mistral-Nemo-Instruct-2407",
+  "pinned_revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+  "retrieval_timestamp_utc": "2026-09-23T12:44:00Z",
+  "note": "CPU / metadata / API-only retrieval. This control's weight-layout evidence was already closed in Phase 21B.4.16 (consolidated.safetensors=24,495,604,224 bytes, confirmed again below via the HF 5-shard representation). This file closes the remaining Phase 21B.4.16 gap: the chat-template/tokenizer path was previously inferred from the 'mistral-common' repository tag alone rather than independently inspected from pinned tokenizer/config files.",
+
+  "A_weight_layout_reconfirmation": {
+    "consolidated_safetensors_bytes": 24495604224,
+    "hf_5shard_representation_bytes": {
+      "model-00001-of-00005.safetensors": 4865522496,
+      "model-00002-of-00005.safetensors": 4907529424,
+      "model-00003-of-00005.safetensors": 4907529456,
+      "model-00004-of-00005.safetensors": 4907529456,
+      "model-00005-of-00005.safetensors": 4907496272,
+      "sum_bytes": 24495607104
+    },
+    "delta_between_two_formats_bytes": 2880,
+    "delta_note": "The two on-disk formats (single-file consolidated.safetensors vs. 5-shard HF format) represent the identical BF16 weights and differ by only 2,880 bytes -- header/padding overhead across shard boundaries in the sharded format. Both are the SAME model; this is not two different weight sets.",
+    "torch_dtype": "bfloat16",
+    "torch_dtype_source": "config.json torch_dtype field at the pinned revision (independently re-confirmed this phase)",
+    "weight_layout_evidence_status": "COMPLETE -- previously closed in Phase 21B.4.16, dtype field gap closed this phase"
+  },
+
+  "B_tokenizer_and_chat_template": {
+    "sources_used": [
+      "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/raw/04d8a90549d23fc6bd7f642064003592df51e9b3/tokenizer_config.json",
+      "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/raw/04d8a90549d23fc6bd7f642064003592df51e9b3/params.json"
+    ],
+    "correction_to_prior_phase_assumption": "Phase 21B.4.16 assumed the canonical chat-formatting path 'likely runs through the mistral-common package rather than a plain chat_template.jinja' based on the repository's mistral-common tag alone, without inspecting tokenizer_config.json directly. This phase fetched tokenizer_config.json directly: it DOES exist (HTTP 200) and DOES contain a populated chat_template jinja field -- the prior assumption was too weak.",
+    "tokenizer_config_json_exists": true,
+    "tokenizer_config_json_chat_template_present": true,
+    "tokenizer_config_json_keys": [
+      "add_bos_token", "add_eos_token", "add_prefix_space", "added_tokens_decoder",
+      "bos_token", "chat_template", "clean_up_tokenization_spaces", "eos_token",
+      "model_input_names", "model_max_length", "tokenizer_class", "unk_token"
+    ],
+    "bos_token": "<s>",
+    "eos_token": "</s>",
+    "instruction_format_special_tokens": ["[INST]", "[/INST]", "[AVAILABLE_TOOLS]", "[/AVAILABLE_TOOLS]", "[TOOL_RESULTS]", "[/TOOL_RESULTS]"],
+    "dual_config_path_confirmed": {
+      "hf_transformers_path": "config.json + sharded model.safetensors.index.json + tokenizer_config.json (with chat_template) + tokenizer.json + vocab.json + merges.txt + special_tokens_map.json -- the standard HF/transformers/vLLM-compatible representation.",
+      "mistral_native_path": "params.json (dim=5120, n_layers=40, head_dim=128, hidden_dim=14336, n_heads=32, n_kv_heads=8, norm_eps=1e-05, vocab_size=131072, rope_theta=1000000.0, max_position_embeddings=131072) + consolidated.safetensors + tekken.json -- the mistral-common/mistral-inference-native representation.",
+      "conclusion": "The repository ships BOTH a fully standard HF-transformers-compatible chat-template path (usable directly by vLLM's OpenAI-compatible server without requiring the mistral-common package) AND the Mistral-native tooling path. The mistral-common tag signals the existence of an alternative canonical formatting path, not a requirement that HF-standard tooling is unusable -- this correction is more evidence-supported than the prior phase's framing."
+    },
+    "vllm_tokenizer_mode_note": "A general web search of vLLM documentation for Mistral-Nemo tokenizer-mode handling was explicitly out of scope for this fetch pass and is recorded as NOT independently confirmed this phase -- not asserted either way.",
+    "chat_tokenizer_evidence_status": "COMPLETE"
+  }
+}

@@ -19,7 +19,7 @@
   "B_license": {
     "license_identifier": "apache-2.0",
     "actual_license_file_exists": false,
-    "evidence_source": "README.md YAML frontmatter tag only -- no standalone LICENSE/LICENSE.md file exists in the repository (both checked, both HTTP 404 at the pinned revision)",
+    "evidence_source": "The pinned repository README.md itself explicitly declares Apache-2.0 in BOTH the YAML frontmatter metadata field (license: apache-2.0, line 13) AND in first-party prose text within the README body (line 29: '- Released under the **Apache 2 License**') -- no standalone LICENSE/LICENSE.md/LICENSE.txt file exists in the repository (all three checked, all HTTP 404 at the pinned revision).",
     "evidence_path": "docs/orneur/phase-21/evidence/MISTRAL_NEMO_2407_README_PRIMARY_SOURCE_2026-09-23.md",
     "evidence_sha256": "445377992e7404021555e689a5df79b90a3293c38829ec1dcaa9dfed5b7526b0",
     "commercial_use": "CLEAR",
@@ -29,7 +29,7 @@
     "fine_tuning": "CLEAR",
     "derivative_work": "CLEAR",
     "license_status": "CLEAR",
-    "note": "Apache-2.0 is declared unambiguously via the repository's own cardData.license metadata field (a real, structured HF API field, not a blog-post inference), and Apache-2.0's canonical text is a fixed, universally known standard document -- its rights are identified accurately even though this specific repository does not host a local copy of the full legal text. The repository's 'extra_gated_description' is informational only (a Privacy Policy link) and the API's own 'gated' field confirms false -- no genuine access restriction exists. This evidentiary gap (metadata tag vs. persisted license file) is recorded honestly per phase instruction, and does not change the license determination given the tag names a well-known, unambiguous standard license."
+    "note": "Phase 21B.4.16.1 correction: the prior phase's wording ('README.md YAML frontmatter tag only') understated the actual first-party evidence. The persisted README contains an explicit PROSE statement -- '- Released under the **Apache 2 License**' (line 29) -- in addition to the structured cardData.license metadata tag (line 13); these are two independent first-party declarations of the same license, not one metadata tag alone. Apache-2.0 identification is therefore directly supported by the repository's own first-party content (metadata AND prose), not merely inferred from a tag. The absence of a standalone full-license-text file remains an accurate evidentiary-FORMAT fact (this repository does not host a local copy of the canonical Apache-2.0 legal text) but is not, and was never, a license-identity AMBIGUITY. The repository's 'extra_gated_description' is informational only (a Privacy Policy link) and the API's own 'gated' field confirms false -- no genuine access restriction exists."
   },
 
   "C_admission": {
@@ -38,8 +38,9 @@
   },
 
   "D_tokenizer_identity": {
-    "note": "Tokenizer identity pinned at the same repository revision. Repository carries a 'mistral-common' tag, indicating the official Mistral tokenizer/chat-formatting package (mistral-common) may be required or recommended for fully correct chat-template behavior, distinct from a plain transformers AutoTokenizer path.",
-    "mistral_common_package_relevant": true
+    "note": "Tokenizer identity pinned at the same repository revision. Repository carries a 'mistral-common' tag AND ships a full HF-transformers-compatible tokenizer_config.json with a populated chat_template -- both paths coexist (see H_chat_template below, closed in Phase 21B.4.16.1).",
+    "mistral_common_package_relevant": true,
+    "hf_standard_tokenizer_config_also_present": true
   },
 
   "E_architecture_config_identity": {
@@ -64,7 +65,14 @@
   },
 
   "H_chat_template": {
-    "note": "Official chat template / serving path relies on Mistral's own conventions; 'mistral-common' tag suggests the canonical chat-formatting path is the mistral-common package rather than (or in addition to) a plain transformers chat_template.jinja file. Not independently deep-inspected this phase beyond confirming the tag's presence."
+    "chat_template_present_in_pinned_tokenizer_config": true,
+    "tokenizer_config_json_exists": true,
+    "bos_token": "<s>",
+    "eos_token": "</s>",
+    "instruction_format_special_tokens": ["[INST]", "[/INST]", "[AVAILABLE_TOOLS]", "[/AVAILABLE_TOOLS]", "[TOOL_RESULTS]", "[/TOOL_RESULTS]"],
+    "dual_path_confirmed": "The repository ships BOTH a standard HF-transformers-compatible tokenizer_config.json with a populated chat_template jinja field (usable directly by vLLM's OpenAI-compatible server) AND the Mistral-native tooling path (params.json + consolidated.safetensors + tekken.json, the mistral-common/mistral-inference-native representation).",
+    "evidence_path": "docs/orneur/phase-21/evidence/MISTRAL_NEMO_2407_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json",
+    "note": "Phase 21B.4.16.1 correction: the prior phase inferred the chat-formatting path solely from the 'mistral-common' repository tag without inspecting tokenizer_config.json. Direct inspection this phase found tokenizer_config.json DOES exist and DOES contain a populated chat_template -- the prior 'likely runs through mistral-common rather than a plain chat_template.jinja' framing was too weak; both paths coexist."
   },
 
   "I_reasoning_thinking_mode": {
@@ -84,14 +92,27 @@
     },
     "transformers": {
       "supported": true,
-      "note": "MistralForCausalLM is a mainstream, long-established architecture class."
+      "note": "MistralForCausalLM confirmed as a supported architecture in vLLM's own official supported-models documentation (docs/orneur/phase-21/evidence/GENESIS_CONTROL_SET_VLLM_SUPPORTED_MODELS_PRIMARY_SOURCE_2026-09-23.md) -- the Example HF Models column lists other Mistral models (Ministral-3, Mistral-7B family), not Mistral-Nemo-Instruct-2407 by name, so this is architecture-class support evidence, not model-specific confirmation; recorded honestly as that weaker evidence tier."
     }
   },
 
   "K_likely_future_topology": {
-    "minimum_plausible_native_precision_topology": "THEORETICAL -- a single 24GB-class GPU (L4/L40/A10G) is BORDERLINE for BF16: the ~22.8 GiB weight floor leaves little to no headroom for runtime/KV-cache overhead once actual engine memory usage is accounted for, matching the existing registry's own 'borderline -- no headroom' assessment. A single H100/H200-class GPU (80GB+) comfortably fits BF16 with real headroom.",
-    "safer_qualification_topology": "THEORETICAL -- 1x H100/H200-class GPU (80GB+) is the safer minimum for a bounded BF16 production-serving smoke, given the borderline fit on a 24GB card",
-    "quantized_topology_options": "THEORETICAL -- FP8 (~12.2 GB) and INT4 (~6.1 GB) both fit comfortably on a single 24GB-class GPU by weight size alone; no official quantized artifact confirmed this phase"
+    "raw_weight_fit_1x_24gb_class_gpu": "NO",
+    "raw_weight_fit_note": "24,495,604,224 bytes (~24.50 GB decimal / ~22.81 GiB) BF16 weight footprint EXCEEDS a 24GB-class GPU's raw usable capacity by weight size alone -- a GPU marketed as 24 GB does not provide >24,495,604,224 bytes of usable model memory, and runtime/KV allocations require additional space beyond the raw weight floor regardless. The prior phase's framing ('BORDERLINE ... little to no headroom') incorrectly implied a possible fit; corrected here to a clear NO.",
+    "production_serving_qualification": "NOT_TESTED",
+    "production_serving_qualification_note": "No topology is claimed as qualified regardless of raw fit.",
+    "minimum_plausible_native_precision_topology": {
+      "evidence_level": "THEORETICAL",
+      "statement": "A single 24GB-class GPU does NOT raw-fit the ~24.5 GB BF16 weight set. A native-BF16 topology requires either a larger single card (e.g. an 80GB+-class GPU) or a multi-GPU topology explicitly supported by the chosen runtime -- no exact topology is claimed as qualified."
+    },
+    "safer_qualification_topology": {
+      "evidence_level": "THEORETICAL",
+      "statement": "1x H100/H200-class GPU (80GB+) is the safer minimum for a bounded BF16 production-serving smoke, since it raw-fits the weight set with real headroom and avoids relying on unconfirmed multi-GPU tensor-parallel behavior for this architecture/runtime combination."
+    },
+    "quantized_topology_options": {
+      "evidence_level": "THEORETICAL",
+      "statement": "FP8 (~12.2 GB) and INT4 (~6.1 GB) both raw-fit a single 24GB-class GPU by weight size alone; no official quantized artifact confirmed this phase."
+    }
   },
 
   "L_precision_options": {

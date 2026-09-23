@@ -31,6 +31,17 @@
         "transformers_version_written_by": "4.51.0",
         "tie_word_embeddings": false
       },
+      "weight_layout_evidence_closure_21b4161": {
+        "evidence_path": "docs/orneur/phase-21/evidence/QWEN3_8B_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json",
+        "exact_total_bytes_one_model_representation": 16381516776,
+        "shard_count": 5,
+        "note": "Phase 21B.4.16.1: exact per-shard byte sizes freshly derived from HF tree API file listing at the pinned revision, superseding the prior phase's registry cross-check-only approach."
+      },
+      "vllm_supported_models_md_confirmation_21b4161": {
+        "evidence_path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_SET_VLLM_SUPPORTED_MODELS_PRIMARY_SOURCE_2026-09-23.md",
+        "row": "`Qwen3ForCausalLM` | Qwen3 | `Qwen/Qwen3-8B`, etc. | LoRA + PP checked",
+        "note": "Qwen/Qwen3-8B named explicitly as an Example HF Model -- direct model-specific confirmation."
+      },
       "tokenizer_config_json": {
         "url": "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/tokenizer_config.json",
         "eos_token": "<|im_end|>",
@@ -80,7 +91,9 @@
         "head_dim": 128,
         "intermediate_size": 14336,
         "max_position_embeddings": 131072,
-        "torch_dtype": "not captured in this fetch -- UNRESOLVED_THIS_PHASE, safetensors metadata independently confirms BF16"
+        "torch_dtype": "bfloat16",
+        "torch_dtype_resolution_note": "Phase 21B.4.16.1: the prior phase's UNRESOLVED_THIS_PHASE gap for this specific config.json field is now closed via direct re-fetch -- torch_dtype='bfloat16' confirmed, consistent with the safetensors metadata's already-confirmed BF16 dtype.",
+        "architectures": ["MistralForCausalLM"]
       },
       "weight_layout_evidence": {
         "source": "https://huggingface.co/api/models/mistralai/Mistral-Nemo-Instruct-2407?blobs=true",
@@ -103,15 +116,20 @@
         "extra_gated_description_present": true,
         "extra_gated_description_content": "If you want to learn more about how we process your personal data, please read our Privacy Policy (https://mistral.ai/terms/).",
         "gated_flag": false,
-        "note": "The extra_gated_description is informational (a Privacy Policy link), NOT an access-gate condition -- the API's own 'gated' field is false, confirming no genuine gated-access restriction exists on this repository. The license itself (Apache-2.0) is a well-known, unambiguous standard license whose canonical text is fixed and publicly available regardless of whether this specific repository hosts a local copy of it -- the absence of a repo-local LICENSE file is an evidentiary gap worth recording honestly, but does not itself cast doubt on which license terms apply."
+        "readme_prose_declaration": "Phase 21B.4.16.1 correction: the persisted README (line 29) ALSO contains explicit first-party prose -- '- Released under the **Apache 2 License**' -- in addition to the YAML frontmatter tag (line 13). The prior phase's 'README.md YAML frontmatter tag only' framing understated the evidence; two independent first-party declarations exist, not one metadata tag alone.",
+        "note": "The extra_gated_description is informational (a Privacy Policy link), NOT an access-gate condition -- the API's own 'gated' field is false, confirming no genuine gated-access restriction exists on this repository. The license itself (Apache-2.0) is a well-known, unambiguous standard license whose canonical text is fixed and publicly available regardless of whether this specific repository hosts a local copy of it -- the absence of a repo-local LICENSE file is an evidentiary-format gap worth recording honestly, but was never a license-identity ambiguity, and is now further supported by the README's own explicit prose declaration."
       },
       "library_name_tag": "vllm",
       "mistral_common_tag_present": true,
+      "tokenizer_config_closure_21b4161": {
+        "evidence_path": "docs/orneur/phase-21/evidence/MISTRAL_NEMO_2407_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json",
+        "note": "Phase 21B.4.16.1: tokenizer_config.json directly inspected -- confirmed to exist and contain a populated chat_template, alongside the separate Mistral-native params.json/tekken.json path. Both paths coexist; the prior phase's inference from the 'mistral-common' tag alone is corrected."
+      },
       "vllm_recipe": {
         "url": "https://recipes.vllm.ai/mistralai/Mistral-Nemo-Instruct-2407",
         "exists": false,
         "http_status": 404,
-        "note": "No dedicated recipe page -- consistent with a mainstream, long-established architecture (MistralForCausalLM, supported in vLLM since shortly after the model's July 2024 release) not requiring a special model-specific recipe."
+        "note": "No dedicated recipe page. vLLM's official supported_models.md confirms the MistralForCausalLM architecture class (docs/orneur/phase-21/evidence/GENESIS_CONTROL_SET_VLLM_SUPPORTED_MODELS_PRIMARY_SOURCE_2026-09-23.md) but does not name mistralai/Mistral-Nemo-Instruct-2407 specifically -- architecture-class support evidence, not model-specific confirmation."
       },
       "sglang_recipe": {
         "exists_confirmed_this_phase": false,
@@ -147,11 +165,22 @@
         "actual_license_file_exists_in_repo": true,
         "note": "License text begins 'Microsoft. Copyright (c) Microsoft Corporation. MIT License' -- standard MIT terms, full text persisted."
       },
+      "weight_layout_evidence_closure_21b4161": {
+        "evidence_path": "docs/orneur/phase-21/evidence/PHI4_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json",
+        "exact_total_bytes_one_model_representation": 29319042992,
+        "shard_count": 6,
+        "note": "Phase 21B.4.16.1: exact per-shard byte sizes freshly derived from HF tree API file listing at the pinned revision, superseding the prior phase's config.json-identity-check-only approach."
+      },
+      "tokenizer_config_closure_21b4161": {
+        "evidence_path": "docs/orneur/phase-21/evidence/PHI4_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json",
+        "chat_template_present": true,
+        "note": "Phase 21B.4.16.1: tokenizer_config.json, special_tokens_map.json, and generation_config.json directly inspected at the pinned revision, replacing the prior phase's general Phi-family-convention reliance."
+      },
       "vllm_recipe": {
         "url": "https://recipes.vllm.ai/microsoft/phi-4",
         "exists": false,
         "http_status": 404,
-        "note": "No dedicated recipe page -- consistent with a mainstream, long-established architecture (Phi3ForCausalLM, supported in vLLM since the Phi-3 family's initial release well before Phi-4's Dec 2024 publication) not requiring a special model-specific recipe."
+        "note": "No dedicated recipes.vllm.ai page, but vLLM's official supported_models.md names 'microsoft/Phi-4' explicitly as an Example HF Model for Phi3ForCausalLM (docs/orneur/phase-21/evidence/GENESIS_CONTROL_SET_VLLM_SUPPORTED_MODELS_PRIMARY_SOURCE_2026-09-23.md) -- direct, model-specific, cited primary-source confirmation replacing the prior generic 'mainstream architecture' framing."
       },
       "sglang_recipe": {
         "exists_confirmed_this_phase": false,

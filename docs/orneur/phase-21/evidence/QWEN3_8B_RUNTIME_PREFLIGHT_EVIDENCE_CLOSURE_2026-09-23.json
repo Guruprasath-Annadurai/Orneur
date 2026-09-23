@@ -1,0 +1,73 @@
+{
+  "evidence_type": "GENESIS_CONTROL_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE",
+  "phase": "21B.4.16.1",
+  "control": "Qwen3-8B",
+  "artifact_repository": "Qwen/Qwen3-8B",
+  "pinned_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "retrieval_timestamp_utc": "2026-09-23T12:44:00Z",
+  "note": "CPU / metadata / API-only retrieval. No file-body weight download -- only file-listing byte sizes and small JSON config/tokenizer files were fetched. Closes the Phase 21B.4.16 evidence gap where BF16 storage size was cross-checked from the existing registry rather than freshly derived from pinned repository file metadata.",
+
+  "A_weight_layout": {
+    "sources_used": [
+      "https://huggingface.co/api/models/Qwen/Qwen3-8B/tree/b968826d9c46dd6066d109eabc6255188de91218?recursive=true",
+      "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/model.safetensors.index.json",
+      "https://huggingface.co/api/models/Qwen/Qwen3-8B?expand[]=safetensors",
+      "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/config.json"
+    ],
+    "safetensors_shard_count": 5,
+    "safetensors_files": [
+      {"filename": "model-00001-of-00005.safetensors", "bytes": 3996250744},
+      {"filename": "model-00002-of-00005.safetensors", "bytes": 3993160032},
+      {"filename": "model-00003-of-00005.safetensors", "bytes": 3959604768},
+      {"filename": "model-00004-of-00005.safetensors", "bytes": 3187841392},
+      {"filename": "model-00005-of-00005.safetensors", "bytes": 1244659840}
+    ],
+    "model_safetensors_index_json_bytes": 32878,
+    "exact_total_bytes_one_model_representation": 16381516776,
+    "exact_total_bytes_method": "Sum of the 5 shard files' exact byte sizes as reported by the HF tree API's file listing at the pinned revision -- this is the most authoritative figure (real on-disk file sizes), not a parameter-count derivation.",
+    "index_json_metadata_total_size_bytes": 16381470720,
+    "index_json_vs_tree_sum_delta_bytes": 46056,
+    "index_json_vs_tree_sum_delta_note": "model.safetensors.index.json's internal metadata.total_size field is itself a parameter-count-derived figure written by the original save_pretrained() call, not a re-measurement of actual file bytes -- it differs from the tree API's summed real file sizes by 46,056 bytes (per-shard safetensors header/padding overhead not counted in total_size). The tree-API sum (16,381,516,776 bytes) is treated as authoritative for 'exact bytes on disk'.",
+    "duplicate_or_alternative_format_present": false,
+    "duplicate_format_note": "No .bin PyTorch files, no consolidated single-file alternative format present in the pinned-revision tree -- exactly one BF16 safetensors representation exists.",
+    "native_stored_dtype": "bfloat16",
+    "native_stored_dtype_source": "config.json torch_dtype field at the pinned revision",
+    "hf_api_safetensors_expand_field": {
+      "raw_response": {"parameters": {"BF16": 8190735360}, "total": 8190735360},
+      "clarification": "This HF API field ('total': 8190735360) is a PARAMETER COUNT (8,190,735,360 parameters), not a byte count. It must not be confused with the exact_total_bytes_one_model_representation figure above. Multiplying 8,190,735,360 params x 2 bytes/param (BF16) = 16,381,470,720 bytes -- matching the index.json's total_size exactly, confirming that field is parameter-arithmetic-derived rather than an independent file-size measurement. Only the tree-API summed shard bytes (16,381,516,776) reflect actual on-disk file sizes including safetensors header/padding overhead."
+    },
+    "weight_layout_evidence_status": "COMPLETE"
+  },
+
+  "B_tokenizer_and_chat_template": {
+    "sources_used": [
+      "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/tokenizer_config.json",
+      "https://huggingface.co/Qwen/Qwen3-8B/raw/b968826d9c46dd6066d109eabc6255188de91218/generation_config.json"
+    ],
+    "tokenizer_config_chat_template_present": true,
+    "tokenizer_config_chat_template_length_chars": 4168,
+    "tokenizer_config_chat_template_thinking_mode_evidence": "Template contains the branch: {%- if enable_thinking is defined and enable_thinking is false %}{{- '<think>\\n\\n</think>\\n\\n' }}{%- endif %} -- confirms hybrid thinking mode is ON by default (thinking content is generated unless the caller explicitly passes enable_thinking=false, in which case the template pre-fills empty <think></think> tags to suppress it).",
+    "bos_token": null,
+    "bos_token_note": "Qwen3's tokenizer has no BOS token (null in tokenizer_config.json) -- generation begins directly with the chat-template-formatted prompt.",
+    "eos_token": "<|im_end|>",
+    "generation_config_json": {
+      "bos_token_id": 151643,
+      "eos_token_id": [151645, 151643],
+      "pad_token_id": 151643,
+      "temperature": 0.6,
+      "top_k": 20,
+      "top_p": 0.95,
+      "transformers_version": "4.51.0"
+    },
+    "chat_tokenizer_evidence_status": "COMPLETE"
+  },
+
+  "C_current_vllm_runtime_support": {
+    "source": "https://raw.githubusercontent.com/vllm-project/vllm/main/docs/models/supported_models.md",
+    "retrieval_note": "Fetched from the vllm-project/vllm repository's main branch HEAD at retrieval time (this is current-support documentation, not an immutable pinned-revision artifact, so main-branch HEAD is the correct target).",
+    "table_row_verbatim": "| `Qwen3ForCausalLM` | Qwen3 | `Qwen/Qwen3-8B`, etc. | ✓︎ | ✓︎ |",
+    "table_columns": ["Architecture", "Models", "Example HF Models", "LoRA", "PP (pipeline-parallel)"],
+    "interpretation": "vLLM's own official supported-models documentation names Qwen/Qwen3-8B explicitly as an Example HF Model for the Qwen3ForCausalLM architecture, with both LoRA and pipeline-parallel support checked. This is direct, model-specific, current primary-source confirmation -- not merely a generic 'mainstream architecture' inference.",
+    "dedicated_recipe_still_applies": "The CPU-scoped recipes.vllm.ai/Qwen/Qwen3-8B recipe (min_vllm_version>=0.8.5, reasoning_parser=qwen3, tool_call_parser=hermes) remains the more detailed, launch-flag-specific evidence source; this supported_models.md entry corroborates general architecture-level support independent of that recipe."
+  }
+}

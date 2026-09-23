@@ -56,7 +56,11 @@
     "total_parameters": 8190735360,
     "parameters_by_dtype": {"BF16": 8190735360},
     "weight_storage_bf16_gb": 16.4,
-    "note": "Matches the existing registry entry exactly -- re-confirmed live, not re-derived independently this phase (no fresh blobs=true fetch was performed for this control; total_parameters cross-checked against the existing registry record, which itself was HF-API-sourced)."
+    "exact_total_bytes_one_model_representation": 16381516776,
+    "exact_bytes_source": "HF tree API file listing at the pinned revision (5 safetensors shards, real on-disk file sizes summed) -- see docs/orneur/phase-21/evidence/QWEN3_8B_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json for the full per-shard byte breakdown, the model.safetensors.index.json cross-check, and the reproduction methodology.",
+    "shard_count": 5,
+    "duplicate_or_alternative_format_present": false,
+    "note": "Phase 21B.4.16.1 closure: exact per-shard byte sizes freshly derived this phase from pinned-revision repository file metadata (not from parameter_count x 2 arithmetic and not merely cross-checked against the existing registry record)."
   },
 
   "G_context_window": {
@@ -69,7 +73,10 @@
   "H_chat_template": {
     "supports_system_user_assistant_roles": true,
     "im_start_im_end_format": true,
-    "note": "Standard ChatML-style (<|im_start|>/<|im_end|>) template, consistent with the Qwen family convention."
+    "chat_template_present_in_pinned_tokenizer_config": true,
+    "chat_template_length_chars": 4168,
+    "evidence_path": "docs/orneur/phase-21/evidence/QWEN3_8B_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE_2026-09-23.json",
+    "note": "Standard ChatML-style (<|im_start|>/<|im_end|>) template, consistent with the Qwen family convention -- and this phase (21B.4.16.1) independently confirmed the chat_template field's presence and thinking-mode branch directly from the pinned tokenizer_config.json, not merely family convention."
   },
 
   "I_reasoning_thinking_mode": {
@@ -92,14 +99,27 @@
     },
     "transformers": {
       "supported": true,
-      "note": "Qwen3ForCausalLM is a mainstream, long-established architecture class in transformers."
+      "note": "Qwen3ForCausalLM confirmed as a supported architecture in vLLM's own official supported-models documentation (Qwen/Qwen3-8B named explicitly as an Example HF Model), per docs/orneur/phase-21/evidence/GENESIS_CONTROL_SET_VLLM_SUPPORTED_MODELS_PRIMARY_SOURCE_2026-09-23.md -- production-serving support and native-Transformers load-compatibility support are recorded as distinct claims; only the latter is asserted for the 'transformers' fallback path."
     }
   },
 
   "K_likely_future_topology": {
-    "minimum_plausible_native_precision_topology": "THEORETICAL -- 1x 24GB-class GPU (L4/L40/A10G) or any single modern datacenter GPU comfortably fits the 16.4 GB BF16 weight set with substantial headroom for KV cache at a bounded context",
-    "safer_qualification_topology": "DOCUMENTED (CPU) / THEORETICAL (GPU) -- the only official recipe evidence documents a 2x Xeon 6 CPU configuration; no GPU topology has been live-proven or officially recipe-documented for this control",
-    "quantized_topology_options": "THEORETICAL -- FP8 (~8.2 GB) and INT4 (~4.1 GB) both fit trivially on any single modern GPU by weight size alone; no official quantized artifact confirmed this phase"
+    "raw_weight_fit_1x_24gb_class_gpu": "YES",
+    "raw_weight_fit_note": "16.4 GB (16,381,516,776 bytes exact) BF16 weight footprint fits within a 24GB-class GPU's raw capacity by weight size alone.",
+    "production_serving_qualification": "NOT_TESTED",
+    "production_serving_qualification_note": "Raw weight fit is not a production-serving qualification claim -- runtime/KV-cache overhead, exact framework memory behavior, and end-to-end serving have not been live-tested for this control.",
+    "minimum_plausible_native_precision_topology": {
+      "evidence_level": "THEORETICAL",
+      "statement": "1x 24GB-class GPU (L4/L40/A10G) or any single modern datacenter GPU raw-fits the 16.4 GB BF16 weight set with headroom remaining for KV cache at a bounded context -- a weight-fit calculation, not a live-proven or documented runtime topology."
+    },
+    "safer_qualification_topology": {
+      "evidence_level": "DOCUMENTED (CPU) / THEORETICAL (GPU)",
+      "statement": "The only official recipe evidence documents a 2x Xeon 6 CPU configuration (recipes.vllm.ai/Qwen/Qwen3-8B); no GPU topology has been live-proven or officially recipe-documented for this control."
+    },
+    "quantized_topology_options": {
+      "evidence_level": "THEORETICAL",
+      "statement": "FP8 (~8.2 GB) and INT4 (~4.1 GB) both fit trivially on any single modern GPU by weight size alone; no official quantized artifact confirmed this phase."
+    }
   },
 
   "L_precision_options": {

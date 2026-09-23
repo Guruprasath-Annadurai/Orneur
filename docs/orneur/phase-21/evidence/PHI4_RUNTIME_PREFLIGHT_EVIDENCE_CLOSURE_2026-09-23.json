@@ -1,0 +1,79 @@
+{
+  "evidence_type": "GENESIS_CONTROL_RUNTIME_PREFLIGHT_EVIDENCE_CLOSURE",
+  "phase": "21B.4.16.1",
+  "control": "Phi-4",
+  "artifact_repository": "microsoft/phi-4",
+  "pinned_revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+  "retrieval_timestamp_utc": "2026-09-23T12:44:00Z",
+  "note": "CPU / metadata / API-only retrieval. No file-body weight download -- only file-listing byte sizes and small JSON config/tokenizer files were fetched. Closes the Phase 21B.4.16 evidence gap where BF16 storage size was re-confirmed via config.json identity checks only, not a fresh pinned-revision weight-file listing.",
+
+  "A_weight_layout": {
+    "sources_used": [
+      "https://huggingface.co/api/models/microsoft/phi-4/tree/2db69c1c3e91a05d2c64a3185acfbaf36f744e25?recursive=true",
+      "https://huggingface.co/microsoft/phi-4/raw/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/model.safetensors.index.json",
+      "https://huggingface.co/api/models/microsoft/phi-4?expand[]=safetensors",
+      "https://huggingface.co/microsoft/phi-4/raw/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/config.json"
+    ],
+    "safetensors_shard_count": 6,
+    "safetensors_files": [
+      {"filename": "model-00001-of-00006.safetensors", "bytes": 4933656472},
+      {"filename": "model-00002-of-00006.safetensors", "bytes": 4954690712},
+      {"filename": "model-00003-of-00006.safetensors", "bytes": 4902241352},
+      {"filename": "model-00004-of-00006.safetensors", "bytes": 4771169120},
+      {"filename": "model-00005-of-00006.safetensors", "bytes": 4771169120},
+      {"filename": "model-00006-of-00006.safetensors", "bytes": 4986116216}
+    ],
+    "model_safetensors_index_json_bytes": 20364,
+    "exact_total_bytes_one_model_representation": 29319042992,
+    "exact_total_bytes_method": "Sum of the 6 shard files' exact byte sizes as reported by the HF tree API's file listing at the pinned revision -- this is the most authoritative figure (real on-disk file sizes), not a parameter-count derivation.",
+    "index_json_metadata_total_size_bytes": 29319014400,
+    "index_json_vs_tree_sum_delta_bytes": 28592,
+    "index_json_vs_tree_sum_delta_note": "model.safetensors.index.json's internal metadata.total_size field is a parameter-count-derived figure, not a re-measurement of actual file bytes -- it differs from the tree API's summed real file sizes by 28,592 bytes (per-shard safetensors header/padding overhead not counted in total_size). The tree-API sum (29,319,042,992 bytes) is treated as authoritative for 'exact bytes on disk'.",
+    "duplicate_or_alternative_format_present": false,
+    "duplicate_format_note": "No .bin PyTorch files or alternative single-file format present in the pinned-revision tree -- exactly one BF16 safetensors representation exists.",
+    "native_stored_dtype": "bfloat16",
+    "native_stored_dtype_source": "config.json torch_dtype field at the pinned revision",
+    "hf_api_safetensors_expand_field": {
+      "raw_response": {"parameters": {"BF16": 14659507200}, "total": 14659507200},
+      "clarification": "This HF API field ('total': 14659507200) is a PARAMETER COUNT (14,659,507,200 parameters), not a byte count. 14,659,507,200 params x 2 bytes/param (BF16) = 29,319,014,400 bytes -- matching the index.json total_size exactly, confirming that field is parameter-arithmetic-derived. Only the tree-API summed shard bytes (29,319,042,992) reflect actual on-disk file sizes including safetensors header/padding overhead."
+    },
+    "weight_layout_evidence_status": "COMPLETE"
+  },
+
+  "B_tokenizer_and_chat_template": {
+    "sources_used": [
+      "https://huggingface.co/microsoft/phi-4/raw/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/tokenizer_config.json",
+      "https://huggingface.co/microsoft/phi-4/raw/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/generation_config.json",
+      "https://huggingface.co/microsoft/phi-4/raw/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/special_tokens_map.json",
+      "https://huggingface.co/microsoft/phi-4/raw/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/config.json"
+    ],
+    "tokenizer_config_chat_template_present": true,
+    "tokenizer_config_chat_template_length_chars": 462,
+    "tokenizer_config_chat_template_format": "Simple non-thinking ChatML-style template: <|im_start|>role<|im_sep|>content<|im_end|> (note the <|im_sep|> token, distinct from vanilla ChatML's plain newline separator). No reasoning/thinking tags -- this is the base phi-4 instruct release, distinct from the separate Phi-4-reasoning variant which is out of scope for this control.",
+    "bos_token": "<|endoftext|>",
+    "eos_token": "<|im_end|>",
+    "special_tokens_map_json": {
+      "bos_token": "<|endoftext|>",
+      "eos_token": "<|im_end|>",
+      "pad_token": "<|dummy_85|>"
+    },
+    "generation_config_json": {
+      "bos_token_id": 100257,
+      "eos_token_id": [100257, 100265],
+      "pad_token_id": 100349,
+      "transformers_version": "4.47.0"
+    },
+    "trust_remote_code_required": false,
+    "trust_remote_code_source": "config.json auto_map field is null at the pinned revision -- no custom remote modeling class is declared, so this is a standard Phi3ForCausalLM architecture requiring no trust_remote_code flag.",
+    "chat_tokenizer_evidence_status": "COMPLETE"
+  },
+
+  "C_current_vllm_runtime_support": {
+    "source": "https://raw.githubusercontent.com/vllm-project/vllm/main/docs/models/supported_models.md",
+    "retrieval_note": "Fetched from the vllm-project/vllm repository's main branch HEAD at retrieval time (this is current-support documentation, not an immutable pinned-revision artifact, so main-branch HEAD is the correct target).",
+    "table_row_verbatim": "| `Phi3ForCausalLM` | Phi-4, Phi-3 | `microsoft/Phi-4-mini-instruct`, `microsoft/Phi-4`, `microsoft/Phi-3-mini-4k-instruct`, `microsoft/Phi-3-mini-128k-instruct`, `microsoft/Phi-3-medium-128k-instruct`, etc. | ✓︎ | ✓︎ |",
+    "table_columns": ["Architecture", "Models", "Example HF Models", "LoRA", "PP (pipeline-parallel)"],
+    "interpretation": "vLLM's own official supported-models documentation names 'microsoft/Phi-4' explicitly as an Example HF Model for the Phi3ForCausalLM architecture, with both LoRA and pipeline-parallel support checked. This directly upgrades the prior Phase 21B.4.16 statement ('mainstream, long-established architecture') into concrete, model-specific, current primary-source evidence -- 'not researched' is now 'researched and confirmed', not converted into a false negative.",
+    "recipes_vllm_ai_dedicated_page": "Still absent (HTTP 404 checked in Phase 21B.4.16; the /microsoft vendor listing on recipes.vllm.ai shows only Phi-4-mini-instruct, Phi-4-multimodal-instruct, and Phi-4-reasoning -- plain phi-4 has no dedicated recipe). This does not contradict the supported_models.md confirmation above -- a recipe page and general architecture-support documentation are different evidence tiers, and both are now recorded accurately as what they are."
+  }
+}
