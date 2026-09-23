@@ -1,62 +1,62 @@
 {
   "evidence_type": "GENESIS_FRONTIER_REFERENCE_EVIDENCE_INTEGRITY_INDEX",
   "created": "2026-09-23",
-  "phase": "21B.4.17",
-  "note": "SHA-256 hashes computed live from actual file bytes. Every path is repo-relative. No GPU, no frontier inference, no paid API call performed to produce any indexed file.",
+  "phase": "21B.4.17.1",
+  "note": "SHA-256 hashes computed live from actual file bytes. Every path is repo-relative. No GPU, no frontier inference, no paid API call performed to produce any indexed file. Recomputed in full for Phase 21B.4.17.1's terms/access/quorum reconciliation corrections -- no stale hashes.",
   "entries": [
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_FRONTIER_REFERENCE_PRIMARY_SOURCES_2026-09-23.json",
-      "sha256": "1b52b52b975a73bb5c1543b8943ee6ac471674b37320ef74e7a8b9b10252cd93",
+      "sha256": "3bdbe681e0778217eec117affd3f518f31b7ce6c6f92c926d748d36cfc263b8f",
       "evidence_role": "frontier_reference_primary_sources",
-      "size_bytes": 7695
+      "size_bytes": 9842
     },
     {
       "path": "docs/orneur/phase-21/evidence/DEEPSEEK_V4_1_FLASH_REFERENCE_ADMISSION_2026-09-23.json",
-      "sha256": "d94fbf77829ff299c3fb316abf629c5913f08655128c624b1b49f3c2583c5faf",
+      "sha256": "90364c24b19dff0af665bf590d526d2973cb2859d3ea151c8ff0055f5469cbca",
       "evidence_role": "deepseek_v4_1_flash_admission",
-      "size_bytes": 9710
+      "size_bytes": 10856
     },
     {
       "path": "docs/orneur/phase-21/evidence/GLM_5_3_FLAGSHIP_REFERENCE_ADMISSION_2026-09-23.json",
-      "sha256": "602a020b3503c6028c0a94bd42e3ab2ed0fcf65ccd986fe6406d31debaeb534a",
+      "sha256": "1b313da25fd1c2e84d20098646a158d20afe02175ebb72c9b89aba658b391c8f",
       "evidence_role": "glm_5_3_flagship_admission",
-      "size_bytes": 10229
+      "size_bytes": 10228
     },
     {
       "path": "docs/orneur/phase-21/evidence/MISTRAL_LARGE_3_REFERENCE_ADMISSION_2026-09-23.json",
-      "sha256": "55c72a19aae5ceb6f0a52bd1ebad9952a469dbff3259d8d09e3544277e61a1c6",
+      "sha256": "5f99f482737a7da7aef5863b67e971f2b2d6233b94760a645757faed6fd0775a",
       "evidence_role": "mistral_large_3_admission",
-      "size_bytes": 11876
+      "size_bytes": 12482
     },
     {
       "path": "docs/orneur/phase-21/evidence/MINIMAX_M3_REFERENCE_ADMISSION_2026-09-23.json",
-      "sha256": "6ab80622d9814fa45aa612e05e8abe6dc07dc225287db59aaac8a028bf231391",
+      "sha256": "ed167d693d647266061103eb9364046bb3e71ed3fc2ebda5b870f99509aeb621",
       "evidence_role": "minimax_m3_admission",
-      "size_bytes": 11763
+      "size_bytes": 15207
     },
     {
       "path": "docs/orneur/phase-21/evidence/QWEN3_8_MAX_REFERENCE_ADMISSION_2026-09-23.json",
-      "sha256": "f2ee1fa2a178077b004f3e1e0a2ad99f51ff536aeab93d05fde0070e4db8a2ef",
+      "sha256": "dd1fc8b569ff0f9af28cbc1137c3e7f9f7373633ccd1bc335229d5b2ef233b6f",
       "evidence_role": "qwen3_8_max_admission",
-      "size_bytes": 14674
+      "size_bytes": 14673
     },
     {
       "path": "docs/orneur/phase-21/evidence/KIMI_K3_REFERENCE_ADMISSION_2026-09-23.json",
-      "sha256": "b513a0d2b55bb2f83007e00c623138dda6d10d9187f7bb044b0b684accb7ca01",
+      "sha256": "2526ac2895065cfa6fbc1b7affaaadc3efe3646c42e9cbc1cc11e6e6ffe9791b",
       "evidence_role": "kimi_k3_admission",
-      "size_bytes": 11265
+      "size_bytes": 11209
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_ACCESS_MATRIX_2026-09-23.md",
-      "sha256": "4ac25b60bfb82f582f48328f628300085544624dbb55796cf6b12ca667b97180",
+      "sha256": "522071fb51c82028bfe32e7e635e27f1f2b18a4ca300d95fcf0ee24c83bca023",
       "evidence_role": "access_matrix",
-      "size_bytes": 4904
+      "size_bytes": 6411
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_FRONTIER_REFERENCE_TERMS_MATRIX_2026-09-23.md",
-      "sha256": "0aa4abde34e10b6ea48577eeac1534bcaf1cee528ddd2769c823f489189bd63e",
+      "sha256": "420823ce297a21cfce4c4b7c4b8c1592cacbae3f1c81f86edb09c3cfda8dc435",
       "evidence_role": "terms_matrix",
-      "size_bytes": 5403
+      "size_bytes": 7930
     }
   ]
 }

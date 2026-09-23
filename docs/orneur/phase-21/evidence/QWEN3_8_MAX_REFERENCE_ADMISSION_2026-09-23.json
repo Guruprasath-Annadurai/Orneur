@@ -145,5 +145,5 @@
     "availability_status": "REFERENCE_EXECUTION_DEFERRED"
   },
 
-  "gate": "REVIEW_REQUIRED -- does not count toward quorum this phase"
+  "gate": "REVIEW_REQUIRED -- DOES_NOT_COUNT_TOWARD_EXECUTION_QUORUM"
 }

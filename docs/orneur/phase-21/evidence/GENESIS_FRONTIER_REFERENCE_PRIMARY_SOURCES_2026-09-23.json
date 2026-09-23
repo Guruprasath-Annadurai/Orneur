@@ -2,7 +2,7 @@
   "evidence_type": "GENESIS_FRONTIER_REFERENCE_PRIMARY_SOURCE_RESEARCH",
   "phase": "21B.4.17",
   "retrieval_date": "2026-09-23",
-  "note": "CPU / metadata / terms-page / API-docs research only. No GPU, no frontier inference, no paid API call, no benchmark, no holdout execution. Identity/license/access-path facts re-verified live against primary sources for all six locked frontier references; per-reference detail lives in the six *_REFERENCE_ADMISSION_2026-09-23.json files -- this file is the consolidated index.",
+  "note": "CPU / metadata / terms-page / API-docs research only. No GPU, no frontier inference, no paid API call, no benchmark, no holdout execution. Identity/license/access-path facts re-verified live against primary sources for all six locked frontier references; per-reference detail lives in the six *_REFERENCE_ADMISSION_2026-09-23.json files -- this file is the consolidated index. Phase 21B.4.17.1 corrected three evidence/status inconsistencies found by independent audit (see quorum_summary.correction_note): DeepSeek's automated-evaluation classification, MiniMax M3's commercial-use classification and access-preflight status, and Mistral Large 3's teacher-use classification.",
 
   "target_references": 6,
   "substitutions": "NONE",
@@ -16,6 +16,7 @@
       "upstream_drift": "NO -- HF /refs endpoint confirmed main HEAD == pinned revision exactly",
       "license": "mit (plain, unmodified; confirmed via LICENSE file + README's own License section)",
       "teacher_distillation_evidence": "DeepSeek Open Platform ToS §4.2 explicitly names 'training other models (such as model distillation)' as a permitted use case -- strongest teacher-rights evidence found among all six references.",
+      "automated_evaluation_allowed": "CLEAR (corrected 21B.4.17.1) -- ToS §4.2's broad affirmative grant already names more expansive uses (derivative product development, distillation) than plain automated evaluation, which is a strict subset.",
       "reference_evaluation_admission_status": "ADMITTED",
       "access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK"
     },
@@ -38,6 +39,7 @@
       "upstream_drift": "NO",
       "canonical_hf_id_discovered": "mistralai/Mistral-Large-3-675B-Instruct-2512-BF16 (registered id 'mistralai/Mistral-Large-3' HTTP-307-redirects to this; not repinned, recorded as identity finding only per §7)",
       "license": "apache-2.0, confirmed via three independent first-party sources (cardData, README prose, docs.mistral.ai badge) -- no custom Mistral Research/Commercial license applies to this repo",
+      "teacher_distillation_evidence": "NOT_EVALUATED (corrected 21B.4.17.1, was incorrectly ADMITTED) -- Apache-2.0 licenses the weights/derivative-works of the Work, not generated outputs; no independent output/teacher/distillation evidence exists for this reference.",
       "reference_evaluation_admission_status": "ADMITTED",
       "access_preflight_status": "UNQUALIFIED (hosted-API ToS body text inaccessible via raw fetch this phase; self-host compute-prohibitive)"
     },
@@ -47,9 +49,9 @@
       "identity_type": "OPEN_WEIGHT",
       "pinned_revision": "f0e1c1e04d40177e4673a22097036854f536e9c0",
       "upstream_drift": "NO",
-      "license": "minimax-community (MiniMax Community License) -- non-commercial internal evaluation use CLEAR; commercial evaluation SEPARATE_PERMISSION_REQUIRED ($20M/yr revenue threshold)",
-      "reference_evaluation_admission_status": "ADMITTED",
-      "access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK"
+      "license": "minimax-community (MiniMax Community License), clause 3: Commercial Use = any use 'primarily intended for commercial advantage or monetary compensation' (non-exhaustive examples) -- REVIEW_REQUIRED (corrected 21B.4.17.1, was incorrectly CLEAR): using this reference as a benchmark while developing a commercial ORNEUR foundation model is a genuinely ambiguous reading of that standard, not resolved by 'internal use' alone.",
+      "reference_evaluation_admission_status": "REVIEW_REQUIRED",
+      "access_preflight_status": "UNQUALIFIED (corrected 21B.4.17.1, was incorrectly PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK -- self-host has no identified zero-owner-cash compute grant and hosted-API terms are unverified; a compute-prohibitive hypothetical path is not a preflight-ready path)"
     },
     "Qwen3.8-Max": {
       "admission_evidence_path": "docs/orneur/phase-21/evidence/QWEN3_8_MAX_REFERENCE_ADMISSION_2026-09-23.json",
@@ -76,15 +78,16 @@
   },
 
   "quorum_summary": {
-    "admitted_reference_count": 4,
-    "admitted_references": ["DeepSeek V4.1-Flash", "Mistral Large 3", "MiniMax M3", "Kimi K3"],
-    "access_preflight_ready_or_pending_count": 2,
-    "access_preflight_ready_or_pending_references": ["DeepSeek V4.1-Flash", "MiniMax M3"],
-    "quorum_counting_references_admitted_and_access_ready": ["DeepSeek V4.1-Flash", "MiniMax M3"],
-    "quorum_counting_count": 2,
-    "independent_organizations_among_quorum_counting": ["DeepSeek AI", "MiniMax"],
-    "independent_organization_count": 2,
+    "correction_note": "Phase 21B.4.17.1 corrected three evidence/status inconsistencies independent audit found: (1) DeepSeek's automated_evaluation_allowed was REVIEW_REQUIRED merely because the literal word 'benchmark' was absent from the ToS, while its access_preflight_status was already PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK -- re-evaluated against the actual broad affirmative grant and corrected to CLEAR; (2) MiniMax M3 was marked CLEAR/ADMITTED/PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK based on an unsupported 'internal use == non-commercial use' inference and a self-host path that is actually compute-prohibitive with no identified compute grant -- corrected to REVIEW_REQUIRED/UNQUALIFIED; (3) Mistral Large 3's teacher_use_status was ADMITTED based solely on Apache-2.0's derivative-works grant, which licenses the weights, not generated outputs -- corrected to NOT_EVALUATED. Each per-reference gate label was also corrected so no ADMITTED-but-access-UNQUALIFIED reference claims to count toward quorum.",
+    "admitted_reference_count": 3,
+    "admitted_references": ["DeepSeek V4.1-Flash", "Mistral Large 3", "Kimi K3"],
+    "access_preflight_ready_or_pending_count": 1,
+    "access_preflight_ready_or_pending_references": ["DeepSeek V4.1-Flash"],
+    "quorum_counting_references_admitted_and_access_ready": ["DeepSeek V4.1-Flash"],
+    "quorum_counting_count": 1,
+    "independent_organizations_among_quorum_counting": ["DeepSeek AI"],
+    "independent_organization_count": 1,
     "quorum_status": "QUORUM_INCOMPLETE",
-    "quorum_status_rationale": "Per phase §15, a reference counts toward quorum only when BOTH reference_evaluation_admission_status=ADMITTED AND access_preflight_status is QUALIFIED_FOR_FUTURE_EXECUTION or PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK. Only DeepSeek V4.1-Flash and MiniMax M3 satisfy both conditions this phase (2 references, 2 independent organizations) -- below MINIMUM_USABLE_REFERENCES=4 and MINIMUM_INDEPENDENT_ORGANIZATIONS=3. Mistral Large 3 and Kimi K3 are license-ADMITTED but their access paths remain UNQUALIFIED pending future terms/ToS re-verification (Mistral's ToS body text was inaccessible via raw fetch this phase; Kimi's automated-benchmarking permission and holdout-content-training concern are unresolved). This is an honest evidence-driven snapshot, not a failure -- closing these specific, named access-path gaps in a future phase is expected to raise the quorum-counting total."
+    "quorum_status_rationale": "Per phase §15, a reference counts toward quorum only when BOTH reference_evaluation_admission_status=ADMITTED AND access_preflight_status is QUALIFIED_FOR_FUTURE_EXECUTION or PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK. After the Phase 21B.4.17.1 corrections, only DeepSeek V4.1-Flash satisfies both conditions (1 reference, 1 organization) -- well below MINIMUM_USABLE_REFERENCES=4 and MINIMUM_INDEPENDENT_ORGANIZATIONS=3. Mistral Large 3 and Kimi K3 remain license-ADMITTED but their access paths are UNQUALIFIED; GLM-5.3, MiniMax M3, and Qwen3.8-Max remain REVIEW_REQUIRED on license/terms. This is a smaller, but more honest, count than the prior (incorrect) 2-reference figure -- no reference was promoted or preserved merely to keep quorum higher."
   }
 }

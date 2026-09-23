@@ -1,4 +1,4 @@
-# Genesis Frontier Reference Access Matrix — Phase 21B.4.17
+# Genesis Frontier Reference Access Matrix — Phase 21B.4.17 (terms/access reconciled in 21B.4.17.1)
 
 **PRIMARY-SOURCE RESEARCH + CPU/METADATA ONLY. No GPU, no frontier
 inference, no paid API call, no benchmark. Metadata/docs/terms only.**
@@ -6,18 +6,46 @@ inference, no paid API call, no benchmark. Metadata/docs/terms only.**
 Source evidence: `docs/orneur/phase-21/evidence/GENESIS_FRONTIER_REFERENCE_PRIMARY_SOURCES_2026-09-23.json`
 and the six per-reference `*_REFERENCE_ADMISSION_2026-09-23.json` files.
 
+**Phase 21B.4.17.1 correction:** MiniMax M3's access preflight was
+downgraded from `PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK` to
+`UNQUALIFIED` — that status requires all NON-FINANCIAL access
+requirements to already be satisfied with only a live billing/credit
+check remaining. A compute-prohibitive self-host path with no
+identified zero-owner-cash compute grant, combined with unverified
+hosted-API terms, does not satisfy that bar; it was applied too
+generously in Phase 21B.4.17.
+
 ## Access paths per reference
 
 | Reference | Self-host | First-party API | Access preflight |
 |---|---|---|---|
-| DeepSeek V4.1-Flash | COMPUTE_PROHIBITIVE (763B, 20x/10x/5x 80GB GPUs) | api.deepseek.com, OpenAI-compatible, documented pricing, concurrency 2500 | **PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK** |
+| DeepSeek V4.1-Flash | COMPUTE_PROHIBITIVE (763B, 20x/10x/5x 80GB GPUs) | api.deepseek.com, OpenAI-compatible, documented pricing, concurrency 2500, automated-evaluation use CLEAR under ToS §4.2 (corrected 21B.4.17.1) | **PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK** |
 | GLM-5.3 (flagship) | COMPUTE_PROHIBITIVE (753B, 19x/10x/5x) | api.z.ai OpenAI-compatible, documented pricing, ToS on benchmarking/retention NOT found | UNQUALIFIED |
 | Mistral Large 3 | COMPUTE_PROHIBITIVE (675B, 17x/9x/5x) | La Plateforme, model slug `mistral-large-3-25-12`; pricing UNCONFIRMED, ToS body text inaccessible (client-rendered site) | UNQUALIFIED |
-| MiniMax M3 | COMPUTE_PROHIBITIVE (428B, 11x/6x/3x — least prohibitive of the six, still not zero-cash-feasible) | platform.minimaxi.com redirects to a `.cn` domain, not fetched this phase; third-party-sourced pricing only | **PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK** (license permits self-host for internal eval; requires a live zero-cash check before any execution) |
+| MiniMax M3 | COMPUTE_PROHIBITIVE (428B, 11x/6x/3x — least prohibitive of the six, but no identified zero-owner-cash compute grant) | platform.minimaxi.com redirects to a `.cn` domain, not fetched this phase; third-party-sourced pricing only, ToS unverified | **UNQUALIFIED** (corrected 21B.4.17.1 — see note above; commercial-use classification itself is also now REVIEW_REQUIRED, see terms matrix) |
 | Qwen3.8-Max | NOT_APPLICABLE (no open weights; MUTABLE_HOSTED_API) | Alibaba Cloud Model Studio, OpenAI-compatible + native DashScope; pricing found, rate limits/context window NOT confirmed | UNQUALIFIED |
 | Kimi K3 | COMPUTE_PROHIBITIVE (2.8T, 70x/35x/18x — largest of the six) | api.moonshot.ai (→platform.kimi.ai), OpenAI-compatible, documented pricing; trains on content by default (ToS §4) unless enterprise opt-out | UNQUALIFIED |
 
 All self-host figures cite `GENESIS_FRONTIER_COMPUTE_MATRIX.md`, not redesigned this phase (no material evidence change). Every self-host figure is a **THEORETICAL_WEIGHT_FIT**, never a **PRACTICAL_FRONTIER_EVALUATION_SERVING** claim.
+
+## Access-preflight semantics (hardened 21B.4.17.1)
+
+`PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK` means all of the
+following are ALREADY satisfied for a specific, identified access path,
+with only a live billing/credit check remaining:
+- provider/path identity is known;
+- governing evaluation terms are clear for THAT path;
+- evidence retention is acceptable for THAT path;
+- automated evaluation is allowed (or clearly encompassed by the
+  governing terms) for THAT path;
+- model identity is sufficiently attributable;
+- no unresolved non-financial blocker remains.
+
+A compute-prohibitive hypothetical self-host path with no identified
+compute grant does NOT satisfy this state by itself, regardless of
+whether the underlying open-weight repository technically exists.
+Only DeepSeek V4.1-Flash currently satisfies all of the above for its
+first-party API path this phase.
 
 ## Third-party shared-endpoint discipline (§12)
 

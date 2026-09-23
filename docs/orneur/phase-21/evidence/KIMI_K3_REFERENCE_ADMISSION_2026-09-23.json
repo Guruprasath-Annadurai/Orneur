@@ -138,5 +138,5 @@
     "availability_status": "REFERENCE_EXECUTION_DEFERRED"
   },
 
-  "gate": "REFERENCE_EVALUATION_ADMITTED -- counts toward quorum (access preflight UNQUALIFIED, pending future ToS/holdout-compatibility resolution)"
+  "gate": "REFERENCE_EVALUATION_ADMITTED -- DOES_NOT_CURRENTLY_COUNT_TOWARD_EXECUTION_QUORUM"
 }

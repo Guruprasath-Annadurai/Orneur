@@ -229,9 +229,14 @@ def test_evaluation_and_teacher_status_are_independent(registry):
     eval_admitted_names = {r["reference_name"] for r in registry.frontier_references if r["reference_evaluation_admission_status"] == "ADMITTED"}
     teacher_admitted_names = {r["reference_name"] for r in registry.frontier_references if r["teacher_use_status"] == "ADMITTED"}
     assert eval_admitted_names != teacher_admitted_names, "evaluation and teacher admission sets must not be identical"
-    # MiniMax M3, Kimi K3: evaluation ADMITTED but teacher NOT ADMITTED
-    assert "MiniMax M3" in eval_admitted_names and "MiniMax M3" not in teacher_admitted_names
+    # Kimi K3, Mistral Large 3: evaluation ADMITTED but teacher NOT ADMITTED
+    # (Phase 21B.4.17.1: Mistral Large 3's teacher status was corrected
+    # from ADMITTED to NOT_EVALUATED -- Apache-2.0's derivative-works
+    # grant over the weights does not itself license generated outputs)
     assert "Kimi K3" in eval_admitted_names and "Kimi K3" not in teacher_admitted_names
+    assert "Mistral Large 3" in eval_admitted_names and "Mistral Large 3" not in teacher_admitted_names
+    # DeepSeek is the only reference with BOTH evaluation and teacher ADMITTED
+    assert "DeepSeek V4.1-Flash" in eval_admitted_names and "DeepSeek V4.1-Flash" in teacher_admitted_names
 
 
 def test_teacher_status_schema_values_are_valid(registry):
@@ -322,11 +327,20 @@ def test_quorum_constants_locked():
 
 
 def test_quorum_report_matches_registry_evidence(registry):
+    """Phase 21B.4.17.1: after correcting DeepSeek's automated-evaluation
+    status, MiniMax M3's commercial-use classification, and Mistral
+    Large 3's teacher-use status, the honest quorum-counting count drops
+    from the prior (incorrect) 2 to 1 -- only DeepSeek V4.1-Flash
+    satisfies both admission AND access-preflight-readiness. This test
+    intentionally does NOT preserve the old numbers merely because a
+    prior phase reported them (per phase instruction §10: report the
+    truth, QUORUM_INCOMPLETE remains acceptable)."""
     report = compute_admission_quorum(list(registry.frontier_references))
-    assert report.admitted_reference_count == 4
-    assert report.access_preflight_ready_count == 2
-    assert report.quorum_counting_count == 2
-    assert report.independent_lineage_count == 2
+    assert report.admitted_reference_count == 3  # DeepSeek, Mistral Large 3, Kimi K3
+    assert report.access_preflight_ready_count == 1  # DeepSeek only
+    assert report.quorum_counting_count == 1
+    assert report.quorum_counting_references == ("DeepSeek V4.1-Flash",)
+    assert report.independent_lineage_count == 1
     assert report.quorum_status == "QUORUM_INCOMPLETE"
 
 
@@ -502,3 +516,134 @@ def test_registry_still_loads_and_validates_end_to_end():
     assert len(registry.deployable_candidates) == 4
     assert len(registry.controls) == 3
     assert len(registry.frontier_references) == 6
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Phase 21B.4.17.1: Frontier Reference Terms + Access + Quorum
+# Reconciliation (A-N below). G/H/I/K/L/M/N of the phase spec's required
+# test list are already proven by the updated tests above (unchanged
+# assertion targets, just corrected expected values): quorum matches
+# corrected registry state (test_quorum_report_matches_registry_evidence),
+# no reference promoted merely to preserve quorum (same test, honest
+# count of 1), Qwen3.8-Max distinctness (test_qwen3_8_max_distinct_from_2_4t_a95b),
+# Kimi holdout path-dependence (test_kimi_k3_holdout_path_dependent_retention_documented),
+# no frontier API/GPU/weight code (test_no_frontier_api_call_code_introduced
+# etc.), deployable/control states unchanged (test_deployable_candidate_states_unchanged,
+# test_control_states_unchanged), Phase 21C unauthorized
+# (test_phase_21c_still_unauthorized_and_frontier_lock_present).
+# ═══════════════════════════════════════════════════════════════════════
+
+
+# ── A: DeepSeek cannot be access-ready while automated eval is unresolved ─
+
+
+def test_deepseek_automated_evaluation_now_clear():
+    data = json.loads(REFERENCE_ADMISSION_FILES["DeepSeek V4.1-Flash"].read_text())
+    assert data["I_automated_evaluation_allowed"]["status"] == "CLEAR"
+
+
+def test_access_ready_requires_automated_evaluation_not_review_required():
+    """Tamper test: if DeepSeek's automated-evaluation status were still
+    REVIEW_REQUIRED, its access_preflight_status could not honestly be
+    PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK -- this is a property
+    of the evidence file's own internal consistency, checked directly."""
+    data = json.loads(REFERENCE_ADMISSION_FILES["DeepSeek V4.1-Flash"].read_text())
+    if data["I_automated_evaluation_allowed"]["status"] == "REVIEW_REQUIRED":
+        assert data["final_state"]["access_preflight_status"] != "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK"
+    else:
+        assert data["I_automated_evaluation_allowed"]["status"] == "CLEAR"
+
+
+# ── B: MiniMax cannot be access-ready solely because a repo exists ─────
+
+
+def test_minimax_m3_access_preflight_is_unqualified_not_ready(registry):
+    minimax = next(r for r in registry.frontier_references if r["reference_name"] == "MiniMax M3")
+    assert minimax["access_preflight_status"] == "UNQUALIFIED"
+    data = json.loads(REFERENCE_ADMISSION_FILES["MiniMax M3"].read_text())
+    assert data["K_access_paths"]["self_host"]["status"] == "COMPUTE_PROHIBITIVE"
+    assert data["final_state"]["access_preflight_status"] == "UNQUALIFIED"
+
+
+# ── C: MiniMax commercial-use classification supported by actual text ──
+
+
+def test_minimax_commercial_use_classification_cites_actual_license_clause():
+    data = json.loads(REFERENCE_ADMISSION_FILES["MiniMax M3"].read_text())
+    d = data["D_license_or_terms"]
+    assert "primarily intended for commercial advantage" in d["commercial_use_definition_verbatim"]
+    assert d["license_or_terms_status"] == "REVIEW_REQUIRED"
+    # must not merely assert "internal == non-commercial"
+    assert "not sufficiently supported" in d.get("evaluation_use_reassessment_21b4171", "") or \
+           "genuinely ambiguous" in d["status_rationale"]
+
+
+def test_minimax_registry_status_matches_corrected_evidence(registry):
+    minimax = next(r for r in registry.frontier_references if r["reference_name"] == "MiniMax M3")
+    assert minimax["license_or_terms_status"] == "REVIEW_REQUIRED"
+    assert minimax["reference_evaluation_admission_status"] == "REVIEW_REQUIRED"
+
+
+# ── D/E: Mistral Large 3 teacher admission cannot rely solely on Apache-2.0 ──
+
+
+def test_mistral_large_3_teacher_status_corrected_to_not_evaluated(registry):
+    mistral = next(r for r in registry.frontier_references if r["reference_name"] == "Mistral Large 3")
+    assert mistral["teacher_use_status"] == "NOT_EVALUATED"
+    assert mistral["teacher_use_evidence_reference"] is None
+    data = json.loads(REFERENCE_ADMISSION_FILES["Mistral Large 3"].read_text())
+    assert data["final_state"]["teacher_use_status"] == "NOT_EVALUATED"
+    # evaluation admission (weight-license-based) is unaffected
+    assert data["final_state"]["reference_evaluation_admission_status"] == "ADMITTED"
+
+
+def test_teacher_admitted_requires_output_specific_evidence_not_bare_weight_license():
+    """Only DeepSeek V4.1-Flash has TEACHER_USE_ADMITTED this phase --
+    verify its evidence specifically names output/training/distillation
+    use (not merely a permissive weight license), and verify no other
+    reference achieves ADMITTED without an equivalent named clause."""
+    for name, path in REFERENCE_ADMISSION_FILES.items():
+        data = json.loads(path.read_text())
+        if data["final_state"]["teacher_use_status"] == "ADMITTED":
+            evidence_ref = data["final_state"]["teacher_use_evidence_reference"]
+            assert evidence_ref, name
+            lowered = evidence_ref.lower()
+            assert "tos" in lowered or "terms of service" in lowered or "distillation" in lowered, (
+                f"{name}: teacher_use_evidence_reference must cite output/training/distillation-specific "
+                f"terms, not merely a general weight license -- got {evidence_ref!r}"
+            )
+
+
+# ── F: ADMITTED + access UNQUALIFIED never produces a "counts toward quorum" gate ──
+
+
+def test_no_admitted_but_unqualified_reference_claims_quorum_counting():
+    for name, path in REFERENCE_ADMISSION_FILES.items():
+        data = json.loads(path.read_text())
+        fs = data["final_state"]
+        gate = data["gate"]
+        if fs["reference_evaluation_admission_status"] == "ADMITTED" and fs["access_preflight_status"] not in (
+            "QUALIFIED_FOR_FUTURE_EXECUTION", "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
+        ):
+            assert "COUNTS_TOWARD_EXECUTION_QUORUM" not in gate or "DOES_NOT" in gate, (
+                f"{name}: ADMITTED-but-access-UNQUALIFIED reference must not claim to count toward quorum "
+                f"in its gate string -- got {gate!r}"
+            )
+            assert "DOES_NOT_CURRENTLY_COUNT_TOWARD_EXECUTION_QUORUM" in gate, name
+
+
+def test_review_required_gate_never_claims_counting():
+    for name, path in REFERENCE_ADMISSION_FILES.items():
+        data = json.loads(path.read_text())
+        if data["final_state"]["reference_evaluation_admission_status"] == "REVIEW_REQUIRED":
+            assert "DOES_NOT_COUNT_TOWARD_EXECUTION_QUORUM" in data["gate"], name
+
+
+# ── J: GLM remains REVIEW_REQUIRED unless independently resolved ───────
+
+
+def test_glm_5_3_remains_review_required(registry):
+    glm = next(r for r in registry.frontier_references if r["reference_name"] == "GLM-5.3 (flagship)")
+    assert glm["license_or_terms_status"] == "REVIEW_REQUIRED"
+    assert glm["reference_evaluation_admission_status"] == "REVIEW_REQUIRED"
+    assert glm["access_preflight_status"] == "UNQUALIFIED"

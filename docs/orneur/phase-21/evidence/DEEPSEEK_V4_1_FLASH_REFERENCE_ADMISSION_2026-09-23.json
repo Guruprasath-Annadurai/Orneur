@@ -76,8 +76,9 @@
   },
 
   "I_automated_evaluation_allowed": {
-    "status": "REVIEW_REQUIRED",
-    "rationale": "No clause explicitly naming 'benchmarking' or 'automated evaluation' was found in the fetched ToS text -- not prohibited, but the broad §4.2 grant ('a wide range of use cases... derivative product development') was not read as an unambiguous, name-specific authorization either. Recorded as unresolved rather than assumed."
+    "status": "CLEAR",
+    "status_correction_note": "Phase 21B.4.17.1 correction: the prior REVIEW_REQUIRED status searched only for the literal word 'benchmark' and treated the broader §4.2 grant as insufficient. Re-evaluated against the actual clause: ToS §4.2 affirmatively states users may apply Inputs and Outputs to 'a wide range of use cases, including personal use, academic research, derivative product development, training other models (such as model distillation), etc.' This is a broad, non-exhaustive ('etc.') grant that already names far more expansive and sensitive uses -- 'derivative product development' and 'training other models (distillation)' -- than plain automated internal evaluation/scoring. ORNEUR's Genesis frontier evaluation (sending prompts, receiving outputs, scoring them for internal comparison) is a strict subset of 'academic research' and 'derivative product development' as those terms are ordinarily understood, and is manifestly a lesser, more limited use than the distillation/training use the clause already explicitly permits. It would be internally inconsistent to read this clause as permitting the more expansive use (training a new model on outputs) while leaving the narrower, non-training use (merely evaluating and scoring outputs) unresolved.",
+    "rationale": "The broad §4.2 affirmative grant encompasses ORNEUR's automated internal evaluation use -- CLEAR, not merely 'not prohibited.'"
   },
 
   "J_commercial_product_evaluation_allowed": {
@@ -98,7 +99,7 @@
       "context_limit": "1,048,576 tokens input, up to 384K max output",
       "reasoning_mode": "Thinking mode supported",
       "openai_compatible_interface": true,
-      "automated_benchmarking_tos": "Not explicitly named -- see I above.",
+      "automated_benchmarking_tos": "CLEAR under ToS §4.2's broad affirmative use-case grant -- see I above (corrected Phase 21B.4.17.1).",
       "output_retention_permitted": true
     },
     "self_host": {
@@ -136,5 +137,5 @@
     "availability_status": "REFERENCE_EXECUTION_DEFERRED"
   },
 
-  "gate": "REFERENCE_EVALUATION_ADMITTED -- counts toward quorum"
+  "gate": "REFERENCE_EVALUATION_ADMITTED -- COUNTS_TOWARD_EXECUTION_QUORUM"
 }

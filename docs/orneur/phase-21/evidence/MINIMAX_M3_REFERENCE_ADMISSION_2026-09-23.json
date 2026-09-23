@@ -41,12 +41,12 @@
     "license_identifier": "minimax-community (MiniMax Community License, HF tag category 'other')",
     "actual_license_file_exists": true,
     "license_url": "https://huggingface.co/MiniMaxAI/MiniMax-M3/raw/f0e1c1e04d40177e4673a22097036854f536e9c0/LICENSE",
+    "license_text_reverified_21b4171": "Phase 21B.4.17.1: exact license text re-fetched directly from the pinned revision to confirm clause 3's verbatim wording (the prior phase's paraphrase understated its breadth).",
     "base_grant": "Free of charge for NON-COMMERCIAL purposes -- to use, copy, modify, merge, publish, distribute, sublicense, and/or provide copies of the Software.",
-    "commercial_use_definition": "Explicitly includes: (i) offering fee-based products/services incorporating the Software/derivatives; (ii) commercial use of APIs built on the Software; (iii) deployment/provision of the Software or derivatives that have been post-trained/fine-tuned/instruction-tuned/otherwise modified, FOR ANY COMMERCIAL PURPOSE.",
-    "commercial_use_conditions": "If commercial: must display 'Built with MiniMax M3' attribution; if resulting product/service revenue exceeds $20M/year, prior written authorization from MiniMax is required (api@minimax.io); below that, a one-time notice email suffices.",
-    "evaluation_use": "Non-commercial internal evaluation/comparison (running inference for internal scoring, not offering a fee-based product or commercially deploying a fine-tuned derivative) falls within the free non-commercial grant -- CLEAR for that specific use.",
-    "commercial_evaluation": "SEPARATE_PERMISSION_REQUIRED -- if ORNEUR's use of this reference is deemed to support a commercial product/service (revenue threshold $20M/year triggers written authorization), the commercial-use clause and its notice/authorization requirements apply.",
-    "hosting": "Permitted for non-commercial purposes under the base grant.",
+    "commercial_use_definition_verbatim": "Clause 3, quoted exactly: '\"Commercial Use\" means any use of the Software or any derivative work thereof that is primarily intended for commercial advantage or monetary compensation, which includes, without limitation: (i) offering products or services to third parties for a fee, which utilize, incorporate, or rely on the Software or its derivatives, (ii) the commercial use of APIs provided by or for the Software or its derivatives, including to support or enable commercial products, services, or operations, whether in a cloud-based, hosted, or other similar environment, and (iii) the deployment or provision of the Software or its derivatives that have been subjected to post-training, fine-tuning, instruction-tuning, or any other form of modification, for any commercial purpose.' Phase 21B.4.17.1 correction: the definition's operative clause is the general standard ('primarily intended for commercial advantage or monetary compensation') -- clauses (i)-(iii) are explicitly non-exhaustive examples ('without limitation'), not the exclusive scope of Commercial Use.",
+    "commercial_use_conditions_verbatim": "Clause 2, quoted exactly: if Commercial Use applies, licensee (1) 'shall prominently display \"Built with MiniMax M3\"' on a related website/UI/blogpost/about-page/product-documentation, and (2) 'shall obtain a separate, prior written authorization from MiniMax ... if such products and services generate more than 20 million US dollars ... in yearly revenue; otherwise, you only need to send a one-time notice to api@minimax.io.' Phase 21B.4.17.1 correction: NOT all Commercial Use requires prior written permission -- only Commercial Use exceeding the $20M/year revenue threshold does; below that threshold, only a one-time notice email is required. The prior phase's summary did not clearly separate these two tiers.",
+    "evaluation_use_reassessment_21b4171": "Phase 21B.4.17.1 correction: the prior phase's reasoning ('internal use == non-commercial use, therefore CLEAR') is NOT sufficiently supported. ORNEUR's Genesis program is explicitly intended to become a commercial AI product/ecosystem -- the fact that a specific evaluation RUN is executed internally does not by itself establish that the USE is not 'primarily intended for commercial advantage,' which is the license's actual operative test (clause 3), not an 'internal vs. external' distinction. Using MiniMax M3 as a benchmark/reference specifically WHILE developing a commercial foundation model is a plausible reading of 'primarily intended for commercial advantage,' even though it does not fall within any of clauses (i)-(iii)'s named examples (no fee-based product incorporates MiniMax M3 itself, no commercial API is built on it, and it is not fine-tuned/modified and commercially deployed). Because clause 3's operative standard is broader than its own non-exhaustive examples, and because ORNEUR's overall commercial intent is a real, non-hypothetical fact (not overreaching speculation), this question is NOT unambiguous from the primary source alone.",
+    "hosting": "Permitted for non-commercial purposes under the base grant; commercial-purpose hosting would trigger the Commercial Use conditions.",
     "redistribution": "Permitted, conditioned on copyright/permission-notice inclusion (clause 1).",
     "fine_tuning": "Permitted non-commercially under the base grant ('modify'); commercial deployment of a fine-tuned derivative falls under the Commercial Use definition above.",
     "derivative_work": "Permitted non-commercially (see fine_tuning); commercial derivative deployment requires the Commercial Use conditions.",
@@ -55,38 +55,38 @@
     "synthetic_data_use": "NOT ADDRESSED explicitly as a standalone term.",
     "distillation_teacher_use": "NOT explicitly named ('teacher model' / 'synthetic data generation' do not appear), but commercially deploying a fine-tuned/distilled derivative falls under the Commercial Use definition's clause (iii). Using the model purely to generate distillation data WITHOUT commercial deployment of the result is not explicitly addressed -- a genuine gap, not a grant.",
     "prohibited_uses": "Appendix bars: content violating law, military purposes, exploitation of minors, disseminating false/misleading info to cause harm, promoting discrimination/hate speech.",
-    "license_or_terms_status": "CLEAR",
-    "status_rationale": "For ORNEUR's actual intended use this phase -- internal, non-commercial Genesis frontier COMPARISON/evaluation, not a fee-based product and not commercial deployment of a fine-tuned derivative -- the license's non-commercial grant clearly covers it. Recorded CLEAR for EVALUATION_USE specifically; COMMERCIAL_EVALUATION and DISTILLATION/TEACHER_USE are recorded as separate, unresolved categories per D above (§9's mandatory separation)."
+    "license_or_terms_status": "REVIEW_REQUIRED",
+    "status_rationale": "Phase 21B.4.17.1 correction (was CLEAR): whether using MiniMax M3 solely as an evaluation/reference benchmark while developing a commercial ORNEUR foundation model constitutes Commercial Use under clause 3's broad, non-exhaustive 'primarily intended for commercial advantage' standard is genuinely ambiguous from the primary source alone -- not resolved by the internal-use fact, and not clearly excluded by clauses (i)-(iii)'s named examples either. Per phase instruction, this ambiguity is recorded as REVIEW_REQUIRED pending written clarification from MiniMax (api@minimax.io) or a separately authorized compliance determination, not resolved by inference."
   },
 
   "E_reference_evaluation_admission": {
-    "status": "ADMITTED",
-    "rationale": "Identity resolved, license/terms CLEAR for the specific non-commercial evaluation use ORNEUR requires, no evidence-retention prohibition found (see F), and no access-path blocker exists for OPEN_WEIGHT self-host in principle (though impractical -- see K)."
+    "status": "REVIEW_REQUIRED",
+    "rationale": "Phase 21B.4.17.1 correction (was ADMITTED): license_or_terms_status is now REVIEW_REQUIRED (see D), which structurally blocks ADMITTED per the schema's cross-field invariant. Not BLOCKED outright -- the Commercial Use question is a genuine, resolvable ambiguity (written clarification from MiniMax, or a separately authorized compliance determination, could resolve it to CLEAR), not an explicit prohibition."
   },
 
   "F_evidence_retention": {
-    "status": "PERMITTED",
-    "rationale": "The license does not prohibit retaining evaluation records (prompts/outputs/metadata) for internal, non-commercial research/audit purposes -- this falls within the broad non-commercial grant ('use, copy, modify... provide copies') and is not contradicted by any clause."
+    "status": "REVIEW_REQUIRED",
+    "rationale": "Phase 21B.4.17.1 correction (was PERMITTED): evidence retention was previously reasoned as 'falls within the non-commercial grant,' but that grant's applicability itself is now unresolved (see D/E) -- retention rights inherit the same unresolved Commercial Use question rather than being independently clear."
   },
 
   "G_output_display_to_judges": {
-    "status": "PERMITTED",
-    "rationale": "Showing model outputs to internal ORNEUR judges as part of the same internal, non-commercial evaluation process is covered by the same non-commercial grant as F above -- this is not external redistribution to the public or a commercial product."
+    "status": "REVIEW_REQUIRED",
+    "rationale": "Phase 21B.4.17.1 correction: inherits the same unresolved Commercial Use question as F."
   },
 
   "H_private_holdout_compatibility": {
-    "status": "PERMITTED_IN_PRINCIPLE",
-    "rationale": "No holdout prompts are authored this phase. Nothing in the license requires publication of prompts/outputs or prohibits confidential internal test material -- private holdout use, if it remains non-commercial internal evaluation, is not contradicted by the license terms found."
+    "status": "REVIEW_REQUIRED",
+    "rationale": "Phase 21B.4.17.1 correction (was PERMITTED_IN_PRINCIPLE): no holdout prompts are authored this phase, and this status inherits the same unresolved Commercial Use question -- private holdout use cannot be confirmed compatible while the underlying evaluation-use classification itself remains REVIEW_REQUIRED."
   },
 
   "I_automated_evaluation_allowed": {
     "status": "REVIEW_REQUIRED",
-    "rationale": "The LICENSE governs the open-weight artifact itself (self-host); if evaluation instead uses MiniMax's hosted API, that path's specific ToS on automated/batch evaluation was NOT confirmed this phase (see K -- first-party docs fetch was blocked by a .cn redirect). For a self-hosted evaluation path, the license itself does not prohibit automated evaluation."
+    "rationale": "For the hosted-API path, ToS on automated/batch evaluation was NOT confirmed this phase (first-party docs fetch was blocked by a .cn redirect). For the self-host/weight-license path, this now additionally inherits the unresolved Commercial Use question from D/E -- the license's non-commercial grant (which would otherwise clearly permit automated evaluation) is itself of uncertain applicability to ORNEUR's actual use."
   },
 
   "J_commercial_product_evaluation_allowed": {
     "status": "SEPARATE_PERMISSION_REQUIRED",
-    "rationale": "Same as D's commercial_evaluation finding -- the $20M/year revenue threshold and attribution/notice requirements apply if ORNEUR's use is deemed to support a commercial product."
+    "rationale": "Same as D's commercial-use finding -- if ORNEUR's use is deemed Commercial Use, the attribution/notice requirement always applies, and prior written authorization is additionally required only above the $20M/year revenue threshold (Phase 21B.4.17.1 correction: not all Commercial Use requires prior permission, only Commercial Use above that threshold)."
   },
 
   "K_access_paths": {
@@ -107,8 +107,8 @@
       "status": "COMPUTE_PROHIBITIVE",
       "basis": "GENESIS_FRONTIER_COMPUTE_MATRIX.md: 428B params -> 11x 80GB-class GPUs at BF16, 6x at FP8, 3x at INT4 -- THEORETICAL_WEIGHT_FIT only (compute matrix notes MiniMax M3's 3x-80GB INT4 figure as the 'least prohibitive frontier candidate' among the six, but still not PRACTICAL_FRONTIER_EVALUATION_SERVING for a zero-owner-cash program). Compute matrix not redesigned this phase."
     },
-    "access_preflight_status_overall": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
-    "access_preflight_rationale": "License permits self-host for internal non-commercial evaluation, and self-host is the OPEN_WEIGHT reference's canonical access path -- but it requires a live, fresh zero-cash feasibility check (GPU cost) before any actual execution, per phase instruction (no live billing check authorized this phase)."
+    "access_preflight_status_overall": "UNQUALIFIED",
+    "access_preflight_rationale": "Phase 21B.4.17.1 correction (was PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK): that status was applied incorrectly. PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK means all NON-FINANCIAL access requirements are already satisfied and only a live billing/credit check remains -- it does not mean 'a model repository exists and self-host is theoretically possible.' Here: (1) self-host requires 3-11x 80GB-class GPUs with no identified zero-owner-cash compute grant -- this is not merely an unconfirmed financial check, it is an unidentified access path in the first place; (2) the hosted-API path's provider ToS/pricing were NOT first-party-confirmed this phase (redirect blocked); and (3) the underlying Commercial Use license question (see D/E) is itself unresolved, meaning 'governing evaluation terms are clear for THAT path' -- one of the required non-financial preconditions -- is not satisfied for either path. A hypothetical future compute grant is not the same as a preflight-ready path. UNQUALIFIED is the honest status."
   },
 
   "L_zero_owner_cash_classification": "COMPUTE_PROHIBITIVE_SELF_HOST",
@@ -127,15 +127,15 @@
 
   "final_state": {
     "identity_status": "RESOLVED",
-    "license_or_terms_status": "CLEAR",
-    "reference_evaluation_admission_status": "ADMITTED",
+    "license_or_terms_status": "REVIEW_REQUIRED",
+    "reference_evaluation_admission_status": "REVIEW_REQUIRED",
     "teacher_use_status": "NOT_EVALUATED",
     "teacher_use_evidence_reference": null,
-    "access_preflight_status": "PREFLIGHT_READY_PENDING_FRESH_ZERO_CASH_CHECK",
-    "evidence_retention_status": "PERMITTED",
+    "access_preflight_status": "UNQUALIFIED",
+    "evidence_retention_status": "REVIEW_REQUIRED",
     "mutable_identity_status": "FIXED_IMMUTABLE",
     "availability_status": "REFERENCE_EXECUTION_DEFERRED"
   },
 
-  "gate": "REFERENCE_EVALUATION_ADMITTED -- counts toward quorum"
+  "gate": "REVIEW_REQUIRED -- DOES_NOT_COUNT_TOWARD_EXECUTION_QUORUM"
 }
