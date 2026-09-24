@@ -6,25 +6,26 @@ CAPABILITY REMAINS UNPROVEN for every control.**
 
 ## Status (true state after this session)
 
-| Control | Identity | Preflight | Technical runtime | Financial acceptance | Runtime qualification | Capability |
-|---|---|---|---|---|---|---|
-| Qwen3-8B | ADMITTED | PASSED | FAILED (attempt 1 = harness failure, 34.6 s) | PASS (billed delta exactly 0) | FAILED | UNPROVEN |
-| Mistral-Nemo-Instruct-2407 | ADMITTED | PASSED | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
-| Phi-4 | ADMITTED | PASSED | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
+| Control | Identity | Preflight | Attempt result | Technical serving | Financial acceptance | Runtime qualification | Capability |
+|---|---|---|---|---|---|---|---|
+| Qwen3-8B | ADMITTED | PASSED | attempt 1 = HARNESS_FAILURE (failure domain HARNESS, 34.6 s) | NOT_PROVEN | PASS (billed delta 0 at observed time) | NOT_COMPLETED | UNPROVEN |
+| Mistral-Nemo-Instruct-2407 | ADMITTED | PASSED | none | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
+| Phi-4 | ADMITTED | PASSED | none | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
 
-**No control is RUNTIME_QUALIFIED.** The three controls were authorized for one-at-a-time execution on
-existing Modal credits (owner decision, 2026-09-24). Qwen3-8B was launched once; the run was cancelled
-by a harness bug after 34.6 s (no model was served, no smoke ran). The harness treated a poll timeout
-as a failure because Modal 1.5.5 raises the *builtin* `TimeoutError` from `FunctionCall.get(timeout=)`;
-the harness now catches both. Owner billed delta was exactly 0 and cleanup passed (app stopped, 0 tasks,
-0 containers).
+**Attempt result is not model result.** Qwen3-8B attempt 1 was cancelled by a harness bug (Modal 1.5.5 raises the
+*builtin* `TimeoutError` from `FunctionCall.get(timeout=)`; the harness did not catch it). The pinned model was never
+served, so this attempt does **not** show runtime incompatibility. A model-runtime `FAILED` requires an actual valid
+runtime attempt; a harness failure or financial-guard abort always leaves technical serving `NOT_PROVEN` and the
+qualification `NOT_COMPLETED` (machine-enforced; see `FAILURE_DOMAIN_BY_OUTCOME`). The attempt itself is preserved
+unchanged in the history: 34.6 s, billed delta 0 at observed time, cleanup PASS, 0 live tasks, 0 containers,
+settlement `BILLING_SETTLEMENT_NOT_YET_OBSERVABLE`. Its true settled cost is unconfirmed and is not assumed to be zero.
 
-**Execution stopped by the settlement rule (`BILLING_SETTLEMENT_NOT_YET_OBSERVABLE`).** For 30+ minutes after
-the attempt the account showed metered $20.03 / credits -$20.03 / billed $0 and an empty daily report, i.e.
-the run's own usage never became visible, so its credit coverage cannot be confirmed. The owner
-authorization requires stopping before the next launch in that case. No retry of Qwen3-8B, and no
-Mistral-Nemo or Phi-4 run, was started. Both are NOT_TESTED because they were never started; this is
-not a zero-cash-runway block (every preflight passed).
+**No control is RUNTIME_QUALIFIED. No GPU may start** until attempt 1's settlement is observable
+(`QWEN_ATTEMPT_1_SETTLEMENT_STILL_UNRESOLVED` as of the last reconciliation, 2026-09-24T12:19Z; see
+`GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_SETTLEMENT_RECONCILIATION_*.json`). This is not a zero-cash-runway block:
+every preflight passed. Resume conditions: previous settlement observable AND owner payable delta 0 AND
+remaining credit >= $5.00 reserve + $1.25 maximum run cost AND zero live resources. Then exactly one Qwen3-8B
+retry (attempt 2), then Mistral-Nemo, then Phi-4, each gated on the previous settlement.
 
 ## Billing reconciliation
 
@@ -35,6 +36,9 @@ not a zero-cash-runway block (every preflight passed).
   `GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json`; the historical incident is not treated as disproven.
 - **Qwen3-8B attempt 1:** metered delta 0 (not visible), billed delta 0, derived remaining credit $9.97 before and $9.97 after
   (unchanged only because usage was not visible). Settlement ambiguity: **YES**.
+- **Re-reconciliation 2026-09-24T12:15-12:19Z (read-only, ~1 h after the attempt):** metered $20.03 (ephemeral apps $20.03366467, unchanged to 8 decimals),
+  credits -$20.03, billed $0; hourly itemized rows for 2026-09-23..25 contain nothing for the Qwen app (latest row anywhere: the 2026-09-23T08:00 CPU preflight);
+  0 containers, 0 volumes, both deployed apps idle. Verdict `QWEN_ATTEMPT_1_SETTLEMENT_STILL_UNRESOLVED`; no GPU started.
 - Gates per run: owner-payable gate (billed must not exceed baseline) AND credit-coverage gate
   (derived remaining >= $5.00 reserve + $1.25 maximum authorized run cost).
 
@@ -97,14 +101,25 @@ any difference is documented, never hidden. Generated text is data only.
 
 ## Attempt accounting
 
-| Control | Attempt | Outcome | Duration | Owner billed delta | Cleanup | Settlement |
+| Control | Attempt | Outcome / failure domain | Duration | Owner billed delta (observed) | Cleanup | Settlement |
 |---|---|---|---|---|---|---|
-| Qwen3-8B | 1 | HARNESS_FAILURE (poll `TimeoutError` not caught) | 34.6 s | 0 | PASS | BILLING_SETTLEMENT_NOT_YET_OBSERVABLE |
+| Qwen3-8B | 1 | HARNESS_FAILURE / HARNESS (poll `TimeoutError` not caught) | 34.6 s | 0 | PASS | BILLING_SETTLEMENT_NOT_YET_OBSERVABLE |
+
+## Environment-only behaviour (not exercised by CI)
+
+CI has no Modal SDK, so the deterministic suite runs the harness against a recording stand-in for `modal`, plus static
+AST checks, and does **not** test real Modal SDK behaviour. Validated in CI: module syntax, constants, pinned image
+digest/GPU/ceiling passed to the decorator, CLI mode declarations, no `eval`/`exec`/shell/Sandbox/generated-output
+execution, financial-gate and result-validator wiring, and that `reconcile` is read-only. Environment-only (needs a real
+Modal workspace): `FunctionCall.get(timeout=)` exception types and `cancel(terminate_containers=True)` semantics,
+image build/pull, GPU scheduling and container lifecycle, vLLM serving behaviour, and the billing CLI's real output and
+settlement latency.
 
 ## To resume (each launch needs the previous settlement observable and a fresh gate)
 
 ```bash
-.venv/bin/python scripts/phase21b_4_20_control_runtime_qualification.py --control qwen3_8b --mode run
+.venv/bin/python scripts/phase21b_4_20_control_runtime_qualification.py --control qwen3_8b --mode reconcile --attempt 1   # read-only
+.venv/bin/python scripts/phase21b_4_20_control_runtime_qualification.py --control qwen3_8b --mode run                       # attempt 2
 ```
 
 The harness refuses to start while any earlier attempt's billing settlement is unresolved.

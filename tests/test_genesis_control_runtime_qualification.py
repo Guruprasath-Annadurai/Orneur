@@ -156,7 +156,7 @@ def test_a_fully_consistent_synthetic_record_validates(tmp_path):
 
 
 @pytest.mark.parametrize("changes,match", [
-    ({"technical_serving_status": "FAILED"}, "derives|QUALIFIED"),
+    ({"technical_serving_status": "FAILED"}, "derives|QUALIFIED|model-runtime"),
     ({"technical_serving_status": "INCONCLUSIVE"}, "derives|QUALIFIED"),
     ({"financial_acceptance_status": "FAILED"}, "derives|financial"),
     ({"financial_acceptance_status": "NOT_TESTED"}, "derives|financial"),
@@ -209,8 +209,9 @@ def test_derive_runtime_status_is_the_only_correct_mapping():
     assert derive_runtime_status(**dict(ok, live_resources_after_cleanup=2)) == "NOT_ACCEPTED"
     assert derive_runtime_status(**dict(ok, technical="FAILED")) == "FAILED"
     assert derive_runtime_status(**dict(ok, technical="NOT_TESTED")) == "NOT_TESTED"
+    assert derive_runtime_status(**dict(ok, technical="NOT_PROVEN")) == "NOT_COMPLETED"
     assert derive_runtime_status(**dict(ok, technical="BLOCKED_PENDING_ZERO_CASH_RUNWAY")) == "BLOCKED_PENDING_ZERO_CASH_RUNWAY"
-    assert set(RUNTIME_QUALIFICATION_STATUSES) == {"RUNTIME_QUALIFIED", "NOT_ACCEPTED", "FAILED", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY"}
+    assert set(RUNTIME_QUALIFICATION_STATUSES) == {"RUNTIME_QUALIFIED", "NOT_ACCEPTED", "FAILED", "NOT_COMPLETED", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY"}
 
 
 # ══ F/G: capability stays UNPROVEN; no benchmark masquerading ════════════
@@ -704,7 +705,7 @@ def test_settlement_observed_only_when_usage_visible_credits_cover_and_billed_fl
 
 
 @pytest.mark.parametrize("over,frag", [
-    ({"metered_delta_usd": "0E-8"}, "not yet visible"),
+    ({"metered_delta_usd": "0E-8"}, "not yet visible in the account totals"),
     ({"credits_applied_postrun_usd": "20.03"}, "credit coverage not confirmed"),
     ({"billing_delta_usd": "0.01"}, "owner-payable"),
     ({"derived_credit_remaining_after_usd": "4.99"}, "below the reserve"),
@@ -716,9 +717,14 @@ def test_settlement_is_not_claimed_without_evidence(over, frag):
     assert any(frag in x for x in r["reasons"])
 
 
-def test_settlement_visible_via_the_run_report_alone_is_accepted_when_credits_flat_and_no_growth():
+def test_a_report_row_alone_is_not_settlement_without_account_total_growth_and_credit_coverage():
     r = assess_settlement(_recon(metered_delta_usd="0E-8", credits_applied_postrun_usd="20.03"), run_report_metered_usd="0.87")
-    assert r["status"] == SETTLEMENT_OBSERVED
+    assert r["status"] == SETTLEMENT_NOT_OBSERVABLE and any("not yet visible in the account totals" in m for m in r["reasons"])
+
+
+def test_growth_without_an_attributable_itemized_row_is_not_settlement():
+    r = assess_settlement(_recon(), run_report_metered_usd="0")
+    assert r["status"] == SETTLEMENT_NOT_OBSERVABLE and any("cannot be attributed" in m for m in r["reasons"])
 
 
 def test_qualified_requires_reconciliation_settlement_and_discrepancy_reference(tmp_path):
@@ -744,3 +750,204 @@ def test_qualified_requires_reconciliation_settlement_and_discrepancy_reference(
     rec["financial_reconciliation"]["metered_postrun_usd"] = None
     with pytest.raises(ControlRuntimeError, match="without a recorded reason"):
         validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+# ══ audit patch: attempt result != model-runtime result ════════════════════
+
+
+def _failed_attempt(outcome, **extra):
+    a = {"attempt_number": 1, "outcome": outcome, "reason": "synthetic", "resource_type": "synthetic", "duration_seconds": 34.6,
+         "owner_billed_delta_usd": "0", "cleanup_result": "PASS", "billing_settlement_status": SETTLEMENT_NOT_OBSERVABLE}
+    a.update(extra)
+    return a
+
+
+def _no_success_record(tmp_path, attempt, technical, runtime):
+    rec = _qualified_record(tmp_path)
+    rec.update(technical_serving_status=technical, runtime_qualification_status=runtime, smoke_outputs=[],
+               attempts=[attempt], raw_log_artifact=None, raw_log_sha256=None)
+    rec["billing_settlement"] = {"status": SETTLEMENT_NOT_OBSERVABLE, "reasons": ["x"]}
+    return rec
+
+
+def test_a_harness_failure_leaves_runtime_compatibility_UNPROVEN_not_model_FAILED(tmp_path):
+    a = _failed_attempt("HARNESS_FAILURE", failure_domain="HARNESS", valid_runtime_attempt=False)
+    validate_control_runtime_record(_no_success_record(tmp_path, a, "NOT_PROVEN", "NOT_COMPLETED"), evidence_root=tmp_path)
+    with pytest.raises(ControlRuntimeError, match="cannot become a model-runtime FAILED"):
+        validate_control_runtime_record(_no_success_record(tmp_path, a, "FAILED", "FAILED"), evidence_root=tmp_path)
+
+
+def test_harness_and_guard_attempts_force_NOT_PROVEN(tmp_path):
+    for outcome, dom in (("HARNESS_FAILURE", "HARNESS"), ("ABORTED_FINANCIAL_GUARD", "FINANCIAL_GUARD")):
+        a = _failed_attempt(outcome, failure_domain=dom, valid_runtime_attempt=False)
+        with pytest.raises(ControlRuntimeError, match="must be NOT_PROVEN"):
+            validate_control_runtime_record(_no_success_record(tmp_path, a, "INCONCLUSIVE", "FAILED"), evidence_root=tmp_path)
+
+
+def test_a_model_runtime_FAILED_requires_an_actual_valid_runtime_attempt(tmp_path):
+    bad = _failed_attempt("TECHNICAL_FAILURE", failure_domain="MODEL_RUNTIME")
+    with pytest.raises(ControlRuntimeError, match="valid runtime attempt"):
+        validate_control_runtime_record(_no_success_record(tmp_path, bad, "FAILED", "FAILED"), evidence_root=tmp_path)
+    bad2 = _failed_attempt("TECHNICAL_FAILURE", failure_domain="MODEL_RUNTIME", valid_runtime_attempt=False)
+    with pytest.raises(ControlRuntimeError, match="valid runtime attempt"):
+        validate_control_runtime_record(_no_success_record(tmp_path, bad2, "FAILED", "FAILED"), evidence_root=tmp_path)
+    ok = _failed_attempt("TECHNICAL_FAILURE", failure_domain="MODEL_RUNTIME", valid_runtime_attempt=True)
+    validate_control_runtime_record(_no_success_record(tmp_path, ok, "FAILED", "FAILED"), evidence_root=tmp_path)
+
+
+def test_failure_domain_must_agree_with_the_outcome(tmp_path):
+    a = _failed_attempt("HARNESS_FAILURE", failure_domain="MODEL_RUNTIME", valid_runtime_attempt=True)
+    with pytest.raises(ControlRuntimeError, match="contradicts outcome"):
+        validate_control_runtime_record(_no_success_record(tmp_path, a, "NOT_PROVEN", "NOT_COMPLETED"), evidence_root=tmp_path)
+
+
+def test_a_later_attempt_keeps_the_earlier_harness_failure_in_the_history(tmp_path):
+    first = _failed_attempt("HARNESS_FAILURE", failure_domain="HARNESS", valid_runtime_attempt=False)
+    rec = _qualified_record(tmp_path)
+    second = dict(rec["attempts"][0], attempt_number=2)
+    rec["attempts"] = [first, second]
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec["attempts"] = [second]
+    with pytest.raises(ControlRuntimeError, match="gap or reorder"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+# ══ audit patch: cost-free harness coverage WITHOUT the Modal SDK ══════════
+# The deterministic CI image does not install `modal`. These tests load the real
+# harness source against a recording STAND-IN for the SDK, so module syntax,
+# constants, decorator arguments, gate wiring and the read-only reconcile path are
+# exercised in CI. They do NOT test real Modal SDK behaviour (see the matrix,
+# "Environment-only behaviour"): FunctionCall.get()/cancel semantics, image build,
+# GPU scheduling, container lifecycle and the billing CLI are environment-only.
+
+import sys
+import types
+
+
+def _load_harness_with_stub_modal(monkeypatch, name="p21b420_harness_stub"):
+    calls = {"function_kwargs": [], "image_from_registry": []}
+
+    class _Image:
+        @classmethod
+        def from_registry(cls, ref, **kw):
+            calls["image_from_registry"].append((ref, kw))
+            return cls()
+
+        def entrypoint(self, _cmd):
+            return self
+
+    class _App:
+        def __init__(self, app_name):
+            self.name = app_name
+
+        def function(self, **kw):
+            calls["function_kwargs"].append(kw)
+            return lambda fn: fn
+
+    stub = types.ModuleType("modal")
+    stub.Image, stub.App = _Image, _App
+    stub.exception = types.SimpleNamespace(TimeoutError=type("TimeoutError", (Exception,), {}))
+    monkeypatch.setitem(sys.modules, "modal", stub)
+    spec = importlib.util.spec_from_file_location(name, HARNESS_PATH)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod, calls
+
+
+def test_harness_loads_against_a_stub_sdk_and_pins_image_gpu_and_ceiling(monkeypatch):
+    mod, calls = _load_harness_with_stub_modal(monkeypatch)
+    assert calls["image_from_registry"][0][0] == f"vllm/vllm-openai@{mod.VLLM_IMAGE_DIGEST}"
+    (fn_kwargs,) = calls["function_kwargs"]
+    assert fn_kwargs["gpu"] == "A100-80GB:1" and fn_kwargs["timeout"] == 1200
+    assert mod.app.name == "orneur-p21b420-control-runtime-qualification"
+    assert mod.MAX_MODEL_LEN == 4096 and mod.COST_MARGIN == mod.Decimal("1.5")
+    assert mod.worst_case_cost(mod.Decimal("2.5")) == mod.Decimal("1.25")
+
+
+def test_cli_declares_exactly_the_four_modes_and_the_three_controls():
+    tree = _harness_tree()
+    choices = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "add_argument":
+            for kw in node.keywords:
+                if kw.arg == "choices" and isinstance(kw.value, ast.Tuple):
+                    choices.append([e.value for e in kw.value.elts])
+    assert ["preflight", "run", "record-not-tested", "reconcile"] in choices
+
+
+def _func(tree, name):
+    return next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name)
+
+
+def _called_names(fn):
+    out = []
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Call):
+            f = n.func
+            out.append(f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", ""))
+    return out
+
+
+def test_run_control_wires_the_gate_with_settlement_and_positive_billing_inputs_and_the_validator():
+    fn = _func(_harness_tree(), "run_control")
+    gate = next(n for n in ast.walk(fn) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "financial_gate_decision")
+    kws = {k.arg for k in gate.keywords}
+    assert {"prior_positive_billing_seen", "prior_settlement_unresolved", "worst_case_job_cost_usd", "credit_pool_usd", "reserve_usd"} <= kws
+    names = _called_names(fn)
+    assert "validate_control_runtime_record" in names and "build_financial_reconciliation" in names and "assess_settlement" in names
+    assert "write_not_tested" not in names
+
+
+def test_reconcile_mode_is_read_only_and_can_never_start_a_resource():
+    fn = _func(_harness_tree(), "reconcile_attempt")
+    names = _called_names(fn)
+    for forbidden in ("run", "spawn", "remote", "map", "cancel", "deploy"):
+        assert forbidden not in names, forbidden
+    text = ast.unparse(fn)
+    assert "app.run" not in text and "serve_and_smoke" not in text
+    assert "billing" in text and "assess_settlement" in text
+
+
+def test_harness_writes_no_launch_when_no_gpu_authorized_for_reconcile_or_record_modes():
+    main = ast.unparse(_func(_harness_tree(), "main"))
+    assert "reconcile_attempt" in main and "write_not_tested" in main and "run_control" in main
+
+
+def test_a_prior_attempt_blocks_the_next_launch_until_reconciliation_observes_it(monkeypatch, tmp_path):
+    mod, _ = _load_harness_with_stub_modal(monkeypatch, "p21b420_harness_stub2")
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", tmp_path)
+    attempt = {"attempt_number": 1, "billing_settlement_status": SETTLEMENT_NOT_OBSERVABLE}
+    (tmp_path / f"GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_{mod.DATE_TAG}.json").write_text(json.dumps({"attempts": [attempt]}))
+    assert mod.any_unresolved_settlement() is True
+    art = tmp_path / f"GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260924T000000Z.json"
+    art.write_text(json.dumps({"attempt_number": 1, "settlement": {"status": SETTLEMENT_NOT_OBSERVABLE}, "live_resources": 0,
+                               "owner_billed_delta_usd": "0"}))
+    assert mod.any_unresolved_settlement() is True
+    art.write_text(json.dumps({"attempt_number": 1, "settlement": {"status": SETTLEMENT_OBSERVED}, "live_resources": 0,
+                               "owner_billed_delta_usd": "0"}))
+    assert mod.any_unresolved_settlement() is False
+    art.write_text(json.dumps({"attempt_number": 1, "settlement": {"status": SETTLEMENT_OBSERVED}, "live_resources": 1,
+                               "owner_billed_delta_usd": "0"}))
+    assert mod.any_unresolved_settlement() is True  # live resources still present
+    art.write_text(json.dumps({"attempt_number": 1, "settlement": {"status": SETTLEMENT_OBSERVED}, "live_resources": 0,
+                               "owner_billed_delta_usd": "0.01"}))
+    assert mod.any_unresolved_settlement() is True  # a positive payable amount never resolves
+
+
+def test_persisted_qwen_attempt_1_is_preserved_and_classified_as_a_harness_failure():
+    rec = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    (a,) = rec["attempts"]
+    assert a["outcome"] == "HARNESS_FAILURE" and a["status"] == "HARNESS_FAILURE" and a["failure_domain"] == "HARNESS"
+    assert a["valid_runtime_attempt"] is False and a["duration_seconds"] == 34.6
+    assert a["owner_billed_delta_usd"] == "0E-8" and a["cleanup_result"] == "PASS"
+    assert a["billing_settlement_status"] == SETTLEMENT_NOT_OBSERVABLE
+    assert a["annotation"]["pre_annotation_attempts_file_sha256"] == "eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365"
+    assert rec["technical_serving_status"] == "NOT_PROVEN" and rec["runtime_qualification_status"] == "NOT_COMPLETED"
+    assert rec["capability_status"] == "UNPROVEN" and rec["smoke_outputs"] == []
+
+
+def test_the_matrix_records_what_ci_cannot_test_about_live_modal():
+    text = MATRIX_PATH.read_text()
+    assert "Environment-only behaviour" in text
+    for needle in ("FunctionCall.get", "cancel", "GPU scheduling", "billing CLI"):
+        assert needle in text

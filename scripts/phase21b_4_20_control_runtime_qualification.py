@@ -37,7 +37,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -405,12 +405,73 @@ def any_positive_billing_seen() -> bool:
     return False
 
 
+SHORT_NAME = {"qwen3_8b": "QWEN", "mistral_nemo": "MISTRAL", "phi4": "PHI4"}
+
+
+def settlement_resolved(tag: str, attempt: dict) -> bool:
+    """An attempt's settlement is resolved if it was observed in-run OR a later read-only reconciliation artifact for that
+    exact attempt reports OBSERVED with zero live resources."""
+    if attempt.get("billing_settlement_status") == "OBSERVED":
+        return True
+    for f in sorted(EVIDENCE_DIR.glob(f"GENESIS_CONTROL_{tag}_ATTEMPT{attempt['attempt_number']}_SETTLEMENT_RECONCILIATION_*.json")):
+        r = json.loads(f.read_text())
+        if r.get("attempt_number") == attempt["attempt_number"] and r.get("settlement", {}).get("status") == "OBSERVED" \
+                and r.get("live_resources") == 0 and r.get("owner_billed_delta_usd") in ("0", "0E-8", "0.0"):
+            return True
+    return False
+
+
 def any_unresolved_settlement() -> bool:
     for cfg in CONTROLS.values():
         for a in load_attempts(cfg["tag"]):
-            if a.get("billing_settlement_status") != "OBSERVED":
+            if not settlement_resolved(cfg["tag"], a):
                 return True
     return False
+
+
+def reconcile_attempt(control_key: str, attempt_number: int) -> int:
+    """READ-ONLY. Re-queries Modal billing and decides whether a prior attempt's usage is now identifiable in the account
+    data. Never starts any resource. Writes a timestamped reconciliation artifact either way."""
+    from orca.eval.control_runtime_qualification import assess_settlement, build_financial_reconciliation
+
+    cfg = CONTROLS[control_key]
+    tag = cfg["tag"]
+    attempts = load_attempts(tag)
+    a = next((x for x in attempts if x["attempt_number"] == attempt_number), None)
+    if a is None:
+        print(f"no attempt {attempt_number} for {control_key}")
+        return 2
+    base_file = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_ATTEMPT{attempt_number}_BILLING_BEFORE_{DATE_TAG}.json"
+    baseline = json.loads(base_file.read_text())["billing_summary"]
+    now = billing_summary()
+    start = a["started_at_utc"][:10]
+    end = (datetime.fromisoformat(start) + timedelta(days=2)).strftime("%Y-%m-%d")
+    rows = _cli_json("billing", "report", "--start", start, "--end", end, "--resolution", "h", "--json")
+    mine = [r for r in rows if isinstance(r, dict) and r.get("description") == a["modal_app_name"]]  # type: ignore[union-attr]
+    visible = sum((Decimal(str(r["cost"])) for r in mine), Decimal(0))
+    cleanup = cleanup_snapshot()
+    recon = build_financial_reconciliation(baseline, now, credit_pool_usd=CREDIT_POOL_USD, reserve_usd=RESERVE_USD,
+                                           max_run_cost_usd="1.25", peak_billed_usd=now["billed_cost"])
+    settlement = assess_settlement(recon, run_report_metered_usd=str(visible))
+    out = {
+        "evidence_type": "ATTEMPT_SETTLEMENT_RECONCILIATION_READ_ONLY", "phase": PHASE, "control_name": cfg["control_name"],
+        "attempt_number": attempt_number, "captured_at_utc": _now(), "modal_app_name": a["modal_app_name"],
+        "attempt_window_utc": [a["started_at_utc"], a["finished_at_utc"]],
+        "baseline_source": base_file.name, "current_billing_summary": now,
+        "itemized_rows_for_attempt_app": mine, "itemized_visible_cost_usd": str(visible),
+        "itemized_report_range": [start, end], "itemized_rows_total_in_range": len(rows),  # type: ignore[arg-type]
+        "financial_reconciliation": recon, "settlement": settlement,
+        "owner_billed_delta_usd": recon["billing_delta_usd"], "live_resources": cleanup["live_resources"],
+        "cleanup_snapshot": cleanup,
+        "verdict": "SETTLEMENT_OBSERVED" if settlement["status"] == "OBSERVED"
+                   else f"{SHORT_NAME[control_key]}_ATTEMPT_{attempt_number}_SETTLEMENT_STILL_UNRESOLVED",
+        "no_gpu_started": True,
+    }
+    path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_ATTEMPT{attempt_number}_SETTLEMENT_RECONCILIATION_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+    write_json(path, out)
+    print(json.dumps({"artifact": path.name, "verdict": out["verdict"], "reasons": settlement["reasons"],
+                      "visible_cost": str(visible), "billed_delta": recon["billing_delta_usd"], "live_resources": cleanup["live_resources"]}, indent=2))
+    return 0 if settlement["status"] == "OBSERVED" else 5
 
 
 def gpu_hour_rate() -> Decimal:
@@ -596,7 +657,7 @@ def run_control(control_key: str, mode: str) -> int:
         run_metered = str(app_cost_after - app_cost_before)
     except Exception as e:  # noqa: BLE001
         run_metered = f"UNAVAILABLE ({type(e).__name__})"
-    from orca.eval.control_runtime_qualification import assess_settlement, build_financial_reconciliation
+    from orca.eval.control_runtime_qualification import FAILURE_DOMAIN_BY_OUTCOME, assess_settlement, build_financial_reconciliation
     recon = build_financial_reconciliation(before, after, credit_pool_usd=CREDIT_POOL_USD, reserve_usd=RESERVE_USD,
                                            max_run_cost_usd=str(worst), peak_billed_usd=str(peak_billed))
     settlement = assess_settlement(recon, run_report_metered_usd=None if run_metered.startswith("UNAVAILABLE") else run_metered)
@@ -637,6 +698,9 @@ def run_control(control_key: str, mode: str) -> int:
         "attempt_number": attempt_no, "outcome": outcome, "reason": reason, "resource_type": f"Modal ephemeral function {GPU_TYPE}x{GPU_COUNT}",
         "duration_seconds": duration, "owner_billed_delta_usd": str(delta),
         "billing_settlement_status": settlement["status"],
+        "status": outcome,
+        "failure_domain": FAILURE_DOMAIN_BY_OUTCOME[outcome],
+        "valid_runtime_attempt": bool(result and result.get("server_argv_sanitized") and not error_text and not aborted),
         "cleanup_result": "PASS" if cleanup_pass else "FAIL",
         "started_at_utc": started, "finished_at_utc": finished, "modal_app_name": app.name,
         "raw_log_artifact": log_path.name, "raw_log_sha256": log_sha,
@@ -717,7 +781,14 @@ def build_record(cfg, reg, model_id, revision, result, attempts, attempt, delta,
             "ttft_seconds": s.get("ttft_seconds"), "matches_expected_exactly": s.get("matches_expected_exactly"),
             "executed": False,
         })
-    technical = "QUALIFIED" if attempt["outcome"] == "TECHNICAL_SUCCESS" else "FAILED"
+    # Attempt result != model-runtime result: only a VALID runtime attempt that failed for model/runtime reasons is FAILED;
+    # a harness failure or guard abort leaves runtime compatibility NOT_PROVEN.
+    if attempt["outcome"] == "TECHNICAL_SUCCESS":
+        technical = "QUALIFIED"
+    elif attempt["outcome"] == "TECHNICAL_FAILURE" and attempt.get("valid_runtime_attempt") is True:
+        technical = "FAILED"
+    else:
+        technical = "NOT_PROVEN"
     financial = "PASS" if delta == 0 else "FAILED"
     runtime = derive_runtime_status(technical=technical, financial_acceptance=financial, cleanup=attempt["cleanup_result"],
                                     owner_billed_delta_usd=delta, live_resources_after_cleanup=0 if attempt["cleanup_result"] == "PASS" else cleanup["live_resources"])
@@ -833,9 +904,12 @@ def write_not_tested(control_key: str, reason: str) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--control", required=True, choices=sorted(CONTROLS))
-    ap.add_argument("--mode", required=True, choices=("preflight", "run", "record-not-tested"))
+    ap.add_argument("--mode", required=True, choices=("preflight", "run", "record-not-tested", "reconcile"))
     ap.add_argument("--reason", default="GPU launch was not permitted in this session.")
+    ap.add_argument("--attempt", type=int, default=1)
     args = ap.parse_args()
+    if args.mode == "reconcile":
+        return reconcile_attempt(args.control, args.attempt)
     if args.mode == "record-not-tested":
         return write_not_tested(args.control, args.reason)
     return run_control(args.control, args.mode)

@@ -64,12 +64,24 @@ if set(LOCKED_CONTROL_IDENTITIES) != set(EXPECTED_CONTROL_NAMES):
 
 # ── status vocabularies ───────────────────────────────────────────────────
 
-TECHNICAL_SERVING_STATUSES = ("QUALIFIED", "FAILED", "INCONCLUSIVE", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY")
+TECHNICAL_SERVING_STATUSES = ("QUALIFIED", "FAILED", "INCONCLUSIVE", "NOT_PROVEN", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY")
 FINANCIAL_PREFLIGHT_STATUSES = ("PASSED", "FAILED", "NOT_PERFORMED")
 FINANCIAL_ACCEPTANCE_STATUSES = ("PASS", "FAILED", "NOT_TESTED")
-RUNTIME_QUALIFICATION_STATUSES = ("RUNTIME_QUALIFIED", "NOT_ACCEPTED", "FAILED", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY")
+RUNTIME_QUALIFICATION_STATUSES = ("RUNTIME_QUALIFIED", "NOT_ACCEPTED", "FAILED", "NOT_COMPLETED", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY")
 CLEANUP_STATUSES = ("PASS", "FAIL", "NOT_APPLICABLE")
 ATTEMPT_OUTCOMES = ("TECHNICAL_SUCCESS", "TECHNICAL_FAILURE", "HARNESS_FAILURE", "ABORTED_FINANCIAL_GUARD", "BLOCKED_NO_GPU")
+# Attempt result vs model-runtime result are DIFFERENT things. Only a valid
+# runtime attempt (the pinned model's server was actually launched and the
+# outcome observed) can ever make the MODEL's technical status FAILED; a
+# harness bug or a financial-guard abort leaves runtime compatibility
+# UNPROVEN / the qualification NOT_COMPLETED.
+FAILURE_DOMAIN_BY_OUTCOME = {
+    "TECHNICAL_SUCCESS": "NONE",
+    "TECHNICAL_FAILURE": "MODEL_RUNTIME",
+    "HARNESS_FAILURE": "HARNESS",
+    "ABORTED_FINANCIAL_GUARD": "FINANCIAL_GUARD",
+    "BLOCKED_NO_GPU": "NONE",
+}
 CAPABILITY_STATUS = "UNPROVEN"
 EVIDENCE_KIND = "RUNTIME_QUALIFICATION_SMOKE"
 
@@ -276,14 +288,17 @@ def assess_settlement(recon: dict, *, run_report_metered_usd=None) -> dict:
         cap = to_decimal(recon["maximum_authorized_run_cost_usd"], "cap")
     except (KeyError, TypeError, ControlRuntimeError) as e:
         return {"status": SETTLEMENT_NOT_OBSERVABLE, "reasons": [f"reconciliation figures unreadable: {e}"], "stop_before_next_control": True}
+    report_known = run_report_metered_usd is not None
     report_visible = False
-    if run_report_metered_usd is not None:
+    if report_known:
         try:
             report_visible = to_decimal(run_report_metered_usd, "run_report_metered_usd") > 0
         except ControlRuntimeError:
-            pass
-    if not (metered_delta > 0 or report_visible):
-        reasons.append("the completed run's metered usage is not yet visible (metered_delta == 0 and the run's own report cost is absent/zero)")
+            report_known = False
+    if metered_delta <= 0:
+        reasons.append("the completed run's metered usage is not yet visible in the account totals (metered_delta == 0)")
+    elif report_known and not report_visible:
+        reasons.append("account totals grew but the run's own itemized usage row is absent, so the growth cannot be attributed to the run")
     if metered_delta > 0 and credits_delta < metered_delta:
         reasons.append(f"credits applied grew by {credits_delta}, less than metered growth {metered_delta} -- credit coverage not confirmed")
     if billing_delta != 0:
@@ -322,6 +337,8 @@ def derive_runtime_status(*, technical: str, financial_acceptance: str, cleanup:
         return "BLOCKED_PENDING_ZERO_CASH_RUNWAY"
     if technical == "NOT_TESTED":
         return "NOT_TESTED"
+    if technical == "NOT_PROVEN":
+        return "NOT_COMPLETED"
     if technical != "QUALIFIED":
         return "FAILED"
     if delta != 0 or financial_acceptance != "PASS":
@@ -384,6 +401,13 @@ def _check_attempts(record: dict) -> Decimal:
             raise ControlRuntimeError(f"attempt {i} has unrecognized outcome {a['outcome']!r}")
         if a["cleanup_result"] not in CLEANUP_STATUSES:
             raise ControlRuntimeError(f"attempt {i} has unrecognized cleanup_result {a['cleanup_result']!r}")
+        expected_domain = FAILURE_DOMAIN_BY_OUTCOME[a["outcome"]]
+        if a.get("failure_domain", expected_domain) != expected_domain:
+            raise ControlRuntimeError(
+                f"attempt {i} failure_domain {a.get('failure_domain')!r} contradicts outcome {a['outcome']!r} (expected {expected_domain!r})")
+        if a["outcome"] == "TECHNICAL_FAILURE" and a.get("valid_runtime_attempt") is not True:
+            raise ControlRuntimeError(
+                f"attempt {i}: a model-runtime failure requires an actual valid runtime attempt (valid_runtime_attempt must be True)")
         delta = to_decimal(a["owner_billed_delta_usd"], f"attempt {i} owner_billed_delta_usd")
         if seen_positive:
             raise ControlRuntimeError(f"attempt {i} occurred after a positive-billing attempt -- further GPU runs must have stopped")
@@ -511,6 +535,15 @@ def validate_control_runtime_record(record: dict, *, evidence_root: Path) -> Non
     if delta != attempts_total:
         raise ControlRuntimeError(f"owner_billed_delta_usd {delta} disagrees with the attempt history total {attempts_total}")
 
+    last_attempt = record["attempts"][-1]
+    last_domain = FAILURE_DOMAIN_BY_OUTCOME[last_attempt["outcome"]]
+    if technical == "FAILED" and not (last_domain == "MODEL_RUNTIME" and last_attempt.get("valid_runtime_attempt") is True):
+        raise ControlRuntimeError(
+            "technical_serving_status FAILED requires a valid model-runtime attempt; a harness failure or financial-guard abort "
+            "cannot become a model-runtime FAILED (it leaves runtime compatibility NOT_PROVEN)")
+    if last_domain in ("HARNESS", "FINANCIAL_GUARD") and technical != "NOT_PROVEN":
+        raise ControlRuntimeError(
+            f"the last attempt ended in {last_domain}; technical_serving_status must be NOT_PROVEN, got {technical!r}")
     expected = derive_runtime_status(
         technical=technical, financial_acceptance=financial, cleanup=record["cleanup_status"],
         owner_billed_delta_usd=delta, live_resources_after_cleanup=record["live_resources_after_cleanup"],

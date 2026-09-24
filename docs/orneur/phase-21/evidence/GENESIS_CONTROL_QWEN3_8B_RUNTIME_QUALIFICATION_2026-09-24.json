@@ -2,10 +2,21 @@
   "architecture": "Qwen3ForCausalLM",
   "attempts": [
     {
+      "annotation": {
+        "added_fields": [
+          "status",
+          "failure_domain",
+          "valid_runtime_attempt",
+          "annotation"
+        ],
+        "pre_annotation_attempts_file_sha256": "eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365",
+        "reason": "Audit patch: separate the ATTEMPT result from the MODEL runtime-qualification result. All original fields are unchanged."
+      },
       "attempt_number": 1,
       "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
       "cleanup_result": "PASS",
       "duration_seconds": 34.6,
+      "failure_domain": "HARNESS",
       "finished_at_utc": "2026-09-24T11:15:05Z",
       "modal_app_name": "orneur-p21b420-control-runtime-qualification",
       "outcome": "HARNESS_FAILURE",
@@ -14,7 +25,9 @@
       "raw_log_sha256": "d35d88fdc6ca5d54a6c457ce143186bafc767f46c3a003f5c63d1019974b9acd",
       "reason": "TimeoutError: ",
       "resource_type": "Modal ephemeral function A100-80GBx1",
-      "started_at_utc": "2026-09-24T11:14:30Z"
+      "started_at_utc": "2026-09-24T11:14:30Z",
+      "status": "HARNESS_FAILURE",
+      "valid_runtime_attempt": false
     }
   ],
   "attention_backend": null,
@@ -134,7 +147,7 @@
   "max_model_len": 4096,
   "model_id": "Qwen/Qwen3-8B",
   "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
-  "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests and are not performance claims. Generated output was treated as data and never executed.",
+  "notes": "Attempt 1 ended in a HARNESS failure (Modal 1.5.5 raised builtin TimeoutError from call.get(timeout=); the harness did not catch it). The pinned model was never served, so this does NOT show runtime incompatibility: technical serving is NOT_PROVEN and qualification NOT_COMPLETED. Attempt 1 is preserved unchanged in the history (34.6 s, billed delta 0 at observed time, cleanup PASS, 0 live tasks/containers, settlement BILLING_SETTLEMENT_NOT_YET_OBSERVABLE; true settled cost unconfirmed). Capability is UNPROVEN; nothing was benchmarked; generated output was never executed.",
   "orphan_vllm_processes_after_shutdown": null,
   "owner_billed_delta_usd": "0E-8",
   "peak_gpu_memory_bytes": null,
@@ -145,7 +158,7 @@
   "reasoning_mode": "ENABLED (Qwen3 hybrid-thinking template default; canonical control spec launches with --reasoning-parser qwen3)",
   "reasoning_parser": "qwen3",
   "runtime_name": "vLLM (official vllm/vllm-openai image, OpenAI-compatible server)",
-  "runtime_qualification_status": "FAILED",
+  "runtime_qualification_status": "NOT_COMPLETED",
   "runtime_version": null,
   "server_argv_sanitized": null,
   "server_exit_code": null,
@@ -188,7 +201,7 @@
   "started_at_utc": "2026-09-24T11:14:30Z",
   "steady_gpu_memory_bytes": null,
   "stop_behavior": "eos_token <|im_end|>; generation_config eos_token_id [151645, 151643]",
-  "technical_serving_status": "FAILED",
+  "technical_serving_status": "NOT_PROVEN",
   "tensor_parallel": 1,
   "tokenizer_revision": "b968826d9c46dd6066d109eabc6255188de91218",
   "tokens_per_second": null,
