@@ -615,6 +615,7 @@ def test_validator_module_has_no_execution_or_network_code():
 
 
 def test_harness_module_imports_without_side_effects_and_pins_the_runtime():
+    pytest.importorskip("modal", reason="the Modal SDK is a harness-only dependency, not in the deterministic CI image; the AST tests still cover the harness source")
     spec = importlib.util.spec_from_file_location("p21b420_harness", HARNESS_PATH)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # defines the Modal app/function objects only; starts nothing
