@@ -1,0 +1,82 @@
+{
+  "account_state": {
+    "activity": {
+      "agent_cost": "0.02",
+      "studio_cpu_cost": "0.00"
+    },
+    "balance_limit": "0.0",
+    "card_last4_present": false,
+    "card_verified": false,
+    "credits_started_at": "5.00 (0.02 used by the onboarding 'cloudy' agent)",
+    "org_credits": "4.9823576",
+    "plan": "Free",
+    "plan_feature_flags": {
+      "advanced_gpu_hours": {
+        "hit_limit": true,
+        "limit": 0
+      },
+      "concurrent_gpus": {
+        "limit": 2
+      },
+      "gpu_cores": {
+        "limit": 1
+      },
+      "included_credits": {
+        "limit": 15
+      },
+      "requires_credit_card_verification": {
+        "hit_limit": false
+      }
+    },
+    "project_credits": "4.98",
+    "stripe_managed": false,
+    "subscription_amount_usd": 0
+  },
+  "authenticated_as": "annaduraiguruprasath5 (SDK; matches the logged-in Chrome session)",
+  "captured_at_utc": "2026-09-24T14:30:00Z..15:05:00Z",
+  "cpu_staging": {
+    "env": {
+      "python": "3.12.11",
+      "safetensors": "0.8.0",
+      "tokenizers": "0.23.2",
+      "torch": "2.13.0",
+      "transformers": "5.17.0",
+      "vllm": "0.29.0"
+    },
+    "manifests": [
+      "GENESIS_CONTROL_MISTRAL_NEMO_LIGHTNING_STAGE_MANIFEST_2026-09-24.json",
+      "GENESIS_CONTROL_PHI4_LIGHTNING_STAGE_MANIFEST_2026-09-24.json",
+      "GENESIS_CONTROL_QWEN3_8B_LIGHTNING_STAGE_MANIFEST_2026-09-24.json"
+    ],
+    "models": {
+      "mistral_nemo": "verified",
+      "phi4": "verified",
+      "qwen3_8b": "verified"
+    },
+    "verification": "exact pinned revision; summed weight bytes equal the recorded exact bytes; every staged file's sha256 equals the Hugging Face LFS sha256; CPU Studio cost 0.00"
+  },
+  "credits_consumed_by_gpu": "0",
+  "evidence_type": "LIGHTNING_ACCOUNT_VERIFICATION_AND_CPU_STAGING",
+  "gpu_execution": "BLOCKED by provider policy (see GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json): free tier needs a verified payment method to start GPU compute",
+  "machine_catalog_findings": {
+    "h100_h200_b200": "tier_restricted=True (advanced_gpu_hours limit 0)",
+    "other_single_gpus": {
+      "L4_24GB": 1.68,
+      "RTX_PRO_6000_96GB": 4.64,
+      "T4_16GB": 0.55
+    },
+    "selected_gpu": "L40S x1 48GB (lit-l40s-1 = AWS g6e.4xlarge) at 3.54 credits/h, tier_restricted=False, enabled",
+    "single_a100_80gb": "NOT AVAILABLE on this account (only p4d.24xlarge 8 x A100-40GB at 30.9 credits/h, tier_restricted=True)",
+    "user_quoted_a100_80gb_rate_2_71": "not offered on this account; unverified"
+  },
+  "no_gpu_ran": true,
+  "owner_cash_incurred": "none",
+  "phase": "21B.4.20",
+  "planned_cost_envelope": {
+    "hard_cap_seconds": 900,
+    "per_control_max_credits": 0.885,
+    "three_controls_credits": 2.655,
+    "watchdog_seconds": 840
+  },
+  "read_only_except_cpu_staging": true
+}

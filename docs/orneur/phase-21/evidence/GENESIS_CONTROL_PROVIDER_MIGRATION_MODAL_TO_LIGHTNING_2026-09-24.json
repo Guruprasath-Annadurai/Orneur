@@ -43,7 +43,7 @@
     "payment_method_required": null,
     "plan": null,
     "reason": "No authenticated access path exists in this environment: the built-in browser is logged out of lightning.ai, no Claude-in-Chrome browser is connected, and no Lightning SDK/CLI/credentials are installed. Logging in, creating an account or handling credentials is not something this agent may do.",
-    "status": "NOT_PERFORMED"
+    "status": "PERFORMED_AFTER_THIS_ARTIFACT (see GENESIS_LIGHTNING_ACCOUNT_AND_STAGING_EVIDENCE_2026-09-24.json)"
   },
   "locked_controls_in_order": [
     "Qwen3-8B",
@@ -53,11 +53,14 @@
   "locked_identities": "unchanged (registry-pinned model ids and revisions; no substitution, no quantization for cost)",
   "modal_historical_evidence": "PRESERVED, not deleted, reinterpreted or rewritten",
   "modal_qwen_attempt_1": {
+    "attempts_file_sha256_at_migration": {
+      "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json": "e9a9f4a72247cd1ad897ee322d9aebf9638b57e701572e64864b00b36161d4fd",
+      "note": "immutable snapshot committed in c7cc051; the shared attempts file has since GROWN by the Lightning attempt, with Modal attempt 1 unchanged as entry 1"
+    },
     "evidence": {
       "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json": "6eafee2d2312f530d12302ce421f3c6ba52c2cac64ebd9cd8b55194fe63935d1",
       "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_EXECUTION_ATTRIBUTION_2026-09-24.json": "be9c2dd4100c21be469521d29f334b93f9517696e01e0a56f9e817dea11eede7",
-      "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260924T125105Z.json": "3d7c16b4efcec90769765e5898f09f7e9182a5d060a041b0bcd041a0a788f3f9",
-      "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json": "e9a9f4a72247cd1ad897ee322d9aebf9638b57e701572e64864b00b36161d4fd"
+      "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260924T125105Z.json": "3d7c16b4efcec90769765e5898f09f7e9182a5d060a041b0bcd041a0a788f3f9"
     },
     "failure_domain": "HARNESS",
     "note": "Not a model failure. Settlement BILLING_SETTLEMENT_NOT_YET_OBSERVABLE; execution attribution C (unresolved); true settled cost unconfirmed.",
@@ -87,5 +90,15 @@
     "an authenticated Lightning session the agent may read/operate (owner logs in themselves in the browser pane, or connects the Chrome extension, or provisions SDK access outside this chat)",
     "a live read of plan, credits, payment-method and owner-payable state (satisfying the preconditions above)",
     "a Lightning-specific runner and financial-evidence schema (credits before/after, owner charge, payment method present, GPU seconds, rate, expected/observed credit cost) validated in CI before any GPU time"
-  ]
+  ],
+  "update_2026-09-24T15:05Z": {
+    "artifacts": [
+      "GENESIS_LIGHTNING_ACCOUNT_AND_STAGING_EVIDENCE_2026-09-24.json",
+      "GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json"
+    ],
+    "credits_unchanged": "4.9823576",
+    "gpu_started": false,
+    "lightning_gpu_outcome": "BLOCKED by provider policy: free tier needs a verified payment method to start GPU (see GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json)",
+    "owner_cash_incurred": "none"
+  }
 }

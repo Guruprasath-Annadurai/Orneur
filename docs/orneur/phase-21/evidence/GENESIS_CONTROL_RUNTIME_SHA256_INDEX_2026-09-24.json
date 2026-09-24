@@ -66,14 +66,14 @@
     },
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json",
-      "sha256": "e9a9f4a72247cd1ad897ee322d9aebf9638b57e701572e64864b00b36161d4fd",
-      "size_bytes": 1290,
+      "sha256": "b914b0a9a371d9db87daedac65fdc349c6afee687c9f88b63ee1180c0cb6ac90",
+      "size_bytes": 2412,
       "evidence_role": "genesis_control_qwen3_8b_attempts_2026-09-24.json"
     },
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json",
-      "sha256": "2e73e8cac4a94a4d683b5089eda66ab127e8fdb03747124d5a77f1444c490cad",
-      "size_bytes": 9377,
+      "sha256": "fa619da17ecea1e00da9f59d9897b86b126d81527d5c6555ca0e672040f7d0fc",
+      "size_bytes": 9547,
       "evidence_role": "genesis_control_qwen3_8b_runtime_qualification_2026-09-24.json"
     },
     {
@@ -90,8 +90,8 @@
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "d26f5a934c623be1773220ce1a73abd360383b1b62bc660c2a3bc6df4582c630",
-      "size_bytes": 10288,
+      "sha256": "0e086467bfb610938123764300842d85c2164d21b29a713b6ce37e9c5fd6cda1",
+      "size_bytes": 11392,
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md"
     },
     {
@@ -108,9 +108,63 @@
     },
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PROVIDER_MIGRATION_MODAL_TO_LIGHTNING_2026-09-24.json",
-      "sha256": "ea6855ff3a4749f9b700aee7f8d566c9324fd7b91f48d80eb68749d10f9e4a81",
-      "size_bytes": 4685,
+      "sha256": "fb5feca9bf6ea63f726aed4afc43345e40a6233a5b7e618f9b48748395f4c649",
+      "size_bytes": 5462,
       "evidence_role": "genesis_control_provider_migration_modal_to_lightning_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_LIGHTNING_STAGE_MANIFEST_2026-09-24.json",
+      "sha256": "32603a87e78d5893dba1e5340cbb6f70eb1457a011de6463f78254ad82128320",
+      "size_bytes": 3119,
+      "evidence_role": "genesis_control_mistral_nemo_lightning_stage_manifest_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PHI4_LIGHTNING_STAGE_MANIFEST_2026-09-24.json",
+      "sha256": "b709513c802d1c33481d5bf814032a9845173769a970a9fc38d6bfb8ea2bafd1",
+      "size_bytes": 3371,
+      "evidence_role": "genesis_control_phi4_lightning_stage_manifest_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_CREDITS_AFTER_2026-09-24.json",
+      "sha256": "3df080d0c0cc295fd537a84437dc302124ada3d9174c3ed082551573d1c99698",
+      "size_bytes": 1064,
+      "evidence_role": "genesis_control_qwen3_8b_lightning_attempt2_credits_after_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_CREDITS_BEFORE_2026-09-24.json",
+      "sha256": "e447de5017aa0c32a58ff53944e424bb7e8103d315c6b22a753dbf44c5881e12",
+      "size_bytes": 384,
+      "evidence_role": "genesis_control_qwen3_8b_lightning_attempt2_credits_before_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_PREFLIGHT_2026-09-24T145114Z.json",
+      "sha256": "5dfb23276fdb16662c63b2c2ab5e975784ce6d594997ac104b22d07370e9af74",
+      "size_bytes": 2368,
+      "evidence_role": "genesis_control_qwen3_8b_lightning_attempt2_preflight_2026-09-24t145114z.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_RAW_LOG_2026-09-24.txt",
+      "sha256": "251e03da246c4e623887c6c38ebe0bec395d36f04c3ecd802c19924dd271e419",
+      "size_bytes": 435,
+      "evidence_role": "genesis_control_qwen3_8b_lightning_attempt2_raw_log_2026-09-24.txt"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_LIGHTNING_STAGE_MANIFEST_2026-09-24.json",
+      "sha256": "764f3c8611bd2a55c0104ede2ec6e5f209c6d731ea4b4bce07bb3d662b82739b",
+      "size_bytes": 2919,
+      "evidence_role": "genesis_control_qwen3_8b_lightning_stage_manifest_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_LIGHTNING_ACCOUNT_AND_STAGING_EVIDENCE_2026-09-24.json",
+      "sha256": "6f0b711d0d15474e69a3ae6b9731d7557cf85c867aa2ede7d3eb2cb771ec0bec",
+      "size_bytes": 2805,
+      "evidence_role": "genesis_lightning_account_and_staging_evidence_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json",
+      "sha256": "e9b991cbe76c4a3204d815edd184f3ba653796c38ccabcbfa8598a4f4053154a",
+      "size_bytes": 1767,
+      "evidence_role": "genesis_lightning_provider_gpu_rejection_2026-09-24.json"
     }
   ]
 }

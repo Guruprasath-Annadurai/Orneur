@@ -91,6 +91,17 @@ REQUIRED_SMOKE_IDS = ("A", "B", "C")
 MAX_AUTHORIZED_RUN_COST_USD = Decimal("1.25")   # never raised without stopping and reporting
 SETTLEMENT_OBSERVED = "OBSERVED"
 SETTLEMENT_NOT_OBSERVABLE = "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"
+# ── Lightning AI (complimentary credits; owner cash INR 0) ──────────────────
+LIGHTNING_PROVIDER = "Lightning AI"
+LIGHTNING_EXPECTED_USERNAME = "annaduraiguruprasath5"
+LIGHTNING_PER_ATTEMPT_CREDIT_CAP = Decimal("1.00")   # STOP for review above this
+LIGHTNING_RESERVE_CREDITS = Decimal("1.00")          # kept after execution where possible
+LIGHTNING_FINANCIAL_REQUIRED = (
+    "plan", "payment_method_present", "machine_slug", "machine_rate_credits_per_hour", "gpu_runtime_seconds",
+    "credits_before", "credits_after", "credit_delta", "expected_credit_cost", "observed_credit_cost",
+    "owner_charge_before_usd", "owner_charge_after_usd", "owner_cash_delta_usd", "balance_limit",
+    "credit_meter_stopped", "hard_runtime_cap_seconds", "artifacts",
+)
 RECONCILIATION_FIELDS = (
     "billing_baseline_usd", "billing_postrun_usd", "billing_delta_usd",
     "metered_baseline_usd", "metered_postrun_usd", "metered_delta_usd",
@@ -311,6 +322,74 @@ def assess_settlement(recon: dict, *, run_report_metered_usd=None) -> dict:
             "stop_before_next_control": bool(reasons)}
 
 
+def lightning_gate_decision(state: dict | None, *, machine_rate_credits_per_hour, hard_runtime_cap_seconds,
+                            prior_positive_owner_charge: bool = False) -> dict:
+    """Decide whether a Lightning GPU run may START. Pure. Every unknown blocks.
+
+    `state` is a fresh read of the account: {username, plan, payment_method_present, credits_available,
+    balance_limit, machine: {enabled, tier_restricted, out_of_capacity, gpus}, live_gpu_machines}.
+    Requires: expected account, FREE plan, NO payment method, zero owner charge so far, an enabled and
+    unrestricted machine, no GPU already running, a worst-case cost (rate x hard cap) within the per-attempt
+    credit cap, and credits >= worst-case cost + reserve."""
+    reasons: list[str] = []
+    if prior_positive_owner_charge:
+        reasons.append("an owner cash charge was already observed -- further GPU runs are stopped")
+    if not state:
+        return {"allowed": False, "reasons": ["no fresh live Lightning account state was captured"]}
+    try:
+        rate = to_decimal(machine_rate_credits_per_hour, "machine_rate_credits_per_hour")
+        cap_s = to_decimal(hard_runtime_cap_seconds, "hard_runtime_cap_seconds")
+        credits = to_decimal(state["credits_available"], "credits_available")
+        limit = to_decimal(state["balance_limit"], "balance_limit")
+        worst = rate * cap_s / Decimal(3600)
+    except (KeyError, TypeError, ControlRuntimeError) as e:
+        return {"allowed": False, "reasons": [f"account state/inputs unreadable or incomplete: {e}"]}
+    if state.get("username") != LIGHTNING_EXPECTED_USERNAME:
+        reasons.append(f"authenticated as {state.get('username')!r}, not the verified account {LIGHTNING_EXPECTED_USERNAME!r}")
+    if str(state.get("plan", "")).upper() != "FREE":
+        reasons.append(f"plan is {state.get('plan')!r}, not FREE")
+    if state.get("known_provider_gpu_block"):
+        reasons.append(f"provider is known to refuse GPU start for this account state: {state['known_provider_gpu_block']}")
+    if state.get("payment_method_present") is not False:
+        reasons.append("a payment method is present or its absence is unverified -- owner cash could be charged")
+    if limit != 0:
+        reasons.append(f"balance_limit is {limit}, not 0 (negative balance / overdraft could be permitted)")
+    m = state.get("machine") or {}
+    if m.get("enabled") is not True or m.get("tier_restricted") is not False or m.get("out_of_capacity") not in (False, None):
+        reasons.append("the target GPU machine is not enabled, is tier-restricted, or is out of capacity for this account")
+    if state.get("live_gpu_machines") != 0:
+        reasons.append("a GPU machine is already running or its state is unknown")
+    if worst > LIGHTNING_PER_ATTEMPT_CREDIT_CAP:
+        reasons.append(f"worst-case attempt cost {worst} credits exceeds the per-attempt cap {LIGHTNING_PER_ATTEMPT_CREDIT_CAP}")
+    if credits < worst + LIGHTNING_RESERVE_CREDITS:
+        reasons.append(f"credits {credits} < worst-case cost {worst} + reserve {LIGHTNING_RESERVE_CREDITS}")
+    return {"allowed": not reasons, "reasons": reasons, "worst_case_credits": str(worst), "credits_available": str(credits),
+            "reserve_credits": str(LIGHTNING_RESERVE_CREDITS), "per_attempt_cap_credits": str(LIGHTNING_PER_ATTEMPT_CREDIT_CAP)}
+
+
+def _validate_lightning_financial(record: dict, evidence_root: Path) -> None:
+    fin = record.get("lightning_financial")
+    if not isinstance(fin, dict) or any(k not in fin for k in LIGHTNING_FINANCIAL_REQUIRED):
+        raise ControlRuntimeError(f"a Lightning GPU-backed result requires lightning_financial with {LIGHTNING_FINANCIAL_REQUIRED}")
+    if fin["payment_method_present"] is not False:
+        raise ControlRuntimeError("payment_method_present must be False for zero-owner-cash acceptance")
+    before, after, delta = (to_decimal(fin[k], k) for k in ("credits_before", "credits_after", "credit_delta"))
+    if before - after != delta:
+        raise ControlRuntimeError("credit_delta must equal credits_before - credits_after")
+    if after < 0:
+        raise ControlRuntimeError("credits_after is negative: complimentary credits were exhausted and owner cash may be charged")
+    owner = to_decimal(fin["owner_charge_after_usd"], "owner_charge_after_usd") - to_decimal(fin["owner_charge_before_usd"], "owner_charge_before_usd")
+    if owner != to_decimal(fin["owner_cash_delta_usd"], "owner_cash_delta_usd"):
+        raise ControlRuntimeError("owner_cash_delta_usd disagrees with owner_charge_after - owner_charge_before")
+    if to_decimal(record["owner_billed_delta_usd"], "owner_billed_delta_usd") != owner:
+        raise ControlRuntimeError("owner_billed_delta_usd disagrees with the Lightning owner cash delta")
+    for art in ("preflight", "credits_before", "credits_after"):
+        node = (fin["artifacts"] or {}).get(art)
+        if not isinstance(node, dict) or not _HEX64_RE.match(str(node.get("sha256", ""))) \
+                or _artifact_sha(evidence_root, node.get("artifact", ""), f"lightning artifact {art}") != node["sha256"]:
+            raise ControlRuntimeError(f"Lightning financial artifact {art!r} is missing or its hash does not verify")
+
+
 def retry_permitted(attempts: list[dict]) -> bool:
     """§28: no retry after positive billing, an identity/licence/security
     problem, or unclear cost state. Only clearly technical/harness failures
@@ -497,32 +576,36 @@ def validate_control_runtime_record(record: dict, *, evidence_root: Path) -> Non
         raise ControlRuntimeError("a GPU-backed result requires a complete attempt history including the GPU attempt(s)")
     if record["financial_preflight_status"] != "PASSED":
         raise ControlRuntimeError("no GPU-backed result is valid without a PASSED fresh financial preflight")
-    fin = record["financial_evidence"]
-    if not isinstance(fin, dict) or any(k not in fin for k in FINANCIAL_EVIDENCE_REQUIRED):
-        raise ControlRuntimeError(f"financial_evidence must contain {FINANCIAL_EVIDENCE_REQUIRED}")
-    for art, sha in (("preflight_artifact", "preflight_sha256"), ("billing_before_artifact", "billing_before_sha256"),
-                     ("billing_after_artifact", "billing_after_sha256")):
-        if not _HEX64_RE.match(str(fin[sha])) or _artifact_sha(evidence_root, fin[art], art) != fin[sha]:
-            raise ControlRuntimeError(f"financial evidence {art} hash does not verify")
+    lightning = record.get("gpu_provider") == LIGHTNING_PROVIDER
+    if lightning:
+        _validate_lightning_financial(record, evidence_root)
+    else:
+        fin = record["financial_evidence"]
+        if not isinstance(fin, dict) or any(k not in fin for k in FINANCIAL_EVIDENCE_REQUIRED):
+            raise ControlRuntimeError(f"financial_evidence must contain {FINANCIAL_EVIDENCE_REQUIRED}")
+        for art, sha in (("preflight_artifact", "preflight_sha256"), ("billing_before_artifact", "billing_before_sha256"),
+                         ("billing_after_artifact", "billing_after_sha256")):
+            if not _HEX64_RE.match(str(fin[sha])) or _artifact_sha(evidence_root, fin[art], art) != fin[sha]:
+                raise ControlRuntimeError(f"financial evidence {art} hash does not verify")
 
-    recon = record.get("financial_reconciliation")
-    if not isinstance(recon, dict):
-        raise ControlRuntimeError("a GPU-backed result requires a financial_reconciliation with separate billed/metered/credit figures")
-    for k in RECONCILIATION_FIELDS:
-        if k not in recon:
-            raise ControlRuntimeError(f"financial_reconciliation missing {k!r}")
-        if recon[k] is None and not (recon.get("null_reasons") or {}).get(k):
-            raise ControlRuntimeError(f"financial_reconciliation.{k} is null without a recorded reason")
-    if recon["billing_delta_usd"] is not None and to_decimal(recon["billing_delta_usd"], "reconciliation billing_delta_usd") != delta:
-        raise ControlRuntimeError("financial_reconciliation.billing_delta_usd disagrees with owner_billed_delta_usd")
-    settlement = record.get("billing_settlement")
-    if not isinstance(settlement, dict) or settlement.get("status") not in (SETTLEMENT_OBSERVED, SETTLEMENT_NOT_OBSERVABLE):
-        raise ControlRuntimeError("a GPU-backed result requires billing_settlement with an explicit status")
-    disc = record.get("billing_discrepancy_observation")
-    if not isinstance(disc, dict) or any(k not in disc for k in ("artifact", "sha256")):
-        raise ControlRuntimeError("the unresolved billing-discrepancy observation must be referenced (artifact + sha256)")
-    if _artifact_sha(evidence_root, disc["artifact"], "billing_discrepancy_observation") != disc["sha256"]:
-        raise ControlRuntimeError("billing-discrepancy observation hash does not verify")
+        recon = record.get("financial_reconciliation")
+        if not isinstance(recon, dict):
+            raise ControlRuntimeError("a GPU-backed result requires a financial_reconciliation with separate billed/metered/credit figures")
+        for k in RECONCILIATION_FIELDS:
+            if k not in recon:
+                raise ControlRuntimeError(f"financial_reconciliation missing {k!r}")
+            if recon[k] is None and not (recon.get("null_reasons") or {}).get(k):
+                raise ControlRuntimeError(f"financial_reconciliation.{k} is null without a recorded reason")
+        if recon["billing_delta_usd"] is not None and to_decimal(recon["billing_delta_usd"], "reconciliation billing_delta_usd") != delta:
+            raise ControlRuntimeError("financial_reconciliation.billing_delta_usd disagrees with owner_billed_delta_usd")
+        settlement = record.get("billing_settlement")
+        if not isinstance(settlement, dict) or settlement.get("status") not in (SETTLEMENT_OBSERVED, SETTLEMENT_NOT_OBSERVABLE):
+            raise ControlRuntimeError("a GPU-backed result requires billing_settlement with an explicit status")
+        disc = record.get("billing_discrepancy_observation")
+        if not isinstance(disc, dict) or any(k not in disc for k in ("artifact", "sha256")):
+            raise ControlRuntimeError("the unresolved billing-discrepancy observation must be referenced (artifact + sha256)")
+        if _artifact_sha(evidence_root, disc["artifact"], "billing_discrepancy_observation") != disc["sha256"]:
+            raise ControlRuntimeError("billing-discrepancy observation hash does not verify")
 
     # financial invariants (§20, §34)
     if financial == "PASS":
@@ -560,7 +643,10 @@ def _validate_qualified(record: dict, locked: dict, evidence_root: Path) -> None
         raise ControlRuntimeError("RUNTIME_QUALIFIED requires technical QUALIFIED and financial PASS")
     if record["cleanup_status"] != "PASS" or record["live_resources_after_cleanup"] != 0:
         raise ControlRuntimeError("RUNTIME_QUALIFIED requires cleanup PASS and zero live resources")
-    if record["billing_settlement"]["status"] != SETTLEMENT_OBSERVED:
+    if record.get("gpu_provider") == LIGHTNING_PROVIDER:
+        if record["lightning_financial"]["credit_meter_stopped"] is not True:
+            raise ControlRuntimeError("RUNTIME_QUALIFIED requires proof that the Lightning credit meter stopped after cleanup")
+    elif record["billing_settlement"]["status"] != SETTLEMENT_OBSERVED:
         raise ControlRuntimeError("RUNTIME_QUALIFIED requires the run's billing/credit coverage to be observed in the account data")
     last = record["attempts"][-1]
     if last["outcome"] != "TECHNICAL_SUCCESS" or last["cleanup_result"] != "PASS":

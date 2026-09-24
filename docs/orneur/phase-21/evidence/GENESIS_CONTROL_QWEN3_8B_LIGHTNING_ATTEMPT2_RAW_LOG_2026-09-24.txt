@@ -1,0 +1,3 @@
+NO RESULT RETURNED: ApiException: (400)
+Reason: Bad Request
+HTTP response headers: HTTPHeaderDict({'Date': 'Thu, 24 Sep 2026 14:51:30 GMT', 'Content-Type': 'application/json', 'Transfer-Encoding': 'chunked', 'Connection': 'keep-alive', 'access-control-allow-headers': 'Content-Type,X-Grid-Key,X-Grid-User,Authorization', 'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS', 'access-control-allow-origin': '*', 'Se

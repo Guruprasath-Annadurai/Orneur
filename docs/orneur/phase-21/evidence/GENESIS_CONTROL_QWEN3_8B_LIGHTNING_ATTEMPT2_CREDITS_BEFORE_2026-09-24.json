@@ -1,0 +1,15 @@
+{
+  "balance_limit": "0.0",
+  "captured_at_utc": "2026-09-24T14:51:14Z",
+  "credits": "4.9823576",
+  "evidence_type": "LIGHTNING_CREDITS_BEFORE_GPU",
+  "owner_charge_evidence": {
+    "card_last4_present": false,
+    "card_verified": false,
+    "plan": "Free",
+    "stripe_managed": false,
+    "subscription_amount_usd": 0
+  },
+  "owner_charge_usd": "0",
+  "project_credits": "4.98"
+}

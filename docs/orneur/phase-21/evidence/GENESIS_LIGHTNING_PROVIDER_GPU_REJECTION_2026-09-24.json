@@ -1,0 +1,29 @@
+{
+  "account": "annaduraiguruprasath5",
+  "blocks_gpu_while_no_payment_method": true,
+  "captured_at_utc": "2026-09-24T15:05:00Z",
+  "cleanup": "Studio verified on CPU, live_gpu_machines 0 after each request",
+  "credit_delta": "0",
+  "credits_after": "4.9823576",
+  "credits_before": "4.9823576",
+  "evidence_type": "LIGHTNING_PROVIDER_GPU_REJECTION",
+  "first_request": "Qwen3-8B attempt 2 (2026-09-24T14:51:30Z)",
+  "gate_state_when_rejected": {
+    "gate_allowed": true,
+    "live_gpu_machines": 0,
+    "note": "Every zero-cash gate passed; the account plan features API reported requires_credit_card_verification hit_limit=False, which did NOT predict this rejection. The provider enforces the payment-method rule at GPU start.",
+    "payment_method_present": false,
+    "plan": "Free"
+  },
+  "gpu_allocated": false,
+  "grpc_code": "PermissionDenied (9)",
+  "http_status": 400,
+  "not_a_model_result": "No model was served; runtime compatibility of the controls on Lightning is UNPROVEN.",
+  "owner_rule_conflict": "The owner's hard rule is INR 0 with no payment card added or required. A verified payment method is exactly what the provider now requires for any GPU, so Lightning GPU execution cannot proceed under that rule. This agent did not, and will not, add or verify a card.",
+  "phase": "21B.4.20",
+  "provider": "Lightning AI",
+  "provider_message": "Free-tier users must have a verified payment method before starting GPU compute",
+  "request": "cloud_space_service_update_cloud_space_instance_config (Studio switch to compute 'lit-l40s-1' = 1 x L40S), the same call made by lightning_sdk Studio.switch_machine",
+  "requests_made": 2,
+  "second_request": "read-diagnostic repeat of the identical request (2026-09-24T~15:04Z) to read the error body"
+}

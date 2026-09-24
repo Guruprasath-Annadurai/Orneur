@@ -820,6 +820,7 @@ def test_a_later_attempt_keeps_the_earlier_harness_failure_in_the_history(tmp_pa
 # "Environment-only behaviour"): FunctionCall.get()/cancel semantics, image build,
 # GPU scheduling, container lifecycle and the billing CLI are environment-only.
 
+import re
 import sys
 import types
 
@@ -934,14 +935,16 @@ def test_a_prior_attempt_blocks_the_next_launch_until_reconciliation_observes_it
     assert mod.any_unresolved_settlement() is True  # a positive payable amount never resolves
 
 
-def test_persisted_qwen_attempt_1_is_preserved_and_classified_as_a_harness_failure():
+def test_persisted_qwen_history_keeps_modal_attempt_1_unchanged_and_adds_the_blocked_lightning_attempt():
     rec = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
-    (a,) = rec["attempts"]
+    a, b = rec["attempts"]
     assert a["outcome"] == "HARNESS_FAILURE" and a["status"] == "HARNESS_FAILURE" and a["failure_domain"] == "HARNESS"
     assert a["valid_runtime_attempt"] is False and a["duration_seconds"] == 34.6
     assert a["owner_billed_delta_usd"] == "0E-8" and a["cleanup_result"] == "PASS"
     assert a["billing_settlement_status"] == SETTLEMENT_NOT_OBSERVABLE
     assert a["annotation"]["pre_annotation_attempts_file_sha256"] == "eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365"
+    assert b["provider"] == "Lightning AI" and b["outcome"] == "BLOCKED_NO_GPU" and b["failure_domain"] == "NONE"
+    assert b["valid_runtime_attempt"] is False and b["credits_consumed"] in ("0E-7", "0") and "verified payment method" in b["reason"]
     assert rec["technical_serving_status"] == "NOT_PROVEN" and rec["runtime_qualification_status"] == "NOT_COMPLETED"
     assert rec["capability_status"] == "UNPROVEN" and rec["smoke_outputs"] == []
 
@@ -972,7 +975,234 @@ def test_provider_migration_artifact_preserves_modal_evidence_and_records_that_n
     assert q["technical_serving_status"] == "NOT_PROVEN" and q["runtime_qualification_status"] == "NOT_COMPLETED"
     for name, digest in q["evidence"].items():  # the preserved Modal evidence must still hash to what the migration recorded
         assert hashlib.sha256((EVIDENCE_DIR / name).read_bytes()).hexdigest() == digest, name
-    assert art["gpu_started"] is False and art["live_account_verification"]["status"] == "NOT_PERFORMED"
+    assert art["gpu_started"] is False and art["live_account_verification"]["status"].startswith("PERFORMED_AFTER_THIS_ARTIFACT")
+    assert art["update_2026-09-24T15:05Z"]["gpu_started"] is False and art["update_2026-09-24T15:05Z"]["credits_unchanged"]
     assert art["hard_financial_rules"]["owner_cash"] == "INR 0" and art["capability_status"] == "UNPROVEN"
     assert art["locked_controls_in_order"] == ["Qwen3-8B", "Mistral-Nemo-Instruct-2407", "Phi-4"]
     assert art["cost_envelope_credits"]["planned_per_control_credits"] < art["cost_envelope_credits"]["per_attempt_stop_threshold_credits"]
+
+
+# ══ Lightning AI migration: gate, financial validator, runner parity, static safety ══
+
+from orca.eval.control_runtime_qualification import (  # noqa: E402
+    LIGHTNING_EXPECTED_USERNAME, LIGHTNING_FINANCIAL_REQUIRED, LIGHTNING_PROVIDER, lightning_gate_decision,
+)
+
+LIGHTNING_RUNNER = REPO_ROOT / "scripts/phase21b_4_20_lightning_runner.py"
+LIGHTNING_CONTROL = REPO_ROOT / "scripts/phase21b_4_20_lightning_control.py"
+
+
+def _lstate(**over):
+    s = {"username": LIGHTNING_EXPECTED_USERNAME, "plan": "Free", "payment_method_present": False, "credits_available": "4.98",
+         "balance_limit": "0.0", "live_gpu_machines": 0,
+         "machine": {"enabled": True, "tier_restricted": False, "out_of_capacity": False}}
+    s.update(over)
+    return s
+
+
+def _lgate(state=None, **kw):
+    args = dict(machine_rate_credits_per_hour="3.54", hard_runtime_cap_seconds=900)
+    args.update(kw)
+    return lightning_gate_decision(_lstate() if state is None else state, **args)
+
+
+def test_lightning_gate_allows_the_observed_account_and_bounds_the_cost():
+    d = _lgate()
+    assert d["allowed"] is True and Decimal(d["worst_case_credits"]) == Decimal("0.885")
+
+
+@pytest.mark.parametrize("over,frag", [
+    ({"username": "annaduraiguruprasath7"}, "not the verified account"),
+    ({"plan": "Pro"}, "not FREE"),
+    ({"payment_method_present": True}, "payment method"),
+    ({"payment_method_present": None}, "payment method"),
+    ({"balance_limit": "-5"}, "balance_limit"),
+    ({"credits_available": "1.50"}, "reserve"),
+    ({"live_gpu_machines": 1}, "already running"),
+    ({"live_gpu_machines": None}, "already running"),
+    ({"machine": {"enabled": True, "tier_restricted": True, "out_of_capacity": False}}, "tier-restricted"),
+    ({"machine": {"enabled": False, "tier_restricted": False, "out_of_capacity": False}}, "not enabled"),
+    ({"machine": {"enabled": True, "tier_restricted": False, "out_of_capacity": True}}, "out of capacity"),
+])
+def test_lightning_gate_blocks_every_unsafe_state(over, frag):
+    d = _lgate(_lstate(**over))
+    assert d["allowed"] is False and any(frag in r for r in d["reasons"]), d["reasons"]
+
+
+def test_lightning_gate_enforces_the_per_attempt_cap_and_never_allows_a_missing_state():
+    assert _lgate(hard_runtime_cap_seconds=1200)["allowed"] is False  # 3.54 x 1200/3600 = 1.18 > 1.00
+    assert lightning_gate_decision(None, machine_rate_credits_per_hour="3.54", hard_runtime_cap_seconds=900)["allowed"] is False
+    assert _lgate(prior_positive_owner_charge=True)["allowed"] is False
+    assert _lgate(_lstate(credits_available="1.885"))["allowed"] is True   # exactly worst + reserve
+    assert _lgate(_lstate(credits_available="1.884"))["allowed"] is False
+
+
+def _lightning_record(tmp_path, **fin_over):
+    rec = _qualified_record(tmp_path)
+    pre = _write(tmp_path / "lpre.json", b'{"lightning": "pre"}')
+    bef = _write(tmp_path / "lbefore.json", b'{"lightning": "before"}')
+    aft = _write(tmp_path / "lafter.json", b'{"lightning": "after"}')
+    fin = {"plan": "FREE", "payment_method_present": False, "machine_slug": "lit-l40s-1", "machine_rate_credits_per_hour": "3.54",
+           "gpu_runtime_seconds": 600.0, "credits_before": "4.98", "credits_after": "4.40", "credit_delta": "0.58",
+           "expected_credit_cost": "0.5900", "observed_credit_cost": "0.58", "owner_charge_before_usd": "0", "owner_charge_after_usd": "0",
+           "owner_cash_delta_usd": "0", "balance_limit": "0.0", "credit_meter_stopped": True, "hard_runtime_cap_seconds": 900,
+           "artifacts": {"preflight": {"artifact": "lpre.json", "sha256": pre}, "credits_before": {"artifact": "lbefore.json", "sha256": bef},
+                         "credits_after": {"artifact": "lafter.json", "sha256": aft}}}
+    fin.update(fin_over)
+    for k in ("financial_reconciliation", "billing_settlement", "billing_discrepancy_observation"):
+        rec.pop(k, None)   # Modal-only evidence is not required for a Lightning result
+    rec.update(gpu_provider=LIGHTNING_PROVIDER, lightning_financial=fin, financial_evidence={"provider": LIGHTNING_PROVIDER})
+    return rec
+
+
+def test_a_consistent_lightning_record_validates_and_modal_only_evidence_is_not_required(tmp_path):
+    validate_control_runtime_record(_lightning_record(tmp_path), evidence_root=tmp_path)
+
+
+def test_a_lightning_record_keeps_the_modal_attempt_history(tmp_path):
+    rec = _lightning_record(tmp_path)
+    modal_attempt = _failed_attempt("HARNESS_FAILURE", failure_domain="HARNESS", valid_runtime_attempt=False, provider="Modal")
+    rec["attempts"] = [modal_attempt, dict(rec["attempts"][0], attempt_number=2, provider=LIGHTNING_PROVIDER)]
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+@pytest.mark.parametrize("over,frag", [
+    ({"payment_method_present": True}, "payment_method_present"),
+    ({"credits_after": "-0.10", "credit_delta": "5.08"}, "negative"),
+    ({"credit_delta": "0.10"}, "credit_delta must equal"),
+    ({"owner_charge_after_usd": "0.50", "owner_cash_delta_usd": "0.50"}, "owner_billed_delta_usd disagrees"),
+    ({"owner_cash_delta_usd": "0.50"}, "owner_cash_delta_usd disagrees"),
+])
+def test_lightning_financial_invariants_are_enforced(tmp_path, over, frag):
+    with pytest.raises(ControlRuntimeError, match=frag):
+        validate_control_runtime_record(_lightning_record(tmp_path, **over), evidence_root=tmp_path)
+
+
+def test_lightning_qualified_requires_the_credit_meter_stopped_and_verified_artifacts(tmp_path):
+    with pytest.raises(ControlRuntimeError, match="credit meter stopped"):
+        validate_control_runtime_record(_lightning_record(tmp_path, credit_meter_stopped=False), evidence_root=tmp_path)
+    rec = _lightning_record(tmp_path)
+    rec["lightning_financial"]["artifacts"]["credits_after"]["sha256"] = "0" * 64
+    with pytest.raises(ControlRuntimeError, match="hash does not verify"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec = _lightning_record(tmp_path)
+    del rec["lightning_financial"]["credits_before"]
+    with pytest.raises(ControlRuntimeError, match="lightning_financial"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def _fn_source(path, name):
+    text = path.read_text()
+    tree = ast.parse(text)
+    node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
+    return ast.get_source_segment(text, node)
+
+
+def test_the_lightning_serving_function_is_the_modal_function_apart_from_the_interpreter():
+    modal_src = _fn_source(HARNESS_PATH, "serve_and_smoke")
+    light_src = _fn_source(LIGHTNING_RUNNER, "serve_and_smoke")
+    normalise = lambda s: s.replace("    import sys\n", "").replace("sys.executable", '"python3"')
+    assert normalise(light_src) == normalise(modal_src)
+
+
+def _runner_module():
+    spec = importlib.util.spec_from_file_location("p21b420_lightning_runner", LIGHTNING_RUNNER)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_the_runner_locks_the_same_identities_smokes_and_settings_as_the_modal_harness():
+    mod, modal_mod = _runner_module(), None
+    tree_text = HARNESS_PATH.read_text()
+    assert mod.SMOKES == json.loads(json.dumps(mod.SMOKES))  # plain data
+    import types as _t
+    stub = _t.ModuleType("modal")
+    stub.Image = type("Image", (), {"from_registry": classmethod(lambda cls, *a, **k: cls())})
+    stub.Image.entrypoint = lambda self, _c: self
+    stub.App = lambda n: _t.SimpleNamespace(name=n, function=lambda **k: (lambda f: f))
+    stub.exception = _t.SimpleNamespace(TimeoutError=TimeoutError)
+    saved = sys.modules.get("modal")
+    sys.modules["modal"] = stub
+    try:
+        spec = importlib.util.spec_from_file_location("p21b420_modal_for_parity", HARNESS_PATH)
+        modal_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modal_mod)
+    finally:
+        if saved is None:
+            sys.modules.pop("modal", None)
+        else:
+            sys.modules["modal"] = saved
+    assert mod.SMOKES == modal_mod.SMOKES
+    assert mod.MAX_MODEL_LEN == modal_mod.MAX_MODEL_LEN and mod.GPU_MEMORY_UTILIZATION == modal_mod.GPU_MEMORY_UTILIZATION
+    assert mod.VLLM_VERSION == "0.29.0"
+    for key, cfg in modal_mod.CONTROLS.items():
+        locked = LOCKED_CONTROL_IDENTITIES[cfg["control_name"]]
+        r = mod.LOCKED[key]
+        assert (r["model_id"], r["revision"], r["expected_weight_bytes"]) == (locked["model_id"], locked["revision"], locked["expected_weight_bytes"])
+        assert r["extra_args"] == cfg["extra_args"] and r["smoke_max_tokens"] == cfg["smoke_max_tokens"]
+    assert tree_text  # harness untouched by the migration
+
+
+@pytest.mark.parametrize("path", [LIGHTNING_RUNNER, LIGHTNING_CONTROL])
+def test_lightning_scripts_never_eval_exec_compile_or_shell_out_with_generated_text(path):
+    tree = ast.parse(path.read_text())
+    bad_calls = {"eval", "exec", "compile", "__import__"}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call):
+            f = n.func
+            name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
+            assert name not in bad_calls, (path.name, name)
+            assert name not in ("system", "popen"), (path.name, name)
+            for kw in n.keywords:
+                assert not (kw.arg == "shell" and getattr(kw.value, "value", None) is True), (path.name, "shell=True")
+    text = path.read_text()
+    for forbidden in ("Sandbox", "sandbox", "api.openai", "deepseek", "kimi", "minimax", "MODAL_TOKEN", "LIGHTNING_API_KEY", "credentials.json"):
+        assert forbidden not in text, (path.name, forbidden)
+
+
+def test_lightning_control_wiring_gate_before_gpu_cap_watchdog_and_cleanup():
+    text = LIGHTNING_CONTROL.read_text()
+    tree = ast.parse(text)
+    run = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run")
+    src = ast.unparse(run)
+    assert src.index("gate_decision") < src.index("switch_machine")          # gate decided before any GPU allocation
+    assert "force_cpu_and_verify" in src and "finally" in src                 # cleanup on every path
+    assert "meter_proof" in src and "validate_control_runtime_record" in src
+    assert "watchdog" in src and "HARD_CAP_SECONDS" in src
+    cap = int(re.search(r"^HARD_CAP_SECONDS = (\d+)", text, re.M).group(1))
+    dog = int(re.search(r"^WATCHDOG_SECONDS = (\d+)", text, re.M).group(1))
+    assert dog < cap and Decimal("3.54") * cap / 3600 <= Decimal("1.00")     # per-attempt cost cap holds at the quoted rate
+    assert "Machine.CPU" in ast.unparse(next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "force_cpu_and_verify"))
+    assert 'purpose == "run"' in text and "Machine.A100" not in text and "H100" not in text
+
+
+def test_lightning_control_imports_without_the_lightning_or_modal_sdk_and_blocks_a_second_gpu(monkeypatch):
+    spec = importlib.util.spec_from_file_location("p21b420_lightning_control", LIGHTNING_CONTROL)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)   # top-level imports are stdlib + orca only; SDKs are imported lazily
+    assert set(mod.CONTROLS) == set(mod.CONTROL_KEYS) == {"qwen3_8b", "mistral_nemo", "phi4"}
+    assert mod.HARD_CAP_SECONDS == 900 and mod.WATCHDOG_SECONDS < mod.HARD_CAP_SECONDS
+
+
+def test_a_known_provider_gpu_rejection_blocks_the_gate_and_is_recorded_honestly():
+    d = _lgate(_lstate(known_provider_gpu_block="Free-tier users must have a verified payment method before starting GPU compute"))
+    assert d["allowed"] is False and any("provider is known to refuse GPU start" in r for r in d["reasons"])
+    rej = json.loads((EVIDENCE_DIR / "GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json").read_text())
+    assert rej["http_status"] == 400 and rej["gpu_allocated"] is False and rej["credit_delta"] == "0"
+    assert "verified payment method" in rej["provider_message"] and rej["blocks_gpu_while_no_payment_method"] is True
+    assert rej["gate_state_when_rejected"]["gate_allowed"] is True   # the pre-check did not predict it; recorded, not hidden
+    assert "will not, add or verify a card" in rej["owner_rule_conflict"]
+
+
+def test_lightning_account_and_staging_evidence_records_verified_staging_and_no_gpu():
+    acc = json.loads((EVIDENCE_DIR / "GENESIS_LIGHTNING_ACCOUNT_AND_STAGING_EVIDENCE_2026-09-24.json").read_text())
+    assert acc["account_state"]["plan"] == "Free" and acc["account_state"]["card_verified"] is False
+    assert acc["no_gpu_ran"] is True and acc["credits_consumed_by_gpu"] == "0"
+    assert set(acc["cpu_staging"]["models"].values()) == {"verified"}
+    for m in acc["cpu_staging"]["manifests"]:
+        man = json.loads((EVIDENCE_DIR / m).read_text())
+        assert man["staging_verified"] is True and man["all_lfs_sha256_match"] is True
+        locked = LOCKED_CONTROL_IDENTITIES[next(c["control_name"] for c in [{"control_name": n} for n in LOCKED_CONTROL_IDENTITIES]
+                                                if LOCKED_CONTROL_IDENTITIES[c["control_name"]]["model_id"] == man["model_id"])]
+        assert man["revision"] == locked["revision"] and man["weight_bytes_observed"] == locked["expected_weight_bytes"]

@@ -29,11 +29,24 @@ retry (attempt 2), then Mistral-Nemo, then Phi-4, each gated on the previous set
 
 ## Provider migration (Modal -> Lightning AI)
 
-Owner decision: no new Phase 21B.4.20 execution on Modal. Modal evidence and the unresolved Qwen attempt are preserved as
+Owner decision: no new Phase 21B.4.20 execution on Modal; Modal evidence and the unresolved Qwen attempt are preserved as
 historical provider-specific evidence (`GENESIS_CONTROL_PROVIDER_MIGRATION_MODAL_TO_LIGHTNING_2026-09-24.json`).
-Lightning execution has **not started**: the live account state (plan FREE, complimentary credits >= 5, no payment method
-required, owner payable 0) could not be verified because no authenticated Lightning access exists in this environment.
-Under the hard rule, no GPU was provisioned. Statuses are unchanged; no control is RUNTIME_QUALIFIED.
+
+**Lightning account (verified via the official SDK as `annaduraiguruprasath5`):** Free plan, 4.98 complimentary credits,
+balance limit 0, no payment method, no GPU running. No single A100-80GB exists on this account; the only A100 is
+8 x 40GB at 30.9 credits/h and all A100/H100/H200/B200 machines are tier-restricted. The chosen GPU was a single L40S 48GB
+(3.54 credits/h; fits all three controls in BF16, unquantized) with a 900 s cap (0.885 credits) plus a Studio-side watchdog.
+
+**CPU staging (free, done):** vLLM 0.29.0 / torch 2.13.0 / transformers 5.17.0 in a Studio venv; all three controls' exact
+pinned revisions downloaded and verified (summed weight bytes equal the recorded exact bytes and every file's sha256 equals
+its Hugging Face LFS sha256).
+
+**GPU start (blocked by the provider):** the Studio switch to the L40S was refused with HTTP 400 PermissionDenied:
+*"Free-tier users must have a verified payment method before starting GPU compute."* Every zero-cash gate had passed
+(the plan-feature flag `requires_credit_card_verification` did not predict this). No GPU was allocated, credits are
+unchanged (4.9823576) and cleanup is verified. The owner's rule forbids adding or requiring a card, so Lightning GPU
+execution cannot proceed under it. The gate now refuses automatically while this rejection stands
+(`GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json`). No control has run on any provider; statuses are unchanged.
 
 ## Billing reconciliation
 

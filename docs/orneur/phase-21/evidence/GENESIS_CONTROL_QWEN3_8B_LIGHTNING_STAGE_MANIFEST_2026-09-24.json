@@ -1,0 +1,92 @@
+{
+  "control": "qwen3_8b",
+  "model_id": "Qwen/Qwen3-8B",
+  "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "snapshot_dir": "/teamspace/studios/this_studio/.cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+  "snapshot_dir_name": "b968826d9c46dd6066d109eabc6255188de91218",
+  "weight_bytes_observed": 16381516776,
+  "weight_bytes_expected": 16381516776,
+  "all_lfs_sha256_match": true,
+  "download_seconds": 33.2,
+  "files": [
+    {
+      "filename": ".gitattributes",
+      "bytes": 1570
+    },
+    {
+      "filename": "LICENSE",
+      "bytes": 11343
+    },
+    {
+      "filename": "README.md",
+      "bytes": 16660
+    },
+    {
+      "filename": "config.json",
+      "bytes": 728
+    },
+    {
+      "filename": "generation_config.json",
+      "bytes": 239
+    },
+    {
+      "filename": "merges.txt",
+      "bytes": 1671853
+    },
+    {
+      "filename": "model-00001-of-00005.safetensors",
+      "bytes": 3996250744,
+      "sha256": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f",
+      "hf_lfs_sha256": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00002-of-00005.safetensors",
+      "bytes": 3993160032,
+      "sha256": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282",
+      "hf_lfs_sha256": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00003-of-00005.safetensors",
+      "bytes": 3959604768,
+      "sha256": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836",
+      "hf_lfs_sha256": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00004-of-00005.safetensors",
+      "bytes": 3187841392,
+      "sha256": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a",
+      "hf_lfs_sha256": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00005-of-00005.safetensors",
+      "bytes": 1244659840,
+      "sha256": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff",
+      "hf_lfs_sha256": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model.safetensors.index.json",
+      "bytes": 32878
+    },
+    {
+      "filename": "tokenizer.json",
+      "bytes": 11422654,
+      "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "hf_lfs_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "sha256_matches": true
+    },
+    {
+      "filename": "tokenizer_config.json",
+      "bytes": 9732
+    },
+    {
+      "filename": "vocab.json",
+      "bytes": 2776833
+    }
+  ],
+  "staging_verified": true
+}

@@ -27,6 +27,25 @@
       "started_at_utc": "2026-09-24T11:14:30Z",
       "status": "HARNESS_FAILURE",
       "valid_runtime_attempt": false
+    },
+    {
+      "attempt_number": 2,
+      "cleanup_result": "PASS",
+      "credits_consumed": "0E-7",
+      "duration_seconds": 7.2,
+      "failure_domain": "NONE",
+      "finished_at_utc": "2026-09-24T14:51:35Z",
+      "original_classification_note": "First recorded as HARNESS_FAILURE before the provider's error body was read; reclassified from the provider's own message.",
+      "outcome": "BLOCKED_NO_GPU",
+      "owner_billed_delta_usd": "0",
+      "provider": "Lightning AI",
+      "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "251e03da246c4e623887c6c38ebe0bec395d36f04c3ecd802c19924dd271e419",
+      "reason": "Provider refused the GPU start (HTTP 400 PermissionDenied): Free-tier users must have a verified payment method before starting GPU compute. No GPU was allocated; credits unchanged. See GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json.",
+      "resource_type": "Lightning Studio machine L40S (1 GPU)",
+      "started_at_utc": "2026-09-24T14:51:28Z",
+      "status": "BLOCKED_NO_GPU",
+      "valid_runtime_attempt": false
     }
   ],
   "control_name": "Qwen3-8B"

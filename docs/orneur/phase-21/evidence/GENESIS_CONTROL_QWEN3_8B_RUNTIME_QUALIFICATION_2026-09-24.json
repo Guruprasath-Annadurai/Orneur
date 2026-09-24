@@ -28,91 +28,44 @@
       "started_at_utc": "2026-09-24T11:14:30Z",
       "status": "HARNESS_FAILURE",
       "valid_runtime_attempt": false
+    },
+    {
+      "attempt_number": 2,
+      "cleanup_result": "PASS",
+      "credits_consumed": "0E-7",
+      "duration_seconds": 7.2,
+      "failure_domain": "NONE",
+      "finished_at_utc": "2026-09-24T14:51:35Z",
+      "original_classification_note": "First recorded as HARNESS_FAILURE before the provider's error body was read; reclassified from the provider's own message.",
+      "outcome": "BLOCKED_NO_GPU",
+      "owner_billed_delta_usd": "0",
+      "provider": "Lightning AI",
+      "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "251e03da246c4e623887c6c38ebe0bec395d36f04c3ecd802c19924dd271e419",
+      "reason": "Provider refused the GPU start (HTTP 400 PermissionDenied): Free-tier users must have a verified payment method before starting GPU compute. No GPU was allocated; credits unchanged. See GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json.",
+      "resource_type": "Lightning Studio machine L40S (1 GPU)",
+      "started_at_utc": "2026-09-24T14:51:28Z",
+      "status": "BLOCKED_NO_GPU",
+      "valid_runtime_attempt": false
     }
   ],
   "attention_backend": null,
-  "billing_discrepancy_observation": {
-    "artifact": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json",
-    "sha256": "6eafee2d2312f530d12302ce421f3c6ba52c2cac64ebd9cd8b55194fe63935d1"
-  },
-  "billing_settlement": {
-    "reasons": [
-      "the completed run's metered usage is not yet visible (metered_delta == 0 and the run's own report cost is absent/zero)"
-    ],
-    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
-    "stop_before_next_control": true
-  },
   "capability_status": "UNPROVEN",
   "chat_template_source": "tokenizer_config.json chat_template @ pinned revision (4,168 chars; hybrid thinking, enable_thinking default ON)",
-  "cleanup_snapshot": {
-    "apps": [
-      {
-        "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
-        "created_at": "2026-09-18 18:50:37+05:30",
-        "description": "orca-genesis-eval-sandbox",
-        "state": "deployed",
-        "stopped_at": null,
-        "tasks": "0"
-      },
-      {
-        "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
-        "created_at": "2026-09-18 23:18:29+05:30",
-        "description": "orca-genesis-eval-sandbox-v2",
-        "state": "deployed",
-        "stopped_at": null,
-        "tasks": "0"
-      },
-      {
-        "app_id": "ap-vOhF9vtQOV1W5UVAcMPS8O",
-        "created_at": "2026-09-24 16:44:31+05:30",
-        "description": "orneur-p21b420-control-runtime-qualification",
-        "state": "stopped",
-        "stopped_at": "2026-09-24 16:45:05+05:30",
-        "tasks": "0"
-      }
-    ],
-    "captured_at_utc": "2026-09-24T11:15:18Z",
-    "containers": [],
-    "live_resources": 0,
-    "non_idle_apps": [],
-    "running_tasks_total": 0,
-    "volumes": []
-  },
   "cleanup_status": "PASS",
   "cold_start_seconds": null,
-  "container_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
-  "container_image": "vllm/vllm-openai:v0.29.0",
+  "container_digest": null,
+  "container_image": null,
   "control_name": "Qwen3-8B",
   "download_seconds": null,
   "evidence_kind": "RUNTIME_QUALIFICATION_SMOKE",
   "financial_acceptance_status": "PASS",
   "financial_evidence": {
-    "billing_after_artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_BILLING_AFTER_2026-09-24.json",
-    "billing_after_sha256": "63c49899ed58e3c67ba1e8e2e122f30d91c215f33c1e8c611f99f6964e2543c8",
-    "billing_before_artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_BILLING_BEFORE_2026-09-24.json",
-    "billing_before_sha256": "03df55e68b0cdf2cccd3efa689fba36964422e4421526032103b79569dd73d79",
-    "preflight_artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_FINANCIAL_PREFLIGHT_2026-09-24.json",
-    "preflight_sha256": "8b1551c1b59e839ef392e74419cc90cea41ac02f36626623eba6e00326ab4429"
+    "provider": "Lightning AI",
+    "see": "lightning_financial"
   },
   "financial_preflight_status": "PASSED",
-  "financial_reconciliation": {
-    "billing_baseline_usd": "0E-8",
-    "billing_delta_usd": "0E-8",
-    "billing_postrun_usd": "0E-8",
-    "credit_pool_total_usd": "30.00",
-    "credits_applied_baseline_usd": "20.03000000",
-    "credits_applied_postrun_usd": "20.03000000",
-    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
-    "derived_credit_remaining_after_usd": "9.97000000",
-    "derived_credit_remaining_before_usd": "9.97000000",
-    "maximum_authorized_run_cost_usd": "1.250000000000000000000000000",
-    "metered_baseline_usd": "20.03000000",
-    "metered_delta_usd": "0E-8",
-    "metered_postrun_usd": "20.03000000",
-    "null_reasons": {},
-    "reserve_usd": "5.00"
-  },
-  "finished_at_utc": "2026-09-24T11:15:05Z",
+  "finished_at_utc": "2026-09-24T14:51:35Z",
   "generated_output_executed": false,
   "generated_tokens": null,
   "generation_config": {
@@ -126,11 +79,12 @@
     null,
     null
   ],
-  "gpu_provider": "Modal",
-  "gpu_type": "A100-80GB",
+  "gpu_provider": "Lightning AI",
+  "gpu_type": "NVIDIA L40S 48GB (Lightning lit-l40s-1 = AWS g6e.4xlarge)",
   "health_status": null,
   "identity_verification": {
-    "identity_evidence_strength": "HF snapshot directory name == pinned commit AND summed HF shard bytes == preflight-recorded exact bytes AND /v1/models id == pinned repo id AND server started from that local snapshot path. vLLM exposes no separate runtime revision field; no stronger runtime proof exists.",
+    "cpu_stage_manifest_all_lfs_sha256_match": true,
+    "identity_evidence_strength": "HF snapshot dir == pinned commit AND summed shard bytes == recorded exact bytes AND every staged file's sha256 equals the Hugging Face LFS sha256 (CPU stage manifest) AND /v1/models id == pinned repo id AND server started from that local snapshot with HF_HUB_OFFLINE=1. vLLM exposes no separate runtime revision field.",
     "models_endpoint": null,
     "no_silent_model_fallback": false,
     "pinned_revision_matches_runtime_artifact": false,
@@ -142,22 +96,61 @@
   },
   "latency_seconds": null,
   "license": "apache-2.0",
+  "lightning_financial": {
+    "artifacts": {
+      "credits_after": {
+        "artifact": "GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_CREDITS_AFTER_2026-09-24.json",
+        "sha256": "3df080d0c0cc295fd537a84437dc302124ada3d9174c3ed082551573d1c99698"
+      },
+      "credits_before": {
+        "artifact": "GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_CREDITS_BEFORE_2026-09-24.json",
+        "sha256": "e447de5017aa0c32a58ff53944e424bb7e8103d315c6b22a753dbf44c5881e12"
+      },
+      "preflight": {
+        "artifact": "GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_PREFLIGHT_2026-09-24T145114Z.json",
+        "redaction_note": "the owner's email address was removed from the captured account state before commit (privacy); nothing else changed",
+        "sha256": "5dfb23276fdb16662c63b2c2ab5e975784ce6d594997ac104b22d07370e9af74",
+        "sha256_before_email_redaction": "94b58823d9331d33b9cb10c734c399cbfcda150b9ef75a49fb3bfddab7f212d1"
+      }
+    },
+    "balance_limit": "0.0",
+    "cap_breached": false,
+    "credit_delta": "0E-7",
+    "credit_meter_stopped": true,
+    "credits_after": "4.9823576",
+    "credits_before": "4.9823576",
+    "expected_credit_cost": "0.0071",
+    "gpu_ready_after_seconds": null,
+    "gpu_runtime_seconds": 7.2,
+    "hard_runtime_cap_seconds": 900,
+    "machine_rate_credits_per_hour": "3.54",
+    "machine_slug": "lit-l40s-1",
+    "observed_credit_cost": "0E-7",
+    "owner_cash_delta_usd": "0",
+    "owner_charge_after_usd": "0",
+    "owner_charge_before_usd": "0",
+    "payment_method_present": false,
+    "per_attempt_credit_cap": "1.00",
+    "plan": "FREE",
+    "runner_sha256": "a5e658ea87612ed6199c4e9aa5cd30e4d68c293fbcbd96cf559c72d2554d7a61",
+    "watchdog_seconds": 840
+  },
   "live_resources_after_cleanup": 0,
   "load_seconds": null,
   "max_model_len": 4096,
   "model_id": "Qwen/Qwen3-8B",
   "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
-  "notes": "Attempt 1 ended in a HARNESS failure (Modal 1.5.5 raised builtin TimeoutError from call.get(timeout=); the harness did not catch it). The pinned model was never served, so this does NOT show runtime incompatibility: technical serving is NOT_PROVEN and qualification NOT_COMPLETED. Attempt 1 is preserved unchanged in the history (34.6 s, billed delta 0 at observed time, cleanup PASS, 0 live tasks/containers, settlement BILLING_SETTLEMENT_NOT_YET_OBSERVABLE; true settled cost unconfirmed). Capability is UNPROVEN; nothing was benchmarked; generated output was never executed.",
+  "notes": "Runtime-compatibility evidence only. Modal attempt 1 was a HARNESS failure; Lightning attempt 2 was BLOCKED before any GPU was allocated because the provider requires a verified payment method for GPU on the free tier (owner rule forbids a card). The pinned model was never served on either provider, so runtime compatibility is UNPROVEN (technical NOT_PROVEN, qualification NOT_COMPLETED). CPU staging verified the exact revision and hashes. Capability UNPROVEN; nothing benchmarked; generated output never executed.",
   "orphan_vllm_processes_after_shutdown": null,
-  "owner_billed_delta_usd": "0E-8",
+  "owner_billed_delta_usd": "0",
   "peak_gpu_memory_bytes": null,
   "phase": "21B.4.20",
   "precision": "bfloat16",
-  "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_RAW_LOG_2026-09-24.log",
-  "raw_log_sha256": "d35d88fdc6ca5d54a6c457ce143186bafc767f46c3a003f5c63d1019974b9acd",
+  "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_RAW_LOG_2026-09-24.txt",
+  "raw_log_sha256": "251e03da246c4e623887c6c38ebe0bec395d36f04c3ecd802c19924dd271e419",
   "reasoning_mode": "ENABLED (Qwen3 hybrid-thinking template default; canonical control spec launches with --reasoning-parser qwen3)",
   "reasoning_parser": "qwen3",
-  "runtime_name": "vLLM (official vllm/vllm-openai image, OpenAI-compatible server)",
+  "runtime_name": "vLLM (pip venv inside a Lightning AI Studio, OpenAI-compatible server)",
   "runtime_qualification_status": "NOT_COMPLETED",
   "runtime_version": null,
   "server_argv_sanitized": null,
@@ -198,7 +191,7 @@
       "smoke_id": "C"
     }
   ],
-  "started_at_utc": "2026-09-24T11:14:30Z",
+  "started_at_utc": "2026-09-24T14:51:28Z",
   "steady_gpu_memory_bytes": null,
   "stop_behavior": "eos_token <|im_end|>; generation_config eos_token_id [151645, 151643]",
   "technical_serving_status": "NOT_PROVEN",
@@ -209,13 +202,15 @@
   "unobservable_reasons": {
     "attention_backend": "no attention-backend line matched in the vLLM server log",
     "cold_start_seconds": "server never became ready",
+    "container_digest": "not applicable: no container image on Lightning Studio",
+    "container_image": "not applicable: pip-installed vLLM in a Lightning Studio venv (no container image)",
     "generated_tokens": "no usage data returned",
     "latency_seconds": "no smoke request completed",
     "load_seconds": "no model-load duration line matched in the vLLM server log",
     "peak_gpu_memory_bytes": "no nvidia-smi samples captured",
-    "runtime_version": "vLLM version not reported by the container",
+    "runtime_version": "vLLM version not reported",
     "steady_gpu_memory_bytes": "server never reached steady state",
-    "tokens_per_second": "no usage/latency data (tiny-smoke metric only; not a performance claim)",
+    "tokens_per_second": "tiny-smoke metric only; not a performance claim",
     "ttft_seconds": "no streamed first token observed"
   },
   "version_endpoint": null,

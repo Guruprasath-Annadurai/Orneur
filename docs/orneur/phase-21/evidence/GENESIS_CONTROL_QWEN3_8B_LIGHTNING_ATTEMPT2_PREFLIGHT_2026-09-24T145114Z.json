@@ -1,0 +1,91 @@
+{
+  "attempt_number": 2,
+  "control_name": "Qwen3-8B",
+  "evidence_type": "LIGHTNING_FINANCIAL_PREFLIGHT",
+  "gate_decision": {
+    "allowed": true,
+    "credits_available": "4.9823576",
+    "per_attempt_cap_credits": "1.00",
+    "reasons": [],
+    "reserve_credits": "1.00",
+    "worst_case_credits": "0.885"
+  },
+  "gpu_execution_allowed": true,
+  "hard_runtime_cap_seconds": 900,
+  "phase": "21B.4.20",
+  "provider": "Lightning AI",
+  "purpose": "run",
+  "rules": "owner cash INR 0; complimentary credits only; no card; no purchases; per-attempt cap 1.00 credit; reserve 1.00 credit",
+  "state": {
+    "balance_limit": "0.0",
+    "captured_at_utc": "2026-09-24T14:51:14Z",
+    "card_last4_present": false,
+    "card_verified": false,
+    "credits_available": "4.9823576",
+    "live_gpu_machines": 0,
+    "machine": {
+      "available_in_seconds": "86",
+      "catalog_slug": "g6e.4xlarge",
+      "enabled": true,
+      "family": "L40S",
+      "gpu_type": "nvidia-tesla-l40s",
+      "gpus": 1,
+      "out_of_capacity": false,
+      "provider": "AWS",
+      "rate_credits_per_hour": 3.54,
+      "slug_multi_cloud": "lit-l40s-1",
+      "tier_restricted": false
+    },
+    "payment_method_present": false,
+    "plan": "Free",
+    "plan_features": {
+      "advanced_gpu_hours": {
+        "current_usage": 0,
+        "hit_limit": true,
+        "limit": 0
+      },
+      "concurrent_gpus": {
+        "current_usage": 0,
+        "hit_limit": false,
+        "limit": 2
+      },
+      "gpu_cores": {
+        "current_usage": 0,
+        "hit_limit": false,
+        "limit": 1
+      },
+      "included_credits": {
+        "current_usage": 0,
+        "hit_limit": false,
+        "limit": 15
+      },
+      "multi_gpu": {
+        "current_usage": 0,
+        "hit_limit": false,
+        "limit": null
+      },
+      "requires_credit_card_verification": {
+        "current_usage": 0,
+        "hit_limit": false,
+        "limit": null
+      }
+    },
+    "project_credits": "4.98",
+    "stripe_managed": false,
+    "studios": [
+      {
+        "machine": "CPU",
+        "status": "Running",
+        "studio": "ml-experiment-tracker-devbox"
+      },
+      {
+        "machine": null,
+        "status": "Stopped",
+        "studio": "model-debug-visualizer-devbox"
+      }
+    ],
+    "subscription_amount_usd": 0,
+    "username": "annaduraiguruprasath5"
+  },
+  "watchdog_seconds": 840
+}

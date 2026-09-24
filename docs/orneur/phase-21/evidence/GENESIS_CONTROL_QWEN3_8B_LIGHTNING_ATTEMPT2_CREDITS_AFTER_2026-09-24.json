@@ -1,0 +1,49 @@
+{
+  "captured_at_utc": "2026-09-24T14:52:37Z",
+  "cleanup": {
+    "captured_at_utc": "2026-09-24T14:51:35Z",
+    "live_gpu_machines": 0,
+    "notes": [],
+    "studios": [
+      {
+        "machine": "CPU",
+        "status": "Running",
+        "studio": "ml-experiment-tracker-devbox"
+      },
+      {
+        "machine": null,
+        "status": "Stopped",
+        "studio": "model-debug-visualizer-devbox"
+      }
+    ]
+  },
+  "credits": "4.9823576",
+  "evidence_type": "LIGHTNING_CREDITS_AFTER_GPU",
+  "meter": {
+    "final_credits": "4.9823576",
+    "samples": [
+      {
+        "at": "2026-09-24T14:51:36Z",
+        "credits": "4.9823576",
+        "t": 0.3
+      },
+      {
+        "at": "2026-09-24T14:52:06Z",
+        "credits": "4.9823576",
+        "t": 30.6
+      },
+      {
+        "at": "2026-09-24T14:52:36Z",
+        "credits": "4.9823576",
+        "t": 60.9
+      }
+    ],
+    "stopped": true
+  },
+  "owner_charge_evidence": {
+    "card_last4_present": false,
+    "card_verified": false,
+    "subscription_amount_usd": 0
+  },
+  "owner_charge_usd": "0"
+}

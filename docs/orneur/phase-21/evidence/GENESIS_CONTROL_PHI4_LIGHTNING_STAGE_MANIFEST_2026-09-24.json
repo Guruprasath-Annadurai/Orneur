@@ -1,0 +1,116 @@
+{
+  "control": "phi4",
+  "model_id": "microsoft/phi-4",
+  "revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+  "snapshot_dir": "/teamspace/studios/this_studio/.cache/huggingface/hub/models--microsoft--phi-4/snapshots/2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+  "snapshot_dir_name": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+  "weight_bytes_observed": 29319042992,
+  "weight_bytes_expected": 29319042992,
+  "all_lfs_sha256_match": true,
+  "download_seconds": 56.3,
+  "files": [
+    {
+      "filename": ".gitattributes",
+      "bytes": 1519
+    },
+    {
+      "filename": "CODE_OF_CONDUCT.md",
+      "bytes": 453
+    },
+    {
+      "filename": "LICENSE",
+      "bytes": 1105
+    },
+    {
+      "filename": "README.md",
+      "bytes": 13763
+    },
+    {
+      "filename": "SECURITY.md",
+      "bytes": 2697
+    },
+    {
+      "filename": "added_tokens.json",
+      "bytes": 2495
+    },
+    {
+      "filename": "config.json",
+      "bytes": 802
+    },
+    {
+      "filename": "data_summary_card.md",
+      "bytes": 4767
+    },
+    {
+      "filename": "generation_config.json",
+      "bytes": 184
+    },
+    {
+      "filename": "merges.txt",
+      "bytes": 916646
+    },
+    {
+      "filename": "model-00001-of-00006.safetensors",
+      "bytes": 4933656472,
+      "sha256": "cafbe72210c39b19270cbfce27996afc4383c8a487087bcb91a6290d5ceb8f18",
+      "hf_lfs_sha256": "cafbe72210c39b19270cbfce27996afc4383c8a487087bcb91a6290d5ceb8f18",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00002-of-00006.safetensors",
+      "bytes": 4954690712,
+      "sha256": "9f87a5897162ed988cfb0fac13879634b4bab3da5a756b4f9dd2437ef8145e20",
+      "hf_lfs_sha256": "9f87a5897162ed988cfb0fac13879634b4bab3da5a756b4f9dd2437ef8145e20",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00003-of-00006.safetensors",
+      "bytes": 4902241352,
+      "sha256": "19537df78a263aa0c0b2dc12dbce5908021e30a25e528699b08642c3999eeb05",
+      "hf_lfs_sha256": "19537df78a263aa0c0b2dc12dbce5908021e30a25e528699b08642c3999eeb05",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00004-of-00006.safetensors",
+      "bytes": 4771169120,
+      "sha256": "d4f17100a39c19d352f2e8108eef6fb975afb86808e50d78a075e162f1edfc93",
+      "hf_lfs_sha256": "d4f17100a39c19d352f2e8108eef6fb975afb86808e50d78a075e162f1edfc93",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00005-of-00006.safetensors",
+      "bytes": 4771169120,
+      "sha256": "a72666b6001d76e7a9dc3ebe0d05a2c3316f546a8c6779c87343f296bdf82e50",
+      "hf_lfs_sha256": "a72666b6001d76e7a9dc3ebe0d05a2c3316f546a8c6779c87343f296bdf82e50",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00006-of-00006.safetensors",
+      "bytes": 4986116216,
+      "sha256": "a9bfeeea354e31503d09a864e6cd5bd0f1230664065b6a2988b05e22b3228d77",
+      "hf_lfs_sha256": "a9bfeeea354e31503d09a864e6cd5bd0f1230664065b6a2988b05e22b3228d77",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model.safetensors.index.json",
+      "bytes": 20364
+    },
+    {
+      "filename": "special_tokens_map.json",
+      "bytes": 95
+    },
+    {
+      "filename": "tokenizer.json",
+      "bytes": 4253055
+    },
+    {
+      "filename": "tokenizer_config.json",
+      "bytes": 17737
+    },
+    {
+      "filename": "vocab.json",
+      "bytes": 1612637
+    }
+  ],
+  "staging_verified": true
+}

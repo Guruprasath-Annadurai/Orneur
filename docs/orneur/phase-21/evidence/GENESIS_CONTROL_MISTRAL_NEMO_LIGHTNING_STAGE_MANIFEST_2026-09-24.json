@@ -1,0 +1,100 @@
+{
+  "control": "mistral_nemo",
+  "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
+  "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+  "snapshot_dir": "/teamspace/studios/this_studio/.cache/huggingface/hub/models--mistralai--Mistral-Nemo-Instruct-2407/snapshots/04d8a90549d23fc6bd7f642064003592df51e9b3",
+  "snapshot_dir_name": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+  "weight_bytes_observed": 24495607104,
+  "weight_bytes_expected": 24495607104,
+  "all_lfs_sha256_match": true,
+  "download_seconds": 47.0,
+  "files": [
+    {
+      "filename": ".gitattributes",
+      "bytes": 1567
+    },
+    {
+      "filename": "README.md",
+      "bytes": 10518
+    },
+    {
+      "filename": "config.json",
+      "bytes": 622
+    },
+    {
+      "filename": "generation_config.json",
+      "bytes": 116
+    },
+    {
+      "filename": "merges.txt",
+      "bytes": 3127378
+    },
+    {
+      "filename": "model-00001-of-00005.safetensors",
+      "bytes": 4865522496,
+      "sha256": "37597b50c825674e56ff1b058f0d148b57dcbc1c39727b641a87ffbf247886ec",
+      "hf_lfs_sha256": "37597b50c825674e56ff1b058f0d148b57dcbc1c39727b641a87ffbf247886ec",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00002-of-00005.safetensors",
+      "bytes": 4907529424,
+      "sha256": "cec7e36f1451270477569401d5c06af9df8f12da341ff446322796979a30d88b",
+      "hf_lfs_sha256": "cec7e36f1451270477569401d5c06af9df8f12da341ff446322796979a30d88b",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00003-of-00005.safetensors",
+      "bytes": 4907529456,
+      "sha256": "fd68cdd7584ed9bdb5d891cd72fe05abbb50b6ad2860d147786d27a15f764aaa",
+      "hf_lfs_sha256": "fd68cdd7584ed9bdb5d891cd72fe05abbb50b6ad2860d147786d27a15f764aaa",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00004-of-00005.safetensors",
+      "bytes": 4907529456,
+      "sha256": "02a05716064ca298c767b7accf9aed9153f9e090eff4605b871de005ce7ce3a9",
+      "hf_lfs_sha256": "02a05716064ca298c767b7accf9aed9153f9e090eff4605b871de005ce7ce3a9",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model-00005-of-00005.safetensors",
+      "bytes": 4907496272,
+      "sha256": "f41f0dd6989345ad1f29d6ab341cbf965bec0954bd90884913ff4cb1b8cc8402",
+      "hf_lfs_sha256": "f41f0dd6989345ad1f29d6ab341cbf965bec0954bd90884913ff4cb1b8cc8402",
+      "sha256_matches": true
+    },
+    {
+      "filename": "model.safetensors.index.json",
+      "bytes": 29894
+    },
+    {
+      "filename": "params.json",
+      "bytes": 243
+    },
+    {
+      "filename": "special_tokens_map.json",
+      "bytes": 414
+    },
+    {
+      "filename": "tekken.json",
+      "bytes": 14801223,
+      "sha256": "eccd1665d2e477697c33cb7f0daa6f6dfefc57a0a6bceb66d4be52952f827516",
+      "hf_lfs_sha256": "eccd1665d2e477697c33cb7f0daa6f6dfefc57a0a6bceb66d4be52952f827516",
+      "sha256_matches": true
+    },
+    {
+      "filename": "tokenizer.json",
+      "bytes": 9264445
+    },
+    {
+      "filename": "tokenizer_config.json",
+      "bytes": 181297
+    },
+    {
+      "filename": "vocab.json",
+      "bytes": 2472536
+    }
+  ],
+  "staging_verified": true
+}
