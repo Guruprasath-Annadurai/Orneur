@@ -390,6 +390,87 @@ def _validate_lightning_financial(record: dict, evidence_root: Path) -> None:
             raise ControlRuntimeError(f"Lightning financial artifact {art!r} is missing or its hash does not verify")
 
 
+# ── razorBridge (promotional EUR credit only; owner cash EUR 0 / INR 0) ─────────
+RAZORBRIDGE_PROVIDER = "razorBridge"
+RAZORBRIDGE_PER_ATTEMPT_AUTHORIZATION_EUR = Decimal("1.50")
+RAZORBRIDGE_FINAL_RESERVE_EUR = Decimal("2.00")
+RAZORBRIDGE_MAX_H100_RATE_EUR = Decimal("4.29")
+RAZORBRIDGE_FINANCIAL_REQUIRED = (
+    "payment_method_present", "auto_topup_available", "gpu_type", "gpu_rate_eur_per_hour", "blade_runtime_seconds",
+    "credits_before_eur", "credits_after_eur", "credit_delta_eur", "expected_max_charge_eur", "observed_charge_eur",
+    "owner_payable_before_eur", "owner_payable_after_eur", "owner_cash_delta_eur", "credit_meter_stopped",
+    "hard_runtime_cap_seconds", "per_attempt_authorization_eur", "live_blades_after", "artifacts",
+)
+
+
+def razorbridge_gate_decision(*, balance_eur, payment_method_present, auto_topup_available, owner_payable_eur,
+                              rate_eur_per_hour, hard_runtime_cap_seconds, h100_selectable,
+                              platform_session_hours=1, prior_positive_owner_cash: bool = False,
+                              live_blades: int | None = 0) -> dict:
+    """May a razorBridge GPU blade START? Pure; every unknown blocks. Requires: promotional balance > 0; NO payment method;
+    NO auto top-up; owner payable exactly 0; the H100 selectable with a rate <= 4.29 EUR/h; no blade already live; the
+    worst-case attempt cost (rate x hard cap) within the per-attempt authorization (1.50 EUR); and balance >=
+    authorization + final reserve (3.50 EUR) AND >= the platform's own whole-session cover (rate x session hours)."""
+    reasons: list[str] = []
+    if prior_positive_owner_cash:
+        reasons.append("owner cash was already charged in this phase -- further GPU runs are stopped")
+    try:
+        bal = to_decimal(balance_eur, "balance_eur")
+        payable = to_decimal(owner_payable_eur, "owner_payable_eur")
+        rate = to_decimal(rate_eur_per_hour, "rate_eur_per_hour")
+        cap = to_decimal(hard_runtime_cap_seconds, "hard_runtime_cap_seconds")
+    except ControlRuntimeError as e:
+        return {"allowed": False, "reasons": [f"account state unreadable: {e}"]}
+    worst = rate * cap / Decimal(3600)
+    session_cover = rate * Decimal(str(platform_session_hours))
+    if bal <= 0:
+        reasons.append("no promotional credit balance")
+    if payment_method_present is not False:
+        reasons.append("a payment method is present or its absence is unverified")
+    if auto_topup_available is not False:
+        reasons.append("automatic top-up is available/enabled or unverified")
+    if payable != 0:
+        reasons.append(f"owner payable balance is {payable}, not 0")
+    if h100_selectable is not True:
+        reasons.append("the H100 80GB is not selectable for this account")
+    if rate > RAZORBRIDGE_MAX_H100_RATE_EUR:
+        reasons.append(f"rate {rate} EUR/h exceeds the authorized {RAZORBRIDGE_MAX_H100_RATE_EUR}")
+    if live_blades != 0:
+        reasons.append("a blade is already live or its state is unknown")
+    if worst > RAZORBRIDGE_PER_ATTEMPT_AUTHORIZATION_EUR:
+        reasons.append(f"worst-case attempt cost {worst} exceeds the per-attempt authorization {RAZORBRIDGE_PER_ATTEMPT_AUTHORIZATION_EUR}")
+    need = RAZORBRIDGE_PER_ATTEMPT_AUTHORIZATION_EUR + RAZORBRIDGE_FINAL_RESERVE_EUR
+    if bal < need:
+        reasons.append(f"balance {bal} < authorization + reserve {need}")
+    if bal < session_cover:
+        reasons.append(f"balance {bal} does not cover the platform's whole-session check ({session_cover})")
+    return {"allowed": not reasons, "reasons": reasons, "worst_case_eur": str(worst), "balance_eur": str(bal),
+            "required_balance_eur": str(max(need, session_cover))}
+
+
+def _validate_razorbridge_financial(record: dict, evidence_root: Path) -> None:
+    fin = record.get("razorbridge_financial")
+    if not isinstance(fin, dict) or any(k not in fin for k in RAZORBRIDGE_FINANCIAL_REQUIRED):
+        raise ControlRuntimeError(f"a razorBridge GPU-backed result requires razorbridge_financial with {RAZORBRIDGE_FINANCIAL_REQUIRED}")
+    if fin["payment_method_present"] is not False or fin["auto_topup_available"] is not False:
+        raise ControlRuntimeError("payment_method_present and auto_topup_available must both be False for zero-owner-cash acceptance")
+    before, after, delta = (to_decimal(fin[k], k) for k in ("credits_before_eur", "credits_after_eur", "credit_delta_eur"))
+    if before - after != delta:
+        raise ControlRuntimeError("credit_delta_eur must equal credits_before_eur - credits_after_eur")
+    if after < 0:
+        raise ControlRuntimeError("credits_after_eur is negative: promotional credit was exhausted")
+    owner = to_decimal(fin["owner_payable_after_eur"], "owner_payable_after_eur") - to_decimal(fin["owner_payable_before_eur"], "owner_payable_before_eur")
+    if owner != to_decimal(fin["owner_cash_delta_eur"], "owner_cash_delta_eur"):
+        raise ControlRuntimeError("owner_cash_delta_eur disagrees with owner_payable_after - owner_payable_before")
+    if to_decimal(record["owner_billed_delta_usd"], "owner_billed_delta_usd") != owner:
+        raise ControlRuntimeError("owner_billed_delta_usd disagrees with the razorBridge owner cash delta")
+    for art in ("account_gate", "credits_before", "credits_after"):
+        node = (fin["artifacts"] or {}).get(art)
+        if not isinstance(node, dict) or not _HEX64_RE.match(str(node.get("sha256", ""))) \
+                or _artifact_sha(evidence_root, node.get("artifact", ""), f"razorBridge artifact {art}") != node["sha256"]:
+            raise ControlRuntimeError(f"razorBridge financial artifact {art!r} is missing or its hash does not verify")
+
+
 # ── Hugging Face ZeroGPU: MODEL RUNTIME COMPATIBILITY is not PRODUCTION SERVING ──
 # A ZeroGPU/Gradio/PyTorch smoke can show that the exact locked checkpoint loads in BF16 and generates. It is never
 # proof of a production serving runtime (vLLM/TGI/etc.); that is a separate, later Phase 21B proof and must stay
@@ -624,8 +705,11 @@ def validate_control_runtime_record(record: dict, *, evidence_root: Path) -> Non
     if record["financial_preflight_status"] != "PASSED":
         raise ControlRuntimeError("no GPU-backed result is valid without a PASSED fresh financial preflight")
     lightning = record.get("gpu_provider") == LIGHTNING_PROVIDER
+    razor = record.get("gpu_provider") == RAZORBRIDGE_PROVIDER
     if lightning:
         _validate_lightning_financial(record, evidence_root)
+    elif razor:
+        _validate_razorbridge_financial(record, evidence_root)
     else:
         fin = record["financial_evidence"]
         if not isinstance(fin, dict) or any(k not in fin for k in FINANCIAL_EVIDENCE_REQUIRED):
@@ -690,7 +774,10 @@ def _validate_qualified(record: dict, locked: dict, evidence_root: Path) -> None
         raise ControlRuntimeError("RUNTIME_QUALIFIED requires technical QUALIFIED and financial PASS")
     if record["cleanup_status"] != "PASS" or record["live_resources_after_cleanup"] != 0:
         raise ControlRuntimeError("RUNTIME_QUALIFIED requires cleanup PASS and zero live resources")
-    if record.get("gpu_provider") == LIGHTNING_PROVIDER:
+    if record.get("gpu_provider") == RAZORBRIDGE_PROVIDER:
+        if record["razorbridge_financial"]["credit_meter_stopped"] is not True or record["razorbridge_financial"]["live_blades_after"] != 0:
+            raise ControlRuntimeError("RUNTIME_QUALIFIED requires proof that the razorBridge blade stopped, billing stopped and no blade remains")
+    elif record.get("gpu_provider") == LIGHTNING_PROVIDER:
         if record["lightning_financial"]["credit_meter_stopped"] is not True:
             raise ControlRuntimeError("RUNTIME_QUALIFIED requires proof that the Lightning credit meter stopped after cleanup")
     elif record["billing_settlement"]["status"] != SETTLEMENT_OBSERVED:

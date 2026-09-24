@@ -1,0 +1,80 @@
+{
+  "account": {
+    "credentials": "[not persisted]",
+    "email": "[not persisted]",
+    "email_verified": true,
+    "name": "[redacted]"
+  },
+  "auto_topup": {
+    "available": false,
+    "evidence": "no top-up, checkout or auto-recharge control exists in the Hub; docs: self-serve purchase not available yet"
+  },
+  "balance_eur": "10",
+  "billing_granularity": "docs: exact elapsed wall-clock seconds, no rounding, no minimum; the ledger entry is written once when the blade stops",
+  "captured_at_utc": "2026-09-24T18:33:25Z",
+  "evidence_type": "RAZORBRIDGE_ACCOUNT_GATE",
+  "gate_decision": {
+    "allowed": true,
+    "balance_eur": "10",
+    "reasons": [],
+    "required_balance_eur": "4.29",
+    "worst_case_eur": "1.43"
+  },
+  "gpu_execution_allowed": true,
+  "gpu_type_selector": {
+    "default_gpu_preselected_in_form": "RTX 4000 Ada (never submitted)",
+    "durations_hours": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "h100_80gb": {
+      "rate_eur_per_hour": "4.29",
+      "selectable": true,
+      "slug": "gpu-h100x1-80gb"
+    },
+    "h200_141gb": {
+      "rate_eur_per_hour": "4.49",
+      "slug": "gpu-h200x1-141gb"
+    }
+  },
+  "h100_live_availability": "NOT SHOWN: the pricing page's availability dots are all neutral; availability is only proven by provisioning, and a failed provisioning is documented as not billed",
+  "hard_limits": {
+    "balance_teardown": "a running blade is stopped when its accrued cost reaches the balance; no debt",
+    "concurrent_self_serve_blades": 2,
+    "max_session_hours": 8,
+    "monthly_spend_eur": 50,
+    "source": "docs (account-specific values not visible in the UI)"
+  },
+  "hard_rules": [
+    "owner cash EUR 0 / INR 0",
+    "no card",
+    "no purchased credit",
+    "no top-up",
+    "one H100 blade at a time",
+    "no model substitution or quantization",
+    "20 minute runtime target, 1.50 EUR per-attempt authorization",
+    "capability stays UNPROVEN"
+  ],
+  "ledger": [
+    {
+      "amount_eur": "10",
+      "balance_after_eur": "10",
+      "description": "Signup grant",
+      "source": "grant",
+      "type": "credit"
+    }
+  ],
+  "owner_payable_eur": "0",
+  "owner_payable_evidence": "prepaid model; the ledger holds only the signup grant; no invoice or debit",
+  "payment_method": {
+    "evidence": "no payment-method, card or billing-details section exists in the Account or Credits pages; docs: self-serve purchase is not available",
+    "present": false
+  },
+  "phase": "21B.4.20",
+  "platform_session_check": "a 1-hour minimum session is checked against the balance up front (4.29 EUR for the H100)",
+  "provider": "razorBridge",
+  "source": "the owner's logged-in razorBridge web app (Hub), read-only pages, plus the provider's public docs and pricing page",
+  "stop_control": "the Actions column of the GPU Sessions table (docs: Stop); not visible until a session exists -- to be confirmed at launch"
+}

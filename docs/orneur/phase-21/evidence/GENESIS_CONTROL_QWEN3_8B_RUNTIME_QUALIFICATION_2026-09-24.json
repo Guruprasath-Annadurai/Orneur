@@ -47,6 +47,24 @@
       "started_at_utc": "2026-09-24T14:51:28Z",
       "status": "BLOCKED_NO_GPU",
       "valid_runtime_attempt": false
+    },
+    {
+      "attempt_number": 3,
+      "cleanup_result": "NOT_APPLICABLE",
+      "credits_consumed": "0",
+      "duration_seconds": 0,
+      "failure_domain": "NONE",
+      "finished_at_utc": "2026-09-24T18:40:30Z",
+      "outcome": "BLOCKED_NO_GPU",
+      "owner_billed_delta_usd": "0",
+      "provider": "razorBridge",
+      "raw_log_artifact": "GENESIS_RAZORBRIDGE_PROVIDER_START_REFUSED_2026-09-24.json",
+      "raw_log_sha256": "521abf08efca1eb4a4f8d2307963de00fab37bc747204caeb4764d3313f69a52",
+      "reason": "razorBridge refused to start the self-serve H100 session twice (about 5 minutes apart): 'Self-serve GPU sessions are temporarily paused for maintenance.' No blade was created; credit unchanged at EUR 10. See GENESIS_RAZORBRIDGE_PROVIDER_START_REFUSED_2026-09-24.json.",
+      "resource_type": "razorBridge self-serve blade gpu-h100x1-80gb (not created)",
+      "started_at_utc": "2026-09-24T18:35:00Z",
+      "status": "BLOCKED_NO_GPU",
+      "valid_runtime_attempt": false
     }
   ],
   "attention_backend": null,
@@ -140,7 +158,7 @@
   "max_model_len": 4096,
   "model_id": "Qwen/Qwen3-8B",
   "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
-  "notes": "Runtime-compatibility evidence only. Modal attempt 1 was a HARNESS failure; Lightning attempt 2 was BLOCKED before any GPU was allocated because the provider requires a verified payment method for GPU on the free tier (owner rule forbids a card). The pinned model was never served on either provider, so runtime compatibility is UNPROVEN (technical NOT_PROVEN, qualification NOT_COMPLETED). CPU staging verified the exact revision and hashes. Capability UNPROVEN; nothing benchmarked; generated output never executed.",
+  "notes": "Runtime-compatibility evidence only. Modal attempt 1 was a HARNESS failure; Lightning attempt 2 was BLOCKED before any GPU was allocated because the provider requires a verified payment method for GPU on the free tier (owner rule forbids a card). The pinned model was never served on either provider, so runtime compatibility is UNPROVEN (technical NOT_PROVEN, qualification NOT_COMPLETED). CPU staging verified the exact revision and hashes. Capability UNPROVEN; nothing benchmarked; generated output never executed. razorBridge attempt 3 was BLOCKED_NO_GPU: the provider refused to start a self-serve H100 session (maintenance pause), so nothing was served, no credit was used and runtime compatibility stays UNPROVEN.",
   "orphan_vllm_processes_after_shutdown": null,
   "owner_billed_delta_usd": "0",
   "peak_gpu_memory_bytes": null,

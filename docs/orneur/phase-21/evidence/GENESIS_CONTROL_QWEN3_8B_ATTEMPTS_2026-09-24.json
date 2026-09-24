@@ -46,6 +46,24 @@
       "started_at_utc": "2026-09-24T14:51:28Z",
       "status": "BLOCKED_NO_GPU",
       "valid_runtime_attempt": false
+    },
+    {
+      "attempt_number": 3,
+      "cleanup_result": "NOT_APPLICABLE",
+      "credits_consumed": "0",
+      "duration_seconds": 0,
+      "failure_domain": "NONE",
+      "finished_at_utc": "2026-09-24T18:40:30Z",
+      "outcome": "BLOCKED_NO_GPU",
+      "owner_billed_delta_usd": "0",
+      "provider": "razorBridge",
+      "raw_log_artifact": "GENESIS_RAZORBRIDGE_PROVIDER_START_REFUSED_2026-09-24.json",
+      "raw_log_sha256": "521abf08efca1eb4a4f8d2307963de00fab37bc747204caeb4764d3313f69a52",
+      "reason": "razorBridge refused to start the self-serve H100 session twice (about 5 minutes apart): 'Self-serve GPU sessions are temporarily paused for maintenance.' No blade was created; credit unchanged at EUR 10. See GENESIS_RAZORBRIDGE_PROVIDER_START_REFUSED_2026-09-24.json.",
+      "resource_type": "razorBridge self-serve blade gpu-h100x1-80gb (not created)",
+      "started_at_utc": "2026-09-24T18:35:00Z",
+      "status": "BLOCKED_NO_GPU",
+      "valid_runtime_attempt": false
     }
   ],
   "control_name": "Qwen3-8B"

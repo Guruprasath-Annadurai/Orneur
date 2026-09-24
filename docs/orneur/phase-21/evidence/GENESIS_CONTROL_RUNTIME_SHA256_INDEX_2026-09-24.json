@@ -66,14 +66,14 @@
     },
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json",
-      "sha256": "b914b0a9a371d9db87daedac65fdc349c6afee687c9f88b63ee1180c0cb6ac90",
-      "size_bytes": 2412,
+      "sha256": "e5f6aea4cb7f9580dc35bba69f1cff46fe26eb3b16072a539f40e5ad98f39f10",
+      "size_bytes": 3411,
       "evidence_role": "genesis_control_qwen3_8b_attempts_2026-09-24.json"
     },
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json",
-      "sha256": "fa619da17ecea1e00da9f59d9897b86b126d81527d5c6555ca0e672040f7d0fc",
-      "size_bytes": 9547,
+      "sha256": "38e45d3e57351893deb29b2ca248f10a807e78abf701c4f9c52c14944010b9f0",
+      "size_bytes": 10749,
       "evidence_role": "genesis_control_qwen3_8b_runtime_qualification_2026-09-24.json"
     },
     {
@@ -90,8 +90,8 @@
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "3ce2fa5daffe792a02286b2ec818253dfa97e53135a9e77a1f0fc604080b7f4d",
-      "size_bytes": 13302,
+      "sha256": "eeb113c2fc5679569db38d158c1908f795f86d52c75ade5ad823e3490782a200",
+      "size_bytes": 14420,
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md"
     },
     {
@@ -177,6 +177,18 @@
       "sha256": "1e7083388cb5abfe02010ca893539f8a84a7eb8f6915adc91ca94154f34a86a2",
       "size_bytes": 4260,
       "evidence_role": "genesis_hf_zerogpu_account_verification_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_RAZORBRIDGE_ACCOUNT_GATE_QWEN3_8B_2026-09-24.json",
+      "sha256": "540868da24bab3eb9fe25b2de37d38cbff1f8d93d68ac8bb7f3b13ccfecb1941",
+      "size_bytes": 2889,
+      "evidence_role": "genesis_razorbridge_account_gate_qwen3_8b_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_RAZORBRIDGE_PROVIDER_START_REFUSED_2026-09-24.json",
+      "sha256": "521abf08efca1eb4a4f8d2307963de00fab37bc747204caeb4764d3313f69a52",
+      "size_bytes": 2133,
+      "evidence_role": "genesis_razorbridge_provider_start_refused_2026-09-24.json"
     }
   ]
 }

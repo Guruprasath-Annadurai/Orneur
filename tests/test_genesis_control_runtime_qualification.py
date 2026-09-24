@@ -937,7 +937,7 @@ def test_a_prior_attempt_blocks_the_next_launch_until_reconciliation_observes_it
 
 def test_persisted_qwen_history_keeps_modal_attempt_1_unchanged_and_adds_the_blocked_lightning_attempt():
     rec = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
-    a, b = rec["attempts"]
+    a, b, c = rec["attempts"]
     assert a["outcome"] == "HARNESS_FAILURE" and a["status"] == "HARNESS_FAILURE" and a["failure_domain"] == "HARNESS"
     assert a["valid_runtime_attempt"] is False and a["duration_seconds"] == 34.6
     assert a["owner_billed_delta_usd"] == "0E-8" and a["cleanup_result"] == "PASS"
@@ -945,6 +945,7 @@ def test_persisted_qwen_history_keeps_modal_attempt_1_unchanged_and_adds_the_blo
     assert a["annotation"]["pre_annotation_attempts_file_sha256"] == "eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365"
     assert b["provider"] == "Lightning AI" and b["outcome"] == "BLOCKED_NO_GPU" and b["failure_domain"] == "NONE"
     assert b["valid_runtime_attempt"] is False and b["credits_consumed"] in ("0E-7", "0") and "verified payment method" in b["reason"]
+    assert c["provider"] == "razorBridge" and c["outcome"] == "BLOCKED_NO_GPU" and c["credits_consumed"] == "0" and c["valid_runtime_attempt"] is False
     assert rec["technical_serving_status"] == "NOT_PROVEN" and rec["runtime_qualification_status"] == "NOT_COMPLETED"
     assert rec["capability_status"] == "UNPROVEN" and rec["smoke_outputs"] == []
 
@@ -1287,3 +1288,118 @@ def test_hf_zerogpu_account_verification_is_not_eligible_by_age_and_persists_no_
     assert art["gpu_started"] is False and art["owner_cash_incurred"] == "none" and art["production_serving_qualification"] == "UNCHANGED"
     assert "no purchased credits" in art["explicitly_not_done"] and "no Space creation" in art["explicitly_not_done"]
     assert art["earliest_age_eligibility_utc"] == "2026-10-24T15:34:25Z"
+
+
+# ══ razorBridge: gate, financial validator, static safety ═══════════════════
+
+from orca.eval.control_runtime_qualification import (  # noqa: E402
+    RAZORBRIDGE_FINANCIAL_REQUIRED, RAZORBRIDGE_PROVIDER, razorbridge_gate_decision,
+)
+
+RB_CONTROL = REPO_ROOT / "scripts/phase21b_4_20_razorbridge_control.py"
+
+
+def _rgate(**over):
+    args = dict(balance_eur="10", payment_method_present=False, auto_topup_available=False, owner_payable_eur="0",
+                rate_eur_per_hour="4.29", hard_runtime_cap_seconds=1200, h100_selectable=True, live_blades=0)
+    args.update(over)
+    return razorbridge_gate_decision(**args)
+
+
+def test_razorbridge_gate_allows_the_observed_account_and_bounds_the_attempt_cost():
+    d = _rgate()
+    assert d["allowed"] is True and Decimal(d["worst_case_eur"]) == Decimal("1.43") and Decimal(d["required_balance_eur"]) == Decimal("4.29")
+
+
+@pytest.mark.parametrize("over,frag", [
+    ({"payment_method_present": True}, "payment method"), ({"payment_method_present": None}, "payment method"),
+    ({"auto_topup_available": True}, "top-up"), ({"auto_topup_available": None}, "top-up"),
+    ({"owner_payable_eur": "0.01"}, "owner payable"), ({"balance_eur": "0"}, "no promotional"),
+    ({"h100_selectable": False}, "not selectable"), ({"rate_eur_per_hour": "4.30"}, "exceeds the authorized"),
+    ({"live_blades": 1}, "already live"), ({"live_blades": None}, "already live"),
+    ({"hard_runtime_cap_seconds": 1300}, "per-attempt authorization"),
+    ({"balance_eur": "3.49"}, "authorization + reserve"), ({"balance_eur": "4.28"}, "whole-session"),
+    ({"prior_positive_owner_cash": True}, "already charged"),
+])
+def test_razorbridge_gate_blocks_every_unsafe_state(over, frag):
+    d = _rgate(**over)
+    assert d["allowed"] is False and any(frag in r for r in d["reasons"]), d["reasons"]
+
+
+def _rb_record(tmp_path, **fin_over):
+    rec = _qualified_record(tmp_path)
+    gate = _write(tmp_path / "rgate.json", b'{"rb": "gate"}')
+    bef = _write(tmp_path / "rbefore.json", b'{"rb": "before"}')
+    aft = _write(tmp_path / "rafter.json", b'{"rb": "after"}')
+    fin = {"payment_method_present": False, "auto_topup_available": False, "gpu_type": "H100", "gpu_rate_eur_per_hour": "4.29",
+           "blade_runtime_seconds": 720.0, "credits_before_eur": "10", "credits_after_eur": "9.1416", "credit_delta_eur": "0.8584",
+           "expected_max_charge_eur": "0.8580", "observed_charge_eur": "0.8584", "owner_payable_before_eur": "0", "owner_payable_after_eur": "0",
+           "owner_cash_delta_eur": "0", "credit_meter_stopped": True, "hard_runtime_cap_seconds": 1200, "per_attempt_authorization_eur": "1.50",
+           "live_blades_after": 0, "artifacts": {"account_gate": {"artifact": "rgate.json", "sha256": gate},
+                                                 "credits_before": {"artifact": "rbefore.json", "sha256": bef},
+                                                 "credits_after": {"artifact": "rafter.json", "sha256": aft}}}
+    fin.update(fin_over)
+    for k in ("financial_reconciliation", "billing_settlement", "billing_discrepancy_observation"):
+        rec.pop(k, None)
+    rec.update(gpu_provider=RAZORBRIDGE_PROVIDER, razorbridge_financial=fin, financial_evidence={"provider": RAZORBRIDGE_PROVIDER})
+    return rec
+
+
+def test_a_consistent_razorbridge_record_validates(tmp_path):
+    validate_control_runtime_record(_rb_record(tmp_path), evidence_root=tmp_path)
+
+
+@pytest.mark.parametrize("over,frag", [
+    ({"payment_method_present": True}, "must both be False"), ({"auto_topup_available": True}, "must both be False"),
+    ({"credits_after_eur": "-0.5", "credit_delta_eur": "10.5"}, "negative"), ({"credit_delta_eur": "0.10"}, "credit_delta_eur must equal"),
+    ({"owner_payable_after_eur": "0.50", "owner_cash_delta_eur": "0.50"}, "owner_billed_delta_usd disagrees"),
+    ({"owner_cash_delta_eur": "0.50"}, "owner_cash_delta_eur disagrees"),
+    ({"credit_meter_stopped": False}, "billing stopped"), ({"live_blades_after": 1}, "billing stopped"),
+])
+def test_razorbridge_financial_invariants_are_enforced(tmp_path, over, frag):
+    with pytest.raises(ControlRuntimeError, match=frag):
+        validate_control_runtime_record(_rb_record(tmp_path, **over), evidence_root=tmp_path)
+
+
+def test_razorbridge_artifact_hashes_and_required_fields_must_verify(tmp_path):
+    rec = _rb_record(tmp_path)
+    rec["razorbridge_financial"]["artifacts"]["credits_after"]["sha256"] = "0" * 64
+    with pytest.raises(ControlRuntimeError, match="hash does not verify"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec = _rb_record(tmp_path)
+    del rec["razorbridge_financial"]["gpu_rate_eur_per_hour"]
+    with pytest.raises(ControlRuntimeError, match="razorbridge_financial"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    assert "auto_topup_available" in RAZORBRIDGE_FINANCIAL_REQUIRED
+
+
+def test_razorbridge_script_is_statically_safe_and_sets_its_caps():
+    text = RB_CONTROL.read_text()
+    tree = ast.parse(text)
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call):
+            f = n.func
+            name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
+            assert name not in {"eval", "exec", "compile", "__import__", "system", "popen"}, name
+            for kw in n.keywords:
+                assert not (kw.arg == "shell" and getattr(kw.value, "value", None) is True)
+    for forbidden in ("Sandbox", "api.openai", "deepseek", "kimi", "minimax", "credentials.json", "print(pw", "print(password"):
+        assert forbidden not in text, forbidden
+    assert 'os.environ.get("RB_BLADE_PASSWORD")' in text            # password only from the environment
+    assert int(re.search(r"^HARD_CAP_SECONDS = (\d+)", text, re.M).group(1)) == 1200
+    assert int(re.search(r"^ABORT_SECONDS = (\d+)", text, re.M).group(1)) < 1200
+    assert Decimal("4.29") * 1200 / 3600 <= Decimal("1.50") and "gpu-h100x1-80gb" in text
+    assert "H200" not in text.replace('"gpu-h200x1-141gb"', "").replace("H200 141", "")   # H100 only; H200 is a named fallback, never selected here
+
+
+def test_razorbridge_gate_and_start_refusal_are_recorded_without_secrets_and_with_no_cost():
+    gate = json.loads((EVIDENCE_DIR / "GENESIS_RAZORBRIDGE_ACCOUNT_GATE_QWEN3_8B_2026-09-24.json").read_text())
+    rej_path = EVIDENCE_DIR / "GENESIS_RAZORBRIDGE_PROVIDER_START_REFUSED_2026-09-24.json"
+    rej = json.loads(rej_path.read_text())
+    raw = json.dumps(gate) + rej_path.read_text()
+    assert gate["gate_decision"]["allowed"] is True and gate["payment_method"]["present"] is False and gate["auto_topup"]["available"] is False
+    assert gate["account"]["email"] == "[not persisted]" and "@" not in raw and "hotmail" not in raw.lower() and "gmail" not in raw.lower()
+    assert rej["blade_created"] is False and rej["gpu_allocated"] is False and rej["cost_eur"] == "0" and rej["owner_cash_eur"] == "0"
+    assert "temporarily paused for maintenance" in rej["provider_message"] and rej["verification_after"]["credit_balance_eur"] == "10"
+    assert rej["account_gate"]["sha256"] == hashlib.sha256((EVIDENCE_DIR / rej["account_gate"]["artifact"]).read_bytes()).hexdigest()
+    assert "NEVER been exercised" in rej["tooling_state"] and rej["production_serving_qualification"] == "UNCHANGED"

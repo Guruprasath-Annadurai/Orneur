@@ -70,6 +70,19 @@ account-specific hardware selector cannot be seen without creating a Space, so `
 No Space, GPU quota, purchase or setting change was made. Evidence: `GENESIS_HF_ZEROGPU_ACCOUNT_VERIFICATION_2026-09-24.json`.
 The email address is not persisted. Control statuses, production serving qualification and program state are unchanged.
 
+## razorBridge (provider fallback 3)
+
+Public facts verified (pricing page and docs) and account-side state read in the owner's logged-in web app: EUR 10 signup grant
+as the only ledger entry, no payment-method or top-up control anywhere, owner payable 0, H100 80 GB selectable at EUR 4.29/hr,
+durations 1/2/4/8 h. The zero-cash gate passed. Two structural constraints were recorded: blade disks are discarded at teardown
+(every install and model download runs on the billed blade) and blades can be started and stopped only in the web app.
+
+**Start refused by the provider:** two attempts about 5 minutes apart both returned "Self-serve GPU sessions are temporarily
+paused for maintenance." No blade was created, the balance is still EUR 10 and nothing was charged. Qwen3-8B attempt 3 is
+recorded as `BLOCKED_NO_GPU`. The razorBridge gate, validator and SSH operator script are implemented and unit-tested but have
+never been run against a real blade. Evidence: `GENESIS_RAZORBRIDGE_ACCOUNT_GATE_QWEN3_8B_2026-09-24.json`,
+`GENESIS_RAZORBRIDGE_PROVIDER_START_REFUSED_2026-09-24.json`. Control statuses are unchanged.
+
 ## Billing reconciliation
 
 - **Historical GLM record (preserved, not rewritten):** before invocation 2 metered $8.68 / billed $0 / credits -$8.68;

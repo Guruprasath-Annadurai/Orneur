@@ -1,0 +1,50 @@
+{
+  "account_gate": {
+    "artifact": "GENESIS_RAZORBRIDGE_ACCOUNT_GATE_QWEN3_8B_2026-09-24.json",
+    "gate_allowed": true,
+    "sha256": "540868da24bab3eb9fe25b2de37d38cbff1f8d93d68ac8bb7f3b13ccfecb1941"
+  },
+  "blade_created": false,
+  "capability_status": "UNPROVEN",
+  "captured_at_utc": "2026-09-24T18:40:30Z (second attempt; first at about 18:35Z, times approximate)",
+  "classification": "provider-side temporary pause of self-serve sessions; not a harness failure and not a zero-cash gate failure",
+  "control_name": "Qwen3-8B",
+  "control_statuses_unchanged": {
+    "Mistral-Nemo-Instruct-2407": "NOT_TESTED",
+    "Phi-4": "NOT_TESTED",
+    "Qwen3-8B": "NOT_PROVEN / NOT_COMPLETED"
+  },
+  "cost_eur": "0",
+  "endpoint_observed": "POST /hub/compute/sessions/start/ (the web app's own session start)",
+  "evidence_type": "RAZORBRIDGE_PROVIDER_START_REFUSED",
+  "gpu_allocated": false,
+  "gpu_started": false,
+  "owner_cash_eur": "0",
+  "phase": "21B.4.20",
+  "production_serving_qualification": "UNCHANGED",
+  "provider": "razorBridge",
+  "provider_message": "Self-serve GPU sessions are temporarily paused for maintenance. Running sessions are unaffected -- please try again shortly.",
+  "requests": [
+    {
+      "approx_utc": "2026-09-24T18:35:00Z",
+      "form": "H100 (80 GB) - EUR 4.29/hr, duration 1 hour",
+      "n": 1,
+      "result": "refused"
+    },
+    {
+      "approx_utc": "2026-09-24T18:40:00Z",
+      "form": "H100 (80 GB) - EUR 4.29/hr, duration 1 hour",
+      "n": 2,
+      "result": "refused (about 5 minutes after the first)"
+    }
+  ],
+  "retry_policy": "two attempts, spaced; no further retries without a new authorization. Nothing was worked around (event blades, other accounts and API endpoints were not used).",
+  "tooling_state": "the razorBridge gate, financial validator and operator script are implemented and unit-tested but have NEVER been exercised against a real blade",
+  "verification_after": {
+    "credit_balance_eur": "10",
+    "gpu_sessions_table": "No GPU sessions yet",
+    "ledger": "only the EUR 10 signup grant; no debit",
+    "live_blades": 0,
+    "owner_payable_eur": "0"
+  }
+}
