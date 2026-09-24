@@ -951,3 +951,14 @@ def test_the_matrix_records_what_ci_cannot_test_about_live_modal():
     assert "Environment-only behaviour" in text
     for needle in ("FunctionCall.get", "cancel", "GPU scheduling", "billing CLI"):
         assert needle in text
+
+
+def test_qwen_attempt_1_execution_attribution_is_unresolved_and_keeps_the_gate_closed():
+    art = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_EXECUTION_ATTRIBUTION_2026-09-24.json").read_text())
+    assert art["read_only"] is True and art["no_gpu_started"] is True
+    assert art["classification"].startswith("C. EXECUTION_ATTRIBUTION_UNRESOLVED")
+    assert art["qwen_retry_eligible"] is False and art["gate"] == "CLOSED"
+    assert art["true_settled_cost"].startswith("unconfirmed")
+    assert art["statuses_unchanged"] == {"technical_serving_status": "NOT_PROVEN", "runtime_qualification_status": "NOT_COMPLETED",
+                                         "capability_status": "UNPROVEN"}
+    assert art["what_the_evidence_cannot_show"] and "created_by" not in json.dumps(art).replace('"created_by": "[redacted]"', "")

@@ -1,0 +1,123 @@
+{
+  "app_id": "ap-vOhF9vtQOV1W5UVAcMPS8O",
+  "app_name": "orneur-p21b420-control-runtime-qualification",
+  "attempt_number": 1,
+  "attempt_window_utc": [
+    "2026-09-24T11:14:30Z",
+    "2026-09-24T11:15:05Z"
+  ],
+  "captured_at_utc": "2026-09-24T13:05:36Z..13:09:40Z",
+  "classification": "C. EXECUTION_ATTRIBUTION_UNRESOLVED",
+  "classification_reason": "The evidence is consistent with cancellation before GPU allocation but does not prove it (A), and does not prove a GPU container ran (B). Nothing was inferred.",
+  "control_name": "Qwen3-8B",
+  "evidence_type": "ATTEMPT_EXECUTION_ATTRIBUTION_READ_ONLY",
+  "function_id": "fu-mXpudkgNujjV2cuIMXalyC",
+  "function_name": "serve_and_smoke",
+  "gate": "CLOSED",
+  "image_id": "im-qe834IY74xqnW09kt0pe8M",
+  "methods": [
+    "modal app history --json",
+    "modal app logs <id> --timestamps",
+    "modal container list --json (live containers only)",
+    "gRPC read-only: AppGetLifecycle, AppGetLayout, TaskList, AppFetchLogs, AppCountLogs, FunctionGetCurrentStats, FunctionGetTimeRangeStats (via the installed modal client)",
+    "modal billing report hourly (+ --show-resources) and modal billing summary"
+  ],
+  "no_gpu_started": true,
+  "observations": {
+    "app_history": "[] (ephemeral app; no deployment history)",
+    "app_lifecycle": {
+      "lifecycle": {
+        "app_state": "APP_STATE_STOPPED",
+        "created_at": 1790248471.537349,
+        "created_by": "[redacted]",
+        "stopped_at": 1790248505.335108
+      }
+    },
+    "app_logs": {
+      "batches": [
+        {
+          "entry_id": "2026-09-24 11:15:05.292765--3-ch",
+          "items": [
+            {
+              "data": "Stopping app - local entrypoint completed.\n",
+              "file_descriptor": "FILE_DESCRIPTOR_INFO",
+              "timestamp": 1790248505.292765,
+              "timestamp_ns": "1790248505292765141"
+            }
+          ]
+        }
+      ]
+    },
+    "billing_summary_at_capture": {
+      "adjustments": {
+        "credits": "-20.03000000",
+        "free_storage": "-0E-8",
+        "plan_cost": "0E-8",
+        "reservation_adjustment": "-0E-8"
+      },
+      "billed_cost": "0E-8",
+      "metered_cost": "20.03000000",
+      "metered_cost_breakdown": {
+        "deployed_apps": "0.00101405",
+        "ephemeral_apps": "20.03366467",
+        "llm_tokens": "0E-8",
+        "volumes": "0E-8"
+      }
+    },
+    "function_call_list": {
+      "ERROR": "UnimplementedError: FunctionCallList is not available via the API"
+    },
+    "function_current_stats": {},
+    "function_time_range_stats_attempt_window": {
+      "since": "2026-09-24T11:13:20Z",
+      "until": "2026-09-24T11:18:20Z"
+    },
+    "function_time_range_stats_day": {
+      "since": "2026-09-24T00:00:00Z",
+      "until": "2026-09-25T00:00:00Z"
+    },
+    "hourly_itemized_report_2026-09-24_with_resources": [],
+    "lifecycle_decoded": {
+      "created_at_utc": "2026-09-24T11:14:31.537Z",
+      "duration_seconds": 33.8,
+      "stopped_at_utc": "2026-09-24T11:15:05.335Z"
+    },
+    "live_containers": [],
+    "live_volumes": [],
+    "log_bucket_counts": {
+      "app_id": "ap-vOhF9vtQOV1W5UVAcMPS8O",
+      "bucket_secs": 3600,
+      "buckets_total": 24,
+      "non_empty_buckets": [
+        {
+          "bucket_start_at": "2026-09-24T11:00:00Z",
+          "system_logs": "1"
+        }
+      ]
+    },
+    "task_list_for_app": {}
+  },
+  "owner_billed_delta_observed_usd": "0",
+  "phase": "21B.4.20",
+  "qwen_retry_eligible": false,
+  "read_only": true,
+  "settlement_state": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE (unchanged; not resolved by non-execution evidence)",
+  "statuses_unchanged": {
+    "capability_status": "UNPROVEN",
+    "runtime_qualification_status": "NOT_COMPLETED",
+    "technical_serving_status": "NOT_PROVEN"
+  },
+  "true_settled_cost": "unconfirmed (not assumed zero)",
+  "what_the_evidence_cannot_show": [
+    "FunctionCallList is 'not available via the API', so the call's cancelled/never-started state cannot be read.",
+    "TaskList and stats do not retain terminated tasks/cancelled inputs, so the absence of a task or metric is not proof that no container was allocated.",
+    "No container or GPU allocation record for the app is retrievable; container IDs and worker lifecycle are not exposed for a finished ephemeral app.",
+    "Billing latency for a ~34 s usage is not established: earlier itemized rows (e.g. a 0.0017 CPU preflight) do appear eventually, but their time-to-visibility was not recorded, so the empty 11:00Z row is consistent with either no usage or not-yet-metered usage.",
+    "Timing does not exclude allocation: the first 30 s poll timed out with the function possibly already starting."
+  ],
+  "what_the_evidence_shows": [
+    "The app existed for ~34 s and its only log line is the harness-side 'Stopping app - local entrypoint completed.' (system stream); no function or container log line exists.",
+    "TaskList for the app is empty, function stats (queue/execution/container-startup/GPU utilisation/input counts) are empty for the day, and the completed 11:00-12:00Z interval has no itemized usage row.",
+    "Account metered total and its ephemeral-apps line are unchanged to 8 decimals from before the attempt; billed is 0."
+  ]
+}

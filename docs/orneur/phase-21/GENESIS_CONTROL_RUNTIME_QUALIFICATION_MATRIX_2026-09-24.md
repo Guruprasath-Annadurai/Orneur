@@ -39,6 +39,10 @@ retry (attempt 2), then Mistral-Nemo, then Phi-4, each gated on the previous set
 - **Re-reconciliation 2026-09-24T12:15-12:19Z (read-only, ~1 h after the attempt):** metered $20.03 (ephemeral apps $20.03366467, unchanged to 8 decimals),
   credits -$20.03, billed $0; hourly itemized rows for 2026-09-23..25 contain nothing for the Qwen app (latest row anywhere: the 2026-09-23T08:00 CPU preflight);
   0 containers, 0 volumes, both deployed apps idle. Verdict `QWEN_ATTEMPT_1_SETTLEMENT_STILL_UNRESOLVED`; no GPU started.
+- **Execution attribution (read-only, 2026-09-24T13:05-13:09Z):** classification **C. EXECUTION_ATTRIBUTION_UNRESOLVED** (see
+  `GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_EXECUTION_ATTRIBUTION_2026-09-24.json`). App lifetime 33.8 s, no function/container logs, empty task/stats and no itemized
+  11:00Z row are consistent with cancellation before allocation but do not prove it; FunctionCallList is unavailable and terminated tasks are not retained.
+  Gate stays closed; retry eligible: NO.
 - Gates per run: owner-payable gate (billed must not exceed baseline) AND credit-coverage gate
   (derived remaining >= $5.00 reserve + $1.25 maximum authorized run cost).
 
