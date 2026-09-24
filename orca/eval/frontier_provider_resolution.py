@@ -61,6 +61,25 @@ Phase 21B.4.19.1 closes four control-plane defects:
   `build_verified_account_setting_evidence_ref()`; RESOLVED re-verifies
   that persisted source. A caller-supplied string is never trusted.
 
+Phase 21B.4.19.2 closes one semantic defect: RESOLVED != PREREQUISITE_
+SATISFIED. RESOLVED only proves the provider interaction/evidence cycle
+concluded -- a provider may definitively answer "NO", which is valid,
+conclusive evidence that must still not unlock a conditional downstream
+action. A dependency now satisfies a dependent only if ALL hold: the
+dependency is RESOLVED; its verified evidence still re-proves; it carries
+a durable RESOLUTION ASSESSMENT (an EVIDENCE_REVIEWER decision bound to
+the action, provider, reference and verified-evidence ref, backed by a
+persisted, SHA-256-hashed review record); the assessment outcome is
+PREREQUISITE_SATISFIED; and every fact that `DEPENDENCY_REQUIREMENTS`
+demands for THIS dependent is established. Facts are structured codes
+(never free text), each tied to the provider questions that must have
+been answered. Outcomes and facts control ACTION SEQUENCING ONLY -- they
+never mutate registry dimensions (`apply_verified_evidence`,
+`resolve_blocker_token` and `promote_access_status` stay the only routes).
+Software cannot semantically understand provider prose: it proves exact
+binding, enum/fact validity, question coverage, timestamps and the review
+record's hash; the EVIDENCE_REVIEWER supplies the interpretation.
+
 What machine validation proves and does NOT prove: it proves internal
 consistency (provider/reference/question-family binding, structural
 completeness, persisted source bytes that hash to the recorded SHA-256,
@@ -74,6 +93,7 @@ from __future__ import annotations
 
 import hashlib
 import itertools
+import json
 import re
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -178,6 +198,7 @@ ACTION_REQUIRED_FIELDS = (
     "expiry_or_freshness_requirement", "notes",
     "state", "priority", "burden", "critical_path", "depends_on", "claude_can_execute",
     "authorization_evidence", "execution_evidence_ref", "verified_evidence_ref",
+    "resolution_outcome", "resolution_assessment",
 )
 
 # Structured owner authorization record (§7/§9). Strict: no other keys.
@@ -309,6 +330,165 @@ if (
     or set(REFERENCE_PROVIDER.values()) != set(PROVIDER_QUESTION_PREFIX)
 ):
     raise ProviderResolutionError("REFERENCE_PROVIDER is inconsistent with the locked reference/provider sets")
+
+
+# ── resolution outcome model (Phase 21B.4.19.2) ───────────────────────────
+# Lifecycle state (RESOLVED) is separate from whether the provider's answer
+# satisfied a downstream prerequisite. `state=RESOLVED` with
+# `resolution_outcome=PREREQUISITE_NOT_SATISFIED` is VALID: the action is
+# completed but must not unlock a conditional dependent.
+
+RESOLUTION_OUTCOMES = (
+    "NOT_ASSESSED",
+    "PREREQUISITE_SATISFIED",
+    "PREREQUISITE_NOT_SATISFIED",
+    "PARTIAL_INFORMATION",
+    "NO_FOLLOWUP_REQUIRED",
+)
+_ASSESSABLE_OUTCOMES = frozenset(RESOLUTION_OUTCOMES) - {"NOT_ASSESSED"}
+ASSESSOR_ROLE = "EVIDENCE_REVIEWER"
+REVIEW_RECORD_SCHEMA = "genesis-provider-resolution-review-v1"
+
+RESOLUTION_ASSESSMENT_FIELDS = (
+    "action_id", "provider", "reference_name", "verified_evidence_ref", "outcome",
+    "assessed_by_role", "assessed_at_utc", "assessment_source_ref", "assessment_sha256",
+    "facts_established", "questions_addressed",
+)
+
+# Structured, action-specific fact codes (never free text). Only these
+# facts may be established by these actions; a fact from another action is
+# rejected. Negative facts are recordable (they let a branch be closed)
+# but never unlock anything.
+ACTION_FACT_CODES: dict[str, frozenset[str]] = {
+    "MIS-01": frozenset({
+        "MISTRAL_API_TRAINING_OPTOUT_APPLICABLE", "MISTRAL_API_TRAINING_OPTOUT_NOT_APPLICABLE",
+        "MISTRAL_ZDR_APPLICABLE", "MISTRAL_ZDR_NOT_APPLICABLE",
+        "MISTRAL_AUTOMATED_EVALUATION_PERMITTED", "MISTRAL_AUTOMATED_EVALUATION_NOT_PERMITTED",
+    }),
+    "DSK-01": frozenset({
+        "DEEPSEEK_API_OPTOUT_APPLICABLE", "DEEPSEEK_API_OPTOUT_NOT_APPLICABLE",
+        "DEEPSEEK_API_OPTOUT_PROSPECTIVE", "DEEPSEEK_API_OPTOUT_NOT_PROSPECTIVE",
+    }),
+    "DSK-02": frozenset({"DEEPSEEK_ACCOUNT_SETTING_PRESENT", "DEEPSEEK_ACCOUNT_SETTING_ABSENT"}),
+    "GLM-01": frozenset({
+        "GLM_NO_TRAINING_CONTROL_AVAILABLE", "GLM_NO_TRAINING_CONTROL_NOT_AVAILABLE",
+        "GLM_NO_TRAINING_CONTROL_APPLIES_TO_GLM_5_3", "GLM_NO_TRAINING_CONTROL_DOES_NOT_APPLY_TO_GLM_5_3",
+    }),
+    "MNX-01": frozenset({
+        "MINIMAX_COMMERCIAL_USE_APPLIES", "MINIMAX_COMMERCIAL_USE_DOES_NOT_APPLY",
+        "MINIMAX_COMMERCIAL_USE_STILL_AMBIGUOUS",
+    }),
+    "KMI-01": frozenset({
+        "KIMI_ACCEPTABLE_ENTERPRISE_NO_TRAINING_PATH_AVAILABLE",
+        "KIMI_ENTERPRISE_NO_TRAINING_PATH_NOT_AVAILABLE",
+    }),
+}
+
+# The provider questions that must have been answered for a fact to be
+# established (§16) -- e.g. MNX-Q2 alone can never establish a Commercial
+# Use conclusion, and an unrelated Kimi pricing question can never
+# establish an acceptable enterprise path. Facts whose evidence is a
+# read-only account capture (DSK-02) need no question.
+FACT_REQUIRED_QUESTIONS: dict[str, frozenset[str]] = {
+    "MISTRAL_API_TRAINING_OPTOUT_APPLICABLE": frozenset({"MIS-Q2", "MIS-Q3", "MIS-Q4"}),
+    "MISTRAL_API_TRAINING_OPTOUT_NOT_APPLICABLE": frozenset({"MIS-Q2"}),
+    "MISTRAL_ZDR_APPLICABLE": frozenset({"MIS-Q5"}),
+    "MISTRAL_ZDR_NOT_APPLICABLE": frozenset({"MIS-Q5"}),
+    "MISTRAL_AUTOMATED_EVALUATION_PERMITTED": frozenset({"MIS-Q1"}),
+    "MISTRAL_AUTOMATED_EVALUATION_NOT_PERMITTED": frozenset({"MIS-Q1"}),
+    "DEEPSEEK_API_OPTOUT_APPLICABLE": frozenset({"DSK-Q1"}),
+    "DEEPSEEK_API_OPTOUT_NOT_APPLICABLE": frozenset({"DSK-Q1"}),
+    "DEEPSEEK_API_OPTOUT_PROSPECTIVE": frozenset({"DSK-Q2"}),
+    "DEEPSEEK_API_OPTOUT_NOT_PROSPECTIVE": frozenset({"DSK-Q2"}),
+    "DEEPSEEK_ACCOUNT_SETTING_PRESENT": frozenset(),
+    "DEEPSEEK_ACCOUNT_SETTING_ABSENT": frozenset(),
+    "GLM_NO_TRAINING_CONTROL_AVAILABLE": frozenset({"GLM-Q6"}),
+    "GLM_NO_TRAINING_CONTROL_NOT_AVAILABLE": frozenset({"GLM-Q6"}),
+    "GLM_NO_TRAINING_CONTROL_APPLIES_TO_GLM_5_3": frozenset({"GLM-Q7"}),
+    "GLM_NO_TRAINING_CONTROL_DOES_NOT_APPLY_TO_GLM_5_3": frozenset({"GLM-Q7"}),
+    "MINIMAX_COMMERCIAL_USE_APPLIES": frozenset({"MNX-Q1"}),
+    "MINIMAX_COMMERCIAL_USE_DOES_NOT_APPLY": frozenset({"MNX-Q1"}),
+    "MINIMAX_COMMERCIAL_USE_STILL_AMBIGUOUS": frozenset({"MNX-Q1"}),
+    "KIMI_ACCEPTABLE_ENTERPRISE_NO_TRAINING_PATH_AVAILABLE": frozenset({"KMI-Q1", "KMI-Q2", "KMI-Q3", "KMI-Q4", "KMI-Q5"}),
+    "KIMI_ENTERPRISE_NO_TRAINING_PATH_NOT_AVAILABLE": frozenset({"KMI-Q1"}),
+}
+
+# At most one fact from each group may be established (a positive and its
+# negative are contradictory; the three MiniMax conclusions are
+# mutually exclusive).
+CONTRADICTORY_FACT_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({"MISTRAL_API_TRAINING_OPTOUT_APPLICABLE", "MISTRAL_API_TRAINING_OPTOUT_NOT_APPLICABLE"}),
+    frozenset({"MISTRAL_ZDR_APPLICABLE", "MISTRAL_ZDR_NOT_APPLICABLE"}),
+    frozenset({"MISTRAL_AUTOMATED_EVALUATION_PERMITTED", "MISTRAL_AUTOMATED_EVALUATION_NOT_PERMITTED"}),
+    frozenset({"DEEPSEEK_API_OPTOUT_APPLICABLE", "DEEPSEEK_API_OPTOUT_NOT_APPLICABLE"}),
+    frozenset({"DEEPSEEK_API_OPTOUT_PROSPECTIVE", "DEEPSEEK_API_OPTOUT_NOT_PROSPECTIVE"}),
+    frozenset({"DEEPSEEK_ACCOUNT_SETTING_PRESENT", "DEEPSEEK_ACCOUNT_SETTING_ABSENT"}),
+    frozenset({"GLM_NO_TRAINING_CONTROL_AVAILABLE", "GLM_NO_TRAINING_CONTROL_NOT_AVAILABLE"}),
+    frozenset({"GLM_NO_TRAINING_CONTROL_APPLIES_TO_GLM_5_3", "GLM_NO_TRAINING_CONTROL_DOES_NOT_APPLY_TO_GLM_5_3"}),
+    frozenset({"MINIMAX_COMMERCIAL_USE_APPLIES", "MINIMAX_COMMERCIAL_USE_DOES_NOT_APPLY", "MINIMAX_COMMERCIAL_USE_STILL_AMBIGUOUS"}),
+    frozenset({"KIMI_ACCEPTABLE_ENTERPRISE_NO_TRAINING_PATH_AVAILABLE", "KIMI_ENTERPRISE_NO_TRAINING_PATH_NOT_AVAILABLE"}),
+)
+
+# Canonical dependency requirement policy (§9): for each dependent action,
+# for each dependency, the positive facts that must be established
+# (`required_facts`) and the definitive-negative facts that close the
+# branch (`closing_facts`). MNX-02 unlocks ONLY on COMMERCIAL_USE_APPLIES
+# -- DOES_NOT_APPLY never satisfies it (it closes the branch); a separate
+# future exact owner election of the conservative path is deliberately
+# NOT implemented here, so there is no bypass.
+DEPENDENCY_REQUIREMENTS: dict[str, dict[str, dict[str, frozenset[str]]]] = {
+    "MIS-02": {"MIS-01": {
+        "required_facts": frozenset({"MISTRAL_API_TRAINING_OPTOUT_APPLICABLE"}),
+        "closing_facts": frozenset({"MISTRAL_API_TRAINING_OPTOUT_NOT_APPLICABLE"}),
+    }},
+    "MIS-03": {"MIS-01": {
+        "required_facts": frozenset({"MISTRAL_ZDR_APPLICABLE"}),
+        "closing_facts": frozenset({"MISTRAL_ZDR_NOT_APPLICABLE"}),
+    }},
+    "DSK-03": {
+        "DSK-01": {
+            "required_facts": frozenset({"DEEPSEEK_API_OPTOUT_APPLICABLE", "DEEPSEEK_API_OPTOUT_PROSPECTIVE"}),
+            "closing_facts": frozenset({"DEEPSEEK_API_OPTOUT_NOT_APPLICABLE", "DEEPSEEK_API_OPTOUT_NOT_PROSPECTIVE"}),
+        },
+        "DSK-02": {
+            "required_facts": frozenset({"DEEPSEEK_ACCOUNT_SETTING_PRESENT"}),
+            "closing_facts": frozenset({"DEEPSEEK_ACCOUNT_SETTING_ABSENT"}),
+        },
+    },
+    "GLM-02": {"GLM-01": {
+        "required_facts": frozenset({"GLM_NO_TRAINING_CONTROL_AVAILABLE", "GLM_NO_TRAINING_CONTROL_APPLIES_TO_GLM_5_3"}),
+        "closing_facts": frozenset({"GLM_NO_TRAINING_CONTROL_NOT_AVAILABLE", "GLM_NO_TRAINING_CONTROL_DOES_NOT_APPLY_TO_GLM_5_3"}),
+    }},
+    "MNX-02": {"MNX-01": {
+        "required_facts": frozenset({"MINIMAX_COMMERCIAL_USE_APPLIES"}),
+        "closing_facts": frozenset({"MINIMAX_COMMERCIAL_USE_DOES_NOT_APPLY"}),
+    }},
+    "KMI-02": {"KMI-01": {
+        "required_facts": frozenset({"KIMI_ACCEPTABLE_ENTERPRISE_NO_TRAINING_PATH_AVAILABLE"}),
+        "closing_facts": frozenset({"KIMI_ENTERPRISE_NO_TRAINING_PATH_NOT_AVAILABLE"}),
+    }},
+}
+
+# Facts that, if established, unlock at least one dependent of the action.
+UNLOCK_FACTS: dict[str, frozenset[str]] = {}
+for _dependent, _deps in DEPENDENCY_REQUIREMENTS.items():
+    for _dep_id, _req in _deps.items():
+        UNLOCK_FACTS[_dep_id] = UNLOCK_FACTS.get(_dep_id, frozenset()) | _req["required_facts"]
+
+# Import-time consistency of the policy tables: a drifted table fails
+# loudly rather than silently mis-gating an action.
+_all_facts = frozenset().union(*ACTION_FACT_CODES.values())
+if set(FACT_REQUIRED_QUESTIONS) != set(_all_facts):
+    raise ProviderResolutionError("FACT_REQUIRED_QUESTIONS does not cover exactly the defined fact codes")
+for _group in CONTRADICTORY_FACT_GROUPS:
+    if not _group <= _all_facts:
+        raise ProviderResolutionError("CONTRADICTORY_FACT_GROUPS references an undefined fact code")
+for _dependent, _deps in DEPENDENCY_REQUIREMENTS.items():
+    for _dep_id, _req in _deps.items():
+        if not (_req["required_facts"] | _req["closing_facts"]) <= ACTION_FACT_CODES.get(_dep_id, frozenset()):
+            raise ProviderResolutionError(f"DEPENDENCY_REQUIREMENTS[{_dependent}][{_dep_id}] uses facts the dependency cannot establish")
+        if _req["required_facts"] & _req["closing_facts"]:
+            raise ProviderResolutionError(f"DEPENDENCY_REQUIREMENTS[{_dependent}][{_dep_id}] has a fact that both unlocks and closes")
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
@@ -545,6 +725,273 @@ def _derive_verified_ref(record, evidence_root: Path) -> dict:
     return build_verified_provider_evidence_ref(record, evidence_root=evidence_root)
 
 
+# ── resolution assessment (Phase 21B.4.19.2 §5-§7/§14/§16) ────────────────
+
+
+def review_record_bytes(
+    *, action_id: str, provider: str, reference_name: str, outcome: str, facts_established, questions_addressed,
+    verified_evidence_ref: dict, assessed_by_role: str, assessed_at_utc: str,
+) -> bytes:
+    """The canonical bytes of the durable review record. The record lives
+    on disk under the evidence root at `assessment_source_ref`; its
+    SHA-256 is `assessment_sha256`. Deterministic, so the assessment and
+    the persisted file can be cross-checked byte for byte."""
+    payload = {
+        "schema": REVIEW_RECORD_SCHEMA,
+        "action_id": action_id,
+        "provider": provider,
+        "reference_name": reference_name,
+        "outcome": outcome,
+        "facts_established": sorted(facts_established),
+        "questions_addressed": sorted(questions_addressed),
+        "verified_evidence_sha256": verified_evidence_ref["sha256"],
+        "verified_evidence_source_location": verified_evidence_ref["source_location"],
+        "assessed_by_role": assessed_by_role,
+        "assessed_at_utc": assessed_at_utc,
+    }
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+
+
+def _bytes_of_file(evidence_root: Path, location: str) -> bytes:
+    root = Path(evidence_root).resolve()
+    path = (root / location).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as e:
+        raise ProviderResolutionError(f"assessment_source_ref {location!r} escapes the evidence root") from e
+    if not path.is_file():
+        raise ProviderResolutionError(f"assessment_source_ref {location!r} does not exist under the evidence root")
+    return path.read_bytes()
+
+
+def _validate_fact_set(action_id: str, facts, label: str) -> None:
+    if not isinstance(facts, list) or any(not isinstance(f, str) for f in facts):
+        raise ProviderResolutionError(f"{label}: facts_established must be a list of structured fact codes")
+    if facts != sorted(set(facts)):
+        raise ProviderResolutionError(f"{label}: facts_established must be a sorted, duplicate-free list")
+    allowed = ACTION_FACT_CODES.get(action_id, frozenset())
+    unknown = [f for f in facts if f not in allowed]
+    if unknown:
+        raise ProviderResolutionError(f"{label}: fact code(s) {unknown} are not defined for action {action_id!r}")
+    for group in CONTRADICTORY_FACT_GROUPS:
+        clash = sorted(group & set(facts))
+        if len(clash) > 1:
+            raise ProviderResolutionError(f"{label}: contradictory/mutually-exclusive facts {clash}")
+
+
+def _check_question_coverage(facts, questions, label: str) -> None:
+    for fact in facts:
+        missing = FACT_REQUIRED_QUESTIONS[fact] - set(questions)
+        if missing:
+            raise ProviderResolutionError(
+                f"{label}: fact {fact!r} requires question(s) {sorted(missing)} to have been answered"
+            )
+
+
+def _check_outcome_consistency(action_id: str, outcome: str, facts, label: str) -> None:
+    unlock = UNLOCK_FACTS.get(action_id, frozenset())
+    if outcome == "PREREQUISITE_SATISFIED":
+        if not (unlock & set(facts)):
+            raise ProviderResolutionError(f"{label}: PREREQUISITE_SATISFIED requires at least one dependency-unlocking positive fact")
+    elif outcome == "PREREQUISITE_NOT_SATISFIED":
+        if unlock & set(facts):
+            raise ProviderResolutionError(f"{label}: PREREQUISITE_NOT_SATISFIED may not carry dependency-unlocking facts")
+    elif outcome == "NO_FOLLOWUP_REQUIRED":
+        if unlock:
+            raise ProviderResolutionError(f"{label}: action has downstream dependents; NO_FOLLOWUP_REQUIRED is not valid")
+        if facts:
+            raise ProviderResolutionError(f"{label}: NO_FOLLOWUP_REQUIRED must carry no facts")
+
+
+def validate_resolution_assessment(assessment, *, action: dict, evidence_root: Path | None = None) -> None:
+    """Structural + binding validation of an assessment, and -- with
+    `evidence_root` -- byte-level re-verification of the persisted review
+    record. Proves: exact action/provider/reference binding, binding to the
+    action's own verified-evidence ref, valid outcome/role/timestamp, only
+    facts defined for this action (no contradictions), question-family and
+    fact-to-question coverage, and that the durable review record's bytes
+    hash to `assessment_sha256` and match the assessment exactly. It does
+    not (and cannot) judge the semantic correctness of the reviewer's
+    reading of the provider's prose."""
+    aid = action["action_id"]
+    label = f"resolution assessment for {aid!r}"
+    _require_exact_keys(assessment, RESOLUTION_ASSESSMENT_FIELDS, label)
+    if action["provider"] == "ALL" or action["reference_name"] == "ALL":
+        raise ProviderResolutionError(f"global action {aid!r} has no provider-bound resolution assessment")
+    if assessment["action_id"] != aid:
+        raise ProviderResolutionError(f"{label} is for action_id={assessment['action_id']!r}")
+    if assessment["provider"] != action["provider"] or assessment["reference_name"] != action["reference_name"]:
+        raise ProviderResolutionError(
+            f"{label} is bound to {assessment['provider']!r}/{assessment['reference_name']!r}, "
+            f"not {action['provider']!r}/{action['reference_name']!r}"
+        )
+    _check_provider_binding(assessment["provider"], assessment["reference_name"], label)
+    if not action.get("verified_evidence_ref") or assessment["verified_evidence_ref"] != action["verified_evidence_ref"]:
+        raise ProviderResolutionError(f"{label} does not reference the action's own verified evidence")
+    if assessment["outcome"] not in _ASSESSABLE_OUTCOMES:
+        raise ProviderResolutionError(f"{label} has invalid outcome {assessment['outcome']!r}")
+    if assessment["assessed_by_role"] != ASSESSOR_ROLE:
+        raise ProviderResolutionError(f"{label} must be assessed by role {ASSESSOR_ROLE!r}, got {assessment['assessed_by_role']!r}")
+    _parse_utc(assessment["assessed_at_utc"], "assessed_at_utc")
+    _nonempty_ref(assessment["assessment_source_ref"], "assessment_source_ref (durable review record)")
+    if not _HEX64_RE.match(str(assessment["assessment_sha256"])):
+        raise ProviderResolutionError(f"{label} requires a 64-hex assessment_sha256 of the review record")
+    _validate_fact_set(aid, assessment["facts_established"], label)
+    questions = assessment["questions_addressed"]
+    if not isinstance(questions, list) or questions != sorted(set(questions)):
+        raise ProviderResolutionError(f"{label}: questions_addressed must be a sorted, duplicate-free list")
+    _check_question_families(action["provider"], questions, label)
+    _check_question_coverage(assessment["facts_established"], questions, label)
+    _check_outcome_consistency(aid, assessment["outcome"], assessment["facts_established"], label)
+    if evidence_root is not None:
+        data = _bytes_of_file(evidence_root, assessment["assessment_source_ref"])
+        if hashlib.sha256(data).hexdigest() != assessment["assessment_sha256"]:
+            raise ProviderResolutionError(f"{label}: review record bytes do not match assessment_sha256")
+        expected = review_record_bytes(
+            action_id=aid, provider=assessment["provider"], reference_name=assessment["reference_name"],
+            outcome=assessment["outcome"], facts_established=assessment["facts_established"],
+            questions_addressed=questions, verified_evidence_ref=assessment["verified_evidence_ref"],
+            assessed_by_role=assessment["assessed_by_role"], assessed_at_utc=assessment["assessed_at_utc"],
+        )
+        if data != expected:
+            raise ProviderResolutionError(f"{label}: persisted review record does not match the assessment's facts/outcome")
+
+
+def assess_action_resolution(
+    action: dict,
+    *,
+    outcome: str,
+    facts_established,
+    questions_addressed=(),
+    assessed_at_utc: str,
+    assessment_source_ref: str,
+    evidence_root: Path,
+    provider_evidence_record: dict | None = None,
+    assessed_by_role: str = ASSESSOR_ROLE,
+) -> dict:
+    """Attach a durable resolution assessment to a RESOLVED action and
+    return a NEW action (the input is never mutated). Fail-closed:
+
+    * the action must be RESOLVED with verified evidence that still
+      re-proves against `evidence_root`, and must not already be assessed;
+    * facts must be defined for this action, sorted/duplicate-free, and
+      non-contradictory; every fact's required questions must be among
+      `questions_addressed`, which must be in the provider's family;
+    * for provider-response evidence the ORIGINAL record must be supplied,
+      is re-validated, must rebuild the action's own verified ref, and must
+      actually have answered every claimed question -- coverage is derived
+      from validated evidence, not reviewer assertion;
+    * the persisted review record at `assessment_source_ref` must equal the
+      canonical bytes for this assessment (its SHA-256 is recorded).
+    """
+    validate_action(action, evidence_root=evidence_root)
+    aid = action["action_id"]
+    if action["state"] != DEPENDENCY_COMPLETE_STATE:
+        raise ProviderResolutionError(f"action {aid!r} must be RESOLVED to be assessed, not {action['state']!r}")
+    if action["resolution_assessment"] is not None:
+        raise ProviderResolutionError(f"action {aid!r} already carries a resolution assessment (immutable)")
+    facts = sorted(set(facts_established)) if isinstance(facts_established, (list, tuple, set, frozenset)) else facts_established
+    questions = sorted(set(questions_addressed))
+    ref = action["verified_evidence_ref"]
+    if ref["evidence_type"] == "PROVIDER_RESPONSE":
+        needs_record = bool(facts) or bool(questions)
+        if needs_record:
+            if not isinstance(provider_evidence_record, dict):
+                raise ProviderResolutionError("the original provider evidence record is required to assess question/fact coverage")
+            if build_verified_provider_evidence_ref(provider_evidence_record, evidence_root=evidence_root) != ref:
+                raise ProviderResolutionError("provider_evidence_record does not rebuild the action's verified evidence ref")
+            unanswered = sorted(set(questions) - set(provider_evidence_record["question_ids_answered"]))
+            if unanswered:
+                raise ProviderResolutionError(f"the evidence never answered claimed question(s) {unanswered}")
+    elif questions:
+        raise ProviderResolutionError("account-setting evidence answers no provider questions")
+    # cheap semantic checks first, so a missing review file never masks them
+    label = f"resolution assessment for {aid!r}"
+    if outcome not in _ASSESSABLE_OUTCOMES:
+        raise ProviderResolutionError(f"{label} has invalid outcome {outcome!r}")
+    _validate_fact_set(aid, facts, label)
+    _check_question_families(action["provider"], questions, label)
+    _check_question_coverage(facts, questions, label)
+    _check_outcome_consistency(aid, outcome, facts, label)
+    data = _bytes_of_file(evidence_root, assessment_source_ref)
+    assessment = {
+        "action_id": aid,
+        "provider": action["provider"],
+        "reference_name": action["reference_name"],
+        "verified_evidence_ref": deepcopy(ref),
+        "outcome": outcome,
+        "assessed_by_role": assessed_by_role,
+        "assessed_at_utc": assessed_at_utc,
+        "assessment_source_ref": assessment_source_ref,
+        "assessment_sha256": hashlib.sha256(data).hexdigest(),
+        "facts_established": facts,
+        "questions_addressed": questions,
+    }
+    validate_resolution_assessment(assessment, action=action, evidence_root=evidence_root)
+    updated = deepcopy(action)
+    updated["resolution_assessment"] = assessment
+    updated["resolution_outcome"] = outcome
+    validate_action(updated, evidence_root=evidence_root)
+    return updated
+
+
+def _require_prerequisite_satisfied(dependent_id: str, dep_id: str, dep: dict, evidence_root) -> None:
+    """A dependency satisfies a dependent only when its RESOLVED action
+    carries a valid assessment with outcome PREREQUISITE_SATISFIED and
+    every fact demanded for THIS dependent (§10). RESOLVED alone never
+    does."""
+    req = DEPENDENCY_REQUIREMENTS.get(dependent_id, {}).get(dep_id)
+    if req is None:
+        raise ProviderResolutionError(f"no dependency requirement policy for {dependent_id!r} on {dep_id!r}")
+    assessment = dep.get("resolution_assessment")
+    if not assessment:
+        raise ProviderResolutionError(
+            f"dependency {dep_id!r} of {dependent_id!r} is RESOLVED but has no resolution assessment "
+            "(RESOLVED != PREREQUISITE_SATISFIED)"
+        )
+    validate_resolution_assessment(assessment, action=dep, evidence_root=evidence_root)
+    if dep.get("resolution_outcome") != assessment["outcome"]:
+        raise ProviderResolutionError(f"dependency {dep_id!r} resolution_outcome disagrees with its assessment")
+    if assessment["outcome"] != "PREREQUISITE_SATISFIED":
+        raise ProviderResolutionError(
+            f"dependency {dep_id!r} of {dependent_id!r} has outcome {assessment['outcome']!r}, which does not allow follow-up"
+        )
+    missing = sorted(req["required_facts"] - set(assessment["facts_established"]))
+    if missing:
+        raise ProviderResolutionError(
+            f"dependency {dep_id!r} did not establish required fact(s) {missing} for {dependent_id!r}"
+        )
+
+
+def close_unavailable_branch(action: dict, *, dependency_actions: dict, evidence_root: Path) -> dict:
+    """When a dependency is RESOLVED with a definitive-negative fact for
+    this dependent (its `closing_facts`), the conditional action is
+    permanently unavailable: it moves to NOT_REQUIRED and can never be
+    executed. Ambiguous or partial outcomes do NOT close a branch (the
+    action simply stays ineligible). The upstream action is never
+    re-opened -- the provider question was answered."""
+    validate_action(action, evidence_root=evidence_root)
+    aid = action["action_id"]
+    reqs = DEPENDENCY_REQUIREMENTS.get(aid)
+    if not reqs:
+        raise ProviderResolutionError(f"action {aid!r} is not a conditional dependent action")
+    if action["state"] != "PREPARED":
+        raise ProviderResolutionError(f"only a PREPARED conditional action can be closed, {aid!r} is {action['state']!r}")
+    if not isinstance(dependency_actions, dict) or not dependency_actions:
+        raise ProviderResolutionError(f"closing {aid!r} requires the dependency_actions context")
+    for dep_id, req in reqs.items():
+        dep = dependency_actions.get(dep_id)
+        if not dep:
+            continue
+        validate_action(dep, evidence_root=evidence_root)
+        if dep["state"] != DEPENDENCY_COMPLETE_STATE or not dep["resolution_assessment"]:
+            continue
+        validate_resolution_assessment(dep["resolution_assessment"], action=dep, evidence_root=evidence_root)
+        if req["closing_facts"] & set(dep["resolution_assessment"]["facts_established"]):
+            return advance_action_state(action, "NOT_REQUIRED")
+    raise ProviderResolutionError(f"no dependency has definitively closed the branch for {aid!r}")
+
+
 # ── action queue validation (§10/§27) ─────────────────────────────────────
 
 
@@ -626,6 +1073,19 @@ def validate_action(action: dict, *, evidence_root: Path | None = None) -> None:
     elif action["verified_evidence_ref"] is not None and action["state"] != "EXPIRED_OR_STALE":
         raise ProviderResolutionError(f"action {aid!r} carries a verified_evidence_ref outside a verified/expired state")
 
+    # Resolution assessment (Phase 21B.4.19.2): only a RESOLVED action may
+    # carry one, and the outcome must agree with the durable assessment.
+    assessment = action["resolution_assessment"]
+    if assessment is None:
+        if action["resolution_outcome"] is not None:
+            raise ProviderResolutionError(f"action {aid!r} has a resolution_outcome without a resolution assessment")
+    else:
+        if action["state"] != DEPENDENCY_COMPLETE_STATE:
+            raise ProviderResolutionError(f"action {aid!r} carries a resolution assessment outside RESOLVED")
+        validate_resolution_assessment(assessment, action=action, evidence_root=evidence_root)
+        if action["resolution_outcome"] != assessment["outcome"]:
+            raise ProviderResolutionError(f"action {aid!r} resolution_outcome disagrees with its assessment")
+
 
 def _assert_acyclic(actions: list[dict]) -> None:
     graph = {a["action_id"]: list(a["depends_on"]) for a in actions}
@@ -663,8 +1123,22 @@ def validate_action_queue(queue: dict, *, evidence_root: Path | None = None) -> 
             if dep not in known:
                 raise ProviderResolutionError(f"action {action['action_id']!r} depends on unknown action {dep!r}")
     _assert_acyclic(queue["actions"])
+    # Dependency requirement policy must cover exactly the declared graph
+    # (Phase 21B.4.19.2): no dependent without a fact policy, no policy
+    # without a dependency.
+    for action in queue["actions"]:
+        policy = DEPENDENCY_REQUIREMENTS.get(action["action_id"])
+        if action["depends_on"]:
+            if policy is None or set(policy) != set(action["depends_on"]):
+                raise ProviderResolutionError(
+                    f"action {action['action_id']!r}: depends_on {action['depends_on']} has no matching "
+                    "dependency requirement policy"
+                )
+        elif policy:
+            raise ProviderResolutionError(f"action {action['action_id']!r} has a requirement policy but no depends_on")
     # Queue-level consistency: a dependent action that claims to be
-    # authorized/executed must have every dependency RESOLVED.
+    # authorized/executed must have every dependency RESOLVED AND
+    # prerequisite-satisfied (RESOLVED alone is not enough).
     for action in queue["actions"]:
         if action["authorization_status"] == "AUTHORIZED" or action["executed_status"] == "EXECUTED":
             for dep in action["depends_on"]:
@@ -673,6 +1147,7 @@ def validate_action_queue(queue: dict, *, evidence_root: Path | None = None) -> 
                         f"action {action['action_id']!r} is authorized/executed but dependency {dep!r} is "
                         f"{known[dep]['state']!r}, not {DEPENDENCY_COMPLETE_STATE}"
                     )
+                _require_prerequisite_satisfied(action["action_id"], dep, known[dep], evidence_root)
 
 
 def build_action_lookup(queue: dict, *, evidence_root: Path | None = None) -> dict[str, dict]:
@@ -695,7 +1170,8 @@ def assert_queue_fully_unauthorized(queue: dict) -> None:
     for action in queue["actions"]:
         if action["authorization_status"] != "NOT_AUTHORIZED" or action["executed_status"] != "NOT_EXECUTED":
             raise ProviderResolutionError(f"action {action['action_id']!r} is not NOT_AUTHORIZED/NOT_EXECUTED")
-        for field in ("authorization_evidence", "execution_evidence_ref", "verified_evidence_ref"):
+        for field in ("authorization_evidence", "execution_evidence_ref", "verified_evidence_ref",
+                      "resolution_outcome", "resolution_assessment"):
             if action[field] is not None:
                 raise ProviderResolutionError(f"action {action['action_id']!r} carries {field} in a no-authorization phase")
         if action["state"] in _EXECUTION_ASSERTING_STATES | {"AUTHORIZED_NOT_EXECUTED"}:
@@ -728,6 +1204,7 @@ def _require_dependencies_resolved(action: dict, dependency_actions, evidence_ro
                 f"action {action['action_id']!r} cannot proceed: dependency {dep_id!r} is {dep['state']!r}, "
                 f"not {DEPENDENCY_COMPLETE_STATE}"
             )
+        _require_prerequisite_satisfied(action["action_id"], dep_id, dep, evidence_root)
 
 
 def advance_action_state(
@@ -797,6 +1274,12 @@ def advance_action_state(
         updated["executed_status"] = "NOT_EXECUTED"
         updated["execution_evidence_ref"] = None
         updated["verified_evidence_ref"] = None
+        updated["resolution_outcome"] = None
+        updated["resolution_assessment"] = None
+    elif new_state == "EXPIRED_OR_STALE":
+        # a stale action no longer satisfies anything it once unlocked
+        updated["resolution_outcome"] = None
+        updated["resolution_assessment"] = None
     updated["state"] = new_state
     validate_action(updated, evidence_root=evidence_root)
     return updated

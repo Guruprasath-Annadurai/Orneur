@@ -1,5 +1,5 @@
 {
-  "schema_version": "genesis-frontier-provider-response-schema-v2",
+  "schema_version": "genesis-frontier-provider-response-schema-v3",
   "phase": "21B.4.19",
   "created": "2026-09-24",
   "note": "SCHEMA AND FORMAT ONLY. This file contains NO provider response and NO evidence. The example_format block is SYNTHETIC, uses placeholders only, and must never be treated as, copied into, or cited as evidence. No response is automatically trusted: a record is only VERIFIED when it passes orca.eval.frontier_provider_resolution.validate_provider_response().",
@@ -188,5 +188,271 @@
       "queue actions"
     ]
   },
-  "attestation_limits": "Machine validation proves internal consistency and source persistence (hash of saved bytes, official-domain string, binding). It does NOT cryptographically prove a human has not fabricated metadata or file content. Human/connector provenance remains part of evidence review."
+  "attestation_limits": "Machine validation proves internal consistency and source persistence (hash of saved bytes, official-domain string, binding). It does NOT cryptographically prove a human has not fabricated metadata or file content. Human/connector provenance remains part of evidence review.",
+  "resolution_assessment": {
+    "purpose": "Separates ACTION LIFECYCLE COMPLETION (state=RESOLVED) from DEPENDENCY PREREQUISITE SATISFACTION. A provider may definitively answer NO: that is valid, conclusive evidence that may legitimately RESOLVE the upstream action, yet it must not unlock a conditional downstream action. Outcomes and facts control action sequencing ONLY.",
+    "resolved_is_not_prerequisite_satisfied": true,
+    "registry_dimensions_mutated": false,
+    "registry_dimensions_still_changed_only_by": [
+      "apply_verified_evidence",
+      "resolve_blocker_token",
+      "promote_access_status"
+    ],
+    "assessor_role": "EVIDENCE_REVIEWER",
+    "outcomes": [
+      "NOT_ASSESSED",
+      "PREREQUISITE_SATISFIED",
+      "PREREQUISITE_NOT_SATISFIED",
+      "PARTIAL_INFORMATION",
+      "NO_FOLLOWUP_REQUIRED"
+    ],
+    "only_outcome_that_unlocks_a_dependent": "PREREQUISITE_SATISFIED",
+    "assessment_fields": [
+      "action_id",
+      "provider",
+      "reference_name",
+      "verified_evidence_ref",
+      "outcome",
+      "assessed_by_role",
+      "assessed_at_utc",
+      "assessment_source_ref",
+      "assessment_sha256",
+      "facts_established",
+      "questions_addressed"
+    ],
+    "review_record": {
+      "schema": "genesis-provider-resolution-review-v1",
+      "rule": "assessment_source_ref points to a persisted review record under the evidence root whose canonical bytes (orca.eval.frontier_provider_resolution.review_record_bytes) must match the assessment exactly; assessment_sha256 is its SHA-256, recomputed at every dependency check."
+    },
+    "machine_validation_proves": [
+      "exact action/provider/reference binding",
+      "binding to the action's own verified-evidence ref",
+      "valid outcome enum, role and UTC timestamp",
+      "only fact codes defined for that action, no contradictions",
+      "provider question-family and fact-to-question coverage derived from the validated evidence record",
+      "durable review record hash and byte-for-byte consistency"
+    ],
+    "machine_validation_does_not_prove": "That the EVIDENCE_REVIEWER read the provider's prose correctly. Human review supplies the semantic interpretation; this layer only makes it exact, bound, and tamper-evident.",
+    "action_fact_codes": {
+      "DSK-01": [
+        "DEEPSEEK_API_OPTOUT_APPLICABLE",
+        "DEEPSEEK_API_OPTOUT_NOT_APPLICABLE",
+        "DEEPSEEK_API_OPTOUT_NOT_PROSPECTIVE",
+        "DEEPSEEK_API_OPTOUT_PROSPECTIVE"
+      ],
+      "DSK-02": [
+        "DEEPSEEK_ACCOUNT_SETTING_ABSENT",
+        "DEEPSEEK_ACCOUNT_SETTING_PRESENT"
+      ],
+      "GLM-01": [
+        "GLM_NO_TRAINING_CONTROL_APPLIES_TO_GLM_5_3",
+        "GLM_NO_TRAINING_CONTROL_AVAILABLE",
+        "GLM_NO_TRAINING_CONTROL_DOES_NOT_APPLY_TO_GLM_5_3",
+        "GLM_NO_TRAINING_CONTROL_NOT_AVAILABLE"
+      ],
+      "KMI-01": [
+        "KIMI_ACCEPTABLE_ENTERPRISE_NO_TRAINING_PATH_AVAILABLE",
+        "KIMI_ENTERPRISE_NO_TRAINING_PATH_NOT_AVAILABLE"
+      ],
+      "MIS-01": [
+        "MISTRAL_API_TRAINING_OPTOUT_APPLICABLE",
+        "MISTRAL_API_TRAINING_OPTOUT_NOT_APPLICABLE",
+        "MISTRAL_AUTOMATED_EVALUATION_NOT_PERMITTED",
+        "MISTRAL_AUTOMATED_EVALUATION_PERMITTED",
+        "MISTRAL_ZDR_APPLICABLE",
+        "MISTRAL_ZDR_NOT_APPLICABLE"
+      ],
+      "MNX-01": [
+        "MINIMAX_COMMERCIAL_USE_APPLIES",
+        "MINIMAX_COMMERCIAL_USE_DOES_NOT_APPLY",
+        "MINIMAX_COMMERCIAL_USE_STILL_AMBIGUOUS"
+      ]
+    },
+    "fact_required_questions": {
+      "DEEPSEEK_ACCOUNT_SETTING_ABSENT": [],
+      "DEEPSEEK_ACCOUNT_SETTING_PRESENT": [],
+      "DEEPSEEK_API_OPTOUT_APPLICABLE": [
+        "DSK-Q1"
+      ],
+      "DEEPSEEK_API_OPTOUT_NOT_APPLICABLE": [
+        "DSK-Q1"
+      ],
+      "DEEPSEEK_API_OPTOUT_NOT_PROSPECTIVE": [
+        "DSK-Q2"
+      ],
+      "DEEPSEEK_API_OPTOUT_PROSPECTIVE": [
+        "DSK-Q2"
+      ],
+      "GLM_NO_TRAINING_CONTROL_APPLIES_TO_GLM_5_3": [
+        "GLM-Q7"
+      ],
+      "GLM_NO_TRAINING_CONTROL_AVAILABLE": [
+        "GLM-Q6"
+      ],
+      "GLM_NO_TRAINING_CONTROL_DOES_NOT_APPLY_TO_GLM_5_3": [
+        "GLM-Q7"
+      ],
+      "GLM_NO_TRAINING_CONTROL_NOT_AVAILABLE": [
+        "GLM-Q6"
+      ],
+      "KIMI_ACCEPTABLE_ENTERPRISE_NO_TRAINING_PATH_AVAILABLE": [
+        "KMI-Q1",
+        "KMI-Q2",
+        "KMI-Q3",
+        "KMI-Q4",
+        "KMI-Q5"
+      ],
+      "KIMI_ENTERPRISE_NO_TRAINING_PATH_NOT_AVAILABLE": [
+        "KMI-Q1"
+      ],
+      "MINIMAX_COMMERCIAL_USE_APPLIES": [
+        "MNX-Q1"
+      ],
+      "MINIMAX_COMMERCIAL_USE_DOES_NOT_APPLY": [
+        "MNX-Q1"
+      ],
+      "MINIMAX_COMMERCIAL_USE_STILL_AMBIGUOUS": [
+        "MNX-Q1"
+      ],
+      "MISTRAL_API_TRAINING_OPTOUT_APPLICABLE": [
+        "MIS-Q2",
+        "MIS-Q3",
+        "MIS-Q4"
+      ],
+      "MISTRAL_API_TRAINING_OPTOUT_NOT_APPLICABLE": [
+        "MIS-Q2"
+      ],
+      "MISTRAL_AUTOMATED_EVALUATION_NOT_PERMITTED": [
+        "MIS-Q1"
+      ],
+      "MISTRAL_AUTOMATED_EVALUATION_PERMITTED": [
+        "MIS-Q1"
+      ],
+      "MISTRAL_ZDR_APPLICABLE": [
+        "MIS-Q5"
+      ],
+      "MISTRAL_ZDR_NOT_APPLICABLE": [
+        "MIS-Q5"
+      ]
+    },
+    "contradictory_fact_groups": [
+      [
+        "MISTRAL_API_TRAINING_OPTOUT_APPLICABLE",
+        "MISTRAL_API_TRAINING_OPTOUT_NOT_APPLICABLE"
+      ],
+      [
+        "MISTRAL_ZDR_APPLICABLE",
+        "MISTRAL_ZDR_NOT_APPLICABLE"
+      ],
+      [
+        "MISTRAL_AUTOMATED_EVALUATION_NOT_PERMITTED",
+        "MISTRAL_AUTOMATED_EVALUATION_PERMITTED"
+      ],
+      [
+        "DEEPSEEK_API_OPTOUT_APPLICABLE",
+        "DEEPSEEK_API_OPTOUT_NOT_APPLICABLE"
+      ],
+      [
+        "DEEPSEEK_API_OPTOUT_NOT_PROSPECTIVE",
+        "DEEPSEEK_API_OPTOUT_PROSPECTIVE"
+      ],
+      [
+        "DEEPSEEK_ACCOUNT_SETTING_ABSENT",
+        "DEEPSEEK_ACCOUNT_SETTING_PRESENT"
+      ],
+      [
+        "GLM_NO_TRAINING_CONTROL_AVAILABLE",
+        "GLM_NO_TRAINING_CONTROL_NOT_AVAILABLE"
+      ],
+      [
+        "GLM_NO_TRAINING_CONTROL_APPLIES_TO_GLM_5_3",
+        "GLM_NO_TRAINING_CONTROL_DOES_NOT_APPLY_TO_GLM_5_3"
+      ],
+      [
+        "MINIMAX_COMMERCIAL_USE_APPLIES",
+        "MINIMAX_COMMERCIAL_USE_DOES_NOT_APPLY",
+        "MINIMAX_COMMERCIAL_USE_STILL_AMBIGUOUS"
+      ],
+      [
+        "KIMI_ACCEPTABLE_ENTERPRISE_NO_TRAINING_PATH_AVAILABLE",
+        "KIMI_ENTERPRISE_NO_TRAINING_PATH_NOT_AVAILABLE"
+      ]
+    ],
+    "dependency_required_facts": {
+      "DSK-03": {
+        "DSK-01": [
+          "DEEPSEEK_API_OPTOUT_APPLICABLE",
+          "DEEPSEEK_API_OPTOUT_PROSPECTIVE"
+        ],
+        "DSK-02": [
+          "DEEPSEEK_ACCOUNT_SETTING_PRESENT"
+        ]
+      },
+      "GLM-02": {
+        "GLM-01": [
+          "GLM_NO_TRAINING_CONTROL_APPLIES_TO_GLM_5_3",
+          "GLM_NO_TRAINING_CONTROL_AVAILABLE"
+        ]
+      },
+      "KMI-02": {
+        "KMI-01": [
+          "KIMI_ACCEPTABLE_ENTERPRISE_NO_TRAINING_PATH_AVAILABLE"
+        ]
+      },
+      "MIS-02": {
+        "MIS-01": [
+          "MISTRAL_API_TRAINING_OPTOUT_APPLICABLE"
+        ]
+      },
+      "MIS-03": {
+        "MIS-01": [
+          "MISTRAL_ZDR_APPLICABLE"
+        ]
+      },
+      "MNX-02": {
+        "MNX-01": [
+          "MINIMAX_COMMERCIAL_USE_APPLIES"
+        ]
+      }
+    },
+    "dependency_closing_facts": {
+      "DSK-03": {
+        "DSK-01": [
+          "DEEPSEEK_API_OPTOUT_NOT_APPLICABLE",
+          "DEEPSEEK_API_OPTOUT_NOT_PROSPECTIVE"
+        ],
+        "DSK-02": [
+          "DEEPSEEK_ACCOUNT_SETTING_ABSENT"
+        ]
+      },
+      "GLM-02": {
+        "GLM-01": [
+          "GLM_NO_TRAINING_CONTROL_DOES_NOT_APPLY_TO_GLM_5_3",
+          "GLM_NO_TRAINING_CONTROL_NOT_AVAILABLE"
+        ]
+      },
+      "KMI-02": {
+        "KMI-01": [
+          "KIMI_ENTERPRISE_NO_TRAINING_PATH_NOT_AVAILABLE"
+        ]
+      },
+      "MIS-02": {
+        "MIS-01": [
+          "MISTRAL_API_TRAINING_OPTOUT_NOT_APPLICABLE"
+        ]
+      },
+      "MIS-03": {
+        "MIS-01": [
+          "MISTRAL_ZDR_NOT_APPLICABLE"
+        ]
+      },
+      "MNX-02": {
+        "MNX-01": [
+          "MINIMAX_COMMERCIAL_USE_DOES_NOT_APPLY"
+        ]
+      }
+    },
+    "branch_closure": "A definitive-negative (closing) fact lets close_unavailable_branch() move the conditional action to NOT_REQUIRED permanently; ambiguous or partial outcomes neither unlock nor close it. The upstream action is never re-opened.",
+    "not_implemented_by_design": "MNX-02's alternative unlock (a separate future exact owner election of the conservative Commercial-Use path) is deliberately NOT implemented in this phase, so there is no bypass."
+  }
 }

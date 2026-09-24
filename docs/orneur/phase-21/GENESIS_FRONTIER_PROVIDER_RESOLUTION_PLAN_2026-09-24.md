@@ -233,6 +233,76 @@ Real queue after this closure: 15 actions, 0 authorized, 0 executed, 0
 resolved, no authorization/execution/verified evidence, all counters 0;
 `GLB-02` BLOCKED.
 
+## Phase 21B.4.19.2 closure — outcome-bound dependencies
+
+One semantic defect remained after 21B.4.19.1: a dependency counted as
+satisfied when its upstream action was merely `RESOLVED`. But `RESOLVED`
+only proves the provider interaction/evidence cycle concluded — a provider
+may definitively answer **NO** (valid, conclusive evidence) and the upstream
+action is legitimately `RESOLVED`, yet the conditional downstream action
+(e.g. DSK-03 `ENABLE_NO_TRAINING`) must stay locked.
+
+**Canonical rule: `RESOLVED != PREREQUISITE_SATISFIED`.** Lifecycle state and
+prerequisite satisfaction are now separate.
+
+- **Outcome model** (`resolution_outcome`, separate from `state`):
+  `NOT_ASSESSED`, `PREREQUISITE_SATISFIED`, `PREREQUISITE_NOT_SATISFIED`,
+  `PARTIAL_INFORMATION`, `NO_FOLLOWUP_REQUIRED`. `state=RESOLVED` with
+  `PREREQUISITE_NOT_SATISFIED` is valid and does not unlock anything.
+  Only `PREREQUISITE_SATISFIED` can unlock a dependent.
+- **Durable resolution assessment** (`resolution_assessment`): an
+  `EVIDENCE_REVIEWER` decision bound to the action, provider, reference and
+  the action's own verified-evidence ref, with structured fact codes, the
+  provider questions addressed, a UTC time, and a persisted review record
+  whose SHA-256 is recorded and re-checked (byte for byte) at every
+  dependency check. Question coverage is derived from the validated
+  original provider record, not reviewer assertion.
+- **Structured facts, not prose** (`ACTION_FACT_CODES`): e.g. MIS-01 →
+  `MISTRAL_API_TRAINING_OPTOUT_APPLICABLE`, `MISTRAL_ZDR_APPLICABLE`,
+  `MISTRAL_AUTOMATED_EVALUATION_PERMITTED` (+ negatives); DSK-01 →
+  `DEEPSEEK_API_OPTOUT_APPLICABLE`, `..._PROSPECTIVE`; DSK-02 →
+  `DEEPSEEK_ACCOUNT_SETTING_PRESENT`; GLM-01 →
+  `GLM_NO_TRAINING_CONTROL_AVAILABLE`, `..._APPLIES_TO_GLM_5_3`; MNX-01 → one
+  mutually-exclusive conclusion (`APPLIES` / `DOES_NOT_APPLY` /
+  `STILL_AMBIGUOUS`); KMI-01 →
+  `KIMI_ACCEPTABLE_ENTERPRISE_NO_TRAINING_PATH_AVAILABLE`. Each fact names the
+  questions that must have been answered (MNX-Q2 alone can never establish a
+  Commercial Use conclusion; an unrelated Moonshot pricing answer can never
+  establish an acceptable enterprise path). Wrong-action facts, unknown
+  codes, contradictions, unsorted/duplicate lists are rejected.
+- **Dependency requirement policy** (`DEPENDENCY_REQUIREMENTS`): MIS-02 needs
+  the training-opt-out-applicable fact from MIS-01; MIS-03 needs the
+  ZDR-applicable fact; DSK-03 needs both DSK-01 facts (applicable +
+  prospective) AND DSK-02's setting-present fact; GLM-02 needs
+  control-available AND applies-to-GLM-5.3; MNX-02 needs
+  `MINIMAX_COMMERCIAL_USE_APPLIES` (`DOES_NOT_APPLY` never satisfies it);
+  KMI-02 needs the acceptable-path fact.
+- **Gate** (authorize *or* execute a dependent): dependency `RESOLVED` **and**
+  its verified evidence re-proves **and** its assessment validates against
+  the persisted review record **and** outcome is `PREREQUISITE_SATISFIED`
+  **and** every fact required for *this* dependent is present. Anything
+  else fails closed. The queue validator additionally requires the policy to
+  match the declared `depends_on` graph exactly.
+- **Negative answers close the branch, never re-open the upstream action.**
+  A definitive-negative fact lets `close_unavailable_branch()` move the
+  conditional action to `NOT_REQUIRED` permanently (e.g. MNX-02 when
+  Commercial Use does not apply; KMI-02 when no acceptable enterprise path
+  exists). Ambiguous or partial outcomes neither unlock nor close it.
+- **Registry untouched.** Outcomes and facts control action sequencing only;
+  `apply_verified_evidence`, `resolve_blocker_token` and
+  `promote_access_status` remain the only routes to registry state.
+- **Honest limits.** Software cannot semantically understand provider prose.
+  Machine validation proves exact binding, valid enums/facts, question
+  coverage, timestamps and the review record's hash; the human
+  `EVIDENCE_REVIEWER` supplies the interpretation. It is tamper-evident, not
+  proof of authenticity. MNX-02's alternative unlock (a separate future exact
+  owner election of the conservative Commercial-Use path) is deliberately
+  **not implemented** here, so there is no bypass.
+
+Real queue after this closure: 15 actions, 0 authorized, 0 executed, 0
+resolved, 0 resolution assessments, no outcome and no established facts on
+any action; `GLB-02` BLOCKED.
+
 ## Authorization boundary
 
 This phase ends before the queue is executed. Valid future

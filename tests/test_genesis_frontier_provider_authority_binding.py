@@ -23,16 +23,20 @@ import pytest
 
 from orca.eval.candidate_registry import CandidateExecutionRegistry, EXPECTED_REFERENCE_NAMES
 from orca.eval.frontier_provider_resolution import (
+    FACT_REQUIRED_QUESTIONS,
     GLOBAL_ACTION_IDS,
     OFFICIAL_PROVIDER_DOMAINS,
     PROVIDER_QUESTION_PREFIX,
     REFERENCE_PROVIDER,
+    UNLOCK_FACTS,
     ProviderResolutionError,
     advance_action_state,
+    assess_action_resolution,
     assert_queue_fully_unauthorized,
     build_action_lookup,
     build_verified_account_setting_evidence_ref,
     build_verified_provider_evidence_ref,
+    review_record_bytes,
     validate_account_setting_evidence,
     validate_action,
     validate_action_queue,
@@ -170,13 +174,40 @@ def _to_awaiting(action):
     return action
 
 
-def _drive(action, target, tmp_path, *, lookup=None):
+def _assess(action, tmp_path, record, *, outcome=None, facts=None, at="2000-01-04T00:00:00Z"):
+    """SYNTHETIC TEST FIXTURE -- attach a resolution assessment (with its
+    durable review record written under tmp_path) to a RESOLVED action.
+    Defaults to establishing every positive fact its dependents need."""
+    unlock = sorted(UNLOCK_FACTS.get(action["action_id"], ()))
+    facts = unlock if facts is None else sorted(facts)
+    outcome = outcome or ("PREREQUISITE_SATISFIED" if unlock else "NO_FOLLOWUP_REQUIRED")
+    questions = sorted({q for f in facts for q in FACT_REQUIRED_QUESTIONS[f]})
+    data = review_record_bytes(
+        action_id=action["action_id"], provider=action["provider"], reference_name=action["reference_name"],
+        outcome=outcome, facts_established=facts, questions_addressed=questions,
+        verified_evidence_ref=action["verified_evidence_ref"], assessed_by_role="EVIDENCE_REVIEWER", assessed_at_utc=at)
+    # content-addressed name: two different reviews of the same action never collide
+    ref_name = f"review_{action['action_id']}_{hashlib.sha256(data).hexdigest()[:10]}.json"
+    (tmp_path / ref_name).write_bytes(data)
+    return assess_action_resolution(
+        action, outcome=outcome, facts_established=facts, questions_addressed=questions, assessed_at_utc=at,
+        assessment_source_ref=ref_name, evidence_root=tmp_path, provider_evidence_record=record)
+
+
+def _family_questions(provider):
+    return [f"{PROVIDER_QUESTION_PREFIX[provider]}{i}" for i in range(1, 13)]
+
+
+def _drive(action, target, tmp_path, *, lookup=None, assess=True, outcome=None, facts=None):
     """Drive a SYNTHETIC copy of an action forward through the real state
-    machine using synthetic evidence in tmp_path, up to `target`."""
+    machine using synthetic evidence in tmp_path, up to `target`. Reaching
+    RESOLVED also attaches a resolution assessment (default: establishes
+    every positive fact its dependents need) unless assess=False."""
     order = ["AUTHORIZED_NOT_EXECUTED", "EXECUTED_AWAITING_PROVIDER", "PROVIDER_REPLIED_UNVERIFIED",
              "EVIDENCE_VERIFIED", "RESOLVED"]
     action = _to_awaiting(action)
-    record = _provider_record(tmp_path, action["provider"], action["reference_name"])
+    record = _provider_record(tmp_path, action["provider"], action["reference_name"],
+                              question_ids=_family_questions(action["provider"]))
     common = dict(evidence_root=tmp_path, dependency_actions=lookup)
     for state in order:
         kwargs = dict(common)
@@ -190,6 +221,8 @@ def _drive(action, target, tmp_path, *, lookup=None):
             kwargs["verified_evidence_record"] = record
         action = advance_action_state(action, state, **kwargs)
         if state == target:
+            if state == "RESOLVED" and assess:
+                action = _assess(action, tmp_path, record, outcome=outcome, facts=facts)
             return action
     raise AssertionError(f"unknown target {target}")
 
