@@ -1,0 +1,84 @@
+{
+  "account_state_observed": {
+    "billing_mode": "prepaid",
+    "can_pay": false,
+    "credit_balance_usd": "0.00",
+    "current_period_end": "Oct 1",
+    "current_period_usage_usd": "0.00",
+    "is_pro": false,
+    "private_storage_gb": "0/100",
+    "public_storage": "0/8.7 TB",
+    "zerogpu_quota_minutes_used_of_total": "0/5"
+  },
+  "actions_taken": "read-only: settings pages and the site's own session endpoints; no Space, repository, token, setting, payment or credit action; no GPU quota used",
+  "authenticated_account": {
+    "age_days_at_check": 0,
+    "counts": {
+      "datasets": 0,
+      "models": 0,
+      "spaces": 0
+    },
+    "created_at_utc": "2026-09-24T15:34:25Z",
+    "credentials": "[not persisted]",
+    "display_name": "Orneur-labs",
+    "email": "[not persisted]",
+    "email_verified": true,
+    "older_than_30_days": false,
+    "organizations": [],
+    "type": "user (personal account)",
+    "username": "Orneur"
+  },
+  "captured_at_utc": "2026-09-24T16:15:00Z",
+  "checks": {
+    "10_payment_method_required": "NO for the free path; account shows canPay=false, credits $0.00, billing mode prepaid, not PRO",
+    "11_owner_payable_exposure": "$0.00 (current period usage $0.00; credits $0.00; nothing purchased)",
+    "12_account_specific_hardware": "NOT VERIFIABLE from account UI without creating a Space (not permitted in this step); documentation lists large=48 GB (1x quota) and xlarge=96 GB (2x quota); the account-specific selector remains UNVERIFIED",
+    "1_authenticated_identity": "VERIFIED (session cookie; username Orneur)",
+    "2_personal_user_account": "VERIFIED (type=user, no organizations)",
+    "3_email_verified": "VERIFIED (emailVerified=true; address not persisted)",
+    "4_account_older_than_30_days": "FAILED (created 2026-09-24T15:34:25Z)",
+    "5_good_standing": "NO ADVERSE SIGNAL OBSERVED (no explicit standing indicator exists in the UI/API read)",
+    "6_zerogpu_hosting_eligibility": "NOT ELIGIBLE by the age rule; the hosting UI itself was not exercised (no Space may be created in this step)",
+    "7_free_daily_zerogpu_quota": "VERIFIED account-specific: billing page shows ZeroGPU 0/5 minutes",
+    "8_free_space_hosting_available": "NOT AVAILABLE until the account is older than 30 days (0 of 2 free ZeroGPU Space slots is unusable now)",
+    "9_paid_plan_required": "NO for the free path once eligible; a paid plan is NOT being used or bought"
+  },
+  "control_statuses_unchanged": {
+    "Mistral-Nemo-Instruct-2407": "NOT_TESTED",
+    "Phi-4": "NOT_TESTED",
+    "Qwen3-8B": "NOT_PROVEN / NOT_COMPLETED"
+  },
+  "earliest_age_eligibility_note": "created + 30 days; assumes the rule is applied literally and nothing else blocks hosting. Not a guarantee.",
+  "earliest_age_eligibility_utc": "2026-10-24T15:34:25Z",
+  "evidence_type": "HF_ZEROGPU_ACCOUNT_VERIFICATION_READ_ONLY",
+  "explicitly_not_done": [
+    "no PRO purchase",
+    "no payment method",
+    "no purchased credits",
+    "no multiple-account or quota-evasion tactics",
+    "no Space creation",
+    "no GPU quota use"
+  ],
+  "gpu_started": false,
+  "owner_cash_incurred": "none",
+  "phase": "21B.4.20",
+  "production_serving_qualification": "UNCHANGED",
+  "program_state": {
+    "CONTROL_CAPABILITY_STATUS": "UNPROVEN",
+    "FRONTIER_EXECUTION_AUTHORIZED": "NO",
+    "GENESIS_FOUNDATION": "NOT SELECTED",
+    "GENESIS_FRONTIER_STATUS": "UNPROVEN",
+    "PHASE_21C": "NOT AUTHORIZED"
+  },
+  "reason": "The authenticated account was created 2026-09-24T15:34:25Z (about 40 minutes before this check). The official ZeroGPU hosting rule for free personal accounts requires an account in good standing with a verified email AND an account older than 30 days.",
+  "result": "HF_ZEROGPU_NOT_ELIGIBLE",
+  "resume_options": [
+    "wait until the account is older than 30 days (earliest 2026-10-24) and re-verify read-only",
+    "use an existing older Hugging Face personal account in good standing if the owner has one (never a purchased PRO, never a payment method)"
+  ],
+  "source_rule": {
+    "accessed": "2026-09-24",
+    "text": "Free personal accounts: accounts in good standing (verified email, account older than 30 days) can host up to 2 ZeroGPU Spaces for free.",
+    "url": "https://huggingface.co/docs/hub/spaces-zerogpu"
+  }
+}

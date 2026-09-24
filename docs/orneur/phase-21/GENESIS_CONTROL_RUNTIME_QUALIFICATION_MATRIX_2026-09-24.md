@@ -61,6 +61,15 @@ was created and no account action was taken. Estimated BF16 memory fits the 48 G
 27.5 GB headroom, assuming a 4 GB overhead reserve; an estimate, not a measurement). Evidence:
 `GENESIS_HF_ZEROGPU_ELIGIBILITY_AND_HEADROOM_2026-09-24.json`. Statuses below are unchanged.
 
+### Update: authenticated Hugging Face account verified -- HF_ZEROGPU_NOT_ELIGIBLE
+
+The owner logged in to Hugging Face (personal account `Orneur`, email verified, not PRO, no payment method, credits $0.00,
+ZeroGPU quota shown as 0/5 minutes). The account was created 2026-09-24T15:34:25Z, so it fails the documented
+"older than 30 days" hosting rule: **HF_ZEROGPU_NOT_ELIGIBLE** for now (earliest 2026-10-24, not guaranteed). The
+account-specific hardware selector cannot be seen without creating a Space, so `large`/48 GB remains documentation-only.
+No Space, GPU quota, purchase or setting change was made. Evidence: `GENESIS_HF_ZEROGPU_ACCOUNT_VERIFICATION_2026-09-24.json`.
+The email address is not persisted. Control statuses, production serving qualification and program state are unchanged.
+
 ## Billing reconciliation
 
 - **Historical GLM record (preserved, not rewritten):** before invocation 2 metered $8.68 / billed $0 / credits -$8.68;

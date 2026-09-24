@@ -90,8 +90,8 @@
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "93f8d850e7410f6ccc1bf8e1a6d1d11126585cecee6bf3a27cff06bab757361e",
-      "size_bytes": 12502,
+      "sha256": "3ce2fa5daffe792a02286b2ec818253dfa97e53135a9e77a1f0fc604080b7f4d",
+      "size_bytes": 13302,
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md"
     },
     {
@@ -171,6 +171,12 @@
       "sha256": "a01bba1b2a0fa52f036bd3bb17c67580e1fc3fa56c22f35a8f456e0ac9f61b71",
       "size_bytes": 7134,
       "evidence_role": "genesis_hf_zerogpu_eligibility_and_headroom_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_HF_ZEROGPU_ACCOUNT_VERIFICATION_2026-09-24.json",
+      "sha256": "1e7083388cb5abfe02010ca893539f8a84a7eb8f6915adc91ca94154f34a86a2",
+      "size_bytes": 4260,
+      "evidence_role": "genesis_hf_zerogpu_account_verification_2026-09-24.json"
     }
   ]
 }

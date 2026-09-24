@@ -1270,3 +1270,20 @@ def test_hf_zerogpu_eligibility_is_recorded_as_not_established_and_nothing_was_c
     assert art["quota_plan"]["total_planned_seconds"] <= art["quota_plan"]["free_daily_quota_seconds"]
     assert "no quota bypass" in art["quota_plan"]["rule"] and "no PRO purchase" in art["hard_rules"]
     assert "UNCHANGED" in art["hard_rules"][-1]
+
+
+def test_hf_zerogpu_account_verification_is_not_eligible_by_age_and_persists_no_email_or_credentials():
+    path = EVIDENCE_DIR / "GENESIS_HF_ZEROGPU_ACCOUNT_VERIFICATION_2026-09-24.json"
+    raw = path.read_text()
+    art = json.loads(raw)
+    assert art["result"] == "HF_ZEROGPU_NOT_ELIGIBLE"
+    acct = art["authenticated_account"]
+    assert acct["older_than_30_days"] is False and acct["created_at_utc"] == "2026-09-24T15:34:25Z"
+    assert acct["email"] == "[not persisted]" and acct["credentials"] == "[not persisted]"
+    assert "@" not in raw and "hotmail" not in raw.lower() and "gmail" not in raw.lower()
+    checks = art["checks"]
+    assert checks["4_account_older_than_30_days"].startswith("FAILED") and checks["11_owner_payable_exposure"].startswith("$0.00")
+    assert checks["7_free_daily_zerogpu_quota"].endswith("0/5 minutes") and "UNVERIFIED" in checks["12_account_specific_hardware"]
+    assert art["gpu_started"] is False and art["owner_cash_incurred"] == "none" and art["production_serving_qualification"] == "UNCHANGED"
+    assert "no purchased credits" in art["explicitly_not_done"] and "no Space creation" in art["explicitly_not_done"]
+    assert art["earliest_age_eligibility_utc"] == "2026-10-24T15:34:25Z"
