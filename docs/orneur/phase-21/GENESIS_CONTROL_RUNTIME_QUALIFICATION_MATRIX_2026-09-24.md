@@ -48,6 +48,19 @@ unchanged (4.9823576) and cleanup is verified. The owner's rule forbids adding o
 execution cannot proceed under it. The gate now refuses automatically while this rejection stands
 (`GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json`). No control has run on any provider; statuses are unchanged.
 
+## Hugging Face ZeroGPU fallback (read-only eligibility check)
+
+Modal and Lightning execution is stopped for this phase (audit decision). The next candidate, Hugging Face ZeroGPU, is a
+**model runtime compatibility** test (exact BF16 checkpoint, Gradio/PyTorch), never a production-serving proof; production
+serving qualification stays **UNCHANGED**. Official rules: free personal accounts in good standing (verified email, older
+than 30 days) may host up to 2 ZeroGPU Spaces; the free daily GPU quota is 5 minutes; hardware `large` is 48 GB.
+
+**Eligibility: NOT ESTABLISHED.** No authenticated Hugging Face session is available (no local token; Chrome shows the login
+form), so eligibility can be neither confirmed nor refused; this is not `HF_ZEROGPU_NOT_ELIGIBLE`. No Space, repository or GPU
+was created and no account action was taken. Estimated BF16 memory fits the 48 GB tier for all three controls (about 14.7 to
+27.5 GB headroom, assuming a 4 GB overhead reserve; an estimate, not a measurement). Evidence:
+`GENESIS_HF_ZEROGPU_ELIGIBILITY_AND_HEADROOM_2026-09-24.json`. Statuses below are unchanged.
+
 ## Billing reconciliation
 
 - **Historical GLM record (preserved, not rewritten):** before invocation 2 metered $8.68 / billed $0 / credits -$8.68;

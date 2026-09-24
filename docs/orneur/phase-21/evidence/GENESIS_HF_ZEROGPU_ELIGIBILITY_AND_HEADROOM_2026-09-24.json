@@ -1,0 +1,141 @@
+{
+  "authentication": {
+    "action_taken": "none: this agent does not log in, create accounts or handle credentials",
+    "builtin_browser": "logged out",
+    "chrome_session": "logged out (redirected to the Hugging Face login form)",
+    "local_hf_token": "absent"
+  },
+  "captured_at_utc": "2026-09-24T16:00:00Z",
+  "classification_boundary": "model_runtime_compatibility_status (ZeroGPU/Gradio/PyTorch smoke of the exact BF16 checkpoint) is separate from production serving qualification, which ZeroGPU can never change.",
+  "control_statuses_unchanged": {
+    "Mistral-Nemo-Instruct-2407": "NOT_TESTED",
+    "Phi-4": "NOT_TESTED",
+    "Qwen3-8B": "NOT_PROVEN / NOT_COMPLETED"
+  },
+  "created_or_launched": "nothing: no Space, no repository, no GPU allocation, no account action",
+  "evidence_type": "HF_ZEROGPU_ELIGIBILITY_AND_HEADROOM_READ_ONLY",
+  "fields_not_verified": {
+    "account_age_over_30_days": "NOT_VERIFIED",
+    "authenticated_identity": "NOT_VERIFIED",
+    "daily_free_quota_remaining": "NOT_VERIFIED",
+    "owner_payable_exposure": "NOT_VERIFIED (none expected for free hosting and free quota only; unconfirmed)",
+    "payment_method_present": "NOT_VERIFIED",
+    "verified_email": "NOT_VERIFIED",
+    "zerogpu_hosting_eligibility": "NOT_VERIFIED"
+  },
+  "gpu_started": false,
+  "hard_rules": [
+    "no PRO purchase",
+    "no payment method",
+    "no purchased credits",
+    "no model substitution, quantization, GGUF, reduced model or FP16 downgrade",
+    "generated output is data only (no eval/exec/shell)",
+    "capability stays UNPROVEN",
+    "production serving qualification stays UNCHANGED"
+  ],
+  "memory_conclusion": "All three controls are estimated to fit the 48 GB large tier in exact BF16 with no quantization; no control is launched on an estimate alone and no precision is ever altered to make a model fit.",
+  "memory_headroom_estimates_large_48gb": {
+    "Mistral-Nemo-Instruct-2407": {
+      "architecture": {
+        "head_dim": 128,
+        "kv_heads": 8,
+        "layers": 40
+      },
+      "basis": "architecture fields read from each pinned revision's config.json (public file); weights are the exact recorded byte sums; overhead is an ASSUMED 4 GB reserve -- an estimate, not a measurement",
+      "context_assumption": "max_new_tokens 64 + <=64 prompt tokens",
+      "cuda_context_allocator_overhead_bytes_assumed": 4000000000,
+      "estimated_headroom_bytes": 19483093696,
+      "estimated_total_bytes": 28516906304,
+      "fits_large_48gb": true,
+      "kv_cache_bytes_estimate": 21299200,
+      "large_tier_vram_bytes": 48000000000,
+      "weights_bytes_exact_bf16": 24495607104
+    },
+    "Phi-4": {
+      "architecture": {
+        "head_dim": 128,
+        "kv_heads": 10,
+        "layers": 40
+      },
+      "basis": "architecture fields read from each pinned revision's config.json (public file); weights are the exact recorded byte sums; overhead is an ASSUMED 4 GB reserve -- an estimate, not a measurement",
+      "context_assumption": "max_new_tokens 64 + <=64 prompt tokens",
+      "cuda_context_allocator_overhead_bytes_assumed": 4000000000,
+      "estimated_headroom_bytes": 14654333008,
+      "estimated_total_bytes": 33345666992,
+      "fits_large_48gb": true,
+      "kv_cache_bytes_estimate": 26624000,
+      "large_tier_vram_bytes": 48000000000,
+      "weights_bytes_exact_bf16": 29319042992
+    },
+    "Qwen3-8B": {
+      "architecture": {
+        "head_dim": 128,
+        "kv_heads": 8,
+        "layers": 36
+      },
+      "basis": "architecture fields read from each pinned revision's config.json (public file); weights are the exact recorded byte sums; overhead is an ASSUMED 4 GB reserve -- an estimate, not a measurement",
+      "context_assumption": "max_new_tokens 1024 (thinking template) + <=64 prompt tokens",
+      "cuda_context_allocator_overhead_bytes_assumed": 4000000000,
+      "estimated_headroom_bytes": 27456281624,
+      "estimated_total_bytes": 20543718376,
+      "fits_large_48gb": true,
+      "kv_cache_bytes_estimate": 162201600,
+      "large_tier_vram_bytes": 48000000000,
+      "weights_bytes_exact_bf16": 16381516776
+    }
+  },
+  "official_rules": {
+    "accessed": "2026-09-24",
+    "free_daily_gpu_quota": "5 minutes (medium queue priority); unauthenticated 2 minutes; quota resets exactly 24 hours after first GPU use",
+    "hardware": {
+      "large": "half NVIDIA RTX Pro 6000 Blackwell, 48 GB VRAM, 1x quota cost",
+      "xlarge": "full RTX Pro 6000 Blackwell, 96 GB, 2x quota cost"
+    },
+    "hosting_free_personal": "accounts in good standing (verified email, account older than 30 days) can host up to 2 ZeroGPU Spaces for free",
+    "hosting_orgs": "Team/Enterprise (NOT used)",
+    "hosting_pro": "PRO can host up to 10 (NOT used: no PRO purchase)",
+    "paid_extension": "PRO/Team/Enterprise only, pre-paid credits at $1 per 10 minutes (NOT used: no payment method, no credits)",
+    "runtime": {
+      "default_function_duration_seconds": 60,
+      "model_loading": "models are placed on cuda at module level; a CUDA emulation mode runs outside @spaces.GPU (no GPU quota used); real CUDA only inside @spaces.GPU",
+      "python": [
+        "3.12.12",
+        "3.10.13"
+      ],
+      "sdk": "Gradio only",
+      "torch": "2.8.0 to latest",
+      "torch_compile": "not supported"
+    },
+    "source": "https://huggingface.co/docs/hub/spaces-zerogpu"
+  },
+  "owner_cash_incurred": "none",
+  "phase": "21B.4.20",
+  "program_state": {
+    "CONTROL_CAPABILITY_STATUS": "UNPROVEN",
+    "FRONTIER_EXECUTION_AUTHORIZED": "NO",
+    "GENESIS_FOUNDATION": "NOT SELECTED",
+    "GENESIS_FRONTIER_STATUS": "UNPROVEN",
+    "PHASE_21C": "NOT AUTHORIZED"
+  },
+  "quota_plan": {
+    "free_daily_quota_seconds": 300,
+    "per_control_gpu_function_duration_seconds": {
+      "Mistral-Nemo-Instruct-2407": 60,
+      "Phi-4": 60,
+      "Qwen3-8B": 90
+    },
+    "rule": "respect the legitimate daily quota; if a window is exhausted, preserve phase state and continue only when free quota legitimately returns; no multiple accounts, no token rotation, no quota bypass",
+    "total_planned_seconds": 210
+  },
+  "result": "ELIGIBILITY_NOT_ESTABLISHED",
+  "result_meaning": "No authenticated Hugging Face session is available to this agent, so eligibility can be neither confirmed nor refused. This is NOT HF_ZEROGPU_NOT_ELIGIBLE (the account was not shown to be ineligible) and it is NOT eligible.",
+  "resume_requirements": [
+    "the owner logs in to Hugging Face in the Chrome session (an account with verified email older than 30 days)",
+    "read-only verification of profile join date, email verified flag, billing (no payment method) and the ZeroGPU quota display",
+    "a Space runner and evidence writer validated in CI before any GPU quota is used"
+  ],
+  "unverified_risks": [
+    "ZeroGPU Space CPU RAM and disk are not published in the docs; loading the largest control (Phi-4, 29.3 GB BF16) at module level needs enough CPU RAM/disk, which is unproven",
+    "free quota is only 300 GPU-seconds per day; each control is planned within a small @spaces.GPU duration and controls run one at a time across quota windows without evasion"
+  ]
+}

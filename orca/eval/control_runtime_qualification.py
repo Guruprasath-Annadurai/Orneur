@@ -390,6 +390,53 @@ def _validate_lightning_financial(record: dict, evidence_root: Path) -> None:
             raise ControlRuntimeError(f"Lightning financial artifact {art!r} is missing or its hash does not verify")
 
 
+# ── Hugging Face ZeroGPU: MODEL RUNTIME COMPATIBILITY is not PRODUCTION SERVING ──
+# A ZeroGPU/Gradio/PyTorch smoke can show that the exact locked checkpoint loads in BF16 and generates. It is never
+# proof of a production serving runtime (vLLM/TGI/etc.); that is a separate, later Phase 21B proof and must stay
+# UNCHANGED by anything ZeroGPU does. These two concepts are never merged.
+ZEROGPU_PROVIDER = "Hugging Face ZeroGPU"
+MODEL_RUNTIME_COMPATIBILITY_STATUSES = ("QUALIFIED", "FAILED", "NOT_PROVEN", "NOT_TESTED", "NOT_ELIGIBLE")
+PRODUCTION_SERVING_UNCHANGED = "UNCHANGED"
+
+
+def derive_model_runtime_compatibility(*, provider_eligible: bool, identity_pass: bool, bf16_exact_model_loaded: bool,
+                                       smokes_pass: bool, evidence_verified: bool, cleanup_pass: bool,
+                                       owner_cash_delta_usd, attempted: bool = True) -> str:
+    """QUALIFIED only when the exact identity passes, the exact BF16 checkpoint loaded, every required smoke succeeded,
+    the evidence hashes verify, cleanup succeeded and owner cash delta is exactly 0."""
+    if not provider_eligible:
+        return "NOT_ELIGIBLE"
+    if not attempted:
+        return "NOT_TESTED"
+    if to_decimal(owner_cash_delta_usd, "owner_cash_delta_usd") != 0:
+        return "NOT_PROVEN"      # positive owner cash: never accepted (acceptance is a financial gate too)
+    if not (identity_pass and evidence_verified and cleanup_pass):
+        return "NOT_PROVEN"
+    if bf16_exact_model_loaded and smokes_pass:
+        return "QUALIFIED"
+    return "FAILED" if bf16_exact_model_loaded is False or smokes_pass is False else "NOT_PROVEN"
+
+
+def validate_zerogpu_classification(record: dict) -> None:
+    """Static boundary checks for a ZeroGPU control record."""
+    if record.get("gpu_provider") != ZEROGPU_PROVIDER:
+        raise ControlRuntimeError("not a ZeroGPU record")
+    if record.get("production_serving_runtime_status") != PRODUCTION_SERVING_UNCHANGED:
+        raise ControlRuntimeError("ZeroGPU evidence can never change production serving qualification; it must remain UNCHANGED")
+    if "runtime_qualification_status" in record and record["runtime_qualification_status"] == "RUNTIME_QUALIFIED":
+        raise ControlRuntimeError("a ZeroGPU record must not use the production-runtime label RUNTIME_QUALIFIED")
+    status = record.get("model_runtime_compatibility_status")
+    if status not in MODEL_RUNTIME_COMPATIBILITY_STATUSES:
+        raise ControlRuntimeError(f"model_runtime_compatibility_status {status!r} is not one of {MODEL_RUNTIME_COMPATIBILITY_STATUSES}")
+    if record.get("capability_status") != CAPABILITY_STATUS:
+        raise ControlRuntimeError("capability_status must remain UNPROVEN")
+    if status == "QUALIFIED":
+        if str(record.get("precision", "")).lower() not in ("bfloat16", "bf16") or record.get("quantization") not in (None, "none", "NONE"):
+            raise ControlRuntimeError("QUALIFIED requires exact BF16 with no quantization")
+        if to_decimal(record.get("owner_cash_delta_usd"), "owner_cash_delta_usd") != 0:
+            raise ControlRuntimeError("QUALIFIED requires owner cash delta exactly 0")
+
+
 def retry_permitted(attempts: list[dict]) -> bool:
     """§28: no retry after positive billing, an identity/licence/security
     problem, or unclear cost state. Only clearly technical/harness failures

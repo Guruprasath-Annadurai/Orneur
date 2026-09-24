@@ -1206,3 +1206,67 @@ def test_lightning_account_and_staging_evidence_records_verified_staging_and_no_
         locked = LOCKED_CONTROL_IDENTITIES[next(c["control_name"] for c in [{"control_name": n} for n in LOCKED_CONTROL_IDENTITIES]
                                                 if LOCKED_CONTROL_IDENTITIES[c["control_name"]]["model_id"] == man["model_id"])]
         assert man["revision"] == locked["revision"] and man["weight_bytes_observed"] == locked["expected_weight_bytes"]
+
+
+# ══ Hugging Face ZeroGPU: model runtime compatibility != production serving ═══
+
+from orca.eval.control_runtime_qualification import (  # noqa: E402
+    MODEL_RUNTIME_COMPATIBILITY_STATUSES, PRODUCTION_SERVING_UNCHANGED, ZEROGPU_PROVIDER,
+    derive_model_runtime_compatibility, validate_zerogpu_classification,
+)
+
+
+def _zg(**over):
+    args = dict(provider_eligible=True, identity_pass=True, bf16_exact_model_loaded=True, smokes_pass=True,
+                evidence_verified=True, cleanup_pass=True, owner_cash_delta_usd="0")
+    args.update(over)
+    return derive_model_runtime_compatibility(**args)
+
+
+def test_zerogpu_compatibility_needs_every_condition():
+    assert _zg() == "QUALIFIED"
+    for k in ("identity_pass", "evidence_verified", "cleanup_pass"):
+        assert _zg(**{k: False}) == "NOT_PROVEN", k
+    assert _zg(bf16_exact_model_loaded=False) == "FAILED" and _zg(smokes_pass=False) == "FAILED"
+    assert _zg(owner_cash_delta_usd="0.01") == "NOT_PROVEN"
+    assert _zg(provider_eligible=False) == "NOT_ELIGIBLE" and _zg(attempted=False) == "NOT_TESTED"
+
+
+def _zrec(**over):
+    r = {"gpu_provider": ZEROGPU_PROVIDER, "production_serving_runtime_status": PRODUCTION_SERVING_UNCHANGED,
+         "model_runtime_compatibility_status": "QUALIFIED", "capability_status": "UNPROVEN", "precision": "bfloat16",
+         "quantization": None, "owner_cash_delta_usd": "0"}
+    r.update(over)
+    return r
+
+
+def test_zerogpu_never_changes_production_serving_and_never_uses_the_production_label():
+    validate_zerogpu_classification(_zrec())
+    for over, frag in (
+        ({"production_serving_runtime_status": "QUALIFIED"}, "UNCHANGED"),
+        ({"production_serving_runtime_status": None}, "UNCHANGED"),
+        ({"runtime_qualification_status": "RUNTIME_QUALIFIED"}, "production-runtime label"),
+        ({"capability_status": "QUALIFIED"}, "UNPROVEN"),
+        ({"precision": "float16"}, "BF16"),
+        ({"quantization": "int4"}, "BF16"),
+        ({"owner_cash_delta_usd": "0.5"}, "owner cash"),
+        ({"model_runtime_compatibility_status": "RUNTIME_QUALIFIED"}, "not one of"),
+    ):
+        with pytest.raises(ControlRuntimeError, match=frag):
+            validate_zerogpu_classification(_zrec(**over))
+    assert "RUNTIME_QUALIFIED" not in MODEL_RUNTIME_COMPATIBILITY_STATUSES   # the two vocabularies never merge
+
+
+def test_hf_zerogpu_eligibility_is_recorded_as_not_established_and_nothing_was_created():
+    art = json.loads((EVIDENCE_DIR / "GENESIS_HF_ZEROGPU_ELIGIBILITY_AND_HEADROOM_2026-09-24.json").read_text())
+    assert art["result"] == "ELIGIBILITY_NOT_ESTABLISHED" and "NOT HF_ZEROGPU_NOT_ELIGIBLE" in art["result_meaning"]
+    assert set(art["fields_not_verified"].values()) >= {"NOT_VERIFIED"} and art["gpu_started"] is False
+    assert art["created_or_launched"].startswith("nothing") and art["owner_cash_incurred"] == "none"
+    for name, m in art["memory_headroom_estimates_large_48gb"].items():
+        locked = LOCKED_CONTROL_IDENTITIES[name]
+        assert m["weights_bytes_exact_bf16"] == locked["expected_weight_bytes"]
+        assert m["fits_large_48gb"] is True and m["estimated_headroom_bytes"] > 10 * 10**9
+        assert "ASSUMED" in m["basis"] and "not a measurement" in m["basis"]
+    assert art["quota_plan"]["total_planned_seconds"] <= art["quota_plan"]["free_daily_quota_seconds"]
+    assert "no quota bypass" in art["quota_plan"]["rule"] and "no PRO purchase" in art["hard_rules"]
+    assert "UNCHANGED" in art["hard_rules"][-1]
