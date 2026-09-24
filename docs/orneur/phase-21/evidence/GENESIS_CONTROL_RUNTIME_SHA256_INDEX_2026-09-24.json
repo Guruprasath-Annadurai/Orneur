@@ -93,6 +93,12 @@
       "sha256": "debece64f7e2d54fa06ae9971b32cb48ad3dae1caedc5d44ee144d92aa895c56",
       "size_bytes": 9179,
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260924T125105Z.json",
+      "sha256": "3d7c16b4efcec90769765e5898f09f7e9182a5d060a041b0bcd041a0a788f3f9",
+      "size_bytes": 3251,
+      "evidence_role": "genesis_control_qwen3_8b_attempt1_settlement_reconciliation_20260924t125105z.json"
     }
   ]
 }
