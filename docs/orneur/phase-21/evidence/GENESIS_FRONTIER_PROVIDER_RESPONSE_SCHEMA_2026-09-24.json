@@ -1,0 +1,96 @@
+{
+  "schema_version": "genesis-frontier-provider-response-schema-v1",
+  "phase": "21B.4.19",
+  "created": "2026-09-24",
+  "note": "SCHEMA AND FORMAT ONLY. This file contains NO provider response and NO evidence. The example_format block is SYNTHETIC, uses placeholders only, and must never be treated as, copied into, or cited as evidence. No response is automatically trusted: a record is only VERIFIED when it passes orca.eval.frontier_provider_resolution.validate_provider_response().",
+  "future_response_storage": "docs/orneur/phase-21/evidence/provider_responses/ (created only when a real, owner-forwarded response exists; each raw file is stored verbatim and hashed)",
+  "response_record": {
+    "required_fields": {
+      "provider": "registry organization value (e.g. 'Mistral AI')",
+      "reference_name": "exact locked reference name",
+      "incoming_channel": "EMAIL | SUPPORT_TICKET | PUBLISHED_DOCUMENT | ACCOUNT_CONSOLE",
+      "sender_identity": "name/role/mailbox as shown by the provider",
+      "sender_domain": "must be an official provider domain (exact or subdomain) to be VERIFIED",
+      "message_id": "email Message-ID or ticket id",
+      "received_at_utc": "ISO-8601 UTC",
+      "question_ids_answered": "list of packet question ids actually answered, e.g. ['MIS-Q1','MIS-Q2']",
+      "raw_response_location": "path under the evidence root of the verbatim saved response",
+      "sha256": "64-hex SHA-256 of the saved raw bytes (recomputed at validation)",
+      "quoted_authoritative_clauses": "verbatim clauses relied on",
+      "interpretation": "reviewer's reading, reviewed against the exact question asked",
+      "remaining_ambiguity": "list; must be empty for any approved state change",
+      "evidence_tier": "A | B | C | D",
+      "review_status": "UNREVIEWED | VERIFIED | INSUFFICIENT | REJECTED",
+      "approved_state_changes": "list of {field, from, to, evidence_kind} or {blocker_resolved}; only on a VERIFIED record",
+      "reviewer": "named reviewer",
+      "expiry_or_freshness": "date/condition after which the response is stale"
+    }
+  },
+  "evidence_tiers": {
+    "A": "published primary-source terms/documentation from an official provider domain",
+    "B": "official provider written response from an official support/legal/business channel",
+    "C": "provider account setting with captured evidence plus current documentation",
+    "D": "informal/non-authoritative communication"
+  },
+  "resolving_tiers": ["A", "B", "C"],
+  "tier_d_can_resolve_hard_blocker": false,
+  "verification_requirements": [
+    "official provider domain (exact match or subdomain)",
+    "attributable to the provider",
+    "specific enough to answer the blocker; ambiguous replies are EVIDENCE_INSUFFICIENT",
+    "raw response saved verbatim and SHA-256 recomputed from the saved bytes",
+    "timestamped",
+    "linked to the exact reference",
+    "reviewed against the exact question asked",
+    "no remaining ambiguity behind any approved state change"
+  ],
+  "dimension_change_rules": {
+    "private_holdout_status": {"transitions": ["REVIEW_REQUIRED->PERMITTED", "BLOCKED->PERMITTED"], "evidence_kind": "NO_TRAINING_CONFIDENTIALITY", "also_requires": "verified account-setting evidence where the route is a provider setting"},
+    "automated_evaluation_status": {"transitions": ["REVIEW_REQUIRED->CLEAR"], "evidence_kind": "AUTOMATED_EVALUATION_PERMISSION"},
+    "license_or_terms_status": {"transitions": ["REVIEW_REQUIRED->CLEAR"], "evidence_kind": "TERMS_CLARIFICATION"},
+    "evidence_retention_status": {"transitions": ["REVIEW_REQUIRED->PERMITTED"], "evidence_kind": "RETENTION_RIGHTS"},
+    "model_identity_attributable": {"transitions": ["false->true"], "evidence_kind": "PROVIDER_VERSION_IDENTITY"},
+    "access_path_identified": {"transitions": ["false->true"], "evidence_kind": "ACCESS_PATH_TERMS"},
+    "reference_evaluation_admission_status": {"transitions": ["REVIEW_REQUIRED->ADMITTED"], "evidence_kind": "TERMS_CLARIFICATION"}
+  },
+  "never_changed_by_a_response": ["access_preflight_status", "full_protocol_access_validation", "SELF_HOST_COMPUTE_PROHIBITIVE", "ZERO_CASH_CHECK_REQUIRED"],
+  "required_sequence": [
+    "provider evidence received",
+    "evidence ingested",
+    "evidence verified",
+    "underlying evidence dimensions updated (apply_verified_evidence / resolve_blocker_token)",
+    "fail-closed validator run (promote_access_status -> validate_full_protocol_access_readiness)",
+    "only then access status may change",
+    "quorum recomputed (compute_admission_quorum re-derives readiness again)"
+  ],
+  "official_provider_domains": {
+    "DeepSeek AI": ["deepseek.com"],
+    "Zhipu AI / Z.ai": ["z.ai", "zhipuai.cn", "bigmodel.cn"],
+    "Mistral AI": ["mistral.ai"],
+    "MiniMax": ["minimax.io", "minimaxi.com"],
+    "Alibaba": ["alibabacloud.com", "aliyun.com"],
+    "Moonshot AI": ["moonshot.ai", "kimi.ai", "kimi.com", "moonshot.cn"]
+  },
+  "example_format": {
+    "_SYNTHETIC_NON_EVIDENCE": true,
+    "_warning": "PLACEHOLDER FORMAT ONLY. Not a provider reply. Never cite.",
+    "provider": "<PROVIDER_ORGANIZATION>",
+    "reference_name": "<LOCKED_REFERENCE_NAME>",
+    "incoming_channel": "<CHANNEL>",
+    "sender_identity": "<PLACEHOLDER>",
+    "sender_domain": "<OFFICIAL_DOMAIN>",
+    "message_id": "<PLACEHOLDER>",
+    "received_at_utc": "<ISO_8601_UTC>",
+    "question_ids_answered": ["<QUESTION_ID>"],
+    "raw_response_location": "<PATH_UNDER_EVIDENCE_ROOT>",
+    "sha256": "<64_HEX>",
+    "quoted_authoritative_clauses": ["<VERBATIM_CLAUSE>"],
+    "interpretation": "<REVIEWER_TEXT>",
+    "remaining_ambiguity": [],
+    "evidence_tier": "<A|B|C|D>",
+    "review_status": "UNREVIEWED",
+    "approved_state_changes": [],
+    "reviewer": "<NAME>",
+    "expiry_or_freshness": "<CONDITION>"
+  }
+}
