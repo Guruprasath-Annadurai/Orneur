@@ -1,0 +1,118 @@
+# Genesis Control Runtime Qualification Matrix — Phase 21B.4.20
+
+**Runtime-compatibility evidence only. No frontier inference, no benchmark,
+no private holdout, no generated-output execution, no Modal Sandbox.
+CAPABILITY REMAINS UNPROVEN for every control.**
+
+## Status (true state after this session)
+
+| Control | Identity | Preflight | Technical runtime | Financial acceptance | Runtime qualification | Capability |
+|---|---|---|---|---|---|---|
+| Qwen3-8B | ADMITTED | PASSED | FAILED (attempt 1 = harness failure, 34.6 s) | PASS (billed delta exactly 0) | FAILED | UNPROVEN |
+| Mistral-Nemo-Instruct-2407 | ADMITTED | PASSED | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
+| Phi-4 | ADMITTED | PASSED | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
+
+**No control is RUNTIME_QUALIFIED.** The three controls were authorized for one-at-a-time execution on
+existing Modal credits (owner decision, 2026-09-24). Qwen3-8B was launched once; the run was cancelled
+by a harness bug after 34.6 s (no model was served, no smoke ran). The harness treated a poll timeout
+as a failure because Modal 1.5.5 raises the *builtin* `TimeoutError` from `FunctionCall.get(timeout=)`;
+the harness now catches both. Owner billed delta was exactly 0 and cleanup passed (app stopped, 0 tasks,
+0 containers).
+
+**Execution stopped by the settlement rule (`BILLING_SETTLEMENT_NOT_YET_OBSERVABLE`).** For 30+ minutes after
+the attempt the account showed metered $20.03 / credits -$20.03 / billed $0 and an empty daily report, i.e.
+the run's own usage never became visible, so its credit coverage cannot be confirmed. The owner
+authorization requires stopping before the next launch in that case. No retry of Qwen3-8B, and no
+Mistral-Nemo or Phi-4 run, was started. Both are NOT_TESTED because they were never started; this is
+not a zero-cash-runway block (every preflight passed).
+
+## Billing reconciliation
+
+- **Historical GLM record (preserved, not rewritten):** before invocation 2 metered $8.68 / billed $0 / credits -$8.68;
+  after, metered $33.52 / billed $3.52 / credits -$30.00, owner delta $3.52, zero-cash gate VIOLATED.
+- **Current live baseline (2026-09-24):** metered $20.03 / billed $0 / credits -$20.03.
+- **Discrepancy:** unresolved billing-observability discrepancy, persisted in
+  `GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json`; the historical incident is not treated as disproven.
+- **Qwen3-8B attempt 1:** metered delta 0 (not visible), billed delta 0, derived remaining credit $9.97 before and $9.97 after
+  (unchanged only because usage was not visible). Settlement ambiguity: **YES**.
+- Gates per run: owner-payable gate (billed must not exceed baseline) AND credit-coverage gate
+  (derived remaining >= $5.00 reserve + $1.25 maximum authorized run cost).
+
+## Fresh account-specific financial preflight (live, read-only)
+
+Captured 2026-09-24 immediately before allocation via `modal billing summary --json` / `billing rates --json` /
+`app|container|volume list`.
+
+- Starting owner-payable (billed) cost: **$0.00**; metered $20.03 fully absorbed by $20.03 credits
+- Known remaining credit: **~$9.97**, *derived* (owner pool $30.00 minus credits applied; Modal exposes no remaining-credit field)
+- GPU: A100-80GB x 1 at $2.50/h; hard ceiling 20 min; worst case = rate x 20 min x 1.5 = **$1.25** per job
+- Fixed reserve **$5.00**; gate requires remaining >= reserve + $1.25
+
+The runway is thin (three worst-case jobs $3.75 vs $4.97 usable) and must be re-checked live before every launch.
+
+## Planned runtime topology (derived, not measured)
+
+Common: vLLM `v0.29.0` official image, digest
+`sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b`
+(the digest proven for Mistral Small 4 in Phase 21B.4.12.3), 1× A100-80GB,
+tensor-parallel 1, BF16, `--max-model-len 4096`, `--gpu-memory-utilization 0.90`
+(≈72 GB budget), OpenAI-compatible server started for the **exact pinned
+revision** from a local snapshot pre-downloaded with `revision=<pinned commit>`
+(consolidated duplicates excluded).
+
+| Control | Pinned revision | Raw BF16 weights | vs 24 GB | Runtime flags | Template / stop path |
+|---|---|---|---|---|---|
+| Qwen3-8B | `b968826d9c46dd6066d109eabc6255188de91218` | 16,381,516,776 B (5 shards) | fits raw weights, but runtime overhead must not be assumed to fit | `--reasoning-parser qwen3` (canonical control spec; thinking template default ON) | tokenizer_config chat_template, eos `<\|im_end\|>` |
+| Mistral-Nemo-Instruct-2407 | `04d8a90549d23fc6bd7f642064003592df51e9b3` | 24,495,607,104 B (HF 5-shard) | does **not** fit safely | `--tokenizer-mode hf --config-format hf --load-format safetensors` (pins the HF path; mistral-common path not used) | tokenizer_config chat_template, eos `</s>` |
+| Phi-4 | `2db69c1c3e91a05d2c64a3185acfbaf36f744e25` | 29,319,042,992 B (6 shards) | does **not** fit safely | default (Phi3ForCausalLM) | ChatML-like `<\|im_sep\|>`, eos `<\|im_end\|>` |
+
+An 80 GB-class GPU is chosen for fidelity, not minimal cost: weights plus
+runtime overhead plus a 4,096-token KV cache (roughly 0.6–0.85 GB per
+sequence, derived from architecture parameters and **not verified this
+phase**) sit far inside the 72 GB budget, avoiding OOM risk and any reliance
+on unconfirmed multi-GPU tensor-parallel support.
+
+## Smoke prompts (not a benchmark)
+
+`temperature=0`, `top_p=1`, `seed=0`, small `max_tokens` (1024 for Qwen's
+thinking template, 64 otherwise). User-only messages:
+
+- **A** — `Reply with exactly:` / `READY` (streamed, for first-token latency)
+- **B** — `Return the single integer result of:` / `2 + 3`
+- **C** — `Return valid JSON with one field:` / `{"status":"ready"}`
+
+Technical PASS = server ready, `/v1/models` identity matches the pinned repo id,
+all three requests HTTP 200 with non-empty content, clean shutdown, zero orphan
+processes. Exact-match against the expected strings is recorded but non-blocking;
+any difference is documented, never hidden. Generated text is data only.
+
+## Acceptance rules (machine-enforced in `orca/eval/control_runtime_qualification.py`)
+
+- `RUNTIME_QUALIFIED` only if technical `QUALIFIED` **and** financial `PASS` **and**
+  cleanup `PASS` with zero live resources **and** verified identity **and** verified hashes.
+- Financial `PASS` only if `owner_billed_delta_usd == 0` exactly. Technical success with any
+  positive owner billing is `NOT_ACCEPTED` (the GLM-5.3-Flash mistake must not recur).
+- No retry after positive billing, unclear cost state, or a failed cleanup; no automatic retry ever.
+- Every attempt is recorded; a hidden or omitted attempt fails validation.
+
+## Attempt accounting
+
+| Control | Attempt | Outcome | Duration | Owner billed delta | Cleanup | Settlement |
+|---|---|---|---|---|---|---|
+| Qwen3-8B | 1 | HARNESS_FAILURE (poll `TimeoutError` not caught) | 34.6 s | 0 | PASS | BILLING_SETTLEMENT_NOT_YET_OBSERVABLE |
+
+## To resume (each launch needs the previous settlement observable and a fresh gate)
+
+```bash
+.venv/bin/python scripts/phase21b_4_20_control_runtime_qualification.py --control qwen3_8b --mode run
+```
+
+The harness refuses to start while any earlier attempt's billing settlement is unresolved.
+
+## Program state (unchanged)
+
+- GENESIS FOUNDATION: NOT SELECTED
+- GENESIS FRONTIER STATUS: UNPROVEN
+- CONTROL CAPABILITY STATUS: UNPROVEN
+- PHASE 21C: NOT AUTHORIZED
+- FRONTIER EXECUTION AUTHORIZED: NO

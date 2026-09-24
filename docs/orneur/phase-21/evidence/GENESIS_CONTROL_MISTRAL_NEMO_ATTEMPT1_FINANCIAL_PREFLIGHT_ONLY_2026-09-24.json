@@ -1,0 +1,83 @@
+{
+  "attempt_number": 1,
+  "authorization_basis": "Phase 21B.4.20 specification relayed by the owner in a genuine user turn on 2026-09-24 directs GPU-backed runtime qualification of the three locked controls, subject to the section 7-9 hard financial gates. It states no dollar ceiling, so this run imposes its own: worst-case per-job cost above, all controls together well inside remaining credit minus the fixed reserve.",
+  "billing_discrepancy_observation": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json",
+  "billing_summary_live": {
+    "adjustments": {
+      "credits": "-20.03000000",
+      "free_storage": "-0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "20.03000000",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "20.03366467",
+      "llm_tokens": "0E-8",
+      "volumes": "0E-8"
+    }
+  },
+  "captured_at_utc": "2026-09-24T11:13:29Z",
+  "cleanup_procedure": "cancel call with terminate_containers, exit ephemeral app context, verify zero containers/volumes/running tasks/non-idle apps via modal CLI, then settle-poll billing",
+  "control_name": "Mistral-Nemo-Instruct-2407",
+  "credit_pool_provenance": "Owner-provided Phase 21B.4.13 billing gate (2026-09-22: credits_remaining ~22.26 with usage 7.74 => pool 30.00) and the credits ceiling observed at exactly -30.00 in the GLM incident record; cross-checked against live adjustments.credits. Modal exposes no direct remaining-credit field, so remaining = pool - credits applied (derived, not read).",
+  "credit_pool_usd_assumed": "30.00",
+  "estimated_maximum_spend_usd": "1.2500",
+  "evidence_type": "GENESIS_CONTROL_FINANCIAL_PREFLIGHT",
+  "financial_acceptance_rule": "OWNER_BILLED_DELTA_USD == 0 exactly (billed_after == billed_before); any positive amount FAILS financial acceptance even if technically successful",
+  "gate_decision": {
+    "allowed": true,
+    "billed_cost_usd": "0E-8",
+    "credit_pool_total_usd": "30.00",
+    "credits_applied_usd": "20.03000000",
+    "headroom_usd": "3.720000000000000000000000000",
+    "maximum_authorized_run_cost_usd": "1.250000000000000000000000000",
+    "metered_cost_usd": "20.03000000",
+    "reasons": [],
+    "remaining_credit_usd": "9.97000000",
+    "reserve_usd": "5.00"
+  },
+  "gates": "OWNER PAYABLE GATE (billed must not exceed baseline) AND CREDIT-COVERAGE GATE (derived remaining >= reserve + maximum authorized run cost)",
+  "gpu_count": 1,
+  "gpu_execution_allowed": false,
+  "gpu_hour_rate_usd": "2.50000",
+  "gpu_type": "A100-80GB",
+  "hard_container_timeout_seconds": 1200,
+  "hard_runtime_timeout_seconds": 1200,
+  "known_remaining_credit_usd": "9.97000000",
+  "live_polling": "every 30s; proactive cancel if billed_cost rises, metered growth exceeds the worst-case cap, or projected runway is breached",
+  "phase": "21B.4.20",
+  "provider_account_context": {
+    "provider": "Modal",
+    "workspace_profile_redacted": true
+  },
+  "ready_deadline_seconds": 900,
+  "resources_before": {
+    "apps": [
+      {
+        "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
+        "created_at": "2026-09-18 18:50:37+05:30",
+        "description": "orca-genesis-eval-sandbox",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
+        "created_at": "2026-09-18 23:18:29+05:30",
+        "description": "orca-genesis-eval-sandbox-v2",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      }
+    ],
+    "live_resources": 0
+  },
+  "safety_reserve_usd": "5.00",
+  "source": "modal billing summary --json / billing rates --json / app+container+volume list (supported CLI, executed live in this session immediately before any allocation)",
+  "starting_credits_applied_usd": "-20.03000000",
+  "starting_metered_cost_usd": "20.03000000",
+  "starting_owner_payable_usd": "0E-8",
+  "worst_case_cost_method": "gpu_rate/3600 * 1200s * 1.5 margin (CPU/memory/unknown metering)"
+}

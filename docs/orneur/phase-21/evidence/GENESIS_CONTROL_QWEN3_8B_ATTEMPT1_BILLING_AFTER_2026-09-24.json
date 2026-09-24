@@ -1,0 +1,107 @@
+{
+  "billed_after_usd": "0E-8",
+  "billed_before_usd": "0E-8",
+  "billing_settlement": {
+    "reasons": [
+      "the completed run's metered usage is not yet visible (metered_delta == 0 and the run's own report cost is absent/zero)"
+    ],
+    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+    "stop_before_next_control": true
+  },
+  "billing_summary_settled": {
+    "adjustments": {
+      "credits": "-20.03000000",
+      "free_storage": "-0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "20.03000000",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "20.03366467",
+      "llm_tokens": "0E-8",
+      "volumes": "0E-8"
+    }
+  },
+  "captured_at_utc": "2026-09-24T11:16:54Z",
+  "cleanup_snapshot": {
+    "apps": [
+      {
+        "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
+        "created_at": "2026-09-18 18:50:37+05:30",
+        "description": "orca-genesis-eval-sandbox",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
+        "created_at": "2026-09-18 23:18:29+05:30",
+        "description": "orca-genesis-eval-sandbox-v2",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-vOhF9vtQOV1W5UVAcMPS8O",
+        "created_at": "2026-09-24 16:44:31+05:30",
+        "description": "orneur-p21b420-control-runtime-qualification",
+        "state": "stopped",
+        "stopped_at": "2026-09-24 16:45:05+05:30",
+        "tasks": "0"
+      }
+    ],
+    "captured_at_utc": "2026-09-24T11:15:18Z",
+    "containers": [],
+    "live_resources": 0,
+    "non_idle_apps": [],
+    "running_tasks_total": 0,
+    "volumes": []
+  },
+  "delta_rule": "owner_billed_delta_usd = (highest billed_cost observed in-run or in the settle window) - billed_before; any positive reading fails acceptance",
+  "evidence_type": "MODAL_BILLING_SNAPSHOT_AFTER_GPU_ALLOCATION",
+  "financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "30.00",
+    "credits_applied_baseline_usd": "20.03000000",
+    "credits_applied_postrun_usd": "20.03000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "9.97000000",
+    "derived_credit_remaining_before_usd": "9.97000000",
+    "maximum_authorized_run_cost_usd": "1.250000000000000000000000000",
+    "metered_baseline_usd": "20.03000000",
+    "metered_delta_usd": "0E-8",
+    "metered_postrun_usd": "20.03000000",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
+  "in_run_guard_samples": [],
+  "owner_billed_delta_usd": "0E-8",
+  "peak_observed_billed_usd": "0E-8",
+  "run_app_metered_cost_usd_from_report": "0",
+  "settle_samples": [
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "t": 1.5
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "t": 48.0
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "t": 94.5
+    }
+  ],
+  "settled_delta_usd": "0E-8",
+  "telemetry_limitation": "Modal billing is polled via the CLI; provisional metering has been observed to differ from later-settled figures (Phase 21B.4.13 record vs current report). Any positive billed reading during the run or settle window is recorded and fails acceptance."
+}

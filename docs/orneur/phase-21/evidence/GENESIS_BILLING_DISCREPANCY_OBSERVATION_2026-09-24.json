@@ -1,0 +1,37 @@
+{
+  "classification": "BILLING_OBSERVABILITY_DISCREPANCY",
+  "consequence": "Does not automatically block a new run. Because the billed-cost field alone is not trusted, each run is protected by BOTH an owner-payable gate (billed must not rise above the pre-run baseline) AND a credit-coverage gate (derived remaining credit >= reserve + maximum authorized run cost), plus stronger before/after and multi-reading settlement evidence. Remaining credit is derived from the $30.00 pool minus credits applied, not read from the provider.",
+  "current_live_baseline_2026-09-24": {
+    "billed_usd": "0E-8",
+    "credits_usd": "-20.03000000",
+    "metered_usd": "20.03000000",
+    "source": "modal billing summary --json (live, before any Phase 21B.4.20 GPU allocation)"
+  },
+  "discrepancy": "The current summary reports metered $20.03 / billed $0 / credits -$20.03, which cannot be the same accumulating account state as metered $33.52 / billed $3.52 / credits -$30.00 a day earlier. Possible causes (unverified): a billing-period reset, provisional metering later re-rated, or a billing adjustment. The cause is not known and is not assumed.",
+  "evidence_type": "UNRESOLVED_FINANCIAL_OBSERVATION",
+  "historical_glm_record_preserved_facts": {
+    "after_invocation2": {
+      "billed_usd": 3.52,
+      "credits_usd": -30.0,
+      "metered_usd": 33.52,
+      "owner_billed_delta_usd": 3.52,
+      "zero_cash_gate_result": "VIOLATED"
+    },
+    "artifacts": [
+      "GLM_5_3_FLASH_BILLING_BEFORE_2026-09-23.json",
+      "GLM_5_3_FLASH_BILLING_AFTER_2026-09-23.json",
+      "GLM_5_3_FLASH_BILLING_GATE_2026-09-22.json"
+    ],
+    "before_invocation2": {
+      "billed_usd": 0.0,
+      "credits_usd": -8.68,
+      "metered_usd": 8.68
+    },
+    "credit_ceiling_observed_usd": 30.0
+  },
+  "maximum_authorized_run_cost_usd": "1.25",
+  "phase": "21B.4.20",
+  "reserve_usd": "5.00",
+  "statement": "Historical GLM incident evidence and current live Modal billing data are not mutually consistent. The historical incident is NOT erased, rewritten or treated as disproven because the current summary shows $0 billed.",
+  "status": "UNRESOLVED"
+}

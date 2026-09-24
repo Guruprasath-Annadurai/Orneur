@@ -1,0 +1,210 @@
+{
+  "architecture": "Qwen3ForCausalLM",
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+      "cleanup_result": "PASS",
+      "duration_seconds": 34.6,
+      "finished_at_utc": "2026-09-24T11:15:05Z",
+      "modal_app_name": "orneur-p21b420-control-runtime-qualification",
+      "outcome": "HARNESS_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_RAW_LOG_2026-09-24.log",
+      "raw_log_sha256": "d35d88fdc6ca5d54a6c457ce143186bafc767f46c3a003f5c63d1019974b9acd",
+      "reason": "TimeoutError: ",
+      "resource_type": "Modal ephemeral function A100-80GBx1",
+      "started_at_utc": "2026-09-24T11:14:30Z"
+    }
+  ],
+  "attention_backend": null,
+  "billing_discrepancy_observation": {
+    "artifact": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json",
+    "sha256": "6eafee2d2312f530d12302ce421f3c6ba52c2cac64ebd9cd8b55194fe63935d1"
+  },
+  "billing_settlement": {
+    "reasons": [
+      "the completed run's metered usage is not yet visible (metered_delta == 0 and the run's own report cost is absent/zero)"
+    ],
+    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+    "stop_before_next_control": true
+  },
+  "capability_status": "UNPROVEN",
+  "chat_template_source": "tokenizer_config.json chat_template @ pinned revision (4,168 chars; hybrid thinking, enable_thinking default ON)",
+  "cleanup_snapshot": {
+    "apps": [
+      {
+        "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
+        "created_at": "2026-09-18 18:50:37+05:30",
+        "description": "orca-genesis-eval-sandbox",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
+        "created_at": "2026-09-18 23:18:29+05:30",
+        "description": "orca-genesis-eval-sandbox-v2",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-vOhF9vtQOV1W5UVAcMPS8O",
+        "created_at": "2026-09-24 16:44:31+05:30",
+        "description": "orneur-p21b420-control-runtime-qualification",
+        "state": "stopped",
+        "stopped_at": "2026-09-24 16:45:05+05:30",
+        "tasks": "0"
+      }
+    ],
+    "captured_at_utc": "2026-09-24T11:15:18Z",
+    "containers": [],
+    "live_resources": 0,
+    "non_idle_apps": [],
+    "running_tasks_total": 0,
+    "volumes": []
+  },
+  "cleanup_status": "PASS",
+  "cold_start_seconds": null,
+  "container_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
+  "container_image": "vllm/vllm-openai:v0.29.0",
+  "control_name": "Qwen3-8B",
+  "download_seconds": null,
+  "evidence_kind": "RUNTIME_QUALIFICATION_SMOKE",
+  "financial_acceptance_status": "PASS",
+  "financial_evidence": {
+    "billing_after_artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_BILLING_AFTER_2026-09-24.json",
+    "billing_after_sha256": "63c49899ed58e3c67ba1e8e2e122f30d91c215f33c1e8c611f99f6964e2543c8",
+    "billing_before_artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_BILLING_BEFORE_2026-09-24.json",
+    "billing_before_sha256": "03df55e68b0cdf2cccd3efa689fba36964422e4421526032103b79569dd73d79",
+    "preflight_artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_FINANCIAL_PREFLIGHT_2026-09-24.json",
+    "preflight_sha256": "8b1551c1b59e839ef392e74419cc90cea41ac02f36626623eba6e00326ab4429"
+  },
+  "financial_preflight_status": "PASSED",
+  "financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "30.00",
+    "credits_applied_baseline_usd": "20.03000000",
+    "credits_applied_postrun_usd": "20.03000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "9.97000000",
+    "derived_credit_remaining_before_usd": "9.97000000",
+    "maximum_authorized_run_cost_usd": "1.250000000000000000000000000",
+    "metered_baseline_usd": "20.03000000",
+    "metered_delta_usd": "0E-8",
+    "metered_postrun_usd": "20.03000000",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
+  "finished_at_utc": "2026-09-24T11:15:05Z",
+  "generated_output_executed": false,
+  "generated_tokens": null,
+  "generation_config": {
+    "max_tokens": 1024,
+    "seed": 0,
+    "temperature": 0,
+    "top_p": 1
+  },
+  "gpu_count": 1,
+  "gpu_memory_used_mib_before_after": [
+    null,
+    null
+  ],
+  "gpu_provider": "Modal",
+  "gpu_type": "A100-80GB",
+  "health_status": null,
+  "identity_verification": {
+    "identity_evidence_strength": "HF snapshot directory name == pinned commit AND summed HF shard bytes == preflight-recorded exact bytes AND /v1/models id == pinned repo id AND server started from that local snapshot path. vLLM exposes no separate runtime revision field; no stronger runtime proof exists.",
+    "models_endpoint": null,
+    "no_silent_model_fallback": false,
+    "pinned_revision_matches_runtime_artifact": false,
+    "runtime_served_model_matches_pinned_id": false,
+    "snapshot_dir_names": null,
+    "weight_bytes_expected_for_pinned_revision": 16381516776,
+    "weight_bytes_observed": null,
+    "weight_shard_files": null
+  },
+  "latency_seconds": null,
+  "license": "apache-2.0",
+  "live_resources_after_cleanup": 0,
+  "load_seconds": null,
+  "max_model_len": 4096,
+  "model_id": "Qwen/Qwen3-8B",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests and are not performance claims. Generated output was treated as data and never executed.",
+  "orphan_vllm_processes_after_shutdown": null,
+  "owner_billed_delta_usd": "0E-8",
+  "peak_gpu_memory_bytes": null,
+  "phase": "21B.4.20",
+  "precision": "bfloat16",
+  "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_RAW_LOG_2026-09-24.log",
+  "raw_log_sha256": "d35d88fdc6ca5d54a6c457ce143186bafc767f46c3a003f5c63d1019974b9acd",
+  "reasoning_mode": "ENABLED (Qwen3 hybrid-thinking template default; canonical control spec launches with --reasoning-parser qwen3)",
+  "reasoning_parser": "qwen3",
+  "runtime_name": "vLLM (official vllm/vllm-openai image, OpenAI-compatible server)",
+  "runtime_qualification_status": "FAILED",
+  "runtime_version": null,
+  "server_argv_sanitized": null,
+  "server_exit_code": null,
+  "smoke_outputs": [],
+  "smoke_prompts": [
+    {
+      "expected": "READY",
+      "messages": [
+        {
+          "content": "Reply with exactly:\nREADY",
+          "role": "user"
+        }
+      ],
+      "purpose": "deterministic readiness",
+      "smoke_id": "A"
+    },
+    {
+      "expected": "5",
+      "messages": [
+        {
+          "content": "Return the single integer result of:\n2 + 3",
+          "role": "user"
+        }
+      ],
+      "purpose": "trivial instruction following",
+      "smoke_id": "B"
+    },
+    {
+      "expected": "{\"status\":\"ready\"}",
+      "messages": [
+        {
+          "content": "Return valid JSON with one field:\n{\"status\":\"ready\"}",
+          "role": "user"
+        }
+      ],
+      "purpose": "short structured response",
+      "smoke_id": "C"
+    }
+  ],
+  "started_at_utc": "2026-09-24T11:14:30Z",
+  "steady_gpu_memory_bytes": null,
+  "stop_behavior": "eos_token <|im_end|>; generation_config eos_token_id [151645, 151643]",
+  "technical_serving_status": "FAILED",
+  "tensor_parallel": 1,
+  "tokenizer_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "tokens_per_second": null,
+  "ttft_seconds": null,
+  "unobservable_reasons": {
+    "attention_backend": "no attention-backend line matched in the vLLM server log",
+    "cold_start_seconds": "server never became ready",
+    "generated_tokens": "no usage data returned",
+    "latency_seconds": "no smoke request completed",
+    "load_seconds": "no model-load duration line matched in the vLLM server log",
+    "peak_gpu_memory_bytes": "no nvidia-smi samples captured",
+    "runtime_version": "vLLM version not reported by the container",
+    "steady_gpu_memory_bytes": "server never reached steady state",
+    "tokens_per_second": "no usage/latency data (tiny-smoke metric only; not a performance claim)",
+    "ttft_seconds": "no streamed first token observed"
+  },
+  "version_endpoint": null,
+  "versions": {}
+}

@@ -1,0 +1,121 @@
+{
+  "architecture": "Phi3ForCausalLM",
+  "attempts": [],
+  "attention_backend": null,
+  "capability_status": "UNPROVEN",
+  "chat_template_source": "tokenizer_config.json chat_template @ pinned revision (462 chars; ChatML-like <|im_start|>role<|im_sep|>content<|im_end|>)",
+  "cleanup_status": "NOT_APPLICABLE",
+  "cold_start_seconds": null,
+  "container_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
+  "container_image": "vllm/vllm-openai:v0.29.0",
+  "control_name": "Phi-4",
+  "evidence_kind": "RUNTIME_QUALIFICATION_SMOKE",
+  "financial_acceptance_status": "NOT_TESTED",
+  "financial_evidence": {
+    "preflight_artifact": "GENESIS_CONTROL_PHI4_ATTEMPT1_FINANCIAL_PREFLIGHT_ONLY_2026-09-24.json",
+    "preflight_sha256": "89ba7c56a26ec617fd2636ed8915a35fad5869b2d92c5f279053c90fd55a472e"
+  },
+  "financial_preflight_status": "PASSED",
+  "finished_at_utc": "2026-09-24T11:48:04Z",
+  "generated_output_executed": false,
+  "generated_tokens": null,
+  "generation_config": {
+    "max_tokens": 64,
+    "note": "planned",
+    "seed": 0,
+    "temperature": 0,
+    "top_p": 1
+  },
+  "gpu_count": 1,
+  "gpu_provider": "Modal",
+  "gpu_type": "A100-80GB (planned)",
+  "identity_verification": {
+    "pinned_revision_from_registry": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+    "reason": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "verified_at_runtime": false
+  },
+  "latency_seconds": null,
+  "license": "mit",
+  "live_resources_after_cleanup": 0,
+  "load_seconds": null,
+  "max_model_len": 4096,
+  "model_id": "microsoft/phi-4",
+  "model_revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+  "notes": "NO GPU EXECUTION OCCURRED. Not started: BILLING_SETTLEMENT_NOT_YET_OBSERVABLE after the Qwen3-8B attempt 1 (harness failure at 34.6s); the owner authorization requires stopping before the next control until that run's usage/credit coverage is observable. The fresh read-only financial preflight (see financial_evidence) PASSED, so this is NOT a zero-cash-runway block; the run simply has not been launched. Capability is UNPROVEN and nothing was benchmarked.",
+  "owner_billed_delta_usd": "0",
+  "peak_gpu_memory_bytes": null,
+  "phase": "21B.4.20",
+  "planned_topology": {
+    "extra_vllm_args": [],
+    "gpu": "A100-80GB x1",
+    "gpu_memory_utilization": 0.9,
+    "max_model_len": 4096,
+    "tensor_parallel": 1
+  },
+  "precision": "bfloat16 (planned)",
+  "raw_log_artifact": null,
+  "raw_log_sha256": null,
+  "reasoning_mode": "NOT_APPLICABLE (base phi-4 instruct, no thinking tags)",
+  "reasoning_parser": null,
+  "runtime_name": "vLLM (official vllm/vllm-openai image, OpenAI-compatible server) -- PLANNED",
+  "runtime_qualification_status": "NOT_TESTED",
+  "runtime_version": null,
+  "smoke_outputs": [],
+  "smoke_prompts": [
+    {
+      "expected": "READY",
+      "messages": [
+        {
+          "content": "Reply with exactly:\nREADY",
+          "role": "user"
+        }
+      ],
+      "purpose": "deterministic readiness",
+      "smoke_id": "A"
+    },
+    {
+      "expected": "5",
+      "messages": [
+        {
+          "content": "Return the single integer result of:\n2 + 3",
+          "role": "user"
+        }
+      ],
+      "purpose": "trivial instruction following",
+      "smoke_id": "B"
+    },
+    {
+      "expected": "{\"status\":\"ready\"}",
+      "messages": [
+        {
+          "content": "Return valid JSON with one field:\n{\"status\":\"ready\"}",
+          "role": "user"
+        }
+      ],
+      "purpose": "short structured response",
+      "smoke_id": "C"
+    }
+  ],
+  "started_at_utc": "2026-09-24T11:48:04Z",
+  "steady_gpu_memory_bytes": null,
+  "stop_behavior": "eos_token <|im_end|>; generation_config eos_token_id [100257, 100265]",
+  "technical_serving_status": "NOT_TESTED",
+  "tensor_parallel": 1,
+  "tokenizer_revision": null,
+  "tokens_per_second": null,
+  "ttft_seconds": null,
+  "unobservable_reasons": {
+    "attention_backend": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "cold_start_seconds": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "generated_tokens": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "latency_seconds": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "load_seconds": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "peak_gpu_memory_bytes": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "reasoning_parser": "not applicable: this control is a non-reasoning model with no reasoning parser",
+    "runtime_version": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "steady_gpu_memory_bytes": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "tokenizer_revision": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "tokens_per_second": "not executed: GPU launch did not occur in this session (no provider resources were created)",
+    "ttft_seconds": "not executed: GPU launch did not occur in this session (no provider resources were created)"
+  }
+}

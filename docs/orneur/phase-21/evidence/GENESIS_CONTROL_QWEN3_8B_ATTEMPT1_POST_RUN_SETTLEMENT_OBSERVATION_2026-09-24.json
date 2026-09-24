@@ -1,0 +1,259 @@
+{
+  "attempt_run_window_utc": [
+    "2026-09-24T11:14:30Z",
+    "2026-09-24T11:15:05Z"
+  ],
+  "conclusion": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE: for more than 30 minutes after the 34.6-second attempt the account metered total stayed at 20.03, credits at -20.03, billed at 0, and the daily report had no rows. The run's usage is not visible, so its credit coverage cannot be confirmed; billed never rose above the baseline in any reading. Execution stopped before any further control per the owner authorization.",
+  "control_name": "Qwen3-8B",
+  "evidence_type": "QWEN3_8B_ATTEMPT1_POST_RUN_SETTLEMENT_OBSERVATION",
+  "final_app_list": [
+    {
+      "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
+      "created_at": "2026-09-18 18:50:37+05:30",
+      "description": "orca-genesis-eval-sandbox",
+      "state": "deployed",
+      "stopped_at": null,
+      "tasks": "0"
+    },
+    {
+      "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
+      "created_at": "2026-09-18 23:18:29+05:30",
+      "description": "orca-genesis-eval-sandbox-v2",
+      "state": "deployed",
+      "stopped_at": null,
+      "tasks": "0"
+    },
+    {
+      "app_id": "ap-vOhF9vtQOV1W5UVAcMPS8O",
+      "created_at": "2026-09-24 16:44:31+05:30",
+      "description": "orneur-p21b420-control-runtime-qualification",
+      "state": "stopped",
+      "stopped_at": "2026-09-24 16:45:05+05:30",
+      "tasks": "0"
+    }
+  ],
+  "final_billing_report_today_rows": 0,
+  "final_billing_summary": {
+    "adjustments": {
+      "credits": "-20.03000000",
+      "free_storage": "-0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "20.03000000",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "20.03366467",
+      "llm_tokens": "0E-8",
+      "volumes": "0E-8"
+    }
+  },
+  "final_container_list": [],
+  "phase": "21B.4.20",
+  "polled_readings": [
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:17:57"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:19:00"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:20:03"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:21:06"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:22:09"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:23:11"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:24:14"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:25:17"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:26:20"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:27:23"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:28:26"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:29:29"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:30:31"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:31:34"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:32:38"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:33:40"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:34:43"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:35:46"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:36:49"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:37:52"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:38:55"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:39:58"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:41:00"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:42:03"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:43:06"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:44:09"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:45:12"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:46:14"
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.03000000",
+      "metered": "20.03000000",
+      "report_rows_today": 0,
+      "time_utc": "11:47:17"
+    }
+  ]
+}
