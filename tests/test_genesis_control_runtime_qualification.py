@@ -1403,3 +1403,253 @@ def test_razorbridge_gate_and_start_refusal_are_recorded_without_secrets_and_wit
     assert "temporarily paused for maintenance" in rej["provider_message"] and rej["verification_after"]["credit_balance_eur"] == "10"
     assert rej["account_gate"]["sha256"] == hashlib.sha256((EVIDENCE_DIR / rej["account_gate"]["artifact"]).read_bytes()).hexdigest()
     assert "NEVER been exercised" in rej["tooling_state"] and rej["production_serving_qualification"] == "UNCHANGED"
+
+
+# ══ Modal H100 simplified harness: static wiring, caps, no polling, shared serving function ═══
+
+MODAL_H100 = REPO_ROOT / "scripts/phase21b_4_20_modal_h100_control.py"
+
+
+def _load_modal_h100(monkeypatch):
+    return _load_harness_stub(monkeypatch, MODAL_H100, "p21b420_modal_h100_stub")
+
+
+def _load_harness_stub(monkeypatch, path, name):
+    import types as _t
+    calls = {"function_kwargs": [], "local_files": []}
+
+    class _Img:
+        @classmethod
+        def from_registry(cls, ref, **kw):
+            calls["registry"] = (ref, kw)
+            return cls()
+
+        def entrypoint(self, _c):
+            return self
+
+        def add_local_file(self, src, dst, **kw):
+            calls["local_files"].append((src, dst))
+            return self
+
+    class _Vol:
+        @classmethod
+        def from_name(cls, n, **kw):
+            calls["volume"] = (n, kw)
+            return cls()
+
+    class _App:
+        def __init__(self, n):
+            self.name = n
+
+        def function(self, **kw):
+            calls["function_kwargs"].append(kw)
+            return lambda fn: fn
+
+    stub = _t.ModuleType("modal")
+    stub.Image, stub.App, stub.Volume = _Img, _App, _Vol
+    stub.exception = _t.SimpleNamespace(TimeoutError=type("TimeoutError", (Exception,), {}))
+    stub.is_local = lambda: True
+    monkeypatch.setitem(sys.modules, "modal", stub)
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod, calls
+
+
+def test_modal_h100_harness_pins_image_gpu_volume_and_uses_the_function_timeout_as_the_hard_cap(monkeypatch):
+    mod, calls = _load_modal_h100(monkeypatch)
+    assert calls["registry"][0] == f"vllm/vllm-openai@{mod.VLLM_IMAGE_DIGEST}" and mod.VLLM_IMAGE_DIGEST.startswith("sha256:")
+    assert calls["volume"][0] == "orneur-p21b420-model-cache" and calls["volume"][1] == {"create_if_missing": True}
+    assert calls["local_files"][0][1] == "/root/runner.py"
+    cpu_fn, gpu_fn = calls["function_kwargs"]
+    assert "gpu" not in cpu_fn and cpu_fn["timeout"] == 1800 and cpu_fn["volumes"] == {"/models": mod.volume}
+    assert gpu_fn["gpu"] == "H100" and gpu_fn["timeout"] == mod.HARD_TIMEOUT_SECONDS == 900 and mod.HARD_TIMEOUT_SECONDS <= 1200
+    # worst case (H100 + CPU + memory) for the hard cap stays inside the EXISTING $1.25 per-attempt maximum: no guard was loosened
+    r = {"h100": Decimal("3.95"), "cpu": Decimal("0.0473"), "mem": Decimal("0.008")}
+    worst = mod.worst_case_cost(r, gpu=True, cores=mod.CPU_CORES, memory_mib=mod.GPU_MEMORY_MIB, seconds=mod.HARD_TIMEOUT_SECONDS)
+    assert worst <= Decimal("1.25") and worst > Decimal("1.0")
+
+
+def test_modal_h100_harness_has_no_polling_loop_no_cancel_no_sandbox_and_a_single_blocking_gpu_call():
+    text = MODAL_H100.read_text()
+    tree = ast.parse(text)
+    run = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run")
+    src = ast.unparse(run)
+    assert src.count("serve_and_smoke.remote(") == 1 and ".spawn(" not in text and ".cancel(" not in text
+    assert "while True" not in text and ".get(timeout" not in text and "Sandbox" not in text
+    for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in {"precache", "serve_and_smoke"}):
+        body = ast.unparse(fn)
+        for banned in ("eval(", "exec(", "compile(", "os.system", "shell=True", "subprocess"):
+            assert banned not in body, (fn.name, banned)
+    assert src.index("_preflight") < src.index("app.run()")                      # gate decided before any GPU allocation
+    assert "pre-cached and verified" in src and "validate_control_runtime_record" in src
+    assert "financial_gate_decision" in ast.unparse(next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_preflight"))
+
+
+def test_modal_h100_uses_the_same_serving_function_as_every_other_provider_and_offline_verified_weights():
+    text = MODAL_H100.read_text()
+    assert "phase21b_4_20_lightning_runner.py" in text and "runner.serve_and_smoke(cfg)" in text
+    assert 'os.environ["HF_HUB_OFFLINE"] = "1"' in text and "volume.reload()" in text and "volume.commit()" in text
+    assert "runner.cmd_stage_model(control)" in text                              # hash-verified pre-cache (LFS sha256 + exact bytes)
+    assert not any(k in text for k in ("api.openai", "deepseek", "kimi", "minimax"))
+
+
+def test_modal_h100_worst_case_gate_keeps_the_existing_maximum_and_blocks_on_unresolved_settlement(monkeypatch, tmp_path):
+    mod, _ = _load_modal_h100(monkeypatch)
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", tmp_path)
+    (tmp_path / f"GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_{mod.DATE_TAG}.json").write_text(json.dumps({"attempts": [
+        {"attempt_number": 1, "outcome": "HARNESS_FAILURE", "owner_billed_delta_usd": "0E-8", "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE", "duration_seconds": 34.6},
+        {"attempt_number": 2, "provider": "Lightning AI", "outcome": "BLOCKED_NO_GPU", "owner_billed_delta_usd": "0"}]}))
+    (tmp_path / "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json").write_text("{}")
+    tag, a = next(iter(mod._modal_attempts()))
+    assert tag == "QWEN3_8B" and a["attempt_number"] == 1                        # only Modal attempts count; Lightning/other are excluded
+    assert mod.settlement_resolved(tag, a) is False
+    assert Decimal("0.03") < mod.unresolved_settlement_upper_bound_usd() < Decimal("0.05")   # conservative upper bound is deducted from runway
+    (tmp_path / f"GENESIS_OWNER_SETTLEMENT_WAIVER_QWEN3_8B_ATTEMPT1_{mod.DATE_TAG}.json").write_text("{}")
+    assert mod.settlement_resolved(tag, a) is False                              # existence alone is NOT authorization
+    (tmp_path / f"GENESIS_OWNER_SETTLEMENT_WAIVER_QWEN3_8B_ATTEMPT1_{mod.DATE_TAG}.json").write_text(json.dumps(_valid_waiver()))
+    assert mod.settlement_resolved(tag, a) is True                               # only a strictly valid owner waiver lifts the gate
+    assert mod.any_positive_billing_seen() is False
+
+
+def test_modal_h100_script_never_writes_a_waiver_or_touches_the_shared_guards():
+    text = MODAL_H100.read_text()
+    assert "GENESIS_OWNER_SETTLEMENT_WAIVER" in text and "never created by this script" in text
+    assert "write_json(EVIDENCE_DIR / f\"GENESIS_OWNER_SETTLEMENT_WAIVER" not in text
+    assert "MAX_AUTHORIZED_RUN_COST_USD" not in text and "max_authorized_run_cost_usd" not in text
+
+
+# ── strict owner-waiver validation (fixtures live in tmp_path only; the real owner artifact is never created) ──
+def _valid_waiver() -> dict:
+    return {
+        "artifact_type": "OWNER_SETTLEMENT_WAIVER", "phase": "21B.4.20", "authorized_by": "ORNEUR_OWNER", "decision": "AUTHORIZED",
+        "created_at_utc": "2026-09-25T10:00:00Z",
+        "scope": {"provider": "Modal", "control": "Qwen3-8B", "historical_attempt": 1, "waiver": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE", "historical_only": True},
+        "authorization_text": "The ORNEUR owner authorizes a one-time waiver for Modal Qwen3-8B historical attempt 1 only.",
+        "asserts": {"attempt_1_cost_was_zero": False, "settlement_resolved": False, "attempt_1_valid_model_qualification_attempt": False,
+                    "attempt_1_status": "HARNESS_FAILURE", "attempt_1_billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+                    "attempt_1_conservative_exposure_reserved_usd": "0.038"},
+        "does_not_waive": ["zero_owner_cash_invariant", "promotional_credit_sufficiency", "model_identity_and_revision_verification",
+                           "cleanup_requirements", "evidence_integrity", "security_controls"],
+        "does_not_authorize": ["frontier_inference", "benchmarks", "genesis_training", "phase_21c"],
+        "authorized_execution": {"controls_in_order": ["Qwen3-8B", "Mistral-Nemo-Instruct-2407", "Phi-4"], "provider": "Modal", "gpu": "H100 80GB",
+                                 "precision": "BF16", "quantization": False, "model_substitution": False, "sequential_only": True},
+        "note": "Creating this artifact does not itself authorize GPU execution.",
+    }
+
+
+def _waiver_env(monkeypatch, tmp_path, waiver=None, raw=None):
+    mod, _ = _load_modal_h100(monkeypatch)
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", tmp_path)
+    (tmp_path / f"GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_{mod.DATE_TAG}.json").write_text(json.dumps({"attempts": [
+        {"attempt_number": 1, "outcome": "HARNESS_FAILURE", "owner_billed_delta_usd": "0E-8",
+         "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE", "duration_seconds": 34.6}]}))
+    wp = tmp_path / f"GENESIS_OWNER_SETTLEMENT_WAIVER_QWEN3_8B_ATTEMPT1_{mod.DATE_TAG}.json"
+    if raw is not None:
+        wp.write_text(raw)
+    elif waiver is not None:
+        wp.write_text(json.dumps(waiver))
+    tag, a = next(iter(mod._modal_attempts()))
+    return mod, tag, a
+
+
+def _mut(fn):
+    w = _valid_waiver()
+    fn(w)
+    return w
+
+
+_INVALID_WAIVERS = {
+    "empty_object": lambda: {},
+    "wrong_phase": lambda: _mut(lambda w: w.update(phase="21B.4.19")),
+    "wrong_authorized_by": lambda: _mut(lambda w: w.update(authorized_by="CLAUDE")),
+    "wrong_decision": lambda: _mut(lambda w: w.update(decision="DENIED")),
+    "missing_timestamp": lambda: _mut(lambda w: w.pop("created_at_utc")),
+    "bad_timestamp": lambda: _mut(lambda w: w.update(created_at_utc="yesterday")),
+    "wrong_provider": lambda: _mut(lambda w: w["scope"].update(provider="Lightning AI")),
+    "wrong_control": lambda: _mut(lambda w: w["scope"].update(control="Phi-4")),
+    "wrong_attempt": lambda: _mut(lambda w: w["scope"].update(historical_attempt=2)),
+    "attempt_as_bool": lambda: _mut(lambda w: w["scope"].update(historical_attempt=True)),
+    "wrong_settlement_status": lambda: _mut(lambda w: w["scope"].update(waiver="OBSERVED")),
+    "not_historical_only": lambda: _mut(lambda w: w["scope"].update(historical_only=False)),
+    "claims_cost_zero": lambda: _mut(lambda w: w["asserts"].update(attempt_1_cost_was_zero=True)),
+    "claims_settlement_resolved": lambda: _mut(lambda w: w["asserts"].update(settlement_resolved=True)),
+    "claims_valid_qualification_attempt": lambda: _mut(lambda w: w["asserts"].update(attempt_1_valid_model_qualification_attempt=True)),
+    "wrong_attempt_status": lambda: _mut(lambda w: w["asserts"].update(attempt_1_status="RUNTIME_QUALIFIED")),
+    "wrong_asserted_settlement_status": lambda: _mut(lambda w: w["asserts"].update(attempt_1_billing_settlement_status="OBSERVED")),
+    "negative_exposure": lambda: _mut(lambda w: w["asserts"].update(attempt_1_conservative_exposure_reserved_usd="-0.01")),
+    "missing_exposure": lambda: _mut(lambda w: w["asserts"].pop("attempt_1_conservative_exposure_reserved_usd")),
+    "missing_zero_owner_cash_preservation": lambda: _mut(lambda w: w["does_not_waive"].remove("zero_owner_cash_invariant")),
+    "missing_credit_sufficiency_preservation": lambda: _mut(lambda w: w["does_not_waive"].remove("promotional_credit_sufficiency")),
+    "missing_identity_preservation": lambda: _mut(lambda w: w["does_not_waive"].remove("model_identity_and_revision_verification")),
+    "missing_cleanup_preservation": lambda: _mut(lambda w: w["does_not_waive"].remove("cleanup_requirements")),
+    "missing_evidence_integrity_preservation": lambda: _mut(lambda w: w["does_not_waive"].remove("evidence_integrity")),
+    "missing_security_preservation": lambda: _mut(lambda w: w["does_not_waive"].remove("security_controls")),
+    "authorizes_benchmarks_by_omission": lambda: _mut(lambda w: w["does_not_authorize"].remove("benchmarks")),
+    "authorizes_frontier_inference_by_omission": lambda: _mut(lambda w: w["does_not_authorize"].remove("frontier_inference")),
+    "authorizes_training_by_omission": lambda: _mut(lambda w: w["does_not_authorize"].remove("genesis_training")),
+    "authorizes_21c_by_omission": lambda: _mut(lambda w: w["does_not_authorize"].remove("phase_21c")),
+    "extra_authorizes_key": lambda: _mut(lambda w: w.update(authorizes=["benchmarks"])),
+    "wrong_gpu": lambda: _mut(lambda w: w["authorized_execution"].update(gpu="A100 80GB")),
+    "wrong_precision": lambda: _mut(lambda w: w["authorized_execution"].update(precision="FP8")),
+    "quantization_true": lambda: _mut(lambda w: w["authorized_execution"].update(quantization=True)),
+    "model_substitution_true": lambda: _mut(lambda w: w["authorized_execution"].update(model_substitution=True)),
+    "not_sequential": lambda: _mut(lambda w: w["authorized_execution"].update(sequential_only=False)),
+    "wrong_control_ordering": lambda: _mut(lambda w: w["authorized_execution"].update(controls_in_order=["Phi-4", "Qwen3-8B", "Mistral-Nemo-Instruct-2407"])),
+    "extra_control": lambda: _mut(lambda w: w["authorized_execution"]["controls_in_order"].append("Llama")),
+    "empty_authorization_text": lambda: _mut(lambda w: w.update(authorization_text=" ")),
+}
+
+
+def test_owner_waiver_absent_is_not_accepted_and_settlement_stays_unresolved(monkeypatch, tmp_path):
+    mod, tag, a = _waiver_env(monkeypatch, tmp_path)
+    assert mod.validate_owner_settlement_waiver(tag, a)[0] == "WAIVER_ABSENT" and mod.settlement_resolved(tag, a) is False
+
+
+def test_owner_waiver_malformed_json_is_invalid_and_fails_closed(monkeypatch, tmp_path):
+    for raw in ("{not json", "[]", "null", ""):
+        mod, tag, a = _waiver_env(monkeypatch, tmp_path, raw=raw)
+        status, reasons = mod.validate_owner_settlement_waiver(tag, a)
+        assert status == "WAIVER_INVALID" and reasons and mod.settlement_resolved(tag, a) is False
+
+
+@pytest.mark.parametrize("name", sorted(_INVALID_WAIVERS))
+def test_owner_waiver_every_defect_is_waiver_invalid_and_settlement_stays_unresolved(monkeypatch, tmp_path, name):
+    mod, tag, a = _waiver_env(monkeypatch, tmp_path, waiver=_INVALID_WAIVERS[name]())
+    status, reasons = mod.validate_owner_settlement_waiver(tag, a)
+    assert status == "WAIVER_INVALID" and reasons, name
+    assert mod.settlement_resolved(tag, a) is False
+
+
+def test_owner_waiver_valid_canonical_is_accepted_but_does_not_launch_or_resolve_the_record(monkeypatch, tmp_path):
+    mod, tag, a = _waiver_env(monkeypatch, tmp_path, waiver=_valid_waiver())
+    assert mod.validate_owner_settlement_waiver(tag, a) == ("WAIVER_ACCEPTED", [])
+    assert mod.settlement_resolved(tag, a) is True
+    assert a["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"          # historical record untouched
+    assert Decimal("0.03") < mod.unresolved_settlement_upper_bound_usd() < Decimal("0.05")    # exposure still deducted after the waiver
+    assert not any(n.name.startswith("GENESIS_CONTROL_") and "H100_RUN" in n.name for n in tmp_path.iterdir())
+
+
+def test_owner_waiver_applies_only_to_qwen_attempt_1_and_contradicting_history_invalidates_it(monkeypatch, tmp_path):
+    mod, tag, a = _waiver_env(monkeypatch, tmp_path, waiver=_valid_waiver())
+    other_attempt = dict(a, attempt_number=2)
+    other_control = "MISTRAL_NEMO"
+    assert mod.validate_owner_settlement_waiver(tag, other_attempt)[0] == "WAIVER_ABSENT" and mod.settlement_resolved(tag, other_attempt) is False
+    assert mod.validate_owner_settlement_waiver(other_control, a)[0] == "WAIVER_ABSENT" and mod.settlement_resolved(other_control, a) is False
+    # copying the Qwen waiver to another control/attempt filename does not lift any other settlement
+    for name in ("GENESIS_OWNER_SETTLEMENT_WAIVER_MISTRAL_NEMO_ATTEMPT1_2026-09-24.json", "GENESIS_OWNER_SETTLEMENT_WAIVER_QWEN3_8B_ATTEMPT2_2026-09-24.json"):
+        (tmp_path / name).write_text(json.dumps(_valid_waiver()))
+    assert mod.settlement_resolved(other_control, a) is False and mod.settlement_resolved(tag, other_attempt) is False
+    # the waiver contradicts a history record that is not a harness failure with unobserved settlement
+    contradicting = dict(a, outcome="RUNTIME_QUALIFIED")
+    assert mod.validate_owner_settlement_waiver(tag, contradicting)[0] == "WAIVER_INVALID"
+
+
+def test_invalid_waiver_is_reported_in_the_gate_reasons(monkeypatch, tmp_path):
+    mod, tag, a = _waiver_env(monkeypatch, tmp_path, waiver=_mut(lambda w: w["asserts"].update(settlement_resolved=True)))
+    monkeypatch.setattr(mod, "_load_lightning_control", lambda: types.SimpleNamespace(CONTROLS={"qwen3_8b": {"control_name": "Qwen3-8B", "tag": "QWEN3_8B"}}))
+    monkeypatch.setattr(mod, "rates", lambda: {"h100": Decimal("3.95"), "cpu": Decimal("0.0473"), "mem": Decimal("0.008")})
+    monkeypatch.setattr(mod, "billing_summary", lambda: {"billed_cost_usd": "0", "metered_cost_usd": "20.07", "credits_applied_usd": "20.07"})
+    monkeypatch.setattr(mod, "cleanup_snapshot", lambda: {"live_resources": 0})
+    decision = mod._preflight("gpu", "qwen3_8b", gpu=True)[-1]
+    assert decision["allowed"] is False and any(r.startswith("WAIVER_INVALID") for r in decision["reasons"])

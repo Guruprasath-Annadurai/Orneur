@@ -1,0 +1,90 @@
+{
+  "attempt_number": 1,
+  "attempt_window_utc": [
+    "2026-09-24T11:14:30Z",
+    "2026-09-24T11:15:05Z"
+  ],
+  "baseline_source": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_BILLING_BEFORE_2026-09-24.json",
+  "captured_at_utc": "2026-09-24T19:15:41Z",
+  "cleanup_snapshot": {
+    "apps": [
+      {
+        "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
+        "created_at": "2026-09-18 18:50:37+05:30",
+        "description": "orca-genesis-eval-sandbox",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
+        "created_at": "2026-09-18 23:18:29+05:30",
+        "description": "orca-genesis-eval-sandbox-v2",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      }
+    ],
+    "captured_at_utc": "2026-09-24T19:15:41Z",
+    "containers": [],
+    "live_resources": 0,
+    "non_idle_apps": [],
+    "running_tasks_total": 0,
+    "volumes": []
+  },
+  "control_name": "Qwen3-8B",
+  "current_billing_summary": {
+    "adjustments": {
+      "credits": "-20.03000000",
+      "free_storage": "-0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "20.03000000",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "20.03366467",
+      "llm_tokens": "0E-8",
+      "volumes": "0E-8"
+    }
+  },
+  "evidence_type": "ATTEMPT_SETTLEMENT_RECONCILIATION_READ_ONLY",
+  "financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "30.00",
+    "credits_applied_baseline_usd": "20.03000000",
+    "credits_applied_postrun_usd": "20.03000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "9.97000000",
+    "derived_credit_remaining_before_usd": "9.97000000",
+    "maximum_authorized_run_cost_usd": "1.25",
+    "metered_baseline_usd": "20.03000000",
+    "metered_delta_usd": "0E-8",
+    "metered_postrun_usd": "20.03000000",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
+  "itemized_report_range": [
+    "2026-09-24",
+    "2026-09-26"
+  ],
+  "itemized_rows_for_attempt_app": [],
+  "itemized_rows_total_in_range": 0,
+  "itemized_visible_cost_usd": "0",
+  "live_resources": 0,
+  "modal_app_name": "orneur-p21b420-control-runtime-qualification",
+  "no_gpu_started": true,
+  "owner_billed_delta_usd": "0E-8",
+  "phase": "21B.4.20",
+  "settlement": {
+    "reasons": [
+      "the completed run's metered usage is not yet visible in the account totals (metered_delta == 0)"
+    ],
+    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+    "stop_before_next_control": true
+  },
+  "verdict": "QWEN_ATTEMPT_1_SETTLEMENT_STILL_UNRESOLVED"
+}

@@ -1,0 +1,102 @@
+{
+  "cache_volume": "orneur-p21b420-model-cache",
+  "captured_at_utc": "2026-09-24T19:53:39Z",
+  "control_name": "Qwen3-8B",
+  "evidence_type": "MODAL_MODEL_PRECACHE_MANIFEST",
+  "gpu_used": false,
+  "manifest": {
+    "all_lfs_sha256_match": true,
+    "control": "qwen3_8b",
+    "download_seconds": 82.7,
+    "files": [
+      {
+        "bytes": 1570,
+        "filename": ".gitattributes"
+      },
+      {
+        "bytes": 11343,
+        "filename": "LICENSE"
+      },
+      {
+        "bytes": 16660,
+        "filename": "README.md"
+      },
+      {
+        "bytes": 728,
+        "filename": "config.json"
+      },
+      {
+        "bytes": 239,
+        "filename": "generation_config.json"
+      },
+      {
+        "bytes": 1671853,
+        "filename": "merges.txt"
+      },
+      {
+        "bytes": 3996250744,
+        "filename": "model-00001-of-00005.safetensors",
+        "hf_lfs_sha256": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f",
+        "sha256": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f",
+        "sha256_matches": true
+      },
+      {
+        "bytes": 3993160032,
+        "filename": "model-00002-of-00005.safetensors",
+        "hf_lfs_sha256": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282",
+        "sha256": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282",
+        "sha256_matches": true
+      },
+      {
+        "bytes": 3959604768,
+        "filename": "model-00003-of-00005.safetensors",
+        "hf_lfs_sha256": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836",
+        "sha256": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836",
+        "sha256_matches": true
+      },
+      {
+        "bytes": 3187841392,
+        "filename": "model-00004-of-00005.safetensors",
+        "hf_lfs_sha256": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a",
+        "sha256": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a",
+        "sha256_matches": true
+      },
+      {
+        "bytes": 1244659840,
+        "filename": "model-00005-of-00005.safetensors",
+        "hf_lfs_sha256": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff",
+        "sha256": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff",
+        "sha256_matches": true
+      },
+      {
+        "bytes": 32878,
+        "filename": "model.safetensors.index.json"
+      },
+      {
+        "bytes": 11422654,
+        "filename": "tokenizer.json",
+        "hf_lfs_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "sha256_matches": true
+      },
+      {
+        "bytes": 9732,
+        "filename": "tokenizer_config.json"
+      },
+      {
+        "bytes": 2776833,
+        "filename": "vocab.json"
+      }
+    ],
+    "model_id": "Qwen/Qwen3-8B",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "snapshot_dir": "/__modal/volumes/vo-VM7m0sko3youIgfeTQhSXD/hf/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218",
+    "snapshot_dir_name": "b968826d9c46dd6066d109eabc6255188de91218",
+    "staging_verified": true,
+    "weight_bytes_expected": 16381516776,
+    "weight_bytes_observed": 16381516776
+  },
+  "phase": "21B.4.20",
+  "started_at_utc": "2026-09-24T19:51:50Z",
+  "verified": true
+}
