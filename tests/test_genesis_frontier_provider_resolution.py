@@ -33,6 +33,7 @@ from orca.eval.frontier_provider_resolution import (
     ACTION_STATES,
     EXTERNAL_ACTION_TYPES,
     OFFICIAL_PROVIDER_DOMAINS,
+    PROVIDER_QUESTION_PREFIX,
     RESPONSE_REQUIRED_FIELDS,
     ProviderResolutionError,
     advance_action_state,
@@ -106,7 +107,7 @@ def _synthetic_verified_record(tmp_path, entry, changes, *, tier="B", sender_dom
         "sender_domain": sender_domain or OFFICIAL_PROVIDER_DOMAINS[entry["organization"]][0],
         "message_id": "SYNTHETIC-1",
         "received_at_utc": "2000-01-01T00:00:00Z",
-        "question_ids_answered": ["SYN-Q1"],
+        "question_ids_answered": [PROVIDER_QUESTION_PREFIX[entry["organization"]] + "1"],
         "raw_response_location": "synthetic_response.txt",
         "sha256": hashlib.sha256(raw.read_bytes()).hexdigest(),
         "quoted_authoritative_clauses": ["SYNTHETIC CLAUSE"],
@@ -199,26 +200,9 @@ def test_D_executed_without_authorization_is_rejected(queue):
         validate_action(action)
 
 
-def test_D_state_machine_requires_evidence_at_each_step(queue):
-    action = _action(queue, "MIS-01")
-    assert action["state"] == "AWAITING_OWNER_AUTHORIZATION"
-    with pytest.raises(ProviderResolutionError, match="authorization_evidence"):
-        advance_action_state(action, "AUTHORIZED_NOT_EXECUTED")
-    with pytest.raises(ProviderResolutionError, match="not permitted"):
-        advance_action_state(action, "EXECUTED_AWAITING_PROVIDER")  # cannot skip authorization
-    authorized = advance_action_state(action, "AUTHORIZED_NOT_EXECUTED", authorization_evidence={"note": "SYNTHETIC TEST AUTHORIZATION"})
-    assert authorized["authorization_status"] == "AUTHORIZED"
-    with pytest.raises(ProviderResolutionError, match="execution_evidence"):
-        advance_action_state(authorized, "EXECUTED_AWAITING_PROVIDER")
-    executed = advance_action_state(authorized, "EXECUTED_AWAITING_PROVIDER", execution_evidence={"note": "SYNTHETIC"})
-    assert executed["executed_status"] == "EXECUTED"
-    replied = advance_action_state(executed, "PROVIDER_REPLIED_UNVERIFIED", execution_evidence={"note": "SYNTHETIC"})
-    verified_state = advance_action_state(replied, "EVIDENCE_VERIFIED", verified_evidence_ref="SYNTHETIC-REF")
-    with pytest.raises(ProviderResolutionError, match="verified_evidence_ref"):
-        advance_action_state(replied, "EVIDENCE_VERIFIED")
-    assert advance_action_state(verified_state, "RESOLVED", verified_evidence_ref="SYNTHETIC-REF")["state"] == "RESOLVED"
-    # the original queue action was never mutated
-    assert action["state"] == "AWAITING_OWNER_AUTHORIZATION" and action["authorization_status"] == "NOT_AUTHORIZED"
+# The full evidence-gated state-machine chain (structured authorization,
+# dependency enforcement, execution evidence, derived verified refs) is
+# proven in tests/test_genesis_frontier_provider_authority_binding.py.
 
 
 def test_state_machine_has_exactly_the_specified_states_and_no_sent_state():

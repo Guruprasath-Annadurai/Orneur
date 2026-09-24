@@ -171,6 +171,68 @@ another action.
 | GLB-01 | ALL | verify billing/credits | not needed until a future run | zero-cash gate | live billing evidence | none now |
 | GLB-02 | ALL | RUN_FRONTIER_API | **BLOCKED — do not authorize** | Phase 21C not authorized | n/a | paid inference |
 
+## Phase 21B.4.19.1 closure — authority, binding, dependencies, evidence refs
+
+Independent audit passed the architecture and found four fail-closed
+defects. All four are closed in `orca/eval/frontier_provider_resolution.py`;
+no reference state, action state, or quorum figure changed.
+
+1. **Provider ↔ reference binding.** `REFERENCE_PROVIDER` is the single
+   canonical map (DeepSeek V4.1-Flash → DeepSeek AI; GLM-5.3 (flagship) →
+   Zhipu AI / Z.ai; Mistral Large 3 → Mistral AI; MiniMax M3 → MiniMax;
+   Qwen3.8-Max → Alibaba; Kimi K3 → Moonshot AI). A provider response,
+   account-setting record, verified-evidence ref, execution record or queue
+   action whose provider is not the canonical owner of its reference is
+   rejected — even when the sender domain is genuinely official for some
+   other provider. Answered question ids must come from the provider's own
+   family (`MIS-Q*`, `DSK-Q*`, `KMI-Q*`, `GLM-Q*`, `MNX-Q*`, `QWN-Q*`). Only
+   `GLB-01`/`GLB-02` may use provider/reference `ALL`.
+2. **Structured owner authorization.** A non-empty dict authorizes nothing.
+   An authorization is a strict record `{action_id, decision=AUTHORIZED,
+   authorized_by_role=OWNER, authorized_at_utc, authorization_source_kind,
+   authorization_source_ref, scope=EXACT_ACTION_ONLY}` for exactly one
+   action id; unknown keys, wildcard/provider-wide/phase-wide scope, empty
+   source refs and malformed timestamps are rejected.
+   `advance_action_state(... AUTHORIZED_NOT_EXECUTED ...)` calls the
+   validator, so MIS-01's authorization cannot authorize MIS-02/MIS-03, nor
+   another provider's action.
+3. **Enforced dependencies.** `depends_on` is checked at authorization and
+   again at execution. Completion rule: the dependency must be **RESOLVED**
+   (a merely authorized, executed, replied, or EVIDENCE_VERIFIED dependency
+   is not complete). The dependency context (`build_action_lookup(queue)`) and
+   an `evidence_root` are mandatory arguments — missing context fails
+   closed, and a dependency's persisted evidence is re-hashed. DSK-03
+   requires both DSK-01 and DSK-02. The queue validator also rejects a
+   queue in which a dependent action is authorized/executed while a
+   dependency is not RESOLVED, and any dependency cycle. `GLB-02`
+   (`RUN_FRONTIER_API`, BLOCKED) cannot be moved by authorization or
+   dependency state.
+4. **Durable, validated evidence references.** Entering an
+   execution-asserting state persists a structured `execution_evidence_ref`
+   bound to the action's id/type/provider/reference with a source ref and a
+   UTC time not earlier than the authorization. `EVIDENCE_VERIFIED` accepts
+   only the ORIGINAL evidence record (re-validated in full); the canonical
+   `verified_evidence_ref` is *derived* by
+   `build_verified_provider_evidence_ref()` /
+   `build_verified_account_setting_evidence_ref()` — never hand-authored,
+   never a string. `RESOLVED` re-verifies the persisted source bytes.
+   Evidence type must suit the action type (an email action cannot be closed
+   by account-setting evidence).
+
+**What machine validation proves — and does not.** It proves internal
+consistency: provider/reference/question-family binding, structural
+completeness, persisted source bytes that hash to the recorded SHA-256, an
+official-domain sender *string*, a permitted evidence tier, and exact-action
+authorization structure. It does **not** cryptographically prove that a
+human has not fabricated metadata (sender identity, message id, timestamps,
+authorization text) or the saved file's content, and it cannot prove an
+email was really sent. Human/connector provenance remains part of evidence
+review.
+
+Real queue after this closure: 15 actions, 0 authorized, 0 executed, 0
+resolved, no authorization/execution/verified evidence, all counters 0;
+`GLB-02` BLOCKED.
+
 ## Authorization boundary
 
 This phase ends before the queue is executed. Valid future

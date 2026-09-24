@@ -1,26 +1,26 @@
 {
   "evidence_type": "GENESIS_FRONTIER_PROVIDER_RESOLUTION_INTEGRITY_INDEX",
   "created": "2026-09-24",
-  "phase": "21B.4.19",
-  "note": "SHA-256 hashes computed live from actual file bytes. Every path is repo-relative. No GPU, no frontier inference, no paid API call, no provider message, ticket, or account action was performed to produce any indexed file. Covers the Phase 21B.4.19 control-plane artifacts; this index does not hash itself.",
+  "phase": "21B.4.19.1",
+  "note": "SHA-256 hashes computed live from actual file bytes. Every path is repo-relative. No GPU, no frontier inference, no paid API call, no provider message, ticket, or account action was performed to produce any indexed file. Covers the Phase 21B.4.19 control-plane artifacts as updated by Phase 21B.4.19.1 (authority, provider binding, dependency and evidence-reference closure); this index does not hash itself.",
   "entries": [
     {
       "path": "docs/orneur/phase-21/GENESIS_FRONTIER_PROVIDER_RESOLUTION_PLAN_2026-09-24.md",
-      "sha256": "76827bc0118870173cdd1707b89426691099082c65b129720498336345bd974d",
+      "sha256": "9c7cde501de9ba7c2f68e651ff0249c350e7b264c455d575b547457cc9a8ab31",
       "evidence_role": "provider_resolution_plan",
-      "size_bytes": 10801
+      "size_bytes": 14630
     },
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_FRONTIER_PROVIDER_ACTION_QUEUE_2026-09-24.json",
-      "sha256": "9b71e8fa97335c9e56f5c292ede403bf7906c0fedcb433b0c9317bda38ef189d",
+      "sha256": "ecfe4328421e77ced0a01751458aaaf54f9811cb89891ada5efd9625d4747f08",
       "evidence_role": "provider_action_queue",
-      "size_bytes": 32727
+      "size_bytes": 33873
     },
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_FRONTIER_PROVIDER_RESPONSE_SCHEMA_2026-09-24.json",
-      "sha256": "48e13fa4c798c7027a47f4b5da734acb6c5f87902183c1a1efa6717b9cfaab2b",
+      "sha256": "6fe343eb1d4c09595b42f238ce4746822dfd3b449154a83ff458a08130ad0c58",
       "evidence_role": "provider_response_schema",
-      "size_bytes": 5780
+      "size_bytes": 7341
     },
     {
       "path": "docs/orneur/phase-21/evidence/GENESIS_FRONTIER_PROVIDER_CLARIFICATION_PACKETS_2026-09-24.md",

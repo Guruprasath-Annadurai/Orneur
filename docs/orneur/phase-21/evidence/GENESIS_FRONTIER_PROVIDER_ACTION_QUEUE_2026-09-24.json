@@ -1,8 +1,10 @@
 {
-  "schema_version": "genesis-frontier-provider-action-queue-v1",
+  "schema_version": "genesis-frontier-provider-action-queue-v2",
   "phase": "21B.4.19",
   "created": "2026-09-24",
   "note": "PREPARED ONLY. No action in this queue is authorized or executed. Every entry defaults to authorization_status=NOT_AUTHORIZED / executed_status=NOT_EXECUTED with no authorization_evidence. Claude may prepare these actions; Claude may NOT perform them. One future authorization authorizes exactly one action_id -- there is no bundled consent. A draft, a checklist, or a queued action never changes any reference's registry state.",
+  "owner_authorization_schema": "Each authorization is a strict structured record {action_id, decision=AUTHORIZED, authorized_by_role=OWNER, authorized_at_utc, authorization_source_kind, authorization_source_ref, scope=EXACT_ACTION_ONLY} for exactly one action_id. No wildcard, provider-wide, phase-wide or dependency-implying authorization. See orca.eval.frontier_provider_resolution.validate_owner_authorization.",
+  "dependency_rule": "A dependent action cannot be authorized or executed until every depends_on action is RESOLVED (RESOLVED is the only completion state).",
   "messages_sent": 0,
   "support_tickets_submitted": 0,
   "account_settings_changed": 0,
@@ -32,6 +34,7 @@
       "depends_on": [],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Send the QWN packet email from an ORNEUR business address to Alibaba Cloud Model Studio support; forward the raw reply (with headers) to the evidence intake.",
       "risk_cost": "Free. Low risk. Do not attach any private holdout material."
@@ -59,6 +62,7 @@
       "depends_on": [],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Send the MIS packet email to Mistral support/legal; forward the raw reply to evidence intake.",
       "risk_cost": "Free. Low risk. No confidential material."
@@ -86,6 +90,7 @@
       "depends_on": [],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Send the DSK packet to DeepSeek Open Platform support; forward the raw reply to evidence intake.",
       "risk_cost": "Free. Low risk."
@@ -113,6 +118,7 @@
       "depends_on": [],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Send the GLM packet to Z.ai developer support; forward the raw reply and any DPA PDF to evidence intake.",
       "risk_cost": "Free. Low risk."
@@ -140,6 +146,7 @@
       "depends_on": ["MIS-01"],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "After MIS-01 is answered, follow the checklist in the Mistral packet exactly and capture the required screenshots.",
       "risk_cost": "Free. Changes account privacy state; reversible. Do not touch the separate Vibe toggle."
@@ -167,6 +174,7 @@
       "depends_on": [],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Log in and only look; capture screenshots per the checklist; click nothing that saves a setting.",
       "risk_cost": "Free. Minimal risk if strictly read-only."
@@ -194,6 +202,7 @@
       "depends_on": ["DSK-01", "DSK-02"],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Wait for verified DSK-01/DSK-02 evidence, then authorize separately.",
       "risk_cost": "Free. Reversible privacy change."
@@ -221,6 +230,7 @@
       "depends_on": [],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Send the MNX-Q1 clarification (not the notice) to api@minimax.io.",
       "risk_cost": "Free. Low risk."
@@ -248,6 +258,7 @@
       "depends_on": [],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Send the KMI enterprise inquiry; do not agree to anything on the reply.",
       "risk_cost": "Free to ask. Any resulting commitment is a separate, separately-authorized decision."
@@ -275,6 +286,7 @@
       "depends_on": ["GLM-01"],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Do not authorize until GLM-01 evidence is verified.",
       "risk_cost": "May require an enterprise/developer request; cost unknown until GLM-01 answers."
@@ -302,6 +314,7 @@
       "depends_on": ["MIS-01"],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Do not authorize unless MIS-01 verified evidence says ZDR is required.",
       "risk_cost": "May require a paid plan; cost unknown until MIS-01 answers."
@@ -329,6 +342,7 @@
       "depends_on": ["MNX-01"],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Do not authorize before MNX-01 evidence is verified.",
       "risk_cost": "Free; creates a formal notice on record."
@@ -356,6 +370,7 @@
       "depends_on": ["KMI-01"],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Do not authorize until KMI-01 evidence is verified and the owner has reviewed terms and cost.",
       "risk_cost": "Potentially significant committed spend; owner decision."
@@ -383,6 +398,7 @@
       "depends_on": [],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Not needed until a future execution phase is authorized.",
       "risk_cost": "None until run time."
@@ -410,6 +426,7 @@
       "depends_on": [],
       "claude_can_execute": false,
       "authorization_evidence": null,
+      "execution_evidence_ref": null,
       "verified_evidence_ref": null,
       "owner_instruction": "Do not authorize. Phase 21C is not authorized.",
       "risk_cost": "Paid inference; forbidden this phase."

@@ -1,5 +1,6 @@
 """
-Genesis Frontier Provider Resolution control plane (Phase 21B.4.19).
+Genesis Frontier Provider Resolution control plane (Phase 21B.4.19,
+authority/binding closure Phase 21B.4.19.1).
 
 Turns the remaining frontier-reference blockers (provider clarification,
 provider account settings, enterprise agreements, model-version
@@ -11,8 +12,8 @@ VALIDATION. Nothing in this module sends a message, submits a ticket,
 changes a provider account setting, calls a provider API, or executes a
 model -- it only models actions, validates evidence records, and gates
 registry-dimension changes. Every external/account-mutating action
-defaults to NOT_AUTHORIZED; only a separate, explicit owner authorization
-(recorded as `authorization_evidence`) can ever move one forward.
+defaults to NOT_AUTHORIZED; only a separate, structured, exact-action
+owner authorization can ever move one forward.
 
 Fail-closed layering (the existing Phase 21B.4.17.2/.18 validator stays
 authoritative):
@@ -20,7 +21,7 @@ authoritative):
 1. `validate_provider_response()` / `validate_account_setting_evidence()`
    decide whether an evidence record is VERIFIED (persisted source,
    matching SHA-256, official provider domain, tier A/B/C, specific,
-   unambiguous).
+   unambiguous) AND bound to the reference's canonical provider.
 2. `apply_verified_evidence()` / `resolve_blocker_token()` change ONE
    underlying evidence dimension (or remove ONE blocker token) only when
    verified evidence explicitly approves exactly that change. They never
@@ -30,6 +31,44 @@ authoritative):
    entry's own dimensions -- a provider reply can never bypass it.
 4. `compute_admission_quorum()` (unchanged) re-derives readiness again at
    count time.
+
+Phase 21B.4.19.1 closes four control-plane defects:
+
+* PROVIDER BINDING -- `REFERENCE_PROVIDER` is the one canonical
+  reference->provider map. A provider response, account-setting record,
+  or queue action whose provider is not the canonical provider of its
+  reference is rejected, even when the sender domain is genuinely
+  official for some other provider. Answered question ids must belong to
+  the provider's documented question family (`PROVIDER_QUESTION_PREFIX`).
+  Only the documented global actions (`GLOBAL_ACTION_IDS`) may use ALL.
+* OWNER AUTHORIZATION -- an authorization is a strict structured record
+  (`validate_owner_authorization`), bound to exactly one action id. An
+  arbitrary non-empty dict authorizes nothing; there is no wildcard,
+  provider-wide, phase-wide, or dependency-implying authorization.
+* DEPENDENCIES -- `depends_on` is enforced. A dependent action cannot
+  become AUTHORIZED_NOT_EXECUTED or EXECUTED_AWAITING_PROVIDER until each
+  dependency is RESOLVED (completion rule: RESOLVED only -- a merely
+  EVIDENCE_VERIFIED, replied, executed or authorized dependency is not
+  complete). The dependency context is a mandatory explicit argument
+  (`build_action_lookup(queue)`); no global state; missing context fails
+  closed.
+* DURABLE EVIDENCE REFERENCES -- entering an execution-asserting state
+  persists a validated, structured `execution_evidence_ref` bound to the
+  action's id/type/provider/reference. Entering EVIDENCE_VERIFIED
+  requires the ORIGINAL evidence record, which is re-validated and from
+  which the canonical `verified_evidence_ref` is derived by
+  `build_verified_provider_evidence_ref()` /
+  `build_verified_account_setting_evidence_ref()`; RESOLVED re-verifies
+  that persisted source. A caller-supplied string is never trusted.
+
+What machine validation proves and does NOT prove: it proves internal
+consistency (provider/reference/question-family binding, structural
+completeness, persisted source bytes that hash to the recorded SHA-256,
+an official-domain sender string, a permitted evidence tier). It does
+NOT cryptographically prove that a human has not fabricated the metadata
+(sender identity, message id, timestamps) or the saved file's content.
+Human/connector provenance remains part of evidence review; nothing here
+claims more.
 """
 from __future__ import annotations
 
@@ -37,6 +76,7 @@ import hashlib
 import itertools
 import re
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 
 from orca.eval.candidate_registry import EXPECTED_REFERENCE_NAMES, _validate_reference
@@ -46,6 +86,32 @@ from orca.eval.frontier_reference_admission_quorum import (
     MINIMUM_USABLE_REFERENCES,
     validate_full_protocol_access_readiness,
 )
+
+# ── canonical provider identity (Phase 21B.4.19.1 §3) ─────────────────────
+
+REFERENCE_PROVIDER: dict[str, str] = {
+    "DeepSeek V4.1-Flash": "DeepSeek AI",
+    "GLM-5.3 (flagship)": "Zhipu AI / Z.ai",
+    "Mistral Large 3": "Mistral AI",
+    "MiniMax M3": "MiniMax",
+    "Qwen3.8-Max": "Alibaba",
+    "Kimi K3": "Moonshot AI",
+}
+
+# Documented question-id families (packet ids). A response may only claim
+# to have answered ids from its own provider's family (§20).
+PROVIDER_QUESTION_PREFIX: dict[str, str] = {
+    "Mistral AI": "MIS-Q",
+    "DeepSeek AI": "DSK-Q",
+    "Moonshot AI": "KMI-Q",
+    "Zhipu AI / Z.ai": "GLM-Q",
+    "MiniMax": "MNX-Q",
+    "Alibaba": "QWN-Q",
+}
+
+# The only actions that may use provider=ALL / reference=ALL (§6).
+GLOBAL_ACTION_IDS = frozenset({"GLB-01", "GLB-02"})
+GLOBAL_ACTION_TYPES = frozenset({"VERIFY_BILLING_CREDITS", "RUN_FRONTIER_API"})
 
 # ── action state machine (§8) ─────────────────────────────────────────────
 
@@ -63,7 +129,7 @@ ACTION_STATES = (
     "EXPIRED_OR_STALE",
 )
 
-# "SENT" is deliberately not a state and never equals resolution (§8).
+# "SENT" is deliberately not a state and never equals resolution.
 _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "NOT_REQUIRED": frozenset(),
     "PREPARED": frozenset({"AWAITING_OWNER_AUTHORIZATION", "NOT_REQUIRED", "BLOCKED"}),
@@ -83,6 +149,9 @@ _EXECUTION_ASSERTING_STATES = frozenset(
     {"EXECUTED_AWAITING_PROVIDER", "PROVIDER_REPLIED_UNVERIFIED", "EVIDENCE_VERIFIED", "RESOLVED"}
 )
 _VERIFIED_EVIDENCE_STATES = frozenset({"EVIDENCE_VERIFIED", "RESOLVED"})
+# Dependency completion rule (§10): only RESOLVED completes a dependency.
+DEPENDENCY_COMPLETE_STATE = "RESOLVED"
+_DEPENDENCY_GATED_TARGET_STATES = frozenset({"AUTHORIZED_NOT_EXECUTED", "EXECUTED_AWAITING_PROVIDER"})
 
 # ── owner authorization model (§9/§10) ────────────────────────────────────
 
@@ -108,8 +177,43 @@ ACTION_REQUIRED_FIELDS = (
     "evidence_required_after_execution", "expected_state_transition",
     "expiry_or_freshness_requirement", "notes",
     "state", "priority", "burden", "critical_path", "depends_on", "claude_can_execute",
-    "authorization_evidence", "verified_evidence_ref",
+    "authorization_evidence", "execution_evidence_ref", "verified_evidence_ref",
 )
+
+# Structured owner authorization record (§7/§9). Strict: no other keys.
+OWNER_AUTHORIZATION_FIELDS = (
+    "action_id", "decision", "authorized_by_role", "authorized_at_utc",
+    "authorization_source_kind", "authorization_source_ref", "scope",
+)
+AUTHORIZATION_SOURCE_KINDS = ("OWNER_CHAT_MESSAGE", "OWNER_WRITTEN_RECORD")
+AUTHORIZATION_SCOPE_EXACT = "EXACT_ACTION_ONLY"
+
+# Structured execution evidence (§13/§14). Strict: no other keys.
+EXECUTION_EVIDENCE_FIELDS = (
+    "action_id", "action_type", "provider", "reference_name", "executed_at_utc", "source_ref",
+)
+
+# Canonical verified-evidence reference shapes (§16). Strict: no other keys.
+VERIFIED_REF_FIELDS: dict[str, tuple[str, ...]] = {
+    "PROVIDER_RESPONSE": (
+        "evidence_type", "provider", "reference_name", "source_location", "sha256",
+        "message_id", "evidence_tier", "received_at_utc",
+    ),
+    "ACCOUNT_SETTING": (
+        "evidence_type", "provider", "reference_name", "source_location", "sha256",
+        "setting_name", "effective_timestamp_utc",
+    ),
+}
+_SETTING_ACTION_TYPES = frozenset({
+    "CHANGE_PROVIDER_ACCOUNT_SETTING", "INSPECT_PROVIDER_ACCOUNT_SETTING", "ENABLE_NO_TRAINING", "ENABLE_ZDR",
+})
+# Which verified-evidence kinds may close which action types. Setting
+# actions may also be closed by a written provider confirmation; every
+# other action type needs a provider response.
+_ALLOWED_EVIDENCE_TYPES_BY_ACTION: dict[str, frozenset[str]] = {
+    **{t: frozenset({"ACCOUNT_SETTING", "PROVIDER_RESPONSE"}) for t in _SETTING_ACTION_TYPES},
+    **{t: frozenset({"PROVIDER_RESPONSE"}) for t in EXTERNAL_ACTION_TYPES if t not in _SETTING_ACTION_TYPES},
+}
 
 # ── provider evidence standard (§18/§19) ──────────────────────────────────
 
@@ -169,9 +273,8 @@ DIMENSION_EVIDENCE_KIND: dict[str, str] = {
 }
 
 # blocker token -> (dimension, satisfied value) that must already hold
-# before the token may be removed. Tokens absent here that need only a
-# verified response are handled separately; SELF_HOST_COMPUTE_PROHIBITIVE
-# and ZERO_CASH_CHECK_REQUIRED are compute/financial, never resolvable by
+# before the token may be removed. SELF_HOST_COMPUTE_PROHIBITIVE and
+# ZERO_CASH_CHECK_REQUIRED are compute/financial, never resolvable by
 # provider evidence.
 _BLOCKER_REQUIRED_DIMENSION: dict[str, tuple[str, object]] = {
     "TERMS_AMBIGUITY": ("license_or_terms_status", "CLEAR"),
@@ -188,11 +291,24 @@ _BLOCKER_NEEDS_ACCOUNT_SETTING = frozenset({"PROVIDER_ACCOUNT_SETTING_REQUIRED"}
 _BLOCKER_NEVER_PROVIDER_RESOLVABLE = frozenset({"SELF_HOST_COMPUTE_PROHIBITIVE", "ZERO_CASH_CHECK_REQUIRED"})
 
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
+_WILDCARD_TOKENS = frozenset({"*", "ALL", "ANY", "N/A", "NONE", "NULL", "TBD"})
 
 
 class ProviderResolutionError(ValueError):
     """An action, evidence record, or state transition violates the
-    Phase 21B.4.19 fail-closed provider-resolution rules."""
+    Phase 21B.4.19/.19.1 fail-closed provider-resolution rules."""
+
+
+# Import-time consistency: the canonical map must cover exactly the six
+# locked references and exactly the providers with domains/question
+# families -- a drifted mapping fails loudly, never silently.
+if (
+    set(REFERENCE_PROVIDER) != set(EXPECTED_REFERENCE_NAMES)
+    or set(REFERENCE_PROVIDER.values()) != set(OFFICIAL_PROVIDER_DOMAINS)
+    or set(REFERENCE_PROVIDER.values()) != set(PROVIDER_QUESTION_PREFIX)
+):
+    raise ProviderResolutionError("REFERENCE_PROVIDER is inconsistent with the locked reference/provider sets")
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
@@ -224,16 +340,238 @@ def _require_fields(record: dict, required: tuple[str, ...], label: str) -> None
         raise ProviderResolutionError(f"{label} missing required field(s): {missing}")
 
 
+def _require_exact_keys(record, required: tuple[str, ...], label: str) -> None:
+    if not isinstance(record, dict):
+        raise ProviderResolutionError(f"{label} must be a structured record, got {type(record).__name__}")
+    _require_fields(record, required, label)
+    unknown = sorted(set(record) - set(required))
+    if unknown:
+        raise ProviderResolutionError(f"{label} has unexpected field(s) {unknown}; only {list(required)} are allowed")
+
+
+def _parse_utc(value, label: str) -> datetime:
+    if not isinstance(value, str) or not _UTC_RE.match(value):
+        raise ProviderResolutionError(f"{label} must be a UTC ISO-8601 timestamp ending in 'Z', got {value!r}")
+    try:
+        return datetime.fromisoformat(value[:-1] + "+00:00").astimezone(timezone.utc)
+    except ValueError as e:
+        raise ProviderResolutionError(f"{label} is not a valid timestamp: {value!r}") from e
+
+
+def _nonempty_ref(value, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ProviderResolutionError(f"{label} must be a non-empty string")
+    if value.strip().upper() in _WILDCARD_TOKENS or "*" in value:
+        raise ProviderResolutionError(f"{label} must not be a wildcard/placeholder, got {value!r}")
+    return value
+
+
+def canonical_provider_for(reference_name: str) -> str:
+    try:
+        return REFERENCE_PROVIDER[reference_name]
+    except KeyError as e:
+        raise ProviderResolutionError(f"unregistered reference {reference_name!r}") from e
+
+
+def _check_provider_binding(provider, reference_name, label: str) -> None:
+    """The provider must be the canonical owner of the reference -- a
+    valid domain for some OTHER provider never substitutes (§4/§5)."""
+    canonical = canonical_provider_for(reference_name)
+    if provider != canonical:
+        raise ProviderResolutionError(
+            f"{label}: provider {provider!r} does not own reference {reference_name!r} (canonical provider is {canonical!r})"
+        )
+
+
+def _check_question_families(provider: str, question_ids, label: str) -> None:
+    prefix = PROVIDER_QUESTION_PREFIX[provider]
+    pattern = re.compile(re.escape(prefix) + r"\d+[A-Za-z0-9._-]*$")
+    for qid in question_ids:
+        if not isinstance(qid, str) or not pattern.match(qid):
+            raise ProviderResolutionError(
+                f"{label}: question id {qid!r} is not in {provider!r}'s documented family {prefix}*"
+            )
+
+
+# ── owner authorization (Phase 21B.4.19.1 §7-§9) ──────────────────────────
+
+
+def validate_owner_authorization(record, *, action_id: str) -> None:
+    """A structured OWNER authorization for exactly one action. Rejects an
+    arbitrary non-empty dict, a wrong/wildcard action id, a non-OWNER
+    role, a non-AUTHORIZED decision, any scope other than
+    EXACT_ACTION_ONLY (so no provider-wide, phase-wide or
+    dependency-implying grant), an empty source ref, and a malformed
+    timestamp. One authorization authorizes one action -- never its
+    dependencies or follow-ups."""
+    _require_exact_keys(record, OWNER_AUTHORIZATION_FIELDS, f"owner authorization for {action_id!r}")
+    if record["action_id"] != action_id:
+        raise ProviderResolutionError(
+            f"owner authorization is for action_id={record['action_id']!r}, not {action_id!r} -- one authorization "
+            "authorizes exactly one action"
+        )
+    if str(record["action_id"]).strip().upper() in _WILDCARD_TOKENS or "*" in str(record["action_id"]):
+        raise ProviderResolutionError("wildcard action_id is not an authorization")
+    if record["decision"] != "AUTHORIZED":
+        raise ProviderResolutionError(f"owner authorization decision must be AUTHORIZED, got {record['decision']!r}")
+    if record["authorized_by_role"] != "OWNER":
+        raise ProviderResolutionError(f"authorization must come from role OWNER, got {record['authorized_by_role']!r}")
+    if record["scope"] != AUTHORIZATION_SCOPE_EXACT:
+        raise ProviderResolutionError(
+            f"authorization scope must be {AUTHORIZATION_SCOPE_EXACT!r} (no wildcard, provider-wide or phase-wide "
+            f"authorization), got {record['scope']!r}"
+        )
+    if record["authorization_source_kind"] not in AUTHORIZATION_SOURCE_KINDS:
+        raise ProviderResolutionError(
+            f"authorization_source_kind must be one of {AUTHORIZATION_SOURCE_KINDS}, got {record['authorization_source_kind']!r}"
+        )
+    _nonempty_ref(record["authorization_source_ref"], "authorization_source_ref")
+    _parse_utc(record["authorized_at_utc"], "authorized_at_utc")
+
+
+# ── execution evidence (Phase 21B.4.19.1 §13/§14) ─────────────────────────
+
+
+def validate_execution_evidence(record, *, action: dict) -> None:
+    """Structured evidence that THIS action was executed: it must name the
+    action's own id, type, provider and reference, a real source ref, and
+    a valid UTC timestamp not earlier than the recorded authorization."""
+    aid = action["action_id"]
+    _require_exact_keys(record, EXECUTION_EVIDENCE_FIELDS, f"execution evidence for {aid!r}")
+    for field, expected in (
+        ("action_id", aid),
+        ("action_type", action["action_type"]),
+        ("provider", action["provider"]),
+        ("reference_name", action["reference_name"]),
+    ):
+        if record[field] != expected:
+            raise ProviderResolutionError(
+                f"execution evidence {field}={record[field]!r} does not match action {aid!r} ({expected!r})"
+            )
+    _nonempty_ref(record["source_ref"], "execution evidence source_ref")
+    executed_at = _parse_utc(record["executed_at_utc"], "executed_at_utc")
+    authorization = action.get("authorization_evidence")
+    if authorization:
+        if executed_at < _parse_utc(authorization["authorized_at_utc"], "authorized_at_utc"):
+            raise ProviderResolutionError("execution evidence predates the owner authorization")
+
+
+def _validate_received_record(record, action: dict) -> None:
+    """The marker that a provider/console reply arrived (still
+    UNVERIFIED): it must be bound to this action's provider/reference and
+    point at a persisted source. It proves nothing yet."""
+    label = f"received record for {action['action_id']!r}"
+    if not isinstance(record, dict) or not record:
+        raise ProviderResolutionError(f"{label} must be a structured record")
+    if record.get("provider") != action["provider"] or record.get("reference_name") != action["reference_name"]:
+        raise ProviderResolutionError(f"{label} is not bound to provider/reference {action['provider']!r}/{action['reference_name']!r}")
+    location = record.get("raw_response_location") or record.get("screenshot_evidence_reference")
+    _nonempty_ref(location, f"{label} persisted source location")
+    _parse_utc(record.get("received_at_utc") or record.get("effective_timestamp_utc"), f"{label} timestamp")
+    if "question_ids_answered" in record:
+        _check_question_families(action["provider"], record["question_ids_answered"], label)
+
+
+# ── verified evidence references (Phase 21B.4.19.1 §15-§18) ───────────────
+
+
+def validate_verified_evidence_ref(ref, *, action: dict, evidence_root: Path | None = None) -> None:
+    """Shape + binding check of a canonical verified-evidence reference.
+    With `evidence_root` the persisted source is re-read and its SHA-256
+    recomputed, so a RESOLVED action's evidence is re-proved, not
+    remembered. Global (provider=ALL) actions have no provider-bound
+    evidence path in this phase and can never hold one."""
+    aid = action["action_id"]
+    if not isinstance(ref, dict):
+        raise ProviderResolutionError(f"verified_evidence_ref for {aid!r} must be a structured reference, not {type(ref).__name__}")
+    evidence_type = ref.get("evidence_type")
+    if evidence_type not in VERIFIED_REF_FIELDS:
+        raise ProviderResolutionError(f"verified_evidence_ref for {aid!r} has unrecognized evidence_type={evidence_type!r}")
+    _require_exact_keys(ref, VERIFIED_REF_FIELDS[evidence_type], f"verified_evidence_ref for {aid!r}")
+    if action["provider"] == "ALL" or action["reference_name"] == "ALL":
+        raise ProviderResolutionError(f"global action {aid!r} has no provider-bound verified-evidence path")
+    if ref["provider"] != action["provider"] or ref["reference_name"] != action["reference_name"]:
+        raise ProviderResolutionError(
+            f"verified_evidence_ref for {aid!r} is bound to {ref['provider']!r}/{ref['reference_name']!r}, "
+            f"not the action's {action['provider']!r}/{action['reference_name']!r}"
+        )
+    _check_provider_binding(ref["provider"], ref["reference_name"], f"verified_evidence_ref for {aid!r}")
+    if evidence_type not in _ALLOWED_EVIDENCE_TYPES_BY_ACTION[action["action_type"]]:
+        raise ProviderResolutionError(f"{evidence_type} evidence cannot close a {action['action_type']} action")
+    if not _HEX64_RE.match(str(ref["sha256"])):
+        raise ProviderResolutionError(f"verified_evidence_ref for {aid!r} requires a 64-hex sha256")
+    _nonempty_ref(ref["source_location"], "verified_evidence_ref source_location")
+    if evidence_root is not None and _sha256_of_file(evidence_root, ref["source_location"]) != ref["sha256"]:
+        raise ProviderResolutionError(f"verified_evidence_ref for {aid!r}: persisted source no longer matches its sha256")
+
+
+def build_verified_provider_evidence_ref(record: dict, *, evidence_root: Path) -> dict:
+    """Derive the canonical ref FROM a record that has actually passed
+    `validate_provider_response()` as VERIFIED. Callers never hand-author
+    a trusted ref."""
+    validate_provider_response(record, evidence_root=evidence_root)
+    if record["review_status"] != "VERIFIED":
+        raise ProviderResolutionError("only a VERIFIED provider response can produce a verified evidence ref")
+    return {
+        "evidence_type": "PROVIDER_RESPONSE",
+        "provider": record["provider"],
+        "reference_name": record["reference_name"],
+        "source_location": record["raw_response_location"],
+        "sha256": record["sha256"],
+        "message_id": record["message_id"],
+        "evidence_tier": record["evidence_tier"],
+        "received_at_utc": record["received_at_utc"],
+    }
+
+
+def build_verified_account_setting_evidence_ref(record: dict, *, evidence_root: Path) -> dict:
+    validate_account_setting_evidence(record, evidence_root=evidence_root)
+    return {
+        "evidence_type": "ACCOUNT_SETTING",
+        "provider": record["provider"],
+        "reference_name": record["reference_name"],
+        "source_location": record["screenshot_evidence_reference"],
+        "sha256": record["sha256"],
+        "setting_name": record["setting_name"],
+        "effective_timestamp_utc": record["effective_timestamp_utc"],
+    }
+
+
+def _derive_verified_ref(record, evidence_root: Path) -> dict:
+    if not isinstance(record, dict):
+        raise ProviderResolutionError("verified evidence must be supplied as the original evidence record, not a string or reference")
+    if "screenshot_evidence_reference" in record:
+        return build_verified_account_setting_evidence_ref(record, evidence_root=evidence_root)
+    return build_verified_provider_evidence_ref(record, evidence_root=evidence_root)
+
+
 # ── action queue validation (§10/§27) ─────────────────────────────────────
 
 
-def validate_action(action: dict) -> None:
+def validate_action(action: dict, *, evidence_root: Path | None = None) -> None:
     _require_fields(action, ACTION_REQUIRED_FIELDS, f"action {action.get('action_id', '<unnamed>')!r}")
     aid = action["action_id"]
     if action["action_type"] not in EXTERNAL_ACTION_TYPES:
         raise ProviderResolutionError(f"action {aid!r} has unrecognized action_type={action['action_type']!r}")
-    if action["reference_name"] != "ALL" and action["reference_name"] not in EXPECTED_REFERENCE_NAMES:
-        raise ProviderResolutionError(f"action {aid!r} targets unregistered reference {action['reference_name']!r}")
+
+    # Provider/reference binding (§6): specific actions use the canonical
+    # provider; only the documented global actions may use ALL/ALL.
+    if action["reference_name"] == "ALL" or action["provider"] == "ALL":
+        if not (
+            action["reference_name"] == "ALL" and action["provider"] == "ALL"
+            and aid in GLOBAL_ACTION_IDS and action["action_type"] in GLOBAL_ACTION_TYPES
+        ):
+            raise ProviderResolutionError(
+                f"action {aid!r} uses ALL for provider/reference but is not a documented global action "
+                f"({sorted(GLOBAL_ACTION_IDS)})"
+            )
+    else:
+        if action["reference_name"] not in EXPECTED_REFERENCE_NAMES:
+            raise ProviderResolutionError(f"action {aid!r} targets unregistered reference {action['reference_name']!r}")
+        _check_provider_binding(action["provider"], action["reference_name"], f"action {aid!r}")
+        if aid in GLOBAL_ACTION_IDS or action["action_type"] in GLOBAL_ACTION_TYPES:
+            raise ProviderResolutionError(f"global action/type {aid!r}/{action['action_type']!r} must use provider=ALL and reference=ALL")
+
     if action["requires_owner_authorization"] is not True:
         raise ProviderResolutionError(f"action {aid!r} is external/account-mutating and must require owner authorization")
     if action["claude_can_execute"] is not False:
@@ -250,6 +588,8 @@ def validate_action(action: dict) -> None:
         raise ProviderResolutionError(f"action {aid!r} has invalid burden={action['burden']!r}")
     if not isinstance(action["depends_on"], list):
         raise ProviderResolutionError(f"action {aid!r} depends_on must be a list")
+    if aid in action["depends_on"]:
+        raise ProviderResolutionError(f"action {aid!r} may not depend on itself")
 
     # No executed action without prior authorization evidence (§27).
     if action["executed_status"] == "EXECUTED":
@@ -257,19 +597,57 @@ def validate_action(action: dict) -> None:
             raise ProviderResolutionError(
                 f"action {aid!r} is EXECUTED without AUTHORIZED status and persisted authorization_evidence"
             )
-    if action["authorization_status"] == "AUTHORIZED" and not action["authorization_evidence"]:
-        raise ProviderResolutionError(f"action {aid!r} is AUTHORIZED without authorization_evidence")
+    if action["authorization_status"] == "AUTHORIZED":
+        if not action["authorization_evidence"]:
+            raise ProviderResolutionError(f"action {aid!r} is AUTHORIZED without authorization_evidence")
+        validate_owner_authorization(action["authorization_evidence"], action_id=aid)
+    elif action["authorization_evidence"] is not None:
+        raise ProviderResolutionError(f"action {aid!r} is NOT_AUTHORIZED but carries authorization_evidence")
+
     if action["state"] == "AUTHORIZED_NOT_EXECUTED" and action["authorization_status"] != "AUTHORIZED":
         raise ProviderResolutionError(f"action {aid!r} state AUTHORIZED_NOT_EXECUTED requires AUTHORIZED status")
     if action["state"] in _EXECUTION_ASSERTING_STATES and action["executed_status"] != "EXECUTED":
         raise ProviderResolutionError(f"action {aid!r} state {action['state']!r} asserts execution but executed_status is not EXECUTED")
+
+    # Durable execution evidence (§13): present exactly when executed.
+    if action["executed_status"] == "EXECUTED":
+        if not action["execution_evidence_ref"]:
+            raise ProviderResolutionError(f"action {aid!r} is EXECUTED without a persisted execution_evidence_ref")
+        validate_execution_evidence(action["execution_evidence_ref"], action=action)
+    elif action["execution_evidence_ref"] is not None:
+        raise ProviderResolutionError(f"action {aid!r} is NOT_EXECUTED but carries an execution_evidence_ref")
+
     # A blocker/action may not be RESOLVED or EVIDENCE_VERIFIED without a
-    # persisted verified-evidence reference (§27).
-    if action["state"] in _VERIFIED_EVIDENCE_STATES and not action["verified_evidence_ref"]:
-        raise ProviderResolutionError(f"action {aid!r} state {action['state']!r} requires a persisted verified_evidence_ref")
+    # validated structured verified-evidence reference (§15/§27).
+    if action["state"] in _VERIFIED_EVIDENCE_STATES:
+        if not action["verified_evidence_ref"]:
+            raise ProviderResolutionError(f"action {aid!r} state {action['state']!r} requires a persisted verified_evidence_ref")
+        validate_verified_evidence_ref(action["verified_evidence_ref"], action=action, evidence_root=evidence_root)
+    elif action["verified_evidence_ref"] is not None and action["state"] != "EXPIRED_OR_STALE":
+        raise ProviderResolutionError(f"action {aid!r} carries a verified_evidence_ref outside a verified/expired state")
 
 
-def validate_action_queue(queue: dict) -> None:
+def _assert_acyclic(actions: list[dict]) -> None:
+    graph = {a["action_id"]: list(a["depends_on"]) for a in actions}
+    visiting: set[str] = set()
+    done: set[str] = set()
+
+    def visit(node: str) -> None:
+        if node in done:
+            return
+        if node in visiting:
+            raise ProviderResolutionError(f"dependency cycle involving action {node!r}")
+        visiting.add(node)
+        for dep in graph.get(node, []):
+            visit(dep)
+        visiting.discard(node)
+        done.add(node)
+
+    for node in graph:
+        visit(node)
+
+
+def validate_action_queue(queue: dict, *, evidence_root: Path | None = None) -> None:
     for key in ("schema_version", "phase", "actions", "messages_sent", "support_tickets_submitted",
                 "account_settings_changed", "commercial_notices_sent"):
         if key not in queue:
@@ -278,18 +656,38 @@ def validate_action_queue(queue: dict) -> None:
     if len(ids) != len(set(ids)):
         raise ProviderResolutionError("action queue contains duplicate action_id values")
     for action in queue["actions"]:
-        validate_action(action)
-    known = set(ids)
+        validate_action(action, evidence_root=evidence_root)
+    known = {a["action_id"]: a for a in queue["actions"]}
     for action in queue["actions"]:
         for dep in action["depends_on"]:
             if dep not in known:
                 raise ProviderResolutionError(f"action {action['action_id']!r} depends on unknown action {dep!r}")
+    _assert_acyclic(queue["actions"])
+    # Queue-level consistency: a dependent action that claims to be
+    # authorized/executed must have every dependency RESOLVED.
+    for action in queue["actions"]:
+        if action["authorization_status"] == "AUTHORIZED" or action["executed_status"] == "EXECUTED":
+            for dep in action["depends_on"]:
+                if known[dep]["state"] != DEPENDENCY_COMPLETE_STATE:
+                    raise ProviderResolutionError(
+                        f"action {action['action_id']!r} is authorized/executed but dependency {dep!r} is "
+                        f"{known[dep]['state']!r}, not {DEPENDENCY_COMPLETE_STATE}"
+                    )
+
+
+def build_action_lookup(queue: dict, *, evidence_root: Path | None = None) -> dict[str, dict]:
+    """The explicit dependency context for `advance_action_state`: the
+    validated queue's actions keyed by id. Returned dicts are copies, so
+    there is no shared mutable state."""
+    validate_action_queue(queue, evidence_root=evidence_root)
+    return {a["action_id"]: deepcopy(a) for a in queue["actions"]}
 
 
 def assert_queue_fully_unauthorized(queue: dict) -> None:
-    """Phase 21B.4.19 authorizes NO external action: every action must
-    still be NOT_AUTHORIZED / NOT_EXECUTED with no authorization evidence,
-    and every phase-level counter must be zero."""
+    """Phase 21B.4.19/.19.1 authorizes NO external action: every action
+    must still be NOT_AUTHORIZED / NOT_EXECUTED with no authorization,
+    execution or verified evidence, and every phase-level counter must
+    be zero."""
     validate_action_queue(queue)
     for counter in ("messages_sent", "support_tickets_submitted", "account_settings_changed", "commercial_notices_sent"):
         if queue[counter] != 0:
@@ -297,8 +695,39 @@ def assert_queue_fully_unauthorized(queue: dict) -> None:
     for action in queue["actions"]:
         if action["authorization_status"] != "NOT_AUTHORIZED" or action["executed_status"] != "NOT_EXECUTED":
             raise ProviderResolutionError(f"action {action['action_id']!r} is not NOT_AUTHORIZED/NOT_EXECUTED")
-        if action["authorization_evidence"] is not None:
-            raise ProviderResolutionError(f"action {action['action_id']!r} carries authorization_evidence in a no-authorization phase")
+        for field in ("authorization_evidence", "execution_evidence_ref", "verified_evidence_ref"):
+            if action[field] is not None:
+                raise ProviderResolutionError(f"action {action['action_id']!r} carries {field} in a no-authorization phase")
+        if action["state"] in _EXECUTION_ASSERTING_STATES | {"AUTHORIZED_NOT_EXECUTED"}:
+            raise ProviderResolutionError(f"action {action['action_id']!r} is in advanced state {action['state']!r}")
+
+
+def _require_dependencies_resolved(action: dict, dependency_actions, evidence_root) -> None:
+    """Fail-closed dependency gate (§10/§11). The dependency context and
+    an evidence root are mandatory whenever an action has dependencies,
+    because a dependency only counts once its own verified evidence
+    re-proves against persisted bytes."""
+    deps = action["depends_on"]
+    if not deps:
+        return
+    if not isinstance(dependency_actions, dict) or not dependency_actions:
+        raise ProviderResolutionError(
+            f"action {action['action_id']!r} has dependencies {deps}; a dependency_actions context is mandatory"
+        )
+    if evidence_root is None:
+        raise ProviderResolutionError(
+            f"action {action['action_id']!r} has dependencies {deps}; an evidence_root is mandatory to re-verify them"
+        )
+    for dep_id in deps:
+        dep = dependency_actions.get(dep_id)
+        if dep is None or dep.get("action_id") != dep_id:
+            raise ProviderResolutionError(f"dependency {dep_id!r} of {action['action_id']!r} is missing from the dependency context")
+        validate_action(dep, evidence_root=evidence_root)
+        if dep["state"] != DEPENDENCY_COMPLETE_STATE:
+            raise ProviderResolutionError(
+                f"action {action['action_id']!r} cannot proceed: dependency {dep_id!r} is {dep['state']!r}, "
+                f"not {DEPENDENCY_COMPLETE_STATE}"
+            )
 
 
 def advance_action_state(
@@ -307,37 +736,69 @@ def advance_action_state(
     *,
     authorization_evidence: dict | None = None,
     execution_evidence: dict | None = None,
-    verified_evidence_ref: str | None = None,
+    received_record: dict | None = None,
+    verified_evidence_record: dict | None = None,
+    evidence_root: Path | None = None,
+    dependency_actions: dict | None = None,
 ) -> dict:
     """Returns a NEW action dict in `new_state`, or raises. Never mutates
-    the input. Each forward step requires its own evidence."""
-    validate_action(action)
+    the input. Each forward step requires its own validated evidence:
+
+    * AUTHORIZED_NOT_EXECUTED: a structured owner authorization for this
+      exact action, and every dependency RESOLVED.
+    * EXECUTED_AWAITING_PROVIDER: prior authorization, dependencies still
+      RESOLVED, and structured execution evidence bound to this action.
+    * PROVIDER_REPLIED_UNVERIFIED: a received record bound to this
+      action's provider/reference.
+    * EVIDENCE_VERIFIED: the ORIGINAL evidence record + evidence_root; the
+      record is fully re-validated and the canonical verified ref derived
+      from it. A string or hand-authored ref is never accepted.
+    * RESOLVED: the persisted verified evidence is re-verified against
+      evidence_root.
+    """
+    validate_action(action, evidence_root=evidence_root)
     old_state = action["state"]
     if new_state not in ACTION_STATES:
         raise ProviderResolutionError(f"unrecognized target state {new_state!r}")
     if new_state not in _ALLOWED_TRANSITIONS[old_state]:
         raise ProviderResolutionError(f"transition {old_state} -> {new_state} is not permitted")
+
+    if new_state in _DEPENDENCY_GATED_TARGET_STATES:
+        _require_dependencies_resolved(action, dependency_actions, evidence_root)
+
     updated = deepcopy(action)
     if new_state == "AUTHORIZED_NOT_EXECUTED":
-        if not authorization_evidence:
-            raise ProviderResolutionError("AUTHORIZED_NOT_EXECUTED requires explicit owner authorization_evidence")
+        validate_owner_authorization(authorization_evidence, action_id=action["action_id"])
         updated["authorization_status"] = "AUTHORIZED"
         updated["authorization_evidence"] = deepcopy(authorization_evidence)
     elif new_state == "EXECUTED_AWAITING_PROVIDER":
         if updated["authorization_status"] != "AUTHORIZED" or not updated["authorization_evidence"]:
             raise ProviderResolutionError("execution requires prior owner authorization evidence")
-        if not execution_evidence:
-            raise ProviderResolutionError("EXECUTED_AWAITING_PROVIDER requires execution_evidence")
+        validate_execution_evidence(execution_evidence, action=updated)
         updated["executed_status"] = "EXECUTED"
+        updated["execution_evidence_ref"] = deepcopy(execution_evidence)
     elif new_state == "PROVIDER_REPLIED_UNVERIFIED":
-        if not execution_evidence:
-            raise ProviderResolutionError("PROVIDER_REPLIED_UNVERIFIED requires the received record as execution_evidence")
-    elif new_state in _VERIFIED_EVIDENCE_STATES:
-        if not verified_evidence_ref:
-            raise ProviderResolutionError(f"{new_state} requires a persisted verified_evidence_ref")
-        updated["verified_evidence_ref"] = verified_evidence_ref
+        _validate_received_record(received_record, updated)
+    elif new_state == "EVIDENCE_VERIFIED":
+        if evidence_root is None:
+            raise ProviderResolutionError("EVIDENCE_VERIFIED requires an evidence_root to validate the evidence record")
+        ref = _derive_verified_ref(verified_evidence_record, evidence_root)
+        validate_verified_evidence_ref(ref, action=updated, evidence_root=evidence_root)
+        updated["verified_evidence_ref"] = ref
+    elif new_state == "RESOLVED":
+        if evidence_root is None:
+            raise ProviderResolutionError("RESOLVED requires an evidence_root to re-verify the persisted evidence")
+        validate_verified_evidence_ref(updated["verified_evidence_ref"], action=updated, evidence_root=evidence_root)
+    elif new_state == "PREPARED":
+        # A fresh cycle after EVIDENCE_INSUFFICIENT / EXPIRED_OR_STALE needs
+        # a fresh authorization; nothing carries over.
+        updated["authorization_status"] = "NOT_AUTHORIZED"
+        updated["authorization_evidence"] = None
+        updated["executed_status"] = "NOT_EXECUTED"
+        updated["execution_evidence_ref"] = None
+        updated["verified_evidence_ref"] = None
     updated["state"] = new_state
-    validate_action(updated)
+    validate_action(updated, evidence_root=evidence_root)
     return updated
 
 
@@ -371,12 +832,14 @@ def _validate_approved_changes(record: dict) -> None:
 
 
 def validate_provider_response(record: dict, *, evidence_root: Path | None = None) -> None:
-    """Raises unless the record is structurally valid. A record whose
-    review_status is VERIFIED is additionally held to the full evidence
-    standard: persisted source under `evidence_root` whose bytes hash to
-    `sha256`, tier A/B/C, official provider domain, at least one answered
-    question, a named reviewer, no remaining ambiguity behind any approved
-    state change, and only permitted, evidence-kind-matched changes."""
+    """Raises unless the record is structurally valid AND bound to the
+    reference's canonical provider. A record whose review_status is
+    VERIFIED is additionally held to the full evidence standard:
+    persisted source under `evidence_root` whose bytes hash to `sha256`,
+    tier A/B/C, official provider domain, at least one answered question
+    from the provider's own family, a named reviewer, no remaining
+    ambiguity behind any approved state change, and only permitted,
+    evidence-kind-matched changes."""
     _require_fields(record, RESPONSE_REQUIRED_FIELDS, "provider response")
     if record["evidence_tier"] not in EVIDENCE_TIERS:
         raise ProviderResolutionError(f"unrecognized evidence_tier={record['evidence_tier']!r}")
@@ -386,8 +849,10 @@ def validate_provider_response(record: dict, *, evidence_root: Path | None = Non
         raise ProviderResolutionError(f"response targets unregistered reference {record['reference_name']!r}")
     if record["provider"] not in OFFICIAL_PROVIDER_DOMAINS:
         raise ProviderResolutionError(f"unrecognized provider {record['provider']!r}")
+    _check_provider_binding(record["provider"], record["reference_name"], "provider response")
     if not isinstance(record["question_ids_answered"], list) or not isinstance(record["approved_state_changes"], list):
         raise ProviderResolutionError("question_ids_answered and approved_state_changes must be lists")
+    _check_question_families(record["provider"], record["question_ids_answered"], "provider response")
 
     if record["review_status"] != "VERIFIED":
         if record["approved_state_changes"]:
@@ -422,7 +887,8 @@ def validate_provider_response(record: dict, *, evidence_root: Path | None = Non
 def validate_account_setting_evidence(record: dict, *, evidence_root: Path | None = None) -> None:
     """Account-setting evidence (§20). Counts only when the setting was
     verified ACTIVE, is prospective, API-specific, screenshot-backed and
-    hash-verified, and carries no real account identifier or secret."""
+    hash-verified, is bound to the reference's canonical provider, and
+    carries no real account identifier or secret."""
     _require_fields(record, ACCOUNT_SETTING_REQUIRED_FIELDS, "account-setting evidence")
     for forbidden in _FORBIDDEN_ACCOUNT_SECRET_KEYS:
         if forbidden in record:
@@ -431,6 +897,7 @@ def validate_account_setting_evidence(record: dict, *, evidence_root: Path | Non
         raise ProviderResolutionError("account_identifier_category must be a redacted category, never a real identifier")
     if record["provider"] not in OFFICIAL_PROVIDER_DOMAINS or record["reference_name"] not in EXPECTED_REFERENCE_NAMES:
         raise ProviderResolutionError("account-setting evidence targets an unrecognized provider/reference")
+    _check_provider_binding(record["provider"], record["reference_name"], "account-setting evidence")
     if record["verification_result"] != "VERIFIED_ACTIVE":
         raise ProviderResolutionError("account-setting evidence requires verification_result=VERIFIED_ACTIVE")
     if record["prospective"] is not True or record["api_specific"] is not True:

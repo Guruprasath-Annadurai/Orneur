@@ -1,5 +1,5 @@
 {
-  "schema_version": "genesis-frontier-provider-response-schema-v1",
+  "schema_version": "genesis-frontier-provider-response-schema-v2",
   "phase": "21B.4.19",
   "created": "2026-09-24",
   "note": "SCHEMA AND FORMAT ONLY. This file contains NO provider response and NO evidence. The example_format block is SYNTHETIC, uses placeholders only, and must never be treated as, copied into, or cited as evidence. No response is automatically trusted: a record is only VERIFIED when it passes orca.eval.frontier_provider_resolution.validate_provider_response().",
@@ -32,7 +32,11 @@
     "C": "provider account setting with captured evidence plus current documentation",
     "D": "informal/non-authoritative communication"
   },
-  "resolving_tiers": ["A", "B", "C"],
+  "resolving_tiers": [
+    "A",
+    "B",
+    "C"
+  ],
   "tier_d_can_resolve_hard_blocker": false,
   "verification_requirements": [
     "official provider domain (exact match or subdomain)",
@@ -45,15 +49,57 @@
     "no remaining ambiguity behind any approved state change"
   ],
   "dimension_change_rules": {
-    "private_holdout_status": {"transitions": ["REVIEW_REQUIRED->PERMITTED", "BLOCKED->PERMITTED"], "evidence_kind": "NO_TRAINING_CONFIDENTIALITY", "also_requires": "verified account-setting evidence where the route is a provider setting"},
-    "automated_evaluation_status": {"transitions": ["REVIEW_REQUIRED->CLEAR"], "evidence_kind": "AUTOMATED_EVALUATION_PERMISSION"},
-    "license_or_terms_status": {"transitions": ["REVIEW_REQUIRED->CLEAR"], "evidence_kind": "TERMS_CLARIFICATION"},
-    "evidence_retention_status": {"transitions": ["REVIEW_REQUIRED->PERMITTED"], "evidence_kind": "RETENTION_RIGHTS"},
-    "model_identity_attributable": {"transitions": ["false->true"], "evidence_kind": "PROVIDER_VERSION_IDENTITY"},
-    "access_path_identified": {"transitions": ["false->true"], "evidence_kind": "ACCESS_PATH_TERMS"},
-    "reference_evaluation_admission_status": {"transitions": ["REVIEW_REQUIRED->ADMITTED"], "evidence_kind": "TERMS_CLARIFICATION"}
+    "private_holdout_status": {
+      "transitions": [
+        "REVIEW_REQUIRED->PERMITTED",
+        "BLOCKED->PERMITTED"
+      ],
+      "evidence_kind": "NO_TRAINING_CONFIDENTIALITY",
+      "also_requires": "verified account-setting evidence where the route is a provider setting"
+    },
+    "automated_evaluation_status": {
+      "transitions": [
+        "REVIEW_REQUIRED->CLEAR"
+      ],
+      "evidence_kind": "AUTOMATED_EVALUATION_PERMISSION"
+    },
+    "license_or_terms_status": {
+      "transitions": [
+        "REVIEW_REQUIRED->CLEAR"
+      ],
+      "evidence_kind": "TERMS_CLARIFICATION"
+    },
+    "evidence_retention_status": {
+      "transitions": [
+        "REVIEW_REQUIRED->PERMITTED"
+      ],
+      "evidence_kind": "RETENTION_RIGHTS"
+    },
+    "model_identity_attributable": {
+      "transitions": [
+        "false->true"
+      ],
+      "evidence_kind": "PROVIDER_VERSION_IDENTITY"
+    },
+    "access_path_identified": {
+      "transitions": [
+        "false->true"
+      ],
+      "evidence_kind": "ACCESS_PATH_TERMS"
+    },
+    "reference_evaluation_admission_status": {
+      "transitions": [
+        "REVIEW_REQUIRED->ADMITTED"
+      ],
+      "evidence_kind": "TERMS_CLARIFICATION"
+    }
   },
-  "never_changed_by_a_response": ["access_preflight_status", "full_protocol_access_validation", "SELF_HOST_COMPUTE_PROHIBITIVE", "ZERO_CASH_CHECK_REQUIRED"],
+  "never_changed_by_a_response": [
+    "access_preflight_status",
+    "full_protocol_access_validation",
+    "SELF_HOST_COMPUTE_PROHIBITIVE",
+    "ZERO_CASH_CHECK_REQUIRED"
+  ],
   "required_sequence": [
     "provider evidence received",
     "evidence ingested",
@@ -64,12 +110,31 @@
     "quorum recomputed (compute_admission_quorum re-derives readiness again)"
   ],
   "official_provider_domains": {
-    "DeepSeek AI": ["deepseek.com"],
-    "Zhipu AI / Z.ai": ["z.ai", "zhipuai.cn", "bigmodel.cn"],
-    "Mistral AI": ["mistral.ai"],
-    "MiniMax": ["minimax.io", "minimaxi.com"],
-    "Alibaba": ["alibabacloud.com", "aliyun.com"],
-    "Moonshot AI": ["moonshot.ai", "kimi.ai", "kimi.com", "moonshot.cn"]
+    "DeepSeek AI": [
+      "deepseek.com"
+    ],
+    "Zhipu AI / Z.ai": [
+      "z.ai",
+      "zhipuai.cn",
+      "bigmodel.cn"
+    ],
+    "Mistral AI": [
+      "mistral.ai"
+    ],
+    "MiniMax": [
+      "minimax.io",
+      "minimaxi.com"
+    ],
+    "Alibaba": [
+      "alibabacloud.com",
+      "aliyun.com"
+    ],
+    "Moonshot AI": [
+      "moonshot.ai",
+      "kimi.ai",
+      "kimi.com",
+      "moonshot.cn"
+    ]
   },
   "example_format": {
     "_SYNTHETIC_NON_EVIDENCE": true,
@@ -81,10 +146,14 @@
     "sender_domain": "<OFFICIAL_DOMAIN>",
     "message_id": "<PLACEHOLDER>",
     "received_at_utc": "<ISO_8601_UTC>",
-    "question_ids_answered": ["<QUESTION_ID>"],
+    "question_ids_answered": [
+      "<QUESTION_ID>"
+    ],
     "raw_response_location": "<PATH_UNDER_EVIDENCE_ROOT>",
     "sha256": "<64_HEX>",
-    "quoted_authoritative_clauses": ["<VERBATIM_CLAUSE>"],
+    "quoted_authoritative_clauses": [
+      "<VERBATIM_CLAUSE>"
+    ],
     "interpretation": "<REVIEWER_TEXT>",
     "remaining_ambiguity": [],
     "evidence_tier": "<A|B|C|D>",
@@ -92,5 +161,32 @@
     "approved_state_changes": [],
     "reviewer": "<NAME>",
     "expiry_or_freshness": "<CONDITION>"
-  }
+  },
+  "provider_reference_binding": {
+    "rule": "A response's provider must equal the canonical provider of its reference_name; a valid domain for a different provider never substitutes.",
+    "canonical_map": {
+      "DeepSeek V4.1-Flash": "DeepSeek AI",
+      "GLM-5.3 (flagship)": "Zhipu AI / Z.ai",
+      "Mistral Large 3": "Mistral AI",
+      "MiniMax M3": "MiniMax",
+      "Qwen3.8-Max": "Alibaba",
+      "Kimi K3": "Moonshot AI"
+    },
+    "question_id_families": {
+      "Mistral AI": "MIS-Q*",
+      "DeepSeek AI": "DSK-Q*",
+      "Moonshot AI": "KMI-Q*",
+      "Zhipu AI / Z.ai": "GLM-Q*",
+      "MiniMax": "MNX-Q*",
+      "Alibaba": "QWN-Q*"
+    },
+    "applies_to": [
+      "provider responses",
+      "account-setting evidence",
+      "verified evidence refs",
+      "execution evidence",
+      "queue actions"
+    ]
+  },
+  "attestation_limits": "Machine validation proves internal consistency and source persistence (hash of saved bytes, official-domain string, binding). It does NOT cryptographically prove a human has not fabricated metadata or file content. Human/connector provenance remains part of evidence review."
 }
