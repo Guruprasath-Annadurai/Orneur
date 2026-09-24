@@ -1,0 +1,91 @@
+{
+  "capability_status": "UNPROVEN",
+  "captured_at_utc": "2026-09-24T13:30:00Z",
+  "control_statuses_unchanged": {
+    "Mistral-Nemo-Instruct-2407": "NOT_TESTED",
+    "Phi-4": "NOT_TESTED",
+    "Qwen3-8B": "NOT_COMPLETED / technical NOT_PROVEN"
+  },
+  "cost_envelope_credits": {
+    "a100_80gb_rate_credits_per_hour_owner_stated": 2.71,
+    "hard_max_gpu_seconds_per_control": 1200,
+    "per_attempt_stop_threshold_credits": 1.0,
+    "planned_per_control_credits": 0.9033,
+    "planned_three_controls_credits": 2.71,
+    "rate_source": "owner-provided from Lightning's published pricing; NOT independently verified in this session (the public homepage shows only H200 from $4.50/hr)",
+    "reserve_after_execution_credits": 1.0
+  },
+  "cpu_prestage": {
+    "reason": "requires an authenticated Lightning CPU Studio",
+    "status": "NOT_STARTED"
+  },
+  "evidence_type": "PROVIDER_MIGRATION",
+  "gpu_started": false,
+  "gpu_target": {
+    "fallbacks": "inspect H100/H200/L40S compatibility and free-credit cost first; never change the qualification configuration to fit hardware",
+    "preferred": "1 x A100 80GB"
+  },
+  "hard_financial_rules": {
+    "if_not_verifiable_or_unavailable": "STOP; do not provision a GPU",
+    "owner_cash": "INR 0",
+    "payment_card": "must not be added or required",
+    "preconditions_before_any_gpu": [
+      "plan == FREE",
+      "complimentary credits available >= 5 (or whatever the account actually shows)",
+      "owner payment method required == NO",
+      "owner payable balance == 0"
+    ],
+    "purchase_credits": "never"
+  },
+  "live_account_verification": {
+    "credits_available": null,
+    "owner_payable_balance": null,
+    "payment_method_required": null,
+    "plan": null,
+    "reason": "No authenticated access path exists in this environment: the built-in browser is logged out of lightning.ai, no Claude-in-Chrome browser is connected, and no Lightning SDK/CLI/credentials are installed. Logging in, creating an account or handling credentials is not something this agent may do.",
+    "status": "NOT_PERFORMED"
+  },
+  "locked_controls_in_order": [
+    "Qwen3-8B",
+    "Mistral-Nemo-Instruct-2407",
+    "Phi-4"
+  ],
+  "locked_identities": "unchanged (registry-pinned model ids and revisions; no substitution, no quantization for cost)",
+  "modal_historical_evidence": "PRESERVED, not deleted, reinterpreted or rewritten",
+  "modal_qwen_attempt_1": {
+    "evidence": {
+      "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json": "6eafee2d2312f530d12302ce421f3c6ba52c2cac64ebd9cd8b55194fe63935d1",
+      "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_EXECUTION_ATTRIBUTION_2026-09-24.json": "be9c2dd4100c21be469521d29f334b93f9517696e01e0a56f9e817dea11eede7",
+      "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260924T125105Z.json": "3d7c16b4efcec90769765e5898f09f7e9182a5d060a041b0bcd041a0a788f3f9",
+      "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json": "e9a9f4a72247cd1ad897ee322d9aebf9638b57e701572e64864b00b36161d4fd"
+    },
+    "failure_domain": "HARNESS",
+    "note": "Not a model failure. Settlement BILLING_SETTLEMENT_NOT_YET_OBSERVABLE; execution attribution C (unresolved); true settled cost unconfirmed.",
+    "outcome": "HARNESS_FAILURE",
+    "runtime_qualification_status": "NOT_COMPLETED",
+    "technical_serving_status": "NOT_PROVEN",
+    "valid_runtime_attempt": false
+  },
+  "owner_cash_incurred": "none (no provider resource created on any provider in this step)",
+  "phase": "21B.4.20",
+  "program_state": {
+    "CONTROL_CAPABILITY_STATUS": "UNPROVEN",
+    "FRONTIER_EXECUTION_AUTHORIZED": "NO",
+    "GENESIS_FOUNDATION": "NOT SELECTED",
+    "GENESIS_FRONTIER_STATUS": "UNPROVEN",
+    "PHASE_21C": "NOT AUTHORIZED"
+  },
+  "provider_from": "Modal",
+  "provider_to": "Lightning AI",
+  "reason": "Modal attempt settlement remained execution-attribution unresolved (classification C); new Phase 21B.4.20 execution moved to an independent zero-owner-cash provider on owner/program decision.",
+  "repository_start_state": {
+    "branch": "session-update-2026-08-25",
+    "sha": "cbaba5b87917f4ea8df8b31509a4f7cd94a552b4",
+    "working_tree": "clean"
+  },
+  "resume_requirements": [
+    "an authenticated Lightning session the agent may read/operate (owner logs in themselves in the browser pane, or connects the Chrome extension, or provisions SDK access outside this chat)",
+    "a live read of plan, credits, payment-method and owner-payable state (satisfying the preconditions above)",
+    "a Lightning-specific runner and financial-evidence schema (credits before/after, owner charge, payment method present, GPU seconds, rate, expected/observed credit cost) validated in CI before any GPU time"
+  ]
+}

@@ -90,8 +90,8 @@
     },
     {
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "2f41036ec2a3f83febb8f7321c0631a81fd153842917d326679328feb3a44a11",
-      "size_bytes": 9662,
+      "sha256": "d26f5a934c623be1773220ce1a73abd360383b1b62bc660c2a3bc6df4582c630",
+      "size_bytes": 10288,
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md"
     },
     {
@@ -105,6 +105,12 @@
       "sha256": "be9c2dd4100c21be469521d29f334b93f9517696e01e0a56f9e817dea11eede7",
       "size_bytes": 5215,
       "evidence_role": "genesis_control_qwen3_8b_attempt1_execution_attribution_2026-09-24.json"
+    },
+    {
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PROVIDER_MIGRATION_MODAL_TO_LIGHTNING_2026-09-24.json",
+      "sha256": "ea6855ff3a4749f9b700aee7f8d566c9324fd7b91f48d80eb68749d10f9e4a81",
+      "size_bytes": 4685,
+      "evidence_role": "genesis_control_provider_migration_modal_to_lightning_2026-09-24.json"
     }
   ]
 }

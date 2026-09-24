@@ -27,6 +27,14 @@ every preflight passed. Resume conditions: previous settlement observable AND ow
 remaining credit >= $5.00 reserve + $1.25 maximum run cost AND zero live resources. Then exactly one Qwen3-8B
 retry (attempt 2), then Mistral-Nemo, then Phi-4, each gated on the previous settlement.
 
+## Provider migration (Modal -> Lightning AI)
+
+Owner decision: no new Phase 21B.4.20 execution on Modal. Modal evidence and the unresolved Qwen attempt are preserved as
+historical provider-specific evidence (`GENESIS_CONTROL_PROVIDER_MIGRATION_MODAL_TO_LIGHTNING_2026-09-24.json`).
+Lightning execution has **not started**: the live account state (plan FREE, complimentary credits >= 5, no payment method
+required, owner payable 0) could not be verified because no authenticated Lightning access exists in this environment.
+Under the hard rule, no GPU was provisioned. Statuses are unchanged; no control is RUNTIME_QUALIFIED.
+
 ## Billing reconciliation
 
 - **Historical GLM record (preserved, not rewritten):** before invocation 2 metered $8.68 / billed $0 / credits -$8.68;

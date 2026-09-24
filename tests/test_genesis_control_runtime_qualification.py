@@ -962,3 +962,17 @@ def test_qwen_attempt_1_execution_attribution_is_unresolved_and_keeps_the_gate_c
     assert art["statuses_unchanged"] == {"technical_serving_status": "NOT_PROVEN", "runtime_qualification_status": "NOT_COMPLETED",
                                          "capability_status": "UNPROVEN"}
     assert art["what_the_evidence_cannot_show"] and "created_by" not in json.dumps(art).replace('"created_by": "[redacted]"', "")
+
+
+def test_provider_migration_artifact_preserves_modal_evidence_and_records_that_no_lightning_gpu_ran():
+    art = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PROVIDER_MIGRATION_MODAL_TO_LIGHTNING_2026-09-24.json").read_text())
+    assert art["provider_from"] == "Modal" and art["provider_to"] == "Lightning AI"
+    q = art["modal_qwen_attempt_1"]
+    assert q["outcome"] == "HARNESS_FAILURE" and q["valid_runtime_attempt"] is False
+    assert q["technical_serving_status"] == "NOT_PROVEN" and q["runtime_qualification_status"] == "NOT_COMPLETED"
+    for name, digest in q["evidence"].items():  # the preserved Modal evidence must still hash to what the migration recorded
+        assert hashlib.sha256((EVIDENCE_DIR / name).read_bytes()).hexdigest() == digest, name
+    assert art["gpu_started"] is False and art["live_account_verification"]["status"] == "NOT_PERFORMED"
+    assert art["hard_financial_rules"]["owner_cash"] == "INR 0" and art["capability_status"] == "UNPROVEN"
+    assert art["locked_controls_in_order"] == ["Qwen3-8B", "Mistral-Nemo-Instruct-2407", "Phi-4"]
+    assert art["cost_envelope_credits"]["planned_per_control_credits"] < art["cost_envelope_credits"]["per_attempt_stop_threshold_credits"]
