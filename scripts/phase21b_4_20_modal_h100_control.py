@@ -54,6 +54,7 @@ EVIDENCE_DIR = REPO_ROOT / "docs/orneur/phase-21/evidence"
 RUNNER = REPO_ROOT / "scripts/phase21b_4_20_lightning_runner.py"     # provider-neutral serving function (stdlib only)
 LIGHTNING_CONTROL = REPO_ROOT / "scripts/phase21b_4_20_lightning_control.py"
 PROTOCOL_FILE = REPO_ROOT / "orca/eval/locked_smoke_protocol.py"      # the ONE canonical locked-smoke protocol, shipped beside the runner
+CONFIG_FILE = REPO_ROOT / "orca/eval/control_runtime_configuration.py"   # the ONE canonical per-control runtime configuration, shipped beside the runner
 CONTROL_KEYS = ("qwen3_8b", "mistral_nemo", "phi4")
 
 image = (
@@ -64,6 +65,7 @@ image = (
     .entrypoint([])
     .add_local_file(str(RUNNER), "/root/runner.py")
     .add_local_file(str(PROTOCOL_FILE), "/root/locked_smoke_protocol.py")
+    .add_local_file(str(CONFIG_FILE), "/root/control_runtime_configuration.py")
 )
 volume = modal.Volume.from_name(CACHE_VOLUME, create_if_missing=True)
 app = modal.App("orneur-p21b420-h100-control-runtime")
@@ -78,6 +80,25 @@ def _container_env() -> None:
     Path(f"{MOUNT}/p4420").mkdir(parents=True, exist_ok=True)
     if "/root" not in sys.path:
         sys.path.insert(0, "/root")
+
+
+def _container_proof(runner, cfg: dict, result: dict) -> dict:
+    """Proof, computed INSIDE the GPU container from what was actually used/sent, of the runtime configuration and the locked protocol."""
+    argv = result.get("server_argv_sanitized") or []
+
+    def flag(name):
+        return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else None
+
+    smokes = result.get("smoke_results") or []
+    models = ((result.get("models_endpoint") or {}).get("data") or [{}])
+    return {"runtime_configuration_id": (cfg.get("runtime_configuration") or {}).get("id"),
+            "runtime_configuration_id_applied": result.get("runtime_configuration_id_applied"),
+            "runtime_configuration_sha256": runner.RUNTIME_CONFIGS.configuration_sha256(cfg["model_id"]),
+            "chat_template_kwargs_sent": {x["smoke_id"]: x.get("chat_template_kwargs_sent") for x in smokes},
+            "smoke_protocol_sha256": runner.LOCKED_PROTOCOL.protocol_sha256(),
+            "prompt_sha256_sent": {x["smoke_id"]: x.get("prompt_sha256_sent") for x in smokes},
+            "model_id": cfg["model_id"], "served_model_id": models[0].get("id"), "revision": result.get("snapshot_dir_name"),
+            "precision": flag("--dtype"), "quantization": flag("--quantization"), "reasoning_parser": flag("--reasoning-parser")}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -107,14 +128,9 @@ def serve_and_smoke(control: str) -> dict:
     os.environ["HF_HUB_OFFLINE"] = "1"      # weights come only from the verified cache; no network fetch on GPU time
     import runner  # type: ignore
 
-    lock = runner.LOCKED[control]
-    cfg = {"model_id": lock["model_id"], "revision": lock["revision"], "extra_args": lock["extra_args"], "smokes": runner.SMOKES,
-           "max_model_len": runner.MAX_MODEL_LEN, "gpu_memory_utilization": runner.GPU_MEMORY_UTILIZATION,
-           "smoke_max_tokens": lock["smoke_max_tokens"], "ready_deadline_seconds": 420}
+    cfg = runner.serving_config(control, 420)          # the ONE assembly path (includes the control's runtime configuration, if any)
     result = runner.serve_and_smoke(cfg)
-    # proof, from inside the container, of exactly which canonical protocol and prompt bytes were sent
-    result["smoke_protocol_sha256"] = runner.LOCKED_PROTOCOL.protocol_sha256()
-    result["smoke_prompt_sha256_sent"] = {x["smoke_id"]: hashlib.sha256(x["user"].encode("utf-8")).hexdigest() for x in cfg["smokes"]}
+    result["runtime_configuration_proof"] = _container_proof(runner, cfg, result)
     try:
         result["stage_manifest"] = json.loads(Path(f"{MOUNT}/p4420/stage_{control}.json").read_text())
     except Exception as e:  # noqa: BLE001
@@ -165,6 +181,7 @@ def _load_lightning_control():
 
 
 if modal.is_local():  # the container only needs the remote functions; orca is not shipped to it
+    from orca.eval import control_runtime_configuration as runtime_config  # noqa: E402
     from orca.eval import locked_smoke_protocol as locked_protocol  # noqa: E402
     from orca.eval.control_runtime_qualification import (  # noqa: E402
         FAILURE_DOMAIN_BY_OUTCOME, LOCKED_CONTROL_IDENTITIES, assess_settlement, build_financial_reconciliation,
@@ -415,6 +432,61 @@ def cmd_precache(a) -> int:
     return 0 if ok and to_decimal(after["billed_cost"], "billed") == to_decimal(before["billed_cost"], "billed") and snap2["live_resources"] == 0 else 1
 
 
+def _same_json(a, b) -> bool:
+    """Strict JSON equality (True != 1, 0 != False): compares canonical dumps."""
+    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+
+def container_proof_problems(result, model_id: str, locked_revision: str) -> list[str]:
+    """Every way the container's proof can fail to establish the approved runtime configuration + canonical protocol. Empty list == proven.
+    A control WITHOUT an approved configuration must prove that NO extra request setting was sent."""
+    proof = (result or {}).get("runtime_configuration_proof")
+    if not isinstance(proof, dict):
+        return ["the container returned no runtime_configuration_proof"]
+    approved = runtime_config.configuration_for_model(model_id)
+    want_id = approved["id"] if approved else None
+    want_kwargs = approved["chat_template_kwargs"] if approved else None
+    bad: list[str] = []
+    if proof.get("runtime_configuration_id") != want_id or proof.get("runtime_configuration_id_applied") != want_id:
+        bad.append(f"runtime_configuration_id (declared {proof.get('runtime_configuration_id')!r}, applied {proof.get('runtime_configuration_id_applied')!r}) != {want_id!r}")
+    sent = proof.get("chat_template_kwargs_sent")
+    if not isinstance(sent, dict) or sorted(sent) != list(locked_protocol.smoke_ids()) or not all(_same_json(v, want_kwargs) for v in sent.values()):
+        bad.append(f"chat_template_kwargs actually sent {sent!r} != {want_kwargs!r} for every locked smoke")
+    if proof.get("runtime_configuration_sha256") != runtime_config.configuration_sha256(model_id):
+        bad.append("runtime configuration fingerprint differs from the canonical one")
+    if proof.get("smoke_protocol_sha256") != locked_protocol.protocol_sha256():
+        bad.append("locked smoke protocol fingerprint differs from the canonical one")
+    if proof.get("prompt_sha256_sent") != {sid: locked_protocol.prompt_sha256(sid) for sid in locked_protocol.smoke_ids()}:
+        bad.append("per-prompt sha256 values sent differ from the canonical prompts")
+    if proof.get("model_id") != model_id or proof.get("served_model_id") != model_id:
+        bad.append("served model id differs from the locked model id")
+    if proof.get("revision") != locked_revision:
+        bad.append("served revision differs from the locked revision")
+    if proof.get("precision") != "bfloat16" or proof.get("quantization") is not None:
+        bad.append(f"precision/quantization ({proof.get('precision')!r}/{proof.get('quantization')!r}) != bfloat16/None")
+    if approved and proof.get("reasoning_parser") != approved["reasoning_parser"]:
+        bad.append("reasoning parser differs from the approved configuration")
+    return bad
+
+
+def archive_prior_record(tag: str) -> str | None:
+    """Before a new attempt may write the control's runtime record, keep the CURRENT one (with its raw smoke outputs) as an immutable
+    byte-identical snapshot named after its final attempt. Fail closed if a snapshot exists but differs from the current record."""
+    rec_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_{DATE_TAG}.json"
+    if not rec_path.is_file():
+        return None
+    record = json.loads(rec_path.read_text())
+    prev = (record.get("attempts") or [{}])[-1].get("attempt_number")
+    if not prev or not record.get("smoke_outputs"):
+        return None
+    snap = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_ATTEMPT{prev}_SNAPSHOT_{DATE_TAG}.json"
+    if not snap.exists():
+        snap.write_bytes(rec_path.read_bytes())
+    elif snap.read_bytes() != rec_path.read_bytes():
+        raise RuntimeError(f"{snap.name} differs from the current record; refusing to overwrite prior-attempt evidence")
+    return snap.name
+
+
 def _app_row(name: str, app_id: str | None):
     rows = _cli_json("app", "list", "--json")
     for row in rows:
@@ -448,6 +520,13 @@ def cmd_run(a) -> int:
         print("FINANCIAL GATE BLOCKED -- NO GPU STARTED")
         return 3
 
+    try:
+        archived = archive_prior_record(tag)
+    except RuntimeError as e:
+        print(f"REFUSING TO START: {e}")
+        return 2
+    if archived:
+        print(f"prior-attempt record preserved as {archived}")
     billed_before = to_decimal(before["billed_cost"], "billed_before")
     started, t0 = _now(), time.time()
     outcome, reason, result, error_text = "HARNESS_FAILURE", "unset", None, None
@@ -496,10 +575,10 @@ def cmd_run(a) -> int:
     tech_ok = bool(result and not result.get("error") and result.get("server_ready") and smokes_ok
                    and all(x.get("http_status") == 200 and x.get("content") and not x.get("error") for x in result["smoke_results"])
                    and result.get("orphan_vllm_processes_after_shutdown") == 0)
-    protocol_ok = bool(result and result.get("smoke_protocol_sha256") == locked_protocol.protocol_sha256()
-                       and result.get("smoke_prompt_sha256_sent") == {sid: locked_protocol.prompt_sha256(sid) for sid in locked_protocol.smoke_ids()})
-    if error_text is None and result is not None and not protocol_ok:
-        outcome, reason = "HARNESS_FAILURE", "the container did not prove it used the canonical locked smoke protocol (fingerprint / prompt hashes differ)"
+    locked_identity = LOCKED_CONTROL_IDENTITIES[cfg["control_name"]]
+    proof_problems = container_proof_problems(result, locked_identity["model_id"], locked_identity["revision"]) if result is not None else []
+    if error_text is None and result is not None and proof_problems:
+        outcome, reason = "HARNESS_FAILURE", "the container did not prove the approved runtime configuration and canonical locked smoke protocol: " + "; ".join(proof_problems)
     elif error_text is None:
         if result is not None and (result.get("server_argv_sanitized") or result.get("error")):
             outcome = "TECHNICAL_SUCCESS" if tech_ok else "TECHNICAL_FAILURE"
@@ -544,6 +623,11 @@ def cmd_run(a) -> int:
     })
     for k in ("container_image", "container_digest"):
         record["unobservable_reasons"].pop(k, None)
+    approved_cfg = runtime_config.configuration_for_model(locked_identity["model_id"])
+    record["runtime_configuration"] = None if approved_cfg is None else {
+        "id": approved_cfg["id"], "chat_template_kwargs": approved_cfg["chat_template_kwargs"],
+        "configuration_sha256": runtime_config.configuration_sha256(locked_identity["model_id"]),
+        "container_proof": (result or {}).get("runtime_configuration_proof")}
     record["smoke_acceptance"] = compute_smoke_acceptance(record)      # derived from the raw outputs; the raw outputs themselves are never altered
     record["runtime_qualification_status"] = derive_runtime_status(
         technical=record["technical_serving_status"], financial_acceptance=record["financial_acceptance_status"], cleanup=record["cleanup_status"],

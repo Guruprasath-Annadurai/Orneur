@@ -86,6 +86,7 @@ FAILURE_DOMAIN_BY_OUTCOME = {
 CAPABILITY_STATUS = "UNPROVEN"
 EVIDENCE_KIND = "RUNTIME_QUALIFICATION_SMOKE"
 
+from orca.eval import control_runtime_configuration as _rc  # noqa: E402  (the ONE canonical per-control runtime configuration)
 from orca.eval import locked_smoke_protocol as _locked  # noqa: E402  (the ONE canonical smoke protocol; verified on import)
 
 REQUIRED_SMOKE_IDS = _locked.smoke_ids()
@@ -622,6 +623,69 @@ def compute_smoke_acceptance(record: dict) -> list[dict]:
     return sorted(out, key=lambda x: str(x["smoke_id"]))
 
 
+def _same_json(a, b) -> bool:
+    """Strict JSON equality (True != 1)."""
+    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+
+
+def _check_container_proof(record: dict, rc: dict, approved: dict) -> None:
+    proof = rc.get("container_proof")
+    if not isinstance(proof, dict):
+        raise ControlRuntimeError("a valid runtime attempt with an approved runtime configuration requires the container proof")
+    if proof.get("runtime_configuration_id") != rc["id"] or proof.get("runtime_configuration_id_applied") != rc["id"]:
+        raise ControlRuntimeError("container proof disagrees with the record: runtime_configuration_id")
+    sent = proof.get("chat_template_kwargs_sent")
+    if not isinstance(sent, dict) or sorted(sent) != list(REQUIRED_SMOKE_IDS) or not all(_same_json(v, rc["chat_template_kwargs"]) for v in sent.values()):
+        raise ControlRuntimeError("container proof disagrees with the record: chat_template_kwargs must have been sent with every locked smoke request")
+    for o in record.get("smoke_outputs") or []:
+        if "chat_template_kwargs_sent" in o and not _same_json(o["chat_template_kwargs_sent"], rc["chat_template_kwargs"]):
+            raise ControlRuntimeError(f"smoke {o.get('smoke_id')!r} output records chat_template_kwargs that disagree with the runtime configuration")
+    if proof.get("runtime_configuration_sha256") != _rc.configuration_sha256(record["model_id"]):
+        raise ControlRuntimeError("container proof: runtime configuration fingerprint differs from the canonical one")
+    if proof.get("smoke_protocol_sha256") != _locked.protocol_sha256():
+        raise ControlRuntimeError("container proof: canonical smoke protocol fingerprint differs")
+    if proof.get("prompt_sha256_sent") != {sid: _locked.prompt_sha256(sid) for sid in REQUIRED_SMOKE_IDS}:
+        raise ControlRuntimeError("container proof: per-prompt sha256 values differ from the canonical prompts")
+    if proof.get("model_id") != record["model_id"] or proof.get("served_model_id") != record["model_id"] or proof.get("revision") != record["model_revision"]:
+        raise ControlRuntimeError("container proof: model id / revision differ from the record")
+    if proof.get("precision") != approved["precision"] or proof.get("quantization") is not None:
+        raise ControlRuntimeError("container proof: precision must be bfloat16 with no quantization")
+    if proof.get("reasoning_parser") != approved["reasoning_parser"]:
+        raise ControlRuntimeError("container proof: reasoning parser differs from the approved configuration")
+
+
+def _check_runtime_configuration(record: dict) -> None:
+    """Approved per-control runtime configuration (currently only Qwen3-8B `qwen3_8b_non_thinking_v1`). Required on records whose final
+    attempt number is >= REQUIRED_FROM_ATTEMPT (attempts 1-4 are historical and never retro-fitted); controls without an approved
+    configuration must carry none (no Qwen-specific setting may leak to Mistral-Nemo / Phi-4)."""
+    model_id = record.get("model_id")
+    approved = _rc.RUNTIME_CONFIGURATIONS.get(model_id)
+    rc = record.get("runtime_configuration")
+    if approved is None:
+        if rc is not None:
+            raise ControlRuntimeError(f"{model_id} has no approved runtime configuration; runtime_configuration must be absent")
+        return
+    last = record["attempts"][-1]
+    required = last.get("attempt_number", 0) >= _rc.REQUIRED_FROM_ATTEMPT.get(model_id, 10**9)
+    if rc is None:
+        if required:
+            raise ControlRuntimeError(f"{model_id} attempt {last.get('attempt_number')} requires runtime_configuration {approved['id']!r}")
+        return
+    if not isinstance(rc, dict) or rc.get("id") != approved["id"]:
+        raise ControlRuntimeError(f"runtime_configuration.id must be {approved['id']!r}")
+    kwargs = rc.get("chat_template_kwargs")
+    if not isinstance(kwargs, dict) or "enable_thinking" not in kwargs:
+        raise ControlRuntimeError("runtime_configuration.chat_template_kwargs must set enable_thinking (absent)")
+    if set(kwargs) != set(approved["chat_template_kwargs"]):
+        raise ControlRuntimeError(f"unapproved chat_template_kwargs {sorted(set(kwargs) - set(approved['chat_template_kwargs']))} in runtime_configuration")
+    if not _same_json(kwargs, approved["chat_template_kwargs"]):
+        raise ControlRuntimeError("runtime_configuration.chat_template_kwargs.enable_thinking must be false (thinking may not be enabled)")
+    if rc.get("configuration_sha256") not in (None, _rc.configuration_sha256(model_id)):
+        raise ControlRuntimeError("runtime_configuration.configuration_sha256 differs from the canonical configuration")
+    if last.get("valid_runtime_attempt") is True or record.get("technical_serving_status") in ("QUALIFIED", "FAILED"):
+        _check_container_proof(record, rc, approved)
+
+
 def _check_locked_prompts(record: dict) -> None:
     """A QUALIFIED record must have been produced with the canonical locked protocol: exact prompts, exact expected values, and the
     persisted protocol fingerprint equal to the canonical one. A different wording is a different protocol and cannot qualify."""
@@ -831,6 +895,7 @@ def validate_control_runtime_record(record: dict, *, evidence_root: Path) -> Non
     if last_domain in ("HARNESS", "FINANCIAL_GUARD") and technical != "NOT_PROVEN":
         raise ControlRuntimeError(
             f"the last attempt ended in {last_domain}; technical_serving_status must be NOT_PROVEN, got {technical!r}")
+    _check_runtime_configuration(record)
     if technical == "QUALIFIED":
         _check_locked_smokes(record)
     expected = derive_runtime_status(

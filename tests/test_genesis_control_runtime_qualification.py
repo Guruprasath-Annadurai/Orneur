@@ -2015,7 +2015,7 @@ def test_every_phase_21b_4_20_modal_h100_evidence_file_is_in_the_sha256_index():
     index = json.loads(INDEX_PATH.read_text())
     indexed = {e["path"] for e in index["entries"]}
     patterns = ("*MODAL_H100*", "*MODAL_PRECACHE_MANIFEST*", "*OWNER_SETTLEMENT_WAIVER*", "*ATTEMPT4*", "*SETTLEMENT_RECONCILIATION*",
-                "GENESIS_CONTROL_*_RUNTIME_QUALIFICATION_2026-09-24.json", "GENESIS_CONTROL_*_ATTEMPTS_2026-09-24.json")
+                "GENESIS_CONTROL_*_RUNTIME_QUALIFICATION_2026-09-24.json", "GENESIS_CONTROL_*_ATTEMPTS_2026-09-24.json", "*NON_THINKING_V1*", "*SNAPSHOT*")
     missing = sorted({str(p.relative_to(REPO_ROOT)) for pat in patterns for p in EVIDENCE_DIR.glob(pat)} - indexed)
     assert not missing, missing
     assert any("GPU_PREFLIGHT_2026-09-24T205041Z" in p for p in indexed)
@@ -2177,7 +2177,7 @@ _ACCEPTANCE_PROBES = ["READY", "\n\nREADY\n", "Ready", "READY.", "5", " 5 ", "5.
 
 
 @pytest.mark.parametrize("probe", _ACCEPTANCE_PROBES)
-def test_acceptance_semantics_agree_between_canonical_validator_and_the_runner_and_legacy_helpers(probe, monkeypatch):
+def test_the_runner_and_legacy_harness_call_the_canonical_acceptance_directly(probe, monkeypatch):
     runner = _runner_module()
     stub = types.ModuleType("modal")
     stub.Image = type("Image", (), {"from_registry": classmethod(lambda cls, *a, **k: cls()), "entrypoint": lambda self, _c: self})
@@ -2187,17 +2187,19 @@ def test_acceptance_semantics_agree_between_canonical_validator_and_the_runner_a
     spec = importlib.util.spec_from_file_location("p21b420_legacy_helper", HARNESS_PATH)
     legacy = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(legacy)
-    for smoke in locked_protocol.runner_smokes():
-        sid = smoke["smoke_id"]
-        want = locked_protocol.acceptance(sid, probe)[0]
-        assert smoke_locked_acceptance(sid, probe)[0] is want
-        assert runner._meets_acceptance(smoke["acceptance"], probe) is want and legacy._meets_acceptance(smoke["acceptance"], probe) is want
+    assert not hasattr(runner, "_meets_acceptance") and not hasattr(legacy, "_meets_acceptance")          # the duplicate implementation is gone
+    for sid in locked_protocol.smoke_ids():
+        want = locked_protocol.acceptance(sid, probe)
+        assert runner.LOCKED_PROTOCOL.acceptance(sid, probe) == want == legacy.LOCKED_PROTOCOL.acceptance(sid, probe)
+        assert smoke_locked_acceptance(sid, probe) == want
 
 
-def test_the_two_acceptance_helpers_are_source_identical_and_the_serving_bodies_use_them():
-    assert _fn_source(LIGHTNING_RUNNER, "_meets_acceptance") == _fn_source(HARNESS_PATH, "_meets_acceptance")
+def test_the_serving_bodies_call_the_canonical_acceptance_and_share_one_payload_builder():
     for path in (LIGHTNING_RUNNER, HARNESS_PATH):
-        assert "_meets_acceptance(smoke[\"acceptance\"]" in _fn_source(path, "serve_and_smoke")
+        body = _fn_source(path, "serve_and_smoke")
+        assert 'LOCKED_PROTOCOL.acceptance(smoke["smoke_id"], entry.get("content", ""))[0]' in body and "build_chat_payload(cfg, smoke, gen_cfg)" in body
+        assert "_meets_acceptance" not in path.read_text()
+    assert _fn_source(LIGHTNING_RUNNER, "build_chat_payload") == _fn_source(HARNESS_PATH, "build_chat_payload")
 
 
 def test_no_hand_written_smoke_string_exists_outside_the_canonical_module():
@@ -2278,7 +2280,392 @@ def test_a_drifted_wording_record_cannot_qualify_even_with_perfect_outputs(tmp_p
 
 def test_the_modal_harness_proves_the_canonical_protocol_from_inside_the_container_and_fails_closed():
     text = MODAL_H100.read_text()
-    serve = ast.unparse(next(n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef) and n.name == "serve_and_smoke"))
-    assert "smoke_protocol_sha256" in serve and "smoke_prompt_sha256_sent" in serve and "runner.LOCKED_PROTOCOL.protocol_sha256()" in serve
-    run = ast.unparse(next(n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run"))
-    assert "protocol_ok" in run and "canonical locked smoke protocol" in run and "smoke_prompt_sha256_sent" in run
+    tree = ast.parse(text)
+    proof = ast.unparse(next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_container_proof"))
+    serve = ast.unparse(next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "serve_and_smoke"))
+    assert "runtime_configuration_proof" in serve and "_container_proof(runner, cfg, result)" in serve and "runner.serving_config(control" in serve
+    for key in ("runtime_configuration_id", "chat_template_kwargs_sent", "smoke_protocol_sha256", "prompt_sha256_sent", "model_id", "revision", "precision", "quantization"):
+        assert f"'{key}'" in proof
+    run = ast.unparse(next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run"))
+    assert "container_proof_problems" in run and "proof_problems" in run and "HARNESS_FAILURE" in run
+
+
+# ══ Qwen3-8B runtime configuration `qwen3_8b_non_thinking_v1` (CPU-only wiring; nothing here launches, serves or infers) ═══════════
+import contextlib  # noqa: E402
+import shutil  # noqa: E402
+
+from orca.eval import control_runtime_configuration as runtime_cfg  # noqa: E402
+
+QWEN_CFG_ID = "qwen3_8b_non_thinking_v1"
+ATTEMPT_4_SNAPSHOT = EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json"
+BASE_PAYLOAD_KEYS = {"model", "messages", "temperature", "top_p", "seed", "max_tokens"}
+
+
+def test_the_approved_qwen_configuration_is_exactly_the_authorized_one():
+    cfg = runtime_cfg.configuration_for_model("Qwen/Qwen3-8B")
+    assert runtime_cfg.QWEN_CONFIGURATION_ID == QWEN_CFG_ID == cfg["id"]
+    assert cfg["chat_template_kwargs"] == {"enable_thinking": False} and cfg["chat_template_kwargs"]["enable_thinking"] is False
+    assert (cfg["model_id"], cfg["revision"], cfg["precision"], cfg["quantization"], cfg["reasoning_parser"]) == (
+        "Qwen/Qwen3-8B", LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]["revision"], "bfloat16", None, "qwen3")
+    assert set(runtime_cfg.RUNTIME_CONFIGURATIONS) == {"Qwen/Qwen3-8B"} and runtime_cfg.REQUIRED_FROM_ATTEMPT == {"Qwen/Qwen3-8B": 5}
+    assert runtime_cfg.configuration_for_model("mistralai/Mistral-Nemo-Instruct-2407") is None and runtime_cfg.configuration_for_model("microsoft/phi-4") is None
+    assert runtime_cfg.chat_template_kwargs_for_model("microsoft/phi-4") is None
+    copy_ = runtime_cfg.configuration_for_model("Qwen/Qwen3-8B")
+    copy_["chat_template_kwargs"]["enable_thinking"] = True                    # callers cannot mutate the canonical data
+    assert runtime_cfg.RUNTIME_CONFIGURATIONS["Qwen/Qwen3-8B"]["chat_template_kwargs"]["enable_thinking"] is False
+
+
+@pytest.mark.parametrize("key,expect_kwargs", [("qwen3_8b", True), ("mistral_nemo", False), ("phi4", False)])
+def test_only_qwen_requests_carry_enable_thinking_false_and_every_smoke_carries_it(key, expect_kwargs):
+    runner = _runner_module()
+    cfg = runner.serving_config(key)
+    gen = {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": cfg["smoke_max_tokens"]}
+    for smoke in cfg["smokes"]:
+        payload = runner.build_chat_payload(cfg, smoke, gen)
+        assert payload["messages"] == locked_protocol.messages(smoke["smoke_id"])                    # canonical prompts, untouched
+        if expect_kwargs:
+            assert payload["chat_template_kwargs"] == {"enable_thinking": False} and payload["chat_template_kwargs"]["enable_thinking"] is False
+            assert set(payload) == BASE_PAYLOAD_KEYS | {"chat_template_kwargs"}
+        else:
+            assert "chat_template_kwargs" not in payload and set(payload) == BASE_PAYLOAD_KEYS       # NO Qwen-specific setting
+    assert (cfg["runtime_configuration"] or {}).get("id") == (QWEN_CFG_ID if expect_kwargs else None)
+
+
+def test_the_qwen_payload_differs_from_the_thinking_default_only_by_that_one_field():
+    runner = _runner_module()
+    cfg = runner.serving_config("qwen3_8b")
+    gen = {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 1024}
+    for smoke in cfg["smokes"]:
+        after = runner.build_chat_payload(cfg, smoke, gen)
+        before = runner.build_chat_payload(dict(cfg, runtime_configuration=None), smoke, gen)
+        assert {k: v for k, v in after.items() if k != "chat_template_kwargs"} == before and "chat_template_kwargs" not in before
+    assert (cfg["model_id"], cfg["revision"], cfg["extra_args"], cfg["max_model_len"], cfg["smoke_max_tokens"]) == (
+        "Qwen/Qwen3-8B", "b968826d9c46dd6066d109eabc6255188de91218", ["--reasoning-parser", "qwen3"], 4096, 1024)
+
+
+def test_the_runner_cli_and_the_modal_harness_assemble_the_serving_config_in_one_place():
+    modal_src = ast.unparse(next(n for n in ast.walk(ast.parse(MODAL_H100.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "serve_and_smoke"))
+    assert "runner.serving_config(control" in modal_src and '"smokes"' not in modal_src            # no second cfg assembly in the harness
+    cmd = ast.unparse(next(n for n in ast.walk(ast.parse(LIGHTNING_RUNNER.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "cmd_serve"))
+    assert "serving_config(control" in cmd and '"smokes"' not in cmd
+
+
+def test_the_canonical_acceptance_is_the_only_smoke_acceptance_implementation():
+    allowed = REPO_ROOT / "orca/eval/locked_smoke_protocol.py"
+    files = [p for p in sorted(REPO_ROOT.glob("scripts/phase21b_4_20_*.py")) + sorted((REPO_ROOT / "orca/eval").glob("*.py")) if p != allowed]
+    assert len(files) >= 8
+    for path in files:
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                assert node.name not in {"_meets_acceptance", "acceptance", "meets_acceptance"} or "smoke_locked_acceptance" == node.name, (path.name, node.name)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                assert node.value not in {"exact_text", "json_equal"}, (path.name, node.value)
+    # the validator's function delegates; it does not re-implement
+    body = ast.unparse(next(n for n in ast.walk(ast.parse((REPO_ROOT / "orca/eval/control_runtime_qualification.py").read_text()))
+                            if isinstance(n, ast.FunctionDef) and n.name == "smoke_locked_acceptance"))
+    assert body.count("return") == 1 and "_locked.acceptance(smoke_id, content)" in body
+
+
+def test_modal_harness_ships_the_configuration_module_beside_the_runner(monkeypatch):
+    mod, calls = _load_modal_h100(monkeypatch)
+    shipped = [tuple(c) for c in calls["local_files"]]
+    assert (str(REPO_ROOT / "orca/eval/control_runtime_configuration.py"), "/root/control_runtime_configuration.py") in shipped
+    assert shipped[0][1] == "/root/runner.py" and mod.CONFIG_FILE == REPO_ROOT / "orca/eval/control_runtime_configuration.py"
+
+
+# ── validator: the NEW Qwen attempt must carry and prove the configuration; attempts 1-4 are never retro-fitted ──
+def _qwen_history(n_last: int):
+    hist = [{"attempt_number": 1, "outcome": "HARNESS_FAILURE", "status": "HARNESS_FAILURE", "failure_domain": "HARNESS", "valid_runtime_attempt": False, "reason": "h",
+             "resource_type": "x", "duration_seconds": 34.6, "owner_billed_delta_usd": "0E-8", "cleanup_result": "PASS"},
+            {"attempt_number": 2, "provider": "Lightning AI", "outcome": "BLOCKED_NO_GPU", "valid_runtime_attempt": False, "reason": "x", "resource_type": "x",
+             "duration_seconds": 0, "owner_billed_delta_usd": "0", "cleanup_result": "NOT_APPLICABLE"},
+            {"attempt_number": 3, "provider": "razorBridge", "outcome": "BLOCKED_NO_GPU", "valid_runtime_attempt": False, "reason": "x", "resource_type": "x",
+             "duration_seconds": 0, "owner_billed_delta_usd": "0", "cleanup_result": "NOT_APPLICABLE"},
+            {"attempt_number": 4, "provider": "Modal", "outcome": "TECHNICAL_FAILURE", "failure_domain": "MODEL_RUNTIME", "valid_runtime_attempt": True, "reason": "smoke B",
+             "resource_type": "x", "duration_seconds": 196.5, "owner_billed_delta_usd": "0E-8", "cleanup_result": "PASS"}]
+    if n_last == 5:
+        hist.append({"attempt_number": 5, "provider": "Modal", "outcome": "TECHNICAL_SUCCESS", "failure_domain": "NONE", "valid_runtime_attempt": True, "reason": "ok",
+                     "resource_type": "x", "duration_seconds": 190.0, "owner_billed_delta_usd": "0E-8", "cleanup_result": "PASS"})
+    return hist[:n_last] if n_last <= 4 else hist
+
+
+def _qwen_proof(**over):
+    proof = {"runtime_configuration_id": QWEN_CFG_ID, "runtime_configuration_id_applied": QWEN_CFG_ID,
+             "runtime_configuration_sha256": runtime_cfg.configuration_sha256("Qwen/Qwen3-8B"),
+             "chat_template_kwargs_sent": {sid: {"enable_thinking": False} for sid in "ABC"},
+             "smoke_protocol_sha256": CANONICAL_PROTOCOL_SHA256, "prompt_sha256_sent": {sid: locked_protocol.prompt_sha256(sid) for sid in "ABC"},
+             "model_id": "Qwen/Qwen3-8B", "served_model_id": "Qwen/Qwen3-8B", "revision": LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]["revision"],
+             "precision": "bfloat16", "quantization": None, "reasoning_parser": "qwen3"}
+    proof.update(over)
+    return proof
+
+
+def _qwen5(tmp_path, **rc_over):
+    rec = _qualified_record(tmp_path, "Qwen3-8B")
+    rec["attempts"] = _qwen_history(5)
+    rec["gpu_provider"] = "Modal"
+    for o in rec["smoke_outputs"]:
+        o["chat_template_kwargs_sent"] = {"enable_thinking": False}
+    rec["runtime_configuration"] = {"id": QWEN_CFG_ID, "chat_template_kwargs": {"enable_thinking": False},
+                                    "configuration_sha256": runtime_cfg.configuration_sha256("Qwen/Qwen3-8B"), "container_proof": _qwen_proof()}
+    rec["runtime_configuration"].update(rc_over)
+    return rec
+
+
+def test_a_consistent_attempt_5_qwen_record_with_the_configuration_and_proof_validates(tmp_path):
+    validate_control_runtime_record(_qwen5(tmp_path), evidence_root=tmp_path)
+
+
+def test_attempt_4_style_qwen_records_need_no_configuration_and_the_field_is_not_retro_fitted(tmp_path):
+    rec = _qualified_record(tmp_path, "Qwen3-8B")
+    rec["attempts"] = _qwen_history(4)
+    rec["technical_serving_status"], rec["runtime_qualification_status"] = "FAILED", "FAILED"
+    validate_control_runtime_record(rec, evidence_root=tmp_path)                          # no runtime_configuration: allowed below attempt 5
+    assert "runtime_configuration" not in _persisted_qwen()                               # and the persisted attempt-4 record has none
+    rec5 = _qwen5(tmp_path)
+    del rec5["runtime_configuration"]
+    with pytest.raises(ControlRuntimeError, match="requires runtime_configuration"):
+        validate_control_runtime_record(rec5, evidence_root=tmp_path)
+
+
+@pytest.mark.parametrize("label,mutate,match", [
+    ("missing_id", lambda rc: rc.pop("id"), "runtime_configuration.id"),
+    ("wrong_id", lambda rc: rc.update(id="qwen3_8b_thinking_v0"), "runtime_configuration.id"),
+    ("thinking_true", lambda rc: rc.update(chat_template_kwargs={"enable_thinking": True}), "must be false"),
+    ("thinking_int_zero", lambda rc: rc.update(chat_template_kwargs={"enable_thinking": 0}), "must be false"),
+    ("thinking_absent", lambda rc: rc.update(chat_template_kwargs={}), "enable_thinking"),
+    ("kwargs_missing", lambda rc: rc.pop("chat_template_kwargs"), "enable_thinking"),
+    ("extra_kwarg", lambda rc: rc.update(chat_template_kwargs={"enable_thinking": False, "reasoning_effort": "none"}), "unapproved chat_template_kwargs"),
+    ("wrong_config_fingerprint", lambda rc: rc.update(configuration_sha256="0" * 64), "configuration_sha256"),
+    ("no_proof", lambda rc: rc.pop("container_proof"), "container proof"),
+    ("proof_id_disagrees", lambda rc: rc["container_proof"].update(runtime_configuration_id="qwen3_8b_thinking_v0"), "runtime_configuration_id"),
+    ("proof_applied_id_disagrees", lambda rc: rc["container_proof"].update(runtime_configuration_id_applied=None), "runtime_configuration_id"),
+    ("proof_kwargs_true_for_one_smoke", lambda rc: rc["container_proof"]["chat_template_kwargs_sent"].update(B={"enable_thinking": True}), "every locked smoke"),
+    ("proof_kwargs_missing_for_one_smoke", lambda rc: rc["container_proof"]["chat_template_kwargs_sent"].update(C=None), "every locked smoke"),
+    ("proof_wrong_protocol_fingerprint", lambda rc: rc["container_proof"].update(smoke_protocol_sha256="0" * 64), "protocol fingerprint"),
+    ("proof_wrong_prompt_hash", lambda rc: rc["container_proof"]["prompt_sha256_sent"].update(B=locked_protocol.prompt_sha256("A")), "per-prompt sha256"),
+    ("proof_wrong_model", lambda rc: rc["container_proof"].update(model_id="Qwen/Qwen3-4B"), "model id"),
+    ("proof_wrong_served_model", lambda rc: rc["container_proof"].update(served_model_id="other"), "model id"),
+    ("proof_wrong_revision", lambda rc: rc["container_proof"].update(revision="0" * 40), "revision"),
+    ("proof_wrong_precision", lambda rc: rc["container_proof"].update(precision="float16"), "precision"),
+    ("proof_quantized", lambda rc: rc["container_proof"].update(quantization="fp8"), "precision"),
+    ("proof_wrong_parser", lambda rc: rc["container_proof"].update(reasoning_parser=None), "reasoning parser"),
+    ("proof_wrong_config_fingerprint", lambda rc: rc["container_proof"].update(runtime_configuration_sha256="0" * 64), "fingerprint"),
+])
+def test_the_validator_rejects_every_qwen_configuration_defect(tmp_path, label, mutate, match):
+    rec = _qwen5(tmp_path)
+    mutate(rec["runtime_configuration"])
+    with pytest.raises(ControlRuntimeError, match=match):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_an_output_that_records_different_kwargs_than_the_configuration_is_rejected(tmp_path):
+    rec = _qwen5(tmp_path)
+    rec["smoke_outputs"][1]["chat_template_kwargs_sent"] = {"enable_thinking": True}
+    with pytest.raises(ControlRuntimeError, match="disagree"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_a_qualified_attempt_5_still_needs_the_canonical_prompts_and_fingerprint(tmp_path):
+    rec = _qwen5(tmp_path)
+    rec["smoke_protocol"]["protocol_sha256"] = "0" * 64
+    with pytest.raises(ControlRuntimeError, match="smoke_protocol"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+@pytest.mark.parametrize("control", ["Mistral-Nemo-Instruct-2407", "Phi-4"])
+def test_controls_without_an_approved_configuration_may_not_carry_the_qwen_setting(tmp_path, control):
+    rec = _qualified_record(tmp_path, control)
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec["runtime_configuration"] = {"id": QWEN_CFG_ID, "chat_template_kwargs": {"enable_thinking": False}}
+    with pytest.raises(ControlRuntimeError, match="no approved runtime configuration"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+# ── harness: container proof is verified locally and fails closed; the next attempt is 5; prior evidence is preserved ──
+def _proof_for(mod, model_key="Qwen3-8B", **over):
+    locked = LOCKED_CONTROL_IDENTITIES[model_key]
+    approved = runtime_cfg.configuration_for_model(locked["model_id"])
+    proof = _qwen_proof() if approved else {
+        "runtime_configuration_id": None, "runtime_configuration_id_applied": None, "runtime_configuration_sha256": None,
+        "chat_template_kwargs_sent": {sid: None for sid in "ABC"}, "smoke_protocol_sha256": CANONICAL_PROTOCOL_SHA256,
+        "prompt_sha256_sent": {sid: locked_protocol.prompt_sha256(sid) for sid in "ABC"}, "model_id": locked["model_id"], "served_model_id": locked["model_id"],
+        "revision": locked["revision"], "precision": "bfloat16", "quantization": None, "reasoning_parser": None}
+    proof.update(over)
+    return {"runtime_configuration_proof": proof}
+
+
+def test_the_harness_accepts_only_a_complete_matching_container_proof(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    q = LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]
+    assert mod.container_proof_problems(_proof_for(mod), q["model_id"], q["revision"]) == []
+    assert mod.container_proof_problems(None, q["model_id"], q["revision"]) and mod.container_proof_problems({}, q["model_id"], q["revision"])
+    bad = [dict(runtime_configuration_id=None), dict(runtime_configuration_id="qwen3_8b_thinking_v0"), dict(runtime_configuration_id_applied="x"),
+           dict(chat_template_kwargs_sent={"A": {"enable_thinking": False}, "B": {"enable_thinking": True}, "C": {"enable_thinking": False}}),
+           dict(chat_template_kwargs_sent={"A": {"enable_thinking": 0}, "B": {"enable_thinking": False}, "C": {"enable_thinking": False}}),
+           dict(chat_template_kwargs_sent={"A": {"enable_thinking": False}}), dict(chat_template_kwargs_sent={sid: {} for sid in "ABC"}),
+           dict(smoke_protocol_sha256="0" * 64), dict(prompt_sha256_sent={"A": "0" * 64, "B": "0" * 64, "C": "0" * 64}), dict(model_id="x"), dict(served_model_id="x"),
+           dict(revision="0" * 40), dict(precision="float16"), dict(quantization="fp8"), dict(reasoning_parser=None), dict(runtime_configuration_sha256="0" * 64)]
+    for over in bad:
+        assert mod.container_proof_problems(_proof_for(mod, **over), q["model_id"], q["revision"]), over
+    for key in ("Mistral-Nemo-Instruct-2407", "Phi-4"):
+        m = LOCKED_CONTROL_IDENTITIES[key]
+        assert mod.container_proof_problems(_proof_for(mod, key), m["model_id"], m["revision"]) == []              # proves NO extra setting was sent
+        leaked = _proof_for(mod, key, chat_template_kwargs_sent={sid: {"enable_thinking": False} for sid in "ABC"})
+        assert mod.container_proof_problems(leaked, m["model_id"], m["revision"])                                 # a leaked Qwen setting is refused
+
+
+def test_the_next_qwen_attempt_number_is_5_and_the_real_history_is_intact(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    attempts = mod._load_attempts("QWEN3_8B")
+    assert [a["attempt_number"] for a in attempts] == [1, 2, 3, 4] and len(attempts) + 1 == 5
+    assert attempts[3]["outcome"] == "TECHNICAL_FAILURE" and attempts[3]["original_classification"]["outcome"] == "TECHNICAL_SUCCESS"
+    assert not any("runtime_configuration" in a for a in attempts)                       # attempts 1-4 carry no configuration
+    assert mod._load_attempts("MISTRAL_NEMO") == [] and mod._load_attempts("PHI4") == []
+
+
+def test_attempt_4_evidence_is_byte_identical_to_its_snapshot_and_still_failed():
+    assert ATTEMPT_4_SNAPSHOT.read_bytes() == (EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_bytes()
+    q = json.loads(ATTEMPT_4_SNAPSHOT.read_text())
+    assert q["technical_serving_status"] == "FAILED" and q["runtime_qualification_status"] == "FAILED" and q["attempts"][-1]["attempt_number"] == 4
+    assert hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256
+    assert q["raw_log_sha256"] == "068332b340ddcf73d1d61e326c1e95646a610ac6864b2a47848cf218355d5bbd"
+    assert hashlib.sha256((EVIDENCE_DIR / q["raw_log_artifact"]).read_bytes()).hexdigest() == q["raw_log_sha256"]
+    assert hashlib.sha256(json.dumps(q["smoke_prompts"], sort_keys=True).encode()).hexdigest() == ATTEMPT_4_PROMPTS_SHA256
+
+
+def test_the_existing_financial_gates_are_untouched_and_the_settlement_waiver_stays_attempt_1_only(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    from orca.eval.control_runtime_qualification import MAX_AUTHORIZED_RUN_COST_USD, financial_gate_decision
+    assert MAX_AUTHORIZED_RUN_COST_USD == Decimal("1.25") and mod.RESERVE_USD == "5.00" and mod.HARD_TIMEOUT_SECONDS == 900
+    worst = mod.worst_case_cost({"h100": Decimal("3.95"), "cpu": Decimal("0.0473"), "mem": Decimal("0.008")}, gpu=True, cores=mod.CPU_CORES,
+                                memory_mib=mod.GPU_MEMORY_MIB, seconds=mod.HARD_TIMEOUT_SECONDS)
+    assert worst <= Decimal("1.25")
+    summary = {"billed_cost": "0", "metered_cost": "20.31", "adjustments": {"credits": "-20.31"}}
+    assert financial_gate_decision(summary, worst_case_job_cost_usd="1.26", credit_pool_usd="30.00", reserve_usd="5.00",
+                                   prior_positive_billing_seen=False, prior_settlement_unresolved=False)["allowed"] is False
+    assert financial_gate_decision(dict(summary, billed_cost="0.01"), worst_case_job_cost_usd=str(worst), credit_pool_usd="30.00", reserve_usd="5.00",
+                                   prior_positive_billing_seen=False, prior_settlement_unresolved=False)["allowed"] is False
+    assert financial_gate_decision(summary, worst_case_job_cost_usd=str(worst), credit_pool_usd="30.00", reserve_usd="5.00",
+                                   prior_positive_billing_seen=False, prior_settlement_unresolved=True)["allowed"] is False
+    pre = ast.unparse(next(n for n in ast.walk(ast.parse(MODAL_H100.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "_preflight"))
+    assert "financial_gate_decision" in pre and "prior_settlement_unresolved=unresolved" in pre and "live Modal resource" in pre
+    attempts = dict(((t, a["attempt_number"]), a) for t, a in mod._modal_attempts())
+    assert mod.validate_owner_settlement_waiver("QWEN3_8B", attempts[("QWEN3_8B", 4)])[0] == "WAIVER_ABSENT"      # the waiver never applies to attempt 4
+    assert mod.validate_owner_settlement_waiver("QWEN3_8B", attempts[("QWEN3_8B", 1)])[0] == "WAIVER_ACCEPTED"
+    assert all(mod.settlement_resolved(t, a) for t, a in mod._modal_attempts())                                    # attempt 1 by waiver, attempt 4 by OBSERVED reconciliation
+    assert mod.unresolved_settlement_upper_bound_usd() > 0                                                        # attempt 1's conservative exposure stays deducted
+
+
+def _fake_container_result(mod, runner, *, kwargs_for_b=None):
+    cfg = runner.serving_config("qwen3_8b", 420)
+    good = {"A": "READY", "B": "5", "C": '{"status":"ready"}'}
+    smokes = []
+    for sid in "ABC":
+        text = good[sid]
+        smokes.append({"smoke_id": sid, "http_status": 200, "raw_response": json.dumps({"choices": [{"message": {"content": text}}]}), "content": text, "finish_reason": "stop",
+                       "usage": {"completion_tokens": 2}, "latency_seconds": 0.5, "ttft_seconds": None, "matches_expected_exactly": True,
+                       "chat_template_kwargs_sent": kwargs_for_b if (sid == "B" and kwargs_for_b is not None) else {"enable_thinking": False},
+                       "prompt_sha256_sent": locked_protocol.prompt_sha256(sid)})
+    argv = ["/usr/local/bin/python", "-m", "vllm.entrypoints.openai.api_server", "--model", "<local pinned-revision snapshot dir>", "--served-model-name", "Qwen/Qwen3-8B",
+            "--dtype", "bfloat16", "--max-model-len", "4096", "--gpu-memory-utilization", "0.9", "--host", "127.0.0.1", "--port", "8000", "--seed", "0", "--reasoning-parser", "qwen3"]
+    result = {"server_ready": True, "error": None, "server_argv_sanitized": argv, "orphan_vllm_processes_after_shutdown": 0, "server_exit_code": 0,
+              "snapshot_dir_name": LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]["revision"], "snapshot_dir_names": [LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]["revision"]],
+              "weight_bytes_observed": LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]["expected_weight_bytes"], "weight_shard_files": ["model-00001-of-00005.safetensors"],
+              "models_endpoint": {"data": [{"id": "Qwen/Qwen3-8B"}]}, "versions": {"vllm": "0.29.0"}, "server_log": "", "events": ["synthetic"],
+              "cold_start_seconds": 100.0, "peak_gpu_memory_used_mib": 70000, "steady_gpu_memory_used_mib": 60000, "smoke_results": smokes,
+              "runtime_configuration_id_applied": cfg["runtime_configuration"]["id"], "generation_config_sent": {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 1024},
+              "stage_manifest": {"all_lfs_sha256_match": True}}
+    result["runtime_configuration_proof"] = mod._container_proof(runner, cfg, result)
+    return result
+
+
+def _run_env(monkeypatch, tmp_path, result_builder):
+    mod, _ = _load_modal_h100(monkeypatch)
+    ev = tmp_path / "evidence"
+    shutil.copytree(EVIDENCE_DIR, ev)
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
+    lc = mod._load_lightning_control()
+    baseline = {"billed_cost": "0E-8", "metered_cost": "20.31000000", "adjustments": {"credits": "-20.31000000", "plan_cost": "0E-8"},
+                "metered_cost_breakdown": {"ephemeral_apps": "20.30462160", "deployed_apps": "0.00101405"}}
+    decision = {"allowed": True, "reasons": [], "remaining_credit_usd": "9.65"}
+    monkeypatch.setattr(mod, "_preflight", lambda kind, key, gpu: (lc.CONTROLS[key], {"h100": Decimal("3.95"), "cpu": Decimal("0.0473"), "mem": Decimal("0.008")},
+                                                                    Decimal("1.0828"), baseline, {"live_resources": 0}, Decimal("0.0380"), decision))
+    monkeypatch.setattr(mod, "billing_summary", lambda: baseline)
+    monkeypatch.setattr(mod, "cleanup_snapshot", lambda: {"live_resources": 0, "containers": [], "apps": [], "volumes": []})
+    monkeypatch.setattr(mod, "_app_row", lambda name, app_id: {"app_id": "ap-TEST", "state": "stopped", "tasks": "0"})
+    monkeypatch.setattr(mod, "_cli_json", lambda *a: [])
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)
+    remote_calls = []
+    runner = _runner_module()
+
+    def fake_remote(control):
+        remote_calls.append(control)
+        return result_builder(mod, runner)
+
+    monkeypatch.setattr(mod, "serve_and_smoke", types.SimpleNamespace(remote=fake_remote))         # NOTHING real runs: no GPU, no Modal, no network
+    monkeypatch.setattr(mod, "app", types.SimpleNamespace(run=lambda: contextlib.nullcontext(), app_id="ap-TEST", name="orneur-p21b420-h100-control-runtime"))
+    return mod, ev, remote_calls
+
+
+def test_a_future_qwen_run_becomes_attempt_5_preserves_attempt_4_and_records_the_verified_configuration(monkeypatch, tmp_path):
+    mod, ev, remote_calls = _run_env(monkeypatch, tmp_path, lambda m, r: _fake_container_result(m, r))
+    before = {p.name: p.read_bytes() for p in ev.iterdir() if "ATTEMPT4" in p.name or "ATTEMPT1" in p.name or "ATTEMPTS" in p.name}
+    assert mod.cmd_run(types.SimpleNamespace(control="qwen3_8b")) == 1 and remote_calls == ["qwen3_8b"]           # 1 == settlement still pending (flat metering in this stand-in)
+    attempts = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json").read_text())["attempts"]
+    assert [a["attempt_number"] for a in attempts] == [1, 2, 3, 4, 5] and attempts[:4] == json.loads(before["GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json"])["attempts"]
+    assert attempts[4]["outcome"] == "TECHNICAL_SUCCESS" and attempts[4]["valid_runtime_attempt"] is True
+    snap = ev / ATTEMPT_4_SNAPSHOT.name
+    assert snap.read_bytes() == ATTEMPT_4_SNAPSHOT.read_bytes()                                                    # attempt-4 record preserved byte-identically
+    rec = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert rec["runtime_configuration"]["id"] == QWEN_CFG_ID and rec["runtime_configuration"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert rec["runtime_configuration"]["container_proof"]["smoke_protocol_sha256"] == CANONICAL_PROTOCOL_SHA256 and rec["smoke_protocol"]["protocol_sha256"] == CANONICAL_PROTOCOL_SHA256
+    assert rec["runtime_qualification_status"] == "PENDING_SETTLEMENT_OBSERVATION" and rec["capability_status"] == "UNPROVEN" and "validator_note" not in rec
+    validate_control_runtime_record(rec, evidence_root=ev)
+    for name, data in before.items():
+        if "ATTEMPTS" not in name:
+            assert (ev / name).read_bytes() == data                                                                # every per-attempt attempt-1/attempt-4 file untouched
+
+
+@pytest.mark.parametrize("label,builder", [
+    ("thinking_true_sent", lambda m, r: _fake_container_result(m, r, kwargs_for_b={"enable_thinking": True})),
+    ("no_proof", lambda m, r: {k: v for k, v in _fake_container_result(m, r).items() if k != "runtime_configuration_proof"}),
+])
+def test_a_missing_or_disagreeing_container_proof_is_a_harness_failure_never_a_model_result(monkeypatch, tmp_path, label, builder):
+    mod, ev, remote_calls = _run_env(monkeypatch, tmp_path, builder)
+    mod.cmd_run(types.SimpleNamespace(control="qwen3_8b"))
+    a5 = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json").read_text())["attempts"][4]
+    assert a5["attempt_number"] == 5 and a5["outcome"] == "HARNESS_FAILURE" and a5["failure_domain"] == "HARNESS" and a5["valid_runtime_attempt"] is False
+    assert "did not prove" in a5["reason"]
+    rec = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert rec["technical_serving_status"] == "NOT_PROVEN" and rec["runtime_qualification_status"] == "NOT_COMPLETED"
+
+
+def test_a_changed_prior_attempt_snapshot_refuses_the_launch_before_any_remote_call(monkeypatch, tmp_path):
+    mod, ev, remote_calls = _run_env(monkeypatch, tmp_path, lambda m, r: _fake_container_result(m, r))
+    (ev / ATTEMPT_4_SNAPSHOT.name).write_text("{}")
+    assert mod.cmd_run(types.SimpleNamespace(control="qwen3_8b")) == 2 and remote_calls == []
+
+
+def test_this_test_module_never_calls_a_gpu_or_provider_function_for_real():
+    # every harness test above replaces serve_and_smoke/app with inert stand-ins; there is no live call, and generated text is data only
+    for path in (LIGHTNING_RUNNER, MODAL_H100):
+        text = path.read_text()
+        for banned in ("eval(", "exec(", "compile(", "os.system", "shell=True"):
+            assert banned not in ast.unparse(ast.parse(text)).replace("re.compile(", ""), (path.name, banned)
+
+
+def test_the_implementation_readiness_artifact_is_cpu_only_and_consistent_with_the_code():
+    a = json.loads((EVIDENCE_DIR / "GENESIS_QWEN3_8B_NON_THINKING_V1_IMPLEMENTATION_READINESS_2026-09-25.json").read_text())
+    assert a["no_gpu_used"] and a["no_modal_function_called"] and a["no_inference_performed"] and a["owner_cash_spent_usd"] == "0" and a["generated_output_executed"] is False
+    assert a["approved_configuration"]["runtime_configuration_id"] == QWEN_CFG_ID and a["approved_configuration"]["configuration_sha256"] == runtime_cfg.configuration_sha256("Qwen/Qwen3-8B")
+    d = a["request_payload_delta"]
+    assert d["after_qwen_non_thinking_v1"]["chat_template_kwargs"] == {"enable_thinking": False} and "chat_template_kwargs" not in d["before_qwen_thinking_default"]
+    assert d["mistral_nemo_payload_has_chat_template_kwargs"] is False and d["phi4_payload_has_chat_template_kwargs"] is False
+    assert a["canonical_smoke_protocol"]["protocol_sha256"] == CANONICAL_PROTOCOL_SHA256 and a["acceptance_logic"]["runner_duplicate_removed"] is True
+    assert a["attempt_5_readiness"]["next_attempt_number"] == 5 and a["attempt_5_readiness"]["execution_authorized"] is False and a["attempt_5_readiness"]["financial_gates_evaluated_here"] is False
+    h = a["historical_attempt_4"]
+    assert h["record_equals_snapshot"] is True and h["status"] == {"technical_serving_status": "FAILED", "runtime_qualification_status": "FAILED"}
+    assert h["snapshot_sha256"] == hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest()
+    assert a["status_unchanged"] == {"qwen3_8b": "FAILED", "mistral_nemo": "NOT_TESTED", "phi4": "NOT_TESTED", "capability": "UNPROVEN"}

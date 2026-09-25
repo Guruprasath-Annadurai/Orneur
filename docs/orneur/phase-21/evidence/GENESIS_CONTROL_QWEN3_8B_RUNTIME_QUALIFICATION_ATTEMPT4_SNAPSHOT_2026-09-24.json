@@ -1,0 +1,461 @@
+{
+  "architecture": "Qwen3ForCausalLM",
+  "attempts": [
+    {
+      "annotation": {
+        "added_fields": [
+          "status",
+          "failure_domain",
+          "valid_runtime_attempt",
+          "annotation"
+        ],
+        "pre_annotation_attempts_file_sha256": "eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365",
+        "reason": "Audit patch: separate the ATTEMPT result from the MODEL runtime-qualification result. All original fields are unchanged."
+      },
+      "attempt_number": 1,
+      "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+      "cleanup_result": "PASS",
+      "duration_seconds": 34.6,
+      "failure_domain": "HARNESS",
+      "finished_at_utc": "2026-09-24T11:15:05Z",
+      "modal_app_name": "orneur-p21b420-control-runtime-qualification",
+      "outcome": "HARNESS_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_RAW_LOG_2026-09-24.log",
+      "raw_log_sha256": "d35d88fdc6ca5d54a6c457ce143186bafc767f46c3a003f5c63d1019974b9acd",
+      "reason": "TimeoutError: ",
+      "resource_type": "Modal ephemeral function A100-80GBx1",
+      "started_at_utc": "2026-09-24T11:14:30Z",
+      "status": "HARNESS_FAILURE",
+      "valid_runtime_attempt": false
+    },
+    {
+      "attempt_number": 2,
+      "cleanup_result": "PASS",
+      "credits_consumed": "0E-7",
+      "duration_seconds": 7.2,
+      "failure_domain": "NONE",
+      "finished_at_utc": "2026-09-24T14:51:35Z",
+      "original_classification_note": "First recorded as HARNESS_FAILURE before the provider's error body was read; reclassified from the provider's own message.",
+      "outcome": "BLOCKED_NO_GPU",
+      "owner_billed_delta_usd": "0",
+      "provider": "Lightning AI",
+      "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_LIGHTNING_ATTEMPT2_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "251e03da246c4e623887c6c38ebe0bec395d36f04c3ecd802c19924dd271e419",
+      "reason": "Provider refused the GPU start (HTTP 400 PermissionDenied): Free-tier users must have a verified payment method before starting GPU compute. No GPU was allocated; credits unchanged. See GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json.",
+      "resource_type": "Lightning Studio machine L40S (1 GPU)",
+      "started_at_utc": "2026-09-24T14:51:28Z",
+      "status": "BLOCKED_NO_GPU",
+      "valid_runtime_attempt": false
+    },
+    {
+      "attempt_number": 3,
+      "cleanup_result": "NOT_APPLICABLE",
+      "credits_consumed": "0",
+      "duration_seconds": 0,
+      "failure_domain": "NONE",
+      "finished_at_utc": "2026-09-24T18:40:30Z",
+      "outcome": "BLOCKED_NO_GPU",
+      "owner_billed_delta_usd": "0",
+      "provider": "razorBridge",
+      "raw_log_artifact": "GENESIS_RAZORBRIDGE_PROVIDER_START_REFUSED_2026-09-24.json",
+      "raw_log_sha256": "521abf08efca1eb4a4f8d2307963de00fab37bc747204caeb4764d3313f69a52",
+      "reason": "razorBridge refused to start the self-serve H100 session twice (about 5 minutes apart): 'Self-serve GPU sessions are temporarily paused for maintenance.' No blade was created; credit unchanged at EUR 10. See GENESIS_RAZORBRIDGE_PROVIDER_START_REFUSED_2026-09-24.json.",
+      "resource_type": "razorBridge self-serve blade gpu-h100x1-80gb (not created)",
+      "started_at_utc": "2026-09-24T18:35:00Z",
+      "status": "BLOCKED_NO_GPU",
+      "valid_runtime_attempt": false
+    },
+    {
+      "attempt_number": 4,
+      "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+      "cleanup_result": "PASS",
+      "duration_seconds": 196.5,
+      "failure_domain": "MODEL_RUNTIME",
+      "finished_at_utc": "2026-09-24T20:56:49Z",
+      "modal_app_id": "ap-3frDTjsVLzElehnHpfm69I",
+      "modal_app_name": "orneur-p21b420-h100-control-runtime",
+      "original_classification": {
+        "failure_domain": "NONE",
+        "note": "originally judged on HTTP 200 + non-empty content only; reclassified after the independent audit applied the LOCKED smoke semantics to the unchanged raw outputs",
+        "outcome": "TECHNICAL_SUCCESS",
+        "reason": "server ready, 3 smoke requests HTTP 200 with non-empty content, clean shutdown",
+        "status": "TECHNICAL_SUCCESS"
+      },
+      "outcome": "TECHNICAL_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "provider": "Modal",
+      "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "068332b340ddcf73d1d61e326c1e95646a610ac6864b2a47848cf218355d5bbd",
+      "reason": "locked smoke contract not met (B: content is not exactly '5'); server, identity, BF16 load, cleanup and financial gates passed",
+      "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "started_at_utc": "2026-09-24T20:53:32Z",
+      "status": "TECHNICAL_FAILURE",
+      "valid_runtime_attempt": true
+    }
+  ],
+  "attention_backend": "FLASH_ATTN attention backend out of potential",
+  "billing_discrepancy_observation": {
+    "artifact": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json",
+    "sha256": "6eafee2d2312f530d12302ce421f3c6ba52c2cac64ebd9cd8b55194fe63935d1"
+  },
+  "billing_settlement": {
+    "reasons": [],
+    "status": "OBSERVED",
+    "stop_before_next_control": false
+  },
+  "capability_status": "UNPROVEN",
+  "chat_template_source": "tokenizer_config.json chat_template @ pinned revision (4,168 chars; hybrid thinking, enable_thinking default ON)",
+  "cleanup_status": "PASS",
+  "cold_start_seconds": 165.09,
+  "container_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
+  "container_image": "vllm/vllm-openai:v0.29.0",
+  "control_name": "Qwen3-8B",
+  "download_seconds": 0.04,
+  "evidence_kind": "RUNTIME_QUALIFICATION_SMOKE",
+  "failure_analysis": {
+    "failed_smokes": [
+      {
+        "accepted": false,
+        "normalized_content": "The result of adding 2 and 3 is calculated by combining the two numbers. Starting with 2 and adding 3 to it:\n\n$$\n2 + 3 = 5\n$$\n\n**Answer:** 5",
+        "reason": "content is not exactly '5'",
+        "smoke_id": "B"
+      }
+    ],
+    "infrastructure": "server ready, exact identity PASS, BF16 PASS, cleanup PASS, 0 live resources, owner billed delta 0",
+    "kind": "LOCKED_SMOKE_CONTRACT_NOT_MET (model response behaviour), not an infrastructure or identity failure"
+  },
+  "financial_acceptance_status": "PASS",
+  "financial_evidence": {
+    "billing_after_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_BILLING_AFTER_2026-09-24.json",
+    "billing_after_sha256": "7e920538144a19dcdd27da6b1a731c575133a4a2bf9d408e52fc82e48fd35440",
+    "billing_before_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_BILLING_BEFORE_2026-09-24.json",
+    "billing_before_sha256": "cb4820941e118e4b7ea5f16aef1447042ecd614a607fc044da723f3034d9b601",
+    "preflight_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_FINANCIAL_PREFLIGHT_2026-09-24.json",
+    "preflight_sha256": "33caea6a0e275e40475bce53094347b3c78f40da1e482399431bc3effc6a7fd6"
+  },
+  "financial_preflight_status": "PASSED",
+  "financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "29.9620",
+    "credits_applied_baseline_usd": "20.08000000",
+    "credits_applied_postrun_usd": "20.31000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "9.65200000",
+    "derived_credit_remaining_before_usd": "9.88200000",
+    "maximum_authorized_run_cost_usd": "1.0828",
+    "metered_baseline_usd": "20.08000000",
+    "metered_delta_usd": "0.23000000",
+    "metered_postrun_usd": "20.31000000",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
+  "finished_at_utc": "2026-09-24T20:56:49Z",
+  "generated_output_executed": false,
+  "generated_tokens": 895,
+  "generation_config": {
+    "max_tokens": 1024,
+    "seed": 0,
+    "temperature": 0,
+    "top_p": 1
+  },
+  "gpu_count": 1,
+  "gpu_memory_used_mib_before_after": [
+    4,
+    4
+  ],
+  "gpu_provider": "Modal",
+  "gpu_type": "NVIDIA H100 80GB (Modal H100)",
+  "health_status": 200,
+  "identity_verification": {
+    "cpu_stage_manifest_all_lfs_sha256_match": true,
+    "identity_evidence_strength": "HF snapshot dir == pinned commit AND summed shard bytes == recorded exact bytes AND every staged file's sha256 equals the Hugging Face LFS sha256 (CPU stage manifest) AND /v1/models id == pinned repo id AND server started from that local snapshot with HF_HUB_OFFLINE=1. vLLM exposes no separate runtime revision field.",
+    "models_endpoint": {
+      "data": [
+        {
+          "created": 1790283393,
+          "id": "Qwen/Qwen3-8B",
+          "max_model_len": 4096,
+          "object": "model",
+          "owned_by": "vllm",
+          "parent": null,
+          "permission": [
+            {
+              "allow_create_engine": false,
+              "allow_fine_tuning": false,
+              "allow_logprobs": true,
+              "allow_sampling": true,
+              "allow_search_indices": false,
+              "allow_view": true,
+              "created": 1790283393,
+              "group": null,
+              "id": "modelperm-838cfcdc6d2bdd1e",
+              "is_blocking": false,
+              "object": "model_permission",
+              "organization": "*"
+            }
+          ],
+          "root": "/__modal/volumes/vo-VM7m0sko3youIgfeTQhSXD/hf/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218"
+        }
+      ],
+      "object": "list"
+    },
+    "no_silent_model_fallback": true,
+    "pinned_revision_matches_runtime_artifact": true,
+    "runtime_served_model_matches_pinned_id": true,
+    "snapshot_dir_names": [
+      "b968826d9c46dd6066d109eabc6255188de91218"
+    ],
+    "weight_bytes_expected_for_pinned_revision": 16381516776,
+    "weight_bytes_observed": 16381516776,
+    "weight_shard_files": [
+      {
+        "bytes": 3996250744,
+        "filename": "model-00001-of-00005.safetensors"
+      },
+      {
+        "bytes": 3993160032,
+        "filename": "model-00002-of-00005.safetensors"
+      },
+      {
+        "bytes": 3959604768,
+        "filename": "model-00003-of-00005.safetensors"
+      },
+      {
+        "bytes": 3187841392,
+        "filename": "model-00004-of-00005.safetensors"
+      },
+      {
+        "bytes": 1244659840,
+        "filename": "model-00005-of-00005.safetensors"
+      }
+    ]
+  },
+  "latency_seconds": 5.8927,
+  "license": "apache-2.0",
+  "live_resources_after_cleanup": 0,
+  "load_seconds": 8.59,
+  "max_model_len": 4096,
+  "model_id": "Qwen/Qwen3-8B",
+  "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests. Generated output was treated as data and never executed. Executed on Modal (canonical provider) on 1 x H100 80GB with weights from a hash-verified Modal Volume cache; earlier Modal, Lightning, Hugging Face and razorBridge attempts are preserved in attempts.",
+  "original_in_run_billing_settlement": {
+    "reasons": [
+      "the completed run's metered usage is not yet visible in the account totals (metered_delta == 0)"
+    ],
+    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+    "stop_before_next_control": true
+  },
+  "original_in_run_financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "29.96203611111111111111111111",
+    "credits_applied_baseline_usd": "20.08000000",
+    "credits_applied_postrun_usd": "20.08000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "9.88203611111111111111111111",
+    "derived_credit_remaining_before_usd": "9.88203611111111111111111111",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_baseline_usd": "20.08000000",
+    "metered_delta_usd": "0E-8",
+    "metered_postrun_usd": "20.08000000",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
+  "original_validator_note": "record FAILED its own validator: ControlRuntimeError: RUNTIME_QUALIFIED requires the run's billing/credit coverage to be observed in the account data",
+  "orphan_vllm_processes_after_shutdown": 0,
+  "owner_billed_delta_usd": "0E-8",
+  "peak_gpu_memory_bytes": 77337722880,
+  "phase": "21B.4.20",
+  "precision": "bfloat16",
+  "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_RAW_LOG_2026-09-24.txt",
+  "raw_log_sha256": "068332b340ddcf73d1d61e326c1e95646a610ac6864b2a47848cf218355d5bbd",
+  "reasoning_mode": "ENABLED (Qwen3 hybrid-thinking template default; canonical control spec launches with --reasoning-parser qwen3)",
+  "reasoning_parser": "qwen3",
+  "runtime_name": "vLLM (official vllm/vllm-openai image on Modal, OpenAI-compatible server; model from a verified Modal Volume cache)",
+  "runtime_qualification_status": "FAILED",
+  "runtime_version": "0.29.0",
+  "server_argv_sanitized": [
+    "/usr/local/bin/python",
+    "-m",
+    "vllm.entrypoints.openai.api_server",
+    "--model",
+    "<local pinned-revision snapshot dir>",
+    "--served-model-name",
+    "Qwen/Qwen3-8B",
+    "--dtype",
+    "bfloat16",
+    "--max-model-len",
+    "4096",
+    "--gpu-memory-utilization",
+    "0.9",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8000",
+    "--seed",
+    "0",
+    "--reasoning-parser",
+    "qwen3"
+  ],
+  "server_exit_code": 0,
+  "settlement_reconciliation": {
+    "artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT4_SETTLEMENT_RECONCILIATION_20260924T211518Z.json",
+    "owner_cash_delta_usd": "0E-8",
+    "promotional_credit_used_usd": "0.22772907",
+    "sha256": "462b65f53d1fd375c5568a531c33238139e7d12b99edd8812c080ba4af21c75b"
+  },
+  "smoke_acceptance": [
+    {
+      "accepted": true,
+      "normalized_content": "READY",
+      "reason": "exact match",
+      "smoke_id": "A"
+    },
+    {
+      "accepted": false,
+      "normalized_content": "The result of adding 2 and 3 is calculated by combining the two numbers. Starting with 2 and adding 3 to it:\n\n$$\n2 + 3 = 5\n$$\n\n**Answer:** 5",
+      "reason": "content is not exactly '5'",
+      "smoke_id": "B"
+    },
+    {
+      "accepted": true,
+      "normalized_content": "{\"status\":\"ready\"}",
+      "reason": "parsed JSON equals the exact object",
+      "smoke_id": "C"
+    }
+  ],
+  "smoke_outputs": [
+    {
+      "content": "\n\nREADY",
+      "executed": false,
+      "finish_reason": "stop",
+      "http_status": 200,
+      "latency_seconds": 0.8716,
+      "matches_expected_exactly": true,
+      "raw_response": "{\"content\": \"\\n\\nREADY\", \"finish_reason\": \"stop\", \"reasoning_content\": \"\\nOkay, the user wants me to reply with exactly \\\"READY\\\". Let me make sure I understand the request correctly. They specified that the response should be exactly that word, no more, no less. I need to check if there are any hidden instructions or if they want a specific format. Since the example shows \\\"READY\\\" in uppercase, I should follow that. No other text, just the word. Alright, I'll make sure to output only \\\"READY\\\" without any additional characters or explanations. Let me confirm once more to avoid any mistakes. Yep, that's all.\\n\", \"usage\": {\"completion_tokens\": 122, \"completion_tokens_details\": {\"reasoning_tokens\": 117}, \"prompt_tokens\": 13, \"total_tokens\": 135}}",
+      "raw_response_sha256": "ad87ff2109df8a3a94b8c8af67b26a093d75f4e4561b5cc6aaa5461f2917b75e",
+      "smoke_id": "A",
+      "ttft_seconds": 0.0967,
+      "usage": {
+        "completion_tokens": 122,
+        "completion_tokens_details": {
+          "reasoning_tokens": 117
+        },
+        "prompt_tokens": 13,
+        "total_tokens": 135
+      }
+    },
+    {
+      "content": "\n\nThe result of adding 2 and 3 is calculated by combining the two numbers. Starting with 2 and adding 3 to it:\n\n$$\n2 + 3 = 5\n$$\n\n**Answer:** 5",
+      "executed": false,
+      "finish_reason": "stop",
+      "http_status": 200,
+      "latency_seconds": 2.1317,
+      "matches_expected_exactly": false,
+      "raw_response": "{\"id\":\"chatcmpl-86a3133df50e335f\",\"object\":\"chat.completion\",\"created\":1790283399,\"model\":\"Qwen/Qwen3-8B\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"\\n\\nThe result of adding 2 and 3 is calculated by combining the two numbers. Starting with 2 and adding 3 to it:\\n\\n$$\\n2 + 3 = 5\\n$$\\n\\n**Answer:** 5\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":\"\\nOkay, let's see. The user is asking for the result of 2 + 3. Hmm, that seems straightforward. Wait, maybe they want me to explain the process? Let me think. Addition is one of the basic arithmetic operations. So, adding 2 and 3 together. Let me visualize it. If I have two objects and then add three more, how many do I have in total? Let's count: 1, 2 (that's the first number), then adding 3 more. So 1, 2, 3. Wait, no. Wait, starting from 2, adding 3. So 2 + 1 is 3, then +1 more is 4, then +1 more is 5. So total is 5. Alternatively, I can think of it as combining the two numbers. 2 plus 3 equals 5. Yeah, that's right. I don't think there's any trick here. Maybe the user is testing if I can handle simple addition. Or maybe they want a more detailed explanation. But the question says to return the single integer result. So the answer should just be 5. Let me double-check. 2 + 3. Yes, 2 + 3 is definitely 5. No other possible answer. So the final answer is 5.\\n\"},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"system_fingerprint\":\"vllm-0.29.0-7a9c0274\",\"usage\":{\"prompt_tokens\":19,\"total_tokens\":347,\"completion_tokens\":328,\"prompt_tokens_details\":null,\"completion_tokens_details\":{\"reasoning_tokens\":279}},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null}",
+      "raw_response_sha256": "ad8377f857150d3709f326517d81fe56e3ff26aac1e9f60773650e98aa49294b",
+      "smoke_id": "B",
+      "ttft_seconds": null,
+      "usage": {
+        "completion_tokens": 328,
+        "completion_tokens_details": {
+          "reasoning_tokens": 279
+        },
+        "prompt_tokens": 19,
+        "prompt_tokens_details": null,
+        "total_tokens": 347
+      }
+    },
+    {
+      "content": "\n\n{\"status\":\"ready\"}",
+      "executed": false,
+      "finish_reason": "stop",
+      "http_status": 200,
+      "latency_seconds": 2.8894,
+      "matches_expected_exactly": true,
+      "raw_response": "{\"id\":\"chatcmpl-a5e5dc924bc7a649\",\"object\":\"chat.completion\",\"created\":1790283401,\"model\":\"Qwen/Qwen3-8B\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"\\n\\n{\\\"status\\\":\\\"ready\\\"}\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":\"\\nOkay, the user wants me to return a valid JSON with one field: {\\\"status\\\":\\\"ready\\\"}. Let me make sure I understand the request correctly. They specified that the JSON should have a single field called \\\"status\\\" with the value \\\"ready\\\". \\n\\nFirst, I need to check if the JSON structure is correct. The syntax should start with a curly brace, then the key in quotes, a colon, the value in quotes, and close with a curly brace. So {\\\"status\\\":\\\"ready\\\"} looks right. \\n\\nWait, are there any other requirements? The user mentioned \\\"valid JSON\\\", so I should ensure there are no syntax errors. Also, the value \\\"ready\\\" should be a string, which it is. No trailing commas or missing quotes. \\n\\nI should also consider if there's any additional context. The user might be testing if I can generate a specific JSON response, maybe for an API or a configuration file. They might need this for a system that checks the status of a service or a component. \\n\\nIs there a possibility of needing more fields? The user explicitly said one field, so I shouldn't add anything else. Maybe they want to ensure that the response is minimal. \\n\\nI should also think about encoding. JSON requires that the keys and strings are in double quotes, which they are. No single quotes, which would make it invalid. \\n\\nAnother thing: the user might be using this in a programming context. For example, in JavaScript, this JSON could be parsed into an object. So the structure must be correct to avoid errors. \\n\\nI should double-check the JSON by using an online validator or a tool. But since I can't do that right now, I'll rely on my knowledge. The structure seems correct. \\n\\nSo the final answer should be exactly {\\\"status\\\":\\\"ready\\\"} without any extra spaces or characters. Let me make sure there's no typo in the key or value. \\\"status\\\" is correctly spelled, and \\\"ready\\\" is in quotes. \\n\\nYes, this should meet the user's requirements. They probably want a simple, valid JSON response without any additional information. I'll present it as specified.\\n\"},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"system_fingerprint\":\"vllm-0.29.0-7a9c0274\",\"usage\":{\"prompt_tokens\":20,\"total_tokens\":465,\"completion_tokens\":445,\"prompt_tokens_details\":null,\"completion_tokens_details\":{\"reasoning_tokens\":436}},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null}",
+      "raw_response_sha256": "8cddca358c2c4bf930351f8a2c15b67239cd738d0b1f8d34fdd1b5a340f9c649",
+      "smoke_id": "C",
+      "ttft_seconds": null,
+      "usage": {
+        "completion_tokens": 445,
+        "completion_tokens_details": {
+          "reasoning_tokens": 436
+        },
+        "prompt_tokens": 20,
+        "prompt_tokens_details": null,
+        "total_tokens": 465
+      }
+    }
+  ],
+  "smoke_prompts": [
+    {
+      "expected": "READY",
+      "messages": [
+        {
+          "content": "Reply with exactly:\nREADY",
+          "role": "user"
+        }
+      ],
+      "purpose": "deterministic readiness",
+      "smoke_id": "A"
+    },
+    {
+      "expected": "5",
+      "messages": [
+        {
+          "content": "Return the single integer result of:\n2 + 3",
+          "role": "user"
+        }
+      ],
+      "purpose": "trivial instruction following",
+      "smoke_id": "B"
+    },
+    {
+      "expected": "{\"status\":\"ready\"}",
+      "messages": [
+        {
+          "content": "Return valid JSON with one field:\n{\"status\":\"ready\"}",
+          "role": "user"
+        }
+      ],
+      "purpose": "short structured response",
+      "smoke_id": "C"
+    }
+  ],
+  "started_at_utc": "2026-09-24T20:53:32Z",
+  "status_correction": {
+    "from": "RUNTIME_QUALIFIED",
+    "reason": "RUNTIME_QUALIFIED requires observed settlement (validator); no technical evidence was altered",
+    "to": "PENDING_SETTLEMENT_OBSERVATION"
+  },
+  "steady_gpu_memory_bytes": 77337722880,
+  "stop_behavior": "eos_token <|im_end|>; generation_config eos_token_id [151645, 151643]",
+  "superseded_classification": {
+    "reason": "audit finding: locked Smoke B (exact '5') was not satisfied; HTTP 200 + non-empty is not acceptance",
+    "runtime_qualification_status": "RUNTIME_QUALIFIED",
+    "technical_serving_status": "QUALIFIED"
+  },
+  "technical_serving_status": "FAILED",
+  "tensor_parallel": 1,
+  "tokenizer_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "tokens_per_second": 151.88,
+  "ttft_seconds": 0.0967,
+  "unobservable_reasons": {},
+  "version_endpoint": {
+    "version": "0.29.0"
+  },
+  "versions": {
+    "huggingface_hub": "1.30.0",
+    "safetensors": "0.8.0",
+    "tokenizers": "0.23.2",
+    "torch": "2.13.0+cu130",
+    "torch_cuda": "13.0",
+    "transformers": "5.16.1",
+    "vllm": "0.29.0"
+  }
+}

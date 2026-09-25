@@ -4,8 +4,8 @@
     {
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md",
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "d7167697c17f285603a929b805efe15f6d82b312365d054647860c65b0724e19",
-      "size_bytes": 20211
+      "sha256": "dddc2167399d8594f663a8496ddb01b6b84989e28dac76e5de38bfd6b6ccfde0",
+      "size_bytes": 21066
     },
     {
       "evidence_role": "genesis_billing_discrepancy_observation_2026-09-24.json",
@@ -230,6 +230,12 @@
       "size_bytes": 24288
     },
     {
+      "evidence_role": "genesis_control_qwen3_8b_runtime_qualification_attempt4_snapshot_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json",
+      "sha256": "008b945e7fc0f10eec2a04104f5627260a4187d512d14294b0da41b0a0e217fd",
+      "size_bytes": 24288
+    },
+    {
       "evidence_role": "genesis_hf_zerogpu_account_verification_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_HF_ZEROGPU_ACCOUNT_VERIFICATION_2026-09-24.json",
       "sha256": "1e7083388cb5abfe02010ca893539f8a84a7eb8f6915adc91ca94154f34a86a2",
@@ -266,6 +272,12 @@
       "size_bytes": 1724
     },
     {
+      "evidence_role": "genesis_qwen3_8b_non_thinking_v1_implementation_readiness_2026-09-25.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_QWEN3_8B_NON_THINKING_V1_IMPLEMENTATION_READINESS_2026-09-25.json",
+      "sha256": "5af097bb526ea31cd39a41ad9a04412fbc7a4e172dbcb5a2f6ff6aaff7415742",
+      "size_bytes": 6465
+    },
+    {
       "evidence_role": "genesis_qwen3_8b_runtime_configuration_analysis_2026-09-25.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_2026-09-25.json",
       "sha256": "5e7a48d937541b11b0b2555026d7d88286a21e2f7127386ea5b8c2d74bb7622c",
@@ -291,6 +303,6 @@
     }
   ],
   "evidence_type": "GENESIS_CONTROL_RUNTIME_QUALIFICATION_INTEGRITY_INDEX",
-  "note": "SHA-256 hashes computed live from actual file bytes; repo-relative paths. Includes Qwen3-8B attempt 1 (harness failure, annotated with failure_domain; pre-annotation attempts-file sha256 eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365 is preserved in git history and in the annotation), the read-only settlement reconciliation, and NOT_TESTED records for Mistral-Nemo and Phi-4. Phase 21B.4.20 Modal H100 update: adds CPU pre-cache manifests, owner-created attempt-1 settlement waiver (hash recorded, content untouched), Qwen3-8B H100 attempt 4 evidence and its delayed-settlement reconciliation artifacts. Audit remediation: adds the three Modal H100 preflight artifacts (CPU 191936Z, GPU 195933Z blocked, GPU 205041Z allowed) and re-derives every hash from actual bytes; GENESIS_CONTROL_SET_* files belong to the earlier control-set admission phase and have their own index. Adds the CPU-only Qwen3-8B runtime-configuration analysis (2026-09-25). Canonical locked-smoke protocol canonicalization (2026-09-25): adds GENESIS_LOCKED_SMOKE_PROTOCOL and the V2 canonical-prompt Qwen analysis; the earlier analysis is annotated superseded; Mistral/Phi NOT_TESTED planned prompts canonicalized (originals preserved); matrix updated.",
+  "note": "SHA-256 hashes computed live from actual file bytes; repo-relative paths. Includes Qwen3-8B attempt 1 (harness failure, annotated with failure_domain; pre-annotation attempts-file sha256 eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365 is preserved in git history and in the annotation), the read-only settlement reconciliation, and NOT_TESTED records for Mistral-Nemo and Phi-4. Phase 21B.4.20 Modal H100 update: adds CPU pre-cache manifests, owner-created attempt-1 settlement waiver (hash recorded, content untouched), Qwen3-8B H100 attempt 4 evidence and its delayed-settlement reconciliation artifacts. Audit remediation: adds the three Modal H100 preflight artifacts (CPU 191936Z, GPU 195933Z blocked, GPU 205041Z allowed) and re-derives every hash from actual bytes; GENESIS_CONTROL_SET_* files belong to the earlier control-set admission phase and have their own index. Adds the CPU-only Qwen3-8B runtime-configuration analysis (2026-09-25). Canonical locked-smoke protocol canonicalization (2026-09-25): adds GENESIS_LOCKED_SMOKE_PROTOCOL and the V2 canonical-prompt Qwen analysis; the earlier analysis is annotated superseded; Mistral/Phi NOT_TESTED planned prompts canonicalized (originals preserved); matrix updated. Qwen3-8B qwen3_8b_non_thinking_v1 implementation readiness (2026-09-25): adds the byte-identical attempt-4 record snapshot and the CPU-only readiness artifact; matrix updated.",
   "phase": "21B.4.20"
 }

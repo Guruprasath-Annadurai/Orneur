@@ -96,33 +96,31 @@ CONTROLS = {
     },
 }
 
-def _load_locked_protocol():
-    """Load the ONE canonical locked-smoke protocol (stdlib-only). Sibling copy first (container / Studio), repo path otherwise."""
+def _load_canonical(name: str):
+    """Load a canonical stdlib-only module. Sibling copy first, repo path otherwise; it verifies its own integrity on import."""
     import importlib.util as _ilu
     here = Path(__file__).resolve()
-    for cand in (here.with_name("locked_smoke_protocol.py"), here.parents[1] / "orca" / "eval" / "locked_smoke_protocol.py"):
+    for cand in (here.with_name(f"{name}.py"), here.parents[1] / "orca" / "eval" / f"{name}.py"):
         if cand.is_file():
-            spec = _ilu.spec_from_file_location("locked_smoke_protocol", cand)
+            spec = _ilu.spec_from_file_location(name, cand)
             mod = _ilu.module_from_spec(spec)
-            spec.loader.exec_module(mod)          # verifies the pinned protocol fingerprint on import (fails closed on drift)
+            spec.loader.exec_module(mod)
             return mod
-    raise RuntimeError("locked_smoke_protocol.py not found next to this script or in the repository")
+    raise RuntimeError(f"{name}.py not found next to this script or in the repository")
 
 
-LOCKED_PROTOCOL = _load_locked_protocol()
+LOCKED_PROTOCOL = _load_canonical("locked_smoke_protocol")
 SMOKES = LOCKED_PROTOCOL.runner_smokes()      # no hand-written smoke string lives in this file
 
 
-def _meets_acceptance(rule: dict, content) -> bool:
-    """Same semantics as the canonical protocol's `acceptance` (a test cross-checks them): strip whitespace, then exact text or exact JSON object."""
-    text = (content or "").strip()
-    if rule["kind"] == "exact_text":
-        return text == rule["expected"]
-    try:
-        parsed = json.loads(text)
-    except ValueError:
-        return False
-    return isinstance(parsed, dict) and parsed == rule["expected"]
+def build_chat_payload(cfg: dict, smoke: dict, gen_cfg: dict) -> dict:
+    """The exact chat-completions body for one locked smoke -- the ONLY place a request body is built. A control's runtime configuration
+    (if it has one) adds exactly its chat_template_kwargs to EVERY smoke; controls without a configuration get no extra field."""
+    payload = {"model": cfg["model_id"], "messages": [{"role": "user", "content": smoke["user"]}], **gen_cfg}
+    kwargs = (cfg.get("runtime_configuration") or {}).get("chat_template_kwargs")
+    if kwargs is not None:
+        payload["chat_template_kwargs"] = json.loads(json.dumps(kwargs))
+    return payload
 
 image = (
     modal.Image.from_registry(
@@ -294,10 +292,13 @@ def serve_and_smoke(cfg: dict) -> dict:
         outputs = []
         gen_cfg = {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": cfg["smoke_max_tokens"]}
         result["generation_config_sent"] = gen_cfg
+        result["runtime_configuration_id_applied"] = (cfg.get("runtime_configuration") or {}).get("id")
         for smoke in cfg["smokes"]:
-            payload = {"model": cfg["model_id"], "messages": [{"role": "user", "content": smoke["user"]}], **gen_cfg}
+            payload = build_chat_payload(cfg, smoke, gen_cfg)
             t_req = _time.time()
-            entry = {"smoke_id": smoke["smoke_id"], "http_status": None, "raw_response": None}
+            entry = {"smoke_id": smoke["smoke_id"], "http_status": None, "raw_response": None,
+                     "chat_template_kwargs_sent": payload.get("chat_template_kwargs"),
+                     "prompt_sha256_sent": hashlib.sha256(payload["messages"][0]["content"].encode("utf-8")).hexdigest()}
             try:
                 if smoke["stream"]:
                     payload = dict(payload, stream=True, stream_options={"include_usage": True})
@@ -342,7 +343,7 @@ def serve_and_smoke(cfg: dict) -> dict:
             except Exception as e:  # noqa: BLE001
                 entry["error"] = f"{type(e).__name__}: {e}"
             entry["latency_seconds"] = round(_time.time() - t_req, 4)
-            entry["matches_expected_exactly"] = _meets_acceptance(smoke["acceptance"], entry.get("content", ""))
+            entry["matches_expected_exactly"] = LOCKED_PROTOCOL.acceptance(smoke["smoke_id"], entry.get("content", ""))[0]
             outputs.append(entry)
             ev(f"smoke {smoke['smoke_id']} status={entry['http_status']} latency={entry['latency_seconds']}s")
         result["smoke_results"] = outputs

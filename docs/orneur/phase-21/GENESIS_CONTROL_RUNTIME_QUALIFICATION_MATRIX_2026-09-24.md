@@ -35,6 +35,14 @@ failure. The earlier `PENDING_SETTLEMENT_OBSERVATION` and `RUNTIME_QUALIFIED` la
 (strict `validate_owner_settlement_waiver`); it never marks that settlement resolved, its conservative exposure stays deducted, and
 it applies to attempt 1 only, never to attempt 4.
 
+**Prepared, not executed: `qwen3_8b_non_thinking_v1`.** The approved configuration (`chat_template_kwargs: {"enable_thinking": false}` sent
+with every locked Qwen3-8B smoke; nothing else changes, and Mistral-Nemo / Phi-4 receive no such setting) is implemented CPU-only in
+`orca/eval/control_runtime_configuration.py`, wired through the shared runner's single request builder, proven from inside the container,
+and enforced by the validator for Qwen records whose final attempt number is >= 5. Attempts 1-4 are never renumbered or retro-fitted
+(attempt 4 is preserved byte-identically as `GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json`). A future
+authorized run would be **attempt 5**. Nothing has been launched; see
+`GENESIS_QWEN3_8B_NON_THINKING_V1_IMPLEMENTATION_READINESS_2026-09-25.json`. Qwen3-8B remains FAILED.
+
 **Resume conditions.** A new Qwen3-8B attempt would need a separate explicit owner authorization; any change to the qualified
 runtime configuration (for example the thinking mode) is a configuration change and needs its own authorization. Every launch
 still requires: owner billed delta 0, credit runway >= $5.00 reserve + worst-case run cost (H100 900 s cap ~= $1.083, under the

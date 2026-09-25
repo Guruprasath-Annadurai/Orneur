@@ -420,7 +420,8 @@ def build_lightning_record(control_key, result, attempt_no, attempt, fin, log_pa
         outputs.append({"smoke_id": s["smoke_id"], "http_status": s.get("http_status"), "raw_response": raw,
                         "raw_response_sha256": hashlib.sha256(raw.encode()).hexdigest(), "content": s.get("content"),
                         "finish_reason": s.get("finish_reason"), "usage": s.get("usage"), "latency_seconds": s.get("latency_seconds"),
-                        "ttft_seconds": s.get("ttft_seconds"), "matches_expected_exactly": s.get("matches_expected_exactly"), "executed": False})
+                        "ttft_seconds": s.get("ttft_seconds"), "matches_expected_exactly": s.get("matches_expected_exactly"),
+                        "chat_template_kwargs_sent": s.get("chat_template_kwargs_sent"), "prompt_sha256_sent": s.get("prompt_sha256_sent"), "executed": False})
     if attempt["outcome"] == "TECHNICAL_SUCCESS":
         technical = "QUALIFIED"
     elif attempt["outcome"] == "TECHNICAL_FAILURE" and attempt.get("valid_runtime_attempt") is True:
