@@ -2018,3 +2018,48 @@ def test_every_phase_21b_4_20_modal_h100_evidence_file_is_in_the_sha256_index():
     missing = sorted({str(p.relative_to(REPO_ROOT)) for pat in patterns for p in EVIDENCE_DIR.glob(pat)} - indexed)
     assert not missing, missing
     assert any("GPU_PREFLIGHT_2026-09-24T205041Z" in p for p in indexed)
+
+
+# ── CPU-only Qwen3-8B runtime-configuration analysis (no GPU; decision document, not a qualification) ──
+QWEN_ANALYSIS = EVIDENCE_DIR / "GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_2026-09-25.json"
+
+
+def test_qwen_configuration_analysis_is_cpu_only_and_identity_preserving():
+    a = json.loads(QWEN_ANALYSIS.read_text())
+    assert a["no_gpu_used"] and a["no_modal_used"] and a["no_model_loaded"] and a["no_generation"] and a["generated_output_executed"] is False
+    assert a["model"] == {"model_id": "Qwen/Qwen3-8B", "revision": LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]["revision"], "precision": "bfloat16", "quantization": None}
+    ans = a["answers"]["5"]
+    assert [ans[k] for k in ("model_weights_change", "revision_change", "precision_change", "quantization_change")] == ["NO"] * 4
+    assert ans["serving_runtime_change"].startswith("NO") and ans["only_chat_template_request_behavior"].startswith("YES")
+    assert a["model_identity"]["identical"] is True and a["is_new_runtime_configuration_requiring_fresh_qualification"]["answer"] == "YES"
+    assert a["decision"].startswith("A.") and a["candidate_configuration"]["request_setting"] == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert a["qwen3_8b_status_unchanged"]["runtime_qualification_status"] == "FAILED"
+    assert "not authorized" in json.dumps(a["future_attempt_proposal_NOT_IMPLEMENTED_NOT_AUTHORIZED"]).lower() or "NOT_AUTHORIZED" in json.dumps(a)
+
+
+def test_qwen_configuration_analysis_keeps_the_locked_smoke_prompts_and_only_appends_an_empty_think_block():
+    a = json.loads(QWEN_ANALYSIS.read_text())
+    persisted = {p["smoke_id"]: p["messages"] for p in json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())["smoke_prompts"]}
+    for sid, r in a["rendered_locked_requests"].items():
+        assert r["messages_unchanged"] == persisted[sid]                                   # the locked prompts are not rewritten
+        assert r["candidate_enable_thinking_false"] == r["current_thinking_default"] + "<think>\n\n</think>\n\n"
+        assert r["current_thinking_default"].endswith("<|im_start|>assistant\n")
+
+
+def test_qwen_configuration_analysis_facts_are_proven_from_hashed_pinned_sources():
+    a = json.loads(QWEN_ANALYSIS.read_text())
+    assert a["chat_template"]["supports_enable_thinking"] and a["chat_template"]["template_contains_no_think_soft_switch_logic"]
+    assert a["sources"]["tokenizer_config.json"]["url"].split("/resolve/")[1].startswith(LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]["revision"])
+    assert all(len(s["sha256"]) == 64 for s in a["sources"].values()) and a["vllm"]["commit"] in a["sources"]["vllm/parser/qwen3.py"]["url"]
+    path = a["vllm_0_29_0_path"]
+    assert "chat_kwargs.get(\"enable_thinking\", True)" in path["qwen3_parser_reads_enable_thinking"]["text"]
+    assert "ParserState.CONTENT" in path["qwen3_parser_initial_state"]["text"]
+    assert "chat_template_kwargs" in path["same_kwargs_given_to_parser"]["text"] and "_engine_chat_template_kwargs" in path["same_kwargs_given_to_engine_template"]["anchor"]
+    assert a["current_configuration"]["server_argv"][-2:] == ["--reasoning-parser", "qwen3"] and "UNCHANGED" in a["candidate_configuration"]["server_argv"]
+
+
+def test_qwen_configuration_analysis_script_is_cpu_only_and_executes_nothing():
+    text = (REPO_ROOT / "scripts/phase21b_4_20_qwen_config_analysis.py").read_text()
+    for banned in ("import modal", "import torch", "import vllm", "subprocess", "os.system", "eval(", "exec(", "shell=True"):
+        assert banned not in text, banned
+    assert "ImmutableSandboxedEnvironment" in text

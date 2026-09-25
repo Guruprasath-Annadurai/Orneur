@@ -260,6 +260,12 @@
       "size_bytes": 1724
     },
     {
+      "evidence_role": "genesis_qwen3_8b_runtime_configuration_analysis_2026-09-25.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_2026-09-25.json",
+      "sha256": "94fc9707f673df2c3c305d654b0e100b3ea12972f6c4e70c7c1a0b12f3fd76ad",
+      "size_bytes": 18026
+    },
+    {
       "evidence_role": "genesis_razorbridge_account_gate_qwen3_8b_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_RAZORBRIDGE_ACCOUNT_GATE_QWEN3_8B_2026-09-24.json",
       "sha256": "540868da24bab3eb9fe25b2de37d38cbff1f8d93d68ac8bb7f3b13ccfecb1941",
@@ -273,6 +279,6 @@
     }
   ],
   "evidence_type": "GENESIS_CONTROL_RUNTIME_QUALIFICATION_INTEGRITY_INDEX",
-  "note": "SHA-256 hashes computed live from actual file bytes; repo-relative paths. Includes Qwen3-8B attempt 1 (harness failure, annotated with failure_domain; pre-annotation attempts-file sha256 eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365 is preserved in git history and in the annotation), the read-only settlement reconciliation, and NOT_TESTED records for Mistral-Nemo and Phi-4. Phase 21B.4.20 Modal H100 update: adds CPU pre-cache manifests, owner-created attempt-1 settlement waiver (hash recorded, content untouched), Qwen3-8B H100 attempt 4 evidence and its delayed-settlement reconciliation artifacts. Audit remediation: adds the three Modal H100 preflight artifacts (CPU 191936Z, GPU 195933Z blocked, GPU 205041Z allowed) and re-derives every hash from actual bytes; GENESIS_CONTROL_SET_* files belong to the earlier control-set admission phase and have their own index.",
+  "note": "SHA-256 hashes computed live from actual file bytes; repo-relative paths. Includes Qwen3-8B attempt 1 (harness failure, annotated with failure_domain; pre-annotation attempts-file sha256 eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365 is preserved in git history and in the annotation), the read-only settlement reconciliation, and NOT_TESTED records for Mistral-Nemo and Phi-4. Phase 21B.4.20 Modal H100 update: adds CPU pre-cache manifests, owner-created attempt-1 settlement waiver (hash recorded, content untouched), Qwen3-8B H100 attempt 4 evidence and its delayed-settlement reconciliation artifacts. Audit remediation: adds the three Modal H100 preflight artifacts (CPU 191936Z, GPU 195933Z blocked, GPU 205041Z allowed) and re-derives every hash from actual bytes; GENESIS_CONTROL_SET_* files belong to the earlier control-set admission phase and have their own index. Adds the CPU-only Qwen3-8B runtime-configuration analysis (2026-09-25).",
   "phase": "21B.4.20"
 }

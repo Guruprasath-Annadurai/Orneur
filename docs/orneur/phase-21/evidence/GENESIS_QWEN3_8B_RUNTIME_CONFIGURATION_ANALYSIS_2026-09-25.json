@@ -1,0 +1,315 @@
+{
+  "answers": {
+    "1_template_supports_enable_thinking": true,
+    "2_default": "thinking ON (variable undefined behaves as True); only explicit false disables",
+    "3_vllm_0_29_0_pass_through": "request body field chat_template_kwargs -> ChatCompletionRequest.build_chat_params -> _effective_chat_template_kwargs (merged with --default-chat-template-kwargs) -> given to BOTH the chat-template renderer and the reasoning-parser instance",
+    "4_reasoning_parser_independent_of_template_choice": {
+      "answer": "NO -- it is coupled through the same kwargs, and still valid",
+      "detail": "with --reasoning-parser qwen3 unchanged, Qwen3Parser reads enable_thinking from chat_template_kwargs; false => initial state CONTENT and extract_reasoning returns (None, whole output), so the answer arrives in message.content. The flag itself is not changed. Because both consumers read the SAME request kwargs, they cannot disagree."
+    },
+    "5": {
+      "model_weights_change": "NO",
+      "only_chat_template_request_behavior": "YES (an empty <think></think> block is appended to the rendered prompt; parser state follows)",
+      "precision_change": "NO",
+      "quantization_change": "NO",
+      "revision_change": "NO",
+      "serving_runtime_change": "NO (same image, same server argv)"
+    },
+    "6_officially_supported": "YES -- documented by the Qwen authors in the pinned model card; implemented by the pinned template; exposed by vLLM 0.29.0. Not an ORNEUR-specific hack.",
+    "7_representable_reproducibly": "YES -- a single JSON request field plus a named configuration id can be persisted per smoke (the extra body, the rendered-prompt hash, the template sha256) alongside the unchanged locked messages"
+  },
+  "candidate_configuration": {
+    "alternative_equivalent_form": "--default-chat-template-kwargs '{\"enable_thinking\": false}' (server argv change; not preferred: changes argv)",
+    "alternative_excluded": [
+      "/no_think soft switch (edits the locked prompt)",
+      "reasoning_effort=none (equivalent mapping but a less direct, version-dependent path)"
+    ],
+    "id": "qwen3_8b_non_thinking_v1",
+    "locked_messages": "UNCHANGED (LOCKED_SMOKES below)",
+    "request_setting": {
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "sampling": "UNCHANGED (temperature 0, top_p 1, seed 0); smoke_max_tokens may stay 1024",
+    "server_argv": "UNCHANGED (still --reasoning-parser qwen3; the parser adapts from the same kwargs)"
+  },
+  "cannot_be_concluded_on_cpu": [
+    "whether Qwen3-8B will then return exactly '5' for locked Smoke B (that needs generation)",
+    "bit-exact reproducibility of greedy decoding on the GPU",
+    "the effective sampling merge on a live server (generation_config defaults)"
+  ],
+  "captured_at_utc": "2026-09-25T06:00:29Z",
+  "chat_template": {
+    "chat_template_sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
+    "decisive_clause": "{%- if enable_thinking is defined and enable_thinking is false %} {{- '<think>\\n\\n</think>\\n\\n' }} {%- endif %}",
+    "default_when_unset": "THINKING (variable undefined => nothing is appended after '<|im_start|>assistant\\n'; the model opens its own <think>)",
+    "eos_token": "<|im_end|>",
+    "occurrences": 2,
+    "only_false_disables": "only an explicit boolean false triggers the empty think block; true or undefined leave the model free to think",
+    "supports_enable_thinking": true,
+    "template_contains_no_think_soft_switch_logic": true
+  },
+  "current_configuration": {
+    "observed_attempt_4": {
+      "finish_reason": "stop for all three",
+      "reasoning_tokens_A_B_C": [
+        117,
+        279,
+        436
+      ],
+      "smoke_B_final_content": "verbose explanation ending in 5",
+      "smoke_B_thinking_concluded": "the answer should just be 5"
+    },
+    "request": "locked messages only; no chat_template_kwargs, no reasoning_effort => enable_thinking undefined => thinking ON",
+    "sampling": {
+      "max_tokens": 1024,
+      "seed": 0,
+      "temperature": 0,
+      "top_p": 1
+    },
+    "server_argv": [
+      "--dtype",
+      "bfloat16",
+      "--max-model-len",
+      "4096",
+      "--gpu-memory-utilization",
+      "0.9",
+      "--seed",
+      "0",
+      "--reasoning-parser",
+      "qwen3"
+    ]
+  },
+  "decision": "A. SUPPORTED CONFIGURATION CHANGE IDENTIFIED",
+  "evidence_type": "QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_CPU_ONLY",
+  "future_attempt_proposal_NOT_IMPLEMENTED_NOT_AUTHORIZED": {
+    "files_that_would_change": [
+      "scripts/phase21b_4_20_lightning_runner.py (LOCKED['qwen3_8b'] gains a chat_template_kwargs field; the shared serve_and_smoke request body adds it to the chat-completions payload only when present)",
+      "scripts/phase21b_4_20_modal_h100_control.py (cfg passed to runner.serve_and_smoke carries it; the record persists runtime_configuration_id, chat_template_kwargs and the rendered-prompt sha256; the run must not overwrite attempt 4)",
+      "scripts/phase21b_4_20_lightning_control.py (record builder: reasoning_mode / generation_config fields reflect the configuration)",
+      "orca/eval/control_runtime_qualification.py (validator: a Qwen record must state its configuration explicitly; locked-smoke acceptance is unchanged)",
+      "tests/test_genesis_control_runtime_qualification.py (payload wiring, configuration recorded, locked prompts unchanged, attempt 4 preserved)",
+      "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md and the SHA256 index"
+    ],
+    "runtime_setting": {
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "unchanged": [
+      "Qwen/Qwen3-8B",
+      "b968826d9c46dd6066d109eabc6255188de91218",
+      "BF16",
+      "no quantization",
+      "vLLM 0.29.0 pinned image digest",
+      "server argv incl. --reasoning-parser qwen3",
+      "locked smoke messages A/B/C",
+      "temperature 0 / top_p 1 / seed 0",
+      "generated output never executed"
+    ]
+  },
+  "generated_output_executed": false,
+  "generation_config_defaults_in_pinned_revision": {
+    "file": "generation_config.json",
+    "note": "documented vLLM behaviour merges these defaults for fields a request does not set; the locked request sets temperature/top_p explicitly. Not verified on a live server in this CPU-only analysis.",
+    "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2",
+    "values": {
+      "bos_token_id": 151643,
+      "do_sample": true,
+      "eos_token_id": [
+        151645,
+        151643
+      ],
+      "pad_token_id": 151643,
+      "temperature": 0.6,
+      "top_k": 20,
+      "top_p": 0.95,
+      "transformers_version": "4.51.0"
+    }
+  },
+  "is_new_runtime_configuration_requiring_fresh_qualification": {
+    "answer": "YES",
+    "why": [
+      "the rendered prompt differs (extra empty think block), so generation begins from a different context",
+      "the qualified runtime configuration recorded for attempt 4 had thinking ON; a different configuration cannot inherit or overwrite that result",
+      "attempt 4 stays FAILED and preserved; a new attempt would carry its own configuration id and its own owner authorization"
+    ]
+  },
+  "model": {
+    "model_id": "Qwen/Qwen3-8B",
+    "precision": "bfloat16",
+    "quantization": null,
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218"
+  },
+  "model_identity": {
+    "identical": true,
+    "why": "same repository, same immutable revision, same weight files/bytes/LFS sha256 in the verified cache, same BF16 load; only the rendered prompt/parse behaviour differs"
+  },
+  "no_generation": true,
+  "no_gpu_used": true,
+  "no_modal_used": true,
+  "no_model_loaded": true,
+  "official_support": {
+    "model_card_pinned_revision": {
+      "excerpts": [
+        "    enable_thinking=True # Switches between thinking and non-thinking modes. Default is True.",
+        "The `enable_thinking` switch is also available in APIs created by SGLang and vLLM.",
+        "In this mode, the model will not generate any think content and will not include a `<think>...</think>` block. (enable_thinking=False)",
+        "When `enable_thinking=False`, the soft switches are not valid. (i.e. do NOT use /no_think in prompts with enable_thinking=False)",
+        "For thinking mode ... DO NOT use greedy decoding, as it can lead to performance degradation and endless repetitions.",
+        "For non-thinking mode (`enable_thinking=False`), we suggest using Temperature=0.7, TopP=0.8, TopK=20, and MinP=0."
+      ],
+      "file": "README.md",
+      "sha256": "0f36caaff9c2516411a7738db384606263ba653c1e63e61d72f511606164d5a6"
+    },
+    "not_used": "the '/no_think' soft switch edits the locked user prompts, so it is excluded",
+    "verdict": "OFFICIAL: documented by the model authors in the pinned model card and implemented in the pinned chat template; vLLM 0.29.0 exposes it as the request field chat_template_kwargs (and the server flag --default-chat-template-kwargs)"
+  },
+  "phase": "21B.4.20",
+  "qwen3_8b_status_unchanged": {
+    "capability_status": "UNPROVEN",
+    "runtime_qualification_status": "FAILED",
+    "technical_serving_status": "FAILED"
+  },
+  "rendered_locked_requests": {
+    "A": {
+      "candidate_enable_thinking_false": "<|im_start|>user\nReply with exactly:\nREADY<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "current_thinking_default": "<|im_start|>user\nReply with exactly:\nREADY<|im_end|>\n<|im_start|>assistant\n",
+      "difference_only_appended_suffix": "<think>\n\n</think>\n\n",
+      "messages_unchanged": [
+        {
+          "content": "Reply with exactly:\nREADY",
+          "role": "user"
+        }
+      ],
+      "prompt_prefix_identical": true
+    },
+    "B": {
+      "candidate_enable_thinking_false": "<|im_start|>user\nReturn the single integer result of:\n2 + 3<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "current_thinking_default": "<|im_start|>user\nReturn the single integer result of:\n2 + 3<|im_end|>\n<|im_start|>assistant\n",
+      "difference_only_appended_suffix": "<think>\n\n</think>\n\n",
+      "messages_unchanged": [
+        {
+          "content": "Return the single integer result of:\n2 + 3",
+          "role": "user"
+        }
+      ],
+      "prompt_prefix_identical": true
+    },
+    "C": {
+      "candidate_enable_thinking_false": "<|im_start|>user\nReturn valid JSON with one field:\n{\"status\":\"ready\"}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "current_thinking_default": "<|im_start|>user\nReturn valid JSON with one field:\n{\"status\":\"ready\"}<|im_end|>\n<|im_start|>assistant\n",
+      "difference_only_appended_suffix": "<think>\n\n</think>\n\n",
+      "messages_unchanged": [
+        {
+          "content": "Return valid JSON with one field:\n{\"status\":\"ready\"}",
+          "role": "user"
+        }
+      ],
+      "prompt_prefix_identical": true
+    }
+  },
+  "security_implications": [
+    "generated model text is still data only: never eval/exec/shell/import/compile (unchanged)",
+    "chat_template_kwargs carries one boolean; no template text or code is supplied by the request (vLLM only honours a request-supplied template when trust_request_chat_template is set, and it is not)",
+    "the pinned template is rendered in a sandboxed jinja environment and already contains the enable_thinking branch; no new template is introduced",
+    "no new network access, credential, permission or billing surface"
+  ],
+  "sources": {
+    "README.md": {
+      "bytes": 16660,
+      "sha256": "0f36caaff9c2516411a7738db384606263ba653c1e63e61d72f511606164d5a6",
+      "url": "https://huggingface.co/Qwen/Qwen3-8B/resolve/b968826d9c46dd6066d109eabc6255188de91218/README.md"
+    },
+    "generation_config.json": {
+      "bytes": 239,
+      "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2",
+      "url": "https://huggingface.co/Qwen/Qwen3-8B/resolve/b968826d9c46dd6066d109eabc6255188de91218/generation_config.json"
+    },
+    "tokenizer_config.json": {
+      "bytes": 9732,
+      "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+      "url": "https://huggingface.co/Qwen/Qwen3-8B/resolve/b968826d9c46dd6066d109eabc6255188de91218/tokenizer_config.json"
+    },
+    "vllm/entrypoints/launchers/cli_args.py": {
+      "bytes": 20866,
+      "sha256": "7f4388428da9a2b2922153816b8f48f3ed1bca4be1a436c6a6f6e6820291c14c",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/entrypoints/launchers/cli_args.py"
+    },
+    "vllm/entrypoints/openai/chat_completion/protocol.py": {
+      "bytes": 48040,
+      "sha256": "8a1f1138f79557aa5b5add12e81b9745fd5e286fa35f0502a97f2a377d41665b",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/entrypoints/openai/chat_completion/protocol.py"
+    },
+    "vllm/entrypoints/openai/chat_completion/serving.py": {
+      "bytes": 56242,
+      "sha256": "ea1f76074a9587c8054f54d30a6ba748b6a5fc4d90dd82c801504505c1da1f92",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/entrypoints/openai/chat_completion/serving.py"
+    },
+    "vllm/parser/qwen3.py": {
+      "bytes": 9808,
+      "sha256": "35e65a9b89198cbdbf44195c572a89eed2c137c78cbb96632c5bfadc99ca1e5c",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/parser/qwen3.py"
+    },
+    "vllm/reasoning/qwen3_engine_reasoning_parser.py": {
+      "bytes": 230,
+      "sha256": "0a0038bf94ff7b77dffe1a5737c16208f37b06535e1876e2e085f9a63310c742",
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/reasoning/qwen3_engine_reasoning_parser.py"
+    }
+  },
+  "vllm": {
+    "commit": "98dff2a81d747d1dba01a47f939f48c3526d4206",
+    "image_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
+    "note": "sources read at the commit behind tag v0.29.0; the run image is the pinned official vllm/vllm-openai:v0.29.0 digest (the tag-to-image correspondence is the tag's own; not re-verified inside the image on CPU)",
+    "version": "0.29.0"
+  },
+  "vllm_0_29_0_path": {
+    "effective_kwargs_merge_request_plus_server_defaults": {
+      "anchor": "def _effective_chat_template_kwargs",
+      "first_line": 189,
+      "text": "    def _effective_chat_template_kwargs(\n        self, request: ChatCompletionRequest\n    ) -> dict[str, Any]:\n        return (\n            request.build_chat_params(\n                self.chat_template,\n                self.chat_template_content_format,\n            )\n            .with_defaults(self.default_chat_template_kwargs)\n            .chat_template_kwargs"
+    },
+    "qwen3_parser_extract_reasoning_when_off": {
+      "anchor": "if not self.thinking_enabled:",
+      "first_line": 257,
+      "text": "        if not self.thinking_enabled:\n            return None, model_output"
+    },
+    "qwen3_parser_initial_state": {
+      "anchor": "initial_state=ParserState.REASONING if thinking else ParserState.CONTENT",
+      "first_line": 102,
+      "text": "        initial_state=ParserState.REASONING if thinking else ParserState.CONTENT,"
+    },
+    "qwen3_parser_reads_enable_thinking": {
+      "anchor": "self.thinking_enabled = chat_kwargs.get(\"enable_thinking\", True)",
+      "first_line": 229,
+      "text": "        chat_kwargs = kwargs.get(\"chat_template_kwargs\", {}) or {}\n        self.thinking_enabled = chat_kwargs.get(\"enable_thinking\", True)\n        kwargs.setdefault("
+    },
+    "reasoning_effort_none_maps_to_enable_thinking_false": {
+      "anchor": "extra_kwargs[\"enable_thinking\"]",
+      "first_line": 586,
+      "text": "        user_kwargs = self.chat_template_kwargs or {}\n        if self.reasoning_effort is not None and \"enable_thinking\" not in user_kwargs:\n            extra_kwargs[\"enable_thinking\"] = self.reasoning_effort != \"none\"\n"
+    },
+    "reasoning_parser_registry_qwen3": "vllm.reasoning.qwen3_engine_reasoning_parser -> Qwen3ParserReasoningAdapter -> vllm.parser.qwen3.Qwen3Parser",
+    "request_field": {
+      "anchor": "chat_template_kwargs: dict[str, Any] | None = Field(",
+      "first_line": 357,
+      "text": "    chat_template_kwargs: dict[str, Any] | None = Field(\n        default=None,\n        description=(\n            \"Additional keyword args to pass to the template renderer. \"\n            \"Will be accessible by the chat template.\"\n        ),\n    )"
+    },
+    "same_kwargs_given_to_engine_template": {
+      "anchor": "\"chat_template_kwargs\": self._engine_chat_template_kwargs(",
+      "first_line": 379,
+      "text": "                        \"chat_template_kwargs\": self._engine_chat_template_kwargs(\n                            chat_template_kwargs\n                        ),\n                    }"
+    },
+    "same_kwargs_given_to_parser": {
+      "anchor": "chat_template_kwargs = self._effective_chat_template_kwargs(request)",
+      "first_line": 266,
+      "text": "        chat_template_kwargs = self._effective_chat_template_kwargs(request)\n        parser: Parser | None = None\n        if self.parser_cls is not None:\n            parser = self.parser_cls(\n                tokenizer,\n                request.tools,\n                chat_template_kwargs=chat_template_kwargs,\n                model_config=self.model_config,\n            )"
+    },
+    "server_level_alternative_flag": {
+      "anchor": "default_chat_template_kwargs: dict[str, Any] | None = None",
+      "first_line": 93,
+      "text": "    default_chat_template_kwargs: dict[str, Any] | None = None\n    \"\"\"Default keyword arguments to pass to the chat template renderer.\n    These will be merged with request-level chat_template_kwargs,\n    with request values taking precedence. Useful for setting default\n    behavior for reasoning models. Example: '{\"enable_thinking\": false}'"
+    }
+  }
+}
