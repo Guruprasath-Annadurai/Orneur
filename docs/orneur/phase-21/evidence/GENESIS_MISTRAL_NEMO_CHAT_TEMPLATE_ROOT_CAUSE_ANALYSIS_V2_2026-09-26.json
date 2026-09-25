@@ -1,0 +1,452 @@
+{
+  "A_pinned_tokenizer_config": {
+    "chat_template_sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272",
+    "chat_template_type": "str",
+    "chat_template_utf8_bytes": 3945,
+    "files_in_pinned_snapshot": {
+      "config.json": {
+        "bytes": 622,
+        "matches_container_manifest_size": true,
+        "sha256": "8a42669219f4caadedb891be88c34712572573d42b3d02d665d527f92d94ddfe"
+      },
+      "generation_config.json": {
+        "bytes": 116,
+        "matches_container_manifest_size": true,
+        "sha256": "c052c7f6082ca59fbee5478371f6dd18cbd9ec059b657f8081ff165deb9ea0fa"
+      },
+      "merges.txt": {
+        "bytes": 3127378,
+        "matches_container_manifest_size": true,
+        "sha256": "4e4d41c64d2ed2e26713ae7af7c958b07df532a6f4498dffa9a2cf7f4c6c0aa6"
+      },
+      "model.safetensors.index.json": {
+        "bytes": 29894,
+        "matches_container_manifest_size": true,
+        "sha256": "f14ac27ce39aa8652e83b8e3a9c59babba2831711e5b31512c1f96bfeeee09cf"
+      },
+      "params.json": {
+        "bytes": 243,
+        "matches_container_manifest_size": true,
+        "sha256": "c280a2d7e402aa5bbd88b09d9c85fd63ca7699d6b742c182e9b55121564e30fd"
+      },
+      "special_tokens_map.json": {
+        "bytes": 414,
+        "matches_container_manifest_size": true,
+        "sha256": "6fa06efa2785e450051989a6f8fb4416b10149ded485ddd3f127a40734f5cfd0"
+      },
+      "tekken.json": {
+        "bytes": 14801223,
+        "matches_container_manifest_size": true,
+        "sha256": "eccd1665d2e477697c33cb7f0daa6f6dfefc57a0a6bceb66d4be52952f827516"
+      },
+      "tokenizer.json": {
+        "bytes": 9264445,
+        "matches_container_manifest_size": true,
+        "sha256": "e11c71726323d33da7b8d6f6f269f1988931c0a52b7122bcdd8c05042974e0db"
+      },
+      "tokenizer_config.json": {
+        "bytes": 181297,
+        "matches_container_manifest_size": true,
+        "sha256": "67f3aeef765b7d78012a081dba98efd4900cd2bac24eac182296841c7e2aef2a"
+      },
+      "vocab.json": {
+        "bytes": 2472536,
+        "matches_container_manifest_size": true,
+        "sha256": "8572e8853a6b2f2d830de4afa15d43c49257d367abf3c5fd2f6f7687bcd8f63d"
+      }
+    },
+    "has_chat_template_key": true,
+    "json_parses": true,
+    "tokenizer_class_declared": "PreTrainedTokenizerFast",
+    "tokenizer_config_json_bytes": 181297,
+    "tokenizer_config_json_sha256": "67f3aeef765b7d78012a081dba98efd4900cd2bac24eac182296841c7e2aef2a"
+  },
+  "B_controls": {
+    "without_params_json": {
+      "apply_chat_template_AB_C": {
+        "A": {
+          "ok": true,
+          "rendered": "<s>[INST]Reply exactly:\nREADY[/INST]",
+          "rendered_sha256": "bd4128f9ba0feccd9cf1177b7762b2b92dc76f84232a6980e392243726505b60"
+        },
+        "B": {
+          "ok": true,
+          "rendered": "<s>[INST]2 + 3[/INST]",
+          "rendered_sha256": "31550a789c0de5f30beee3e2447779c539d7da669cfacba28e598713d054b688"
+        },
+        "C": {
+          "ok": true,
+          "rendered": "<s>[INST]Return valid JSON:\n{\"status\":\"ready\"}[/INST]",
+          "rendered_sha256": "bf54d297a1bf0c4fe1725e52edd0fab724d5422f85561bb12616759551f365da"
+        }
+      },
+      "chat_template_attribute": "None",
+      "chat_template_sha256": null,
+      "chat_template_utf8_bytes": null,
+      "directory_files": [
+        "config.json",
+        "generation_config.json",
+        "merges.txt",
+        "model.safetensors.index.json",
+        "special_tokens_map.json",
+        "tekken.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json"
+      ],
+      "get_chat_template": {
+        "exception": "NotImplementedError: `MistralCommonBackend` does not implement `get_chat_template`.",
+        "ok": false
+      },
+      "is_fast": "<no attribute>",
+      "label": "control: without_params_json",
+      "mro": [
+        "MistralCommonBackend",
+        "PreTrainedTokenizerBase",
+        "PushToHubMixin",
+        "object"
+      ],
+      "name_or_path": "",
+      "tokenizer_class": "transformers.tokenization_mistral_common.MistralCommonBackend"
+    },
+    "without_tekken_and_params": {
+      "apply_chat_template_AB_C": {
+        "A": {
+          "ok": true,
+          "rendered": "<s>[INST]Reply exactly:\nREADY[/INST]",
+          "rendered_sha256": "bd4128f9ba0feccd9cf1177b7762b2b92dc76f84232a6980e392243726505b60"
+        },
+        "B": {
+          "ok": true,
+          "rendered": "<s>[INST]2 + 3[/INST]",
+          "rendered_sha256": "31550a789c0de5f30beee3e2447779c539d7da669cfacba28e598713d054b688"
+        },
+        "C": {
+          "ok": true,
+          "rendered": "<s>[INST]Return valid JSON:\n{\"status\":\"ready\"}[/INST]",
+          "rendered_sha256": "bf54d297a1bf0c4fe1725e52edd0fab724d5422f85561bb12616759551f365da"
+        }
+      },
+      "chat_template_attribute": "str",
+      "chat_template_sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272",
+      "chat_template_utf8_bytes": 3945,
+      "directory_files": [
+        "config.json",
+        "generation_config.json",
+        "merges.txt",
+        "model.safetensors.index.json",
+        "special_tokens_map.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json"
+      ],
+      "get_chat_template": {
+        "ok": true,
+        "sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272",
+        "type": "str"
+      },
+      "is_fast": true,
+      "label": "control: without_tekken_and_params",
+      "mro": [
+        "TokenizersBackend",
+        "PreTrainedTokenizerBase",
+        "PushToHubMixin",
+        "object"
+      ],
+      "name_or_path": "/var/folders/m1/ryrgq8hx2zn6ngg90ltwrx8m0000gn/T/p4420_ctl_rw1h9i4r/without_tekken_and_params",
+      "tokenizer_class": "transformers.tokenization_utils_tokenizers.TokenizersBackend"
+    },
+    "without_tekken_json": {
+      "apply_chat_template_AB_C": {
+        "A": {
+          "ok": true,
+          "rendered": "<s>[INST]Reply exactly:\nREADY[/INST]",
+          "rendered_sha256": "bd4128f9ba0feccd9cf1177b7762b2b92dc76f84232a6980e392243726505b60"
+        },
+        "B": {
+          "ok": true,
+          "rendered": "<s>[INST]2 + 3[/INST]",
+          "rendered_sha256": "31550a789c0de5f30beee3e2447779c539d7da669cfacba28e598713d054b688"
+        },
+        "C": {
+          "ok": true,
+          "rendered": "<s>[INST]Return valid JSON:\n{\"status\":\"ready\"}[/INST]",
+          "rendered_sha256": "bf54d297a1bf0c4fe1725e52edd0fab724d5422f85561bb12616759551f365da"
+        }
+      },
+      "chat_template_attribute": "str",
+      "chat_template_sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272",
+      "chat_template_utf8_bytes": 3945,
+      "directory_files": [
+        "config.json",
+        "generation_config.json",
+        "merges.txt",
+        "model.safetensors.index.json",
+        "params.json",
+        "special_tokens_map.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json"
+      ],
+      "get_chat_template": {
+        "ok": true,
+        "sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272",
+        "type": "str"
+      },
+      "is_fast": true,
+      "label": "control: without_tekken_json",
+      "mro": [
+        "TokenizersBackend",
+        "PreTrainedTokenizerBase",
+        "PushToHubMixin",
+        "object"
+      ],
+      "name_or_path": "/var/folders/m1/ryrgq8hx2zn6ngg90ltwrx8m0000gn/T/p4420_ctl_rw1h9i4r/without_tekken_json",
+      "tokenizer_class": "transformers.tokenization_utils_tokenizers.TokenizersBackend"
+    }
+  },
+  "B_transformers_autotokenizer_exact_snapshot": {
+    "apply_chat_template_AB_C": {
+      "A": {
+        "ok": true,
+        "rendered": "<s>[INST]Reply exactly:\nREADY[/INST]",
+        "rendered_sha256": "bd4128f9ba0feccd9cf1177b7762b2b92dc76f84232a6980e392243726505b60"
+      },
+      "B": {
+        "ok": true,
+        "rendered": "<s>[INST]2 + 3[/INST]",
+        "rendered_sha256": "31550a789c0de5f30beee3e2447779c539d7da669cfacba28e598713d054b688"
+      },
+      "C": {
+        "ok": true,
+        "rendered": "<s>[INST]Return valid JSON:\n{\"status\":\"ready\"}[/INST]",
+        "rendered_sha256": "bf54d297a1bf0c4fe1725e52edd0fab724d5422f85561bb12616759551f365da"
+      }
+    },
+    "chat_template_attribute": "None",
+    "chat_template_sha256": null,
+    "chat_template_utf8_bytes": null,
+    "directory_files": [
+      "config.json",
+      "generation_config.json",
+      "merges.txt",
+      "model.safetensors.index.json",
+      "params.json",
+      "special_tokens_map.json",
+      "tekken.json",
+      "tokenizer.json",
+      "tokenizer_config.json",
+      "vocab.json"
+    ],
+    "get_chat_template": {
+      "exception": "NotImplementedError: `MistralCommonBackend` does not implement `get_chat_template`.",
+      "ok": false
+    },
+    "is_fast": "<no attribute>",
+    "label": "B: exact pinned snapshot files (as in the attempt-2 container)",
+    "mro": [
+      "MistralCommonBackend",
+      "PreTrainedTokenizerBase",
+      "PushToHubMixin",
+      "object"
+    ],
+    "name_or_path": "",
+    "tokenizer_class": "transformers.tokenization_mistral_common.MistralCommonBackend"
+  },
+  "C_vllm_0_29_0_source_path": {
+    "hf_mode_loader_from_source": "vllm/tokenizers/hf.py CachedHfTokenizer.from_pretrained -> transformers AutoTokenizer.from_pretrained(path, revision=None, ...) then get_cached_tokenizer (a copy whose class is renamed 'Cached<Class>'; it does not touch chat_template/get_chat_template) -- the wrapper itself was NOT executed (it imports vLLM runtime modules); the underlying tokenizer is AutoTokenizer's return value, measured in B.",
+    "on_control_without_tekken_and_params": {
+      "_resolve_chat_template_content_format": "string",
+      "logged_events_during_resolution": [],
+      "model_type_used_for_fallback_lookup": "mistral",
+      "processor_stage_calls": [
+        {
+          "ok": true,
+          "returned_class": "transformers.tokenization_utils_tokenizers.TokenizersBackend"
+        }
+      ],
+      "resolve_chat_template": {
+        "resolved_template_sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272",
+        "returned_none": false
+      },
+      "safe_apply_chat_template_AB_C": {
+        "A": {
+          "raised": false
+        },
+        "B": {
+          "raised": false
+        },
+        "C": {
+          "raised": false
+        }
+      }
+    },
+    "on_exact_pinned_snapshot": {
+      "_resolve_chat_template_content_format": "string",
+      "logged_events_during_resolution": [
+        [
+          "debug",
+          "Failed to load AutoProcessor chat template for "
+        ],
+        [
+          "debug",
+          "Failed to load AutoTokenizer chat template for "
+        ],
+        [
+          "debug_once",
+          "There is no chat template fallback for "
+        ]
+      ],
+      "model_type_used_for_fallback_lookup": "mistral",
+      "processor_stage_calls": [
+        {
+          "exception": "OSError: Repo id must use alphanumeric chars, '-', '_' or '.'. The name cannot start or end with '-' or '.' and the maximum length is 96: ''.",
+          "ok": false
+        }
+      ],
+      "resolve_chat_template": {
+        "resolved_template_sha256": null,
+        "returned_none": true
+      },
+      "safe_apply_chat_template_AB_C": {
+        "A": {
+          "exception_class": "ChatTemplateResolutionError",
+          "message": "As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.",
+          "raised": true
+        },
+        "B": {
+          "exception_class": "ChatTemplateResolutionError",
+          "message": "As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.",
+          "raised": true
+        },
+        "C": {
+          "exception_class": "ChatTemplateResolutionError",
+          "message": "As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.",
+          "raised": true
+        }
+      }
+    },
+    "stubs_and_approximations": [
+      "logger: recording stub (real vLLM logger not imported)",
+      "load_chat_template: returns the literal string only when is_literal=True, else None (real one also reads files/URLs; not reachable here)",
+      "cached_get_processor: approximated by transformers AutoProcessor.from_pretrained(name, revision='main') (vLLM's get_processor tuple-class branch)",
+      "resolve_chat_template_kwargs: identity stub (only reached AFTER a template is resolved)",
+      "get_chat_template_fallback_path: the REAL v0.29.0 registry function, executed"
+    ],
+    "vllm_imported": false,
+    "vllm_source": "vllm-project/vllm@98dff2a81d747d1dba01a47f939f48c3526d4206 (v0.29.0) vllm/renderers/hf.py, vllm/transformers_utils/chat_templates/registry.py, vllm/tokenizers/hf.py"
+  },
+  "D_startup_log_line": {
+    "conclusion": "the line does NOT prove a template was resolved; it is identical whether the template is None or a string-content template",
+    "log_line_present_in_attempt2_raw_log": true,
+    "reproduced_on_exact_snapshot": "string",
+    "source_facts": [
+      "_resolve_chat_template_content_format: `detected_format = \"string\" if jinja_text is None else _detect_content_format(jinja_text, default=\"string\")`",
+      "so when resolve_chat_template returns None, the content format is reported as 'string' -- the log line is emitted WITHOUT any resolved template",
+      "_detect_content_format also returns default 'string' for templates with no content-item assignment"
+    ]
+  },
+  "E_hypotheses": [
+    {
+      "evidence": "A: key present, str, sha256 recorded; loads and renders in the control",
+      "hypothesis": "the pinned tokenizer_config.json has no usable chat_template",
+      "status": "DISPROVEN"
+    },
+    {
+      "evidence": "B: measured with the exact transformers/tokenizers/huggingface_hub versions of the container (mistral_common version of the container is not logged)",
+      "hypothesis": "Transformers 5.16.1 AutoTokenizer returns MistralCommonBackend (chat_template=None, get_chat_template unimplemented) for the exact pinned snapshot files",
+      "status": "PROVEN"
+    },
+    {
+      "evidence": "B': removing tekken.json alone yields an ordinary TokenizersBackend with a resolvable template; removing only params.json still yields MistralCommonBackend",
+      "hypothesis": "the presence of tekken.json in the snapshot is what selects MistralCommonBackend (file-driven backend selection, i.e. configuration behavior); params.json alone does not",
+      "status": "PROVEN"
+    },
+    {
+      "evidence": "C: the real v0.29.0 functions executed; message equals the attempt-2 body (ChatTemplateResolutionError -> HTTP 400)",
+      "hypothesis": "vLLM 0.29.0 resolve_chat_template returns None for such a tokenizer and safe_apply_chat_template raises the exact attempt-2 400 message",
+      "status": "PROVEN"
+    },
+    {
+      "evidence": "the attempt-2 log never prints the tokenizer class and the container's mistral_common version is unrecorded; the CPU reproduction under matching versions produces the identical failure at the identical layer, but it is a reproduction, not an observation",
+      "hypothesis": "the container's actual tokenizer object was MistralCommonBackend",
+      "status": "NOT ESTABLISHED"
+    },
+    {
+      "evidence": "every file size equals the container's persisted manifest; the failure reproduces on pristine pinned files; byte-level hashes of the container copies are not recorded",
+      "hypothesis": "cache/file corruption of the served snapshot",
+      "status": "DISPROVEN as necessary cause"
+    },
+    {
+      "evidence": "the wrapper only renames/caches properties; the class returned by AutoTokenizer already lacks the template",
+      "hypothesis": "a vLLM wrapper bug (CachedHfTokenizer) drops the template",
+      "status": "NOT ESTABLISHED"
+    },
+    {
+      "evidence": "failure occurs before any model computation, at request preprocessing",
+      "hypothesis": "a model/weights incompatibility",
+      "status": "DISPROVEN"
+    }
+  ],
+  "F_remedy_candidates_analysis_only": [
+    {
+      "candidate": "explicit --chat-template with the exact pinned HF template text",
+      "changes_locked_serving_configuration": true,
+      "cpu_testable_first": "the vLLM resolve/safe_apply source path, but rendering equivalence needs the exact template applied through the MistralCommonBackend-selected tokenizer -- NOT tested here",
+      "preserves_revision_and_weights": true,
+      "supported_by": "pinned tokenizer_config has the template (A); vLLM's 1st priority path uses a given template without get_chat_template on the backend"
+    },
+    {
+      "candidate": "--tokenizer-mode mistral",
+      "changes_locked_serving_configuration": true,
+      "cpu_testable_first": "requires vllm.tokenizers.mistral (vLLM import); not executable in this environment without vLLM",
+      "preserves_revision_and_weights": true,
+      "supported_by": "snapshot ships tekken.json/params.json, which vLLM's mistral tokenizer mode is built for"
+    },
+    {
+      "candidate": "alter config/load format",
+      "changes_locked_serving_configuration": true,
+      "cpu_testable_first": "not applicable",
+      "preserves_revision_and_weights": true,
+      "supported_by": "no evidence: the failure is tokenizer/template resolution, not config or weight loading"
+    },
+    {
+      "candidate": "different vLLM/Transformers combination",
+      "changes_locked_serving_configuration": true,
+      "cpu_testable_first": "possible only by re-running this script under other versions",
+      "preserves_revision_and_weights": true,
+      "supported_by": "no evidence that another combination behaves differently; it changes the pinned image digest"
+    }
+  ],
+  "captured_at_utc": "2026-09-25T19:19:28Z",
+  "container_versions_from_attempt2_log": {
+    "huggingface_hub": "1.30.0",
+    "tokenizers": "0.23.2",
+    "transformers": "5.16.1"
+  },
+  "cpu_library_versions_used": {
+    "huggingface_hub": "1.30.0",
+    "jinja2": "3.1.6",
+    "mistral_common": "1.12.0",
+    "tokenizers": "0.23.2",
+    "transformers": "5.16.1"
+  },
+  "established_failure_layer": "vLLM chat-completions preprocessing: resolve_chat_template returned None -> safe_apply_chat_template raised ChatTemplateResolutionError (HTTP 400) BEFORE any generation",
+  "evidence_type": "GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2",
+  "generated_output_executed": false,
+  "no_generation": true,
+  "no_gpu_used": true,
+  "no_modal_used": true,
+  "no_model_weights_loaded": true,
+  "phase": "21B.4.20",
+  "recommendation": "NO serving-configuration change is recommended by this analysis; any change needs a new owner authorization and an audit. Classification of attempt 2 is unchanged.",
+  "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+  "root_cause_statement": "REPRODUCED CPU-ONLY under the container's exact transformers/tokenizers/huggingface_hub versions: the pinned snapshot contains tekken.json and params.json, so Transformers 5.16.1 AutoTokenizer selects MistralCommonBackend (tekken.json is the discriminating file: without it the tokenizer is an ordinary TokenizersBackend), which carries no chat_template and does not implement get_chat_template; vLLM 0.29.0 resolve_chat_template then returns None and safe_apply_chat_template raises the observed error. NOT directly observed inside the container (tokenizer class and mistral_common version are not in the attempt-2 log).",
+  "status_unchanged": {
+    "attempt_outcome": "UNATTRIBUTED_REQUEST_REJECTION",
+    "capability_status": "UNPROVEN",
+    "runtime_qualification_status": "NOT_COMPLETED",
+    "technical_serving_status": "NOT_PROVEN"
+  },
+  "subject": "Mistral-Nemo-Instruct-2407 attempt 2: three HTTP 400 'default chat template is no longer allowed ...' responses"
+}

@@ -3961,7 +3961,7 @@ def test_a_later_launch_snapshots_the_attempt_2_record_and_refuses_tampering(mon
     monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
     rec_path = ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json"
     assert mod.archive_prior_record("MISTRAL_NEMO") == "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json"
-    assert (ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json").read_bytes() == rec_path.read_bytes()
+    assert (ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json").read_bytes() == (EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json").read_bytes()   # immutable pre-correction bytes; the live record differs ONLY by the documented correction
     tampered = json.loads(rec_path.read_text())
     tampered["attempts"][-1]["duration_seconds"] = 1.0                                                       # anything beyond the documented fields is refused
     rec_path.write_text(json.dumps(tampered))
@@ -4125,3 +4125,65 @@ def test_CS_E_real_mixed_fixture_and_positive_noncredit_semantics_unchanged():
     assert _gate(_mixed(), worst_case_job_cost_usd="1.0828")["allowed"] is True
     d = _gate(_mixed(surcharge="0.50000000"))
     assert d["allowed"] is False and not any("positive" in r for r in d["reasons"])
+
+
+# ══ Mistral attempt 2: settlement reconciliation + CPU-only chat-template root-cause V2 + descriptive correction ═════════════════════════
+A2_RECON = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT2_SETTLEMENT_RECONCILIATION_20260925T191352Z.json"
+A2_SNAPSHOT = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json"
+CT_V2 = EVIDENCE_DIR / "GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json"
+
+
+def test_attempt_2_reconciliation_is_read_only_and_stays_not_observable_with_object_id_attribution():
+    d = json.loads(A2_RECON.read_text())
+    assert d["verdict"] == "SETTLEMENT_STILL_NOT_OBSERVABLE" and d["modal_app_id"] == "ap-euwY3zXbgcZfGoZiRNstFt"
+    assert d["no_gpu_started"] is True and d["no_modal_function_called"] is True and d["live_resources"] == 0
+    assert d["owner_billed_delta_usd"] in ("0", "0E-8") and d["itemized_run_cost_usd"] == "0.15881105"
+    live = _mistral_live()["attempts"][-1]
+    assert live["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and "settlement_reconciliation" not in _mistral_live()   # nothing was finalized
+
+
+def test_chat_template_v2_analysis_facts_are_recorded_and_classification_is_unchanged():
+    d = json.loads(CT_V2.read_text())
+    assert d["no_gpu_used"] and d["no_modal_used"] and d["no_model_weights_loaded"] and d["no_generation"] and d["generated_output_executed"] is False
+    assert d["cpu_library_versions_used"]["transformers"] == "5.16.1" and d["cpu_library_versions_used"]["tokenizers"] == "0.23.2" and d["cpu_library_versions_used"]["huggingface_hub"] == "1.30.0"
+    a = d["A_pinned_tokenizer_config"]
+    assert a["has_chat_template_key"] and a["chat_template_type"] == "str" and len(a["chat_template_sha256"]) == 64 and a["tokenizer_config_json_bytes"] == 181297
+    assert all(f["matches_container_manifest_size"] for f in a["files_in_pinned_snapshot"].values())
+    b = d["B_transformers_autotokenizer_exact_snapshot"]
+    assert b["tokenizer_class"].endswith("MistralCommonBackend") and b["chat_template_attribute"] == "None" and b["get_chat_template"]["ok"] is False
+    assert d["B_controls"]["without_tekken_json"]["tokenizer_class"].endswith("TokenizersBackend") and d["B_controls"]["without_params_json"]["tokenizer_class"].endswith("MistralCommonBackend")
+    c = d["C_vllm_0_29_0_source_path"]["on_exact_pinned_snapshot"]
+    assert c["resolve_chat_template"]["returned_none"] is True and all(v["raised"] for v in c["safe_apply_chat_template_AB_C"].values())
+    assert d["D_startup_log_line"]["reproduced_on_exact_snapshot"] == "string" and "does NOT prove" in d["D_startup_log_line"]["conclusion"]
+    status = {e["hypothesis"][:40]: e["status"] for e in d["E_hypotheses"]}
+    assert "NOT ESTABLISHED" in status.values() and "PROVEN" in status.values() and "DISPROVEN" in status.values()
+    assert "NOT directly observed" in d["root_cause_statement"] and "NO serving-configuration change is recommended" in d["recommendation"]
+    assert d["status_unchanged"]["attempt_outcome"] == "UNATTRIBUTED_REQUEST_REJECTION"
+    live = _mistral_live()
+    assert live["attempts"][-1]["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION" and live["technical_serving_status"] == "NOT_PROVEN" and live["capability_status"] == "UNPROVEN"
+
+
+def test_attempt_2_descriptive_correction_is_documented_snapshotted_and_touches_only_the_description():
+    live, snap = _mistral_live(), json.loads(A2_SNAPSHOT.read_text())
+    mc = live["metadata_correction"]
+    assert mc["field"] == "chat_template_source" and mc["reclassifies_attempt"] is False and mc["snapshot_sha256"] == hashlib.sha256(A2_SNAPSHOT.read_bytes()).hexdigest()
+    assert mc["analysis_sha256"] == hashlib.sha256(CT_V2.read_bytes()).hexdigest()
+    assert "did NOT resolve/use" in live["chat_template_source"] and "mistral-common path NOT used" not in live["chat_template_source"]
+    strip = lambda r: {k: v for k, v in r.items() if k not in ("chat_template_source", "metadata_correction")}
+    assert strip(live) == strip(snap)                                                                                      # nothing else differs (raw outputs, proof, statuses, attempts)
+
+
+def test_the_chat_template_source_correction_runs_only_on_a_tmp_copy_and_refuses_other_attempts(monkeypatch, tmp_path):
+    mod, _ = _load_modal_h100(monkeypatch)
+    ev = tmp_path / "evidence"
+    shutil.copytree(EVIDENCE_DIR, ev)
+    rec = ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json"
+    rec.write_bytes(A2_SNAPSHOT.read_bytes())                                                                              # start from the pre-correction record
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
+    args = types.SimpleNamespace(control="mistral_nemo", attempt=1)
+    assert mod.cmd_correct_chat_template_source(args) == 2                                                                 # not the final attempt
+    args.attempt = 2
+    assert mod.cmd_correct_chat_template_source(args) == 0
+    assert json.loads(rec.read_text())["chat_template_source"] == _mistral_live()["chat_template_source"]
+    assert mod.cmd_correct_chat_template_source(args) == 0                                                                 # idempotent
+    assert mod.archive_prior_record("MISTRAL_NEMO") == A2_SNAPSHOT.name                                                    # a later launch accepts exactly this documented correction

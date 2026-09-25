@@ -479,7 +479,7 @@ def container_proof_problems(result, model_id: str, locked_revision: str, extra_
     return bad
 
 
-METADATA_CORRECTION_KEYS = ("reasoning_mode", "metadata_correction")     # descriptive fields a documented correction may change
+METADATA_CORRECTION_KEYS = ("reasoning_mode", "chat_template_source", "metadata_correction")     # descriptive fields a documented correction may change
 
 
 SETTLEMENT_SYNC_ATTEMPT_KEYS = ("billing_settlement_status", "original_in_run_billing_settlement_status", "settlement_reconciliation_artifact")
@@ -1073,6 +1073,55 @@ def cmd_correct_reasoning_mode(a) -> int:
     return 0
 
 
+def cmd_correct_chat_template_source(a) -> int:
+    """CPU-ONLY, no Modal, no GPU. Corrects ONLY the descriptive `chat_template_source` of Mistral-Nemo attempt 2: the old text implied the pinned HF template was
+    the one in use ("HF path pinned ... mistral-common path NOT used"), which the attempt-2 runtime did not confirm -- vLLM failed to resolve any template. The
+    pre-correction record is snapshotted byte-for-byte first; no raw output/log/financial/settlement/proof/outcome/status is touched and the attempt is NOT reclassified."""
+    lc = _load_lightning_control()
+    cfg = lc.CONTROLS[a.control]
+    tag = cfg["tag"]
+    rec_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_{DATE_TAG}.json"
+    record = _json_file(rec_path)
+    if record["attempts"][-1].get("attempt_number") != a.attempt or cfg["control_name"] != "Mistral-Nemo-Instruct-2407":
+        print("requested attempt is not the Mistral-Nemo record's final attempt; refusing")
+        return 2
+    analysis = EVIDENCE_DIR / "GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json"
+    if not analysis.is_file():
+        print("the V2 root-cause analysis artifact is missing; refusing")
+        return 2
+    a_doc = _json_file(analysis)["A_pinned_tokenizer_config"]
+    snap_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_ATTEMPT{a.attempt}_SNAPSHOT_{DATE_TAG}.json"
+    if not snap_path.exists():
+        if "metadata_correction" in record:
+            print("record already corrected but its snapshot is missing; refusing")
+            return 2
+        snap_path.write_bytes(rec_path.read_bytes())
+    corrected = (f"pinned tokenizer_config.json contains a chat_template ({a_doc['chat_template_utf8_bytes']} UTF-8 bytes, sha256 {a_doc['chat_template_sha256']}); "
+                 f"in attempt 2 the vLLM 0.29.0 runtime did NOT resolve/use a chat template for chat completion (HTTP 400 ChatTemplateResolutionError); "
+                 f"see {analysis.name}")
+    if corrected == record.get("chat_template_source"):
+        print("chat_template_source already corrected; nothing to do")
+        return 0
+    final = json.loads(json.dumps(record))
+    final["chat_template_source"] = corrected
+    final["metadata_correction"] = {
+        "field": "chat_template_source", "from": record.get("chat_template_source"), "to": corrected, "reclassifies_attempt": False,
+        "kind": "DESCRIPTIVE METADATA ONLY: the old text implied successful runtime use of the pinned HF template; only the file's contents are established, not runtime resolution",
+        "unchanged": ["raw responses", "raw log", "financial evidence", "settlement evidence", "container proof", "smoke outputs", "attempt outcomes", "runtime/technical status"],
+        "snapshot_artifact": snap_path.name, "snapshot_sha256": sha_of(snap_path), "analysis_artifact": analysis.name, "analysis_sha256": sha_of(analysis)}
+    try:
+        validate_control_runtime_record(final, evidence_root=EVIDENCE_DIR)
+    except Exception as e:  # noqa: BLE001
+        print(f"CORRECTED RECORD FAILED VALIDATION -- nothing written: {type(e).__name__}: {e}")
+        return 1
+    if not _only_documented_metadata_correction(final, json.loads(snap_path.read_text()), snap_path):
+        print("internal check failed: the correction changed more than descriptive metadata; nothing written")
+        return 1
+    write_json(rec_path, final)
+    print(json.dumps({"chat_template_source": corrected, "snapshot": snap_path.name, "snapshot_sha256": sha_of(snap_path), "record_sha256": sha_of(rec_path)}, indent=2))
+    return 0
+
+
 def cmd_reclassify_unattributed(a) -> int:
     """CPU-ONLY, no Modal, no GPU. Conservatively reclassifies an attempt whose smoke calls were rejected at HTTP level with NO captured diagnostic:
     proven from the immutable raw server log, the rejection cannot be attributed to the model, so the attempt becomes UNATTRIBUTED_REQUEST_REJECTION and the
@@ -1178,7 +1227,7 @@ def cmd_reclassify_unattributed(a) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", required=True, choices=("preflight", "precache", "run", "reconcile", "reevaluate-smokes", "correct-reasoning-mode", "reclassify-unattributed"))
+    ap.add_argument("--mode", required=True, choices=("preflight", "precache", "run", "reconcile", "reevaluate-smokes", "correct-reasoning-mode", "correct-chat-template-source", "reclassify-unattributed"))
     ap.add_argument("--control", required=True, choices=CONTROL_KEYS)
     ap.add_argument("--attempt", type=int, help="reconcile only: the completed attempt number")
     ap.add_argument("--kind", choices=("gpu", "cpu"), default="gpu", help="preflight only")
@@ -1191,6 +1240,8 @@ def main() -> int:
         return cmd_reclassify_unattributed(a) if a.attempt else 2
     if a.mode == "correct-reasoning-mode":
         return cmd_correct_reasoning_mode(a) if a.attempt else 2
+    if a.mode == "correct-chat-template-source":
+        return cmd_correct_chat_template_source(a) if a.attempt else 2
     if a.mode == "reevaluate-smokes":
         return cmd_reevaluate_smokes(a) if a.attempt else 2
     if a.mode == "reconcile":

@@ -65,7 +65,7 @@
     "stop_before_next_control": true
   },
   "capability_status": "UNPROVEN",
-  "chat_template_source": "pinned tokenizer_config.json contains a chat_template (3945 UTF-8 bytes, sha256 e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272); in attempt 2 the vLLM 0.29.0 runtime did NOT resolve/use a chat template for chat completion (HTTP 400 ChatTemplateResolutionError); see GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json",
+  "chat_template_source": "tokenizer_config.json chat_template @ pinned revision (HF path pinned explicitly via --tokenizer-mode hf; mistral-common path NOT used)",
   "cleanup_status": "PASS",
   "cold_start_seconds": 117.07,
   "container_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
@@ -215,27 +215,6 @@
   "live_resources_after_cleanup": 0,
   "load_seconds": 9.09,
   "max_model_len": 4096,
-  "metadata_correction": {
-    "analysis_artifact": "GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json",
-    "analysis_sha256": "5401d96573ce576d99c2d75cea0fad0d2cd6dd989fbdae6d09b5680ba907b2f0",
-    "field": "chat_template_source",
-    "from": "tokenizer_config.json chat_template @ pinned revision (HF path pinned explicitly via --tokenizer-mode hf; mistral-common path NOT used)",
-    "kind": "DESCRIPTIVE METADATA ONLY: the old text implied successful runtime use of the pinned HF template; only the file's contents are established, not runtime resolution",
-    "reclassifies_attempt": false,
-    "snapshot_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json",
-    "snapshot_sha256": "7eabbd15d5b7a6ef89edb2641de7d259db11fa5779a23e6cac648fe690d7b929",
-    "to": "pinned tokenizer_config.json contains a chat_template (3945 UTF-8 bytes, sha256 e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272); in attempt 2 the vLLM 0.29.0 runtime did NOT resolve/use a chat template for chat completion (HTTP 400 ChatTemplateResolutionError); see GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json",
-    "unchanged": [
-      "raw responses",
-      "raw log",
-      "financial evidence",
-      "settlement evidence",
-      "container proof",
-      "smoke outputs",
-      "attempt outcomes",
-      "runtime/technical status"
-    ]
-  },
   "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
   "model_revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
   "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests. Generated output was treated as data and never executed. Executed on Modal (canonical provider) on 1 x H100 80GB with weights from a hash-verified Modal Volume cache; earlier Modal, Lightning, Hugging Face and razorBridge attempts are preserved in attempts.",

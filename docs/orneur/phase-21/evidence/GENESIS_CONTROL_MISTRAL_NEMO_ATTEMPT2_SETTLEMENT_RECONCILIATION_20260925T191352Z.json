@@ -1,0 +1,166 @@
+{
+  "app_listing": "LISTED_STOPPED",
+  "app_row": {
+    "app_id": "ap-euwY3zXbgcZfGoZiRNstFt",
+    "created_at": "2026-09-25 22:42:35+05:30",
+    "description": "orneur-p21b420-h100-control-runtime",
+    "state": "stopped",
+    "stopped_at": "2026-09-25 22:44:58+05:30",
+    "tasks": "0"
+  },
+  "app_stopped_with_zero_tasks": true,
+  "attempt_number": 2,
+  "cache_volume_counted_as_live_resource": false,
+  "captured_at_utc": "2026-09-25T19:13:52Z",
+  "cleanup_snapshot": {
+    "apps": [
+      {
+        "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
+        "created_at": "2026-09-18 18:50:37+05:30",
+        "description": "orca-genesis-eval-sandbox",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
+        "created_at": "2026-09-18 23:18:29+05:30",
+        "description": "orca-genesis-eval-sandbox-v2",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-euwY3zXbgcZfGoZiRNstFt",
+        "created_at": "2026-09-25 22:42:35+05:30",
+        "description": "orneur-p21b420-h100-control-runtime",
+        "state": "stopped",
+        "stopped_at": "2026-09-25 22:44:58+05:30",
+        "tasks": "0"
+      }
+    ],
+    "captured_at_utc": "2026-09-25T19:13:48Z",
+    "containers": [],
+    "expected_cache_volume": "orneur-p21b420-model-cache",
+    "live_resources": 0,
+    "non_idle_apps": [],
+    "running_tasks_total": 0,
+    "volumes": [
+      {
+        "created_at": "2026-09-25 00:50:00+05:30",
+        "created_by": "guruprasath-annadurai",
+        "name": "orneur-p21b420-model-cache"
+      }
+    ]
+  },
+  "control_name": "Mistral-Nemo-Instruct-2407",
+  "credits_applied_delta_usd": "0.32000000",
+  "evidence_type": "ATTEMPT_SETTLEMENT_RECONCILIATION_READ_ONLY",
+  "financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "29.7464",
+    "credits_applied_baseline_usd": "20.70000000",
+    "credits_applied_postrun_usd": "21.02000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "8.72640000",
+    "derived_credit_remaining_before_usd": "9.04640000",
+    "maximum_authorized_run_cost_usd": "1.0828",
+    "metered_baseline_usd": "20.89627853",
+    "metered_delta_usd": "0.32000000",
+    "metered_postrun_usd": "21.21627853",
+    "non_credit_adjustments_baseline_usd": "-0.19627853",
+    "non_credit_adjustments_postrun_usd": "-0.19627853",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
+  "fresh_billing_state": {
+    "adjustments": {
+      "credits": "-21.02000000",
+      "free_storage": "-0.19627853",
+      "network_egress_allowance": "0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "21.21627853",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "21.01525087",
+      "llm_tokens": "0E-8",
+      "volumes": "0.19627853"
+    }
+  },
+  "itemized_report_range": [
+    "2026-09-25",
+    "2026-09-26"
+  ],
+  "itemized_rows_attributable_to_run": [
+    {
+      "cost": "0.15881105",
+      "description": "orneur-p21b420-h100-control-runtime",
+      "environment": "main",
+      "interval_start": "2026-09-25T17:00:00",
+      "object_id": "ap-euwY3zXbgcZfGoZiRNstFt"
+    }
+  ],
+  "itemized_run_cost_usd": "0.15881105",
+  "live_resources": 0,
+  "metered_delta_precise_usd": "0.31762209",
+  "metered_delta_precision_note": "metered_cost totals are rounded to the cent; the exact figure is the sum of metered_cost_breakdown categories when present",
+  "metered_delta_total_usd": "0.32000000",
+  "metered_unattributed_usd": "0.15881104",
+  "modal_app_id": "ap-euwY3zXbgcZfGoZiRNstFt",
+  "modal_app_name": "orneur-p21b420-h100-control-runtime",
+  "no_gpu_started": true,
+  "no_modal_function_called": true,
+  "original_billing_baseline": {
+    "adjustments": {
+      "credits": "-20.70000000",
+      "free_storage": "-0.19627853",
+      "network_egress_allowance": "0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "20.89627853",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "20.69762878",
+      "llm_tokens": "0E-8",
+      "volumes": "0.19627853"
+    }
+  },
+  "original_evidence": {
+    "billing_after": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_BILLING_AFTER_2026-09-24.json",
+    "billing_before": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_BILLING_BEFORE_2026-09-24.json",
+    "financial_evidence_sha256": {
+      "billing_after_sha256": "71c5d18cb7f57c13ec707e80378388fa803eced1672c075933df3ffcdc3d4beb",
+      "billing_before_sha256": "33a3c9f0d8e11ddaa9f2039322e0cea646b232833d89926155170d5334c28377",
+      "preflight_sha256": "cd8cce46f63fb49c23e0d5af13c58fcd229022300e664199afa6f5def788df25"
+    },
+    "preflight": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_FINANCIAL_PREFLIGHT_2026-09-24.json",
+    "raw_log": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_RAW_LOG_2026-09-24.txt",
+    "raw_log_sha256": "42f4e8404fca206eb3d7e589170f3d418527093060979c09f795309fe503317e"
+  },
+  "original_run_window_utc": [
+    "2026-09-25T17:12:34Z",
+    "2026-09-25T17:14:54Z"
+  ],
+  "owner_billed_delta_usd": "0E-8",
+  "owner_cash_delta_usd": "0E-8",
+  "phase": "21B.4.20",
+  "promotional_credit_delta_attributable_usd": null,
+  "settlement": {
+    "reasons": [
+      "metered growth 0.31762209 exceeds the run's own itemized cost 0.15881105 by 0.15881104; the excess cannot be attributed to this run"
+    ],
+    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+    "stop_before_next_control": true
+  },
+  "verdict": "SETTLEMENT_STILL_NOT_OBSERVABLE",
+  "waiver_applies": false,
+  "waiver_note": "the attempt-1 owner waiver never applies to this attempt; settlement here is evidenced, not waived",
+  "wall_seconds": 140.0
+}
