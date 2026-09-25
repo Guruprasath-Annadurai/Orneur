@@ -2392,7 +2392,7 @@ def _qwen_history(n_last: int):
 
 def _qwen_proof(**over):
     proof = {"runtime_configuration_id": QWEN_CFG_ID, "runtime_configuration_id_applied": QWEN_CFG_ID,
-             "runtime_configuration_sha256": runtime_cfg.configuration_sha256("Qwen/Qwen3-8B"),
+             "runtime_configuration_sha256": runtime_cfg.configuration_sha256("Qwen/Qwen3-8B"), "runtime_policy_sha256": runtime_cfg.PINNED_RUNTIME_POLICY_SHA256,
              "chat_template_kwargs_sent": {sid: {"enable_thinking": False} for sid in "ABC"},
              "smoke_protocol_sha256": CANONICAL_PROTOCOL_SHA256, "prompt_sha256_sent": {sid: locked_protocol.prompt_sha256(sid) for sid in "ABC"},
              "model_id": "Qwen/Qwen3-8B", "served_model_id": "Qwen/Qwen3-8B", "revision": LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]["revision"],
@@ -2408,7 +2408,8 @@ def _qwen5(tmp_path, **rc_over):
     for o in rec["smoke_outputs"]:
         o["chat_template_kwargs_sent"] = {"enable_thinking": False}
     rec["runtime_configuration"] = {"id": QWEN_CFG_ID, "chat_template_kwargs": {"enable_thinking": False},
-                                    "configuration_sha256": runtime_cfg.configuration_sha256("Qwen/Qwen3-8B"), "container_proof": _qwen_proof()}
+                                    "configuration_sha256": runtime_cfg.configuration_sha256("Qwen/Qwen3-8B"),
+                                    "runtime_policy_sha256": runtime_cfg.PINNED_RUNTIME_POLICY_SHA256, "container_proof": _qwen_proof()}
     rec["runtime_configuration"].update(rc_over)
     return rec
 
@@ -2489,6 +2490,7 @@ def _proof_for(mod, model_key="Qwen3-8B", **over):
     approved = runtime_cfg.configuration_for_model(locked["model_id"])
     proof = _qwen_proof() if approved else {
         "runtime_configuration_id": None, "runtime_configuration_id_applied": None, "runtime_configuration_sha256": None,
+        "runtime_policy_sha256": runtime_cfg.PINNED_RUNTIME_POLICY_SHA256,
         "chat_template_kwargs_sent": {sid: None for sid in "ABC"}, "smoke_protocol_sha256": CANONICAL_PROTOCOL_SHA256,
         "prompt_sha256_sent": {sid: locked_protocol.prompt_sha256(sid) for sid in "ABC"}, "model_id": locked["model_id"], "served_model_id": locked["model_id"],
         "revision": locked["revision"], "precision": "bfloat16", "quantization": None, "reasoning_parser": None}
@@ -2669,3 +2671,170 @@ def test_the_implementation_readiness_artifact_is_cpu_only_and_consistent_with_t
     assert h["record_equals_snapshot"] is True and h["status"] == {"technical_serving_status": "FAILED", "runtime_qualification_status": "FAILED"}
     assert h["snapshot_sha256"] == hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest()
     assert a["status_unchanged"] == {"qwen3_8b": "FAILED", "mistral_nemo": "NOT_TESTED", "phi4": "NOT_TESTED", "capability": "UNPROVEN"}
+
+
+# ══ pinned runtime-configuration POLICY fingerprint (fail-closed on import; over the policy DATA, not the source-file hash) ═══════════
+RUNTIME_CONFIG_FILE = REPO_ROOT / "orca/eval/control_runtime_configuration.py"
+PINNED_POLICY_SHA256 = "50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e"
+PINNED_QWEN_CONFIG_SHA256 = "c88e0e140797d25ea9c86bc642d23706d9b6e76c241c49d2b6b354a40b83bab1"
+EXPECTED_POLICY_DOCUMENT = {                                   # written independently of the module on purpose
+    "policy_id": "GENESIS_CONTROL_RUNTIME_CONFIGURATION_POLICY",
+    "policies": [{"runtime_configuration_id": "qwen3_8b_non_thinking_v1", "model_id": "Qwen/Qwen3-8B", "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+                  "precision": "bfloat16", "quantization": None, "reasoning_parser": "qwen3", "chat_template_kwargs": {"enable_thinking": False},
+                  "required_from_attempt": 5}]}
+
+
+def test_the_canonical_runtime_policy_passes_and_is_exactly_the_protected_document():
+    runtime_cfg.verify_runtime_configuration_integrity()
+    assert runtime_cfg.PINNED_RUNTIME_POLICY_SHA256 == PINNED_POLICY_SHA256 == runtime_cfg.runtime_policy_sha256()
+    assert runtime_cfg.runtime_policy_document() == EXPECTED_POLICY_DOCUMENT
+    assert hashlib.sha256(json.dumps(EXPECTED_POLICY_DOCUMENT, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest() == PINNED_POLICY_SHA256
+    assert runtime_cfg.PINNED_QWEN_CONFIGURATION_SHA256 == PINNED_QWEN_CONFIG_SHA256 == runtime_cfg.configuration_sha256("Qwen/Qwen3-8B")
+
+
+def _policy_inputs():
+    return copy.deepcopy(runtime_cfg.RUNTIME_CONFIGURATIONS), copy.deepcopy(runtime_cfg.REQUIRED_FROM_ATTEMPT)
+
+
+_PROTECTED_MUTATIONS = {
+    "configuration_id": lambda c, r: c["Qwen/Qwen3-8B"].update(id="qwen3_8b_non_thinking_v2"),
+    "model_id": lambda c, r: c["Qwen/Qwen3-8B"].update(model_id="Qwen/Qwen3-4B"),
+    "revision": lambda c, r: c["Qwen/Qwen3-8B"].update(revision="0" * 40),
+    "precision": lambda c, r: c["Qwen/Qwen3-8B"].update(precision="float16"),
+    "quantization": lambda c, r: c["Qwen/Qwen3-8B"].update(quantization="fp8"),
+    "reasoning_parser": lambda c, r: c["Qwen/Qwen3-8B"].update(reasoning_parser="deepseek_r1"),
+    "reasoning_parser_removed": lambda c, r: c["Qwen/Qwen3-8B"].update(reasoning_parser=None),
+    "enable_thinking": lambda c, r: c["Qwen/Qwen3-8B"]["chat_template_kwargs"].update(enable_thinking=True),
+    "enable_thinking_removed": lambda c, r: c["Qwen/Qwen3-8B"].update(chat_template_kwargs={}),
+    "extra_kwarg": lambda c, r: c["Qwen/Qwen3-8B"]["chat_template_kwargs"].update(reasoning_effort="none"),
+    "required_from_attempt_earlier": lambda c, r: r.update({"Qwen/Qwen3-8B": 4}),
+    "required_from_attempt_later": lambda c, r: r.update({"Qwen/Qwen3-8B": 6}),
+    "required_from_attempt_removed": lambda c, r: r.pop("Qwen/Qwen3-8B"),
+}
+
+
+@pytest.mark.parametrize("field", sorted(_PROTECTED_MUTATIONS))
+def test_a_one_field_mutation_of_every_protected_policy_field_fails_integrity_verification(field):
+    configs, required = _policy_inputs()
+    _PROTECTED_MUTATIONS[field](configs, required)
+    assert runtime_cfg.runtime_policy_sha256(configs, required) != PINNED_POLICY_SHA256
+    with pytest.raises(RuntimeError, match="policy drift"):
+        runtime_cfg.verify_runtime_configuration_integrity(configs, required)
+
+
+def test_a_new_unapproved_control_entry_or_a_removed_qwen_entry_also_fails():
+    configs, required = _policy_inputs()
+    configs["microsoft/phi-4"] = {"id": "phi4_x", "model_id": "microsoft/phi-4", "revision": "r", "precision": "bfloat16", "quantization": None,
+                                  "reasoning_parser": None, "chat_template_kwargs": {"enable_thinking": False}}
+    with pytest.raises(RuntimeError, match="policy drift"):
+        runtime_cfg.verify_runtime_configuration_integrity(configs, required)
+    with pytest.raises(RuntimeError, match="policy drift"):
+        runtime_cfg.verify_runtime_configuration_integrity({}, {})
+    configs, required = _policy_inputs()
+    configs["Qwen/Qwen3-8B"]["note"] = "an unprotected extra key"                     # not in the policy document, but the pinned configuration hash catches it
+    with pytest.raises(RuntimeError, match="policy drift"):
+        runtime_cfg.verify_runtime_configuration_integrity(configs, required)
+
+
+_SOURCE_EDITS = {
+    "id": ('QWEN_CONFIGURATION_ID = "qwen3_8b_non_thinking_v1"', 'QWEN_CONFIGURATION_ID = "qwen3_8b_non_thinking_v2"'),
+    "revision": ('"revision": "b968826d9c46dd6066d109eabc6255188de91218",', '"revision": "c968826d9c46dd6066d109eabc6255188de91218",'),
+    "precision": ('"precision": "bfloat16",', '"precision": "float16",'),
+    "quantization": ('"quantization": None,', '"quantization": "fp8",'),
+    "reasoning_parser": ('"reasoning_parser": "qwen3",', '"reasoning_parser": "deepseek_r1",'),
+    "enable_thinking": ('"chat_template_kwargs": {"enable_thinking": False},', '"chat_template_kwargs": {"enable_thinking": True},'),
+    "extra_kwarg": ('"chat_template_kwargs": {"enable_thinking": False},', '"chat_template_kwargs": {"enable_thinking": False, "reasoning_effort": "none"},'),
+    "required_from_attempt": ('REQUIRED_FROM_ATTEMPT: dict[str, int] = {"Qwen/Qwen3-8B": 5}', 'REQUIRED_FROM_ATTEMPT: dict[str, int] = {"Qwen/Qwen3-8B": 4}'),
+}
+
+
+@pytest.mark.parametrize("field", sorted(_SOURCE_EDITS))
+def test_editing_the_canonical_module_data_stops_every_importer_at_import_time(field):
+    old, new = _SOURCE_EDITS[field]
+    original = RUNTIME_CONFIG_FILE.read_text()
+    assert original.count(old) == 1 and old != new
+    with pytest.raises(RuntimeError, match="policy drift"):
+        exec(compile(original.replace(old, new), "policy_drift_probe", "exec"), {"__name__": "policy_drift_probe"})     # test-only probe of the import-time check
+
+
+def test_the_pin_covers_the_policy_data_not_the_source_file_bytes():
+    original = RUNTIME_CONFIG_FILE.read_text()
+    exec(compile(original + "\n# a comment and   extra   whitespace change nothing about the approved policy\n", "neutral_edit", "exec"), {"__name__": "neutral_edit"})
+    assert hashlib.sha256(original.encode()).hexdigest() != PINNED_POLICY_SHA256                 # the source-file hash is not what is pinned
+
+
+def test_the_container_and_the_runner_load_the_same_pinned_policy(monkeypatch):
+    runner = _runner_module()
+    assert runner.RUNTIME_CONFIGS.PINNED_RUNTIME_POLICY_SHA256 == PINNED_POLICY_SHA256 == runner.RUNTIME_CONFIGS.runtime_policy_sha256()
+    mod, _ = _load_modal_h100(monkeypatch)
+    assert mod.runtime_config.PINNED_RUNTIME_POLICY_SHA256 == PINNED_POLICY_SHA256
+    proof = mod._container_proof(runner, runner.serving_config("qwen3_8b"), {"smoke_results": []})
+    assert proof["runtime_policy_sha256"] == PINNED_POLICY_SHA256
+
+
+@pytest.mark.parametrize("label,mutate", [
+    ("record_missing", lambda rc: rc.pop("runtime_policy_sha256")),
+    ("record_wrong", lambda rc: rc.update(runtime_policy_sha256="0" * 64)),
+    ("proof_missing", lambda rc: rc["container_proof"].pop("runtime_policy_sha256")),
+    ("proof_wrong", lambda rc: rc["container_proof"].update(runtime_policy_sha256="0" * 64)),
+    ("record_and_proof_agree_on_a_drifted_value", lambda rc: (rc.update(runtime_policy_sha256="1" * 64), rc["container_proof"].update(runtime_policy_sha256="1" * 64))),
+    ("proof_equals_record_but_not_pinned_config_hash_reused", lambda rc: (rc.update(runtime_policy_sha256=PINNED_QWEN_CONFIG_SHA256), rc["container_proof"].update(runtime_policy_sha256=PINNED_QWEN_CONFIG_SHA256))),
+])
+def test_record_container_and_pinned_policy_hashes_must_all_be_equal_or_validation_fails(tmp_path, label, mutate):
+    rec = _qwen5(tmp_path)
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+    mutate(rec["runtime_configuration"])
+    with pytest.raises(ControlRuntimeError, match="runtime-policy sha256|runtime_policy_sha256"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_the_harness_refuses_a_container_policy_hash_that_differs_from_the_locally_pinned_one(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    q = LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]
+    assert mod.container_proof_problems(_proof_for(mod), q["model_id"], q["revision"]) == []
+    for bad in ("0" * 64, None):
+        problems = mod.container_proof_problems(_proof_for(mod, runtime_policy_sha256=bad), q["model_id"], q["revision"])
+        assert any("runtime-policy sha256" in p for p in problems)
+    for key in ("Mistral-Nemo-Instruct-2407", "Phi-4"):                                            # the policy hash is global: every control proves it
+        m = LOCKED_CONTROL_IDENTITIES[key]
+        assert any("runtime-policy sha256" in p for p in mod.container_proof_problems(_proof_for(mod, key, runtime_policy_sha256="0" * 64), m["model_id"], m["revision"]))
+
+
+def test_a_drifted_container_policy_hash_is_a_harness_failure_never_a_model_result(monkeypatch, tmp_path):
+    def builder(m, r):
+        result = _fake_container_result(m, r)
+        result["runtime_configuration_proof"]["runtime_policy_sha256"] = "2" * 64
+        return result
+
+    mod, ev, remote_calls = _run_env(monkeypatch, tmp_path, builder)
+    mod.cmd_run(types.SimpleNamespace(control="qwen3_8b"))
+    a5 = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json").read_text())["attempts"][4]
+    assert a5["attempt_number"] == 5 and a5["outcome"] == "HARNESS_FAILURE" and a5["failure_domain"] == "HARNESS" and a5["valid_runtime_attempt"] is False
+    assert "runtime-policy sha256" in a5["reason"]
+
+
+def test_the_policy_pin_leaves_attempt_4_byte_identical_qwen_failed_and_the_next_attempt_5(monkeypatch):
+    assert ATTEMPT_4_SNAPSHOT.read_bytes() == (EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_bytes()
+    q = _persisted_qwen()
+    assert q["runtime_qualification_status"] == "FAILED" and q["technical_serving_status"] == "FAILED" and "runtime_configuration" not in q
+    assert hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256
+    mod, _ = _load_modal_h100(monkeypatch)
+    assert len(mod._load_attempts("QWEN3_8B")) + 1 == 5 and mod._load_attempts("MISTRAL_NEMO") == [] and mod._load_attempts("PHI4") == []
+    for tag in ("MISTRAL_NEMO", "PHI4"):
+        r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+        assert r["runtime_qualification_status"] == "NOT_TESTED"
+
+
+def test_the_policy_module_never_executes_generated_text_and_makes_no_gpu_or_provider_call():
+    tree = ast.parse(RUNTIME_CONFIG_FILE.read_text())
+    imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names} | {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+    assert imported <= {"__future__", "copy", "hashlib", "json"}                                   # stdlib data handling only: no modal, no network, no subprocess
+    body = ast.unparse(tree)
+    for banned in ("eval(", "exec(", "compile(", "subprocess", "os.system", "modal", "urllib", "requests"):
+        assert banned not in body, banned
+
+
+def test_the_readiness_artifact_records_the_pinned_policy_and_its_document():
+    a = json.loads((EVIDENCE_DIR / "GENESIS_QWEN3_8B_NON_THINKING_V1_IMPLEMENTATION_READINESS_2026-09-25.json").read_text())["approved_configuration"]
+    assert a["pinned_runtime_policy_sha256"] == PINNED_POLICY_SHA256 and a["protected_policy_document"] == EXPECTED_POLICY_DOCUMENT
+    assert a["policy_fingerprint_verified_on_import"] is True and a["pinned_configuration_sha256"] == PINNED_QWEN_CONFIG_SHA256

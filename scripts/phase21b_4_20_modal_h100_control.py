@@ -94,6 +94,7 @@ def _container_proof(runner, cfg: dict, result: dict) -> dict:
     return {"runtime_configuration_id": (cfg.get("runtime_configuration") or {}).get("id"),
             "runtime_configuration_id_applied": result.get("runtime_configuration_id_applied"),
             "runtime_configuration_sha256": runner.RUNTIME_CONFIGS.configuration_sha256(cfg["model_id"]),
+            "runtime_policy_sha256": runner.RUNTIME_CONFIGS.runtime_policy_sha256(),
             "chat_template_kwargs_sent": {x["smoke_id"]: x.get("chat_template_kwargs_sent") for x in smokes},
             "smoke_protocol_sha256": runner.LOCKED_PROTOCOL.protocol_sha256(),
             "prompt_sha256_sent": {x["smoke_id"]: x.get("prompt_sha256_sent") for x in smokes},
@@ -454,6 +455,8 @@ def container_proof_problems(result, model_id: str, locked_revision: str) -> lis
         bad.append(f"chat_template_kwargs actually sent {sent!r} != {want_kwargs!r} for every locked smoke")
     if proof.get("runtime_configuration_sha256") != runtime_config.configuration_sha256(model_id):
         bad.append("runtime configuration fingerprint differs from the canonical one")
+    if proof.get("runtime_policy_sha256") != runtime_config.PINNED_RUNTIME_POLICY_SHA256:
+        bad.append("container runtime-policy sha256 differs from the locally pinned runtime-policy sha256")
     if proof.get("smoke_protocol_sha256") != locked_protocol.protocol_sha256():
         bad.append("locked smoke protocol fingerprint differs from the canonical one")
     if proof.get("prompt_sha256_sent") != {sid: locked_protocol.prompt_sha256(sid) for sid in locked_protocol.smoke_ids()}:
@@ -627,6 +630,7 @@ def cmd_run(a) -> int:
     record["runtime_configuration"] = None if approved_cfg is None else {
         "id": approved_cfg["id"], "chat_template_kwargs": approved_cfg["chat_template_kwargs"],
         "configuration_sha256": runtime_config.configuration_sha256(locked_identity["model_id"]),
+        "runtime_policy_sha256": runtime_config.PINNED_RUNTIME_POLICY_SHA256,
         "container_proof": (result or {}).get("runtime_configuration_proof")}
     record["smoke_acceptance"] = compute_smoke_acceptance(record)      # derived from the raw outputs; the raw outputs themselves are never altered
     record["runtime_qualification_status"] = derive_runtime_status(

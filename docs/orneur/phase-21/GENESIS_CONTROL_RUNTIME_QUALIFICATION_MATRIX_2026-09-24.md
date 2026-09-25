@@ -38,7 +38,10 @@ it applies to attempt 1 only, never to attempt 4.
 **Prepared, not executed: `qwen3_8b_non_thinking_v1`.** The approved configuration (`chat_template_kwargs: {"enable_thinking": false}` sent
 with every locked Qwen3-8B smoke; nothing else changes, and Mistral-Nemo / Phi-4 receive no such setting) is implemented CPU-only in
 `orca/eval/control_runtime_configuration.py`, wired through the shared runner's single request builder, proven from inside the container,
-and enforced by the validator for Qwen records whose final attempt number is >= 5. Attempts 1-4 are never renumbered or retro-fitted
+and enforced by the validator for Qwen records whose final attempt number is >= 5. The complete approved policy (id, model, revision, precision,
+quantization, reasoning parser, exact kwargs and the required-from-attempt) is pinned by a fail-closed fingerprint verified on import
+(`PINNED_RUNTIME_POLICY_SHA256 = 50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e`); the container proof, the record and the locally
+pinned value must be equal. Attempts 1-4 are never renumbered or retro-fitted
 (attempt 4 is preserved byte-identically as `GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json`). A future
 authorized run would be **attempt 5**. Nothing has been launched; see
 `GENESIS_QWEN3_8B_NON_THINKING_V1_IMPLEMENTATION_READINESS_2026-09-25.json`. Qwen3-8B remains FAILED.

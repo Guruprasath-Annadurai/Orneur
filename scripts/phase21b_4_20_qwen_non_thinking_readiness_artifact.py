@@ -62,6 +62,8 @@ def main() -> int:
         "approved_configuration": {"runtime_configuration_id": approved["id"], "configuration": approved, "configuration_sha256": rc.configuration_sha256(MODEL_ID),
                                    "source_of_truth": "orca/eval/control_runtime_configuration.py (stdlib only; shipped beside the runner into the container)",
                                    "required_from_attempt": rc.REQUIRED_FROM_ATTEMPT[MODEL_ID],
+                                   "pinned_runtime_policy_sha256": rc.PINNED_RUNTIME_POLICY_SHA256, "protected_policy_document": rc.runtime_policy_document(),
+                                   "policy_fingerprint_verified_on_import": True, "pinned_configuration_sha256": rc.PINNED_QWEN_CONFIGURATION_SHA256,
                                    "analysis_basis": "GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_V2_CANONICAL_PROMPTS_2026-09-25.json"},
         "request_payload_delta": {
             "smoke_id": "B", "before_qwen_thinking_default": payload_before, "after_qwen_non_thinking_v1": payload_after,
@@ -83,6 +85,7 @@ def main() -> int:
             "chat_template_kwargs must be exactly {\"enable_thinking\": false} (true, absent, or any extra kwarg fails)",
             "a valid runtime attempt must carry the container proof and it must agree with the record: configuration id (declared and applied), kwargs actually sent with every smoke, configuration fingerprint, canonical protocol fingerprint, per-prompt sha256, model id, served model id, revision, precision bfloat16, quantization none, reasoning parser qwen3",
             "controls without an approved configuration (Mistral-Nemo, Phi-4) must carry none",
+            "record, container proof and the locally pinned runtime-policy sha256 must all be equal (three-way)",
             "a QUALIFIED record must use the canonical prompts and protocol fingerprint (unchanged rule)"],
         "harness_fail_closed": "cmd_run turns any missing/disagreeing container proof into HARNESS_FAILURE (never a model-runtime result)",
         "historical_attempt_4": {"status": {"technical_serving_status": record["technical_serving_status"], "runtime_qualification_status": record["runtime_qualification_status"]},

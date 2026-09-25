@@ -17,6 +17,26 @@
       "revision": "b968826d9c46dd6066d109eabc6255188de91218"
     },
     "configuration_sha256": "c88e0e140797d25ea9c86bc642d23706d9b6e76c241c49d2b6b354a40b83bab1",
+    "pinned_configuration_sha256": "c88e0e140797d25ea9c86bc642d23706d9b6e76c241c49d2b6b354a40b83bab1",
+    "pinned_runtime_policy_sha256": "50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e",
+    "policy_fingerprint_verified_on_import": true,
+    "protected_policy_document": {
+      "policies": [
+        {
+          "chat_template_kwargs": {
+            "enable_thinking": false
+          },
+          "model_id": "Qwen/Qwen3-8B",
+          "precision": "bfloat16",
+          "quantization": null,
+          "reasoning_parser": "qwen3",
+          "required_from_attempt": 5,
+          "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+          "runtime_configuration_id": "qwen3_8b_non_thinking_v1"
+        }
+      ],
+      "policy_id": "GENESIS_CONTROL_RUNTIME_CONFIGURATION_POLICY"
+    },
     "required_from_attempt": 5,
     "runtime_configuration_id": "qwen3_8b_non_thinking_v1",
     "source_of_truth": "orca/eval/control_runtime_configuration.py (stdlib only; shipped beside the runner into the container)"
@@ -52,7 +72,7 @@
     "protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
     "source": "orca/eval/locked_smoke_protocol.py"
   },
-  "captured_at_utc": "2026-09-25T07:28:56Z",
+  "captured_at_utc": "2026-09-25T07:52:28Z",
   "evidence_type": "QWEN3_8B_NON_THINKING_V1_IMPLEMENTATION_READINESS_CPU_ONLY",
   "generated_output_executed": false,
   "harness_fail_closed": "cmd_run turns any missing/disagreeing container proof into HARNESS_FAILURE (never a model-runtime result)",
@@ -153,6 +173,7 @@
     "chat_template_kwargs must be exactly {\"enable_thinking\": false} (true, absent, or any extra kwarg fails)",
     "a valid runtime attempt must carry the container proof and it must agree with the record: configuration id (declared and applied), kwargs actually sent with every smoke, configuration fingerprint, canonical protocol fingerprint, per-prompt sha256, model id, served model id, revision, precision bfloat16, quantization none, reasoning parser qwen3",
     "controls without an approved configuration (Mistral-Nemo, Phi-4) must carry none",
+    "record, container proof and the locally pinned runtime-policy sha256 must all be equal (three-way)",
     "a QUALIFIED record must use the canonical prompts and protocol fingerprint (unchanged rule)"
   ]
 }

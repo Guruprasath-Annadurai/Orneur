@@ -642,6 +642,8 @@ def _check_container_proof(record: dict, rc: dict, approved: dict) -> None:
             raise ControlRuntimeError(f"smoke {o.get('smoke_id')!r} output records chat_template_kwargs that disagree with the runtime configuration")
     if proof.get("runtime_configuration_sha256") != _rc.configuration_sha256(record["model_id"]):
         raise ControlRuntimeError("container proof: runtime configuration fingerprint differs from the canonical one")
+    if not (proof.get("runtime_policy_sha256") == rc.get("runtime_policy_sha256") == _rc.PINNED_RUNTIME_POLICY_SHA256):
+        raise ControlRuntimeError("container proof: runtime-policy sha256 must equal the record's and the locally pinned runtime-policy sha256")
     if proof.get("smoke_protocol_sha256") != _locked.protocol_sha256():
         raise ControlRuntimeError("container proof: canonical smoke protocol fingerprint differs")
     if proof.get("prompt_sha256_sent") != {sid: _locked.prompt_sha256(sid) for sid in REQUIRED_SMOKE_IDS}:
@@ -682,6 +684,8 @@ def _check_runtime_configuration(record: dict) -> None:
         raise ControlRuntimeError("runtime_configuration.chat_template_kwargs.enable_thinking must be false (thinking may not be enabled)")
     if rc.get("configuration_sha256") not in (None, _rc.configuration_sha256(model_id)):
         raise ControlRuntimeError("runtime_configuration.configuration_sha256 differs from the canonical configuration")
+    if rc.get("runtime_policy_sha256") != _rc.PINNED_RUNTIME_POLICY_SHA256:
+        raise ControlRuntimeError("runtime_configuration.runtime_policy_sha256 must equal the pinned runtime-policy sha256")
     if last.get("valid_runtime_attempt") is True or record.get("technical_serving_status") in ("QUALIFIED", "FAILED"):
         _check_container_proof(record, rc, approved)
 
