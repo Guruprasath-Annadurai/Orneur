@@ -4,8 +4,8 @@
     {
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md",
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "1162162c95b84c225c0ba22168171f233fb01ea15bf03d0338631bb252ce3b0c",
-      "size_bytes": 31280
+      "sha256": "94acd7953f37130680c798c05405195801140e39d8e9685d40e97f29de7a0369",
+      "size_bytes": 31734
     },
     {
       "evidence_role": "genesis_billing_discrepancy_observation_2026-09-24.json",
@@ -438,6 +438,12 @@
       "path": "docs/orneur/phase-21/evidence/GENESIS_MODAL_FINANCIAL_GATE_CORRECTION_2026-09-25.json",
       "sha256": "345fac9c4e069fcd765b620ebcfa55777bf549c640df779d243142cd40e76260",
       "size_bytes": 2718
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_modal_h100_gpu_preflight_2026-09-25t164921z.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_GPU_PREFLIGHT_2026-09-25T164921Z.json",
+      "sha256": "c1df21da24719fd6cd2d68b54d663c9d5bab7c6134fb77b10879eed44c71fd6c",
+      "size_bytes": 2874
     }
   ],
   "evidence_type": "GENESIS_CONTROL_RUNTIME_QUALIFICATION_INTEGRITY_INDEX",

@@ -194,7 +194,12 @@ def provider_billing_reconciliation(billing_summary: dict) -> dict:
     parsed = {str(k): to_decimal(v, f"adjustments.{k}") for k, v in adjustments.items()}
     if "credits" not in parsed:
         raise ControlRuntimeError("adjustments.credits is missing")
+    if parsed["credits"] > 0:
+        raise ControlRuntimeError(f"adjustments.credits is positive ({parsed['credits']}); a positive credits adjustment cannot be read as promotional "
+                                  "credit consumption and must not increase GPU runway")
     credits_applied = -parsed["credits"]
+    if credits_applied < 0:
+        raise ControlRuntimeError(f"derived credits_applied is negative ({credits_applied})")
     non_credit = sum((v for k, v in parsed.items() if k != "credits"), Decimal(0))
     recomputed = metered + sum(parsed.values(), Decimal(0))
     return {"metered": metered, "billed": billed, "credits_applied": credits_applied, "non_credit_adjustments": non_credit,

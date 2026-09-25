@@ -4056,3 +4056,37 @@ def test_FG_reconciliation_still_blocks_when_neither_credits_nor_free_storage_co
                                        credit_pool_usd="30.00", reserve_usd="5.00", max_run_cost_usd="1.25")
     st = assess_settlement(r, run_report_metered_usd="1.0")
     assert st["status"] != "OBSERVED" and any("coverage not confirmed" in x for x in st["reasons"])
+
+
+# ══ Credit-sign fail-closed invariant ═════════════════════════════════════════════════════════════════
+
+
+def test_CS_A_negative_credits_unchanged():
+    d = _gate(_mixed(), worst_case_job_cost_usd="1.0828")
+    assert d["allowed"] is True and d["credits_applied_usd"] == "20.70000000"
+
+
+def test_CS_B_zero_credits_runway_is_only_the_unused_pool():
+    d = _gate({"metered_cost": "0", "billed_cost": "0", "adjustments": {"credits": "0"}}, worst_case_job_cost_usd="1.0828")
+    assert d["allowed"] is True and Decimal(d["remaining_promotional_credit_usd"]) == Decimal("30.00")
+
+
+@pytest.mark.parametrize("val", ["0.50", "+0.50", "0.00000001", "100"])
+def test_CS_C_positive_credits_block_fail_closed(val):
+    d = _gate({"metered_cost": "0.50", "billed_cost": "0", "adjustments": {"credits": val}})
+    assert d["allowed"] is False and any("unreadable" in r and "positive" in r for r in d["reasons"])
+    from orca.eval.control_runtime_qualification import provider_billing_reconciliation
+    with pytest.raises(ControlRuntimeError, match="positive"):
+        provider_billing_reconciliation({"metered_cost": "0.50", "billed_cost": "0", "adjustments": {"credits": val}})
+
+
+def test_CS_D_positive_credits_never_push_remaining_above_the_pool():
+    d = _gate({"metered_cost": "0", "billed_cost": "0.50", "adjustments": {"credits": "0.50"}})
+    assert d["allowed"] is False
+    assert d["remaining_credit_usd"] is None or Decimal(d["remaining_credit_usd"]) <= Decimal("30.00")
+
+
+def test_CS_E_real_mixed_fixture_and_positive_noncredit_semantics_unchanged():
+    assert _gate(_mixed(), worst_case_job_cost_usd="1.0828")["allowed"] is True
+    d = _gate(_mixed(surcharge="0.50000000"))
+    assert d["allowed"] is False and not any("positive" in r for r in d["reasons"])
