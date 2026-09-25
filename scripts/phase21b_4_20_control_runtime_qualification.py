@@ -37,6 +37,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -111,6 +112,84 @@ def _load_canonical(name: str):
 
 LOCKED_PROTOCOL = _load_canonical("locked_smoke_protocol")
 SMOKES = LOCKED_PROTOCOL.runner_smokes()      # no hand-written smoke string lives in this file
+
+
+def capture_http_error(entry: dict, exc) -> None:
+    """Persist an HTTP error response of a smoke call (urllib raises HTTPError before any status/body is recorded): status, safe headers, the error BODY as
+    DATA (never parsed for execution), its sha256 and, if it parses as JSON, the structured error. Works for streamed and non-streamed calls."""
+    raw = exc.read() or b""
+    text = raw.decode("utf-8", errors="replace")
+    structured = None
+    try:
+        parsed = json.loads(text)
+        structured = parsed if isinstance(parsed, (dict, list)) else None
+    except ValueError:
+        structured = None
+    entry["http_status"] = exc.code
+    entry["raw_response"] = text
+    entry["error"] = f"{type(exc).__name__}: HTTP Error {exc.code}: {exc.reason}"
+    entry["http_error"] = {"smoke_id": entry["smoke_id"], "error_class": type(exc).__name__, "status": exc.code, "reason": str(exc.reason),
+                           "headers": {k: v for k, v in exc.headers.items() if k.lower() in ("content-type", "content-length", "date", "server")},
+                           "body_sha256": hashlib.sha256(raw).hexdigest(), "body_bytes": len(raw), "structured_error": structured}
+
+
+def run_smoke_call(cfg: dict, smoke: dict, gen_cfg: dict, http) -> dict:
+    """One locked smoke call (streamed or not) -> its persisted entry. HTTP error responses are CAPTURED (status, safe headers, body, sha256, structured
+    error) for both modes; generated/response text is DATA ONLY and is never executed."""
+    _json, _time = json, time
+    payload = build_chat_payload(cfg, smoke, gen_cfg)
+    t_req = _time.time()
+    entry = {"smoke_id": smoke["smoke_id"], "http_status": None, "raw_response": None,
+             "chat_template_kwargs_sent": payload.get("chat_template_kwargs"),
+             "prompt_sha256_sent": hashlib.sha256(payload["messages"][0]["content"].encode("utf-8")).hexdigest()}
+    try:
+        if smoke["stream"]:
+            payload = dict(payload, stream=True, stream_options={"include_usage": True})
+            ttft = None
+            content, reasoning, finish, usage = [], [], None, None
+            with http("POST", "/v1/chat/completions", payload, timeout=300) as r:
+                entry["http_status"] = r.status
+                for raw in r:
+                    line = raw.decode().strip()
+                    if not line.startswith("data:") or line == "data: [DONE]":
+                        continue
+                    chunk = _json.loads(line[5:].strip())
+                    if chunk.get("usage"):
+                        usage = chunk["usage"]
+                    for ch in chunk.get("choices", []):
+                        delta = ch.get("delta", {})
+                        piece_c = delta.get("content") or ""
+                        piece_r = delta.get("reasoning_content") or delta.get("reasoning") or ""
+                        if (piece_c or piece_r) and ttft is None:
+                            ttft = _time.time() - t_req
+                        content.append(piece_c)
+                        reasoning.append(piece_r)
+                        finish = ch.get("finish_reason") or finish
+            entry["ttft_seconds"] = None if ttft is None else round(ttft, 4)
+            entry["raw_response"] = _json.dumps(
+                {"content": "".join(content), "reasoning_content": "".join(reasoning), "finish_reason": finish, "usage": usage},
+                sort_keys=True)
+            entry["content"] = "".join(content)
+            entry["finish_reason"] = finish
+            entry["usage"] = usage
+        else:
+            with http("POST", "/v1/chat/completions", payload, timeout=300) as r:
+                entry["http_status"] = r.status
+                body = r.read().decode()
+            entry["raw_response"] = body
+            parsed = _json.loads(body)
+            msg = parsed["choices"][0]["message"]
+            entry["content"] = msg.get("content") or ""
+            entry["finish_reason"] = parsed["choices"][0].get("finish_reason")
+            entry["usage"] = parsed.get("usage")
+            entry["ttft_seconds"] = None
+    except urllib.error.HTTPError as he:
+        capture_http_error(entry, he)
+    except Exception as e:  # noqa: BLE001
+        entry["error"] = f"{type(e).__name__}: {e}"
+    entry["latency_seconds"] = round(_time.time() - t_req, 4)
+    entry["matches_expected_exactly"] = LOCKED_PROTOCOL.acceptance(smoke["smoke_id"], entry.get("content", ""))[0]
+    return entry
 
 
 def build_chat_payload(cfg: dict, smoke: dict, gen_cfg: dict) -> dict:
@@ -294,56 +373,7 @@ def serve_and_smoke(cfg: dict) -> dict:
         result["generation_config_sent"] = gen_cfg
         result["runtime_configuration_id_applied"] = (cfg.get("runtime_configuration") or {}).get("id")
         for smoke in cfg["smokes"]:
-            payload = build_chat_payload(cfg, smoke, gen_cfg)
-            t_req = _time.time()
-            entry = {"smoke_id": smoke["smoke_id"], "http_status": None, "raw_response": None,
-                     "chat_template_kwargs_sent": payload.get("chat_template_kwargs"),
-                     "prompt_sha256_sent": hashlib.sha256(payload["messages"][0]["content"].encode("utf-8")).hexdigest()}
-            try:
-                if smoke["stream"]:
-                    payload = dict(payload, stream=True, stream_options={"include_usage": True})
-                    ttft = None
-                    content, reasoning, finish, usage = [], [], None, None
-                    with http("POST", "/v1/chat/completions", payload, timeout=300) as r:
-                        entry["http_status"] = r.status
-                        for raw in r:
-                            line = raw.decode().strip()
-                            if not line.startswith("data:") or line == "data: [DONE]":
-                                continue
-                            chunk = _json.loads(line[5:].strip())
-                            if chunk.get("usage"):
-                                usage = chunk["usage"]
-                            for ch in chunk.get("choices", []):
-                                delta = ch.get("delta", {})
-                                piece_c = delta.get("content") or ""
-                                piece_r = delta.get("reasoning_content") or delta.get("reasoning") or ""
-                                if (piece_c or piece_r) and ttft is None:
-                                    ttft = _time.time() - t_req
-                                content.append(piece_c)
-                                reasoning.append(piece_r)
-                                finish = ch.get("finish_reason") or finish
-                    entry["ttft_seconds"] = None if ttft is None else round(ttft, 4)
-                    entry["raw_response"] = _json.dumps(
-                        {"content": "".join(content), "reasoning_content": "".join(reasoning), "finish_reason": finish, "usage": usage},
-                        sort_keys=True)
-                    entry["content"] = "".join(content)
-                    entry["finish_reason"] = finish
-                    entry["usage"] = usage
-                else:
-                    with http("POST", "/v1/chat/completions", payload, timeout=300) as r:
-                        entry["http_status"] = r.status
-                        body = r.read().decode()
-                    entry["raw_response"] = body
-                    parsed = _json.loads(body)
-                    msg = parsed["choices"][0]["message"]
-                    entry["content"] = msg.get("content") or ""
-                    entry["finish_reason"] = parsed["choices"][0].get("finish_reason")
-                    entry["usage"] = parsed.get("usage")
-                    entry["ttft_seconds"] = None
-            except Exception as e:  # noqa: BLE001
-                entry["error"] = f"{type(e).__name__}: {e}"
-            entry["latency_seconds"] = round(_time.time() - t_req, 4)
-            entry["matches_expected_exactly"] = LOCKED_PROTOCOL.acceptance(smoke["smoke_id"], entry.get("content", ""))[0]
+            entry = run_smoke_call(cfg, smoke, gen_cfg, http)
             outputs.append(entry)
             ev(f"smoke {smoke['smoke_id']} status={entry['http_status']} latency={entry['latency_seconds']}s")
         result["smoke_results"] = outputs

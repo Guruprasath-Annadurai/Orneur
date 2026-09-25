@@ -613,7 +613,7 @@ def test_harness_imports_module_level_only_stdlib_and_modal():
             roots.update(a.name.split(".")[0] for a in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             roots.add(node.module.split(".")[0])
-    assert roots <= {"__future__", "argparse", "hashlib", "json", "re", "subprocess", "sys", "time", "datetime", "decimal", "pathlib", "modal"}
+    assert roots <= {"__future__", "argparse", "hashlib", "json", "re", "subprocess", "sys", "time", "datetime", "decimal", "pathlib", "modal", "urllib"}
 
 
 def test_validator_module_has_no_execution_or_network_code():
@@ -2203,10 +2203,12 @@ def test_the_runner_and_legacy_harness_call_the_canonical_acceptance_directly(pr
 
 def test_the_serving_bodies_call_the_canonical_acceptance_and_share_one_payload_builder():
     for path in (LIGHTNING_RUNNER, HARNESS_PATH):
-        body = _fn_source(path, "serve_and_smoke")
-        assert 'LOCKED_PROTOCOL.acceptance(smoke["smoke_id"], entry.get("content", ""))[0]' in body and "build_chat_payload(cfg, smoke, gen_cfg)" in body
+        call = _fn_source(path, "run_smoke_call")
+        assert 'LOCKED_PROTOCOL.acceptance(smoke["smoke_id"], entry.get("content", ""))[0]' in call and "build_chat_payload(cfg, smoke, gen_cfg)" in call
+        assert "run_smoke_call(cfg, smoke, gen_cfg, http)" in _fn_source(path, "serve_and_smoke")
         assert "_meets_acceptance" not in path.read_text()
-    assert _fn_source(LIGHTNING_RUNNER, "build_chat_payload") == _fn_source(HARNESS_PATH, "build_chat_payload")
+    for name in ("build_chat_payload", "capture_http_error", "run_smoke_call"):
+        assert _fn_source(LIGHTNING_RUNNER, name) == _fn_source(HARNESS_PATH, name), name
 
 
 def test_no_hand_written_smoke_string_exists_outside_the_canonical_module():
@@ -3125,18 +3127,47 @@ def _mistral():
     return json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
 
 
-def test_mistral_attempt_1_served_the_exact_model_but_every_chat_request_returned_http_400():
+MISTRAL_SNAPSHOT = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT1_SNAPSHOT_2026-09-24.json"
+MISTRAL_SNAPSHOT_SHA256 = "5bcf5aa8423ea22082a554c39edf414dea27b45511dca1f3c18136e4fe9fd5df"
+
+
+def test_mistral_attempt_1_served_the_exact_model_but_the_http_400_rejection_is_unattributed():
     m = _mistral()
     a = m["attempts"][-1]
-    assert a["attempt_number"] == 1 and len(m["attempts"]) == 1 and a["provider"] == "Modal" and a["outcome"] == "TECHNICAL_FAILURE" and a["valid_runtime_attempt"] is True
-    assert m["technical_serving_status"] == "FAILED" and m["runtime_qualification_status"] == "FAILED" and m["capability_status"] == "UNPROVEN"
-    assert all(o["http_status"] is None and o["raw_response"] == "" and o["content"] is None and o["executed"] is False for o in m["smoke_outputs"])     # no successful HTTP response at all
-    assert [(x["smoke_id"], x["accepted"]) for x in m["smoke_acceptance"]] == [("A", False), ("B", False), ("C", False)]
+    assert a["attempt_number"] == 1 and len(m["attempts"]) == 1 and a["provider"] == "Modal" and a["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION" and a["failure_domain"] == "UNATTRIBUTED"
+    assert m["technical_serving_status"] == "NOT_PROVEN" and m["runtime_qualification_status"] == "NOT_COMPLETED" and m["capability_status"] == "UNPROVEN"
+    assert "NOT captured" in a["reason"] and "not a pass" in a["reason"] and "not evidence that the model is incompatible" in a["reason"]
+    assert all(o["http_status"] is None and o["raw_response"] == "" and o["content"] is None and o["executed"] is False for o in m["smoke_outputs"])     # raw fields preserved exactly
     assert hashlib.sha256(json.dumps(m["smoke_outputs"], sort_keys=True).encode()).hexdigest() == MISTRAL_SMOKE_OUTPUTS_SHA256
     log = (EVIDENCE_DIR / m["raw_log_artifact"]).read_text()
-    assert log.count('"POST /v1/chat/completions HTTP/1.1" 400 Bad Request') == 3 and "server ready" in log                                      # server was up; all three requests refused
+    assert log.count('"POST /v1/chat/completions HTTP/1.1" 400 Bad Request') == 3 and "server ready" in log                                      # the immutable log proves three HTTP 400s
     assert hashlib.sha256((EVIDENCE_DIR / m["raw_log_artifact"]).read_bytes()).hexdigest() == m["raw_log_sha256"] == MISTRAL_RAW_LOG_SHA256
+    gap = m["http_error_evidence_gap"]
+    assert gap["api_error_bodies_captured"] is False and gap["proven_by_immutable_raw_server_log"]["post_chat_completions_statuses"] == [400, 400, 400]
+    assert gap["preserved_unchanged"] == {"http_status": [None, None, None], "raw_response": ["", "", ""]} and "not reconstructed" in gap["statement"]
     validate_control_runtime_record(m, evidence_root=EVIDENCE_DIR)
+
+
+def test_mistral_original_classification_and_the_pre_correction_record_are_preserved():
+    assert hashlib.sha256(MISTRAL_SNAPSHOT.read_bytes()).hexdigest() == MISTRAL_SNAPSHOT_SHA256
+    snap, cur = json.loads(MISTRAL_SNAPSHOT.read_text()), _mistral()
+    assert snap["technical_serving_status"] == "FAILED" and snap["runtime_qualification_status"] == "FAILED" and snap["attempts"][-1]["outcome"] == "TECHNICAL_FAILURE"
+    assert snap["attempts"][-1]["failure_domain"] == "MODEL_RUNTIME" and snap["attempts"][-1]["billing_settlement_status"] == "OBSERVED"       # the contradictory pre-correction state, kept as history
+    oc = cur["attempts"][-1]["original_classification"]
+    assert (oc["outcome"], oc["status"], oc["failure_domain"], oc["valid_runtime_attempt"]) == ("TECHNICAL_FAILURE", "TECHNICAL_FAILURE", "MODEL_RUNTIME", True)
+    cc = cur["classification_correction"]
+    assert cc["snapshot_sha256"] == MISTRAL_SNAPSHOT_SHA256 and cc["from"]["outcome"] == "TECHNICAL_FAILURE" and cc["to"]["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION"
+    assert "chat-completions qualification" in cc["not_established"] and "any model incompatibility" in cc["not_established"] and "server ready" in cc["established"]
+    changed = {k for k in set(snap) | set(cur) if snap.get(k) != cur.get(k)}
+    assert changed == set(cc["changed_fields"]) | {"classification_correction"} == {"attempts", "technical_serving_status", "runtime_qualification_status", "container_execution_proof",
+                                                                                     "http_error_evidence_gap", "classification_correction"}
+    for key in ("smoke_outputs", "raw_log_sha256", "raw_log_artifact", "financial_evidence", "financial_reconciliation", "billing_settlement", "original_in_run_billing_settlement",
+                "settlement_correction", "identity_verification", "server_argv_sanitized", "started_at_utc", "finished_at_utc", "cold_start_seconds", "load_seconds",
+                "latency_seconds", "peak_gpu_memory_bytes", "owner_billed_delta_usd", "smoke_prompts", "smoke_protocol"):
+        assert cur[key] == snap[key], key
+    strip = lambda a: {k: v for k, v in a.items() if k not in ("outcome", "status", "failure_domain", "reason", "original_classification", "billing_settlement_status",
+                                                                 "original_in_run_billing_settlement_status")}
+    assert strip(cur["attempts"][-1]) == strip(snap["attempts"][-1])                                                                            # timings, ids, log hash untouched
 
 
 def test_mistral_attempt_1_identity_flags_prompts_and_no_qwen_leakage_are_evidenced():
@@ -3169,7 +3200,8 @@ def test_mistral_attempt_1_financials_cleanup_and_owner_cash_are_zero_and_the_se
     assert corr["reclassifies_attempt"] is False and [r["object_id"] for r in corr["foreign_rows_in_original_itemization"]] == ["ap-b6PkVuAdoik7AvUELDwNuQ"]
     assert hashlib.sha256((EVIDENCE_DIR / corr["reconciliation_artifact"]).read_bytes()).hexdigest() == corr["reconciliation_sha256"]
     att = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json").read_text())["attempts"][0]
-    assert att["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and att["original_in_run_billing_settlement_status"] == "OBSERVED" and att["outcome"] == "TECHNICAL_FAILURE"
+    assert att["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and att["original_in_run_billing_settlement_status"] == "OBSERVED" and att["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION"
+    assert m["attempts"][-1] == att and m["attempts"][-1]["billing_settlement_status"] == m["billing_settlement"]["status"]       # embedded == top-level == attempts file
 
 
 def test_the_unobserved_mistral_settlement_keeps_the_gate_for_later_controls_closed(monkeypatch):
@@ -3224,3 +3256,344 @@ def test_a_contaminated_in_run_settlement_is_corrected_honestly_and_the_gate_sta
     corrected = json.loads(attempts_path.read_text())["attempts"][-1]
     assert corrected["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and corrected["original_in_run_billing_settlement_status"] == "OBSERVED"
     assert mod.settlement_resolved("QWEN3_8B", corrected) is False                                          # the gate is closed again until a reconciliation observes it
+
+
+# ══ audit remediation: HTTPError capture, conservative Mistral classification, settlement consistency, container execution proof for EVERY control ═══
+import http.server  # noqa: E402
+import threading  # noqa: E402
+import urllib.error  # noqa: E402
+import urllib.request  # noqa: E402
+
+_ERROR_JSON = '{"object": "error", "message": "synthetic bad request", "type": "BadRequestError", "code": 400}'
+_HOSTILE_BODY = "__import__('os').system('touch {marker}')"        # response text is DATA: it must never be executed
+
+
+class _FakeVllm(http.server.BaseHTTPRequestHandler):
+    mode = "error_json"
+    marker = ""
+
+    def log_message(self, *a):  # noqa: D401
+        pass
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        self.rfile.read(length)
+        mode = type(self).mode
+        if mode in ("error_json", "error_text", "error_hostile"):
+            body = {"error_json": _ERROR_JSON, "error_text": "plain text error", "error_hostile": _HOSTILE_BODY.format(marker=type(self).marker)}[mode].encode()
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json" if mode == "error_json" else "text/plain")
+            self.send_header("Set-Cookie", "secret=1")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif mode == "ok_stream":
+            body = b'data: {"choices":[{"delta":{"content":"READY"},"finish_reason":"stop"}],"usage":{"completion_tokens":2}}\n\ndata: [DONE]\n\n'
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            body = b'{"choices":[{"message":{"content":"5"},"finish_reason":"stop"}],"usage":{"completion_tokens":1}}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+
+@contextlib.contextmanager
+def _fake_server(mode, marker=""):
+    _FakeVllm.mode, _FakeVllm.marker = mode, marker
+    srv = http.server.HTTPServer(("127.0.0.1", 0), _FakeVllm)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+
+    def http_call(method, path, body=None, timeout=10.0):
+        req = urllib.request.Request(f"http://127.0.0.1:{srv.server_address[1]}{path}", method=method, data=None if body is None else json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json"})
+        return urllib.request.urlopen(req, timeout=timeout)
+
+    try:
+        yield http_call
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def _call_modules(monkeypatch):
+    runner = _runner_module()
+    stub = types.ModuleType("modal")
+    stub.Image = type("Image", (), {"from_registry": classmethod(lambda cls, *a, **k: cls()), "entrypoint": lambda self, _c: self})
+    stub.App = lambda n: types.SimpleNamespace(name=n, function=lambda **k: (lambda f: f))
+    stub.exception = types.SimpleNamespace(TimeoutError=TimeoutError)
+    monkeypatch.setitem(sys.modules, "modal", stub)
+    spec = importlib.util.spec_from_file_location("p21b420_legacy_for_http", HARNESS_PATH)
+    legacy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(legacy)
+    return runner, legacy
+
+
+@pytest.mark.parametrize("sid,stream", [("A", True), ("B", False), ("C", False)])
+@pytest.mark.parametrize("mode,structured", [("error_json", True), ("error_text", False)])
+def test_an_http_400_body_is_captured_for_streamed_and_non_streamed_requests(monkeypatch, sid, stream, mode, structured):
+    for module in _call_modules(monkeypatch):                                                  # the shared runner AND the legacy harness carry the identical code
+        cfg = module.serving_config("mistral_nemo") if hasattr(module, "serving_config") else {"model_id": "mistralai/Mistral-Nemo-Instruct-2407", "smoke_max_tokens": 64}
+        smoke = next(x for x in module.SMOKES if x["smoke_id"] == sid)
+        assert smoke["stream"] is stream
+        with _fake_server(mode) as call:
+            entry = module.run_smoke_call(cfg, smoke, {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 64}, call)
+        body = _ERROR_JSON if mode == "error_json" else "plain text error"
+        assert entry["http_status"] == 400 and entry["raw_response"] == body and entry["smoke_id"] == sid
+        err = entry["http_error"]
+        assert err["status"] == 400 and err["error_class"] == "HTTPError" and err["smoke_id"] == sid and err["body_bytes"] == len(body.encode())
+        assert err["body_sha256"] == hashlib.sha256(body.encode()).hexdigest()                                     # sha256 of the captured body
+        assert (err["structured_error"] == json.loads(_ERROR_JSON)) if structured else err["structured_error"] is None
+        assert "content-type" in {k.lower() for k in err["headers"]} and "set-cookie" not in {k.lower() for k in err["headers"]}     # safe headers only
+        assert entry["error"].startswith("HTTPError: HTTP Error 400") and entry["matches_expected_exactly"] is False and "content" not in entry
+        assert entry["prompt_sha256_sent"] == locked_protocol.prompt_sha256(sid) and entry["chat_template_kwargs_sent"] is None
+
+
+def test_the_refactored_smoke_call_still_records_successful_streamed_and_non_streamed_responses(monkeypatch):
+    for module in _call_modules(monkeypatch):
+        cfg = {"model_id": "m", "smoke_max_tokens": 8, "runtime_configuration": None}
+        gen = {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 8}
+        with _fake_server("ok_stream") as call:
+            a = module.run_smoke_call(cfg, next(x for x in module.SMOKES if x["smoke_id"] == "A"), gen, call)
+        with _fake_server("ok") as call:
+            b = module.run_smoke_call(cfg, next(x for x in module.SMOKES if x["smoke_id"] == "B"), gen, call)
+        assert (a["http_status"], a["content"], a["matches_expected_exactly"]) == (200, "READY", True) and "http_error" not in a
+        assert (b["http_status"], b["content"], b["matches_expected_exactly"]) == (200, "5", True) and "http_error" not in b
+
+
+def test_an_http_error_body_is_data_only_and_never_executed(monkeypatch, tmp_path):
+    marker = tmp_path / "PWNED"
+    runner, _ = _call_modules(monkeypatch)
+    cfg = {"model_id": "m", "smoke_max_tokens": 8, "runtime_configuration": None}
+    with _fake_server("error_hostile", marker=str(marker)) as call:
+        entry = runner.run_smoke_call(cfg, next(x for x in runner.SMOKES if x["smoke_id"] == "B"), {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 8}, call)
+    assert entry["raw_response"] == _HOSTILE_BODY.format(marker=marker) and not marker.exists()                # stored verbatim, nothing ran
+    for path in (LIGHTNING_RUNNER, HARNESS_PATH):
+        for name in ("capture_http_error", "run_smoke_call"):
+            src = _fn_source(path, name)
+            assert not any(b in src for b in ("eval(", "exec(", "compile(", "subprocess", "os.system", "__import__("))
+
+
+def test_the_record_builder_persists_the_captured_http_error_fields():
+    text = LIGHTNING_CONTROL.read_text()
+    assert '"error": s.get("error"), "http_error": s.get("http_error")' in text
+
+
+# ── validator: conservative attribution, settlement consistency, container execution proof ──
+def _mistral_record(tmp_path, *, outcome="UNATTRIBUTED_REQUEST_REJECTION", technical="NOT_PROVEN", runtime="NOT_COMPLETED", statuses=None, proof="ok"):
+    rec = _qualified_record(tmp_path, "Mistral-Nemo-Instruct-2407")
+    rec.update(gpu_type="NVIDIA H100 80GB (Modal H100)", technical_serving_status=technical, runtime_qualification_status=runtime, reasoning_parser=None)
+    rec["attempts"] = [{"attempt_number": 1, "provider": "Modal", "outcome": outcome, "valid_runtime_attempt": True, "reason": "synthetic", "resource_type": "x",
+                        "duration_seconds": 176.2, "owner_billed_delta_usd": "0E-8", "cleanup_result": "PASS", "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"}]
+    rec["billing_settlement"] = {"status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE", "reasons": ["x"], "stop_before_next_control": True}
+    for o, st in zip(rec["smoke_outputs"], statuses or [None, None, None]):
+        o["http_status"] = st
+        if st is None:
+            o["raw_response"] = ""
+            o["raw_response_sha256"] = hashlib.sha256(b"").hexdigest()
+    if proof == "ok":
+        rec["container_execution_proof"] = dict(_mistral_proof()["runtime_configuration_proof"], provenance="CONTAINER_RETURNED")
+    return rec
+
+
+def test_a_missing_http_error_body_prevents_a_model_runtime_attribution(tmp_path):
+    from orca.eval.control_runtime_qualification import ATTEMPT_OUTCOMES, FAILURE_DOMAIN_BY_OUTCOME
+    validate_control_runtime_record(_mistral_record(tmp_path), evidence_root=tmp_path)                       # UNATTRIBUTED + NOT_PROVEN / NOT_COMPLETED is accepted
+    with pytest.raises(ControlRuntimeError, match="MODEL_RUNTIME attribution requires a captured HTTP 200"):
+        validate_control_runtime_record(_mistral_record(tmp_path, outcome="TECHNICAL_FAILURE", technical="FAILED", runtime="FAILED"), evidence_root=tmp_path)
+    with pytest.raises(ControlRuntimeError, match="MODEL_RUNTIME attribution requires a captured HTTP 200"):
+        validate_control_runtime_record(_mistral_record(tmp_path, outcome="TECHNICAL_FAILURE", technical="FAILED", runtime="FAILED", statuses=[400, 400, 400]), evidence_root=tmp_path)
+    with pytest.raises(ControlRuntimeError, match="requires a valid model-runtime attempt"):                   # an unattributed rejection can never be a model-runtime FAILED
+        validate_control_runtime_record(_mistral_record(tmp_path, technical="FAILED", runtime="FAILED"), evidence_root=tmp_path)
+    assert FAILURE_DOMAIN_BY_OUTCOME["UNATTRIBUTED_REQUEST_REJECTION"] == "UNATTRIBUTED" and "UNATTRIBUTED_REQUEST_REJECTION" in ATTEMPT_OUTCOMES
+    assert derive_runtime_status(technical="NOT_PROVEN", financial_acceptance="PASS", cleanup="PASS", owner_billed_delta_usd="0", live_resources_after_cleanup=0) == "NOT_COMPLETED"
+
+
+def test_the_embedded_attempt_settlement_must_equal_the_top_level_settlement_after_a_correction(tmp_path):
+    rec = _mistral_record(tmp_path)
+    rec["original_in_run_billing_settlement"] = {"status": "OBSERVED", "reasons": []}
+    rec["settlement_correction"] = {"reason": "x"}
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec["attempts"][-1]["billing_settlement_status"] = "OBSERVED"                                             # the audit's contradiction
+    with pytest.raises(ControlRuntimeError, match="contradicts the corrected top-level"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec = _mistral_record(tmp_path)
+    rec["original_in_run_billing_settlement"] = {"status": "OBSERVED", "reasons": []}
+    rec["attempts"][-1]["billing_settlement_status"] = "SOMETHING_ELSE"
+    with pytest.raises(ControlRuntimeError, match="neither the current settlement nor the preserved"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    qwen4 = _attempt4_record()                                                                                   # historical finalization: in-run value kept as history, top-level OBSERVED
+    assert qwen4["attempts"][-1]["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and qwen4["billing_settlement"]["status"] == "OBSERVED"
+    validate_control_runtime_record(qwen4, evidence_root=EVIDENCE_DIR)
+
+
+@pytest.mark.parametrize("label,mutate,match", [
+    ("missing_proof", lambda r: r.pop("container_execution_proof"), "requires container_execution_proof"),
+    ("qwen_configuration_leaked", lambda r: r["container_execution_proof"].update(runtime_configuration_id="qwen3_8b_non_thinking_v1"), "no other control's configuration"),
+    ("qwen_applied_leaked", lambda r: r["container_execution_proof"].update(runtime_configuration_id_applied="qwen3_8b_non_thinking_v1"), "no other control's configuration"),
+    ("qwen_kwargs_leaked", lambda r: r["container_execution_proof"]["chat_template_kwargs_sent"].update(B={"enable_thinking": False}), "chat_template_kwargs sent must be None"),
+    ("kwargs_key_missing", lambda r: r["container_execution_proof"]["chat_template_kwargs_sent"].pop("C"), "chat_template_kwargs sent"),
+    ("reasoning_parser_leaked", lambda r: r["container_execution_proof"].update(reasoning_parser="qwen3"), "reasoning_parser proven as 'qwen3'"),
+    ("tokenizer_mode_wrong", lambda r: r["container_execution_proof"].update(tokenizer_mode="mistral"), "tokenizer_mode proven as 'mistral'"),
+    ("tokenizer_mode_missing", lambda r: r["container_execution_proof"].update(tokenizer_mode=None), "tokenizer_mode"),
+    ("config_format_wrong", lambda r: r["container_execution_proof"].update(config_format="mistral"), "config_format"),
+    ("load_format_wrong", lambda r: r["container_execution_proof"].update(load_format="auto"), "load_format"),
+    ("wrong_protocol", lambda r: r["container_execution_proof"].update(smoke_protocol_sha256="0" * 64), "canonical smoke protocol"),
+    ("wrong_prompt_hash", lambda r: r["container_execution_proof"]["prompt_sha256_sent"].update(A="0" * 64), "canonical smoke protocol"),
+    ("wrong_model", lambda r: r["container_execution_proof"].update(model_id="mistralai/Mistral-Nemo-Base-2407"), "model id"),
+    ("wrong_served_model", lambda r: r["container_execution_proof"].update(served_model_id="other"), "model id"),
+    ("wrong_revision", lambda r: r["container_execution_proof"].update(revision="0" * 40), "revision"),
+    ("wrong_precision", lambda r: r["container_execution_proof"].update(precision="float16"), "bfloat16"),
+    ("quantized", lambda r: r["container_execution_proof"].update(quantization="fp8"), "bfloat16"),
+    ("bad_provenance", lambda r: r["container_execution_proof"].update(provenance="TRUST_ME"), "provenance"),
+    ("returned_proof_wrong_policy_hash", lambda r: r["container_execution_proof"].update(runtime_policy_sha256="0" * 64), "runtime-policy sha256"),
+    ("returned_proof_missing_policy_hash", lambda r: r["container_execution_proof"].update(runtime_policy_sha256=None), "runtime-policy sha256"),
+    ("reconstructed_claims_a_policy_hash", lambda r: r["container_execution_proof"].update(provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE", reconstruction_note="x"), "RECONSTRUCTED proof"),
+    ("reconstructed_without_a_note", lambda r: r["container_execution_proof"].update(provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE", runtime_policy_sha256=None), "RECONSTRUCTED proof"),
+])
+def test_a_valid_runtime_attempt_requires_the_full_container_execution_proof_with_null_qwen_settings_and_exact_mistral_flags(tmp_path, label, mutate, match):
+    rec = _mistral_record(tmp_path)
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+    mutate(rec)
+    with pytest.raises(ControlRuntimeError, match=match):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_a_reconstructed_proof_with_a_null_policy_hash_and_a_note_is_accepted(tmp_path):
+    rec = _mistral_record(tmp_path)
+    rec["container_execution_proof"].update(provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE", runtime_policy_sha256=None, reconstruction_note="reconstructed from persisted evidence")
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_the_locked_server_flags_in_the_validator_mirror_the_runner_lock():
+    from orca.eval.control_runtime_qualification import LOCKED_SERVER_FLAGS
+    runner = _runner_module()
+    for key, name in (("qwen3_8b", "Qwen3-8B"), ("mistral_nemo", "Mistral-Nemo-Instruct-2407"), ("phi4", "Phi-4")):
+        args = runner.LOCKED[key]["extra_args"]
+        want = dict(zip(args[0::2], args[1::2]))
+        assert LOCKED_SERVER_FLAGS[name] == {"reasoning_parser": want.get("--reasoning-parser"), "tokenizer_mode": want.get("--tokenizer-mode"),
+                                             "config_format": want.get("--config-format"), "load_format": want.get("--load-format")}
+
+
+def test_the_qwen_proof_stays_cross_bound_and_historical_qwen_attempts_are_exempt(tmp_path):
+    validate_control_runtime_record(_attempt4_record(), evidence_root=EVIDENCE_DIR)                            # attempt 4 predates the proof: never retro-fitted
+    validate_control_runtime_record(_persisted_qwen(), evidence_root=EVIDENCE_DIR)                             # attempt 5: proof lives in runtime_configuration.container_proof
+    rec = _qwen5(tmp_path)
+    rec["gpu_type"] = "NVIDIA H100 80GB (Modal H100)"
+    rec["container_execution_proof"] = dict(copy.deepcopy(rec["runtime_configuration"]["container_proof"]), provenance="CONTAINER_RETURNED")
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec["container_execution_proof"]["chat_template_kwargs_sent"]["B"] = {"enable_thinking": True}
+    with pytest.raises(ControlRuntimeError, match="container_execution_proof disagrees"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_the_persisted_mistral_proof_is_reconstructed_binds_the_exact_flags_and_null_qwen_settings():
+    m = _mistral()
+    p = m["container_execution_proof"]
+    locked = LOCKED_CONTROL_IDENTITIES["Mistral-Nemo-Instruct-2407"]
+    assert p["provenance"] == "RECONSTRUCTED_FROM_PERSISTED_EVIDENCE" and p["runtime_policy_sha256"] is None and "not reconstructable" in p["reconstruction_note"]
+    assert (p["model_id"], p["served_model_id"], p["revision"], p["precision"], p["quantization"]) == (locked["model_id"], locked["model_id"], locked["revision"], "bfloat16", None)
+    assert (p["tokenizer_mode"], p["config_format"], p["load_format"], p["reasoning_parser"]) == ("hf", "hf", "safetensors", None)
+    assert p["runtime_configuration_id"] is None and p["runtime_configuration_id_applied"] is None and p["chat_template_kwargs_sent"] == {"A": None, "B": None, "C": None}
+    assert p["smoke_protocol_sha256"] == CANONICAL_PROTOCOL_SHA256 and p["prompt_sha256_sent"] == {sid: locked_protocol.prompt_sha256(sid) for sid in "ABC"}
+
+
+def test_a_new_harness_record_persists_the_container_execution_proof_for_every_control(monkeypatch, tmp_path):
+    mod, ev, remote_calls = _run_env(monkeypatch, tmp_path, lambda m, r: _fake_container_result(m, r))
+    mod.cmd_run(types.SimpleNamespace(control="qwen3_8b"))
+    rec = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert rec["container_execution_proof"]["provenance"] == "CONTAINER_RETURNED" and rec["container_execution_proof"]["runtime_policy_sha256"] == PINNED_POLICY_SHA256
+    assert {k: v for k, v in rec["container_execution_proof"].items() if k != "provenance"} == rec["runtime_configuration"]["container_proof"]
+    assert "container_execution_proof" in ast.unparse(next(n for n in ast.walk(ast.parse(MODAL_H100.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run"))
+    validate_control_runtime_record(rec, evidence_root=ev)
+
+
+def test_an_http_rejection_in_a_future_run_is_classified_unattributed_never_model_runtime(monkeypatch, tmp_path):
+    def builder(m, r):
+        result = _fake_container_result(m, r)
+        for x in result["smoke_results"]:
+            x.update(http_status=400, content=None, raw_response='{"error": "synthetic"}', matches_expected_exactly=False, error="HTTPError: HTTP Error 400: Bad Request",
+                     http_error={"status": 400, "body_sha256": hashlib.sha256(b'{"error": "synthetic"}').hexdigest()})
+        return result
+
+    mod, ev, remote_calls = _run_env(monkeypatch, tmp_path, builder)
+    mod.cmd_run(types.SimpleNamespace(control="qwen3_8b"))
+    a5 = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json").read_text())["attempts"][4]
+    assert a5["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION" and a5["failure_domain"] == "UNATTRIBUTED" and "not attributable to the model" in a5["reason"]
+    rec = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert rec["technical_serving_status"] == "NOT_PROVEN" and rec["runtime_qualification_status"] == "NOT_COMPLETED"
+    assert all(o["http_status"] == 400 and o["http_error"]["status"] == 400 for o in rec["smoke_outputs"])
+
+
+def _reclass_env(monkeypatch, tmp_path):
+    mod, _ = _load_modal_h100(monkeypatch)
+    ev = tmp_path / "evidence"
+    shutil.copytree(EVIDENCE_DIR, ev)
+    (ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").write_bytes(MISTRAL_SNAPSHOT.read_bytes())          # the pre-correction record
+    (ev / MISTRAL_SNAPSHOT.name).unlink()
+    attempts_path = ev / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json"
+    doc = json.loads(attempts_path.read_text())
+    doc["attempts"] = json.loads(MISTRAL_SNAPSHOT.read_text())["attempts"]
+    attempts_path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
+    boom = types.SimpleNamespace(remote=lambda *a, **k: (_ for _ in ()).throw(AssertionError("no GPU / provider function may be called")))
+    monkeypatch.setattr(mod, "serve_and_smoke", boom)
+    monkeypatch.setattr(mod, "app", types.SimpleNamespace(run=lambda *a, **k: (_ for _ in ()).throw(AssertionError("no Modal app run"))))
+    monkeypatch.setattr(mod, "_cli_json", lambda *a: (_ for _ in ()).throw(AssertionError("no Modal CLI / billing call")))
+    return mod, ev
+
+
+def test_the_cpu_only_reclassification_reproduces_the_persisted_mistral_record_and_calls_no_provider(monkeypatch, tmp_path):
+    mod, ev = _reclass_env(monkeypatch, tmp_path)
+    args = types.SimpleNamespace(control="mistral_nemo", attempt=1)
+    assert mod.cmd_reclassify_unattributed(args) == 0
+    assert (ev / MISTRAL_SNAPSHOT.name).read_bytes() == MISTRAL_SNAPSHOT.read_bytes()                       # snapshot taken first, byte-identical
+    out = json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    persisted = _mistral()
+    for key in ("attempts", "technical_serving_status", "runtime_qualification_status", "container_execution_proof", "http_error_evidence_gap"):
+        assert out[key] == persisted[key], key
+    first = (ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_bytes()
+    assert mod.cmd_reclassify_unattributed(args) == 0 and (ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_bytes() == first    # idempotent
+    body = ast.unparse(next(n for n in ast.walk(ast.parse(MODAL_H100.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "cmd_reclassify_unattributed"))
+    for banned in ("serve_and_smoke", ".remote(", "app.run", "billing_summary", "_cli_json", "subprocess", "eval(", "exec("):
+        assert banned not in body, banned
+    rec_path = ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json"
+    assert mod.archive_prior_record("MISTRAL_NEMO") == MISTRAL_SNAPSHOT.name                                  # a later launch accepts exactly this documented correction
+    tampered = json.loads(rec_path.read_text())
+    tampered["smoke_outputs"][0]["http_status"] = 400                                                        # fabricating a status would be refused
+    rec_path.write_text(json.dumps(tampered))
+    with pytest.raises(RuntimeError, match="refusing to overwrite prior-attempt evidence"):
+        mod.archive_prior_record("MISTRAL_NEMO")
+
+
+def test_the_reclassification_refuses_when_the_raw_log_does_not_prove_the_rejection(monkeypatch, tmp_path):
+    mod, ev = _reclass_env(monkeypatch, tmp_path)
+    args = types.SimpleNamespace(control="mistral_nemo", attempt=1)
+    assert mod.cmd_reclassify_unattributed(types.SimpleNamespace(control="mistral_nemo", attempt=2)) == 2
+    log = ev / json.loads(MISTRAL_SNAPSHOT.read_text())["raw_log_artifact"]
+    log.write_text(log.read_text().replace(" 400 Bad Request", " 200 OK"))                                      # a log that no longer proves the rejection (and no longer matches its hash)
+    assert mod.cmd_reclassify_unattributed(args) == 2
+    assert json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())["technical_serving_status"] == "FAILED"
+
+
+def test_mistral_final_state_settlement_gate_and_neighbours_after_the_remediation(monkeypatch):
+    m = _mistral()
+    assert m["technical_serving_status"] == "NOT_PROVEN" and m["runtime_qualification_status"] == "NOT_COMPLETED" and m["capability_status"] == "UNPROVEN"
+    assert m["owner_billed_delta_usd"] == "0E-8" and m["billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"
+    art = json.loads((EVIDENCE_DIR / m["settlement_correction"]["reconciliation_artifact"]).read_text())
+    assert art["itemized_run_cost_usd"] == "0.20532158" and art["owner_billed_delta_usd"] == "0E-8" and art["settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"
+    mod, _ = _load_modal_h100(monkeypatch)
+    attempts = {(t, a["attempt_number"]): a for t, a in mod._modal_attempts()}
+    assert mod.settlement_resolved("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)]) is False and mod.validate_owner_settlement_waiver("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)])[0] == "WAIVER_ABSENT"
+    assert not any(p.name.startswith("GENESIS_OWNER_SETTLEMENT_WAIVER_MISTRAL") for p in EVIDENCE_DIR.iterdir())
+    q = _persisted_qwen()
+    assert q["runtime_qualification_status"] == "FAILED" and hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == ATTEMPT_5_SMOKE_OUTPUTS_SHA256
+    assert hashlib.sha256(ATTEMPT_5_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_5_SNAPSHOT_SHA256 and hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256
+    phi = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert phi["runtime_qualification_status"] == "NOT_TESTED" and phi["attempts"] == []

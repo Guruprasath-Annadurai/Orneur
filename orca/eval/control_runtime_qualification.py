@@ -70,7 +70,7 @@ FINANCIAL_PREFLIGHT_STATUSES = ("PASSED", "FAILED", "NOT_PERFORMED")
 FINANCIAL_ACCEPTANCE_STATUSES = ("PASS", "FAILED", "NOT_TESTED")
 RUNTIME_QUALIFICATION_STATUSES = ("RUNTIME_QUALIFIED", "PENDING_SETTLEMENT_OBSERVATION", "NOT_ACCEPTED", "FAILED", "NOT_COMPLETED", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY")
 CLEANUP_STATUSES = ("PASS", "FAIL", "NOT_APPLICABLE")
-ATTEMPT_OUTCOMES = ("TECHNICAL_SUCCESS", "TECHNICAL_FAILURE", "HARNESS_FAILURE", "ABORTED_FINANCIAL_GUARD", "BLOCKED_NO_GPU")
+ATTEMPT_OUTCOMES = ("TECHNICAL_SUCCESS", "TECHNICAL_FAILURE", "HARNESS_FAILURE", "ABORTED_FINANCIAL_GUARD", "BLOCKED_NO_GPU", "UNATTRIBUTED_REQUEST_REJECTION")
 # Attempt result vs model-runtime result are DIFFERENT things. Only a valid
 # runtime attempt (the pinned model's server was actually launched and the
 # outcome observed) can ever make the MODEL's technical status FAILED; a
@@ -82,6 +82,9 @@ FAILURE_DOMAIN_BY_OUTCOME = {
     "HARNESS_FAILURE": "HARNESS",
     "ABORTED_FINANCIAL_GUARD": "FINANCIAL_GUARD",
     "BLOCKED_NO_GPU": "NONE",
+    # The pinned server started and its identity was proven, but the API rejected the qualification calls (HTTP-level) and the diagnostic
+    # is not attributable to the model (vs the request format / harness). It can never become a model-runtime FAILED and is never a pass.
+    "UNATTRIBUTED_REQUEST_REJECTION": "UNATTRIBUTED",
 }
 CAPABILITY_STATUS = "UNPROVEN"
 EVIDENCE_KIND = "RUNTIME_QUALIFICATION_SMOKE"
@@ -628,6 +631,89 @@ def _same_json(a, b) -> bool:
     return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
+LOCKED_SERVER_FLAGS = {          # mirrors the runner's locked extra_args per control (a test asserts equality); None == the flag must be absent
+    "Qwen3-8B": {"reasoning_parser": "qwen3", "tokenizer_mode": None, "config_format": None, "load_format": None},
+    "Mistral-Nemo-Instruct-2407": {"reasoning_parser": None, "tokenizer_mode": "hf", "config_format": "hf", "load_format": "safetensors"},
+    "Phi-4": {"reasoning_parser": None, "tokenizer_mode": None, "config_format": None, "load_format": None},
+}
+PROOF_PROVENANCES = ("CONTAINER_RETURNED", "RECONSTRUCTED_FROM_PERSISTED_EVIDENCE")
+
+
+def _check_model_runtime_attribution(record: dict) -> None:
+    """A MODEL_RUNTIME failure needs diagnostic evidence: every smoke that was attempted must have produced a captured HTTP 200 response whose CONTENT failed
+    the locked acceptance. An HTTP-level rejection (or no captured status) cannot be attributed to the model; it is UNATTRIBUTED_REQUEST_REJECTION."""
+    last = record["attempts"][-1]
+    if last.get("outcome") != "TECHNICAL_FAILURE":
+        return
+    for o in record.get("smoke_outputs") or []:
+        if not isinstance(o, dict) or o.get("http_status") != 200:
+            raise ControlRuntimeError(f"smoke {o.get('smoke_id') if isinstance(o, dict) else o!r}: a MODEL_RUNTIME attribution requires a captured HTTP 200 response; "
+                                      "an HTTP-level rejection without a diagnostic cannot be attributed to the model (use UNATTRIBUTED_REQUEST_REJECTION)")
+
+
+def _check_settlement_consistency(record: dict) -> None:
+    """After a reconciliation/correction every authoritative settlement field agrees; a preserved in-run value may only appear as history."""
+    last = record["attempts"][-1]
+    embedded = last.get("billing_settlement_status")
+    top = (record.get("billing_settlement") or {}).get("status")
+    original = (record.get("original_in_run_billing_settlement") or {}).get("status")
+    if embedded is None or top is None:
+        return
+    if "settlement_correction" in record and embedded != top:
+        raise ControlRuntimeError(f"attempt billing_settlement_status {embedded!r} contradicts the corrected top-level billing_settlement.status {top!r}")
+    if original is not None and embedded not in (top, original):
+        raise ControlRuntimeError("attempt billing_settlement_status matches neither the current settlement nor the preserved in-run settlement")
+
+
+def _expected_flags(record: dict) -> dict:
+    return LOCKED_SERVER_FLAGS.get(record.get("control_name"), {})
+
+
+def _check_container_execution_proof(record: dict) -> None:
+    """Every valid Modal-H100 runtime attempt must persist the container's proof of what actually ran (identity, precision, flags, protocol, prompts,
+    request settings). Historical Qwen attempts < REQUIRED_FROM_ATTEMPT predate the proof and are never retro-fitted. For Qwen >= 5 the proof inside
+    runtime_configuration is accepted and must equal any top-level copy."""
+    last = record["attempts"][-1]
+    if last.get("valid_runtime_attempt") is not True or record.get("gpu_provider") != "Modal" or "H100" not in str(record.get("gpu_type", "")):
+        return
+    model_id = record.get("model_id")
+    if last.get("attempt_number", 0) < _rc.REQUIRED_FROM_ATTEMPT.get(model_id, 0):
+        return
+    top = record.get("container_execution_proof")
+    rc = record.get("runtime_configuration")
+    inner = rc.get("container_proof") if isinstance(rc, dict) else None
+    proof = top if top is not None else inner
+    if not isinstance(proof, dict):
+        raise ControlRuntimeError("a valid runtime attempt requires container_execution_proof (identity, precision, flags, protocol, prompts, request settings)")
+    if top is not None and inner is not None and {k: v for k, v in top.items() if k != "provenance"} != {k: v for k, v in inner.items() if k != "provenance"}:
+        raise ControlRuntimeError("container_execution_proof disagrees with runtime_configuration.container_proof")
+    provenance = proof.get("provenance", "CONTAINER_RETURNED")
+    if provenance not in PROOF_PROVENANCES:
+        raise ControlRuntimeError(f"container_execution_proof.provenance must be one of {PROOF_PROVENANCES}")
+    approved = _rc.RUNTIME_CONFIGURATIONS.get(model_id)
+    want_id = approved["id"] if approved else None
+    want_kwargs = approved["chat_template_kwargs"] if approved else None
+    if proof.get("runtime_configuration_id") != want_id or proof.get("runtime_configuration_id_applied") != want_id:
+        raise ControlRuntimeError(f"container proof: runtime_configuration_id must be {want_id!r} (no other control's configuration may leak)")
+    sent = proof.get("chat_template_kwargs_sent")
+    if not isinstance(sent, dict) or sorted(sent) != list(REQUIRED_SMOKE_IDS) or not all(_same_json(v, want_kwargs) for v in sent.values()):
+        raise ControlRuntimeError(f"container proof: chat_template_kwargs sent must be {want_kwargs!r} for every locked smoke (null for controls without a configuration)")
+    if proof.get("smoke_protocol_sha256") != _locked.protocol_sha256() or proof.get("prompt_sha256_sent") != {sid: _locked.prompt_sha256(sid) for sid in REQUIRED_SMOKE_IDS}:
+        raise ControlRuntimeError("container proof: canonical smoke protocol / per-prompt sha256 values differ")
+    if proof.get("model_id") != model_id or proof.get("served_model_id") != model_id or proof.get("revision") != record.get("model_revision"):
+        raise ControlRuntimeError("container proof: model id / served model id / revision differ from the record")
+    if proof.get("precision") != "bfloat16" or proof.get("quantization") is not None:
+        raise ControlRuntimeError("container proof: precision must be bfloat16 with no quantization")
+    for key, want in _expected_flags(record).items():
+        if proof.get(key) != want:
+            raise ControlRuntimeError(f"container proof: {key} proven as {proof.get(key)!r}, locked value {want!r}")
+    if provenance == "CONTAINER_RETURNED":
+        if proof.get("runtime_policy_sha256") != _rc.PINNED_RUNTIME_POLICY_SHA256:
+            raise ControlRuntimeError("container proof: runtime-policy sha256 must equal the pinned runtime-policy sha256")
+    elif proof.get("runtime_policy_sha256") is not None or not proof.get("reconstruction_note"):
+        raise ControlRuntimeError("a RECONSTRUCTED proof may not claim a container-returned policy hash and must state how it was reconstructed")
+
+
 def _check_container_proof(record: dict, rc: dict, approved: dict) -> None:
     proof = rc.get("container_proof")
     if not isinstance(proof, dict):
@@ -899,10 +985,13 @@ def validate_control_runtime_record(record: dict, *, evidence_root: Path) -> Non
         raise ControlRuntimeError(
             "technical_serving_status FAILED requires a valid model-runtime attempt; a harness failure or financial-guard abort "
             "cannot become a model-runtime FAILED (it leaves runtime compatibility NOT_PROVEN)")
-    if last_domain in ("HARNESS", "FINANCIAL_GUARD") and technical != "NOT_PROVEN":
+    if last_domain in ("HARNESS", "FINANCIAL_GUARD", "UNATTRIBUTED") and technical != "NOT_PROVEN":
         raise ControlRuntimeError(
             f"the last attempt ended in {last_domain}; technical_serving_status must be NOT_PROVEN, got {technical!r}")
     _check_runtime_configuration(record)
+    _check_model_runtime_attribution(record)
+    _check_settlement_consistency(record)
+    _check_container_execution_proof(record)
     if technical == "QUALIFIED":
         _check_locked_smokes(record)
     expected = derive_runtime_status(

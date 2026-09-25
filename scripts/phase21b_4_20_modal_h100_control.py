@@ -23,6 +23,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import time
@@ -482,11 +483,19 @@ METADATA_CORRECTION_KEYS = ("reasoning_mode", "metadata_correction")     # descr
 
 
 def _only_documented_metadata_correction(current: dict, snapshot: dict, snap_path: Path) -> bool:
-    """True iff `current` differs from the immutable `snapshot` ONLY in descriptive metadata and says so, referencing the snapshot by sha256."""
+    """True iff `current` differs from the immutable `snapshot` ONLY in fields a documented correction (metadata_correction or classification_correction)
+    lists, and that correction references the snapshot by sha256."""
+    sha = sha_of(snap_path)
+    allowed: set[str] = set()
     note = current.get("metadata_correction")
-    if not isinstance(note, dict) or note.get("snapshot_sha256") != sha_of(snap_path) or note.get("reclassifies_attempt") is not False:
+    if isinstance(note, dict) and note.get("snapshot_sha256") == sha and note.get("reclassifies_attempt") is False:
+        allowed |= set(METADATA_CORRECTION_KEYS)
+    cc = current.get("classification_correction")
+    if isinstance(cc, dict) and cc.get("snapshot_sha256") == sha:
+        allowed |= set(cc.get("changed_fields", [])) | {"classification_correction"}
+    if not allowed:
         return False
-    strip = lambda d: {k: v for k, v in d.items() if k not in METADATA_CORRECTION_KEYS}
+    strip = lambda d: {k: v for k, v in d.items() if k not in allowed}
     return strip(current) == strip(snapshot)
 
 
@@ -601,10 +610,13 @@ def cmd_run(a) -> int:
     if error_text is None and result is not None and proof_problems:
         outcome, reason = "HARNESS_FAILURE", "the container did not prove the approved runtime configuration and canonical locked smoke protocol: " + "; ".join(proof_problems)
     elif error_text is None:
+        smoke_statuses = [x.get("http_status") for x in (result or {}).get("smoke_results", [])]
+        http_rejected = bool(result and result.get("server_ready") and smoke_statuses and any(st != 200 for st in smoke_statuses))
         if result is not None and (result.get("server_argv_sanitized") or result.get("error")):
-            outcome = "TECHNICAL_SUCCESS" if tech_ok else "TECHNICAL_FAILURE"
+            outcome = "TECHNICAL_SUCCESS" if tech_ok else ("UNATTRIBUTED_REQUEST_REJECTION" if http_rejected else "TECHNICAL_FAILURE")
             reason = ("server ready, all 3 LOCKED smokes matched exactly, clean shutdown" if tech_ok else
-                      (result.get("error") or ("locked smoke contract not met: " + "; ".join(f"{x.get('smoke_id')}: {smoke_locked_acceptance(x.get('smoke_id'), x.get('content'))[1]}"
+                      ("server ready and identity proven, but the API rejected smoke call(s) at HTTP level (statuses %s); the rejection is not attributable to the model without diagnosis (see http_error)" % smoke_statuses
+                       if http_rejected else result.get("error") or ("locked smoke contract not met: " + "; ".join(f"{x.get('smoke_id')}: {smoke_locked_acceptance(x.get('smoke_id'), x.get('content'))[1]}"
                                                                                            for x in result.get("smoke_results", []) if not smoke_locked_acceptance(x.get("smoke_id"), x.get("content"))[0])
                                                if result.get("server_ready") and not smokes_ok else "smoke/teardown criteria not met")))
         else:
@@ -612,7 +624,7 @@ def cmd_run(a) -> int:
     else:
         outcome = "ABORTED_FINANCIAL_GUARD" if "Timeout" in error_text else "HARNESS_FAILURE"
         reason = error_text
-    valid_runtime = bool(result and result.get("server_argv_sanitized") and outcome in ("TECHNICAL_SUCCESS", "TECHNICAL_FAILURE"))
+    valid_runtime = bool(result and result.get("server_argv_sanitized") and outcome in ("TECHNICAL_SUCCESS", "TECHNICAL_FAILURE", "UNATTRIBUTED_REQUEST_REJECTION"))
     cleanup_pass = cleanup["live_resources"] == 0
     log_path = EVIDENCE_DIR / f"{prefix}_RAW_LOG_{DATE_TAG}.txt"
     log_path.write_text(("\n".join(result.get("events", [])) + "\n\n===== vLLM server log (tail) =====\n" + result.get("server_log", "")) if result else f"NO RESULT RETURNED: {reason}\n")
@@ -650,6 +662,8 @@ def cmd_run(a) -> int:
         "configuration_sha256": runtime_config.configuration_sha256(locked_identity["model_id"]),
         "runtime_policy_sha256": runtime_config.PINNED_RUNTIME_POLICY_SHA256,
         "container_proof": (result or {}).get("runtime_configuration_proof")}
+    proof_returned = (result or {}).get("runtime_configuration_proof")
+    record["container_execution_proof"] = None if proof_returned is None else dict(proof_returned, provenance="CONTAINER_RETURNED")     # persisted for EVERY control
     record["reasoning_mode"] = runtime_config.effective_reasoning_mode(record.get("reasoning_mode"), record["runtime_configuration"])   # effective config, not template capability
     record["smoke_acceptance"] = compute_smoke_acceptance(record)      # derived from the raw outputs; the raw outputs themselves are never altered
     record["runtime_qualification_status"] = derive_runtime_status(
@@ -813,6 +827,10 @@ def _downgrade_contaminated_settlement(record: dict, rec_path: Path, art_path: P
     final = json.loads(json.dumps(record))
     final["original_in_run_billing_settlement"] = record["billing_settlement"]
     final["billing_settlement"] = art["settlement"]
+    for i, x in enumerate(final["attempts"]):                       # every authoritative settlement field must agree; the in-run value survives only as history
+        if x.get("attempt_number") == att["attempt_number"] and x.get("billing_settlement_status") == "OBSERVED":
+            final["attempts"][i] = dict(x, billing_settlement_status=art["settlement"]["status"], original_in_run_billing_settlement_status="OBSERVED",
+                                        settlement_correction=f"see {art_path.name}")
     final["settlement_correction"] = {
         "reason": "the in-run OBSERVED was computed from itemized rows that included another attempt's app (rows were matched by the shared app description, not by object id); "
                   "the read-only exact-attribution reconciliation cannot confirm settlement", "foreign_rows_in_original_itemization": foreign,
@@ -974,9 +992,109 @@ def cmd_correct_reasoning_mode(a) -> int:
     return 0
 
 
+def cmd_reclassify_unattributed(a) -> int:
+    """CPU-ONLY, no Modal, no GPU. Conservatively reclassifies an attempt whose smoke calls were rejected at HTTP level with NO captured diagnostic:
+    proven from the immutable raw server log, the rejection cannot be attributed to the model, so the attempt becomes UNATTRIBUTED_REQUEST_REJECTION and the
+    model's technical status NOT_PROVEN / runtime NOT_COMPLETED. The original classification is preserved; raw log, billing, smoke raw fields, identity,
+    argv and timings are never touched; the pre-correction record is snapshotted byte-for-byte first. Nothing is fabricated: missing error bodies stay missing."""
+    lc = _load_lightning_control()
+    cfg = lc.CONTROLS[a.control]
+    tag = cfg["tag"]
+    rec_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_{DATE_TAG}.json"
+    record = _json_file(rec_path)
+    att = record["attempts"][-1]
+    if "classification_correction" in record and att.get("attempt_number") == a.attempt and (EVIDENCE_DIR / record["classification_correction"]["snapshot_artifact"]).exists():
+        print("already reclassified; nothing to do")
+        return 0
+    if att.get("attempt_number") != a.attempt or att.get("outcome") != "TECHNICAL_FAILURE" or att.get("provider") != "Modal":
+        print("requested attempt is not the record's final Modal TECHNICAL_FAILURE attempt; refusing")
+        return 2
+    outputs = record.get("smoke_outputs") or []
+    log_text = (EVIDENCE_DIR / record["raw_log_artifact"]).read_text()
+    log_statuses = [int(m) for m in re.findall(r'"POST /v1/chat/completions HTTP/1\.1" (\d{3})', log_text)]
+    if (not outputs or any(o.get("http_status") is not None or o.get("raw_response") for o in outputs) or len(log_statuses) != len(outputs)
+            or any(st < 400 for st in log_statuses) or sha_of(EVIDENCE_DIR / record["raw_log_artifact"]) != record["raw_log_sha256"]):
+        print("the immutable raw server log does not prove an HTTP-level rejection of every smoke call with no captured response; refusing")
+        return 2
+    snap_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_ATTEMPT{a.attempt}_SNAPSHOT_{DATE_TAG}.json"
+    if not snap_path.exists():
+        if "classification_correction" in record:
+            print("record already reclassified but its snapshot is missing; refusing")
+            return 2
+        snap_path.write_bytes(rec_path.read_bytes())
+    if "classification_correction" in record:
+        print("already reclassified; nothing to do")
+        return 0
+    settlement_status = record["billing_settlement"]["status"]
+    new_att = dict(att)
+    new_att["original_classification"] = {"outcome": att["outcome"], "status": att["status"], "failure_domain": att["failure_domain"], "valid_runtime_attempt": att["valid_runtime_attempt"],
+                                          "reason": att["reason"], "note": "recorded by the harness as a model-runtime failure although the HTTP error bodies were never captured"}
+    new_att.update({"outcome": "UNATTRIBUTED_REQUEST_REJECTION", "status": "UNATTRIBUTED_REQUEST_REJECTION", "failure_domain": FAILURE_DOMAIN_BY_OUTCOME["UNATTRIBUTED_REQUEST_REJECTION"],
+                    "reason": (f"server ready, exact identity and BF16 load proven; the immutable raw server log proves {len(log_statuses)} POST /v1/chat/completions responses with HTTP status "
+                               f"{sorted(set(log_statuses))}; the API error bodies were NOT captured (runner gap), so the rejection is UNATTRIBUTED (model/runtime vs request-format/harness). "
+                               "Chat-completions qualification was NOT established; this is not a pass and not evidence that the model is incompatible")})
+    if new_att.get("billing_settlement_status") != settlement_status:
+        new_att.setdefault("original_in_run_billing_settlement_status", new_att.get("billing_settlement_status"))
+        new_att["billing_settlement_status"] = settlement_status
+    ident = record["identity_verification"]
+    argv = record["server_argv_sanitized"]
+    flag = lambda name: argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else None
+    served = ((ident.get("models_endpoint") or {}).get("data") or [{}])[0].get("id")
+    if ident.get("snapshot_dir_names") != [record["model_revision"]] or served != record["model_id"]:
+        print("persisted identity evidence does not support a reconstructed proof; refusing")
+        return 2
+    proof = {"provenance": "RECONSTRUCTED_FROM_PERSISTED_EVIDENCE",
+             "reconstruction_note": "the container-returned proof object was computed and verified by the harness at run time (the attempt was not a HARNESS_FAILURE) but was not persisted; "
+                                    "this proof is reconstructed from persisted evidence (server_argv_sanitized, identity_verification, per-smoke prompt_sha256_sent / chat_template_kwargs_sent, "
+                                    "smoke_protocol). runtime_policy_sha256 is not reconstructable and is null.",
+             "runtime_configuration_id": None, "runtime_configuration_id_applied": None, "runtime_configuration_sha256": None, "runtime_policy_sha256": None,
+             "chat_template_kwargs_sent": {o["smoke_id"]: o.get("chat_template_kwargs_sent") for o in outputs},
+             "smoke_protocol_sha256": record["smoke_protocol"]["protocol_sha256"], "prompt_sha256_sent": {o["smoke_id"]: o.get("prompt_sha256_sent") for o in outputs},
+             "model_id": record["model_id"], "served_model_id": served, "revision": record["model_revision"],
+             "precision": flag("--dtype"), "quantization": flag("--quantization"), "reasoning_parser": flag("--reasoning-parser"),
+             "tokenizer_mode": flag("--tokenizer-mode"), "config_format": flag("--config-format"), "load_format": flag("--load-format")}
+    changed = ["attempts", "technical_serving_status", "runtime_qualification_status", "container_execution_proof", "http_error_evidence_gap"]
+    final = json.loads(json.dumps(record))
+    final["attempts"] = record["attempts"][:-1] + [new_att]
+    final["technical_serving_status"] = "NOT_PROVEN"
+    final["runtime_qualification_status"] = derive_runtime_status(
+        technical="NOT_PROVEN", financial_acceptance=final["financial_acceptance_status"], cleanup=final["cleanup_status"],
+        owner_billed_delta_usd=final["owner_billed_delta_usd"], live_resources_after_cleanup=final["live_resources_after_cleanup"], settlement_status=settlement_status)
+    final["container_execution_proof"] = proof
+    final["http_error_evidence_gap"] = {
+        "proven_by_immutable_raw_server_log": {"artifact": record["raw_log_artifact"], "sha256": record["raw_log_sha256"], "post_chat_completions_statuses": log_statuses},
+        "api_error_bodies_captured": False,
+        "preserved_unchanged": {"http_status": [o.get("http_status") for o in outputs], "raw_response": [o.get("raw_response") for o in outputs]},
+        "statement": "HTTP 400 is proven by the server log, but the corresponding API error bodies were not captured (urllib raised HTTPError before status/body were recorded). "
+                     "They are not reconstructed. The shared runner now captures them for future requests."}
+    final["classification_correction"] = {
+        "from": {"technical_serving_status": record["technical_serving_status"], "runtime_qualification_status": record["runtime_qualification_status"], "outcome": att["outcome"], "failure_domain": att["failure_domain"]},
+        "to": {"technical_serving_status": "NOT_PROVEN", "runtime_qualification_status": final["runtime_qualification_status"], "outcome": "UNATTRIBUTED_REQUEST_REJECTION", "failure_domain": "UNATTRIBUTED"},
+        "kind": "CONSERVATIVE CLASSIFICATION: an unknown HTTP-level rejection cannot be attributed to the model", "changed_fields": changed, "reclassifies_settlement": False,
+        "snapshot_artifact": snap_path.name, "snapshot_sha256": sha_of(snap_path),
+        "established": ["server ready", "exact pinned identity", "BF16 load", "exact locked server flags", f"{len(log_statuses)} HTTP {sorted(set(log_statuses))} responses (server log)"],
+        "not_established": ["chat-completions qualification", "the cause of the HTTP rejection", "any model incompatibility"],
+        "unchanged": ["raw log", "billing before/after", "financial preflight", "smoke raw fields", "model identity evidence", "server argv", "timing metrics", "run timestamps"]}
+    try:
+        validate_control_runtime_record(final, evidence_root=EVIDENCE_DIR)
+    except Exception as e:  # noqa: BLE001
+        print(f"RECLASSIFIED RECORD FAILED VALIDATION -- nothing written: {type(e).__name__}: {e}")
+        return 1
+    if not _only_documented_metadata_correction(final, json.loads(snap_path.read_text()), snap_path):
+        print("internal check failed: the correction changed more than the documented fields; nothing written")
+        return 1
+    write_json(rec_path, final)
+    attempts_all = _load_attempts(tag)
+    attempts_all[-1] = new_att
+    write_json(_attempts_path(tag), {"control_name": cfg["control_name"], "attempts": attempts_all})
+    print(json.dumps({"outcome": new_att["outcome"], "technical_serving_status": final["technical_serving_status"], "runtime_qualification_status": final["runtime_qualification_status"],
+                      "snapshot": snap_path.name, "snapshot_sha256": sha_of(snap_path)}, indent=2))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", required=True, choices=("preflight", "precache", "run", "reconcile", "reevaluate-smokes", "correct-reasoning-mode"))
+    ap.add_argument("--mode", required=True, choices=("preflight", "precache", "run", "reconcile", "reevaluate-smokes", "correct-reasoning-mode", "reclassify-unattributed"))
     ap.add_argument("--control", required=True, choices=CONTROL_KEYS)
     ap.add_argument("--attempt", type=int, help="reconcile only: the completed attempt number")
     ap.add_argument("--kind", choices=("gpu", "cpu"), default="gpu", help="preflight only")
@@ -985,6 +1103,8 @@ def main() -> int:
         return cmd_preflight(a)
     if a.mode == "precache":
         return cmd_precache(a)
+    if a.mode == "reclassify-unattributed":
+        return cmd_reclassify_unattributed(a) if a.attempt else 2
     if a.mode == "correct-reasoning-mode":
         return cmd_correct_reasoning_mode(a) if a.attempt else 2
     if a.mode == "reevaluate-smokes":

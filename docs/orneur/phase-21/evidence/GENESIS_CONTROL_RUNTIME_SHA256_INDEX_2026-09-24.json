@@ -4,8 +4,8 @@
     {
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md",
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "c607a31ba8d59a66b54745d377926e2b14ed521f942f72c8414b5000c90ed2e2",
-      "size_bytes": 25068
+      "sha256": "7c75cebd9ddc7dc7bcbaff9a75697571b36e0ece417cb5cb92093b0379d35d45",
+      "size_bytes": 26732
     },
     {
       "evidence_role": "genesis_billing_discrepancy_observation_2026-09-24.json",
@@ -40,8 +40,8 @@
     {
       "evidence_role": "genesis_control_mistral_nemo_attempts_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json",
-      "sha256": "afcc28a8c9d00824e81a7e89608f2eb741a9878bed6a7a4303a631a635fc7810",
-      "size_bytes": 1261
+      "sha256": "3d28cecea8854c5d4355974fca4b2772a90e8694cb05c1670c6cc2d969528fec",
+      "size_bytes": 1905
     },
     {
       "evidence_role": "genesis_control_mistral_nemo_lightning_stage_manifest_2026-09-24.json",
@@ -88,6 +88,12 @@
     {
       "evidence_role": "genesis_control_mistral_nemo_runtime_qualification_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json",
+      "sha256": "51bb1c5f43a27f084f8f783016b591d10c732fb2888c0cd084582ffb65cae9a2",
+      "size_bytes": 20720
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_runtime_qualification_attempt1_snapshot_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT1_SNAPSHOT_2026-09-24.json",
       "sha256": "5bcf5aa8423ea22082a554c39edf414dea27b45511dca1f3c18136e4fe9fd5df",
       "size_bytes": 16003
     },
@@ -393,6 +399,6 @@
     }
   ],
   "evidence_type": "GENESIS_CONTROL_RUNTIME_QUALIFICATION_INTEGRITY_INDEX",
-  "note": "SHA-256 hashes computed live from actual file bytes; repo-relative paths. Includes Qwen3-8B attempt 1 (harness failure, annotated with failure_domain; pre-annotation attempts-file sha256 eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365 is preserved in git history and in the annotation), the read-only settlement reconciliation, and NOT_TESTED records for Mistral-Nemo and Phi-4. Phase 21B.4.20 Modal H100 update: adds CPU pre-cache manifests, owner-created attempt-1 settlement waiver (hash recorded, content untouched), Qwen3-8B H100 attempt 4 evidence and its delayed-settlement reconciliation artifacts. Audit remediation: adds the three Modal H100 preflight artifacts (CPU 191936Z, GPU 195933Z blocked, GPU 205041Z allowed) and re-derives every hash from actual bytes; GENESIS_CONTROL_SET_* files belong to the earlier control-set admission phase and have their own index. Adds the CPU-only Qwen3-8B runtime-configuration analysis (2026-09-25). Canonical locked-smoke protocol canonicalization (2026-09-25): adds GENESIS_LOCKED_SMOKE_PROTOCOL and the V2 canonical-prompt Qwen analysis; the earlier analysis is annotated superseded; Mistral/Phi NOT_TESTED planned prompts canonicalized (originals preserved); matrix updated. Qwen3-8B qwen3_8b_non_thinking_v1 implementation readiness (2026-09-25): adds the byte-identical attempt-4 record snapshot and the CPU-only readiness artifact; matrix updated. Runtime-policy pin (2026-09-25): readiness artifact regenerated with the pinned policy fingerprint; matrix updated. Qwen3-8B attempt 5 (2026-09-25, owner-authorized, qwen3_8b_non_thinking_v1): adds the attempt-5 preflight/billing/raw-log artifacts and the 081417Z GPU preflight; attempts file and Qwen record re-hashed; matrix updated. Attempt-5 reasoning_mode metadata correction (2026-09-25): adds the byte-identical pre-correction attempt-5 record snapshot; Qwen record re-hashed (descriptive metadata only); matrix updated. Mistral-Nemo attempt 1 (2026-09-25, owner-authorized): adds the attempt-1 preflight/billing/raw-log/attempts/reconciliation artifacts; Mistral record re-hashed; matrix updated.",
+  "note": "SHA-256 hashes computed live from actual file bytes; repo-relative paths. Includes Qwen3-8B attempt 1 (harness failure, annotated with failure_domain; pre-annotation attempts-file sha256 eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365 is preserved in git history and in the annotation), the read-only settlement reconciliation, and NOT_TESTED records for Mistral-Nemo and Phi-4. Phase 21B.4.20 Modal H100 update: adds CPU pre-cache manifests, owner-created attempt-1 settlement waiver (hash recorded, content untouched), Qwen3-8B H100 attempt 4 evidence and its delayed-settlement reconciliation artifacts. Audit remediation: adds the three Modal H100 preflight artifacts (CPU 191936Z, GPU 195933Z blocked, GPU 205041Z allowed) and re-derives every hash from actual bytes; GENESIS_CONTROL_SET_* files belong to the earlier control-set admission phase and have their own index. Adds the CPU-only Qwen3-8B runtime-configuration analysis (2026-09-25). Canonical locked-smoke protocol canonicalization (2026-09-25): adds GENESIS_LOCKED_SMOKE_PROTOCOL and the V2 canonical-prompt Qwen analysis; the earlier analysis is annotated superseded; Mistral/Phi NOT_TESTED planned prompts canonicalized (originals preserved); matrix updated. Qwen3-8B qwen3_8b_non_thinking_v1 implementation readiness (2026-09-25): adds the byte-identical attempt-4 record snapshot and the CPU-only readiness artifact; matrix updated. Runtime-policy pin (2026-09-25): readiness artifact regenerated with the pinned policy fingerprint; matrix updated. Qwen3-8B attempt 5 (2026-09-25, owner-authorized, qwen3_8b_non_thinking_v1): adds the attempt-5 preflight/billing/raw-log artifacts and the 081417Z GPU preflight; attempts file and Qwen record re-hashed; matrix updated. Attempt-5 reasoning_mode metadata correction (2026-09-25): adds the byte-identical pre-correction attempt-5 record snapshot; Qwen record re-hashed (descriptive metadata only); matrix updated. Mistral-Nemo attempt 1 (2026-09-25, owner-authorized): adds the attempt-1 preflight/billing/raw-log/attempts/reconciliation artifacts; Mistral record re-hashed; matrix updated. Mistral audit remediation (2026-09-25): adds the byte-identical pre-correction Mistral attempt-1 snapshot; Mistral record/attempts re-hashed (conservative UNATTRIBUTED classification, settlement sync, reconstructed container proof); matrix updated.",
   "phase": "21B.4.20"
 }

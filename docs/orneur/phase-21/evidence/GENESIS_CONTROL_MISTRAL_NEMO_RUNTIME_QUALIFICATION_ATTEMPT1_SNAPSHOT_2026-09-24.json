@@ -3,31 +3,22 @@
   "attempts": [
     {
       "attempt_number": 1,
-      "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+      "billing_settlement_status": "OBSERVED",
       "cleanup_result": "PASS",
       "duration_seconds": 176.2,
-      "failure_domain": "UNATTRIBUTED",
+      "failure_domain": "MODEL_RUNTIME",
       "finished_at_utc": "2026-09-25T09:14:42Z",
       "modal_app_id": "ap-LEwLRsdDZiLhSvTgwIPn7g",
       "modal_app_name": "orneur-p21b420-h100-control-runtime",
-      "original_classification": {
-        "failure_domain": "MODEL_RUNTIME",
-        "note": "recorded by the harness as a model-runtime failure although the HTTP error bodies were never captured",
-        "outcome": "TECHNICAL_FAILURE",
-        "reason": "locked smoke contract not met: A: no string content; B: no string content; C: no string content",
-        "status": "TECHNICAL_FAILURE",
-        "valid_runtime_attempt": true
-      },
-      "original_in_run_billing_settlement_status": "OBSERVED",
-      "outcome": "UNATTRIBUTED_REQUEST_REJECTION",
+      "outcome": "TECHNICAL_FAILURE",
       "owner_billed_delta_usd": "0E-8",
       "provider": "Modal",
       "raw_log_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt",
       "raw_log_sha256": "c4986233bce379dd1ff374ac856cee41235425e47886d455379f29852aed8aa3",
-      "reason": "server ready, exact identity and BF16 load proven; the immutable raw server log proves 3 POST /v1/chat/completions responses with HTTP status [400]; the API error bodies were NOT captured (runner gap), so the rejection is UNATTRIBUTED (model/runtime vs request-format/harness). Chat-completions qualification was NOT established; this is not a pass and not evidence that the model is incompatible",
+      "reason": "locked smoke contract not met: A: no string content; B: no string content; C: no string content",
       "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
       "started_at_utc": "2026-09-25T09:11:46Z",
-      "status": "UNATTRIBUTED_REQUEST_REJECTION",
+      "status": "TECHNICAL_FAILURE",
       "valid_runtime_attempt": true
     }
   ],
@@ -45,84 +36,9 @@
   },
   "capability_status": "UNPROVEN",
   "chat_template_source": "tokenizer_config.json chat_template @ pinned revision (HF path pinned explicitly via --tokenizer-mode hf; mistral-common path NOT used)",
-  "classification_correction": {
-    "changed_fields": [
-      "attempts",
-      "technical_serving_status",
-      "runtime_qualification_status",
-      "container_execution_proof",
-      "http_error_evidence_gap"
-    ],
-    "established": [
-      "server ready",
-      "exact pinned identity",
-      "BF16 load",
-      "exact locked server flags",
-      "3 HTTP [400] responses (server log)"
-    ],
-    "from": {
-      "failure_domain": "MODEL_RUNTIME",
-      "outcome": "TECHNICAL_FAILURE",
-      "runtime_qualification_status": "FAILED",
-      "technical_serving_status": "FAILED"
-    },
-    "kind": "CONSERVATIVE CLASSIFICATION: an unknown HTTP-level rejection cannot be attributed to the model",
-    "not_established": [
-      "chat-completions qualification",
-      "the cause of the HTTP rejection",
-      "any model incompatibility"
-    ],
-    "reclassifies_settlement": false,
-    "snapshot_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT1_SNAPSHOT_2026-09-24.json",
-    "snapshot_sha256": "5bcf5aa8423ea22082a554c39edf414dea27b45511dca1f3c18136e4fe9fd5df",
-    "to": {
-      "failure_domain": "UNATTRIBUTED",
-      "outcome": "UNATTRIBUTED_REQUEST_REJECTION",
-      "runtime_qualification_status": "NOT_COMPLETED",
-      "technical_serving_status": "NOT_PROVEN"
-    },
-    "unchanged": [
-      "raw log",
-      "billing before/after",
-      "financial preflight",
-      "smoke raw fields",
-      "model identity evidence",
-      "server argv",
-      "timing metrics",
-      "run timestamps"
-    ]
-  },
   "cleanup_status": "PASS",
   "cold_start_seconds": 153.09,
   "container_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
-  "container_execution_proof": {
-    "chat_template_kwargs_sent": {
-      "A": null,
-      "B": null,
-      "C": null
-    },
-    "config_format": "hf",
-    "load_format": "safetensors",
-    "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
-    "precision": "bfloat16",
-    "prompt_sha256_sent": {
-      "A": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
-      "B": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
-      "C": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42"
-    },
-    "provenance": "RECONSTRUCTED_FROM_PERSISTED_EVIDENCE",
-    "quantization": null,
-    "reasoning_parser": null,
-    "reconstruction_note": "the container-returned proof object was computed and verified by the harness at run time (the attempt was not a HARNESS_FAILURE) but was not persisted; this proof is reconstructed from persisted evidence (server_argv_sanitized, identity_verification, per-smoke prompt_sha256_sent / chat_template_kwargs_sent, smoke_protocol). runtime_policy_sha256 is not reconstructable and is null.",
-    "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
-    "runtime_configuration_id": null,
-    "runtime_configuration_id_applied": null,
-    "runtime_configuration_sha256": null,
-    "runtime_policy_sha256": null,
-    "served_model_id": "mistralai/Mistral-Nemo-Instruct-2407",
-    "smoke_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
-    "tokenizer_mode": "hf"
-  },
   "container_image": "vllm/vllm-openai:v0.29.0",
   "control_name": "Mistral-Nemo-Instruct-2407",
   "download_seconds": 0.05,
@@ -171,31 +87,6 @@
   "gpu_provider": "Modal",
   "gpu_type": "NVIDIA H100 80GB (Modal H100)",
   "health_status": 200,
-  "http_error_evidence_gap": {
-    "api_error_bodies_captured": false,
-    "preserved_unchanged": {
-      "http_status": [
-        null,
-        null,
-        null
-      ],
-      "raw_response": [
-        "",
-        "",
-        ""
-      ]
-    },
-    "proven_by_immutable_raw_server_log": {
-      "artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt",
-      "post_chat_completions_statuses": [
-        400,
-        400,
-        400
-      ],
-      "sha256": "c4986233bce379dd1ff374ac856cee41235425e47886d455379f29852aed8aa3"
-    },
-    "statement": "HTTP 400 is proven by the server log, but the corresponding API error bodies were not captured (urllib raised HTTPError before status/body were recorded). They are not reconstructed. The shared runner now captures them for future requests."
-  },
   "identity_verification": {
     "cpu_stage_manifest_all_lfs_sha256_match": true,
     "identity_evidence_strength": "HF snapshot dir == pinned commit AND summed shard bytes == recorded exact bytes AND every staged file's sha256 equals the Hugging Face LFS sha256 (CPU stage manifest) AND /v1/models id == pinned repo id AND server started from that local snapshot with HF_HUB_OFFLINE=1. vLLM exposes no separate runtime revision field.",
@@ -284,7 +175,7 @@
   "reasoning_parser": null,
   "runtime_configuration": null,
   "runtime_name": "vLLM (official vllm/vllm-openai image on Modal, OpenAI-compatible server; model from a verified Modal Volume cache)",
-  "runtime_qualification_status": "NOT_COMPLETED",
+  "runtime_qualification_status": "FAILED",
   "runtime_version": "0.29.0",
   "server_argv_sanitized": [
     "/usr/local/bin/python",
@@ -546,7 +437,7 @@
   "started_at_utc": "2026-09-25T09:11:46Z",
   "steady_gpu_memory_bytes": 76157026304,
   "stop_behavior": "eos_token </s>; instruction tokens [INST] [/INST]",
-  "technical_serving_status": "NOT_PROVEN",
+  "technical_serving_status": "FAILED",
   "tensor_parallel": 1,
   "tokenizer_revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
   "tokens_per_second": null,
