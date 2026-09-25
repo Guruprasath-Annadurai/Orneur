@@ -27,6 +27,7 @@ import pytest
 
 from orca.eval.candidate_registry import CandidateExecutionRegistry, EXPECTED_CONTROL_NAMES
 from orca.eval.control_runtime_qualification import (
+    compute_smoke_acceptance,
     ATTEMPT_OUTCOMES,
     CAPABILITY_STATUS,
     LOCKED_CONTROL_IDENTITIES,
@@ -76,7 +77,7 @@ def _qualified_record(tmp_path: Path, control="Phi-4") -> dict:
     log_sha = _write(tmp_path / "raw.log", b"SYNTHETIC RAW LOG")
     outputs, prompts = [], []
     for sid in REQUIRED_SMOKE_IDS:
-        raw = f'{{"content": "SYNTHETIC-{sid}"}}'
+        raw = json.dumps({"content": {"A": "\n\nREADY", "B": " 5\n", "C": '\n{"status": "ready"}'}[sid]})     # locked contents, surrounding whitespace only
         outputs.append({"smoke_id": sid, "http_status": 200, "raw_response": raw,
                         "raw_response_sha256": hashlib.sha256(raw.encode()).hexdigest(), "executed": False})
         prompts.append({"smoke_id": sid, "messages": [{"role": "user", "content": "synthetic"}]})
@@ -945,7 +946,8 @@ def test_a_prior_attempt_blocks_the_next_launch_until_reconciliation_observes_it
 def test_persisted_qwen_history_keeps_modal_attempt_1_unchanged_and_adds_the_blocked_lightning_attempt():
     rec = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
     a, b, c, d = rec["attempts"]
-    assert d["provider"] == "Modal" and d["attempt_number"] == 4 and d["outcome"] == "TECHNICAL_SUCCESS" and d["valid_runtime_attempt"] is True
+    assert d["provider"] == "Modal" and d["attempt_number"] == 4 and d["outcome"] == "TECHNICAL_FAILURE" and d["valid_runtime_attempt"] is True
+    assert d["original_classification"]["outcome"] == "TECHNICAL_SUCCESS"      # audit reclassification (locked Smoke B) keeps the original judgement
     assert a["outcome"] == "HARNESS_FAILURE" and a["status"] == "HARNESS_FAILURE" and a["failure_domain"] == "HARNESS"
     assert a["valid_runtime_attempt"] is False and a["duration_seconds"] == 34.6
     assert a["owner_billed_delta_usd"] == "0E-8" and a["cleanup_result"] == "PASS"
@@ -954,7 +956,7 @@ def test_persisted_qwen_history_keeps_modal_attempt_1_unchanged_and_adds_the_blo
     assert b["provider"] == "Lightning AI" and b["outcome"] == "BLOCKED_NO_GPU" and b["failure_domain"] == "NONE"
     assert b["valid_runtime_attempt"] is False and b["credits_consumed"] in ("0E-7", "0") and "verified payment method" in b["reason"]
     assert c["provider"] == "razorBridge" and c["outcome"] == "BLOCKED_NO_GPU" and c["credits_consumed"] == "0" and c["valid_runtime_attempt"] is False
-    assert rec["technical_serving_status"] == "QUALIFIED" and rec["runtime_qualification_status"] in ("PENDING_SETTLEMENT_OBSERVATION", "RUNTIME_QUALIFIED")
+    assert rec["technical_serving_status"] == "FAILED" and rec["runtime_qualification_status"] == "FAILED"
     assert rec["capability_status"] == "UNPROVEN" and len(rec["smoke_outputs"]) == 3
 
 
@@ -1850,3 +1852,169 @@ def test_reconcile_uses_the_exact_metered_breakdown_because_account_totals_are_r
 def test_reconcile_still_refuses_when_the_exact_breakdown_shows_unexplained_growth(monkeypatch, tmp_path):
     mod, _ = _reconcile_env(monkeypatch, tmp_path, eph_before="20.07689253", eph_now="20.30462160", run_cost="0.20000000")
     assert mod.cmd_reconcile(_rc_args(mod)) == 5 and _rc_record(tmp_path)["runtime_qualification_status"] == "PENDING_SETTLEMENT_OBSERVATION"
+
+
+# ── locked smoke semantics (audit finding: HTTP 200 + non-empty is NOT acceptance) ──
+def _with_smoke(tmp_path, sid, content):
+    rec = _qualified_record(tmp_path)
+    for o in rec["smoke_outputs"]:
+        if o["smoke_id"] == sid:
+            o["raw_response"] = json.dumps({"content": content})
+            o["raw_response_sha256"] = hashlib.sha256(o["raw_response"].encode()).hexdigest()
+    return rec
+
+
+@pytest.mark.parametrize("sid,content", [
+    ("A", "Ready"), ("A", "READY."), ("A", "The word is READY"), ("A", "READY READY"), ("A", ""), ("A", "anything non-empty"),
+    ("B", "The result of adding 2 and 3 is 5.\n\n**Answer:** 5"), ("B", "5."), ("B", "five"), ("B", "The answer is 5"), ("B", "$$2 + 3 = 5$$"), ("B", "6"),
+    ("C", "{status: ready}"), ("C", "not json"), ("C", '{"status":"ready","extra":1}'), ("C", '{"status":"READY"}'), ("C", '```json\n{"status":"ready"}\n```'),
+    ("C", '["status","ready"]'), ("C", '{"status":"ready"} trailing'),
+])
+def test_locked_smoke_wrong_or_verbose_output_blocks_runtime_qualified(tmp_path, sid, content):
+    rec = _with_smoke(tmp_path, sid, content)
+    assert rec["smoke_outputs"] and all(o["http_status"] == 200 and o["raw_response"] for o in rec["smoke_outputs"])      # HTTP 200 + non-empty is present
+    with pytest.raises(ControlRuntimeError, match="LOCKED smoke"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+@pytest.mark.parametrize("sid,content", [
+    ("A", "READY"), ("A", "\n\nREADY\n"), ("A", "  READY  "), ("B", "5"), ("B", "\n 5 \n"), ("B", "\t5"),
+    ("C", '{"status":"ready"}'), ("C", '\n\n{"status":"ready"}\n'), ("C", '{ "status" : "ready" }'),
+])
+def test_locked_smoke_exact_outputs_with_only_surrounding_whitespace_pass(tmp_path, sid, content):
+    validate_control_runtime_record(_with_smoke(tmp_path, sid, content), evidence_root=tmp_path)
+
+
+def test_locked_smoke_acceptance_is_derived_from_raw_output_not_a_stored_flag_or_forged_summary(tmp_path):
+    rec = _with_smoke(tmp_path, "B", "a verbose answer that ends in 5")
+    for o in rec["smoke_outputs"]:
+        o["matches_expected_exactly"] = True                                             # a forged boolean changes nothing
+    with pytest.raises(ControlRuntimeError, match="LOCKED smoke"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec = _qualified_record(tmp_path)
+    rec["smoke_outputs"][1]["content"] = "5"                                             # persisted summary disagreeing with the raw response
+    rec["smoke_outputs"][1]["raw_response"] = json.dumps({"content": "verbose 5"})
+    rec["smoke_outputs"][1]["raw_response_sha256"] = hashlib.sha256(rec["smoke_outputs"][1]["raw_response"].encode()).hexdigest()
+    with pytest.raises(ControlRuntimeError, match="LOCKED smoke"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec = _qualified_record(tmp_path)
+    rec["smoke_acceptance"] = [{"smoke_id": s, "accepted": False} for s in ("A", "B", "C")]
+    with pytest.raises(ControlRuntimeError, match="smoke_acceptance"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_openai_chat_shaped_raw_response_is_read_from_choices(tmp_path):
+    rec = _qualified_record(tmp_path)
+    raw = json.dumps({"choices": [{"message": {"role": "assistant", "content": "\n\n5", "reasoning": "long thinking"}}]})
+    rec["smoke_outputs"][1].update(raw_response=raw, raw_response_sha256=hashlib.sha256(raw.encode()).hexdigest(), content="\n\n5")
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256 = "88909b4935ba571da2275835428cba8221b05caba264a4902122e192b6e8a4b4"
+
+
+def _persisted_qwen():
+    return json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+
+
+def test_persisted_qwen_attempt_4_cannot_be_runtime_qualified_with_its_existing_smoke_b_output():
+    rec = _persisted_qwen()
+    acc = {a["smoke_id"]: a for a in compute_smoke_acceptance(rec)}
+    assert acc["A"]["accepted"] and acc["C"]["accepted"] and acc["B"]["accepted"] is False
+    forced = copy.deepcopy(rec)
+    forced.update(technical_serving_status="QUALIFIED", runtime_qualification_status="RUNTIME_QUALIFIED")
+    with pytest.raises(ControlRuntimeError, match="LOCKED smoke"):
+        validate_control_runtime_record(forced, evidence_root=EVIDENCE_DIR)
+    assert rec["runtime_qualification_status"] == "FAILED" and rec["technical_serving_status"] == "FAILED"     # the honest derived status
+    validate_control_runtime_record(rec, evidence_root=EVIDENCE_DIR)
+    assert rec["attempts"][-1]["outcome"] == "TECHNICAL_FAILURE" and rec["attempts"][-1]["valid_runtime_attempt"] is True
+    assert rec["attempts"][-1]["original_classification"]["outcome"] == "TECHNICAL_SUCCESS"                   # history of the original judgement kept
+    assert rec["failure_analysis"]["kind"].startswith("LOCKED_SMOKE_CONTRACT_NOT_MET") and rec["capability_status"] == "UNPROVEN"
+
+
+def test_persisted_qwen_raw_evidence_financials_and_no_execution_are_unchanged():
+    rec = _persisted_qwen()
+    canon = hashlib.sha256(json.dumps(rec["smoke_outputs"], sort_keys=True).encode()).hexdigest()
+    assert canon == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256                                    # raw smoke outputs byte-for-byte as first persisted
+    assert rec["raw_log_sha256"] == "068332b340ddcf73d1d61e326c1e95646a610ac6864b2a47848cf218355d5bbd"
+    assert hashlib.sha256((EVIDENCE_DIR / rec["raw_log_artifact"]).read_bytes()).hexdigest() == rec["raw_log_sha256"]
+    assert all(o["executed"] is False for o in rec["smoke_outputs"]) and rec["generated_output_executed"] is False
+    ref = rec["settlement_reconciliation"]
+    art_path = EVIDENCE_DIR / ref["artifact"]
+    assert hashlib.sha256(art_path.read_bytes()).hexdigest() == ref["sha256"]
+    art = json.loads(art_path.read_text())
+    assert rec["financial_reconciliation"] == art["financial_reconciliation"] and rec["billing_settlement"]["status"] == "OBSERVED"
+    assert ref["promotional_credit_used_usd"] == "0.22772907" and rec["owner_billed_delta_usd"] == "0E-8"
+    assert rec["original_in_run_billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"     # in-run delay stays historical truth
+
+
+def test_smoke_acceptance_functions_never_execute_generated_text():
+    tree = ast.parse((REPO_ROOT / "orca/eval/control_runtime_qualification.py").read_text())
+    for fn in (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name in {"smoke_locked_acceptance", "extract_smoke_content", "compute_smoke_acceptance", "_check_locked_smokes"}):
+        body = ast.unparse(fn)
+        for banned in ("eval(", "exec(", "compile(", "os.system", "subprocess", "__import__", "importlib", "pickle"):
+            assert banned not in body, (fn.name, banned)
+
+
+def test_modal_harness_run_judges_technical_success_by_the_locked_smoke_semantics():
+    text = MODAL_H100.read_text()
+    run = ast.unparse(next(n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run"))
+    assert "smoke_locked_acceptance" in run and "smokes_ok" in run and "compute_smoke_acceptance" in run
+
+
+def _rc_finalized_env(monkeypatch, tmp_path):
+    mod, before = _reconcile_env(monkeypatch, tmp_path)
+    assert mod.cmd_reconcile(_rc_args(mod)) == 0
+    return mod
+
+
+def _degrade_b(tmp_path):
+    p = tmp_path / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json"
+    rec = json.loads(p.read_text())
+    o = rec["smoke_outputs"][1]
+    o["raw_response"] = json.dumps({"content": "\n\nThe result is calculated by adding.\n\n**Answer:** 5"})
+    o["raw_response_sha256"] = hashlib.sha256(o["raw_response"].encode()).hexdigest()
+    p.write_text(json.dumps(rec))
+    return rec
+
+
+def test_reevaluate_smokes_reclassifies_a_verbose_b_without_touching_raw_evidence_or_financials(monkeypatch, tmp_path):
+    mod = _rc_finalized_env(monkeypatch, tmp_path)
+    before = _degrade_b(tmp_path)
+    assert mod.cmd_reevaluate_smokes(_rc_args(mod)) == 0
+    after = _rc_record(tmp_path)
+    assert after["technical_serving_status"] == "FAILED" and after["runtime_qualification_status"] == "FAILED" and after["runtime_qualification_status"] != "RUNTIME_QUALIFIED"
+    assert after["smoke_outputs"] == before["smoke_outputs"] and after["raw_log_sha256"] == before["raw_log_sha256"]
+    assert after["financial_reconciliation"] == before["financial_reconciliation"] and after["billing_settlement"] == before["billing_settlement"]
+    assert after["settlement_reconciliation"] == before["settlement_reconciliation"] and after["owner_billed_delta_usd"] == before["owner_billed_delta_usd"]
+    last = after["attempts"][-1]
+    assert last["outcome"] == "TECHNICAL_FAILURE" and last["failure_domain"] == "MODEL_RUNTIME" and last["original_classification"]["outcome"] == "TECHNICAL_SUCCESS"
+    assert [(a["smoke_id"], a["accepted"]) for a in after["smoke_acceptance"]] == [("A", True), ("B", False), ("C", True)]
+    attempts_file = json.loads((tmp_path / f"GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_{mod.DATE_TAG}.json").read_text())["attempts"]
+    assert attempts_file[-1] == last and attempts_file[:-1] == after["attempts"][:-1]
+    validate_control_runtime_record(after, evidence_root=tmp_path)
+
+
+def test_reevaluate_smokes_leaves_a_fully_compliant_record_qualified(monkeypatch, tmp_path):
+    mod = _rc_finalized_env(monkeypatch, tmp_path)
+    assert mod.cmd_reevaluate_smokes(_rc_args(mod)) == 0
+    after = _rc_record(tmp_path)
+    assert after["runtime_qualification_status"] == "RUNTIME_QUALIFIED" and after["technical_serving_status"] == "QUALIFIED" and all(a["accepted"] for a in after["smoke_acceptance"])
+
+
+def test_reevaluate_smokes_is_cpu_only_and_refuses_the_wrong_attempt(monkeypatch, tmp_path):
+    body = ast.unparse(next(n for n in ast.walk(ast.parse(MODAL_H100.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "cmd_reevaluate_smokes"))
+    for banned in ("serve_and_smoke", ".remote(", "app.run", "billing_summary", "_cli_json", "subprocess", "eval(", "exec("):
+        assert banned not in body, banned
+    mod = _rc_finalized_env(monkeypatch, tmp_path)
+    assert mod.cmd_reevaluate_smokes(_rc_args(mod, attempt=3)) == 2
+
+
+def test_every_phase_21b_4_20_modal_h100_evidence_file_is_in_the_sha256_index():
+    index = json.loads(INDEX_PATH.read_text())
+    indexed = {e["path"] for e in index["entries"]}
+    patterns = ("*MODAL_H100*", "*MODAL_PRECACHE_MANIFEST*", "*OWNER_SETTLEMENT_WAIVER*", "*ATTEMPT4*", "*SETTLEMENT_RECONCILIATION*",
+                "GENESIS_CONTROL_*_RUNTIME_QUALIFICATION_2026-09-24.json", "GENESIS_CONTROL_*_ATTEMPTS_2026-09-24.json")
+    missing = sorted({str(p.relative_to(REPO_ROOT)) for pat in patterns for p in EVIDENCE_DIR.glob(pat)} - indexed)
+    assert not missing, missing
+    assert any("GPU_PREFLIGHT_2026-09-24T205041Z" in p for p in indexed)

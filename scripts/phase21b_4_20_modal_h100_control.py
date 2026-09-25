@@ -162,7 +162,7 @@ def _load_lightning_control():
 if modal.is_local():  # the container only needs the remote functions; orca is not shipped to it
     from orca.eval.control_runtime_qualification import (  # noqa: E402
         FAILURE_DOMAIN_BY_OUTCOME, LOCKED_CONTROL_IDENTITIES, assess_settlement, build_financial_reconciliation,
-        derive_runtime_status, financial_gate_decision, to_decimal, validate_control_runtime_record,
+        compute_smoke_acceptance, derive_runtime_status, smoke_locked_acceptance, financial_gate_decision, to_decimal, validate_control_runtime_record,
     )
 
 
@@ -484,13 +484,19 @@ def cmd_run(a) -> int:
                                         "app_row": row, "app_id": app_id, "itemized_rows_for_app": mine, "duration_seconds_wall": duration, "cleanup_snapshot": cleanup,
                                         "object_specific_note": "the app's own created/stopped timestamps (Modal) are the authoritative active window; itemized billing rows may lag"})
 
-    tech_ok = bool(result and not result.get("error") and result.get("server_ready") and len(result.get("smoke_results", [])) == 3
-                   and all(s.get("http_status") == 200 and s.get("content") and not s.get("error") for s in result["smoke_results"])
+    # LOCKED smoke semantics: HTTP 200 + non-empty content is NOT enough; each response must satisfy its exact locked requirement
+    smokes_ok = bool(result and len(result.get("smoke_results", [])) == 3
+                     and all(smoke_locked_acceptance(x.get("smoke_id"), x.get("content"))[0] for x in result["smoke_results"]))
+    tech_ok = bool(result and not result.get("error") and result.get("server_ready") and smokes_ok
+                   and all(x.get("http_status") == 200 and x.get("content") and not x.get("error") for x in result["smoke_results"])
                    and result.get("orphan_vllm_processes_after_shutdown") == 0)
     if error_text is None:
         if result is not None and (result.get("server_argv_sanitized") or result.get("error")):
             outcome = "TECHNICAL_SUCCESS" if tech_ok else "TECHNICAL_FAILURE"
-            reason = "server ready, 3 smoke requests HTTP 200 with non-empty content, clean shutdown" if tech_ok else (result.get("error") or "smoke/teardown criteria not met")
+            reason = ("server ready, all 3 LOCKED smokes matched exactly, clean shutdown" if tech_ok else
+                      (result.get("error") or ("locked smoke contract not met: " + "; ".join(f"{x.get('smoke_id')}: {smoke_locked_acceptance(x.get('smoke_id'), x.get('content'))[1]}"
+                                                                                           for x in result.get("smoke_results", []) if not smoke_locked_acceptance(x.get("smoke_id"), x.get("content"))[0])
+                                               if result.get("server_ready") and not smokes_ok else "smoke/teardown criteria not met")))
         else:
             outcome, reason = "HARNESS_FAILURE", "no usable result returned"
     else:
@@ -528,6 +534,7 @@ def cmd_run(a) -> int:
     })
     for k in ("container_image", "container_digest"):
         record["unobservable_reasons"].pop(k, None)
+    record["smoke_acceptance"] = compute_smoke_acceptance(record)      # derived from the raw outputs; the raw outputs themselves are never altered
     record["runtime_qualification_status"] = derive_runtime_status(
         technical=record["technical_serving_status"], financial_acceptance=record["financial_acceptance_status"], cleanup=record["cleanup_status"],
         owner_billed_delta_usd=record["owner_billed_delta_usd"], live_resources_after_cleanup=record["live_resources_after_cleanup"],
@@ -717,9 +724,64 @@ def _finalize_record(record: dict, rec_path: Path, art_path: Path, art_sha: str,
     return 0 if final["runtime_qualification_status"] == "RUNTIME_QUALIFIED" else 1
 
 
+def cmd_reevaluate_smokes(a) -> int:
+    """CPU-ONLY, no Modal, no GPU. Re-derives the honest status of a persisted attempt from its RAW smoke outputs under the locked
+    smoke semantics. Raw outputs, raw log, financial evidence and settlement evidence are never modified. If any locked smoke fails,
+    the attempt is reclassified TECHNICAL_FAILURE (valid runtime attempt, model-runtime domain) with the original classification
+    preserved, and the record becomes technical FAILED / runtime FAILED -- never RUNTIME_QUALIFIED."""
+    lc = _load_lightning_control()
+    cfg = lc.CONTROLS[a.control]
+    tag = cfg["tag"]
+    rec_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_{DATE_TAG}.json"
+    record = _json_file(rec_path)
+    att = record["attempts"][-1]
+    if att.get("attempt_number") != a.attempt or att.get("provider") != "Modal":
+        print("requested attempt is not the final Modal attempt of the record; refusing")
+        return 2
+    acceptance = compute_smoke_acceptance(record)
+    failed = [x for x in acceptance if not x["accepted"]]
+    final = json.loads(json.dumps(record))
+    final["smoke_acceptance"] = acceptance
+    if not failed:
+        final["runtime_qualification_status"] = derive_runtime_status(
+            technical=final["technical_serving_status"], financial_acceptance=final["financial_acceptance_status"], cleanup=final["cleanup_status"],
+            owner_billed_delta_usd=final["owner_billed_delta_usd"], live_resources_after_cleanup=final["live_resources_after_cleanup"],
+            settlement_status=final["billing_settlement"]["status"])
+    else:
+        summary = "; ".join(f"{x['smoke_id']}: {x['reason']}" for x in failed)
+        new_att = dict(att)
+        new_att.setdefault("original_classification", {"outcome": att["outcome"], "status": att["status"], "failure_domain": att["failure_domain"], "reason": att["reason"],
+                                                       "note": "originally judged on HTTP 200 + non-empty content only; reclassified after the independent audit applied the LOCKED smoke semantics to the unchanged raw outputs"})
+        new_att.update({"outcome": "TECHNICAL_FAILURE", "status": "TECHNICAL_FAILURE", "failure_domain": "MODEL_RUNTIME", "valid_runtime_attempt": True,
+                        "reason": f"locked smoke contract not met ({summary}); server, identity, BF16 load, cleanup and financial gates passed"})
+        final["attempts"] = record["attempts"][:-1] + [new_att]
+        final.setdefault("superseded_classification", {"technical_serving_status": record["technical_serving_status"],
+                                                       "runtime_qualification_status": record["runtime_qualification_status"],
+                                                       "reason": "audit finding: locked Smoke B (exact '5') was not satisfied; HTTP 200 + non-empty is not acceptance"})
+        final["technical_serving_status"] = "FAILED"
+        final["runtime_qualification_status"] = derive_runtime_status(
+            technical="FAILED", financial_acceptance=final["financial_acceptance_status"], cleanup=final["cleanup_status"],
+            owner_billed_delta_usd=final["owner_billed_delta_usd"], live_resources_after_cleanup=final["live_resources_after_cleanup"],
+            settlement_status=final["billing_settlement"]["status"])
+        final["failure_analysis"] = {"kind": "LOCKED_SMOKE_CONTRACT_NOT_MET (model response behaviour), not an infrastructure or identity failure",
+                                     "failed_smokes": failed, "infrastructure": "server ready, exact identity PASS, BF16 PASS, cleanup PASS, 0 live resources, owner billed delta 0"}
+    try:
+        validate_control_runtime_record(final, evidence_root=EVIDENCE_DIR)
+    except Exception as e:  # noqa: BLE001
+        print(f"RE-EVALUATED RECORD FAILED VALIDATION -- nothing written: {type(e).__name__}: {e}")
+        return 1
+    write_json(rec_path, final)
+    attempts_all = _load_attempts(tag)
+    attempts_all[-1] = final["attempts"][-1]
+    write_json(_attempts_path(tag), {"control_name": cfg["control_name"], "attempts": attempts_all})
+    print(json.dumps({"technical_serving_status": final["technical_serving_status"], "runtime_qualification_status": final["runtime_qualification_status"],
+                      "smoke_acceptance": [(x["smoke_id"], x["accepted"]) for x in acceptance]}, indent=2))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", required=True, choices=("preflight", "precache", "run", "reconcile"))
+    ap.add_argument("--mode", required=True, choices=("preflight", "precache", "run", "reconcile", "reevaluate-smokes"))
     ap.add_argument("--control", required=True, choices=CONTROL_KEYS)
     ap.add_argument("--attempt", type=int, help="reconcile only: the completed attempt number")
     ap.add_argument("--kind", choices=("gpu", "cpu"), default="gpu", help="preflight only")
@@ -728,6 +790,8 @@ def main() -> int:
         return cmd_preflight(a)
     if a.mode == "precache":
         return cmd_precache(a)
+    if a.mode == "reevaluate-smokes":
+        return cmd_reevaluate_smokes(a) if a.attempt else 2
     if a.mode == "reconcile":
         return cmd_reconcile(a) if a.attempt else 2
     return cmd_run(a)

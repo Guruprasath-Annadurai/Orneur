@@ -4,13 +4,45 @@
 no private holdout, no generated-output execution, no Modal Sandbox.
 CAPABILITY REMAINS UNPROVEN for every control.**
 
-## Status (true state after this session)
+## Current authoritative state (one consistent state; everything below the "Historical record" heading is preserved history)
 
-| Control | Identity | Preflight | Attempt result | Technical serving | Financial acceptance | Runtime qualification | Capability |
+Canonical provider: **Modal, 1 x H100 80GB, BF16, no quantization, no substitution**, exact pinned revisions from a hash-verified
+Modal Volume cache (CPU-only pre-cache manifests `GENESIS_CONTROL_*_MODAL_PRECACHE_MANIFEST_2026-09-24.json`).
+
+| Control | Identity | Latest attempt | Locked smokes A / B / C | Technical serving | Financial acceptance | Runtime qualification | Capability |
 |---|---|---|---|---|---|---|---|
-| Qwen3-8B | ADMITTED | PASSED | attempt 4 (Modal H100, 196.5 s) = TECHNICAL_SUCCESS; attempts 1-3 preserved (HARNESS_FAILURE, BLOCKED_NO_GPU x2) | QUALIFIED | PASS (owner billed delta 0; promotional credit used 0.22772907 USD, observed by read-only reconciliation) | RUNTIME_QUALIFIED | UNPROVEN |
-| Mistral-Nemo-Instruct-2407 | ADMITTED | PASSED | none | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
-| Phi-4 | ADMITTED | PASSED | none | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
+| Qwen3-8B | ADMITTED | attempt 4, Modal H100, 196.5 s, valid runtime attempt; reclassified `TECHNICAL_FAILURE` (model-runtime domain) by the audit | PASS / **FAIL** / PASS | FAILED (locked Smoke B contract not met) | PASS (owner billed delta 0; promotional credit used 0.22772907 USD, settlement OBSERVED) | **FAILED** | UNPROVEN |
+| Mistral-Nemo-Instruct-2407 | ADMITTED | none | not run | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
+| Phi-4 | ADMITTED | none | not run | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
+
+**No control is RUNTIME_QUALIFIED.** No retry and no further GPU run has been authorized; Mistral-Nemo and Phi-4 have not been run.
+Runtime qualification is not capability qualification.
+
+**Qwen3-8B attempt 4 (what is and is not established).** Infrastructure and identity facts hold: exact pinned Qwen3-8B revision
+(identity PASS), BF16 load PASS, Modal H100 serving PASS, cleanup PASS, 0 live resources, owner billed delta 0, promotional-credit
+settlement OBSERVED by the read-only `--mode reconcile` (0.22772907 USD, matching the app's own itemized row and the exact
+per-category metered growth), generated output never executed. But locked Smoke B (`Return the single integer result of: 2 + 3`,
+expected exactly `5`) was answered with a verbose explanation ending in 5, so the locked smoke contract was **not** met. The
+attempt was first judged on HTTP 200 + non-empty content; an independent audit showed that is not acceptance. The validator now
+enforces the locked semantics (after stripping surrounding whitespace: A == `READY`; B == `5`; C parses as JSON equal to exactly
+`{"status":"ready"}`), and `--mode reevaluate-smokes` (CPU only) re-derived the honest status from the unchanged raw outputs:
+attempt reclassified `TECHNICAL_FAILURE` (original classification preserved in `original_classification`), technical
+`FAILED`, runtime `FAILED`. This is a smoke-contract (response-behaviour) failure, not an identity, infrastructure or financial
+failure. The earlier `PENDING_SETTLEMENT_OBSERVATION` and `RUNTIME_QUALIFIED` labels are preserved as history
+(`superseded_classification`, `original_in_run_billing_settlement`).
+
+**Owner waiver.** Historical Modal attempt 1's unresolved settlement was lifted for launch gating only by the owner-created waiver
+(strict `validate_owner_settlement_waiver`); it never marks that settlement resolved, its conservative exposure stays deducted, and
+it applies to attempt 1 only, never to attempt 4.
+
+**Resume conditions.** A new Qwen3-8B attempt would need a separate explicit owner authorization; any change to the qualified
+runtime configuration (for example the thinking mode) is a configuration change and needs its own authorization. Every launch
+still requires: owner billed delta 0, credit runway >= $5.00 reserve + worst-case run cost (H100 900 s cap ~= $1.083, under the
+$1.25 maximum), zero live Modal resources, a verified model cache, and every earlier settlement observed or explicitly waived.
+
+## Historical record (superseded state preserved; text below may describe earlier states)
+
+### Historical: Qwen3-8B attempt 1 (Modal A100) and the gate that followed
 
 **Attempt result is not model result.** Qwen3-8B attempt 1 was cancelled by a harness bug (Modal 1.5.5 raises the
 *builtin* `TimeoutError` from `FunctionCall.get(timeout=)`; the harness did not catch it). The pinned model was never
@@ -20,33 +52,11 @@ qualification `NOT_COMPLETED` (machine-enforced; see `FAILURE_DOMAIN_BY_OUTCOME`
 unchanged in the history: 34.6 s, billed delta 0 at observed time, cleanup PASS, 0 live tasks, 0 containers,
 settlement `BILLING_SETTLEMENT_NOT_YET_OBSERVABLE`. Its true settled cost is unconfirmed and is not assumed to be zero.
 
-**No control is RUNTIME_QUALIFIED. No GPU may start** until attempt 1's settlement is observable
-(`QWEN_ATTEMPT_1_SETTLEMENT_STILL_UNRESOLVED` as of the last reconciliation, 2026-09-24T12:19Z; see
-`GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_SETTLEMENT_RECONCILIATION_*.json`). This is not a zero-cash-runway block:
-every preflight passed. Resume conditions: previous settlement observable AND owner payable delta 0 AND
-remaining credit >= $5.00 reserve + $1.25 maximum run cost AND zero live resources. Then exactly one Qwen3-8B
-retry (attempt 2), then Mistral-Nemo, then Phi-4, each gated on the previous settlement.
+*Historical (as of 2026-09-24T12:19Z, superseded):* the harness then refused any GPU start while attempt 1's settlement was
+unresolved (`QWEN_ATTEMPT_1_SETTLEMENT_STILL_UNRESOLVED`; see `GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_SETTLEMENT_RECONCILIATION_*.json`).
+That gate was later lifted for launch purposes by the owner waiver described above; attempt 1's settlement itself is still unresolved.
 
-## Modal H100 (canonical provider) -- Qwen3-8B attempt 4 and delayed-settlement reconciliation
-
-Canonical provider decision: Modal, 1 x H100 80GB, BF16, no quantization, no substitution, exact pinned revision from a
-hash-verified Modal Volume cache (CPU-only pre-cache for all three controls; manifests
-`GENESIS_CONTROL_*_MODAL_PRECACHE_MANIFEST_2026-09-24.json`). Historical attempt 1's unresolved settlement was lifted
-for *launch gating only* by the owner-created waiver (strict `validate_owner_settlement_waiver`; it never marks that
-settlement resolved and its conservative exposure stays deducted). The waiver applies to attempt 1 only and can never
-apply to attempt 4.
-
-Qwen3-8B attempt 4: technical `QUALIFIED`, all three locked smokes passed, cleanup PASS, 0 live resources, owner billed
-delta 0. Its in-run settlement was `BILLING_SETTLEMENT_NOT_YET_OBSERVABLE` (Modal metering lag), so the record was first
-`PENDING_SETTLEMENT_OBSERVATION` (a new machine-enforced status: technically and financially clean but credit coverage
-not yet observed; a status-label correction only, no technical evidence altered). The read-only
-`--mode reconcile --control qwen3_8b --attempt 4` later observed the run's own itemized row (0.22772907 USD, matching the
-exact per-category metered growth), credits applied covering it, owner billed unchanged, app stopped with 0 tasks, and
-finalized the record to `RUNTIME_QUALIFIED` without rerunning anything. The in-run delay is preserved in
-`original_in_run_billing_settlement`. Owner cash is 0; promotional credit used is 0.22772907 USD (a different quantity).
-Mistral-Nemo and Phi-4 have not been run (NOT_TESTED). Runtime qualification is not capability qualification.
-
-## Provider migration (Modal -> Lightning AI)
+### Historical: provider migration (Modal -> Lightning AI)
 
 Owner decision: no new Phase 21B.4.20 execution on Modal; Modal evidence and the unresolved Qwen attempt are preserved as
 historical provider-specific evidence (`GENESIS_CONTROL_PROVIDER_MIGRATION_MODAL_TO_LIGHTNING_2026-09-24.json`).
@@ -67,7 +77,7 @@ unchanged (4.9823576) and cleanup is verified. The owner's rule forbids adding o
 execution cannot proceed under it. The gate now refuses automatically while this rejection stands
 (`GENESIS_LIGHTNING_PROVIDER_GPU_REJECTION_2026-09-24.json`). No control has run on any provider; statuses are unchanged.
 
-## Hugging Face ZeroGPU fallback (read-only eligibility check)
+### Historical: Hugging Face ZeroGPU fallback (read-only eligibility check)
 
 Modal and Lightning execution is stopped for this phase (audit decision). The next candidate, Hugging Face ZeroGPU, is a
 **model runtime compatibility** test (exact BF16 checkpoint, Gradio/PyTorch), never a production-serving proof; production
@@ -80,7 +90,7 @@ was created and no account action was taken. Estimated BF16 memory fits the 48 G
 27.5 GB headroom, assuming a 4 GB overhead reserve; an estimate, not a measurement). Evidence:
 `GENESIS_HF_ZEROGPU_ELIGIBILITY_AND_HEADROOM_2026-09-24.json`. Statuses below are unchanged.
 
-### Update: authenticated Hugging Face account verified -- HF_ZEROGPU_NOT_ELIGIBLE
+#### Historical update: authenticated Hugging Face account verified -- HF_ZEROGPU_NOT_ELIGIBLE
 
 The owner logged in to Hugging Face (personal account `Orneur`, email verified, not PRO, no payment method, credits $0.00,
 ZeroGPU quota shown as 0/5 minutes). The account was created 2026-09-24T15:34:25Z, so it fails the documented
@@ -89,7 +99,7 @@ account-specific hardware selector cannot be seen without creating a Space, so `
 No Space, GPU quota, purchase or setting change was made. Evidence: `GENESIS_HF_ZEROGPU_ACCOUNT_VERIFICATION_2026-09-24.json`.
 The email address is not persisted. Control statuses, production serving qualification and program state are unchanged.
 
-## razorBridge (provider fallback 3)
+### Historical: razorBridge (provider fallback 3)
 
 Public facts verified (pricing page and docs) and account-side state read in the owner's logged-in web app: EUR 10 signup grant
 as the only ledger entry, no payment-method or top-up control anywhere, owner payable 0, H100 80 GB selectable at EUR 4.29/hr,
@@ -102,7 +112,7 @@ recorded as `BLOCKED_NO_GPU`. The razorBridge gate, validator and SSH operator s
 never been run against a real blade. Evidence: `GENESIS_RAZORBRIDGE_ACCOUNT_GATE_QWEN3_8B_2026-09-24.json`,
 `GENESIS_RAZORBRIDGE_PROVIDER_START_REFUSED_2026-09-24.json`. Control statuses are unchanged.
 
-## Billing reconciliation
+### Billing reconciliation (historical entries plus current baseline)
 
 - **Historical GLM record (preserved, not rewritten):** before invocation 2 metered $8.68 / billed $0 / credits -$8.68;
   after, metered $33.52 / billed $3.52 / credits -$30.00, owner delta $3.52, zero-cash gate VIOLATED.
@@ -118,10 +128,13 @@ never been run against a real blade. Evidence: `GENESIS_RAZORBRIDGE_ACCOUNT_GATE
   `GENESIS_CONTROL_QWEN3_8B_ATTEMPT1_EXECUTION_ATTRIBUTION_2026-09-24.json`). App lifetime 33.8 s, no function/container logs, empty task/stats and no itemized
   11:00Z row are consistent with cancellation before allocation but do not prove it; FunctionCallList is unavailable and terminated tasks are not retained.
   Gate stays closed; retry eligible: NO.
+- **Current (Modal H100, 2026-09-24):** attempt 4 settlement OBSERVED by `GENESIS_CONTROL_QWEN3_8B_ATTEMPT4_SETTLEMENT_RECONCILIATION_20260924T211518Z.json`:
+  metered growth 0.22772907 USD (exact breakdown) equals the app's itemized row, credits applied cover it, owner billed unchanged at 0. An earlier
+  same-day artifact (`...T211440Z.json`) compared against the cent-rounded account total and returned NOT_OBSERVABLE; it is kept as evidence.
 - Gates per run: owner-payable gate (billed must not exceed baseline) AND credit-coverage gate
   (derived remaining >= $5.00 reserve + $1.25 maximum authorized run cost).
 
-## Fresh account-specific financial preflight (live, read-only)
+### Historical: fresh account-specific financial preflight for Modal A100 attempt 1 (live, read-only)
 
 Captured 2026-09-24 immediately before allocation via `modal billing summary --json` / `billing rates --json` /
 `app|container|volume list`.
@@ -131,13 +144,13 @@ Captured 2026-09-24 immediately before allocation via `modal billing summary --j
 - GPU: A100-80GB x 1 at $2.50/h; hard ceiling 20 min; worst case = rate x 20 min x 1.5 = **$1.25** per job
 - Fixed reserve **$5.00**; gate requires remaining >= reserve + $1.25
 
-The runway is thin (three worst-case jobs $3.75 vs $4.97 usable) and must be re-checked live before every launch.
+The runway is thin and must be re-checked live before every launch. (Historical A100 figures; the current H100 gate uses rate x 900 s = ~$1.083 worst case, see the current state above.)
 
-## Planned runtime topology (derived, not measured)
+### Runtime topology (derived, not measured; originally planned on A100, executed on H100)
 
 Common: vLLM `v0.29.0` official image, digest
 `sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b`
-(the digest proven for Mistral Small 4 in Phase 21B.4.12.3), 1× A100-80GB,
+(the digest proven for Mistral Small 4 in Phase 21B.4.12.3), 1× 80GB GPU (planned A100-80GB; the executed canonical runtime is Modal H100 80GB),
 tensor-parallel 1, BF16, `--max-model-len 4096`, `--gpu-memory-utilization 0.90`
 (≈72 GB budget), OpenAI-compatible server started for the **exact pinned
 revision** from a local snapshot pre-downloaded with `revision=<pinned commit>`
@@ -155,7 +168,7 @@ sequence, derived from architecture parameters and **not verified this
 phase**) sit far inside the 72 GB budget, avoiding OOM risk and any reliance
 on unconfirmed multi-GPU tensor-parallel support.
 
-## Smoke prompts (not a benchmark)
+### Smoke prompts (not a benchmark)
 
 `temperature=0`, `top_p=1`, `seed=0`, small `max_tokens` (1024 for Qwen's
 thinking template, 64 otherwise). User-only messages:
@@ -164,27 +177,32 @@ thinking template, 64 otherwise). User-only messages:
 - **B** — `Return the single integer result of:` / `2 + 3`
 - **C** — `Return valid JSON with one field:` / `{"status":"ready"}`
 
-Technical PASS = server ready, `/v1/models` identity matches the pinned repo id,
-all three requests HTTP 200 with non-empty content, clean shutdown, zero orphan
-processes. Exact-match against the expected strings is recorded but non-blocking;
-any difference is documented, never hidden. Generated text is data only.
+Technical PASS = server ready, `/v1/models` identity matches the pinned repo id, clean shutdown, zero orphan processes,
+**and every locked smoke matches exactly** (whitespace stripped only): A == `READY`; B == `5`; C parses as JSON and equals exactly
+`{"status":"ready"}`. HTTP 200 + non-empty content is necessary but never sufficient, and a "contains 5" / "mentions ready"
+match is not acceptance. (An earlier version of this document called exact-match non-blocking; that was wrong and is superseded.)
+Generated text is data only.
 
-## Acceptance rules (machine-enforced in `orca/eval/control_runtime_qualification.py`)
+### Acceptance rules (machine-enforced in `orca/eval/control_runtime_qualification.py`)
 
 - `RUNTIME_QUALIFIED` only if technical `QUALIFIED` **and** financial `PASS` **and**
-  cleanup `PASS` with zero live resources **and** verified identity **and** verified hashes.
+  cleanup `PASS` with zero live resources **and** verified identity **and** verified hashes **and** every locked smoke exactly
+  satisfied **and** (Modal) the run's credit coverage observed in the account data (`PENDING_SETTLEMENT_OBSERVATION` until then).
 - Financial `PASS` only if `owner_billed_delta_usd == 0` exactly. Technical success with any
   positive owner billing is `NOT_ACCEPTED` (the GLM-5.3-Flash mistake must not recur).
 - No retry after positive billing, unclear cost state, or a failed cleanup; no automatic retry ever.
 - Every attempt is recorded; a hidden or omitted attempt fails validation.
 
-## Attempt accounting
+### Attempt accounting (Qwen3-8B; all attempts preserved)
 
-| Control | Attempt | Outcome / failure domain | Duration | Owner billed delta (observed) | Cleanup | Settlement |
+| Attempt | Provider | Outcome / failure domain | Duration | Owner billed delta (observed) | Cleanup | Settlement |
 |---|---|---|---|---|---|---|
-| Qwen3-8B | 1 | HARNESS_FAILURE / HARNESS (poll `TimeoutError` not caught) | 34.6 s | 0 | PASS | BILLING_SETTLEMENT_NOT_YET_OBSERVABLE |
+| 1 | Modal (A100) | HARNESS_FAILURE / HARNESS (poll `TimeoutError` not caught) | 34.6 s | 0 | PASS | BILLING_SETTLEMENT_NOT_YET_OBSERVABLE (unresolved; owner waiver lifts launch gating only) |
+| 2 | Lightning AI | BLOCKED_NO_GPU / NONE (payment-method requirement) | 7.2 s | 0 | PASS | n/a |
+| 3 | razorBridge | BLOCKED_NO_GPU / NONE (maintenance pause) | 0 s | 0 | n/a | n/a |
+| 4 | Modal (H100) | TECHNICAL_FAILURE / MODEL_RUNTIME (locked Smoke B contract; originally judged TECHNICAL_SUCCESS, reclassified by audit) | 196.5 s | 0 | PASS | OBSERVED by reconciliation (0.22772907 USD promotional credit) |
 
-## Environment-only behaviour (not exercised by CI)
+### Environment-only behaviour (not exercised by CI)
 
 CI has no Modal SDK, so the deterministic suite runs the harness against a recording stand-in for `modal`, plus static
 AST checks, and does **not** test real Modal SDK behaviour. Validated in CI: module syntax, constants, pinned image
@@ -194,14 +212,11 @@ Modal workspace): `FunctionCall.get(timeout=)` exception types and `cancel(termi
 image build/pull, GPU scheduling and container lifecycle, vLLM serving behaviour, and the billing CLI's real output and
 settlement latency.
 
-## To resume (each launch needs the previous settlement observable and a fresh gate)
+### Historical: A100-era resume instructions (obsolete)
 
-```bash
-.venv/bin/python scripts/phase21b_4_20_control_runtime_qualification.py --control qwen3_8b --mode reconcile --attempt 1   # read-only
-.venv/bin/python scripts/phase21b_4_20_control_runtime_qualification.py --control qwen3_8b --mode run                       # attempt 2
-```
-
-The harness refuses to start while any earlier attempt's billing settlement is unresolved.
+The earlier instructions ("run `--mode run` for attempt 2 on the A100 harness once attempt 1 settles") are obsolete: the canonical
+runtime is the Modal H100 harness `scripts/phase21b_4_20_modal_h100_control.py` (`preflight | precache | run | reconcile | reevaluate-smokes`).
+See "Resume conditions" in the current state above; no run is authorized at present.
 
 ## Program state (unchanged)
 

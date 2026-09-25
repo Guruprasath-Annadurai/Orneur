@@ -71,19 +71,26 @@
       "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
       "cleanup_result": "PASS",
       "duration_seconds": 196.5,
-      "failure_domain": "NONE",
+      "failure_domain": "MODEL_RUNTIME",
       "finished_at_utc": "2026-09-24T20:56:49Z",
       "modal_app_id": "ap-3frDTjsVLzElehnHpfm69I",
       "modal_app_name": "orneur-p21b420-h100-control-runtime",
-      "outcome": "TECHNICAL_SUCCESS",
+      "original_classification": {
+        "failure_domain": "NONE",
+        "note": "originally judged on HTTP 200 + non-empty content only; reclassified after the independent audit applied the LOCKED smoke semantics to the unchanged raw outputs",
+        "outcome": "TECHNICAL_SUCCESS",
+        "reason": "server ready, 3 smoke requests HTTP 200 with non-empty content, clean shutdown",
+        "status": "TECHNICAL_SUCCESS"
+      },
+      "outcome": "TECHNICAL_FAILURE",
       "owner_billed_delta_usd": "0E-8",
       "provider": "Modal",
       "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_RAW_LOG_2026-09-24.txt",
       "raw_log_sha256": "068332b340ddcf73d1d61e326c1e95646a610ac6864b2a47848cf218355d5bbd",
-      "reason": "server ready, 3 smoke requests HTTP 200 with non-empty content, clean shutdown",
+      "reason": "locked smoke contract not met (B: content is not exactly '5'); server, identity, BF16 load, cleanup and financial gates passed",
       "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
       "started_at_utc": "2026-09-24T20:53:32Z",
-      "status": "TECHNICAL_SUCCESS",
+      "status": "TECHNICAL_FAILURE",
       "valid_runtime_attempt": true
     }
   ],
@@ -106,6 +113,18 @@
   "control_name": "Qwen3-8B",
   "download_seconds": 0.04,
   "evidence_kind": "RUNTIME_QUALIFICATION_SMOKE",
+  "failure_analysis": {
+    "failed_smokes": [
+      {
+        "accepted": false,
+        "normalized_content": "The result of adding 2 and 3 is calculated by combining the two numbers. Starting with 2 and adding 3 to it:\n\n$$\n2 + 3 = 5\n$$\n\n**Answer:** 5",
+        "reason": "content is not exactly '5'",
+        "smoke_id": "B"
+      }
+    ],
+    "infrastructure": "server ready, exact identity PASS, BF16 PASS, cleanup PASS, 0 live resources, owner billed delta 0",
+    "kind": "LOCKED_SMOKE_CONTRACT_NOT_MET (model response behaviour), not an infrastructure or identity failure"
+  },
   "financial_acceptance_status": "PASS",
   "financial_evidence": {
     "billing_after_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_BILLING_AFTER_2026-09-24.json",
@@ -257,7 +276,7 @@
   "reasoning_mode": "ENABLED (Qwen3 hybrid-thinking template default; canonical control spec launches with --reasoning-parser qwen3)",
   "reasoning_parser": "qwen3",
   "runtime_name": "vLLM (official vllm/vllm-openai image on Modal, OpenAI-compatible server; model from a verified Modal Volume cache)",
-  "runtime_qualification_status": "RUNTIME_QUALIFIED",
+  "runtime_qualification_status": "FAILED",
   "runtime_version": "0.29.0",
   "server_argv_sanitized": [
     "/usr/local/bin/python",
@@ -289,6 +308,26 @@
     "promotional_credit_used_usd": "0.22772907",
     "sha256": "462b65f53d1fd375c5568a531c33238139e7d12b99edd8812c080ba4af21c75b"
   },
+  "smoke_acceptance": [
+    {
+      "accepted": true,
+      "normalized_content": "READY",
+      "reason": "exact match",
+      "smoke_id": "A"
+    },
+    {
+      "accepted": false,
+      "normalized_content": "The result of adding 2 and 3 is calculated by combining the two numbers. Starting with 2 and adding 3 to it:\n\n$$\n2 + 3 = 5\n$$\n\n**Answer:** 5",
+      "reason": "content is not exactly '5'",
+      "smoke_id": "B"
+    },
+    {
+      "accepted": true,
+      "normalized_content": "{\"status\":\"ready\"}",
+      "reason": "parsed JSON equals the exact object",
+      "smoke_id": "C"
+    }
+  ],
   "smoke_outputs": [
     {
       "content": "\n\nREADY",
@@ -396,7 +435,12 @@
   },
   "steady_gpu_memory_bytes": 77337722880,
   "stop_behavior": "eos_token <|im_end|>; generation_config eos_token_id [151645, 151643]",
-  "technical_serving_status": "QUALIFIED",
+  "superseded_classification": {
+    "reason": "audit finding: locked Smoke B (exact '5') was not satisfied; HTTP 200 + non-empty is not acceptance",
+    "runtime_qualification_status": "RUNTIME_QUALIFIED",
+    "technical_serving_status": "QUALIFIED"
+  },
+  "technical_serving_status": "FAILED",
   "tensor_parallel": 1,
   "tokenizer_revision": "b968826d9c46dd6066d109eabc6255188de91218",
   "tokens_per_second": 151.88,

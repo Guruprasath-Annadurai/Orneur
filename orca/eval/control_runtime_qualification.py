@@ -87,6 +87,9 @@ CAPABILITY_STATUS = "UNPROVEN"
 EVIDENCE_KIND = "RUNTIME_QUALIFICATION_SMOKE"
 
 REQUIRED_SMOKE_IDS = ("A", "B", "C")
+# LOCKED smoke acceptance (exact, never 'contains' / 'mentions' / 'HTTP 200' / 'non-empty'). The only permitted normalization is
+# stripping surrounding whitespace, applied identically to every smoke. C must PARSE as JSON and equal the exact object.
+LOCKED_SMOKE_EXPECTATIONS = {"A": "READY", "B": "5", "C": {"status": "ready"}}
 
 # ── financial reconciliation (owner-payable gate AND credit-coverage gate) ──
 MAX_AUTHORIZED_RUN_COST_USD = Decimal("1.25")   # never raised without stopping and reporting
@@ -583,6 +586,67 @@ def _walk_keys(node):
             yield from _walk_keys(v)
 
 
+def extract_smoke_content(output: dict):
+    """The assistant message content of a persisted smoke output: taken from its raw response (OpenAI chat shape or the flat
+    {"content": ...} shape) and, when both exist, required to equal the persisted `content` field (no forged summary)."""
+    from_raw = None
+    try:
+        raw = json.loads(output.get("raw_response") or "")
+        if isinstance(raw, dict):
+            if isinstance(raw.get("choices"), list) and raw["choices"] and isinstance(raw["choices"][0], dict):
+                from_raw = (raw["choices"][0].get("message") or {}).get("content")
+            elif "content" in raw:
+                from_raw = raw["content"]
+    except ValueError:
+        pass
+    persisted = output.get("content")
+    if from_raw is not None and persisted is not None and from_raw != persisted:
+        return None
+    return from_raw if from_raw is not None else persisted
+
+
+def smoke_locked_acceptance(smoke_id: str, content) -> tuple[bool, str]:
+    """Pure. Does `content` satisfy the locked smoke requirement exactly? (whitespace-strip only)"""
+    if smoke_id not in LOCKED_SMOKE_EXPECTATIONS:
+        return False, f"unknown smoke {smoke_id!r}"
+    if not isinstance(content, str):
+        return False, "no string content"
+    text = content.strip()
+    want = LOCKED_SMOKE_EXPECTATIONS[smoke_id]
+    if smoke_id in ("A", "B"):
+        return (text == want, "exact match" if text == want else f"content is not exactly {want!r}")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return False, "content is not valid JSON"
+    return (parsed == want and isinstance(parsed, dict), "parsed JSON equals the exact object" if parsed == want else f"parsed JSON is not exactly {json.dumps(want)}")
+
+
+def compute_smoke_acceptance(record: dict) -> list[dict]:
+    """Per-smoke acceptance derived from the persisted raw outputs (never from HTTP status or a stored boolean)."""
+    out = []
+    for o in record.get("smoke_outputs") or []:
+        content = extract_smoke_content(o)
+        ok, why = smoke_locked_acceptance(o.get("smoke_id"), content)
+        out.append({"smoke_id": o.get("smoke_id"), "accepted": ok, "reason": why if content is not None else "raw response and persisted content disagree or are absent",
+                    "normalized_content": content.strip() if isinstance(content, str) else None})
+    return sorted(out, key=lambda x: str(x["smoke_id"]))
+
+
+def _check_locked_smokes(record: dict) -> None:
+    outputs = record.get("smoke_outputs")
+    if not isinstance(outputs, list) or sorted(o.get("smoke_id") for o in outputs if isinstance(o, dict)) != list(REQUIRED_SMOKE_IDS):
+        raise ControlRuntimeError(f"exactly smoke prompts/outputs {REQUIRED_SMOKE_IDS} are required")
+    acceptance = compute_smoke_acceptance(record)
+    failed = [a for a in acceptance if not a["accepted"]]
+    if failed:
+        raise ControlRuntimeError("technical QUALIFIED / RUNTIME_QUALIFIED require every LOCKED smoke to pass exactly; failed: "
+                                  + "; ".join(f"{a['smoke_id']}: {a['reason']}" for a in failed))
+    persisted = record.get("smoke_acceptance")
+    if persisted is not None and [(x.get("smoke_id"), x.get("accepted")) for x in persisted] != [(a["smoke_id"], a["accepted"]) for a in acceptance]:
+        raise ControlRuntimeError("persisted smoke_acceptance disagrees with the acceptance derived from the raw outputs")
+
+
 def _artifact_sha(evidence_root: Path, location: str, label: str) -> str:
     root = Path(evidence_root).resolve()
     path = (root / location).resolve()
@@ -761,6 +825,8 @@ def validate_control_runtime_record(record: dict, *, evidence_root: Path) -> Non
     if last_domain in ("HARNESS", "FINANCIAL_GUARD") and technical != "NOT_PROVEN":
         raise ControlRuntimeError(
             f"the last attempt ended in {last_domain}; technical_serving_status must be NOT_PROVEN, got {technical!r}")
+    if technical == "QUALIFIED":
+        _check_locked_smokes(record)
     expected = derive_runtime_status(
         technical=technical, financial_acceptance=financial, cleanup=record["cleanup_status"],
         owner_billed_delta_usd=delta, live_resources_after_cleanup=record["live_resources_after_cleanup"],
