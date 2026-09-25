@@ -32,6 +32,7 @@ real-time; that limitation is recorded in the evidence, not hidden.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -67,7 +68,7 @@ if set(LOCKED_CONTROL_IDENTITIES) != set(EXPECTED_CONTROL_NAMES):
 TECHNICAL_SERVING_STATUSES = ("QUALIFIED", "FAILED", "INCONCLUSIVE", "NOT_PROVEN", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY")
 FINANCIAL_PREFLIGHT_STATUSES = ("PASSED", "FAILED", "NOT_PERFORMED")
 FINANCIAL_ACCEPTANCE_STATUSES = ("PASS", "FAILED", "NOT_TESTED")
-RUNTIME_QUALIFICATION_STATUSES = ("RUNTIME_QUALIFIED", "NOT_ACCEPTED", "FAILED", "NOT_COMPLETED", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY")
+RUNTIME_QUALIFICATION_STATUSES = ("RUNTIME_QUALIFIED", "PENDING_SETTLEMENT_OBSERVATION", "NOT_ACCEPTED", "FAILED", "NOT_COMPLETED", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY")
 CLEANUP_STATUSES = ("PASS", "FAIL", "NOT_APPLICABLE")
 ATTEMPT_OUTCOMES = ("TECHNICAL_SUCCESS", "TECHNICAL_FAILURE", "HARNESS_FAILURE", "ABORTED_FINANCIAL_GUARD", "BLOCKED_NO_GPU")
 # Attempt result vs model-runtime result are DIFFERENT things. Only a valid
@@ -534,7 +535,7 @@ def retry_permitted(attempts: list[dict]) -> bool:
 
 
 def derive_runtime_status(*, technical: str, financial_acceptance: str, cleanup: str, owner_billed_delta_usd,
-                          live_resources_after_cleanup) -> str:
+                          live_resources_after_cleanup, settlement_status: str | None = None) -> str:
     """The ONLY correct derivation of `runtime_qualification_status` from
     its inputs. RUNTIME_QUALIFIED requires technical PASS and financial PASS
     and clean teardown; technical success with a positive owner delta is
@@ -552,6 +553,8 @@ def derive_runtime_status(*, technical: str, financial_acceptance: str, cleanup:
         return "NOT_ACCEPTED"
     if cleanup != "PASS" or live_resources_after_cleanup != 0:
         return "NOT_ACCEPTED"
+    if settlement_status is not None and settlement_status != SETTLEMENT_OBSERVED:
+        return "PENDING_SETTLEMENT_OBSERVATION"       # technically + financially clean, but the run's credit coverage is not yet observable
     return "RUNTIME_QUALIFIED"
 
 
@@ -761,6 +764,7 @@ def validate_control_runtime_record(record: dict, *, evidence_root: Path) -> Non
     expected = derive_runtime_status(
         technical=technical, financial_acceptance=financial, cleanup=record["cleanup_status"],
         owner_billed_delta_usd=delta, live_resources_after_cleanup=record["live_resources_after_cleanup"],
+        settlement_status=(None if (lightning or razor) else (record.get("billing_settlement") or {}).get("status")),
     )
     if runtime != expected:
         raise ControlRuntimeError(f"runtime_qualification_status={runtime!r} but the evidence derives {expected!r}")
@@ -782,6 +786,19 @@ def _validate_qualified(record: dict, locked: dict, evidence_root: Path) -> None
             raise ControlRuntimeError("RUNTIME_QUALIFIED requires proof that the Lightning credit meter stopped after cleanup")
     elif record["billing_settlement"]["status"] != SETTLEMENT_OBSERVED:
         raise ControlRuntimeError("RUNTIME_QUALIFIED requires the run's billing/credit coverage to be observed in the account data")
+    else:
+        original = record.get("original_in_run_billing_settlement")
+        if isinstance(original, dict) and original.get("status") != SETTLEMENT_OBSERVED:
+            # settlement was delayed in-run: the later read-only reconciliation artifact must prove it, hash-verified
+            ref = record.get("settlement_reconciliation")
+            if not isinstance(ref, dict) or any(k not in ref for k in ("artifact", "sha256")):
+                raise ControlRuntimeError("a delayed settlement requires a referenced reconciliation artifact (artifact + sha256)")
+            if _artifact_sha(evidence_root, ref["artifact"], "settlement_reconciliation") != ref["sha256"]:
+                raise ControlRuntimeError("settlement reconciliation artifact hash does not verify")
+            rec_art = json.loads((evidence_root / ref["artifact"]).read_text())
+            if (rec_art.get("settlement", {}).get("status") != SETTLEMENT_OBSERVED or rec_art.get("attempt_number") != record["attempts"][-1]["attempt_number"]
+                    or rec_art.get("live_resources") != 0 or to_decimal(rec_art.get("owner_billed_delta_usd"), "reconciliation owner delta") != 0):
+                raise ControlRuntimeError("the reconciliation artifact does not show OBSERVED settlement, zero owner billing and zero live resources for the final attempt")
     last = record["attempts"][-1]
     if last["outcome"] != "TECHNICAL_SUCCESS" or last["cleanup_result"] != "PASS":
         raise ControlRuntimeError("the final attempt must be a TECHNICAL_SUCCESS with a passing cleanup")

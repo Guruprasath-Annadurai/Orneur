@@ -1,0 +1,21 @@
+{
+  "billing_summary": {
+    "adjustments": {
+      "credits": "-20.08000000",
+      "free_storage": "-0E-8",
+      "network_egress_allowance": "0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "20.08000000",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "20.07689253",
+      "llm_tokens": "0E-8",
+      "volumes": "0E-8"
+    }
+  },
+  "captured_at_utc": "2026-09-24T20:53:32Z",
+  "evidence_type": "MODAL_BILLING_SNAPSHOT_BEFORE_GPU_ALLOCATION"
+}

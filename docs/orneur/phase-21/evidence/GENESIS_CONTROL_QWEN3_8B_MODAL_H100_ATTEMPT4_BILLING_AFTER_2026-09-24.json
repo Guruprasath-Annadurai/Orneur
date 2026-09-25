@@ -1,0 +1,182 @@
+{
+  "app_id": "ap-3frDTjsVLzElehnHpfm69I",
+  "app_row": {
+    "app_id": "ap-3frDTjsVLzElehnHpfm69I",
+    "created_at": "2026-09-25 02:23:33+05:30",
+    "description": "orneur-p21b420-h100-control-runtime",
+    "state": "stopped",
+    "stopped_at": "2026-09-25 02:26:52+05:30",
+    "tasks": "0"
+  },
+  "billed_before_usd": "0E-8",
+  "billing_settlement": {
+    "reasons": [
+      "the completed run's metered usage is not yet visible in the account totals (metered_delta == 0)"
+    ],
+    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+    "stop_before_next_control": true
+  },
+  "billing_summary_settled": {
+    "adjustments": {
+      "credits": "-20.08000000",
+      "free_storage": "-0E-8",
+      "network_egress_allowance": "0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "20.08000000",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "20.07689253",
+      "llm_tokens": "0E-8",
+      "volumes": "0E-8"
+    }
+  },
+  "captured_at_utc": "2026-09-24T21:00:12Z",
+  "cleanup_snapshot": {
+    "apps": [
+      {
+        "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
+        "created_at": "2026-09-18 18:50:37+05:30",
+        "description": "orca-genesis-eval-sandbox",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
+        "created_at": "2026-09-18 23:18:29+05:30",
+        "description": "orca-genesis-eval-sandbox-v2",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-3frDTjsVLzElehnHpfm69I",
+        "created_at": "2026-09-25 02:23:33+05:30",
+        "description": "orneur-p21b420-h100-control-runtime",
+        "state": "stopped",
+        "stopped_at": "2026-09-25 02:26:52+05:30",
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-V1c4M5y7BRGkK7t1NzYXvg",
+        "created_at": "2026-09-25 01:26:32+05:30",
+        "description": "orneur-p21b420-h100-control-runtime",
+        "state": "stopped",
+        "stopped_at": "2026-09-25 01:29:07+05:30",
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-regsZvHdRawqEr7OsIIdGI",
+        "created_at": "2026-09-25 01:23:52+05:30",
+        "description": "orneur-p21b420-h100-control-runtime",
+        "state": "stopped",
+        "stopped_at": "2026-09-25 01:26:22+05:30",
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-HBjXiHLP9UKtagu5dS99tK",
+        "created_at": "2026-09-25 01:21:50+05:30",
+        "description": "orneur-p21b420-h100-control-runtime",
+        "state": "stopped",
+        "stopped_at": "2026-09-25 01:23:41+05:30",
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-ymITzeyoXEDmTwvp6Vyb23",
+        "created_at": "2026-09-25 00:49:59+05:30",
+        "description": "orneur-p21b420-h100-control-runtime",
+        "state": "stopped",
+        "stopped_at": "2026-09-25 01:21:36+05:30",
+        "tasks": "0"
+      }
+    ],
+    "captured_at_utc": "2026-09-24T20:57:03Z",
+    "containers": [],
+    "expected_cache_volume": "orneur-p21b420-model-cache",
+    "live_resources": 0,
+    "non_idle_apps": [],
+    "running_tasks_total": 0,
+    "volumes": [
+      {
+        "created_at": "2026-09-25 00:50:00+05:30",
+        "created_by": "guruprasath-annadurai",
+        "name": "orneur-p21b420-model-cache"
+      }
+    ]
+  },
+  "duration_seconds_wall": 196.5,
+  "evidence_type": "MODAL_BILLING_SNAPSHOT_AFTER_GPU_ALLOCATION",
+  "financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "29.96203611111111111111111111",
+    "credits_applied_baseline_usd": "20.08000000",
+    "credits_applied_postrun_usd": "20.08000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "9.88203611111111111111111111",
+    "derived_credit_remaining_before_usd": "9.88203611111111111111111111",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_baseline_usd": "20.08000000",
+    "metered_delta_usd": "0E-8",
+    "metered_postrun_usd": "20.08000000",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
+  "itemized_rows_for_app": [
+    {
+      "cost": "0.01084207",
+      "description": "orneur-p21b420-h100-control-runtime",
+      "environment": "main",
+      "interval_start": "2026-09-24T19:00:00",
+      "object_id": "ap-HBjXiHLP9UKtagu5dS99tK"
+    },
+    {
+      "cost": "0.01617659",
+      "description": "orneur-p21b420-h100-control-runtime",
+      "environment": "main",
+      "interval_start": "2026-09-24T19:00:00",
+      "object_id": "ap-V1c4M5y7BRGkK7t1NzYXvg"
+    },
+    {
+      "cost": "0.01532182",
+      "description": "orneur-p21b420-h100-control-runtime",
+      "environment": "main",
+      "interval_start": "2026-09-24T19:00:00",
+      "object_id": "ap-regsZvHdRawqEr7OsIIdGI"
+    },
+    {
+      "cost": "0.00088738",
+      "description": "orneur-p21b420-h100-control-runtime",
+      "environment": "main",
+      "interval_start": "2026-09-24T19:00:00",
+      "object_id": "ap-ymITzeyoXEDmTwvp6Vyb23"
+    }
+  ],
+  "object_specific_note": "the app's own created/stopped timestamps (Modal) are the authoritative active window; itemized billing rows may lag",
+  "owner_billed_delta_usd": "0E-8",
+  "peak_observed_billed_usd": "0E-8",
+  "post_run_readings": [
+    {
+      "billed": "0E-8",
+      "credits": "-20.08000000",
+      "metered": "20.08000000",
+      "t": 1.7
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.08000000",
+      "metered": "20.08000000",
+      "t": 94.4
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.08000000",
+      "metered": "20.08000000",
+      "t": 186.2
+    }
+  ]
+}

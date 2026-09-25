@@ -1,0 +1,51 @@
+{
+  "artifact_type": "OWNER_SETTLEMENT_WAIVER",
+  "phase": "21B.4.20",
+  "authorized_by": "ORNEUR_OWNER",
+  "decision": "AUTHORIZED",
+  "created_at_utc": "2026-09-24T20:49:55Z",
+  "scope": {
+    "provider": "Modal",
+    "control": "Qwen3-8B",
+    "historical_attempt": 1,
+    "waiver": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+    "historical_only": true
+  },
+  "authorization_text": "The ORNEUR owner authorizes a one-time waiver of the unresolved billing-settlement gate for Modal Qwen3-8B historical attempt 1 only, so that new qualification execution may continue despite that unresolved historical settlement.",
+  "asserts": {
+    "attempt_1_cost_was_zero": false,
+    "settlement_resolved": false,
+    "attempt_1_valid_model_qualification_attempt": false,
+    "attempt_1_status": "HARNESS_FAILURE",
+    "attempt_1_billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+    "attempt_1_conservative_exposure_reserved_usd": "0.038"
+  },
+  "does_not_waive": [
+    "zero_owner_cash_invariant",
+    "promotional_credit_sufficiency",
+    "model_identity_and_revision_verification",
+    "cleanup_requirements",
+    "evidence_integrity",
+    "security_controls"
+  ],
+  "does_not_authorize": [
+    "frontier_inference",
+    "benchmarks",
+    "genesis_training",
+    "phase_21c"
+  ],
+  "authorized_execution": {
+    "controls_in_order": [
+      "Qwen3-8B",
+      "Mistral-Nemo-Instruct-2407",
+      "Phi-4"
+    ],
+    "provider": "Modal",
+    "gpu": "H100 80GB",
+    "precision": "BF16",
+    "quantization": false,
+    "model_substitution": false,
+    "sequential_only": true
+  },
+  "note": "Creating this artifact does not itself authorize GPU execution; all pre-GPU gates are re-evaluated before every launch."
+}

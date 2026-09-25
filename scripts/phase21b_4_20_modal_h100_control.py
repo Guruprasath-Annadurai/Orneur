@@ -162,7 +162,7 @@ def _load_lightning_control():
 if modal.is_local():  # the container only needs the remote functions; orca is not shipped to it
     from orca.eval.control_runtime_qualification import (  # noqa: E402
         FAILURE_DOMAIN_BY_OUTCOME, LOCKED_CONTROL_IDENTITIES, assess_settlement, build_financial_reconciliation,
-        financial_gate_decision, to_decimal, validate_control_runtime_record,
+        derive_runtime_status, financial_gate_decision, to_decimal, validate_control_runtime_record,
     )
 
 
@@ -528,6 +528,10 @@ def cmd_run(a) -> int:
     })
     for k in ("container_image", "container_digest"):
         record["unobservable_reasons"].pop(k, None)
+    record["runtime_qualification_status"] = derive_runtime_status(
+        technical=record["technical_serving_status"], financial_acceptance=record["financial_acceptance_status"], cleanup=record["cleanup_status"],
+        owner_billed_delta_usd=record["owner_billed_delta_usd"], live_resources_after_cleanup=record["live_resources_after_cleanup"],
+        settlement_status=settlement["status"])          # delayed settlement => PENDING_SETTLEMENT_OBSERVATION, never a false RUNTIME_QUALIFIED
     validation_error = None
     try:
         validate_control_runtime_record(record, evidence_root=EVIDENCE_DIR)
@@ -547,16 +551,185 @@ def cmd_run(a) -> int:
     return 0 if record["runtime_qualification_status"] == "RUNTIME_QUALIFIED" and not validation_error else 1
 
 
+def _breakdown_total(summary: dict) -> Decimal | None:
+    parts = summary.get("metered_cost_breakdown")
+    if not isinstance(parts, dict) or not parts:
+        return None
+    return sum((Decimal(str(v)) for v in parts.values()), Decimal(0))
+
+
+def _json_file(path: Path) -> dict:
+    return json.loads(path.read_text())
+
+
+def _verified_artifact(name: str, want_sha: str | None = None) -> tuple[dict | None, str | None, str | None]:
+    """(content, sha256, error). Any missing/mismatching original evidence is an error (fail closed)."""
+    path = EVIDENCE_DIR / name
+    if not path.is_file():
+        return None, None, f"missing original evidence {name}"
+    sha = sha_of(path)
+    if want_sha is not None and sha != want_sha:
+        return None, sha, f"hash of {name} does not match the recorded sha256"
+    return (json.loads(path.read_text()) if name.endswith(".json") else {}), sha, None
+
+
+def cmd_reconcile(a) -> int:
+    """STRICTLY READ-ONLY delayed-settlement reconciliation for a completed Modal H100 attempt.
+    Reads Modal billing/app/container/volume state and local evidence, writes ONE timestamped reconciliation artifact and, only when
+    settlement is OBSERVED and every gate holds, finalizes the existing runtime record WITHOUT rerunning anything. It never allocates
+    a GPU, never starts a Modal function or container, never touches the owner waiver, and never executes generated output."""
+    lc = _load_lightning_control()
+    cfg = lc.CONTROLS[a.control]
+    tag = cfg["tag"]
+    att = next((x for x in _load_attempts(tag) if x.get("attempt_number") == a.attempt), None)
+    if att is None or att.get("provider") != "Modal" or not att.get("modal_app_id"):
+        print(f"unknown or non-Modal-H100 attempt {a.attempt} for {a.control}; refusing")
+        return 2
+    prefix = f"GENESIS_CONTROL_{tag}_MODAL_H100_ATTEMPT{a.attempt}"
+    rec_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_{DATE_TAG}.json"
+    record = _json_file(rec_path) if rec_path.is_file() else None
+    if record is None or record.get("attempts", [{}])[-1].get("attempt_number") != a.attempt:
+        print("the runtime record does not end with the requested attempt; refusing")
+        return 2
+    fin = record["financial_evidence"]
+    errors: list[str] = []
+    originals = {}
+    for key, art, sha in (("preflight", "preflight_artifact", "preflight_sha256"), ("billing_before", "billing_before_artifact", "billing_before_sha256"),
+                          ("billing_after", "billing_after_artifact", "billing_after_sha256")):
+        content, _sha, err = _verified_artifact(fin[art], fin[sha])
+        originals[key] = content
+        if err:
+            errors.append(err)
+    _c, log_sha, err = _verified_artifact(att["raw_log_artifact"], att["raw_log_sha256"])
+    if err:
+        errors.append(err)
+    if errors:
+        print("ORIGINAL EVIDENCE INTEGRITY FAILURE:", errors)
+        return 6
+
+    pre, baseline_doc, after_doc = originals["preflight"], originals["billing_before"], originals["billing_after"]
+    baseline = baseline_doc["billing_summary"]
+    now = billing_summary()
+    cleanup = cleanup_snapshot()
+    app_id = att["modal_app_id"]
+    row = _app_row(att["modal_app_name"], app_id)
+    start = att["started_at_utc"][:10]
+    end = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+    report = _cli_json("billing", "report", "--start", start, "--end", end, "--resolution", "h", "--json")
+    mine = [x for x in report if isinstance(x, dict) and x.get("object_id") == app_id]
+    visible = sum((Decimal(str(x["cost"])) for x in mine), Decimal(0))
+    peak_recorded = to_decimal(after_doc["peak_observed_billed_usd"], "recorded peak billed")
+    billed_before = to_decimal(baseline["billed_cost"], "billed_before")
+    peak = max(peak_recorded, to_decimal(now["billed_cost"], "billed now"))
+    owner_delta = peak - billed_before
+    pool = Decimal(pre["credit_pool_usd"]) - Decimal(pre["unresolved_prior_settlement_upper_bound_deducted_usd"])
+    recon = build_financial_reconciliation(baseline, now, credit_pool_usd=str(pool), reserve_usd=pre["reserve_usd"],
+                                           max_run_cost_usd=pre["worst_case_cost_usd"], peak_billed_usd=str(peak))
+    settlement = assess_settlement(recon, run_report_metered_usd=str(visible))
+    metered_delta = to_decimal(recon["metered_delta_usd"], "metered_delta")
+    # the account-level metered_cost total is rounded to the cent; the per-category breakdown is exact, so use it for attribution when present
+    precise = _breakdown_total(now), _breakdown_total(baseline)
+    metered_delta_precise = precise[0] - precise[1] if None not in precise else metered_delta
+    unattributed = metered_delta_precise - visible
+    reasons = list(settlement["reasons"])
+    if settlement["status"] == "OBSERVED" and unattributed > Decimal("0.0001"):
+        reasons.append(f"metered growth {metered_delta_precise} exceeds the run's own itemized cost {visible} by {unattributed}; the excess cannot be attributed to this run")
+    app_stopped = bool(row) and row.get("state") == "stopped" and int(row.get("tasks", 0) or 0) == 0
+    if not app_stopped:
+        reasons.append("the attempt's Modal app is not in state 'stopped' with 0 tasks")
+    if cleanup["live_resources"] != 0 or cleanup["containers"]:
+        reasons.append(f"live Modal resources are not zero ({cleanup['live_resources']})")
+    if owner_delta != 0:
+        reasons.append(f"POSITIVE OWNER BILLING observed (delta {owner_delta})")
+    observed = settlement["status"] == "OBSERVED" and not reasons
+    settlement = {"status": "OBSERVED" if observed else "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE", "reasons": reasons, "stop_before_next_control": not observed}
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = {"evidence_type": "ATTEMPT_SETTLEMENT_RECONCILIATION_READ_ONLY", "phase": PHASE, "control_name": cfg["control_name"], "attempt_number": a.attempt,
+           "captured_at_utc": _now(), "modal_app_id": app_id, "modal_app_name": att["modal_app_name"],
+           "original_run_window_utc": [att["started_at_utc"], att["finished_at_utc"]], "wall_seconds": att["duration_seconds"],
+           "original_evidence": {"preflight": fin["preflight_artifact"], "billing_before": fin["billing_before_artifact"], "billing_after": fin["billing_after_artifact"],
+                                 "raw_log": att["raw_log_artifact"], "raw_log_sha256": log_sha, "financial_evidence_sha256": {k: fin[k] for k in fin if k.endswith("_sha256")}},
+           "original_billing_baseline": baseline, "fresh_billing_state": now, "itemized_rows_attributable_to_run": mine,
+           "itemized_run_cost_usd": str(visible), "itemized_report_range": [start, end], "financial_reconciliation": recon,
+           "metered_delta_total_usd": str(metered_delta), "metered_delta_precise_usd": str(metered_delta_precise),
+           "metered_delta_precision_note": "metered_cost totals are rounded to the cent; the exact figure is the sum of metered_cost_breakdown categories when present",
+           "metered_unattributed_usd": str(unattributed),
+           "promotional_credit_delta_attributable_usd": str(visible) if observed else None,
+           "credits_applied_delta_usd": str(to_decimal(recon["credits_applied_postrun_usd"], "c1") - to_decimal(recon["credits_applied_baseline_usd"], "c0")),
+           "owner_cash_delta_usd": str(owner_delta), "owner_billed_delta_usd": str(owner_delta), "settlement": settlement,
+           "app_row": row, "app_stopped_with_zero_tasks": app_stopped, "cleanup_snapshot": cleanup, "live_resources": cleanup["live_resources"],
+           "cache_volume_counted_as_live_resource": False,
+           "waiver_applies": False, "waiver_note": "the attempt-1 owner waiver never applies to this attempt; settlement here is evidenced, not waived",
+           "no_gpu_started": True, "no_modal_function_called": True,
+           "verdict": "SETTLEMENT_OBSERVED" if observed else "SETTLEMENT_STILL_NOT_OBSERVABLE"}
+    path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_ATTEMPT{a.attempt}_SETTLEMENT_RECONCILIATION_{stamp}.json"
+    sha = write_json(path, out)
+    print(json.dumps({"artifact": path.name, "sha256": sha, "verdict": out["verdict"], "reasons": reasons, "itemized_run_cost_usd": str(visible),
+                      "metered_delta_usd": str(metered_delta), "owner_billed_delta_usd": str(owner_delta), "live_resources": cleanup["live_resources"]}, indent=2))
+    if owner_delta != 0:
+        print("POSITIVE OWNER BILLING -- STOP")
+        return 4
+    if not observed:
+        print("BILLING_SETTLEMENT_NOT_YET_OBSERVABLE -- qualification stays pending; reconcile again later")
+        _set_pending_status(record, rec_path)
+        return 5
+    return _finalize_record(record, rec_path, path, sha, out, att)
+
+
+def _set_pending_status(record: dict, rec_path: Path) -> None:
+    """Correct a self-inconsistent label only (technical evidence untouched): a technically+financially clean run whose settlement is
+    not yet observed is PENDING_SETTLEMENT_OBSERVATION, not RUNTIME_QUALIFIED."""
+    if record.get("runtime_qualification_status") == "PENDING_SETTLEMENT_OBSERVATION" or record["billing_settlement"]["status"] == "OBSERVED":
+        return
+    record.setdefault("original_validator_note", record.pop("validator_note", None))
+    record["status_correction"] = {"from": record["runtime_qualification_status"], "to": "PENDING_SETTLEMENT_OBSERVATION",
+                                   "reason": "RUNTIME_QUALIFIED requires observed settlement (validator); no technical evidence was altered"}
+    record["runtime_qualification_status"] = "PENDING_SETTLEMENT_OBSERVATION"
+    validate_control_runtime_record(record, evidence_root=EVIDENCE_DIR)
+    write_json(rec_path, record)
+
+
+def _finalize_record(record: dict, rec_path: Path, art_path: Path, art_sha: str, art: dict, att: dict) -> int:
+    """Finalize WITHOUT rerunning anything. Original in-run settlement/reconciliation are preserved as history; the later reconciliation
+    artifact is the evidence that settlement subsequently became OBSERVED. RUNTIME_QUALIFIED only if the shared validator passes."""
+    final = json.loads(json.dumps(record))
+    final.setdefault("original_in_run_billing_settlement", record["billing_settlement"])
+    final.setdefault("original_in_run_financial_reconciliation", record["financial_reconciliation"])
+    final["billing_settlement"] = art["settlement"]
+    final["financial_reconciliation"] = art["financial_reconciliation"]
+    final["settlement_reconciliation"] = {"artifact": art_path.name, "sha256": art_sha, "promotional_credit_used_usd": art["itemized_run_cost_usd"],
+                                          "owner_cash_delta_usd": art["owner_cash_delta_usd"]}
+    if final.get("runtime_qualification_status") == "PENDING_SETTLEMENT_OBSERVATION" or final.get("validator_note"):
+        final.setdefault("original_validator_note", final.pop("validator_note", None))
+    final["runtime_qualification_status"] = derive_runtime_status(
+        technical=final["technical_serving_status"], financial_acceptance=final["financial_acceptance_status"], cleanup=final["cleanup_status"],
+        owner_billed_delta_usd=final["owner_billed_delta_usd"], live_resources_after_cleanup=final["live_resources_after_cleanup"],
+        settlement_status=final["billing_settlement"]["status"])
+    try:
+        validate_control_runtime_record(final, evidence_root=EVIDENCE_DIR)
+    except Exception as e:  # noqa: BLE001
+        print(f"FINALIZED RECORD FAILED VALIDATION -- record left unchanged: {type(e).__name__}: {e}")
+        return 1
+    final.pop("validator_note", None)
+    write_json(rec_path, final)
+    print(json.dumps({"runtime_qualification_status": final["runtime_qualification_status"], "record_sha256": sha_of(rec_path),
+                      "promotional_credit_used_usd": art["itemized_run_cost_usd"], "owner_cash_delta_usd": art["owner_cash_delta_usd"]}, indent=2))
+    return 0 if final["runtime_qualification_status"] == "RUNTIME_QUALIFIED" else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", required=True, choices=("preflight", "precache", "run"))
+    ap.add_argument("--mode", required=True, choices=("preflight", "precache", "run", "reconcile"))
     ap.add_argument("--control", required=True, choices=CONTROL_KEYS)
+    ap.add_argument("--attempt", type=int, help="reconcile only: the completed attempt number")
     ap.add_argument("--kind", choices=("gpu", "cpu"), default="gpu", help="preflight only")
     a = ap.parse_args()
     if a.mode == "preflight":
         return cmd_preflight(a)
     if a.mode == "precache":
         return cmd_precache(a)
+    if a.mode == "reconcile":
+        return cmd_reconcile(a) if a.attempt else 2
     return cmd_run(a)
 
 

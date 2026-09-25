@@ -19,6 +19,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import types
 from decimal import Decimal
 from pathlib import Path
 
@@ -211,7 +212,11 @@ def test_derive_runtime_status_is_the_only_correct_mapping():
     assert derive_runtime_status(**dict(ok, technical="NOT_TESTED")) == "NOT_TESTED"
     assert derive_runtime_status(**dict(ok, technical="NOT_PROVEN")) == "NOT_COMPLETED"
     assert derive_runtime_status(**dict(ok, technical="BLOCKED_PENDING_ZERO_CASH_RUNWAY")) == "BLOCKED_PENDING_ZERO_CASH_RUNWAY"
-    assert set(RUNTIME_QUALIFICATION_STATUSES) == {"RUNTIME_QUALIFIED", "NOT_ACCEPTED", "FAILED", "NOT_COMPLETED", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY"}
+    assert derive_runtime_status(**dict(ok, settlement_status="BILLING_SETTLEMENT_NOT_YET_OBSERVABLE")) == "PENDING_SETTLEMENT_OBSERVATION"
+    assert derive_runtime_status(**dict(ok, settlement_status="OBSERVED")) == "RUNTIME_QUALIFIED"
+    assert derive_runtime_status(**dict(ok, technical="FAILED", settlement_status="BILLING_SETTLEMENT_NOT_YET_OBSERVABLE")) == "FAILED"
+    assert derive_runtime_status(**dict(ok, owner_billed_delta_usd="0.01", settlement_status="BILLING_SETTLEMENT_NOT_YET_OBSERVABLE")) == "NOT_ACCEPTED"
+    assert set(RUNTIME_QUALIFICATION_STATUSES) == {"RUNTIME_QUALIFIED", "PENDING_SETTLEMENT_OBSERVATION", "NOT_ACCEPTED", "FAILED", "NOT_COMPLETED", "NOT_TESTED", "BLOCKED_PENDING_ZERO_CASH_RUNWAY"}
 
 
 # ══ F/G: capability stays UNPROVEN; no benchmark masquerading ════════════
@@ -736,8 +741,10 @@ def test_qualified_requires_reconciliation_settlement_and_discrepancy_reference(
             validate_control_runtime_record(rec, evidence_root=tmp_path)
     rec = _qualified_record(tmp_path)
     rec["billing_settlement"] = {"status": SETTLEMENT_NOT_OBSERVABLE, "reasons": ["x"]}
-    with pytest.raises(ControlRuntimeError, match="observed"):
+    with pytest.raises(ControlRuntimeError, match="observed|PENDING_SETTLEMENT_OBSERVATION"):
         validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec["runtime_qualification_status"] = "PENDING_SETTLEMENT_OBSERVATION"       # the honest label for the same evidence
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
     rec = _qualified_record(tmp_path)
     rec["billing_discrepancy_observation"]["sha256"] = "0" * 64
     with pytest.raises(ControlRuntimeError, match="hash"):
@@ -937,7 +944,8 @@ def test_a_prior_attempt_blocks_the_next_launch_until_reconciliation_observes_it
 
 def test_persisted_qwen_history_keeps_modal_attempt_1_unchanged_and_adds_the_blocked_lightning_attempt():
     rec = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
-    a, b, c = rec["attempts"]
+    a, b, c, d = rec["attempts"]
+    assert d["provider"] == "Modal" and d["attempt_number"] == 4 and d["outcome"] == "TECHNICAL_SUCCESS" and d["valid_runtime_attempt"] is True
     assert a["outcome"] == "HARNESS_FAILURE" and a["status"] == "HARNESS_FAILURE" and a["failure_domain"] == "HARNESS"
     assert a["valid_runtime_attempt"] is False and a["duration_seconds"] == 34.6
     assert a["owner_billed_delta_usd"] == "0E-8" and a["cleanup_result"] == "PASS"
@@ -946,8 +954,8 @@ def test_persisted_qwen_history_keeps_modal_attempt_1_unchanged_and_adds_the_blo
     assert b["provider"] == "Lightning AI" and b["outcome"] == "BLOCKED_NO_GPU" and b["failure_domain"] == "NONE"
     assert b["valid_runtime_attempt"] is False and b["credits_consumed"] in ("0E-7", "0") and "verified payment method" in b["reason"]
     assert c["provider"] == "razorBridge" and c["outcome"] == "BLOCKED_NO_GPU" and c["credits_consumed"] == "0" and c["valid_runtime_attempt"] is False
-    assert rec["technical_serving_status"] == "NOT_PROVEN" and rec["runtime_qualification_status"] == "NOT_COMPLETED"
-    assert rec["capability_status"] == "UNPROVEN" and rec["smoke_outputs"] == []
+    assert rec["technical_serving_status"] == "QUALIFIED" and rec["runtime_qualification_status"] in ("PENDING_SETTLEMENT_OBSERVATION", "RUNTIME_QUALIFIED")
+    assert rec["capability_status"] == "UNPROVEN" and len(rec["smoke_outputs"]) == 3
 
 
 def test_the_matrix_records_what_ci_cannot_test_about_live_modal():
@@ -1653,3 +1661,192 @@ def test_invalid_waiver_is_reported_in_the_gate_reasons(monkeypatch, tmp_path):
     monkeypatch.setattr(mod, "cleanup_snapshot", lambda: {"live_resources": 0})
     decision = mod._preflight("gpu", "qwen3_8b", gpu=True)[-1]
     assert decision["allowed"] is False and any(r.startswith("WAIVER_INVALID") for r in decision["reasons"])
+
+
+# ── delayed-settlement reconcile mode (read-only; no GPU, no Modal function, no generated-output execution) ──
+_RECON_APP_ID = "ap-SYNTHETICATTEMPT4"
+
+
+def _rc_summary(metered, credits, billed="0E-8", eph=None):
+    out = {"billed_cost": billed, "metered_cost": metered, "adjustments": {"credits": credits, "plan_cost": "0E-8"}}
+    if eph is not None:
+        out["metered_cost_breakdown"] = {"deployed_apps": "0.00101405", "ephemeral_apps": eph, "llm_tokens": "0E-8", "volumes": "0E-8"}
+    return out
+
+
+def _reconcile_env(monkeypatch, tmp_path, *, metered_now="20.31000000", credits_now="-20.31000000", billed_now="0E-8", rows=None,
+                   live=0, app_state="stopped", tamper_before=False, eph_before=None, eph_now=None, run_cost="0.23000000"):
+    mod, _ = _load_modal_h100(monkeypatch)
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", tmp_path)
+    monkeypatch.setattr(mod, "_load_lightning_control", lambda: types.SimpleNamespace(CONTROLS={"qwen3_8b": {"control_name": "Qwen3-8B", "tag": "QWEN3_8B"}}))
+    rec = _qualified_record(tmp_path, "Qwen3-8B")
+    baseline = _rc_summary("20.08000000", "-20.08000000", eph=eph_before)
+    pre = {"credit_pool_usd": "30.00", "unresolved_prior_settlement_upper_bound_deducted_usd": "0.0380", "reserve_usd": "5.00", "worst_case_cost_usd": "1.0828"}
+    fin = {}
+    for key, doc in (("preflight", pre), ("billing_before", {"billing_summary": baseline}), ("billing_after", {"peak_observed_billed_usd": "0E-8"})):
+        name = f"synthetic_{key}.json"
+        (tmp_path / name).write_text(json.dumps(doc))
+        fin[f"{key}_artifact"] = name
+        fin[f"{key}_sha256"] = hashlib.sha256((tmp_path / name).read_bytes()).hexdigest()
+    (tmp_path / "raw_attempt4.txt").write_text("synthetic raw log")
+    raw_sha = hashlib.sha256(b"synthetic raw log").hexdigest()
+    attempt = {"attempt_number": 4, "provider": "Modal", "outcome": "TECHNICAL_SUCCESS", "status": "TECHNICAL_SUCCESS", "failure_domain": "NONE",
+               "valid_runtime_attempt": True, "reason": "synthetic", "resource_type": "synthetic", "duration_seconds": 196.5, "owner_billed_delta_usd": "0E-8",
+               "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE", "cleanup_result": "PASS", "started_at_utc": "2026-09-24T20:53:32Z",
+               "finished_at_utc": "2026-09-24T20:56:49Z", "modal_app_name": "orneur-p21b420-h100-control-runtime", "modal_app_id": _RECON_APP_ID,
+               "raw_log_artifact": "raw_attempt4.txt", "raw_log_sha256": raw_sha}
+    history = [{"attempt_number": 1, "outcome": "HARNESS_FAILURE", "status": "HARNESS_FAILURE", "failure_domain": "HARNESS", "valid_runtime_attempt": False,
+                "reason": "synthetic historical", "resource_type": "synthetic", "duration_seconds": 34.6, "owner_billed_delta_usd": "0E-8", "cleanup_result": "PASS",
+                "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"},
+               {"attempt_number": 2, "provider": "Lightning AI", "outcome": "BLOCKED_NO_GPU", "valid_runtime_attempt": False, "reason": "synthetic", "resource_type": "synthetic",
+                "duration_seconds": 0, "owner_billed_delta_usd": "0", "cleanup_result": "NOT_APPLICABLE"},
+               {"attempt_number": 3, "provider": "razorBridge", "outcome": "BLOCKED_NO_GPU", "valid_runtime_attempt": False, "reason": "synthetic", "resource_type": "synthetic",
+                "duration_seconds": 0, "owner_billed_delta_usd": "0", "cleanup_result": "NOT_APPLICABLE"}]
+    rec.update({"attempts": history + [attempt], "financial_evidence": fin, "owner_billed_delta_usd": "0E-8", "raw_log_artifact": "raw_attempt4.txt", "raw_log_sha256": raw_sha,
+                "billing_settlement": {"status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE", "reasons": ["not yet visible"], "stop_before_next_control": True},
+                "runtime_qualification_status": "RUNTIME_QUALIFIED", "validator_note": "record FAILED its own validator: RUNTIME_QUALIFIED requires observed"})
+    rec["financial_reconciliation"] = build_financial_reconciliation(baseline, baseline, credit_pool_usd="29.9620", reserve_usd="5.00", max_run_cost_usd="1.0828", peak_billed_usd="0E-8")
+    (tmp_path / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").write_text(json.dumps(rec))
+    (tmp_path / f"GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_{mod.DATE_TAG}.json").write_text(json.dumps({"control_name": "Qwen3-8B", "attempts": history + [attempt]}))
+    if tamper_before:
+        (tmp_path / "synthetic_billing_before.json").write_text("{}")
+    monkeypatch.setattr(mod, "billing_summary", lambda: _rc_summary(metered_now, credits_now, billed_now, eph=eph_now))
+    monkeypatch.setattr(mod, "cleanup_snapshot", lambda: {"live_resources": live, "containers": [], "apps": [], "volumes": []})
+    monkeypatch.setattr(mod, "_app_row", lambda name, app_id: {"app_id": _RECON_APP_ID, "state": app_state, "tasks": "0"})
+    report_rows = [{"object_id": _RECON_APP_ID, "description": "orneur-p21b420-h100-control-runtime", "cost": run_cost, "interval_start": "2026-09-24T20:00:00"},
+                   {"object_id": "ap-OTHER", "description": "orneur-p21b420-h100-control-runtime", "cost": "9.99", "interval_start": "2026-09-24T19:00:00"}] if rows is None else rows
+    monkeypatch.setattr(mod, "_cli_json", lambda *args: report_rows)
+    for banned in ("serve_and_smoke", "precache"):
+        monkeypatch.setattr(mod, banned, types.SimpleNamespace(remote=lambda *a, **k: (_ for _ in ()).throw(AssertionError("reconcile must not start a Modal function"))), raising=False)
+    monkeypatch.setattr(mod.app, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("reconcile must not open a Modal app run")), raising=False)
+    return mod, rec
+
+
+def _rc_args(mod, attempt=4):
+    return types.SimpleNamespace(control="qwen3_8b", attempt=attempt)
+
+
+def _rc_record(tmp_path):
+    return json.loads((tmp_path / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+
+
+def _rc_artifacts(tmp_path):
+    return sorted(tmp_path.glob("GENESIS_CONTROL_QWEN3_8B_ATTEMPT4_SETTLEMENT_RECONCILIATION_*.json"))
+
+
+def test_reconcile_mode_is_read_only_by_construction():
+    tree = ast.parse(MODAL_H100.read_text())
+    src = ast.unparse(next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "cmd_reconcile"))
+    fin_src = ast.unparse(next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_finalize_record"))
+    for body in (src, fin_src):
+        for banned in ("serve_and_smoke", ".remote(", "app.run", ".spawn(", "precache", "eval(", "exec(", "compile(", "os.system", "shell=True", "subprocess",
+                       "Sandbox", "WAIVER", "waiver_path"):
+            assert banned not in body, banned
+    assert "no_gpu_started" in src and "no_modal_function_called" in src
+
+
+def test_reconcile_unknown_attempt_fails_closed(monkeypatch, tmp_path):
+    mod, _ = _reconcile_env(monkeypatch, tmp_path)
+    before = _rc_record(tmp_path)
+    assert mod.cmd_reconcile(_rc_args(mod, attempt=9)) == 2
+    assert mod.cmd_reconcile(_rc_args(mod, attempt=1)) == 2                     # attempt 1 is not a Modal H100 attempt in this history
+    assert _rc_artifacts(tmp_path) == [] and _rc_record(tmp_path) == before
+
+
+def test_reconcile_still_unobservable_keeps_qualification_pending_and_labels_honestly(monkeypatch, tmp_path):
+    mod, _ = _reconcile_env(monkeypatch, tmp_path, metered_now="20.08000000", credits_now="-20.08000000", rows=[])
+    assert mod.cmd_reconcile(_rc_args(mod)) == 5
+    art = json.loads(_rc_artifacts(tmp_path)[0].read_text())
+    assert art["settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and art["verdict"] == "SETTLEMENT_STILL_NOT_OBSERVABLE"
+    assert art["no_gpu_started"] is True and art["no_modal_function_called"] is True and art["owner_billed_delta_usd"] == "0E-8"
+    rec = _rc_record(tmp_path)
+    assert rec["runtime_qualification_status"] == "PENDING_SETTLEMENT_OBSERVATION" and rec["technical_serving_status"] == "QUALIFIED"
+    assert rec["status_correction"]["to"] == "PENDING_SETTLEMENT_OBSERVATION" and rec["original_validator_note"]
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+    assert mod.settlement_resolved("QWEN3_8B", rec["attempts"][-1]) is False    # the next control stays blocked
+
+
+def test_reconcile_observed_finalizes_without_rerunning_and_preserves_original_evidence(monkeypatch, tmp_path):
+    mod, before = _reconcile_env(monkeypatch, tmp_path)
+    assert mod.cmd_reconcile(_rc_args(mod)) == 0
+    art_path = _rc_artifacts(tmp_path)[0]
+    art = json.loads(art_path.read_text())
+    assert art["settlement"]["status"] == "OBSERVED" and art["itemized_run_cost_usd"] == "0.23000000"      # only this app's rows, not ap-OTHER
+    assert art["promotional_credit_delta_attributable_usd"] == "0.23000000" and art["owner_cash_delta_usd"] == "0E-8"
+    assert art["waiver_applies"] is False and art["live_resources"] == 0 and art["cache_volume_counted_as_live_resource"] is False
+    rec = _rc_record(tmp_path)
+    assert rec["runtime_qualification_status"] == "RUNTIME_QUALIFIED" and rec["billing_settlement"]["status"] == "OBSERVED"
+    assert rec["original_in_run_billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"      # the in-run delay stays historical truth
+    assert rec["attempts"] == before["attempts"] and rec["smoke_outputs"] == before["smoke_outputs"] and rec["raw_log_sha256"] == before["raw_log_sha256"]
+    assert rec["generated_output_executed"] is False and rec["capability_status"] == "UNPROVEN"
+    assert rec["settlement_reconciliation"]["sha256"] == hashlib.sha256(art_path.read_bytes()).hexdigest()
+    assert rec["settlement_reconciliation"]["promotional_credit_used_usd"] == "0.23000000" and rec["owner_billed_delta_usd"] == "0E-8"
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+    assert mod.settlement_resolved("QWEN3_8B", rec["attempts"][-1]) is True    # now unlocks the next control via evidence, not a waiver
+
+
+def test_reconcile_refuses_positive_owner_billing(monkeypatch, tmp_path):
+    mod, before = _reconcile_env(monkeypatch, tmp_path, billed_now="0.01000000")
+    assert mod.cmd_reconcile(_rc_args(mod)) == 4
+    art = json.loads(_rc_artifacts(tmp_path)[0].read_text())
+    assert art["settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and art["owner_billed_delta_usd"] != "0E-8"
+    assert _rc_record(tmp_path) == before                                       # nothing finalized
+
+
+def test_reconcile_requires_zero_live_resources_and_a_stopped_app(monkeypatch, tmp_path):
+    for kw in ({"live": 1}, {"app_state": "running"}):
+        mod, before = _reconcile_env(monkeypatch, tmp_path, **kw)
+        assert mod.cmd_reconcile(_rc_args(mod)) == 5
+        assert _rc_record(tmp_path)["runtime_qualification_status"] == "PENDING_SETTLEMENT_OBSERVATION"
+
+
+def test_reconcile_will_not_attribute_unexplained_metered_growth_to_the_run(monkeypatch, tmp_path):
+    mod, _ = _reconcile_env(monkeypatch, tmp_path, metered_now="20.50000000", credits_now="-20.50000000")   # 0.42 grew, only 0.23 itemized to the app
+    assert mod.cmd_reconcile(_rc_args(mod)) == 5
+    art = json.loads(_rc_artifacts(tmp_path)[0].read_text())
+    assert art["settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and any("cannot be attributed" in r for r in art["settlement"]["reasons"])
+
+
+def test_reconcile_detects_tampered_original_evidence(monkeypatch, tmp_path):
+    mod, _ = _reconcile_env(monkeypatch, tmp_path, tamper_before=True)
+    assert mod.cmd_reconcile(_rc_args(mod)) == 6 and _rc_artifacts(tmp_path) == []
+
+
+def test_attempt_1_owner_waiver_never_applies_to_attempt_4(monkeypatch, tmp_path):
+    mod, _ = _reconcile_env(monkeypatch, tmp_path, metered_now="20.08000000", credits_now="-20.08000000", rows=[])
+    (tmp_path / f"GENESIS_OWNER_SETTLEMENT_WAIVER_QWEN3_8B_ATTEMPT1_{mod.DATE_TAG}.json").write_text(json.dumps(_valid_waiver()))
+    (tmp_path / f"GENESIS_OWNER_SETTLEMENT_WAIVER_QWEN3_8B_ATTEMPT4_{mod.DATE_TAG}.json").write_text(json.dumps(_valid_waiver()))
+    a4 = _rc_record(tmp_path)["attempts"][-1]
+    assert mod.validate_owner_settlement_waiver("QWEN3_8B", a4)[0] == "WAIVER_ABSENT" and mod.settlement_resolved("QWEN3_8B", a4) is False
+
+
+def test_validator_rejects_a_delayed_settlement_finalization_without_a_verified_reconciliation_artifact(tmp_path):
+    rec = _qualified_record(tmp_path)
+    rec["original_in_run_billing_settlement"] = {"status": SETTLEMENT_NOT_OBSERVABLE, "reasons": ["lag"]}
+    with pytest.raises(ControlRuntimeError, match="reconciliation artifact"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    art = {"attempt_number": 1, "settlement": {"status": "OBSERVED"}, "live_resources": 0, "owner_billed_delta_usd": "0"}
+    sha = _write(tmp_path / "recon.json", json.dumps(art).encode())
+    rec["settlement_reconciliation"] = {"artifact": "recon.json", "sha256": sha}
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec["settlement_reconciliation"]["sha256"] = "0" * 64
+    with pytest.raises(ControlRuntimeError, match="hash"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    art["live_resources"] = 1
+    rec["settlement_reconciliation"]["sha256"] = _write(tmp_path / "recon.json", json.dumps(art).encode())
+    with pytest.raises(ControlRuntimeError, match="zero live resources"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_reconcile_uses_the_exact_metered_breakdown_because_account_totals_are_rounded_to_the_cent(monkeypatch, tmp_path):
+    # totals show 20.08 -> 20.31 (0.23) but the exact per-category growth is 0.22772907, which the app's own row explains exactly
+    mod, _ = _reconcile_env(monkeypatch, tmp_path, eph_before="20.07689253", eph_now="20.30462160", run_cost="0.22772907")
+    assert mod.cmd_reconcile(_rc_args(mod)) == 0
+    art = json.loads(_rc_artifacts(tmp_path)[0].read_text())
+    assert art["metered_delta_precise_usd"] == "0.22772907" and art["itemized_run_cost_usd"] == "0.22772907" and art["settlement"]["status"] == "OBSERVED"
+    assert _rc_record(tmp_path)["settlement_reconciliation"]["promotional_credit_used_usd"] == "0.22772907"
+
+
+def test_reconcile_still_refuses_when_the_exact_breakdown_shows_unexplained_growth(monkeypatch, tmp_path):
+    mod, _ = _reconcile_env(monkeypatch, tmp_path, eph_before="20.07689253", eph_now="20.30462160", run_cost="0.20000000")
+    assert mod.cmd_reconcile(_rc_args(mod)) == 5 and _rc_record(tmp_path)["runtime_qualification_status"] == "PENDING_SETTLEMENT_OBSERVATION"

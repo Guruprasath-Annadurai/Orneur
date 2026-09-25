@@ -8,7 +8,7 @@ CAPABILITY REMAINS UNPROVEN for every control.**
 
 | Control | Identity | Preflight | Attempt result | Technical serving | Financial acceptance | Runtime qualification | Capability |
 |---|---|---|---|---|---|---|---|
-| Qwen3-8B | ADMITTED | PASSED | attempt 1 = HARNESS_FAILURE (failure domain HARNESS, 34.6 s) | NOT_PROVEN | PASS (billed delta 0 at observed time) | NOT_COMPLETED | UNPROVEN |
+| Qwen3-8B | ADMITTED | PASSED | attempt 4 (Modal H100, 196.5 s) = TECHNICAL_SUCCESS; attempts 1-3 preserved (HARNESS_FAILURE, BLOCKED_NO_GPU x2) | QUALIFIED | PASS (owner billed delta 0; promotional credit used 0.22772907 USD, observed by read-only reconciliation) | RUNTIME_QUALIFIED | UNPROVEN |
 | Mistral-Nemo-Instruct-2407 | ADMITTED | PASSED | none | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
 | Phi-4 | ADMITTED | PASSED | none | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
 
@@ -26,6 +26,25 @@ settlement `BILLING_SETTLEMENT_NOT_YET_OBSERVABLE`. Its true settled cost is unc
 every preflight passed. Resume conditions: previous settlement observable AND owner payable delta 0 AND
 remaining credit >= $5.00 reserve + $1.25 maximum run cost AND zero live resources. Then exactly one Qwen3-8B
 retry (attempt 2), then Mistral-Nemo, then Phi-4, each gated on the previous settlement.
+
+## Modal H100 (canonical provider) -- Qwen3-8B attempt 4 and delayed-settlement reconciliation
+
+Canonical provider decision: Modal, 1 x H100 80GB, BF16, no quantization, no substitution, exact pinned revision from a
+hash-verified Modal Volume cache (CPU-only pre-cache for all three controls; manifests
+`GENESIS_CONTROL_*_MODAL_PRECACHE_MANIFEST_2026-09-24.json`). Historical attempt 1's unresolved settlement was lifted
+for *launch gating only* by the owner-created waiver (strict `validate_owner_settlement_waiver`; it never marks that
+settlement resolved and its conservative exposure stays deducted). The waiver applies to attempt 1 only and can never
+apply to attempt 4.
+
+Qwen3-8B attempt 4: technical `QUALIFIED`, all three locked smokes passed, cleanup PASS, 0 live resources, owner billed
+delta 0. Its in-run settlement was `BILLING_SETTLEMENT_NOT_YET_OBSERVABLE` (Modal metering lag), so the record was first
+`PENDING_SETTLEMENT_OBSERVATION` (a new machine-enforced status: technically and financially clean but credit coverage
+not yet observed; a status-label correction only, no technical evidence altered). The read-only
+`--mode reconcile --control qwen3_8b --attempt 4` later observed the run's own itemized row (0.22772907 USD, matching the
+exact per-category metered growth), credits applied covering it, owner billed unchanged, app stopped with 0 tasks, and
+finalized the record to `RUNTIME_QUALIFIED` without rerunning anything. The in-run delay is preserved in
+`original_in_run_billing_settlement`. Owner cash is 0; promotional credit used is 0.22772907 USD (a different quantity).
+Mistral-Nemo and Phi-4 have not been run (NOT_TESTED). Runtime qualification is not capability qualification.
 
 ## Provider migration (Modal -> Lightning AI)
 

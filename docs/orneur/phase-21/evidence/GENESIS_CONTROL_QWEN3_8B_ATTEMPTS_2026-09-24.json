@@ -64,6 +64,26 @@
       "started_at_utc": "2026-09-24T18:35:00Z",
       "status": "BLOCKED_NO_GPU",
       "valid_runtime_attempt": false
+    },
+    {
+      "attempt_number": 4,
+      "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+      "cleanup_result": "PASS",
+      "duration_seconds": 196.5,
+      "failure_domain": "NONE",
+      "finished_at_utc": "2026-09-24T20:56:49Z",
+      "modal_app_id": "ap-3frDTjsVLzElehnHpfm69I",
+      "modal_app_name": "orneur-p21b420-h100-control-runtime",
+      "outcome": "TECHNICAL_SUCCESS",
+      "owner_billed_delta_usd": "0E-8",
+      "provider": "Modal",
+      "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "068332b340ddcf73d1d61e326c1e95646a610ac6864b2a47848cf218355d5bbd",
+      "reason": "server ready, 3 smoke requests HTTP 200 with non-empty content, clean shutdown",
+      "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "started_at_utc": "2026-09-24T20:53:32Z",
+      "status": "TECHNICAL_SUCCESS",
+      "valid_runtime_attempt": true
     }
   ],
   "control_name": "Qwen3-8B"
