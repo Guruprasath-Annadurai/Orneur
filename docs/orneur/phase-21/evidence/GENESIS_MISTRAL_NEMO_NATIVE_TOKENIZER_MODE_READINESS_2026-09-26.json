@@ -1,0 +1,267 @@
+{
+  "B1_mode_selection_from_vllm_source": {
+    "auto_mode_source_NOT_EXECUTED": "    # Try to use official Mistral tokenizer if possible\n    if (\n        tokenizer_mode == \"auto\"\n        and is_mistral_model_repo(\n            model_name_or_path=str(tokenizer_name), revision=revision\n        )\n        and any_pattern_in_repo_files(\n            model_name_or_path=str(tokenizer_name),\n            allow_patterns=[\"tekken.json\", \"tokenizer.model.v*\"],\n            revision=revision,\n        )\n    ):\n        tokenizer_mode = \"mistral\"\n\n",
+    "conclusion": "the attempt-2 explicit `--tokenizer-mode hf` selected CachedHfTokenizer + HfRenderer (registry values above); `--tokenizer-mode mistral` selects MistralTokenizer + MistralRenderer. 'auto' would select mistral for a Mistral repo containing tekken.json / tokenizer.model.v* (source quoted, not executed).",
+    "explicit_mode_resolution_executed": {
+      "hf": {
+        "renderer": [
+          "hf",
+          "HfRenderer"
+        ],
+        "tokenizer": [
+          "hf",
+          "CachedHfTokenizer"
+        ],
+        "tokenizer_mode_returned": "hf"
+      },
+      "mistral": {
+        "renderer": [
+          "mistral",
+          "MistralRenderer"
+        ],
+        "tokenizer": [
+          "mistral",
+          "MistralTokenizer"
+        ],
+        "tokenizer_mode_returned": "mistral"
+      }
+    },
+    "renderer_mode_equals_tokenizer_mode": true,
+    "renderer_registry__VLLM_RENDERERS": {
+      "hf": [
+        "hf",
+        "HfRenderer"
+      ],
+      "mistral": [
+        "mistral",
+        "MistralRenderer"
+      ]
+    },
+    "renderer_selection_source": "def renderer_from_config(config: \"VllmConfig\", **kwargs):\n    model_config = config.model_config\n\n    tokenizer = cached_tokenizer_from_config(model_config, **kwargs)\n    renderer_mode, *_ = tokenizer_args_from_config(model_config, **kwargs)\n\n    return RENDERER_REGISTRY.load_renderer(renderer_mode, config, tokenizer)",
+    "source_files": {
+      "vllm/entrypoints/openai/chat_completion/protocol.py": {
+        "bytes": 48040,
+        "sha256": "8a1f1138f79557aa5b5add12e81b9745fd5e286fa35f0502a97f2a377d41665b"
+      },
+      "vllm/renderers/hf.py": {
+        "bytes": 48680,
+        "sha256": "2b24612a7163f176f205f9a976ebabafc2ac7840ed5516574b0776272c02ed26"
+      },
+      "vllm/renderers/mistral.py": {
+        "bytes": 3850,
+        "sha256": "586b99a78050d99172b742fa81be535eea91b82967f2837f8c43a8ed6f5434d8"
+      },
+      "vllm/renderers/params.py": {
+        "bytes": 20056,
+        "sha256": "30104415b818465eb1114852104a9b52b9792a4eed9bc3f32a355d8cf33dd8e0"
+      },
+      "vllm/renderers/registry.py": {
+        "bytes": 2849,
+        "sha256": "a08f893773e22d4b249726f2cec930ea70eb508f32a4903bacffba37b07fdf5b"
+      },
+      "vllm/tokenizers/mistral.py": {
+        "bytes": 22303,
+        "sha256": "923bd30cd82b685c2cd51586f933bf1e893d31c348b204af9d54bb578968eb65"
+      },
+      "vllm/tokenizers/registry.py": {
+        "bytes": 10521,
+        "sha256": "9515c9d30b5b87e1706d1905c51dfac45ff75eb72bb34957181b7907dc29ca73"
+      }
+    },
+    "tokenizer_registry__VLLM_TOKENIZERS": {
+      "hf": [
+        "hf",
+        "CachedHfTokenizer"
+      ],
+      "mistral": [
+        "mistral",
+        "MistralTokenizer"
+      ]
+    },
+    "vllm_commit": "98dff2a81d747d1dba01a47f939f48c3526d4206"
+  },
+  "B2_mistral_tokenizer_construction": {
+    "bos_id": 1,
+    "construction": "SUCCEEDED",
+    "eos_id": 2,
+    "executed_real_source": "vllm/tokenizers/mistral.py (module executed unmodified)",
+    "is_spm": false,
+    "is_tekken": true,
+    "mistral_common_tokenizer_class": "mistral_common.tokens.tokenizers.mistral.MistralTokenizer",
+    "mistral_common_version": "1.12.0",
+    "pad_id": 11,
+    "stubbed_vllm_internals": [
+      "vllm.entrypoints.chat_utils",
+      "vllm.entrypoints.openai.chat_completion.protocol",
+      "vllm.logger",
+      "vllm.tokenizers.protocol.TokenizerLike (plain base)"
+    ],
+    "tekken_json_sha256": "eccd1665d2e477697c33cb7f0daa6f6dfefc57a0a6bceb66d4be52952f827516",
+    "tokenizer_source_file_in_snapshot": "tekken.json",
+    "tokenizer_version": 3,
+    "transformers_backend": "transformers.tokenization_mistral_common.MistralCommonBackend",
+    "underlying_tokenizer_class": "mistral_common.tokens.tokenizers.tekken.Tekkenizer",
+    "validation_mode": "ValidationMode.test",
+    "vllm_class": "MistralTokenizer",
+    "vocab_size": 131072
+  },
+  "B3_native_chat_rendering_locked_smokes": {
+    "MistralRenderer.render_messages_called": false,
+    "apply_kwargs_derived_by_real_merge_kwargs": {
+      "add_generation_prompt": true,
+      "continue_final_message": false,
+      "return_dict": false
+    },
+    "executed_real_function": "vllm.renderers.mistral.safe_apply_chat_template (real source) -> MistralTokenizer.apply_chat_template (real) -> MistralCommonBackend.apply_chat_template",
+    "no_chat_template_or_kwargs_supplied_by_the_request": true,
+    "smokes": {
+      "A": {
+        "chat_template_resolution_error": false,
+        "decoded_sha256": "bd4128f9ba0feccd9cf1177b7762b2b92dc76f84232a6980e392243726505b60",
+        "decoded_with_special_tokens": "<s>[INST]Reply exactly:\nREADY[/INST]",
+        "informational_same_ids_as_ordinary_hf_jinja_render_plus_tokenizer_json": true,
+        "ok": true,
+        "prompt_sha256_of_user_message": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+        "token_count": 8,
+        "token_ids": [
+          1,
+          3,
+          53156,
+          10693,
+          1877,
+          38237,
+          1089,
+          4
+        ],
+        "token_ids_sha256": "c8fa8a3079e38fef4c16fdf569df2b8e654ce784555b79f31088358c83aed072"
+      },
+      "B": {
+        "chat_template_resolution_error": false,
+        "decoded_sha256": "31550a789c0de5f30beee3e2447779c539d7da669cfacba28e598713d054b688",
+        "decoded_with_special_tokens": "<s>[INST]2 + 3[/INST]",
+        "informational_same_ids_as_ordinary_hf_jinja_render_plus_tokenizer_json": true,
+        "ok": true,
+        "prompt_sha256_of_user_message": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+        "token_count": 7,
+        "token_ids": [
+          1,
+          3,
+          1050,
+          1867,
+          1032,
+          1051,
+          4
+        ],
+        "token_ids_sha256": "91c2dcb2aedd18a8ca080609df84ae1909d1ac4fbee912d23880cb0b4e52b566"
+      },
+      "C": {
+        "chat_template_resolution_error": false,
+        "decoded_sha256": "bf54d297a1bf0c4fe1725e52edd0fab724d5422f85561bb12616759551f365da",
+        "decoded_with_special_tokens": "<s>[INST]Return valid JSON:\n{\"status\":\"ready\"}[/INST]",
+        "informational_same_ids_as_ordinary_hf_jinja_render_plus_tokenizer_json": true,
+        "ok": true,
+        "prompt_sha256_of_user_message": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42",
+        "token_count": 12,
+        "token_ids": [
+          1,
+          3,
+          15773,
+          5746,
+          11748,
+          1877,
+          19227,
+          10560,
+          12592,
+          4868,
+          46005,
+          4
+        ],
+        "token_ids_sha256": "3603d86009760fd851c2c523cf015237c54c0d6f2539bb0fd4c7aaaf059cb786"
+      }
+    }
+  },
+  "B4_comparison": {
+    "failed_hf_chain": [
+      "CachedHfTokenizer / HfRenderer",
+      "AutoTokenizer -> MistralCommonBackend (tekken.json present)",
+      "resolve_chat_template -> None (get_chat_template NotImplementedError swallowed at debug)",
+      "safe_apply_chat_template raises ChatTemplateResolutionError -> HTTP 400"
+    ],
+    "failed_hf_chain_reproduced_by": "GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json",
+    "native_chain_reproduced_cpu_side": {
+      "MistralTokenizer_constructed": true,
+      "native_apply_chat_template_A_B_C": true,
+      "no_ChatTemplateResolutionError": true,
+      "tekken_backend": true
+    },
+    "native_mistral_chain": [
+      "MistralTokenizer / MistralRenderer",
+      "MistralCommonBackend.from_pretrained(mode=test) -> mistral_common Tekkenizer",
+      "safe_apply_chat_template -> MistralTokenizer.apply_chat_template -> MistralCommonBackend.apply_chat_template (no HF Jinja, no get_chat_template)",
+      "prompt token ids produced"
+    ]
+  },
+  "captured_at_utc": "2026-09-25T20:12:45Z",
+  "config_changed": false,
+  "container_versions_from_attempt2_log": {
+    "huggingface_hub": "1.30.0",
+    "tokenizers": "0.23.2",
+    "transformers": "5.16.1"
+  },
+  "cpu_library_versions_used": {
+    "huggingface_hub": "1.30.0",
+    "jinja2": "3.1.6",
+    "mistral_common": "1.12.0",
+    "tokenizers": "0.23.2",
+    "transformers": "5.16.1"
+  },
+  "evidence_type": "GENESIS_MISTRAL_NEMO_NATIVE_TOKENIZER_MODE_READINESS",
+  "generated_output_executed": false,
+  "known_source_facts_for_native_mode": [
+    "vllm/tokenizers/mistral.py validate_request_params: a request carrying chat_template or chat_template_kwargs is rejected in Mistral mode (the locked smokes send neither)",
+    "MistralTokenizer.apply_chat_template pops add_generation_prompt and lets mistral_common build the [INST] prompt"
+  ],
+  "mistral_common_note": "vLLM 0.29.0 requires mistral_common[image] >= 1.11.6; the container's exact mistral_common version is NOT recorded in the attempt-2 log",
+  "no_generation": true,
+  "no_gpu_used": true,
+  "no_modal_used": true,
+  "no_model_weights_loaded": true,
+  "no_provider_call": true,
+  "not_covered_by_cpu_evidence": [
+    "engine initialization and weight loading with --tokenizer-mode mistral (and its interaction with --config-format hf / --load-format safetensors)",
+    "stop-token/EOS behaviour and the generated text on GPU",
+    "the container's exact mistral_common version",
+    "any behaviour of MistralRenderer.render_messages beyond its safe_apply_chat_template step"
+  ],
+  "phase": "21B.4.20",
+  "readiness_scope": "CPU-side prompt preprocessing path only; NOT a GPU authorization and NOT a runtime qualification. The canonical configuration (--tokenizer-mode hf) is UNCHANGED.",
+  "readiness_verdict": "NATIVE_MISTRAL_MODE_CPU_READY",
+  "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+  "secondary_explicit_chat_template_hf_renderer": {
+    "backend_apply_chat_template_with_chat_template_argument": {
+      "note": "MistralCommonBackend ignores/does not use the supplied Jinja template (its own native rendering answered)",
+      "ok": true,
+      "output": "<s>[INST]2 + 3[/INST]"
+    },
+    "backend_class_from_hf_mode": "transformers.tokenization_mistral_common.MistralCommonBackend",
+    "recommended": false,
+    "resolve_chat_template_with_explicit_template": {
+      "exception": "NotImplementedError: `MistralCommonBackend` does not implement `get_chat_template`.",
+      "note": "vLLM's 1st-priority branch calls tokenizer.get_chat_template(<explicit template>) which MistralCommonBackend does not implement; the exception is NOT caught in that branch",
+      "ok": false
+    },
+    "status": "NOT_VIABLE_ON_THIS_BACKEND (executed real vLLM path raises)",
+    "template_sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272"
+  },
+  "status_unchanged": {
+    "attempt_outcome": "UNATTRIBUTED_REQUEST_REJECTION",
+    "capability_status": "UNPROVEN",
+    "runtime_qualification_status": "NOT_COMPLETED",
+    "technical_serving_status": "NOT_PROVEN"
+  },
+  "verdict_reasons": [
+    "MistralTokenizer constructed from the exact pinned snapshot on tekken (mistral_common.tokens.tokenizers.mistral.MistralTokenizer)",
+    "locked smokes A/B/C rendered to token ids through the real vLLM safe_apply_chat_template with no ChatTemplateResolutionError and no get_chat_template call",
+    "registry evidence: tokenizer_mode mistral -> MistralTokenizer and MistralRenderer"
+  ]
+}

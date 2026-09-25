@@ -4187,3 +4187,78 @@ def test_the_chat_template_source_correction_runs_only_on_a_tmp_copy_and_refuses
     assert json.loads(rec.read_text())["chat_template_source"] == _mistral_live()["chat_template_source"]
     assert mod.cmd_correct_chat_template_source(args) == 0                                                                 # idempotent
     assert mod.archive_prior_record("MISTRAL_NEMO") == A2_SNAPSHOT.name                                                    # a later launch accepts exactly this documented correction
+
+
+# ══ Native Mistral tokenizer-mode CPU readiness + evidence-integrity regression guards ═══════════════════════════════════════════════════
+NATIVE_READINESS = EVIDENCE_DIR / "GENESIS_MISTRAL_NEMO_NATIVE_TOKENIZER_MODE_READINESS_2026-09-26.json"
+
+
+@pytest.fixture(autouse=True)
+def _real_evidence_directory_is_never_mutated_by_a_test():
+    """No test in this module may create, modify or delete anything in the repository evidence directory (mutating flows must use tmp copies)."""
+    def state():
+        return {p.name: (p.stat().st_size, p.stat().st_mtime_ns) for p in EVIDENCE_DIR.iterdir() if p.is_file()}
+    before = state()
+    yield
+    after = state()
+    assert after == before, sorted(set(before) ^ set(after)) or [k for k in before if before[k] != after.get(k)]
+
+
+def test_native_mistral_mode_readiness_artifact_is_cpu_only_and_changes_no_configuration():
+    d = json.loads(NATIVE_READINESS.read_text())
+    assert d["readiness_verdict"] == "NATIVE_MISTRAL_MODE_CPU_READY" and d["config_changed"] is False
+    for k in ("no_gpu_used", "no_modal_used", "no_provider_call", "no_model_weights_loaded", "no_generation"):
+        assert d[k] is True
+    assert d["generated_output_executed"] is False and d["status_unchanged"]["technical_serving_status"] == "NOT_PROVEN"
+    assert d["cpu_library_versions_used"]["transformers"] == "5.16.1" and d["B1_mode_selection_from_vllm_source"]["vllm_commit"] == "98dff2a81d747d1dba01a47f939f48c3526d4206"
+    b1 = d["B1_mode_selection_from_vllm_source"]
+    assert b1["tokenizer_registry__VLLM_TOKENIZERS"] == {"hf": ["hf", "CachedHfTokenizer"], "mistral": ["mistral", "MistralTokenizer"]}
+    assert b1["renderer_registry__VLLM_RENDERERS"] == {"hf": ["hf", "HfRenderer"], "mistral": ["mistral", "MistralRenderer"]} and b1["renderer_mode_equals_tokenizer_mode"] is True
+    b2 = d["B2_mistral_tokenizer_construction"]
+    assert b2["construction"] == "SUCCEEDED" and b2["is_tekken"] is True and b2["underlying_tokenizer_class"].endswith("Tekkenizer") and b2["mistral_common_version"]
+    smokes = d["B3_native_chat_rendering_locked_smokes"]["smokes"]
+    assert sorted(smokes) == ["A", "B", "C"] and all(s["ok"] and not s["chat_template_resolution_error"] and s["token_ids"] for s in smokes.values())
+    assert d["B3_native_chat_rendering_locked_smokes"]["MistralRenderer.render_messages_called"] is False
+    assert d["secondary_explicit_chat_template_hf_renderer"]["recommended"] is False and d["secondary_explicit_chat_template_hf_renderer"]["status"] != "PROVEN"
+    assert "NOT a GPU authorization" in d["readiness_scope"] and d["not_covered_by_cpu_evidence"]
+
+
+def test_the_cpu_analysis_scripts_import_no_provider_and_call_no_subprocess_or_remote():
+    for name in ("phase21b_4_20_mistral_chat_template_analysis_v2.py", "phase21b_4_20_mistral_native_tokenizer_readiness.py"):
+        tree = ast.parse((REPO_ROOT / "scripts" / name).read_text())
+        imported = {n.names[0].name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import)} | {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+        assert not ({"modal", "subprocess", "torch", "vllm"} & imported), (name, imported)
+        assert not [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in ("remote", "spawn", "run_in_executor")], name
+
+
+def test_attempt_1_and_attempt_2_historical_evidence_is_pinned_byte_for_byte():
+    assert hashlib.sha256(MISTRAL_A1_FINALIZED.read_bytes()).hexdigest() == MISTRAL_A1_FINALIZED_SHA256
+    assert hashlib.sha256(MISTRAL_SNAPSHOT.read_bytes()).hexdigest() == MISTRAL_SNAPSHOT_SHA256
+    assert hashlib.sha256((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json").read_bytes()).hexdigest() == \
+        "7eabbd15d5b7a6ef89edb2641de7d259db11fa5779a23e6cac648fe690d7b929"
+    assert hashlib.sha256((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt").read_bytes()).hexdigest() == MISTRAL_RAW_LOG_SHA256
+    live = _mistral_live()
+    assert live["raw_log_sha256"] == "42f4e8404fca206eb3d7e589170f3d418527093060979c09f795309fe503317e"
+    assert hashlib.sha256((EVIDENCE_DIR / live["raw_log_artifact"]).read_bytes()).hexdigest() == live["raw_log_sha256"]
+    snap = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json").read_text())
+    assert live["smoke_outputs"] == snap["smoke_outputs"] and live["container_execution_proof"] == snap["container_execution_proof"] and live["attempts"] == snap["attempts"]
+
+
+def test_the_metadata_correction_guard_stays_narrow(monkeypatch, tmp_path):
+    mod, _ = _load_modal_h100(monkeypatch)
+    ev = tmp_path / "evidence"
+    shutil.copytree(EVIDENCE_DIR, ev)
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
+    snap_path = ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json"
+    snap, live = json.loads(snap_path.read_text()), json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert mod._only_documented_metadata_correction(live, snap, snap_path) is True
+    for key, val in (("technical_serving_status", "PASSED"), ("capability_status", "QUALIFIED"), ("smoke_outputs", []), ("container_execution_proof", {}), ("raw_log_sha256", "0" * 64)):
+        bad = json.loads(json.dumps(live))
+        bad[key] = val
+        assert mod._only_documented_metadata_correction(bad, snap, snap_path) is False, key
+    bad = json.loads(json.dumps(live))
+    bad["attempts"][-1]["outcome"] = "TECHNICAL_SUCCESS"
+    assert mod._only_documented_metadata_correction(bad, snap, snap_path) is False
+    bad = json.loads(json.dumps(live))
+    bad["metadata_correction"]["reclassifies_attempt"] = True
+    assert mod._only_documented_metadata_correction(bad, snap, snap_path) is False
