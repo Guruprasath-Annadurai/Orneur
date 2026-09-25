@@ -686,6 +686,9 @@ def _check_runtime_configuration(record: dict) -> None:
         raise ControlRuntimeError("runtime_configuration.configuration_sha256 differs from the canonical configuration")
     if rc.get("runtime_policy_sha256") != _rc.PINNED_RUNTIME_POLICY_SHA256:
         raise ControlRuntimeError("runtime_configuration.runtime_policy_sha256 must equal the pinned runtime-policy sha256")
+    mode = record.get("reasoning_mode")
+    if kwargs.get("enable_thinking") is False and (not isinstance(mode, str) or not mode.startswith("NON_THINKING") or "enable_thinking=false" not in mode or "ENABLED" in mode):
+        raise ControlRuntimeError("reasoning_mode must describe the effective configuration (NON_THINKING / enable_thinking=false), not the model's default template capability")
     if last.get("valid_runtime_attempt") is True or record.get("technical_serving_status") in ("QUALIFIED", "FAILED"):
         _check_container_proof(record, rc, approved)
 

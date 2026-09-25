@@ -29,6 +29,13 @@ cleanup PASS (app stopped, 0 tasks, 0 containers, 0 live resources), owner bille
 credit, equal to the app's own itemized row and the exact per-category metered growth), generated output never executed. Outcome:
 attempt 5 `TECHNICAL_FAILURE` (valid runtime attempt), technical `FAILED`, runtime `FAILED`. It is a smoke-contract (response-behaviour) failure,
 not an identity, infrastructure or financial failure. The evidence record is written by the harness with its validator passing.
+**Metadata correction (descriptive only).** The originally generated attempt-5 record carried a stale `reasoning_mode` ("ENABLED (Qwen3 hybrid-thinking template
+default; ...)") copied from the model's default template capability. It is now derived from the effective approved configuration:
+`NON_THINKING (enable_thinking=false ...); --reasoning-parser qwen3 is loaded but thinking is not enabled` (loading the parser does not mean thinking is on;
+the persisted smokes show 0 reasoning tokens). The pre-correction record is preserved byte-identically as
+`GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT5_SNAPSHOT_2026-09-24.json` (sha256 `85d3fec9…13c5`); the correction changes only `reasoning_mode` and adds a
+`metadata_correction` note, does **not** reclassify attempt 5, and leaves raw responses, raw log, financial/settlement evidence, container proof, smoke outputs and all
+attempt outcomes untouched. Qwen3-8B remains FAILED.
 
 **Qwen3-8B attempt 4 (historical).** Preserved byte-identically as `GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json`.
 Thinking default ON and the runner's earlier prompt wording; A PASS, B FAIL (verbose explanation), C PASS; owner billed delta 0; promotional credit

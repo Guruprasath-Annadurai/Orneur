@@ -4,8 +4,8 @@
     {
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md",
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "99a862ee623a510d7dc018c854b2920435b8ab1cd8f4e05d9dbcea0b418de80e",
-      "size_bytes": 21838
+      "sha256": "239266bb8d9cc29ae703cbb20fdaabf0de578daaab9dc6993844ca346375921d",
+      "size_bytes": 22780
     },
     {
       "evidence_role": "genesis_billing_discrepancy_observation_2026-09-24.json",
@@ -256,14 +256,20 @@
     {
       "evidence_role": "genesis_control_qwen3_8b_runtime_qualification_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json",
-      "sha256": "85d3fec9ae744c553ce668fa693fb19f329e6a14414051b082a23be6202213c5",
-      "size_bytes": 23158
+      "sha256": "858bfc953611c63d4ec6d9cb288205ead615f0894853117fa05e8c5aed84cd48",
+      "size_bytes": 24383
     },
     {
       "evidence_role": "genesis_control_qwen3_8b_runtime_qualification_attempt4_snapshot_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json",
       "sha256": "008b945e7fc0f10eec2a04104f5627260a4187d512d14294b0da41b0a0e217fd",
       "size_bytes": 24288
+    },
+    {
+      "evidence_role": "genesis_control_qwen3_8b_runtime_qualification_attempt5_snapshot_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT5_SNAPSHOT_2026-09-24.json",
+      "sha256": "85d3fec9ae744c553ce668fa693fb19f329e6a14414051b082a23be6202213c5",
+      "size_bytes": 23158
     },
     {
       "evidence_role": "genesis_hf_zerogpu_account_verification_2026-09-24.json",
@@ -333,6 +339,6 @@
     }
   ],
   "evidence_type": "GENESIS_CONTROL_RUNTIME_QUALIFICATION_INTEGRITY_INDEX",
-  "note": "SHA-256 hashes computed live from actual file bytes; repo-relative paths. Includes Qwen3-8B attempt 1 (harness failure, annotated with failure_domain; pre-annotation attempts-file sha256 eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365 is preserved in git history and in the annotation), the read-only settlement reconciliation, and NOT_TESTED records for Mistral-Nemo and Phi-4. Phase 21B.4.20 Modal H100 update: adds CPU pre-cache manifests, owner-created attempt-1 settlement waiver (hash recorded, content untouched), Qwen3-8B H100 attempt 4 evidence and its delayed-settlement reconciliation artifacts. Audit remediation: adds the three Modal H100 preflight artifacts (CPU 191936Z, GPU 195933Z blocked, GPU 205041Z allowed) and re-derives every hash from actual bytes; GENESIS_CONTROL_SET_* files belong to the earlier control-set admission phase and have their own index. Adds the CPU-only Qwen3-8B runtime-configuration analysis (2026-09-25). Canonical locked-smoke protocol canonicalization (2026-09-25): adds GENESIS_LOCKED_SMOKE_PROTOCOL and the V2 canonical-prompt Qwen analysis; the earlier analysis is annotated superseded; Mistral/Phi NOT_TESTED planned prompts canonicalized (originals preserved); matrix updated. Qwen3-8B qwen3_8b_non_thinking_v1 implementation readiness (2026-09-25): adds the byte-identical attempt-4 record snapshot and the CPU-only readiness artifact; matrix updated. Runtime-policy pin (2026-09-25): readiness artifact regenerated with the pinned policy fingerprint; matrix updated. Qwen3-8B attempt 5 (2026-09-25, owner-authorized, qwen3_8b_non_thinking_v1): adds the attempt-5 preflight/billing/raw-log artifacts and the 081417Z GPU preflight; attempts file and Qwen record re-hashed; matrix updated.",
+  "note": "SHA-256 hashes computed live from actual file bytes; repo-relative paths. Includes Qwen3-8B attempt 1 (harness failure, annotated with failure_domain; pre-annotation attempts-file sha256 eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365 is preserved in git history and in the annotation), the read-only settlement reconciliation, and NOT_TESTED records for Mistral-Nemo and Phi-4. Phase 21B.4.20 Modal H100 update: adds CPU pre-cache manifests, owner-created attempt-1 settlement waiver (hash recorded, content untouched), Qwen3-8B H100 attempt 4 evidence and its delayed-settlement reconciliation artifacts. Audit remediation: adds the three Modal H100 preflight artifacts (CPU 191936Z, GPU 195933Z blocked, GPU 205041Z allowed) and re-derives every hash from actual bytes; GENESIS_CONTROL_SET_* files belong to the earlier control-set admission phase and have their own index. Adds the CPU-only Qwen3-8B runtime-configuration analysis (2026-09-25). Canonical locked-smoke protocol canonicalization (2026-09-25): adds GENESIS_LOCKED_SMOKE_PROTOCOL and the V2 canonical-prompt Qwen analysis; the earlier analysis is annotated superseded; Mistral/Phi NOT_TESTED planned prompts canonicalized (originals preserved); matrix updated. Qwen3-8B qwen3_8b_non_thinking_v1 implementation readiness (2026-09-25): adds the byte-identical attempt-4 record snapshot and the CPU-only readiness artifact; matrix updated. Runtime-policy pin (2026-09-25): readiness artifact regenerated with the pinned policy fingerprint; matrix updated. Qwen3-8B attempt 5 (2026-09-25, owner-authorized, qwen3_8b_non_thinking_v1): adds the attempt-5 preflight/billing/raw-log artifacts and the 081417Z GPU preflight; attempts file and Qwen record re-hashed; matrix updated. Attempt-5 reasoning_mode metadata correction (2026-09-25): adds the byte-identical pre-correction attempt-5 record snapshot; Qwen record re-hashed (descriptive metadata only); matrix updated.",
   "phase": "21B.4.20"
 }

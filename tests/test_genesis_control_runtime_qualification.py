@@ -2412,6 +2412,7 @@ def _qwen5(tmp_path, **rc_over):
     rec = _qualified_record(tmp_path, "Qwen3-8B")
     rec["attempts"] = _qwen_history(5)
     rec["gpu_provider"] = "Modal"
+    rec["reasoning_mode"] = runtime_cfg.effective_reasoning_mode("ENABLED (default template capability)", runtime_cfg.configuration_for_model("Qwen/Qwen3-8B"))
     for o in rec["smoke_outputs"]:
         o["chat_template_kwargs_sent"] = {"enable_thinking": False}
     rec["runtime_configuration"] = {"id": QWEN_CFG_ID, "chat_template_kwargs": {"enable_thinking": False},
@@ -2931,3 +2932,143 @@ def test_attempt_5_left_attempts_1_to_4_and_the_attempt_4_snapshot_untouched_and
         assert r["runtime_qualification_status"] == "NOT_TESTED" and r["attempts"] == [] and r["smoke_outputs"] == []
     raw_attempts = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json").read_text())["attempts"]
     assert raw_attempts == q["attempts"] and len(raw_attempts) == 5
+
+
+# ══ attempt-5 descriptive-metadata correction: reasoning_mode derives from the EFFECTIVE configuration, not the template capability ═══════
+ATTEMPT_5_SNAPSHOT = EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT5_SNAPSHOT_2026-09-24.json"
+ATTEMPT_5_SNAPSHOT_SHA256 = "85d3fec9ae744c553ce668fa693fb19f329e6a14414051b082a23be6202213c5"
+STALE_REASONING_MODE = "ENABLED (Qwen3 hybrid-thinking template default; canonical control spec launches with --reasoning-parser qwen3)"
+
+
+def _attempt5_snapshot():
+    return json.loads(ATTEMPT_5_SNAPSHOT.read_text())
+
+
+def test_qwen_records_from_attempt_5_with_enable_thinking_false_describe_a_non_thinking_mode():
+    mode = runtime_cfg.effective_reasoning_mode(STALE_REASONING_MODE, runtime_cfg.configuration_for_model("Qwen/Qwen3-8B"))
+    assert mode.startswith("NON_THINKING") and "enable_thinking=false" in mode and QWEN_CFG_ID in mode and "ENABLED" not in mode
+    assert "--reasoning-parser qwen3 is loaded but thinking is not enabled" in mode                    # the parser being loaded does not imply thinking
+    # any other configuration (or none) leaves the descriptive default untouched: nothing is invented
+    for other in (None, {}, {"chat_template_kwargs": None}, {"chat_template_kwargs": {"enable_thinking": True}}, {"chat_template_kwargs": {}}):
+        assert runtime_cfg.effective_reasoning_mode(STALE_REASONING_MODE, other) == STALE_REASONING_MODE
+    assert runtime_cfg.effective_reasoning_mode("NOT_APPLICABLE (non-reasoning instruct model)", None) == "NOT_APPLICABLE (non-reasoning instruct model)"
+
+
+def test_the_validator_requires_reasoning_mode_to_match_the_effective_non_thinking_configuration(tmp_path):
+    validate_control_runtime_record(_qwen5(tmp_path), evidence_root=tmp_path)
+    for bad in (STALE_REASONING_MODE, None, "", "NON_THINKING", "ENABLED", "NON_THINKING but ENABLED (enable_thinking=false)", 7):
+        rec = _qwen5(tmp_path)
+        rec["reasoning_mode"] = bad
+        with pytest.raises(ControlRuntimeError, match="reasoning_mode must describe the effective configuration"):
+            validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec = _qwen5(tmp_path)
+    del rec["reasoning_mode"]
+    with pytest.raises(ControlRuntimeError, match="reasoning_mode"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_a_new_harness_record_derives_reasoning_mode_from_the_effective_configuration(monkeypatch, tmp_path):
+    mod, ev, remote_calls = _run_env(monkeypatch, tmp_path, lambda m, r: _fake_container_result(m, r))
+    mod.cmd_run(types.SimpleNamespace(control="qwen3_8b"))
+    rec = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert rec["reasoning_mode"].startswith("NON_THINKING") and "enable_thinking=false" in rec["reasoning_mode"] and rec["reasoning_parser"] == "qwen3"
+    assert "ENABLED" not in rec["reasoning_mode"] and "metadata_correction" not in rec                     # correct at creation time; nothing to patch later
+    validate_control_runtime_record(rec, evidence_root=ev)
+
+
+def test_historical_attempt_4_stays_recorded_as_thinking_default_and_untouched():
+    q4 = _attempt4_record()
+    assert q4["reasoning_mode"] == STALE_REASONING_MODE and q4["reasoning_parser"] == "qwen3" and "runtime_configuration" not in q4 and "metadata_correction" not in q4
+    assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256
+    assert hashlib.sha256(json.dumps(q4["smoke_outputs"], sort_keys=True).encode()).hexdigest() == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256
+    assert q4["attempts"][-1]["outcome"] == "TECHNICAL_FAILURE" and q4["attempts"][-1]["attempt_number"] == 4                # attempt 4 really ran with thinking on
+
+
+def test_the_persisted_attempt_5_record_was_corrected_in_descriptive_metadata_only():
+    snap, cur = _attempt5_snapshot(), _persisted_qwen()
+    assert hashlib.sha256(ATTEMPT_5_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_5_SNAPSHOT_SHA256
+    assert snap["reasoning_mode"] == STALE_REASONING_MODE and "metadata_correction" not in snap             # the pre-correction record, preserved immutably
+    assert cur["reasoning_mode"].startswith("NON_THINKING") and "enable_thinking=false" in cur["reasoning_mode"] and cur["reasoning_parser"] == "qwen3"
+    note = cur["metadata_correction"]
+    assert note["field"] == "reasoning_mode" and note["from"] == STALE_REASONING_MODE and note["to"] == cur["reasoning_mode"] and note["reclassifies_attempt"] is False
+    assert note["snapshot_sha256"] == ATTEMPT_5_SNAPSHOT_SHA256 and note["snapshot_artifact"] == ATTEMPT_5_SNAPSHOT.name and "DESCRIPTIVE METADATA ONLY" in note["kind"]
+    differing = {k for k in set(snap) | set(cur) if snap.get(k) != cur.get(k)}
+    assert differing == {"reasoning_mode", "metadata_correction"}                                             # NOTHING else changed: outputs, log, financials, proof, attempts, status
+    for key in ("smoke_outputs", "raw_log_sha256", "financial_evidence", "financial_reconciliation", "billing_settlement", "runtime_configuration", "attempts",
+                "technical_serving_status", "runtime_qualification_status", "smoke_acceptance", "owner_billed_delta_usd"):
+        assert cur[key] == snap[key], key
+    validate_control_runtime_record(cur, evidence_root=EVIDENCE_DIR)
+
+
+def test_attempt_5_is_not_reclassified_by_the_metadata_correction():
+    cur = _persisted_qwen()
+    a5 = cur["attempts"][-1]
+    assert a5["attempt_number"] == 5 and a5["outcome"] == "TECHNICAL_FAILURE" and a5["failure_domain"] == "MODEL_RUNTIME" and a5["valid_runtime_attempt"] is True
+    assert cur["technical_serving_status"] == "FAILED" and cur["runtime_qualification_status"] == "FAILED" and cur["capability_status"] == "UNPROVEN"
+    assert {a["smoke_id"]: a["accepted"] for a in cur["smoke_acceptance"]} == {"A": True, "B": False, "C": True}
+    assert next(o["content"] for o in cur["smoke_outputs"] if o["smoke_id"] == "B") == "2 + 3 = 5"
+    assert hashlib.sha256(json.dumps(cur["smoke_outputs"], sort_keys=True).encode()).hexdigest() == ATTEMPT_5_SMOKE_OUTPUTS_SHA256
+    assert cur["raw_log_sha256"] == ATTEMPT_5_RAW_LOG_SHA256 and all(o["usage"]["completion_tokens_details"]["reasoning_tokens"] == 0 for o in cur["smoke_outputs"])
+    forced = copy.deepcopy(cur)
+    forced.update(technical_serving_status="QUALIFIED", runtime_qualification_status="RUNTIME_QUALIFIED")
+    with pytest.raises(ControlRuntimeError, match="LOCKED (smoke|protocol)"):
+        validate_control_runtime_record(forced, evidence_root=EVIDENCE_DIR)
+
+
+def _correction_env(monkeypatch, tmp_path, *, drop_snapshot=True):
+    mod, _ = _load_modal_h100(monkeypatch)
+    ev = tmp_path / "evidence"
+    shutil.copytree(EVIDENCE_DIR, ev)
+    (ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").write_bytes(ATTEMPT_5_SNAPSHOT.read_bytes())          # the pre-correction record
+    if drop_snapshot:
+        (ev / ATTEMPT_5_SNAPSHOT.name).unlink()
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
+    boom = types.SimpleNamespace(remote=lambda *a, **k: (_ for _ in ()).throw(AssertionError("no GPU / provider function may be called")))
+    monkeypatch.setattr(mod, "serve_and_smoke", boom)
+    monkeypatch.setattr(mod, "app", types.SimpleNamespace(run=lambda *a, **k: (_ for _ in ()).throw(AssertionError("no Modal app run"))))
+    monkeypatch.setattr(mod, "_cli_json", lambda *a: (_ for _ in ()).throw(AssertionError("no Modal CLI / billing call")))
+    return mod, ev
+
+
+def test_the_correction_mode_snapshots_first_changes_only_descriptive_metadata_and_calls_no_provider(monkeypatch, tmp_path):
+    mod, ev = _correction_env(monkeypatch, tmp_path)
+    args = types.SimpleNamespace(control="qwen3_8b", attempt=5)
+    assert mod.cmd_correct_reasoning_mode(args) == 0
+    snap = ev / ATTEMPT_5_SNAPSHOT.name
+    assert snap.read_bytes() == ATTEMPT_5_SNAPSHOT.read_bytes()                                                                   # byte-identical pre-correction copy
+    cur = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert {k for k in set(cur) | set(_attempt5_snapshot()) if cur.get(k) != _attempt5_snapshot().get(k)} == {"reasoning_mode", "metadata_correction"}
+    assert cur["reasoning_mode"].startswith("NON_THINKING") and cur["metadata_correction"]["snapshot_sha256"] == ATTEMPT_5_SNAPSHOT_SHA256
+    first = (ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_bytes()
+    assert mod.cmd_correct_reasoning_mode(args) == 0                                                                              # idempotent
+    assert (ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_bytes() == first
+    assert mod.cmd_correct_reasoning_mode(types.SimpleNamespace(control="qwen3_8b", attempt=4)) == 2                              # only the record's final attempt
+    body = ast.unparse(next(n for n in ast.walk(ast.parse(MODAL_H100.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "cmd_correct_reasoning_mode"))
+    for banned in ("serve_and_smoke", ".remote(", "app.run", "billing_summary", "_cli_json", "subprocess", "eval(", "exec("):
+        assert banned not in body, banned
+
+
+def test_a_documented_metadata_correction_does_not_block_a_later_launch_but_other_drift_does(monkeypatch, tmp_path):
+    mod, ev = _correction_env(monkeypatch, tmp_path, drop_snapshot=False)
+    assert mod.cmd_correct_reasoning_mode(types.SimpleNamespace(control="qwen3_8b", attempt=5)) == 0
+    assert mod.archive_prior_record("QWEN3_8B") == ATTEMPT_5_SNAPSHOT.name                                                       # corrected record vs its snapshot: accepted
+    rec_path = ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json"
+    tampered = json.loads(rec_path.read_text())
+    tampered["smoke_outputs"][1]["content"] = "5"                                                                                # any change beyond the documented metadata
+    rec_path.write_text(json.dumps(tampered))
+    with pytest.raises(RuntimeError, match="refusing to overwrite prior-attempt evidence"):
+        mod.archive_prior_record("QWEN3_8B")
+    undocumented = json.loads(ATTEMPT_5_SNAPSHOT.read_text())
+    undocumented["reasoning_mode"] = "NON_THINKING (undocumented edit)"
+    rec_path.write_text(json.dumps(undocumented))
+    with pytest.raises(RuntimeError, match="refusing to overwrite prior-attempt evidence"):
+        mod.archive_prior_record("QWEN3_8B")
+
+
+def test_only_the_qwen_non_thinking_configuration_changes_a_reasoning_mode_other_controls_are_unaffected():
+    for control_default in ("NOT_APPLICABLE (non-reasoning instruct model)", "NOT_APPLICABLE (base phi-4 instruct, no thinking tags)"):
+        assert runtime_cfg.effective_reasoning_mode(control_default, runtime_cfg.configuration_for_model("microsoft/phi-4")) == control_default
+        assert runtime_cfg.effective_reasoning_mode(control_default, runtime_cfg.configuration_for_model("mistralai/Mistral-Nemo-Instruct-2407")) == control_default
+    for tag in ("MISTRAL_NEMO", "PHI4"):
+        r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+        assert r["runtime_qualification_status"] == "NOT_TESTED" and r["reasoning_mode"].startswith("NOT_APPLICABLE")

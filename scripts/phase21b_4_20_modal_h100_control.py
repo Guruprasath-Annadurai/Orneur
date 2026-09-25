@@ -472,6 +472,18 @@ def container_proof_problems(result, model_id: str, locked_revision: str) -> lis
     return bad
 
 
+METADATA_CORRECTION_KEYS = ("reasoning_mode", "metadata_correction")     # descriptive fields a documented correction may change
+
+
+def _only_documented_metadata_correction(current: dict, snapshot: dict, snap_path: Path) -> bool:
+    """True iff `current` differs from the immutable `snapshot` ONLY in descriptive metadata and says so, referencing the snapshot by sha256."""
+    note = current.get("metadata_correction")
+    if not isinstance(note, dict) or note.get("snapshot_sha256") != sha_of(snap_path) or note.get("reclassifies_attempt") is not False:
+        return False
+    strip = lambda d: {k: v for k, v in d.items() if k not in METADATA_CORRECTION_KEYS}
+    return strip(current) == strip(snapshot)
+
+
 def archive_prior_record(tag: str) -> str | None:
     """Before a new attempt may write the control's runtime record, keep the CURRENT one (with its raw smoke outputs) as an immutable
     byte-identical snapshot named after its final attempt. Fail closed if a snapshot exists but differs from the current record."""
@@ -485,7 +497,7 @@ def archive_prior_record(tag: str) -> str | None:
     snap = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_ATTEMPT{prev}_SNAPSHOT_{DATE_TAG}.json"
     if not snap.exists():
         snap.write_bytes(rec_path.read_bytes())
-    elif snap.read_bytes() != rec_path.read_bytes():
+    elif snap.read_bytes() != rec_path.read_bytes() and not _only_documented_metadata_correction(record, json.loads(snap.read_text()), snap):
         raise RuntimeError(f"{snap.name} differs from the current record; refusing to overwrite prior-attempt evidence")
     return snap.name
 
@@ -632,6 +644,7 @@ def cmd_run(a) -> int:
         "configuration_sha256": runtime_config.configuration_sha256(locked_identity["model_id"]),
         "runtime_policy_sha256": runtime_config.PINNED_RUNTIME_POLICY_SHA256,
         "container_proof": (result or {}).get("runtime_configuration_proof")}
+    record["reasoning_mode"] = runtime_config.effective_reasoning_mode(record.get("reasoning_mode"), record["runtime_configuration"])   # effective config, not template capability
     record["smoke_acceptance"] = compute_smoke_acceptance(record)      # derived from the raw outputs; the raw outputs themselves are never altered
     record["runtime_qualification_status"] = derive_runtime_status(
         technical=record["technical_serving_status"], financial_acceptance=record["financial_acceptance_status"], cleanup=record["cleanup_status"],
@@ -877,9 +890,53 @@ def cmd_reevaluate_smokes(a) -> int:
     return 0
 
 
+def cmd_correct_reasoning_mode(a) -> int:
+    """CPU-ONLY, no Modal, no GPU. Corrects ONLY the descriptive `reasoning_mode` of a record whose approved runtime configuration is
+    non-thinking. Snapshots the record first (immutable, byte-identical), changes no raw output/log/financial/settlement/proof/attempt
+    outcome, does not reclassify the attempt, and records the correction with the snapshot's sha256."""
+    lc = _load_lightning_control()
+    cfg = lc.CONTROLS[a.control]
+    tag = cfg["tag"]
+    rec_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_{DATE_TAG}.json"
+    record = _json_file(rec_path)
+    last = record["attempts"][-1]
+    rc = record.get("runtime_configuration")
+    if last.get("attempt_number") != a.attempt or not isinstance(rc, dict):
+        print("requested attempt is not the record's final attempt or it has no runtime configuration; refusing")
+        return 2
+    snap_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_ATTEMPT{a.attempt}_SNAPSHOT_{DATE_TAG}.json"
+    if not snap_path.exists():
+        if "metadata_correction" in record:
+            print("record already corrected but its snapshot is missing; refusing")
+            return 2
+        snap_path.write_bytes(rec_path.read_bytes())
+    corrected = runtime_config.effective_reasoning_mode(record.get("reasoning_mode"), rc)
+    if corrected == record.get("reasoning_mode"):
+        print("reasoning_mode already reflects the effective runtime configuration; nothing to do")
+        return 0
+    final = json.loads(json.dumps(record))
+    final["reasoning_mode"] = corrected
+    final["metadata_correction"] = {
+        "field": "reasoning_mode", "from": record.get("reasoning_mode"), "to": corrected, "reclassifies_attempt": False,
+        "kind": "DESCRIPTIVE METADATA ONLY: the stale value described the model's default template capability, not the effective approved runtime configuration",
+        "unchanged": ["raw responses", "raw log", "financial evidence", "settlement evidence", "container proof", "smoke outputs", "attempt outcomes", "runtime/technical status"],
+        "snapshot_artifact": snap_path.name, "snapshot_sha256": sha_of(snap_path), "evidence_of_effective_mode": "reasoning_tokens == 0 for every smoke; container proof chat_template_kwargs_sent == {enable_thinking: false}"}
+    try:
+        validate_control_runtime_record(final, evidence_root=EVIDENCE_DIR)
+    except Exception as e:  # noqa: BLE001
+        print(f"CORRECTED RECORD FAILED VALIDATION -- nothing written: {type(e).__name__}: {e}")
+        return 1
+    if not _only_documented_metadata_correction(final, json.loads(snap_path.read_text()), snap_path):
+        print("internal check failed: the correction changed more than descriptive metadata; nothing written")
+        return 1
+    write_json(rec_path, final)
+    print(json.dumps({"reasoning_mode": corrected, "snapshot": snap_path.name, "snapshot_sha256": sha_of(snap_path), "record_sha256": sha_of(rec_path)}, indent=2))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", required=True, choices=("preflight", "precache", "run", "reconcile", "reevaluate-smokes"))
+    ap.add_argument("--mode", required=True, choices=("preflight", "precache", "run", "reconcile", "reevaluate-smokes", "correct-reasoning-mode"))
     ap.add_argument("--control", required=True, choices=CONTROL_KEYS)
     ap.add_argument("--attempt", type=int, help="reconcile only: the completed attempt number")
     ap.add_argument("--kind", choices=("gpu", "cpu"), default="gpu", help="preflight only")
@@ -888,6 +945,8 @@ def main() -> int:
         return cmd_preflight(a)
     if a.mode == "precache":
         return cmd_precache(a)
+    if a.mode == "correct-reasoning-mode":
+        return cmd_correct_reasoning_mode(a) if a.attempt else 2
     if a.mode == "reevaluate-smokes":
         return cmd_reevaluate_smokes(a) if a.attempt else 2
     if a.mode == "reconcile":

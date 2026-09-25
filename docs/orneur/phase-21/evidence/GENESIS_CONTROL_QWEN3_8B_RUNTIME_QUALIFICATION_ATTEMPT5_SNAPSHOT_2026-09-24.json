@@ -246,26 +246,6 @@
   "live_resources_after_cleanup": 0,
   "load_seconds": 5.54,
   "max_model_len": 4096,
-  "metadata_correction": {
-    "evidence_of_effective_mode": "reasoning_tokens == 0 for every smoke; container proof chat_template_kwargs_sent == {enable_thinking: false}",
-    "field": "reasoning_mode",
-    "from": "ENABLED (Qwen3 hybrid-thinking template default; canonical control spec launches with --reasoning-parser qwen3)",
-    "kind": "DESCRIPTIVE METADATA ONLY: the stale value described the model's default template capability, not the effective approved runtime configuration",
-    "reclassifies_attempt": false,
-    "snapshot_artifact": "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT5_SNAPSHOT_2026-09-24.json",
-    "snapshot_sha256": "85d3fec9ae744c553ce668fa693fb19f329e6a14414051b082a23be6202213c5",
-    "to": "NON_THINKING (enable_thinking=false via chat_template_kwargs; approved runtime configuration qwen3_8b_non_thinking_v1); --reasoning-parser qwen3 is loaded but thinking is not enabled",
-    "unchanged": [
-      "raw responses",
-      "raw log",
-      "financial evidence",
-      "settlement evidence",
-      "container proof",
-      "smoke outputs",
-      "attempt outcomes",
-      "runtime/technical status"
-    ]
-  },
   "model_id": "Qwen/Qwen3-8B",
   "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
   "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests. Generated output was treated as data and never executed. Executed on Modal (canonical provider) on 1 x H100 80GB with weights from a hash-verified Modal Volume cache; earlier Modal, Lightning, Hugging Face and razorBridge attempts are preserved in attempts.",
@@ -276,7 +256,7 @@
   "precision": "bfloat16",
   "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT5_RAW_LOG_2026-09-24.txt",
   "raw_log_sha256": "3596fbd908ea8c92a2553a3d6c10e230b4b3a1bcb47f6127ece5a661f743abeb",
-  "reasoning_mode": "NON_THINKING (enable_thinking=false via chat_template_kwargs; approved runtime configuration qwen3_8b_non_thinking_v1); --reasoning-parser qwen3 is loaded but thinking is not enabled",
+  "reasoning_mode": "ENABLED (Qwen3 hybrid-thinking template default; canonical control spec launches with --reasoning-parser qwen3)",
   "reasoning_parser": "qwen3",
   "runtime_configuration": {
     "chat_template_kwargs": {

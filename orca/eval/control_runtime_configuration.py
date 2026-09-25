@@ -61,6 +61,18 @@ def chat_template_kwargs_for_model(model_id: str) -> dict | None:
     return copy.deepcopy(cfg["chat_template_kwargs"]) if cfg is not None else None
 
 
+def effective_reasoning_mode(default_mode, runtime_configuration) -> str:
+    """The reasoning mode a record must DESCRIBE, derived from the EFFECTIVE runtime configuration -- never from the model's default template
+    capability. Loading `--reasoning-parser qwen3` does not mean thinking is on: with `enable_thinking=false` the parser starts in CONTENT
+    state and the rendered prompt carries an empty think block, so the run is NON_THINKING."""
+    cfg = runtime_configuration or {}
+    kwargs = cfg.get("chat_template_kwargs")
+    if isinstance(kwargs, dict) and kwargs.get("enable_thinking") is False:
+        return (f"NON_THINKING (enable_thinking=false via chat_template_kwargs; approved runtime configuration {cfg.get('id')}); "
+                "--reasoning-parser qwen3 is loaded but thinking is not enabled")
+    return default_mode
+
+
 # ── fail-closed pinned policy fingerprint ────────────────────────────────────────────────────────────────────────
 POLICY_ID = "GENESIS_CONTROL_RUNTIME_CONFIGURATION_POLICY"
 PINNED_QWEN_CONFIGURATION_SHA256 = "c88e0e140797d25ea9c86bc642d23706d9b6e76c241c49d2b6b354a40b83bab1"
