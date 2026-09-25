@@ -74,6 +74,11 @@ transactional: the record's top-level settlement, the embedded attempt and the a
 `settlement_correction` and the earlier NOT_YET_OBSERVABLE reconciliation evidence are preserved, and the new artifact is referenced. **Only the financial settlement resolved: Mistral remains
 `UNATTRIBUTED_REQUEST_REJECTION`, technical NOT_PROVEN, runtime NOT_COMPLETED, capability UNPROVEN.** No rerun, no waiver.
 
+**Mistral-Nemo attempt 2 (owner-authorized): NOT STARTED, the fresh live preflight was BLOCKED.** The existing gate refused: credits applied 20.70 do not cover metered 20.89627853 (owner billed still 0). A new metered
+category `volumes` = 0.19627853 USD (the Modal Volume holding the three pre-cached model revisions) appeared; ephemeral-app metering is unchanged, so it is not GPU usage. No GPU, no Modal function, no volume change, no retry of the
+gate. Whether the storage charge will be absorbed by credits/free storage or become owner-billed is not established. Evidence: `GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_GPU_PREFLIGHT_2026-09-25T122704Z.json`,
+`GENESIS_MODAL_VOLUME_METERING_DIAGNOSIS_2026-09-25.json`. The authorization for attempt 2 remains unused; Mistral stays NOT_PROVEN / NOT_COMPLETED.
+
 **Qwen3-8B attempt 4 (historical).** Preserved byte-identically as `GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json`.
 Thinking default ON and the runner's earlier prompt wording; A PASS, B FAIL (verbose explanation), C PASS; owner billed delta 0; promotional credit
 0.22772907 USD (settlement observed by the read-only `--mode reconcile`); reclassified `TECHNICAL_FAILURE`, technical `FAILED`, runtime `FAILED` after the

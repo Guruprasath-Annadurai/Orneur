@@ -1,0 +1,74 @@
+{
+  "actions_taken": "none: no GPU, no Modal function, no volume change or deletion, no retry of the gate",
+  "blocked_preflight": {
+    "artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_GPU_PREFLIGHT_2026-09-25T122704Z.json",
+    "gate_allowed": false,
+    "reasons": [
+      "credits applied (20.70000000) do not cover metered cost (20.89627853) -- credits are not absorbing usage"
+    ]
+  },
+  "captured_at_utc_local_note": "2026-09-25 17:57-17:58 IST (three read-only readings 30 s apart)",
+  "context": "Mistral-Nemo attempt 2 (owner-authorized) preflight was BLOCKED by the existing credit-coverage gate; no GPU was started.",
+  "earlier_reading_2026_09_25_1206Z": {
+    "ephemeral_apps": "20.69762878",
+    "metered": "20.70000000",
+    "volumes": "0 (absent from the breakdown)"
+  },
+  "evidence_type": "MODAL_VOLUME_METERING_DIAGNOSIS_READ_ONLY",
+  "finding": "a new metered category 'volumes' = 0.19627853 USD appeared (the Modal Volume holding the three pre-cached model revisions). Credits applied stayed at 20.70, so metered exceeds credits by 0.19627853 and the existing gate 'credits absorb usage' refuses. Owner billed stayed 0. Ephemeral-app metering is unchanged (0.20532159 above the pre-Mistral baseline = the Mistral row), so the increase is NOT GPU usage.",
+  "gpu_started": false,
+  "itemized_report_rows": [
+    {
+      "cost": "0.20532158",
+      "object_id": "ap-LEwLRsdDZiLhSvTgwIPn7g"
+    },
+    {
+      "cost": "0.18768559",
+      "object_id": "ap-b6PkVuAdoik7AvUELDwNuQ"
+    }
+  ],
+  "live_resources": {
+    "containers": [],
+    "non_idle_apps": 0
+  },
+  "not_established": [
+    "whether the volume storage charge will be absorbed by credits/free storage at period rollup or become owner-billed",
+    "the accrual rate of further volume storage while the cache remains"
+  ],
+  "phase": "21B.4.20",
+  "readings": [
+    {
+      "billed": "0E-8",
+      "credits": "-20.70000000",
+      "metered": "20.89627853",
+      "metered_cost_breakdown": {
+        "deployed_apps": "0.00101405",
+        "ephemeral_apps": "20.69762878",
+        "llm_tokens": "0E-8",
+        "volumes": "0.19627853"
+      }
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.70000000",
+      "metered": "20.89627853",
+      "metered_cost_breakdown": {
+        "deployed_apps": "0.00101405",
+        "ephemeral_apps": "20.69762878",
+        "llm_tokens": "0E-8",
+        "volumes": "0.19627853"
+      }
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.70000000",
+      "metered": "20.89627853",
+      "metered_cost_breakdown": {
+        "deployed_apps": "0.00101405",
+        "ephemeral_apps": "20.69762878",
+        "llm_tokens": "0E-8",
+        "volumes": "0.19627853"
+      }
+    }
+  ]
+}
