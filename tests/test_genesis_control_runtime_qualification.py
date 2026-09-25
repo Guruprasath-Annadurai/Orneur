@@ -1687,7 +1687,8 @@ def _reconcile_env(monkeypatch, tmp_path, *, metered_now="20.31000000", credits_
     baseline = _rc_summary("20.08000000", "-20.08000000", eph=eph_before)
     pre = {"credit_pool_usd": "30.00", "unresolved_prior_settlement_upper_bound_deducted_usd": "0.0380", "reserve_usd": "5.00", "worst_case_cost_usd": "1.0828"}
     fin = {}
-    for key, doc in (("preflight", pre), ("billing_before", {"billing_summary": baseline}), ("billing_after", {"peak_observed_billed_usd": "0E-8"})):
+    for key, doc in (("preflight", pre), ("billing_before", {"billing_summary": baseline}),
+                     ("billing_after", {"peak_observed_billed_usd": "0E-8", "app_row": {"app_id": _RECON_APP_ID, "state": "stopped", "tasks": "0"}})):
         name = f"synthetic_{key}.json"
         (tmp_path / name).write_text(json.dumps(doc))
         fin[f"{key}_artifact"] = name
@@ -3454,8 +3455,9 @@ def test_the_embedded_attempt_settlement_must_equal_the_top_level_settlement_aft
     ("bad_provenance", lambda r: r["container_execution_proof"].update(provenance="TRUST_ME"), "provenance"),
     ("returned_proof_wrong_policy_hash", lambda r: r["container_execution_proof"].update(runtime_policy_sha256="0" * 64), "runtime-policy sha256"),
     ("returned_proof_missing_policy_hash", lambda r: r["container_execution_proof"].update(runtime_policy_sha256=None), "runtime-policy sha256"),
-    ("reconstructed_claims_a_policy_hash", lambda r: r["container_execution_proof"].update(provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE", reconstruction_note="x"), "RECONSTRUCTED proof"),
-    ("reconstructed_without_a_note", lambda r: r["container_execution_proof"].update(provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE", runtime_policy_sha256=None), "RECONSTRUCTED proof"),
+    ("reconstructed_claims_a_policy_hash", lambda r: r["container_execution_proof"].update(provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE", reconstruction_note="x"), "grandfathered exception|correction markers"),
+    ("reconstructed_without_a_note", lambda r: r["container_execution_proof"].update(provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE", runtime_policy_sha256=None), "grandfathered exception|correction markers"),
+    ("top_level_proof_without_explicit_provenance", lambda r: r["container_execution_proof"].pop("provenance"), "provenance must be one of"),
 ])
 def test_a_valid_runtime_attempt_requires_the_full_container_execution_proof_with_null_qwen_settings_and_exact_mistral_flags(tmp_path, label, mutate, match):
     rec = _mistral_record(tmp_path)
@@ -3465,10 +3467,10 @@ def test_a_valid_runtime_attempt_requires_the_full_container_execution_proof_wit
         validate_control_runtime_record(rec, evidence_root=tmp_path)
 
 
-def test_a_reconstructed_proof_with_a_null_policy_hash_and_a_note_is_accepted(tmp_path):
-    rec = _mistral_record(tmp_path)
-    rec["container_execution_proof"].update(provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE", runtime_policy_sha256=None, reconstruction_note="reconstructed from persisted evidence")
-    validate_control_runtime_record(rec, evidence_root=tmp_path)
+def test_the_grandfathered_historical_mistral_attempt_1_reconstructed_proof_is_accepted():
+    m = _mistral()
+    assert m["container_execution_proof"]["provenance"] == "RECONSTRUCTED_FROM_PERSISTED_EVIDENCE" and m["container_execution_proof"]["runtime_policy_sha256"] is None
+    validate_control_runtime_record(m, evidence_root=EVIDENCE_DIR)
 
 
 def test_the_locked_server_flags_in_the_validator_mirror_the_runner_lock():
@@ -3597,3 +3599,214 @@ def test_mistral_final_state_settlement_gate_and_neighbours_after_the_remediatio
     assert hashlib.sha256(ATTEMPT_5_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_5_SNAPSHOT_SHA256 and hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256
     phi = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
     assert phi["runtime_qualification_status"] == "NOT_TESTED" and phi["attempts"] == []
+
+
+# ══ proof-provenance hardening: RECONSTRUCTED is grandfathered for Mistral-Nemo attempt 1 ONLY ═══════════════════════════════════════════════
+from orca.eval.control_runtime_qualification import GRANDFATHERED_RECONSTRUCTED_PROOFS  # noqa: E402
+
+
+def test_the_grandfather_rule_is_exactly_mistral_attempt_1_with_the_pinned_snapshot_and_raw_log():
+    assert GRANDFATHERED_RECONSTRUCTED_PROOFS == {("Mistral-Nemo-Instruct-2407", 1): {
+        "snapshot_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT1_SNAPSHOT_2026-09-24.json", "snapshot_sha256": MISTRAL_SNAPSHOT_SHA256,
+        "raw_log_sha256": MISTRAL_RAW_LOG_SHA256, "outcome": "UNATTRIBUTED_REQUEST_REJECTION"}}
+    m = _mistral()
+    assert m["classification_correction"]["snapshot_sha256"] == MISTRAL_SNAPSHOT_SHA256 and m["raw_log_sha256"] == MISTRAL_RAW_LOG_SHA256
+
+
+def _reconstructed_variant(**over):
+    m = copy.deepcopy(_mistral())
+    m.update(over)
+    return m
+
+
+def test_reconstructed_provenance_fails_for_mistral_attempt_2():
+    m = _mistral()
+    a2 = copy.deepcopy(m["attempts"][0])
+    a2.update(attempt_number=2)
+    a2.pop("original_classification", None)
+    rec = _reconstructed_variant(attempts=[m["attempts"][0], a2])
+    with pytest.raises(ControlRuntimeError, match="grandfathered exception for Mistral-Nemo attempt 1 ONLY"):
+        validate_control_runtime_record(rec, evidence_root=EVIDENCE_DIR)
+
+
+def test_reconstructed_provenance_fails_for_phi4_attempt_1_and_for_any_new_qwen_attempt(tmp_path):
+    phi = _mistral_record(tmp_path)
+    phi.update(control_name="Phi-4", model_id=LOCKED_CONTROL_IDENTITIES["Phi-4"]["model_id"], model_revision=LOCKED_CONTROL_IDENTITIES["Phi-4"]["revision"])
+    phi["container_execution_proof"].update(provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE", runtime_policy_sha256=None, reconstruction_note="x")
+    with pytest.raises(ControlRuntimeError, match="grandfathered exception for Mistral-Nemo attempt 1 ONLY"):
+        validate_control_runtime_record(phi, evidence_root=tmp_path)
+    q = _qwen5(tmp_path)                                                                                      # a NEW Qwen attempt (5) cannot use a reconstructed proof
+    q["gpu_type"] = "NVIDIA H100 80GB (Modal H100)"
+    q["container_execution_proof"] = dict(copy.deepcopy(q["runtime_configuration"]["container_proof"]), provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE")
+    with pytest.raises(ControlRuntimeError, match="grandfathered exception for Mistral-Nemo attempt 1 ONLY"):
+        validate_control_runtime_record(q, evidence_root=tmp_path)
+    q6 = _qwen5(tmp_path)                                                                                     # ... nor any later one
+    q6["gpu_type"] = "NVIDIA H100 80GB (Modal H100)"
+    extra = dict(q6["attempts"][-1], attempt_number=6)
+    q6["attempts"] = q6["attempts"] + [extra]
+    q6["container_execution_proof"] = dict(copy.deepcopy(q6["runtime_configuration"]["container_proof"]), provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE")
+    with pytest.raises(ControlRuntimeError, match="grandfathered exception for Mistral-Nemo attempt 1 ONLY"):
+        validate_control_runtime_record(q6, evidence_root=tmp_path)
+
+
+@pytest.mark.parametrize("label,mutate", [
+    ("outcome_differs", lambda r: r["attempts"][-1].update(outcome="TECHNICAL_FAILURE", failure_domain="MODEL_RUNTIME")),
+    ("correction_snapshot_sha_differs", lambda r: r["classification_correction"].update(snapshot_sha256="0" * 64)),
+    ("correction_snapshot_name_differs", lambda r: r["classification_correction"].update(snapshot_artifact="OTHER_SNAPSHOT.json")),
+    ("correction_block_missing", lambda r: r.pop("classification_correction")),
+    ("record_raw_log_sha_differs", lambda r: r.update(raw_log_sha256="0" * 64)),
+    ("gap_raw_log_sha_differs", lambda r: r["http_error_evidence_gap"]["proven_by_immutable_raw_server_log"].update(sha256="0" * 64)),
+    ("gap_block_missing", lambda r: r.pop("http_error_evidence_gap")),
+])
+def test_every_historical_correction_marker_must_agree_for_the_grandfathered_exception(label, mutate):
+    rec = _reconstructed_variant()
+    mutate(rec)
+    with pytest.raises(ControlRuntimeError):
+        validate_control_runtime_record(rec, evidence_root=EVIDENCE_DIR)
+
+
+def test_a_tampered_grandfathered_snapshot_file_is_refused(tmp_path):
+    ev = tmp_path / "evidence"
+    shutil.copytree(EVIDENCE_DIR, ev)
+    (ev / MISTRAL_SNAPSHOT.name).write_text("{}")
+    with pytest.raises(ControlRuntimeError):
+        validate_control_runtime_record(_mistral(), evidence_root=ev)
+
+
+def test_an_otherwise_identical_future_attempt_with_reconstructed_provenance_fails_but_container_returned_passes(tmp_path):
+    ok = _mistral_record(tmp_path)                                            # a future-style Mistral record: CONTAINER_RETURNED
+    validate_control_runtime_record(ok, evidence_root=tmp_path)
+    bad = _mistral_record(tmp_path)
+    bad["attempts"] = [dict(bad["attempts"][0], attempt_number=1), dict(bad["attempts"][0], attempt_number=2)]
+    bad["container_execution_proof"].update(provenance="RECONSTRUCTED_FROM_PERSISTED_EVIDENCE", runtime_policy_sha256=None, reconstruction_note="manufactured after execution")
+    with pytest.raises(ControlRuntimeError, match="grandfathered exception"):
+        validate_control_runtime_record(bad, evidence_root=tmp_path)
+
+
+def test_the_harness_can_only_record_a_container_returned_proof_and_a_missing_one_is_a_harness_failure(monkeypatch, tmp_path):
+    text = MODAL_H100.read_text()
+    run = ast.unparse(next(n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run"))
+    assert "RECONSTRUCTED" not in run and "provenance='CONTAINER_RETURNED'" in run.replace('"', "'")            # the run path can only stamp CONTAINER_RETURNED
+    mod, ev, remote_calls = _run_env(monkeypatch, tmp_path, lambda m, r: {k: v for k, v in _fake_container_result(m, r).items() if k != "runtime_configuration_proof"})
+    mod.cmd_run(types.SimpleNamespace(control="qwen3_8b"))
+    a5 = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json").read_text())["attempts"][4]
+    assert a5["outcome"] == "HARNESS_FAILURE" and a5["failure_domain"] == "HARNESS" and a5["valid_runtime_attempt"] is False and "no runtime_configuration_proof" in a5["reason"]
+    rec = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert rec["technical_serving_status"] == "NOT_PROVEN" and rec.get("container_execution_proof") is None
+
+
+def test_the_reclassification_mode_is_refused_for_anything_but_the_grandfathered_attempt(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    assert mod.cmd_reclassify_unattributed(types.SimpleNamespace(control="qwen3_8b", attempt=5)) == 2
+    assert mod.cmd_reclassify_unattributed(types.SimpleNamespace(control="phi4", attempt=1)) == 2
+    assert mod.cmd_reclassify_unattributed(types.SimpleNamespace(control="mistral_nemo", attempt=2)) == 2
+
+
+# ── reconcile: an app that has aged out of Modal's listing is not a live app; a NOT_COMPLETED record is never relabelled PENDING ──
+def test_reconcile_treats_an_app_that_aged_out_of_the_listing_as_not_live_only_with_run_time_stopped_evidence(monkeypatch, tmp_path):
+    mod, before = _reconcile_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(mod, "_app_row", lambda name, app_id: None)                                          # the stopped ephemeral app is no longer listed
+    assert mod.cmd_reconcile(_rc_args(mod)) == 0
+    art = json.loads(_rc_artifacts(tmp_path)[0].read_text())
+    assert art["app_listing"] == "ABSENT_FROM_LISTING_RUNTIME_EVIDENCE_STOPPED" and art["app_stopped_with_zero_tasks"] is True and art["settlement"]["status"] == "OBSERVED"
+    for f in tmp_path.glob("GENESIS_CONTROL_QWEN3_8B_ATTEMPT4_SETTLEMENT_RECONCILIATION_*.json"):
+        f.unlink()
+
+
+def test_an_absent_app_without_run_time_stopped_evidence_or_with_live_resources_is_not_accepted(monkeypatch, tmp_path):
+    mod, _ = _reconcile_env(monkeypatch, tmp_path, live=1)
+    monkeypatch.setattr(mod, "_app_row", lambda name, app_id: None)
+    assert mod.cmd_reconcile(_rc_args(mod)) == 5
+    assert json.loads(_rc_artifacts(tmp_path)[0].read_text())["app_listing"] == "ABSENT_FROM_LISTING_NO_STOPPED_EVIDENCE"
+    (tmp_path / "second").mkdir()
+    mod2, _ = _reconcile_env(monkeypatch, tmp_path / "second")
+    (tmp_path / "second" / "synthetic_billing_after.json").write_text(json.dumps({"peak_observed_billed_usd": "0E-8"}))         # no run-time stopped evidence
+    rec = json.loads((tmp_path / "second" / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    rec["financial_evidence"]["billing_after_sha256"] = hashlib.sha256((tmp_path / "second" / "synthetic_billing_after.json").read_bytes()).hexdigest()
+    (tmp_path / "second" / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").write_text(json.dumps(rec))
+    monkeypatch.setattr(mod2, "_app_row", lambda name, app_id: None)
+    assert mod2.cmd_reconcile(_rc_args(mod2)) == 5
+
+
+def test_a_not_completed_record_is_never_relabelled_pending_and_the_pending_step_does_not_raise(monkeypatch, tmp_path):
+    mod, before = _reconcile_env(monkeypatch, tmp_path, metered_now="20.08000000", credits_now="-20.08000000", rows=[])
+    rec_path = tmp_path / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json"
+    rec = json.loads(rec_path.read_text())
+    rec.update(technical_serving_status="NOT_PROVEN", runtime_qualification_status="NOT_COMPLETED")
+    rec["attempts"][-1].update(outcome="UNATTRIBUTED_REQUEST_REJECTION", status="UNATTRIBUTED_REQUEST_REJECTION", failure_domain="UNATTRIBUTED")
+    rec_path.write_text(json.dumps(rec))
+    for x in rec["smoke_outputs"]:
+        pass
+    before_bytes = rec_path.read_bytes()
+    assert mod.cmd_reconcile(_rc_args(mod)) == 5                                                            # no traceback
+    assert rec_path.read_bytes() == before_bytes                                                            # the record stands as recorded
+
+
+# ══ CPU-only Mistral HTTP 400 root-cause analysis + the third read-only reconciliation ═══════════════════════════════════════════════════════
+MISTRAL_ANALYSIS = EVIDENCE_DIR / "GENESIS_MISTRAL_NEMO_HTTP400_CPU_ROOT_CAUSE_ANALYSIS_2026-09-25.json"
+MISTRAL_RECON_3 = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260925T114303Z.json"
+
+
+def test_the_mistral_http400_analysis_is_cpu_only_and_states_that_the_root_cause_is_not_established():
+    a = json.loads(MISTRAL_ANALYSIS.read_text())
+    assert a["no_gpu_used"] and a["no_modal_used"] and a["no_model_weights_loaded"] and a["no_generation"] and a["generated_output_executed"] is False and a["mistral_rerun"] is False
+    d = a["decision"]
+    assert d["answer"] == "B. ROOT CAUSE NOT ESTABLISHED CPU-ONLY" and "no fix is proposed" in d["not_invented"] and d["classification_of_the_issue"].startswith("UNATTRIBUTED")
+    assert d["correction_changes_model_identity"].startswith("n/a") and "would require its own owner authorization" in d["what_would_establish_it"]
+    assert a["status_unchanged"] == {"mistral_nemo": "NOT_PROVEN / NOT_COMPLETED", "qwen3_8b": "FAILED", "phi4": "NOT_TESTED", "capability": "UNPROVEN"}
+
+
+def test_the_mistral_analysis_uses_the_exact_orneur_payloads_and_the_runs_own_library_versions():
+    a = json.loads(MISTRAL_ANALYSIS.read_text())
+    runner = _runner_module()
+    cfg = runner.serving_config("mistral_nemo")
+    gen = {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": cfg["smoke_max_tokens"]}
+    assert (a["subject"]["revision"], a["subject"]["server_flags"], a["subject"]["canonical_protocol_sha256"]) == (
+        LOCKED_CONTROL_IDENTITIES["Mistral-Nemo-Instruct-2407"]["revision"], MISTRAL_ARGS, CANONICAL_PROTOCOL_SHA256)
+    for smoke in cfg["smokes"]:
+        want = runner.build_chat_payload(cfg, smoke, gen)
+        if smoke["stream"]:
+            want = dict(want, stream=True, stream_options={"include_usage": True})
+        t = a["request_by_request_trace"][smoke["smoke_id"]]
+        assert t["exact_payload"] == want and t["prompt_is_canonical"] is True and "chat_template_kwargs" not in t["exact_payload"]
+        assert t["payload_prompt_sha256"] == locked_protocol.prompt_sha256(smoke["smoke_id"])
+        assert ("stream" in t["exact_payload"]) is (smoke["smoke_id"] == "A")                                   # only A carries the streaming fields
+        assert {k: v["result"] for k, v in t["stages"].items()} == {"chat_template_render_and_tokenize_cpu": "PASS", "prompt_plus_max_tokens_within_max_model_len": "PASS"}
+        assert t["stages"]["chat_template_render_and_tokenize_cpu"]["rendered_text"].startswith("<s>[INST]") and t["stages"]["chat_template_render_and_tokenize_cpu"]["bos_count"] == 1
+    v = a["cpu_library_versions_used"]
+    assert v["transformers"] == "5.16.1" and v["tokenizers"] == "0.23.2" and "'transformers': '5.16.1'" in v["in_run_log"] and "'tokenizers': '0.23.2'" in v["in_run_log"]
+    assert a["pinned_files_facts"]["chat_template_present"] is True and a["pinned_files_facts"]["config_json_architectures"] == ["MistralForCausalLM"]
+
+
+def test_the_mistral_analysis_reads_the_immutable_raw_log_and_is_consistent_with_it():
+    a = json.loads(MISTRAL_ANALYSIS.read_text())
+    f = a["raw_server_log_facts"]
+    assert f["raw_log_sha256"] == MISTRAL_RAW_LOG_SHA256 and f["statuses"] == ["400", "400", "400"] and len(f["post_chat_completions_lines"]) == 3
+    assert f["traceback_in_log"] is False and f["transformers_chat_template_exception_logged"] is False and f["error_with_model_logged"] is False and f["error_level_lines_before_the_400s"] == []
+    log = (EVIDENCE_DIR / _mistral()["raw_log_artifact"]).read_text()
+    assert log.count('"POST /v1/chat/completions HTTP/1.1" 400 Bad Request') == 3 and "Traceback" not in log and "An error occurred in `transformers`" not in log
+    ev = a["vllm_source_evidence"]
+    assert "raise ValueError(str(e)) from e" in ev["template_failure_is_logged_and_wrapped_as_ValueError_400"]["text"] and "logger.exception" in ev["template_failure_is_logged_and_wrapped_as_ValueError_400"]["text"]
+    assert "log_error_stack" in ev["pydantic_request_validation_errors_are_logged_only_with_log_error_stack"]["text"]
+    assert "HTTPStatus.BAD_REQUEST" in ev["create_error_response_default_is_400"]["text"]
+    assert a["vllm_source_evidence"]["stream_options_requires_stream"]["text"].count("stream") >= 2
+    assert all(len(x["sha256"]) == 64 for group in a["sources"].values() for x in group.values()) and a["sources"]["vllm_v0_29_0"]["renderers/hf.py"]["url"].find("98dff2a81d747d1dba01a47f939f48c3526d4206") > 0
+
+
+def test_the_mistral_analysis_script_is_cpu_only_executes_nothing_and_loads_no_model():
+    text = (REPO_ROOT / "scripts/phase21b_4_20_mistral_http400_analysis.py").read_text()
+    for banned in ("import modal", "import torch", "import vllm", "subprocess", "os.system", "eval(", "exec(", "from_pretrained(\"mistralai", ".generate(", "safetensors.torch"):
+        assert banned not in text, banned
+    assert "AutoTokenizer" in text and "apply_chat_template" in text                                            # tokenizer/config only
+
+
+def test_the_third_read_only_reconciliation_left_mistral_unresolved_owner_cash_zero_and_the_record_untouched():
+    r = json.loads(MISTRAL_RECON_3.read_text())
+    assert r["no_gpu_started"] is True and r["no_modal_function_called"] is True and r["waiver_applies"] is False
+    assert r["verdict"] == "SETTLEMENT_STILL_NOT_OBSERVABLE" and r["settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and r["settlement"]["stop_before_next_control"] is True
+    assert r["owner_billed_delta_usd"] == "0E-8" and r["live_resources"] == 0 and r["itemized_run_cost_usd"] == "0.20532158" and r["modal_app_id"] == "ap-LEwLRsdDZiLhSvTgwIPn7g"
+    assert r["metered_delta_precise_usd"] == "0.20532159" and r["metered_unattributed_usd"] == "1E-8"                # the exact growth now equals the run's own row (1e-8 rounding)
+    assert any("not in state 'stopped'" in x for x in r["settlement"]["reasons"]) and r["app_row"] is None       # unresolved only because the aged-out app was judged by the listing (harness fixed since)
+    m = _mistral()
+    assert m["billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and m["technical_serving_status"] == "NOT_PROVEN" and m["runtime_qualification_status"] == "NOT_COMPLETED"
+    assert m["owner_billed_delta_usd"] == "0E-8" and "runtime_configuration" in m

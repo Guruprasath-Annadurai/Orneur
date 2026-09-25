@@ -637,6 +637,33 @@ LOCKED_SERVER_FLAGS = {          # mirrors the runner's locked extra_args per co
     "Phi-4": {"reasoning_parser": None, "tokenizer_mode": None, "config_format": None, "load_format": None},
 }
 PROOF_PROVENANCES = ("CONTAINER_RETURNED", "RECONSTRUCTED_FROM_PERSISTED_EVIDENCE")
+# RECONSTRUCTED_FROM_PERSISTED_EVIDENCE is a NARROWLY GRANDFATHERED historical exception, never a general provenance. It exists for exactly one attempt whose
+# container-returned proof was verified at run time but not persisted. Every other valid Modal-H100 attempt (any other control, any later attempt of this control,
+# any Qwen or Phi-4 attempt) MUST carry a CONTAINER_RETURNED proof; a future run may never manufacture a reconstructed proof after execution.
+GRANDFATHERED_RECONSTRUCTED_PROOFS = {
+    ("Mistral-Nemo-Instruct-2407", 1): {
+        "snapshot_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT1_SNAPSHOT_2026-09-24.json",
+        "snapshot_sha256": "5bcf5aa8423ea22082a554c39edf414dea27b45511dca1f3c18136e4fe9fd5df",
+        "raw_log_sha256": "c4986233bce379dd1ff374ac856cee41235425e47886d455379f29852aed8aa3",
+        "outcome": "UNATTRIBUTED_REQUEST_REJECTION"},
+}
+
+
+def _check_grandfathered_reconstruction(record: dict, evidence_root: Path | None) -> None:
+    """All historical correction markers must agree before a reconstructed proof is accepted."""
+    last = record["attempts"][-1]
+    rule = GRANDFATHERED_RECONSTRUCTED_PROOFS.get((record.get("control_name"), last.get("attempt_number")))
+    if rule is None:
+        raise ControlRuntimeError("RECONSTRUCTED_FROM_PERSISTED_EVIDENCE is a grandfathered exception for Mistral-Nemo attempt 1 ONLY; every other valid attempt "
+                                  "must carry a CONTAINER_RETURNED proof (a missing returned proof is a HARNESS_FAILURE, never a reconstruction)")
+    cc = record.get("classification_correction")
+    gap = (record.get("http_error_evidence_gap") or {}).get("proven_by_immutable_raw_server_log") or {}
+    if (last.get("outcome") != rule["outcome"] or not isinstance(cc, dict) or cc.get("snapshot_artifact") != rule["snapshot_artifact"]
+            or cc.get("snapshot_sha256") != rule["snapshot_sha256"] or record.get("raw_log_sha256") != rule["raw_log_sha256"] or gap.get("sha256") != rule["raw_log_sha256"]):
+        raise ControlRuntimeError("the historical Mistral attempt-1 correction markers (outcome, snapshot artifact + sha256, raw log sha256) do not all agree; "
+                                  "reconstructed proof provenance refused")
+    if evidence_root is not None and _artifact_sha(Path(evidence_root), rule["snapshot_artifact"], "grandfathered snapshot") != rule["snapshot_sha256"]:
+        raise ControlRuntimeError("the grandfathered pre-correction snapshot does not verify against its pinned sha256")
 
 
 def _check_model_runtime_attribution(record: dict) -> None:
@@ -669,7 +696,7 @@ def _expected_flags(record: dict) -> dict:
     return LOCKED_SERVER_FLAGS.get(record.get("control_name"), {})
 
 
-def _check_container_execution_proof(record: dict) -> None:
+def _check_container_execution_proof(record: dict, evidence_root: Path | None = None) -> None:
     """Every valid Modal-H100 runtime attempt must persist the container's proof of what actually ran (identity, precision, flags, protocol, prompts,
     request settings). Historical Qwen attempts < REQUIRED_FROM_ATTEMPT predate the proof and are never retro-fitted. For Qwen >= 5 the proof inside
     runtime_configuration is accepted and must equal any top-level copy."""
@@ -687,9 +714,11 @@ def _check_container_execution_proof(record: dict) -> None:
         raise ControlRuntimeError("a valid runtime attempt requires container_execution_proof (identity, precision, flags, protocol, prompts, request settings)")
     if top is not None and inner is not None and {k: v for k, v in top.items() if k != "provenance"} != {k: v for k, v in inner.items() if k != "provenance"}:
         raise ControlRuntimeError("container_execution_proof disagrees with runtime_configuration.container_proof")
-    provenance = proof.get("provenance", "CONTAINER_RETURNED")
+    provenance = proof.get("provenance") if top is not None else proof.get("provenance", "CONTAINER_RETURNED")     # the historical inner Qwen proof carries none
     if provenance not in PROOF_PROVENANCES:
         raise ControlRuntimeError(f"container_execution_proof.provenance must be one of {PROOF_PROVENANCES}")
+    if provenance == "RECONSTRUCTED_FROM_PERSISTED_EVIDENCE":
+        _check_grandfathered_reconstruction(record, evidence_root)
     approved = _rc.RUNTIME_CONFIGURATIONS.get(model_id)
     want_id = approved["id"] if approved else None
     want_kwargs = approved["chat_template_kwargs"] if approved else None
@@ -991,7 +1020,7 @@ def validate_control_runtime_record(record: dict, *, evidence_root: Path) -> Non
     _check_runtime_configuration(record)
     _check_model_runtime_attribution(record)
     _check_settlement_consistency(record)
-    _check_container_execution_proof(record)
+    _check_container_execution_proof(record, evidence_root)
     if technical == "QUALIFIED":
         _check_locked_smokes(record)
     expected = derive_runtime_status(

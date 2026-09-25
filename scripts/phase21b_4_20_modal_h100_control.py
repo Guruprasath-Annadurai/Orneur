@@ -187,7 +187,7 @@ if modal.is_local():  # the container only needs the remote functions; orca is n
     from orca.eval import control_runtime_configuration as runtime_config  # noqa: E402
     from orca.eval import locked_smoke_protocol as locked_protocol  # noqa: E402
     from orca.eval.control_runtime_qualification import (  # noqa: E402
-        FAILURE_DOMAIN_BY_OUTCOME, LOCKED_CONTROL_IDENTITIES, assess_settlement, build_financial_reconciliation,
+        FAILURE_DOMAIN_BY_OUTCOME, GRANDFATHERED_RECONSTRUCTED_PROOFS, LOCKED_CONTROL_IDENTITIES, assess_settlement, build_financial_reconciliation,
         compute_smoke_acceptance, derive_runtime_status, smoke_locked_acceptance, financial_gate_decision, to_decimal, validate_control_runtime_record,
     )
 
@@ -772,9 +772,16 @@ def cmd_reconcile(a) -> int:
     reasons = list(settlement["reasons"])
     if settlement["status"] == "OBSERVED" and unattributed > Decimal("0.0001"):
         reasons.append(f"metered growth {metered_delta_precise} exceeds the run's own itemized cost {visible} by {unattributed}; the excess cannot be attributed to this run")
-    app_stopped = bool(row) and row.get("state") == "stopped" and int(row.get("tasks", 0) or 0) == 0
+    orig_row = after_doc.get("app_row") or {}
+    orig_stopped = orig_row.get("state") == "stopped" and int(orig_row.get("tasks", 0) or 0) == 0          # recorded at run time, before the app aged out of the listing
+    if row is not None:
+        app_stopped = row.get("state") == "stopped" and int(row.get("tasks", 0) or 0) == 0
+        app_listing = "LISTED_STOPPED" if app_stopped else "LISTED_NOT_STOPPED"
+    else:                                                          # Modal drops stopped ephemeral apps from the listing after a while; absence means not live
+        app_stopped = orig_stopped and cleanup["live_resources"] == 0 and not cleanup["containers"]
+        app_listing = "ABSENT_FROM_LISTING_RUNTIME_EVIDENCE_STOPPED" if app_stopped else "ABSENT_FROM_LISTING_NO_STOPPED_EVIDENCE"
     if not app_stopped:
-        reasons.append("the attempt's Modal app is not in state 'stopped' with 0 tasks")
+        reasons.append("the attempt's Modal app is not shown stopped with 0 tasks (listed state, or run-time evidence when it has aged out of the listing)")
     if cleanup["live_resources"] != 0 or cleanup["containers"]:
         reasons.append(f"live Modal resources are not zero ({cleanup['live_resources']})")
     if owner_delta != 0:
@@ -795,7 +802,7 @@ def cmd_reconcile(a) -> int:
            "promotional_credit_delta_attributable_usd": str(visible) if observed else None,
            "credits_applied_delta_usd": str(to_decimal(recon["credits_applied_postrun_usd"], "c1") - to_decimal(recon["credits_applied_baseline_usd"], "c0")),
            "owner_cash_delta_usd": str(owner_delta), "owner_billed_delta_usd": str(owner_delta), "settlement": settlement,
-           "app_row": row, "app_stopped_with_zero_tasks": app_stopped, "cleanup_snapshot": cleanup, "live_resources": cleanup["live_resources"],
+           "app_row": row, "app_listing": app_listing, "app_stopped_with_zero_tasks": app_stopped, "cleanup_snapshot": cleanup, "live_resources": cleanup["live_resources"],
            "cache_volume_counted_as_live_resource": False,
            "waiver_applies": False, "waiver_note": "the attempt-1 owner waiver never applies to this attempt; settlement here is evidenced, not waived",
            "no_gpu_started": True, "no_modal_function_called": True,
@@ -855,8 +862,8 @@ def _tag_of_record(record: dict) -> str:
 def _set_pending_status(record: dict, rec_path: Path) -> None:
     """Correct a self-inconsistent label only (technical evidence untouched): a technically+financially clean run whose settlement is
     not yet observed is PENDING_SETTLEMENT_OBSERVATION, not RUNTIME_QUALIFIED."""
-    if record.get("runtime_qualification_status") == "PENDING_SETTLEMENT_OBSERVATION" or record["billing_settlement"]["status"] == "OBSERVED":
-        return
+    if record.get("runtime_qualification_status") != "RUNTIME_QUALIFIED" or record["billing_settlement"]["status"] == "OBSERVED":
+        return                                        # only a self-inconsistent RUNTIME_QUALIFIED label is ever corrected to PENDING; every other status stands as recorded
     record.setdefault("original_validator_note", record.pop("validator_note", None))
     record["status_correction"] = {"from": record["runtime_qualification_status"], "to": "PENDING_SETTLEMENT_OBSERVATION",
                                    "reason": "RUNTIME_QUALIFIED requires observed settlement (validator); no technical evidence was altered"}
@@ -1000,6 +1007,9 @@ def cmd_reclassify_unattributed(a) -> int:
     lc = _load_lightning_control()
     cfg = lc.CONTROLS[a.control]
     tag = cfg["tag"]
+    if (cfg["control_name"], a.attempt) not in GRANDFATHERED_RECONSTRUCTED_PROOFS:
+        print("a reconstructed container proof is a grandfathered exception for Mistral-Nemo attempt 1 only; refusing")
+        return 2
     rec_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_{DATE_TAG}.json"
     record = _json_file(rec_path)
     att = record["attempts"][-1]

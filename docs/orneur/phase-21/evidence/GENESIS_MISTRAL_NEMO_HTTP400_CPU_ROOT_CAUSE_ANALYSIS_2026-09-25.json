@@ -1,0 +1,479 @@
+{
+  "captured_at_utc": "2026-09-25T11:42:46Z",
+  "comparison": {
+    "alternative_official_mistral_flags": {
+      "fact": "vLLM v0.29.0 registers a separate 'mistral' tokenizer mode and renderer (mistral-common based) and the pinned repo also ships consolidated.safetensors, params.json and tekken.json; the owner locked the hf path",
+      "not_established": "that the hf flags are unsupported or that the mistral flags are required; no change is proposed"
+    },
+    "hf_tokenizer_mode_compatibility": {
+      "caveat_observed": "transformers logs that the pinned tokenizer.json has an 'incorrect regex pattern' (\"This will lead to incorrect tokenization\"); this concerns tokenization fidelity under hf mode, not request validation, and is not shown to cause the 400",
+      "cpu_result": "chat template renders and tokenizes with the pinned HF tokenizer for all three payloads (transformers 5.16.1, tokenizers 0.23.2)",
+      "not_established": "whether hf tokenizer mode is fully compatible with ChatCompletion for this revision on the real server"
+    },
+    "qwen_attempt_5_vs_mistral_attempt_1": {
+      "different": [
+        "model / tokenizer / chat template",
+        "max_tokens 1024 vs 64",
+        "chat_template_kwargs present vs absent",
+        "server flags (--reasoning-parser qwen3 vs --tokenizer-mode hf --config-format hf --load-format safetensors)"
+      ],
+      "same": [
+        "runner request builder",
+        "temperature 0",
+        "top_p 1",
+        "seed 0",
+        "stream mode per smoke",
+        "vLLM 0.29.0 image",
+        "HF renderer",
+        "OpenAI chat-completions endpoint"
+      ]
+    }
+  },
+  "cpu_library_versions_used": {
+    "in_run_log": "{'vllm': '0.29.0', 'torch': '2.13.0+cu130', 'transformers': '5.16.1', 'tokenizers': '0.23.2', 'safetensors': '0.8.0', 'huggingface_hub': '1.30.0', 'torch_cuda': '13.0'}",
+    "tokenizers": "0.23.2",
+    "transformers": "5.16.1"
+  },
+  "decision": {
+    "answer": "B. ROOT CAUSE NOT ESTABLISHED CPU-ONLY",
+    "classification_of_the_issue": "UNATTRIBUTED (harness/request configuration vs vLLM runtime vs tokenizer/template vs model runtime cannot be distinguished)",
+    "correction_changes_canonical_prompts": "n/a",
+    "correction_changes_model_identity": "n/a (no correction proposed)",
+    "correction_changes_sampling": "n/a",
+    "narrowing": {
+      "excluded_or_unlikely": [
+        "model name mismatch",
+        "prompt too long",
+        "streaming option misuse",
+        "seed/temperature/top_p/max_tokens range violations",
+        "chat-template render exception (logged, absent)"
+      ],
+      "remaining": [
+        "a rejection inside vLLM's request/renderer path that is not logged",
+        "an interaction between hf tokenizer mode and the Mistral repo files on the real server"
+      ]
+    },
+    "not_invented": "no fix is proposed; nothing was changed to make a test pass",
+    "what_would_establish_it": "one authorized run of the SAME configuration with the runner's HTTP error-body capture (already implemented) would record the API error body; that would require its own owner authorization and a new attempt",
+    "why": [
+      "the exact HTTP 400 was not reproduced: vLLM's request model, renderer, engine input path and server were not executed (vLLM is not installable on this CPU host and the model must not be loaded)",
+      "every stage that could be run on CPU with the exact payloads passes: chat-template render, tokenization, length checks (transformers 5.16.1 / tokenizers 0.23.2 = the run's own versions)",
+      "no field/value in the ORNEUR payload was found, in the vLLM v0.29.0 sources, to be rejected on this Mistral path",
+      "the immutable raw server log contains no traceback and no 'An error occurred in `transformers` while applying chat template' line, which the template path would log; that makes a template-application error unlikely but does not prove it, and it does not exclude the paths vLLM does not log (pydantic request-validation rejections are logged only with --log-error-stack, and ValueError -> create_error_response paths are not logged)",
+      "the API error bodies were never captured, which is the only direct evidence of the cause"
+    ]
+  },
+  "evidence_type": "MISTRAL_NEMO_HTTP400_CPU_ONLY_ROOT_CAUSE_ANALYSIS",
+  "field_by_field_trace": {
+    "max_tokens": "64 -> plain int field; max_output_tokens (64) is far below max_model_len (4096) and prompt+64 <= 4096 for A/B/C",
+    "messages": "single user message, string content; content-format 'string' detected (log); renders + tokenizes on CPU (see stages)",
+    "model": "mistralai/Mistral-Nemo-Instruct-2407 == --served-model-name (the run log shows no 'Error with model' line, and an unknown model would be 404 not 400)",
+    "qwen_comparison": "identical request fields succeeded for Qwen3-8B (HTTP 200) except: model, max_tokens (1024 vs 64), and the presence of chat_template_kwargs (Qwen only)",
+    "seed": "0 -> within the int64 field bounds",
+    "stream (A only)": "true",
+    "stream_options.include_usage (A only)": "accepted because stream is true (B and C send no stream_options)",
+    "summary": "no field is sent that the request schema, the sampling validation or the token-length checks reject",
+    "temperature": "0 -> float field, no constraint that rejects 0",
+    "top_p": "1 -> float field, no constraint that rejects 1"
+  },
+  "generated_output_executed": false,
+  "mistral_rerun": false,
+  "no_generation": true,
+  "no_gpu_used": true,
+  "no_modal_used": true,
+  "no_model_weights_loaded": true,
+  "phase": "21B.4.20",
+  "pinned_files_facts": {
+    "add_bos_token": true,
+    "bos_token": "<s>",
+    "chat_template_chars": 3945,
+    "chat_template_present": true,
+    "chat_template_undeclared_variables": [
+      "bos_token",
+      "content",
+      "eos_token",
+      "loop_messages",
+      "messages",
+      "raise_exception",
+      "system_message",
+      "tools"
+    ],
+    "config_json_architectures": [
+      "MistralForCausalLM"
+    ],
+    "eos_token": "</s>",
+    "generation_config": {
+      "_from_model_config": true,
+      "bos_token_id": 1,
+      "eos_token_id": 2,
+      "transformers_version": "4.43.0.dev0"
+    },
+    "tokenizer_class": "PreTrainedTokenizerFast",
+    "vocab_size": 131072
+  },
+  "raw_server_log_facts": {
+    "content_format_line": "(APIServer pid=22) INFO 09-25 09:14:31 [hf.py:547] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.",
+    "error_level_lines_before_the_400s": [],
+    "error_with_model_logged": false,
+    "line_numbering_note": "Python text-mode (universal-newline) line numbers; the file contains carriage returns (progress output) so `grep -n` numbers the same lines lower (POST lines 117-119)",
+    "post_chat_completions_lines": [
+      284,
+      285,
+      286
+    ],
+    "raw_log_sha256": "c4986233bce379dd1ff374ac856cee41235425e47886d455379f29852aed8aa3",
+    "request_latencies_seconds": [
+      [
+        "A",
+        "0.0058"
+      ],
+      [
+        "B",
+        "0.0028"
+      ],
+      [
+        "C",
+        "0.0016"
+      ]
+    ],
+    "statuses": [
+      "400",
+      "400",
+      "400"
+    ],
+    "traceback_in_log": false,
+    "transformers_chat_template_exception_logged": false,
+    "versions_in_run": "{'vllm': '0.29.0', 'torch': '2.13.0+cu130', 'transformers': '5.16.1', 'tokenizers': '0.23.2', 'safetensors': '0.8.0', 'huggingface_hub': '1.30.0', 'torch_cuda': '13.0'}",
+    "window_before_and_including_the_400s": [
+      "(APIServer pid=22) INFO 09-25 09:14:31 [launcher.py:70] Route: /inference/v1/generate, Methods: POST",
+      "(APIServer pid=22) INFO:     Started server process [22]",
+      "(APIServer pid=22) INFO:     Waiting for application startup.",
+      "(APIServer pid=22) INFO:     Application startup complete.",
+      "(APIServer pid=22) INFO:     127.0.0.1:20736 - \"GET /v1/models HTTP/1.1\" 200 OK",
+      "(APIServer pid=22) INFO:     127.0.0.1:47985 - \"GET /health HTTP/1.1\" 200 OK",
+      "(APIServer pid=22) INFO:     127.0.0.1:39763 - \"GET /version HTTP/1.1\" 200 OK",
+      "(APIServer pid=22) INFO:     127.0.0.1:40654 - \"POST /v1/chat/completions HTTP/1.1\" 400 Bad Request",
+      "(APIServer pid=22) INFO:     127.0.0.1:58254 - \"POST /v1/chat/completions HTTP/1.1\" 400 Bad Request",
+      "(APIServer pid=22) INFO:     127.0.0.1:65225 - \"POST /v1/chat/completions HTTP/1.1\" 400 Bad Request"
+    ]
+  },
+  "request_by_request_trace": {
+    "A": {
+      "exact_payload": {
+        "max_tokens": 64,
+        "messages": [
+          {
+            "content": "Reply exactly:\nREADY",
+            "role": "user"
+          }
+        ],
+        "model": "mistralai/Mistral-Nemo-Instruct-2407",
+        "seed": 0,
+        "stream": true,
+        "stream_options": {
+          "include_usage": true
+        },
+        "temperature": 0,
+        "top_p": 1
+      },
+      "fields_sent": [
+        "max_tokens",
+        "messages",
+        "model",
+        "seed",
+        "stream",
+        "stream_options",
+        "temperature",
+        "top_p"
+      ],
+      "payload_prompt_sha256": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+      "prompt_is_canonical": true,
+      "stages": {
+        "chat_template_render_and_tokenize_cpu": {
+          "bos_count": 1,
+          "eos_token": "</s>",
+          "n_tokens": 8,
+          "rendered_text": "<s>[INST]Reply exactly:\nREADY[/INST]",
+          "result": "PASS",
+          "token_ids": [
+            1,
+            3,
+            53156,
+            10693,
+            1877,
+            38237,
+            1089,
+            4
+          ]
+        },
+        "prompt_plus_max_tokens_within_max_model_len": {
+          "max_model_len": 4096,
+          "max_tokens": 64,
+          "prompt_tokens": 8,
+          "result": "PASS"
+        }
+      }
+    },
+    "B": {
+      "exact_payload": {
+        "max_tokens": 64,
+        "messages": [
+          {
+            "content": "2 + 3",
+            "role": "user"
+          }
+        ],
+        "model": "mistralai/Mistral-Nemo-Instruct-2407",
+        "seed": 0,
+        "temperature": 0,
+        "top_p": 1
+      },
+      "fields_sent": [
+        "max_tokens",
+        "messages",
+        "model",
+        "seed",
+        "temperature",
+        "top_p"
+      ],
+      "payload_prompt_sha256": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+      "prompt_is_canonical": true,
+      "stages": {
+        "chat_template_render_and_tokenize_cpu": {
+          "bos_count": 1,
+          "eos_token": "</s>",
+          "n_tokens": 7,
+          "rendered_text": "<s>[INST]2 + 3[/INST]",
+          "result": "PASS",
+          "token_ids": [
+            1,
+            3,
+            1050,
+            1867,
+            1032,
+            1051,
+            4
+          ]
+        },
+        "prompt_plus_max_tokens_within_max_model_len": {
+          "max_model_len": 4096,
+          "max_tokens": 64,
+          "prompt_tokens": 7,
+          "result": "PASS"
+        }
+      }
+    },
+    "C": {
+      "exact_payload": {
+        "max_tokens": 64,
+        "messages": [
+          {
+            "content": "Return valid JSON:\n{\"status\":\"ready\"}",
+            "role": "user"
+          }
+        ],
+        "model": "mistralai/Mistral-Nemo-Instruct-2407",
+        "seed": 0,
+        "temperature": 0,
+        "top_p": 1
+      },
+      "fields_sent": [
+        "max_tokens",
+        "messages",
+        "model",
+        "seed",
+        "temperature",
+        "top_p"
+      ],
+      "payload_prompt_sha256": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42",
+      "prompt_is_canonical": true,
+      "stages": {
+        "chat_template_render_and_tokenize_cpu": {
+          "bos_count": 1,
+          "eos_token": "</s>",
+          "n_tokens": 12,
+          "rendered_text": "<s>[INST]Return valid JSON:\n{\"status\":\"ready\"}[/INST]",
+          "result": "PASS",
+          "token_ids": [
+            1,
+            3,
+            15773,
+            5746,
+            11748,
+            1877,
+            19227,
+            10560,
+            12592,
+            4868,
+            46005,
+            4
+          ]
+        },
+        "prompt_plus_max_tokens_within_max_model_len": {
+          "max_model_len": 4096,
+          "max_tokens": 64,
+          "prompt_tokens": 12,
+          "result": "PASS"
+        }
+      }
+    }
+  },
+  "sources": {
+    "pinned_hf": {
+      "config.json": {
+        "bytes": 622,
+        "sha256": "8a42669219f4caadedb891be88c34712572573d42b3d02d665d527f92d94ddfe",
+        "url": "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/resolve/04d8a90549d23fc6bd7f642064003592df51e9b3/config.json"
+      },
+      "generation_config.json": {
+        "bytes": 116,
+        "sha256": "c052c7f6082ca59fbee5478371f6dd18cbd9ec059b657f8081ff165deb9ea0fa",
+        "url": "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/resolve/04d8a90549d23fc6bd7f642064003592df51e9b3/generation_config.json"
+      },
+      "special_tokens_map.json": {
+        "bytes": 414,
+        "sha256": "6fa06efa2785e450051989a6f8fb4416b10149ded485ddd3f127a40734f5cfd0",
+        "url": "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/resolve/04d8a90549d23fc6bd7f642064003592df51e9b3/special_tokens_map.json"
+      },
+      "tokenizer.json": {
+        "bytes": 9264445,
+        "sha256": "e11c71726323d33da7b8d6f6f269f1988931c0a52b7122bcdd8c05042974e0db",
+        "url": "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/resolve/04d8a90549d23fc6bd7f642064003592df51e9b3/tokenizer.json"
+      },
+      "tokenizer_config.json": {
+        "bytes": 181297,
+        "sha256": "67f3aeef765b7d78012a081dba98efd4900cd2bac24eac182296841c7e2aef2a",
+        "url": "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/resolve/04d8a90549d23fc6bd7f642064003592df51e9b3/tokenizer_config.json"
+      }
+    },
+    "vllm_v0_29_0": {
+      "chat_completion/protocol.py": {
+        "bytes": 48040,
+        "sha256": "8a1f1138f79557aa5b5add12e81b9745fd5e286fa35f0502a97f2a377d41665b",
+        "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/entrypoints/openai/chat_completion/protocol.py"
+      },
+      "chat_completion/serving.py": {
+        "bytes": 56242,
+        "sha256": "ea1f76074a9587c8054f54d30a6ba748b6a5fc4d90dd82c801504505c1da1f92",
+        "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/entrypoints/openai/chat_completion/serving.py"
+      },
+      "exception_handling/validation.py": {
+        "bytes": 4673,
+        "sha256": "63e1f4343d917d1164f6d1a4b11fd9df985a468527e82bc38a756dbb653a5ee7",
+        "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/entrypoints/serve/exception_handling/handlers/validation.py"
+      },
+      "renderers/hf.py": {
+        "bytes": 48680,
+        "sha256": "2b24612a7163f176f205f9a976ebabafc2ac7840ed5516574b0776272c02ed26",
+        "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/renderers/hf.py"
+      },
+      "renderers/params.py": {
+        "bytes": 20056,
+        "sha256": "30104415b818465eb1114852104a9b52b9792a4eed9bc3f32a355d8cf33dd8e0",
+        "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/renderers/params.py"
+      },
+      "renderers/registry.py": {
+        "bytes": 2849,
+        "sha256": "a08f893773e22d4b249726f2cec930ea70eb508f32a4903bacffba37b07fdf5b",
+        "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/renderers/registry.py"
+      },
+      "serve/engine/serving.py": {
+        "bytes": 7253,
+        "sha256": "70143311acc2230b925e7f3603b8b9314f029ff5e98d5af990b3bdca691331f1",
+        "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/entrypoints/serve/engine/serving.py"
+      },
+      "tokenizers/hf.py": {
+        "bytes": 9512,
+        "sha256": "bdcf92dd86b15ad28a86dead12000af07e9ab3273ce6d38e490b6ba5b5a71c8f",
+        "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/tokenizers/hf.py"
+      },
+      "tokenizers/registry.py": {
+        "bytes": 10521,
+        "sha256": "9515c9d30b5b87e1706d1905c51dfac45ff75eb72bb34957181b7907dc29ca73",
+        "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/tokenizers/registry.py"
+      }
+    }
+  },
+  "status_unchanged": {
+    "capability": "UNPROVEN",
+    "mistral_nemo": "NOT_PROVEN / NOT_COMPLETED",
+    "phi4": "NOT_TESTED",
+    "qwen3_8b": "FAILED"
+  },
+  "subject": {
+    "attempt": 1,
+    "canonical_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
+    "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
+    "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+    "server_flags": [
+      "--tokenizer-mode",
+      "hf",
+      "--config-format",
+      "hf",
+      "--load-format",
+      "safetensors"
+    ]
+  },
+  "vllm_source_evidence": {
+    "check_model_failure_is_logged": {
+      "anchor": "Error with model",
+      "file": "chat_completion/serving.py",
+      "first_line": 233,
+      "text": "        error_check_ret = await self._check_model(request)\n        if error_check_ret is not None:\n            logger.error(\"Error with model %s\", error_check_ret)\n            return error_check_ret\n"
+    },
+    "create_error_response_default_is_400": {
+      "anchor": "status_code: HTTPStatus = HTTPStatus.BAD_REQUEST",
+      "file": "serve/engine/serving.py",
+      "first_line": 78,
+      "text": "    def create_error_response(\n        message: str | Exception,\n        err_type: str = \"BadRequestError\",\n        status_code: HTTPStatus = HTTPStatus.BAD_REQUEST,\n        param: str | None = None,\n    ) -> ErrorResponse:\n        return create_error_response(message, err_type, status_code, param)"
+    },
+    "hf_renderer_tokenize_default_and_return_dict_false": {
+      "anchor": "Force `return_dict=False`",
+      "file": "renderers/hf.py",
+      "first_line": 775,
+      "text": "\n    # transformers v5 changed the default of `return_dict` to True, which\n    # makes `apply_chat_template(tokenize=True)` return a `BatchEncoding`\n    # instead of `list[int]`. Force `return_dict=False` so downstream code\n    # that expects a flat token list (e.g. `parse_dec_only_prompt`) works\n    # consistently across v4 and v5.\n    if tokenize and \"return_dict\" not in resolved_kwargs:"
+    },
+    "kwargs_forwarded_to_apply_chat_template": {
+      "anchor": "def get_apply_chat_template_kwargs",
+      "file": "renderers/params.py",
+      "first_line": 132,
+      "text": "    def get_apply_chat_template_kwargs(self) -> dict[str, Any]:\n        \"\"\"The arguments to pass to `tokenizer.apply_chat_template`.\"\"\"\n        return merge_kwargs(\n            self.chat_template_kwargs,\n            dict(chat_template=self.chat_template, return_dict=False),"
+    },
+    "max_output_vs_max_total_check": {
+      "anchor": "max_output_tokens > max_total_tokens",
+      "file": "renderers/params.py",
+      "first_line": 225,
+      "text": "        if (\n            max_output_tokens is not None\n            and max_total_tokens is not None\n            and max_output_tokens > max_total_tokens\n        ):\n            raise VLLMValidationError(\n                f\"{self.max_output_tokens_param}={max_output_tokens} \"\n                f\"cannot be greater than \""
+    },
+    "pydantic_request_validation_errors_are_logged_only_with_log_error_stack": {
+      "anchor": "if req.app.state.args.log_error_stack",
+      "file": "exception_handling/validation.py",
+      "first_line": 95,
+      "text": "async def validation_exception_handler(req: Request, exc: RequestValidationError):\n    if req.app.state.args.log_error_stack:\n        logger.exception(\n            \"RequestValidationError caught. Request id: %s\",\n            req.state.request_metadata.request_id\n            if hasattr(req.state, \"request_metadata\")\n            else None,\n        )"
+    },
+    "seed_field": {
+      "anchor": "seed: int | None = Field(None, ge=_INT64_MIN, le=_INT64_MAX)",
+      "file": "chat_completion/protocol.py",
+      "first_line": 230,
+      "text": "    seed: int | None = Field(None, ge=_INT64_MIN, le=_INT64_MAX)"
+    },
+    "stream_options_requires_stream": {
+      "anchor": "Stream options can only be defined when `stream=True`",
+      "file": "chat_completion/protocol.py",
+      "first_line": 789,
+      "text": "            return data\n        if data.get(\"stream_options\") and not data.get(\"stream\"):\n            raise VLLMValidationError(\n                \"Stream options can only be defined when `stream=True`.\",\n                parameter=\"stream_options\",\n            )"
+    },
+    "template_failure_is_logged_and_wrapped_as_ValueError_400": {
+      "anchor": "An error occurred in `transformers` while applying chat template",
+      "file": "renderers/hf.py",
+      "first_line": 791,
+      "text": "        )\n    except Exception as e:\n        logger.exception(\n            \"An error occurred in `transformers` while applying chat template\"\n        )\n        raise ValueError(str(e)) from e"
+    },
+    "token_length_check": {
+      "anchor": "if len(tokens) > max_input_tokens",
+      "file": "renderers/params.py",
+      "first_line": 456,
+      "text": "\n        if len(tokens) > max_input_tokens:\n            token_count = len(tokens)\n            # The tokenizer may have truncated the prompt to\n            # max_input_tokens + 1 (see get_encode_kwargs), so the\n            # actual prompt length could be larger."
+    }
+  }
+}

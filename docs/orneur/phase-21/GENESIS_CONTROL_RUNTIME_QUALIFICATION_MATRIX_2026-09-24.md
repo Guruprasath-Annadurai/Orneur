@@ -58,6 +58,17 @@ is preserved only as history: it matched itemized rows by the shared app descrip
 Exact attribution: the run's own row is 0.20532158 USD; the account's metered totals moved non-monotonically so the excess cannot yet be attributed to this run. No waiver applies; only the read-only
 `--mode reconcile` may be repeated later. No rerun.
 
+**Mistral-Nemo HTTP 400: CPU-only root-cause analysis (decision B, not established).** `GENESIS_MISTRAL_NEMO_HTTP400_CPU_ROOT_CAUSE_ANALYSIS_2026-09-25.json`. The exact ORNEUR payloads for A (with its streaming
+fields), B and C were run on CPU through the pinned HF tokenizer + chat template + tokenization with the run's own library versions (transformers 5.16.1, tokenizers 0.23.2): all three pass
+(8 / 7 / 12 prompt tokens, `<s>[INST]…[/INST]`, one BOS, prompt + 64 <= 4096). Every payload field was traced against the vLLM v0.29.0 sources (immutable commit) and none is rejected on this path;
+Qwen received HTTP 200 for the same fields. The immutable raw log has no traceback and no "error occurred in transformers while applying chat template" line (which vLLM logs and wraps as a 400 ValueError),
+so a template-application error is unlikely, but pydantic request-validation rejections are logged only with `--log-error-stack` and other `create_error_response` paths are not logged, so they cannot be ruled out.
+The exact 400 was **not reproduced** (vLLM cannot be run CPU-only and the model must not be loaded) and the API error bodies were never captured: **B. ROOT CAUSE NOT ESTABLISHED CPU-ONLY.** No fix is proposed; it
+remains UNATTRIBUTED (harness/request configuration vs vLLM runtime vs tokenizer/template vs model runtime). A further attempt would need its own authorization (the runner now captures the error body).
+*Settlement (third read-only reconciliation, 2026-09-25T11:43Z):* still `BILLING_SETTLEMENT_NOT_YET_OBSERVABLE`. The exact metered growth (0.20532159 USD) now equals the run's own itemized row (0.20532158, 1e-8 rounding) and owner billed
+delta is 0 with 0 live resources, but the check failed only because the stopped app had aged out of Modal's listing; the harness was fixed to accept an unlisted app as not live only when run-time evidence recorded it stopped
+and no live resources exist. The gate stays closed and no waiver applies; the fix has not been exercised on Mistral (exactly one reconciliation was authorized).
+
 **Qwen3-8B attempt 4 (historical).** Preserved byte-identically as `GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json`.
 Thinking default ON and the runner's earlier prompt wording; A PASS, B FAIL (verbose explanation), C PASS; owner billed delta 0; promotional credit
 0.22772907 USD (settlement observed by the read-only `--mode reconcile`); reclassified `TECHNICAL_FAILURE`, technical `FAILED`, runtime `FAILED` after the
