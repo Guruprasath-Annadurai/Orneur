@@ -99,7 +99,8 @@ def _container_proof(runner, cfg: dict, result: dict) -> dict:
             "smoke_protocol_sha256": runner.LOCKED_PROTOCOL.protocol_sha256(),
             "prompt_sha256_sent": {x["smoke_id"]: x.get("prompt_sha256_sent") for x in smokes},
             "model_id": cfg["model_id"], "served_model_id": models[0].get("id"), "revision": result.get("snapshot_dir_name"),
-            "precision": flag("--dtype"), "quantization": flag("--quantization"), "reasoning_parser": flag("--reasoning-parser")}
+            "precision": flag("--dtype"), "quantization": flag("--quantization"), "reasoning_parser": flag("--reasoning-parser"),
+            "tokenizer_mode": flag("--tokenizer-mode"), "config_format": flag("--config-format"), "load_format": flag("--load-format")}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -438,7 +439,7 @@ def _same_json(a, b) -> bool:
     return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
-def container_proof_problems(result, model_id: str, locked_revision: str) -> list[str]:
+def container_proof_problems(result, model_id: str, locked_revision: str, extra_args=None) -> list[str]:
     """Every way the container's proof can fail to establish the approved runtime configuration + canonical protocol. Empty list == proven.
     A control WITHOUT an approved configuration must prove that NO extra request setting was sent."""
     proof = (result or {}).get("runtime_configuration_proof")
@@ -469,6 +470,11 @@ def container_proof_problems(result, model_id: str, locked_revision: str) -> lis
         bad.append(f"precision/quantization ({proof.get('precision')!r}/{proof.get('quantization')!r}) != bfloat16/None")
     if approved and proof.get("reasoning_parser") != approved["reasoning_parser"]:
         bad.append("reasoning parser differs from the approved configuration")
+    if extra_args is not None:                     # the exact locked server flags for this control: nothing missing, nothing leaked in from another control
+        want = dict(zip(extra_args[0::2], extra_args[1::2]))
+        for key, flag in (("reasoning_parser", "--reasoning-parser"), ("tokenizer_mode", "--tokenizer-mode"), ("config_format", "--config-format"), ("load_format", "--load-format")):
+            if proof.get(key) != want.get(flag):
+                bad.append(f"server flag {flag} proven as {proof.get(key)!r}, locked value {want.get(flag)!r}")
     return bad
 
 
@@ -572,7 +578,7 @@ def cmd_run(a) -> int:
     try:
         report = _cli_json("billing", "report", "--start", started[:10], "--end", (datetime.fromisoformat(started[:10]) + timedelta(days=2)).strftime("%Y-%m-%d"),
                            "--resolution", "h", "--json")
-        mine = [x for x in report if isinstance(x, dict) and x.get("description") == app.name]
+        mine = [x for x in report if isinstance(x, dict) and x.get("object_id") == app_id]      # by object id: every attempt's app shares one description
         visible = sum((Decimal(str(x["cost"])) for x in mine), Decimal(0))
     except Exception as e:  # noqa: BLE001
         mine, visible = [], None
@@ -591,7 +597,7 @@ def cmd_run(a) -> int:
                    and all(x.get("http_status") == 200 and x.get("content") and not x.get("error") for x in result["smoke_results"])
                    and result.get("orphan_vllm_processes_after_shutdown") == 0)
     locked_identity = LOCKED_CONTROL_IDENTITIES[cfg["control_name"]]
-    proof_problems = container_proof_problems(result, locked_identity["model_id"], locked_identity["revision"]) if result is not None else []
+    proof_problems = container_proof_problems(result, locked_identity["model_id"], locked_identity["revision"], cfg["extra_args"]) if result is not None else []
     if error_text is None and result is not None and proof_problems:
         outcome, reason = "HARNESS_FAILURE", "the container did not prove the approved runtime configuration and canonical locked smoke protocol: " + "; ".join(proof_problems)
     elif error_text is None:
@@ -790,8 +796,42 @@ def cmd_reconcile(a) -> int:
     if not observed:
         print("BILLING_SETTLEMENT_NOT_YET_OBSERVABLE -- qualification stays pending; reconcile again later")
         _set_pending_status(record, rec_path)
+        _downgrade_contaminated_settlement(record, rec_path, path, sha, out, att, after_doc, app_id)
         return 5
     return _finalize_record(record, rec_path, path, sha, out, att)
+
+
+def _downgrade_contaminated_settlement(record: dict, rec_path: Path, art_path: Path, art_sha: str, art: dict, att: dict, after_doc: dict, app_id: str) -> None:
+    """If the in-run settlement said OBSERVED but was computed from itemized rows that belong to OTHER apps (an earlier version matched rows by the shared app
+    description), and the exact-attribution reconciliation cannot confirm it, correct the SETTLEMENT claim honestly: the original is preserved, the technical
+    result and status are untouched, and the settlement gate for later controls stays closed until a reconciliation observes it."""
+    if record.get("billing_settlement", {}).get("status") != "OBSERVED" or "settlement_correction" in record:
+        return
+    foreign = [r for r in after_doc.get("itemized_rows_for_app", []) if isinstance(r, dict) and r.get("object_id") != app_id]
+    if not foreign:
+        return
+    final = json.loads(json.dumps(record))
+    final["original_in_run_billing_settlement"] = record["billing_settlement"]
+    final["billing_settlement"] = art["settlement"]
+    final["settlement_correction"] = {
+        "reason": "the in-run OBSERVED was computed from itemized rows that included another attempt's app (rows were matched by the shared app description, not by object id); "
+                  "the read-only exact-attribution reconciliation cannot confirm settlement", "foreign_rows_in_original_itemization": foreign,
+        "reconciliation_artifact": art_path.name, "reconciliation_sha256": art_sha, "reclassifies_attempt": False,
+        "unchanged": ["raw responses", "raw log", "smoke outputs", "container proof", "technical result and status", "owner billed delta"]}
+    validate_control_runtime_record(final, evidence_root=EVIDENCE_DIR)
+    write_json(rec_path, final)
+    tag = _tag_of_record(final)
+    attempts = _load_attempts(tag)
+    for i, x in enumerate(attempts):
+        if x.get("attempt_number") == att["attempt_number"] and x.get("billing_settlement_status") == "OBSERVED":
+            attempts[i] = dict(x, billing_settlement_status="BILLING_SETTLEMENT_NOT_YET_OBSERVABLE", original_in_run_billing_settlement_status="OBSERVED",
+                               settlement_correction=f"see {art_path.name}")
+    write_json(_attempts_path(tag), {"control_name": final["control_name"], "attempts": attempts})
+    print("in-run settlement claim corrected to BILLING_SETTLEMENT_NOT_YET_OBSERVABLE (original preserved); technical status unchanged")
+
+
+def _tag_of_record(record: dict) -> str:
+    return {"Qwen3-8B": "QWEN3_8B", "Mistral-Nemo-Instruct-2407": "MISTRAL_NEMO", "Phi-4": "PHI4"}[record["control_name"]]
 
 
 def _set_pending_status(record: dict, rec_path: Path) -> None:

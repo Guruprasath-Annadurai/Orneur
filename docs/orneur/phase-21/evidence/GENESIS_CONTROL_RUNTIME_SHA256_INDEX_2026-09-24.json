@@ -4,8 +4,8 @@
     {
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md",
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "239266bb8d9cc29ae703cbb20fdaabf0de578daaab9dc6993844ca346375921d",
-      "size_bytes": 22780
+      "sha256": "c607a31ba8d59a66b54745d377926e2b14ed521f942f72c8414b5000c90ed2e2",
+      "size_bytes": 25068
     },
     {
       "evidence_role": "genesis_billing_discrepancy_observation_2026-09-24.json",
@@ -20,10 +20,64 @@
       "size_bytes": 4036
     },
     {
+      "evidence_role": "genesis_control_mistral_nemo_attempt1_settlement_reconciliation_20260925t092029z.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260925T092029Z.json",
+      "sha256": "fbf1c6b688d1207508d07f85557360b91ad9f535016a898c78d7d37d7a1d170e",
+      "size_bytes": 6282
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_attempt1_settlement_reconciliation_20260925t102747z.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260925T102747Z.json",
+      "sha256": "e05c1ecc8c8f7e0826cbcf46f28ab2d7a13b3145eaed438441bf903fe9245a62",
+      "size_bytes": 6005
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_attempt1_settlement_reconciliation_20260925t103022z.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260925T103022Z.json",
+      "sha256": "efd8c201208f7badf1a6933c29eead9d8203bc31d19b30c073c58ab18f67135a",
+      "size_bytes": 6005
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_attempts_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json",
+      "sha256": "afcc28a8c9d00824e81a7e89608f2eb741a9878bed6a7a4303a631a635fc7810",
+      "size_bytes": 1261
+    },
+    {
       "evidence_role": "genesis_control_mistral_nemo_lightning_stage_manifest_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_LIGHTNING_STAGE_MANIFEST_2026-09-24.json",
       "sha256": "32603a87e78d5893dba1e5340cbb6f70eb1457a011de6463f78254ad82128320",
       "size_bytes": 3119
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_modal_h100_attempt1_billing_after_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_BILLING_AFTER_2026-09-24.json",
+      "sha256": "55536ef6330e1d975c7a3a0ce76de72c515c93f056422f92da4a15eb676cd924",
+      "size_bytes": 4525
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_modal_h100_attempt1_billing_before_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_BILLING_BEFORE_2026-09-24.json",
+      "sha256": "0528f1cc7f8f8590f739f6b81d3b58fdb701cb14f57785d664e0d71dad06c673",
+      "size_bytes": 572
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_modal_h100_attempt1_financial_preflight_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_FINANCIAL_PREFLIGHT_2026-09-24.json",
+      "sha256": "12aab707f9334ef3734b426ff4412aa32de8743cffc81b735879404a8d5d5d29",
+      "size_bytes": 2836
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_modal_h100_attempt1_raw_log_2026-09-24.txt",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt",
+      "sha256": "c4986233bce379dd1ff374ac856cee41235425e47886d455379f29852aed8aa3",
+      "size_bytes": 35174
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_modal_h100_gpu_preflight_2026-09-25t091133z.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_GPU_PREFLIGHT_2026-09-25T091133Z.json",
+      "sha256": "d502917f31b867ef72cc8a9cab84430fa284878fb1d16caf53228d836c2e5847",
+      "size_bytes": 2718
     },
     {
       "evidence_role": "genesis_control_mistral_nemo_modal_precache_manifest_2026-09-24.json",
@@ -34,8 +88,8 @@
     {
       "evidence_role": "genesis_control_mistral_nemo_runtime_qualification_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json",
-      "sha256": "258fe1d65cbf2dafff069ebc57ee9a8049ff93575da1b25df03e184803ed0ac8",
-      "size_bytes": 9506
+      "sha256": "5bcf5aa8423ea22082a554c39edf414dea27b45511dca1f3c18136e4fe9fd5df",
+      "size_bytes": 16003
     },
     {
       "evidence_role": "genesis_control_phi4_attempt1_financial_preflight_only_2026-09-24.json",
@@ -339,6 +393,6 @@
     }
   ],
   "evidence_type": "GENESIS_CONTROL_RUNTIME_QUALIFICATION_INTEGRITY_INDEX",
-  "note": "SHA-256 hashes computed live from actual file bytes; repo-relative paths. Includes Qwen3-8B attempt 1 (harness failure, annotated with failure_domain; pre-annotation attempts-file sha256 eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365 is preserved in git history and in the annotation), the read-only settlement reconciliation, and NOT_TESTED records for Mistral-Nemo and Phi-4. Phase 21B.4.20 Modal H100 update: adds CPU pre-cache manifests, owner-created attempt-1 settlement waiver (hash recorded, content untouched), Qwen3-8B H100 attempt 4 evidence and its delayed-settlement reconciliation artifacts. Audit remediation: adds the three Modal H100 preflight artifacts (CPU 191936Z, GPU 195933Z blocked, GPU 205041Z allowed) and re-derives every hash from actual bytes; GENESIS_CONTROL_SET_* files belong to the earlier control-set admission phase and have their own index. Adds the CPU-only Qwen3-8B runtime-configuration analysis (2026-09-25). Canonical locked-smoke protocol canonicalization (2026-09-25): adds GENESIS_LOCKED_SMOKE_PROTOCOL and the V2 canonical-prompt Qwen analysis; the earlier analysis is annotated superseded; Mistral/Phi NOT_TESTED planned prompts canonicalized (originals preserved); matrix updated. Qwen3-8B qwen3_8b_non_thinking_v1 implementation readiness (2026-09-25): adds the byte-identical attempt-4 record snapshot and the CPU-only readiness artifact; matrix updated. Runtime-policy pin (2026-09-25): readiness artifact regenerated with the pinned policy fingerprint; matrix updated. Qwen3-8B attempt 5 (2026-09-25, owner-authorized, qwen3_8b_non_thinking_v1): adds the attempt-5 preflight/billing/raw-log artifacts and the 081417Z GPU preflight; attempts file and Qwen record re-hashed; matrix updated. Attempt-5 reasoning_mode metadata correction (2026-09-25): adds the byte-identical pre-correction attempt-5 record snapshot; Qwen record re-hashed (descriptive metadata only); matrix updated.",
+  "note": "SHA-256 hashes computed live from actual file bytes; repo-relative paths. Includes Qwen3-8B attempt 1 (harness failure, annotated with failure_domain; pre-annotation attempts-file sha256 eaa18cb6ce2718bc7c510d4c4de533b202694e5c04453a72989497410a8de365 is preserved in git history and in the annotation), the read-only settlement reconciliation, and NOT_TESTED records for Mistral-Nemo and Phi-4. Phase 21B.4.20 Modal H100 update: adds CPU pre-cache manifests, owner-created attempt-1 settlement waiver (hash recorded, content untouched), Qwen3-8B H100 attempt 4 evidence and its delayed-settlement reconciliation artifacts. Audit remediation: adds the three Modal H100 preflight artifacts (CPU 191936Z, GPU 195933Z blocked, GPU 205041Z allowed) and re-derives every hash from actual bytes; GENESIS_CONTROL_SET_* files belong to the earlier control-set admission phase and have their own index. Adds the CPU-only Qwen3-8B runtime-configuration analysis (2026-09-25). Canonical locked-smoke protocol canonicalization (2026-09-25): adds GENESIS_LOCKED_SMOKE_PROTOCOL and the V2 canonical-prompt Qwen analysis; the earlier analysis is annotated superseded; Mistral/Phi NOT_TESTED planned prompts canonicalized (originals preserved); matrix updated. Qwen3-8B qwen3_8b_non_thinking_v1 implementation readiness (2026-09-25): adds the byte-identical attempt-4 record snapshot and the CPU-only readiness artifact; matrix updated. Runtime-policy pin (2026-09-25): readiness artifact regenerated with the pinned policy fingerprint; matrix updated. Qwen3-8B attempt 5 (2026-09-25, owner-authorized, qwen3_8b_non_thinking_v1): adds the attempt-5 preflight/billing/raw-log artifacts and the 081417Z GPU preflight; attempts file and Qwen record re-hashed; matrix updated. Attempt-5 reasoning_mode metadata correction (2026-09-25): adds the byte-identical pre-correction attempt-5 record snapshot; Qwen record re-hashed (descriptive metadata only); matrix updated. Mistral-Nemo attempt 1 (2026-09-25, owner-authorized): adds the attempt-1 preflight/billing/raw-log/attempts/reconciliation artifacts; Mistral record re-hashed; matrix updated.",
   "phase": "21B.4.20"
 }

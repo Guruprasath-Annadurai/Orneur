@@ -12,10 +12,10 @@ Modal Volume cache (CPU-only pre-cache manifests `GENESIS_CONTROL_*_MODAL_PRECAC
 | Control | Identity | Latest attempt | Locked smokes A / B / C | Technical serving | Financial acceptance | Runtime qualification | Capability |
 |---|---|---|---|---|---|---|---|
 | Qwen3-8B | ADMITTED | **attempt 5**, Modal H100, `qwen3_8b_non_thinking_v1`, 163.2 s, valid runtime attempt, `TECHNICAL_FAILURE` (model-runtime domain); attempts 1-4 preserved | PASS / **FAIL** / PASS | FAILED (locked Smoke B contract not met: `2 + 3 = 5`) | PASS (owner billed delta 0; promotional credit used 0.18768559 USD, settlement OBSERVED in-run) | **FAILED** | UNPROVEN |
-| Mistral-Nemo-Instruct-2407 | ADMITTED | none | not run | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
+| Mistral-Nemo-Instruct-2407 | ADMITTED | **attempt 1**, Modal H100, 176.2 s, valid runtime attempt, `TECHNICAL_FAILURE` (model-runtime domain): server ready, exact identity proven, **all three chat requests returned HTTP 400** | FAIL / FAIL / FAIL (no response content) | FAILED | PASS (owner billed delta 0; itemized run cost 0.20532158 USD; settlement NOT_YET_OBSERVABLE, see below) | **FAILED** | UNPROVEN |
 | Phi-4 | ADMITTED | none | not run | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
 
-**No control is RUNTIME_QUALIFIED.** The single owner-authorized Qwen3-8B attempt 5 has been executed; no retry and no further GPU run is authorized. Mistral-Nemo and Phi-4 have not been run.
+**No control is RUNTIME_QUALIFIED.** The single owner-authorized Qwen3-8B attempt 5 has been executed; no retry and no further GPU run is authorized. Mistral-Nemo attempt 1 (owner-authorized, executed once) failed as below; Phi-4 has not been run.
 Runtime qualification is not capability qualification.
 
 **Qwen3-8B attempt 5 (authorized, executed once).** Modal H100, approved configuration `qwen3_8b_non_thinking_v1`
@@ -36,6 +36,17 @@ the persisted smokes show 0 reasoning tokens). The pre-correction record is pres
 `GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT5_SNAPSHOT_2026-09-24.json` (sha256 `85d3fec9…13c5`); the correction changes only `reasoning_mode` and adds a
 `metadata_correction` note, does **not** reclassify attempt 5, and leaves raw responses, raw log, financial/settlement evidence, container proof, smoke outputs and all
 attempt outcomes untouched. Qwen3-8B remains FAILED.
+
+**Mistral-Nemo-Instruct-2407 attempt 1 (authorized, executed once).** Modal H100, no per-control request configuration, locked flags `--tokenizer-mode hf --config-format hf
+--load-format safetensors`, no reasoning parser, no `chat_template_kwargs`, canonical protocol `d462103b…25c1`. The server reached ready after 153 s with the exact pinned identity
+(revision, weight bytes 24,495,607,104, served model id), bfloat16, no quantization. All three `POST /v1/chat/completions` (A streamed, B, C) were rejected with **HTTP 400 Bad Request**, so there
+is no response content and every locked smoke fails. The 400 response body was not captured (the runner keeps only the exception class in memory and the record builder does not persist it), so the
+**cause is not established by the evidence**: the pinned `tokenizer_config.json` does define a chat template, and rendering it locally for the three canonical prompts succeeds
+(`<s>[INST]…[/INST]`), so a template-render error is not indicated. Recorded honestly as `TECHNICAL_FAILURE` / technical `FAILED` / runtime `FAILED`; it is a valid runtime attempt (server served,
+identity proven) but it is **not established whether the 400 reflects the model/runtime path or a request-format issue**; that classification is left to audit. Owner cash 0; cleanup PASS (app stopped, 0 tasks,
+0 containers). **Settlement: BILLING_SETTLEMENT_NOT_YET_OBSERVABLE.** The in-run OBSERVED was computed from itemized rows matched by the shared app description, which included Qwen attempt 5's app; it was
+corrected (original preserved, attempt not reclassified) and the harness now matches rows by object id. Exact attribution: the run's own row is 0.20532158 USD; the account's metered totals moved
+non-monotonically (+0.2775, then +0.2053, then +0.4106 vs the pre-run baseline) so the excess cannot yet be attributed to this run. `--mode reconcile` (read-only) may be repeated later; no rerun.
 
 **Qwen3-8B attempt 4 (historical).** Preserved byte-identically as `GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json`.
 Thinking default ON and the runner's earlier prompt wording; A PASS, B FAIL (verbose explanation), C PASS; owner billed delta 0; promotional credit

@@ -2266,7 +2266,7 @@ def test_historical_attempt_4_is_untouched_qwen_is_failed_and_mistral_phi_are_no
     assert q["technical_serving_status"] == "FAILED" and q["runtime_qualification_status"] == "FAILED" and q["capability_status"] == "UNPROVEN"
     assert "smoke_protocol" not in q                                                                                                   # the record was not rewritten
     validate_control_runtime_record(q, evidence_root=EVIDENCE_DIR)
-    for tag in ("MISTRAL_NEMO", "PHI4"):
+    for tag in ("PHI4",):                                                           # Mistral-Nemo has since had its one authorized attempt
         r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
         assert r["runtime_qualification_status"] == "NOT_TESTED" and r["technical_serving_status"] == "NOT_TESTED" and r["attempts"] == [] and r["smoke_outputs"] == []
         assert tuple(p["messages"][0]["content"] for p in r["smoke_prompts"]) == tuple(CANONICAL_USER_TEXT.values())
@@ -2533,7 +2533,7 @@ def test_the_real_qwen_history_is_1_to_5_attempts_1_to_4_are_unchanged_and_attem
     assert attempts[:4] == _attempt4_record()["attempts"]                                # attempts 1-4 exactly as preserved in the attempt-4 snapshot
     assert attempts[3]["outcome"] == "TECHNICAL_FAILURE" and attempts[3]["original_classification"]["outcome"] == "TECHNICAL_SUCCESS"
     assert not any("runtime_configuration" in a for a in attempts[:4])                   # attempts 1-4 carry no configuration
-    assert mod._load_attempts("MISTRAL_NEMO") == [] and mod._load_attempts("PHI4") == []
+    assert len(mod._load_attempts("MISTRAL_NEMO")) == 1 and mod._load_attempts("PHI4") == []
 
 ATTEMPT_4_SNAPSHOT_SHA256 = "008b945e7fc0f10eec2a04104f5627260a4187d512d14294b0da41b0a0e217fd"
 
@@ -2568,7 +2568,8 @@ def test_the_existing_financial_gates_are_untouched_and_the_settlement_waiver_st
     attempts = dict(((t, a["attempt_number"]), a) for t, a in mod._modal_attempts())
     assert mod.validate_owner_settlement_waiver("QWEN3_8B", attempts[("QWEN3_8B", 4)])[0] == "WAIVER_ABSENT"      # the waiver never applies to attempt 4
     assert mod.validate_owner_settlement_waiver("QWEN3_8B", attempts[("QWEN3_8B", 1)])[0] == "WAIVER_ACCEPTED"
-    assert all(mod.settlement_resolved(t, a) for t, a in mod._modal_attempts())                                    # attempt 1 by waiver, attempt 4 by OBSERVED reconciliation
+    assert all(mod.settlement_resolved(t, a) for t, a in mod._modal_attempts() if t == "QWEN3_8B")                    # Qwen attempt 1 by waiver, 4 and 5 by OBSERVED settlement
+    assert not any(mod.settlement_resolved(t, a) for t, a in mod._modal_attempts() if t == "MISTRAL_NEMO")           # Mistral attempt 1 is not yet observed: the gate for a later control stays closed
     assert mod.unresolved_settlement_upper_bound_usd() > 0                                                        # attempt 1's conservative exposure stays deducted
 
 
@@ -2837,8 +2838,8 @@ def test_the_policy_pin_leaves_attempt_4_byte_identical_and_mistral_phi_not_test
     assert q["runtime_qualification_status"] == "FAILED" and q["technical_serving_status"] == "FAILED" and "runtime_configuration" not in q
     assert hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256
     mod, _ = _load_modal_h100(monkeypatch)
-    assert mod._load_attempts("MISTRAL_NEMO") == [] and mod._load_attempts("PHI4") == []
-    for tag in ("MISTRAL_NEMO", "PHI4"):
+    assert len(mod._load_attempts("MISTRAL_NEMO")) == 1 and mod._load_attempts("PHI4") == []
+    for tag in ("PHI4",):                                                           # Mistral-Nemo has since had its one authorized attempt
         r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
         assert r["runtime_qualification_status"] == "NOT_TESTED"
 
@@ -2927,7 +2928,7 @@ def test_attempt_5_left_attempts_1_to_4_and_the_attempt_4_snapshot_untouched_and
     q = _persisted_qwen()
     assert q["attempts"][:4] == _attempt4_record()["attempts"] and [a["attempt_number"] for a in q["attempts"]] == [1, 2, 3, 4, 5]
     assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256
-    for tag in ("MISTRAL_NEMO", "PHI4"):
+    for tag in ("PHI4",):                                                           # Mistral-Nemo has since had its one authorized attempt
         r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
         assert r["runtime_qualification_status"] == "NOT_TESTED" and r["attempts"] == [] and r["smoke_outputs"] == []
     raw_attempts = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json").read_text())["attempts"]
@@ -3069,6 +3070,157 @@ def test_only_the_qwen_non_thinking_configuration_changes_a_reasoning_mode_other
     for control_default in ("NOT_APPLICABLE (non-reasoning instruct model)", "NOT_APPLICABLE (base phi-4 instruct, no thinking tags)"):
         assert runtime_cfg.effective_reasoning_mode(control_default, runtime_cfg.configuration_for_model("microsoft/phi-4")) == control_default
         assert runtime_cfg.effective_reasoning_mode(control_default, runtime_cfg.configuration_for_model("mistralai/Mistral-Nemo-Instruct-2407")) == control_default
-    for tag in ("MISTRAL_NEMO", "PHI4"):
+    for tag in ("PHI4",):                                                           # Mistral-Nemo has since had its one authorized attempt
         r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
         assert r["runtime_qualification_status"] == "NOT_TESTED" and r["reasoning_mode"].startswith("NOT_APPLICABLE")
+
+
+# ── Mistral-Nemo: exact locked server flags proven from the container; no Qwen setting or parser may leak ──
+MISTRAL_ARGS = ["--tokenizer-mode", "hf", "--config-format", "hf", "--load-format", "safetensors"]
+
+
+def _mistral_proof(**over):
+    m = LOCKED_CONTROL_IDENTITIES["Mistral-Nemo-Instruct-2407"]
+    proof = {"runtime_configuration_id": None, "runtime_configuration_id_applied": None, "runtime_configuration_sha256": None, "runtime_policy_sha256": runtime_cfg.PINNED_RUNTIME_POLICY_SHA256,
+             "chat_template_kwargs_sent": {sid: None for sid in "ABC"}, "smoke_protocol_sha256": CANONICAL_PROTOCOL_SHA256,
+             "prompt_sha256_sent": {sid: locked_protocol.prompt_sha256(sid) for sid in "ABC"}, "model_id": m["model_id"], "served_model_id": m["model_id"],
+             "revision": m["revision"], "precision": "bfloat16", "quantization": None, "reasoning_parser": None,
+             "tokenizer_mode": "hf", "config_format": "hf", "load_format": "safetensors"}
+    proof.update(over)
+    return {"runtime_configuration_proof": proof}
+
+
+def test_the_mistral_container_proof_requires_exactly_the_locked_flags_and_no_qwen_leakage(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    m = LOCKED_CONTROL_IDENTITIES["Mistral-Nemo-Instruct-2407"]
+    assert mod.container_proof_problems(_mistral_proof(), m["model_id"], m["revision"], MISTRAL_ARGS) == []
+    assert _runner_module().LOCKED["mistral_nemo"]["extra_args"] == MISTRAL_ARGS
+    for over in (dict(tokenizer_mode=None), dict(tokenizer_mode="mistral"), dict(config_format=None), dict(config_format="mistral"), dict(load_format="auto"), dict(load_format=None),
+                 dict(reasoning_parser="qwen3"), dict(runtime_configuration_id="qwen3_8b_non_thinking_v1"), dict(runtime_configuration_id_applied="qwen3_8b_non_thinking_v1"),
+                 dict(chat_template_kwargs_sent={sid: {"enable_thinking": False} for sid in "ABC"}), dict(chat_template_kwargs_sent={"A": None, "B": {"enable_thinking": False}, "C": None}),
+                 dict(runtime_configuration_sha256=runtime_cfg.configuration_sha256("Qwen/Qwen3-8B")), dict(quantization="fp8"), dict(precision="float16"),
+                 dict(smoke_protocol_sha256="0" * 64), dict(prompt_sha256_sent={"A": "0" * 64, "B": "0" * 64, "C": "0" * 64}), dict(revision="0" * 40), dict(served_model_id="other")):
+        assert mod.container_proof_problems(_mistral_proof(**over), m["model_id"], m["revision"], MISTRAL_ARGS), over
+    q = LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]                                            # and the Qwen control still proves its parser
+    assert any("--reasoning-parser" in p for p in mod.container_proof_problems(_proof_for(mod, reasoning_parser=None), q["model_id"], q["revision"], ["--reasoning-parser", "qwen3"]))
+
+
+def test_the_container_proof_reads_the_server_flags_from_the_real_argv(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    runner = _runner_module()
+    cfg = runner.serving_config("mistral_nemo")
+    assert cfg["runtime_configuration"] is None and cfg["extra_args"] == MISTRAL_ARGS
+    argv = ["python", "-m", "vllm.entrypoints.openai.api_server", "--model", "<snap>", "--dtype", "bfloat16", *MISTRAL_ARGS, "--seed", "0"]
+    proof = mod._container_proof(runner, cfg, {"server_argv_sanitized": argv, "smoke_results": [], "models_endpoint": {"data": [{"id": cfg["model_id"]}]}, "snapshot_dir_name": cfg["revision"]})
+    assert (proof["tokenizer_mode"], proof["config_format"], proof["load_format"], proof["reasoning_parser"], proof["quantization"], proof["precision"]) == ("hf", "hf", "safetensors", None, None, "bfloat16")
+    assert proof["runtime_configuration_id"] is None and proof["runtime_policy_sha256"] == PINNED_POLICY_SHA256
+
+
+# ══ Mistral-Nemo-Instruct-2407 attempt 1 (owner-authorized, executed once): the persisted, honest result ═══════════════════════════════
+MISTRAL_SMOKE_OUTPUTS_SHA256 = "fc6d67603f3dfb6981bd4fd95955c5f8923cb5bcdd08984ff1f11d5c1561a00a"
+MISTRAL_RAW_LOG_SHA256 = "c4986233bce379dd1ff374ac856cee41235425e47886d455379f29852aed8aa3"
+
+
+def _mistral():
+    return json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+
+
+def test_mistral_attempt_1_served_the_exact_model_but_every_chat_request_returned_http_400():
+    m = _mistral()
+    a = m["attempts"][-1]
+    assert a["attempt_number"] == 1 and len(m["attempts"]) == 1 and a["provider"] == "Modal" and a["outcome"] == "TECHNICAL_FAILURE" and a["valid_runtime_attempt"] is True
+    assert m["technical_serving_status"] == "FAILED" and m["runtime_qualification_status"] == "FAILED" and m["capability_status"] == "UNPROVEN"
+    assert all(o["http_status"] is None and o["raw_response"] == "" and o["content"] is None and o["executed"] is False for o in m["smoke_outputs"])     # no successful HTTP response at all
+    assert [(x["smoke_id"], x["accepted"]) for x in m["smoke_acceptance"]] == [("A", False), ("B", False), ("C", False)]
+    assert hashlib.sha256(json.dumps(m["smoke_outputs"], sort_keys=True).encode()).hexdigest() == MISTRAL_SMOKE_OUTPUTS_SHA256
+    log = (EVIDENCE_DIR / m["raw_log_artifact"]).read_text()
+    assert log.count('"POST /v1/chat/completions HTTP/1.1" 400 Bad Request') == 3 and "server ready" in log                                      # server was up; all three requests refused
+    assert hashlib.sha256((EVIDENCE_DIR / m["raw_log_artifact"]).read_bytes()).hexdigest() == m["raw_log_sha256"] == MISTRAL_RAW_LOG_SHA256
+    validate_control_runtime_record(m, evidence_root=EVIDENCE_DIR)
+
+
+def test_mistral_attempt_1_identity_flags_prompts_and_no_qwen_leakage_are_evidenced():
+    m = _mistral()
+    locked = LOCKED_CONTROL_IDENTITIES["Mistral-Nemo-Instruct-2407"]
+    ident = m["identity_verification"]
+    assert ident["pinned_revision_matches_runtime_artifact"] is True and ident["runtime_served_model_matches_pinned_id"] is True and ident["no_silent_model_fallback"] is True
+    assert ident["weight_bytes_observed"] == locked["expected_weight_bytes"] and m["model_id"] == locked["model_id"] and m["model_revision"] == locked["revision"]
+    argv = m["server_argv_sanitized"]
+    assert argv[argv.index("--dtype") + 1] == "bfloat16" and "--quantization" not in argv and "--reasoning-parser" not in argv
+    assert argv[argv.index("--tokenizer-mode") + 1] == "hf" and argv[argv.index("--config-format") + 1] == "hf" and argv[argv.index("--load-format") + 1] == "safetensors"
+    assert m.get("runtime_configuration") is None and m["reasoning_parser"] is None and m["reasoning_mode"].startswith("NOT_APPLICABLE")
+    assert all(o["chat_template_kwargs_sent"] is None for o in m["smoke_outputs"])                                                                  # NO Qwen-specific request setting
+    assert [o["prompt_sha256_sent"] for o in m["smoke_outputs"]] == [locked_protocol.prompt_sha256(sid) for sid in "ABC"]
+    assert [p["messages"] for p in m["smoke_prompts"]] == [locked_protocol.messages(sid) for sid in "ABC"] and m["smoke_protocol"]["protocol_sha256"] == CANONICAL_PROTOCOL_SHA256
+
+
+def test_mistral_attempt_1_financials_cleanup_and_owner_cash_are_zero_and_the_settlement_claim_was_honestly_corrected():
+    m = _mistral()
+    assert m["financial_acceptance_status"] == "PASS" and m["owner_billed_delta_usd"] == "0E-8" and m["cleanup_status"] == "PASS" and m["live_resources_after_cleanup"] == 0
+    fin = m["financial_evidence"]
+    after = json.loads((EVIDENCE_DIR / fin["billing_after_artifact"]).read_text())
+    assert after["owner_billed_delta_usd"] == "0E-8" and all(r["billed"] == "0E-8" for r in after["post_run_readings"]) and after["cleanup_snapshot"]["live_resources"] == 0
+    assert after["app_row"]["state"] == "stopped" and after["app_row"]["tasks"] == "0"
+    pre = json.loads((EVIDENCE_DIR / fin["preflight_artifact"]).read_text())
+    assert pre["gate_decision"]["allowed"] is True and Decimal(pre["worst_case_cost_usd"]) <= Decimal("1.25")
+    # the in-run OBSERVED matched itemized rows by the shared app description and so included Qwen attempt 5's app; corrected, original preserved
+    assert m["original_in_run_billing_settlement"]["status"] == "OBSERVED" and m["billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"
+    corr = m["settlement_correction"]
+    assert corr["reclassifies_attempt"] is False and [r["object_id"] for r in corr["foreign_rows_in_original_itemization"]] == ["ap-b6PkVuAdoik7AvUELDwNuQ"]
+    assert hashlib.sha256((EVIDENCE_DIR / corr["reconciliation_artifact"]).read_bytes()).hexdigest() == corr["reconciliation_sha256"]
+    att = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json").read_text())["attempts"][0]
+    assert att["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and att["original_in_run_billing_settlement_status"] == "OBSERVED" and att["outcome"] == "TECHNICAL_FAILURE"
+
+
+def test_the_unobserved_mistral_settlement_keeps_the_gate_for_later_controls_closed(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    attempts = {(t, a["attempt_number"]): a for t, a in mod._modal_attempts()}
+    assert mod.settlement_resolved("QWEN3_8B", attempts[("QWEN3_8B", 5)]) is True and mod.settlement_resolved("QWEN3_8B", attempts[("QWEN3_8B", 4)]) is True
+    assert mod.settlement_resolved("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)]) is False                # not observed => a later control's GPU gate blocks
+    assert mod.validate_owner_settlement_waiver("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)])[0] == "WAIVER_ABSENT"      # the waiver never applies to Mistral
+    assert mod.unresolved_settlement_upper_bound_usd() > 0
+
+
+def test_mistral_and_qwen_records_are_unchanged_by_the_mistral_run_and_phi4_is_untested():
+    assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256 and hashlib.sha256(ATTEMPT_5_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_5_SNAPSHOT_SHA256
+    q = _persisted_qwen()
+    assert q["runtime_qualification_status"] == "FAILED" and q["attempts"][-1]["attempt_number"] == 5 and hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == ATTEMPT_5_SMOKE_OUTPUTS_SHA256
+    phi = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert phi["runtime_qualification_status"] == "NOT_TESTED" and phi["attempts"] == [] and phi["smoke_outputs"] == []
+
+
+def test_a_run_matches_itemized_billing_rows_by_object_id_not_by_the_shared_app_description(monkeypatch, tmp_path):
+    mod, ev, remote_calls = _run_env(monkeypatch, tmp_path, lambda m, r: _fake_container_result(m, r))
+    rows = [{"object_id": "ap-TEST", "description": "orneur-p21b420-h100-control-runtime", "cost": "0.2", "interval_start": "2026-09-25T09:00:00"},
+            {"object_id": "ap-EARLIER-ATTEMPT", "description": "orneur-p21b420-h100-control-runtime", "cost": "0.19", "interval_start": "2026-09-25T08:00:00"}]
+    monkeypatch.setattr(mod, "_cli_json", lambda *a: rows)
+    mod.cmd_run(types.SimpleNamespace(control="qwen3_8b"))
+    after = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT5_BILLING_AFTER_2026-09-24.json").read_text())
+    assert [r["object_id"] for r in after["itemized_rows_for_app"]] == ["ap-TEST"]
+    assert 'x.get("object_id") == app_id' in MODAL_H100.read_text() and 'x.get("description") == app.name' not in MODAL_H100.read_text()
+
+
+def test_a_contaminated_in_run_settlement_is_corrected_honestly_and_the_gate_stays_closed(monkeypatch, tmp_path):
+    mod, before = _reconcile_env(monkeypatch, tmp_path, metered_now="20.50000000", credits_now="-20.50000000", eph_before="20.07689253", eph_now="20.49230719", run_cost="0.20000000")
+    rec_path = tmp_path / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json"
+    rec = json.loads(rec_path.read_text())
+    rec.update(technical_serving_status="FAILED", runtime_qualification_status="FAILED", billing_settlement={"status": "OBSERVED", "reasons": [], "stop_before_next_control": False})
+    rec["attempts"][-1].update(outcome="TECHNICAL_FAILURE", status="TECHNICAL_FAILURE", failure_domain="MODEL_RUNTIME", billing_settlement_status="OBSERVED")
+    after_doc = json.loads((tmp_path / rec["financial_evidence"]["billing_after_artifact"]).read_text())
+    after_doc["itemized_rows_for_app"] = [{"object_id": "ap-OTHER-ATTEMPT", "cost": "0.19"}, {"object_id": "ap-SYNTHETICATTEMPT4", "cost": "0.2"}]
+    (tmp_path / rec["financial_evidence"]["billing_after_artifact"]).write_text(json.dumps(after_doc))
+    rec["financial_evidence"]["billing_after_sha256"] = hashlib.sha256((tmp_path / rec["financial_evidence"]["billing_after_artifact"]).read_bytes()).hexdigest()
+    rec_path.write_text(json.dumps(rec))
+    attempts_path = tmp_path / f"GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_{mod.DATE_TAG}.json"
+    doc = json.loads(attempts_path.read_text())
+    doc["attempts"][-1].update(outcome="TECHNICAL_FAILURE", billing_settlement_status="OBSERVED")
+    attempts_path.write_text(json.dumps(doc))
+    assert mod.settlement_resolved("QWEN3_8B", doc["attempts"][-1]) is True                                # the contaminated claim would have unlocked the next control
+    assert mod.cmd_reconcile(_rc_args(mod)) == 5                                                            # growth 0.4123 vs own row 0.2: not observable
+    out = json.loads(rec_path.read_text())
+    assert out["billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and out["original_in_run_billing_settlement"]["status"] == "OBSERVED"
+    assert out["settlement_correction"]["reclassifies_attempt"] is False and out["technical_serving_status"] == "FAILED" and out["runtime_qualification_status"] == "FAILED"
+    assert out["smoke_outputs"] == rec["smoke_outputs"] and out["raw_log_sha256"] == rec["raw_log_sha256"] and out["financial_evidence"] == rec["financial_evidence"]
+    corrected = json.loads(attempts_path.read_text())["attempts"][-1]
+    assert corrected["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and corrected["original_in_run_billing_settlement_status"] == "OBSERVED"
+    assert mod.settlement_resolved("QWEN3_8B", corrected) is False                                          # the gate is closed again until a reconciliation observes it
