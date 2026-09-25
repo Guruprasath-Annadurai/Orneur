@@ -25,9 +25,10 @@ from pathlib import Path
 
 import pytest
 
+from orca.eval import locked_smoke_protocol as locked_protocol
 from orca.eval.candidate_registry import CandidateExecutionRegistry, EXPECTED_CONTROL_NAMES
 from orca.eval.control_runtime_qualification import (
-    compute_smoke_acceptance,
+    compute_smoke_acceptance, smoke_locked_acceptance,
     ATTEMPT_OUTCOMES,
     CAPABILITY_STATUS,
     LOCKED_CONTROL_IDENTITIES,
@@ -80,7 +81,7 @@ def _qualified_record(tmp_path: Path, control="Phi-4") -> dict:
         raw = json.dumps({"content": {"A": "\n\nREADY", "B": " 5\n", "C": '\n{"status": "ready"}'}[sid]})     # locked contents, surrounding whitespace only
         outputs.append({"smoke_id": sid, "http_status": 200, "raw_response": raw,
                         "raw_response_sha256": hashlib.sha256(raw.encode()).hexdigest(), "executed": False})
-        prompts.append({"smoke_id": sid, "messages": [{"role": "user", "content": "synthetic"}]})
+        prompts.append({"smoke_id": sid, "messages": locked_protocol.messages(sid)})
     return {
         "phase": "21B.4.20", "evidence_kind": "RUNTIME_QUALIFICATION_SMOKE", "control_name": control,
         "model_id": locked["model_id"], "model_revision": locked["revision"], "tokenizer_revision": locked["revision"],
@@ -91,7 +92,7 @@ def _qualified_record(tmp_path: Path, control="Phi-4") -> dict:
         "chat_template_source": "synthetic", "stop_behavior": "synthetic",
         "started_at_utc": "2000-01-01T00:00:00Z", "finished_at_utc": "2000-01-01T00:10:00Z",
         "cold_start_seconds": 100.0, "load_seconds": 50.0, "peak_gpu_memory_bytes": 1, "steady_gpu_memory_bytes": 1,
-        "smoke_prompts": prompts, "generation_config": {"temperature": 0}, "smoke_outputs": outputs,
+        "smoke_prompts": prompts, "smoke_protocol": locked_protocol.protocol_document(), "generation_config": {"temperature": 0}, "smoke_outputs": outputs,
         "latency_seconds": 1.0, "ttft_seconds": 0.1, "generated_tokens": 3, "tokens_per_second": 3.0,
         "technical_serving_status": "QUALIFIED", "financial_preflight_status": "PASSED",
         "financial_acceptance_status": "PASS", "owner_billed_delta_usd": "0",
@@ -1873,7 +1874,7 @@ def _with_smoke(tmp_path, sid, content):
 def test_locked_smoke_wrong_or_verbose_output_blocks_runtime_qualified(tmp_path, sid, content):
     rec = _with_smoke(tmp_path, sid, content)
     assert rec["smoke_outputs"] and all(o["http_status"] == 200 and o["raw_response"] for o in rec["smoke_outputs"])      # HTTP 200 + non-empty is present
-    with pytest.raises(ControlRuntimeError, match="LOCKED smoke"):
+    with pytest.raises(ControlRuntimeError, match="LOCKED (smoke|protocol)"):
         validate_control_runtime_record(rec, evidence_root=tmp_path)
 
 
@@ -1889,13 +1890,13 @@ def test_locked_smoke_acceptance_is_derived_from_raw_output_not_a_stored_flag_or
     rec = _with_smoke(tmp_path, "B", "a verbose answer that ends in 5")
     for o in rec["smoke_outputs"]:
         o["matches_expected_exactly"] = True                                             # a forged boolean changes nothing
-    with pytest.raises(ControlRuntimeError, match="LOCKED smoke"):
+    with pytest.raises(ControlRuntimeError, match="LOCKED (smoke|protocol)"):
         validate_control_runtime_record(rec, evidence_root=tmp_path)
     rec = _qualified_record(tmp_path)
     rec["smoke_outputs"][1]["content"] = "5"                                             # persisted summary disagreeing with the raw response
     rec["smoke_outputs"][1]["raw_response"] = json.dumps({"content": "verbose 5"})
     rec["smoke_outputs"][1]["raw_response_sha256"] = hashlib.sha256(rec["smoke_outputs"][1]["raw_response"].encode()).hexdigest()
-    with pytest.raises(ControlRuntimeError, match="LOCKED smoke"):
+    with pytest.raises(ControlRuntimeError, match="LOCKED (smoke|protocol)"):
         validate_control_runtime_record(rec, evidence_root=tmp_path)
     rec = _qualified_record(tmp_path)
     rec["smoke_acceptance"] = [{"smoke_id": s, "accepted": False} for s in ("A", "B", "C")]
@@ -1923,7 +1924,7 @@ def test_persisted_qwen_attempt_4_cannot_be_runtime_qualified_with_its_existing_
     assert acc["A"]["accepted"] and acc["C"]["accepted"] and acc["B"]["accepted"] is False
     forced = copy.deepcopy(rec)
     forced.update(technical_serving_status="QUALIFIED", runtime_qualification_status="RUNTIME_QUALIFIED")
-    with pytest.raises(ControlRuntimeError, match="LOCKED smoke"):
+    with pytest.raises(ControlRuntimeError, match="LOCKED (smoke|protocol)"):
         validate_control_runtime_record(forced, evidence_root=EVIDENCE_DIR)
     assert rec["runtime_qualification_status"] == "FAILED" and rec["technical_serving_status"] == "FAILED"     # the honest derived status
     validate_control_runtime_record(rec, evidence_root=EVIDENCE_DIR)
@@ -2063,3 +2064,221 @@ def test_qwen_configuration_analysis_script_is_cpu_only_and_executes_nothing():
     for banned in ("import modal", "import torch", "import vllm", "subprocess", "os.system", "eval(", "exec(", "shell=True"):
         assert banned not in text, banned
     assert "ImmutableSandboxedEnvironment" in text
+
+
+# ══ canonical LOCKED smoke protocol: ONE source of truth (governance drift fix) ═══════════════════════
+LOCKED_PROTOCOL_FILE = REPO_ROOT / "orca/eval/locked_smoke_protocol.py"
+CANONICAL_PROTOCOL_SHA256 = "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1"
+CANONICAL_USER_TEXT = {"A": "Reply exactly:\nREADY", "B": "2 + 3", "C": 'Return valid JSON:\n{"status":"ready"}'}       # written independently of the module on purpose
+DRIFTED_USER_TEXT = ("Reply with exactly:\nREADY", "Return the single integer result of:\n2 + 3", 'Return valid JSON with one field:\n{"status":"ready"}')
+ATTEMPT_4_PROMPTS_SHA256 = "afcdec5f49964d38d47d0e35e0f408b92c8ef3401e5393475ad6498b3c065c80"
+
+
+def test_canonical_smoke_texts_are_exactly_the_owner_locked_wording():
+    assert locked_protocol.smoke_ids() == ("A", "B", "C")
+    for sid, text in CANONICAL_USER_TEXT.items():
+        assert locked_protocol.messages(sid) == [{"role": "user", "content": text}]
+        assert locked_protocol.prompt_utf8(sid) == text.encode("utf-8")
+        assert locked_protocol.prompt_sha256(sid) == hashlib.sha256(text.encode("utf-8")).hexdigest()
+    assert locked_protocol.messages("A")[0]["content"] == "Reply exactly:\nREADY"
+    assert locked_protocol.messages("B")[0]["content"] == "2 + 3"
+    assert locked_protocol.messages("C")[0]["content"] == 'Return valid JSON:\n{"status":"ready"}'
+    assert [d["stream"] for d in locked_protocol.SMOKE_DEFINITIONS] == [True, False, False]
+    assert locked_protocol.protocol_sha256() == locked_protocol.PINNED_PROTOCOL_SHA256 == CANONICAL_PROTOCOL_SHA256
+    assert locked_protocol.canonical_protocol_bytes().decode("utf-8").count("Reply exactly") == 1
+    for drifted in DRIFTED_USER_TEXT:
+        assert drifted.encode() not in locked_protocol.canonical_protocol_bytes().replace(b"\\n", b"\n") and drifted not in CANONICAL_USER_TEXT.values()
+
+
+def _mutations():
+    for sid, text in CANONICAL_USER_TEXT.items():
+        for name, changed in filter(lambda nc: nc[1] != text, (("append_char", text + "."), ("drop_last_char", text[:-1]), ("case_change", text.swapcase()), ("trailing_newline", text + "\n"),
+                              ("leading_space", " " + text), ("replace_first_char", "X" + text[1:]), ("nbsp", text.replace(" ", "\u00a0") if " " in text else text + "\u00a0"))):
+            yield sid, name, changed
+
+
+@pytest.mark.parametrize("sid,name,changed", list(_mutations()))
+def test_any_one_character_change_to_a_locked_prompt_changes_the_fingerprint_and_fails_closed(sid, name, changed):
+    defs = copy.deepcopy(locked_protocol.SMOKE_DEFINITIONS)
+    for d in defs:
+        if d["smoke_id"] == sid:
+            d["user"] = changed
+    assert locked_protocol.protocol_sha256(defs) != CANONICAL_PROTOCOL_SHA256
+    assert locked_protocol.prompt_sha256(sid, defs) != locked_protocol.prompt_sha256(sid)
+    with pytest.raises(RuntimeError, match="drift"):
+        locked_protocol.verify_protocol_integrity(defs)
+    # the same edit made to the module source stops every consumer at import time
+    original = LOCKED_PROTOCOL_FILE.read_text()
+    node = next(n for n in ast.walk(ast.parse(original)) if isinstance(n, ast.Constant) and n.value == CANONICAL_USER_TEXT[sid])
+    lines = original.splitlines(keepends=True)
+    assert node.lineno == node.end_lineno
+    line = lines[node.lineno - 1]
+    lines[node.lineno - 1] = line[:node.col_offset] + repr(changed) + line[node.end_col_offset:]
+    src = "".join(lines)
+    assert src != original
+    ns: dict = {"__name__": "drift_probe"}
+    with pytest.raises(RuntimeError, match="drift"):
+        exec(compile(src, "drift_probe", "exec"), ns)          # test-only probe of the module's own import-time integrity check
+
+
+@pytest.mark.parametrize("field,value", [("expected", "READY."), ("stream", False)])
+def test_changing_expected_acceptance_or_request_mode_also_changes_the_fingerprint(field, value):
+    defs = copy.deepcopy(locked_protocol.SMOKE_DEFINITIONS)
+    if field == "expected":
+        defs[0]["acceptance"]["expected"] = value
+    else:
+        defs[0]["stream"] = value
+    assert locked_protocol.protocol_sha256(defs) != CANONICAL_PROTOCOL_SHA256
+    defs = copy.deepcopy(locked_protocol.SMOKE_DEFINITIONS)
+    defs[2]["acceptance"] = {"kind": "exact_text", "expected": '{"status":"ready"}'}
+    assert locked_protocol.protocol_sha256(defs) != CANONICAL_PROTOCOL_SHA256
+
+
+def test_the_protocol_document_persists_messages_bytes_and_hashes():
+    doc = locked_protocol.protocol_document()
+    assert doc["protocol_sha256"] == CANONICAL_PROTOCOL_SHA256 == hashlib.sha256(locked_protocol.canonical_protocol_bytes()).hexdigest()
+    for p in doc["prompts"]:
+        text = CANONICAL_USER_TEXT[p["smoke_id"]]
+        assert p["messages"] == [{"role": "user", "content": text}] and bytes.fromhex(p["utf8_hex"]) == text.encode("utf-8")
+        assert p["sha256"] == hashlib.sha256(text.encode("utf-8")).hexdigest()
+    persisted = json.loads((EVIDENCE_DIR / "GENESIS_LOCKED_SMOKE_PROTOCOL_2026-09-25.json").read_text())
+    assert persisted["protocol"] == doc and persisted["protocol_sha256"] == CANONICAL_PROTOCOL_SHA256 == persisted["pinned_in_module"]
+    drift = persisted["wording_history"]["earlier_runner_wording_drift"]
+    assert tuple(drift["messages"].values()) == DRIFTED_USER_TEXT and drift["protocol_sha256_as_run"] != CANONICAL_PROTOCOL_SHA256
+
+
+def test_runner_both_modal_harnesses_validator_and_record_builder_consume_the_same_definitions(monkeypatch):
+    canonical = locked_protocol.runner_smokes()
+    runner = _runner_module()
+    assert runner.SMOKES == canonical and runner.LOCKED_PROTOCOL.protocol_sha256() == CANONICAL_PROTOCOL_SHA256
+    legacy = importlib.util.spec_from_file_location("p21b420_legacy_consts", HARNESS_PATH)
+    stub = types.ModuleType("modal")
+    stub.Image = type("Image", (), {"from_registry": classmethod(lambda cls, *a, **k: cls()), "entrypoint": lambda self, _c: self})
+    stub.App = lambda n: types.SimpleNamespace(name=n, function=lambda **k: (lambda f: f))
+    stub.exception = types.SimpleNamespace(TimeoutError=TimeoutError)
+    monkeypatch.setitem(sys.modules, "modal", stub)
+    mod = importlib.util.module_from_spec(legacy)
+    legacy.loader.exec_module(mod)
+    assert mod.SMOKES == canonical and mod.LOCKED_PROTOCOL.protocol_sha256() == CANONICAL_PROTOCOL_SHA256
+    h100, calls = _load_modal_h100(monkeypatch)
+    assert h100.PROTOCOL_FILE == LOCKED_PROTOCOL_FILE and (str(LOCKED_PROTOCOL_FILE), "/root/locked_smoke_protocol.py") in [tuple(c) for c in calls["local_files"]]
+    assert h100.locked_protocol.protocol_sha256() == CANONICAL_PROTOCOL_SHA256
+    lc_spec = importlib.util.spec_from_file_location("p21b420_lc_for_protocol", LIGHTNING_CONTROL)
+    lc = importlib.util.module_from_spec(lc_spec)
+    lc_spec.loader.exec_module(lc)
+    assert lc.CONSTS.SMOKES == canonical and lc.LOCKED_PROTOCOL.protocol_document() == locked_protocol.protocol_document()
+    import orca.eval.control_runtime_qualification as v
+    assert v.REQUIRED_SMOKE_IDS == locked_protocol.smoke_ids() and v._locked is locked_protocol
+    assert v.LOCKED_SMOKE_EXPECTATIONS == {d["smoke_id"]: d["acceptance"]["expected"] for d in locked_protocol.SMOKE_DEFINITIONS}
+
+
+_ACCEPTANCE_PROBES = ["READY", "\n\nREADY\n", "Ready", "READY.", "5", " 5 ", "5.", "The answer is 5", "", "  ", '{"status":"ready"}', '\n{ "status" : "ready" }\n',
+                      '{"status":"ready","x":1}', '{"status":"READY"}', "not json", '["status","ready"]', '```json\n{"status":"ready"}\n```', "null", "1"]
+
+
+@pytest.mark.parametrize("probe", _ACCEPTANCE_PROBES)
+def test_acceptance_semantics_agree_between_canonical_validator_and_the_runner_and_legacy_helpers(probe, monkeypatch):
+    runner = _runner_module()
+    stub = types.ModuleType("modal")
+    stub.Image = type("Image", (), {"from_registry": classmethod(lambda cls, *a, **k: cls()), "entrypoint": lambda self, _c: self})
+    stub.App = lambda n: types.SimpleNamespace(name=n, function=lambda **k: (lambda f: f))
+    stub.exception = types.SimpleNamespace(TimeoutError=TimeoutError)
+    monkeypatch.setitem(sys.modules, "modal", stub)
+    spec = importlib.util.spec_from_file_location("p21b420_legacy_helper", HARNESS_PATH)
+    legacy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(legacy)
+    for smoke in locked_protocol.runner_smokes():
+        sid = smoke["smoke_id"]
+        want = locked_protocol.acceptance(sid, probe)[0]
+        assert smoke_locked_acceptance(sid, probe)[0] is want
+        assert runner._meets_acceptance(smoke["acceptance"], probe) is want and legacy._meets_acceptance(smoke["acceptance"], probe) is want
+
+
+def test_the_two_acceptance_helpers_are_source_identical_and_the_serving_bodies_use_them():
+    assert _fn_source(LIGHTNING_RUNNER, "_meets_acceptance") == _fn_source(HARNESS_PATH, "_meets_acceptance")
+    for path in (LIGHTNING_RUNNER, HARNESS_PATH):
+        assert "_meets_acceptance(smoke[\"acceptance\"]" in _fn_source(path, "serve_and_smoke")
+
+
+def test_no_hand_written_smoke_string_exists_outside_the_canonical_module():
+    banned = list(CANONICAL_USER_TEXT.values()) + list(DRIFTED_USER_TEXT)
+    scanned = sorted(REPO_ROOT.glob("scripts/phase21b_4_20_*.py")) + [REPO_ROOT / "orca/eval/control_runtime_qualification.py"]
+    assert len(scanned) >= 6
+    for path in scanned:
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                for b in banned:
+                    assert node.value != b, (path.name, b)
+                assert not any(k in node.value for k in ("Reply exactly", "Reply with exactly", "single integer result")), (path.name, node.value[:60])
+
+
+def test_qwen_configuration_analysis_uses_the_canonical_protocol_and_cannot_substitute_prompts():
+    v2 = json.loads((EVIDENCE_DIR / "GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_V2_CANONICAL_PROMPTS_2026-09-25.json").read_text())
+    assert v2["locked_smoke_protocol_sha256"] == CANONICAL_PROTOCOL_SHA256 and v2["decision"].startswith("A.")
+    for sid, r in v2["rendered_locked_requests"].items():
+        text = CANONICAL_USER_TEXT[sid]
+        assert r["messages_unchanged"] == [{"role": "user", "content": text}]
+        assert r["current_thinking_default"] == f"<|im_start|>user\n{text}<|im_end|>\n<|im_start|>assistant\n"
+        assert r["candidate_enable_thinking_false"] == r["current_thinking_default"] + "<think>\n\n</think>\n\n"
+        assert locked_protocol.prompt_sha256(sid) == v2["locked_smoke_prompt_sha256"][sid]
+    text = (REPO_ROOT / "scripts/phase21b_4_20_qwen_config_analysis.py").read_text()
+    assert "locked_protocol.messages(sid)" in text and not any(b in text for b in DRIFTED_USER_TEXT + tuple(CANONICAL_USER_TEXT.values()))
+    earlier = json.loads(QWEN_ANALYSIS.read_text())
+    assert earlier["rendering_status"] == "SUPERSEDED_DRIFTED_PROMPTS" and earlier["superseded_by"]["artifact"].startswith("GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_V2")
+    assert v2["supersedes"]["artifact"] == QWEN_ANALYSIS.name and len(v2["supersedes"]["original_sha256"]) == 64
+    assert earlier["rendered_locked_requests"]["B"]["messages_unchanged"][0]["content"] == DRIFTED_USER_TEXT[1]      # earlier history preserved, not hidden
+
+
+def test_a_qualified_record_must_use_the_canonical_prompts_and_protocol_fingerprint(tmp_path):
+    validate_control_runtime_record(_qualified_record(tmp_path), evidence_root=tmp_path)
+    rec = _qualified_record(tmp_path)
+    rec["smoke_prompts"][1]["messages"] = [{"role": "user", "content": DRIFTED_USER_TEXT[1]}]
+    with pytest.raises(ControlRuntimeError, match="canonical LOCKED protocol"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec = _qualified_record(tmp_path)
+    del rec["smoke_protocol"]
+    with pytest.raises(ControlRuntimeError, match="smoke_protocol"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec = _qualified_record(tmp_path)
+    rec["smoke_protocol"]["protocol_sha256"] = "0" * 64
+    with pytest.raises(ControlRuntimeError, match="smoke_protocol"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    rec = _qualified_record(tmp_path)
+    rec["smoke_protocol"]["prompts"][0]["sha256"] = "0" * 64
+    with pytest.raises(ControlRuntimeError, match="per-prompt sha256"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_historical_attempt_4_is_untouched_qwen_is_failed_and_mistral_phi_are_not_tested():
+    q = _persisted_qwen()
+    assert hashlib.sha256(json.dumps(q["smoke_prompts"], sort_keys=True).encode()).hexdigest() == ATTEMPT_4_PROMPTS_SHA256           # prompts as actually sent
+    assert tuple(p["messages"][0]["content"] for p in q["smoke_prompts"]) == DRIFTED_USER_TEXT
+    assert hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256
+    assert q["technical_serving_status"] == "FAILED" and q["runtime_qualification_status"] == "FAILED" and q["capability_status"] == "UNPROVEN"
+    assert "smoke_protocol" not in q                                                                                                   # the record was not rewritten
+    validate_control_runtime_record(q, evidence_root=EVIDENCE_DIR)
+    for tag in ("MISTRAL_NEMO", "PHI4"):
+        r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+        assert r["runtime_qualification_status"] == "NOT_TESTED" and r["technical_serving_status"] == "NOT_TESTED" and r["attempts"] == [] and r["smoke_outputs"] == []
+        assert tuple(p["messages"][0]["content"] for p in r["smoke_prompts"]) == tuple(CANONICAL_USER_TEXT.values())
+        assert r["smoke_protocol"]["protocol_sha256"] == CANONICAL_PROTOCOL_SHA256
+        note = r["smoke_prompts_canonicalization"]
+        assert note["superseded_planned_prompts_sha256"] == ATTEMPT_4_PROMPTS_SHA256 and note["canonical_protocol_sha256"] == CANONICAL_PROTOCOL_SHA256
+        validate_control_runtime_record(r, evidence_root=EVIDENCE_DIR)
+
+
+def test_a_drifted_wording_record_cannot_qualify_even_with_perfect_outputs(tmp_path):
+    rec = _qualified_record(tmp_path)
+    for p, d in zip(rec["smoke_prompts"], DRIFTED_USER_TEXT):
+        p["messages"] = [{"role": "user", "content": d}]
+    rec["smoke_protocol"]["protocol_sha256"] = "303f55ca0389142253619b2875a61fad0f06560cbb15022a830454a203e54829"
+    with pytest.raises(ControlRuntimeError, match="canonical LOCKED protocol"):
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_the_modal_harness_proves_the_canonical_protocol_from_inside_the_container_and_fails_closed():
+    text = MODAL_H100.read_text()
+    serve = ast.unparse(next(n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef) and n.name == "serve_and_smoke"))
+    assert "smoke_protocol_sha256" in serve and "smoke_prompt_sha256_sent" in serve and "runner.LOCKED_PROTOCOL.protocol_sha256()" in serve
+    run = ast.unparse(next(n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run"))
+    assert "protocol_ok" in run and "canonical locked smoke protocol" in run and "smoke_prompt_sha256_sent" in run

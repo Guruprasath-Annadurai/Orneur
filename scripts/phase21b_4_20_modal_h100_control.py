@@ -53,6 +53,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = REPO_ROOT / "docs/orneur/phase-21/evidence"
 RUNNER = REPO_ROOT / "scripts/phase21b_4_20_lightning_runner.py"     # provider-neutral serving function (stdlib only)
 LIGHTNING_CONTROL = REPO_ROOT / "scripts/phase21b_4_20_lightning_control.py"
+PROTOCOL_FILE = REPO_ROOT / "orca/eval/locked_smoke_protocol.py"      # the ONE canonical locked-smoke protocol, shipped beside the runner
 CONTROL_KEYS = ("qwen3_8b", "mistral_nemo", "phi4")
 
 image = (
@@ -62,6 +63,7 @@ image = (
     )
     .entrypoint([])
     .add_local_file(str(RUNNER), "/root/runner.py")
+    .add_local_file(str(PROTOCOL_FILE), "/root/locked_smoke_protocol.py")
 )
 volume = modal.Volume.from_name(CACHE_VOLUME, create_if_missing=True)
 app = modal.App("orneur-p21b420-h100-control-runtime")
@@ -110,6 +112,9 @@ def serve_and_smoke(control: str) -> dict:
            "max_model_len": runner.MAX_MODEL_LEN, "gpu_memory_utilization": runner.GPU_MEMORY_UTILIZATION,
            "smoke_max_tokens": lock["smoke_max_tokens"], "ready_deadline_seconds": 420}
     result = runner.serve_and_smoke(cfg)
+    # proof, from inside the container, of exactly which canonical protocol and prompt bytes were sent
+    result["smoke_protocol_sha256"] = runner.LOCKED_PROTOCOL.protocol_sha256()
+    result["smoke_prompt_sha256_sent"] = {x["smoke_id"]: hashlib.sha256(x["user"].encode("utf-8")).hexdigest() for x in cfg["smokes"]}
     try:
         result["stage_manifest"] = json.loads(Path(f"{MOUNT}/p4420/stage_{control}.json").read_text())
     except Exception as e:  # noqa: BLE001
@@ -160,6 +165,7 @@ def _load_lightning_control():
 
 
 if modal.is_local():  # the container only needs the remote functions; orca is not shipped to it
+    from orca.eval import locked_smoke_protocol as locked_protocol  # noqa: E402
     from orca.eval.control_runtime_qualification import (  # noqa: E402
         FAILURE_DOMAIN_BY_OUTCOME, LOCKED_CONTROL_IDENTITIES, assess_settlement, build_financial_reconciliation,
         compute_smoke_acceptance, derive_runtime_status, smoke_locked_acceptance, financial_gate_decision, to_decimal, validate_control_runtime_record,
@@ -490,7 +496,11 @@ def cmd_run(a) -> int:
     tech_ok = bool(result and not result.get("error") and result.get("server_ready") and smokes_ok
                    and all(x.get("http_status") == 200 and x.get("content") and not x.get("error") for x in result["smoke_results"])
                    and result.get("orphan_vllm_processes_after_shutdown") == 0)
-    if error_text is None:
+    protocol_ok = bool(result and result.get("smoke_protocol_sha256") == locked_protocol.protocol_sha256()
+                       and result.get("smoke_prompt_sha256_sent") == {sid: locked_protocol.prompt_sha256(sid) for sid in locked_protocol.smoke_ids()})
+    if error_text is None and result is not None and not protocol_ok:
+        outcome, reason = "HARNESS_FAILURE", "the container did not prove it used the canonical locked smoke protocol (fingerprint / prompt hashes differ)"
+    elif error_text is None:
         if result is not None and (result.get("server_argv_sanitized") or result.get("error")):
             outcome = "TECHNICAL_SUCCESS" if tech_ok else "TECHNICAL_FAILURE"
             reason = ("server ready, all 3 LOCKED smokes matched exactly, clean shutdown" if tech_ok else

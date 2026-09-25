@@ -25,7 +25,7 @@
       "reasoning_effort=none (equivalent mapping but a less direct, version-dependent path)"
     ],
     "id": "qwen3_8b_non_thinking_v1",
-    "locked_messages": "UNCHANGED (LOCKED_SMOKES below)",
+    "locked_messages": "UNCHANGED (the canonical LOCKED protocol; see rendered_locked_requests)",
     "request_setting": {
       "chat_template_kwargs": {
         "enable_thinking": false
@@ -39,7 +39,7 @@
     "bit-exact reproducibility of greedy decoding on the GPU",
     "the effective sampling merge on a live server (generation_config defaults)"
   ],
-  "captured_at_utc": "2026-09-25T06:00:29Z",
+  "captured_at_utc": "2026-09-25T07:08:16Z",
   "chat_template": {
     "chat_template_sha256": "a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8",
     "decisive_clause": "{%- if enable_thinking is defined and enable_thinking is false %} {{- '<think>\\n\\n</think>\\n\\n' }} {%- endif %}",
@@ -104,7 +104,7 @@
       "no quantization",
       "vLLM 0.29.0 pinned image digest",
       "server argv incl. --reasoning-parser qwen3",
-      "locked smoke messages A/B/C",
+      "locked smoke messages A/B/C (canonical protocol)",
       "temperature 0 / top_p 1 / seed 0",
       "generated output never executed"
     ]
@@ -136,6 +136,12 @@
       "attempt 4 stays FAILED and preserved; a new attempt would carry its own configuration id and its own owner authorization"
     ]
   },
+  "locked_smoke_prompt_sha256": {
+    "A": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+    "B": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+    "C": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42"
+  },
+  "locked_smoke_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
   "model": {
     "model_id": "Qwen/Qwen3-8B",
     "precision": "bfloat16",
@@ -174,43 +180,42 @@
   },
   "rendered_locked_requests": {
     "A": {
-      "candidate_enable_thinking_false": "<|im_start|>user\nReply with exactly:\nREADY<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
-      "current_thinking_default": "<|im_start|>user\nReply with exactly:\nREADY<|im_end|>\n<|im_start|>assistant\n",
+      "candidate_enable_thinking_false": "<|im_start|>user\nReply exactly:\nREADY<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "current_thinking_default": "<|im_start|>user\nReply exactly:\nREADY<|im_end|>\n<|im_start|>assistant\n",
       "difference_only_appended_suffix": "<think>\n\n</think>\n\n",
       "messages_unchanged": [
         {
-          "content": "Reply with exactly:\nREADY",
+          "content": "Reply exactly:\nREADY",
           "role": "user"
         }
       ],
       "prompt_prefix_identical": true
     },
     "B": {
-      "candidate_enable_thinking_false": "<|im_start|>user\nReturn the single integer result of:\n2 + 3<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
-      "current_thinking_default": "<|im_start|>user\nReturn the single integer result of:\n2 + 3<|im_end|>\n<|im_start|>assistant\n",
+      "candidate_enable_thinking_false": "<|im_start|>user\n2 + 3<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "current_thinking_default": "<|im_start|>user\n2 + 3<|im_end|>\n<|im_start|>assistant\n",
       "difference_only_appended_suffix": "<think>\n\n</think>\n\n",
       "messages_unchanged": [
         {
-          "content": "Return the single integer result of:\n2 + 3",
+          "content": "2 + 3",
           "role": "user"
         }
       ],
       "prompt_prefix_identical": true
     },
     "C": {
-      "candidate_enable_thinking_false": "<|im_start|>user\nReturn valid JSON with one field:\n{\"status\":\"ready\"}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
-      "current_thinking_default": "<|im_start|>user\nReturn valid JSON with one field:\n{\"status\":\"ready\"}<|im_end|>\n<|im_start|>assistant\n",
+      "candidate_enable_thinking_false": "<|im_start|>user\nReturn valid JSON:\n{\"status\":\"ready\"}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "current_thinking_default": "<|im_start|>user\nReturn valid JSON:\n{\"status\":\"ready\"}<|im_end|>\n<|im_start|>assistant\n",
       "difference_only_appended_suffix": "<think>\n\n</think>\n\n",
       "messages_unchanged": [
         {
-          "content": "Return valid JSON with one field:\n{\"status\":\"ready\"}",
+          "content": "Return valid JSON:\n{\"status\":\"ready\"}",
           "role": "user"
         }
       ],
       "prompt_prefix_identical": true
     }
   },
-  "rendering_status": "SUPERSEDED_DRIFTED_PROMPTS",
   "security_implications": [
     "generated model text is still data only: never eval/exec/shell/import/compile (unchanged)",
     "chat_template_kwargs carries one boolean; no template text or code is supplied by the request (vLLM only honours a request-supplied template when trust_request_chat_template is set, and it is not)",
@@ -259,12 +264,12 @@
       "url": "https://raw.githubusercontent.com/vllm-project/vllm/98dff2a81d747d1dba01a47f939f48c3526d4206/vllm/reasoning/qwen3_engine_reasoning_parser.py"
     }
   },
-  "superseded_by": {
-    "artifact": "GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_V2_CANONICAL_PROMPTS_2026-09-25.json",
-    "canonical_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
-    "original_sha256_before_this_notice": "94fc9707f673df2c3c305d654b0e100b3ea12972f6c4e70c7c1a0b12f3fd76ad",
-    "reason": "its rendered_locked_requests used the runner's drifted smoke wording, not the canonical owner-locked protocol; the corrected rendering is in the superseding artifact. All original content below is preserved unchanged for history."
+  "supersedes": {
+    "artifact": "GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_2026-09-25.json",
+    "original_sha256": "94fc9707f673df2c3c305d654b0e100b3ea12972f6c4e70c7c1a0b12f3fd76ad",
+    "reason": "the earlier artifact rendered the runner's DRIFTED smoke wording (recorded in GENESIS_LOCKED_SMOKE_PROTOCOL_2026-09-25.json under wording_history); this version renders the canonical owner-locked protocol. The template/vLLM analysis itself is unchanged."
   },
+  "version": 2,
   "vllm": {
     "commit": "98dff2a81d747d1dba01a47f939f48c3526d4206",
     "image_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",

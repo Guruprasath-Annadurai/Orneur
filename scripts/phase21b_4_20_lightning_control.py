@@ -99,6 +99,7 @@ def load_modal_constants() -> types.ModuleType:
 
 CONSTS = load_modal_constants()
 CONTROLS = CONSTS.CONTROLS
+from orca.eval import locked_smoke_protocol as LOCKED_PROTOCOL
 from orca.eval.control_runtime_qualification import (  # noqa: E402
     FAILURE_DOMAIN_BY_OUTCOME, LIGHTNING_PROVIDER, LOCKED_CONTROL_IDENTITIES, derive_runtime_status,
     lightning_gate_decision, to_decimal, validate_control_runtime_record,
@@ -453,6 +454,7 @@ def build_lightning_record(control_key, result, attempt_no, attempt, fin, log_pa
         "steady_gpu_memory_bytes": metric("steady_gpu_memory_bytes", None if steady is None else steady * 1024 * 1024, "server never reached steady state"),
         "smoke_prompts": [{"smoke_id": s["smoke_id"], "purpose": s["purpose"], "messages": [{"role": "user", "content": s["user"]}],
                            "expected": s["expected"]} for s in CONSTS.SMOKES],
+        "smoke_protocol": LOCKED_PROTOCOL.protocol_document(),
         "generation_config": result.get("generation_config_sent") or {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": cfg["smoke_max_tokens"]},
         "smoke_outputs": outputs,
         "latency_seconds": metric("latency_seconds", None if not smokes else round(sum(s.get("latency_seconds", 0) for s in smokes), 4), "no smoke request completed"),

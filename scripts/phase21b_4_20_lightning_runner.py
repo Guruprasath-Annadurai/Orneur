@@ -45,11 +45,33 @@ LOCKED = {
              "expected_weight_bytes": 29319042992, "extra_args": [], "smoke_max_tokens": 64},
 }
 
-SMOKES = [
-    {"smoke_id": "A", "purpose": "deterministic readiness", "user": "Reply with exactly:\nREADY", "expected": "READY", "stream": True},
-    {"smoke_id": "B", "purpose": "trivial instruction following", "user": "Return the single integer result of:\n2 + 3", "expected": "5", "stream": False},
-    {"smoke_id": "C", "purpose": "short structured response", "user": "Return valid JSON with one field:\n{\"status\":\"ready\"}", "expected": "{\"status\":\"ready\"}", "stream": False},
-]
+def _load_locked_protocol():
+    """Load the ONE canonical locked-smoke protocol (stdlib-only). Sibling copy first (container / Studio), repo path otherwise."""
+    import importlib.util as _ilu
+    here = Path(__file__).resolve()
+    for cand in (here.with_name("locked_smoke_protocol.py"), here.parents[1] / "orca" / "eval" / "locked_smoke_protocol.py"):
+        if cand.is_file():
+            spec = _ilu.spec_from_file_location("locked_smoke_protocol", cand)
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)          # verifies the pinned protocol fingerprint on import (fails closed on drift)
+            return mod
+    raise RuntimeError("locked_smoke_protocol.py not found next to this script or in the repository")
+
+
+LOCKED_PROTOCOL = _load_locked_protocol()
+SMOKES = LOCKED_PROTOCOL.runner_smokes()      # no hand-written smoke string lives in this file
+
+
+def _meets_acceptance(rule: dict, content) -> bool:
+    """Same semantics as the canonical protocol's `acceptance` (a test cross-checks them): strip whitespace, then exact text or exact JSON object."""
+    text = (content or "").strip()
+    if rule["kind"] == "exact_text":
+        return text == rule["expected"]
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(parsed, dict) and parsed == rule["expected"]
 
 IGNORE_PATTERNS = ["consolidated*", "original/*", "*.pth", "*.bin", "*.gguf", "*.msgpack", "*.h5", "*.onnx"]
 
@@ -261,7 +283,7 @@ def serve_and_smoke(cfg: dict) -> dict:
             except Exception as e:  # noqa: BLE001
                 entry["error"] = f"{type(e).__name__}: {e}"
             entry["latency_seconds"] = round(_time.time() - t_req, 4)
-            entry["matches_expected_exactly"] = (entry.get("content", "").strip() == smoke["expected"])
+            entry["matches_expected_exactly"] = _meets_acceptance(smoke["acceptance"], entry.get("content", ""))
             outputs.append(entry)
             ev(f"smoke {smoke['smoke_id']} status={entry['http_status']} latency={entry['latency_seconds']}s")
         result["smoke_results"] = outputs

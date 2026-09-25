@@ -66,7 +66,7 @@
       "expected": "READY",
       "messages": [
         {
-          "content": "Reply with exactly:\nREADY",
+          "content": "Reply exactly:\nREADY",
           "role": "user"
         }
       ],
@@ -77,7 +77,7 @@
       "expected": "5",
       "messages": [
         {
-          "content": "Return the single integer result of:\n2 + 3",
+          "content": "2 + 3",
           "role": "user"
         }
       ],
@@ -88,7 +88,7 @@
       "expected": "{\"status\":\"ready\"}",
       "messages": [
         {
-          "content": "Return valid JSON with one field:\n{\"status\":\"ready\"}",
+          "content": "Return valid JSON:\n{\"status\":\"ready\"}",
           "role": "user"
         }
       ],
@@ -96,6 +96,150 @@
       "smoke_id": "C"
     }
   ],
+  "smoke_prompts_canonicalization": {
+    "canonical_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
+    "reason": "these were PLANNED prompts (nothing was ever sent to this control) written from a drifted copy of the runner wording; replaced by the canonical owner-locked protocol",
+    "superseded_planned_prompts": [
+      {
+        "expected": "READY",
+        "messages": [
+          {
+            "content": "Reply with exactly:\nREADY",
+            "role": "user"
+          }
+        ],
+        "purpose": "deterministic readiness",
+        "smoke_id": "A"
+      },
+      {
+        "expected": "5",
+        "messages": [
+          {
+            "content": "Return the single integer result of:\n2 + 3",
+            "role": "user"
+          }
+        ],
+        "purpose": "trivial instruction following",
+        "smoke_id": "B"
+      },
+      {
+        "expected": "{\"status\":\"ready\"}",
+        "messages": [
+          {
+            "content": "Return valid JSON with one field:\n{\"status\":\"ready\"}",
+            "role": "user"
+          }
+        ],
+        "purpose": "short structured response",
+        "smoke_id": "C"
+      }
+    ],
+    "superseded_planned_prompts_sha256": "afcdec5f49964d38d47d0e35e0f408b92c8ef3401e5393475ad6498b3c065c80"
+  },
+  "smoke_protocol": {
+    "canonical_json_utf8_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
+    "normalization": "str.strip() (surrounding whitespace only), identical for every smoke",
+    "prompts": [
+      {
+        "acceptance": {
+          "expected": "READY",
+          "kind": "exact_text"
+        },
+        "messages": [
+          {
+            "content": "Reply exactly:\nREADY",
+            "role": "user"
+          }
+        ],
+        "sha256": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+        "smoke_id": "A",
+        "stream": true,
+        "utf8_hex": "5265706c792065786163746c793a0a5245414459"
+      },
+      {
+        "acceptance": {
+          "expected": "5",
+          "kind": "exact_text"
+        },
+        "messages": [
+          {
+            "content": "2 + 3",
+            "role": "user"
+          }
+        ],
+        "sha256": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+        "smoke_id": "B",
+        "stream": false,
+        "utf8_hex": "32202b2033"
+      },
+      {
+        "acceptance": {
+          "expected": {
+            "status": "ready"
+          },
+          "kind": "json_equal"
+        },
+        "messages": [
+          {
+            "content": "Return valid JSON:\n{\"status\":\"ready\"}",
+            "role": "user"
+          }
+        ],
+        "sha256": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42",
+        "smoke_id": "C",
+        "stream": false,
+        "utf8_hex": "52657475726e2076616c6964204a534f4e3a0a7b22737461747573223a227265616479227d"
+      }
+    ],
+    "protocol_id": "GENESIS_CONTROL_RUNTIME_LOCKED_SMOKE_PROTOCOL",
+    "protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
+    "smokes": [
+      {
+        "acceptance": {
+          "expected": "READY",
+          "kind": "exact_text"
+        },
+        "messages": [
+          {
+            "content": "Reply exactly:\nREADY",
+            "role": "user"
+          }
+        ],
+        "smoke_id": "A",
+        "stream": true
+      },
+      {
+        "acceptance": {
+          "expected": "5",
+          "kind": "exact_text"
+        },
+        "messages": [
+          {
+            "content": "2 + 3",
+            "role": "user"
+          }
+        ],
+        "smoke_id": "B",
+        "stream": false
+      },
+      {
+        "acceptance": {
+          "expected": {
+            "status": "ready"
+          },
+          "kind": "json_equal"
+        },
+        "messages": [
+          {
+            "content": "Return valid JSON:\n{\"status\":\"ready\"}",
+            "role": "user"
+          }
+        ],
+        "smoke_id": "C",
+        "stream": false
+      }
+    ]
+  },
   "started_at_utc": "2026-09-24T11:48:04Z",
   "steady_gpu_memory_bytes": null,
   "stop_behavior": "eos_token <|im_end|>; generation_config eos_token_id [100257, 100265]",

@@ -19,7 +19,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_DIR = REPO_ROOT / "docs/orneur/phase-21/evidence"
-OUT = EVIDENCE_DIR / "GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_2026-09-25.json"
+EARLIER = EVIDENCE_DIR / "GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_2026-09-25.json"          # first analysis (drifted runner wording); preserved
+OUT = EVIDENCE_DIR / "GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_V2_CANONICAL_PROMPTS_2026-09-25.json"
+EARLIER_ORIGINAL_SHA256 = "94fc9707f673df2c3c305d654b0e100b3ea12972f6c4e70c7c1a0b12f3fd76ad"      # sha256 of the earlier artifact as committed in 5c3200b (before the supersession notice)
 CACHE = Path("/tmp/p4420/qwen_cfg_analysis")
 
 QWEN_REV = "b968826d9c46dd6066d109eabc6255188de91218"
@@ -37,12 +39,11 @@ SOURCES = {
     "vllm/entrypoints/openai/chat_completion/serving.py": GH + "vllm/entrypoints/openai/chat_completion/serving.py",
     "vllm/entrypoints/launchers/cli_args.py": GH + "vllm/entrypoints/launchers/cli_args.py",
 }
-# the three LOCKED smoke requests, exactly as persisted (messages only; never rewritten to make Qwen pass)
-LOCKED_SMOKES = {
-    "A": [{"role": "user", "content": "Reply with exactly:\nREADY"}],
-    "B": [{"role": "user", "content": "Return the single integer result of:\n2 + 3"}],
-    "C": [{"role": "user", "content": 'Return valid JSON with one field:\n{"status":"ready"}'}],
-}
+sys.path.insert(0, str(REPO_ROOT))
+from orca.eval import locked_smoke_protocol as locked_protocol  # noqa: E402
+
+# the three LOCKED smoke requests come ONLY from the canonical protocol; this tool cannot substitute any other wording
+LOCKED_SMOKES = {sid: locked_protocol.messages(sid) for sid in locked_protocol.smoke_ids()}
 
 
 def fetch(name: str, url: str) -> bytes:
@@ -132,7 +133,9 @@ def main() -> int:
     }
 
     artifact = {
-        "evidence_type": "QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_CPU_ONLY", "phase": "21B.4.20", "captured_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "evidence_type": "QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_CPU_ONLY", "version": 2, "phase": "21B.4.20",
+        "supersedes": {"artifact": EARLIER.name, "original_sha256": EARLIER_ORIGINAL_SHA256, "reason": "the earlier artifact rendered the runner's DRIFTED smoke wording (recorded in GENESIS_LOCKED_SMOKE_PROTOCOL_2026-09-25.json under wording_history); this version renders the canonical owner-locked protocol. The template/vLLM analysis itself is unchanged."},
+        "locked_smoke_protocol_sha256": locked_protocol.protocol_sha256(), "locked_smoke_prompt_sha256": {sid: locked_protocol.prompt_sha256(sid) for sid in locked_protocol.smoke_ids()}, "captured_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "no_gpu_used": True, "no_modal_used": True, "no_model_loaded": True, "no_generation": True, "generated_output_executed": False,
         "model": {"model_id": "Qwen/Qwen3-8B", "revision": QWEN_REV, "precision": "bfloat16", "quantization": None},
         "vllm": {"version": "0.29.0", "commit": VLLM_COMMIT, "image_digest": VLLM_IMAGE_DIGEST,
@@ -148,7 +151,7 @@ def main() -> int:
             "id": "qwen3_8b_non_thinking_v1",
             "request_setting": {"chat_template_kwargs": {"enable_thinking": False}},
             "server_argv": "UNCHANGED (still --reasoning-parser qwen3; the parser adapts from the same kwargs)",
-            "locked_messages": "UNCHANGED (LOCKED_SMOKES below)",
+            "locked_messages": "UNCHANGED (the canonical LOCKED protocol; see rendered_locked_requests)",
             "sampling": "UNCHANGED (temperature 0, top_p 1, seed 0); smoke_max_tokens may stay 1024",
             "alternative_equivalent_form": "--default-chat-template-kwargs '{\"enable_thinking\": false}' (server argv change; not preferred: changes argv)",
             "alternative_excluded": ["/no_think soft switch (edits the locked prompt)", "reasoning_effort=none (equivalent mapping but a less direct, version-dependent path)"]},
@@ -188,7 +191,7 @@ def main() -> int:
         "future_attempt_proposal_NOT_IMPLEMENTED_NOT_AUTHORIZED": {
             "runtime_setting": {"chat_template_kwargs": {"enable_thinking": False}},
             "unchanged": ["Qwen/Qwen3-8B", QWEN_REV, "BF16", "no quantization", "vLLM 0.29.0 pinned image digest", "server argv incl. --reasoning-parser qwen3",
-                          "locked smoke messages A/B/C", "temperature 0 / top_p 1 / seed 0", "generated output never executed"],
+                          "locked smoke messages A/B/C (canonical protocol)", "temperature 0 / top_p 1 / seed 0", "generated output never executed"],
             "files_that_would_change": [
                 "scripts/phase21b_4_20_lightning_runner.py (LOCKED['qwen3_8b'] gains a chat_template_kwargs field; the shared serve_and_smoke request body adds it to the chat-completions payload only when present)",
                 "scripts/phase21b_4_20_modal_h100_control.py (cfg passed to runner.serve_and_smoke carries it; the record persists runtime_configuration_id, chat_template_kwargs and the rendered-prompt sha256; the run must not overwrite attempt 4)",
@@ -200,8 +203,22 @@ def main() -> int:
         "qwen3_8b_status_unchanged": {"technical_serving_status": "FAILED", "runtime_qualification_status": "FAILED", "capability_status": "UNPROVEN"},
     }
     OUT.write_text(json.dumps(artifact, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
+    annotate_earlier()
     print(json.dumps({"artifact": OUT.name, "decision": artifact["decision"], "sha256": hashlib.sha256(OUT.read_bytes()).hexdigest()}, indent=2))
     return 0
+
+
+def annotate_earlier() -> None:
+    """Mark the earlier analysis SUPERSEDED without deleting or rewriting any of its content (its original hash is recorded)."""
+    earlier = json.loads(EARLIER.read_text())
+    if "superseded_by" in earlier:
+        return
+    if hashlib.sha256(EARLIER.read_bytes()).hexdigest() != EARLIER_ORIGINAL_SHA256:
+        raise SystemExit("earlier artifact bytes differ from the committed original; refusing to annotate")
+    earlier["rendering_status"] = "SUPERSEDED_DRIFTED_PROMPTS"
+    earlier["superseded_by"] = {"artifact": OUT.name, "reason": "its rendered_locked_requests used the runner's drifted smoke wording, not the canonical owner-locked protocol; the corrected rendering is in the superseding artifact. All original content below is preserved unchanged for history.",
+                                "original_sha256_before_this_notice": EARLIER_ORIGINAL_SHA256, "canonical_protocol_sha256": locked_protocol.protocol_sha256()}
+    EARLIER.write_text(json.dumps(earlier, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
 
 if __name__ == "__main__":

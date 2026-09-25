@@ -86,10 +86,11 @@ FAILURE_DOMAIN_BY_OUTCOME = {
 CAPABILITY_STATUS = "UNPROVEN"
 EVIDENCE_KIND = "RUNTIME_QUALIFICATION_SMOKE"
 
-REQUIRED_SMOKE_IDS = ("A", "B", "C")
-# LOCKED smoke acceptance (exact, never 'contains' / 'mentions' / 'HTTP 200' / 'non-empty'). The only permitted normalization is
-# stripping surrounding whitespace, applied identically to every smoke. C must PARSE as JSON and equal the exact object.
-LOCKED_SMOKE_EXPECTATIONS = {"A": "READY", "B": "5", "C": {"status": "ready"}}
+from orca.eval import locked_smoke_protocol as _locked  # noqa: E402  (the ONE canonical smoke protocol; verified on import)
+
+REQUIRED_SMOKE_IDS = _locked.smoke_ids()
+# derived views of the canonical protocol; no smoke string or acceptance rule is written by hand here
+LOCKED_SMOKE_EXPECTATIONS = {d["smoke_id"]: d["acceptance"]["expected"] for d in _locked.SMOKE_DEFINITIONS}
 
 # ── financial reconciliation (owner-payable gate AND credit-coverage gate) ──
 MAX_AUTHORIZED_RUN_COST_USD = Decimal("1.25")   # never raised without stopping and reporting
@@ -606,20 +607,8 @@ def extract_smoke_content(output: dict):
 
 
 def smoke_locked_acceptance(smoke_id: str, content) -> tuple[bool, str]:
-    """Pure. Does `content` satisfy the locked smoke requirement exactly? (whitespace-strip only)"""
-    if smoke_id not in LOCKED_SMOKE_EXPECTATIONS:
-        return False, f"unknown smoke {smoke_id!r}"
-    if not isinstance(content, str):
-        return False, "no string content"
-    text = content.strip()
-    want = LOCKED_SMOKE_EXPECTATIONS[smoke_id]
-    if smoke_id in ("A", "B"):
-        return (text == want, "exact match" if text == want else f"content is not exactly {want!r}")
-    try:
-        parsed = json.loads(text)
-    except ValueError:
-        return False, "content is not valid JSON"
-    return (parsed == want and isinstance(parsed, dict), "parsed JSON equals the exact object" if parsed == want else f"parsed JSON is not exactly {json.dumps(want)}")
+    """Pure. Does `content` satisfy the locked smoke requirement exactly? Delegates to the canonical protocol."""
+    return _locked.acceptance(smoke_id, content)
 
 
 def compute_smoke_acceptance(record: dict) -> list[dict]:
@@ -633,7 +622,24 @@ def compute_smoke_acceptance(record: dict) -> list[dict]:
     return sorted(out, key=lambda x: str(x["smoke_id"]))
 
 
+def _check_locked_prompts(record: dict) -> None:
+    """A QUALIFIED record must have been produced with the canonical locked protocol: exact prompts, exact expected values, and the
+    persisted protocol fingerprint equal to the canonical one. A different wording is a different protocol and cannot qualify."""
+    prompts = record.get("smoke_prompts")
+    if not isinstance(prompts, list) or sorted(p.get("smoke_id") for p in prompts if isinstance(p, dict)) != list(REQUIRED_SMOKE_IDS):
+        raise ControlRuntimeError(f"exactly smoke prompts/outputs {REQUIRED_SMOKE_IDS} are required")
+    for p in prompts:
+        if p.get("messages") != _locked.messages(p["smoke_id"]):
+            raise ControlRuntimeError(f"smoke {p['smoke_id']!r} prompt differs from the canonical LOCKED protocol (a different wording cannot qualify)")
+    proto = record.get("smoke_protocol")
+    if not isinstance(proto, dict) or proto.get("protocol_sha256") != _locked.protocol_sha256():
+        raise ControlRuntimeError("a QUALIFIED record must persist smoke_protocol whose protocol_sha256 equals the canonical LOCKED protocol fingerprint")
+    if [(x.get("smoke_id"), x.get("sha256")) for x in proto.get("prompts", [])] != [(sid, _locked.prompt_sha256(sid)) for sid in REQUIRED_SMOKE_IDS]:
+        raise ControlRuntimeError("persisted per-prompt sha256 values do not match the canonical LOCKED prompts")
+
+
 def _check_locked_smokes(record: dict) -> None:
+    _check_locked_prompts(record)
     outputs = record.get("smoke_outputs")
     if not isinstance(outputs, list) or sorted(o.get("smoke_id") for o in outputs if isinstance(o, dict)) != list(REQUIRED_SMOKE_IDS):
         raise ControlRuntimeError(f"exactly smoke prompts/outputs {REQUIRED_SMOKE_IDS} are required")

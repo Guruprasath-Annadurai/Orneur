@@ -96,11 +96,33 @@ CONTROLS = {
     },
 }
 
-SMOKES = [
-    {"smoke_id": "A", "purpose": "deterministic readiness", "user": "Reply with exactly:\nREADY", "expected": "READY", "stream": True},
-    {"smoke_id": "B", "purpose": "trivial instruction following", "user": "Return the single integer result of:\n2 + 3", "expected": "5", "stream": False},
-    {"smoke_id": "C", "purpose": "short structured response", "user": "Return valid JSON with one field:\n{\"status\":\"ready\"}", "expected": "{\"status\":\"ready\"}", "stream": False},
-]
+def _load_locked_protocol():
+    """Load the ONE canonical locked-smoke protocol (stdlib-only). Sibling copy first (container / Studio), repo path otherwise."""
+    import importlib.util as _ilu
+    here = Path(__file__).resolve()
+    for cand in (here.with_name("locked_smoke_protocol.py"), here.parents[1] / "orca" / "eval" / "locked_smoke_protocol.py"):
+        if cand.is_file():
+            spec = _ilu.spec_from_file_location("locked_smoke_protocol", cand)
+            mod = _ilu.module_from_spec(spec)
+            spec.loader.exec_module(mod)          # verifies the pinned protocol fingerprint on import (fails closed on drift)
+            return mod
+    raise RuntimeError("locked_smoke_protocol.py not found next to this script or in the repository")
+
+
+LOCKED_PROTOCOL = _load_locked_protocol()
+SMOKES = LOCKED_PROTOCOL.runner_smokes()      # no hand-written smoke string lives in this file
+
+
+def _meets_acceptance(rule: dict, content) -> bool:
+    """Same semantics as the canonical protocol's `acceptance` (a test cross-checks them): strip whitespace, then exact text or exact JSON object."""
+    text = (content or "").strip()
+    if rule["kind"] == "exact_text":
+        return text == rule["expected"]
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(parsed, dict) and parsed == rule["expected"]
 
 image = (
     modal.Image.from_registry(
@@ -320,7 +342,7 @@ def serve_and_smoke(cfg: dict) -> dict:
             except Exception as e:  # noqa: BLE001
                 entry["error"] = f"{type(e).__name__}: {e}"
             entry["latency_seconds"] = round(_time.time() - t_req, 4)
-            entry["matches_expected_exactly"] = (entry.get("content", "").strip() == smoke["expected"])
+            entry["matches_expected_exactly"] = _meets_acceptance(smoke["acceptance"], entry.get("content", ""))
             outputs.append(entry)
             ev(f"smoke {smoke['smoke_id']} status={entry['http_status']} latency={entry['latency_seconds']}s")
         result["smoke_results"] = outputs
@@ -811,7 +833,7 @@ def build_record(cfg, reg, model_id, revision, result, attempts, attempt, delta,
         "download_seconds": result.get("download_seconds"),
         "peak_gpu_memory_bytes": metric("peak_gpu_memory_bytes", None if peak_mib is None else peak_mib * 1024 * 1024, "no nvidia-smi samples captured"),
         "steady_gpu_memory_bytes": metric("steady_gpu_memory_bytes", None if steady_mib is None else steady_mib * 1024 * 1024, "server never reached steady state"),
-        "smoke_prompts": smoke_prompts, "generation_config": result.get("generation_config_sent") or {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": cfg["smoke_max_tokens"]},
+        "smoke_prompts": smoke_prompts, "smoke_protocol": LOCKED_PROTOCOL.protocol_document(), "generation_config": result.get("generation_config_sent") or {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": cfg["smoke_max_tokens"]},
         "smoke_outputs": smoke_outputs,
         "latency_seconds": metric("latency_seconds", None if not smokes else round(sum(s.get("latency_seconds", 0) for s in smokes), 4), "no smoke request completed"),
         "ttft_seconds": metric("ttft_seconds", first.get("ttft_seconds"), "no streamed first token observed"),
@@ -873,6 +895,7 @@ def write_not_tested(control_key: str, reason: str) -> int:
         "started_at_utc": _now(), "finished_at_utc": _now(),
         "smoke_prompts": [{"smoke_id": s["smoke_id"], "purpose": s["purpose"], "messages": [{"role": "user", "content": s["user"]}],
                            "expected": s["expected"]} for s in SMOKES],
+        "smoke_protocol": LOCKED_PROTOCOL.protocol_document(),
         "generation_config": {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": cfg["smoke_max_tokens"], "note": "planned"},
         "smoke_outputs": [],
         "technical_serving_status": "NOT_TESTED", "financial_preflight_status": "PASSED",

@@ -21,8 +21,8 @@ Runtime qualification is not capability qualification.
 **Qwen3-8B attempt 4 (what is and is not established).** Infrastructure and identity facts hold: exact pinned Qwen3-8B revision
 (identity PASS), BF16 load PASS, Modal H100 serving PASS, cleanup PASS, 0 live resources, owner billed delta 0, promotional-credit
 settlement OBSERVED by the read-only `--mode reconcile` (0.22772907 USD, matching the app's own itemized row and the exact
-per-category metered growth), generated output never executed. But locked Smoke B (`Return the single integer result of: 2 + 3`,
-expected exactly `5`) was answered with a verbose explanation ending in 5, so the locked smoke contract was **not** met. The
+per-category metered growth), generated output never executed. But locked Smoke B (attempt 4 sent the runner's earlier wording `Return the single integer result of: 2 + 3`, see the
+canonical protocol below; expected exactly `5`) was answered with a verbose explanation ending in 5, so the locked smoke contract was **not** met. The
 attempt was first judged on HTTP 200 + non-empty content; an independent audit showed that is not acceptance. The validator now
 enforces the locked semantics (after stripping surrounding whitespace: A == `READY`; B == `5`; C parses as JSON equal to exactly
 `{"status":"ready"}`), and `--mode reevaluate-smokes` (CPU only) re-derived the honest status from the unchanged raw outputs:
@@ -168,14 +168,24 @@ sequence, derived from architecture parameters and **not verified this
 phase**) sit far inside the 72 GB budget, avoiding OOM risk and any reliance
 on unconfirmed multi-GPU tensor-parallel support.
 
-### Smoke prompts (not a benchmark)
+### Smoke prompts (not a benchmark) -- canonical LOCKED protocol
 
-`temperature=0`, `top_p=1`, `seed=0`, small `max_tokens` (1024 for Qwen's
-thinking template, 64 otherwise). User-only messages:
+One source of truth: `orca/eval/locked_smoke_protocol.py` (stdlib only; verifies its pinned fingerprint on import). Persisted, with UTF-8
+bytes and per-prompt hashes, in `GENESIS_LOCKED_SMOKE_PROTOCOL_2026-09-25.json`. **Protocol SHA256:
+`d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1`.**
 
-- **A** — `Reply with exactly:` / `READY` (streamed, for first-token latency)
-- **B** — `Return the single integer result of:` / `2 + 3`
-- **C** — `Return valid JSON with one field:` / `{"status":"ready"}`
+`temperature=0`, `top_p=1`, `seed=0`, small `max_tokens` (1024 for Qwen's thinking template, 64 otherwise). User-only messages:
+
+- **A** — `Reply exactly:\nREADY` (streamed, for first-token latency); accepted iff stripped content == `READY`
+- **B** — `2 + 3`; accepted iff stripped content == `5`
+- **C** — `Return valid JSON:\n{"status":"ready"}`; accepted iff the stripped content parses as JSON equal to exactly `{"status":"ready"}`
+
+**Wording drift (historical, now corrected).** Until 2026-09-25 the runner used a longer wording (`Reply with exactly:\nREADY`,
+`Return the single integer result of:\n2 + 3`, `Return valid JSON with one field:\n{"status":"ready"}`). Qwen3-8B attempt 4 was run with it
+(raw evidence unchanged; protocol fingerprint as run `303f55ca…4829`); the never-sent planned prompts of the Mistral-Nemo and Phi-4
+NOT_TESTED records were canonicalized with the originals preserved. A record produced with any non-canonical wording cannot be
+RUNTIME_QUALIFIED (machine-enforced). The corrected CPU-only Qwen rendering is
+`GENESIS_QWEN3_8B_RUNTIME_CONFIGURATION_ANALYSIS_V2_CANONICAL_PROMPTS_2026-09-25.json`; the earlier analysis artifact is marked superseded and preserved.
 
 Technical PASS = server ready, `/v1/models` identity matches the pinned repo id, clean shutdown, zero orphan processes,
 **and every locked smoke matches exactly** (whitespace stripped only): A == `READY`; B == `5`; C parses as JSON and equals exactly
