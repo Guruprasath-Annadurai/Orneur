@@ -482,21 +482,42 @@ def container_proof_problems(result, model_id: str, locked_revision: str, extra_
 METADATA_CORRECTION_KEYS = ("reasoning_mode", "metadata_correction")     # descriptive fields a documented correction may change
 
 
+SETTLEMENT_SYNC_ATTEMPT_KEYS = ("billing_settlement_status", "original_in_run_billing_settlement_status", "settlement_reconciliation_artifact")
+SETTLEMENT_FINALIZATION_KEYS = ("billing_settlement", "financial_reconciliation", "original_in_run_financial_reconciliation", "original_in_run_billing_settlement",
+                                "settlement_reconciliation", "runtime_qualification_status")
+
+
 def _only_documented_metadata_correction(current: dict, snapshot: dict, snap_path: Path) -> bool:
-    """True iff `current` differs from the immutable `snapshot` ONLY in fields a documented correction (metadata_correction or classification_correction)
-    lists, and that correction references the snapshot by sha256."""
+    """True iff `current` differs from the immutable `snapshot` ONLY in fields a documented correction lists (metadata_correction / classification_correction, each
+    referencing the snapshot by sha256) or in the fields a hash-verified OBSERVED settlement reconciliation finalizes (settlement fields and the attempts' settlement-sync keys)."""
     sha = sha_of(snap_path)
     allowed: set[str] = set()
     note = current.get("metadata_correction")
     if isinstance(note, dict) and note.get("snapshot_sha256") == sha and note.get("reclassifies_attempt") is False:
         allowed |= set(METADATA_CORRECTION_KEYS)
     cc = current.get("classification_correction")
+    attempt_keys: set[str] = set()
     if isinstance(cc, dict) and cc.get("snapshot_sha256") == sha:
-        allowed |= set(cc.get("changed_fields", [])) | {"classification_correction"}
+        allowed |= (set(cc.get("changed_fields", [])) - {"attempts"}) | {"classification_correction"}       # `attempts` is never allowed wholesale: only the classification keys below
+        attempt_keys |= {"outcome", "status", "failure_domain", "reason", "original_classification"} | set(SETTLEMENT_SYNC_ATTEMPT_KEYS)
+    sr = current.get("settlement_reconciliation")
+    settlement_finalized = False
+    if isinstance(sr, dict) and (EVIDENCE_DIR / str(sr.get("artifact", ""))).is_file() and sha_of(EVIDENCE_DIR / sr["artifact"]) == sr.get("sha256"):
+        art = json.loads((EVIDENCE_DIR / sr["artifact"]).read_text())
+        if art.get("settlement", {}).get("status") == "OBSERVED" and art.get("live_resources") == 0:
+            allowed |= set(SETTLEMENT_FINALIZATION_KEYS)
+            attempt_keys |= set(SETTLEMENT_SYNC_ATTEMPT_KEYS)
+            settlement_finalized = True
     if not allowed:
         return False
-    strip = lambda d: {k: v for k, v in d.items() if k not in allowed}
-    return strip(current) == strip(snapshot)
+    top_allowed = allowed | ({"attempts"} if attempt_keys else set())      # attempts are compared separately, key by key, below
+    strip = lambda d: {k: v for k, v in d.items() if k not in top_allowed}
+    if strip(current) != strip(snapshot):
+        return False
+    if attempt_keys:
+        sa = lambda xs: [{k: v for k, v in a.items() if k not in attempt_keys} for a in xs]
+        return sa(current["attempts"]) == sa(snapshot["attempts"])
+    return True
 
 
 def archive_prior_record(tag: str) -> str | None:
@@ -872,9 +893,41 @@ def _set_pending_status(record: dict, rec_path: Path) -> None:
     write_json(rec_path, record)
 
 
+def _atomic_write_pair(items: list[tuple[Path, dict]]) -> None:
+    """Write every (path, data) via a temp file first and only then replace the real files, so a failure while preparing any of them leaves ALL of the
+    existing files untouched."""
+    tmps = []
+    try:
+        for path, data in items:
+            tmp = path.with_name(path.name + ".tmp-finalize")
+            tmp.write_text(json.dumps(data, indent=2, sort_keys=True, default=str) + "\n")
+            tmps.append((tmp, path))
+        for tmp, path in tmps:
+            tmp.replace(path)
+    except BaseException:
+        for tmp, _p in tmps:
+            if tmp.exists():
+                tmp.unlink()
+        raise
+
+
+def _sync_attempt_settlement(attempt: dict, status: str, art_path: Path) -> dict:
+    """The matching attempt's settlement status becomes `status`; every historical field survives (the previous value is kept once as history)."""
+    out = dict(attempt)
+    if out.get("billing_settlement_status") not in (None, status):
+        out.setdefault("original_in_run_billing_settlement_status", out["billing_settlement_status"])
+    out["billing_settlement_status"] = status
+    out["settlement_reconciliation_artifact"] = art_path.name
+    return out
+
+
 def _finalize_record(record: dict, rec_path: Path, art_path: Path, art_sha: str, art: dict, att: dict) -> int:
-    """Finalize WITHOUT rerunning anything. Original in-run settlement/reconciliation are preserved as history; the later reconciliation
-    artifact is the evidence that settlement subsequently became OBSERVED. RUNTIME_QUALIFIED only if the shared validator passes."""
+    """TRANSACTIONAL finalization of a later OBSERVED reconciliation, WITHOUT rerunning anything. The complete candidate runtime record AND the complete candidate
+    attempts file are built and validated first (top-level settlement == embedded attempt == attempts-file entry); only then are both persisted (temp files, then
+    replace). Original in-run settlement/reconciliation, any settlement correction and every other historical field are preserved; the attempt outcome, failure
+    domain, technical status, smoke/HTTP evidence, container proof, identity, raw log and capability are never touched. RUNTIME_QUALIFIED is derived only if
+    the shared validator's rules allow it; a technically NOT_PROVEN / FAILED record stays exactly that -- settlement resolution qualifies nothing."""
+    tag = _tag_of_record(record)
     final = json.loads(json.dumps(record))
     final.setdefault("original_in_run_billing_settlement", record["billing_settlement"])
     final.setdefault("original_in_run_financial_reconciliation", record["financial_reconciliation"])
@@ -884,20 +937,41 @@ def _finalize_record(record: dict, rec_path: Path, art_path: Path, art_sha: str,
                                           "owner_cash_delta_usd": art["owner_cash_delta_usd"]}
     if final.get("runtime_qualification_status") == "PENDING_SETTLEMENT_OBSERVATION" or final.get("validator_note"):
         final.setdefault("original_validator_note", final.pop("validator_note", None))
+    status = art["settlement"]["status"]
+    idx = next((i for i, x in enumerate(final["attempts"]) if x.get("attempt_number") == att["attempt_number"]), None)
+    attempts_all = _load_attempts(tag)
+    fidx = next((i for i, x in enumerate(attempts_all) if x.get("attempt_number") == att["attempt_number"]), None)
+    if idx is None or fidx is None:
+        print("the attempt is missing from the record or from the attempts file; nothing written")
+        return 1
+    final["attempts"][idx] = _sync_attempt_settlement(final["attempts"][idx], status, art_path)
+    cand_attempts = list(attempts_all)
+    cand_attempts[fidx] = _sync_attempt_settlement(attempts_all[fidx], status, art_path)
     final["runtime_qualification_status"] = derive_runtime_status(
         technical=final["technical_serving_status"], financial_acceptance=final["financial_acceptance_status"], cleanup=final["cleanup_status"],
-        owner_billed_delta_usd=final["owner_billed_delta_usd"], live_resources_after_cleanup=final["live_resources_after_cleanup"],
-        settlement_status=final["billing_settlement"]["status"])
+        owner_billed_delta_usd=final["owner_billed_delta_usd"], live_resources_after_cleanup=final["live_resources_after_cleanup"], settlement_status=status)
+    for keep in ("outcome", "failure_domain", "status", "valid_runtime_attempt"):        # nothing about the attempt's classification may change
+        if final["attempts"][idx].get(keep) != record["attempts"][idx].get(keep) or cand_attempts[fidx].get(keep) != attempts_all[fidx].get(keep):
+            print(f"internal check failed: attempt field {keep!r} changed; nothing written")
+            return 1
+    if final["technical_serving_status"] != record["technical_serving_status"] or final.get("capability_status") != record.get("capability_status"):
+        print("internal check failed: technical/capability status changed; nothing written")
+        return 1
+    states = {final["billing_settlement"]["status"], final["attempts"][idx]["billing_settlement_status"], cand_attempts[fidx]["billing_settlement_status"]}
+    if len(states) != 1 or final["attempts"][idx] != cand_attempts[fidx]:
+        print("internal check failed: the record, the embedded attempt and the attempts-file entry do not agree; nothing written")
+        return 1
     try:
         validate_control_runtime_record(final, evidence_root=EVIDENCE_DIR)
     except Exception as e:  # noqa: BLE001
-        print(f"FINALIZED RECORD FAILED VALIDATION -- record left unchanged: {type(e).__name__}: {e}")
+        print(f"FINALIZED RECORD FAILED VALIDATION -- record and attempts file left unchanged: {type(e).__name__}: {e}")
         return 1
     final.pop("validator_note", None)
-    write_json(rec_path, final)
-    print(json.dumps({"runtime_qualification_status": final["runtime_qualification_status"], "record_sha256": sha_of(rec_path),
-                      "promotional_credit_used_usd": art["itemized_run_cost_usd"], "owner_cash_delta_usd": art["owner_cash_delta_usd"]}, indent=2))
-    return 0 if final["runtime_qualification_status"] == "RUNTIME_QUALIFIED" else 1
+    _atomic_write_pair([(rec_path, final), (_attempts_path(tag), {"control_name": final["control_name"], "attempts": cand_attempts})])
+    print(json.dumps({"technical_serving_status": final["technical_serving_status"], "runtime_qualification_status": final["runtime_qualification_status"],
+                      "settlement": status, "record_sha256": sha_of(rec_path), "promotional_credit_used_usd": art["itemized_run_cost_usd"],
+                      "owner_cash_delta_usd": art["owner_cash_delta_usd"]}, indent=2))
+    return 0
 
 
 def cmd_reevaluate_smokes(a) -> int:

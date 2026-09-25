@@ -2,7 +2,7 @@
   "attempts": [
     {
       "attempt_number": 1,
-      "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+      "billing_settlement_status": "OBSERVED",
       "cleanup_result": "PASS",
       "duration_seconds": 176.2,
       "failure_domain": "UNATTRIBUTED",
@@ -25,6 +25,7 @@
       "raw_log_sha256": "c4986233bce379dd1ff374ac856cee41235425e47886d455379f29852aed8aa3",
       "reason": "server ready, exact identity and BF16 load proven; the immutable raw server log proves 3 POST /v1/chat/completions responses with HTTP status [400]; the API error bodies were NOT captured (runner gap), so the rejection is UNATTRIBUTED (model/runtime vs request-format/harness). Chat-completions qualification was NOT established; this is not a pass and not evidence that the model is incompatible",
       "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "settlement_reconciliation_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260925T120607Z.json",
       "started_at_utc": "2026-09-25T09:11:46Z",
       "status": "UNATTRIBUTED_REQUEST_REJECTION",
       "valid_runtime_attempt": true

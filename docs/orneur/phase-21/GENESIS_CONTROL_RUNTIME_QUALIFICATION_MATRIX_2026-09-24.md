@@ -12,7 +12,7 @@ Modal Volume cache (CPU-only pre-cache manifests `GENESIS_CONTROL_*_MODAL_PRECAC
 | Control | Identity | Latest attempt | Locked smokes A / B / C | Technical serving | Financial acceptance | Runtime qualification | Capability |
 |---|---|---|---|---|---|---|---|
 | Qwen3-8B | ADMITTED | **attempt 5**, Modal H100, `qwen3_8b_non_thinking_v1`, 163.2 s, valid runtime attempt, `TECHNICAL_FAILURE` (model-runtime domain); attempts 1-4 preserved | PASS / **FAIL** / PASS | FAILED (locked Smoke B contract not met: `2 + 3 = 5`) | PASS (owner billed delta 0; promotional credit used 0.18768559 USD, settlement OBSERVED in-run) | **FAILED** | UNPROVEN |
-| Mistral-Nemo-Instruct-2407 | ADMITTED | **attempt 1**, Modal H100, 176.2 s: server ready, exact identity + BF16 + locked flags proven; three chat calls returned HTTP 400 (proven by the raw server log; error bodies NOT captured); classified `UNATTRIBUTED_REQUEST_REJECTION` (originally recorded `TECHNICAL_FAILURE`, preserved) | not established (no response content) | **NOT_PROVEN** | PASS (owner billed delta 0; itemized run cost 0.20532158 USD; settlement NOT_YET_OBSERVABLE) | **NOT_COMPLETED** | UNPROVEN |
+| Mistral-Nemo-Instruct-2407 | ADMITTED | **attempt 1**, Modal H100, 176.2 s: server ready, exact identity + BF16 + locked flags proven; three chat calls returned HTTP 400 (proven by the raw server log; error bodies NOT captured); classified `UNATTRIBUTED_REQUEST_REJECTION` (originally recorded `TECHNICAL_FAILURE`, preserved) | not established (no response content) | **NOT_PROVEN** | PASS (owner billed delta 0; itemized run cost 0.20532158 USD; settlement OBSERVED by reconciliation) | **NOT_COMPLETED** | UNPROVEN |
 | Phi-4 | ADMITTED | none | not run | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
 
 **No control is RUNTIME_QUALIFIED.** The single owner-authorized Qwen3-8B attempt 5 has been executed; no retry and no further GPU run is authorized. Mistral-Nemo attempt 1 (owner-authorized, executed once) failed as below; Phi-4 has not been run.
@@ -65,9 +65,14 @@ Qwen received HTTP 200 for the same fields. The immutable raw log has no traceba
 so a template-application error is unlikely, but pydantic request-validation rejections are logged only with `--log-error-stack` and other `create_error_response` paths are not logged, so they cannot be ruled out.
 The exact 400 was **not reproduced** (vLLM cannot be run CPU-only and the model must not be loaded) and the API error bodies were never captured: **B. ROOT CAUSE NOT ESTABLISHED CPU-ONLY.** No fix is proposed; it
 remains UNATTRIBUTED (harness/request configuration vs vLLM runtime vs tokenizer/template vs model runtime). A further attempt would need its own authorization (the runner now captures the error body).
-*Settlement (third read-only reconciliation, 2026-09-25T11:43Z):* still `BILLING_SETTLEMENT_NOT_YET_OBSERVABLE`. The exact metered growth (0.20532159 USD) now equals the run's own itemized row (0.20532158, 1e-8 rounding) and owner billed
+*Settlement (fourth and final read-only reconciliation, 2026-09-25T12:06Z): OBSERVED* (details at the end of this paragraph). The third reconciliation (11:43Z) had returned `BILLING_SETTLEMENT_NOT_YET_OBSERVABLE`. The exact metered growth (0.20532159 USD) now equals the run's own itemized row (0.20532158, 1e-8 rounding) and owner billed
 delta is 0 with 0 live resources, but the check failed only because the stopped app had aged out of Modal's listing; the harness was fixed to accept an unlisted app as not live only when run-time evidence recorded it stopped
-and no live resources exist. The gate stays closed and no waiver applies; the fix has not been exercised on Mistral (exactly one reconciliation was authorized).
+and no live resources exist. The gate stayed closed then; no waiver applied.
+*Fourth reconciliation (`…20260925T120607Z.json`):* with the aged-out-app rule (absent from the listing, run-time evidence proves the exact app stopped with 0 tasks, 0 live resources, 0 containers, object-id
+attribution `ap-LEwLRsdDZiLhSvTgwIPn7g`) the verdict is **SETTLEMENT_OBSERVED**: itemized cost 0.20532158 USD, precise metered delta 0.20532159 (1e-8 rounding), owner billed delta 0. Finalization is
+transactional: the record's top-level settlement, the embedded attempt and the attempts file all say OBSERVED (validated before either is written), the original contaminated in-run OBSERVED, the
+`settlement_correction` and the earlier NOT_YET_OBSERVABLE reconciliation evidence are preserved, and the new artifact is referenced. **Only the financial settlement resolved: Mistral remains
+`UNATTRIBUTED_REQUEST_REJECTION`, technical NOT_PROVEN, runtime NOT_COMPLETED, capability UNPROVEN.** No rerun, no waiver.
 
 **Qwen3-8B attempt 4 (historical).** Preserved byte-identically as `GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json`.
 Thinking default ON and the runner's earlier prompt wording; A PASS, B FAIL (verbose explanation), C PASS; owner billed delta 0; promotional credit

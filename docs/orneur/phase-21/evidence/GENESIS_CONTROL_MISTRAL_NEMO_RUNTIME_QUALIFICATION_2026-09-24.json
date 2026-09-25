@@ -3,7 +3,7 @@
   "attempts": [
     {
       "attempt_number": 1,
-      "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+      "billing_settlement_status": "OBSERVED",
       "cleanup_result": "PASS",
       "duration_seconds": 176.2,
       "failure_domain": "UNATTRIBUTED",
@@ -26,6 +26,7 @@
       "raw_log_sha256": "c4986233bce379dd1ff374ac856cee41235425e47886d455379f29852aed8aa3",
       "reason": "server ready, exact identity and BF16 load proven; the immutable raw server log proves 3 POST /v1/chat/completions responses with HTTP status [400]; the API error bodies were NOT captured (runner gap), so the rejection is UNATTRIBUTED (model/runtime vs request-format/harness). Chat-completions qualification was NOT established; this is not a pass and not evidence that the model is incompatible",
       "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "settlement_reconciliation_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260925T120607Z.json",
       "started_at_utc": "2026-09-25T09:11:46Z",
       "status": "UNATTRIBUTED_REQUEST_REJECTION",
       "valid_runtime_attempt": true
@@ -37,11 +38,9 @@
     "sha256": "6eafee2d2312f530d12302ce421f3c6ba52c2cac64ebd9cd8b55194fe63935d1"
   },
   "billing_settlement": {
-    "reasons": [
-      "metered growth 0.41064317 exceeds the run's own itemized cost 0.20532158 by 0.20532159; the excess cannot be attributed to this run"
-    ],
-    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
-    "stop_before_next_control": true
+    "reasons": [],
+    "status": "OBSERVED",
+    "stop_before_next_control": false
   },
   "capability_status": "UNPROVEN",
   "chat_template_source": "tokenizer_config.json chat_template @ pinned revision (HF path pinned explicitly via --tokenizer-mode hf; mistral-common path NOT used)",
@@ -141,16 +140,16 @@
     "billing_baseline_usd": "0E-8",
     "billing_delta_usd": "0E-8",
     "billing_postrun_usd": "0E-8",
-    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credit_pool_total_usd": "29.7464",
     "credits_applied_baseline_usd": "20.49000000",
-    "credits_applied_postrun_usd": "20.77000000",
+    "credits_applied_postrun_usd": "20.70000000",
     "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
-    "derived_credit_remaining_after_usd": "8.97643194444444444444444444",
-    "derived_credit_remaining_before_usd": "9.25643194444444444444444444",
-    "maximum_authorized_run_cost_usd": "1.08280",
+    "derived_credit_remaining_after_usd": "9.04640000",
+    "derived_credit_remaining_before_usd": "9.25640000",
+    "maximum_authorized_run_cost_usd": "1.0828",
     "metered_baseline_usd": "20.49000000",
-    "metered_delta_usd": "0.28000000",
-    "metered_postrun_usd": "20.77000000",
+    "metered_delta_usd": "0.21000000",
+    "metered_postrun_usd": "20.70000000",
     "null_reasons": {},
     "reserve_usd": "5.00"
   },
@@ -273,6 +272,23 @@
     "status": "OBSERVED",
     "stop_before_next_control": false
   },
+  "original_in_run_financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credits_applied_baseline_usd": "20.49000000",
+    "credits_applied_postrun_usd": "20.77000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "8.97643194444444444444444444",
+    "derived_credit_remaining_before_usd": "9.25643194444444444444444444",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_baseline_usd": "20.49000000",
+    "metered_delta_usd": "0.28000000",
+    "metered_postrun_usd": "20.77000000",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
   "orphan_vllm_processes_after_shutdown": 0,
   "owner_billed_delta_usd": "0E-8",
   "peak_gpu_memory_bytes": 76157026304,
@@ -336,6 +352,12 @@
       "technical result and status",
       "owner billed delta"
     ]
+  },
+  "settlement_reconciliation": {
+    "artifact": "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260925T120607Z.json",
+    "owner_cash_delta_usd": "0E-8",
+    "promotional_credit_used_usd": "0.20532158",
+    "sha256": "34563009e840abc9cfd36d3f4271cc3e1c569179aeb9f94c68715495a2798981"
   },
   "smoke_acceptance": [
     {

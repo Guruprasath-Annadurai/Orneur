@@ -1782,7 +1782,8 @@ def test_reconcile_observed_finalizes_without_rerunning_and_preserves_original_e
     rec = _rc_record(tmp_path)
     assert rec["runtime_qualification_status"] == "RUNTIME_QUALIFIED" and rec["billing_settlement"]["status"] == "OBSERVED"
     assert rec["original_in_run_billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"      # the in-run delay stays historical truth
-    assert rec["attempts"] == before["attempts"] and rec["smoke_outputs"] == before["smoke_outputs"] and rec["raw_log_sha256"] == before["raw_log_sha256"]
+    strip = lambda xs: [{k: v for k, v in a.items() if k not in ("billing_settlement_status", "original_in_run_billing_settlement_status", "settlement_reconciliation_artifact")} for a in xs]
+    assert strip(rec["attempts"]) == strip(before["attempts"]) and rec["smoke_outputs"] == before["smoke_outputs"] and rec["raw_log_sha256"] == before["raw_log_sha256"]
     assert rec["generated_output_executed"] is False and rec["capability_status"] == "UNPROVEN"
     assert rec["settlement_reconciliation"]["sha256"] == hashlib.sha256(art_path.read_bytes()).hexdigest()
     assert rec["settlement_reconciliation"]["promotional_credit_used_usd"] == "0.23000000" and rec["owner_billed_delta_usd"] == "0E-8"
@@ -2572,7 +2573,7 @@ def test_the_existing_financial_gates_are_untouched_and_the_settlement_waiver_st
     assert mod.validate_owner_settlement_waiver("QWEN3_8B", attempts[("QWEN3_8B", 4)])[0] == "WAIVER_ABSENT"      # the waiver never applies to attempt 4
     assert mod.validate_owner_settlement_waiver("QWEN3_8B", attempts[("QWEN3_8B", 1)])[0] == "WAIVER_ACCEPTED"
     assert all(mod.settlement_resolved(t, a) for t, a in mod._modal_attempts() if t == "QWEN3_8B")                    # Qwen attempt 1 by waiver, 4 and 5 by OBSERVED settlement
-    assert not any(mod.settlement_resolved(t, a) for t, a in mod._modal_attempts() if t == "MISTRAL_NEMO")           # Mistral attempt 1 is not yet observed: the gate for a later control stays closed
+    assert all(mod.settlement_resolved(t, a) for t, a in mod._modal_attempts() if t == "MISTRAL_NEMO")               # Mistral attempt 1 is now OBSERVED by reconciliation evidence, not by a waiver
     assert mod.unresolved_settlement_upper_bound_usd() > 0                                                        # attempt 1's conservative exposure stays deducted
 
 
@@ -3160,14 +3161,16 @@ def test_mistral_original_classification_and_the_pre_correction_record_are_prese
     assert cc["snapshot_sha256"] == MISTRAL_SNAPSHOT_SHA256 and cc["from"]["outcome"] == "TECHNICAL_FAILURE" and cc["to"]["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION"
     assert "chat-completions qualification" in cc["not_established"] and "any model incompatibility" in cc["not_established"] and "server ready" in cc["established"]
     changed = {k for k in set(snap) | set(cur) if snap.get(k) != cur.get(k)}
-    assert changed == set(cc["changed_fields"]) | {"classification_correction"} == {"attempts", "technical_serving_status", "runtime_qualification_status", "container_execution_proof",
-                                                                                     "http_error_evidence_gap", "classification_correction"}
-    for key in ("smoke_outputs", "raw_log_sha256", "raw_log_artifact", "financial_evidence", "financial_reconciliation", "billing_settlement", "original_in_run_billing_settlement",
+    assert set(cc["changed_fields"]) | {"classification_correction"} == {"attempts", "technical_serving_status", "runtime_qualification_status", "container_execution_proof",
+                                                                          "http_error_evidence_gap", "classification_correction"}
+    # the later, hash-verified OBSERVED settlement reconciliation additionally finalized ONLY the settlement fields
+    assert changed == set(cc["changed_fields"]) | {"classification_correction", "billing_settlement", "financial_reconciliation", "original_in_run_financial_reconciliation", "settlement_reconciliation"}
+    for key in ("smoke_outputs", "raw_log_sha256", "raw_log_artifact", "financial_evidence", "original_in_run_billing_settlement",
                 "settlement_correction", "identity_verification", "server_argv_sanitized", "started_at_utc", "finished_at_utc", "cold_start_seconds", "load_seconds",
                 "latency_seconds", "peak_gpu_memory_bytes", "owner_billed_delta_usd", "smoke_prompts", "smoke_protocol"):
         assert cur[key] == snap[key], key
     strip = lambda a: {k: v for k, v in a.items() if k not in ("outcome", "status", "failure_domain", "reason", "original_classification", "billing_settlement_status",
-                                                                 "original_in_run_billing_settlement_status")}
+                                                                 "original_in_run_billing_settlement_status", "settlement_reconciliation_artifact")}
     assert strip(cur["attempts"][-1]) == strip(snap["attempts"][-1])                                                                            # timings, ids, log hash untouched
 
 
@@ -3196,23 +3199,24 @@ def test_mistral_attempt_1_financials_cleanup_and_owner_cash_are_zero_and_the_se
     pre = json.loads((EVIDENCE_DIR / fin["preflight_artifact"]).read_text())
     assert pre["gate_decision"]["allowed"] is True and Decimal(pre["worst_case_cost_usd"]) <= Decimal("1.25")
     # the in-run OBSERVED matched itemized rows by the shared app description and so included Qwen attempt 5's app; corrected, original preserved
-    assert m["original_in_run_billing_settlement"]["status"] == "OBSERVED" and m["billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"
+    assert m["original_in_run_billing_settlement"]["status"] == "OBSERVED"                              # the contaminated original determination is preserved as history
+    assert m["billing_settlement"]["status"] == "OBSERVED" and m["settlement_reconciliation"]["artifact"].endswith("20260925T120607Z.json")     # finally OBSERVED by exact-attribution reconciliation
     corr = m["settlement_correction"]
     assert corr["reclassifies_attempt"] is False and [r["object_id"] for r in corr["foreign_rows_in_original_itemization"]] == ["ap-b6PkVuAdoik7AvUELDwNuQ"]
     assert hashlib.sha256((EVIDENCE_DIR / corr["reconciliation_artifact"]).read_bytes()).hexdigest() == corr["reconciliation_sha256"]
     att = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json").read_text())["attempts"][0]
-    assert att["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and att["original_in_run_billing_settlement_status"] == "OBSERVED" and att["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION"
+    assert att["billing_settlement_status"] == "OBSERVED" and att["original_in_run_billing_settlement_status"] == "OBSERVED" and att["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION"
     assert m["attempts"][-1] == att and m["attempts"][-1]["billing_settlement_status"] == m["billing_settlement"]["status"]       # embedded == top-level == attempts file
 
 
-def test_the_unobserved_mistral_settlement_keeps_the_gate_for_later_controls_closed(monkeypatch):
+def test_the_observed_mistral_settlement_is_resolved_by_evidence_never_by_a_waiver(monkeypatch):
     mod, _ = _load_modal_h100(monkeypatch)
-    attempts = {(t, a["attempt_number"]): a for t, a in mod._modal_attempts()}
+    attempts = {(tag, a["attempt_number"]): a for tag, a in mod._modal_attempts()}
     assert mod.settlement_resolved("QWEN3_8B", attempts[("QWEN3_8B", 5)]) is True and mod.settlement_resolved("QWEN3_8B", attempts[("QWEN3_8B", 4)]) is True
-    assert mod.settlement_resolved("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)]) is False                # not observed => a later control's GPU gate blocks
-    assert mod.validate_owner_settlement_waiver("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)])[0] == "WAIVER_ABSENT"      # the waiver never applies to Mistral
-    assert mod.unresolved_settlement_upper_bound_usd() > 0
-
+    assert mod.settlement_resolved("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)]) is True                  # observed by the exact-attribution reconciliation
+    assert mod.validate_owner_settlement_waiver("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)])[0] == "WAIVER_ABSENT"      # ... and NOT by a waiver
+    assert not any(p.name.startswith("GENESIS_OWNER_SETTLEMENT_WAIVER_MISTRAL") for p in EVIDENCE_DIR.iterdir())
+    assert mod.unresolved_settlement_upper_bound_usd() > 0                                                  # Qwen attempt 1's exposure is still deducted
 
 def test_mistral_and_qwen_records_are_unchanged_by_the_mistral_run_and_phi4_is_untested():
     assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256 and hashlib.sha256(ATTEMPT_5_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_5_SNAPSHOT_SHA256
@@ -3558,8 +3562,10 @@ def test_the_cpu_only_reclassification_reproduces_the_persisted_mistral_record_a
     assert (ev / MISTRAL_SNAPSHOT.name).read_bytes() == MISTRAL_SNAPSHOT.read_bytes()                       # snapshot taken first, byte-identical
     out = json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
     persisted = _mistral()
-    for key in ("attempts", "technical_serving_status", "runtime_qualification_status", "container_execution_proof", "http_error_evidence_gap"):
+    strip = lambda xs: [{k: v for k, v in a.items() if k not in ("billing_settlement_status", "settlement_reconciliation_artifact")} for a in xs]
+    for key in ("technical_serving_status", "container_execution_proof", "http_error_evidence_gap"):
         assert out[key] == persisted[key], key
+    assert strip(out["attempts"]) == strip(persisted["attempts"]) and out["runtime_qualification_status"] == persisted["runtime_qualification_status"] == "NOT_COMPLETED"
     first = (ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_bytes()
     assert mod.cmd_reclassify_unattributed(args) == 0 and (ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_bytes() == first    # idempotent
     body = ast.unparse(next(n for n in ast.walk(ast.parse(MODAL_H100.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "cmd_reclassify_unattributed"))
@@ -3587,12 +3593,14 @@ def test_the_reclassification_refuses_when_the_raw_log_does_not_prove_the_reject
 def test_mistral_final_state_settlement_gate_and_neighbours_after_the_remediation(monkeypatch):
     m = _mistral()
     assert m["technical_serving_status"] == "NOT_PROVEN" and m["runtime_qualification_status"] == "NOT_COMPLETED" and m["capability_status"] == "UNPROVEN"
-    assert m["owner_billed_delta_usd"] == "0E-8" and m["billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"
-    art = json.loads((EVIDENCE_DIR / m["settlement_correction"]["reconciliation_artifact"]).read_text())
-    assert art["itemized_run_cost_usd"] == "0.20532158" and art["owner_billed_delta_usd"] == "0E-8" and art["settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"
+    assert m["owner_billed_delta_usd"] == "0E-8" and m["billing_settlement"]["status"] == "OBSERVED"
+    art = json.loads((EVIDENCE_DIR / m["settlement_reconciliation"]["artifact"]).read_text())
+    assert art["itemized_run_cost_usd"] == "0.20532158" and art["owner_billed_delta_usd"] == "0E-8" and art["settlement"]["status"] == "OBSERVED" and art["app_listing"] == "ABSENT_FROM_LISTING_RUNTIME_EVIDENCE_STOPPED"
+    earlier = json.loads((EVIDENCE_DIR / m["settlement_correction"]["reconciliation_artifact"]).read_text())
+    assert earlier["settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"                       # the earlier downgrade evidence is preserved
     mod, _ = _load_modal_h100(monkeypatch)
     attempts = {(t, a["attempt_number"]): a for t, a in mod._modal_attempts()}
-    assert mod.settlement_resolved("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)]) is False and mod.validate_owner_settlement_waiver("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)])[0] == "WAIVER_ABSENT"
+    assert mod.settlement_resolved("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)]) is True and mod.validate_owner_settlement_waiver("MISTRAL_NEMO", attempts[("MISTRAL_NEMO", 1)])[0] == "WAIVER_ABSENT"
     assert not any(p.name.startswith("GENESIS_OWNER_SETTLEMENT_WAIVER_MISTRAL") for p in EVIDENCE_DIR.iterdir())
     q = _persisted_qwen()
     assert q["runtime_qualification_status"] == "FAILED" and hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == ATTEMPT_5_SMOKE_OUTPUTS_SHA256
@@ -3808,5 +3816,143 @@ def test_the_third_read_only_reconciliation_left_mistral_unresolved_owner_cash_z
     assert r["metered_delta_precise_usd"] == "0.20532159" and r["metered_unattributed_usd"] == "1E-8"                # the exact growth now equals the run's own row (1e-8 rounding)
     assert any("not in state 'stopped'" in x for x in r["settlement"]["reasons"]) and r["app_row"] is None       # unresolved only because the aged-out app was judged by the listing (harness fixed since)
     m = _mistral()
-    assert m["billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and m["technical_serving_status"] == "NOT_PROVEN" and m["runtime_qualification_status"] == "NOT_COMPLETED"
-    assert m["owner_billed_delta_usd"] == "0E-8" and "runtime_configuration" in m
+    assert m["technical_serving_status"] == "NOT_PROVEN" and m["runtime_qualification_status"] == "NOT_COMPLETED" and m["owner_billed_delta_usd"] == "0E-8"
+    assert m["settlement_reconciliation"]["artifact"] != MISTRAL_RECON_3.name                                # the later (fourth) reconciliation, not this one, finalized the settlement
+
+
+# ══ transactional settlement finalization: record, embedded attempt and attempts file move together; settlement resolution qualifies nothing ═══════════
+def _mistral_like_env(monkeypatch, tmp_path, **env):
+    """An UNATTRIBUTED (technical NOT_PROVEN) record whose settlement was corrected to NOT_YET_OBSERVABLE, with a later reconciliation that will observe it."""
+    mod, before = _reconcile_env(monkeypatch, tmp_path, **env)
+    rec_path = tmp_path / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json"
+    attempts_path = tmp_path / f"GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_{mod.DATE_TAG}.json"
+    rec = json.loads(rec_path.read_text())
+    unresolved = {"status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE", "reasons": ["excess cannot be attributed"], "stop_before_next_control": True}
+    rec.update(technical_serving_status="NOT_PROVEN", runtime_qualification_status="NOT_COMPLETED", billing_settlement=unresolved,
+               original_in_run_billing_settlement={"status": "OBSERVED", "reasons": [], "stop_before_next_control": False},
+               settlement_correction={"reason": "in-run OBSERVED was contaminated by another attempt's rows", "reclassifies_attempt": False})
+    last = rec["attempts"][-1]
+    last.update(outcome="UNATTRIBUTED_REQUEST_REJECTION", status="UNATTRIBUTED_REQUEST_REJECTION", failure_domain="UNATTRIBUTED", billing_settlement_status="BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+                original_in_run_billing_settlement_status="OBSERVED", settlement_correction="see earlier reconciliation")
+    rec_path.write_text(json.dumps(rec, indent=2, sort_keys=True) + "\n")
+    doc = json.loads(attempts_path.read_text())
+    doc["attempts"][-1] = dict(last)
+    attempts_path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    validate_control_runtime_record(rec, evidence_root=tmp_path)                       # the pre-reconciliation state is itself valid and consistent
+    return mod, rec_path, attempts_path, rec, doc
+
+
+def test_an_observed_reconciliation_updates_the_record_the_embedded_attempt_and_the_attempts_file_together(monkeypatch, tmp_path):
+    mod, rec_path, attempts_path, before, before_att = _mistral_like_env(monkeypatch, tmp_path)
+    assert mod.cmd_reconcile(_rc_args(mod)) == 0
+    art_path = _rc_artifacts(tmp_path)[-1]
+    art = json.loads(art_path.read_text())
+    assert art["settlement"]["status"] == "OBSERVED"
+    rec = json.loads(rec_path.read_text())
+    file_att = json.loads(attempts_path.read_text())["attempts"][-1]
+    emb = rec["attempts"][-1]
+    assert rec["billing_settlement"]["status"] == emb["billing_settlement_status"] == file_att["billing_settlement_status"] == "OBSERVED"            # all three agree
+    assert emb == file_att                                                                                                                             # identical attempt state
+    assert rec["settlement_reconciliation"]["artifact"] == art_path.name and rec["settlement_reconciliation"]["sha256"] == hashlib.sha256(art_path.read_bytes()).hexdigest()
+    assert emb["settlement_reconciliation_artifact"] == art_path.name                                                                                  # the final OBSERVED cites the NEW artifact
+    assert rec["settlement_reconciliation"]["promotional_credit_used_usd"] == art["itemized_run_cost_usd"]
+    validate_control_runtime_record(rec, evidence_root=tmp_path)
+
+
+def test_the_finalization_preserves_the_contaminated_history_and_changes_nothing_else(monkeypatch, tmp_path):
+    mod, rec_path, attempts_path, before, before_att = _mistral_like_env(monkeypatch, tmp_path)
+    assert mod.cmd_reconcile(_rc_args(mod)) == 0
+    rec = json.loads(rec_path.read_text())
+    emb = rec["attempts"][-1]
+    assert rec["original_in_run_billing_settlement"] == before["original_in_run_billing_settlement"] and rec["original_in_run_billing_settlement"]["status"] == "OBSERVED"
+    assert rec["settlement_correction"] == before["settlement_correction"]                                                                             # the downgrade history survives
+    assert emb["original_in_run_billing_settlement_status"] == "OBSERVED" and emb["settlement_correction"] == "see earlier reconciliation"
+    assert rec["original_in_run_financial_reconciliation"] == before["financial_reconciliation"]
+    for key in ("technical_serving_status", "runtime_qualification_status", "capability_status", "smoke_outputs", "smoke_prompts", "smoke_protocol", "smoke_acceptance",
+                "raw_log_sha256", "raw_log_artifact", "identity_verification", "server_argv_sanitized", "financial_evidence", "owner_billed_delta_usd", "cleanup_status",
+                "live_resources_after_cleanup", "container_execution_proof", "http_error_evidence_gap", "classification_correction", "model_id", "model_revision"):
+        assert rec.get(key) == before.get(key), key
+    for key in ("outcome", "status", "failure_domain", "valid_runtime_attempt", "reason", "duration_seconds", "started_at_utc", "finished_at_utc", "modal_app_id", "raw_log_sha256"):
+        assert emb.get(key) == before["attempts"][-1].get(key), key
+    assert rec["technical_serving_status"] == "NOT_PROVEN" and rec["runtime_qualification_status"] == "NOT_COMPLETED" and rec["capability_status"] == "UNPROVEN"   # settlement qualifies nothing
+    assert emb["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION" and emb["failure_domain"] == "UNATTRIBUTED"
+
+
+def test_an_unobserved_reconciliation_leaves_the_record_and_the_attempts_file_untouched(monkeypatch, tmp_path):
+    mod, rec_path, attempts_path, before, before_att = _mistral_like_env(monkeypatch, tmp_path, metered_now="20.50000000", credits_now="-20.50000000",
+                                                                         eph_before="20.07689253", eph_now="20.49230719", run_cost="0.20000000")
+    rb, ab = rec_path.read_bytes(), attempts_path.read_bytes()
+    assert mod.cmd_reconcile(_rc_args(mod)) == 5
+    assert rec_path.read_bytes() == rb and attempts_path.read_bytes() == ab
+
+
+def test_a_failed_validation_persists_nothing_partial(monkeypatch, tmp_path):
+    mod, rec_path, attempts_path, before, before_att = _mistral_like_env(monkeypatch, tmp_path)
+    rb, ab = rec_path.read_bytes(), attempts_path.read_bytes()
+    real = mod.validate_control_runtime_record
+
+    def boom(record, evidence_root=None):
+        if record["billing_settlement"]["status"] == "OBSERVED":
+            raise ControlRuntimeError("synthetic validation failure")
+        return real(record, evidence_root=evidence_root)
+
+    monkeypatch.setattr(mod, "validate_control_runtime_record", boom)
+    assert mod.cmd_reconcile(_rc_args(mod)) == 1
+    assert rec_path.read_bytes() == rb and attempts_path.read_bytes() == ab                                       # neither file changed
+    assert not list(tmp_path.glob("*.tmp-finalize"))
+    assert _rc_artifacts(tmp_path), "the timestamped reconciliation artifact may remain as immutable evidence"
+
+
+def test_a_failure_while_writing_the_pair_leaves_both_original_files_intact(tmp_path):
+    mod = types.SimpleNamespace()
+    spec = importlib.util.spec_from_file_location("p21b420_atomic_probe", MODAL_H100)
+    stub = types.ModuleType("modal")
+    stub.Image = type("Image", (), {"from_registry": classmethod(lambda cls, *a, **k: cls()), "entrypoint": lambda self, _c: self, "add_local_file": lambda self, *a, **k: self})
+    stub.App = lambda n: types.SimpleNamespace(name=n, function=lambda **k: (lambda f: f))
+    stub.Volume = types.SimpleNamespace(from_name=lambda *a, **k: None)
+    stub.is_local = lambda: True
+    sys.modules["modal"] = stub
+    try:
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+    finally:
+        sys.modules.pop("modal", None)
+    a, b = tmp_path / "a.json", tmp_path / "b.json"
+    a.write_text('{"v": 1}')
+    b.write_text('{"v": 2}')
+    with pytest.raises(FileNotFoundError):
+        m._atomic_write_pair([(a, {"v": 10}), (tmp_path / "missing_dir" / "b.json", {"v": 20})])       # the second file cannot even be prepared
+    assert json.loads(a.read_text()) == {"v": 1} and json.loads(b.read_text()) == {"v": 2} and not list(tmp_path.glob("*.tmp-finalize"))
+    m._atomic_write_pair([(a, {"v": 10}), (b, {"v": 20})])
+    assert json.loads(a.read_text()) == {"v": 10} and json.loads(b.read_text()) == {"v": 20}
+
+
+def test_the_finalizer_source_is_transactional_and_calls_no_provider():
+    text = MODAL_H100.read_text()
+    fn = ast.unparse(next(n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef) and n.name == "_finalize_record"))
+    assert fn.index("validate_control_runtime_record") < fn.index("_atomic_write_pair") and "write_json(" not in fn
+    for banned in ("serve_and_smoke", ".remote(", "app.run", "billing_summary", "_cli_json", "subprocess", "eval(", "exec("):
+        assert banned not in fn, banned
+    assert "_sync_attempt_settlement" in fn and "the record, the embedded attempt and the attempts-file entry do not agree" in fn
+
+
+def test_the_finalizer_leaves_qwen_and_phi_evidence_as_recorded():
+    assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256 and hashlib.sha256(ATTEMPT_5_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_5_SNAPSHOT_SHA256
+    q = _persisted_qwen()
+    assert q["runtime_qualification_status"] == "FAILED" and hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == ATTEMPT_5_SMOKE_OUTPUTS_SHA256
+    phi = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert phi["runtime_qualification_status"] == "NOT_TESTED" and phi["attempts"] == [] and phi["smoke_outputs"] == []
+
+
+def test_a_later_launch_still_accepts_the_finalized_mistral_record_against_its_immutable_snapshot(monkeypatch, tmp_path):
+    mod, _ = _load_modal_h100(monkeypatch)
+    assert mod.archive_prior_record("MISTRAL_NEMO") == MISTRAL_SNAPSHOT.name                                 # classification correction + settlement finalization are the only differences
+    ev = tmp_path / "evidence"
+    shutil.copytree(EVIDENCE_DIR, ev)
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
+    rec_path = ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json"
+    tampered = json.loads(rec_path.read_text())
+    tampered["attempts"][-1]["duration_seconds"] = 1.0                                                       # anything beyond the documented fields (e.g. a timing metric) is refused
+    rec_path.write_text(json.dumps(tampered))
+    with pytest.raises(RuntimeError, match="refusing to overwrite prior-attempt evidence"):
+        mod.archive_prior_record("MISTRAL_NEMO")
