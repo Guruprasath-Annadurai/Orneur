@@ -4,8 +4,8 @@
     {
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md",
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "94acd7953f37130680c798c05405195801140e39d8e9685d40e97f29de7a0369",
-      "size_bytes": 31734
+      "sha256": "1c07289e0f5a08be90e735345062cf0c430858077b8093ff9084b0a46af1d46b",
+      "size_bytes": 33929
     },
     {
       "evidence_role": "genesis_billing_discrepancy_observation_2026-09-24.json",
@@ -52,8 +52,8 @@
     {
       "evidence_role": "genesis_control_mistral_nemo_attempts_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json",
-      "sha256": "27b996fa158c29f7a1f5065a8f06eaee4cffb7e443f7b63f468aa2802ca0736c",
-      "size_bytes": 2009
+      "sha256": "b4b79accd887e47ee0d74cd4b765042e4241694b4dcc2541bdece76563102776",
+      "size_bytes": 3134
     },
     {
       "evidence_role": "genesis_control_mistral_nemo_lightning_stage_manifest_2026-09-24.json",
@@ -106,8 +106,8 @@
     {
       "evidence_role": "genesis_control_mistral_nemo_runtime_qualification_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json",
-      "sha256": "bbde9921df216a253cf5f0f01a3210530e776794dd0bcad5e0f110e31e2d9464",
-      "size_bytes": 21818
+      "sha256": "7eabbd15d5b7a6ef89edb2641de7d259db11fa5779a23e6cac648fe690d7b929",
+      "size_bytes": 21395
     },
     {
       "evidence_role": "genesis_control_mistral_nemo_runtime_qualification_attempt1_snapshot_2026-09-24.json",
@@ -444,6 +444,36 @@
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_GPU_PREFLIGHT_2026-09-25T164921Z.json",
       "sha256": "c1df21da24719fd6cd2d68b54d663c9d5bab7c6134fb77b10879eed44c71fd6c",
       "size_bytes": 2874
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_modal_h100_attempt2_billing_after_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_BILLING_AFTER_2026-09-24.json",
+      "sha256": "71c5d18cb7f57c13ec707e80378388fa803eced1672c075933df3ffcdc3d4beb",
+      "size_bytes": 4056
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_modal_h100_attempt2_billing_before_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_BILLING_BEFORE_2026-09-24.json",
+      "sha256": "33a3c9f0d8e11ddaa9f2039322e0cea646b232833d89926155170d5334c28377",
+      "size_bytes": 584
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_modal_h100_attempt2_financial_preflight_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_FINANCIAL_PREFLIGHT_2026-09-24.json",
+      "sha256": "cd8cce46f63fb49c23e0d5af13c58fcd229022300e664199afa6f5def788df25",
+      "size_bytes": 2992
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_modal_h100_attempt2_raw_log_2026-09-24.txt",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_RAW_LOG_2026-09-24.txt",
+      "sha256": "42f4e8404fca206eb3d7e589170f3d418527093060979c09f795309fe503317e",
+      "size_bytes": 32959
+    },
+    {
+      "evidence_role": "genesis_control_mistral_nemo_runtime_qualification_attempt1_finalized_snapshot_2026-09-25.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT1_FINALIZED_SNAPSHOT_2026-09-25.json",
+      "sha256": "bbde9921df216a253cf5f0f01a3210530e776794dd0bcad5e0f110e31e2d9464",
+      "size_bytes": 21818
     }
   ],
   "evidence_type": "GENESIS_CONTROL_RUNTIME_QUALIFICATION_INTEGRITY_INDEX",

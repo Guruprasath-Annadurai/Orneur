@@ -30,26 +30,6 @@
       "started_at_utc": "2026-09-25T09:11:46Z",
       "status": "UNATTRIBUTED_REQUEST_REJECTION",
       "valid_runtime_attempt": true
-    },
-    {
-      "attempt_number": 2,
-      "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
-      "cleanup_result": "PASS",
-      "duration_seconds": 140.0,
-      "failure_domain": "UNATTRIBUTED",
-      "finished_at_utc": "2026-09-25T17:14:54Z",
-      "modal_app_id": "ap-euwY3zXbgcZfGoZiRNstFt",
-      "modal_app_name": "orneur-p21b420-h100-control-runtime",
-      "outcome": "UNATTRIBUTED_REQUEST_REJECTION",
-      "owner_billed_delta_usd": "0E-8",
-      "provider": "Modal",
-      "raw_log_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_RAW_LOG_2026-09-24.txt",
-      "raw_log_sha256": "42f4e8404fca206eb3d7e589170f3d418527093060979c09f795309fe503317e",
-      "reason": "server ready and identity proven, but the API rejected smoke call(s) at HTTP level (statuses [400, 400, 400]); the rejection is not attributable to the model without diagnosis (see http_error)",
-      "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
-      "started_at_utc": "2026-09-25T17:12:34Z",
-      "status": "UNATTRIBUTED_REQUEST_REJECTION",
-      "valid_runtime_attempt": true
     }
   ],
   "attention_backend": "FLASH_ATTN attention backend out of potential",
@@ -58,16 +38,61 @@
     "sha256": "6eafee2d2312f530d12302ce421f3c6ba52c2cac64ebd9cd8b55194fe63935d1"
   },
   "billing_settlement": {
-    "reasons": [
-      "the completed run's metered usage is not yet visible in the account totals (metered_delta == 0)"
-    ],
-    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
-    "stop_before_next_control": true
+    "reasons": [],
+    "status": "OBSERVED",
+    "stop_before_next_control": false
   },
   "capability_status": "UNPROVEN",
   "chat_template_source": "tokenizer_config.json chat_template @ pinned revision (HF path pinned explicitly via --tokenizer-mode hf; mistral-common path NOT used)",
+  "classification_correction": {
+    "changed_fields": [
+      "attempts",
+      "technical_serving_status",
+      "runtime_qualification_status",
+      "container_execution_proof",
+      "http_error_evidence_gap"
+    ],
+    "established": [
+      "server ready",
+      "exact pinned identity",
+      "BF16 load",
+      "exact locked server flags",
+      "3 HTTP [400] responses (server log)"
+    ],
+    "from": {
+      "failure_domain": "MODEL_RUNTIME",
+      "outcome": "TECHNICAL_FAILURE",
+      "runtime_qualification_status": "FAILED",
+      "technical_serving_status": "FAILED"
+    },
+    "kind": "CONSERVATIVE CLASSIFICATION: an unknown HTTP-level rejection cannot be attributed to the model",
+    "not_established": [
+      "chat-completions qualification",
+      "the cause of the HTTP rejection",
+      "any model incompatibility"
+    ],
+    "reclassifies_settlement": false,
+    "snapshot_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT1_SNAPSHOT_2026-09-24.json",
+    "snapshot_sha256": "5bcf5aa8423ea22082a554c39edf414dea27b45511dca1f3c18136e4fe9fd5df",
+    "to": {
+      "failure_domain": "UNATTRIBUTED",
+      "outcome": "UNATTRIBUTED_REQUEST_REJECTION",
+      "runtime_qualification_status": "NOT_COMPLETED",
+      "technical_serving_status": "NOT_PROVEN"
+    },
+    "unchanged": [
+      "raw log",
+      "billing before/after",
+      "financial preflight",
+      "smoke raw fields",
+      "model identity evidence",
+      "server argv",
+      "timing metrics",
+      "run timestamps"
+    ]
+  },
   "cleanup_status": "PASS",
-  "cold_start_seconds": 117.07,
+  "cold_start_seconds": 153.09,
   "container_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
   "container_execution_proof": {
     "chat_template_kwargs_sent": {
@@ -84,52 +109,51 @@
       "B": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
       "C": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42"
     },
-    "provenance": "CONTAINER_RETURNED",
+    "provenance": "RECONSTRUCTED_FROM_PERSISTED_EVIDENCE",
     "quantization": null,
     "reasoning_parser": null,
+    "reconstruction_note": "the container-returned proof object was computed and verified by the harness at run time (the attempt was not a HARNESS_FAILURE) but was not persisted; this proof is reconstructed from persisted evidence (server_argv_sanitized, identity_verification, per-smoke prompt_sha256_sent / chat_template_kwargs_sent, smoke_protocol). runtime_policy_sha256 is not reconstructable and is null.",
     "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
     "runtime_configuration_id": null,
     "runtime_configuration_id_applied": null,
     "runtime_configuration_sha256": null,
-    "runtime_policy_sha256": "50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e",
+    "runtime_policy_sha256": null,
     "served_model_id": "mistralai/Mistral-Nemo-Instruct-2407",
     "smoke_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
     "tokenizer_mode": "hf"
   },
   "container_image": "vllm/vllm-openai:v0.29.0",
   "control_name": "Mistral-Nemo-Instruct-2407",
-  "download_seconds": 0.02,
+  "download_seconds": 0.05,
   "evidence_kind": "RUNTIME_QUALIFICATION_SMOKE",
   "financial_acceptance_status": "PASS",
   "financial_evidence": {
-    "billing_after_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_BILLING_AFTER_2026-09-24.json",
-    "billing_after_sha256": "71c5d18cb7f57c13ec707e80378388fa803eced1672c075933df3ffcdc3d4beb",
-    "billing_before_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_BILLING_BEFORE_2026-09-24.json",
-    "billing_before_sha256": "33a3c9f0d8e11ddaa9f2039322e0cea646b232833d89926155170d5334c28377",
-    "preflight_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_FINANCIAL_PREFLIGHT_2026-09-24.json",
-    "preflight_sha256": "cd8cce46f63fb49c23e0d5af13c58fcd229022300e664199afa6f5def788df25"
+    "billing_after_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_BILLING_AFTER_2026-09-24.json",
+    "billing_after_sha256": "55536ef6330e1d975c7a3a0ce76de72c515c93f056422f92da4a15eb676cd924",
+    "billing_before_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_BILLING_BEFORE_2026-09-24.json",
+    "billing_before_sha256": "0528f1cc7f8f8590f739f6b81d3b58fdb701cb14f57785d664e0d71dad06c673",
+    "preflight_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_FINANCIAL_PREFLIGHT_2026-09-24.json",
+    "preflight_sha256": "12aab707f9334ef3734b426ff4412aa32de8743cffc81b735879404a8d5d5d29"
   },
   "financial_preflight_status": "PASSED",
   "financial_reconciliation": {
     "billing_baseline_usd": "0E-8",
     "billing_delta_usd": "0E-8",
     "billing_postrun_usd": "0E-8",
-    "credit_pool_total_usd": "29.74643194444444444444444444",
-    "credits_applied_baseline_usd": "20.70000000",
+    "credit_pool_total_usd": "29.7464",
+    "credits_applied_baseline_usd": "20.49000000",
     "credits_applied_postrun_usd": "20.70000000",
     "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
-    "derived_credit_remaining_after_usd": "9.04643194444444444444444444",
-    "derived_credit_remaining_before_usd": "9.04643194444444444444444444",
-    "maximum_authorized_run_cost_usd": "1.08280",
-    "metered_baseline_usd": "20.89627853",
-    "metered_delta_usd": "0E-8",
-    "metered_postrun_usd": "20.89627853",
-    "non_credit_adjustments_baseline_usd": "-0.19627853",
-    "non_credit_adjustments_postrun_usd": "-0.19627853",
+    "derived_credit_remaining_after_usd": "9.04640000",
+    "derived_credit_remaining_before_usd": "9.25640000",
+    "maximum_authorized_run_cost_usd": "1.0828",
+    "metered_baseline_usd": "20.49000000",
+    "metered_delta_usd": "0.21000000",
+    "metered_postrun_usd": "20.70000000",
     "null_reasons": {},
     "reserve_usd": "5.00"
   },
-  "finished_at_utc": "2026-09-25T17:14:54Z",
+  "finished_at_utc": "2026-09-25T09:14:42Z",
   "generated_output_executed": false,
   "generated_tokens": 0,
   "generation_config": {
@@ -146,13 +170,38 @@
   "gpu_provider": "Modal",
   "gpu_type": "NVIDIA H100 80GB (Modal H100)",
   "health_status": 200,
+  "http_error_evidence_gap": {
+    "api_error_bodies_captured": false,
+    "preserved_unchanged": {
+      "http_status": [
+        null,
+        null,
+        null
+      ],
+      "raw_response": [
+        "",
+        "",
+        ""
+      ]
+    },
+    "proven_by_immutable_raw_server_log": {
+      "artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt",
+      "post_chat_completions_statuses": [
+        400,
+        400,
+        400
+      ],
+      "sha256": "c4986233bce379dd1ff374ac856cee41235425e47886d455379f29852aed8aa3"
+    },
+    "statement": "HTTP 400 is proven by the server log, but the corresponding API error bodies were not captured (urllib raised HTTPError before status/body were recorded). They are not reconstructed. The shared runner now captures them for future requests."
+  },
   "identity_verification": {
     "cpu_stage_manifest_all_lfs_sha256_match": true,
     "identity_evidence_strength": "HF snapshot dir == pinned commit AND summed shard bytes == recorded exact bytes AND every staged file's sha256 equals the Hugging Face LFS sha256 (CPU stage manifest) AND /v1/models id == pinned repo id AND server started from that local snapshot with HF_HUB_OFFLINE=1. vLLM exposes no separate runtime revision field.",
     "models_endpoint": {
       "data": [
         {
-          "created": 1790356485,
+          "created": 1790327673,
           "id": "mistralai/Mistral-Nemo-Instruct-2407",
           "max_model_len": 4096,
           "object": "model",
@@ -166,9 +215,9 @@
               "allow_sampling": true,
               "allow_search_indices": false,
               "allow_view": true,
-              "created": 1790356485,
+              "created": 1790327673,
               "group": null,
-              "id": "modelperm-a8358fbe548c1d3c",
+              "id": "modelperm-8f97492afb71f8a3",
               "is_blocking": false,
               "object": "model_permission",
               "organization": "*"
@@ -210,21 +259,43 @@
       }
     ]
   },
-  "latency_seconds": 0.0092,
+  "latency_seconds": 0.0102,
   "license": "apache-2.0",
   "live_resources_after_cleanup": 0,
-  "load_seconds": 9.09,
+  "load_seconds": 17.11,
   "max_model_len": 4096,
   "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
   "model_revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
   "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests. Generated output was treated as data and never executed. Executed on Modal (canonical provider) on 1 x H100 80GB with weights from a hash-verified Modal Volume cache; earlier Modal, Lightning, Hugging Face and razorBridge attempts are preserved in attempts.",
+  "original_in_run_billing_settlement": {
+    "reasons": [],
+    "status": "OBSERVED",
+    "stop_before_next_control": false
+  },
+  "original_in_run_financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credits_applied_baseline_usd": "20.49000000",
+    "credits_applied_postrun_usd": "20.77000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "8.97643194444444444444444444",
+    "derived_credit_remaining_before_usd": "9.25643194444444444444444444",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_baseline_usd": "20.49000000",
+    "metered_delta_usd": "0.28000000",
+    "metered_postrun_usd": "20.77000000",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
   "orphan_vllm_processes_after_shutdown": 0,
   "owner_billed_delta_usd": "0E-8",
   "peak_gpu_memory_bytes": 76157026304,
   "phase": "21B.4.20",
   "precision": "bfloat16",
-  "raw_log_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_RAW_LOG_2026-09-24.txt",
-  "raw_log_sha256": "42f4e8404fca206eb3d7e589170f3d418527093060979c09f795309fe503317e",
+  "raw_log_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt",
+  "raw_log_sha256": "c4986233bce379dd1ff374ac856cee41235425e47886d455379f29852aed8aa3",
   "reasoning_mode": "NOT_APPLICABLE (non-reasoning instruct model)",
   "reasoning_parser": null,
   "runtime_configuration": null,
@@ -259,6 +330,35 @@
     "safetensors"
   ],
   "server_exit_code": 0,
+  "settlement_correction": {
+    "foreign_rows_in_original_itemization": [
+      {
+        "cost": "0.18768559",
+        "description": "orneur-p21b420-h100-control-runtime",
+        "environment": "main",
+        "interval_start": "2026-09-25T08:00:00",
+        "object_id": "ap-b6PkVuAdoik7AvUELDwNuQ"
+      }
+    ],
+    "reason": "the in-run OBSERVED was computed from itemized rows that included another attempt's app (rows were matched by the shared app description, not by object id); the read-only exact-attribution reconciliation cannot confirm settlement",
+    "reclassifies_attempt": false,
+    "reconciliation_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260925T103022Z.json",
+    "reconciliation_sha256": "efd8c201208f7badf1a6933c29eead9d8203bc31d19b30c073c58ab18f67135a",
+    "unchanged": [
+      "raw responses",
+      "raw log",
+      "smoke outputs",
+      "container proof",
+      "technical result and status",
+      "owner billed delta"
+    ]
+  },
+  "settlement_reconciliation": {
+    "artifact": "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT1_SETTLEMENT_RECONCILIATION_20260925T120607Z.json",
+    "owner_cash_delta_usd": "0E-8",
+    "promotional_credit_used_usd": "0.20532158",
+    "sha256": "34563009e840abc9cfd36d3f4271cc3e1c569179aeb9f94c68715495a2798981"
+  },
   "smoke_acceptance": [
     {
       "accepted": false,
@@ -283,37 +383,14 @@
     {
       "chat_template_kwargs_sent": null,
       "content": null,
-      "error": "HTTPError: HTTP Error 400: Bad Request",
       "executed": false,
       "finish_reason": null,
-      "http_error": {
-        "body_bytes": 216,
-        "body_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
-        "error_class": "HTTPError",
-        "headers": {
-          "content-length": "216",
-          "content-type": "application/json",
-          "date": "Fri, 25 Sep 2026 17:14:50 GMT",
-          "server": "uvicorn"
-        },
-        "reason": "Bad Request",
-        "smoke_id": "A",
-        "status": 400,
-        "structured_error": {
-          "error": {
-            "code": 400,
-            "message": "As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.",
-            "param": null,
-            "type": "BadRequestError"
-          }
-        }
-      },
-      "http_status": 400,
-      "latency_seconds": 0.0051,
+      "http_status": null,
+      "latency_seconds": 0.0058,
       "matches_expected_exactly": false,
       "prompt_sha256_sent": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
-      "raw_response": "{\"error\":{\"message\":\"As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.\",\"type\":\"BadRequestError\",\"param\":null,\"code\":400}}",
-      "raw_response_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
+      "raw_response": "",
+      "raw_response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "smoke_id": "A",
       "ttft_seconds": null,
       "usage": null
@@ -321,37 +398,14 @@
     {
       "chat_template_kwargs_sent": null,
       "content": null,
-      "error": "HTTPError: HTTP Error 400: Bad Request",
       "executed": false,
       "finish_reason": null,
-      "http_error": {
-        "body_bytes": 216,
-        "body_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
-        "error_class": "HTTPError",
-        "headers": {
-          "content-length": "216",
-          "content-type": "application/json",
-          "date": "Fri, 25 Sep 2026 17:14:50 GMT",
-          "server": "uvicorn"
-        },
-        "reason": "Bad Request",
-        "smoke_id": "B",
-        "status": 400,
-        "structured_error": {
-          "error": {
-            "code": 400,
-            "message": "As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.",
-            "param": null,
-            "type": "BadRequestError"
-          }
-        }
-      },
-      "http_status": 400,
-      "latency_seconds": 0.0024,
+      "http_status": null,
+      "latency_seconds": 0.0028,
       "matches_expected_exactly": false,
       "prompt_sha256_sent": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
-      "raw_response": "{\"error\":{\"message\":\"As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.\",\"type\":\"BadRequestError\",\"param\":null,\"code\":400}}",
-      "raw_response_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
+      "raw_response": "",
+      "raw_response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "smoke_id": "B",
       "ttft_seconds": null,
       "usage": null
@@ -359,37 +413,14 @@
     {
       "chat_template_kwargs_sent": null,
       "content": null,
-      "error": "HTTPError: HTTP Error 400: Bad Request",
       "executed": false,
       "finish_reason": null,
-      "http_error": {
-        "body_bytes": 216,
-        "body_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
-        "error_class": "HTTPError",
-        "headers": {
-          "content-length": "216",
-          "content-type": "application/json",
-          "date": "Fri, 25 Sep 2026 17:14:50 GMT",
-          "server": "uvicorn"
-        },
-        "reason": "Bad Request",
-        "smoke_id": "C",
-        "status": 400,
-        "structured_error": {
-          "error": {
-            "code": 400,
-            "message": "As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.",
-            "param": null,
-            "type": "BadRequestError"
-          }
-        }
-      },
-      "http_status": 400,
-      "latency_seconds": 0.0017,
+      "http_status": null,
+      "latency_seconds": 0.0016,
       "matches_expected_exactly": false,
       "prompt_sha256_sent": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42",
-      "raw_response": "{\"error\":{\"message\":\"As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.\",\"type\":\"BadRequestError\",\"param\":null,\"code\":400}}",
-      "raw_response_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
+      "raw_response": "",
+      "raw_response_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "smoke_id": "C",
       "ttft_seconds": null,
       "usage": null
@@ -534,7 +565,7 @@
       }
     ]
   },
-  "started_at_utc": "2026-09-25T17:12:34Z",
+  "started_at_utc": "2026-09-25T09:11:46Z",
   "steady_gpu_memory_bytes": 76157026304,
   "stop_behavior": "eos_token </s>; instruction tokens [INST] [/INST]",
   "technical_serving_status": "NOT_PROVEN",

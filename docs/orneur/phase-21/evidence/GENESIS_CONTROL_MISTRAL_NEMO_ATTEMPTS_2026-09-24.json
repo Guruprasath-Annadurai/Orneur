@@ -29,6 +29,26 @@
       "started_at_utc": "2026-09-25T09:11:46Z",
       "status": "UNATTRIBUTED_REQUEST_REJECTION",
       "valid_runtime_attempt": true
+    },
+    {
+      "attempt_number": 2,
+      "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+      "cleanup_result": "PASS",
+      "duration_seconds": 140.0,
+      "failure_domain": "UNATTRIBUTED",
+      "finished_at_utc": "2026-09-25T17:14:54Z",
+      "modal_app_id": "ap-euwY3zXbgcZfGoZiRNstFt",
+      "modal_app_name": "orneur-p21b420-h100-control-runtime",
+      "outcome": "UNATTRIBUTED_REQUEST_REJECTION",
+      "owner_billed_delta_usd": "0E-8",
+      "provider": "Modal",
+      "raw_log_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "42f4e8404fca206eb3d7e589170f3d418527093060979c09f795309fe503317e",
+      "reason": "server ready and identity proven, but the API rejected smoke call(s) at HTTP level (statuses [400, 400, 400]); the rejection is not attributable to the model without diagnosis (see http_error)",
+      "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "started_at_utc": "2026-09-25T17:12:34Z",
+      "status": "UNATTRIBUTED_REQUEST_REJECTION",
+      "valid_runtime_attempt": true
     }
   ],
   "control_name": "Mistral-Nemo-Instruct-2407"
