@@ -75,6 +75,8 @@ transactional: the record's top-level settlement, the embedded attempt and the a
 `UNATTRIBUTED_REQUEST_REJECTION`, technical NOT_PROVEN, runtime NOT_COMPLETED, capability UNPROVEN.** No rerun, no waiver.
 
 **Mistral-Nemo attempt 2 (owner-authorized): NOT STARTED, the fresh live preflight was BLOCKED.** The existing gate refused: credits applied 20.70 do not cover metered 20.89627853 (owner billed still 0). A new metered
+
+**Financial-gate correction (2026-09-25):** the 12:27 block was a false block (old assumption: all metered cost must be covered by `credits`; the provider's `free_storage` adjustment already offset the 0.19627853 volume metering). The gate now reconciles metered + all adjustments == billed == 0 for owner-payable coverage and keeps GPU runway promotional-credit-only. A corrected read-only preflight (`GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_GPU_PREFLIGHT_2026-09-25T130507Z.json`) returned ALLOWED (remaining promotional credit 9.0464, reserve 5.00, worst case 1.0828, headroom 2.9636). **The GPU was NOT started; attempt 2 remains UNSTARTED pending independent audit.** See `GENESIS_MODAL_FINANCIAL_GATE_CORRECTION_2026-09-25.json`.
 category `volumes` = 0.19627853 USD (the Modal Volume holding the three pre-cached model revisions) appeared; ephemeral-app metering is unchanged, so it is not GPU usage. No GPU, no Modal function, no volume change, no retry of the
 gate. Whether the storage charge will be absorbed by credits/free storage or become owner-billed is not established. Evidence: `GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_GPU_PREFLIGHT_2026-09-25T122704Z.json`,
 `GENESIS_MODAL_VOLUME_METERING_DIAGNOSIS_2026-09-25.json`. The authorization for attempt 2 remains unused; Mistral stays NOT_PROVEN / NOT_COMPLETED.

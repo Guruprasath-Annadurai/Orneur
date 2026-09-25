@@ -1,0 +1,47 @@
+{
+  "code": [
+    "orca/eval/control_runtime_qualification.py::provider_billing_reconciliation (new)",
+    "::financial_gate_decision",
+    "::build_financial_reconciliation",
+    "::assess_settlement"
+  ],
+  "corrected_preflight_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_GPU_PREFLIGHT_2026-09-25T130507Z.json",
+  "corrected_preflight_gate_decision": {
+    "adjustments_usd": {
+      "credits": "-20.70000000",
+      "free_storage": "-0.19627853",
+      "network_egress_allowance": "0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "allowed": true,
+    "billed_cost_usd": "0E-8",
+    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credits_applied_usd": "20.70000000",
+    "current_owner_payable_covered": true,
+    "headroom_usd": "2.96363194444444444444444444",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_cost_usd": "20.89627853",
+    "non_credit_adjustments_usd": "-0.19627853",
+    "provider_recomputed_billed_usd": "0E-8",
+    "reasons": [],
+    "remaining_credit_usd": "9.04643194444444444444444444",
+    "remaining_promotional_credit_usd": "9.04643194444444444444444444",
+    "reserve_usd": "5.00"
+  },
+  "date": "2026-09-25",
+  "evidence_type": "GENESIS_MODAL_FINANCIAL_GATE_CORRECTION",
+  "future_storage_note": "Free storage coverage is established only for the current live reading; every preflight re-reads live billing.",
+  "gpu_started": false,
+  "historical_blocked_preflight": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_GPU_PREFLIGHT_2026-09-25T122704Z.json (remains valid evidence that the OLD gate blocked)",
+  "historical_evidence_unchanged": true,
+  "new_model": {
+    "current_owner_payable_coverage": "provider_recomputed_billed = metered + sum(ALL numeric adjustments); must equal billed_cost and billed_cost must be 0; unreadable/non-finite values, mismatch, positive billed, or prior positive billing block",
+    "future_gpu_runway": "remaining_promotional_credit = effective_credit_pool - adjustments.credits ONLY; must be >= reserve + worst-case run; free_storage/network/plan/unknown adjustments never count as GPU credit",
+    "reconciliation": "assess_settlement coverage of metered growth = credits growth + growth of provider non-credit adjustments (fields absent => credits only); reported separately as non_credit_adjustments_*_usd"
+  },
+  "no_past_attempt_reclassified": true,
+  "old_assumption": "all metered cost must be covered specifically by adjustments.credits (credits_applied >= metered_cost)",
+  "phase": "21B.4.20",
+  "trigger": "Independent audit of commit 57c6e91: blocked 12:27 preflight was a FALSE BLOCK (metered 20.89627853 - credits 20.70000000 - free_storage 0.19627853 = billed 0)."
+}

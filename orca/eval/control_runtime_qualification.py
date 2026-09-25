@@ -181,6 +181,27 @@ def to_decimal(value, label: str) -> Decimal:
 # ── financial hard gate (§7-§9) ───────────────────────────────────────────
 
 
+def provider_billing_reconciliation(billing_summary: dict) -> dict:
+    """CURRENT OWNER-PAYABLE COVERAGE, kept separate from the promotional-credit runway. Pure; raises ControlRuntimeError when any required
+    monetary value is unreadable/non-finite. `provider_recomputed_billed = metered + sum(EVERY numeric adjustment)` (credits, free_storage,
+    network allowance, plan adjustments, unknown keys -- all provider adjustments reduce the invoice). Only `adjustments.credits` is ever a
+    promotional GPU credit (`credits_applied_usd`); everything else is `non_credit_adjustments_usd` and never counts toward GPU runway."""
+    metered = to_decimal(billing_summary["metered_cost"], "metered_cost")
+    billed = to_decimal(billing_summary["billed_cost"], "billed_cost")
+    adjustments = billing_summary["adjustments"]
+    if not isinstance(adjustments, dict):
+        raise ControlRuntimeError("adjustments is not a mapping")
+    parsed = {str(k): to_decimal(v, f"adjustments.{k}") for k, v in adjustments.items()}
+    if "credits" not in parsed:
+        raise ControlRuntimeError("adjustments.credits is missing")
+    credits_applied = -parsed["credits"]
+    non_credit = sum((v for k, v in parsed.items() if k != "credits"), Decimal(0))
+    recomputed = metered + sum(parsed.values(), Decimal(0))
+    return {"metered": metered, "billed": billed, "credits_applied": credits_applied, "non_credit_adjustments": non_credit,
+            "recomputed_billed": recomputed, "adjustments": parsed,
+            "current_owner_payable_covered": bool(billed == 0 and recomputed == billed)}
+
+
 def financial_gate_decision(
     billing_summary: dict | None,
     *,
@@ -197,9 +218,9 @@ def financial_gate_decision(
     * a fresh live billing summary is supplied and parses;
     * no positive owner billing has ever been seen in this phase's attempts;
     * `billed_cost` is exactly the amount already recorded (never rising);
-    * all metered usage is currently covered by credits (billed == 0 on
-      top of the baseline);
-    * the KNOWN remaining credit (credit pool minus credits already
+    * the provider invoice reconciles (metered + every adjustment == billed
+      == 0) -- covering adjustments need NOT be credits (e.g. free_storage);
+    * the KNOWN remaining PROMOTIONAL credit (pool minus `adjustments.credits` only -- never free_storage or other adjustments; pool minus credits already
       applied) minus the safety reserve exceeds the run's WORST-CASE cost.
 
     Historical free-tier claims, old credits and past $0 runs are never
@@ -214,9 +235,8 @@ def financial_gate_decision(
         reasons.append("no fresh live billing summary was captured")
         return {"allowed": False, "reasons": reasons, "remaining_credit_usd": None, "headroom_usd": None}
     try:
-        metered = to_decimal(billing_summary["metered_cost"], "metered_cost")
-        billed = to_decimal(billing_summary["billed_cost"], "billed_cost")
-        credits_applied = -to_decimal(billing_summary["adjustments"]["credits"], "adjustments.credits")
+        pbr = provider_billing_reconciliation(billing_summary)
+        metered, billed, credits_applied = pbr["metered"], pbr["billed"], pbr["credits_applied"]
         pool = to_decimal(credit_pool_usd, "credit_pool_usd")
         reserve = to_decimal(reserve_usd, "reserve_usd")
         worst = to_decimal(worst_case_job_cost_usd, "worst_case_job_cost_usd")
@@ -229,8 +249,9 @@ def financial_gate_decision(
         reasons.append(f"worst-case cost {worst} exceeds the maximum authorized run cost {MAX_AUTHORIZED_RUN_COST_USD}")
     if billed != 0:
         reasons.append(f"billed_cost is already {billed} (owner cash is being charged); a run must start from billed_cost == 0")
-    if credits_applied < metered:
-        reasons.append(f"credits applied ({credits_applied}) do not cover metered cost ({metered}) -- credits are not absorbing usage")
+    if pbr["recomputed_billed"] != billed:
+        reasons.append(f"provider billing does not reconcile: metered {metered} + all adjustments {sum(pbr['adjustments'].values(), Decimal(0))} "
+                       f"= {pbr['recomputed_billed']} != billed_cost {billed}")
     remaining = pool - credits_applied
     headroom = remaining - reserve - worst
     if remaining <= 0:
@@ -248,6 +269,11 @@ def financial_gate_decision(
         "billed_cost_usd": str(billed),
         "metered_cost_usd": str(metered),
         "credits_applied_usd": str(credits_applied),
+        "non_credit_adjustments_usd": str(pbr["non_credit_adjustments"]),
+        "provider_recomputed_billed_usd": str(pbr["recomputed_billed"]),
+        "adjustments_usd": {k: str(v) for k, v in sorted(pbr["adjustments"].items())},
+        "current_owner_payable_covered": pbr["current_owner_payable_covered"],
+        "remaining_promotional_credit_usd": str(remaining),
         "reserve_usd": str(reserve),
         "maximum_authorized_run_cost_usd": str(worst),
         "credit_pool_total_usd": str(pool),
@@ -270,6 +296,8 @@ def build_financial_reconciliation(before: dict, after: dict | None, *, credit_p
                 return to_decimal(summary["billed_cost"], "billed_cost")
             if key == "metered":
                 return to_decimal(summary["metered_cost"], "metered_cost")
+            if key == "noncredit":
+                return provider_billing_reconciliation(summary)["non_credit_adjustments"]
             return -to_decimal(summary["adjustments"]["credits"], "credits")
         except (KeyError, TypeError, ControlRuntimeError):
             return None
@@ -281,6 +309,10 @@ def build_financial_reconciliation(before: dict, after: dict | None, *, credit_p
                 "credits_applied_baseline_usd": None if c_b is None else str(c_b),
                 "credits_applied_postrun_usd": None if c_a is None else str(c_a)})
     peak = to_decimal(peak_billed_usd, "peak_billed_usd") if peak_billed_usd is not None else b_a
+    # Provider non-credit adjustments (free_storage, ...) are reported separately; they never enter credit runway. Absent => null (old shape).
+    n_b, n_a = read(before, "noncredit"), (read(after, "noncredit") if after else None)
+    out["non_credit_adjustments_baseline_usd"] = None if n_b is None else str(n_b)
+    out["non_credit_adjustments_postrun_usd"] = None if n_a is None else str(n_a)
     out["billing_delta_usd"] = None if (peak is None or b_b is None) else str(peak - b_b)
     out["metered_delta_usd"] = None if (m_a is None or m_b is None) else str(m_a - m_b)
     out["derived_credit_remaining_before_usd"] = None if c_b is None else str(pool - c_b)
@@ -319,8 +351,14 @@ def assess_settlement(recon: dict, *, run_report_metered_usd=None) -> dict:
         reasons.append("the completed run's metered usage is not yet visible in the account totals (metered_delta == 0)")
     elif report_known and not report_visible:
         reasons.append("account totals grew but the run's own itemized usage row is absent, so the growth cannot be attributed to the run")
-    if metered_delta > 0 and credits_delta < metered_delta:
-        reasons.append(f"credits applied grew by {credits_delta}, less than metered growth {metered_delta} -- credit coverage not confirmed")
+    # Coverage of metered growth = credits growth + growth of provider non-credit adjustments (e.g. free_storage). Absent fields => credits only.
+    try:
+        nc_delta = to_decimal(recon["non_credit_adjustments_postrun_usd"], "nc post") - to_decimal(recon["non_credit_adjustments_baseline_usd"], "nc pre")
+    except (KeyError, TypeError, ControlRuntimeError):
+        nc_delta = Decimal(0)
+    if metered_delta > 0 and credits_delta - nc_delta < metered_delta:
+        reasons.append(f"credits applied grew by {credits_delta} (non-credit adjustments {nc_delta}), less than metered growth {metered_delta} "
+                       f"-- credit coverage not confirmed")
     if billing_delta != 0:
         reasons.append(f"owner-payable amount changed by {billing_delta}")
     if remaining_after < reserve:

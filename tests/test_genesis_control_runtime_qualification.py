@@ -449,7 +449,7 @@ def test_L_a_healthy_fresh_reading_allows_the_run():
     ({"metered_cost": "x", "billed_cost": "0", "adjustments": {"credits": "0"}}, {}, "unreadable"),
     (_summary(billed="0.01"), {}, "billed_cost is already"),
     (_summary(billed="3.52", metered="33.52", credits="-30.00"), {}, "billed_cost is already"),
-    (_summary(metered="25.00", credits="-20.03"), {}, "do not cover metered"),
+    (_summary(metered="25.00", credits="-20.03"), {}, "does not reconcile"),
     (_summary(metered="30.00", credits="-30.00"), {}, "no known credit remains"),
     (_summary(metered="27.00", credits="-27.00"), {}, "credit-coverage gate"),
     (_summary(), {"worst_case_job_cost_usd": "4.98"}, "credit-coverage gate"),
@@ -3956,3 +3956,103 @@ def test_a_later_launch_still_accepts_the_finalized_mistral_record_against_its_i
     rec_path.write_text(json.dumps(tampered))
     with pytest.raises(RuntimeError, match="refusing to overwrite prior-attempt evidence"):
         mod.archive_prior_record("MISTRAL_NEMO")
+
+
+# ══ Financial-gate correction: provider-adjustment reconciliation vs promotional-credit runway ═════════
+
+
+def _mixed(metered="20.89627853", billed="0E-8", **adj):
+    adjustments = {"credits": "-20.70000000", "free_storage": "-0.19627853"}
+    adjustments.update(adj)
+    return {"metered_cost": metered, "billed_cost": billed, "adjustments": adjustments}
+
+
+def test_FG_A_pure_credit_case_still_passes():
+    d = _gate(_summary(metered="20.70", credits="-20.70"), worst_case_job_cost_usd="1.0828")
+    assert d["allowed"] is True and d["current_owner_payable_covered"] is True and d["non_credit_adjustments_usd"] == "0"
+
+
+def test_FG_B_real_mixed_adjustment_shape_passes_and_reports_every_field():
+    d = _gate(_mixed(), worst_case_job_cost_usd="1.0828")
+    assert d["allowed"] is True, d["reasons"]
+    assert d["metered_cost_usd"] == "20.89627853" and d["credits_applied_usd"] == "20.70000000"
+    assert d["non_credit_adjustments_usd"] == "-0.19627853" and Decimal(d["provider_recomputed_billed_usd"]) == 0
+    assert d["current_owner_payable_covered"] is True
+    assert Decimal(d["remaining_promotional_credit_usd"]) == Decimal("30.00") - Decimal("20.70000000")
+    assert Decimal(d["headroom_usd"]) == Decimal("9.30") - Decimal("5.00") - Decimal("1.0828")
+
+
+def test_FG_C_free_storage_never_increases_promotional_runway():
+    with_free = _gate(_mixed(), worst_case_job_cost_usd="1.25")
+    without = _gate(_summary(metered="20.70", credits="-20.70"), worst_case_job_cost_usd="1.25")
+    assert Decimal(with_free["remaining_promotional_credit_usd"]) == Decimal(without["remaining_promotional_credit_usd"])
+    # big free_storage must not rescue an exhausted credit pool
+    d = _gate({"metered_cost": "27.00", "billed_cost": "0", "adjustments": {"credits": "-26.00", "free_storage": "-1.00"}})
+    assert d["allowed"] is False and any("credit-coverage gate" in r for r in d["reasons"])
+
+
+def test_FG_D_positive_billed_cost_always_blocks():
+    d = _gate(_mixed(metered="20.99627853", billed="0.10000000"))
+    assert d["allowed"] is False and any("billed_cost is already" in r for r in d["reasons"])
+
+
+def test_FG_E_provider_arithmetic_mismatch_blocks_fail_closed():
+    d = _gate(_mixed(metered="20.99627853"))          # 20.996 - 20.70 - 0.196 = 0.10 != billed 0
+    assert d["allowed"] is False and any("does not reconcile" in r for r in d["reasons"])
+
+
+def test_FG_F_unknown_adjustment_keys_reconcile_but_never_count_as_gpu_credit():
+    s = _mixed(metered="21.09627853", network_allowance="-0.20000000")
+    d = _gate(s, worst_case_job_cost_usd="1.0828")
+    assert d["allowed"] is True and d["adjustments_usd"]["network_allowance"] == "-0.20000000"
+    assert d["credits_applied_usd"] == "20.70000000" and Decimal(d["remaining_promotional_credit_usd"]) == Decimal(_gate(_mixed())["remaining_promotional_credit_usd"])
+
+
+@pytest.mark.parametrize("bad", ["abc", None, "NaN", "Infinity", {"x": 1}])
+def test_FG_G_malformed_adjustment_values_fail_closed(bad):
+    d = _gate(_mixed(free_storage=bad))
+    assert d["allowed"] is False and any("unreadable" in r for r in d["reasons"])
+
+
+def test_FG_G_missing_or_non_mapping_adjustments_fail_closed():
+    assert _gate({"metered_cost": "1", "billed_cost": "0", "adjustments": ["x"]})["allowed"] is False
+    assert _gate({"metered_cost": "1", "billed_cost": "0", "adjustments": {"free_storage": "-1"}})["allowed"] is False   # no credits key
+
+
+def test_FG_H_positive_non_credit_adjustment_is_accounted_for():
+    # a positive adjustment (a charge) is part of the invoice arithmetic: it makes billed non-zero or breaks reconciliation
+    d = _gate(_mixed(surcharge="0.50000000"))
+    assert d["allowed"] is False
+    ok = _gate({"metered_cost": "20.70", "billed_cost": "0.50", "adjustments": {"credits": "-20.70", "surcharge": "0.50"}})
+    assert ok["allowed"] is False and any("billed_cost is already" in r for r in ok["reasons"])
+
+
+def test_FG_I_insufficient_promotional_credit_blocks_even_when_billed_is_zero():
+    d = _gate(_mixed(metered="26.19627853", credits="-26.00000000"), worst_case_job_cost_usd="1.0828")
+    assert d["allowed"] is False and Decimal(d["billed_cost_usd"]) == 0
+    assert any("credit-coverage gate" in r for r in d["reasons"])
+
+
+def test_FG_J_K_prior_positive_billing_and_unresolved_settlement_still_block():
+    assert _gate(_mixed(), prior_positive_billing_seen=True)["allowed"] is False
+    assert _gate(_mixed(), prior_settlement_unresolved=True)["allowed"] is False
+
+
+def test_FG_L_gate_and_reconciliation_are_pure_no_provider_call(monkeypatch):
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("provider call")))
+    _gate(_mixed())
+    from orca.eval.control_runtime_qualification import build_financial_reconciliation, assess_settlement
+    r = build_financial_reconciliation(_summary(metered="20.70", credits="-20.70"), _mixed(metered="21.70627853", credits="-21.51000000"),
+                                       credit_pool_usd="30.00", reserve_usd="5.00", max_run_cost_usd="1.25")
+    assert r["non_credit_adjustments_postrun_usd"] == "-0.19627853" and r["non_credit_adjustments_baseline_usd"] == "0"
+    assert assess_settlement(r, run_report_metered_usd="1.0")["status"] == "OBSERVED"
+
+
+def test_FG_reconciliation_still_blocks_when_neither_credits_nor_free_storage_cover_growth():
+    from orca.eval.control_runtime_qualification import build_financial_reconciliation, assess_settlement
+    r = build_financial_reconciliation(_summary(metered="20.70", credits="-20.70"),
+                                       {"metered_cost": "21.70", "billed_cost": "0", "adjustments": {"credits": "-20.90", "free_storage": "-0.10"}},
+                                       credit_pool_usd="30.00", reserve_usd="5.00", max_run_cost_usd="1.25")
+    st = assess_settlement(r, run_report_metered_usd="1.0")
+    assert st["status"] != "OBSERVED" and any("coverage not confirmed" in x for x in st["reasons"])
