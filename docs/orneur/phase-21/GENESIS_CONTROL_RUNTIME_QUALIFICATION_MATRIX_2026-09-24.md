@@ -11,43 +11,42 @@ Modal Volume cache (CPU-only pre-cache manifests `GENESIS_CONTROL_*_MODAL_PRECAC
 
 | Control | Identity | Latest attempt | Locked smokes A / B / C | Technical serving | Financial acceptance | Runtime qualification | Capability |
 |---|---|---|---|---|---|---|---|
-| Qwen3-8B | ADMITTED | attempt 4, Modal H100, 196.5 s, valid runtime attempt; reclassified `TECHNICAL_FAILURE` (model-runtime domain) by the audit | PASS / **FAIL** / PASS | FAILED (locked Smoke B contract not met) | PASS (owner billed delta 0; promotional credit used 0.22772907 USD, settlement OBSERVED) | **FAILED** | UNPROVEN |
+| Qwen3-8B | ADMITTED | **attempt 5**, Modal H100, `qwen3_8b_non_thinking_v1`, 163.2 s, valid runtime attempt, `TECHNICAL_FAILURE` (model-runtime domain); attempts 1-4 preserved | PASS / **FAIL** / PASS | FAILED (locked Smoke B contract not met: `2 + 3 = 5`) | PASS (owner billed delta 0; promotional credit used 0.18768559 USD, settlement OBSERVED in-run) | **FAILED** | UNPROVEN |
 | Mistral-Nemo-Instruct-2407 | ADMITTED | none | not run | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
 | Phi-4 | ADMITTED | none | not run | NOT_TESTED | NOT_TESTED | NOT_TESTED | UNPROVEN |
 
-**No control is RUNTIME_QUALIFIED.** No retry and no further GPU run has been authorized; Mistral-Nemo and Phi-4 have not been run.
+**No control is RUNTIME_QUALIFIED.** The single owner-authorized Qwen3-8B attempt 5 has been executed; no retry and no further GPU run is authorized. Mistral-Nemo and Phi-4 have not been run.
 Runtime qualification is not capability qualification.
 
-**Qwen3-8B attempt 4 (what is and is not established).** Infrastructure and identity facts hold: exact pinned Qwen3-8B revision
-(identity PASS), BF16 load PASS, Modal H100 serving PASS, cleanup PASS, 0 live resources, owner billed delta 0, promotional-credit
-settlement OBSERVED by the read-only `--mode reconcile` (0.22772907 USD, matching the app's own itemized row and the exact
-per-category metered growth), generated output never executed. But locked Smoke B (attempt 4 sent the runner's earlier wording `Return the single integer result of: 2 + 3`, see the
-canonical protocol below; expected exactly `5`) was answered with a verbose explanation ending in 5, so the locked smoke contract was **not** met. The
-attempt was first judged on HTTP 200 + non-empty content; an independent audit showed that is not acceptance. The validator now
-enforces the locked semantics (after stripping surrounding whitespace: A == `READY`; B == `5`; C parses as JSON equal to exactly
-`{"status":"ready"}`), and `--mode reevaluate-smokes` (CPU only) re-derived the honest status from the unchanged raw outputs:
-attempt reclassified `TECHNICAL_FAILURE` (original classification preserved in `original_classification`), technical
-`FAILED`, runtime `FAILED`. This is a smoke-contract (response-behaviour) failure, not an identity, infrastructure or financial
-failure. The earlier `PENDING_SETTLEMENT_OBSERVATION` and `RUNTIME_QUALIFIED` labels are preserved as history
-(`superseded_classification`, `original_in_run_billing_settlement`).
+**Qwen3-8B attempt 5 (authorized, executed once).** Modal H100, approved configuration `qwen3_8b_non_thinking_v1`
+(`chat_template_kwargs: {"enable_thinking": false}` sent with every locked smoke; proven from inside the container: configuration id, kwargs sent,
+runtime-policy sha256 `50c0b455…c62e` equal to the record and the local pin, configuration sha `c88e0e14…bab1`, canonical protocol
+`d462103b…25c1`, per-prompt hashes, exact model/revision, bfloat16, no quantization, parser `qwen3`). Results, canonical prompts, whitespace stripped:
+A `READY` **PASS**; B `2 + 3 = 5` **FAIL** (not exactly `5`); C `{"status": "ready"}` **PASS** (parses to the exact object). Thinking was
+disabled as designed (0 reasoning tokens each) and the response is still not the bare `5`, so the runtime configuration removed the
+verbosity of attempt 4 for A and C but not for B. Infrastructure and identity facts hold: exact pinned identity PASS, BF16 PASS, serving PASS,
+cleanup PASS (app stopped, 0 tasks, 0 containers, 0 live resources), owner billed delta 0, settlement OBSERVED in-run (0.18768559 USD promotional
+credit, equal to the app's own itemized row and the exact per-category metered growth), generated output never executed. Outcome:
+attempt 5 `TECHNICAL_FAILURE` (valid runtime attempt), technical `FAILED`, runtime `FAILED`. It is a smoke-contract (response-behaviour) failure,
+not an identity, infrastructure or financial failure. The evidence record is written by the harness with its validator passing.
+
+**Qwen3-8B attempt 4 (historical).** Preserved byte-identically as `GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json`.
+Thinking default ON and the runner's earlier prompt wording; A PASS, B FAIL (verbose explanation), C PASS; owner billed delta 0; promotional credit
+0.22772907 USD (settlement observed by the read-only `--mode reconcile`); reclassified `TECHNICAL_FAILURE`, technical `FAILED`, runtime `FAILED` after the
+audit applied the locked smoke semantics (`original_classification`, `superseded_classification`, `original_in_run_billing_settlement` keep the history).
 
 **Owner waiver.** Historical Modal attempt 1's unresolved settlement was lifted for launch gating only by the owner-created waiver
 (strict `validate_owner_settlement_waiver`); it never marks that settlement resolved, its conservative exposure stays deducted, and
 it applies to attempt 1 only, never to attempt 4.
 
-**Prepared, not executed: `qwen3_8b_non_thinking_v1`.** The approved configuration (`chat_template_kwargs: {"enable_thinking": false}` sent
-with every locked Qwen3-8B smoke; nothing else changes, and Mistral-Nemo / Phi-4 receive no such setting) is implemented CPU-only in
-`orca/eval/control_runtime_configuration.py`, wired through the shared runner's single request builder, proven from inside the container,
-and enforced by the validator for Qwen records whose final attempt number is >= 5. The complete approved policy (id, model, revision, precision,
-quantization, reasoning parser, exact kwargs and the required-from-attempt) is pinned by a fail-closed fingerprint verified on import
-(`PINNED_RUNTIME_POLICY_SHA256 = 50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e`); the container proof, the record and the locally
-pinned value must be equal. Attempts 1-4 are never renumbered or retro-fitted
-(attempt 4 is preserved byte-identically as `GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json`). A future
-authorized run would be **attempt 5**. Nothing has been launched; see
-`GENESIS_QWEN3_8B_NON_THINKING_V1_IMPLEMENTATION_READINESS_2026-09-25.json`. Qwen3-8B remains FAILED.
+**`qwen3_8b_non_thinking_v1` (implemented CPU-only, then executed once as attempt 5).** Source of truth `orca/eval/control_runtime_configuration.py`,
+wired through the shared runner's single request builder, proven from inside the container and enforced by the validator for Qwen records whose
+final attempt number is >= 5. The complete approved policy is pinned by a fail-closed fingerprint verified on import
+(`PINNED_RUNTIME_POLICY_SHA256 = 50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e`); container proof, record and local pin must be
+equal. Mistral-Nemo / Phi-4 receive no such setting. See `GENESIS_QWEN3_8B_NON_THINKING_V1_IMPLEMENTATION_READINESS_2026-09-25.json` (pre-run readiness).
 
-**Resume conditions.** A new Qwen3-8B attempt would need a separate explicit owner authorization; any change to the qualified
-runtime configuration (for example the thinking mode) is a configuration change and needs its own authorization. Every launch
+**Resume conditions.** Any further Qwen3-8B attempt (attempt 6) would need a separate explicit owner authorization; any change to the qualified
+runtime configuration, sampling or locked prompts is a configuration change and needs its own authorization. Every launch
 still requires: owner billed delta 0, credit runway >= $5.00 reserve + worst-case run cost (H100 900 s cap ~= $1.083, under the
 $1.25 maximum), zero live Modal resources, a verified model cache, and every earlier settlement observed or explicitly waived.
 
@@ -222,6 +221,7 @@ Generated text is data only.
 | 2 | Lightning AI | BLOCKED_NO_GPU / NONE (payment-method requirement) | 7.2 s | 0 | PASS | n/a |
 | 3 | razorBridge | BLOCKED_NO_GPU / NONE (maintenance pause) | 0 s | 0 | n/a | n/a |
 | 4 | Modal (H100) | TECHNICAL_FAILURE / MODEL_RUNTIME (locked Smoke B contract; originally judged TECHNICAL_SUCCESS, reclassified by audit) | 196.5 s | 0 | PASS | OBSERVED by reconciliation (0.22772907 USD promotional credit) |
+| 5 | Modal (H100), `qwen3_8b_non_thinking_v1` | TECHNICAL_FAILURE / MODEL_RUNTIME (locked Smoke B: `2 + 3 = 5`) | 163.2 s | 0 | PASS | OBSERVED in-run (0.18768559 USD promotional credit) |
 
 ### Environment-only behaviour (not exercised by CI)
 

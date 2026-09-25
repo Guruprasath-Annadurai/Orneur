@@ -1,0 +1,127 @@
+{
+  "app_id": "ap-b6PkVuAdoik7AvUELDwNuQ",
+  "app_row": {
+    "app_id": "ap-b6PkVuAdoik7AvUELDwNuQ",
+    "created_at": "2026-09-25 13:44:30+05:30",
+    "description": "orneur-p21b420-h100-control-runtime",
+    "state": "stopped",
+    "stopped_at": "2026-09-25 13:47:15+05:30",
+    "tasks": "0"
+  },
+  "billed_before_usd": "0E-8",
+  "billing_settlement": {
+    "reasons": [],
+    "status": "OBSERVED",
+    "stop_before_next_control": false
+  },
+  "billing_summary_settled": {
+    "adjustments": {
+      "credits": "-20.49000000",
+      "free_storage": "-0E-8",
+      "network_egress_allowance": "0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "20.49000000",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "20.49230719",
+      "llm_tokens": "0E-8",
+      "volumes": "0E-8"
+    }
+  },
+  "captured_at_utc": "2026-09-25T08:20:34Z",
+  "cleanup_snapshot": {
+    "apps": [
+      {
+        "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
+        "created_at": "2026-09-18 18:50:37+05:30",
+        "description": "orca-genesis-eval-sandbox",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
+        "created_at": "2026-09-18 23:18:29+05:30",
+        "description": "orca-genesis-eval-sandbox-v2",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-b6PkVuAdoik7AvUELDwNuQ",
+        "created_at": "2026-09-25 13:44:30+05:30",
+        "description": "orneur-p21b420-h100-control-runtime",
+        "state": "stopped",
+        "stopped_at": "2026-09-25 13:47:15+05:30",
+        "tasks": "0"
+      }
+    ],
+    "captured_at_utc": "2026-09-25T08:17:26Z",
+    "containers": [],
+    "expected_cache_volume": "orneur-p21b420-model-cache",
+    "live_resources": 0,
+    "non_idle_apps": [],
+    "running_tasks_total": 0,
+    "volumes": [
+      {
+        "created_at": "2026-09-25 00:50:00+05:30",
+        "created_by": "guruprasath-annadurai",
+        "name": "orneur-p21b420-model-cache"
+      }
+    ]
+  },
+  "duration_seconds_wall": 163.2,
+  "evidence_type": "MODAL_BILLING_SNAPSHOT_AFTER_GPU_ALLOCATION",
+  "financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credits_applied_baseline_usd": "20.31000000",
+    "credits_applied_postrun_usd": "20.49000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "9.25643194444444444444444444",
+    "derived_credit_remaining_before_usd": "9.43643194444444444444444444",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_baseline_usd": "20.31000000",
+    "metered_delta_usd": "0.18000000",
+    "metered_postrun_usd": "20.49000000",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
+  "itemized_rows_for_app": [
+    {
+      "cost": "0.18768559",
+      "description": "orneur-p21b420-h100-control-runtime",
+      "environment": "main",
+      "interval_start": "2026-09-25T08:00:00",
+      "object_id": "ap-b6PkVuAdoik7AvUELDwNuQ"
+    }
+  ],
+  "object_specific_note": "the app's own created/stopped timestamps (Modal) are the authoritative active window; itemized billing rows may lag",
+  "owner_billed_delta_usd": "0E-8",
+  "peak_observed_billed_usd": "0E-8",
+  "post_run_readings": [
+    {
+      "billed": "0E-8",
+      "credits": "-20.33000000",
+      "metered": "20.33000000",
+      "t": 1.7
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.43000000",
+      "metered": "20.43000000",
+      "t": 93.5
+    },
+    {
+      "billed": "0E-8",
+      "credits": "-20.49000000",
+      "metered": "20.49000000",
+      "t": 185.3
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "billing_discrepancy_observation": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json",
+  "billing_summary_live": {
+    "adjustments": {
+      "credits": "-20.31000000",
+      "free_storage": "-0E-8",
+      "network_egress_allowance": "0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "20.31000000",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "20.30462160",
+      "llm_tokens": "0E-8",
+      "volumes": "0E-8"
+    }
+  },
+  "captured_at_utc": "2026-09-25T08:14:17Z",
+  "cleanup_snapshot_before": {
+    "apps": [
+      {
+        "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
+        "created_at": "2026-09-18 18:50:37+05:30",
+        "description": "orca-genesis-eval-sandbox",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
+        "created_at": "2026-09-18 23:18:29+05:30",
+        "description": "orca-genesis-eval-sandbox-v2",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      }
+    ],
+    "captured_at_utc": "2026-09-25T08:14:17Z",
+    "containers": [],
+    "expected_cache_volume": "orneur-p21b420-model-cache",
+    "live_resources": 0,
+    "non_idle_apps": [],
+    "running_tasks_total": 0,
+    "volumes": [
+      {
+        "created_at": "2026-09-25 00:50:00+05:30",
+        "created_by": "guruprasath-annadurai",
+        "name": "orneur-p21b420-model-cache"
+      }
+    ]
+  },
+  "control_name": "Qwen3-8B",
+  "cpu_cores": 4,
+  "credit_pool_usd": "30.00",
+  "evidence_type": "MODAL_H100_FINANCIAL_PREFLIGHT",
+  "gate_decision": {
+    "allowed": true,
+    "billed_cost_usd": "0E-8",
+    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credits_applied_usd": "20.31000000",
+    "headroom_usd": "3.35363194444444444444444444",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_cost_usd": "20.31000000",
+    "reasons": [],
+    "remaining_credit_usd": "9.43643194444444444444444444",
+    "reserve_usd": "5.00"
+  },
+  "hard_timeout_seconds": 900,
+  "kind": "gpu",
+  "memory_mib": 24576,
+  "phase": "21B.4.20",
+  "rates_usd_per_hour": {
+    "cpu": "0.04730",
+    "h100": "3.95000",
+    "mem": "0.00800"
+  },
+  "reserve_usd": "5.00",
+  "unresolved_prior_settlement_upper_bound_deducted_usd": "0.2536",
+  "worst_case_cost_usd": "1.0828"
+}

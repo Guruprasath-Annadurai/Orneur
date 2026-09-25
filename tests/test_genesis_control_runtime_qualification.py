@@ -946,7 +946,8 @@ def test_a_prior_attempt_blocks_the_next_launch_until_reconciliation_observes_it
 
 def test_persisted_qwen_history_keeps_modal_attempt_1_unchanged_and_adds_the_blocked_lightning_attempt():
     rec = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
-    a, b, c, d = rec["attempts"]
+    a, b, c, d, e = rec["attempts"]
+    assert e["attempt_number"] == 5 and e["provider"] == "Modal" and e["outcome"] == "TECHNICAL_FAILURE" and e["valid_runtime_attempt"] is True
     assert d["provider"] == "Modal" and d["attempt_number"] == 4 and d["outcome"] == "TECHNICAL_FAILURE" and d["valid_runtime_attempt"] is True
     assert d["original_classification"]["outcome"] == "TECHNICAL_SUCCESS"      # audit reclassification (locked Smoke B) keeps the original judgement
     assert a["outcome"] == "HARNESS_FAILURE" and a["status"] == "HARNESS_FAILURE" and a["failure_domain"] == "HARNESS"
@@ -1915,11 +1916,17 @@ PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256 = "88909b4935ba571da2275835428cba8221b05caba
 
 
 def _persisted_qwen():
+    """The CURRENT Qwen3-8B record (final attempt 5, after the authorized non-thinking run)."""
     return json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
 
 
+def _attempt4_record():
+    """The preserved byte-identical snapshot of the Qwen3-8B record as it stood after attempt 4."""
+    return json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_ATTEMPT4_SNAPSHOT_2026-09-24.json").read_text())
+
+
 def test_persisted_qwen_attempt_4_cannot_be_runtime_qualified_with_its_existing_smoke_b_output():
-    rec = _persisted_qwen()
+    rec = _attempt4_record()
     acc = {a["smoke_id"]: a for a in compute_smoke_acceptance(rec)}
     assert acc["A"]["accepted"] and acc["C"]["accepted"] and acc["B"]["accepted"] is False
     forced = copy.deepcopy(rec)
@@ -1934,7 +1941,7 @@ def test_persisted_qwen_attempt_4_cannot_be_runtime_qualified_with_its_existing_
 
 
 def test_persisted_qwen_raw_evidence_financials_and_no_execution_are_unchanged():
-    rec = _persisted_qwen()
+    rec = _attempt4_record()
     canon = hashlib.sha256(json.dumps(rec["smoke_outputs"], sort_keys=True).encode()).hexdigest()
     assert canon == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256                                    # raw smoke outputs byte-for-byte as first persisted
     assert rec["raw_log_sha256"] == "068332b340ddcf73d1d61e326c1e95646a610ac6864b2a47848cf218355d5bbd"
@@ -2040,7 +2047,7 @@ def test_qwen_configuration_analysis_is_cpu_only_and_identity_preserving():
 
 def test_qwen_configuration_analysis_keeps_the_locked_smoke_prompts_and_only_appends_an_empty_think_block():
     a = json.loads(QWEN_ANALYSIS.read_text())
-    persisted = {p["smoke_id"]: p["messages"] for p in json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())["smoke_prompts"]}
+    persisted = {p["smoke_id"]: p["messages"] for p in _attempt4_record()["smoke_prompts"]}     # the earlier analysis rendered what attempt 4 sent
     for sid, r in a["rendered_locked_requests"].items():
         assert r["messages_unchanged"] == persisted[sid]                                   # the locked prompts are not rewritten
         assert r["candidate_enable_thinking_false"] == r["current_thinking_default"] + "<think>\n\n</think>\n\n"
@@ -2252,7 +2259,7 @@ def test_a_qualified_record_must_use_the_canonical_prompts_and_protocol_fingerpr
 
 
 def test_historical_attempt_4_is_untouched_qwen_is_failed_and_mistral_phi_are_not_tested():
-    q = _persisted_qwen()
+    q = _attempt4_record()
     assert hashlib.sha256(json.dumps(q["smoke_prompts"], sort_keys=True).encode()).hexdigest() == ATTEMPT_4_PROMPTS_SHA256           # prompts as actually sent
     assert tuple(p["messages"][0]["content"] for p in q["smoke_prompts"]) == DRIFTED_USER_TEXT
     assert hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256
@@ -2423,7 +2430,7 @@ def test_attempt_4_style_qwen_records_need_no_configuration_and_the_field_is_not
     rec["attempts"] = _qwen_history(4)
     rec["technical_serving_status"], rec["runtime_qualification_status"] = "FAILED", "FAILED"
     validate_control_runtime_record(rec, evidence_root=tmp_path)                          # no runtime_configuration: allowed below attempt 5
-    assert "runtime_configuration" not in _persisted_qwen()                               # and the persisted attempt-4 record has none
+    assert "runtime_configuration" not in _attempt4_record()                              # and the persisted attempt-4 record has none
     rec5 = _qwen5(tmp_path)
     del rec5["runtime_configuration"]
     with pytest.raises(ControlRuntimeError, match="requires runtime_configuration"):
@@ -2518,24 +2525,28 @@ def test_the_harness_accepts_only_a_complete_matching_container_proof(monkeypatc
         assert mod.container_proof_problems(leaked, m["model_id"], m["revision"])                                 # a leaked Qwen setting is refused
 
 
-def test_the_next_qwen_attempt_number_is_5_and_the_real_history_is_intact(monkeypatch):
+def test_the_real_qwen_history_is_1_to_5_attempts_1_to_4_are_unchanged_and_attempt_5_is_the_only_new_one(monkeypatch):
     mod, _ = _load_modal_h100(monkeypatch)
     attempts = mod._load_attempts("QWEN3_8B")
-    assert [a["attempt_number"] for a in attempts] == [1, 2, 3, 4] and len(attempts) + 1 == 5
+    assert [a["attempt_number"] for a in attempts] == [1, 2, 3, 4, 5]
+    assert attempts[:4] == _attempt4_record()["attempts"]                                # attempts 1-4 exactly as preserved in the attempt-4 snapshot
     assert attempts[3]["outcome"] == "TECHNICAL_FAILURE" and attempts[3]["original_classification"]["outcome"] == "TECHNICAL_SUCCESS"
-    assert not any("runtime_configuration" in a for a in attempts)                       # attempts 1-4 carry no configuration
+    assert not any("runtime_configuration" in a for a in attempts[:4])                   # attempts 1-4 carry no configuration
     assert mod._load_attempts("MISTRAL_NEMO") == [] and mod._load_attempts("PHI4") == []
 
+ATTEMPT_4_SNAPSHOT_SHA256 = "008b945e7fc0f10eec2a04104f5627260a4187d512d14294b0da41b0a0e217fd"
 
-def test_attempt_4_evidence_is_byte_identical_to_its_snapshot_and_still_failed():
-    assert ATTEMPT_4_SNAPSHOT.read_bytes() == (EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_bytes()
+
+def test_attempt_4_evidence_snapshot_is_byte_identical_to_what_was_preserved_and_still_failed():
+    assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256                  # pinned: unchanged since the readiness artifact
     q = json.loads(ATTEMPT_4_SNAPSHOT.read_text())
     assert q["technical_serving_status"] == "FAILED" and q["runtime_qualification_status"] == "FAILED" and q["attempts"][-1]["attempt_number"] == 4
     assert hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256
     assert q["raw_log_sha256"] == "068332b340ddcf73d1d61e326c1e95646a610ac6864b2a47848cf218355d5bbd"
     assert hashlib.sha256((EVIDENCE_DIR / q["raw_log_artifact"]).read_bytes()).hexdigest() == q["raw_log_sha256"]
     assert hashlib.sha256(json.dumps(q["smoke_prompts"], sort_keys=True).encode()).hexdigest() == ATTEMPT_4_PROMPTS_SHA256
-
+    readiness = json.loads((EVIDENCE_DIR / "GENESIS_QWEN3_8B_NON_THINKING_V1_IMPLEMENTATION_READINESS_2026-09-25.json").read_text())
+    assert readiness["historical_attempt_4"]["snapshot_sha256"] == ATTEMPT_4_SNAPSHOT_SHA256
 
 def test_the_existing_financial_gates_are_untouched_and_the_settlement_waiver_stays_attempt_1_only(monkeypatch):
     mod, _ = _load_modal_h100(monkeypatch)
@@ -2587,6 +2598,12 @@ def _run_env(monkeypatch, tmp_path, result_builder):
     mod, _ = _load_modal_h100(monkeypatch)
     ev = tmp_path / "evidence"
     shutil.copytree(EVIDENCE_DIR, ev)
+    # simulate the state BEFORE the authorized attempt 5 (attempts 1-4, main record == attempt-4 snapshot); the real evidence is never touched
+    (ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").write_bytes(ATTEMPT_4_SNAPSHOT.read_bytes())
+    attempts_path = ev / "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json"
+    doc = json.loads(attempts_path.read_text())
+    doc["attempts"] = doc["attempts"][:4]
+    attempts_path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
     monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
     lc = mod._load_lightning_control()
     baseline = {"billed_cost": "0E-8", "metered_cost": "20.31000000", "adjustments": {"credits": "-20.31000000", "plan_cost": "0E-8"},
@@ -2813,17 +2830,16 @@ def test_a_drifted_container_policy_hash_is_a_harness_failure_never_a_model_resu
     assert "runtime-policy sha256" in a5["reason"]
 
 
-def test_the_policy_pin_leaves_attempt_4_byte_identical_qwen_failed_and_the_next_attempt_5(monkeypatch):
-    assert ATTEMPT_4_SNAPSHOT.read_bytes() == (EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_bytes()
-    q = _persisted_qwen()
+def test_the_policy_pin_leaves_attempt_4_byte_identical_and_mistral_phi_not_tested(monkeypatch):
+    assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256
+    q = _attempt4_record()
     assert q["runtime_qualification_status"] == "FAILED" and q["technical_serving_status"] == "FAILED" and "runtime_configuration" not in q
     assert hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256
     mod, _ = _load_modal_h100(monkeypatch)
-    assert len(mod._load_attempts("QWEN3_8B")) + 1 == 5 and mod._load_attempts("MISTRAL_NEMO") == [] and mod._load_attempts("PHI4") == []
+    assert mod._load_attempts("MISTRAL_NEMO") == [] and mod._load_attempts("PHI4") == []
     for tag in ("MISTRAL_NEMO", "PHI4"):
         r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
         assert r["runtime_qualification_status"] == "NOT_TESTED"
-
 
 def test_the_policy_module_never_executes_generated_text_and_makes_no_gpu_or_provider_call():
     tree = ast.parse(RUNTIME_CONFIG_FILE.read_text())
@@ -2838,3 +2854,80 @@ def test_the_readiness_artifact_records_the_pinned_policy_and_its_document():
     a = json.loads((EVIDENCE_DIR / "GENESIS_QWEN3_8B_NON_THINKING_V1_IMPLEMENTATION_READINESS_2026-09-25.json").read_text())["approved_configuration"]
     assert a["pinned_runtime_policy_sha256"] == PINNED_POLICY_SHA256 and a["protected_policy_document"] == EXPECTED_POLICY_DOCUMENT
     assert a["policy_fingerprint_verified_on_import"] is True and a["pinned_configuration_sha256"] == PINNED_QWEN_CONFIG_SHA256
+
+
+# ══ Qwen3-8B attempt 5 (owner-authorized, executed once under qwen3_8b_non_thinking_v1): the persisted, honest result ═══════════════════
+ATTEMPT_5_SMOKE_OUTPUTS_SHA256 = "9fcf1402ab27f2d089a26fbdfd12e7ca6a3c4b8d072e769e546b690371536bef"
+ATTEMPT_5_RAW_LOG_SHA256 = "3596fbd908ea8c92a2553a3d6c10e230b4b3a1bcb47f6127ece5a661f743abeb"
+APPROVED_POLICY_SHA256 = "50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e"
+
+
+def test_attempt_5_is_a_valid_runtime_attempt_whose_locked_smoke_b_did_not_return_exactly_5():
+    q = _persisted_qwen()
+    a5 = q["attempts"][-1]
+    assert a5["attempt_number"] == 5 and a5["provider"] == "Modal" and a5["outcome"] == "TECHNICAL_FAILURE" and a5["failure_domain"] == "MODEL_RUNTIME"
+    assert a5["valid_runtime_attempt"] is True and "B: content is not exactly '5'" in a5["reason"] and a5["cleanup_result"] == "PASS"
+    assert a5["owner_billed_delta_usd"] == "0E-8" and a5["billing_settlement_status"] == "OBSERVED" and a5["duration_seconds"] < 900
+    assert q["technical_serving_status"] == "FAILED" and q["runtime_qualification_status"] == "FAILED" and q["capability_status"] == "UNPROVEN"
+    out = {o["smoke_id"]: o for o in q["smoke_outputs"]}
+    assert (out["A"]["content"], out["B"]["content"], out["C"]["content"]) == ("READY", "2 + 3 = 5", '{"status": "ready"}')          # raw contents, as returned
+    assert [(x["smoke_id"], x["accepted"]) for x in q["smoke_acceptance"]] == [("A", True), ("B", False), ("C", True)]
+    assert all(o["executed"] is False and o["http_status"] == 200 and o["finish_reason"] == "stop" for o in out.values()) and q["generated_output_executed"] is False
+    assert all((o["usage"]["completion_tokens_details"] or {}).get("reasoning_tokens") == 0 for o in out.values())                    # thinking really was off
+    assert hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == ATTEMPT_5_SMOKE_OUTPUTS_SHA256
+    validate_control_runtime_record(q, evidence_root=EVIDENCE_DIR)
+
+
+def test_attempt_5_can_never_be_relabelled_qualified_with_its_smoke_b_output():
+    forced = copy.deepcopy(_persisted_qwen())
+    forced.update(technical_serving_status="QUALIFIED", runtime_qualification_status="RUNTIME_QUALIFIED")
+    with pytest.raises(ControlRuntimeError, match="LOCKED (smoke|protocol)"):
+        validate_control_runtime_record(forced, evidence_root=EVIDENCE_DIR)
+    assert {a["smoke_id"]: a["accepted"] for a in compute_smoke_acceptance(_persisted_qwen())} == {"A": True, "B": False, "C": True}
+
+
+def test_attempt_5_proved_the_approved_configuration_the_pinned_policy_and_the_canonical_protocol_from_inside_the_container():
+    q = _persisted_qwen()
+    rc = q["runtime_configuration"]
+    assert rc["id"] == QWEN_CFG_ID and rc["chat_template_kwargs"] == {"enable_thinking": False} and rc["chat_template_kwargs"]["enable_thinking"] is False
+    proof = rc["container_proof"]
+    assert proof["runtime_policy_sha256"] == rc["runtime_policy_sha256"] == runtime_cfg.PINNED_RUNTIME_POLICY_SHA256 == APPROVED_POLICY_SHA256
+    assert proof["runtime_configuration_sha256"] == PINNED_QWEN_CONFIG_SHA256 == rc["configuration_sha256"]
+    assert proof["runtime_configuration_id"] == proof["runtime_configuration_id_applied"] == QWEN_CFG_ID
+    assert proof["chat_template_kwargs_sent"] == {sid: {"enable_thinking": False} for sid in "ABC"}
+    assert all(o["chat_template_kwargs_sent"] == {"enable_thinking": False} for o in q["smoke_outputs"])
+    assert proof["smoke_protocol_sha256"] == q["smoke_protocol"]["protocol_sha256"] == CANONICAL_PROTOCOL_SHA256
+    assert proof["prompt_sha256_sent"] == {sid: locked_protocol.prompt_sha256(sid) for sid in "ABC"}
+    assert [p["messages"] for p in q["smoke_prompts"]] == [locked_protocol.messages(sid) for sid in "ABC"]                             # canonical prompts, not the drifted ones
+    assert (proof["model_id"], proof["served_model_id"], proof["revision"], proof["precision"], proof["quantization"], proof["reasoning_parser"]) == (
+        "Qwen/Qwen3-8B", "Qwen/Qwen3-8B", LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]["revision"], "bfloat16", None, "qwen3")
+    ident = q["identity_verification"]
+    assert ident["pinned_revision_matches_runtime_artifact"] is True and ident["runtime_served_model_matches_pinned_id"] is True and ident["no_silent_model_fallback"] is True
+    assert ident["weight_bytes_observed"] == LOCKED_CONTROL_IDENTITIES["Qwen3-8B"]["expected_weight_bytes"] and q["precision"].lower().startswith("bfloat16")
+
+
+def test_attempt_5_financials_settlement_cleanup_and_raw_log_are_consistent_and_zero_owner_cash():
+    q = _persisted_qwen()
+    assert q["financial_acceptance_status"] == "PASS" and q["owner_billed_delta_usd"] == "0E-8" and q["cleanup_status"] == "PASS" and q["live_resources_after_cleanup"] == 0
+    assert q["billing_settlement"]["status"] == "OBSERVED" and q["financial_reconciliation"]["billing_delta_usd"] in ("0E-8", "0")
+    fin = q["financial_evidence"]
+    for art, sha in (("preflight_artifact", "preflight_sha256"), ("billing_before_artifact", "billing_before_sha256"), ("billing_after_artifact", "billing_after_sha256")):
+        assert "ATTEMPT5" in fin[art] and hashlib.sha256((EVIDENCE_DIR / fin[art]).read_bytes()).hexdigest() == fin[sha]
+    after = json.loads((EVIDENCE_DIR / fin["billing_after_artifact"]).read_text())
+    assert after["owner_billed_delta_usd"] == "0E-8" and after["peak_observed_billed_usd"] == "0E-8" and all(r["billed"] == "0E-8" for r in after["post_run_readings"])
+    assert [r["cost"] for r in after["itemized_rows_for_app"]] == ["0.18768559"] and after["cleanup_snapshot"]["live_resources"] == 0
+    assert after["app_row"]["state"] == "stopped" and after["app_row"]["tasks"] == "0" and after["cleanup_snapshot"]["containers"] == []
+    pre = json.loads((EVIDENCE_DIR / fin["preflight_artifact"]).read_text())
+    assert pre["gate_decision"]["allowed"] is True and Decimal(pre["worst_case_cost_usd"]) <= Decimal("1.25") and pre["reserve_usd"] == "5.00"
+    assert q["raw_log_sha256"] == ATTEMPT_5_RAW_LOG_SHA256 and hashlib.sha256((EVIDENCE_DIR / q["raw_log_artifact"]).read_bytes()).hexdigest() == ATTEMPT_5_RAW_LOG_SHA256
+
+
+def test_attempt_5_left_attempts_1_to_4_and_the_attempt_4_snapshot_untouched_and_ran_no_other_control():
+    q = _persisted_qwen()
+    assert q["attempts"][:4] == _attempt4_record()["attempts"] and [a["attempt_number"] for a in q["attempts"]] == [1, 2, 3, 4, 5]
+    assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256
+    for tag in ("MISTRAL_NEMO", "PHI4"):
+        r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+        assert r["runtime_qualification_status"] == "NOT_TESTED" and r["attempts"] == [] and r["smoke_outputs"] == []
+    raw_attempts = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json").read_text())["attempts"]
+    assert raw_attempts == q["attempts"] and len(raw_attempts) == 5

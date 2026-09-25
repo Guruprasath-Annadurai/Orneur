@@ -92,6 +92,26 @@
       "started_at_utc": "2026-09-24T20:53:32Z",
       "status": "TECHNICAL_FAILURE",
       "valid_runtime_attempt": true
+    },
+    {
+      "attempt_number": 5,
+      "billing_settlement_status": "OBSERVED",
+      "cleanup_result": "PASS",
+      "duration_seconds": 163.2,
+      "failure_domain": "MODEL_RUNTIME",
+      "finished_at_utc": "2026-09-25T08:17:12Z",
+      "modal_app_id": "ap-b6PkVuAdoik7AvUELDwNuQ",
+      "modal_app_name": "orneur-p21b420-h100-control-runtime",
+      "outcome": "TECHNICAL_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "provider": "Modal",
+      "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT5_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "3596fbd908ea8c92a2553a3d6c10e230b4b3a1bcb47f6127ece5a661f743abeb",
+      "reason": "locked smoke contract not met: B: content is not exactly '5'",
+      "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "started_at_utc": "2026-09-25T08:14:29Z",
+      "status": "TECHNICAL_FAILURE",
+      "valid_runtime_attempt": true
     }
   ],
   "attention_backend": "FLASH_ATTN attention backend out of potential",
@@ -107,54 +127,42 @@
   "capability_status": "UNPROVEN",
   "chat_template_source": "tokenizer_config.json chat_template @ pinned revision (4,168 chars; hybrid thinking, enable_thinking default ON)",
   "cleanup_status": "PASS",
-  "cold_start_seconds": 165.09,
+  "cold_start_seconds": 138.08,
   "container_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
   "container_image": "vllm/vllm-openai:v0.29.0",
   "control_name": "Qwen3-8B",
-  "download_seconds": 0.04,
+  "download_seconds": 0.01,
   "evidence_kind": "RUNTIME_QUALIFICATION_SMOKE",
-  "failure_analysis": {
-    "failed_smokes": [
-      {
-        "accepted": false,
-        "normalized_content": "The result of adding 2 and 3 is calculated by combining the two numbers. Starting with 2 and adding 3 to it:\n\n$$\n2 + 3 = 5\n$$\n\n**Answer:** 5",
-        "reason": "content is not exactly '5'",
-        "smoke_id": "B"
-      }
-    ],
-    "infrastructure": "server ready, exact identity PASS, BF16 PASS, cleanup PASS, 0 live resources, owner billed delta 0",
-    "kind": "LOCKED_SMOKE_CONTRACT_NOT_MET (model response behaviour), not an infrastructure or identity failure"
-  },
   "financial_acceptance_status": "PASS",
   "financial_evidence": {
-    "billing_after_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_BILLING_AFTER_2026-09-24.json",
-    "billing_after_sha256": "7e920538144a19dcdd27da6b1a731c575133a4a2bf9d408e52fc82e48fd35440",
-    "billing_before_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_BILLING_BEFORE_2026-09-24.json",
-    "billing_before_sha256": "cb4820941e118e4b7ea5f16aef1447042ecd614a607fc044da723f3034d9b601",
-    "preflight_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_FINANCIAL_PREFLIGHT_2026-09-24.json",
-    "preflight_sha256": "33caea6a0e275e40475bce53094347b3c78f40da1e482399431bc3effc6a7fd6"
+    "billing_after_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT5_BILLING_AFTER_2026-09-24.json",
+    "billing_after_sha256": "92cc4c1117af0288c5a218b8274711f3e6cac45996fa6dcefed70494c3618d5b",
+    "billing_before_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT5_BILLING_BEFORE_2026-09-24.json",
+    "billing_before_sha256": "09740560899028ecc80a1c24f63a0d5df1cbfcde16297c08941560aaeab29a49",
+    "preflight_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT5_FINANCIAL_PREFLIGHT_2026-09-24.json",
+    "preflight_sha256": "5e34eda1fde154c088e94eefa1f91a230ef210a31d7e7fbe918b80d839d17b71"
   },
   "financial_preflight_status": "PASSED",
   "financial_reconciliation": {
     "billing_baseline_usd": "0E-8",
     "billing_delta_usd": "0E-8",
     "billing_postrun_usd": "0E-8",
-    "credit_pool_total_usd": "29.9620",
-    "credits_applied_baseline_usd": "20.08000000",
-    "credits_applied_postrun_usd": "20.31000000",
+    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credits_applied_baseline_usd": "20.31000000",
+    "credits_applied_postrun_usd": "20.49000000",
     "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
-    "derived_credit_remaining_after_usd": "9.65200000",
-    "derived_credit_remaining_before_usd": "9.88200000",
-    "maximum_authorized_run_cost_usd": "1.0828",
-    "metered_baseline_usd": "20.08000000",
-    "metered_delta_usd": "0.23000000",
-    "metered_postrun_usd": "20.31000000",
+    "derived_credit_remaining_after_usd": "9.25643194444444444444444444",
+    "derived_credit_remaining_before_usd": "9.43643194444444444444444444",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_baseline_usd": "20.31000000",
+    "metered_delta_usd": "0.18000000",
+    "metered_postrun_usd": "20.49000000",
     "null_reasons": {},
     "reserve_usd": "5.00"
   },
-  "finished_at_utc": "2026-09-24T20:56:49Z",
+  "finished_at_utc": "2026-09-25T08:17:12Z",
   "generated_output_executed": false,
-  "generated_tokens": 895,
+  "generated_tokens": 17,
   "generation_config": {
     "max_tokens": 1024,
     "seed": 0,
@@ -175,7 +183,7 @@
     "models_endpoint": {
       "data": [
         {
-          "created": 1790283393,
+          "created": 1790324223,
           "id": "Qwen/Qwen3-8B",
           "max_model_len": 4096,
           "object": "model",
@@ -189,9 +197,9 @@
               "allow_sampling": true,
               "allow_search_indices": false,
               "allow_view": true,
-              "created": 1790283393,
+              "created": 1790324223,
               "group": null,
-              "id": "modelperm-838cfcdc6d2bdd1e",
+              "id": "modelperm-9b2c1281ff72f764",
               "is_blocking": false,
               "object": "model_permission",
               "organization": "*"
@@ -233,48 +241,60 @@
       }
     ]
   },
-  "latency_seconds": 5.8927,
+  "latency_seconds": 0.195,
   "license": "apache-2.0",
   "live_resources_after_cleanup": 0,
-  "load_seconds": 8.59,
+  "load_seconds": 5.54,
   "max_model_len": 4096,
   "model_id": "Qwen/Qwen3-8B",
   "model_revision": "b968826d9c46dd6066d109eabc6255188de91218",
   "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests. Generated output was treated as data and never executed. Executed on Modal (canonical provider) on 1 x H100 80GB with weights from a hash-verified Modal Volume cache; earlier Modal, Lightning, Hugging Face and razorBridge attempts are preserved in attempts.",
-  "original_in_run_billing_settlement": {
-    "reasons": [
-      "the completed run's metered usage is not yet visible in the account totals (metered_delta == 0)"
-    ],
-    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
-    "stop_before_next_control": true
-  },
-  "original_in_run_financial_reconciliation": {
-    "billing_baseline_usd": "0E-8",
-    "billing_delta_usd": "0E-8",
-    "billing_postrun_usd": "0E-8",
-    "credit_pool_total_usd": "29.96203611111111111111111111",
-    "credits_applied_baseline_usd": "20.08000000",
-    "credits_applied_postrun_usd": "20.08000000",
-    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
-    "derived_credit_remaining_after_usd": "9.88203611111111111111111111",
-    "derived_credit_remaining_before_usd": "9.88203611111111111111111111",
-    "maximum_authorized_run_cost_usd": "1.08280",
-    "metered_baseline_usd": "20.08000000",
-    "metered_delta_usd": "0E-8",
-    "metered_postrun_usd": "20.08000000",
-    "null_reasons": {},
-    "reserve_usd": "5.00"
-  },
-  "original_validator_note": "record FAILED its own validator: ControlRuntimeError: RUNTIME_QUALIFIED requires the run's billing/credit coverage to be observed in the account data",
   "orphan_vllm_processes_after_shutdown": 0,
   "owner_billed_delta_usd": "0E-8",
   "peak_gpu_memory_bytes": 77337722880,
   "phase": "21B.4.20",
   "precision": "bfloat16",
-  "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT4_RAW_LOG_2026-09-24.txt",
-  "raw_log_sha256": "068332b340ddcf73d1d61e326c1e95646a610ac6864b2a47848cf218355d5bbd",
+  "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT5_RAW_LOG_2026-09-24.txt",
+  "raw_log_sha256": "3596fbd908ea8c92a2553a3d6c10e230b4b3a1bcb47f6127ece5a661f743abeb",
   "reasoning_mode": "ENABLED (Qwen3 hybrid-thinking template default; canonical control spec launches with --reasoning-parser qwen3)",
   "reasoning_parser": "qwen3",
+  "runtime_configuration": {
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    },
+    "configuration_sha256": "c88e0e140797d25ea9c86bc642d23706d9b6e76c241c49d2b6b354a40b83bab1",
+    "container_proof": {
+      "chat_template_kwargs_sent": {
+        "A": {
+          "enable_thinking": false
+        },
+        "B": {
+          "enable_thinking": false
+        },
+        "C": {
+          "enable_thinking": false
+        }
+      },
+      "model_id": "Qwen/Qwen3-8B",
+      "precision": "bfloat16",
+      "prompt_sha256_sent": {
+        "A": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+        "B": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+        "C": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42"
+      },
+      "quantization": null,
+      "reasoning_parser": "qwen3",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "runtime_configuration_id": "qwen3_8b_non_thinking_v1",
+      "runtime_configuration_id_applied": "qwen3_8b_non_thinking_v1",
+      "runtime_configuration_sha256": "c88e0e140797d25ea9c86bc642d23706d9b6e76c241c49d2b6b354a40b83bab1",
+      "runtime_policy_sha256": "50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e",
+      "served_model_id": "Qwen/Qwen3-8B",
+      "smoke_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1"
+    },
+    "id": "qwen3_8b_non_thinking_v1",
+    "runtime_policy_sha256": "50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e"
+  },
   "runtime_name": "vLLM (official vllm/vllm-openai image on Modal, OpenAI-compatible server; model from a verified Modal Volume cache)",
   "runtime_qualification_status": "FAILED",
   "runtime_version": "0.29.0",
@@ -302,12 +322,6 @@
     "qwen3"
   ],
   "server_exit_code": 0,
-  "settlement_reconciliation": {
-    "artifact": "GENESIS_CONTROL_QWEN3_8B_ATTEMPT4_SETTLEMENT_RECONCILIATION_20260924T211518Z.json",
-    "owner_cash_delta_usd": "0E-8",
-    "promotional_credit_used_usd": "0.22772907",
-    "sha256": "462b65f53d1fd375c5568a531c33238139e7d12b99edd8812c080ba4af21c75b"
-  },
   "smoke_acceptance": [
     {
       "accepted": true,
@@ -317,78 +331,90 @@
     },
     {
       "accepted": false,
-      "normalized_content": "The result of adding 2 and 3 is calculated by combining the two numbers. Starting with 2 and adding 3 to it:\n\n$$\n2 + 3 = 5\n$$\n\n**Answer:** 5",
+      "normalized_content": "2 + 3 = 5",
       "reason": "content is not exactly '5'",
       "smoke_id": "B"
     },
     {
       "accepted": true,
-      "normalized_content": "{\"status\":\"ready\"}",
+      "normalized_content": "{\"status\": \"ready\"}",
       "reason": "parsed JSON equals the exact object",
       "smoke_id": "C"
     }
   ],
   "smoke_outputs": [
     {
-      "content": "\n\nREADY",
+      "chat_template_kwargs_sent": {
+        "enable_thinking": false
+      },
+      "content": "READY",
       "executed": false,
       "finish_reason": "stop",
       "http_status": 200,
-      "latency_seconds": 0.8716,
+      "latency_seconds": 0.0812,
       "matches_expected_exactly": true,
-      "raw_response": "{\"content\": \"\\n\\nREADY\", \"finish_reason\": \"stop\", \"reasoning_content\": \"\\nOkay, the user wants me to reply with exactly \\\"READY\\\". Let me make sure I understand the request correctly. They specified that the response should be exactly that word, no more, no less. I need to check if there are any hidden instructions or if they want a specific format. Since the example shows \\\"READY\\\" in uppercase, I should follow that. No other text, just the word. Alright, I'll make sure to output only \\\"READY\\\" without any additional characters or explanations. Let me confirm once more to avoid any mistakes. Yep, that's all.\\n\", \"usage\": {\"completion_tokens\": 122, \"completion_tokens_details\": {\"reasoning_tokens\": 117}, \"prompt_tokens\": 13, \"total_tokens\": 135}}",
-      "raw_response_sha256": "ad87ff2109df8a3a94b8c8af67b26a093d75f4e4561b5cc6aaa5461f2917b75e",
+      "prompt_sha256_sent": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+      "raw_response": "{\"content\": \"READY\", \"finish_reason\": \"stop\", \"reasoning_content\": \"\", \"usage\": {\"completion_tokens\": 2, \"completion_tokens_details\": {\"reasoning_tokens\": 0}, \"prompt_tokens\": 16, \"total_tokens\": 18}}",
+      "raw_response_sha256": "a6bb7a5266ea7179ae04b1474f7119bb4299fa15382f1f709186d54dfc06e420",
       "smoke_id": "A",
-      "ttft_seconds": 0.0967,
+      "ttft_seconds": 0.0747,
       "usage": {
-        "completion_tokens": 122,
+        "completion_tokens": 2,
         "completion_tokens_details": {
-          "reasoning_tokens": 117
+          "reasoning_tokens": 0
         },
-        "prompt_tokens": 13,
-        "total_tokens": 135
+        "prompt_tokens": 16,
+        "total_tokens": 18
       }
     },
     {
-      "content": "\n\nThe result of adding 2 and 3 is calculated by combining the two numbers. Starting with 2 and adding 3 to it:\n\n$$\n2 + 3 = 5\n$$\n\n**Answer:** 5",
+      "chat_template_kwargs_sent": {
+        "enable_thinking": false
+      },
+      "content": "2 + 3 = 5",
       "executed": false,
       "finish_reason": "stop",
       "http_status": 200,
-      "latency_seconds": 2.1317,
+      "latency_seconds": 0.0604,
       "matches_expected_exactly": false,
-      "raw_response": "{\"id\":\"chatcmpl-86a3133df50e335f\",\"object\":\"chat.completion\",\"created\":1790283399,\"model\":\"Qwen/Qwen3-8B\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"\\n\\nThe result of adding 2 and 3 is calculated by combining the two numbers. Starting with 2 and adding 3 to it:\\n\\n$$\\n2 + 3 = 5\\n$$\\n\\n**Answer:** 5\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":\"\\nOkay, let's see. The user is asking for the result of 2 + 3. Hmm, that seems straightforward. Wait, maybe they want me to explain the process? Let me think. Addition is one of the basic arithmetic operations. So, adding 2 and 3 together. Let me visualize it. If I have two objects and then add three more, how many do I have in total? Let's count: 1, 2 (that's the first number), then adding 3 more. So 1, 2, 3. Wait, no. Wait, starting from 2, adding 3. So 2 + 1 is 3, then +1 more is 4, then +1 more is 5. So total is 5. Alternatively, I can think of it as combining the two numbers. 2 plus 3 equals 5. Yeah, that's right. I don't think there's any trick here. Maybe the user is testing if I can handle simple addition. Or maybe they want a more detailed explanation. But the question says to return the single integer result. So the answer should just be 5. Let me double-check. 2 + 3. Yes, 2 + 3 is definitely 5. No other possible answer. So the final answer is 5.\\n\"},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"system_fingerprint\":\"vllm-0.29.0-7a9c0274\",\"usage\":{\"prompt_tokens\":19,\"total_tokens\":347,\"completion_tokens\":328,\"prompt_tokens_details\":null,\"completion_tokens_details\":{\"reasoning_tokens\":279}},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null}",
-      "raw_response_sha256": "ad8377f857150d3709f326517d81fe56e3ff26aac1e9f60773650e98aa49294b",
+      "prompt_sha256_sent": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+      "raw_response": "{\"id\":\"chatcmpl-b6cd89c36a3fae03\",\"object\":\"chat.completion\",\"created\":1790324228,\"model\":\"Qwen/Qwen3-8B\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"2 + 3 = 5\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"system_fingerprint\":\"vllm-0.29.0-7a9c0274\",\"usage\":{\"prompt_tokens\":16,\"total_tokens\":24,\"completion_tokens\":8,\"prompt_tokens_details\":null,\"completion_tokens_details\":{\"reasoning_tokens\":0}},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null}",
+      "raw_response_sha256": "74055bc9f3373d49c039356265ba196362f5d0a2b6cfb2f0cc2b40c30dc77613",
       "smoke_id": "B",
       "ttft_seconds": null,
       "usage": {
-        "completion_tokens": 328,
+        "completion_tokens": 8,
         "completion_tokens_details": {
-          "reasoning_tokens": 279
+          "reasoning_tokens": 0
         },
-        "prompt_tokens": 19,
+        "prompt_tokens": 16,
         "prompt_tokens_details": null,
-        "total_tokens": 347
+        "total_tokens": 24
       }
     },
     {
-      "content": "\n\n{\"status\":\"ready\"}",
+      "chat_template_kwargs_sent": {
+        "enable_thinking": false
+      },
+      "content": "{\"status\": \"ready\"}",
       "executed": false,
       "finish_reason": "stop",
       "http_status": 200,
-      "latency_seconds": 2.8894,
+      "latency_seconds": 0.0534,
       "matches_expected_exactly": true,
-      "raw_response": "{\"id\":\"chatcmpl-a5e5dc924bc7a649\",\"object\":\"chat.completion\",\"created\":1790283401,\"model\":\"Qwen/Qwen3-8B\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"\\n\\n{\\\"status\\\":\\\"ready\\\"}\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":\"\\nOkay, the user wants me to return a valid JSON with one field: {\\\"status\\\":\\\"ready\\\"}. Let me make sure I understand the request correctly. They specified that the JSON should have a single field called \\\"status\\\" with the value \\\"ready\\\". \\n\\nFirst, I need to check if the JSON structure is correct. The syntax should start with a curly brace, then the key in quotes, a colon, the value in quotes, and close with a curly brace. So {\\\"status\\\":\\\"ready\\\"} looks right. \\n\\nWait, are there any other requirements? The user mentioned \\\"valid JSON\\\", so I should ensure there are no syntax errors. Also, the value \\\"ready\\\" should be a string, which it is. No trailing commas or missing quotes. \\n\\nI should also consider if there's any additional context. The user might be testing if I can generate a specific JSON response, maybe for an API or a configuration file. They might need this for a system that checks the status of a service or a component. \\n\\nIs there a possibility of needing more fields? The user explicitly said one field, so I shouldn't add anything else. Maybe they want to ensure that the response is minimal. \\n\\nI should also think about encoding. JSON requires that the keys and strings are in double quotes, which they are. No single quotes, which would make it invalid. \\n\\nAnother thing: the user might be using this in a programming context. For example, in JavaScript, this JSON could be parsed into an object. So the structure must be correct to avoid errors. \\n\\nI should double-check the JSON by using an online validator or a tool. But since I can't do that right now, I'll rely on my knowledge. The structure seems correct. \\n\\nSo the final answer should be exactly {\\\"status\\\":\\\"ready\\\"} without any extra spaces or characters. Let me make sure there's no typo in the key or value. \\\"status\\\" is correctly spelled, and \\\"ready\\\" is in quotes. \\n\\nYes, this should meet the user's requirements. They probably want a simple, valid JSON response without any additional information. I'll present it as specified.\\n\"},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"system_fingerprint\":\"vllm-0.29.0-7a9c0274\",\"usage\":{\"prompt_tokens\":20,\"total_tokens\":465,\"completion_tokens\":445,\"prompt_tokens_details\":null,\"completion_tokens_details\":{\"reasoning_tokens\":436}},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null}",
-      "raw_response_sha256": "8cddca358c2c4bf930351f8a2c15b67239cd738d0b1f8d34fdd1b5a340f9c649",
+      "prompt_sha256_sent": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42",
+      "raw_response": "{\"id\":\"chatcmpl-8c1f925ca020d8b8\",\"object\":\"chat.completion\",\"created\":1790324228,\"model\":\"Qwen/Qwen3-8B\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"status\\\": \\\"ready\\\"}\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"system_fingerprint\":\"vllm-0.29.0-7a9c0274\",\"usage\":{\"prompt_tokens\":21,\"total_tokens\":28,\"completion_tokens\":7,\"prompt_tokens_details\":null,\"completion_tokens_details\":{\"reasoning_tokens\":0}},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null}",
+      "raw_response_sha256": "cd4759853d6c353ae227fca90c684f82ac7ff481657e6dd01adc327345b809da",
       "smoke_id": "C",
       "ttft_seconds": null,
       "usage": {
-        "completion_tokens": 445,
+        "completion_tokens": 7,
         "completion_tokens_details": {
-          "reasoning_tokens": 436
+          "reasoning_tokens": 0
         },
-        "prompt_tokens": 20,
+        "prompt_tokens": 21,
         "prompt_tokens_details": null,
-        "total_tokens": 465
+        "total_tokens": 28
       }
     }
   ],
@@ -397,7 +423,7 @@
       "expected": "READY",
       "messages": [
         {
-          "content": "Reply with exactly:\nREADY",
+          "content": "Reply exactly:\nREADY",
           "role": "user"
         }
       ],
@@ -408,7 +434,7 @@
       "expected": "5",
       "messages": [
         {
-          "content": "Return the single integer result of:\n2 + 3",
+          "content": "2 + 3",
           "role": "user"
         }
       ],
@@ -419,7 +445,7 @@
       "expected": "{\"status\":\"ready\"}",
       "messages": [
         {
-          "content": "Return valid JSON with one field:\n{\"status\":\"ready\"}",
+          "content": "Return valid JSON:\n{\"status\":\"ready\"}",
           "role": "user"
         }
       ],
@@ -427,24 +453,118 @@
       "smoke_id": "C"
     }
   ],
-  "started_at_utc": "2026-09-24T20:53:32Z",
-  "status_correction": {
-    "from": "RUNTIME_QUALIFIED",
-    "reason": "RUNTIME_QUALIFIED requires observed settlement (validator); no technical evidence was altered",
-    "to": "PENDING_SETTLEMENT_OBSERVATION"
+  "smoke_protocol": {
+    "canonical_json_utf8_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
+    "normalization": "str.strip() (surrounding whitespace only), identical for every smoke",
+    "prompts": [
+      {
+        "acceptance": {
+          "expected": "READY",
+          "kind": "exact_text"
+        },
+        "messages": [
+          {
+            "content": "Reply exactly:\nREADY",
+            "role": "user"
+          }
+        ],
+        "sha256": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+        "smoke_id": "A",
+        "stream": true,
+        "utf8_hex": "5265706c792065786163746c793a0a5245414459"
+      },
+      {
+        "acceptance": {
+          "expected": "5",
+          "kind": "exact_text"
+        },
+        "messages": [
+          {
+            "content": "2 + 3",
+            "role": "user"
+          }
+        ],
+        "sha256": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+        "smoke_id": "B",
+        "stream": false,
+        "utf8_hex": "32202b2033"
+      },
+      {
+        "acceptance": {
+          "expected": {
+            "status": "ready"
+          },
+          "kind": "json_equal"
+        },
+        "messages": [
+          {
+            "content": "Return valid JSON:\n{\"status\":\"ready\"}",
+            "role": "user"
+          }
+        ],
+        "sha256": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42",
+        "smoke_id": "C",
+        "stream": false,
+        "utf8_hex": "52657475726e2076616c6964204a534f4e3a0a7b22737461747573223a227265616479227d"
+      }
+    ],
+    "protocol_id": "GENESIS_CONTROL_RUNTIME_LOCKED_SMOKE_PROTOCOL",
+    "protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
+    "smokes": [
+      {
+        "acceptance": {
+          "expected": "READY",
+          "kind": "exact_text"
+        },
+        "messages": [
+          {
+            "content": "Reply exactly:\nREADY",
+            "role": "user"
+          }
+        ],
+        "smoke_id": "A",
+        "stream": true
+      },
+      {
+        "acceptance": {
+          "expected": "5",
+          "kind": "exact_text"
+        },
+        "messages": [
+          {
+            "content": "2 + 3",
+            "role": "user"
+          }
+        ],
+        "smoke_id": "B",
+        "stream": false
+      },
+      {
+        "acceptance": {
+          "expected": {
+            "status": "ready"
+          },
+          "kind": "json_equal"
+        },
+        "messages": [
+          {
+            "content": "Return valid JSON:\n{\"status\":\"ready\"}",
+            "role": "user"
+          }
+        ],
+        "smoke_id": "C",
+        "stream": false
+      }
+    ]
   },
+  "started_at_utc": "2026-09-25T08:14:29Z",
   "steady_gpu_memory_bytes": 77337722880,
   "stop_behavior": "eos_token <|im_end|>; generation_config eos_token_id [151645, 151643]",
-  "superseded_classification": {
-    "reason": "audit finding: locked Smoke B (exact '5') was not satisfied; HTTP 200 + non-empty is not acceptance",
-    "runtime_qualification_status": "RUNTIME_QUALIFIED",
-    "technical_serving_status": "QUALIFIED"
-  },
   "technical_serving_status": "FAILED",
   "tensor_parallel": 1,
   "tokenizer_revision": "b968826d9c46dd6066d109eabc6255188de91218",
-  "tokens_per_second": 151.88,
-  "ttft_seconds": 0.0967,
+  "tokens_per_second": 87.18,
+  "ttft_seconds": 0.0747,
   "unobservable_reasons": {},
   "version_endpoint": {
     "version": "0.29.0"
