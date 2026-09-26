@@ -735,7 +735,24 @@ def _check_settlement_consistency(record: dict) -> None:
         raise ControlRuntimeError("attempt billing_settlement_status matches neither the current settlement nor the preserved in-run settlement")
 
 
+def _candidate_id(record: dict) -> str | None:
+    """A record may declare that a CANDIDATE runtime configuration (never the canonical one) was used, via `runtime_candidate_configuration_id`. The id must be a known
+    candidate restricted to this record's own model; anything else is refused. Absent == canonical (the historical Mistral/Qwen/Phi records all lack the key)."""
+    cid = record.get("runtime_candidate_configuration_id")
+    if cid is None:
+        return None
+    ref = _rc.CANDIDATE_CONFIGURATIONS.get(cid) if isinstance(cid, str) else None
+    if ref is None or record.get("model_id") != ref["model_id"]:
+        raise ControlRuntimeError(f"runtime_candidate_configuration_id {cid!r} is unknown or restricted to another model")
+    return cid
+
+
 def _expected_flags(record: dict) -> dict:
+    cid = _candidate_id(record)
+    if cid is not None:                      # the candidate's OWN flags; the canonical hf flags are never accepted for a candidate record (no silent fallback)
+        args = _rc.CANDIDATE_CONFIGURATIONS[cid]["server_args"]
+        flags = dict(zip(args[0::2], args[1::2]))
+        return {"reasoning_parser": None, "tokenizer_mode": flags.get("--tokenizer-mode"), "config_format": flags.get("--config-format"), "load_format": flags.get("--load-format")}
     return LOCKED_SERVER_FLAGS.get(record.get("control_name"), {})
 
 
@@ -762,11 +779,17 @@ def _check_container_execution_proof(record: dict, evidence_root: Path | None = 
         raise ControlRuntimeError(f"container_execution_proof.provenance must be one of {PROOF_PROVENANCES}")
     if provenance == "RECONSTRUCTED_FROM_PERSISTED_EVIDENCE":
         _check_grandfathered_reconstruction(record, evidence_root)
+    cid = _candidate_id(record)
     approved = _rc.RUNTIME_CONFIGURATIONS.get(model_id)
-    want_id = approved["id"] if approved else None
-    want_kwargs = approved["chat_template_kwargs"] if approved else None
+    want_id = cid if cid is not None else (approved["id"] if approved else None)
+    want_kwargs = None if cid is not None else (approved["chat_template_kwargs"] if approved else None)
     if proof.get("runtime_configuration_id") != want_id or proof.get("runtime_configuration_id_applied") != want_id:
         raise ControlRuntimeError(f"container proof: runtime_configuration_id must be {want_id!r} (no other control's configuration may leak)")
+    if cid is not None:
+        if proof.get("runtime_configuration_sha256") != _rc.candidate_configuration_sha256(cid):
+            raise ControlRuntimeError("container proof: candidate configuration fingerprint differs from the local candidate")
+        if "chat_template_flag" not in proof or proof.get("chat_template_flag") is not None:
+            raise ControlRuntimeError("container proof: a candidate attempt must prove that no --chat-template server flag was used")
     sent = proof.get("chat_template_kwargs_sent")
     if not isinstance(sent, dict) or sorted(sent) != list(REQUIRED_SMOKE_IDS) or not all(_same_json(v, want_kwargs) for v in sent.values()):
         raise ControlRuntimeError(f"container proof: chat_template_kwargs sent must be {want_kwargs!r} for every locked smoke (null for controls without a configuration)")
@@ -1060,6 +1083,7 @@ def validate_control_runtime_record(record: dict, *, evidence_root: Path) -> Non
     if last_domain in ("HARNESS", "FINANCIAL_GUARD", "UNATTRIBUTED") and technical != "NOT_PROVEN":
         raise ControlRuntimeError(
             f"the last attempt ended in {last_domain}; technical_serving_status must be NOT_PROVEN, got {technical!r}")
+    _candidate_id(record)                    # any declared candidate must be known and restricted to this record's own model, whatever the record's status
     _check_runtime_configuration(record)
     _check_model_runtime_attribution(record)
     _check_settlement_consistency(record)

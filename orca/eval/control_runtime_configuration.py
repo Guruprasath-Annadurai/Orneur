@@ -111,3 +111,103 @@ def verify_runtime_configuration_integrity(configs=None, required_from=None) -> 
 
 
 verify_runtime_configuration_integrity()
+
+# ══ CANDIDATE runtime configurations (NOT canonical, NOT part of the pinned policy above) ═══════════════════════════════════════════════════
+# A candidate is a separately versioned, separately fingerprinted configuration that a FUTURE owner-authorized attempt may select explicitly. It never
+# changes RUNTIME_CONFIGURATIONS, REQUIRED_FROM_ATTEMPT, PINNED_RUNTIME_POLICY_SHA256 or the runner's canonical LOCKED flags, and nothing selects it by default.
+MISTRAL_NATIVE_V1_ID = "mistral_nemo_native_v1"
+LOCKED_SMOKE_PROTOCOL_SHA256 = "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1"      # mirrors locked_smoke_protocol.PINNED_PROTOCOL_SHA256 (a test asserts equality)
+
+CANDIDATE_CONFIGURATIONS: dict[str, dict] = {
+    MISTRAL_NATIVE_V1_ID: {
+        "id": MISTRAL_NATIVE_V1_ID,
+        "status": "CANDIDATE",
+        "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
+        "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+        "precision": "bfloat16",
+        "quantization": None,
+        "server_args": ["--tokenizer-mode", "mistral", "--config-format", "hf", "--load-format", "safetensors"],
+        "forbidden_server_flags": ["--reasoning-parser", "--chat-template"],
+        "reasoning_parser": None,
+        "chat_template": None,
+        "chat_template_kwargs": None,
+        "generation": {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 64},
+        "smoke_protocol_sha256": LOCKED_SMOKE_PROTOCOL_SHA256,
+    },
+}
+PINNED_CANDIDATE_SHA256 = {MISTRAL_NATIVE_V1_ID: "88a9cfec24af45da3dd4b969e24a3e44e82a6b3a850cb152a76cddbfb135459a"}
+
+
+def candidate_canonical_bytes(config_id: str, configs=None) -> bytes:
+    cfg = (CANDIDATE_CONFIGURATIONS if configs is None else configs)[config_id]
+    return json.dumps(cfg, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def candidate_configuration_sha256(config_id: str, configs=None) -> str:
+    return hashlib.sha256(candidate_canonical_bytes(config_id, configs)).hexdigest()
+
+
+def candidate_problems(cfg, *, model_id: str | None = None) -> list[str]:
+    """Every way a candidate configuration (or a record's claim of one) can differ from the approved candidate. Empty list == exactly the approved candidate.
+    Fail closed: tokenizer mode must be `mistral` (never `hf`), config/load format cannot drift, no reasoning parser, no chat-template override, no hidden kwargs."""
+    if not isinstance(cfg, dict):
+        return ["candidate configuration is not a mapping"]
+    ref = CANDIDATE_CONFIGURATIONS.get(cfg.get("id"))
+    if ref is None:
+        return [f"unknown candidate configuration id {cfg.get('id')!r}"]
+    bad: list[str] = []
+    if model_id is not None and (cfg.get("model_id") != ref["model_id"] or model_id != ref["model_id"]):
+        bad.append(f"candidate {ref['id']} may only be used with {ref['model_id']} (asked for {model_id!r})")
+    args = cfg.get("server_args")
+    if not isinstance(args, list) or len(args) % 2 or not all(isinstance(a, str) for a in args):
+        return bad + ["server_args is not a flat list of flag/value strings"]
+    flags = dict(zip(args[0::2], args[1::2]))
+    if flags.get("--tokenizer-mode") != "mistral":
+        bad.append(f"--tokenizer-mode must be 'mistral' (found {flags.get('--tokenizer-mode')!r}); an hf substitution is rejected")
+    if flags.get("--config-format") != "hf" or flags.get("--load-format") != "safetensors":
+        bad.append("--config-format/--load-format drifted from hf/safetensors")
+    for f in ref["forbidden_server_flags"]:
+        if f in args:
+            bad.append(f"{f} may not appear")
+    if args != ref["server_args"]:
+        bad.append("server_args differ from the approved candidate")
+    if cfg.get("reasoning_parser") is not None:
+        bad.append("reasoning_parser must be null")
+    if cfg.get("chat_template") is not None:
+        bad.append("a chat-template override is not allowed")
+    if cfg.get("chat_template_kwargs") is not None:
+        bad.append("chat_template_kwargs must be null (no hidden kwargs)")
+    for key in ("revision", "precision", "quantization", "generation", "smoke_protocol_sha256", "status"):
+        if cfg.get(key) != ref[key]:
+            bad.append(f"{key} differs from the approved candidate")
+    if set(cfg) != set(ref):
+        bad.append(f"unexpected/missing fields {sorted(set(cfg) ^ set(ref))}")
+    return bad
+
+
+def candidate_configuration(config_id: str, model_id: str) -> dict:
+    """The approved candidate for exactly this model, or ValueError (any other model / unknown id is refused)."""
+    ref = CANDIDATE_CONFIGURATIONS.get(config_id)
+    if ref is None:
+        raise ValueError(f"unknown candidate configuration id {config_id!r}")
+    if model_id != ref["model_id"]:
+        raise ValueError(f"candidate {config_id} is restricted to {ref['model_id']}, not {model_id!r}")
+    return copy.deepcopy(ref)
+
+
+def candidate_server_args(config_id: str, model_id: str) -> list[str]:
+    return list(candidate_configuration(config_id, model_id)["server_args"])
+
+
+def verify_candidate_integrity(configs=None) -> None:
+    for cid, want in PINNED_CANDIDATE_SHA256.items():
+        cfgs = CANDIDATE_CONFIGURATIONS if configs is None else configs
+        if cid not in cfgs or candidate_configuration_sha256(cid, cfgs) != want:
+            raise RuntimeError(f"candidate runtime configuration drift: {cid} fingerprint differs from its pinned sha256")
+        problems = candidate_problems(cfgs[cid], model_id=cfgs[cid]["model_id"])
+        if problems:
+            raise RuntimeError(f"candidate runtime configuration {cid} violates its own invariants: {problems}")
+
+
+verify_candidate_integrity()
+

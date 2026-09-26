@@ -417,13 +417,23 @@ def cmd_stage_model(control: str) -> int:
     return 0 if ok else 3
 
 
-def serving_config(control: str, ready_deadline_seconds: int = READY_DEADLINE_SECONDS) -> dict:
+def serving_config(control: str, ready_deadline_seconds: int = READY_DEADLINE_SECONDS, candidate: str | None = None) -> dict:
     """The complete serve_and_smoke configuration for a control -- the ONE place it is assembled (runner CLI and Modal harness both call it).
-    The control's runtime configuration comes from the canonical module by model id; controls without one carry None."""
+    The control's runtime configuration comes from the canonical module by model id; controls without one carry None.
+    `candidate` (default None == canonical, unchanged) selects a separately versioned CANDIDATE configuration for exactly its own model: its server flags
+    replace the canonical extra_args, it is validated fail-closed, and nothing ever falls back to the canonical flags."""
     lock = LOCKED[control]
-    return {"model_id": lock["model_id"], "revision": lock["revision"], "extra_args": lock["extra_args"], "smokes": SMOKES,
+    extra_args, runtime_configuration = lock["extra_args"], RUNTIME_CONFIGS.configuration_for_model(lock["model_id"])
+    if candidate is not None:
+        runtime_configuration = RUNTIME_CONFIGS.candidate_configuration(candidate, lock["model_id"])      # ValueError: unknown id / another model
+        problems = RUNTIME_CONFIGS.candidate_problems(runtime_configuration, model_id=lock["model_id"])
+        if (problems or runtime_configuration["revision"] != lock["revision"] or runtime_configuration["generation"]["max_tokens"] != lock["smoke_max_tokens"]
+                or runtime_configuration["smoke_protocol_sha256"] != LOCKED_PROTOCOL.protocol_sha256()):
+            raise RuntimeError(f"candidate {candidate} does not match the locked identity/generation/protocol: {problems}")
+        extra_args = list(runtime_configuration["server_args"])
+    return {"model_id": lock["model_id"], "revision": lock["revision"], "extra_args": extra_args, "smokes": SMOKES,
             "max_model_len": MAX_MODEL_LEN, "gpu_memory_utilization": GPU_MEMORY_UTILIZATION, "smoke_max_tokens": lock["smoke_max_tokens"],
-            "ready_deadline_seconds": ready_deadline_seconds, "runtime_configuration": RUNTIME_CONFIGS.configuration_for_model(lock["model_id"])}
+            "ready_deadline_seconds": ready_deadline_seconds, "runtime_configuration": runtime_configuration}
 
 
 def cmd_serve(control: str, out: str, deadline: int) -> int:

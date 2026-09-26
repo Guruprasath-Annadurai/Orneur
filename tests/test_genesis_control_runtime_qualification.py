@@ -2763,8 +2763,9 @@ def test_a_new_unapproved_control_entry_or_a_removed_qwen_entry_also_fails():
 _SOURCE_EDITS = {
     "id": ('QWEN_CONFIGURATION_ID = "qwen3_8b_non_thinking_v1"', 'QWEN_CONFIGURATION_ID = "qwen3_8b_non_thinking_v2"'),
     "revision": ('"revision": "b968826d9c46dd6066d109eabc6255188de91218",', '"revision": "c968826d9c46dd6066d109eabc6255188de91218",'),
-    "precision": ('"precision": "bfloat16",', '"precision": "float16",'),
-    "quantization": ('"quantization": None,', '"quantization": "fp8",'),
+    # anchored on the Qwen entry (the separately pinned CANDIDATE block below it repeats these two lines)
+    "precision": ('"precision": "bfloat16",\n        "quantization": None,\n        "reasoning_parser": "qwen3",', '"precision": "float16",\n        "quantization": None,\n        "reasoning_parser": "qwen3",'),
+    "quantization": ('"precision": "bfloat16",\n        "quantization": None,\n        "reasoning_parser": "qwen3",', '"precision": "bfloat16",\n        "quantization": "fp8",\n        "reasoning_parser": "qwen3",'),
     "reasoning_parser": ('"reasoning_parser": "qwen3",', '"reasoning_parser": "deepseek_r1",'),
     "enable_thinking": ('"chat_template_kwargs": {"enable_thinking": False},', '"chat_template_kwargs": {"enable_thinking": True},'),
     "extra_kwarg": ('"chat_template_kwargs": {"enable_thinking": False},', '"chat_template_kwargs": {"enable_thinking": False, "reasoning_effort": "none"},'),
@@ -4381,3 +4382,218 @@ def test_the_pinned_readiness_constants_are_independent_of_the_readiness_artifac
     from orca.eval.control_runtime_qualification import LOCKED_SERVER_FLAGS
     assert LOCKED_SERVER_FLAGS["Mistral-Nemo-Instruct-2407"]["tokenizer_mode"] == "hf"                                      # canonical configuration is UNCHANGED in this commit
     assert _mistral_live()["container_execution_proof"]["tokenizer_mode"] == "hf"
+
+
+# ══ Candidate runtime configuration `mistral_nemo_native_v1` (CPU-only formalization; the canonical Mistral configuration stays hf) ═════════
+from orca.eval.control_runtime_qualification import LOCKED_SERVER_FLAGS  # noqa: E402
+
+CAND_ID = "mistral_nemo_native_v1"
+MISTRAL_MODEL = "mistralai/Mistral-Nemo-Instruct-2407"
+CAND_ARGS = ["--tokenizer-mode", "mistral", "--config-format", "hf", "--load-format", "safetensors"]
+NATIVE_V1_READINESS = EVIDENCE_DIR / "GENESIS_MISTRAL_NEMO_NATIVE_V1_IMPLEMENTATION_READINESS_2026-09-26.json"
+
+
+def _cand():
+    return runtime_cfg.candidate_configuration(CAND_ID, MISTRAL_MODEL)
+
+
+def test_candidate_id_and_fingerprint_are_deterministic_and_pinned():
+    a, b = runtime_cfg.candidate_configuration_sha256(CAND_ID), runtime_cfg.candidate_configuration_sha256(CAND_ID)
+    assert a == b == runtime_cfg.PINNED_CANDIDATE_SHA256[CAND_ID] == "88a9cfec24af45da3dd4b969e24a3e44e82a6b3a850cb152a76cddbfb135459a"
+    reordered = {CAND_ID: dict(reversed(list(_cand().items())))}                                                            # key order cannot change the canonical serialization
+    assert runtime_cfg.candidate_configuration_sha256(CAND_ID, reordered) == a
+    assert runtime_cfg.candidate_canonical_bytes(CAND_ID) == json.dumps(_cand(), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    c = _cand()
+    assert c["id"] == CAND_ID and c["status"] == "CANDIDATE" and c["server_args"] == CAND_ARGS and c["generation"] == {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 64}
+    assert runtime_cfg.candidate_problems(c, model_id=MISTRAL_MODEL) == []
+    assert c["reasoning_parser"] is None and c["chat_template"] is None and c["chat_template_kwargs"] is None and c["quantization"] is None and c["precision"] == "bfloat16"
+
+
+_CAND_SOURCE_EDITS = {
+    "tokenizer_mode_hf": ('"server_args": ["--tokenizer-mode", "mistral",', '"server_args": ["--tokenizer-mode", "hf",'),
+    "load_format": ('"--load-format", "safetensors"],\n        "forbidden', '"--load-format", "auto"],\n        "forbidden'),
+    "reasoning_parser": ('"reasoning_parser": None,\n        "chat_template": None,', '"reasoning_parser": "qwen3",\n        "chat_template": None,'),
+    "chat_template_override": ('"chat_template": None,\n        "chat_template_kwargs": None,', '"chat_template": "{{x}}",\n        "chat_template_kwargs": None,'),
+    "hidden_kwargs": ('"chat_template": None,\n        "chat_template_kwargs": None,', '"chat_template": None,\n        "chat_template_kwargs": {"x": 1},'),
+    "generation": ('"generation": {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 64}', '"generation": {"temperature": 0.7, "top_p": 1, "seed": 0, "max_tokens": 64}'),
+    "revision": ('"revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",\n        "precision": "bfloat16",\n        "quantization": None,\n        "server_args"',
+                 '"revision": "14d8a90549d23fc6bd7f642064003592df51e9b3",\n        "precision": "bfloat16",\n        "quantization": None,\n        "server_args"'),
+}
+
+
+@pytest.mark.parametrize("field", sorted(_CAND_SOURCE_EDITS))
+def test_editing_the_candidate_source_data_stops_every_importer_at_import_time(field):
+    old, new = _CAND_SOURCE_EDITS[field]
+    original = RUNTIME_CONFIG_FILE.read_text()
+    assert original.count(old) == 1 and old != new
+    with pytest.raises(RuntimeError, match="candidate runtime configuration"):
+        exec(compile(original.replace(old, new), "candidate_drift_probe", "exec"), {"__name__": "candidate_drift_probe"})
+
+
+def test_candidate_validation_rejects_every_drift_and_any_other_model():
+    ok = _cand()
+    assert runtime_cfg.candidate_problems(ok, model_id=MISTRAL_MODEL) == []
+    variants = {
+        "hf_substitution": dict(ok, server_args=["--tokenizer-mode", "hf", "--config-format", "hf", "--load-format", "safetensors"]),
+        "config_format": dict(ok, server_args=["--tokenizer-mode", "mistral", "--config-format", "mistral", "--load-format", "safetensors"]),
+        "load_format": dict(ok, server_args=["--tokenizer-mode", "mistral", "--config-format", "hf", "--load-format", "mistral"]),
+        "reasoning_parser_flag": dict(ok, server_args=ok["server_args"] + ["--reasoning-parser", "qwen3"]),
+        "chat_template_flag": dict(ok, server_args=ok["server_args"] + ["--chat-template", "t.jinja"]),
+        "reasoning_parser_field": dict(ok, reasoning_parser="qwen3"), "chat_template_field": dict(ok, chat_template="{{x}}"), "kwargs": dict(ok, chat_template_kwargs={"a": 1}),
+        "generation": dict(ok, generation=dict(ok["generation"], temperature=1)), "protocol": dict(ok, smoke_protocol_sha256="0" * 64), "revision": dict(ok, revision="0" * 40),
+        "precision": dict(ok, precision="float16"), "quantization": dict(ok, quantization="fp8"), "extra_field": dict(ok, note="x"), "id": dict(ok, id="other"), "not_a_mapping": None,
+        "odd_args": dict(ok, server_args=["--tokenizer-mode"]),
+    }
+    for name, v in variants.items():
+        assert runtime_cfg.candidate_problems(v, model_id=MISTRAL_MODEL), name
+    for other in ("Qwen/Qwen3-8B", "microsoft/phi-4", "x/y"):
+        assert runtime_cfg.candidate_problems(ok, model_id=other)
+        with pytest.raises(ValueError, match="restricted"):
+            runtime_cfg.candidate_configuration(CAND_ID, other)
+    with pytest.raises(ValueError, match="unknown"):
+        runtime_cfg.candidate_configuration("qwen3_8b_non_thinking_v1", MISTRAL_MODEL)
+
+
+def test_the_runner_assembles_the_candidate_only_on_explicit_request_and_never_falls_back():
+    r = _runner_module()
+    canon, cand = r.serving_config("mistral_nemo"), r.serving_config("mistral_nemo", 420, CAND_ID)
+    assert canon["extra_args"] == MISTRAL_ARGS and canon["runtime_configuration"] is None                                   # default is unchanged: hf, no configuration
+    assert cand["extra_args"] == CAND_ARGS and cand["runtime_configuration"]["id"] == CAND_ID and cand["smoke_max_tokens"] == 64
+    assert r.LOCKED["mistral_nemo"]["extra_args"] == MISTRAL_ARGS and LOCKED_SERVER_FLAGS["Mistral-Nemo-Instruct-2407"]["tokenizer_mode"] == "hf"
+    for control in ("qwen3_8b", "phi4"):
+        with pytest.raises(ValueError, match="restricted"):
+            r.serving_config(control, 420, CAND_ID)
+    with pytest.raises(ValueError, match="unknown"):
+        r.serving_config("mistral_nemo", 420, "mistral_nemo_native_v2")
+    # Qwen and Phi assembly are byte-for-byte what they were
+    q, p = r.serving_config("qwen3_8b"), r.serving_config("phi4")
+    assert q["runtime_configuration"] == runtime_cfg.configuration_for_model("Qwen/Qwen3-8B") and q["extra_args"] == ["--reasoning-parser", "qwen3"]
+    assert p["runtime_configuration"] is None and p["extra_args"] == []
+    assert CAND_ID not in runtime_cfg.RUNTIME_CONFIGURATIONS and runtime_cfg.runtime_policy_sha256() == PINNED_POLICY_SHA256 and "mistral" not in json.dumps(runtime_cfg.runtime_policy_document()).lower()
+
+
+def test_the_candidate_request_builder_sends_no_template_kwargs_or_reasoning_and_keeps_the_locked_generation():
+    r = _runner_module()
+    cfg = r.serving_config("mistral_nemo", 420, CAND_ID)
+    gen = {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": cfg["smoke_max_tokens"]}
+    for s in cfg["smokes"]:
+        p = r.build_chat_payload(cfg, s, gen)
+        assert sorted(p) == ["max_tokens", "messages", "model", "seed", "temperature", "top_p"]
+        assert p["messages"] == locked_protocol.messages(s["smoke_id"]) and (p["temperature"], p["top_p"], p["seed"], p["max_tokens"]) == (0, 1, 0, 64)
+    assert runtime_cfg.LOCKED_SMOKE_PROTOCOL_SHA256 == locked_protocol.PINNED_PROTOCOL_SHA256 == locked_protocol.protocol_sha256() == CANONICAL_PROTOCOL_SHA256
+    assert cfg["model_id"] == MISTRAL_MODEL and cfg["revision"] == _cand()["revision"] == LOCKED_CONTROL_IDENTITIES["Mistral-Nemo-Instruct-2407"]["revision"]
+
+
+def _cand_proof(**over):
+    proof = dict(_mistral_proof()["runtime_configuration_proof"], runtime_configuration_id=CAND_ID, runtime_configuration_id_applied=CAND_ID,
+                 runtime_configuration_sha256=runtime_cfg.candidate_configuration_sha256(CAND_ID), tokenizer_mode="mistral", chat_template_flag=None)
+    proof.update(over)
+    return {"runtime_configuration_proof": proof}
+
+
+def test_a_future_candidate_container_proof_must_establish_exactly_the_candidate_and_mismatch_fails_closed(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    m = LOCKED_CONTROL_IDENTITIES["Mistral-Nemo-Instruct-2407"]
+    assert mod.container_proof_problems(_cand_proof(), m["model_id"], m["revision"], candidate_id=CAND_ID) == []
+    assert mod.container_proof_problems(_cand_proof(), m["model_id"], m["revision"], CAND_ARGS, candidate_id=CAND_ID) == []
+    assert mod.container_proof_problems(_cand_proof(), m["model_id"], m["revision"], MISTRAL_ARGS, candidate_id=CAND_ID)              # canonical flags are not the candidate's
+    drifts = (dict(tokenizer_mode="hf"), dict(tokenizer_mode=None), dict(config_format="mistral"), dict(load_format="auto"), dict(reasoning_parser="qwen3"),
+              dict(runtime_configuration_id=None), dict(runtime_configuration_id_applied=None), dict(runtime_configuration_id="qwen3_8b_non_thinking_v1"),
+              dict(runtime_configuration_sha256="0" * 64), dict(runtime_configuration_sha256=runtime_cfg.configuration_sha256("Qwen/Qwen3-8B")),
+              dict(chat_template_kwargs_sent={sid: {"enable_thinking": False} for sid in "ABC"}), dict(chat_template_kwargs_sent={"A": None, "B": None, "C": {}}),
+              dict(chat_template_flag="t.jinja"), dict(smoke_protocol_sha256="0" * 64), dict(prompt_sha256_sent={"A": "0" * 64, "B": "0" * 64, "C": "0" * 64}),
+              dict(model_id="x"), dict(served_model_id="x"), dict(revision="0" * 40), dict(precision="float16"), dict(quantization="fp8"), dict(runtime_policy_sha256="0" * 64))
+    for over in drifts:
+        assert mod.container_proof_problems(_cand_proof(**over), m["model_id"], m["revision"], candidate_id=CAND_ID), over
+    proof = _cand_proof()["runtime_configuration_proof"]
+    del proof["chat_template_flag"]                                                                                        # absent flag proof is not accepted for a candidate
+    assert mod.container_proof_problems({"runtime_configuration_proof": proof}, m["model_id"], m["revision"], candidate_id=CAND_ID)
+    assert mod.container_proof_problems(_mistral_proof(), m["model_id"], m["revision"], candidate_id=CAND_ID)                  # an hf-mode proof cannot satisfy the candidate
+    assert mod.container_proof_problems(_cand_proof(), m["model_id"], m["revision"], MISTRAL_ARGS)                             # and a candidate proof cannot satisfy the canonical configuration
+    for control in ("Qwen/Qwen3-8B", "microsoft/phi-4"):
+        with pytest.raises(ValueError, match="restricted"):
+            mod.container_proof_problems(_cand_proof(), control, "0" * 40, candidate_id=CAND_ID)
+    assert mod.container_proof_problems(_mistral_proof(), m["model_id"], m["revision"], MISTRAL_ARGS) == []                    # the canonical hf proof path is unchanged
+
+
+def test_the_container_proof_records_the_candidate_fingerprint_and_the_absence_of_a_chat_template_flag(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    runner = _runner_module()
+    cfg = runner.serving_config("mistral_nemo", 420, CAND_ID)
+    argv = ["python", "-m", "vllm.entrypoints.openai.api_server", "--model", "<snap>", "--dtype", "bfloat16", "--seed", "0", *CAND_ARGS]
+    smokes = [{"smoke_id": s["smoke_id"], "chat_template_kwargs_sent": None, "prompt_sha256_sent": locked_protocol.prompt_sha256(s["smoke_id"])} for s in cfg["smokes"]]
+    proof = mod._container_proof(runner, cfg, {"server_argv_sanitized": argv, "smoke_results": smokes, "models_endpoint": {"data": [{"id": cfg["model_id"]}]},
+                                               "snapshot_dir_name": cfg["revision"], "runtime_configuration_id_applied": cfg["runtime_configuration"]["id"]})
+    assert proof["runtime_configuration_id"] == proof["runtime_configuration_id_applied"] == CAND_ID and proof["runtime_configuration_sha256"] == runtime_cfg.candidate_configuration_sha256(CAND_ID)
+    assert (proof["tokenizer_mode"], proof["config_format"], proof["load_format"], proof["reasoning_parser"], proof["chat_template_flag"]) == ("mistral", "hf", "safetensors", None, None)
+    m = LOCKED_CONTROL_IDENTITIES["Mistral-Nemo-Instruct-2407"]
+    assert mod.container_proof_problems({"runtime_configuration_proof": proof}, m["model_id"], m["revision"], candidate_id=CAND_ID) == []          # the harness-built proof satisfies the contract
+    canon = mod._container_proof(runner, runner.serving_config("mistral_nemo"), {"server_argv_sanitized": argv[:-6] + MISTRAL_ARGS, "smoke_results": smokes,
+                                                                                  "models_endpoint": {"data": [{"id": cfg["model_id"]}]}, "snapshot_dir_name": cfg["revision"]})
+    assert canon["runtime_configuration_id"] is None and canon["runtime_configuration_sha256"] == runtime_cfg.configuration_sha256(MISTRAL_MODEL) and canon["tokenizer_mode"] == "hf"
+
+
+def _candidate_record(tmp_path, *, declared=CAND_ID, proof_over=None):
+    rec = _mistral_record(tmp_path)
+    rec["container_execution_proof"] = dict(_cand_proof(**(proof_over or {}))["runtime_configuration_proof"], provenance="CONTAINER_RETURNED")
+    if declared is not None:
+        rec["runtime_candidate_configuration_id"] = declared
+    return rec
+
+
+def test_the_record_validator_accepts_a_candidate_attempt_only_with_a_matching_candidate_proof(tmp_path):
+    validate_control_runtime_record(_candidate_record(tmp_path), evidence_root=tmp_path)
+    for over in (dict(tokenizer_mode="hf"), dict(runtime_configuration_id_applied=None), dict(runtime_configuration_sha256="0" * 64), dict(chat_template_flag="t.jinja"),
+                 dict(config_format="mistral"), dict(load_format="auto"), dict(reasoning_parser="qwen3"), dict(chat_template_kwargs_sent={sid: {"a": 1} for sid in "ABC"})):
+        with pytest.raises(ControlRuntimeError):
+            validate_control_runtime_record(_candidate_record(tmp_path, proof_over=over), evidence_root=tmp_path)
+    with pytest.raises(ControlRuntimeError):                                                                                # candidate proof but no declaration => canonical hf expected
+        validate_control_runtime_record(_candidate_record(tmp_path, declared=None), evidence_root=tmp_path)
+    with pytest.raises(ControlRuntimeError):                                                                                # declaration but the historical hf proof => never a silent fallback
+        rec = _candidate_record(tmp_path)
+        rec["container_execution_proof"] = dict(_mistral_proof()["runtime_configuration_proof"], provenance="CONTAINER_RETURNED")
+        validate_control_runtime_record(rec, evidence_root=tmp_path)
+    for bad in ("mistral_nemo_native_v2", "qwen3_8b_non_thinking_v1", 7):
+        with pytest.raises(ControlRuntimeError, match="unknown or restricted"):
+            validate_control_runtime_record(_candidate_record(tmp_path, declared=bad), evidence_root=tmp_path)
+    q = _qualified_record(tmp_path)                                                                                         # a Qwen record cannot claim the Mistral candidate
+    q["runtime_candidate_configuration_id"] = CAND_ID
+    with pytest.raises(ControlRuntimeError, match="unknown or restricted"):
+        validate_control_runtime_record(q, evidence_root=tmp_path)
+
+
+def test_persisted_records_still_use_the_canonical_hf_configuration_and_declare_no_candidate():
+    live = _mistral_live()
+    assert "runtime_candidate_configuration_id" not in live and live["runtime_configuration"] is None and live["container_execution_proof"]["tokenizer_mode"] == "hf"
+    for name in ("QWEN3_8B", "PHI4"):
+        assert "runtime_candidate_configuration_id" not in json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{name}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert LOCKED_SERVER_FLAGS["Mistral-Nemo-Instruct-2407"] == {"reasoning_parser": None, "tokenizer_mode": "hf", "config_format": "hf", "load_format": "safetensors"}
+
+
+def test_native_v1_implementation_readiness_artifact_is_hash_verified_cpu_only_and_matches_the_code():
+    d = json.loads(NATIVE_V1_READINESS.read_text())
+    assert d["candidate_configuration_id"] == CAND_ID and d["candidate_configuration_sha256"] == d["pinned_candidate_sha256"] == runtime_cfg.candidate_configuration_sha256(CAND_ID)
+    assert d["candidate_implementation_ready_cpu_side"] is True and d["canonical_mistral_config_still_hf"] is True and d["candidate_invariant_problems"] == []
+    assert d["exact_candidate_server_argv_sanitized"][-6:] == CAND_ARGS and all(d["argv_contains"].values()) and all(d["argv_contains_no"].values())
+    assert d["canonical_mistral_server_argv_tail_UNCHANGED"] == MISTRAL_ARGS and d["locked_smoke_protocol_sha256"] == CANONICAL_PROTOCOL_SHA256 and d["locked_protocol_unchanged"] is True
+    assert d["request_configuration"]["no_chat_template_no_kwargs_no_reasoning"] is True and d["request_configuration"]["generation"] == {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 64}
+    mp = d["native_tokenizer_renderer_mapping_from_real_vllm_source"]
+    assert (mp["tokenizer"], mp["renderer"], mp["candidate_tokenizer_mode"]) == (["mistral", "MistralTokenizer"], ["mistral", "MistralRenderer"], "mistral") and mp["canonical_tokenizer"] == ["hf", "CachedHfTokenizer"]
+    ra = d["native_readiness_artifact"]
+    assert ra["verified"] and ra["sha256"] == ra["pinned_sha256"] == hashlib.sha256(NATIVE_READINESS.read_bytes()).hexdigest() and ra["source_integrity_reverified_fail_closed"] and ra["snapshot_integrity_reverified_fail_closed"]
+    assert all(v["ok"] and not v["chat_template_resolution_error"] for v in d["cpu_abc_preprocessing_consumed_from_the_hash_verified_readiness_artifact"].values())
+    pc = d["container_proof_contract"]
+    assert pc["every_drift_rejected"] and pc["no_silent_fallback_to_hf"] and pc["synthetic_proof_accepted_problems"] == [] and "SYNTHETIC" in pc["note"]
+    for k in ("no_gpu_used", "no_modal_used", "no_provider_call", "no_model_weights_loaded", "no_generation"):
+        assert d[k] is True
+    assert d["status_unchanged"]["technical_serving_status"] == "NOT_PROVEN" and "NOT a GPU authorization" in d["readiness_scope"]
+
+
+def test_the_native_v1_implementation_script_refuses_a_readiness_artifact_that_differs_from_its_pin():
+    script = (REPO_ROOT / "scripts/phase21b_4_20_mistral_native_v1_implementation_readiness.py").read_text()
+    pinned = re.search(r'PINNED_NATIVE_READINESS_SHA256 = "([0-9a-f]{64})"', script).group(1)
+    assert pinned == hashlib.sha256(NATIVE_READINESS.read_bytes()).hexdigest()
+    tree = ast.parse(script)
+    imported = {n.names[0].name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import)} | {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    assert not ({"modal", "subprocess", "torch", "vllm"} & imported) and not [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in ("remote", "spawn")]
+    assert "differs from its independently pinned sha256" in script and "readiness_mod.verify_inputs()" in script

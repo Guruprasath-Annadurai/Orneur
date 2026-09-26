@@ -94,14 +94,17 @@ def _container_proof(runner, cfg: dict, result: dict) -> dict:
     models = ((result.get("models_endpoint") or {}).get("data") or [{}])
     return {"runtime_configuration_id": (cfg.get("runtime_configuration") or {}).get("id"),
             "runtime_configuration_id_applied": result.get("runtime_configuration_id_applied"),
-            "runtime_configuration_sha256": runner.RUNTIME_CONFIGS.configuration_sha256(cfg["model_id"]),
+            "runtime_configuration_sha256": (runner.RUNTIME_CONFIGS.candidate_configuration_sha256(cfg["runtime_configuration"]["id"])
+                                             if (cfg.get("runtime_configuration") or {}).get("id") in runner.RUNTIME_CONFIGS.CANDIDATE_CONFIGURATIONS
+                                             else runner.RUNTIME_CONFIGS.configuration_sha256(cfg["model_id"])),
             "runtime_policy_sha256": runner.RUNTIME_CONFIGS.runtime_policy_sha256(),
             "chat_template_kwargs_sent": {x["smoke_id"]: x.get("chat_template_kwargs_sent") for x in smokes},
             "smoke_protocol_sha256": runner.LOCKED_PROTOCOL.protocol_sha256(),
             "prompt_sha256_sent": {x["smoke_id"]: x.get("prompt_sha256_sent") for x in smokes},
             "model_id": cfg["model_id"], "served_model_id": models[0].get("id"), "revision": result.get("snapshot_dir_name"),
             "precision": flag("--dtype"), "quantization": flag("--quantization"), "reasoning_parser": flag("--reasoning-parser"),
-            "tokenizer_mode": flag("--tokenizer-mode"), "config_format": flag("--config-format"), "load_format": flag("--load-format")}
+            "tokenizer_mode": flag("--tokenizer-mode"), "config_format": flag("--config-format"), "load_format": flag("--load-format"),
+            "chat_template_flag": flag("--chat-template")}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -123,7 +126,7 @@ def precache(control: str) -> dict:
 # Trusted inference only; generated text is data.
 # ══════════════════════════════════════════════════════════════════════════
 @app.function(image=image, gpu=GPU_TYPE, cpu=CPU_CORES, memory=GPU_MEMORY_MIB, timeout=HARD_TIMEOUT_SECONDS, volumes={MOUNT: volume})
-def serve_and_smoke(control: str) -> dict:
+def serve_and_smoke(control: str, candidate: str | None = None) -> dict:
     import os
 
     _container_env()
@@ -131,7 +134,7 @@ def serve_and_smoke(control: str) -> dict:
     os.environ["HF_HUB_OFFLINE"] = "1"      # weights come only from the verified cache; no network fetch on GPU time
     import runner  # type: ignore
 
-    cfg = runner.serving_config(control, 420)          # the ONE assembly path (includes the control's runtime configuration, if any)
+    cfg = runner.serving_config(control, 420, candidate)   # the ONE assembly path (candidate None == canonical) (includes the control's runtime configuration, if any)
     result = runner.serve_and_smoke(cfg)
     result["runtime_configuration_proof"] = _container_proof(runner, cfg, result)
     try:
@@ -440,23 +443,36 @@ def _same_json(a, b) -> bool:
     return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
-def container_proof_problems(result, model_id: str, locked_revision: str, extra_args=None) -> list[str]:
+def container_proof_problems(result, model_id: str, locked_revision: str, extra_args=None, candidate_id: str | None = None) -> list[str]:
     """Every way the container's proof can fail to establish the approved runtime configuration + canonical protocol. Empty list == proven.
-    A control WITHOUT an approved configuration must prove that NO extra request setting was sent."""
+    A control WITHOUT an approved configuration must prove that NO extra request setting was sent. With `candidate_id` the proof must establish exactly that
+    candidate (id applied, its own fingerprint, its exact server flags, null request kwargs); a proof of any other configuration -- including the canonical hf
+    flags -- is a mismatch (never a silent fallback)."""
     proof = (result or {}).get("runtime_configuration_proof")
     if not isinstance(proof, dict):
         return ["the container returned no runtime_configuration_proof"]
-    approved = runtime_config.configuration_for_model(model_id)
-    want_id = approved["id"] if approved else None
-    want_kwargs = approved["chat_template_kwargs"] if approved else None
+    if candidate_id is not None:
+        approved = runtime_config.candidate_configuration(candidate_id, model_id)        # ValueError for another model / unknown id
+        want_id, want_kwargs, want_sha = candidate_id, None, runtime_config.candidate_configuration_sha256(candidate_id)
+        if extra_args is None:
+            extra_args = approved["server_args"]
+        elif list(extra_args) != approved["server_args"]:
+            return [f"server flags {list(extra_args)!r} are not the candidate's exact flags {approved['server_args']!r}"]
+    else:
+        approved = runtime_config.configuration_for_model(model_id)
+        want_id = approved["id"] if approved else None
+        want_kwargs = approved["chat_template_kwargs"] if approved else None
+        want_sha = runtime_config.configuration_sha256(model_id)
     bad: list[str] = []
     if proof.get("runtime_configuration_id") != want_id or proof.get("runtime_configuration_id_applied") != want_id:
         bad.append(f"runtime_configuration_id (declared {proof.get('runtime_configuration_id')!r}, applied {proof.get('runtime_configuration_id_applied')!r}) != {want_id!r}")
     sent = proof.get("chat_template_kwargs_sent")
     if not isinstance(sent, dict) or sorted(sent) != list(locked_protocol.smoke_ids()) or not all(_same_json(v, want_kwargs) for v in sent.values()):
         bad.append(f"chat_template_kwargs actually sent {sent!r} != {want_kwargs!r} for every locked smoke")
-    if proof.get("runtime_configuration_sha256") != runtime_config.configuration_sha256(model_id):
+    if proof.get("runtime_configuration_sha256") != want_sha:
         bad.append("runtime configuration fingerprint differs from the canonical one")
+    if candidate_id is not None and ("chat_template_flag" not in proof or proof.get("chat_template_flag") is not None):
+        bad.append("a candidate attempt must prove that no --chat-template server flag was used")
     if proof.get("runtime_policy_sha256") != runtime_config.PINNED_RUNTIME_POLICY_SHA256:
         bad.append("container runtime-policy sha256 differs from the locally pinned runtime-policy sha256")
     if proof.get("smoke_protocol_sha256") != locked_protocol.protocol_sha256():

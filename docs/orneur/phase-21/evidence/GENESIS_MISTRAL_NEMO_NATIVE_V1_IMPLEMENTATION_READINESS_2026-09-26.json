@@ -1,0 +1,280 @@
+{
+  "argv_contains": {
+    "--config-format hf": true,
+    "--load-format safetensors": true,
+    "--tokenizer-mode mistral": true
+  },
+  "argv_contains_no": {
+    "--chat-template": true,
+    "--reasoning-parser": true
+  },
+  "candidate_canonical_json_sha256": "88a9cfec24af45da3dd4b969e24a3e44e82a6b3a850cb152a76cddbfb135459a",
+  "candidate_configuration": {
+    "chat_template": null,
+    "chat_template_kwargs": null,
+    "forbidden_server_flags": [
+      "--reasoning-parser",
+      "--chat-template"
+    ],
+    "generation": {
+      "max_tokens": 64,
+      "seed": 0,
+      "temperature": 0,
+      "top_p": 1
+    },
+    "id": "mistral_nemo_native_v1",
+    "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
+    "precision": "bfloat16",
+    "quantization": null,
+    "reasoning_parser": null,
+    "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+    "server_args": [
+      "--tokenizer-mode",
+      "mistral",
+      "--config-format",
+      "hf",
+      "--load-format",
+      "safetensors"
+    ],
+    "smoke_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
+    "status": "CANDIDATE"
+  },
+  "candidate_configuration_id": "mistral_nemo_native_v1",
+  "candidate_configuration_sha256": "88a9cfec24af45da3dd4b969e24a3e44e82a6b3a850cb152a76cddbfb135459a",
+  "candidate_flags_tail": [
+    "--tokenizer-mode",
+    "mistral",
+    "--config-format",
+    "hf",
+    "--load-format",
+    "safetensors"
+  ],
+  "candidate_implementation_ready_cpu_side": true,
+  "candidate_invariant_problems": [],
+  "candidate_status": "CANDIDATE (not canonical; not promoted; nothing selects it by default)",
+  "canonical_mistral_config_still_hf": true,
+  "canonical_mistral_runtime_configuration_UNCHANGED": null,
+  "canonical_mistral_server_argv_tail_UNCHANGED": [
+    "--tokenizer-mode",
+    "hf",
+    "--config-format",
+    "hf",
+    "--load-format",
+    "safetensors"
+  ],
+  "captured_at_utc": "2026-09-26T08:30:43Z",
+  "container_proof_contract": {
+    "drift_problems": {
+      "chat_template_flag": [
+        "a candidate attempt must prove that no --chat-template server flag was used"
+      ],
+      "config_format_drift": [
+        "server flag --config-format proven as 'mistral', locked value 'hf'"
+      ],
+      "id_applied_canonical_none": [
+        "runtime_configuration_id (declared 'mistral_nemo_native_v1', applied None) != 'mistral_nemo_native_v1'"
+      ],
+      "kwargs_sent": [
+        "chat_template_kwargs actually sent {'A': {'enable_thinking': False}, 'B': {'enable_thinking': False}, 'C': {'enable_thinking': False}} != None for every locked smoke"
+      ],
+      "load_format_drift": [
+        "server flag --load-format proven as 'auto', locked value 'safetensors'"
+      ],
+      "model": [
+        "served model id differs from the locked model id"
+      ],
+      "precision": [
+        "precision/quantization ('float16'/None) != bfloat16/None"
+      ],
+      "prompt_hashes": [
+        "per-prompt sha256 values sent differ from the canonical prompts"
+      ],
+      "protocol_sha": [
+        "locked smoke protocol fingerprint differs from the canonical one"
+      ],
+      "quantization": [
+        "precision/quantization ('bfloat16'/'fp8') != bfloat16/None"
+      ],
+      "reasoning_parser": [
+        "reasoning parser differs from the approved configuration",
+        "server flag --reasoning-parser proven as 'qwen3', locked value None"
+      ],
+      "revision": [
+        "served revision differs from the locked revision"
+      ],
+      "tokenizer_mode_hf": [
+        "server flag --tokenizer-mode proven as 'hf', locked value 'mistral'"
+      ],
+      "wrong_fingerprint": [
+        "runtime configuration fingerprint differs from the canonical one"
+      ]
+    },
+    "every_drift_rejected": true,
+    "no_silent_fallback_to_hf": true,
+    "note": "SYNTHETIC CPU-constructed proofs exercising the real validator function; they are NOT runtime evidence and prove nothing about GPU serving",
+    "synthetic_proof_accepted_problems": []
+  },
+  "cpu_abc_preprocessing_consumed_from_the_hash_verified_readiness_artifact": {
+    "A": {
+      "chat_template_resolution_error": false,
+      "ok": true,
+      "token_ids_sha256": "c8fa8a3079e38fef4c16fdf569df2b8e654ce784555b79f31088358c83aed072"
+    },
+    "B": {
+      "chat_template_resolution_error": false,
+      "ok": true,
+      "token_ids_sha256": "91c2dcb2aedd18a8ca080609df84ae1909d1ac4fbee912d23880cb0b4e52b566"
+    },
+    "C": {
+      "chat_template_resolution_error": false,
+      "ok": true,
+      "token_ids_sha256": "3603d86009760fd851c2c523cf015237c54c0d6f2539bb0fd4c7aaaf059cb786"
+    }
+  },
+  "evidence_type": "GENESIS_MISTRAL_NEMO_NATIVE_V1_IMPLEMENTATION_READINESS",
+  "exact_candidate_server_argv_sanitized": [
+    "<python interpreter>",
+    "-m",
+    "vllm.entrypoints.openai.api_server",
+    "--model",
+    "<local pinned-revision snapshot dir>",
+    "--served-model-name",
+    "mistralai/Mistral-Nemo-Instruct-2407",
+    "--dtype",
+    "bfloat16",
+    "--max-model-len",
+    "4096",
+    "--gpu-memory-utilization",
+    "0.9",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8000",
+    "--seed",
+    "0",
+    "--tokenizer-mode",
+    "mistral",
+    "--config-format",
+    "hf",
+    "--load-format",
+    "safetensors"
+  ],
+  "generated_output_executed": false,
+  "locked_protocol_unchanged": true,
+  "locked_smoke_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
+  "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
+  "native_readiness_artifact": {
+    "path": "GENESIS_MISTRAL_NEMO_NATIVE_TOKENIZER_MODE_READINESS_2026-09-26.json",
+    "pinned_sha256": "4befb62b26b34b998faf39c03525146d0ce80725c165f038182b85077829b400",
+    "sha256": "4befb62b26b34b998faf39c03525146d0ce80725c165f038182b85077829b400",
+    "snapshot_integrity_reverified_fail_closed": true,
+    "source_integrity_reverified_fail_closed": true,
+    "verdict": "NATIVE_MISTRAL_MODE_CPU_READY",
+    "verified": true
+  },
+  "native_tokenizer_renderer_mapping_from_real_vllm_source": {
+    "candidate_tokenizer_mode": "mistral",
+    "canonical_renderer": [
+      "hf",
+      "HfRenderer"
+    ],
+    "canonical_tokenizer": [
+      "hf",
+      "CachedHfTokenizer"
+    ],
+    "canonical_tokenizer_mode": "hf",
+    "renderer": [
+      "mistral",
+      "MistralRenderer"
+    ],
+    "tokenizer": [
+      "mistral",
+      "MistralTokenizer"
+    ]
+  },
+  "no_generation": true,
+  "no_gpu_used": true,
+  "no_modal_used": true,
+  "no_model_weights_loaded": true,
+  "no_provider_call": true,
+  "phase": "21B.4.20",
+  "pinned_candidate_sha256": "88a9cfec24af45da3dd4b969e24a3e44e82a6b3a850cb152a76cddbfb135459a",
+  "precision": "bfloat16",
+  "quantization": null,
+  "readiness_scope": "CPU-side configuration formalization only; NOT a GPU authorization, NOT a runtime qualification, NOT a promotion. Engine init/weight loading under tokenizer-mode mistral, generation and EOS behaviour are not covered.",
+  "request_configuration": {
+    "generation": {
+      "max_tokens": 64,
+      "seed": 0,
+      "temperature": 0,
+      "top_p": 1
+    },
+    "no_chat_template_no_kwargs_no_reasoning": true,
+    "per_smoke": {
+      "A": {
+        "content_is_canonical": true,
+        "content_sha256": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+        "generation_fields": {
+          "max_tokens": 64,
+          "seed": 0,
+          "temperature": 0,
+          "top_p": 1
+        },
+        "has_forbidden_request_field": false,
+        "keys": [
+          "max_tokens",
+          "messages",
+          "model",
+          "seed",
+          "temperature",
+          "top_p"
+        ]
+      },
+      "B": {
+        "content_is_canonical": true,
+        "content_sha256": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+        "generation_fields": {
+          "max_tokens": 64,
+          "seed": 0,
+          "temperature": 0,
+          "top_p": 1
+        },
+        "has_forbidden_request_field": false,
+        "keys": [
+          "max_tokens",
+          "messages",
+          "model",
+          "seed",
+          "temperature",
+          "top_p"
+        ]
+      },
+      "C": {
+        "content_is_canonical": true,
+        "content_sha256": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42",
+        "generation_fields": {
+          "max_tokens": 64,
+          "seed": 0,
+          "temperature": 0,
+          "top_p": 1
+        },
+        "has_forbidden_request_field": false,
+        "keys": [
+          "max_tokens",
+          "messages",
+          "model",
+          "seed",
+          "temperature",
+          "top_p"
+        ]
+      }
+    }
+  },
+  "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+  "status_unchanged": {
+    "attempt_outcome": "UNATTRIBUTED_REQUEST_REJECTION",
+    "capability_status": "UNPROVEN",
+    "runtime_qualification_status": "NOT_COMPLETED",
+    "technical_serving_status": "NOT_PROVEN"
+  }
+}
