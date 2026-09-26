@@ -2278,7 +2278,7 @@ def test_historical_attempt_4_is_untouched_qwen_is_failed_and_mistral_phi_are_no
     assert "smoke_protocol" not in q                                                                                                   # the record was not rewritten
     validate_control_runtime_record(q, evidence_root=EVIDENCE_DIR)
     for tag in ("PHI4",):                                                           # Mistral-Nemo has since had its one authorized attempt
-        r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+        r = json.loads(PHI_PRE_ATTEMPT1.read_text())
         assert r["runtime_qualification_status"] == "NOT_TESTED" and r["technical_serving_status"] == "NOT_TESTED" and r["attempts"] == [] and r["smoke_outputs"] == []
         assert tuple(p["messages"][0]["content"] for p in r["smoke_prompts"]) == tuple(CANONICAL_USER_TEXT.values())
         assert r["smoke_protocol"]["protocol_sha256"] == CANONICAL_PROTOCOL_SHA256
@@ -2545,7 +2545,7 @@ def test_the_real_qwen_history_is_1_to_5_attempts_1_to_4_are_unchanged_and_attem
     assert attempts[:4] == _attempt4_record()["attempts"]                                # attempts 1-4 exactly as preserved in the attempt-4 snapshot
     assert attempts[3]["outcome"] == "TECHNICAL_FAILURE" and attempts[3]["original_classification"]["outcome"] == "TECHNICAL_SUCCESS"
     assert not any("runtime_configuration" in a for a in attempts[:4])                   # attempts 1-4 carry no configuration
-    assert len(mod._load_attempts("MISTRAL_NEMO")) == 3 and mod._load_attempts("PHI4") == []
+    assert len(mod._load_attempts("MISTRAL_NEMO")) == 3 and len(mod._load_attempts("PHI4")) == 1
 
 ATTEMPT_4_SNAPSHOT_SHA256 = "008b945e7fc0f10eec2a04104f5627260a4187d512d14294b0da41b0a0e217fd"
 
@@ -2852,9 +2852,9 @@ def test_the_policy_pin_leaves_attempt_4_byte_identical_and_mistral_phi_not_test
     assert q["runtime_qualification_status"] == "FAILED" and q["technical_serving_status"] == "FAILED" and "runtime_configuration" not in q
     assert hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256
     mod, _ = _load_modal_h100(monkeypatch)
-    assert len(mod._load_attempts("MISTRAL_NEMO")) == 3 and mod._load_attempts("PHI4") == []
+    assert len(mod._load_attempts("MISTRAL_NEMO")) == 3 and len(mod._load_attempts("PHI4")) == 1
     for tag in ("PHI4",):                                                           # Mistral-Nemo has since had its one authorized attempt
-        r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+        r = json.loads(PHI_PRE_ATTEMPT1.read_text())
         assert r["runtime_qualification_status"] == "NOT_TESTED"
 
 def test_the_policy_module_never_executes_generated_text_and_makes_no_gpu_or_provider_call():
@@ -2943,7 +2943,7 @@ def test_attempt_5_left_attempts_1_to_4_and_the_attempt_4_snapshot_untouched_and
     assert q["attempts"][:4] == _attempt4_record()["attempts"] and [a["attempt_number"] for a in q["attempts"]] == [1, 2, 3, 4, 5]
     assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256
     for tag in ("PHI4",):                                                           # Mistral-Nemo has since had its one authorized attempt
-        r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+        r = json.loads(PHI_PRE_ATTEMPT1.read_text())
         assert r["runtime_qualification_status"] == "NOT_TESTED" and r["attempts"] == [] and r["smoke_outputs"] == []
     raw_attempts = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_QWEN3_8B_ATTEMPTS_2026-09-24.json").read_text())["attempts"]
     assert raw_attempts == q["attempts"] and len(raw_attempts) == 5
@@ -3085,7 +3085,7 @@ def test_only_the_qwen_non_thinking_configuration_changes_a_reasoning_mode_other
         assert runtime_cfg.effective_reasoning_mode(control_default, runtime_cfg.configuration_for_model("microsoft/phi-4")) == control_default
         assert runtime_cfg.effective_reasoning_mode(control_default, runtime_cfg.configuration_for_model("mistralai/Mistral-Nemo-Instruct-2407")) == control_default
     for tag in ("PHI4",):                                                           # Mistral-Nemo has since had its one authorized attempt
-        r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+        r = json.loads(PHI_PRE_ATTEMPT1.read_text())
         assert r["runtime_qualification_status"] == "NOT_TESTED" and r["reasoning_mode"].startswith("NOT_APPLICABLE")
 
 
@@ -3247,7 +3247,7 @@ def test_mistral_and_qwen_records_are_unchanged_by_the_mistral_run_and_phi4_is_u
     assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256 and hashlib.sha256(ATTEMPT_5_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_5_SNAPSHOT_SHA256
     q = _persisted_qwen()
     assert q["runtime_qualification_status"] == "FAILED" and q["attempts"][-1]["attempt_number"] == 5 and hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == ATTEMPT_5_SMOKE_OUTPUTS_SHA256
-    phi = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    phi = json.loads(PHI_PRE_ATTEMPT1.read_text())                                                                   # the Phi record as it stood before its one authorized attempt (preserved byte-identically)
     assert phi["runtime_qualification_status"] == "NOT_TESTED" and phi["attempts"] == [] and phi["smoke_outputs"] == []
 
 
@@ -3630,7 +3630,7 @@ def test_mistral_final_state_settlement_gate_and_neighbours_after_the_remediatio
     q = _persisted_qwen()
     assert q["runtime_qualification_status"] == "FAILED" and hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == ATTEMPT_5_SMOKE_OUTPUTS_SHA256
     assert hashlib.sha256(ATTEMPT_5_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_5_SNAPSHOT_SHA256 and hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256
-    phi = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    phi = json.loads(PHI_PRE_ATTEMPT1.read_text())
     assert phi["runtime_qualification_status"] == "NOT_TESTED" and phi["attempts"] == []
 
 
@@ -3965,7 +3965,7 @@ def test_the_finalizer_leaves_qwen_and_phi_evidence_as_recorded():
     assert hashlib.sha256(ATTEMPT_4_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_4_SNAPSHOT_SHA256 and hashlib.sha256(ATTEMPT_5_SNAPSHOT.read_bytes()).hexdigest() == ATTEMPT_5_SNAPSHOT_SHA256
     q = _persisted_qwen()
     assert q["runtime_qualification_status"] == "FAILED" and hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == ATTEMPT_5_SMOKE_OUTPUTS_SHA256
-    phi = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    phi = json.loads(PHI_PRE_ATTEMPT1.read_text())                                                                   # the Phi record as it stood before its one authorized attempt (preserved byte-identically)
     assert phi["runtime_qualification_status"] == "NOT_TESTED" and phi["attempts"] == [] and phi["smoke_outputs"] == []
 
 
@@ -4310,8 +4310,8 @@ def test_the_current_authoritative_matrix_rows_agree_with_the_persisted_records(
     sec = _current_state_section()
     rows = {l.split("|")[1].strip(): l for l in sec.splitlines() if l.startswith("| ") and not l.startswith("| Control") and not l.startswith("|---")}
     qwen, mistral, phi = _persisted_qwen(), _mistral_live(), json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
-    qn, mn = qwen["attempts"][-1]["attempt_number"], mistral["attempts"][-1]["attempt_number"]
-    assert (qn, mn) == (5, 3) and phi["attempts"] == [] and phi["runtime_qualification_status"] == "NOT_TESTED"
+    qn, mn, pn = qwen["attempts"][-1]["attempt_number"], mistral["attempts"][-1]["attempt_number"], phi["attempts"][-1]["attempt_number"]
+    assert (qn, mn, pn) == (5, 3, 1)
     q, m, p = rows["Qwen3-8B"], next(v for k, v in rows.items() if k.startswith("Mistral-Nemo")), rows["Phi-4"]
     assert f"**attempt {qn}**" in q and "FAILED" in q
     a3 = mistral["attempts"][-1]
@@ -4319,23 +4319,22 @@ def test_the_current_authoritative_matrix_rows_agree_with_the_persisted_records(
     assert a3["outcome"] == "TECHNICAL_FAILURE" and a3["failure_domain"] == "MODEL_RUNTIME" and "TECHNICAL_FAILURE" in m and "MODEL_RUNTIME" in m
     assert mistral["technical_serving_status"] == "FAILED" and mistral["runtime_qualification_status"] == "FAILED" and mistral["capability_status"] == "UNPROVEN"
     cols = [c.strip() for c in m.split("|")]
-    assert cols[5].startswith("**FAILED**") and cols[7].startswith("**FAILED**") and cols[8] == "UNPROVEN"                                  # technical / runtime / capability columns
+    assert cols[5].startswith("**FAILED**") and cols[7].startswith("**FAILED**") and cols[8] == "UNPROVEN"
     assert "HTTP 200" in m and "A **FAIL**" in m and "B **FAIL**" in m and "C **FAIL**" in m and a3["billing_settlement_status"] == "OBSERVED" and "settlement OBSERVED" in m
     assert "ap-x0yjxHJqSn3C8crMGUYOxK" in m and "144.8 s" in m and "mistral_nemo_native_v1" in m and mistral["runtime_candidate_configuration_id"] == "mistral_nemo_native_v1"
-    assert "NOT_TESTED" in p and "none" in p
+    p1 = phi["attempts"][-1]
+    assert p1["outcome"] == "TECHNICAL_FAILURE" and p1["failure_domain"] == "MODEL_RUNTIME" and p1["billing_settlement_status"] == "OBSERVED" and "runtime_candidate_configuration_id" not in phi
+    assert phi["technical_serving_status"] == "FAILED" and phi["runtime_qualification_status"] == "FAILED" and phi["capability_status"] == "UNPROVEN"
+    pc = [c.strip() for c in p.split("|")]
+    assert f"**attempt {pn}**" in p and "TECHNICAL_FAILURE" in p and "MODEL_RUNTIME" in p and "ap-17KVnh9cuxhvdsTjifYkbj" in p and "163.9 s" in p
+    assert "A **PASS**" in p and "B **FAIL**" in p and "C **FAIL**" in p and pc[5].startswith("**FAILED**") and pc[7].startswith("**FAILED**") and pc[8] == "UNPROVEN" and "settlement OBSERVED" in p
     para = next(l for l in sec.splitlines() if l.startswith("**No control is RUNTIME_QUALIFIED.**"))
-    for needle in (f"Qwen3-8B = attempt {qn}", f"Mistral-Nemo = attempt {mn}", "Phi-4 = NOT_TESTED", "No further GPU run is currently authorized", "canonical configuration is still `--tokenizer-mode hf`"):
+    for needle in (f"Qwen3-8B = attempt {qn}", f"Mistral-Nemo = attempt {mn}", f"Phi-4 = attempt {pn}", "No further GPU run is currently authorized", "canonical Mistral configuration is still `--tokenizer-mode hf`",
+                   "canonical Phi-4 configuration is unchanged"):
         assert needle in para, needle
-    assert "Attempt-3 settlement is OBSERVED" in para and "was NOT promoted" in para
-    stale = [l for l in sec.splitlines() if l.startswith(("**Attempt-3 launch-path wiring", "**Attempt-3 final live financial preflight"))]
+    assert "was NOT promoted" in para and "Phi-4 = NOT_TESTED" not in para
+    stale = [l for l in sec.splitlines() if l.startswith(("**Attempt-3 launch-path wiring", "**Attempt-3 final live financial preflight", "**Phi-4 CPU-only runtime readiness", "**Phi-4 final live financial preflight"))]
     assert stale == []                                                                                                       # pre-execution paragraphs must carry the superseded label (they start with it)
-
-
-def test_a_further_candidate_or_attempt_4_launch_is_refused_from_the_real_persisted_state(monkeypatch):
-    mod, _ = _load_modal_h100(monkeypatch)
-    monkeypatch.setattr(mod, "_cli_json", lambda *a: (_ for _ in ()).throw(AssertionError("no provider call")))
-    problems = mod.candidate_launch_problems("mistral_nemo", "mistral_nemo_native_v1")
-    assert any("attempt 3 only" in p and "latest persisted attempt is 3" in p for p in problems)                              # the candidate is spent: attempt 3 exists, no second attempt
 
 
 def _load_readiness_module():
@@ -4880,6 +4879,8 @@ def test_a_blocked_financial_gate_stops_a_candidate_launch_before_the_gpu_and_th
 
 # ══ Phi-4 CPU-only runtime readiness (no GPU, no generation; Phi stays NOT_TESTED) ═════════════════════════════════════════════════════════
 PHI_MODEL = "microsoft/phi-4"
+PHI_PRE_ATTEMPT1 = EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_PRE_ATTEMPT1_NOT_TESTED_SNAPSHOT_2026-09-26.json"
+PHI_PRE_ATTEMPT1_SHA256 = "e4ef26aa22b0a89da1aab0cfcd6d696d50d811f5fc846283bcfe45d5d00e8492"
 PHI_REV = "2db69c1c3e91a05d2c64a3185acfbaf36f744e25"
 PHI_READINESS = EVIDENCE_DIR / "GENESIS_PHI4_RUNTIME_READINESS_2026-09-26.json"
 PHI_SCRIPT = REPO_ROOT / "scripts/phase21b_4_20_phi4_cpu_readiness.py"
@@ -4959,7 +4960,12 @@ def _fake_phi_result(mod, runner, *, extra_argv=(), kwargs_sent=None, drop_flag_
 
 
 def _phi_run_env(monkeypatch, tmp_path, builder):
-    mod, ev, remote_calls, preflights = _mistral_run_env(monkeypatch, tmp_path, builder)               # same stubbed harness; only the control differs (Phi has no attempts in the real state)
+    mod, ev, remote_calls, preflights = _mistral_run_env(monkeypatch, tmp_path, builder)               # same stubbed harness; only the control differs
+    # reconstruct the audited pre-attempt-1 Phi state on the tmp copy: NOT_TESTED record, no attempts file, no attempt-1 artifacts
+    (ev / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").write_bytes(PHI_PRE_ATTEMPT1.read_bytes())
+    (ev / "GENESIS_CONTROL_PHI4_ATTEMPTS_2026-09-24.json").unlink(missing_ok=True)
+    for f in ev.glob("GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_*"):
+        f.unlink()
     return mod, ev, remote_calls, preflights
 
 
@@ -5005,11 +5011,14 @@ def test_a_future_phi4_run_through_the_real_path_needs_the_full_canonical_proof_
         assert a["outcome"] == "HARNESS_FAILURE" and a["valid_runtime_attempt"] is False and "did not prove" in a["reason"], name
 
 
-def test_the_real_persisted_state_after_the_phi4_readiness_step_is_unchanged_and_no_retry_is_enabled(monkeypatch):
+def test_the_real_persisted_state_after_phi4_attempt_1_preserves_history_and_enables_no_retry(monkeypatch):
+    pre = json.loads(PHI_PRE_ATTEMPT1.read_text())
+    assert hashlib.sha256(PHI_PRE_ATTEMPT1.read_bytes()).hexdigest() == PHI_PRE_ATTEMPT1_SHA256
+    assert pre["attempts"] == [] and pre["technical_serving_status"] == "NOT_TESTED" and pre["runtime_qualification_status"] == "NOT_TESTED"        # preserved pre-attempt state
     phi = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
-    assert phi["attempts"] == [] and phi["technical_serving_status"] == "NOT_TESTED" and phi["runtime_qualification_status"] == "NOT_TESTED" and phi["capability_status"] == "UNPROVEN"
-    assert not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT*")) and not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_PHI4_ATTEMPTS_*"))   # no Phi run artifacts (the old preflight-ONLY file is history)
-    assert not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_MISTRAL_NEMO_*ATTEMPT4*")) and not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_QWEN3_8B_*ATTEMPT6*"))   # no Mistral attempt 4 / Qwen attempt 6
+    assert [a["attempt_number"] for a in phi["attempts"]] == [1] and phi["attempts"][0]["outcome"] == "TECHNICAL_FAILURE" and phi["capability_status"] == "UNPROVEN"
+    assert not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT2*")) and not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_MISTRAL_NEMO_*ATTEMPT4*")) \
+        and not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_QWEN3_8B_*ATTEMPT6*"))                                              # no Phi attempt 2 / Mistral attempt 4 / Qwen attempt 6
     mist, qwen = _mistral_live(), _persisted_qwen()
     assert (mist["attempts"][-1]["attempt_number"], mist["technical_serving_status"], mist["runtime_qualification_status"]) == (3, "FAILED", "FAILED")
     assert (qwen["attempts"][-1]["attempt_number"], qwen["runtime_qualification_status"]) == (5, "FAILED")
@@ -5018,3 +5027,22 @@ def test_the_real_persisted_state_after_the_phi4_readiness_step_is_unchanged_and
     assert any("attempt 3 only" in p for p in mod.candidate_launch_problems("mistral_nemo", "mistral_nemo_native_v1"))     # the spent candidate cannot launch another Mistral attempt
     assert LOCKED_SERVER_FLAGS["Phi-4"] == {"reasoning_parser": None, "tokenizer_mode": None, "config_format": None, "load_format": None} and runtime_cfg.configuration_for_model(PHI_MODEL) is None
     assert _runner_module().LOCKED["phi4"]["extra_args"] == [] and LOCKED_SERVER_FLAGS["Mistral-Nemo-Instruct-2407"]["tokenizer_mode"] == "hf"
+
+
+def test_phi4_attempt_1_is_the_honest_technical_failure_with_a_container_proof_of_the_canonical_configuration():
+    phi = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    a = phi["attempts"][0]
+    assert a["outcome"] == "TECHNICAL_FAILURE" and a["failure_domain"] == "MODEL_RUNTIME" and a["valid_runtime_attempt"] is True and a["modal_app_id"] == "ap-17KVnh9cuxhvdsTjifYkbj"
+    assert a["owner_billed_delta_usd"] in ("0", "0E-8") and a["billing_settlement_status"] == "OBSERVED" and a["cleanup_result"] == "PASS"
+    p = phi["container_execution_proof"]
+    assert p["provenance"] == "CONTAINER_RETURNED" and p["chat_template_flag"] is None and p["runtime_configuration_id"] is None and p["runtime_configuration_id_applied"] is None
+    assert (p["tokenizer_mode"], p["config_format"], p["load_format"], p["reasoning_parser"], p["quantization"], p["precision"]) == (None, None, None, None, None, "bfloat16")
+    assert p["chat_template_kwargs_sent"] == {"A": None, "B": None, "C": None} and p["model_id"] == p["served_model_id"] == PHI_MODEL and p["revision"] == PHI_REV
+    assert p["smoke_protocol_sha256"] == CANONICAL_PROTOCOL_SHA256 and p["runtime_policy_sha256"] == PINNED_POLICY_SHA256
+    outs = {o["smoke_id"]: o for o in phi["smoke_outputs"]}
+    assert [outs[k]["http_status"] for k in "ABC"] == [200, 200, 200] and outs["A"]["content"] == "READY" and outs["B"]["content"] == "2 + 3 equals 5."
+    acc = {x["smoke_id"]: x["accepted"] for x in phi["smoke_acceptance"]}
+    assert acc == {"A": True, "B": False, "C": False}
+    assert phi["technical_serving_status"] == "FAILED" and phi["runtime_qualification_status"] == "FAILED" and phi["capability_status"] == "UNPROVEN"
+    assert "runtime_candidate_configuration_id" not in phi and phi["runtime_configuration"] is None
+    validate_control_runtime_record(phi, evidence_root=EVIDENCE_DIR)

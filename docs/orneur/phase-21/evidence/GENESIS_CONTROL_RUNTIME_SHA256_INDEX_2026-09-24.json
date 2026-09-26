@@ -4,8 +4,8 @@
     {
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md",
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "df06f5ebfed506e7935103e5a189ece6824bd173a6466f478ded0a52599e9b74",
-      "size_bytes": 48537
+      "sha256": "d9593125a97077825dac5201959c55981a5735ee9449adfa25c7b1f648cacd5c",
+      "size_bytes": 51299
     },
     {
       "evidence_role": "genesis_billing_discrepancy_observation_2026-09-24.json",
@@ -136,8 +136,8 @@
     {
       "evidence_role": "genesis_control_phi4_runtime_qualification_2026-09-24.json",
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json",
-      "sha256": "e4ef26aa22b0a89da1aab0cfcd6d696d50d811f5fc846283bcfe45d5d00e8492",
-      "size_bytes": 9339
+      "sha256": "4607efb27a50638e8950959a0c282079a4df290965849447161341abb544df50",
+      "size_bytes": 18755
     },
     {
       "evidence_role": "genesis_control_provider_migration_modal_to_lightning_2026-09-24.json",
@@ -558,6 +558,42 @@
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PHI4_MODAL_H100_GPU_PREFLIGHT_2026-09-26T111653Z.json",
       "sha256": "8d3a24cb1245508dc534ab9b9b605b74b5015e6f567356d7b62ea21f0314b9c1",
       "size_bytes": 3130
+    },
+    {
+      "evidence_role": "genesis_control_phi4_attempts_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PHI4_ATTEMPTS_2026-09-24.json",
+      "sha256": "f699a34d783fb949d028d4f55d3d31add51f59feb989a343035627bc67bfa6b0",
+      "size_bytes": 1011
+    },
+    {
+      "evidence_role": "genesis_control_phi4_modal_h100_attempt1_billing_after_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_BILLING_AFTER_2026-09-24.json",
+      "sha256": "fc64c6fc4aee27cbef6b4c095a80b178163e18517d0e4300e75ef66f637acfc4",
+      "size_bytes": 4428
+    },
+    {
+      "evidence_role": "genesis_control_phi4_modal_h100_attempt1_billing_before_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_BILLING_BEFORE_2026-09-24.json",
+      "sha256": "1efd26b8f5cee0202310f2779d102a3b1691c765f323bc34233b41a5cf601901",
+      "size_bytes": 584
+    },
+    {
+      "evidence_role": "genesis_control_phi4_modal_h100_attempt1_financial_preflight_2026-09-24.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_FINANCIAL_PREFLIGHT_2026-09-24.json",
+      "sha256": "7eecd11441ff2940a2f019d96b2c5f9871ca34af5a410d029394db99eb069d1a",
+      "size_bytes": 3286
+    },
+    {
+      "evidence_role": "genesis_control_phi4_modal_h100_attempt1_raw_log_2026-09-24.txt",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt",
+      "sha256": "813b55988093c8a3c316a1e7ad9ba4fdad30986fb20f46ebb8d36d316334babd",
+      "size_bytes": 32999
+    },
+    {
+      "evidence_role": "genesis_control_phi4_runtime_qualification_pre_attempt1_not_tested_snapshot_2026-09-26.json",
+      "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_PRE_ATTEMPT1_NOT_TESTED_SNAPSHOT_2026-09-26.json",
+      "sha256": "e4ef26aa22b0a89da1aab0cfcd6d696d50d811f5fc846283bcfe45d5d00e8492",
+      "size_bytes": 9339
     }
   ],
   "evidence_type": "GENESIS_CONTROL_RUNTIME_QUALIFICATION_INTEGRITY_INDEX",

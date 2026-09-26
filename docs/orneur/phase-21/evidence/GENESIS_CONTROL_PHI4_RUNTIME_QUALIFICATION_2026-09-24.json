@@ -1,66 +1,320 @@
 {
   "architecture": "Phi3ForCausalLM",
-  "attempts": [],
-  "attention_backend": null,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "billing_settlement_status": "OBSERVED",
+      "cleanup_result": "PASS",
+      "duration_seconds": 163.9,
+      "failure_domain": "MODEL_RUNTIME",
+      "finished_at_utc": "2026-09-26T11:38:11Z",
+      "modal_app_id": "ap-17KVnh9cuxhvdsTjifYkbj",
+      "modal_app_name": "orneur-p21b420-h100-control-runtime",
+      "outcome": "TECHNICAL_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "provider": "Modal",
+      "raw_log_artifact": "GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "813b55988093c8a3c316a1e7ad9ba4fdad30986fb20f46ebb8d36d316334babd",
+      "reason": "locked smoke contract not met: B: content is not exactly '5'; C: content is not valid JSON",
+      "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "started_at_utc": "2026-09-26T11:35:28Z",
+      "status": "TECHNICAL_FAILURE",
+      "valid_runtime_attempt": true
+    }
+  ],
+  "attention_backend": "FLASH_ATTN attention backend out of potential",
+  "billing_discrepancy_observation": {
+    "artifact": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json",
+    "sha256": "6eafee2d2312f530d12302ce421f3c6ba52c2cac64ebd9cd8b55194fe63935d1"
+  },
+  "billing_settlement": {
+    "reasons": [],
+    "status": "OBSERVED",
+    "stop_before_next_control": false
+  },
   "capability_status": "UNPROVEN",
   "chat_template_source": "tokenizer_config.json chat_template @ pinned revision (462 chars; ChatML-like <|im_start|>role<|im_sep|>content<|im_end|>)",
-  "cleanup_status": "NOT_APPLICABLE",
-  "cold_start_seconds": null,
+  "cleanup_status": "PASS",
+  "cold_start_seconds": 138.09,
   "container_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
+  "container_execution_proof": {
+    "chat_template_flag": null,
+    "chat_template_kwargs_sent": {
+      "A": null,
+      "B": null,
+      "C": null
+    },
+    "config_format": null,
+    "load_format": null,
+    "model_id": "microsoft/phi-4",
+    "precision": "bfloat16",
+    "prompt_sha256_sent": {
+      "A": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+      "B": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+      "C": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42"
+    },
+    "provenance": "CONTAINER_RETURNED",
+    "quantization": null,
+    "reasoning_parser": null,
+    "revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+    "runtime_configuration_id": null,
+    "runtime_configuration_id_applied": null,
+    "runtime_configuration_sha256": null,
+    "runtime_policy_sha256": "50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e",
+    "served_model_id": "microsoft/phi-4",
+    "smoke_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
+    "tokenizer_mode": null
+  },
   "container_image": "vllm/vllm-openai:v0.29.0",
   "control_name": "Phi-4",
+  "download_seconds": 0.03,
   "evidence_kind": "RUNTIME_QUALIFICATION_SMOKE",
-  "financial_acceptance_status": "NOT_TESTED",
+  "financial_acceptance_status": "PASS",
   "financial_evidence": {
-    "preflight_artifact": "GENESIS_CONTROL_PHI4_ATTEMPT1_FINANCIAL_PREFLIGHT_ONLY_2026-09-24.json",
-    "preflight_sha256": "89ba7c56a26ec617fd2636ed8915a35fad5869b2d92c5f279053c90fd55a472e"
+    "billing_after_artifact": "GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_BILLING_AFTER_2026-09-24.json",
+    "billing_after_sha256": "fc64c6fc4aee27cbef6b4c095a80b178163e18517d0e4300e75ef66f637acfc4",
+    "billing_before_artifact": "GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_BILLING_BEFORE_2026-09-24.json",
+    "billing_before_sha256": "1efd26b8f5cee0202310f2779d102a3b1691c765f323bc34233b41a5cf601901",
+    "preflight_artifact": "GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_FINANCIAL_PREFLIGHT_2026-09-24.json",
+    "preflight_sha256": "7eecd11441ff2940a2f019d96b2c5f9871ca34af5a410d029394db99eb069d1a"
   },
   "financial_preflight_status": "PASSED",
-  "finished_at_utc": "2026-09-24T11:48:04Z",
+  "financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credits_applied_baseline_usd": "21.02000000",
+    "credits_applied_postrun_usd": "21.29000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "8.45643194444444444444444444",
+    "derived_credit_remaining_before_usd": "8.72643194444444444444444444",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_baseline_usd": "21.21627853",
+    "metered_delta_usd": "0.27000000",
+    "metered_postrun_usd": "21.48627853",
+    "non_credit_adjustments_baseline_usd": "-0.19627853",
+    "non_credit_adjustments_postrun_usd": "-0.19627853",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
+  "finished_at_utc": "2026-09-26T11:38:11Z",
   "generated_output_executed": false,
-  "generated_tokens": null,
+  "generated_tokens": 75,
   "generation_config": {
     "max_tokens": 64,
-    "note": "planned",
     "seed": 0,
     "temperature": 0,
     "top_p": 1
   },
   "gpu_count": 1,
+  "gpu_memory_used_mib_before_after": [
+    4,
+    4
+  ],
   "gpu_provider": "Modal",
-  "gpu_type": "A100-80GB (planned)",
+  "gpu_type": "NVIDIA H100 80GB (Modal H100)",
+  "health_status": 200,
   "identity_verification": {
-    "pinned_revision_from_registry": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
-    "reason": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "verified_at_runtime": false
+    "cpu_stage_manifest_all_lfs_sha256_match": true,
+    "identity_evidence_strength": "HF snapshot dir == pinned commit AND summed shard bytes == recorded exact bytes AND every staged file's sha256 equals the Hugging Face LFS sha256 (CPU stage manifest) AND /v1/models id == pinned repo id AND server started from that local snapshot with HF_HUB_OFFLINE=1. vLLM exposes no separate runtime revision field.",
+    "models_endpoint": {
+      "data": [
+        {
+          "created": 1790422681,
+          "id": "microsoft/phi-4",
+          "max_model_len": 4096,
+          "object": "model",
+          "owned_by": "vllm",
+          "parent": null,
+          "permission": [
+            {
+              "allow_create_engine": false,
+              "allow_fine_tuning": false,
+              "allow_logprobs": true,
+              "allow_sampling": true,
+              "allow_search_indices": false,
+              "allow_view": true,
+              "created": 1790422681,
+              "group": null,
+              "id": "modelperm-a6796b247e312927",
+              "is_blocking": false,
+              "object": "model_permission",
+              "organization": "*"
+            }
+          ],
+          "root": "/__modal/volumes/vo-VM7m0sko3youIgfeTQhSXD/hf/hub/models--microsoft--phi-4/snapshots/2db69c1c3e91a05d2c64a3185acfbaf36f744e25"
+        }
+      ],
+      "object": "list"
+    },
+    "no_silent_model_fallback": true,
+    "pinned_revision_matches_runtime_artifact": true,
+    "runtime_served_model_matches_pinned_id": true,
+    "snapshot_dir_names": [
+      "2db69c1c3e91a05d2c64a3185acfbaf36f744e25"
+    ],
+    "weight_bytes_expected_for_pinned_revision": 29319042992,
+    "weight_bytes_observed": 29319042992,
+    "weight_shard_files": [
+      {
+        "bytes": 4933656472,
+        "filename": "model-00001-of-00006.safetensors"
+      },
+      {
+        "bytes": 4954690712,
+        "filename": "model-00002-of-00006.safetensors"
+      },
+      {
+        "bytes": 4902241352,
+        "filename": "model-00003-of-00006.safetensors"
+      },
+      {
+        "bytes": 4771169120,
+        "filename": "model-00004-of-00006.safetensors"
+      },
+      {
+        "bytes": 4771169120,
+        "filename": "model-00005-of-00006.safetensors"
+      },
+      {
+        "bytes": 4986116216,
+        "filename": "model-00006-of-00006.safetensors"
+      }
+    ]
   },
-  "latency_seconds": null,
+  "latency_seconds": 0.965,
   "license": "mit",
   "live_resources_after_cleanup": 0,
-  "load_seconds": null,
+  "load_seconds": 14.99,
   "max_model_len": 4096,
   "model_id": "microsoft/phi-4",
   "model_revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
-  "notes": "NO GPU EXECUTION OCCURRED. Not started: BILLING_SETTLEMENT_NOT_YET_OBSERVABLE after the Qwen3-8B attempt 1 (harness failure at 34.6s); the owner authorization requires stopping before the next control until that run's usage/credit coverage is observable. The fresh read-only financial preflight (see financial_evidence) PASSED, so this is NOT a zero-cash-runway block; the run simply has not been launched. Capability is UNPROVEN and nothing was benchmarked.",
-  "owner_billed_delta_usd": "0",
-  "peak_gpu_memory_bytes": null,
+  "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests. Generated output was treated as data and never executed. Executed on Modal (canonical provider) on 1 x H100 80GB with weights from a hash-verified Modal Volume cache; earlier Modal, Lightning, Hugging Face and razorBridge attempts are preserved in attempts.",
+  "orphan_vllm_processes_after_shutdown": 0,
+  "owner_billed_delta_usd": "0E-8",
+  "peak_gpu_memory_bytes": 76092014592,
   "phase": "21B.4.20",
-  "planned_topology": {
-    "extra_vllm_args": [],
-    "gpu": "A100-80GB x1",
-    "gpu_memory_utilization": 0.9,
-    "max_model_len": 4096,
-    "tensor_parallel": 1
-  },
-  "precision": "bfloat16 (planned)",
-  "raw_log_artifact": null,
-  "raw_log_sha256": null,
+  "precision": "bfloat16",
+  "raw_log_artifact": "GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt",
+  "raw_log_sha256": "813b55988093c8a3c316a1e7ad9ba4fdad30986fb20f46ebb8d36d316334babd",
   "reasoning_mode": "NOT_APPLICABLE (base phi-4 instruct, no thinking tags)",
   "reasoning_parser": null,
-  "runtime_name": "vLLM (official vllm/vllm-openai image, OpenAI-compatible server) -- PLANNED",
-  "runtime_qualification_status": "NOT_TESTED",
-  "runtime_version": null,
-  "smoke_outputs": [],
+  "runtime_configuration": null,
+  "runtime_name": "vLLM (official vllm/vllm-openai image on Modal, OpenAI-compatible server; model from a verified Modal Volume cache)",
+  "runtime_qualification_status": "FAILED",
+  "runtime_version": "0.29.0",
+  "server_argv_sanitized": [
+    "/usr/local/bin/python",
+    "-m",
+    "vllm.entrypoints.openai.api_server",
+    "--model",
+    "<local pinned-revision snapshot dir>",
+    "--served-model-name",
+    "microsoft/phi-4",
+    "--dtype",
+    "bfloat16",
+    "--max-model-len",
+    "4096",
+    "--gpu-memory-utilization",
+    "0.9",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8000",
+    "--seed",
+    "0"
+  ],
+  "server_exit_code": 0,
+  "smoke_acceptance": [
+    {
+      "accepted": true,
+      "normalized_content": "READY",
+      "reason": "exact match",
+      "smoke_id": "A"
+    },
+    {
+      "accepted": false,
+      "normalized_content": "2 + 3 equals 5.",
+      "reason": "content is not exactly '5'",
+      "smoke_id": "B"
+    },
+    {
+      "accepted": false,
+      "normalized_content": "The JSON you provided is already valid. Here it is again for clarity:\n\n```json\n{\n  \"status\": \"ready\"\n}\n```\n\nThis JSON object contains a single key-value pair, where the key is `\"status\"` and the value is `\"ready\"`. If you need any modifications or additional information, feel",
+      "reason": "content is not valid JSON",
+      "smoke_id": "C"
+    }
+  ],
+  "smoke_outputs": [
+    {
+      "chat_template_kwargs_sent": null,
+      "content": "READY",
+      "error": null,
+      "executed": false,
+      "finish_reason": "stop",
+      "http_error": null,
+      "http_status": 200,
+      "latency_seconds": 0.1057,
+      "matches_expected_exactly": true,
+      "prompt_sha256_sent": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+      "raw_response": "{\"content\": \"READY\", \"finish_reason\": \"stop\", \"reasoning_content\": \"\", \"usage\": {\"completion_tokens\": 2, \"prompt_tokens\": 11, \"total_tokens\": 13}}",
+      "raw_response_sha256": "9536b206f1bd0499d9ebe817e03fe35036c0a34cde3ceb0071254672d8b773a9",
+      "smoke_id": "A",
+      "ttft_seconds": 0.0967,
+      "usage": {
+        "completion_tokens": 2,
+        "prompt_tokens": 11,
+        "total_tokens": 13
+      }
+    },
+    {
+      "chat_template_kwargs_sent": null,
+      "content": "2 + 3 equals 5.",
+      "error": null,
+      "executed": false,
+      "finish_reason": "stop",
+      "http_error": null,
+      "http_status": 200,
+      "latency_seconds": 0.1171,
+      "matches_expected_exactly": false,
+      "prompt_sha256_sent": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+      "raw_response": "{\"id\":\"chatcmpl-85ea39c3fd7eb904\",\"object\":\"chat.completion\",\"created\":1790422686,\"model\":\"microsoft/phi-4\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"2 + 3 equals 5.\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"system_fingerprint\":\"vllm-0.29.0-8589fe5b\",\"usage\":{\"prompt_tokens\":11,\"total_tokens\":20,\"completion_tokens\":9,\"prompt_tokens_details\":null,\"completion_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null}",
+      "raw_response_sha256": "c7af35584a20f0674b62162ec4eac7ab24f1281972a88c98cfb5147006c2ea9a",
+      "smoke_id": "B",
+      "ttft_seconds": null,
+      "usage": {
+        "completion_tokens": 9,
+        "completion_tokens_details": null,
+        "prompt_tokens": 11,
+        "prompt_tokens_details": null,
+        "total_tokens": 20
+      }
+    },
+    {
+      "chat_template_kwargs_sent": null,
+      "content": "The JSON you provided is already valid. Here it is again for clarity:\n\n```json\n{\n  \"status\": \"ready\"\n}\n```\n\nThis JSON object contains a single key-value pair, where the key is `\"status\"` and the value is `\"ready\"`. If you need any modifications or additional information, feel",
+      "error": null,
+      "executed": false,
+      "finish_reason": "length",
+      "http_error": null,
+      "http_status": 200,
+      "latency_seconds": 0.7422,
+      "matches_expected_exactly": false,
+      "prompt_sha256_sent": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42",
+      "raw_response": "{\"id\":\"chatcmpl-aebf1fd44075ef47\",\"object\":\"chat.completion\",\"created\":1790422686,\"model\":\"microsoft/phi-4\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"The JSON you provided is already valid. Here it is again for clarity:\\n\\n```json\\n{\\n  \\\"status\\\": \\\"ready\\\"\\n}\\n```\\n\\nThis JSON object contains a single key-value pair, where the key is `\\\"status\\\"` and the value is `\\\"ready\\\"`. If you need any modifications or additional information, feel\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"length\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"system_fingerprint\":\"vllm-0.29.0-8589fe5b\",\"usage\":{\"prompt_tokens\":16,\"total_tokens\":80,\"completion_tokens\":64,\"prompt_tokens_details\":null,\"completion_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null}",
+      "raw_response_sha256": "63d3a4133147904b8b143f48a76ff4b0d95e67ebb2435c30ba4de8cbd1b94e3a",
+      "smoke_id": "C",
+      "ttft_seconds": null,
+      "usage": {
+        "completion_tokens": 64,
+        "completion_tokens_details": null,
+        "prompt_tokens": 16,
+        "prompt_tokens_details": null,
+        "total_tokens": 80
+      }
+    }
+  ],
   "smoke_prompts": [
     {
       "expected": "READY",
@@ -96,46 +350,6 @@
       "smoke_id": "C"
     }
   ],
-  "smoke_prompts_canonicalization": {
-    "canonical_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
-    "reason": "these were PLANNED prompts (nothing was ever sent to this control) written from a drifted copy of the runner wording; replaced by the canonical owner-locked protocol",
-    "superseded_planned_prompts": [
-      {
-        "expected": "READY",
-        "messages": [
-          {
-            "content": "Reply with exactly:\nREADY",
-            "role": "user"
-          }
-        ],
-        "purpose": "deterministic readiness",
-        "smoke_id": "A"
-      },
-      {
-        "expected": "5",
-        "messages": [
-          {
-            "content": "Return the single integer result of:\n2 + 3",
-            "role": "user"
-          }
-        ],
-        "purpose": "trivial instruction following",
-        "smoke_id": "B"
-      },
-      {
-        "expected": "{\"status\":\"ready\"}",
-        "messages": [
-          {
-            "content": "Return valid JSON with one field:\n{\"status\":\"ready\"}",
-            "role": "user"
-          }
-        ],
-        "purpose": "short structured response",
-        "smoke_id": "C"
-      }
-    ],
-    "superseded_planned_prompts_sha256": "afcdec5f49964d38d47d0e35e0f408b92c8ef3401e5393475ad6498b3c065c80"
-  },
   "smoke_protocol": {
     "canonical_json_utf8_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
     "normalization": "str.strip() (surrounding whitespace only), identical for every smoke",
@@ -240,26 +454,27 @@
       }
     ]
   },
-  "started_at_utc": "2026-09-24T11:48:04Z",
-  "steady_gpu_memory_bytes": null,
+  "started_at_utc": "2026-09-26T11:35:28Z",
+  "steady_gpu_memory_bytes": 76092014592,
   "stop_behavior": "eos_token <|im_end|>; generation_config eos_token_id [100257, 100265]",
-  "technical_serving_status": "NOT_TESTED",
+  "technical_serving_status": "FAILED",
   "tensor_parallel": 1,
-  "tokenizer_revision": null,
-  "tokens_per_second": null,
-  "ttft_seconds": null,
+  "tokenizer_revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+  "tokens_per_second": 77.72,
+  "ttft_seconds": 0.0967,
   "unobservable_reasons": {
-    "attention_backend": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "cold_start_seconds": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "generated_tokens": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "latency_seconds": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "load_seconds": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "peak_gpu_memory_bytes": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "reasoning_parser": "not applicable: this control is a non-reasoning model with no reasoning parser",
-    "runtime_version": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "steady_gpu_memory_bytes": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "tokenizer_revision": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "tokens_per_second": "not executed: GPU launch did not occur in this session (no provider resources were created)",
-    "ttft_seconds": "not executed: GPU launch did not occur in this session (no provider resources were created)"
+    "reasoning_parser": "not applicable: non-reasoning model with no reasoning parser"
+  },
+  "version_endpoint": {
+    "version": "0.29.0"
+  },
+  "versions": {
+    "huggingface_hub": "1.30.0",
+    "safetensors": "0.8.0",
+    "tokenizers": "0.23.2",
+    "torch": "2.13.0+cu130",
+    "torch_cuda": "13.0",
+    "transformers": "5.16.1",
+    "vllm": "0.29.0"
   }
 }

@@ -1,0 +1,25 @@
+{
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "billing_settlement_status": "OBSERVED",
+      "cleanup_result": "PASS",
+      "duration_seconds": 163.9,
+      "failure_domain": "MODEL_RUNTIME",
+      "finished_at_utc": "2026-09-26T11:38:11Z",
+      "modal_app_id": "ap-17KVnh9cuxhvdsTjifYkbj",
+      "modal_app_name": "orneur-p21b420-h100-control-runtime",
+      "outcome": "TECHNICAL_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "provider": "Modal",
+      "raw_log_artifact": "GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "813b55988093c8a3c316a1e7ad9ba4fdad30986fb20f46ebb8d36d316334babd",
+      "reason": "locked smoke contract not met: B: content is not exactly '5'; C: content is not valid JSON",
+      "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "started_at_utc": "2026-09-26T11:35:28Z",
+      "status": "TECHNICAL_FAILURE",
+      "valid_runtime_attempt": true
+    }
+  ],
+  "control_name": "Phi-4"
+}
