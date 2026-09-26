@@ -76,48 +76,6 @@ def test_public_design_manifest_has_no_corpus_and_validates():
     M.validate_public_manifest(m)
 
 
-# ---------------------------------------------------------------- 4. storage boundary
-def test_no_store_is_default_and_fails_closed():
-    s = ST.NoStore()
-    assert s.describe()["configured"] is False
-    with pytest.raises(ST.PrivateStorageNotConfigured):
-        s.read_split("QUALIFICATION_HOLDOUT")
-    with pytest.raises(ST.PrivateStorageNotConfigured):
-        s.write_split("SCREEN", b"x")
-
-
-def test_preflight_reports_exact_owner_setup_when_unconfigured():
-    r = ST.owner_setup_preflight({})
-    assert r["status"] == "PRIVATE_STORAGE_NOT_CONFIGURED"
-    assert {m["item"] for m in r["missing"]} >= {spec.STORE_ENV, spec.SECRET_ENV}
-    r2 = ST.owner_setup_preflight({spec.STORE_ENV: f"PRIVATE_GITHUB_REPO:{ST.PUBLIC_REPO_SLUG}", spec.STORE_TOKEN_ENV: "x", spec.SECRET_ENV: "00" * 32})
-    assert any("must NOT be the public" in m["need"] for m in r2["missing"])
-    assert any("invalid" in m["need"] for m in r2["missing"])          # zero secret rejected
-    ok = ST.owner_setup_preflight({spec.STORE_ENV: "PRIVATE_OBJECT_STORE:s3://bucket/p", spec.STORE_TOKEN_ENV: "t", spec.SECRET_ENV: os.urandom(32).hex()})
-    assert ok["missing"] == [] and "not proof" in ok["note"]
-
-
-def test_encrypted_store_roundtrip_write_once_and_location_rules(tmp_path):
-    pytest.importorskip("cryptography")
-    key = os.urandom(32)
-    with pytest.raises(ST.PrivateStorageViolation):
-        ST.EncryptedFileStore(ROOT / "eval_private" / "x", key)          # inside the repo: refused
-    with pytest.raises(ST.PrivateStorageViolation):
-        ST.EncryptedFileStore(tmp_path, b"\x01" * 32)                     # low-entropy key
-    st = ST.EncryptedFileStore(tmp_path / "vault", key)
-    payload = b'{"private":"unit-test-payload"}'
-    st.write_split("SCREEN", payload)
-    assert st.read_split("SCREEN") == payload
-    assert payload not in (tmp_path / "vault" / "SCREEN.enc").read_bytes()
-    with pytest.raises(FileExistsError):
-        st.write_split("SCREEN", b"other")                                # write-once
-    with pytest.raises(ST.PrivateStorageViolation):
-        st.write_split("DEV", b"x")                                       # public split not stored as private
-    other = ST.EncryptedFileStore(tmp_path / "vault", os.urandom(32))
-    with pytest.raises(Exception):
-        other.read_split("SCREEN")                                        # wrong key
-
-
 # ---------------------------------------------------------------- 5. secret generation
 def test_secret_validation_rejects_weak_and_public_derivable():
     for bad in (b"", b"\x00" * 32, b"a" * 32, bytes(range(32)), (b"abcdefgh" * 4), os.urandom(16),
@@ -208,119 +166,6 @@ def test_public_manifest_mutations_are_rejected(mut):
         M.validate_public_manifest(m)
 
 
-def test_split_separation_and_v1_reuse_checks():
-    items = _items(SECRET)
-    assert M.check_split_separation(items)["pass"]
-    leak = items + [dict(items[0], split="QUALIFICATION_HOLDOUT", item_id="gce2-" + "a" * 24)]     # same text in both splits
-    assert not M.check_split_separation(leak)["pass"]
-    same_id = items + [dict(items[0], split="QUALIFICATION_HOLDOUT", prompt="entirely different text")]   # same item id in both splits
-    assert M.check_split_separation(same_id)["shared_ids"] == 1 and not M.check_split_separation(same_id)["pass"]
-    assert M.check_split_separation(items)["shared_clusters"] == []
-    fp = hashlib.sha256(b"unit test synthetic prompt screen 0").hexdigest()
-    assert not M.check_no_v1_reuse(items, {fp}, set())["pass"]
-    assert not M.check_no_v1_reuse(items, set(), {items[0]["item_id"]})["pass"]
-    assert M.check_no_v1_reuse(items, set(), set())["pass"]
-
-
-# ---------------------------------------------------------------- 8/9. ledger, write-once qualification
-CODE = hashlib.sha256(b"registered-qualifier").hexdigest()
-DIG = hashlib.sha256(b"corpus").hexdigest()
-REG = {"qual": L.RegisteredProcess("qual", CODE, (spec.PURPOSE_QUALIFICATION, spec.PURPOSE_RETIREMENT), ("QUALIFICATION_HOLDOUT",)),
-       "stage1": L.RegisteredProcess("stage1", CODE, (spec.PURPOSE_STAGE1,), ("SCREEN",))}
-FROZEN = {"frozen": True}
-
-
-def req(**kw):
-    base = dict(process_id="qual", code_sha256=CODE, purpose=spec.PURPOSE_QUALIFICATION, split="QUALIFICATION_HOLDOUT",
-                eval_version=spec.EVAL_VERSION, corpus_digest=DIG, run_id="run-1", candidate_revision="rev-a", candidate_lineage="lin-a",
-                timestamp_utc="2026-09-27T00:00:00Z")
-    base.update(kw)
-    return L.AccessRequest(**base)
-
-
-def code_of(fn, *a, **k):
-    with pytest.raises(L.AccessDenied) as e:
-        fn(*a, **k)
-    return e.value.code
-
-
-def test_ledger_denies_everything_until_frozen(tmp_path):
-    led = L.AccessLedger(tmp_path, REG)                       # real committed state: not frozen
-    assert code_of(led.request_access, req()) == "EVAL_NOT_FROZEN"
-    assert code_of(led.request_access, req(process_id="stage1", purpose=spec.PURPOSE_STAGE1, split="SCREEN")) == "EVAL_NOT_FROZEN"
-    assert led.records() == []                                # a denial writes nothing that grants
-
-
-def test_ledger_registered_process_and_purpose_rules(tmp_path):
-    led = L.AccessLedger(tmp_path, REG, freeze=FROZEN)
-    assert code_of(led.request_access, req(process_id="rogue")) == "PROCESS_NOT_PREREGISTERED"
-    assert code_of(led.request_access, req(code_sha256="0" * 64)) == "CODE_HASH_MISMATCH"
-    for purpose in spec.FORBIDDEN_PURPOSES:
-        assert code_of(led.request_access, req(purpose=purpose)) == "FORBIDDEN_PURPOSE"
-    assert code_of(led.request_access, req(process_id="stage1", purpose=spec.PURPOSE_QUALIFICATION)) == "PURPOSE_NOT_PERMITTED"
-    assert code_of(led.request_access, req(process_id="stage1", purpose=spec.PURPOSE_STAGE1)) == "PURPOSE_NOT_PERMITTED"   # holdout not allowed for stage 1
-    assert code_of(led.request_access, req(split="DEV")) == "NOT_A_PRIVATE_SPLIT"
-    assert code_of(led.request_access, req(eval_version="genesis-capability-eval/1.0.0")) == "WRONG_EVAL_VERSION"
-    assert code_of(led.request_access, req(corpus_digest="nothex")) == "BAD_CORPUS_DIGEST"
-    assert code_of(led.request_access, req(run_id="")) == "MISSING_FIELD"
-    assert code_of(led.request_access, req(timestamp_utc="")) == "MISSING_FIELD"
-    assert led.records() == []
-
-
-def test_ledger_record_contents_and_chain(tmp_path):
-    led = L.AccessLedger(tmp_path, REG, freeze=FROZEN)
-    r0 = led.request_access(req(process_id="stage1", purpose=spec.PURPOSE_STAGE1, split="SCREEN", run_id="s1"))
-    r1 = led.request_access(req())
-    for f in L.REQUIRED_FIELDS:
-        assert r1[f] not in (None, "")
-    assert r1["prev_hash"] == r0["record_hash"] and r0["prev_hash"] == L.GENESIS_HASH
-    assert led.verify_chain() == 2
-    p0 = tmp_path / "00000000.json"
-    assert not os.access(p0, os.W_OK) or (p0.stat().st_mode & 0o222) == 0        # created read-only
-    with pytest.raises(FileExistsError):
-        fd = os.open(p0, os.O_CREAT | os.O_EXCL | os.O_WRONLY)                    # cannot be re-created
-    os.chmod(p0, 0o644)
-    d = json.loads(p0.read_text()); d["who"] = "someone-else"; p0.write_text(json.dumps(d))
-    with pytest.raises(L.LedgerCorrupt):
-        led.verify_chain()
-
-
-def test_ledger_detects_deleted_record(tmp_path):
-    led = L.AccessLedger(tmp_path, REG, freeze=FROZEN)
-    led.request_access(req(process_id="stage1", purpose=spec.PURPOSE_STAGE1, split="SCREEN", run_id="s1"))
-    led.request_access(req())
-    os.chmod(tmp_path / "00000000.json", 0o644)
-    (tmp_path / "00000000.json").unlink()
-    with pytest.raises(L.LedgerCorrupt):
-        led.verify_chain()
-
-
-def test_qualification_holdout_is_write_once_per_lineage_and_adaptation_needs_fresh_version(tmp_path):
-    led = L.AccessLedger(tmp_path, REG, freeze=FROZEN)
-    assert led.holdout_state(spec.EVAL_VERSION)["state"] == spec.STATE_SEALED
-    led.request_access(req())
-    assert led.holdout_state(spec.EVAL_VERSION)["state"] == spec.STATE_OPENED
-    assert code_of(led.request_access, req(run_id="run-2")) == "HOLDOUT_ALREADY_OPENED"                     # re-run / retry same lineage
-    assert code_of(led.request_access, req(run_id="run-3", candidate_revision="rev-b")) == "HOLDOUT_ALREADY_OPENED"  # tuned revision, same lineage
-    assert code_of(led.request_access, req(run_id="run-4", candidate_lineage="lin-b", candidate_revision="rev-c",
-                                           derived_from_lineages=("lin-a",))) == "FRESH_HOLDOUT_VERSION_REQUIRED"
-    led.request_access(req(run_id="run-5", candidate_lineage="lin-independent", candidate_revision="rev-z"))     # independent lineage: its own single run
-    assert led.verify_chain() == 2
-
-
-def test_results_are_write_once_and_ground_truth_only_after_retirement(tmp_path):
-    led = L.AccessLedger(tmp_path, REG, freeze=FROZEN)
-    assert code_of(led.request_access, req(purpose=spec.PURPOSE_RETIREMENT, run_id="r")) == "NOT_OPENED"          # cannot peek while sealed
-    led.request_access(req())
-    rd = hashlib.sha256(b"result").hexdigest()
-    assert code_of(led.record_result, "unknown", rd, "t") == "UNKNOWN_RUN"
-    led.record_result("run-1", rd, "2026-09-27T01:00:00Z")
-    assert code_of(led.record_result, "run-1", rd, "t") == "RESULT_ALREADY_RECORDED"
-    led.request_access(req(purpose=spec.PURPOSE_RETIREMENT, run_id="retire-1"))
-    assert led.holdout_state(spec.EVAL_VERSION)["state"] == spec.STATE_RETIRED
-    assert code_of(led.request_access, req(run_id="run-9", candidate_lineage="lin-new")) == "HOLDOUT_RETIRED"
-
-
 # ---------------------------------------------------------------- 6. public-repo leak tests
 def _repo(tmp_path, *, with_record=True):
     r = tmp_path / "repo"
@@ -331,6 +176,7 @@ def _repo(tmp_path, *, with_record=True):
         rec = json.loads((PH / "GENESIS_CAPABILITY_EVAL_V1_STATUS_RECORD.json").read_text())
         rec["exposed_files_sha256"] = {}
         (r / P.STATUS_RECORD).write_text(json.dumps(rec))
+        (r / P.PUBLIC_SFT_CLASSIFICATION).write_text(json.dumps({"files": {}}))
     (r / "README.md").write_text("clean\n")
     return r
 
@@ -463,3 +309,146 @@ def test_v2_design_doc_states_contract():
     for s in ("GENESIS_CAPABILITY_EVAL_V2_FROZEN = false", "not configured", "write-once", "fresh holdout version", "PUBLIC_REPOSITORY_EXPOSURE",
               "SCREEN", "QUALIFICATION_HOLDOUT", "Stage 1 only", "salted"):
         assert s in t, s
+
+
+# ---------------------------------------------------------------- hardened scanner rules (each has an adversarial leak case + a clean twin)
+import io
+import stat
+import tarfile
+import zipfile
+
+CLEAN_TWINS = {
+    "data/manifest.json": json.dumps({"eval_version": spec.EVAL_VERSION, "corpus_generated": False, "splits": {}, "aggregate_sha256": None,
+                                      "public_manifest_contains_answers": False, "public_manifest_contains_prompts": False}),
+    "docs/notes.md": "The reference to a solution is prose only.\n",
+    ".env.example": "ORNEUR_GENESIS_V2_CORPUS_" + "SECRET=\n",
+}
+
+
+def test_scanner_clean_twins_do_not_false_positive(tmp_path):
+    r = _repo(tmp_path)
+    for rel, c in CLEAN_TWINS.items():
+        _add(r, rel, c)
+    assert P.scan_repository(r)["pass"], P.scan_repository(r)["violations"]
+
+
+def _tar_bytes(name, data):
+    b = io.BytesIO()
+    with tarfile.open(fileobj=b, mode="w:gz") as t:
+        ti = tarfile.TarInfo(name)
+        ti.size = len(data)
+        t.addfile(ti, io.BytesIO(data))
+    return b.getvalue()
+
+
+def _zip_bytes(name, data):
+    b = io.BytesIO()
+    with zipfile.ZipFile(b, "w") as z:
+        z.writestr(name, data)
+    return b.getvalue()
+
+
+LEAK_JSON = ('{"item_id":"gce2-' + "a" * 24 + '","split":"SCREEN","prompt":"p","ground_truth":{"a":1}}\n').encode()
+NEW_RULE_CASES = {
+    "v2_private_item_content": ("data/x.json", '{"item_id":"gce2-' + "b" * 24 + '","solution":"forty-two"}'),
+    "private_split_content_alt_answer_key": ("data/y.json", '{"split":"QUALIFICATION_HOLDOUT","reference_answer":"x"}'),
+    "private_split_content_alt_gold": ("data/y2.json", '{"split":"SCREEN","gold_answer":"x"}'),
+    "private_split_content_hidden_tests": ("data/y3.json", '{"split":"SCREEN","hidden_tests":["assert f(1)==2"]}'),
+    "secret_export_dotenv": (".env", "FOO=bar\n"),
+    "secret_export_env_local": ("deploy/.env.production", "FOO=bar\n"),
+    "secret_export_tfvars": ("infra/prod.tfvars", "x=1\n"),
+    "secret_export_manager": ("ops/secret_manager_export.json", "{}"),
+    "aes_key_assignment": ("notes/key.txt", "encryption_" + "key = " + "ab" * 32 + "\n"),
+    "notebooks_data_unclassified": ("notebooks/data/anything.jsonl", '{"text":"x"}\n'),
+    "notebooks_data_private_name": ("notebooks/data/qualification_items.jsonl", '{"text":"x"}\n'),
+    "notebooks_data_screen": ("notebooks/data/screen_set.json", "{}"),
+    "archive_targz": ("backup/logs.tar.gz", _tar_bytes("a/items.jsonl", LEAK_JSON)),
+    "archive_zip": ("backup/dump.zip", _zip_bytes("items.jsonl", LEAK_JSON)),
+    "archive_unscannable_7z": ("backup/dump.7z", b"7z\xbc\xaf\x27\x1c"),
+    "base64_embedded": ("config/dump.txt", "blob: " + __import__("base64").b64encode(LEAK_JSON * 3).decode() + "\n"),
+    "private_manifest_content": ("docs/m.json", json.dumps({"eval_version": spec.EVAL_VERSION, "corpus_generated": True, "public_manifest_contains_answers": False,
+                                                          "public_manifest_contains_prompts": False, "aggregate_sha256": "0" * 64,
+                                                          "splits": {"SCREEN": {"item_count": 1, "by_category": {"a": 1}, "items": [
+                                                              {"id": "gce2-" + "c" * 24, "commitment": "d" * 64, "prompt": "leak"}]}}})),
+    "plaintext_next_to_encrypted_a": ("vault/SCREEN.enc", b"\x00"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(NEW_RULE_CASES))
+def test_hardened_scanner_rule_fires(tmp_path, name):
+    r = _repo(tmp_path)
+    rel, content = NEW_RULE_CASES[name]
+    _add(r, rel, content)
+    res = P.scan_repository(r)
+    assert not res["pass"] and res["violations"], name
+
+
+def test_specific_rule_names_for_new_rules(tmp_path):
+    r = _repo(tmp_path)
+    for n in ("v2_private_item_content", "secret_export_dotenv", "aes_key_assignment", "notebooks_data_unclassified", "archive_targz", "archive_unscannable_7z",
+              "base64_embedded", "private_manifest_content", "private_split_content_alt_answer_key"):
+        _add(r, *NEW_RULE_CASES[n])
+    got = _rules(P.scan_repository(r))
+    assert {"v2_private_item_content", "secret_export_file", "aes_key_assignment", "unclassified_notebook_data", "unscannable_archive",
+            "private_manifest_content", "private_split_content"} <= got
+    assert any(x.startswith("base64_embedded_") for x in got)
+
+
+def test_plaintext_beside_encrypted_artifact_detected(tmp_path):
+    r = _repo(tmp_path)
+    _add(r, "vault/SCREEN.enc", b"\x00")
+    _add(r, "vault/screen_plain.txt", "hello")
+    assert "plaintext_beside_encrypted" in _rules(P.scan_repository(r))
+
+
+def test_notebooks_data_public_sft_is_distinguished_from_private_and_hash_pinned(tmp_path):
+    r = _repo(tmp_path)
+    body = b'{"text":"public sft record"}\n'
+    rel = "notebooks/data/genesis_sft_v2_public_train.jsonl"
+    _add(r, rel, body)
+    cls = json.loads((r / P.PUBLIC_SFT_CLASSIFICATION).read_text())
+    cls["files"][rel] = {"sha256": hashlib.sha256(body).hexdigest(), "classification": "PUBLIC_SFT", "may_be_qualification_evidence": False,
+                         "is_genesis_capability_eval_v2": False}
+    (r / P.PUBLIC_SFT_CLASSIFICATION).write_text(json.dumps(cls))
+    assert P.scan_repository(r)["pass"]                                       # classified public SFT: allowed
+    _add(r, rel, body + b'{"text":"changed"}\n')
+    assert "public_sft_dataset_modified" in _rules(P.scan_repository(r))       # modified after classification: violation
+    cls["files"][rel]["may_be_qualification_evidence"] = True
+    (r / P.PUBLIC_SFT_CLASSIFICATION).write_text(json.dumps(cls))
+    assert _rules(P.scan_repository(r)) == {"scan_error"}                     # a classification that claims qualification status is refused
+
+
+def test_real_legacy_public_sft_files_are_classified_and_never_qualification_evidence():
+    cls = json.loads((PH / "PUBLIC_SFT_DATASET_CLASSIFICATION.json").read_text())
+    for rel, e in cls["files"].items():
+        assert e["classification"] == "PUBLIC_SFT" and e["may_be_qualification_evidence"] is False and e["is_genesis_capability_eval_v2"] is False
+        assert sha(ROOT / rel) == e["sha256"], rel                             # legacy files byte-identical
+    assert {"notebooks/data/orneur_genesis_v2_train.jsonl", "notebooks/data/orneur_genesis_v2_eval.jsonl"} <= set(cls["files"])
+    assert "NOT Genesis Capability Eval V2" in cls["files"]["notebooks/data/orneur_genesis_v2_eval.jsonl"]["legacy_name_note"]
+    on_disk = {str(p.relative_to(ROOT)) for p in (ROOT / "notebooks/data").glob("*.jsonl")}
+    assert on_disk == set(cls["files"])
+
+
+def test_vault_dir_scan_permissions_and_plaintext(tmp_path):
+    v = tmp_path / "vault"
+    v.mkdir(mode=0o700)
+    os.chmod(v, 0o700)
+    good = v / "SEAL.enc"
+    good.write_bytes(b"x")
+    os.chmod(good, 0o400)
+    assert P.scan_vault_dir(v)["pass"]
+    os.chmod(good, 0o644)
+    assert {x["rule"] for x in P.scan_vault_dir(v)["violations"]} == {"vault_file_permissions"}
+    os.chmod(good, 0o400)
+    (v / "corpus.jsonl").write_text("{}")
+    os.chmod(v / "corpus.jsonl", 0o400)
+    assert "plaintext_beside_encrypted" in {x["rule"] for x in P.scan_vault_dir(v)["violations"]}
+    os.chmod(v, 0o755)
+    assert "vault_dir_permissions" in {x["rule"] for x in P.scan_vault_dir(v)["violations"]}
+
+
+def test_scanner_treats_oversized_or_corrupt_archives_as_violations(tmp_path):
+    r = _repo(tmp_path)
+    _add(r, "backup/broken.zip", b"PK\x03\x04 not really a zip")
+    res = P.scan_repository(r)
+    assert not res["pass"] and "unscannable_archive" in _rules(res)

@@ -80,6 +80,12 @@ redis = [
 nvidia = [
     "openai>=1.0.0",
 ]
+# Genesis Capability Eval V2 qualification runner / security CI: AES-256-GCM encrypted private-corpus store (orca.eval.genesis_v2.store).
+# Lower bound 49.0.0: the wheel-bundled OpenSSL advisories through GHSA-537c-gmf6-5ccf (fixed 48.0.1) and the 49.0.0-fixed X.509 issues are
+# excluded; only AESGCM is used. <51 keeps a reviewed major-version window (50.0.0 additionally fixes a PKCS#7 issue in an API we do not use).
+qualification = [
+    "cryptography>=49.0.0,<51.0.0",
+]
 frontier = [
     "openai>=1.0.0",
     "anthropic>=0.40.0",

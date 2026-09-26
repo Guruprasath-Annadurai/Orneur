@@ -25,6 +25,11 @@ still far short of a production SFT corpus; see
 docs/orneur/phase-21/PHASE21_GENESIS_BUILD_PREPARATION.md's dataset
 section for the honest current-size assessment.
 
+NAMING (unambiguous): this is a PUBLIC SFT dataset ("genesis-sft-v2-public"). It is NOT Genesis Capability Eval V2 (genesis-capability-eval/2.0.0,
+the PRIVATE qualification benchmark) and its eval split is NEVER qualification evidence. Outputs are written as genesis_sft_v2_public_{train,eval}.jsonl;
+the legacy tracked files orneur_genesis_v2_{train,eval}.jsonl are kept byte-identical because historical evidence (the V1 training-exclusion
+manifest) references those paths; they are classified in docs/orneur/phase-21/PUBLIC_SFT_DATASET_CLASSIFICATION.json.
+
 Usage: python3 scripts/build_genesis_v2_dataset.py
 """
 from __future__ import annotations
@@ -137,8 +142,8 @@ def build() -> dict:
     if leakage:
         raise ValueError(f"Train/eval leakage detected in {len(leakage)} record(s) -- refusing to write output")
 
-    train_path = OUT_DIR / "orneur_genesis_v2_train.jsonl"
-    eval_path = OUT_DIR / "orneur_genesis_v2_eval.jsonl"
+    train_path = OUT_DIR / "genesis_sft_v2_public_train.jsonl"
+    eval_path = OUT_DIR / "genesis_sft_v2_public_eval.jsonl"
     with open(train_path, "w") as f:
         for r in train_records:
             f.write(json.dumps({"text": r["text"]}) + "\n")
@@ -155,6 +160,9 @@ def build() -> dict:
 
     summary = {
         "dataset_id": "orneur-genesis-v2",
+        "classification": "PUBLIC_SFT",
+        "is_genesis_capability_eval_v2": False,
+        "may_be_qualification_evidence": False,
         "version": "v1",
         "record_count": len(formatted),
         "train_count": len(train_records),

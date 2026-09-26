@@ -119,8 +119,8 @@ def test_build_produces_no_train_eval_leakage(tmp_path, monkeypatch):
     monkeypatch.setattr(builder, "OUT_DIR", out_dir)
 
     summary = builder.build()
-    train_lines = {json.loads(l)["text"] for l in (out_dir / "orneur_genesis_v2_train.jsonl").read_text().splitlines()}
-    eval_lines = {json.loads(l)["text"] for l in (out_dir / "orneur_genesis_v2_eval.jsonl").read_text().splitlines()}
+    train_lines = {json.loads(l)["text"] for l in (out_dir / "genesis_sft_v2_public_train.jsonl").read_text().splitlines()}
+    eval_lines = {json.loads(l)["text"] for l in (out_dir / "genesis_sft_v2_public_eval.jsonl").read_text().splitlines()}
     assert train_lines.isdisjoint(eval_lines)
     assert summary["train_count"] + summary["eval_count"] == summary["record_count"]
 

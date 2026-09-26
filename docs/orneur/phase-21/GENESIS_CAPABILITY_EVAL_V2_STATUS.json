@@ -10,6 +10,15 @@
   "spending": false,
   "training": false
  },
+ "contamination_status": {
+  "contamination_controls_pass": false,
+  "semantic_overlap": "NOT_CONFIGURED",
+  "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE_until_owner_declares_complete_corpus_list"
+ },
+ "descriptor_only_backends_not_operational": [
+  "PRIVATE_GITHUB_REPO",
+  "PRIVATE_OBJECT_STORE"
+ ],
  "document": "GENESIS_CAPABILITY_EVAL_V2_STATUS",
  "eval_version": "genesis-capability-eval/2.0.0",
  "foundation_selected": null,
@@ -25,15 +34,30 @@
   "screen_holdout_separation_pass": false
  },
  "infrastructure_implemented": [
-  "storage_interface_with_fail_closed_NoStore",
-  "secret_entropy_and_hmac_derivation",
-  "salted_commitment_public_manifest",
+  "aes256gcm_encrypted_artifact_store_with_seal",
+  "contamination_similarity_framework",
+  "fail_closed_public_repo_privacy_scan",
+  "hardened_privacy_scanner",
   "hash_chained_create_exclusive_access_ledger",
-  "write_once_holdout_lifecycle",
+  "salted_commitment_public_manifest",
+  "secret_entropy_and_hmac_derivation",
+  "split_isolation_policy_table",
   "split_separation_check",
+  "sqlite_transactional_access_ledger",
+  "storage_interface_with_fail_closed_NoStore",
   "v1_reuse_check",
-  "fail_closed_public_repo_privacy_scan"
+  "write_once_holdout_lifecycle"
  ],
+ "infrastructure_subchecks": {
+  "contamination_control_framework_implemented": true,
+  "encrypted_store_backend_qualified_by_tests": true,
+  "ledger_transactional_concurrency_hardened": true,
+  "note": "Infrastructure subchecks are NOT freeze prerequisites and do not make any prerequisite true.",
+  "privacy_scanner_hardened": true,
+  "public_sft_dataset_classified": true,
+  "split_isolation_policy_implemented": true
+ },
+ "operational_storage_backend": "ENCRYPTED_ARTIFACT",
  "owner_setup_required": "see GENESIS_CAPABILITY_EVAL_V2_OWNER_SETUP.md; run scripts/genesis_v2_preflight.py",
  "private_corpus_committed": false,
  "private_corpus_generated": false,

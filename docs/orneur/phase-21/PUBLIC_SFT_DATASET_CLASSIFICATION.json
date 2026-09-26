@@ -1,0 +1,68 @@
+{
+ "document": "PUBLIC_SFT_DATASET_CLASSIFICATION",
+ "files": {
+  "notebooks/data/orca_core_combined_eval_v2.jsonl": {
+   "classification": "PUBLIC_SFT",
+   "is_genesis_capability_eval_v2": false,
+   "may_be_qualification_evidence": false,
+   "records": 7,
+   "sha256": "2f65da730120a953fb99ba69b5e9de29f9af5e27bd8ce9a89a520b7a2409733b"
+  },
+  "notebooks/data/orca_core_combined_train_v2.jsonl": {
+   "classification": "PUBLIC_SFT",
+   "is_genesis_capability_eval_v2": false,
+   "may_be_qualification_evidence": false,
+   "records": 65,
+   "sha256": "37290766871056ccc2135b1223a73438b73ba90be0991f8c1b80ceffdc79659a"
+  },
+  "notebooks/data/orca_nano_combined_eval_v1.jsonl": {
+   "classification": "PUBLIC_SFT",
+   "is_genesis_capability_eval_v2": false,
+   "may_be_qualification_evidence": false,
+   "records": 3,
+   "sha256": "0b7dcafaa549275675368cc25567e31fb434abdb9bc705134827b40cb8b621fb"
+  },
+  "notebooks/data/orca_nano_combined_train_v1.jsonl": {
+   "classification": "PUBLIC_SFT",
+   "is_genesis_capability_eval_v2": false,
+   "may_be_qualification_evidence": false,
+   "records": 34,
+   "sha256": "2e05abdfdc1cf4a254de87f19f27b6ca12dfece317e4d938e35285d1d5273da0"
+  },
+  "notebooks/data/orneur_genesis_v2_eval.jsonl": {
+   "classification": "PUBLIC_SFT",
+   "is_genesis_capability_eval_v2": false,
+   "legacy_name_note": "Legacy name 'genesis_v2' means the 2nd public SFT dataset build, NOT Genesis Capability Eval V2. Kept unrenamed because historical evidence references this path. Its 'eval' split is an SFT validation split and is never qualification evidence.",
+   "may_be_qualification_evidence": false,
+   "records": 3,
+   "sha256": "ceb2341ba4f3f73bb76b7bd1f696fecb91123f35f7d4ba836657400e912aceb8"
+  },
+  "notebooks/data/orneur_genesis_v2_train.jsonl": {
+   "classification": "PUBLIC_SFT",
+   "is_genesis_capability_eval_v2": false,
+   "legacy_name_note": "Legacy name 'genesis_v2' means the 2nd public SFT dataset build, NOT Genesis Capability Eval V2. Kept unrenamed because historical evidence references this path.",
+   "may_be_qualification_evidence": false,
+   "records": 16,
+   "sha256": "55ae9707a1bc9e01f244b082ee051bc8cc4d91382977a66a1747c8d84122ef75"
+  },
+  "notebooks/data/orneur_genesis_v3_eval.jsonl": {
+   "classification": "PUBLIC_SFT",
+   "is_genesis_capability_eval_v2": false,
+   "may_be_qualification_evidence": false,
+   "records": 13,
+   "sha256": "9d3174c418ef9549b91a8a13e55a45b43f6cd73fd38b9e1d3909dc126d3201d7"
+  },
+  "notebooks/data/orneur_genesis_v3_train.jsonl": {
+   "classification": "PUBLIC_SFT",
+   "is_genesis_capability_eval_v2": false,
+   "may_be_qualification_evidence": false,
+   "records": 71,
+   "sha256": "e024a7328005d035dee9a95d8eb076fe194fec991835d1b71451681e34f1f83f"
+  }
+ },
+ "future_builder_output_names": {
+  "genesis_sft_v2_public_eval.jsonl": "scripts/build_genesis_v2_dataset.py",
+  "genesis_sft_v2_public_train.jsonl": "scripts/build_genesis_v2_dataset.py"
+ },
+ "purpose": "Disambiguate public SFT data (notebooks/data) from the PRIVATE Genesis Capability Eval V2 corpus. The privacy scanner requires every data file under notebooks/data to be listed here with a matching hash."
+}

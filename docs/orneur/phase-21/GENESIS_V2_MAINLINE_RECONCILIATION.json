@@ -1,0 +1,41 @@
+{
+ "audited_v2_branch_head": "d7d5032a8b878b848d836cf654536dffc8ead7b6",
+ "audited_v2_parent": "25d96b8713f66898019e9139599396839ed4f506",
+ "commits_unique_to_branch_count": 577,
+ "commits_unique_to_main": [
+  "1e2bbeb7c15b369868937b6e4d20589b13698f4f",
+  "b78a903185b3abe5fa6d7c748083bce288d4db71"
+ ],
+ "conflict": {
+  "analysis": "main's blob is byte-identical to the FIRST version of the file on the branch (commit 604df3a); every later branch revision is a descendant edit. Nothing on main is newer than the branch's version.",
+  "branch_blob_sha1": "d7f7ee24d1b3ac6fdf808dd2bf5690dc175d0d84",
+  "kind": "add/add",
+  "main_blob_sha1": "0d34cb39d9ba8ff0ff4f0190b3d65257a6e5305e",
+  "path": ".github/workflows/phase14b-distributed-qualification.yml",
+  "resolution": "keep the branch (descendant) version; no content from main is lost because main's version is a strict ancestor blob"
+ },
+ "document": "GENESIS_V2_MAINLINE_RECONCILIATION",
+ "files_changed_on_main_since_merge_base": [
+  ".github/workflows/phase14b-distributed-qualification.yml"
+ ],
+ "finding": "main and session-update-2026-08-25 had diverged: main carried only two commits that add an early version of the Phase 14B distributed-qualification workflow; the session branch (577 commits since the merge base) carries a strict evolution of that same file plus all Genesis / ORNEUR work.",
+ "historical_shas_preserved": true,
+ "main_head_before": "b78a903185b3abe5fa6d7c748083bce288d4db71",
+ "merge_base": "565f50181b5f5ca064137b40690b5521ec5cb843",
+ "merge_commit": "14ab5e61a30535ecb5d5bbade689cb3d10cbf0d7",
+ "merge_commit_parents": [
+  "d7d5032a8b878b848d836cf654536dffc8ead7b6",
+  "b78a903185b3abe5fa6d7c748083bce288d4db71"
+ ],
+ "note": "Mainline integration is only claimed once GitHub shows the final SHA on main; see the phase report.",
+ "overlap_with_branch_changes": [
+  ".github/workflows/phase14b-distributed-qualification.yml"
+ ],
+ "overlap_with_v2_privacy_files": [],
+ "phase": "GENESIS_CAPABILITY_EVAL_V2_PRIVACY_HARDENING_AND_SAFE_MAINLINE_INTEGRATION",
+ "repository": "Guruprasath-Annadurai/Orneur",
+ "strategy": "non-fast-forward merge commit of origin/main into the session branch (no force-push, no rebase, no reset, no history rewrite), then fast-forward of main to the final audited-branch SHA",
+ "tree_after_merge": "c5e2d792a31ddb1926b72bdc08bd6e7ffb26be09",
+ "tree_before_merge": "c5e2d792a31ddb1926b72bdc08bd6e7ffb26be09",
+ "tree_identical_after_merge": true
+}

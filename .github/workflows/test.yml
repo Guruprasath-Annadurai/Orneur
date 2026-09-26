@@ -157,6 +157,34 @@ jobs:
           print('container_livez=PASS')
           PY
 
+  genesis-v2-security:
+    # Genesis Capability Eval V2 private-holdout security suite. Unlike the lightweight jobs, the encrypted-store tests MUST EXECUTE here:
+    # `cryptography` comes from the `qualification` extra, ORNEUR_REQUIRE_CRYPTOGRAPHY=1 turns a missing package into a failure, and the
+    # runner script fails if any test in the suite was skipped.
+    name: Genesis V2 Security (encryption tests must execute)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev + qualification extras)
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev,qualification]"
+
+      - name: Run V2 security/privacy suite (zero skips allowed)
+        env:
+          ORNEUR_REQUIRE_CRYPTOGRAPHY: "1"
+        run: bash scripts/ci/run_genesis_v2_security_tests.sh
+
   security-audit:
     # Phase 15.15 item 10: this job's name is explicit about scope --
     # it audits only the BASE `-e .` install (no dev/mcp/nvidia/train

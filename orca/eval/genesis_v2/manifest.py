@@ -113,23 +113,3 @@ def verify_commitments(m: dict, items: list, secret: bytes) -> bool:
     want = {r["id"]: r["commitment"] for s in m["splits"].values() for r in s["items"]}
     got = {it["item_id"]: sec.commitment(secret, it["item_id"], canonical_item(it)) for it in items if it["split"] in spec.PRIVATE_SPLITS}
     return want == got
-
-
-def check_split_separation(items: list) -> dict:
-    """SCREEN and QUALIFICATION_HOLDOUT must share no item: id, exact content, or normalized-text fingerprint. Shared clusters are reported."""
-    def fp(it):
-        return hashlib.sha256(re.sub(r"\W+", " ", str(it.get("prompt", "")).lower()).strip().encode()).hexdigest()
-    a = [i for i in items if i["split"] == "SCREEN"]
-    b = [i for i in items if i["split"] == "QUALIFICATION_HOLDOUT"]
-    shared_ids = {i["item_id"] for i in a} & {i["item_id"] for i in b}
-    shared_fp = {fp(i) for i in a} & {fp(i) for i in b}
-    shared_clusters = sorted({i["cluster"] for i in a} & {i["cluster"] for i in b})
-    return {"pass": not shared_ids and not shared_fp, "shared_ids": len(shared_ids), "shared_text_fingerprints": len(shared_fp),
-            "shared_clusters": shared_clusters}
-
-
-def check_no_v1_reuse(items: list, v1_prompt_fingerprints: set, v1_item_ids: set) -> dict:
-    def fp(it):
-        return hashlib.sha256(re.sub(r"\W+", " ", str(it.get("prompt", "")).lower()).strip().encode()).hexdigest()
-    reused = [i["item_id"] for i in items if fp(i) in v1_prompt_fingerprints or i["item_id"] in v1_item_ids]
-    return {"pass": not reused, "reused": len(reused)}
