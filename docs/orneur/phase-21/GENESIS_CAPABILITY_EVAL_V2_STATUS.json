@@ -1,0 +1,43 @@
+{
+ "GENESIS_CAPABILITY_EVAL_V1_FROZEN": false,
+ "GENESIS_CAPABILITY_EVAL_V1_PRIVATE_HOLDOUT_VALID": false,
+ "GENESIS_CAPABILITY_EVAL_V2_FROZEN": false,
+ "authorizations": {
+  "foundation_selection": false,
+  "gpu": false,
+  "phase_21c": false,
+  "provider_inference": false,
+  "spending": false,
+  "training": false
+ },
+ "document": "GENESIS_CAPABILITY_EVAL_V2_STATUS",
+ "eval_version": "genesis-capability-eval/2.0.0",
+ "foundation_selected": null,
+ "freeze_prerequisites": {
+  "contamination_controls_pass": false,
+  "exact_sha_ci_green": false,
+  "hashes_and_preregistration_frozen": false,
+  "independent_chatgpt_audit_approval": false,
+  "new_secret_corpus_generated": false,
+  "privacy_audit_pass": false,
+  "private_storage_genuinely_configured": false,
+  "sandbox_ready": false,
+  "screen_holdout_separation_pass": false
+ },
+ "infrastructure_implemented": [
+  "storage_interface_with_fail_closed_NoStore",
+  "secret_entropy_and_hmac_derivation",
+  "salted_commitment_public_manifest",
+  "hash_chained_create_exclusive_access_ledger",
+  "write_once_holdout_lifecycle",
+  "split_separation_check",
+  "v1_reuse_check",
+  "fail_closed_public_repo_privacy_scan"
+ ],
+ "owner_setup_required": "see GENESIS_CAPABILITY_EVAL_V2_OWNER_SETUP.md; run scripts/genesis_v2_preflight.py",
+ "private_corpus_committed": false,
+ "private_corpus_generated": false,
+ "private_storage_state": "NOT_CONFIGURED",
+ "repository_visibility": "PUBLIC",
+ "secret_available": false
+}

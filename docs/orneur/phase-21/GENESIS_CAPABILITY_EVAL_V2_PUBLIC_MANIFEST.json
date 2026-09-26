@@ -1,0 +1,139 @@
+{
+ "aggregate_sha256": null,
+ "corpus_generated": false,
+ "corpus_version": "genesis-corpus/2.0.0",
+ "document": "GENESIS_CAPABILITY_EVAL_V2_PUBLIC_MANIFEST",
+ "eval_version": "genesis-capability-eval/2.0.0",
+ "note": "DESIGN MANIFEST ONLY. No private corpus exists: private storage is not configured, so nothing was generated. planned_counts are design targets, not items.",
+ "planned_counts": {
+  "coding": {
+   "QUALIFICATION_HOLDOUT": 100,
+   "SCREEN": 30,
+   "floor": 0.3,
+   "role": "GATING"
+  },
+  "cost": {
+   "QUALIFICATION_HOLDOUT": 0,
+   "SCREEN": 0,
+   "floor": null,
+   "role": "PROTOCOL"
+  },
+  "counterfactual_reasoning": {
+   "QUALIFICATION_HOLDOUT": 120,
+   "SCREEN": 36,
+   "floor": 0.35,
+   "role": "GATING"
+  },
+  "cross_domain_transfer": {
+   "QUALIFICATION_HOLDOUT": 60,
+   "SCREEN": 18,
+   "floor": null,
+   "role": "REPORT_ONLY"
+  },
+  "discovery_quality": {
+   "QUALIFICATION_HOLDOUT": 60,
+   "SCREEN": 18,
+   "floor": null,
+   "role": "REPORT_ONLY"
+  },
+  "evidence_use": {
+   "QUALIFICATION_HOLDOUT": 165,
+   "SCREEN": 50,
+   "floor": 0.5,
+   "role": "GATING"
+  },
+  "hypothesis_testing": {
+   "QUALIFICATION_HOLDOUT": 120,
+   "SCREEN": 36,
+   "floor": 0.5,
+   "role": "GATING"
+  },
+  "information_gain_reasoning": {
+   "QUALIFICATION_HOLDOUT": 120,
+   "SCREEN": 36,
+   "floor": 0.35,
+   "role": "GATING"
+  },
+  "instruction_following": {
+   "QUALIFICATION_HOLDOUT": 200,
+   "SCREEN": 60,
+   "floor": 0.45,
+   "role": "GATING"
+  },
+  "latency": {
+   "QUALIFICATION_HOLDOUT": 0,
+   "SCREEN": 0,
+   "floor": null,
+   "role": "PROTOCOL"
+  },
+  "long_context": {
+   "QUALIFICATION_HOLDOUT": 170,
+   "SCREEN": 51,
+   "floor": 0.45,
+   "role": "GATING"
+  },
+  "mathematics": {
+   "QUALIFICATION_HOLDOUT": 180,
+   "SCREEN": 54,
+   "floor": 0.45,
+   "role": "GATING"
+  },
+  "multilingual": {
+   "QUALIFICATION_HOLDOUT": 200,
+   "SCREEN": 60,
+   "floor": 0.4,
+   "role": "GATING"
+  },
+  "multimodal_where_applicable": {
+   "QUALIFICATION_HOLDOUT": 60,
+   "SCREEN": 18,
+   "floor": null,
+   "role": "REPORT_ONLY"
+  },
+  "reasoning": {
+   "QUALIFICATION_HOLDOUT": 180,
+   "SCREEN": 54,
+   "floor": 0.35,
+   "role": "GATING"
+  },
+  "research": {
+   "QUALIFICATION_HOLDOUT": 120,
+   "SCREEN": 36,
+   "floor": 0.45,
+   "role": "GATING"
+  },
+  "strict_contracts": {
+   "QUALIFICATION_HOLDOUT": 150,
+   "SCREEN": 45,
+   "floor": null,
+   "role": "REPORT_ONLY"
+  },
+  "structured_outputs": {
+   "QUALIFICATION_HOLDOUT": 180,
+   "SCREEN": 54,
+   "floor": 0.65,
+   "role": "GATING"
+  },
+  "tool_use": {
+   "QUALIFICATION_HOLDOUT": 120,
+   "SCREEN": 36,
+   "floor": 0.55,
+   "role": "GATING"
+  },
+  "trainability": {
+   "QUALIFICATION_HOLDOUT": 0,
+   "SCREEN": 0,
+   "floor": null,
+   "role": "PROTOCOL"
+  },
+  "verification": {
+   "QUALIFICATION_HOLDOUT": 180,
+   "SCREEN": 54,
+   "floor": 0.5,
+   "role": "GATING"
+  }
+ },
+ "public_manifest_contains_answers": false,
+ "public_manifest_contains_prompts": false,
+ "splits": {}
+}

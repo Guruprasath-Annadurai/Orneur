@@ -1,0 +1,7 @@
+{
+ "document": "GENESIS_V2_REPOSITORY_RELEASE_MODE",
+ "repository": "Guruprasath-Annadurai/Orneur",
+ "repository_visibility": "PUBLIC",
+ "private_corpus_tracking_allowed": false,
+ "note": "Fail-closed: the privacy invariant test treats ANY value other than an attested PRIVATE mode as PUBLIC. Changing this file does not make the repository private."
+}
