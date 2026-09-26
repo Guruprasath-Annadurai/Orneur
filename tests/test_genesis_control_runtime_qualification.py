@@ -2574,7 +2574,7 @@ def test_the_existing_financial_gates_are_untouched_and_the_settlement_waiver_st
     assert mod.validate_owner_settlement_waiver("QWEN3_8B", attempts[("QWEN3_8B", 1)])[0] == "WAIVER_ACCEPTED"
     assert all(mod.settlement_resolved(t, a) for t, a in mod._modal_attempts() if t == "QWEN3_8B")                    # Qwen attempt 1 by waiver, 4 and 5 by OBSERVED settlement
     mistral = [(a["attempt_number"], mod.settlement_resolved(t, a)) for t, a in mod._modal_attempts() if t == "MISTRAL_NEMO"]
-    assert mistral == [(1, True), (2, False)]                                                                         # attempt 1 OBSERVED by reconciliation; attempt 2 delayed => any further launch stays blocked
+    assert mistral == [(1, True), (2, True)]                                                                          # attempt 1 and attempt 2 are both OBSERVED by read-only reconciliation (no waiver)
     assert mod.unresolved_settlement_upper_bound_usd() > 0                                                        # attempt 1's conservative exposure stays deducted
 
 
@@ -3990,7 +3990,8 @@ def test_mistral_attempt_2_is_the_honest_unattributed_http400_with_captured_bodi
         he = o["http_error"]
         assert he["status"] == 400 and he["body_sha256"] == hashlib.sha256(o["raw_response"].encode()).hexdigest() and he["structured_error"]["error"]["type"] == "BadRequestError"
         assert "default chat template is no longer allowed" in he["structured_error"]["error"]["message"] and he["headers"]
-    assert a2["owner_billed_delta_usd"] in ("0", "0E-8") and a2["cleanup_result"] == "PASS" and a2["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"
+    assert a2["owner_billed_delta_usd"] in ("0", "0E-8") and a2["cleanup_result"] == "PASS" and a2["billing_settlement_status"] == "OBSERVED" \
+        and a2["original_in_run_billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"
 
 
 # ══ Financial-gate correction: provider-adjustment reconciliation vs promotional-credit runway ═════════
@@ -4133,13 +4134,23 @@ A2_SNAPSHOT = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION
 CT_V2 = EVIDENCE_DIR / "GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json"
 
 
-def test_attempt_2_reconciliation_is_read_only_and_stays_not_observable_with_object_id_attribution():
-    d = json.loads(A2_RECON.read_text())
-    assert d["verdict"] == "SETTLEMENT_STILL_NOT_OBSERVABLE" and d["modal_app_id"] == "ap-euwY3zXbgcZfGoZiRNstFt"
-    assert d["no_gpu_started"] is True and d["no_modal_function_called"] is True and d["live_resources"] == 0
-    assert d["owner_billed_delta_usd"] in ("0", "0E-8") and d["itemized_run_cost_usd"] == "0.15881105"
-    live = _mistral_live()["attempts"][-1]
-    assert live["billing_settlement_status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE" and "settlement_reconciliation" not in _mistral_live()   # nothing was finalized
+A2_RECON_2 = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT2_SETTLEMENT_RECONCILIATION_20260926T061009Z.json"
+
+
+def test_attempt_2_first_reconciliation_is_preserved_history_and_the_second_observed_settlement_with_object_id_attribution():
+    d1 = json.loads(A2_RECON.read_text())                                                                                  # history: read-only, NOT observable at that time
+    assert d1["verdict"] == "SETTLEMENT_STILL_NOT_OBSERVABLE" and d1["modal_app_id"] == "ap-euwY3zXbgcZfGoZiRNstFt" and d1["no_gpu_started"] and d1["no_modal_function_called"]
+    d = json.loads(A2_RECON_2.read_text())
+    assert d["verdict"] == "SETTLEMENT_OBSERVED" and d["modal_app_id"] == "ap-euwY3zXbgcZfGoZiRNstFt" and d["no_gpu_started"] is True and d["no_modal_function_called"] is True
+    assert d["live_resources"] == 0 and d["owner_billed_delta_usd"] in ("0", "0E-8") and d["itemized_run_cost_usd"] == "0.15881105" and d["app_stopped_with_zero_tasks"] is True
+    assert abs(Decimal(d["metered_delta_precise_usd"]) - Decimal(d["itemized_run_cost_usd"])) <= Decimal("0.00000002") and d["settlement"]["status"] == "OBSERVED"
+    live = _mistral_live()
+    a2 = live["attempts"][-1]
+    assert live["billing_settlement"]["status"] == "OBSERVED" and a2["billing_settlement_status"] == "OBSERVED" and live["settlement_reconciliation"]["artifact"] == A2_RECON_2.name
+    assert hashlib.sha256(A2_RECON_2.read_bytes()).hexdigest() == live["settlement_reconciliation"]["sha256"]
+    # only settlement fields moved; the classification and the HTTP evidence did not
+    assert a2["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION" and a2["failure_domain"] == "UNATTRIBUTED" and live["technical_serving_status"] == "NOT_PROVEN"
+    assert live["original_in_run_billing_settlement"]["status"] == "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE"
 
 
 def test_chat_template_v2_analysis_facts_are_recorded_and_classification_is_unchanged():
@@ -4169,8 +4180,11 @@ def test_attempt_2_descriptive_correction_is_documented_snapshotted_and_touches_
     assert mc["field"] == "chat_template_source" and mc["reclassifies_attempt"] is False and mc["snapshot_sha256"] == hashlib.sha256(A2_SNAPSHOT.read_bytes()).hexdigest()
     assert mc["analysis_sha256"] == hashlib.sha256(CT_V2.read_bytes()).hexdigest()
     assert "did NOT resolve/use" in live["chat_template_source"] and "mistral-common path NOT used" not in live["chat_template_source"]
-    strip = lambda r: {k: v for k, v in r.items() if k not in ("chat_template_source", "metadata_correction")}
-    assert strip(live) == strip(snap)                                                                                      # nothing else differs (raw outputs, proof, statuses, attempts)
+    settlement_keys = ("billing_settlement", "financial_reconciliation", "original_in_run_billing_settlement", "original_in_run_financial_reconciliation", "settlement_reconciliation")
+    strip = lambda r: {k: v for k, v in r.items() if k not in ("chat_template_source", "metadata_correction", "attempts", *settlement_keys)}
+    assert strip(live) == strip(snap)                                                                                      # nothing else differs (raw outputs, proof, statuses)
+    sattempt = lambda r: {k: v for k, v in r["attempts"][-1].items() if k not in ("billing_settlement_status", "original_in_run_billing_settlement_status", "settlement_reconciliation_artifact")}
+    assert sattempt(live) == sattempt(snap)
 
 
 def test_the_chat_template_source_correction_runs_only_on_a_tmp_copy_and_refuses_other_attempts(monkeypatch, tmp_path):
@@ -4241,7 +4255,9 @@ def test_attempt_1_and_attempt_2_historical_evidence_is_pinned_byte_for_byte():
     assert live["raw_log_sha256"] == "42f4e8404fca206eb3d7e589170f3d418527093060979c09f795309fe503317e"
     assert hashlib.sha256((EVIDENCE_DIR / live["raw_log_artifact"]).read_bytes()).hexdigest() == live["raw_log_sha256"]
     snap = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json").read_text())
-    assert live["smoke_outputs"] == snap["smoke_outputs"] and live["container_execution_proof"] == snap["container_execution_proof"] and live["attempts"] == snap["attempts"]
+    assert live["smoke_outputs"] == snap["smoke_outputs"] and live["container_execution_proof"] == snap["container_execution_proof"]
+    sk = ("billing_settlement_status", "original_in_run_billing_settlement_status", "settlement_reconciliation_artifact")
+    assert [{k: v for k, v in a.items() if k not in sk} for a in live["attempts"]] == [{k: v for k, v in a.items() if k not in sk} for a in snap["attempts"]]
 
 
 def test_the_metadata_correction_guard_stays_narrow(monkeypatch, tmp_path):
@@ -4262,3 +4278,106 @@ def test_the_metadata_correction_guard_stays_narrow(monkeypatch, tmp_path):
     bad = json.loads(json.dumps(live))
     bad["metadata_correction"]["reclassifies_attempt"] = True
     assert mod._only_documented_metadata_correction(bad, snap, snap_path) is False
+
+
+# ══ Matrix current-state consistency + readiness input-integrity (fail-closed provenance) ═══════════════════════════════════════════════
+MATRIX = REPO_ROOT / "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md"
+
+
+def _current_state_section():
+    text = MATRIX.read_text()
+    return text[text.index("## Current authoritative state"):text.index("## Historical record")]
+
+
+def test_the_current_authoritative_matrix_rows_agree_with_the_persisted_records():
+    sec = _current_state_section()
+    rows = {l.split("|")[1].strip(): l for l in sec.splitlines() if l.startswith("| ") and not l.startswith("| Control") and not l.startswith("|---")}
+    qwen, mistral, phi = _persisted_qwen(), _mistral_live(), json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    qn, mn = qwen["attempts"][-1]["attempt_number"], mistral["attempts"][-1]["attempt_number"]
+    assert (qn, mn) == (5, 2) and phi["attempts"] == [] and phi["runtime_qualification_status"] == "NOT_TESTED"
+    q, m, p = rows["Qwen3-8B"], next(v for k, v in rows.items() if k.startswith("Mistral-Nemo")), rows["Phi-4"]
+    assert f"**attempt {qn}**" in q and "FAILED" in q
+    assert f"**attempt {mn}**" in m and "**attempt 1**" not in m
+    assert mistral["attempts"][-1]["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION" and "UNATTRIBUTED_REQUEST_REJECTION" in m and "UNATTRIBUTED" in m
+    assert "HTTP 400 / HTTP 400 / HTTP 400" in m and "NONE" in m and "NOT_PROVEN" in m and "NOT_COMPLETED" in m and "UNPROVEN" in m
+    assert mistral["technical_serving_status"] == "NOT_PROVEN" and mistral["runtime_qualification_status"] == "NOT_COMPLETED" and mistral["capability_status"] == "UNPROVEN"
+    assert mistral["attempts"][-1]["billing_settlement_status"] == "OBSERVED" and "settlement OBSERVED" in m
+    assert "ap-euwY3zXbgcZfGoZiRNstFt" in m and "140 s" in m and "FAILED" not in m.split("|")[5]                          # the model is not called FAILED (technical column)
+    assert "NOT_TESTED" in p and "none" in p
+    para = next(l for l in sec.splitlines() if l.startswith("**No control is RUNTIME_QUALIFIED.**"))
+    for needle in (f"Qwen3-8B = attempt {qn}", f"Mistral-Nemo = attempt {mn}", "Phi-4 = NOT_TESTED", "No further GPU run is currently authorized", "canonical configuration is still `--tokenizer-mode hf`"):
+        assert needle in para, needle
+    assert "attempt 1 (authorized, executed once) failed" not in para
+
+
+def _load_readiness_module():
+    spec = importlib.util.spec_from_file_location("p4420_native_readiness", REPO_ROOT / "scripts/phase21b_4_20_mistral_native_tokenizer_readiness.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _seed_readiness_inputs(mod, monkeypatch, tmp_path):
+    src_dir, snap = tmp_path / "src", tmp_path / "snap"
+    src_dir.mkdir(); snap.mkdir()
+    paths, expected = {}, {}
+    for i, name in enumerate(mod.EXPECTED_SOURCE_SHA256):
+        (src_dir / f"s{i}.py").write_text(f"# source {i}\n")
+        paths[name] = src_dir / f"s{i}.py"
+        expected[name] = hashlib.sha256(paths[name].read_bytes()).hexdigest()
+    monkeypatch.setattr(mod, "EXPECTED_SOURCE_SHA256", expected)
+    monkeypatch.setattr(mod, "SOURCE_LOCAL_PATHS", paths)
+    files = {}
+    for f in mod.SNAPSHOT_REQUIRED_FILES:
+        (snap / f).write_bytes(f"content of {f}".encode())
+        files[f] = {"sha256": hashlib.sha256((snap / f).read_bytes()).hexdigest()}
+    v2 = tmp_path / "v2.json"
+    v2.write_text(json.dumps({"revision": mod.REV, "A_pinned_tokenizer_config": {"files_in_pinned_snapshot": files}}))
+    monkeypatch.setattr(mod, "SNAP", snap)
+    monkeypatch.setattr(mod, "V2_EVIDENCE", v2)
+    return paths, snap, v2
+
+
+def test_readiness_input_verification_passes_only_on_exact_pinned_inputs_and_is_fail_closed(monkeypatch, tmp_path):
+    mod = _load_readiness_module()
+    paths, snap, v2 = _seed_readiness_inputs(mod, monkeypatch, tmp_path)
+    src_ok, snap_ok = mod.verify_inputs()
+    assert set(src_ok) == set(mod.EXPECTED_SOURCE_SHA256) and set(snap_ok) == set(mod.SNAPSHOT_REQUIRED_FILES)
+    first_src = next(iter(paths))
+    original = paths[first_src].read_bytes()
+    paths[first_src].write_bytes(original + b"tampered")                                                                   # source mismatch => refuse
+    with pytest.raises(SystemExit, match="sha256"):
+        mod.verify_inputs()
+    paths[first_src].write_bytes(original)
+    paths[first_src].unlink()                                                                                              # missing source => refuse, no fallback
+    with pytest.raises(SystemExit, match="missing"):
+        mod.verify_inputs()
+    paths[first_src].write_bytes(original)
+    (snap / "tekken.json").write_bytes(b"corrupted")                                                                       # snapshot mismatch (size-agnostic: hash) => refuse
+    with pytest.raises(SystemExit, match="tekken.json"):
+        mod.verify_inputs()
+    (snap / "tekken.json").write_bytes(b"content of tekken.json")
+    (snap / "params.json").unlink()
+    with pytest.raises(SystemExit, match="missing"):
+        mod.verify_inputs()
+    (snap / "params.json").write_bytes(b"content of params.json")
+    doc = json.loads(v2.read_text())
+    doc["revision"] = "0" * 40
+    v2.write_text(json.dumps(doc))
+    with pytest.raises(SystemExit, match="pinned revision"):
+        mod.verify_inputs()
+
+
+def test_the_pinned_readiness_constants_are_independent_of_the_readiness_artifact_and_the_artifact_records_verification():
+    mod = _load_readiness_module()
+    d = json.loads(NATIVE_READINESS.read_text())
+    assert d["source_integrity_verified"] is True and d["snapshot_integrity_verified"] is True and d["readiness_verdict"] == "NATIVE_MISTRAL_MODE_CPU_READY"
+    assert d["verified_source_sha256"] == mod.EXPECTED_SOURCE_SHA256 and set(d["verified_snapshot_sha256"]) == set(mod.SNAPSHOT_REQUIRED_FILES)
+    v2 = json.loads(CT_V2.read_text())["A_pinned_tokenizer_config"]["files_in_pinned_snapshot"]
+    assert d["verified_snapshot_sha256"] == {f: v2[f]["sha256"] for f in mod.SNAPSHOT_REQUIRED_FILES}
+    assert d["config_changed"] is False and mod.REV == "04d8a90549d23fc6bd7f642064003592df51e9b3" and mod.VLLM_COMMIT == "98dff2a81d747d1dba01a47f939f48c3526d4206"
+    text = (REPO_ROOT / "scripts/phase21b_4_20_mistral_native_tokenizer_readiness.py").read_text()
+    assert "NATIVE_MISTRAL_MODE_READINESS_2026-09-26.json" not in text.split("EXPECTED_SOURCE_SHA256 = {")[1].split("}")[0]   # the expected hashes never come from the artifact
+    from orca.eval.control_runtime_qualification import LOCKED_SERVER_FLAGS
+    assert LOCKED_SERVER_FLAGS["Mistral-Nemo-Instruct-2407"]["tokenizer_mode"] == "hf"                                      # canonical configuration is UNCHANGED in this commit
+    assert _mistral_live()["container_execution_proof"]["tokenizer_mode"] == "hf"

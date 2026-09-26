@@ -33,13 +33,14 @@
     },
     {
       "attempt_number": 2,
-      "billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+      "billing_settlement_status": "OBSERVED",
       "cleanup_result": "PASS",
       "duration_seconds": 140.0,
       "failure_domain": "UNATTRIBUTED",
       "finished_at_utc": "2026-09-25T17:14:54Z",
       "modal_app_id": "ap-euwY3zXbgcZfGoZiRNstFt",
       "modal_app_name": "orneur-p21b420-h100-control-runtime",
+      "original_in_run_billing_settlement_status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
       "outcome": "UNATTRIBUTED_REQUEST_REJECTION",
       "owner_billed_delta_usd": "0E-8",
       "provider": "Modal",
@@ -47,6 +48,7 @@
       "raw_log_sha256": "42f4e8404fca206eb3d7e589170f3d418527093060979c09f795309fe503317e",
       "reason": "server ready and identity proven, but the API rejected smoke call(s) at HTTP level (statuses [400, 400, 400]); the rejection is not attributable to the model without diagnosis (see http_error)",
       "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "settlement_reconciliation_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT2_SETTLEMENT_RECONCILIATION_20260926T061009Z.json",
       "started_at_utc": "2026-09-25T17:12:34Z",
       "status": "UNATTRIBUTED_REQUEST_REJECTION",
       "valid_runtime_attempt": true
@@ -58,11 +60,9 @@
     "sha256": "6eafee2d2312f530d12302ce421f3c6ba52c2cac64ebd9cd8b55194fe63935d1"
   },
   "billing_settlement": {
-    "reasons": [
-      "the completed run's metered usage is not yet visible in the account totals (metered_delta == 0)"
-    ],
-    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
-    "stop_before_next_control": true
+    "reasons": [],
+    "status": "OBSERVED",
+    "stop_before_next_control": false
   },
   "capability_status": "UNPROVEN",
   "chat_template_source": "pinned tokenizer_config.json contains a chat_template (3945 UTF-8 bytes, sha256 e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272); in attempt 2 the vLLM 0.29.0 runtime did NOT resolve/use a chat template for chat completion (HTTP 400 ChatTemplateResolutionError); see GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json",
@@ -114,16 +114,16 @@
     "billing_baseline_usd": "0E-8",
     "billing_delta_usd": "0E-8",
     "billing_postrun_usd": "0E-8",
-    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credit_pool_total_usd": "29.7464",
     "credits_applied_baseline_usd": "20.70000000",
-    "credits_applied_postrun_usd": "20.70000000",
+    "credits_applied_postrun_usd": "20.86000000",
     "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
-    "derived_credit_remaining_after_usd": "9.04643194444444444444444444",
-    "derived_credit_remaining_before_usd": "9.04643194444444444444444444",
-    "maximum_authorized_run_cost_usd": "1.08280",
+    "derived_credit_remaining_after_usd": "8.88640000",
+    "derived_credit_remaining_before_usd": "9.04640000",
+    "maximum_authorized_run_cost_usd": "1.0828",
     "metered_baseline_usd": "20.89627853",
-    "metered_delta_usd": "0E-8",
-    "metered_postrun_usd": "20.89627853",
+    "metered_delta_usd": "0.16000000",
+    "metered_postrun_usd": "21.05627853",
     "non_credit_adjustments_baseline_usd": "-0.19627853",
     "non_credit_adjustments_postrun_usd": "-0.19627853",
     "null_reasons": {},
@@ -239,6 +239,32 @@
   "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
   "model_revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
   "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests. Generated output was treated as data and never executed. Executed on Modal (canonical provider) on 1 x H100 80GB with weights from a hash-verified Modal Volume cache; earlier Modal, Lightning, Hugging Face and razorBridge attempts are preserved in attempts.",
+  "original_in_run_billing_settlement": {
+    "reasons": [
+      "the completed run's metered usage is not yet visible in the account totals (metered_delta == 0)"
+    ],
+    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
+    "stop_before_next_control": true
+  },
+  "original_in_run_financial_reconciliation": {
+    "billing_baseline_usd": "0E-8",
+    "billing_delta_usd": "0E-8",
+    "billing_postrun_usd": "0E-8",
+    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credits_applied_baseline_usd": "20.70000000",
+    "credits_applied_postrun_usd": "20.70000000",
+    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
+    "derived_credit_remaining_after_usd": "9.04643194444444444444444444",
+    "derived_credit_remaining_before_usd": "9.04643194444444444444444444",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_baseline_usd": "20.89627853",
+    "metered_delta_usd": "0E-8",
+    "metered_postrun_usd": "20.89627853",
+    "non_credit_adjustments_baseline_usd": "-0.19627853",
+    "non_credit_adjustments_postrun_usd": "-0.19627853",
+    "null_reasons": {},
+    "reserve_usd": "5.00"
+  },
   "orphan_vllm_processes_after_shutdown": 0,
   "owner_billed_delta_usd": "0E-8",
   "peak_gpu_memory_bytes": 76157026304,
@@ -280,6 +306,12 @@
     "safetensors"
   ],
   "server_exit_code": 0,
+  "settlement_reconciliation": {
+    "artifact": "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT2_SETTLEMENT_RECONCILIATION_20260926T061009Z.json",
+    "owner_cash_delta_usd": "0E-8",
+    "promotional_credit_used_usd": "0.15881105",
+    "sha256": "a182a43f0d7282a8c26e01dcfa9ff01b7c09bcd406bf2e0e578420db8c2057bb"
+  },
   "smoke_acceptance": [
     {
       "accepted": false,

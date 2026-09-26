@@ -51,6 +51,53 @@ SOURCES = {"vllm/tokenizers/registry.py": "v3__vllm__tokenizers__registry.py", "
 def sha(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
+# ── independent pinned input hashes (NOT read from any readiness artifact) ─────────────────────────────────────────────────────────────────
+# SHA256 of every vLLM v0.29.0 (commit above) source file this analysis executes or quotes. Any missing file or mismatch => refuse; there is no fallback.
+EXPECTED_SOURCE_SHA256 = {
+    "vllm/tokenizers/registry.py": "9515c9d30b5b87e1706d1905c51dfac45ff75eb72bb34957181b7907dc29ca73",
+    "vllm/renderers/registry.py": "a08f893773e22d4b249726f2cec930ea70eb508f32a4903bacffba37b07fdf5b",
+    "vllm/tokenizers/mistral.py": "923bd30cd82b685c2cd51586f933bf1e893d31c348b204af9d54bb578968eb65",
+    "vllm/renderers/mistral.py": "586b99a78050d99172b742fa81be535eea91b82967f2837f8c43a8ed6f5434d8",
+    "vllm/renderers/hf.py": "2b24612a7163f176f205f9a976ebabafc2ac7840ed5516574b0776272c02ed26",
+    "vllm/renderers/params.py": "30104415b818465eb1114852104a9b52b9792a4eed9bc3f32a355d8cf33dd8e0",
+    "vllm/entrypoints/openai/chat_completion/protocol.py": "8a1f1138f79557aa5b5add12e81b9745fd5e286fa35f0502a97f2a377d41665b",
+    "vllm/transformers_utils/chat_templates/registry.py": "ab10d6c7edfdd78eefb08591db02749689b1f02227dcbcd0320e8768e89360e7",
+}
+SOURCE_LOCAL_PATHS = {**{k: SRC / v for k, v in SOURCES.items()}, "vllm/transformers_utils/chat_templates/registry.py": Path("/tmp/p4420/v2") / "vllm__transformers_utils__chat_templates__registry.py"}
+SNAPSHOT_REQUIRED_FILES = ("config.json", "generation_config.json", "params.json", "special_tokens_map.json", "tekken.json", "tokenizer.json", "tokenizer_config.json", "vocab.json",
+                           "merges.txt", "model.safetensors.index.json")
+V2_EVIDENCE = EVIDENCE / "GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json"
+
+
+def verify_inputs() -> tuple[dict, dict]:
+    """Fail closed BEFORE any analysis: pinned vLLM sources by SHA256, and the non-weight snapshot files by SHA256 against the committed V2 root-cause evidence."""
+    src_ok: dict[str, str] = {}
+    for name, want in EXPECTED_SOURCE_SHA256.items():
+        path = SOURCE_LOCAL_PATHS[name]
+        if not path.is_file():
+            raise SystemExit(f"REFUSING: vLLM source file missing: {name} ({path})")
+        got = sha(path.read_bytes())
+        if got != want:
+            raise SystemExit(f"REFUSING: vLLM source {name} sha256 {got} != pinned {want}")
+        src_ok[name] = got
+    v2 = json.loads(V2_EVIDENCE.read_text())
+    if v2.get("revision") != REV:
+        raise SystemExit("REFUSING: root-cause V2 evidence is not for the pinned revision")
+    expected = {k: v["sha256"] for k, v in v2["A_pinned_tokenizer_config"]["files_in_pinned_snapshot"].items()}
+    snap_ok: dict[str, str] = {}
+    for f in SNAPSHOT_REQUIRED_FILES:
+        path = SNAP / f
+        if f not in expected or len(expected[f]) != 64:
+            raise SystemExit(f"REFUSING: V2 evidence has no sha256 for {f}")
+        if not path.is_file():
+            raise SystemExit(f"REFUSING: pinned snapshot file missing: {f}")
+        got = sha(path.read_bytes())
+        if got != expected[f]:
+            raise SystemExit(f"REFUSING: snapshot file {f} sha256 {got} != V2 evidence {expected[f]}")
+        snap_ok[f] = got
+    return src_ok, snap_ok
+
+
 
 def src(name: str) -> str:
     return (SRC / SOURCES[name]).read_text()
@@ -122,6 +169,7 @@ def main() -> int:
         if versions[k] != v:
             print(f"REFUSING: {k} {versions[k]} != container {v}")
             return 2
+    src_verified, snap_verified = verify_inputs()
     # ── B1 ─────────────────────────────────────────────────────────────────────────────────────────────────────
     tok_reg_text, rend_reg_text = src("vllm/tokenizers/registry.py"), src("vllm/renderers/registry.py")
     tokenizers = dict_literal(ast.parse(tok_reg_text), "_VLLM_TOKENIZERS")
@@ -234,6 +282,8 @@ def main() -> int:
     verdict = "NATIVE_MISTRAL_MODE_CPU_READY" if (all_ok and B2.get("construction") == "SUCCEEDED" and B2.get("is_tekken") and resolved["mistral"] == "mistral") else "NATIVE_MISTRAL_MODE_NOT_PROVEN"
     art = {"evidence_type": "GENESIS_MISTRAL_NEMO_NATIVE_TOKENIZER_MODE_READINESS", "phase": "21B.4.20", "captured_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
            "revision": REV, "cpu_library_versions_used": versions, "container_versions_from_attempt2_log": CONTAINER_VERSIONS,
+           "source_integrity_verified": True, "verified_source_sha256": src_verified, "snapshot_integrity_verified": True, "verified_snapshot_sha256": snap_verified,
+           "input_provenance_note": "vLLM source hashes are pinned constants in this script (not read from any prior readiness artifact); snapshot hashes are checked against the committed root-cause V2 evidence; no download or provider call is made here",
            "mistral_common_note": "vLLM 0.29.0 requires mistral_common[image] >= 1.11.6; the container's exact mistral_common version is NOT recorded in the attempt-2 log",
            "B1_mode_selection_from_vllm_source": B1, "B2_mistral_tokenizer_construction": B2, "B3_native_chat_rendering_locked_smokes": B3,
            "B4_comparison": {"failed_hf_chain": failed_hf_chain, "native_mistral_chain": native_chain, "native_chain_reproduced_cpu_side": steps_repro,

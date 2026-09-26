@@ -201,7 +201,7 @@
       "prompt token ids produced"
     ]
   },
-  "captured_at_utc": "2026-09-25T20:12:45Z",
+  "captured_at_utc": "2026-09-26T06:11:06Z",
   "config_changed": false,
   "container_versions_from_attempt2_log": {
     "huggingface_hub": "1.30.0",
@@ -217,6 +217,7 @@
   },
   "evidence_type": "GENESIS_MISTRAL_NEMO_NATIVE_TOKENIZER_MODE_READINESS",
   "generated_output_executed": false,
+  "input_provenance_note": "vLLM source hashes are pinned constants in this script (not read from any prior readiness artifact); snapshot hashes are checked against the committed root-cause V2 evidence; no download or provider call is made here",
   "known_source_facts_for_native_mode": [
     "vllm/tokenizers/mistral.py validate_request_params: a request carrying chat_template or chat_template_kwargs is rejected in Mistral mode (the locked smokes send neither)",
     "MistralTokenizer.apply_chat_template pops add_generation_prompt and lets mistral_common build the [INST] prompt"
@@ -253,6 +254,8 @@
     "status": "NOT_VIABLE_ON_THIS_BACKEND (executed real vLLM path raises)",
     "template_sha256": "e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272"
   },
+  "snapshot_integrity_verified": true,
+  "source_integrity_verified": true,
   "status_unchanged": {
     "attempt_outcome": "UNATTRIBUTED_REQUEST_REJECTION",
     "capability_status": "UNPROVEN",
@@ -263,5 +266,27 @@
     "MistralTokenizer constructed from the exact pinned snapshot on tekken (mistral_common.tokens.tokenizers.mistral.MistralTokenizer)",
     "locked smokes A/B/C rendered to token ids through the real vLLM safe_apply_chat_template with no ChatTemplateResolutionError and no get_chat_template call",
     "registry evidence: tokenizer_mode mistral -> MistralTokenizer and MistralRenderer"
-  ]
+  ],
+  "verified_snapshot_sha256": {
+    "config.json": "8a42669219f4caadedb891be88c34712572573d42b3d02d665d527f92d94ddfe",
+    "generation_config.json": "c052c7f6082ca59fbee5478371f6dd18cbd9ec059b657f8081ff165deb9ea0fa",
+    "merges.txt": "4e4d41c64d2ed2e26713ae7af7c958b07df532a6f4498dffa9a2cf7f4c6c0aa6",
+    "model.safetensors.index.json": "f14ac27ce39aa8652e83b8e3a9c59babba2831711e5b31512c1f96bfeeee09cf",
+    "params.json": "c280a2d7e402aa5bbd88b09d9c85fd63ca7699d6b742c182e9b55121564e30fd",
+    "special_tokens_map.json": "6fa06efa2785e450051989a6f8fb4416b10149ded485ddd3f127a40734f5cfd0",
+    "tekken.json": "eccd1665d2e477697c33cb7f0daa6f6dfefc57a0a6bceb66d4be52952f827516",
+    "tokenizer.json": "e11c71726323d33da7b8d6f6f269f1988931c0a52b7122bcdd8c05042974e0db",
+    "tokenizer_config.json": "67f3aeef765b7d78012a081dba98efd4900cd2bac24eac182296841c7e2aef2a",
+    "vocab.json": "8572e8853a6b2f2d830de4afa15d43c49257d367abf3c5fd2f6f7687bcd8f63d"
+  },
+  "verified_source_sha256": {
+    "vllm/entrypoints/openai/chat_completion/protocol.py": "8a1f1138f79557aa5b5add12e81b9745fd5e286fa35f0502a97f2a377d41665b",
+    "vllm/renderers/hf.py": "2b24612a7163f176f205f9a976ebabafc2ac7840ed5516574b0776272c02ed26",
+    "vllm/renderers/mistral.py": "586b99a78050d99172b742fa81be535eea91b82967f2837f8c43a8ed6f5434d8",
+    "vllm/renderers/params.py": "30104415b818465eb1114852104a9b52b9792a4eed9bc3f32a355d8cf33dd8e0",
+    "vllm/renderers/registry.py": "a08f893773e22d4b249726f2cec930ea70eb508f32a4903bacffba37b07fdf5b",
+    "vllm/tokenizers/mistral.py": "923bd30cd82b685c2cd51586f933bf1e893d31c348b204af9d54bb578968eb65",
+    "vllm/tokenizers/registry.py": "9515c9d30b5b87e1706d1905c51dfac45ff75eb72bb34957181b7907dc29ca73",
+    "vllm/transformers_utils/chat_templates/registry.py": "ab10d6c7edfdd78eefb08591db02749689b1f02227dcbcd0320e8768e89360e7"
+  }
 }
