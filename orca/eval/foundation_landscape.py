@@ -14,7 +14,7 @@ GATES = ("A_license", "B_revision_pinned", "C_architecture_documented", "D_token
          "E_peft_qlora_feasible", "F_training_cost_vs_budget", "G_inference_path",
          "H_artifacts_verifiable", "I_no_proprietary_only_stack", "J_ecosystem_maturity")
 
-CLASSES = ("GENESIS_TRAINABLE_NOW", "TEACHER_REFERENCE", "FUTURE_REASON_CANDIDATE",
+CLASSES = ("GENESIS_EVAL_ADMITTED", "TEACHER_REFERENCE", "FUTURE_REASON_CANDIDATE",
            "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE", "BASELINE_ONLY_CONTROL", "NOT_ADMITTED")
 
 # Program constants inherited from the audited decision package (Phase 21B.4.20 closeout).
@@ -45,13 +45,13 @@ CURATED: dict[str, dict[str, Any]] = {
         "caveats": ["Hybrid full/linear attention; same architecture class as Qwen3.8-27B."]},
     "Qwen/Qwen3.8-27B": {"family": "Qwen", "modality": "text+image", "vendor_quantized": ["Qwen/Qwen3.8-27B-FP8", "nvidia/Qwen3.8-27B-NVFP4 (third-party)"],
         "caveats": ["Released 2026-08-05: young ecosystem; hybrid full/linear attention kernels; largest dense candidate that still fits a single 80GB GPU for QLoRA on paper."]},
-    "Qwen/Qwen3.5-35B-A3B": {"family": "Qwen", "modality": "text+image", "active_b": 3.0, "active_source": "NAME_DERIVED",
+    "Qwen/Qwen3.5-35B-A3B": {"family": "Qwen", "modality": "text+image",
         "caveats": ["MoE (256 experts, 8 active): QLoRA over fused experts not verified."]},
-    "Qwen/Qwen3.6-35B-A3B": {"family": "Qwen", "modality": "text+image", "active_b": 3.0, "active_source": "NAME_DERIVED",
+    "Qwen/Qwen3.6-35B-A3B": {"family": "Qwen", "modality": "text+image",
         "caveats": ["MoE (256 experts, 8 active): QLoRA over fused experts not verified; attractive FAST-serving profile if trainable."]},
-    "Qwen/Qwen3.8-Flash-Next": {"family": "Qwen", "modality": "text+image", "active_b": None, "role": "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE",
+    "Qwen/Qwen3.8-Flash-Next": {"family": "Qwen", "modality": "text+image", "role": "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE",
         "caveats": ["License (qwen-community-1.0) requires a separate license from Qwen for any 'Model as a Service or AI Work Assistant business': incompatible with ORNEUR's intended business until legally cleared. Architecture (qwen4_exp) studied only."]},
-    "Qwen/Qwen3.8-2.4T-A95B": {"family": "Qwen", "modality": "text", "active_b": 95.0, "active_source": "NAME_DERIVED", "role": "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE",
+    "Qwen/Qwen3.8-2.4T-A95B": {"family": "Qwen", "modality": "text", "role": "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE",
         "caveats": ["2.4T parameters: reference only. License (qwen3.8-max) needs a separate license for AI-assistant/MaaS businesses above US$50M revenue; terms not fully legal-reviewed."]},
     "google/gemma-4-E4B-it": {"family": "Gemma", "modality": "text+image+audio (per vLLM listing T+I+V+A)", "vendor_quantized": ["google/gemma-4-E4B-it-qat-w4a16-ct"],
         "caveats": ["8.0B stored parameters include per-layer embeddings; 'E4B' effective size is a vendor label (not verified here).", "Repo has no LICENSE file; Apache-2.0 comes from model-card metadata only."]},
@@ -59,7 +59,7 @@ CURATED: dict[str, dict[str, Any]] = {
         "caveats": ["Architecture Gemma4Unified: vLLM docs list it without a LoRA-support mark; repo has no LICENSE file (Apache-2.0 from card metadata)."]},
     "google/gemma-4-12B": {"family": "Gemma", "modality": "any-to-any (pipeline tag)",
         "caveats": ["Pretrained (non-'it') variant of the 12B; Gemma4Unified architecture; no LICENSE file in repo."]},
-    "google/gemma-4-26B-A4B-it": {"family": "Gemma", "modality": "text+image", "active_b": 4.0, "active_source": "NAME_DERIVED",
+    "google/gemma-4-26B-A4B-it": {"family": "Gemma", "modality": "text+image",
         "caveats": ["MoE (128 experts): QLoRA over experts not verified; no LICENSE file in repo."]},
     "google/gemma-4-31B-it": {"family": "Gemma", "modality": "text+image", "vendor_quantized": ["google/gemma-4-31B-it-qat-w4a16-ct"],
         "caveats": ["31.3B dense: QLoRA fits one 80GB GPU on paper; no LICENSE file in repo."]},
@@ -71,9 +71,9 @@ CURATED: dict[str, dict[str, Any]] = {
         "caveats": ["Base checkpoint: needs full instruction/format SFT; same mistral-common/tekken caveat."]},
     "mistralai/Ministral-3-14B-Reasoning-2512": {"family": "Mistral", "modality": "text+image",
         "caveats": ["Reasoning post-trained variant; same mistral-common/tekken caveat."]},
-    "mistralai/Mistral-Small-4-119B-2603": {"family": "Mistral", "modality": "text+image", "active_b": None, "role": "TEACHER_REFERENCE",
+    "mistralai/Mistral-Small-4-119B-2603": {"family": "Mistral", "modality": "text+image", "role": "TEACHER_REFERENCE",
         "caveats": ["119B (FP8 weights, 128 experts): teacher/reference only; provider or large-GPU serving needed."]},
-    "mistralai/Mistral-Large-3-675B-Instruct-2512": {"family": "Mistral", "modality": "text", "active_b": 41.0, "active_source": "PRIOR_LANDSCAPE_DOC_VENDOR_CLAIM", "role": "TEACHER_REFERENCE",
+    "mistralai/Mistral-Large-3-675B-Instruct-2512": {"family": "Mistral", "modality": "text", "role": "TEACHER_REFERENCE",
         "caveats": ["Native Mistral format only (no safetensors metadata/config.json via the HF API): artifact verification partial."]},
     "deepseek-ai/DeepSeek-V4.1-Flash": {"family": "DeepSeek", "modality": "text+image", "role": "TEACHER_REFERENCE",
         "caveats": ["763B stored parameters; architecture deepseek_v41 is not in transformers main or the vLLM supported-models docs at collection time: reference only."]},
@@ -93,19 +93,19 @@ CURATED: dict[str, dict[str, Any]] = {
         "caveats": ["As above: GraniteForCausalLM dense; 4.2 serving unverified."]},
     "ibm-granite/granite-4.2-30b": {"family": "Granite", "modality": "text", "vendor_quantized": ["FP8", "MXFP4", "NVFP4", "GGUF"],
         "caveats": ["29.3B dense; QLoRA fits one 80GB GPU on paper."]},
-    "openai/gpt-oss-20b": {"family": "gpt-oss", "modality": "text", "active_b": 3.6, "active_source": "VENDOR_CLAIM_NOT_REVERIFIED", "vendor_quantized": ["native MXFP4 experts"],
+    "openai/gpt-oss-20b": {"family": "gpt-oss", "modality": "text", "vendor_quantized": ["native MXFP4 experts"],
         "caveats": ["MoE with MXFP4 expert weights: QLoRA/PEFT over quantised experts unverified."]},
-    "openai/gpt-oss-120b": {"family": "gpt-oss", "modality": "text", "active_b": 5.1, "active_source": "VENDOR_CLAIM_NOT_REVERIFIED", "role": "TEACHER_REFERENCE",
+    "openai/gpt-oss-120b": {"family": "gpt-oss", "modality": "text", "role": "TEACHER_REFERENCE",
         "caveats": ["116.8B stored parameters (MXFP4 experts): teacher/reference; hostable on one 80GB-class GPU per vendor claim (not verified here)."]},
     "zai-org/GLM-5.3-Flash": {"family": "GLM", "modality": "text+image", "role": "TEACHER_REFERENCE", "vendor_quantized": ["nvidia/GLM-5.3-Flash-NVFP4 (third-party)"],
         "caveats": ["321B stored parameters, MIT; architecture glm5_next in transformers main but not in vLLM docs at collection time."]},
     "zai-org/GLM-5.3": {"family": "GLM", "modality": "text", "role": "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE",
         "caveats": ["Custom GLM-5.3 License (MaaS clause above US$10B revenue): architecture reference only; unaudited by counsel."]},
-    "zai-org/GLM-4.7-Flash": {"family": "GLM", "modality": "text", "active_b": 3.0, "active_source": "NAME_DERIVED_UNVERIFIED",
+    "zai-org/GLM-4.7-Flash": {"family": "GLM", "modality": "text",
         "caveats": ["MoE 31.2B (64 experts): QLoRA over experts unverified."]},
-    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": {"family": "Nemotron-H", "modality": "text", "active_b": 3.0, "active_source": "NAME_DERIVED",
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": {"family": "Nemotron-H", "modality": "text",
         "caveats": ["Hybrid Mamba/attention MoE (nemotron_h): valuable for architecture diversity; NVIDIA custom open-model license not legally reviewed."]},
-    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16": {"family": "Nemotron-H", "modality": "text", "active_b": 3.0, "active_source": "NAME_DERIVED",
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16": {"family": "Nemotron-H", "modality": "text",
         "caveats": ["Base checkpoint under openmdw-1.1 (card metadata): license text not reviewed this phase."]},
     "allenai/Olmo-3-7B-Instruct": {"family": "OLMo", "modality": "text",
         "caveats": ["Fully-open lineage (data/training documented by vendor, not re-verified); 65k context; released 2025-10 (older than other candidates)."]},
@@ -118,6 +118,116 @@ CURATED: dict[str, dict[str, Any]] = {
     "meta-llama/Llama-4-Scout-17B-16E-Instruct": {"family": "Llama", "modality": "text+image",
         "caveats": ["Manually gated repo + custom Llama 4 licence; 109B total parameters."]},
 }
+
+
+K = 1024
+# Vendor model-card claims. Each quote MUST appear verbatim in the captured README lines of the raw evidence
+# (tests enforce this). Claims are attributed, never verified measurements. K/M shorthand is converted with the
+# K=1024 convention and flagged SHORTHAND_K1024_ASSUMED; exact digits are EXACT.
+def _c(text, tokens, precision, quote, ext=None, ext_prec=None, source="VENDOR_MODEL_CARD_CLAIM"):
+    return {"text": text, "tokens": tokens, "precision": precision, "quote": quote,
+            "extended_tokens": ext, "extended_precision": ext_prec, "source": source}
+
+
+_QWEN35 = _c("262,144 natively and extensible up to 1,010,000 tokens", 262144, "EXACT",
+             "262,144 natively and extensible up to 1,010,000 tokens", 1010000, "EXACT")
+_QWEN38 = _c("262,144 natively and extensible up to 1,000,000 tokens", 262144, "EXACT",
+             "262,144 natively and extensible up to 1,000,000 tokens", 1000000, "EXACT")
+_GEMMA_TABLE = "| **Context Length** | 128K tokens | 128K tokens | 256K tokens  | 256K tokens  |"
+_GRANITE = _c("Natively Supports 128K (Long-context extension to 512K)", 128 * K, "SHORTHAND_K1024_ASSUMED",
+              "Natively Supports 128K (Long-context extension to 512K)", 512 * K, "SHORTHAND_K1024_ASSUMED")
+_MINISTRAL = _c("Supports a 256k context window", 256 * K, "SHORTHAND_K1024_ASSUMED", "Supports a 256k context window")
+
+VENDOR_CONTEXT: dict[str, dict[str, Any]] = {
+    "HuggingFaceTB/SmolLM3-3B": _c("Trained on 64k context and supports up to 128k tokens using YARN extrapolation", 64 * K,
+        "SHORTHAND_K1024_ASSUMED", "Trained on 64k context", 128 * K, "SHORTHAND_K1024_ASSUMED"),
+    "LiquidAI/LFM2.5-2.6B": _c("Context length: 131,072 tokens", 131072, "EXACT", "131,072 tokens"),
+    "Qwen/Qwen3-8B": _c("32,768 natively and 131,072 tokens with YaRN", 32768, "EXACT", "32,768 natively", 131072, "EXACT"),
+    "Qwen/Qwen3.5-4B": _QWEN35, "Qwen/Qwen3.5-9B": _QWEN35, "Qwen/Qwen3.5-27B": _QWEN35, "Qwen/Qwen3.5-35B-A3B": _QWEN35,
+    "Qwen/Qwen3.6-27B": _QWEN35, "Qwen/Qwen3.6-35B-A3B": _QWEN35,
+    "Qwen/Qwen3.8-27B": _QWEN38, "Qwen/Qwen3.8-Flash-Next": _QWEN38,
+    "Qwen/Qwen3.8-2.4T-A95B": _QWEN35,
+    "google/gemma-4-E4B-it": _c("128K tokens (family table, column inferred from parameter row)", 128 * K, "SHORTHAND_K1024_ASSUMED",
+        _GEMMA_TABLE, source="VENDOR_MODEL_CARD_TABLE_COLUMN_INFERRED"),
+    "google/gemma-4-12B-it": _c("256K tokens (family table, column inferred from parameter row)", 256 * K, "SHORTHAND_K1024_ASSUMED",
+        _GEMMA_TABLE, source="VENDOR_MODEL_CARD_TABLE_COLUMN_INFERRED"),
+    "google/gemma-4-12B": _c("256K tokens (family table, column inferred from parameter row)", 256 * K, "SHORTHAND_K1024_ASSUMED",
+        _GEMMA_TABLE, source="VENDOR_MODEL_CARD_TABLE_COLUMN_INFERRED"),
+    "google/gemma-4-31B-it": _c("256K tokens (family table, column inferred from parameter row)", 256 * K, "SHORTHAND_K1024_ASSUMED",
+        _GEMMA_TABLE, source="VENDOR_MODEL_CARD_TABLE_COLUMN_INFERRED"),
+    "google/gemma-4-26B-A4B-it": _c("256K tokens", 256 * K, "SHORTHAND_K1024_ASSUMED", "| **Context Length** | 256K tokens |"),
+    "ibm-granite/granite-4.2-3b": _GRANITE, "ibm-granite/granite-4.2-8b": _GRANITE, "ibm-granite/granite-4.2-30b": _GRANITE,
+    "meta-llama/Llama-3.3-70B-Instruct": _c("128k (model-family table)", 128 * K, "SHORTHAND_K1024_ASSUMED",
+        "Multilingual Text and code  | 128k |"),
+    "microsoft/Fara1.5-9B": _c("262,144 tokens", 262144, "EXACT", "262,144 tokens"),
+    "microsoft/MagenticBrain": _c("32,768 tokens", 32768, "EXACT", "32,768 tokens"),
+    "microsoft/Phi-4-mini-instruct": _c("128K tokens", 128 * K, "SHORTHAND_K1024_ASSUMED", "128K tokens"),
+    "microsoft/phi-4": _c("16K tokens", 16 * K, "SHORTHAND_K1024_ASSUMED", "16K tokens"),
+    "mistralai/Ministral-3-8B-Instruct-2512": _MINISTRAL, "mistralai/Ministral-3-14B-Instruct-2512": _MINISTRAL,
+    "mistralai/Ministral-3-14B-Base-2512": _MINISTRAL, "mistralai/Ministral-3-14B-Reasoning-2512": _MINISTRAL,
+    "mistralai/Mistral-Large-3-675B-Instruct-2512": _MINISTRAL,
+    "mistralai/Mistral-Small-4-119B-2603": _c("256k context length", 256 * K, "SHORTHAND_K1024_ASSUMED", "256k context length"),
+    "mistralai/Mistral-Nemo-Instruct-2407": _c("Trained with a 128k context window", 128 * K, "SHORTHAND_K1024_ASSUMED", "128k context window"),
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": _c("supports up to a 1M context size, although the default context size in the Hugging Face configuration is 256k",
+        1024 * K, "SHORTHAND_K1024_ASSUMED", "supports up to a 1M context size"),
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16": _c("supports up to 1M context length", 1024 * K, "SHORTHAND_K1024_ASSUMED",
+        "supports up to 1M context length"),
+    "deepseek-ai/DeepSeek-V4.1-Flash": _c("`context_window` 1M tokens", 1024 * K, "SHORTHAND_K1024_ASSUMED", "| `context_window` | 1M tokens |"),
+}
+
+# Active parameters (billions): (value, source, quote-or-None, note). VENDOR_MODEL_CARD_CLAIM values are attributed claims;
+# NAME_DERIVED comes only from a 'A<n>B' style model name. Nothing here is a verified measurement.
+VENDOR_ACTIVE: dict[str, tuple[float | None, str, str | None, str | None]] = {
+    "Qwen/Qwen3.5-35B-A3B": (3.0, "VENDOR_MODEL_CARD_CLAIM", "35B in total and 3B activated", None),
+    "Qwen/Qwen3.6-35B-A3B": (3.0, "VENDOR_MODEL_CARD_CLAIM", "35B in total and 3B activated", None),
+    "Qwen/Qwen3.8-2.4T-A95B": (95.0, "VENDOR_MODEL_CARD_CLAIM", "2.4T in total and 95B activated", None),
+    "Qwen/Qwen3.8-Flash-Next": (6.0, "VENDOR_MODEL_CARD_CLAIM", "125B with 6B activated",
+                                "card: 125B + 51B n-gram embedding + 4B MTP (= 180B stored, matching the safetensors total)"),
+    "google/gemma-4-26B-A4B-it": (3.8, "VENDOR_MODEL_CARD_CLAIM", "| **Active Parameters** | 3.8B |",
+                                  "model name says A4B; card table says 3.8B active and 25.2B total (safetensors total is 25.8B)"),
+    "mistralai/Mistral-Small-4-119B-2603": (6.5, "VENDOR_MODEL_CARD_CLAIM", "6.5B activated per token", None),
+    "mistralai/Mistral-Large-3-675B-Instruct-2512": (41.0, "VENDOR_MODEL_CARD_CLAIM", "**41B active parameters** and **675B total parameters**",
+                                                     "the same card also states 39B active for the language model alone"),
+    "openai/gpt-oss-20b": (3.6, "VENDOR_MODEL_CARD_CLAIM", "21B parameters with 3.6B active parameters", None),
+    "openai/gpt-oss-120b": (5.1, "VENDOR_MODEL_CARD_CLAIM", "117B parameters with 5.1B active parameters", None),
+    "zai-org/GLM-5.3-Flash": (18.0, "VENDOR_MODEL_CARD_CLAIM", "320B total parameters and just 18B active parameters", None),
+    "zai-org/GLM-4.7-Flash": (3.0, "NAME_DERIVED", "30B-A3B MoE model", "card only names the model '30B-A3B'; no explicit active count"),
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": (3.0, "NAME_DERIVED", None, "from the 'A3B' model name; card gives experts-per-token, not an active count"),
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16": (3.0, "NAME_DERIVED", None, "from the 'A3B' model name"),
+    "deepseek-ai/DeepSeek-V4.1-Flash": (None, "NOT_RECORDED", "| # Activated Params | — | 13B | 49B | 8B / 16B |",
+                                        "vendor table lists '8B / 16B' (input/output path per earlier landscape doc); column attribution not verified"),
+}
+
+
+def context_info(model: str, raw_row: Mapping[str, Any]) -> dict[str, Any]:
+    cfg = raw_row.get("config_subset") or {}
+    conf = next((v for k, v in cfg.items() if k.endswith("max_position_embeddings")), None)
+    v = VENDOR_CONTEXT.get(model)
+    out: dict[str, Any] = {"config_max_position_embeddings": conf,
+                           "vendor_supported_context_tokens": v["tokens"] if v else None,
+                           "vendor_supported_context_text": v["text"] if v else None,
+                           "vendor_supported_context_precision": v["precision"] if v else None,
+                           "vendor_extended_context_tokens": v["extended_tokens"] if v else None,
+                           "context_source": v["source"] if v else "NOT_CAPTURED_FROM_MODEL_CARD",
+                           "vendor_context_quote": v["quote"] if v else None}
+    if conf is None:
+        rel = "CONFIG_NOT_AVAILABLE"
+    elif v is None:
+        rel = "VENDOR_CLAIM_NOT_CAPTURED"
+    else:
+        rel = "MATCH" if v["tokens"] == conf else "DIFFERS"
+    out["context_config_vs_vendor"] = rel
+    return out
+
+
+def active_info(model: str) -> dict[str, Any]:
+    if model in VENDOR_ACTIVE:
+        val, src, quote, note = VENDOR_ACTIVE[model]
+        return {"active_parameters_b": val, "active_parameters_source": src, "active_parameters_quote": quote,
+                "active_parameters_note": note, "active_parameters_verified": False}
+    return {"active_parameters_b": None, "active_parameters_source": None, "active_parameters_quote": None,
+            "active_parameters_note": None, "active_parameters_verified": False}
+
 
 GATED_OR_CUSTOM_LICENSE = {"other", "llama3.3", "llama4"}
 PERMISSIVE = {"apache-2.0", "mit"}
@@ -165,7 +275,7 @@ def evaluate_gates(model: str, raw_row: Mapping[str, Any], eco: Mapping[str, Any
     vllm = eco.get("vllm_supported_models_lines", {})
     vllm_line = vllm.get(arch) if arch else None
     total = _params_b(raw_row)
-    active = cur.get("active_b")
+    active = VENDOR_ACTIVE.get(model, (None,))[0]
     moe = bool(any(v for k, v in cfg.items() if k.split(".")[-1] in {"num_experts", "num_local_experts", "n_routed_experts"})
                or "moe" in mtype or "MoE" in (arch or ""))
     dtypes = (raw_row.get("safetensors") or {}).get("parameters") or {}
@@ -255,7 +365,7 @@ def classify(model: str, gates: Mapping[str, Mapping[str, str]], raw_row: Mappin
     admitted = all(gates[k]["status"] == "PASS" for k in GATES)
     role = cur.get("role")
     if role == "BASELINE_ONLY_CONTROL":
-        return "BASELINE_ONLY_CONTROL", "Phase 21B.4.20 control; not carried forward automatically; may serve as a regression baseline", admitted
+        return "BASELINE_ONLY_CONTROL", "Phase 21B.4.20 control; never admitted as a candidate; may serve only as a regression baseline", False
     if role == "DERIVATIVE_NOT_A_FOUNDATION":
         return "NOT_ADMITTED", "fine-tuned derivative of another candidate architecture: recorded to avoid double counting, not a separate foundation", False
     if role in {"TEACHER_REFERENCE", "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE"}:
@@ -266,7 +376,7 @@ def classify(model: str, gates: Mapping[str, Mapping[str, str]], raw_row: Mappin
     if gates["A_license"]["status"] == "FAIL":
         return "NOT_ADMITTED", "fails the license gate: " + gates["A_license"]["note"], False
     if admitted:
-        return "GENESIS_TRAINABLE_NOW", "passes all admission gates A-J on documented evidence", True
+        return "GENESIS_EVAL_ADMITTED", "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven", True
     failing = [f"{k}={gates[k]['status']}" for k in GATES if gates[k]["status"] != "PASS"]
     if raw_row.get("safetensors") and (_params_b(raw_row) or 0) <= 40:
         return "FUTURE_REASON_CANDIDATE", "fits the size envelope but gate(s) not passed: " + ", ".join(failing), False
@@ -281,17 +391,20 @@ def build_refresh(raw: Mapping[str, Any]) -> dict[str, Any]:
         gates = evaluate_gates(mid, row, eco)
         klass, reason, admitted = classify(mid, gates, row)
         total = _params_b(row)
-        moe_active = cur.get("active_b")
+        ai = active_info(mid)
+        moe_active = ai["active_parameters_b"]
         compute_b = moe_active if moe_active else total
         rec: dict[str, Any] = {
             "model": mid, "family": cur.get("family"), "revision_sha": row.get("revision_sha"),
             "license": {"card": row.get("license_card"), "name": row.get("license_name"), "gated": row.get("gated")},
             "architecture": (row.get("config_subset") or {}).get("architectures"),
             "model_type": (row.get("config_subset") or {}).get("model_type"),
-            "total_parameters_b": total, "active_parameters_b": moe_active,
+            "total_parameters_b": total,
             "is_moe": is_moe(row),
-            "active_parameters_source": cur.get("active_source", ("NOT_RECORDED" if is_moe(row) else "DENSE") if moe_active is None else None),
-            "context_tokens": next((v for k, v in (row.get("config_subset") or {}).items() if k.endswith("max_position_embeddings")), None),
+            **{**ai, "active_parameters_source": ai["active_parameters_source"] or ("NOT_RECORDED" if is_moe(row) else "DENSE")},
+            "trainability_proven": False, "trainability_evidence_ref": None,
+            "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
+            **context_info(mid, row),
             "multimodality": cur.get("modality"),
             "tool_calling_template": (eco.get("template_and_layer_probes", {}).get(mid) or {}).get("template_mentions_tools"),
             "reasoning_template": (eco.get("template_and_layer_probes", {}).get(mid) or {}).get("template_mentions_thinking"),

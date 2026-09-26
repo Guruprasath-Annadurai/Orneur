@@ -21,7 +21,7 @@ GATE_TEXT = {
     "B_revision_pinned": "An exact 40-hex revision is available to pin.",
     "C_architecture_documented": "config.json is retrievable and the architecture has a native implementation in transformers main or the vLLM supported-models docs.",
     "D_tokenizer_template": "A tokenizer and a chat template are shipped and were probed.",
-    "E_peft_qlora_feasible": "Dense, natively implemented, BF16-stored, <=40B parameters. MoE and natively-quantised checkpoints are UNVERIFIED; >40B fails. Basis is INFERRED_NOT_EXECUTED.",
+    "E_peft_qlora_feasible": "PEFT/QLoRA is feasible ON PAPER: dense, natively implemented, BF16-stored, <=40B parameters. MoE and natively-quantised checkpoints are UNVERIFIED; >40B fails. Basis is INFERRED_NOT_EXECUTED, so a PASS here means 'expected', never 'proven trainable' (see trainability_proven).",
     "F_training_cost_vs_budget": "A 5M-token QLoRA pilot costs <=10% of the low end of the planning budget and the estimated QLoRA memory fits 80GB.",
     "G_inference_path": "A vLLM-listed or transformers-native inference path exists.",
     "H_artifacts_verifiable": "Immutable revision plus safetensors metadata at that revision.",
@@ -69,14 +69,18 @@ def md(doc: dict) -> str:
     a("")
     a("Classes are assigned by rules in `orca/eval/foundation_landscape.py`, not by recency, size or popularity. Giant MoE models are **not** forced into the current budget: they are teacher/reference or architecture-reference material.")
     a("")
+    a("**Terminology (corrected in the audit-corrections phase).** `GENESIS_EVAL_ADMITTED` (formerly `GENESIS_TRAINABLE_NOW`) means *admitted for evaluation* by documented gates. It does **not** mean proven trainable: every record carries `trainability_proven=false` and `trainability_evidence_ref=null` until Stage-0/Stage-3 evidence exists. `BASELINE_ONLY_CONTROL` models are never admitted (`admitted_to_capability_eval=false`) even when they would pass the gates; they are regression baselines only.")
+    a("")
     a("## 4. All investigated models (gate string = A B C D E F G H I J; P=PASS F=FAIL ?=UNVERIFIED)")
     a("")
-    a("| Model | Class | Admitted | Gates | Total params (B) | Active (B) | License | Revision |")
-    a("|---|---|---|---|---|---|---|---|")
+    a("| Model | Class | Admitted | Gates | Total params (B) | Active (B, attributed claim) | Context: config / vendor-supported | License | Revision |")
+    a("|---|---|---|---|---|---|---|---|---|")
     for mid in sorted(M):
         r = M[mid]
-        act = r["active_parameters_b"] if r["active_parameters_b"] else ("dense" if r["active_parameters_source"] == "DENSE" else "MoE (active not recorded)")
-        a(f"| `{mid}` | {r['class']} | {'yes' if r['admitted_to_capability_eval'] else 'no'} | `{short(r)}` | {r['total_parameters_b']} | {act} | {r['license']['card']} | `{(r['revision_sha'] or '')[:12]}` |")
+        act = (f"{r['active_parameters_b']} ({r['active_parameters_source']})" if r["active_parameters_b"]
+               else ("dense" if r["active_parameters_source"] == "DENSE" else "MoE (active not recorded)"))
+        ctx = f"{r['config_max_position_embeddings']} / {r['vendor_supported_context_tokens']} ({r['context_config_vs_vendor']})"
+        a(f"| `{mid}` | {r['class']} | {'yes' if r['admitted_to_capability_eval'] else 'no'} | `{short(r)}` | {r['total_parameters_b']} | {act} | {ctx} | {r['license']['card']} | `{(r['revision_sha'] or '')[:12]}` |")
     a("")
     a("## 5. Per-candidate admission / exclusion reasons and records")
     a("")
@@ -88,7 +92,10 @@ def md(doc: dict) -> str:
             a(f"#### `{mid}`")
             a("")
             a(f"- Exact revision: `{r['revision_sha']}`; license: `{r['license']['card']}` (name `{r['license']['name']}`, gated `{r['license']['gated']}`)")
-            a(f"- Architecture: `{r['architecture']}` / `{r['model_type']}`; total parameters {r['total_parameters_b']}B; active {r['active_parameters_b'] or ('dense' if r['active_parameters_source'] == 'DENSE' else 'not recorded')} ({r['active_parameters_source']}); context (config) {r['context_tokens']}")
+            a(f"- Architecture: `{r['architecture']}` / `{r['model_type']}`; total parameters {r['total_parameters_b']}B; active {r['active_parameters_b'] or ('dense' if r['active_parameters_source'] == 'DENSE' else 'not recorded')} ({r['active_parameters_source']})")
+            a(f"- Context: config `max_position_embeddings`={r['config_max_position_embeddings']}; vendor-supported={r['vendor_supported_context_tokens']} ({r['vendor_supported_context_precision']}; extended {r['vendor_extended_context_tokens']}); source `{r['context_source']}`; config-vs-vendor: **{r['context_config_vs_vendor']}**" + (f"; vendor text: \"{r['vendor_supported_context_text']}\"" if r['vendor_supported_context_text'] else ""))
+            a(f"- Active parameters: {r['active_parameters_b']} — source `{r['active_parameters_source']}`, verified={r['active_parameters_verified']}" + (f"; note: {r['active_parameters_note']}" if r['active_parameters_note'] else ""))
+            a(f"- Admission meaning: {r['admission_meaning']} (trainability_proven={r['trainability_proven']})")
             a(f"- Multimodality: {r['multimodality']}; tool-calling template: {r['tool_calling_template']}; reasoning/thinking template: {r['reasoning_template']}")
             a(f"- Structured output: {r['structured_output']}")
             a(f"- Quantization: vendor variants observed {r['quantization_support']['vendor_quantized_observed'] or 'none recorded'}; runtime 4-bit {r['quantization_support']['runtime_4bit']}")
@@ -104,7 +111,7 @@ def md(doc: dict) -> str:
             a("")
     a("## 6. Shortlists (no ranking, no selection)")
     a("")
-    a("**Trainable-now pool (admitted to the Genesis Capability Eval by gates alone):** " + ", ".join(f"`{m}`" for m in doc["class_membership"]["GENESIS_TRAINABLE_NOW"]) + ".")
+    a("**Eval-admitted pool (admitted to the Genesis Capability Eval by gates alone; NOT proven trainable):** " + ", ".join(f"`{m}`" for m in doc["class_membership"]["GENESIS_EVAL_ADMITTED"]) + ".")
     a("")
     a("**Teacher / reference (studied, not a base):** " + ", ".join(f"`{m}`" for m in doc["class_membership"]["TEACHER_REFERENCE"]) + ".")
     a("")
@@ -116,6 +123,18 @@ def md(doc: dict) -> str:
     a("")
     a("The pool is deliberately larger than can be sensibly trained. It is a *screening* pool: the capability eval design uses a staged funnel so that only a few models receive the expensive stages.")
     a("")
+    a("## 6a. Context and active-parameter semantics (audit correction)")
+    a("")
+    a("Two different things were previously conflated. `config_max_position_embeddings` is what the shipped `config.json` says and is never overwritten. `vendor_supported_context_tokens` is what the vendor's model card states is supported; it is an attributed claim (`context_source`), quoted verbatim from the captured card text, not a measurement. K/M shorthand is converted with the K=1024 convention and flagged `SHORTHAND_K1024_ASSUMED`. Likewise `active_parameters_b` is an attributed claim (`VENDOR_MODEL_CARD_CLAIM`) or a name-derived value (`NAME_DERIVED`), never verified (`active_parameters_verified=false`).")
+    a("")
+    M = doc["models"]
+    differs = sorted(m for m, r in M.items() if r["context_config_vs_vendor"] == "DIFFERS")
+    a("Config-vs-vendor context **differs** for: " + ", ".join(f"`{m}` (config {M[m]['config_max_position_embeddings']}, vendor {M[m]['vendor_supported_context_tokens']})" for m in differs) + ".")
+    a("")
+    for k, label in (("VENDOR_CLAIM_NOT_CAPTURED", "no vendor context claim was captured from the model card"), ("CONFIG_NOT_AVAILABLE", "no config.json retrievable (gated or native-format repo)")):
+        ms = sorted(m for m, r in M.items() if r["context_config_vs_vendor"] == k)
+        a(f"`{k}` ({label}): " + ", ".join(f"`{m}`" for m in ms) + ".")
+        a("")
     a("## 7. Owner budget reality (planning only — does not authorize spending)")
     a("")
     b = doc["budget_planning"]

@@ -48,7 +48,7 @@ A first-class, immutable, provenance-carrying record (`orca.intelligence.protoco
 
 ### Provenance and immutability
 
-`Discovery` is a frozen dataclass. A change is a **new revision** via `Discovery.revise(...)`: `revision` increments and `parent_digest` is the sha256 of the previous revision's canonical form. `parent_digest` must be `None` exactly for revision 0. History is therefore append-only and tamper-evident. Evidence is referenced by content digest, so a discovery cannot silently point at changed material.
+`Discovery` is a frozen dataclass. A change is a **new revision** via `Discovery.revise(...)`: `revision` increments and `parent_digest` is the sha256 of the previous revision's canonical form. `parent_digest` must be `None` exactly for revision 0, and for every revision above 0 it must be a valid lowercase sha256 hex digest (the validator rejects anything else). History is therefore append-only and tamper-evident. Evidence is referenced by content digest, so a discovery cannot silently point at changed material.
 
 ## 3. How a discovery is produced (design)
 

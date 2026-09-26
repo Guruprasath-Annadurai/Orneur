@@ -53,7 +53,7 @@ Failure Genome / outcome → capability gap → candidate expert (state CANDIDAT
 ```
 
 - Candidates are produced by a learning pipeline; **the producer cannot promote its own candidate** (`PromotionDecision` refuses `decided_by == candidate_produced_by` and `== candidate_id`).
-- Promotion requires frozen, adversarial and regression eval references, a shadow deployment reference, a measured positive improvement and zero regressions, decided by a human owner or a qualified gate service.
+- Promotion requires frozen, adversarial and regression eval references, a shadow deployment reference, a measured positive improvement and zero regressions, decided by a separately identified `HUMAN_OWNER` or by a `QUALIFIED_GATE_SERVICE` that cites a `decider_qualification_ref`; an unqualified service cannot promote.
 - **No uncontrolled live weight mutation**: candidate creation happens offline; the serving mesh only ever swaps in a promoted, versioned expert.
 - **Retirement is a normal event.** The Self-Obsolescence Rule applies: an expert superseded by a proven better replacement is retired; keeping it "because we built it" is not a reason.
 

@@ -39,7 +39,7 @@
    "openai/gpt-oss-20b",
    "zai-org/GLM-4.7-Flash"
   ],
-  "GENESIS_TRAINABLE_NOW": [
+  "GENESIS_EVAL_ADMITTED": [
    "HuggingFaceTB/SmolLM3-3B",
    "Qwen/Qwen3.5-27B",
    "Qwen/Qwen3.5-4B",
@@ -78,7 +78,7 @@
  "date": "2026-09-26",
  "document": "GENESIS_FOUNDATION_LANDSCAPE_REFRESH",
  "evidence": {
-  "collected_at_utc": "2026-09-26T13:33:52+00:00",
+  "collected_at_utc": "2026-09-26T14:46:55+00:00",
   "collector": "scripts/orneur_foundation_landscape_collect.py",
   "ecosystem_versions_latest_pypi": {
    "accelerate": "1.15.0",
@@ -122,14 +122,20 @@
  "models": {
   "HuggingFaceTB/SmolLM3-3B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "SmolLM3ForCausalLM"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 65536,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 65536,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -223,18 +229,31 @@
    "revision_sha": "a07cc9a04f16550a088caea529712d1d335b0ac1",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 3.08
+   "total_parameters_b": 3.08,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "Trained on 64k context",
+   "vendor_extended_context_tokens": 131072,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "Trained on 64k context and supports up to 128k tokens using YARN extrapolation",
+   "vendor_supported_context_tokens": 65536
   },
   "LiquidAI/LFM2.5-2.6B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Lfm2ForCausalLM"
    ],
    "class": "NOT_ADMITTED",
    "class_reason": "fails the license gate: license tag 'other' / name 'lfm1.0', gated=False: custom or gated terms; not admitted without legal review",
-   "context_tokens": 131072,
+   "config_max_position_embeddings": 131072,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -328,18 +347,31 @@
    "revision_sha": "654f9463ce32b05d0429d76fe1f580b27d4c1ac0",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 2.7
+   "total_parameters_b": 2.7,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "131,072 tokens",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "Context length: 131,072 tokens",
+   "vendor_supported_context_tokens": 131072
   },
   "Qwen/Qwen3-8B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
-   "admitted_to_capability_eval": true,
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
+   "admitted_to_capability_eval": false,
    "architecture": [
     "Qwen3ForCausalLM"
    ],
    "class": "BASELINE_ONLY_CONTROL",
-   "class_reason": "Phase 21B.4.20 control; not carried forward automatically; may serve as a regression baseline",
-   "context_tokens": 40960,
+   "class_reason": "Phase 21B.4.20 control; never admitted as a candidate; may serve only as a regression baseline",
+   "config_max_position_embeddings": 40960,
+   "context_config_vs_vendor": "DIFFERS",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -433,18 +465,31 @@
    "revision_sha": "b968826d9c46dd6066d109eabc6255188de91218",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 8.19
+   "total_parameters_b": 8.19,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "32,768 natively",
+   "vendor_extended_context_tokens": 131072,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "32,768 natively and 131,072 tokens with YaRN",
+   "vendor_supported_context_tokens": 32768
   },
   "Qwen/Qwen3.5-27B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Qwen3_5ForConditionalGeneration"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 262144,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -538,18 +583,31 @@
    "revision_sha": "fc05daec18b0a78c049392ed2e771dde82bdf654",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 27.78
+   "total_parameters_b": 27.78,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_extended_context_tokens": 1010000,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "Qwen/Qwen3.5-35B-A3B": {
    "active_parameters_b": 3.0,
-   "active_parameters_source": "NAME_DERIVED",
+   "active_parameters_note": null,
+   "active_parameters_quote": "35B in total and 3B activated",
+   "active_parameters_source": "VENDOR_MODEL_CARD_CLAIM",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Qwen3_5MoeForConditionalGeneration"
    ],
    "class": "FUTURE_REASON_CANDIDATE",
    "class_reason": "fits the size envelope but gate(s) not passed: E_peft_qlora_feasible=UNVERIFIED",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -643,18 +701,31 @@
    "revision_sha": "59d61f3ce65a6d9863b86d2e96597125219dc754",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 35.95
+   "total_parameters_b": 35.95,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_extended_context_tokens": 1010000,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "Qwen/Qwen3.5-4B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Qwen3_5ForConditionalGeneration"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 262144,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -748,18 +819,31 @@
    "revision_sha": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 4.66
+   "total_parameters_b": 4.66,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_extended_context_tokens": 1010000,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "Qwen/Qwen3.5-9B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Qwen3_5ForConditionalGeneration"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 262144,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -853,18 +937,31 @@
    "revision_sha": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 9.65
+   "total_parameters_b": 9.65,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_extended_context_tokens": 1010000,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "Qwen/Qwen3.6-27B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Qwen3_5ForConditionalGeneration"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 262144,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -960,18 +1057,31 @@
    "revision_sha": "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 27.78
+   "total_parameters_b": 27.78,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_extended_context_tokens": 1010000,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "Qwen/Qwen3.6-35B-A3B": {
    "active_parameters_b": 3.0,
-   "active_parameters_source": "NAME_DERIVED",
+   "active_parameters_note": null,
+   "active_parameters_quote": "35B in total and 3B activated",
+   "active_parameters_source": "VENDOR_MODEL_CARD_CLAIM",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Qwen3_5MoeForConditionalGeneration"
    ],
    "class": "FUTURE_REASON_CANDIDATE",
    "class_reason": "fits the size envelope but gate(s) not passed: E_peft_qlora_feasible=UNVERIFIED",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -1065,18 +1175,31 @@
    "revision_sha": "995ad96eacd98c81ed38be0c5b274b04031597b0",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 35.95
+   "total_parameters_b": 35.95,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_extended_context_tokens": 1010000,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "Qwen/Qwen3.8-2.4T-A95B": {
    "active_parameters_b": 95.0,
-   "active_parameters_source": "NAME_DERIVED",
+   "active_parameters_note": null,
+   "active_parameters_quote": "2.4T in total and 95B activated",
+   "active_parameters_source": "VENDOR_MODEL_CARD_CLAIM",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Qwen3_5MoeForCausalLM"
    ],
    "class": "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE",
    "class_reason": "too large for the first-stage budget; studied as reference, not admitted as a base",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -1170,18 +1293,31 @@
    "revision_sha": "207bd685a7e3696cfaff12ded7c6a7ea0f88c996",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 2446.18
+   "total_parameters_b": 2446.18,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_extended_context_tokens": 1010000,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "262,144 natively and extensible up to 1,010,000 tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "Qwen/Qwen3.8-27B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Qwen3_5ForConditionalGeneration"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 262144,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -1278,31 +1414,44 @@
    "revision_sha": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 27.78
+   "total_parameters_b": 27.78,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "262,144 natively and extensible up to 1,000,000 tokens",
+   "vendor_extended_context_tokens": 1000000,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "262,144 natively and extensible up to 1,000,000 tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "Qwen/Qwen3.8-Flash-Next": {
-   "active_parameters_b": null,
-   "active_parameters_source": "NOT_RECORDED",
+   "active_parameters_b": 6.0,
+   "active_parameters_note": "card: 125B + 51B n-gram embedding + 4B MTP (= 180B stored, matching the safetensors total)",
+   "active_parameters_quote": "125B with 6B activated",
+   "active_parameters_source": "VENDOR_MODEL_CARD_CLAIM",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Qwen4ExpForConditionalGeneration"
    ],
    "class": "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE",
    "class_reason": "too large for the first-stage budget; studied as reference, not admitted as a base",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
-     23.96,
-     39.94
+     0.8,
+     1.33
     ],
     "qlora_vram_gb_range": [
      94.0,
      134.0
     ],
     "usd_per_million_training_tokens_range": [
-     4.793,
-     7.988
+     0.16,
+     0.266
     ]
    },
    "family": "Qwen",
@@ -1334,7 +1483,7 @@
     },
     "F_training_cost_vs_budget": {
      "basis": "DERIVED_ESTIMATE",
-     "note": "5M-token pilot ~USD 23.96-39.94 (<= 10% of USD 111); est. QLoRA VRAM 94.0-134.0 GB vs 80 GB",
+     "note": "5M-token pilot ~USD 0.8-1.33 (<= 10% of USD 111); est. QLoRA VRAM 94.0-134.0 GB vs 80 GB",
      "status": "FAIL"
     },
     "G_inference_path": {
@@ -1383,18 +1532,31 @@
    "revision_sha": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 180.0
+   "total_parameters_b": 180.0,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "262,144 natively and extensible up to 1,000,000 tokens",
+   "vendor_extended_context_tokens": 1000000,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "262,144 natively and extensible up to 1,000,000 tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "allenai/Olmo-3-7B-Instruct": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Olmo3ForCausalLM"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 65536,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 65536,
+   "context_config_vs_vendor": "VENDOR_CLAIM_NOT_CAPTURED",
+   "context_source": "NOT_CAPTURED_FROM_MODEL_CARD",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -1488,18 +1650,31 @@
    "revision_sha": "6e5971d9eba42665f5bd5a0fcf047f299ce1dccc",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 7.3
+   "total_parameters_b": 7.3,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": null,
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": null,
+   "vendor_supported_context_text": null,
+   "vendor_supported_context_tokens": null
   },
   "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Qwen3ForCausalLM"
    ],
    "class": "NOT_ADMITTED",
    "class_reason": "fine-tuned derivative of another candidate architecture: recorded to avoid double counting, not a separate foundation",
-   "context_tokens": 131072,
+   "config_max_position_embeddings": 131072,
+   "context_config_vs_vendor": "VENDOR_CLAIM_NOT_CAPTURED",
+   "context_source": "NOT_CAPTURED_FROM_MODEL_CARD",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -1593,18 +1768,31 @@
    "revision_sha": "6e8885a6ff5c1dc5201574c8fd700323f23c25fa",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": false,
-   "total_parameters_b": 8.19
+   "total_parameters_b": 8.19,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": null,
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": null,
+   "vendor_supported_context_text": null,
+   "vendor_supported_context_tokens": null
   },
   "deepseek-ai/DeepSeek-V4-Pro-0813": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "NOT_RECORDED",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "DeepseekV4ForCausalLM"
    ],
    "class": "TEACHER_REFERENCE",
    "class_reason": "too large for the first-stage budget; studied as reference, not admitted as a base",
-   "context_tokens": 1048576,
+   "config_max_position_embeddings": 1048576,
+   "context_config_vs_vendor": "VENDOR_CLAIM_NOT_CAPTURED",
+   "context_source": "NOT_CAPTURED_FROM_MODEL_CARD",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -1698,18 +1886,31 @@
    "revision_sha": "72e1d3230f6c080a530b0a1d46f8eb4602340597",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": null,
-   "total_parameters_b": 1650.5
+   "total_parameters_b": 1650.5,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": null,
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": null,
+   "vendor_supported_context_text": null,
+   "vendor_supported_context_tokens": null
   },
   "deepseek-ai/DeepSeek-V4.1-Flash": {
    "active_parameters_b": null,
+   "active_parameters_note": "vendor table lists '8B / 16B' (input/output path per earlier landscape doc); column attribution not verified",
+   "active_parameters_quote": "| # Activated Params | \u2014 | 13B | 49B | 8B / 16B |",
    "active_parameters_source": "NOT_RECORDED",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "DeepseekV41ForCausalLM"
    ],
    "class": "TEACHER_REFERENCE",
    "class_reason": "too large for the first-stage budget; studied as reference, not admitted as a base",
-   "context_tokens": 1048576,
+   "config_max_position_embeddings": 1048576,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -1803,18 +2004,31 @@
    "revision_sha": "dba1be0a40aa45a94ad051997016db3960a90277",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": null,
-   "total_parameters_b": 763.21
+   "total_parameters_b": 763.21,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "| `context_window` | 1M tokens |",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "`context_window` 1M tokens",
+   "vendor_supported_context_tokens": 1048576
   },
   "google/gemma-4-12B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Gemma4UnifiedForConditionalGeneration"
    ],
    "class": "FUTURE_REASON_CANDIDATE",
    "class_reason": "fits the size envelope but gate(s) not passed: D_tokenizer_template=UNVERIFIED",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_TABLE_COLUMN_INFERRED",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -1908,18 +2122,31 @@
    "revision_sha": "023679ed352de9bb66cc873c9009ce3482585c08",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": null,
-   "total_parameters_b": 11.96
+   "total_parameters_b": 11.96,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "| **Context Length** | 128K tokens | 128K tokens | 256K tokens  | 256K tokens  |",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "256K tokens (family table, column inferred from parameter row)",
+   "vendor_supported_context_tokens": 262144
   },
   "google/gemma-4-12B-it": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Gemma4UnifiedForConditionalGeneration"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 262144,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_TABLE_COLUMN_INFERRED",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -2016,31 +2243,44 @@
    "revision_sha": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 11.96
+   "total_parameters_b": 11.96,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "| **Context Length** | 128K tokens | 128K tokens | 256K tokens  | 256K tokens  |",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "256K tokens (family table, column inferred from parameter row)",
+   "vendor_supported_context_tokens": 262144
   },
   "google/gemma-4-26B-A4B-it": {
-   "active_parameters_b": 4.0,
-   "active_parameters_source": "NAME_DERIVED",
+   "active_parameters_b": 3.8,
+   "active_parameters_note": "model name says A4B; card table says 3.8B active and 25.2B total (safetensors total is 25.8B)",
+   "active_parameters_quote": "| **Active Parameters** | 3.8B |",
+   "active_parameters_source": "VENDOR_MODEL_CARD_CLAIM",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Gemma4ForConditionalGeneration"
    ],
    "class": "FUTURE_REASON_CANDIDATE",
    "class_reason": "fits the size envelope but gate(s) not passed: E_peft_qlora_feasible=UNVERIFIED",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
-     0.54,
-     0.89
+     0.51,
+     0.85
     ],
     "qlora_vram_gb_range": [
      16.9,
      26.1
     ],
     "usd_per_million_training_tokens_range": [
-     0.107,
-     0.178
+     0.101,
+     0.169
     ]
    },
    "family": "Gemma",
@@ -2072,7 +2312,7 @@
     },
     "F_training_cost_vs_budget": {
      "basis": "DERIVED_ESTIMATE",
-     "note": "5M-token pilot ~USD 0.54-0.89 (<= 10% of USD 111); est. QLoRA VRAM 16.9-26.1 GB vs 80 GB",
+     "note": "5M-token pilot ~USD 0.51-0.84 (<= 10% of USD 111); est. QLoRA VRAM 16.9-26.1 GB vs 80 GB",
      "status": "PASS"
     },
     "G_inference_path": {
@@ -2121,18 +2361,31 @@
    "revision_sha": "4d7ae4984b7db7de8f8457170b3f1a419ee76d52",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 25.81
+   "total_parameters_b": 25.81,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "| **Context Length** | 256K tokens |",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "256K tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "google/gemma-4-31B-it": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Gemma4ForConditionalGeneration"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 262144,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_TABLE_COLUMN_INFERRED",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -2228,18 +2481,31 @@
    "revision_sha": "842da3794eaa0b77d5f08bae87a17459d91ff475",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 31.27
+   "total_parameters_b": 31.27,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "| **Context Length** | 128K tokens | 128K tokens | 256K tokens  | 256K tokens  |",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "256K tokens (family table, column inferred from parameter row)",
+   "vendor_supported_context_tokens": 262144
   },
   "google/gemma-4-E4B-it": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Gemma4ForConditionalGeneration"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 131072,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 131072,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_TABLE_COLUMN_INFERRED",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -2336,18 +2602,31 @@
    "revision_sha": "ee0ef6023621cff504d758262d4e04895a5af4a2",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 8.0
+   "total_parameters_b": 8.0,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "| **Context Length** | 128K tokens | 128K tokens | 256K tokens  | 256K tokens  |",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "128K tokens (family table, column inferred from parameter row)",
+   "vendor_supported_context_tokens": 131072
   },
   "ibm-granite/granite-4.2-30b": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "GraniteForCausalLM"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 131072,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 131072,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -2446,18 +2725,31 @@
    "revision_sha": "9e668ce1c538387ef24d3644e9b0606647762636",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 29.28
+   "total_parameters_b": 29.28,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "Natively Supports 128K (Long-context extension to 512K)",
+   "vendor_extended_context_tokens": 524288,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "Natively Supports 128K (Long-context extension to 512K)",
+   "vendor_supported_context_tokens": 131072
   },
   "ibm-granite/granite-4.2-3b": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "GraniteForCausalLM"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 131072,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 131072,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -2556,18 +2848,31 @@
    "revision_sha": "e459acceac81e5fe67c07d9cfc72329a332e7eb1",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 3.66
+   "total_parameters_b": 3.66,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "Natively Supports 128K (Long-context extension to 512K)",
+   "vendor_extended_context_tokens": 524288,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "Natively Supports 128K (Long-context extension to 512K)",
+   "vendor_supported_context_tokens": 131072
   },
   "ibm-granite/granite-4.2-8b": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "GraniteForCausalLM"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 131072,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 131072,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -2666,16 +2971,29 @@
    "revision_sha": "f8de16cdcdbc6c779ca517604e050d82cc119e44",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 8.79
+   "total_parameters_b": 8.79,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "Natively Supports 128K (Long-context extension to 512K)",
+   "vendor_extended_context_tokens": 524288,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "Natively Supports 128K (Long-context extension to 512K)",
+   "vendor_supported_context_tokens": 131072
   },
   "meta-llama/Llama-3.3-70B-Instruct": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": null,
    "class": "NOT_ADMITTED",
    "class_reason": "fails the license gate: license tag 'llama3.3' / name 'None', gated=manual: custom or gated terms; not admitted without legal review",
-   "context_tokens": null,
+   "config_max_position_embeddings": null,
+   "context_config_vs_vendor": "CONFIG_NOT_AVAILABLE",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -2769,16 +3087,29 @@
    "revision_sha": "6f6073b423013f6a7d4d9f39144961bfbfbc386b",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": null,
-   "total_parameters_b": 70.55
+   "total_parameters_b": 70.55,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "Multilingual Text and code  | 128k |",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "128k (model-family table)",
+   "vendor_supported_context_tokens": 131072
   },
   "meta-llama/Llama-4-Scout-17B-16E-Instruct": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": null,
    "class": "NOT_ADMITTED",
    "class_reason": "fails the license gate: license tag 'other' / name 'llama4', gated=manual: custom or gated terms; not admitted without legal review",
-   "context_tokens": null,
+   "config_max_position_embeddings": null,
+   "context_config_vs_vendor": "CONFIG_NOT_AVAILABLE",
+   "context_source": "NOT_CAPTURED_FROM_MODEL_CARD",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -2872,18 +3203,31 @@
    "revision_sha": "92f3b1597a195b523d8d9e5700e57e4fbb8f20d3",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": null,
-   "total_parameters_b": 108.64
+   "total_parameters_b": 108.64,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": null,
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": null,
+   "vendor_supported_context_text": null,
+   "vendor_supported_context_tokens": null
   },
   "microsoft/Fara1.5-9B": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Qwen3_5ForConditionalGeneration"
    ],
    "class": "NOT_ADMITTED",
    "class_reason": "fine-tuned derivative of another candidate architecture: recorded to avoid double counting, not a separate foundation",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -2977,18 +3321,31 @@
    "revision_sha": "1a93677cd89d5601bc2ed759791e981f3a520032",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 9.41
+   "total_parameters_b": 9.41,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "262,144 tokens",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "262,144 tokens",
+   "vendor_supported_context_tokens": 262144
   },
   "microsoft/MagenticBrain": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Qwen3ForCausalLM"
    ],
    "class": "NOT_ADMITTED",
    "class_reason": "fine-tuned derivative of another candidate architecture: recorded to avoid double counting, not a separate foundation",
-   "context_tokens": 40960,
+   "config_max_position_embeddings": 40960,
+   "context_config_vs_vendor": "DIFFERS",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -3082,18 +3439,31 @@
    "revision_sha": "db8eb9340a90eaa4424dd13067373d1f9e8887f7",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 14.77
+   "total_parameters_b": 14.77,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "32,768 tokens",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "EXACT",
+   "vendor_supported_context_text": "32,768 tokens",
+   "vendor_supported_context_tokens": 32768
   },
   "microsoft/Phi-4-mini-instruct": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Phi3ForCausalLM"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 131072,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 131072,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -3187,18 +3557,31 @@
    "revision_sha": "cfbefacb99257ffa30c83adab238a50856ac3083",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 3.84
+   "total_parameters_b": 3.84,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "128K tokens",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "128K tokens",
+   "vendor_supported_context_tokens": 131072
   },
   "microsoft/phi-4": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
-   "admitted_to_capability_eval": true,
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
+   "admitted_to_capability_eval": false,
    "architecture": [
     "Phi3ForCausalLM"
    ],
    "class": "BASELINE_ONLY_CONTROL",
-   "class_reason": "Phase 21B.4.20 control; not carried forward automatically; may serve as a regression baseline",
-   "context_tokens": 16384,
+   "class_reason": "Phase 21B.4.20 control; never admitted as a candidate; may serve only as a regression baseline",
+   "config_max_position_embeddings": 16384,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -3292,18 +3675,31 @@
    "revision_sha": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": false,
-   "total_parameters_b": 14.66
+   "total_parameters_b": 14.66,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "16K tokens",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "16K tokens",
+   "vendor_supported_context_tokens": 16384
   },
   "mistralai/Ministral-3-14B-Base-2512": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Mistral3ForConditionalGeneration"
    ],
    "class": "FUTURE_REASON_CANDIDATE",
    "class_reason": "fits the size envelope but gate(s) not passed: D_tokenizer_template=UNVERIFIED",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -3397,18 +3793,31 @@
    "revision_sha": "5b0ceedbb42dff466ae60b258ba296f32da51384",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": null,
-   "total_parameters_b": 13.95
+   "total_parameters_b": 13.95,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "Supports a 256k context window",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "Supports a 256k context window",
+   "vendor_supported_context_tokens": 262144
   },
   "mistralai/Ministral-3-14B-Instruct-2512": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Mistral3ForConditionalGeneration"
    ],
    "class": "FUTURE_REASON_CANDIDATE",
    "class_reason": "fits the size envelope but gate(s) not passed: E_peft_qlora_feasible=UNVERIFIED",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -3505,18 +3914,31 @@
    "revision_sha": "29439f81c2be264d8d393273f99e7db9c0961120",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 13.95
+   "total_parameters_b": 13.95,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "Supports a 256k context window",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "Supports a 256k context window",
+   "vendor_supported_context_tokens": 262144
   },
   "mistralai/Ministral-3-14B-Reasoning-2512": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": true,
    "architecture": [
     "Mistral3ForConditionalGeneration"
    ],
-   "class": "GENESIS_TRAINABLE_NOW",
-   "class_reason": "passes all admission gates A-J on documented evidence",
-   "context_tokens": 262144,
+   "class": "GENESIS_EVAL_ADMITTED",
+   "class_reason": "passes all admission gates A-J on documented evidence: admitted for evaluation only; trainability is NOT proven",
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -3610,18 +4032,31 @@
    "revision_sha": "51f9210f3cd20f3452a80d5819d15dc61cc50630",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 13.95
+   "total_parameters_b": 13.95,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "Supports a 256k context window",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "Supports a 256k context window",
+   "vendor_supported_context_tokens": 262144
   },
   "mistralai/Ministral-3-8B-Instruct-2512": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Mistral3ForConditionalGeneration"
    ],
    "class": "FUTURE_REASON_CANDIDATE",
    "class_reason": "fits the size envelope but gate(s) not passed: E_peft_qlora_feasible=UNVERIFIED",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -3719,16 +4154,29 @@
    "revision_sha": "5b26027e7b19eeb4b7352e1fed3926375dd2cb4d",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 8.92
+   "total_parameters_b": 8.92,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "Supports a 256k context window",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "Supports a 256k context window",
+   "vendor_supported_context_tokens": 262144
   },
   "mistralai/Mistral-Large-3-675B-Instruct-2512": {
    "active_parameters_b": 41.0,
-   "active_parameters_source": "PRIOR_LANDSCAPE_DOC_VENDOR_CLAIM",
+   "active_parameters_note": "the same card also states 39B active for the language model alone",
+   "active_parameters_quote": "**41B active parameters** and **675B total parameters**",
+   "active_parameters_source": "VENDOR_MODEL_CARD_CLAIM",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": null,
    "class": "TEACHER_REFERENCE",
    "class_reason": "too large for the first-stage budget; studied as reference, not admitted as a base",
-   "context_tokens": null,
+   "config_max_position_embeddings": null,
+   "context_config_vs_vendor": "CONFIG_NOT_AVAILABLE",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "family": "Mistral",
    "gates": {
     "A_license": {
@@ -3807,18 +4255,31 @@
    "revision_sha": "383ffea2c7d60dfd44ca960e8e691709d4fdb9cd",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": null
+   "total_parameters_b": null,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "Supports a 256k context window",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "Supports a 256k context window",
+   "vendor_supported_context_tokens": 262144
   },
   "mistralai/Mistral-Nemo-Instruct-2407": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "DENSE",
-   "admitted_to_capability_eval": true,
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
+   "admitted_to_capability_eval": false,
    "architecture": [
     "MistralForCausalLM"
    ],
    "class": "BASELINE_ONLY_CONTROL",
-   "class_reason": "Phase 21B.4.20 control; not carried forward automatically; may serve as a regression baseline",
-   "context_tokens": 131072,
+   "class_reason": "Phase 21B.4.20 control; never admitted as a candidate; may serve only as a regression baseline",
+   "config_max_position_embeddings": 131072,
+   "context_config_vs_vendor": "MATCH",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -3912,31 +4373,44 @@
    "revision_sha": "04d8a90549d23fc6bd7f642064003592df51e9b3",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 12.25
+   "total_parameters_b": 12.25,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "128k context window",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "Trained with a 128k context window",
+   "vendor_supported_context_tokens": 131072
   },
   "mistralai/Mistral-Small-4-119B-2603": {
-   "active_parameters_b": null,
-   "active_parameters_source": "NOT_RECORDED",
+   "active_parameters_b": 6.5,
+   "active_parameters_note": null,
+   "active_parameters_quote": "6.5B activated per token",
+   "active_parameters_source": "VENDOR_MODEL_CARD_CLAIM",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Mistral3ForConditionalGeneration"
    ],
    "class": "TEACHER_REFERENCE",
    "class_reason": "too large for the first-stage budget; studied as reference, not admitted as a base",
-   "context_tokens": 1048576,
+   "config_max_position_embeddings": 1048576,
+   "context_config_vs_vendor": "DIFFERS",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
-     15.89,
-     26.5
+     0.86,
+     1.44
     ],
     "qlora_vram_gb_range": [
      63.7,
      91.6
     ],
     "usd_per_million_training_tokens_range": [
-     3.179,
-     5.299
+     0.173,
+     0.288
     ]
    },
    "family": "Mistral",
@@ -3968,7 +4442,7 @@
     },
     "F_training_cost_vs_budget": {
      "basis": "DERIVED_ESTIMATE",
-     "note": "5M-token pilot ~USD 15.89-26.5 (<= 10% of USD 111); est. QLoRA VRAM 63.7-91.6 GB vs 80 GB",
+     "note": "5M-token pilot ~USD 0.86-1.44 (<= 10% of USD 111); est. QLoRA VRAM 63.7-91.6 GB vs 80 GB",
      "status": "FAIL"
     },
     "G_inference_path": {
@@ -4017,18 +4491,31 @@
    "revision_sha": "a11f36bebf709121056b1dbcc943d1c6afbe494d",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 119.4
+   "total_parameters_b": 119.4,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "256k context length",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "256k context length",
+   "vendor_supported_context_tokens": 262144
   },
   "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": {
    "active_parameters_b": 3.0,
+   "active_parameters_note": "from the 'A3B' model name; card gives experts-per-token, not an active count",
+   "active_parameters_quote": null,
    "active_parameters_source": "NAME_DERIVED",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "NemotronHForCausalLM"
    ],
    "class": "NOT_ADMITTED",
    "class_reason": "fails the license gate: license tag 'other' / name 'nvidia-nemotron-open-model-license', gated=False: custom or gated terms; not admitted without legal review",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "DIFFERS",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -4122,18 +4609,31 @@
    "revision_sha": "bf77c3174f68ad409e1c2aa60daeb46e32d1c606",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 31.58
+   "total_parameters_b": 31.58,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "supports up to a 1M context size",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "supports up to a 1M context size, although the default context size in the Hugging Face configuration is 256k",
+   "vendor_supported_context_tokens": 1048576
   },
   "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16": {
    "active_parameters_b": 3.0,
+   "active_parameters_note": "from the 'A3B' model name",
+   "active_parameters_quote": null,
    "active_parameters_source": "NAME_DERIVED",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "NemotronHForCausalLM"
    ],
    "class": "NOT_ADMITTED",
    "class_reason": "fails the license gate: license tag 'other' / name 'openmdw-1.1', gated=False: custom or gated terms; not admitted without legal review",
-   "context_tokens": 262144,
+   "config_max_position_embeddings": 262144,
+   "context_config_vs_vendor": "DIFFERS",
+   "context_source": "VENDOR_MODEL_CARD_CLAIM",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -4227,18 +4727,31 @@
    "revision_sha": "434456c9a6753f29d24e23c95d622aaf17111b3b",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": null,
-   "total_parameters_b": 31.58
+   "total_parameters_b": 31.58,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": "supports up to 1M context length",
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": "SHORTHAND_K1024_ASSUMED",
+   "vendor_supported_context_text": "supports up to 1M context length",
+   "vendor_supported_context_tokens": 1048576
   },
   "openai/gpt-oss-120b": {
    "active_parameters_b": 5.1,
-   "active_parameters_source": "VENDOR_CLAIM_NOT_REVERIFIED",
+   "active_parameters_note": null,
+   "active_parameters_quote": "117B parameters with 5.1B active parameters",
+   "active_parameters_source": "VENDOR_MODEL_CARD_CLAIM",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "GptOssForCausalLM"
    ],
    "class": "TEACHER_REFERENCE",
    "class_reason": "too large for the first-stage budget; studied as reference, not admitted as a base",
-   "context_tokens": 131072,
+   "config_max_position_embeddings": 131072,
+   "context_config_vs_vendor": "VENDOR_CLAIM_NOT_CAPTURED",
+   "context_source": "NOT_CAPTURED_FROM_MODEL_CARD",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -4332,18 +4845,31 @@
    "revision_sha": "b5c939de8f754692c1647ca79fbf85e8c1e70f8a",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 116.83
+   "total_parameters_b": 116.83,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": null,
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": null,
+   "vendor_supported_context_text": null,
+   "vendor_supported_context_tokens": null
   },
   "openai/gpt-oss-20b": {
    "active_parameters_b": 3.6,
-   "active_parameters_source": "VENDOR_CLAIM_NOT_REVERIFIED",
+   "active_parameters_note": null,
+   "active_parameters_quote": "21B parameters with 3.6B active parameters",
+   "active_parameters_source": "VENDOR_MODEL_CARD_CLAIM",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "GptOssForCausalLM"
    ],
    "class": "FUTURE_REASON_CANDIDATE",
    "class_reason": "fits the size envelope but gate(s) not passed: E_peft_qlora_feasible=UNVERIFIED",
-   "context_tokens": 131072,
+   "config_max_position_embeddings": 131072,
+   "context_config_vs_vendor": "VENDOR_CLAIM_NOT_CAPTURED",
+   "context_source": "NOT_CAPTURED_FROM_MODEL_CARD",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -4439,18 +4965,31 @@
    "revision_sha": "6cee5e81ee83917806bbde320786a8fb61efebee",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 20.91
+   "total_parameters_b": 20.91,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": null,
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": null,
+   "vendor_supported_context_text": null,
+   "vendor_supported_context_tokens": null
   },
   "zai-org/GLM-4.7-Flash": {
    "active_parameters_b": 3.0,
-   "active_parameters_source": "NAME_DERIVED_UNVERIFIED",
+   "active_parameters_note": "card only names the model '30B-A3B'; no explicit active count",
+   "active_parameters_quote": "30B-A3B MoE model",
+   "active_parameters_source": "NAME_DERIVED",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Glm4MoeLiteForCausalLM"
    ],
    "class": "FUTURE_REASON_CANDIDATE",
    "class_reason": "fits the size envelope but gate(s) not passed: E_peft_qlora_feasible=UNVERIFIED",
-   "context_tokens": 202752,
+   "config_max_position_embeddings": 202752,
+   "context_config_vs_vendor": "VENDOR_CLAIM_NOT_CAPTURED",
+   "context_source": "NOT_CAPTURED_FROM_MODEL_CARD",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -4544,18 +5083,31 @@
    "revision_sha": "7dd20894a642a0aa287e9827cb1a1f7f91386b67",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 31.22
+   "total_parameters_b": 31.22,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": null,
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": null,
+   "vendor_supported_context_text": null,
+   "vendor_supported_context_tokens": null
   },
   "zai-org/GLM-5.3": {
    "active_parameters_b": null,
+   "active_parameters_note": null,
+   "active_parameters_quote": null,
    "active_parameters_source": "NOT_RECORDED",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "GlmMoeDsaForCausalLM"
    ],
    "class": "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE",
    "class_reason": "too large for the first-stage budget; studied as reference, not admitted as a base",
-   "context_tokens": 1048576,
+   "config_max_position_embeddings": 1048576,
+   "context_config_vs_vendor": "VENDOR_CLAIM_NOT_CAPTURED",
+   "context_source": "NOT_CAPTURED_FROM_MODEL_CARD",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
@@ -4649,31 +5201,44 @@
    "revision_sha": "aca966e4e02791568aa6a4ced368624b3d897f42",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 753.33
+   "total_parameters_b": 753.33,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": null,
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": null,
+   "vendor_supported_context_text": null,
+   "vendor_supported_context_tokens": null
   },
   "zai-org/GLM-5.3-Flash": {
-   "active_parameters_b": null,
-   "active_parameters_source": "NOT_RECORDED",
+   "active_parameters_b": 18.0,
+   "active_parameters_note": null,
+   "active_parameters_quote": "320B total parameters and just 18B active parameters",
+   "active_parameters_source": "VENDOR_MODEL_CARD_CLAIM",
+   "active_parameters_verified": false,
+   "admission_meaning": "admitted for evaluation only; PEFT/QLoRA training is not proven until Stage-0/Stage-3 evidence exists",
    "admitted_to_capability_eval": false,
    "architecture": [
     "Glm5NextForConditionalGeneration"
    ],
    "class": "TEACHER_REFERENCE",
    "class_reason": "too large for the first-stage budget; studied as reference, not admitted as a base",
-   "context_tokens": 1048576,
+   "config_max_position_embeddings": 1048576,
+   "context_config_vs_vendor": "VENDOR_CLAIM_NOT_CAPTURED",
+   "context_source": "NOT_CAPTURED_FROM_MODEL_CARD",
    "estimates": {
     "kind": "ESTIMATE_NOT_MEASUREMENT",
     "pilot_5m_tokens_usd_range": [
-     42.78,
-     71.3
+     2.4,
+     4.0
     ],
     "qlora_vram_gb_range": [
      164.7,
      232.9
     ],
     "usd_per_million_training_tokens_range": [
-     8.556,
-     14.259
+     0.479,
+     0.799
     ]
    },
    "family": "GLM",
@@ -4705,7 +5270,7 @@
     },
     "F_training_cost_vs_budget": {
      "basis": "DERIVED_ESTIMATE",
-     "note": "5M-token pilot ~USD 42.78-71.3 (<= 10% of USD 111); est. QLoRA VRAM 164.7-232.9 GB vs 80 GB",
+     "note": "5M-token pilot ~USD 2.4-4.0 (<= 10% of USD 111); est. QLoRA VRAM 164.7-232.9 GB vs 80 GB",
      "status": "FAIL"
     },
     "G_inference_path": {
@@ -4756,7 +5321,14 @@
    "revision_sha": "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
    "structured_output": "NOT_MODEL_NATIVE_EVIDENCE: enforced at system level by the ORNEUR Contract Engine; serving-stack constrained decoding not verified this phase",
    "tool_calling_template": true,
-   "total_parameters_b": 321.32
+   "total_parameters_b": 321.32,
+   "trainability_evidence_ref": null,
+   "trainability_proven": false,
+   "vendor_context_quote": null,
+   "vendor_extended_context_tokens": null,
+   "vendor_supported_context_precision": null,
+   "vendor_supported_context_text": null,
+   "vendor_supported_context_tokens": null
   }
  },
  "phase_21c_authorized": false,

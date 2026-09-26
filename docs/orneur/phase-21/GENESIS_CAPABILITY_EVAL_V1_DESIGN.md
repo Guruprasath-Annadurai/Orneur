@@ -21,11 +21,11 @@ Companion documents: `GENESIS_FOUNDATION_LANDSCAPE_REFRESH_2026-09-26.md` (candi
 
 ## 3. Candidate pool and the staged funnel
 
-The refreshed pool has 15 gate-admitted `GENESIS_TRAINABLE_NOW` models (see the refresh). Running the full eval on all 15 would consume a large fraction of the ~INR 10,000 planning budget, so the eval is staged; each stage has a **mechanical** entry rule that never uses capability results from a later stage or vendor benchmark claims.
+The refreshed pool has 15 gate-admitted `GENESIS_EVAL_ADMITTED` models (see the refresh). *Admitted for evaluation* is deliberately not *proven trainable*: PEFT/QLoRA feasibility is `INFERRED_NOT_EXECUTED` until the Stage-0 CPU checks and the Stage-3 pilot produce evidence, and the three Phase 21B.4.20 controls are baseline-only and never admitted. Running the full eval on all 15 would consume a large fraction of the ~INR 10,000 planning budget, so the eval is staged; each stage has a **mechanical** entry rule that never uses capability results from a later stage or vendor benchmark claims.
 
 | Stage | What | Who enters | Compute | Est. cost (formula, not measured) |
 |---|---|---|---|---|
-| 0 — CPU integrity | tokenizer round-trip, chat-template rendering incl. tool and thinking modes, config/architecture load on CPU, license text archived, revision + file hashes verified | all 15 admitted models | CPU only | USD 0 GPU |
+| 0 — CPU integrity (first evidence toward trainability) | tokenizer round-trip, chat-template rendering incl. tool and thinking modes, config/architecture load on CPU, license text archived, revision + file hashes verified | all 15 admitted models | CPU only | USD 0 GPU |
 | 1 — Screening | reduced item set over all 21 categories (≈ 200 items) plus serving smoke | **LEAN:** per model *family*, the admitted model whose total parameters are nearest 9B (7 models). **FULL:** additionally the largest admitted model ≤ 32B per family (≤ 10 models); equal-size ties are broken by lexicographic model id, never by recency | 1×H100 | 0.4–1.0 GPU-h per model × USD 3.95/h |
 | 2 — Full eval | full item set, 2 sampling configs, all categories | survivors of the pre-registered floors, at most 4 (drop Pareto-dominated first; ties → lower cost) | 1×H100 | 1–2 GPU-h per model |
 | 3 — Trainability pilot | 5M-token QLoRA format/contract SFT on the training split, re-run of the format categories | at most 2 | 1×H100 | USD ≈ 1–7 per model + eval |

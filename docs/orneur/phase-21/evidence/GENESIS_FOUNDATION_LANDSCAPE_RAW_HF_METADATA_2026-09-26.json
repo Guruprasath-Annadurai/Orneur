@@ -1,5 +1,5 @@
 {
- "collected_at_utc": "2026-09-26T13:33:52+00:00",
+ "collected_at_utc": "2026-09-26T14:46:55+00:00",
  "ecosystem": {
   "license_probes": {
    "LiquidAI/LFM2.5-2.6B": {
@@ -1198,7 +1198,16 @@
     "license:apache-2.0",
     "endpoints_compatible",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- **Long context:** Trained on 64k context and supports up to **128k tokens** using YARN extrapolation",
+     "The current `config.json` is set for context length up to 65,536 tokens. To handle longer inputs (128k or 256k), we utilize YaRN you can change the `max_position_embeddings` and rope_scaling` to:",
+     "Note: All evaluations are zero-shot unless stated otherwise. For Ruler 64k evaluation, we apply YaRN to the Qwen models with 32k context to extrapolate the context length."
+    ],
+    "readme_bytes": 17445,
+    "readme_sha256": "24f16f90b883af3618425a589783a944356a7fc2e3cfa69b579c9ff06963e178"
+   }
   },
   "LiquidAI/LFM2.5-2.6B": {
    "config_has_quantization_config": false,
@@ -1264,7 +1273,17 @@
     "license:other",
     "eval-results",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "LFM2.5-2.6B is part of LFM2.5, a family of hybrid models designed for **on-device deployment**. It builds on the LFM2 architecture with a 128K context window and agentic post-training.",
+     "- **Total parameters**: 2.69B",
+     "- **Context length**: 131,072 tokens",
+     "LFM2.5-2.6B is pre-trained on ~34T tokens, with a mid-training phase that extends the context window to 128K. Post-training then turns the base model into an agent in four stages: supervised fine-tuning (two rounds), per-domain teacher specialization, multi-domain on-policy distillation, and agentic"
+    ],
+    "readme_bytes": 18290,
+    "readme_sha256": "003ceb63ec63a5b06b17f5e7b7a7d907695f037ad18720cabbcf8d8d68813f24"
+   }
   },
   "Qwen/Qwen3-8B": {
    "config_has_quantization_config": false,
@@ -1317,7 +1336,18 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- Number of Parameters: 8.2B",
+     "- Context Length: 32,768 natively and [131,072 tokens with YaRN](#processing-long-texts).",
+     "Qwen3 natively supports context lengths of up to 32,768 tokens. For conversations where the total length (including both input and output) significantly exceeds this limit, we recommend using RoPE scaling techniques to handle long texts effectively. We have validated the model's performance on conte",
+     "> It is also recommended to modify the `factor` as needed. For example, if the typical context length for your application is 65,536 tokens, it would be better to set `factor` as 2.0.",
+     "> The default `max_position_embeddings` in `config.json` is set to 40,960. This allocation includes reserving 32,768 tokens for outputs and 8,192 tokens for typical prompts, which is sufficient for most scenarios involving short text processing. If the average context length does not exceed 32,768 t"
+    ],
+    "readme_bytes": 16660,
+    "readme_sha256": "0f36caaff9c2516411a7738db384606263ba653c1e63e61d72f511606164d5a6"
+   }
   },
   "Qwen/Qwen3.5-27B": {
    "config_has_quantization_config": false,
@@ -1366,7 +1396,23 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- Number of Parameters: 27B",
+     "- Context Length: 262,144 natively and extensible up to 1,010,000 tokens.",
+     "* WideSearch: we use a 256k context window without any context management.<br>",
+     "> The model has a default context length of 262,144 tokens.",
+     "> If you encounter out-of-memory (OOM) errors, consider reducing the context window.",
+     "> However, because Qwen3.5 leverages extended context for complex tasks, we advise maintaining a context length of at least 128K tokens to preserve thinking capabilities.",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "Qwen3.5 natively supports context lengths of up to 262,144 tokens.",
+     "> It is also recommended to modify the `factor` as needed. For example, if the typical context length for your application is 524,288 tokens, it would be better to set `factor` as 2.0."
+    ],
+    "readme_bytes": 92402,
+    "readme_sha256": "8c6303cd5e89dc378d11fb4b70a0ff9c3cccb55a031133c69d9cbde9481f1a8c"
+   }
   },
   "Qwen/Qwen3.5-35B-A3B": {
    "config_has_quantization_config": false,
@@ -1418,7 +1464,42 @@
     "eval-results",
     "endpoints_compatible",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "license_link: https://huggingface.co/Qwen/Qwen3.5-35B-A3B/blob/main/LICENSE",
+     "- Qwen/Qwen3.5-35B-A3B-Base",
+     "# Qwen3.5-35B-A3B",
+     "> In particular, **Qwen3.5-Flash** is the hosted version corresponding to Qwen3.5-35B-A3B with more production features, e.g., 1M context length by default and official built-in tools.",
+     "- Number of Parameters: 35B in total and 3B activated",
+     "- Number of Activated Experts: 8 Routed + 1 Shared",
+     "- Context Length: 262,144 natively and extensible up to 1,010,000 tokens.",
+     "* WideSearch: we use a 256k context window without any context management.<br>",
+     "> The model has a default context length of 262,144 tokens.",
+     "> If you encounter out-of-memory (OOM) errors, consider reducing the context window.",
+     "> However, because Qwen3.5 leverages extended context for complex tasks, we advise maintaining a context length of at least 128K tokens to preserve thinking capabilities.",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "python -m sglang.launch_server --model-path Qwen/Qwen3.5-35B-A3B --port 8000 --tp-size 8 --mem-fraction-static 0.8 --context-length 262144 --reasoning-parser qwen3",
+     "python -m sglang.launch_server --model-path Qwen/Qwen3.5-35B-A3B --port 8000 --tp-size 8 --mem-fraction-static 0.8 --context-length 262144 --reasoning-parser qwen3 --tool-call-parser qwen3_coder",
+     "python -m sglang.launch_server --model-path Qwen/Qwen3.5-35B-A3B --port 8000 --tp-size 8 --mem-fraction-static 0.8 --context-length 262144 --reasoning-parser qwen3 --speculative-algo NEXTN --speculative-num-steps 3 --speculative-eagle-topk 1 --speculative-num-draft-tokens 4",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "vllm serve Qwen/Qwen3.5-35B-A3B --port 8000 --tensor-parallel-size 8 --max-model-len 262144 --reasoning-parser qwen3",
+     "vllm serve Qwen/Qwen3.5-35B-A3B --port 8000 --tensor-parallel-size 8 --max-model-len 262144 --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder",
+     "vllm serve Qwen/Qwen3.5-35B-A3B --port 8000 --tensor-parallel-size 8 --max-model-len 262144 --reasoning-parser qwen3 --speculative-config '{\"method\":\"qwen3_next_mtp\",\"num_speculative_tokens\":2}'",
+     "vllm serve Qwen/Qwen3.5-35B-A3B --port 8000 --tensor-parallel-size 8 --max-model-len 262144 --reasoning-parser qwen3 --language-model-only",
+     "transformers serve --force-model Qwen/Qwen3.5-35B-A3B --port 8000 --continuous-batching",
+     "model=\"Qwen/Qwen3.5-35B-A3B\",",
+     "model=\"Qwen/Qwen3.5-35B-A3B\",",
+     "model=\"Qwen/Qwen3.5-35B-A3B\",",
+     "model=\"Qwen/Qwen3.5-35B-A3B\",",
+     "'model': 'Qwen3.5-35B-A3B',",
+     "#     'model': 'Qwen/Qwen3.5-35B-A3B',",
+     "Qwen3.5 natively supports context lengths of up to 262,144 tokens.",
+     "> It is also recommended to modify the `factor` as needed. For example, if the typical context length for your application is 524,288 tokens, it would be better to set `factor` as 2.0."
+    ],
+    "readme_bytes": 93145,
+    "readme_sha256": "71c3bbc2eadadd5980bbdbb15df958c27d42ede24821015602a021109aacf492"
+   }
   },
   "Qwen/Qwen3.5-4B": {
    "config_has_quantization_config": false,
@@ -1469,7 +1550,22 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- Number of Parameters: 4B",
+     "- Context Length: 262,144 natively and extensible up to 1,010,000 tokens.",
+     "> The model has a default context length of 262,144 tokens.",
+     "> If you encounter out-of-memory (OOM) errors, consider reducing the context window.",
+     "> However, because Qwen3.5 leverages extended context for complex tasks, we advise maintaining a context length of at least 128K tokens to preserve thinking capabilities.",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "Qwen3.5 natively supports context lengths of up to 262,144 tokens.",
+     "> It is also recommended to modify the `factor` as needed. For example, if the typical context length for your application is 524,288 tokens, it would be better to set `factor` as 2.0."
+    ],
+    "readme_bytes": 77646,
+    "readme_sha256": "1406be1b6b8fd8a6545870da516912804756593628a1d0fb0a7965211e82a7bb"
+   }
   },
   "Qwen/Qwen3.5-9B": {
    "config_has_quantization_config": false,
@@ -1520,7 +1616,22 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- Number of Parameters: 9B",
+     "- Context Length: 262,144 natively and extensible up to 1,010,000 tokens.",
+     "> The model has a default context length of 262,144 tokens.",
+     "> If you encounter out-of-memory (OOM) errors, consider reducing the context window.",
+     "> However, because Qwen3.5 leverages extended context for complex tasks, we advise maintaining a context length of at least 128K tokens to preserve thinking capabilities.",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "Qwen3.5 natively supports context lengths of up to 262,144 tokens.",
+     "> It is also recommended to modify the `factor` as needed. For example, if the typical context length for your application is 524,288 tokens, it would be better to set `factor` as 2.0."
+    ],
+    "readme_bytes": 77628,
+    "readme_sha256": "c5f5a8c2dddab69cfbf05279235aa5fddb137939a06539c4c7637aa900fef6d0"
+   }
   },
   "Qwen/Qwen3.6-27B": {
    "config_has_quantization_config": false,
@@ -1568,7 +1679,23 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- Number of Parameters: 27B",
+     "- Context Length: 262,144 natively and extensible up to 1,010,000 tokens.",
+     "* SWE-Bench Series: Internal agent scaffold (bash + file-edit tools); temp=1.0, top_p=0.95, 200K context window. We correct some problematic tasks in the public set of SWE-bench Pro and evaluate all baselines on the refined benchmark.<br/>",
+     "> The model has a default context length of 262,144 tokens.",
+     "> If you encounter out-of-memory (OOM) errors, consider reducing the context window.",
+     "> However, because Qwen3.6 leverages extended context for complex tasks, we advise maintaining a context length of at least 128K tokens to preserve thinking capabilities.",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "Qwen3.6 natively supports context lengths of up to 262,144 tokens.",
+     "> It is also recommended to modify the `factor` as needed. For example, if the typical context length for your application is 524,288 tokens, it would be better to set `factor` as 2.0."
+    ],
+    "readme_bytes": 62584,
+    "readme_sha256": "bb936d6da51014f1edc9aa4cf9abf28d98695b7616ad56adfeeebfa752051d3d"
+   }
   },
   "Qwen/Qwen3.6-35B-A3B": {
    "config_has_quantization_config": false,
@@ -1618,7 +1745,47 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "license_link: https://huggingface.co/Qwen/Qwen3.6-35B-A3B/blob/main/LICENSE",
+     "# Qwen3.6-35B-A3B",
+     "![Benchmark Results](https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3.6/Figures/qwen3.6_35b_a3b_score.png)",
+     "For more details, please refer to our blog post [Qwen3.6-35B-A3B](https://qwen.ai/blog?id=qwen3.6-35b-a3b).",
+     "- Number of Parameters: 35B in total and 3B activated",
+     "- Number of Activated Experts: 8 Routed + 1 Shared",
+     "- Context Length: 262,144 natively and extensible up to 1,010,000 tokens.",
+     "* SWE-Bench Series: Internal agent scaffold (bash + file-edit tools); temp=1.0, top_p=0.95, 200K context window. We correct some problematic tasks in the public set of SWE-bench Pro and evaluate all baselines on the refined benchmark.<br/>",
+     "* MCPMark: GitHub MCP v0.30.3; Playwright responses truncated at 32K tokens.<br/>",
+     "> The model has a default context length of 262,144 tokens.",
+     "> If you encounter out-of-memory (OOM) errors, consider reducing the context window.",
+     "> However, because Qwen3.6 leverages extended context for complex tasks, we advise maintaining a context length of at least 128K tokens to preserve thinking capabilities.",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "python -m sglang.launch_server --model-path Qwen/Qwen3.6-35B-A3B --port 8000 --tp-size 8 --mem-fraction-static 0.8 --context-length 262144 --reasoning-parser qwen3",
+     "python -m sglang.launch_server --model-path Qwen/Qwen3.6-35B-A3B --port 8000 --tp-size 8 --mem-fraction-static 0.8 --context-length 262144 --reasoning-parser qwen3 --tool-call-parser qwen3_coder",
+     "python -m sglang.launch_server --model-path Qwen/Qwen3.6-35B-A3B --port 8000 --tp-size 8 --mem-fraction-static 0.8 --context-length 262144 --reasoning-parser qwen3 --speculative-algo NEXTN --speculative-num-steps 3 --speculative-eagle-topk 1 --speculative-num-draft-tokens 4",
+     "- **Standard Version**: The following command can be used to create an API endpoint with maximum context length 262,144 tokens using tensor parallel on 8 GPUs.",
+     "vllm serve Qwen/Qwen3.6-35B-A3B --port 8000 --tensor-parallel-size 8 --max-model-len 262144 --reasoning-parser qwen3",
+     "vllm serve Qwen/Qwen3.6-35B-A3B --port 8000 --tensor-parallel-size 8 --max-model-len 262144 --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder",
+     "vllm serve Qwen/Qwen3.6-35B-A3B --port 8000 --tensor-parallel-size 8 --max-model-len 262144 --reasoning-parser qwen3 --speculative-config '{\"method\":\"qwen3_next_mtp\",\"num_speculative_tokens\":2}'",
+     "vllm serve Qwen/Qwen3.6-35B-A3B --port 8000 --tensor-parallel-size 8 --max-model-len 262144 --reasoning-parser qwen3 --language-model-only",
+     "transformers serve Qwen/Qwen3.6-35B-A3B --port 8000 --continuous-batching",
+     "model=\"Qwen/Qwen3.6-35B-A3B\",",
+     "model=\"Qwen/Qwen3.6-35B-A3B\",",
+     "model=\"Qwen/Qwen3.6-35B-A3B\",",
+     "model=\"Qwen/Qwen3.6-35B-A3B\",",
+     "model=\"Qwen/Qwen3.6-35B-A3B\",",
+     "'model': 'Qwen3.6-35B-A3B',",
+     "#     'model': 'Qwen/Qwen3.6-35B-A3B',",
+     "Qwen3.6 natively supports context lengths of up to 262,144 tokens.",
+     "> It is also recommended to modify the `factor` as needed. For example, if the typical context length for your application is 524,288 tokens, it would be better to set `factor` as 2.0.",
+     "@misc{qwen36_35b_a3b,",
+     "title = {{Qwen3.6-35B-A3B}: Agentic Coding Power, Now Open to All},",
+     "url = {https://qwen.ai/blog?id=qwen3.6-35b-a3b},"
+    ],
+    "readme_bytes": 64541,
+    "readme_sha256": "c4ddaa065649ff6352648f64747a16eda31726f3e34add94ce04abb461c77b75"
+   }
   },
   "Qwen/Qwen3.8-2.4T-A95B": {
    "config_has_quantization_config": false,
@@ -1665,7 +1832,21 @@
     "license:other",
     "eval-results",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "# Qwen3.8-2.4T-A95B",
+     "> In particular, **Qwen3.8-Max** is the official version based on Qwen3.8-2.4T-A95B with more features, such as vision input & non-thinking support, 1M context length by default, official built-in tools, etc.",
+     "- Number of Parameters: 2.4T in total and 95B activated",
+     "- Number of Activated Experts: 10 Routed + 1 Shared",
+     "- Context Length: 262,144 natively and extensible up to 1,010,000 tokens.",
+     "- [vLLM](https://vllm.ai/): [Qwen3.8 Recipe](https://recipes.vllm.ai/Qwen/Qwen3.8-2.4T-A95B)",
+     "model=\"Qwen/Qwen3.8-2.4T-A95B\",",
+     "2. **Adequate Output Length**: To optimize performance on agentic tasks, we recommend allocating sufficient output length to allow the model to generate detailed and comprehensive responses. For frameworks that support separate token limits for internal reasoning and final outputs, we suggest the fo"
+    ],
+    "readme_bytes": 35746,
+    "readme_sha256": "7690c680c2d6eb284179ef5dd4db63260d248531cae9087b09b2c2200230f331"
+   }
   },
   "Qwen/Qwen3.8-27B": {
    "config_has_quantization_config": false,
@@ -1713,7 +1894,22 @@
     "endpoints_compatible",
     "deploy:azure",
     "deploy:sagemaker"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "> In particular, **Qwen3.8-27B** will be available as a hosted version with more production features, e.g., 1M context length by default, official built-in tools. For more information, please refer to the [Qwen3.8-27B Overview](https://www.qwencloud.com/models/qwen3.8-27b). The service is coming soo",
+     "- Number of Parameters: 27B",
+     "- Context Length: 262,144 natively and extensible up to 1,000,000 tokens.",
+     "<li>SWE-bench Pro: Except for Opus4.6 Max, which uses the officially reported score, all models are evaluated with the Claude Code harness at temp=1.0, top_p=0.95, and a 256K context window. Problematic tasks were corrected, and all baseline models were re-evaluated on the refined benchmark.</li>",
+     "<li>DeepSWE 1.1: Evaluated with the Claude Code harness at temp=1.0, top_p=0.95, and a 256K context window.</li>",
+     "<li>QwenSWEBench: In-house coding benchmark for evaluating models' software engineering capabilities. Evaluated with the Claude Code harness. Reporting avg@3 with an 8-hour timeout, max_tokens=32,768, temperature=1.0, and a 256K context window.</li>",
+     "2. **Adequate Output Length**: To optimize performance on agentic tasks, we recommend allocating sufficient output length to allow the model to generate detailed and comprehensive responses. For frameworks that support separate token limits for internal reasoning and final outputs, we suggest the fo",
+     "3. **Processing Ultra-Long Texts**: Qwen3.8-27B natively supports context lengths of up to 262,144 tokens. For long-horizon tasks where the total length (including both input and output) exceeds this limit, we recommend using RoPE scaling techniques to handle long texts effectively, e.g., YaRN.",
+     "> It is also recommended to modify the `factor` as needed. For example, if the typical context length for your application is 524,288 tokens, it would be better to set `factor` as 2.0."
+    ],
+    "readme_bytes": 64985,
+    "readme_sha256": "57e4bdb258ee1a7d2635c5174ebd4e56abe392505cdb5f8bbb356b0dc4293641"
+   }
   },
   "Qwen/Qwen3.8-Flash-Next": {
    "config_has_quantization_config": false,
@@ -1762,7 +1958,21 @@
     "license:other",
     "eval-results",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "> In particular, **Qwen3.8-Flash** is the official version based on Qwen3.8-Flash-Next with more production features, e.g., 1M context length by default, official built-in tools. For more information, please refer to the [Qwen3.8-Flash Overview](https://www.qwencloud.com/models/qwen3.8-flash).",
+     "As the frontier of foundation models pushes toward ever-larger parameter counts and ever-longer context windows, the question is no longer just how much we can scale, but how efficiently we can do so. Sustainable progress toward artificial general intelligence (AGI) that benefits everyone demands ar",
+     "- Number of Parameters: 125B with 6B activated, plus 51B n-gram embedding and 4B MTP",
+     "- Number of Activated Experts: 10 Routed + 1 Shared",
+     "- Context Length: 262,144 natively and extensible up to 1,000,000 tokens.",
+     "2. **Adequate Output Length**: To optimize performance on agentic tasks, we recommend allocating sufficient output length to allow the model to generate detailed and comprehensive responses. For frameworks that support separate token limits for internal reasoning and final outputs, we suggest the fo",
+     "3. **Processing Ultra-Long Texts**: Qwen3.8-Flash-Next natively supports context lengths of up to 262,144 tokens. For long-horizon tasks where the total length (including both input and output) exceeds this limit, we recommend using RoPE scaling techniques to handle long texts effectively, e.g., YaR",
+     "> It is also recommended to modify the `factor` as needed. For example, if the typical context length for your application is 524,288 tokens, it would be better to set `factor` as 2.0."
+    ],
+    "readme_bytes": 65144,
+    "readme_sha256": "35ca37ccc366f1ba478dab33841a2c0c18ce53fd62f291ca05341f7728b225b2"
+   }
   },
   "allenai/Olmo-3-7B-Instruct": {
    "config_has_quantization_config": false,
@@ -1813,7 +2023,12 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [],
+    "readme_bytes": 12444,
+    "readme_sha256": "9c7c873ea9bd506db7800e61a0535302106bdc393d72b0d2341197330d25a7fe"
+   }
   },
   "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B": {
    "config_has_quantization_config": false,
@@ -1860,7 +2075,16 @@
     "license:mit",
     "text-generation-inference",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "Compared to the previous version, the upgraded model shows significant improvements in handling complex reasoning tasks. For instance, in the AIME 2025 test, the model\u2019s accuracy has increased from 70% in the previous version to 87.5% in the current version. This advancement stems from enhanced thin",
+     "For all our models, the maximum generation length is set to 64K tokens. For benchmarks requiring sampling, we use a temperature of $0.6$, a top-p value of $0.95$, and generate 16 responses per query to estimate pass@1.",
+     "| Qwen3-235B-A22B\t                | 85.7    | 81.5    | 62.5        | 71.1         | 66.5                  |"
+    ],
+    "readme_bytes": 13440,
+    "readme_sha256": "ee003a09ddabff67a5b0d2394bea65c6ce523e4994f3208d6a58613e27834d8a"
+   }
   },
   "deepseek-ai/DeepSeek-V4-Pro-0813": {
    "config_has_quantization_config": true,
@@ -1914,7 +2138,12 @@
     "endpoints_compatible",
     "8-bit",
     "fp8"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [],
+    "readme_bytes": 7501,
+    "readme_sha256": "61755d88e95789fcd7a36f50892f97bba977a30fc99d0f2907ab787ed10b0e66"
+   }
   },
   "deepseek-ai/DeepSeek-V4.1-Flash": {
    "config_has_quantization_config": true,
@@ -1968,7 +2197,17 @@
     "endpoints_compatible",
     "8-bit",
     "fp8"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "**Additional architectural components** include Single-Pass mHC (revised residual-stream mixing with an efficient Mega-mHC kernel), Engram conditional memory (196B parameters, sparsely accessed via token-based lookup), and DSpark speculative decoding (semi-autoregressive draft generation with confid",
+     "**Pre-training.** DeepSeek-V4.1-Flash is trained from scratch on a multimodal corpus comprising **45T tokens**, with sparse attention trained at a sequence length of 64K and context extended to 1M tokens at 34T tokens.",
+     "| # Activated Params | \u2014 | 13B | 49B | 8B / 16B |",
+     "| `context_window` | 1M tokens |"
+    ],
+    "readme_bytes": 13005,
+    "readme_sha256": "347c9db4e5506acb531cbc3b724407ab88e9af8781679152f0823d7bac16d251"
+   }
   },
   "google/gemma-4-12B": {
    "config_has_quantization_config": false,
@@ -2018,7 +2257,29 @@
     "license:apache-2.0",
     "eval-results",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "Gemma is a family of open models built by Google DeepMind. Gemma 4 models are multimodal, handling text and image input (with audio supported on E2B, E4B, and 12B) and generating text output. This release includes open-weights models in both pre-trained and instruction-tuned variants. Gemma 4 featur",
+     "Featuring both Dense and Mixture-of-Experts (MoE) architectures, Gemma 4 is well-suited for tasks like text generation, coding, and reasoning. The models are available in five distinct sizes: **E2B**, **E4B**, **12B**, **26B A4B**, and **31B**. Their diverse sizes make them deployable in environment",
+     "* **Increased Context Window** \u2013 The small models feature a 128K context window, while the medium models support 256K.",
+     "Gemma 4 models are designed to deliver frontier-level performance at each size, targeting deployment scenarios from mobile and edge devices (E2B, E4B) to consumer GPUs and workstations (12B, 26B A4B, 31B). They are well-suited for reasoning, agentic workflows, coding, and multimodal understanding.",
+     "| **Total Parameters** | 2.3B effective <br> (5.1B with embeddings) | 4.5B effective <br> (8B with embeddings) | 11.95B | 30.7B |",
+     "| **Context Length** | 128K tokens | 128K tokens | 256K tokens  | 256K tokens  |",
+     "| **Vocabulary Size** | 262K | 262K | 262K | 262K |",
+     "| Property | 26B A4B MoE |",
+     "| **Total Parameters** | 25.2B |",
+     "| **Active Parameters** | 3.8B |",
+     "| **Context Length** | 256K tokens |",
+     "| **Vocabulary Size** | 262K |",
+     "| **Expert Count** | 8 active / 128 total and 1 shared |",
+     "The \"A\" in 26B A4B stands for \"active parameters\" in contrast to the total number of parameters the model contains. By only activating a 4B subset of parameters during inference, the Mixture-of-Experts model runs much faster than its 26B total might suggest. This makes it an excellent choice for fas",
+     "|  | Gemma 4  31B | Gemma 4  26B A4B | Gemma 4 12B Unified | Gemma 4  E4B | Gemma 4  E2B | Gemma 3  27B (no think) |",
+     "* **Long Context** \u2013 Context windows of up to 128K tokens (E2B/E4B) and 256K tokens (12B, 26B A4B/31B)."
+    ],
+    "readme_bytes": 28306,
+    "readme_sha256": "131e26f7f1fa69445dc4b0ab98a2251811f8c3128426bf09fcef6ac5ee16e7e4"
+   }
   },
   "google/gemma-4-12B-it": {
    "config_has_quantization_config": false,
@@ -2071,7 +2332,29 @@
     "eval-results",
     "endpoints_compatible",
     "deploy:sagemaker"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "Gemma is a family of open models built by Google DeepMind. Gemma 4 models are multimodal, handling text and image input (with audio supported on E2B, E4B, and 12B) and generating text output. This release includes open-weights models in both pre-trained and instruction-tuned variants. Gemma 4 featur",
+     "Featuring both Dense and Mixture-of-Experts (MoE) architectures, Gemma 4 is well-suited for tasks like text generation, coding, and reasoning. The models are available in five distinct sizes: **E2B**, **E4B**, **12B**, **26B A4B**, and **31B**. Their diverse sizes make them deployable in environment",
+     "* **Increased Context Window** \u2013 The small models feature a 128K context window, while the medium models support 256K.",
+     "Gemma 4 models are designed to deliver frontier-level performance at each size, targeting deployment scenarios from mobile and edge devices (E2B, E4B) to consumer GPUs and workstations (12B, 26B A4B, 31B). They are well-suited for reasoning, agentic workflows, coding, and multimodal understanding.",
+     "| **Total Parameters** | 2.3B effective <br> (5.1B with embeddings) | 4.5B effective <br> (8B with embeddings) | 11.95B | 30.7B |",
+     "| **Context Length** | 128K tokens | 128K tokens | 256K tokens  | 256K tokens  |",
+     "| **Vocabulary Size** | 262K | 262K | 262K | 262K |",
+     "| Property | 26B A4B MoE |",
+     "| **Total Parameters** | 25.2B |",
+     "| **Active Parameters** | 3.8B |",
+     "| **Context Length** | 256K tokens |",
+     "| **Vocabulary Size** | 262K |",
+     "| **Expert Count** | 8 active / 128 total and 1 shared |",
+     "The \"A\" in 26B A4B stands for \"active parameters\" in contrast to the total number of parameters the model contains. By only activating a 4B subset of parameters during inference, the Mixture-of-Experts model runs much faster than its 26B total might suggest. This makes it an excellent choice for fas",
+     "|  | Gemma 4  31B | Gemma 4  26B A4B | Gemma 4 12B Unified | Gemma 4  E4B | Gemma 4  E2B | Gemma 3  27B (no think) |",
+     "* **Long Context** \u2013 Context windows of up to 128K tokens (E2B/E4B) and 256K tokens (12B, 26B A4B/31B)."
+    ],
+    "readme_bytes": 28450,
+    "readme_sha256": "04a06469e3d83b941eaa776a3647b8690b5a7cc5c833af2381e5345bb1bb45c0"
+   }
   },
   "google/gemma-4-26B-A4B-it": {
    "config_has_quantization_config": false,
@@ -2126,7 +2409,33 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- google/gemma-4-26B-A4B",
+     "Gemma is a family of open models built by Google DeepMind. Gemma 4 models are multimodal, handling text and image input (with audio supported on E2B, E4B, and 12B) and generating text output. This release includes open-weights models in both pre-trained and instruction-tuned variants. Gemma 4 featur",
+     "Featuring both Dense and Mixture-of-Experts (MoE) architectures, Gemma 4 is well-suited for tasks like text generation, coding, and reasoning. The models are available in five distinct sizes: **E2B**, **E4B**, **12B**, **26B A4B**, and **31B**. Their diverse sizes make them deployable in environment",
+     "* **Increased Context Window** \u2013 The small models feature a 128K context window, while the medium models support 256K.",
+     "Gemma 4 models are designed to deliver frontier-level performance at each size, targeting deployment scenarios from mobile and edge devices (E2B, E4B) to consumer GPUs and workstations (12B, 26B A4B, 31B). They are well-suited for reasoning, agentic workflows, coding, and multimodal understanding.",
+     "| **Total Parameters** | 2.3B effective <br> (5.1B with embeddings) | 4.5B effective <br> (8B with embeddings) | 11.95B | 30.7B |",
+     "| **Context Length** | 128K tokens | 128K tokens | 256K tokens  | 256K tokens  |",
+     "| **Vocabulary Size** | 262K | 262K | 262K | 262K |",
+     "| Property | 26B A4B MoE |",
+     "| **Total Parameters** | 25.2B |",
+     "| **Active Parameters** | 3.8B |",
+     "| **Context Length** | 256K tokens |",
+     "| **Vocabulary Size** | 262K |",
+     "| **Expert Count** | 8 active / 128 total and 1 shared |",
+     "The \"A\" in 26B A4B stands for \"active parameters\" in contrast to the total number of parameters the model contains. By only activating a 4B subset of parameters during inference, the Mixture-of-Experts model runs much faster than its 26B total might suggest. This makes it an excellent choice for fas",
+     "|  | Gemma 4  31B | Gemma 4  26B A4B | Gemma 4 12B Unified | Gemma 4  E4B | Gemma 4  E2B | Gemma 3  27B (no think) |",
+     "* **Long Context** \u2013 Context windows of up to 128K tokens (E2B/E4B) and 256K tokens (12B, 26B A4B/31B).",
+     "MODEL_ID = \"google/gemma-4-26B-A4B-it\"",
+     "MODEL_ID = \"google/gemma-4-26B-A4B-it\"",
+     "MODEL_ID = \"google/gemma-4-26B-A4B-it\""
+    ],
+    "readme_bytes": 27945,
+    "readme_sha256": "4f463225c4fe49ec120115b0f9bb6713ff1556293a909903ffdae3df7bf974da"
+   }
   },
   "google/gemma-4-31B-it": {
    "config_has_quantization_config": false,
@@ -2180,7 +2489,29 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "Gemma is a family of open models built by Google DeepMind. Gemma 4 models are multimodal, handling text and image input (with audio supported on E2B, E4B, and 12B) and generating text output. This release includes open-weights models in both pre-trained and instruction-tuned variants. Gemma 4 featur",
+     "Featuring both Dense and Mixture-of-Experts (MoE) architectures, Gemma 4 is well-suited for tasks like text generation, coding, and reasoning. The models are available in five distinct sizes: **E2B**, **E4B**, **12B**, **26B A4B**, and **31B**. Their diverse sizes make them deployable in environment",
+     "* **Increased Context Window** \u2013 The small models feature a 128K context window, while the medium models support 256K.",
+     "Gemma 4 models are designed to deliver frontier-level performance at each size, targeting deployment scenarios from mobile and edge devices (E2B, E4B) to consumer GPUs and workstations (12B, 26B A4B, 31B). They are well-suited for reasoning, agentic workflows, coding, and multimodal understanding.",
+     "| **Total Parameters** | 2.3B effective <br> (5.1B with embeddings) | 4.5B effective <br> (8B with embeddings) | 11.95B | 30.7B |",
+     "| **Context Length** | 128K tokens | 128K tokens | 256K tokens  | 256K tokens  |",
+     "| **Vocabulary Size** | 262K | 262K | 262K | 262K |",
+     "| Property | 26B A4B MoE |",
+     "| **Total Parameters** | 25.2B |",
+     "| **Active Parameters** | 3.8B |",
+     "| **Context Length** | 256K tokens |",
+     "| **Vocabulary Size** | 262K |",
+     "| **Expert Count** | 8 active / 128 total and 1 shared |",
+     "The \"A\" in 26B A4B stands for \"active parameters\" in contrast to the total number of parameters the model contains. By only activating a 4B subset of parameters during inference, the Mixture-of-Experts model runs much faster than its 26B total might suggest. This makes it an excellent choice for fas",
+     "|  | Gemma 4  31B | Gemma 4  26B A4B | Gemma 4 12B Unified | Gemma 4  E4B | Gemma 4  E2B | Gemma 3  27B (no think) |",
+     "* **Long Context** \u2013 Context windows of up to 128K tokens (E2B/E4B) and 256K tokens (12B, 26B A4B/31B)."
+    ],
+    "readme_bytes": 27929,
+    "readme_sha256": "e209f5c435b1e66055bd6d7c29185103ae8d2027a03a96b359335154f206b82b"
+   }
   },
   "google/gemma-4-E4B-it": {
    "config_has_quantization_config": false,
@@ -2234,7 +2565,29 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "Gemma is a family of open models built by Google DeepMind. Gemma 4 models are multimodal, handling text and image input (with audio supported on E2B, E4B, and 12B) and generating text output. This release includes open-weights models in both pre-trained and instruction-tuned variants. Gemma 4 featur",
+     "Featuring both Dense and Mixture-of-Experts (MoE) architectures, Gemma 4 is well-suited for tasks like text generation, coding, and reasoning. The models are available in five distinct sizes: **E2B**, **E4B**, **12B**, **26B A4B**, and **31B**. Their diverse sizes make them deployable in environment",
+     "* **Increased Context Window** \u2013 The small models feature a 128K context window, while the medium models support 256K.",
+     "Gemma 4 models are designed to deliver frontier-level performance at each size, targeting deployment scenarios from mobile and edge devices (E2B, E4B) to consumer GPUs and workstations (12B, 26B A4B, 31B). They are well-suited for reasoning, agentic workflows, coding, and multimodal understanding.",
+     "| **Total Parameters** | 2.3B effective <br> (5.1B with embeddings) | 4.5B effective <br> (8B with embeddings) | 11.95B | 30.7B |",
+     "| **Context Length** | 128K tokens | 128K tokens | 256K tokens  | 256K tokens  |",
+     "| **Vocabulary Size** | 262K | 262K | 262K | 262K |",
+     "| Property | 26B A4B MoE |",
+     "| **Total Parameters** | 25.2B |",
+     "| **Active Parameters** | 3.8B |",
+     "| **Context Length** | 256K tokens |",
+     "| **Vocabulary Size** | 262K |",
+     "| **Expert Count** | 8 active / 128 total and 1 shared |",
+     "The \"A\" in 26B A4B stands for \"active parameters\" in contrast to the total number of parameters the model contains. By only activating a 4B subset of parameters during inference, the Mixture-of-Experts model runs much faster than its 26B total might suggest. This makes it an excellent choice for fas",
+     "|  | Gemma 4  31B | Gemma 4  26B A4B | Gemma 4 12B Unified | Gemma 4  E4B | Gemma 4  E2B | Gemma 3  27B (no think) |",
+     "* **Long Context** \u2013 Context windows of up to 128K tokens (E2B/E4B) and 256K tokens (12B, 26B A4B/31B)."
+    ],
+    "readme_bytes": 27922,
+    "readme_sha256": "b21e4f69614ccd77baa2f3797d05311040dee07b989cb9f0d25111aa4b605b2c"
+   }
   },
   "ibm-granite/granite-4.2-30b": {
    "config_has_quantization_config": false,
@@ -2298,7 +2651,16 @@
     "license:apache-2.0",
     "eval-results",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "| **Context Length** | Natively Supports 128K (Long-context extension to 512K) |",
+     "- **512K Context Window:** Supports long documents, multi-turn conversations, and complex agentic workflows.",
+     "In multi-turn conversations, thinking content from previous assistant turns is automatically stripped (`truncate_history_thinking=True` by default) to conserve context window space. Only the current generation produces full reasoning. Set `truncate_history_thinking=False` to preserve full reasoning "
+    ],
+    "readme_bytes": 38613,
+    "readme_sha256": "10d0e2b083c888814dc92a6308ca34d1c6fe01f344b54ff54905a8cbe5a80b06"
+   }
   },
   "ibm-granite/granite-4.2-3b": {
    "config_has_quantization_config": false,
@@ -2362,7 +2724,16 @@
     "license:apache-2.0",
     "eval-results",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "| **Context Length** | Natively Supports 128K (Long-context extension to 512K) |",
+     "- **512K Context Window:** Supports long documents, multi-turn conversations, and complex agentic workflows.",
+     "In multi-turn conversations, thinking content from previous assistant turns is automatically stripped (`truncate_history_thinking=True` by default) to conserve context window space. Only the current generation produces full reasoning. Set `truncate_history_thinking=False` to preserve full reasoning "
+    ],
+    "readme_bytes": 35597,
+    "readme_sha256": "8f22ddce440f0c15ecb58fc9f8501b882baf5f2b7ab0d13872fe77d88c1ad792"
+   }
   },
   "ibm-granite/granite-4.2-8b": {
    "config_has_quantization_config": false,
@@ -2426,7 +2797,16 @@
     "license:apache-2.0",
     "eval-results",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "| **Context Length** | Natively Supports 128K (Long-context extension to 512K) |",
+     "- **512K Context Window:** Supports long documents, multi-turn conversations, and complex agentic workflows.",
+     "In multi-turn conversations, thinking content from previous assistant turns is automatically stripped (`truncate_history_thinking=True` by default) to conserve context window space. Only the current generation produces full reasoning. Set `truncate_history_thinking=False` to preserve full reasoning "
+    ],
+    "readme_bytes": 38567,
+    "readme_sha256": "01396b1a8596586986fea22cfaa86d0255d19113d71fe09e0b69cc2bfa4307da"
+   }
   },
   "meta-llama/Llama-3.3-70B-Instruct": {
    "config_error": "<HTTPError 401: 'Unauthorized'>",
@@ -2472,7 +2852,15 @@
     "eval-results",
     "text-generation-inference",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "|  | Training Data | Params | Input modalities | Output modalities | Context length | GQA | Token count | Knowledge cutoff |",
+     "| Llama 3.3 (text only)  | A new mix of publicly available online data. | 70B | Multilingual Text | Multilingual Text and code  | 128k | Yes | 15T+ | December 2023 |"
+    ],
+    "readme_bytes": 36477,
+    "readme_sha256": "83bfcf4ac40ab3f4d30577e669599e94955b26d6926861410e75e43a07772dad"
+   }
   },
   "meta-llama/Llama-4-Scout-17B-16E-Instruct": {
    "config_error": "<HTTPError 401: 'Unauthorized'>",
@@ -2522,7 +2910,15 @@
     "eval-results",
     "text-generation-inference",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "url1 = \"https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg\"",
+     "| Long context | MTOB (half book) eng-\\>kgv/kgv-\\>eng | \\- | chrF | Context window is 128K |  | 42.2/36.6 | 54.0/46.4 |"
+    ],
+    "readme_bytes": 32511,
+    "readme_sha256": "19659e477d9e582b5cdd9a2bac1658d5e5e7a2722b2efdd4248c06398c87882f"
+   }
   },
   "microsoft/Fara1.5-9B": {
    "config_has_quantization_config": false,
@@ -2581,7 +2977,16 @@
     "license:mit",
     "endpoints_compatible",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- **262K context.** Long enough for multi-screenshot trajectories with full action history.",
+     "- **On-device viable.** 9B parameters means it runs on a single A100/H100/B200 with room for the screenshot history.",
+     "| **Context length** | 262,144 tokens |"
+    ],
+    "readme_bytes": 15550,
+    "readme_sha256": "64a465ed7d131c47f734f0a2a6ef05d2e61e67de89ac384dacc98089c4551518"
+   }
   },
   "microsoft/MagenticBrain": {
    "config_has_quantization_config": false,
@@ -2637,7 +3042,16 @@
     "license:mit",
     "text-generation-inference",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- **32K context.** Enough headroom for system prompt + tool schemas + multi-turn trajectory state.",
+     "| **Context length** | 32,768 tokens |",
+     "The corpus was filtered and normalized before training. Samples ending on non-`submit` tool calls were removed to prevent infinite-loop trajectories. Samples exceeding the 32K context were dropped. JSON tool-call formats were normalized through shared filters. Thinking blocks were stripped or regene"
+    ],
+    "readme_bytes": 10797,
+    "readme_sha256": "47315de5d54472017a8930705541cfab247ee242af043edff347b4bbba7bbd94"
+   }
   },
   "microsoft/Phi-4-mini-instruct": {
    "config_has_quantization_config": false,
@@ -2712,7 +3126,17 @@
     "text-generation-inference",
     "endpoints_compatible",
     "deploy:sagemaker"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "Phi-4-mini-instruct is a lightweight open model built upon synthetic data and filtered publicly available websites - with a focus on high-quality, reasoning dense data. The model belongs to the Phi-4 model family and supports 128K token context length. The model underwent an enhancement process, inc",
+     "To understand the capabilities, the 3.8B parameters Phi-4-mini-instruct  model was compared with a set of models over a variety of benchmarks using an internal benchmark platform (See Appendix A for benchmark methodology). A high-level overview of the model quality is as follows:",
+     "+ **Architecture:** Phi-4-mini-instruct has 3.8B parameters and is a dense decoder-only Transformer model. When compared with Phi-3.5-mini, the major changes with Phi-4-mini-instruct are 200K vocabulary, grouped-query attention, and shared input and output embedding.<br>",
+     "+ **Context length:** 128K tokens<br>"
+    ],
+    "readme_bytes": 29182,
+    "readme_sha256": "c4f34916182a3ee87d95d00c92847cfa687ab21dc338a577275f0c34cf0e1dfd"
+   }
   },
   "microsoft/phi-4": {
    "config_has_quantization_config": false,
@@ -2766,7 +3190,15 @@
     "text-generation-inference",
     "endpoints_compatible",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "| **Architecture**        | 14B parameters, dense decoder-only Transformer model                          |",
+     "| **Context length**      | 16K tokens                                                                    |"
+    ],
+    "readme_bytes": 13747,
+    "readme_sha256": "4cc56faa6a5bcbde6227789b2ef9aedfde481ca660c8a4b686703aae19b00011"
+   }
   },
   "mistralai/Ministral-3-14B-Base-2512": {
    "config_has_quantization_config": false,
@@ -2822,7 +3254,14 @@
     "ar",
     "arxiv:2601.08584",
     "license:apache-2.0"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- **Large Context Window**: Supports a 256k context window."
+    ],
+    "readme_bytes": 11816,
+    "readme_sha256": "5d644dc749bf6b58855443fba529e3706941f1be75a6d3042b3ea94796809d52"
+   }
   },
   "mistralai/Ministral-3-14B-Instruct-2512": {
    "config_has_quantization_config": true,
@@ -2883,7 +3322,14 @@
     "license:apache-2.0",
     "fp8",
     "deploy:sagemaker"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- **Large Context Window**: Supports a 256k context window."
+    ],
+    "readme_bytes": 20320,
+    "readme_sha256": "cc013914f873e709e3f2710e8d1fc8e5ed8ec4cc7a484e7af4445baa8450aeec"
+   }
   },
   "mistralai/Ministral-3-14B-Reasoning-2512": {
    "config_has_quantization_config": false,
@@ -2941,7 +3387,14 @@
     "base_model:mistralai/Ministral-3-14B-Base-2512",
     "base_model:finetune:mistralai/Ministral-3-14B-Base-2512",
     "license:apache-2.0"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- **Large Context Window**: Supports a 256k context window."
+    ],
+    "readme_bytes": 23078,
+    "readme_sha256": "0abaf444981d9f3ee4a13d63e88a9d53b56a1cb38bd93c80cc6b763267ded673"
+   }
   },
   "mistralai/Ministral-3-8B-Instruct-2512": {
    "config_has_quantization_config": true,
@@ -3002,7 +3455,14 @@
     "license:apache-2.0",
     "fp8",
     "deploy:sagemaker"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- **Large Context Window**: Supports a 256k context window."
+    ],
+    "readme_bytes": 20309,
+    "readme_sha256": "2f37208c16b180cfcc12f94c1a61dd720c5d8106ec3802d7e20c6818dcde5044"
+   }
   },
   "mistralai/Mistral-Large-3-675B-Instruct-2512": {
    "config_error": "<HTTPError 404: 'Not Found'>",
@@ -3037,7 +3497,16 @@
     "base_model:finetune:mistralai/Mistral-Large-3-675B-Base-2512",
     "license:apache-2.0",
     "eval-results"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "From our family of large models, **Mistral Large 3** is a state-of-the-art general-purpose **Multimodal granular Mixture-of-Experts** model with **41B active parameters** and **675B total parameters** trained from the ground up with 3000 H200s.",
+     "- **A Granular MoE Language Model with 673B params and 39B active**",
+     "- **Large Context Window**: Supports a 256k context window."
+    ],
+    "readme_bytes": 14425,
+    "readme_sha256": "8f8882191b7bc0e2a348b2f85b35180bc213f4c15da17e8028c8b5cb7a25cb5a"
+   }
   },
   "mistralai/Mistral-Nemo-Instruct-2407": {
    "config_has_quantization_config": false,
@@ -3094,7 +3563,14 @@
     "eval-results",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- Trained with a **128k context window**"
+    ],
+    "readme_bytes": 10514,
+    "readme_sha256": "445377992e7404021555e689a5df79b90a3293c38829ec1dcaa9dfed5b7526b0"
+   }
   },
   "mistralai/Mistral-Small-4-119B-2603": {
    "config_has_quantization_config": true,
@@ -3168,7 +3644,18 @@
     "eval-results",
     "fp8",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "# Mistral Small 4 119B A6B",
+     "- **MoE**: 128 experts, 4 active.",
+     "- **119B parameters**, with **6.5B activated per token**.",
+     "- **256k context length**.",
+     "- **Large Context Window**: Supports a 256k context window."
+    ],
+    "readme_bytes": 16473,
+    "readme_sha256": "243f9d4f6cdb5644ca93d34d2e002822cb946803a6a7e3aed39b56d6ceeb1996"
+   }
   },
   "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": {
    "config_has_quantization_config": false,
@@ -3247,7 +3734,53 @@
     "endpoints_compatible",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "# NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+     "<a href=\"https://build.nvidia.com/nvidia/nemotron-3-nano-30b-a3b\" target=\"_blank\" style=\"margin: 2px;\">",
+     "The model employs a hybrid Mixture-of-Experts (MoE) architecture, consisting of 23 Mamba-2 and MoE layers, along with 6 Attention layers. Each MoE layer includes 128 experts plus 1 shared expert, with 6 experts activated per token. The model has 3.5B active parameters and 30B parameters in total.",
+     "| Task | NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 | Qwen3-30B-A3B-Thinking-2507 | GPT-OSS-20B |",
+     "NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 is a general purpose reasoning and chat model intended to be used in English and coding languages. Other non-English languages (English, Spanish, French, German, Japanese, Italian) are also supported. This model is intended to be used by developers designing AI Ag",
+     "December 15, 2025 via [Hugging Face](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16)",
+     "The model was trained with 25T tokens, with a batch size of 3072, and used the Warmup-Stable-Decay (WSD) learning rate schedule with 8B tokens of learning rate warm up, peak learning rate of 1e-3 and minimum learning rate of 1e-5. There are a total of 52 layers, of which there are 23 of each MoE and",
+     "NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 model is a result of the above work.",
+     "- **Maximum input size:** 1M tokens",
+     "- **Maximum output size:** 1M tokens",
+     "Please note that the model supports up to a 1M context size, although the default context size in the Hugging Face configuration is 256k due to higher VRAM requirements.",
+     "tokenizer = AutoTokenizer.from_pretrained(\"nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16\")",
+     "\"nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16\",",
+     "wget https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16/resolve/main/nano_v3_reasoning_parser.py",
+     "vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \\",
+     "In the example above, we use a context length of 256k. You can increase the context size up to 1M to support longer contexts.",
+     "vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \\",
+     "python3 -m sglang.launch_server --model-path nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 \\",
+     "tokenizer_name_or_path = \"nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16\"",
+     "model=\"nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16\",",
+     "The post-training corpus for NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 of high-quality curated and synthetically-generated data. Primary languages used for post-training include English, German, Spanish, French, Italian, and Japanese.",
+     "| Synthetic AGIEval seeded with AQUA-RAT, LogiQA, and AR-LSAT from Qwen3-30B-A3B | Text | 4.2B | [AQUA-RAT](https://huggingface.co/datasets/deepmind/aqua_rat); [LogiQA](https://huggingface.co/datasets/lucasmccabe/logiqa); [AR-LSAT](https://github.com/zhongwanjun/AR-LSAT) | [Qwen3-30B-A3B](https://hu",
+     "| Synthetic Common Crawl from Qwen3-30B-A3B and Mistral-Nemo-12B-Instruct | Text | 415.8B | [Common Crawl](https://commoncrawl.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B); [Mistral-NeMo-12B-Instruct](https://huggingface.co/nvidia/Mistral-NeMo-12B-Instruct) |",
+     "| Synthetic Multilingual Data from Common Crawl from Qwen3-30B-A3B | Text |  | [Common Crawl](https://commoncrawl.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |",
+     "| Synthetic Multilingual Data from Wikimedia from Qwen3-30B-A3B | Text |  | [Wikimedia](https://dumps.wikimedia.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |",
+     "| Synthetic Scientific Coding from Qwen3-235B-A22B | Text | 1.2B | [Wikimedia](https://dumps.wikimedia.org/) | [Qwen3-235B-A22B](https://huggingface.co/Qwen/Qwen3-235B-A22B-Instruct-2507) |",
+     "| Tool Calling Data | Text | 26.2B |  | [Qwen3-235B-A22B-2507](https://huggingface.co/Qwen/Qwen3-235B-A22B-Instruct-2507); [gpt-oss-120b](https://huggingface.co/openai/gpt-oss-120b) |",
+     "| Translated Synthetic Crawl | Text | 389.9B | [Common Crawl](https://commoncrawl.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |",
+     "| Translated Synthetic Wikipedia | Text | 7.9B | [Wikimedia](https://dumps.wikimedia.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |",
+     "| Synthetic SWE-Gym from Qwen3-Coder-480B-A35B-Instruct | Text | Undisclosed | [SWE-Gym](https://huggingface.co/datasets/SWE-Gym/SWE-Gym) | [Qwen3-Coder-480B-A35B-Instruct](https://huggingface.co/Qwen/Qwen3-Coder-480B-A35B-Instruct) |",
+     "| Synthetic Long Context from Qwen3-235B-A22B-Instruct-2507 | Text | Undisclosed | [CORE](https://core.ac.uk/documentation/dataset); [PG-19](https://github.com/google-deepmind/pg19); [DOAB CC BY & CC BY-SA subset](https://www.doabooks.org/en); [NDLTD](https://ndltd.org/thesis-resources/global-etd-se",
+     "| Synthetic Tool Use Interactive Agent from gpt-oss-120b, DeepSeek-R1-0528, Qwen3-32B, and Qwen3-235B-A22B-Thinking-2507 | Text | Undisclosed | NVIDIA Internal | [gpt-oss-120b](https://huggingface.co/openai/gpt-oss-120b); [DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528); [Qwen",
+     "| Synthetic STEM from Qwen3-235B-A22B-Thinking-2507 | Text | Undisclosed | [ICHO-IPH0](https://huggingface.co/datasets/II-Vietnam/IChO-IPhO-RL-v2-formated); [Physics Big](https://huggingface.co/datasets/Vikhrmodels/physics_big); Scale HLE; [OpenMathReasoning](https://huggingface.co/datasets/nvidia/O",
+     "| Synthetic DocFinQA and SWE-smith from Qwen3-Coder-480B-A35B-Instruct and Kimi-K2-Thinking | Text | Undisclosed | [DocFinQA](https://huggingface.co/datasets/kensho/DocFinQA); [SWE-smith](https://huggingface.co/datasets/SWE-bench/SWE-smith) | [Qwen3-Coder-480B-A35B-Instruct](https://huggingface.co/Q",
+     "| Synthetic SWE-Gym and R2E-Gym-Subset from Qwen3-Coder-480B-A35B-Instruct | Text | Undisclosed | [SWE-Gym](https://huggingface.co/datasets/SWE-Gym/SWE-Gym); [R2E-Gym-Subset](https://huggingface.co/datasets/R2E-Gym/R2E-Gym-Subset) | [Qwen3-Coder-480B-A35B-Instruct](https://huggingface.co/Qwen/Qwen3-",
+     "| Synthetic SWE-Gym from Qwen3-Coder-480B-A35B-Instruct | Text | Undisclosed | [SWE-Gym](https://huggingface.co/datasets/SWE-Gym/SWE-Gym) | [Qwen3-Coder-480B-A35B-Instruct](https://huggingface.co/Qwen/Qwen3-Coder-480B-A35B-Instruct) |",
+     "| Synthetic Search STEM MCQ from Qwen3-235B-A22B and DeepSeek-R1-0528 | Text | Undisclosed | \\- | [Qwen3-235B-A22B](https://huggingface.co/Qwen/Qwen3-235B-A22B); [DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528) |",
+     "| Synthetic MCQ4 from Qwen3-235B-A22B, DeepSeek-R1-0528, and Qwen3-235B-A22B-Instruct-2507 | Text | Undisclosed | \\- | [Qwen3-235B-A22B](https://huggingface.co/Qwen/Qwen3-235B-A22B); [DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528); [Qwen3-235B-A22B-Instruct-2507](https://hugg",
+     "| Synthetic Offline Search MCQA GPQA from Qwen3-235B-A22B and DeepSeek-R1-0528 | Text | Undisclosed | \\- | [Qwen3-235B-A22B](https://huggingface.co/Qwen/Qwen3-235B-A22B); [DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528) |",
+     "| Synthetic Common Crawl from Qwen3-30B-A3B | Text | Undisclosed | [Common Crawl](https://commoncrawl.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |"
+    ],
+    "readme_bytes": 73407,
+    "readme_sha256": "faec6eef185d9993d92a0f03c6ad872381bf252b21699bf5b3ecb52fdeac112b"
+   }
   },
   "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16": {
    "config_has_quantization_config": false,
@@ -3306,7 +3839,48 @@
     "dataset:nvidia/nemotron-pre-training-datasets",
     "license:other",
     "endpoints_compatible"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "# NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16",
+     "> *Looking for the post-trained model? See [NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16) for the full-precision release, or [NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightni",
+     "**NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16** is a large language model (LLM) trained by NVIDIA. This is the base (pre-trained) checkpoint of the Nemotron 3.5 Lightning family \u2014 no supervised fine-tuning, reinforcement learning, or distillation has been applied \u2014 making it the natural starting",
+     "The model employs a hybrid **Mixture-of-Experts (MoE)** architecture, utilizing interleaved Mamba-2 and MoE layers, along with select Attention layers. The model incorporates **Multi-Token Prediction (MTP)** layers \u2014 trained via a dedicated continued pre-training phase \u2014 for richer training signals ",
+     "| Benchmark | Qwen3.5-35B-A3B | Gemma-4-26B-A4B | Nemotron-3 Nano 30B-A3B | Nemotron-3.5 Lightning | Nemotron-3 Super 120B-A12B |",
+     "[Hugging Face](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16) - 08/11/2026",
+     "- **Number of model parameters:** 30B Total / 3B Active",
+     "The model was pre-trained with over 20T tokens and supports up to 1M context length. The pre-training phase used an NVFP4 recipe. The model includes **Multi-Token Prediction (MTP)** layers, which predict multiple future tokens to provide richer training signals and enable faster inference via specul",
+     "* NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16 model was pre-trained using an NVFP4 recipe with crawled and synthetic code, math, science, and general knowledge data.",
+     "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16 model is a result of the above work.",
+     "- **Other Properties Related to Input:** Maximum context length up to 1M tokens. The pre-training corpus spans English, 19 other spoken languages, and 43 programming languages.",
+     "- **Other Properties Related to Output:** Maximum context length up to 1M tokens",
+     "| Nemotron-Pretraining-Fact-Seeking | Text | 35.0B | [FineWiki](https://huggingface.co/datasets/HuggingFaceFW/finewiki) | [Qwen3-30B-A3B-Instruct-2507](https://huggingface.co/Qwen/Qwen3-30B-A3B-Instruct-2507) |",
+     "| Nemotron-Pretraining-Formal-Logic | Text | 128M | [Nemotron Personas](https://huggingface.co/datasets/nvidia/Nemotron-Personas-USA) | [Qwen3-235B-A22B-Thinking-2507](https://huggingface.co/Qwen/Qwen3-235B-A22B-Thinking-2507) |",
+     "| Nemotron-Pretraining-Economics | Text | 73.4M | - | [Qwen3-235B-A22B-Thinking-2507](https://huggingface.co/Qwen/Qwen3-235B-A22B-Thinking-2507) |",
+     "| Nemotron-Pretraining-Multiple-Choice | Text | 1.6B | [MMLU Auxiliary Train](https://huggingface.co/datasets/cais/mmlu/viewer/all/auxiliary_train) | [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3); [Qwen3-235B-A22B](https://huggingface.co/Qwen/Qwen3-235B-A22B) |",
+     "| Nemotron-Pretraining-Unconditional-Algorithmic | Text | 196.5M | - | [gpt-oss-120b](https://huggingface.co/openai/gpt-oss-120b); [Qwen3-235B-A22B](https://huggingface.co/Qwen/Qwen3-235B-A22B) |",
+     "| More Synthetic Tasks from DeepSeek-V3 and Qwen3-235B-A22B | Text | 1.1B | train splits of acp_bench; ai2_arc; babi; gsm8k; hendrycks_math; IFEval; MedText; mediqa_qa; mlqa; MMLU-Pro; mmlu-pro-plus; MMLU-ProX; nq_open; tinyGSM8k; truthful_qa; truthfulqa-multi; MATH-lighteval; mmlu; awesome-chatgpt-",
+     "| Synthetic Moral Stories and Social Chemistry from Qwen3-235B-A22B-Thinking-2507 and Mixtral-8x22B-v0.1 | Text | 15.2M | [social-chemestry-101](https://huggingface.co/datasets/tasksource/social-chemestry-101); [Moral Stories](https://huggingface.co/datasets/demelin/moral_stories) | [Qwen3-235B-A22B",
+     "| Synthetic AGIEval seeded with AQUA-RAT, LogiQA, and AR-LSAT from Qwen3-30B-A3B | Text | 4.2B | [AQUA-RAT](https://huggingface.co/datasets/deepmind/aqua_rat); [LogiQA](https://huggingface.co/datasets/lucasmccabe/logiqa); [AR-LSAT](https://github.com/zhongwanjun/AR-LSAT) | [Qwen3-30B-A3B](https://hu",
+     "| Synthetic Common Crawl from Qwen3-30B-A3B and Mistral-Nemo-12B-Instruct | Text | 415.8B | [Common Crawl](https://commoncrawl.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B); [Mistral-NeMo-12B-Instruct](https://huggingface.co/nvidia/Mistral-NeMo-12B-Instruct) |",
+     "| Synthetic Multilingual Data from Common Crawl from Qwen3-30B-A3B | Text | Undisclosed | [Common Crawl](https://commoncrawl.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |",
+     "| Synthetic Multilingual Data from Wikimedia from Qwen3-30B-A3B | Text | Undisclosed | [Wikimedia](https://dumps.wikimedia.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |",
+     "| Synthetic Scientific Coding from Qwen3-235B-A22B | Text | 1.2B | [Wikimedia](https://dumps.wikimedia.org/) | [Qwen3-235B-A22B](https://huggingface.co/Qwen/Qwen3-235B-A22B-Instruct-2507) |",
+     "| Tool Calling Data | Text | 26.2B | - | [Qwen3-235B-A22B-2507](https://huggingface.co/Qwen/Qwen3-235B-A22B-Instruct-2507); [gpt-oss-120b](https://huggingface.co/openai/gpt-oss-120b) |",
+     "| Translated Synthetic Crawl | Text | 389.9B | [Common Crawl](https://commoncrawl.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |",
+     "| Translated Synthetic Wikipedia | Text | 7.9B | [Wikimedia](https://dumps.wikimedia.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |",
+     "| Synthetic Long Context from Qwen3-235B-A22B-Instruct-2507 | Text | Undisclosed | [CORE](https://core.ac.uk/documentation/dataset); [PG-19](https://github.com/google-deepmind/pg19); [DOAB CC BY & CC BY-SA subset](https://www.doabooks.org/en); [NDLTD](https://ndltd.org/thesis-resources/global-etd-se",
+     "| Synthetic Offline Search MCQA GPQA from Qwen3-235B-A22B and DeepSeek-R1-0528 | Text | Undisclosed | - | [Qwen3-235B-A22B](https://huggingface.co/Qwen/Qwen3-235B-A22B); [DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528) |",
+     "| Synthetic Common Crawl from Qwen3-30B-A3B | Text | Undisclosed | [Common Crawl](https://commoncrawl.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |",
+     "| Synthetic Wikipedia from Qwen3-30B-A3B | Text | Undisclosed | [Wikimedia](https://dumps.wikimedia.org/) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) |",
+     "| Synthetic Essential-Web from Qwen3-30B-A3B and Qwen3-235B-A22B-Thinking-2507 | Text | Undisclosed | [Essential-Web](https://huggingface.co/datasets/EssentialAI/essential-web-v1.0) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B); [Qwen3-235B-A22B-Thinking-2507](https://huggingface.co/Q",
+     "| Synthetic Textbook Math from Qwen3-30B-A3B, Qwen3-235B-A22B, phi-4 | Text | Undisclosed | [Common Crawl](https://commoncrawl.org/); [FineMath](https://huggingface.co/datasets/HuggingFaceTB/finemath) | [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B); [Qwen3-235B-A22B](https://huggingface",
+     "| Synthetic Search STEM MCQ from Qwen3-235B-A22B and DeepSeek-R1-0528 | Text | Undisclosed | - | [Qwen3-235B-A22B](https://huggingface.co/Qwen/Qwen3-235B-A22B); [DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528) |",
+     "| Synthetic MCQ4 from Qwen3-235B-A22B, DeepSeek-R1-0528, and Qwen3-235B-A22B-Instruct-2507 | Text | Undisclosed | - | [Qwen3-235B-A22B](https://huggingface.co/Qwen/Qwen3-235B-A22B); [DeepSeek-R1-0528](https://huggingface.co/deepseek-ai/DeepSeek-R1-0528); [Qwen3-235B-A22B-Instruct-2507](https://huggi"
+    ],
+    "readme_bytes": 47214,
+    "readme_sha256": "5730edec3853e586254f0da60e373123fd939f3512127480465fee121505d5c6"
+   }
   },
   "openai/gpt-oss-120b": {
    "config_has_quantization_config": true,
@@ -3360,7 +3934,16 @@
     "mxfp4",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- `gpt-oss-120b` \u2014 for production, general purpose, high reasoning use cases that fit into a single 80GB GPU (like NVIDIA H100 or AMD MI300X) (117B parameters with 5.1B active parameters)",
+     "- `gpt-oss-20b` \u2014 for lower latency, and local or specialized use cases (21B parameters with 3.6B active parameters)",
+     "You can download the model weights from the [Hugging Face Hub](https://huggingface.co/collections/openai/gpt-oss-68911959590a1634ba11c7a4) directly from Hugging Face CLI:"
+    ],
+    "readme_bytes": 7092,
+    "readme_sha256": "92b0408cf5dce04e4c5e4e5f2be0361da710d3650baefd7d7519badd1c687919"
+   }
   },
   "openai/gpt-oss-20b": {
    "config_has_quantization_config": true,
@@ -3414,7 +3997,16 @@
     "mxfp4",
     "deploy:sagemaker",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- `gpt-oss-120b` \u2014 for production, general purpose, high reasoning use cases that fit into a single 80GB GPU (like NVIDIA H100 or AMD MI300X) (117B parameters with 5.1B active parameters)",
+     "- `gpt-oss-20b` \u2014 for lower latency, and local or specialized use cases (21B parameters with 3.6B active parameters)",
+     "You can download the model weights from the [Hugging Face Hub](https://huggingface.co/collections/openai/gpt-oss-68911959590a1634ba11c7a4) directly from Hugging Face CLI:"
+    ],
+    "readme_bytes": 7076,
+    "readme_sha256": "03c2fcf292549176757b85c911e7dcf527aef3e4241d64b6caec94af3ecf3ac2"
+   }
   },
   "zai-org/GLM-4.7-Flash": {
    "config_has_quantization_config": false,
@@ -3466,7 +4058,15 @@
     "eval-results",
     "endpoints_compatible",
     "deploy:azure"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "GLM-4.7-Flash is a 30B-A3B MoE model. As the strongest model in the 30B class, GLM-4.7-Flash offers a new option for lightweight deployment that balances performance and efficiency.",
+     "| Benchmark          | GLM-4.7-Flash | Qwen3-30B-A3B-Thinking-2507 | GPT-OSS-20B |"
+    ],
+    "readme_bytes": 8156,
+    "readme_sha256": "7bfcbced42741ceb3fff8809f8d6c84ada9696850e257c4e53e6c2fe9ef4f9bf"
+   }
   },
   "zai-org/GLM-5.3": {
    "config_has_quantization_config": true,
@@ -3521,7 +4121,19 @@
     "endpoints_compatible",
     "fp8",
     "deploy:sagemaker"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "- **HLE w/ tools**: We use sampling parameters of `temperature=1.0` and `top_p=0.95` for evaluation, with a maximum generation length of `163,840` tokens. The evaluation is conducted with a maximum context length of `300,000` tokens, using a context management strategy. We use GPT-5.6-luna (medium) ",
+     "- **NL2Repo**: We evaluated NL2Repo with `temperature=1.0`, `top_p=1.0`, and `max_new_tokens=64k` under 1M context. To prevent hacking, we use rule-based and a LLM-based judgement to prevent malicious behaviors (e.g., unauthorized pip or curl operations).",
+     "- **DeepSWE**: We run DeepSWE using the mini-swe-agent harness with `temperature=0.95`, `top_p=1.0`, `timeout=6h` and 400K context.",
+     "- **Terminal-Bench 3.0**: We evaluate Terminal-Bench-3 tasks with the Claude Code 2.1.207 harness (reasoning effort=max, 400K context, and 128K maximum output), reporting avg@3 over three rollouts per task. Each rollout runs in an isolated container built from the task's official image, and is cappe",
+     "- **Agent's Last Exam (CLI)**: We evaluate ALE using the official evaluation protocol with the Claude Code harness (reasoning effort=max, 1M context, and 64K maximum output). Each of the 105 tasks runs in an isolated Docker container using the resources declared in its Task Card. The default timeout",
+     "- **FrontierSWE**: The evaluation was conducted by [Proximal](https://www.proximal.ai/) with 1M context length, max effort level, and 128K maximum output tokens. Dominance score reported as of 2026/08/14."
+    ],
+    "readme_bytes": 14163,
+    "readme_sha256": "ed1c0a4563c437a32f8953d637a1db9bd831de1b24bd3062a5ace9e04340b1cf"
+   }
   },
   "zai-org/GLM-5.3-Flash": {
    "config_has_quantization_config": true,
@@ -3576,7 +4188,18 @@
     "eval-results",
     "endpoints_compatible",
     "fp8"
-   ]
+   ],
+   "vendor_card_claims": {
+    "lines": [
+     "We introduce GLM-5.3-Flash, the first natively multimodal model in the GLM-5 series. With 320B total parameters and just 18B active parameters, it outperforms GLM-5.2 across benchmarks and real-world workloads at one-tenth the price, while approaching Claude Opus 4.8 on coding and agentic benchmarks",
+     "* **HLE w/ tools (full set)**: We use sampling parameters of `temperature=1.0` and `top_p=0.95` for evaluation, with a maximum generation length of `163,840` tokens. The evaluation is conducted with a maximum context length of `300,000` tokens, using a context management strategy. We use GPT-5.6-lun",
+     "* **NL2Repo**: We evaluated NL2Repo with temperature=1.0, top_p=1.0, and max_new_tokens=64k under 1M context. To prevent hacking, we use rule-based and a LLM-based judgement to prevent malicious behaviors (e.g., unauthorized pip or curl operations).",
+     "* **DeepSWE**: We run DeepSWE using the mini-swe-agent harness with `temperature=0.95`, `top_p=1.0`, `timeout=6h` and 400K context.",
+     "* **BabyVision**: We use temperature=1.0, top_p=0.95, and a maximum context length of 164K tokens. We resize the input images such that their shorter side is at least 1.5K pixels, consistent with other baselines."
+    ],
+    "readme_bytes": 8004,
+    "readme_sha256": "e6c5d41400e28f5a89418a0d15b09b9c113314a7553d40d7d4a8a72fcdb87d02"
+   }
   }
  },
  "provider_inference": false,

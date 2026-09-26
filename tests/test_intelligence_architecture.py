@@ -61,7 +61,7 @@ def outcome(**kw):
 
 def promo(**kw):
     base = dict(decision_id="pd1", candidate_id="cand1", candidate_produced_by="learner1", decided_by="gate1",
-                decider_kind="QUALIFIED_GATE_SERVICE", verdict=P.PromotionVerdict.PROMOTE, frozen_eval_ref="f",
+                decider_kind="QUALIFIED_GATE_SERVICE", decider_qualification_ref="gate-qualification-2026", verdict=P.PromotionVerdict.PROMOTE, frozen_eval_ref="f",
                 adversarial_eval_ref="a", regression_eval_ref="r", shadow_deployment_ref="s",
                 measured_improvement=0.05, regressions_found=0)
     base.update(kw)
@@ -188,10 +188,18 @@ def test_valid_promotion_passes():
     dict(decided_by="learner1"), dict(decided_by="cand1"), dict(frozen_eval_ref=None), dict(adversarial_eval_ref=""),
     dict(regression_eval_ref=None), dict(shadow_deployment_ref=None), dict(measured_improvement=0.0),
     dict(measured_improvement=None), dict(regressions_found=1), dict(regressions_found=None),
-    dict(decider_kind="THE_MODEL_ITSELF"),
+    dict(decider_kind="THE_MODEL_ITSELF"), dict(decider_qualification_ref=None), dict(decider_qualification_ref=""),
+    dict(decider_qualification_ref="cand1"),
 ])
 def test_promotion_is_evidence_gated_and_cannot_self_promote(kw):
     assert promo(**kw).problems()
+
+
+def test_human_owner_is_separately_identifiable_and_needs_no_service_qualification():
+    owner = promo(decider_kind="HUMAN_OWNER", decided_by="owner-ag", decider_qualification_ref=None)
+    assert owner.problems() == []
+    assert promo(decider_kind="HUMAN_OWNER", decided_by="learner1", decider_qualification_ref=None).problems()  # still no self-promotion
+    assert promo(decider_kind="QUALIFIED_GATE_SERVICE", decider_qualification_ref=None).problems()             # unqualified service cannot promote
 
 
 def test_reject_and_hold_need_no_gates_but_still_cannot_self_decide():
@@ -223,9 +231,20 @@ def test_valid_discovery_passes_and_revision_chain_is_immutable():
     dict(counter_evidence_refs=("c1",)),  # SEARCHED_NONE_FOUND but refs present
     dict(counter_evidence_status=P.CounterEvidenceStatus.NOT_SEARCHED, confidence=0.9),
     dict(counter_evidence_status=P.CounterEvidenceStatus.NOT_SEARCHED, confidence=0.4, outcome_status=P.DiscoveryOutcome.CONFIRMED),
+    dict(revision=1, parent_digest="abc"), dict(revision=1, parent_digest="A" * 64), dict(revision=1, parent_digest="g" * 64),
+    dict(revision=1, parent_digest="a" * 63), dict(revision=1, parent_digest=""), dict(revision=1, parent_digest=None),
+    dict(revision=0, parent_digest="a" * 64),
 ])
 def test_discovery_requires_evidence_and_counter_evidence_discipline(kw):
     assert discovery(**kw).problems()
+
+
+def test_discovery_revision_chain_requires_valid_sha256_parent():
+    assert discovery(revision=1, parent_digest="a" * 64).problems() == []
+    d = discovery()
+    chained = d.revise("2026-09-27T00:00:00Z")
+    assert re.fullmatch(r"[0-9a-f]{64}", chained.parent_digest) and chained.problems() == []
+    assert chained.revise("2026-09-28T00:00:00Z").parent_digest == chained.digest()
 
 
 def test_discovery_has_all_required_fields():
@@ -304,18 +323,129 @@ def test_delta_propagation_reaches_assumptions_conclusions_and_objectives():
 
 
 # ------------------------------------------------------------------ 8. remaining protocol contracts
-def test_cognitive_result_rules():
-    ok = P.CognitiveResult("r", "COMPLETED", "out", ("e",), ("v",), 0.8)
-    assert ok.problems() == []
-    assert P.CognitiveResult("r", "COMPLETED", "out", (), (), 0.8).problems()
-    assert P.CognitiveResult("r", "COMPLETED", "out", (), (), 0.8, contract_status="SATISFIED").problems() == []
-    assert P.CognitiveResult("r", "COMPLETED", None, ("e",), ("v",), 0.8).problems()
+def _v(subject="out", verdict="PASSED", method="TOOL", evidence=("e",), verifier="verifier", producer="producer"):
+    return P.VerificationResult("v1", subject, method, verdict, evidence, verifier, producer)
+
+
+def generated(**kw):
+    base = dict(request_id="r", status="COMPLETED", output_ref="out", evidence_refs=("e",), verifications=(_v(),), confidence=0.8,
+                output_kind=P.OutputKind.GENERATED_FREE_TEXT)
+    base.update(kw)
+    return P.CognitiveResult(**base)
+
+
+def deterministic(kind=P.OutputKind.DETERMINISTIC_MATH, ctype="DETERMINISTIC_MATH", **kw):
+    base = dict(request_id="r", status="COMPLETED", output_ref="5", evidence_refs=(), verifications=(), confidence=1.0,
+                output_kind=kind, contract_type=ctype, contract_status="SATISFIED", contract_evidence_ref="sha256:contract-evidence",
+                deterministic_authority="orca.contracts.arith.evaluate", model_calls=0)
+    base.update(kw)
+    return P.CognitiveResult(**base)
+
+
+def test_cognitive_result_basic_status_rules():
+    assert generated().problems() == []
+    assert generated(output_ref=None).problems()
+    assert generated(confidence=None).problems()
     assert P.CognitiveResult("r", "FAILED_CLOSED", "leaked", (), (), None).problems()
     assert P.CognitiveResult("r", "NEEDS_INFORMATION", None, (), (), None).problems()
     q = P.InformationGainQuery("Which contract governs this?", "governing contract", 0.6, ("ask about dates",))
     assert P.CognitiveResult("r", "NEEDS_INFORMATION", None, (), (), None, information_request=q).problems() == []
     assert P.InformationGainQuery("One? Two?", "u", 0.5, ()).problems()
     assert P.InformationGainQuery("One?", "u", 1.5, ()).problems()
+
+
+def test_valid_json_with_unsupported_factual_claim_cannot_complete_on_schema_validation_alone():
+    """The audit's central case: JSON_SCHEMA satisfaction is format compliance, not truth."""
+    schema_only = generated(output_kind=P.OutputKind.GENERATED_STRUCTURED, contract_type="JSON_SCHEMA", contract_status="SATISFIED",
+                            contract_evidence_ref="sha256:schema-evidence", verifications=())
+    problems = schema_only.problems()
+    assert any("contract compliance does not substitute for factual verification" in p for p in problems), problems
+    with pytest.raises(P.ProtocolViolation):
+        schema_only.assert_valid()
+
+
+@pytest.mark.parametrize("verifs", [
+    (_v(verdict="FAILED"),), (_v(verdict="INCONCLUSIVE"),), (_v(subject="another-output"),), (_v(evidence=()),),
+    (_v(verifier="producer"),), (_v(method="CONTRACT_ENGINE"),), (),
+])
+def test_generated_structured_needs_a_real_passing_verification_of_this_output(verifs):
+    r = generated(output_kind=P.OutputKind.GENERATED_STRUCTURED, contract_type="JSON_SCHEMA", contract_status="SATISFIED",
+                  contract_evidence_ref="sha256:c", verifications=verifs)
+    assert r.problems()
+
+
+def test_generated_structured_completes_only_with_both_contract_and_verification():
+    ok = generated(output_kind=P.OutputKind.GENERATED_STRUCTURED, contract_type="JSON_SCHEMA", contract_status="SATISFIED",
+                   contract_evidence_ref="sha256:c")
+    assert ok.problems() == []
+    assert dataclasses.replace(ok, contract_status="VIOLATED").problems()          # verification alone is not enough either
+    assert dataclasses.replace(ok, contract_evidence_ref=None).problems()
+    assert dataclasses.replace(ok, contract_type="EXACT_TEXT").problems()
+    assert dataclasses.replace(ok, verifications=ok.verifications + (_v(verdict="FAILED"),)).problems()  # one failure blocks
+
+
+def test_model_generated_free_text_needs_verification_regardless_of_contract_status():
+    assert generated(verifications=(), contract_type="FREE_TEXT", contract_status="SATISFIED", contract_evidence_ref="x").problems()
+    assert generated(contract_type="JSON_SCHEMA").problems()
+
+
+def test_deterministic_arithmetic_completes_on_its_authoritative_mechanism():
+    ok = deterministic()
+    assert ok.problems() == [] and ok.verifications == ()
+    assert deterministic(output_kind=P.OutputKind.DETERMINISTIC_EXACT_TEXT, ctype="EXACT_TEXT").problems() == []
+    assert deterministic(output_kind=P.OutputKind.DETERMINISTIC_JSON_LITERAL, ctype="JSON_LITERAL").problems() == []
+
+
+@pytest.mark.parametrize("kw", [
+    dict(model_calls=1), dict(deterministic_authority=None), dict(contract_status="VIOLATED"), dict(contract_evidence_ref=None),
+    dict(ctype="JSON_SCHEMA"), dict(output_kind_assigned_by="MODEL_DECLARED"),
+])
+def test_deterministic_bypass_is_narrow(kw):
+    ctype = kw.pop("ctype", "DETERMINISTIC_MATH")
+    assert deterministic(ctype=ctype, **kw).problems()
+
+
+def test_deterministic_authority_cannot_be_claimed_by_generated_output():
+    assert generated(deterministic_authority="orca.contracts.arith.evaluate").problems()
+    assert generated(output_kind=None).problems()
+    assert generated(output_kind_assigned_by="MODEL_DECLARED").problems()
+
+
+def test_only_deterministic_kinds_may_bypass_verification_and_they_are_exactly_three():
+    assert {k.value for k in P.DETERMINISTIC_KINDS} == {"DETERMINISTIC_EXACT_TEXT", "DETERMINISTIC_MATH", "DETERMINISTIC_JSON_LITERAL"}
+    assert set(P.DETERMINISTIC_KINDS.values()) == {"EXACT_TEXT", "DETERMINISTIC_MATH", "JSON_LITERAL"}
+    assert "CONTRACT_ENGINE" not in P.VERIFICATION_METHODS   # contract compliance is never a factual verification method
+    b = S.build_spec()["contract_compliance_vs_verification"]
+    assert b["distinct_concepts"] is True and b["generated_json_schema_satisfaction_bypasses_verification"] is False
+    assert b["model_self_report_bypasses_verification"] is False and set(b["verification_bypass_only_for"]) == {"EXACT_TEXT", "DETERMINISTIC_MATH", "JSON_LITERAL"}
+
+
+def test_real_contract_engine_results_map_onto_the_distinction():
+    """Uses the qualified engine unchanged: deterministic math bypasses; generated schema output does not."""
+    from orca.contracts import ContractEngine, ContractStatus
+
+    def exploding(_req):
+        raise AssertionError("model must not be called for deterministic math")
+
+    eng = ContractEngine()
+    math = eng.execute("2 + 3", exploding)
+    assert math.status is ContractStatus.SATISFIED and math.final_output == "5"
+    assert deterministic(output_ref=math.final_output, contract_evidence_ref="sha256:" + math.evidence.to_dict()["final_output_sha256"]
+                         if hasattr(math.evidence, "to_dict") and "final_output_sha256" in math.evidence.to_dict() else "sha256:engine-evidence").problems() == []
+
+    schema_text = 'Return valid JSON matching this schema:\n{"type":"object","properties":{"revenue":{"type":"number"}},"required":["revenue"]}'
+    calls = []
+
+    def hallucinating_model(_req):
+        calls.append(1)
+        return '{"revenue": 1000000000}'   # schema-valid, factually unsupported
+
+    res = eng.execute(schema_text, hallucinating_model)
+    assert calls, "the generated path must call the model"
+    if res.status is ContractStatus.SATISFIED:                       # contract satisfied ...
+        cr = generated(output_ref=res.final_output, output_kind=P.OutputKind.GENERATED_STRUCTURED, contract_type="JSON_SCHEMA",
+                       contract_status="SATISFIED", contract_evidence_ref="sha256:engine-evidence", verifications=(), model_calls=len(calls))
+        assert cr.problems(), "... but the result must not complete without factual verification"
 
 
 def test_expert_contracts_allow_unknown_kinds_but_never_trust_claims():
@@ -402,7 +532,7 @@ def test_classes_partition_every_model_and_admission_equals_all_gates_pass(refre
     for mid, r in refresh["models"].items():
         all_pass = all(r["gates"][g]["status"] == "PASS" for g in fl.GATES)
         assert set(r["gates"]) == set(fl.GATES)
-        if r["class"] == "GENESIS_TRAINABLE_NOW":
+        if r["class"] == "GENESIS_EVAL_ADMITTED":
             assert r["admitted_to_capability_eval"] and all_pass, mid
         if r["class"] in {"TEACHER_REFERENCE", "FUTURE_FRONTIER_ARCHITECTURE_REFERENCE", "FUTURE_REASON_CANDIDATE", "NOT_ADMITTED"}:
             assert not r["admitted_to_capability_eval"], mid
@@ -412,7 +542,7 @@ def test_classes_partition_every_model_and_admission_equals_all_gates_pass(refre
 
 def test_unverified_or_failed_gate_blocks_admission(raw):
     base = fl.build_refresh(raw)
-    trainable = [m for m, r in base.items() if r["class"] == "GENESIS_TRAINABLE_NOW"]
+    trainable = [m for m, r in base.items() if r["class"] == "GENESIS_EVAL_ADMITTED"]
     assert len(trainable) >= 10
     victim = trainable[0]
     mutations = {
@@ -427,12 +557,12 @@ def test_unverified_or_failed_gate_blocks_admission(raw):
         mut(r2["models"][victim])
         again = fl.build_refresh(r2)[victim]
         assert not again["admitted_to_capability_eval"], name
-        assert again["class"] != "GENESIS_TRAINABLE_NOW", name
+        assert again["class"] != "GENESIS_EVAL_ADMITTED", name
 
 
 def test_template_probe_missing_blocks_admission(raw):
     r2 = copy.deepcopy(raw)
-    victim = next(m for m, r in fl.build_refresh(raw).items() if r["class"] == "GENESIS_TRAINABLE_NOW")
+    victim = next(m for m, r in fl.build_refresh(raw).items() if r["class"] == "GENESIS_EVAL_ADMITTED")
     r2["ecosystem"]["template_and_layer_probes"][victim]["template_present"] = False
     assert not fl.build_refresh(r2)[victim]["admitted_to_capability_eval"]
 
@@ -452,7 +582,7 @@ def test_admission_ignores_recency_popularity_and_size_ranking(raw):
 def test_largest_is_not_admitted_and_giants_are_not_trainable(refresh):
     models = refresh["models"]
     assert refresh["selected_foundation"] is None and refresh["foundation_selected"] is False
-    trainable = refresh["class_membership"]["GENESIS_TRAINABLE_NOW"]
+    trainable = refresh["class_membership"]["GENESIS_EVAL_ADMITTED"]
     assert all((models[m]["total_parameters_b"] or 0) <= 40 for m in trainable)
     largest = max(models, key=lambda m: models[m]["total_parameters_b"] or 0)
     assert largest not in trainable
@@ -461,10 +591,32 @@ def test_largest_is_not_admitted_and_giants_are_not_trainable(refresh):
         assert not models[m]["admitted_to_capability_eval"]
 
 
+def test_baseline_controls_are_never_admitted_regression(refresh):
+    """Audit bug: controls were BASELINE_ONLY_CONTROL yet admitted=true. They must never be admitted."""
+    for m in ("Qwen/Qwen3-8B", "mistralai/Mistral-Nemo-Instruct-2407", "microsoft/phi-4"):
+        r = refresh["models"][m]
+        assert r["class"] == "BASELINE_ONLY_CONTROL" and r["admitted_to_capability_eval"] is False, m
+    for r in refresh["models"].values():
+        if r["class"] == "BASELINE_ONLY_CONTROL":
+            assert r["admitted_to_capability_eval"] is False
+    assert not any(refresh["models"][m]["admitted_to_capability_eval"] for m in refresh["class_membership"]["BASELINE_ONLY_CONTROL"])
+
+
+def test_baseline_control_is_not_admitted_even_when_every_gate_passes(raw):
+    base = fl.build_refresh(raw)
+    assert all(base[m]["gates"][g]["status"] == "PASS" for m in ("microsoft/phi-4",) for g in fl.GATES)  # would be admitted on gates alone
+    assert base["microsoft/phi-4"]["admitted_to_capability_eval"] is False
+
+
+def test_only_gate_admitted_non_control_models_are_admitted(refresh):
+    admitted = {m for m, r in refresh["models"].items() if r["admitted_to_capability_eval"]}
+    assert admitted == set(refresh["class_membership"]["GENESIS_EVAL_ADMITTED"])
+
+
 def test_controls_are_baselines_not_automatic_candidates(refresh):
     ctrl = {"Qwen/Qwen3-8B", "mistralai/Mistral-Nemo-Instruct-2407", "microsoft/phi-4"}
     assert set(refresh["class_membership"]["BASELINE_ONLY_CONTROL"]) == ctrl
-    assert not ctrl & set(refresh["class_membership"]["GENESIS_TRAINABLE_NOW"])
+    assert not ctrl & set(refresh["class_membership"]["GENESIS_EVAL_ADMITTED"])
 
 
 def test_license_screen_catches_assistant_business_restrictions(refresh):
@@ -494,13 +646,15 @@ def test_every_gate_result_carries_status_basis_and_note_and_dense_peft_is_label
 
 
 def test_required_admission_record_fields_present(refresh):
-    need = {"model", "revision_sha", "license", "architecture", "total_parameters_b", "active_parameters_b", "context_tokens",
+    need = {"model", "revision_sha", "license", "architecture", "total_parameters_b", "active_parameters_b", "active_parameters_source",
+            "config_max_position_embeddings", "vendor_supported_context_tokens", "context_source", "context_config_vs_vendor",
+            "trainability_proven", "admission_meaning",
             "multimodality", "tool_calling_template", "structured_output", "reasoning_template", "quantization_support",
             "known_caveats", "primary_sources", "gates", "class", "class_reason"}
     for mid, r in refresh["models"].items():
         assert need <= set(r), mid
         assert r["primary_sources"] and all(u.startswith("https://") for u in r["primary_sources"])
-    for mid in refresh["class_membership"]["GENESIS_TRAINABLE_NOW"]:
+    for mid in refresh["class_membership"]["GENESIS_EVAL_ADMITTED"]:
         r = refresh["models"][mid]
         assert re.fullmatch(r"[0-9a-f]{40}", r["revision_sha"]) and "estimates" in r
         assert r["estimates"]["kind"] == "ESTIMATE_NOT_MEASUREMENT"
@@ -509,7 +663,8 @@ def test_required_admission_record_fields_present(refresh):
 def test_active_parameters_are_labelled_by_source_never_presented_as_verified(refresh):
     for mid, r in refresh["models"].items():
         if r["active_parameters_b"]:
-            assert re.match(r"(NAME_DERIVED|VENDOR_CLAIM|PRIOR_LANDSCAPE_DOC_VENDOR_CLAIM)", r["active_parameters_source"]), mid
+            assert r["active_parameters_source"] in {"VENDOR_MODEL_CARD_CLAIM", "NAME_DERIVED"}, mid
+            assert r["active_parameters_verified"] is False, mid
 
 
 def test_moe_models_are_never_labelled_dense(refresh):
@@ -518,7 +673,7 @@ def test_moe_models_are_never_labelled_dense(refresh):
     for m in moes:
         assert refresh["models"][m]["active_parameters_source"] != "DENSE", m
     for m in ("deepseek-ai/DeepSeek-V4-Pro-0813", "mistralai/Mistral-Small-4-119B-2603", "openai/gpt-oss-120b"):
-        assert refresh["models"][m]["is_moe"] is True and refresh["models"][m]["active_parameters_b"] in (None, 5.1)
+        assert refresh["models"][m]["is_moe"] is True and refresh["models"][m]["active_parameters_b"] in (None, 5.1, 6.5)
     assert refresh["models"]["Qwen/Qwen3.5-9B"]["is_moe"] is False
 
 
@@ -640,3 +795,88 @@ def test_reality_compiler_spec_is_protocol_only():
         assert w in rc["canonical_objects"], w
     for w in ("email", "calendar", "spreadsheets", "sensors", "agent results"):
         assert w in rc["inputs"], w
+
+
+# ------------------------------------------------------------------ audit corrections: context / active parameters / terminology
+def test_mistral_small_4_context_and_active_parameters_are_distinguished(refresh, raw):
+    r = refresh["models"]["mistralai/Mistral-Small-4-119B-2603"]
+    assert r["config_max_position_embeddings"] == 1048576          # config evidence is NOT overwritten
+    assert r["vendor_supported_context_tokens"] == 262144 and r["context_source"] == "VENDOR_MODEL_CARD_CLAIM"
+    assert r["context_config_vs_vendor"] == "DIFFERS"
+    assert r["active_parameters_b"] == 6.5 and r["active_parameters_source"] == "VENDOR_MODEL_CARD_CLAIM"
+    assert r["active_parameters_verified"] is False
+    assert raw["models"]["mistralai/Mistral-Small-4-119B-2603"]["config_subset"]["text_config.max_position_embeddings"] == 1048576
+
+
+def test_every_context_and_active_claim_quote_is_verbatim_in_captured_model_card(raw, refresh):
+    checked = 0
+    for mid, r in refresh["models"].items():
+        lines = raw["models"][mid]["vendor_card_claims"].get("lines", [])
+        for quote in (r["vendor_context_quote"], r.get("active_parameters_quote")):
+            if quote:
+                assert any(quote in l for l in lines), (mid, quote)
+                checked += 1
+    assert checked >= 40
+
+
+def test_context_fields_never_alias_config_to_vendor_claims(refresh):
+    for mid, r in refresh["models"].items():
+        assert "context_tokens" not in r, mid  # the ambiguous single field is gone
+        rel = r["context_config_vs_vendor"]
+        assert rel in {"MATCH", "DIFFERS", "VENDOR_CLAIM_NOT_CAPTURED", "CONFIG_NOT_AVAILABLE"}, mid
+        cfg, ven = r["config_max_position_embeddings"], r["vendor_supported_context_tokens"]
+        if rel == "MATCH":
+            assert cfg == ven
+        if rel == "DIFFERS":
+            assert cfg and ven and cfg != ven
+        if ven is None:
+            assert r["context_source"] == "NOT_CAPTURED_FROM_MODEL_CARD"
+        assert r["vendor_supported_context_precision"] in {None, "EXACT", "SHORTHAND_K1024_ASSUMED"}
+
+
+def test_context_audit_over_all_candidates_found_the_differences(refresh):
+    differs = {m for m, r in refresh["models"].items() if r["context_config_vs_vendor"] == "DIFFERS"}
+    assert {"mistralai/Mistral-Small-4-119B-2603", "Qwen/Qwen3-8B", "microsoft/MagenticBrain",
+            "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16", "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16"} <= differs
+    md = REFRESH_MD.read_text()
+    assert "6a. Context and active-parameter semantics" in md
+    for m in differs:
+        assert f"`{m}` (config" in md
+
+
+def test_active_parameter_claims_are_attributed_not_verified(refresh):
+    for mid, r in refresh["models"].items():
+        assert r["active_parameters_verified"] is False
+        if r["active_parameters_b"] is not None:
+            assert r["active_parameters_source"] in {"VENDOR_MODEL_CARD_CLAIM", "NAME_DERIVED"}
+            if r["active_parameters_source"] == "VENDOR_MODEL_CARD_CLAIM":
+                assert r["active_parameters_quote"], mid
+    assert refresh["models"]["google/gemma-4-26B-A4B-it"]["active_parameters_b"] == 3.8   # card table, not the '4' in the model name
+    assert refresh["models"]["mistralai/Mistral-Large-3-675B-Instruct-2512"]["active_parameters_note"]
+
+
+def test_admission_terminology_eval_admitted_not_trainable(refresh):
+    assert "GENESIS_TRAINABLE_NOW" not in fl.CLASSES and "GENESIS_EVAL_ADMITTED" in fl.CLASSES
+    for p in (REFRESH_JSON, REFRESH_MD, PH21 / "GENESIS_CAPABILITY_EVAL_V1_DESIGN.md"):
+        assert "GENESIS_TRAINABLE_NOW" not in p.read_text() or "formerly `GENESIS_TRAINABLE_NOW`" in p.read_text(), p
+    assert "Trainable-now" not in REFRESH_MD.read_text()
+    for mid, r in refresh["models"].items():
+        assert r["trainability_proven"] is False and r["trainability_evidence_ref"] is None, mid
+        assert "not proven" in r["admission_meaning"]
+    e = refresh["models"]["Qwen/Qwen3.5-9B"]["gates"]["E_peft_qlora_feasible"]
+    assert e["basis"] == "INFERRED_NOT_EXECUTED"
+    txt = REFRESH_MD.read_text()
+    assert "does **not** mean proven trainable" in txt and "trainability_proven=false" in txt
+
+
+# ------------------------------------------------------------------ audit corrections: streaming
+def test_streaming_spec_never_implies_transport_retraction():
+    pol = S.build_spec()["cross_cutting"]["instant_response_fabric"]["free_text_release_policy"]
+    assert pol["transport_retraction_claimed"] is False and pol["silently_treat_emitted_unverified_text_as_verified"] is False
+    assert set(pol["claim_bearing_spans"]) == {"HOLD_UNTIL_VERIFIED", "LABEL_PROVISIONAL_BEFORE_EMISSION"}
+    assert pol["post_emission_recourse"] == "VISIBLE_CORRECTION_EVENT"
+    t = ARCH_MD.read_text()
+    assert "visible correction event" in t and "Transport-level retraction is **not** claimed" in t
+    assert "withheld or retracted" not in t and "or retracted according" not in t
+    assert "labelled provisional before emission" in t and "held" in t
+    assert "never silently" in t.lower() or "silently treated as verified" in t

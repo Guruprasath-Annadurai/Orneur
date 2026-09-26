@@ -60,6 +60,24 @@
       }
     }
   },
+  "contract_compliance_vs_verification": {
+    "bypass_requires": [
+      "router-assigned output_kind",
+      "SATISFIED contract with evidence",
+      "named deterministic_authority",
+      "model_calls == 0"
+    ],
+    "contract_compliance_proves": "format/contract correctness only",
+    "distinct_concepts": true,
+    "factual_verification_proves": "content is supported by independent evidence",
+    "generated_json_schema_satisfaction_bypasses_verification": false,
+    "model_self_report_bypasses_verification": false,
+    "verification_bypass_only_for": [
+      "EXACT_TEXT",
+      "DETERMINISTIC_MATH",
+      "JSON_LITERAL"
+    ]
+  },
   "core_protocol_interfaces": [
     "CognitiveRequest",
     "CognitiveResult",
@@ -104,6 +122,16 @@
         }
       ],
       "free_text": "progressively verified streaming",
+      "free_text_release_policy": {
+        "claim_bearing_spans": [
+          "HOLD_UNTIL_VERIFIED",
+          "LABEL_PROVISIONAL_BEFORE_EMISSION"
+        ],
+        "non_claim_text": "may stream immediately",
+        "post_emission_recourse": "VISIBLE_CORRECTION_EVENT",
+        "silently_treat_emitted_unverified_text_as_verified": false,
+        "transport_retraction_claimed": false
+      },
       "latency_targets_are_design_targets_only": true,
       "measured_slo_claimed": false,
       "operates_across_entire_system": true,
@@ -343,6 +371,14 @@
     }
   ],
   "pipeline_closes_loop_into": "improved ORNEUR (next qualified generation)",
+  "promotion_authority": {
+    "deciders": [
+      "HUMAN_OWNER",
+      "QUALIFIED_GATE_SERVICE"
+    ],
+    "producer_or_candidate_may_promote": false,
+    "qualified_gate_service_requires": "decider_qualification_ref"
+  },
   "protocol_version": "orneur.core-protocol/1.0.0",
   "reality_compiler": {
     "canonical_objects": [

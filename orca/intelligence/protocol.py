@@ -307,6 +307,8 @@ class Discovery(_Contract):
                 out.append("a discovery cannot be CONFIRMED/ACTED_ON before counter-evidence is searched")
         if self.revision < 0 or (self.revision == 0) != (self.parent_digest is None):
             out.append("parent_digest is None exactly when revision == 0")
+        if self.revision > 0 and not (isinstance(self.parent_digest, str) and _SHA256.match(self.parent_digest)):
+            out.append("parent_digest must be a lowercase sha256 hex digest when revision > 0")
         return out
 
     def revise(self, updated_at: str, **changes: Any) -> "Discovery":
@@ -341,7 +343,9 @@ class Hypothesis(_Contract):
         return out
 
 
-VERIFICATION_METHODS = frozenset({"DETERMINISTIC", "TOOL", "ADVERSARIAL_EXPERT", "SIMULATION", "HUMAN", "CONTRACT_ENGINE"})
+# Factual/inferential verification methods. Contract compliance is deliberately NOT one of them:
+# it proves format/contract correctness, never truth (see CognitiveResult).
+VERIFICATION_METHODS = frozenset({"DETERMINISTIC", "TOOL", "ADVERSARIAL_EXPERT", "SIMULATION", "HUMAN"})
 
 
 @dataclass(frozen=True)
@@ -430,15 +434,50 @@ class InformationGainQuery(_Contract):
         return out
 
 
+class OutputKind(str, Enum):
+    """Assigned by the ORNEUR router, never by a model."""
+
+    DETERMINISTIC_EXACT_TEXT = "DETERMINISTIC_EXACT_TEXT"
+    DETERMINISTIC_MATH = "DETERMINISTIC_MATH"
+    DETERMINISTIC_JSON_LITERAL = "DETERMINISTIC_JSON_LITERAL"
+    GENERATED_STRUCTURED = "GENERATED_STRUCTURED"  # includes model-generated JSON_SCHEMA output
+    GENERATED_FREE_TEXT = "GENERATED_FREE_TEXT"
+
+
+# The only outputs whose correctness is completely established by an authoritative deterministic
+# mechanism (no model involved), so they alone may complete without a separate factual Verification.
+DETERMINISTIC_KINDS = {
+    OutputKind.DETERMINISTIC_EXACT_TEXT: "EXACT_TEXT",
+    OutputKind.DETERMINISTIC_MATH: "DETERMINISTIC_MATH",
+    OutputKind.DETERMINISTIC_JSON_LITERAL: "JSON_LITERAL",
+}
+
+
 @dataclass(frozen=True)
 class CognitiveResult(_Contract):
+    """Contract Compliance and factual Verification are DISTINCT concepts.
+
+    ``contract_status``/``contract_evidence_ref`` say the output satisfied its format contract.
+    ``verifications`` say the content is supported by evidence. A model-generated result completes
+    only with a passing, independent, evidence-backed Verification of that exact output, even when its
+    contract is SATISFIED. Only router-typed deterministic outputs (exact text, deterministic math,
+    canonical JSON literal produced with zero model calls) may complete on their deterministic
+    authority alone.
+    """
+
     request_id: str
     status: str  # COMPLETED | FAILED_CLOSED | NEEDS_INFORMATION
     output_ref: Optional[str]
     evidence_refs: tuple[str, ...]
-    verification_ids: tuple[str, ...]
+    verifications: tuple[VerificationResult, ...]
     confidence: Optional[float]
+    output_kind: Optional[OutputKind] = None
+    output_kind_assigned_by: str = "ORNEUR_ROUTER"
+    contract_type: Optional[str] = None
     contract_status: Optional[str] = None
+    contract_evidence_ref: Optional[str] = None
+    deterministic_authority: Optional[str] = None
+    model_calls: int = 0
     information_request: Optional[InformationGainQuery] = None
 
     def problems(self) -> list[str]:
@@ -446,13 +485,6 @@ class CognitiveResult(_Contract):
         _need(self, ["request_id"], out)
         if self.status not in {"COMPLETED", "FAILED_CLOSED", "NEEDS_INFORMATION"}:
             out.append("status must be COMPLETED|FAILED_CLOSED|NEEDS_INFORMATION")
-        if self.status == "COMPLETED":
-            if _blank(self.output_ref):
-                out.append("COMPLETED requires output_ref")
-            if not self.verification_ids and self.contract_status != "SATISFIED":
-                out.append("COMPLETED requires verification_ids or a SATISFIED contract")
-            if self.confidence is None:
-                out.append("COMPLETED requires a calibrated confidence")
         if self.status != "COMPLETED" and self.output_ref is not None:
             out.append("only COMPLETED results may carry an output_ref")
         if self.status == "NEEDS_INFORMATION":
@@ -462,6 +494,49 @@ class CognitiveResult(_Contract):
                 out += self.information_request.problems()
         if self.confidence is not None:
             _unit("confidence", self.confidence, out)
+        if self.status == "COMPLETED":
+            out += self._completion_problems()
+        return out
+
+    def _completion_problems(self) -> list[str]:
+        out: list[str] = []
+        if _blank(self.output_ref):
+            out.append("COMPLETED requires output_ref")
+        if self.confidence is None:
+            out.append("COMPLETED requires a calibrated confidence")
+        if self.output_kind is None:
+            return out + ["COMPLETED requires an output_kind assigned by the ORNEUR router"]
+        if self.output_kind_assigned_by != "ORNEUR_ROUTER":
+            out.append("output_kind must be assigned by the ORNEUR router, never declared by a model")
+        contract_ok = self.contract_status == "SATISFIED" and not _blank(self.contract_evidence_ref)
+        if self.output_kind in DETERMINISTIC_KINDS:
+            want = DETERMINISTIC_KINDS[self.output_kind]
+            if self.contract_type != want:
+                out.append(f"{self.output_kind.value} requires contract_type {want}")
+            if not contract_ok:
+                out.append("a deterministic output requires a SATISFIED contract with contract_evidence_ref")
+            if _blank(self.deterministic_authority):
+                out.append("a deterministic output requires the authoritative deterministic_authority that produced it")
+            if self.model_calls != 0:
+                out.append("a deterministic output must have been produced with zero model calls")
+            return out
+        # Model-generated outputs: contract compliance is necessary for structured output, never sufficient.
+        if self.deterministic_authority is not None:
+            out.append("deterministic_authority may only be set for deterministic outputs")
+        if self.output_kind is OutputKind.GENERATED_STRUCTURED:
+            if self.contract_type != "JSON_SCHEMA":
+                out.append("GENERATED_STRUCTURED requires contract_type JSON_SCHEMA")
+            if not contract_ok:
+                out.append("GENERATED_STRUCTURED requires a SATISFIED contract with contract_evidence_ref")
+        elif self.contract_type not in (None, "FREE_TEXT"):
+            out.append("GENERATED_FREE_TEXT may only carry contract_type FREE_TEXT")
+        if any(v.verdict == "FAILED" for v in self.verifications):
+            out.append("a FAILED verification blocks completion")
+        qualifying = [v for v in self.verifications
+                      if v.verdict == "PASSED" and v.subject_ref == self.output_ref and not v.problems()]
+        if not qualifying:
+            out.append("a model-generated result requires a passing, independent, evidence-backed Verification "
+                       "of this exact output; contract compliance does not substitute for factual verification")
         return out
 
 
@@ -706,6 +781,7 @@ class PromotionDecision(_Contract):
     decided_by: str
     decider_kind: str  # HUMAN_OWNER | QUALIFIED_GATE_SERVICE
     verdict: PromotionVerdict
+    decider_qualification_ref: Optional[str] = None  # required for QUALIFIED_GATE_SERVICE
     frozen_eval_ref: Optional[str] = None
     adversarial_eval_ref: Optional[str] = None
     regression_eval_ref: Optional[str] = None
@@ -720,6 +796,11 @@ class PromotionDecision(_Contract):
             out.append("decider_kind must be HUMAN_OWNER|QUALIFIED_GATE_SERVICE")
         if self.decided_by in {self.candidate_produced_by, self.candidate_id}:
             out.append("a self-generated component cannot promote itself")
+        if self.decider_kind == "QUALIFIED_GATE_SERVICE":
+            if _blank(self.decider_qualification_ref):
+                out.append("QUALIFIED_GATE_SERVICE requires decider_qualification_ref (evidence the service is qualified)")
+            elif self.decider_qualification_ref == self.candidate_id:
+                out.append("a candidate cannot vouch for its own promoter")
         if self.verdict is PromotionVerdict.PROMOTE:
             for n in ("frozen_eval_ref", "adversarial_eval_ref", "regression_eval_ref", "shadow_deployment_ref"):
                 if _blank(getattr(self, n)):

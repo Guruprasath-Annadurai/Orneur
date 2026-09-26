@@ -106,6 +106,22 @@ def ecosystem():
     return eco
 
 
+CLAIM_RE = ("context (length|window)|max(imum)? context|context_window|supports? (a )?\\d+\\s?[KkMm]|\\d+\\s?[KkMm]\\s?(token|context)|"
+            "\\|\\s*\\d+\\s?[kK]\\s*\\||supports up to|\\bactive\\b|activated|A\\d+B|\\d+(\\.\\d+)?B (total|parameters)|parameters? .{0,20}total|total parameters|Number of Parameters")
+
+
+def readme_claims(mid):
+    """Vendor model-card lines that mention context or active parameters. Claims, not measurements."""
+    import re
+    try:
+        t = raw(f"https://huggingface.co/{mid}/resolve/main/README.md")
+    except Exception as e:
+        return {"error": repr(e)}
+    lines = [l.strip()[:300] for l in t.splitlines() if re.search(CLAIM_RE, l, re.I) and len(l) < 500
+             and "<th" not in l and "<td" not in l]
+    return {"readme_bytes": len(t), "readme_sha256": __import__("hashlib").sha256(t.encode()).hexdigest(), "lines": lines[:40]}
+
+
 def main(out):
     rows = {}
     for mid in CANDIDATES:
@@ -149,6 +165,7 @@ def main(out):
             row["config_has_quantization_config"] = "quantization_config" in cfg
         except Exception as e:
             row["config_error"] = repr(e)
+        row["vendor_card_claims"] = readme_claims(mid)
         rows[mid] = row
         print(mid, row.get("revision_sha","?")[:12] if row.get("revision_sha") else row.get("info_error","?")[:60],
               row.get("license_card"), file=sys.stderr)

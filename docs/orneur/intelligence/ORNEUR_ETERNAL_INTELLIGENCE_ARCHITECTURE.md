@@ -214,7 +214,7 @@ real failure / successful outcome
 → periodic distillation into next ORNEUR generation
 ```
 
-Hard rules, enforced by `PromotionDecision`: (1) every promotion requires frozen, adversarial and regression eval references and a shadow deployment reference; (2) it requires a measured positive improvement and zero regressions; (3) **no self-generated component may promote itself** — the decider must differ from the producer and from the candidate, and must be a human owner or a qualified gate service; (4) the loop mutates *candidates*, never the serving system in place; (5) `ORNEUR_SELF_IMPROVEMENT_EVAL` (designed in `GENESIS_CAPABILITY_EVAL_V1_DESIGN.md`) tests the loop itself.
+Hard rules, enforced by `PromotionDecision`: (1) every promotion requires frozen, adversarial and regression eval references and a shadow deployment reference; (2) it requires a measured positive improvement and zero regressions; (3) **no self-generated component may promote itself** — the decider must differ from the producer and from the candidate, and must be either a separately identified `HUMAN_OWNER` or a `QUALIFIED_GATE_SERVICE` that cites a `decider_qualification_ref` (evidence that the service is itself qualified; an unqualified service, a producer or the candidate cannot promote, and a candidate cannot vouch for its own promoter); (4) the loop mutates *candidates*, never the serving system in place; (5) `ORNEUR_SELF_IMPROVEMENT_EVAL` (designed in `GENESIS_CAPABILITY_EVAL_V1_DESIGN.md`) tests the loop itself.
 
 ### 10.1 Outcome Learning
 
@@ -251,7 +251,12 @@ The fabric spans the whole loop. Its four doctrines:
 
 **Two release regimes.**
 - *Strict contracts:* **validate before release.** Nothing is emitted until the independent validator passes (the qualified `orca.contracts` behavior; deterministic contracts need no model call at all).
-- *Free text:* **progressively verified streaming.** Tokens stream as they are produced; claims are checked as they become checkable, and unsupported or contradicted spans are marked, withheld or retracted according to the authority policy. The user sees text quickly; trust markers arrive as verification completes.
+- *Free text:* **progressively verified streaming.** Text is released in classes, and no emitted byte is ever silently treated as verified:
+  1. *Non-claim text* (connectives, formatting, verbatim quotation of supplied source text) may stream immediately.
+  2. *Claim-bearing spans* are either **held** until sufficiently verified under the authority policy, or **labelled provisional before emission** (a visible marker travels with the span). One of the two is mandatory; a claim-bearing span is never streamed unmarked and unverified.
+  3. If a span that was already emitted (held-and-released or provisional) is later found unsupported or contradicted, ORNEUR issues a **visible correction event** that names the span and the reason. Transport-level retraction is **not** claimed: bytes that have reached the user cannot be recalled, so the recourse is an explicit, user-visible correction, never a silent edit and never an implication that the span was withdrawn.
+  4. Provisional labels are upgraded to verified only by an explicit verification event tied to the span's evidence, never by elapsed time or by the absence of an objection.
+  The user sees non-claim text quickly; claim text arrives verified, or visibly provisional, or visibly corrected.
 
 **Latency targets (DESIGN TARGETS ONLY — no SLO is measured or claimed):**
 
@@ -263,6 +268,15 @@ The fabric spans the whole loop. Its four doctrines:
 | FRONTIER | acknowledgement plus progressively verified updates ≤ ~1500 ms |
 
 These numbers exist so that designs can be judged against something; they must be replaced by measurements before any external statement is made. They are not derived from any model benchmark.
+
+## 12a. Contract compliance is not factual verification (audit correction)
+
+Two concepts are kept distinct in `CognitiveResult`:
+
+- **Contract Compliance** (`contract_type`, `contract_status`, `contract_evidence_ref`) proves the output satisfied its *format/contract*. It says nothing about whether the content is true.
+- **Verification** (`verifications`: independent, evidence-backed `VerificationResult`s of the exact output) proves the *content* is supported by evidence.
+
+Rules: a model-generated result — including JSON that validates against a JSON_SCHEMA — completes only with a passing, independent, evidence-backed Verification of that exact output; a valid JSON document containing an unsupported factual claim cannot complete solely because schema validation passed, and a model self-report never substitutes. Only router-typed **deterministic** outputs may complete without a separate factual Verification, because an authoritative deterministic mechanism establishes their correctness completely and no model produced them: `EXACT_TEXT` deterministic emission, `DETERMINISTIC_MATH`, and explicit `JSON_LITERAL` canonical serialization (each requires a `SATISFIED` contract with evidence, the named `deterministic_authority`, and `model_calls == 0`). `output_kind` is assigned by the ORNEUR router; a model-declared kind is refused. The Contract Engine itself is unchanged.
 
 ## 13. Authority and contracts
 
