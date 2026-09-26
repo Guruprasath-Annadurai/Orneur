@@ -52,6 +52,26 @@
       "started_at_utc": "2026-09-25T17:12:34Z",
       "status": "UNATTRIBUTED_REQUEST_REJECTION",
       "valid_runtime_attempt": true
+    },
+    {
+      "attempt_number": 3,
+      "billing_settlement_status": "OBSERVED",
+      "cleanup_result": "PASS",
+      "duration_seconds": 144.8,
+      "failure_domain": "MODEL_RUNTIME",
+      "finished_at_utc": "2026-09-26T09:41:09Z",
+      "modal_app_id": "ap-x0yjxHJqSn3C8crMGUYOxK",
+      "modal_app_name": "orneur-p21b420-h100-control-runtime",
+      "outcome": "TECHNICAL_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "provider": "Modal",
+      "raw_log_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT3_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "b394527f5b8199db32ac241706aa1105e1430feeb9be86870a80df5d9ab1e839",
+      "reason": "locked smoke contract not met: A: content is not exactly 'READY'; B: content is not exactly '5'; C: content is not valid JSON",
+      "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "started_at_utc": "2026-09-26T09:38:44Z",
+      "status": "TECHNICAL_FAILURE",
+      "valid_runtime_attempt": true
     }
   ],
   "attention_backend": "FLASH_ATTN attention backend out of potential",
@@ -65,11 +85,12 @@
     "stop_before_next_control": false
   },
   "capability_status": "UNPROVEN",
-  "chat_template_source": "pinned tokenizer_config.json contains a chat_template (3945 UTF-8 bytes, sha256 e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272); in attempt 2 the vLLM 0.29.0 runtime did NOT resolve/use a chat template for chat completion (HTTP 400 ChatTemplateResolutionError); see GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json",
+  "chat_template_source": "native Mistral tokenizer mode (mistral_common Tekkenizer from tekken.json; vLLM MistralRenderer); no HF Jinja chat template is used, overridden or claimed, and no --chat-template flag is passed",
   "cleanup_status": "PASS",
-  "cold_start_seconds": 117.07,
+  "cold_start_seconds": 120.07,
   "container_digest": "sha256:082ca6f035279109041ffd3fe0695cb568b29bc580b35c4f297a66a08b216c1b",
   "container_execution_proof": {
+    "chat_template_flag": null,
     "chat_template_kwargs_sent": {
       "A": null,
       "B": null,
@@ -88,13 +109,13 @@
     "quantization": null,
     "reasoning_parser": null,
     "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
-    "runtime_configuration_id": null,
-    "runtime_configuration_id_applied": null,
-    "runtime_configuration_sha256": null,
+    "runtime_configuration_id": "mistral_nemo_native_v1",
+    "runtime_configuration_id_applied": "mistral_nemo_native_v1",
+    "runtime_configuration_sha256": "88a9cfec24af45da3dd4b969e24a3e44e82a6b3a850cb152a76cddbfb135459a",
     "runtime_policy_sha256": "50c0b455e710aa53d0ec4d5515c9f9835b51ebac14391242813ceef961b6c62e",
     "served_model_id": "mistralai/Mistral-Nemo-Instruct-2407",
     "smoke_protocol_sha256": "d462103b607e9741786ef86afc0b1769d5857d6e7feef36de516dac87a2b25c1",
-    "tokenizer_mode": "hf"
+    "tokenizer_mode": "mistral"
   },
   "container_image": "vllm/vllm-openai:v0.29.0",
   "control_name": "Mistral-Nemo-Instruct-2407",
@@ -102,36 +123,36 @@
   "evidence_kind": "RUNTIME_QUALIFICATION_SMOKE",
   "financial_acceptance_status": "PASS",
   "financial_evidence": {
-    "billing_after_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_BILLING_AFTER_2026-09-24.json",
-    "billing_after_sha256": "71c5d18cb7f57c13ec707e80378388fa803eced1672c075933df3ffcdc3d4beb",
-    "billing_before_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_BILLING_BEFORE_2026-09-24.json",
-    "billing_before_sha256": "33a3c9f0d8e11ddaa9f2039322e0cea646b232833d89926155170d5334c28377",
-    "preflight_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_FINANCIAL_PREFLIGHT_2026-09-24.json",
-    "preflight_sha256": "cd8cce46f63fb49c23e0d5af13c58fcd229022300e664199afa6f5def788df25"
+    "billing_after_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT3_BILLING_AFTER_2026-09-24.json",
+    "billing_after_sha256": "f6cc18cec2c21ad475eaed8b8739f4397898dbf0379c965794f10e0c9c78e920",
+    "billing_before_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT3_BILLING_BEFORE_2026-09-24.json",
+    "billing_before_sha256": "a1408483a151ee70e6b4c3898d2817d79f30d2b3ee54e9263b92b78801c8d723",
+    "preflight_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT3_FINANCIAL_PREFLIGHT_2026-09-24.json",
+    "preflight_sha256": "a39636c6b657c4707c8298e96312d0b47ac90aac3377b59d1b877f6f81631e04"
   },
   "financial_preflight_status": "PASSED",
   "financial_reconciliation": {
     "billing_baseline_usd": "0E-8",
     "billing_delta_usd": "0E-8",
     "billing_postrun_usd": "0E-8",
-    "credit_pool_total_usd": "29.7464",
-    "credits_applied_baseline_usd": "20.70000000",
-    "credits_applied_postrun_usd": "20.86000000",
+    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credits_applied_baseline_usd": "20.86000000",
+    "credits_applied_postrun_usd": "21.02000000",
     "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
-    "derived_credit_remaining_after_usd": "8.88640000",
-    "derived_credit_remaining_before_usd": "9.04640000",
-    "maximum_authorized_run_cost_usd": "1.0828",
-    "metered_baseline_usd": "20.89627853",
+    "derived_credit_remaining_after_usd": "8.72643194444444444444444444",
+    "derived_credit_remaining_before_usd": "8.88643194444444444444444444",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_baseline_usd": "21.05627853",
     "metered_delta_usd": "0.16000000",
-    "metered_postrun_usd": "21.05627853",
+    "metered_postrun_usd": "21.21627853",
     "non_credit_adjustments_baseline_usd": "-0.19627853",
     "non_credit_adjustments_postrun_usd": "-0.19627853",
     "null_reasons": {},
     "reserve_usd": "5.00"
   },
-  "finished_at_utc": "2026-09-25T17:14:54Z",
+  "finished_at_utc": "2026-09-26T09:41:09Z",
   "generated_output_executed": false,
-  "generated_tokens": 0,
+  "generated_tokens": 86,
   "generation_config": {
     "max_tokens": 64,
     "seed": 0,
@@ -152,7 +173,7 @@
     "models_endpoint": {
       "data": [
         {
-          "created": 1790356485,
+          "created": 1790415659,
           "id": "mistralai/Mistral-Nemo-Instruct-2407",
           "max_model_len": 4096,
           "object": "model",
@@ -166,9 +187,9 @@
               "allow_sampling": true,
               "allow_search_indices": false,
               "allow_view": true,
-              "created": 1790356485,
+              "created": 1790415659,
               "group": null,
-              "id": "modelperm-a8358fbe548c1d3c",
+              "id": "modelperm-9b1bcc49eb7ec3b8",
               "is_blocking": false,
               "object": "model_permission",
               "organization": "*"
@@ -210,73 +231,27 @@
       }
     ]
   },
-  "latency_seconds": 0.0092,
+  "latency_seconds": 0.9054,
   "license": "apache-2.0",
   "live_resources_after_cleanup": 0,
-  "load_seconds": 9.09,
+  "load_seconds": 8.69,
   "max_model_len": 4096,
-  "metadata_correction": {
-    "analysis_artifact": "GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json",
-    "analysis_sha256": "5401d96573ce576d99c2d75cea0fad0d2cd6dd989fbdae6d09b5680ba907b2f0",
-    "field": "chat_template_source",
-    "from": "tokenizer_config.json chat_template @ pinned revision (HF path pinned explicitly via --tokenizer-mode hf; mistral-common path NOT used)",
-    "kind": "DESCRIPTIVE METADATA ONLY: the old text implied successful runtime use of the pinned HF template; only the file's contents are established, not runtime resolution",
-    "reclassifies_attempt": false,
-    "snapshot_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json",
-    "snapshot_sha256": "7eabbd15d5b7a6ef89edb2641de7d259db11fa5779a23e6cac648fe690d7b929",
-    "to": "pinned tokenizer_config.json contains a chat_template (3945 UTF-8 bytes, sha256 e4676cb56dffea7782fd3e2b577cfaf1e123537e6ef49b3ec7caa6c095c62272); in attempt 2 the vLLM 0.29.0 runtime did NOT resolve/use a chat template for chat completion (HTTP 400 ChatTemplateResolutionError); see GENESIS_MISTRAL_NEMO_CHAT_TEMPLATE_ROOT_CAUSE_ANALYSIS_V2_2026-09-26.json",
-    "unchanged": [
-      "raw responses",
-      "raw log",
-      "financial evidence",
-      "settlement evidence",
-      "container proof",
-      "smoke outputs",
-      "attempt outcomes",
-      "runtime/technical status"
-    ]
-  },
   "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
   "model_revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
   "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests. Generated output was treated as data and never executed. Executed on Modal (canonical provider) on 1 x H100 80GB with weights from a hash-verified Modal Volume cache; earlier Modal, Lightning, Hugging Face and razorBridge attempts are preserved in attempts.",
-  "original_in_run_billing_settlement": {
-    "reasons": [
-      "the completed run's metered usage is not yet visible in the account totals (metered_delta == 0)"
-    ],
-    "status": "BILLING_SETTLEMENT_NOT_YET_OBSERVABLE",
-    "stop_before_next_control": true
-  },
-  "original_in_run_financial_reconciliation": {
-    "billing_baseline_usd": "0E-8",
-    "billing_delta_usd": "0E-8",
-    "billing_postrun_usd": "0E-8",
-    "credit_pool_total_usd": "29.74643194444444444444444444",
-    "credits_applied_baseline_usd": "20.70000000",
-    "credits_applied_postrun_usd": "20.70000000",
-    "derivation_note": "credit_remaining = credit_pool_total - credits_applied (derived; Modal exposes no remaining-credit field). billing_delta_usd uses the highest billed reading observed in-run or in the settle window.",
-    "derived_credit_remaining_after_usd": "9.04643194444444444444444444",
-    "derived_credit_remaining_before_usd": "9.04643194444444444444444444",
-    "maximum_authorized_run_cost_usd": "1.08280",
-    "metered_baseline_usd": "20.89627853",
-    "metered_delta_usd": "0E-8",
-    "metered_postrun_usd": "20.89627853",
-    "non_credit_adjustments_baseline_usd": "-0.19627853",
-    "non_credit_adjustments_postrun_usd": "-0.19627853",
-    "null_reasons": {},
-    "reserve_usd": "5.00"
-  },
   "orphan_vllm_processes_after_shutdown": 0,
   "owner_billed_delta_usd": "0E-8",
   "peak_gpu_memory_bytes": 76157026304,
   "phase": "21B.4.20",
   "precision": "bfloat16",
-  "raw_log_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT2_RAW_LOG_2026-09-24.txt",
-  "raw_log_sha256": "42f4e8404fca206eb3d7e589170f3d418527093060979c09f795309fe503317e",
+  "raw_log_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT3_RAW_LOG_2026-09-24.txt",
+  "raw_log_sha256": "b394527f5b8199db32ac241706aa1105e1430feeb9be86870a80df5d9ab1e839",
   "reasoning_mode": "NOT_APPLICABLE (non-reasoning instruct model)",
   "reasoning_parser": null,
+  "runtime_candidate_configuration_id": "mistral_nemo_native_v1",
   "runtime_configuration": null,
   "runtime_name": "vLLM (official vllm/vllm-openai image on Modal, OpenAI-compatible server; model from a verified Modal Volume cache)",
-  "runtime_qualification_status": "NOT_COMPLETED",
+  "runtime_qualification_status": "FAILED",
   "runtime_version": "0.29.0",
   "server_argv_sanitized": [
     "/usr/local/bin/python",
@@ -299,153 +274,100 @@
     "--seed",
     "0",
     "--tokenizer-mode",
-    "hf",
+    "mistral",
     "--config-format",
     "hf",
     "--load-format",
     "safetensors"
   ],
   "server_exit_code": 0,
-  "settlement_reconciliation": {
-    "artifact": "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPT2_SETTLEMENT_RECONCILIATION_20260926T061009Z.json",
-    "owner_cash_delta_usd": "0E-8",
-    "promotional_credit_used_usd": "0.15881105",
-    "sha256": "a182a43f0d7282a8c26e01dcfa9ff01b7c09bcd406bf2e0e578420db8c2057bb"
-  },
   "smoke_acceptance": [
     {
       "accepted": false,
-      "normalized_content": null,
-      "reason": "raw response and persisted content disagree or are absent",
+      "normalized_content": "Understood. I'm ready.",
+      "reason": "content is not exactly 'READY'",
       "smoke_id": "A"
     },
     {
       "accepted": false,
-      "normalized_content": null,
-      "reason": "raw response and persisted content disagree or are absent",
+      "normalized_content": "The sum of 2 and 3 is 5. Here's the calculation:\n\n2\n+3\n----\n 5",
+      "reason": "content is not exactly '5'",
       "smoke_id": "B"
     },
     {
       "accepted": false,
-      "normalized_content": null,
-      "reason": "raw response and persisted content disagree or are absent",
+      "normalized_content": "Here's a valid JSON string with the specified status:\n\n```json\n{\n  \"status\": \"ready\"\n}\n```\n\nYou can also format it like this, which is more readable:\n\n```json\n{\n  \"status\": \"ready\"\n}\n```",
+      "reason": "content is not valid JSON",
       "smoke_id": "C"
     }
   ],
   "smoke_outputs": [
     {
       "chat_template_kwargs_sent": null,
-      "content": null,
-      "error": "HTTPError: HTTP Error 400: Bad Request",
+      "content": "Understood. I'm ready.",
+      "error": null,
       "executed": false,
-      "finish_reason": null,
-      "http_error": {
-        "body_bytes": 216,
-        "body_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
-        "error_class": "HTTPError",
-        "headers": {
-          "content-length": "216",
-          "content-type": "application/json",
-          "date": "Fri, 25 Sep 2026 17:14:50 GMT",
-          "server": "uvicorn"
-        },
-        "reason": "Bad Request",
-        "smoke_id": "A",
-        "status": 400,
-        "structured_error": {
-          "error": {
-            "code": 400,
-            "message": "As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.",
-            "param": null,
-            "type": "BadRequestError"
-          }
-        }
-      },
-      "http_status": 400,
-      "latency_seconds": 0.0051,
+      "finish_reason": "stop",
+      "http_error": null,
+      "http_status": 200,
+      "latency_seconds": 0.1497,
       "matches_expected_exactly": false,
       "prompt_sha256_sent": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
-      "raw_response": "{\"error\":{\"message\":\"As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.\",\"type\":\"BadRequestError\",\"param\":null,\"code\":400}}",
-      "raw_response_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
+      "raw_response": "{\"content\": \"Understood. I'm ready.\", \"finish_reason\": \"stop\", \"reasoning_content\": \"\", \"usage\": {\"completion_tokens\": 8, \"prompt_tokens\": 8, \"total_tokens\": 16}}",
+      "raw_response_sha256": "5975f4bce9167ba9e9d438f9b360e268dd75d011f2f9420ff1d86f96db48cdab",
       "smoke_id": "A",
-      "ttft_seconds": null,
-      "usage": null
+      "ttft_seconds": 0.0839,
+      "usage": {
+        "completion_tokens": 8,
+        "prompt_tokens": 8,
+        "total_tokens": 16
+      }
     },
     {
       "chat_template_kwargs_sent": null,
-      "content": null,
-      "error": "HTTPError: HTTP Error 400: Bad Request",
+      "content": "The sum of 2 and 3 is 5. Here's the calculation:\n\n2\n+3\n----\n 5",
+      "error": null,
       "executed": false,
-      "finish_reason": null,
-      "http_error": {
-        "body_bytes": 216,
-        "body_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
-        "error_class": "HTTPError",
-        "headers": {
-          "content-length": "216",
-          "content-type": "application/json",
-          "date": "Fri, 25 Sep 2026 17:14:50 GMT",
-          "server": "uvicorn"
-        },
-        "reason": "Bad Request",
-        "smoke_id": "B",
-        "status": 400,
-        "structured_error": {
-          "error": {
-            "code": 400,
-            "message": "As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.",
-            "param": null,
-            "type": "BadRequestError"
-          }
-        }
-      },
-      "http_status": 400,
-      "latency_seconds": 0.0024,
+      "finish_reason": "stop",
+      "http_error": null,
+      "http_status": 200,
+      "latency_seconds": 0.2657,
       "matches_expected_exactly": false,
       "prompt_sha256_sent": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
-      "raw_response": "{\"error\":{\"message\":\"As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.\",\"type\":\"BadRequestError\",\"param\":null,\"code\":400}}",
-      "raw_response_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
+      "raw_response": "{\"id\":\"chatcmpl-b79d8135370a0dda\",\"object\":\"chat.completion\",\"created\":1790415664,\"model\":\"mistralai/Mistral-Nemo-Instruct-2407\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"The sum of 2 and 3 is 5. Here's the calculation:\\n\\n2\\n+3\\n----\\n 5\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"system_fingerprint\":\"vllm-0.29.0-8f789ed7\",\"usage\":{\"prompt_tokens\":7,\"total_tokens\":34,\"completion_tokens\":27,\"prompt_tokens_details\":null,\"completion_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null}",
+      "raw_response_sha256": "adada687349cfd1f69f3eedab4c957f0dee7605c6b012a123e25a1a8b0cac252",
       "smoke_id": "B",
       "ttft_seconds": null,
-      "usage": null
+      "usage": {
+        "completion_tokens": 27,
+        "completion_tokens_details": null,
+        "prompt_tokens": 7,
+        "prompt_tokens_details": null,
+        "total_tokens": 34
+      }
     },
     {
       "chat_template_kwargs_sent": null,
-      "content": null,
-      "error": "HTTPError: HTTP Error 400: Bad Request",
+      "content": "Here's a valid JSON string with the specified status:\n\n```json\n{\n  \"status\": \"ready\"\n}\n```\n\nYou can also format it like this, which is more readable:\n\n```json\n{\n  \"status\": \"ready\"\n}\n```",
+      "error": null,
       "executed": false,
-      "finish_reason": null,
-      "http_error": {
-        "body_bytes": 216,
-        "body_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
-        "error_class": "HTTPError",
-        "headers": {
-          "content-length": "216",
-          "content-type": "application/json",
-          "date": "Fri, 25 Sep 2026 17:14:50 GMT",
-          "server": "uvicorn"
-        },
-        "reason": "Bad Request",
-        "smoke_id": "C",
-        "status": 400,
-        "structured_error": {
-          "error": {
-            "code": 400,
-            "message": "As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.",
-            "param": null,
-            "type": "BadRequestError"
-          }
-        }
-      },
-      "http_status": 400,
-      "latency_seconds": 0.0017,
+      "finish_reason": "stop",
+      "http_error": null,
+      "http_status": 200,
+      "latency_seconds": 0.49,
       "matches_expected_exactly": false,
       "prompt_sha256_sent": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42",
-      "raw_response": "{\"error\":{\"message\":\"As of transformers v4.44, default chat template is no longer allowed, so you must provide a chat template if the tokenizer does not define one.\",\"type\":\"BadRequestError\",\"param\":null,\"code\":400}}",
-      "raw_response_sha256": "d0899ffb6ab2199eba996f9f7d5d3f724b805ff10b50419865bae5c2518c2309",
+      "raw_response": "{\"id\":\"chatcmpl-9b4d75f37a2d9f54\",\"object\":\"chat.completion\",\"created\":1790415664,\"model\":\"mistralai/Mistral-Nemo-Instruct-2407\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Here's a valid JSON string with the specified status:\\n\\n```json\\n{\\n  \\\"status\\\": \\\"ready\\\"\\n}\\n```\\n\\nYou can also format it like this, which is more readable:\\n\\n```json\\n{\\n  \\\"status\\\": \\\"ready\\\"\\n}\\n```\",\"refusal\":null,\"annotations\":null,\"audio\":null,\"function_call\":null,\"reasoning\":null},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":null,\"token_ids\":null,\"routed_experts\":null}],\"service_tier\":null,\"system_fingerprint\":\"vllm-0.29.0-8f789ed7\",\"usage\":{\"prompt_tokens\":12,\"total_tokens\":63,\"completion_tokens\":51,\"prompt_tokens_details\":null,\"completion_tokens_details\":null},\"prompt_logprobs\":null,\"prompt_token_ids\":null,\"prompt_text\":null,\"kv_transfer_params\":null,\"ec_transfer_params\":null,\"metrics\":null}",
+      "raw_response_sha256": "3e370d9494dca5f139e82554085469f53b344e5e498339b8eb6ce56cf4b920dc",
       "smoke_id": "C",
       "ttft_seconds": null,
-      "usage": null
+      "usage": {
+        "completion_tokens": 51,
+        "completion_tokens_details": null,
+        "prompt_tokens": 12,
+        "prompt_tokens_details": null,
+        "total_tokens": 63
+      }
     }
   ],
   "smoke_prompts": [
@@ -587,18 +509,16 @@
       }
     ]
   },
-  "started_at_utc": "2026-09-25T17:12:34Z",
+  "started_at_utc": "2026-09-26T09:38:44Z",
   "steady_gpu_memory_bytes": 76157026304,
   "stop_behavior": "eos_token </s>; instruction tokens [INST] [/INST]",
-  "technical_serving_status": "NOT_PROVEN",
+  "technical_serving_status": "FAILED",
   "tensor_parallel": 1,
   "tokenizer_revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
-  "tokens_per_second": null,
-  "ttft_seconds": null,
+  "tokens_per_second": 94.99,
+  "ttft_seconds": 0.0839,
   "unobservable_reasons": {
-    "reasoning_parser": "not applicable: non-reasoning model with no reasoning parser",
-    "tokens_per_second": "tiny-smoke metric only; not a performance claim",
-    "ttft_seconds": "no streamed first token observed"
+    "reasoning_parser": "not applicable: non-reasoning model with no reasoning parser"
   },
   "version_endpoint": {
     "version": "0.29.0"

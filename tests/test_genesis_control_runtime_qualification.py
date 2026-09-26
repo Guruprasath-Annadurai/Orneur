@@ -2544,7 +2544,7 @@ def test_the_real_qwen_history_is_1_to_5_attempts_1_to_4_are_unchanged_and_attem
     assert attempts[:4] == _attempt4_record()["attempts"]                                # attempts 1-4 exactly as preserved in the attempt-4 snapshot
     assert attempts[3]["outcome"] == "TECHNICAL_FAILURE" and attempts[3]["original_classification"]["outcome"] == "TECHNICAL_SUCCESS"
     assert not any("runtime_configuration" in a for a in attempts[:4])                   # attempts 1-4 carry no configuration
-    assert len(mod._load_attempts("MISTRAL_NEMO")) == 2 and mod._load_attempts("PHI4") == []
+    assert len(mod._load_attempts("MISTRAL_NEMO")) == 3 and mod._load_attempts("PHI4") == []
 
 ATTEMPT_4_SNAPSHOT_SHA256 = "008b945e7fc0f10eec2a04104f5627260a4187d512d14294b0da41b0a0e217fd"
 
@@ -2581,7 +2581,7 @@ def test_the_existing_financial_gates_are_untouched_and_the_settlement_waiver_st
     assert mod.validate_owner_settlement_waiver("QWEN3_8B", attempts[("QWEN3_8B", 1)])[0] == "WAIVER_ACCEPTED"
     assert all(mod.settlement_resolved(t, a) for t, a in mod._modal_attempts() if t == "QWEN3_8B")                    # Qwen attempt 1 by waiver, 4 and 5 by OBSERVED settlement
     mistral = [(a["attempt_number"], mod.settlement_resolved(t, a)) for t, a in mod._modal_attempts() if t == "MISTRAL_NEMO"]
-    assert mistral == [(1, True), (2, True)]                                                                          # attempt 1 and attempt 2 are both OBSERVED by read-only reconciliation (no waiver)
+    assert mistral == [(1, True), (2, True), (3, True)]                                                                # attempts 1 and 2 OBSERVED by read-only reconciliation, attempt 3 OBSERVED in-run (no waiver)
     assert mod.unresolved_settlement_upper_bound_usd() > 0                                                        # attempt 1's conservative exposure stays deducted
 
 
@@ -2851,7 +2851,7 @@ def test_the_policy_pin_leaves_attempt_4_byte_identical_and_mistral_phi_not_test
     assert q["runtime_qualification_status"] == "FAILED" and q["technical_serving_status"] == "FAILED" and "runtime_configuration" not in q
     assert hashlib.sha256(json.dumps(q["smoke_outputs"], sort_keys=True).encode()).hexdigest() == PERSISTED_QWEN_SMOKE_OUTPUTS_SHA256
     mod, _ = _load_modal_h100(monkeypatch)
-    assert len(mod._load_attempts("MISTRAL_NEMO")) == 2 and mod._load_attempts("PHI4") == []
+    assert len(mod._load_attempts("MISTRAL_NEMO")) == 3 and mod._load_attempts("PHI4") == []
     for tag in ("PHI4",):                                                           # Mistral-Nemo has since had its one authorized attempt
         r = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
         assert r["runtime_qualification_status"] == "NOT_TESTED"
@@ -3144,7 +3144,13 @@ def _mistral():
 
 
 def _mistral_live():
+    """The live Mistral record: currently the ATTEMPT-3 record (candidate mistral_nemo_native_v1)."""
     return json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+
+
+def _mistral_a2():
+    """The finalized ATTEMPT-2 record (byte-identical archive taken before attempt 3 overwrote the live record)."""
+    return json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_FINALIZED_SNAPSHOT_2026-09-26.json").read_text())
 
 
 MISTRAL_SNAPSHOT = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT1_SNAPSHOT_2026-09-24.json"
@@ -3962,14 +3968,16 @@ def test_the_finalizer_leaves_qwen_and_phi_evidence_as_recorded():
     assert phi["runtime_qualification_status"] == "NOT_TESTED" and phi["attempts"] == [] and phi["smoke_outputs"] == []
 
 
-def test_a_later_launch_snapshots_the_attempt_2_record_and_refuses_tampering(monkeypatch, tmp_path):
+def test_a_later_launch_snapshots_the_attempt_3_record_and_refuses_tampering(monkeypatch, tmp_path):
     mod, _ = _load_modal_h100(monkeypatch)
     ev = tmp_path / "evidence"
     shutil.copytree(EVIDENCE_DIR, ev)                                                                        # NEVER touch the real evidence directory from a test
     monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
     rec_path = ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json"
-    assert mod.archive_prior_record("MISTRAL_NEMO") == "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json"
-    assert (ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json").read_bytes() == (EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json").read_bytes()   # immutable pre-correction bytes; the live record differs ONLY by the documented correction
+    snap3 = "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT3_SNAPSHOT_2026-09-24.json"
+    assert not (EVIDENCE_DIR / snap3).exists()                                                               # attempt 3 is the latest; its snapshot is only made if a FURTHER attempt were ever authorized
+    assert mod.archive_prior_record("MISTRAL_NEMO") == snap3
+    assert (ev / snap3).read_bytes() == rec_path.read_bytes()
     tampered = json.loads(rec_path.read_text())
     tampered["attempts"][-1]["duration_seconds"] = 1.0                                                       # anything beyond the documented fields is refused
     rec_path.write_text(json.dumps(tampered))
@@ -3980,11 +3988,11 @@ def test_a_later_launch_snapshots_the_attempt_2_record_and_refuses_tampering(mon
 def test_mistral_attempt_1_finalized_snapshot_is_byte_identical_to_the_pre_attempt_2_record():
     assert hashlib.sha256(MISTRAL_A1_FINALIZED.read_bytes()).hexdigest() == MISTRAL_A1_FINALIZED_SHA256
     live_attempts = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json").read_text())["attempts"]
-    assert live_attempts[0] == _mistral()["attempts"][0] and [a["attempt_number"] for a in live_attempts] == [1, 2]   # attempt 1 unchanged; attempt 2 appended
+    assert live_attempts[0] == _mistral()["attempts"][0] and [a["attempt_number"] for a in live_attempts] == [1, 2, 3]   # attempt 1 unchanged; attempts 2 and 3 appended
 
 
 def test_mistral_attempt_2_is_the_honest_unattributed_http400_with_captured_bodies_and_container_proof():
-    live = _mistral_live()
+    live = _mistral_a2()
     a2 = live["attempts"][-1]
     assert a2["attempt_number"] == 2 and a2["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION" and a2["failure_domain"] == "UNATTRIBUTED"
     assert live["technical_serving_status"] == "NOT_PROVEN" and live["runtime_qualification_status"] == "NOT_COMPLETED" and live["capability_status"] == "UNPROVEN"
@@ -4152,7 +4160,7 @@ def test_attempt_2_first_reconciliation_is_preserved_history_and_the_second_obse
     assert d["verdict"] == "SETTLEMENT_OBSERVED" and d["modal_app_id"] == "ap-euwY3zXbgcZfGoZiRNstFt" and d["no_gpu_started"] is True and d["no_modal_function_called"] is True
     assert d["live_resources"] == 0 and d["owner_billed_delta_usd"] in ("0", "0E-8") and d["itemized_run_cost_usd"] == "0.15881105" and d["app_stopped_with_zero_tasks"] is True
     assert abs(Decimal(d["metered_delta_precise_usd"]) - Decimal(d["itemized_run_cost_usd"])) <= Decimal("0.00000002") and d["settlement"]["status"] == "OBSERVED"
-    live = _mistral_live()
+    live = _mistral_a2()
     a2 = live["attempts"][-1]
     assert live["billing_settlement"]["status"] == "OBSERVED" and a2["billing_settlement_status"] == "OBSERVED" and live["settlement_reconciliation"]["artifact"] == A2_RECON_2.name
     assert hashlib.sha256(A2_RECON_2.read_bytes()).hexdigest() == live["settlement_reconciliation"]["sha256"]
@@ -4178,12 +4186,12 @@ def test_chat_template_v2_analysis_facts_are_recorded_and_classification_is_unch
     assert "NOT ESTABLISHED" in status.values() and "PROVEN" in status.values() and "DISPROVEN" in status.values()
     assert "NOT directly observed" in d["root_cause_statement"] and "NO serving-configuration change is recommended" in d["recommendation"]
     assert d["status_unchanged"]["attempt_outcome"] == "UNATTRIBUTED_REQUEST_REJECTION"
-    live = _mistral_live()
+    live = _mistral_a2()
     assert live["attempts"][-1]["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION" and live["technical_serving_status"] == "NOT_PROVEN" and live["capability_status"] == "UNPROVEN"
 
 
 def test_attempt_2_descriptive_correction_is_documented_snapshotted_and_touches_only_the_description():
-    live, snap = _mistral_live(), json.loads(A2_SNAPSHOT.read_text())
+    live, snap = _mistral_a2(), json.loads(A2_SNAPSHOT.read_text())
     mc = live["metadata_correction"]
     assert mc["field"] == "chat_template_source" and mc["reclassifies_attempt"] is False and mc["snapshot_sha256"] == hashlib.sha256(A2_SNAPSHOT.read_bytes()).hexdigest()
     assert mc["analysis_sha256"] == hashlib.sha256(CT_V2.read_bytes()).hexdigest()
@@ -4206,7 +4214,7 @@ def test_the_chat_template_source_correction_runs_only_on_a_tmp_copy_and_refuses
     assert mod.cmd_correct_chat_template_source(args) == 2                                                                 # not the final attempt
     args.attempt = 2
     assert mod.cmd_correct_chat_template_source(args) == 0
-    assert json.loads(rec.read_text())["chat_template_source"] == _mistral_live()["chat_template_source"]
+    assert json.loads(rec.read_text())["chat_template_source"] == _mistral_a2()["chat_template_source"]
     assert mod.cmd_correct_chat_template_source(args) == 0                                                                 # idempotent
     assert mod.archive_prior_record("MISTRAL_NEMO") == A2_SNAPSHOT.name                                                    # a later launch accepts exactly this documented correction
 
@@ -4259,7 +4267,7 @@ def test_attempt_1_and_attempt_2_historical_evidence_is_pinned_byte_for_byte():
     assert hashlib.sha256((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json").read_bytes()).hexdigest() == \
         "7eabbd15d5b7a6ef89edb2641de7d259db11fa5779a23e6cac648fe690d7b929"
     assert hashlib.sha256((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt").read_bytes()).hexdigest() == MISTRAL_RAW_LOG_SHA256
-    live = _mistral_live()
+    live = _mistral_a2()
     assert live["raw_log_sha256"] == "42f4e8404fca206eb3d7e589170f3d418527093060979c09f795309fe503317e"
     assert hashlib.sha256((EVIDENCE_DIR / live["raw_log_artifact"]).read_bytes()).hexdigest() == live["raw_log_sha256"]
     snap = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json").read_text())
@@ -4274,7 +4282,7 @@ def test_the_metadata_correction_guard_stays_narrow(monkeypatch, tmp_path):
     shutil.copytree(EVIDENCE_DIR, ev)
     monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
     snap_path = ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json"
-    snap, live = json.loads(snap_path.read_text()), json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    snap, live = json.loads(snap_path.read_text()), json.loads((ev / A2_FINALIZED.name).read_text())                           # the finalized attempt-2 record (documented corrections + settlement)
     assert mod._only_documented_metadata_correction(live, snap, snap_path) is True
     for key, val in (("technical_serving_status", "PASSED"), ("capability_status", "QUALIFIED"), ("smoke_outputs", []), ("container_execution_proof", {}), ("raw_log_sha256", "0" * 64)):
         bad = json.loads(json.dumps(live))
@@ -4302,20 +4310,31 @@ def test_the_current_authoritative_matrix_rows_agree_with_the_persisted_records(
     rows = {l.split("|")[1].strip(): l for l in sec.splitlines() if l.startswith("| ") and not l.startswith("| Control") and not l.startswith("|---")}
     qwen, mistral, phi = _persisted_qwen(), _mistral_live(), json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
     qn, mn = qwen["attempts"][-1]["attempt_number"], mistral["attempts"][-1]["attempt_number"]
-    assert (qn, mn) == (5, 2) and phi["attempts"] == [] and phi["runtime_qualification_status"] == "NOT_TESTED"
+    assert (qn, mn) == (5, 3) and phi["attempts"] == [] and phi["runtime_qualification_status"] == "NOT_TESTED"
     q, m, p = rows["Qwen3-8B"], next(v for k, v in rows.items() if k.startswith("Mistral-Nemo")), rows["Phi-4"]
     assert f"**attempt {qn}**" in q and "FAILED" in q
-    assert f"**attempt {mn}**" in m and "**attempt 1**" not in m
-    assert mistral["attempts"][-1]["outcome"] == "UNATTRIBUTED_REQUEST_REJECTION" and "UNATTRIBUTED_REQUEST_REJECTION" in m and "UNATTRIBUTED" in m
-    assert "HTTP 400 / HTTP 400 / HTTP 400" in m and "NONE" in m and "NOT_PROVEN" in m and "NOT_COMPLETED" in m and "UNPROVEN" in m
-    assert mistral["technical_serving_status"] == "NOT_PROVEN" and mistral["runtime_qualification_status"] == "NOT_COMPLETED" and mistral["capability_status"] == "UNPROVEN"
-    assert mistral["attempts"][-1]["billing_settlement_status"] == "OBSERVED" and "settlement OBSERVED" in m
-    assert "ap-euwY3zXbgcZfGoZiRNstFt" in m and "140 s" in m and "FAILED" not in m.split("|")[5]                          # the model is not called FAILED (technical column)
+    a3 = mistral["attempts"][-1]
+    assert f"**attempt {mn}**" in m and "**attempt 1**" not in m and "**attempt 2**" not in m
+    assert a3["outcome"] == "TECHNICAL_FAILURE" and a3["failure_domain"] == "MODEL_RUNTIME" and "TECHNICAL_FAILURE" in m and "MODEL_RUNTIME" in m
+    assert mistral["technical_serving_status"] == "FAILED" and mistral["runtime_qualification_status"] == "FAILED" and mistral["capability_status"] == "UNPROVEN"
+    cols = [c.strip() for c in m.split("|")]
+    assert cols[5].startswith("**FAILED**") and cols[7].startswith("**FAILED**") and cols[8] == "UNPROVEN"                                  # technical / runtime / capability columns
+    assert "HTTP 200" in m and "A **FAIL**" in m and "B **FAIL**" in m and "C **FAIL**" in m and a3["billing_settlement_status"] == "OBSERVED" and "settlement OBSERVED" in m
+    assert "ap-x0yjxHJqSn3C8crMGUYOxK" in m and "144.8 s" in m and "mistral_nemo_native_v1" in m and mistral["runtime_candidate_configuration_id"] == "mistral_nemo_native_v1"
     assert "NOT_TESTED" in p and "none" in p
     para = next(l for l in sec.splitlines() if l.startswith("**No control is RUNTIME_QUALIFIED.**"))
     for needle in (f"Qwen3-8B = attempt {qn}", f"Mistral-Nemo = attempt {mn}", "Phi-4 = NOT_TESTED", "No further GPU run is currently authorized", "canonical configuration is still `--tokenizer-mode hf`"):
         assert needle in para, needle
-    assert "attempt 1 (authorized, executed once) failed" not in para
+    assert "Attempt-3 settlement is OBSERVED" in para and "was NOT promoted" in para
+    stale = [l for l in sec.splitlines() if l.startswith(("**Attempt-3 launch-path wiring", "**Attempt-3 final live financial preflight"))]
+    assert stale == []                                                                                                       # pre-execution paragraphs must carry the superseded label (they start with it)
+
+
+def test_a_further_candidate_or_attempt_4_launch_is_refused_from_the_real_persisted_state(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    monkeypatch.setattr(mod, "_cli_json", lambda *a: (_ for _ in ()).throw(AssertionError("no provider call")))
+    problems = mod.candidate_launch_problems("mistral_nemo", "mistral_nemo_native_v1")
+    assert any("attempt 3 only" in p and "latest persisted attempt is 3" in p for p in problems)                              # the candidate is spent: attempt 3 exists, no second attempt
 
 
 def _load_readiness_module():
@@ -4388,7 +4407,7 @@ def test_the_pinned_readiness_constants_are_independent_of_the_readiness_artifac
     assert "NATIVE_MISTRAL_MODE_READINESS_2026-09-26.json" not in text.split("EXPECTED_SOURCE_SHA256 = {")[1].split("}")[0]   # the expected hashes never come from the artifact
     from orca.eval.control_runtime_qualification import LOCKED_SERVER_FLAGS
     assert LOCKED_SERVER_FLAGS["Mistral-Nemo-Instruct-2407"]["tokenizer_mode"] == "hf"                                      # canonical configuration is UNCHANGED in this commit
-    assert _mistral_live()["container_execution_proof"]["tokenizer_mode"] == "hf"
+    assert _mistral_a2()["container_execution_proof"]["tokenizer_mode"] == "hf"
 
 
 # ══ Candidate runtime configuration `mistral_nemo_native_v1` (CPU-only formalization; the canonical Mistral configuration stays hf) ═════════
@@ -4569,12 +4588,13 @@ def test_the_record_validator_accepts_a_candidate_attempt_only_with_a_matching_c
         validate_control_runtime_record(q, evidence_root=tmp_path)
 
 
-def test_persisted_records_still_use_the_canonical_hf_configuration_and_declare_no_candidate():
-    live = _mistral_live()
-    assert "runtime_candidate_configuration_id" not in live and live["runtime_configuration"] is None and live["container_execution_proof"]["tokenizer_mode"] == "hf"
+def test_persisted_records_keep_the_canonical_hf_configuration_and_only_attempt_3_declares_the_candidate():
+    a2, live = _mistral_a2(), _mistral_live()
+    assert "runtime_candidate_configuration_id" not in a2 and a2["runtime_configuration"] is None and a2["container_execution_proof"]["tokenizer_mode"] == "hf"       # attempts 1-2: canonical hf
+    assert live["runtime_candidate_configuration_id"] == CAND_ID and live["runtime_configuration"] is None and live["container_execution_proof"]["tokenizer_mode"] == "mistral"
     for name in ("QWEN3_8B", "PHI4"):
         assert "runtime_candidate_configuration_id" not in json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{name}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
-    assert LOCKED_SERVER_FLAGS["Mistral-Nemo-Instruct-2407"] == {"reasoning_parser": None, "tokenizer_mode": "hf", "config_format": "hf", "load_format": "safetensors"}
+    assert LOCKED_SERVER_FLAGS["Mistral-Nemo-Instruct-2407"] == {"reasoning_parser": None, "tokenizer_mode": "hf", "config_format": "hf", "load_format": "safetensors"}   # canonical config UNCHANGED
 
 
 def test_native_v1_implementation_readiness_artifact_is_hash_verified_cpu_only_and_matches_the_code():
@@ -4635,7 +4655,13 @@ def _fake_mistral_result(mod, runner, *, use_candidate=True, extra_argv=(), kwar
 def _mistral_run_env(monkeypatch, tmp_path, result_builder, *, decision_allowed=True):
     mod, _ = _load_modal_h100(monkeypatch)
     ev = tmp_path / "evidence"
-    shutil.copytree(EVIDENCE_DIR, ev)                                                             # the REAL persisted state (attempts 1-2, finalized attempt-2 record); never the real dir
+    shutil.copytree(EVIDENCE_DIR, ev)                                                             # never the real dir
+    # reconstruct the AUDITED pre-attempt-3 state on the tmp copy: live record == finalized attempt-2 archive, attempts file holds attempts 1-2 only
+    (ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").write_bytes(A2_FINALIZED.read_bytes())
+    attempts_path = ev / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json"
+    doc = json.loads(attempts_path.read_text())
+    doc["attempts"] = doc["attempts"][:2]
+    attempts_path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
     monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
     lc = mod._load_lightning_control()
     baseline = {"billed_cost": "0E-8", "metered_cost": "21.05627853", "adjustments": {"credits": "-20.86000000", "free_storage": "-0.19627853", "plan_cost": "0E-8"},
@@ -4665,10 +4691,13 @@ def _persisted_mistral_attempts(ev):
     return json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json").read_text())["attempts"]
 
 
-def test_the_finalized_attempt_2_archive_is_distinct_byte_identical_and_pinned():
+def test_the_finalized_attempt_2_archive_is_distinct_pinned_and_no_longer_the_live_record():
     assert hashlib.sha256(A2_FINALIZED.read_bytes()).hexdigest() == A2_FINALIZED_SHA256
     live = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json"
-    assert live.read_bytes() == A2_FINALIZED.read_bytes()                                                     # the live record IS the finalized attempt-2 record (until attempt 3 overwrites it)
+    assert live.read_bytes() != A2_FINALIZED.read_bytes()                                                     # attempt 3 legitimately overwrote the live record; the archive preserved attempt 2
+    live_a = json.loads(live.read_text())["attempts"]
+    sk = ("billing_settlement_status", "original_in_run_billing_settlement_status", "settlement_reconciliation_artifact")
+    assert [a["attempt_number"] for a in live_a] == [1, 2, 3] and live_a[:2] == json.loads(A2_FINALIZED.read_text())["attempts"]                            # attempts 1-2 in the live record are exactly the archived ones
     pre = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json"
     assert pre.name != A2_FINALIZED.name and hashlib.sha256(pre.read_bytes()).hexdigest() == A2_PRECORRECTION_SHA256 and pre.read_bytes() != A2_FINALIZED.read_bytes()
     rec = json.loads(A2_FINALIZED.read_text())

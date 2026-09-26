@@ -51,6 +51,26 @@
       "started_at_utc": "2026-09-25T17:12:34Z",
       "status": "UNATTRIBUTED_REQUEST_REJECTION",
       "valid_runtime_attempt": true
+    },
+    {
+      "attempt_number": 3,
+      "billing_settlement_status": "OBSERVED",
+      "cleanup_result": "PASS",
+      "duration_seconds": 144.8,
+      "failure_domain": "MODEL_RUNTIME",
+      "finished_at_utc": "2026-09-26T09:41:09Z",
+      "modal_app_id": "ap-x0yjxHJqSn3C8crMGUYOxK",
+      "modal_app_name": "orneur-p21b420-h100-control-runtime",
+      "outcome": "TECHNICAL_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "provider": "Modal",
+      "raw_log_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT3_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "b394527f5b8199db32ac241706aa1105e1430feeb9be86870a80df5d9ab1e839",
+      "reason": "locked smoke contract not met: A: content is not exactly 'READY'; B: content is not exactly '5'; C: content is not valid JSON",
+      "resource_type": "Modal ephemeral function H100x1 (H100 80GB), timeout 900s",
+      "started_at_utc": "2026-09-26T09:38:44Z",
+      "status": "TECHNICAL_FAILURE",
+      "valid_runtime_attempt": true
     }
   ],
   "control_name": "Mistral-Nemo-Instruct-2407"
