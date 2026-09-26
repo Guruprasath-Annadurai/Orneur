@@ -1,7 +1,7 @@
 # ORNEUR Eternal Intelligence Architecture
 
-- Architecture version: `orneur.eternal-architecture/1.0.0`
-- Core protocol version: `orneur.core-protocol/1.0.0` (`orca/intelligence/protocol.py`)
+- Architecture version: `orneur.eternal-architecture/1.1.0`
+- Core protocol version: `orneur.core-protocol/1.1.0` (`orca/intelligence/protocol.py`)
 - Machine-readable companion: `ORNEUR_ETERNAL_INTELLIGENCE_ARCHITECTURE.json` (generated from `orca/intelligence/spec.py`; a test asserts they match)
 - Status: **a roadmap and a set of contracts, not a claim of current capability.**
 
@@ -269,14 +269,44 @@ The fabric spans the whole loop. Its four doctrines:
 
 These numbers exist so that designs can be judged against something; they must be replaced by measurements before any external statement is made. They are not derived from any model benchmark.
 
-## 12a. Contract compliance is not factual verification (audit correction)
+## 12a. Output semantics: epistemic vs non-epistemic (final pre-freeze hardening)
 
-Two concepts are kept distinct in `CognitiveResult`:
+Contract Compliance and factual Verification are distinct concepts, and not every output makes a factual claim. `OutputKind` is assigned by the ORNEUR router from trusted runtime state (section 12c), never by a model, and it decides what a result must prove before it may be represented as complete:
 
-- **Contract Compliance** (`contract_type`, `contract_status`, `contract_evidence_ref`) proves the output satisfied its *format/contract*. It says nothing about whether the content is true.
-- **Verification** (`verifications`: independent, evidence-backed `VerificationResult`s of the exact output) proves the *content* is supported by evidence.
+| `OutputKind` | Examples | What must be proven before COMPLETED | Presented to the user as |
+|---|---|---|---|
+| `DETERMINISTIC_EXACT_TEXT` / `DETERMINISTIC_MATH` / `DETERMINISTIC_JSON_LITERAL` | "Reply exactly: READY", `2 + 3`, an explicit JSON literal | a `SATISFIED` contract whose evidence digest equals the output digest, trusted `DETERMINISTIC_AUTHORITY` provenance, and `model_calls == 0`. No separate factual Verification: the deterministic mechanism establishes correctness completely | deterministic output |
+| `GENERATED_EPISTEMIC` | "The capital of X is Y" | a passing, trusted, digest-bound Verification of the exact output, **or** trusted claim-level coverage of every factual claim (section 12d) | verified claims |
+| `GENERATED_STRUCTURED_EPISTEMIC` | schema-valid JSON that asserts facts | the epistemic requirement above **and** a `SATISFIED` `JSON_SCHEMA` contract. Schema compliance alone is never sufficient | verified claims |
+| `GENERATED_TRANSFORMATIVE` | rewrite professionally, translate, format, summarise supplied material with attribution | **no** factual Verification for the content it merely reshapes; it must carry the digests of the supplied sources and trusted epistemic-screening provenance. Any *new* factual claim it introduces is enumerated as a `ClaimBinding` and is epistemic **for that claim** (rule C) | transformation of supplied material |
+| `GENERATED_CREATIVE` | a fictional short story, brainstorming presented as ideas | **no** factual Verification for invented content; trusted epistemic screening; embedded factual claims are bound and verified individually. It can never be presented as verified fact (rule D) | fiction or ideation |
 
-Rules: a model-generated result — including JSON that validates against a JSON_SCHEMA — completes only with a passing, independent, evidence-backed Verification of that exact output; a valid JSON document containing an unsupported factual claim cannot complete solely because schema validation passed, and a model self-report never substitutes. Only router-typed **deterministic** outputs may complete without a separate factual Verification, because an authoritative deterministic mechanism establishes their correctness completely and no model produced them: `EXACT_TEXT` deterministic emission, `DETERMINISTIC_MATH`, and explicit `JSON_LITERAL` canonical serialization (each requires a `SATISFIED` contract with evidence, the named `deterministic_authority`, and `model_calls == 0`). `output_kind` is assigned by the ORNEUR router; a model-declared kind is refused. The Contract Engine itself is unchanged.
+Rules, all machine-checked in `CognitiveResult`:
+
+- **A.** Any factual or inferential claim ORNEUR makes needs appropriate Verification/Evidence before it can be represented as verified.
+- **B.** A non-epistemic transformation is not forced through fake factual verification, so the verification latency is only paid where a truth claim exists.
+- **C.** A transformation that introduces new factual claims is epistemic for those claims.
+- **D.** Creative or brainstorming content is never silently represented as factual: `presented_as` must equal the kind's presentation, and a creative or transformative result cannot claim `VERIFIED_CLAIMS`.
+- **E.** Contract compliance stays separate from truth: a satisfied contract is necessary for structured output and sufficient for nothing epistemic.
+- **F.** Strict-contract fail-closed behaviour is unchanged: the Contract Engine is untouched, and a deterministic bypass needs the contract to be `SATISFIED` with evidence bound to the same output digest.
+
+Examples. "Rewrite this paragraph professionally" completes as `GENERATED_TRANSFORMATIVE` without factual verification if no new claims are introduced. "Write a fictional short story" completes as `GENERATED_CREATIVE`. "The capital of X is Y" is `GENERATED_EPISTEMIC`. Valid JSON containing factual claims is `GENERATED_STRUCTURED_EPISTEMIC`. Misclassifying an epistemic answer as creative is not something a model can do: the classification must carry router provenance that a trusted ledger verifies.
+
+## 12b. Content binding of verification to the exact output (time-of-check/time-of-use protection)
+
+`CognitiveResult.output_digest` and `VerificationResult.subject_digest` are lowercase SHA-256 over the **exact canonical bytes released**: the UTF-8 encoding of the text exactly as emitted, with no normalisation (for canonical JSON, the canonical serialisation is the released text). A Verification qualifies only if `subject_ref == output_ref` **and** `subject_digest == output_digest`, **and** trusted `VERIFIER` provenance shows the verifier's `input_digest` was that digest. For deterministic outputs, `contract_output_digest` (the contract evidence's own output digest) must equal `output_digest`, and the deterministic-authority provenance is bound to the same digest.
+
+References are opaque names and can be re-pointed; the digest is the identity. Consequences, all regression-tested: changing the output changes its digest and invalidates any earlier Verification; a Verification of an older version cannot qualify a newer output; a matching ref with a different digest fails; a matching digest under the wrong subject ref fails. Release-time protection: the emission path must call `CognitiveResult.release_matches(bytes)` (or an equivalent re-hash) immediately before sending, so a check-then-swap between verification and release is detected rather than trusted.
+
+## 12c. Trusted runtime provenance (no self-asserted authority)
+
+An ordinary string is not authority. Privileged statements (the router's `output_kind` assignment, a deterministic authority, claim extraction, epistemic screening, and a verifier's involvement) are made through `RuntimeProvenance`: `provenance_id`, `component_id`, `component_kind` (`ROUTER`, `DETERMINISTIC_AUTHORITY`, `CLAIM_EXTRACTOR`, `EPISTEMIC_SCREENER`, `VERIFIER`), `execution_ref`, `authority_evidence_ref`, `input_digest`, `output_digest`, `seal`. The `seal` is an HMAC minted only by a `ProvenanceLedger`, the in-process trust anchor held by trusted runtime code. The protocol does not attempt PKI; a later generation can replace the seal with signatures without changing the fields.
+
+Invariants: (1) a user- or model-supplied payload cannot make itself authoritative by writing "ORNEUR_ROUTER" or by naming a deterministic tool, because without a ledger-issued seal the provenance does not verify; (2) `COMPLETED` results are validated only against a trusted ledger and fail closed without one; (3) provenance must be bound to the content it vouches for (classification digest, output digest, verified digest); (4) **future deserialisation of any untrusted or model-generated content must strip or reject privileged fields** (`strip_privileged` lists them: provenance, `output_kind`, `presented_as`, contract status and evidence, `model_calls`, `verifications`, `claims_trusted`, `seal`), and the runtime must re-derive them from its own state.
+
+## 12d. Claim-level verification (future contract; no engine implemented)
+
+Progressive verification will operate on individual claim-bearing spans. The protocol therefore defines `ClaimBinding` (`claim_id`, `output_ref`, `output_digest`, `claim_digest`, optional `span_start`/`span_end`, optional `canonical_claim`) and lets a `VerificationResult` bind either to the whole output or to one claim (`claim_id` + `claim_digest`, still inside the output identified by `subject_digest`). A result may complete on claim-level coverage when trusted `CLAIM_EXTRACTOR` provenance vouches for the enumeration and every bound claim has a passing, trusted, digest-bound claim verification. Non-claim prose therefore streams without a fake whole-output verification while coverage of factual claims is still proven. Only canonical claim representations or span digests are stored; hidden chain-of-thought is never stored. `ClaimBinding.matches_output(text)` checks that released text and span still hash to the bound digests.
 
 ## 13. Authority and contracts
 
@@ -300,6 +330,19 @@ A foundation model is one replaceable organ that may realize FAST, REASON or an 
 - Subsystems built and qualified one at a time, each with its own frozen evals.
 - Latency targets converted into measured budgets.
 - Every "not claimed" item above either measured or left unclaimed.
+
+## 16a. Freeze-readiness (computed; READY is not FROZEN)
+
+The three flags below are computed by `orca/intelligence/freeze.py` from behavioural self-tests and structural checks on this tree and are recorded in the JSON companion (`freeze_status`). A test asserts this section equals the computed values, so no flag can say `true` unless the checks justify it. Freezing additionally requires exact-SHA CI and an independent audit, so `frozen` remains `false` in this artifact.
+
+```
+ETERNAL_ARCHITECTURE_V1_FREEZE_READY = true
+CORE_INTELLIGENCE_PROTOCOL_V1_FREEZE_READY = true
+GENESIS_CAPABILITY_EVAL_V1_FREEZE_READY = true
+frozen = false
+```
+
+Version note: the semantic protocol change (new `OutputKind` members, digest binding, provenance, claim binding) is a breaking change relative to `orneur.core-protocol/1.0.0`, so the protocol is now `1.1.0` and the architecture `1.1.0`. Both are made before any freeze, so no frozen version is altered.
 
 ## 17. Authorizations
 

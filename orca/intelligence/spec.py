@@ -5,9 +5,13 @@ The architecture is a ROADMAP and a set of contracts, not a capability claim.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-ARCHITECTURE_VERSION = "orneur.eternal-architecture/1.0.0"
+from orca.eval import genesis_funnel as _funnel
+from orca.intelligence.protocol import PROTOCOL_VERSION
+
+ARCHITECTURE_VERSION = "orneur.eternal-architecture/1.1.0"
 
 PIPELINE = [
     ("user", "User", "CognitiveRequest"),
@@ -110,11 +114,11 @@ NON_CLAIMS = ["AGI", "self-awareness", "consciousness", "autonomous self-evoluti
               "frontier capability", "any measured latency SLO", "cross-domain transfer capability today"]
 
 
-def build_spec() -> dict[str, Any]:
+def build_spec_core() -> dict[str, Any]:
     return {
         "document": "ORNEUR_ETERNAL_INTELLIGENCE_ARCHITECTURE",
         "architecture_version": ARCHITECTURE_VERSION,
-        "protocol_version": "orneur.core-protocol/1.0.0",
+        "protocol_version": PROTOCOL_VERSION,
         "status": "ROADMAP_AND_CONTRACTS_NOT_A_CAPABILITY_CLAIM",
         "base_sha": "1eb31d92508a1da227d9457dd0e16ee370217c9a",
         "doctrine": "Models are replaceable organs. ORNEUR itself is permanent.",
@@ -153,9 +157,37 @@ def build_spec() -> dict[str, Any]:
             "factual_verification_proves": "content is supported by independent evidence",
             "distinct_concepts": True,
             "verification_bypass_only_for": ["EXACT_TEXT", "DETERMINISTIC_MATH", "JSON_LITERAL"],
-            "bypass_requires": ["router-assigned output_kind", "SATISFIED contract with evidence", "named deterministic_authority", "model_calls == 0"],
+            "bypass_requires": ["router-assigned output_kind (trusted provenance)", "SATISFIED contract with evidence",
+                                "contract_output_digest == output_digest", "trusted DETERMINISTIC_AUTHORITY provenance", "model_calls == 0"],
             "generated_json_schema_satisfaction_bypasses_verification": False,
             "model_self_report_bypasses_verification": False},
+        "output_semantics": {
+            "kinds": ["DETERMINISTIC_EXACT_TEXT", "DETERMINISTIC_MATH", "DETERMINISTIC_JSON_LITERAL", "GENERATED_EPISTEMIC",
+                      "GENERATED_STRUCTURED_EPISTEMIC", "GENERATED_TRANSFORMATIVE", "GENERATED_CREATIVE"],
+            "epistemic_requires": "bound, trusted Verification of the exact output (whole output or every enumerated claim)",
+            "transformative_requires_factual_verification": False,
+            "transformative_new_claims": "any new factual claim is epistemic for that claim (ClaimBinding + claim-level verification)",
+            "creative_requires_factual_verification": False,
+            "creative_may_be_presented_as_fact": False,
+            "contract_compliance_is_truth_verification": False,
+            "fail_closed_for_strict_contracts_weakened": False},
+        "content_binding": {"digest": "lowercase sha256 of the exact UTF-8 bytes released (no normalisation)",
+                            "fields": ["CognitiveResult.output_digest", "VerificationResult.subject_digest", "ClaimBinding.output_digest",
+                                       "ClaimBinding.claim_digest"],
+                            "qualifying_verification_requires": ["subject_ref == output_ref", "subject_digest == output_digest",
+                                                                 "trusted VERIFIER provenance whose input_digest is the verified digest"],
+                            "toctou": "references are opaque names; identity is the digest; the release path must re-hash the bytes it emits"},
+        "runtime_provenance": {"contract": "RuntimeProvenance", "fields": ["provenance_id", "component_id", "component_kind", "execution_ref",
+                                                                         "authority_evidence_ref", "input_digest", "output_digest", "seal"],
+                               "component_kinds": ["ROUTER", "DETERMINISTIC_AUTHORITY", "CLAIM_EXTRACTOR", "EPISTEMIC_SCREENER", "VERIFIER"],
+                               "trust_anchor": "ProvenanceLedger (HMAC seal; in-process, not PKI)",
+                               "self_asserted_strings_carry_no_authority": True,
+                               "untrusted_deserialisation": "privileged fields must be stripped or the payload rejected (strip_privileged)"},
+        "claim_level_verification": {"contract": "ClaimBinding", "fields": ["claim_id", "output_ref", "output_digest", "claim_digest",
+                                                                             "span_start", "span_end", "canonical_claim"],
+                                     "verification_scope": ["WHOLE_OUTPUT", "CLAIM"], "non_claim_prose_needs_no_verification": True,
+                                     "stores_hidden_reasoning": False, "verification_engine_implemented": False},
+        "genesis_capability_eval_v1": _funnel.funnel_spec(),
         "promotion_authority": {"deciders": ["HUMAN_OWNER", "QUALIFIED_GATE_SERVICE"],
                                 "qualified_gate_service_requires": "decider_qualification_ref",
                                 "producer_or_candidate_may_promote": False},
@@ -191,3 +223,14 @@ def build_spec() -> dict[str, Any]:
                                  "raw_model_runtime_qualified": {"Qwen3-8B": False, "Mistral-Nemo": False, "Phi-4": False}},
         "non_claims": NON_CLAIMS,
     }
+
+
+def build_spec(root: Path | None = None) -> dict[str, Any]:
+    """Core spec plus computed freeze readiness (READY is not FROZEN)."""
+    from orca.intelligence.freeze import freeze_readiness
+
+    root = root or Path(__file__).resolve().parents[2]
+    spec = build_spec_core()
+    fr = freeze_readiness(root)
+    spec["freeze_status"] = fr
+    return spec

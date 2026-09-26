@@ -4,7 +4,7 @@
     "no_architecture_is_permanent": true,
     "self_obsolescence_rule": "Every major generation must evaluate what is now unnecessary or inferior; proven-better replacements retire the old mechanism."
   },
-  "architecture_version": "orneur.eternal-architecture/1.0.0",
+  "architecture_version": "orneur.eternal-architecture/1.1.0",
   "authorizations": {
     "foundation_selected": false,
     "gpu": false,
@@ -13,6 +13,25 @@
     "training": false
   },
   "base_sha": "1eb31d92508a1da227d9457dd0e16ee370217c9a",
+  "claim_level_verification": {
+    "contract": "ClaimBinding",
+    "fields": [
+      "claim_id",
+      "output_ref",
+      "output_digest",
+      "claim_digest",
+      "span_start",
+      "span_end",
+      "canonical_claim"
+    ],
+    "non_claim_prose_needs_no_verification": true,
+    "stores_hidden_reasoning": false,
+    "verification_engine_implemented": false,
+    "verification_scope": [
+      "WHOLE_OUTPUT",
+      "CLAIM"
+    ]
+  },
   "cognitive_primitives": {
     "qualification_required": true,
     "stores_raw_reasoning_traces": false,
@@ -60,11 +79,27 @@
       }
     }
   },
+  "content_binding": {
+    "digest": "lowercase sha256 of the exact UTF-8 bytes released (no normalisation)",
+    "fields": [
+      "CognitiveResult.output_digest",
+      "VerificationResult.subject_digest",
+      "ClaimBinding.output_digest",
+      "ClaimBinding.claim_digest"
+    ],
+    "qualifying_verification_requires": [
+      "subject_ref == output_ref",
+      "subject_digest == output_digest",
+      "trusted VERIFIER provenance whose input_digest is the verified digest"
+    ],
+    "toctou": "references are opaque names; identity is the digest; the release path must re-hash the bytes it emits"
+  },
   "contract_compliance_vs_verification": {
     "bypass_requires": [
-      "router-assigned output_kind",
+      "router-assigned output_kind (trusted provenance)",
       "SATISFIED contract with evidence",
-      "named deterministic_authority",
+      "contract_output_digest == output_digest",
+      "trusted DETERMINISTIC_AUTHORITY provenance",
       "model_calls == 0"
     ],
     "contract_compliance_proves": "format/contract correctness only",
@@ -193,6 +228,124 @@
     "ORNEUR_SELF_IMPROVEMENT_EVAL": "designed, not executed",
     "single_smartness_score": false
   },
+  "freeze_status": {
+    "CORE_INTELLIGENCE_PROTOCOL_V1_FREEZE_READY": true,
+    "ETERNAL_ARCHITECTURE_V1_FREEZE_READY": true,
+    "GENESIS_CAPABILITY_EVAL_V1_FREEZE_READY": true,
+    "checks": {
+      "CORE_INTELLIGENCE_PROTOCOL_V1": {
+        "all_17_interfaces_defined": true,
+        "claim_binding_and_digest_fields_exist": true,
+        "creative_cannot_be_presented_as_verified": true,
+        "creative_valid_without_factual_verification": true,
+        "deterministic_bypass_valid": true,
+        "deterministic_with_model_calls_rejected": true,
+        "deterministic_without_ledger_fails_closed": true,
+        "digest_mismatch_rejected": true,
+        "epistemic_with_bound_verification_valid": true,
+        "epistemic_without_verification_rejected": true,
+        "foreign_ledger_rejected": true,
+        "forged_router_provenance_rejected": true,
+        "privileged_fields_stripped_from_untrusted_payload": true,
+        "promotion_valid": true,
+        "protocol_names_no_model_family": true,
+        "protocol_version_semver": true,
+        "ref_mismatch_rejected": true,
+        "self_asserted_verifier_rejected": true,
+        "self_promotion_rejected": true,
+        "unqualified_service_rejected": true
+      },
+      "ETERNAL_ARCHITECTURE_V1": {
+        "all_intelligence_docs_present": true,
+        "authorizations_all_false": true,
+        "doctrine_present": true,
+        "epistemic_and_provenance_sections_present": true,
+        "no_overclaims": true,
+        "pipeline_has_21_ordered_stages": true,
+        "streaming_has_no_transport_retraction": true,
+        "versions_are_semver": true
+      },
+      "GENESIS_CAPABILITY_EVAL_V1": {
+        "eval_categories_21": true,
+        "eval_design_only_no_authorization": true,
+        "eval_doc_uses_all_stage_caps": true,
+        "funnel_ranking_excludes_strict_contracts": true,
+        "no_parameter_count_preselection": true,
+        "selection_inputs_forbidden": true,
+        "stage3_entry_is_pre_trainability": true,
+        "strict_contracts_report_only_no_floor_margin": true
+      }
+    },
+    "freeze_requires_beyond_ready": [
+      "exact-SHA CI green",
+      "independent audit approval"
+    ],
+    "frozen": false,
+    "ready_semantics": "all computed checks passed on this tree; READY is not FROZEN"
+  },
+  "genesis_capability_eval_v1": {
+    "cost_planning_usd": {
+      "kind": "PLANNING_ONLY_NOT_AUTHORIZATION",
+      "stage1_hard_cap_for_15_models": 14.81,
+      "stage2_cap": 40.0,
+      "stage3_cap": 25.0
+    },
+    "forbidden_selection_inputs": [
+      "release_date",
+      "parameter_count",
+      "popularity",
+      "vendor_benchmark_claims",
+      "model_size_proxy"
+    ],
+    "ranking_order": [
+      "verification",
+      "evidence_use",
+      "trainability",
+      "cost"
+    ],
+    "report_only_categories": [
+      "strict_contracts",
+      "multimodal_where_applicable",
+      "discovery_quality",
+      "cross_domain_transfer",
+      "latency",
+      "cost"
+    ],
+    "selection_precondition": "every finalist completed the SAME trainability pilot",
+    "stages": [
+      {
+        "exit": "measured Stage-0 checks all passed",
+        "gpu": false,
+        "name": "CPU integrity and compatibility",
+        "stage": 0,
+        "who": "ALL GENESIS_EVAL_ADMITTED models"
+      },
+      {
+        "drop_rule": "only if the 95% upper bound is below a frozen floor on a gating category with sufficient power",
+        "max_gpu_hours_per_model": 0.25,
+        "name": "small common screening probe",
+        "stage": 1,
+        "who": "ALL Stage-0-compatible models"
+      },
+      {
+        "cost_cap_usd": 40.0,
+        "name": "full capability eval",
+        "over_cap_rule": "cheapest survivor per architecture family, then ascending projected cost then id (explicit resource gate)",
+        "stage": 2,
+        "who": "Stage-1 survivors"
+      },
+      {
+        "cost_cap_usd": 25.0,
+        "entry_order": "Pareto-non-dominated on capability and cost, then one per architecture family, then ascending cost, then id",
+        "name": "trainability pilot",
+        "protocol_id": "genesis-trainability-pilot-v1",
+        "stage": 3,
+        "who": "up to 3 finalists chosen from PRE-TRAINABILITY criteria only"
+      }
+    ],
+    "strict_contracts_role": "report-only recovery-cost signal; never a floor, never a ranking input",
+    "version": "genesis-capability-eval-v1-funnel/2"
+  },
   "historical_integrity": {
     "contract_engine_qualification": "SYSTEM_CONTRACT_QUALIFIED",
     "raw_model_runtime_qualified": {
@@ -222,6 +375,24 @@
   "outcome_learning": {
     "distinct_from_preference_feedback": true,
     "tenant_boundaries_preserved": true
+  },
+  "output_semantics": {
+    "contract_compliance_is_truth_verification": false,
+    "creative_may_be_presented_as_fact": false,
+    "creative_requires_factual_verification": false,
+    "epistemic_requires": "bound, trusted Verification of the exact output (whole output or every enumerated claim)",
+    "fail_closed_for_strict_contracts_weakened": false,
+    "kinds": [
+      "DETERMINISTIC_EXACT_TEXT",
+      "DETERMINISTIC_MATH",
+      "DETERMINISTIC_JSON_LITERAL",
+      "GENERATED_EPISTEMIC",
+      "GENERATED_STRUCTURED_EPISTEMIC",
+      "GENERATED_TRANSFORMATIVE",
+      "GENERATED_CREATIVE"
+    ],
+    "transformative_new_claims": "any new factual claim is epistemic for that claim (ClaimBinding + claim-level verification)",
+    "transformative_requires_factual_verification": false
   },
   "permanent_components": [
     "ORNEUR Core Intelligence Protocol",
@@ -379,7 +550,7 @@
     "producer_or_candidate_may_promote": false,
     "qualified_gate_service_requires": "decider_qualification_ref"
   },
-  "protocol_version": "orneur.core-protocol/1.0.0",
+  "protocol_version": "orneur.core-protocol/1.1.0",
   "reality_compiler": {
     "canonical_objects": [
       "entities",
@@ -427,6 +598,29 @@
     "training recipes",
     "quantization formats"
   ],
+  "runtime_provenance": {
+    "component_kinds": [
+      "ROUTER",
+      "DETERMINISTIC_AUTHORITY",
+      "CLAIM_EXTRACTOR",
+      "EPISTEMIC_SCREENER",
+      "VERIFIER"
+    ],
+    "contract": "RuntimeProvenance",
+    "fields": [
+      "provenance_id",
+      "component_id",
+      "component_kind",
+      "execution_ref",
+      "authority_evidence_ref",
+      "input_digest",
+      "output_digest",
+      "seal"
+    ],
+    "self_asserted_strings_carry_no_authority": true,
+    "trust_anchor": "ProvenanceLedger (HMAC seal; in-process, not PKI)",
+    "untrusted_deserialisation": "privileged fields must be stripped or the payload rejected (strip_privileged)"
+  },
   "self_improvement": {
     "every_promotion_evidence_gated": true,
     "live_weight_mutation_allowed": false,

@@ -5334,7 +5334,7 @@
  "phase_21c_authorized": false,
  "provider_inference_authorized": false,
  "selected_foundation": null,
- "selection_rule": "No model is selected in this phase. A future selection must use per-capability results from the frozen Genesis Capability Eval V1 and this pre-registered rule: (1) a model must clear every hard floor listed in GENESIS_CAPABILITY_EVAL_V1_DESIGN.md; (2) among survivors, drop any model Pareto-dominated on every capability category at equal or lower cost; (3) rank the remainder lexicographically by strict_contracts floor margin, then verification, then evidence_use, then trainability, then cost; (4) ties or irreconcilable trade-offs go to an explicit owner decision. Release date, parameter count and popularity are never inputs.",
+ "selection_rule": "No model is selected in this phase. A future selection must use per-capability results from the frozen Genesis Capability Eval V1 and this pre-registered rule, applied only after every finalist has completed the same trainability pilot: (1) a model must clear every frozen floor on the gating categories; (2) among survivors, drop any model Pareto-dominated on every gating category at equal or lower cost; (3) rank the remainder lexicographically by verification, then evidence_use, then trainability, then cost; (4) ties or irreconcilable trade-offs go to an explicit owner decision. strict_contracts is a report-only recovery-cost signal and is never a floor or a ranking input. Release date, parameter count and popularity are never inputs.",
  "training_authorized": false,
  "verdict": "FOUNDATION_LANDSCAPE_REFRESHED_NO_FOUNDATION_SELECTED"
 }

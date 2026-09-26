@@ -19,18 +19,30 @@ Companion documents: `GENESIS_FOUNDATION_LANDSCAPE_REFRESH_2026-09-26.md` (candi
 5. **Raw model vs system.** Everything is scored on raw model output first. System-level scores (with the Contract Engine, verification, tools) are reported separately and labelled.
 6. **No model is favoured by recency, size or popularity.**
 
-## 3. Candidate pool and the staged funnel
+## 3. Candidate pool and the pre-registered funnel
 
-The refreshed pool has 15 gate-admitted `GENESIS_EVAL_ADMITTED` models (see the refresh). *Admitted for evaluation* is deliberately not *proven trainable*: PEFT/QLoRA feasibility is `INFERRED_NOT_EXECUTED` until the Stage-0 CPU checks and the Stage-3 pilot produce evidence, and the three Phase 21B.4.20 controls are baseline-only and never admitted. Running the full eval on all 15 would consume a large fraction of the ~INR 10,000 planning budget, so the eval is staged; each stage has a **mechanical** entry rule that never uses capability results from a later stage or vendor benchmark claims.
+The refreshed pool has 15 gate-admitted `GENESIS_EVAL_ADMITTED` models (see the refresh). *Admitted for evaluation* is deliberately not *proven trainable*: PEFT/QLoRA feasibility is `INFERRED_NOT_EXECUTED` until the Stage-0 CPU checks and the Stage-3 pilot produce evidence, and the three Phase 21B.4.20 controls are baseline-only and never admitted.
 
-| Stage | What | Who enters | Compute | Est. cost (formula, not measured) |
+**Funnel principle.** No stage may use release date, parameter count, popularity, vendor benchmark claims or any size proxy as a *selection input*. Where money genuinely limits a stage, the limit is an explicit, published **cost/resource cap**, not a preference for some model size. The machine-readable form is `orca/eval/genesis_funnel.py` (`funnel_spec()`), embedded in the architecture JSON; tests prove the stated invariants.
+
+| Stage | What | Who enters | Compute | Cap (planning constants, not authorization) |
 |---|---|---|---|---|
-| 0 — CPU integrity (first evidence toward trainability) | tokenizer round-trip, chat-template rendering incl. tool and thinking modes, config/architecture load on CPU, license text archived, revision + file hashes verified | all 15 admitted models | CPU only | USD 0 GPU |
-| 1 — Screening | reduced item set over all 21 categories (≈ 200 items) plus serving smoke | **LEAN:** per model *family*, the admitted model whose total parameters are nearest 9B (7 models). **FULL:** additionally the largest admitted model ≤ 32B per family (≤ 10 models); equal-size ties are broken by lexicographic model id, never by recency | 1×H100 | 0.4–1.0 GPU-h per model × USD 3.95/h |
-| 2 — Full eval | full item set, 2 sampling configs, all categories | survivors of the pre-registered floors, at most 4 (drop Pareto-dominated first; ties → lower cost) | 1×H100 | 1–2 GPU-h per model |
-| 3 — Trainability pilot | 5M-token QLoRA format/contract SFT on the training split, re-run of the format categories | at most 2 | 1×H100 | USD ≈ 1–7 per model + eval |
+| 0 — CPU integrity and compatibility | tokenizer round-trip, chat-template rendering incl. tool and thinking modes, config/architecture load on CPU under the pinned library stack, license text archived, revision + file hashes verified | **ALL** `GENESIS_EVAL_ADMITTED` models | CPU only | no GPU spend |
+| 1 — Small common screening probe | one identical, small item set spanning every category plus a serving smoke test | **ALL** Stage-0-compatible models (no pre-selection of any kind) | 1×H100 | hard cap 0.25 GPU-hours per model including load, i.e. at most 15 × 0.25 h × USD 3.95/h = USD 14.81 for the current 15-model pool |
+| 2 — Full capability eval | full item set, 2 sampling configurations, all 21 categories | Stage-1 survivors | 1×H100 | total USD 40 |
+| 3 — Trainability pilot | 5M-token QLoRA format/contract SFT on the training split under one common protocol (`genesis-trainability-pilot-v1`), then re-run of the format categories and a regression check | up to 3 finalists chosen from **PRE-TRAINABILITY** information only (below) | 1×H100 | total USD 25 |
 
-Estimated totals (planning only, formula = GPU-hours × the program's persisted H100 rate of USD 3.95/h, before a 1.5× contingency): **LEAN** Stage 1 ≈ USD 11–28; Stage 2 (≤ 4 models) ≈ USD 16–32; Stage 3 (≤ 2) ≈ USD 6–17. That can approach the whole USD 111–118 planning budget once contingency is included. Consequently the eval **requires an explicit owner funding decision** and the LEAN profile is the default recommendation. The budget cannot also fund a full training run of any model above the pilot scale until the eval concludes; this is a real constraint, not a formality.
+Planning total if every cap is fully used: USD 14.81 + 40 + 25 = USD 79.81, against a planning budget of USD 111–118 (about INR 10,000). This does **not** authorize spending and does not leave room for a full training run above pilot scale; the eval requires an explicit owner funding decision and a hard spend cap before anything runs. If the pool grows so the Stage-1 cap would exceed its budget, the funnel does **not** drop models automatically: the owner must raise the cap or remove models explicitly and record why.
+
+**Stage 0 exit.** A model leaves the funnel at Stage 0 only for a *measured* failure of a pre-registered CPU check (for example, the tokenizer cannot round-trip or the architecture cannot load under the pinned stack). Nothing else is consulted.
+
+**Stage 1 drop rule.** A model is dropped only if, on a gating category with sufficient power, the 95% **upper** confidence bound of its score is below that category's frozen floor (it is *confidently* below the floor). `LOW_POWER` and report-only categories can never drop a model. This makes the cheap probe safe: it removes only models that are clearly unusable.
+
+**Stage 2 cost rule.** If the projected Stage-2 cost of all survivors fits the cap, all enter. Otherwise the transparent resource gate applies: first the cheapest survivor of each architecture family (diversity), then remaining survivors by ascending projected cost and then model id, until the cap is used. Projected cost comes from Stage-1 measured GPU time. This is an explicit cost gate and may disadvantage expensive-to-run models; that is reported, and the owner may raise the cap.
+
+**Stage 3 entry (non-circular).** Finalists are chosen only from information that exists before any trainability result: Stage-2 capability results, projected cost and architecture family. Order: (a) the Pareto-non-dominated set on capability categories and cost; (b) one per architecture family, ascending cost; (c) ascending cost; (d) model id; capped at 3. A `trainability` value, if it were present, is ignored by construction (a test proves this). Models that do not enter Stage 3 are **not finalists and cannot be selected**.
+
+**No foundation may be selected until all remaining finalists have completed the same trainability pilot.** Selection code returns `NO_SELECTION_YET` until every finalist has a `COMPLETE` pilot under the same protocol id. Only then does trainability join the ranking below, so it is never used to decide who is measured.
 
 ## 4. Capability categories (all mandatory; per-category results only)
 
@@ -39,7 +51,7 @@ Item counts are minimums chosen so a 95% interval half-width is about ±0.07 for
 | # | Category | What is measured | Item sources (all frozen, hashed) | Scoring | Floor (PROPOSED, unfrozen) |
 |---|---|---|---|---|---|
 | 1 | `instruction_following` | verifiable constraints (length, format, inclusion/exclusion) | synthetic verifiable + private set | programmatic checker | ≥ 0.70 |
-| 2 | `strict_contracts` | exact-text, math-literal, JSON-literal, schema contracts **raw**: fraction satisfied with no repair, with 1 retry, and fail-closed rate | generated from contract engine grammar (no hard-coded A/B/C ids) | independent validator = Contract Engine validators | report only; used for recovery-cost estimate |
+| 2 | `strict_contracts` | exact-text, math-literal, JSON-literal, schema contracts **raw**: fraction satisfied with no repair, with 1 retry, and fail-closed rate | generated from contract engine grammar (no hard-coded A/B/C ids) | independent validator = Contract Engine validators | **report-only recovery-cost signal; never a floor and never a ranking input** |
 | 3 | `structured_outputs` | valid JSON / schema conformance on realistic tasks | private schemas | schema validator | ≥ 0.85 valid without repair |
 | 4 | `reasoning` | multi-step verifiable reasoning | private, short-answer | exact match | ≥ 0.50 |
 | 5 | `coding` | hermetic, static and executable checks | private | unit tests in sandbox | ≥ 0.40 |
@@ -58,13 +70,13 @@ Item counts are minimums chosen so a 95% interval half-width is about ±0.07 for
 | 18 | `information_gain_reasoning` | given an underdetermined problem, ask the single question that most reduces uncertainty | private with known-optimal question set | match against oracle ranking; exactly-one-question check | ≥ 0.40 |
 | 19 | `latency` | first-token latency and tokens/s under the harness | measured | measurement, with hardware recorded | report only |
 | 20 | `cost` | USD per 1M tokens served and to train, on stated hardware | measured + formula | measurement | report only |
-| 21 | `trainability` | Stage 3 pilot: format/contract gain per USD and regression on unrelated categories | private train/dev split | before/after delta | must show improvement without regression |
+| 21 | `trainability` | Stage 3 pilot: format/contract gain per USD and regression on unrelated categories | private train/dev split | before/after delta | Stage-3 finalists only (a measurement, not an entry floor): improvement without regression |
 
 Floors are **proposals**, chosen to reject clearly unusable models, not to certify quality. They must be frozen and hashed before the first run; the owner may adjust them *before* freezing. "Report only" categories cannot select a model but are still published.
 
 ## 5. Selection rule (pre-registered)
 
-Identical to the refresh's rule, restated: (1) a model must clear every frozen floor; (2) drop any model Pareto-dominated on every category at equal or lower cost; (3) rank remaining models lexicographically by `strict_contracts` recovery cost margin, then `verification`, then `evidence_use`, then `trainability`, then `cost`; (4) ties or irreconcilable trade-offs go to an explicit owner decision. Release date, parameter count and popularity are never inputs. The output is either `FOUNDATION_SELECTED` with the per-capability table, or `NO_MODEL_QUALIFIES` (a legitimate result).
+Applied only after every finalist has completed the same trainability pilot: (1) a model must clear every frozen floor on the gating categories; (2) drop any model Pareto-dominated on every gating category at equal or lower cost; (3) rank the remainder lexicographically by `verification`, then `evidence_use`, then `trainability` (from the common pilot), then `cost`; (4) ties or irreconcilable trade-offs go to an explicit owner decision. Release date, parameter count and popularity are never inputs. `strict_contracts` is a **report-only recovery-cost signal**: raw-model contract behaviour tells us how often the Contract Engine would have to recover or fail closed, but `SYSTEM_CONTRACT_QUALIFICATION` belongs to ORNEUR itself and is neither a model floor nor a ranking input. The output is either `FOUNDATION_SELECTED` with the per-capability table, or `NO_MODEL_QUALIFIES` (a legitimate result).
 
 ## 6. `ORNEUR_DISCOVERY_EVAL` (future; designed, not executed)
 
@@ -122,7 +134,7 @@ Aggregate reporting is **per dimension**, plus *precision* (valid discoveries / 
 
 ## 10. Preconditions before anything is executed
 
-1. Owner funding decision for a stated profile (LEAN or FULL) and a hard spend cap.
+1. Owner funding decision with a hard spend cap for the stated stage caps.
 2. Pre-registration file (floors + item hashes + selection rule) frozen and hashed.
 3. Fresh, exact-SHA-verified CPU-side integrity (Stage 0) complete.
 4. An explicit authorization message for GPU use. **None exists now.**
@@ -130,10 +142,18 @@ Aggregate reporting is **per dimension**, plus *precision* (valid discoveries / 
 ## 11. Known uncertainties
 
 - Floors are proposals and could reject every model or none.
-- LEAN pool uses "nearest 9B per family" as a mechanical rule; it may miss a family's better size. FULL mitigates at higher cost.
+- The Stage-2 cost rule can disadvantage expensive-to-run models when the cap binds; this is reported and the owner may raise the cap.
 - Some categories (discovery, information gain, hypothesis testing, counterfactual) require newly built private item sets; their construction cost is not included in GPU estimates.
 - Judge disagreement in human-judged dimensions may make some rankings unresolvable; the rule then hands the decision to the owner.
 
 ## 12. Authorizations
 
 `gpu_authorized=false`, `training_authorized=false`, `provider_inference_authorized=false`, `phase_21c_authorized=false`, `foundation_selected=false`.
+
+## 13. Freeze-readiness (computed; READY is not FROZEN)
+
+Computed by `orca/intelligence/freeze.py` and recorded in the architecture JSON; a test asserts this section equals the computed value. Freezing additionally needs exact-SHA CI and an independent audit.
+
+```
+GENESIS_CAPABILITY_EVAL_V1_FREEZE_READY = true
+```

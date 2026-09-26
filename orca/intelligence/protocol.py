@@ -8,13 +8,15 @@ does not implement any subsystem.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import re
+import secrets
 from dataclasses import asdict, dataclass, field, replace
 from enum import Enum
 from typing import Any, Mapping, Optional, Sequence
 
-PROTOCOL_VERSION = "orneur.core-protocol/1.0.0"
+PROTOCOL_VERSION = "orneur.core-protocol/1.1.0"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _OPEN_NAME = re.compile(r"^(FUTURE:)?[A-Za-z][A-Za-z0-9_.\-]{0,63}$")
 
@@ -31,8 +33,8 @@ class _Contract:
     def problems(self) -> list[str]:  # pragma: no cover - overridden
         return []
 
-    def assert_valid(self) -> "_Contract":
-        found = self.problems()
+    def assert_valid(self, *args: Any, **kwargs: Any) -> "_Contract":
+        found = self.problems(*args, **kwargs)
         if found:
             raise ProtocolViolation(type(self).__name__, found)
         return self
@@ -135,6 +137,137 @@ class MigrationMechanism(str, Enum):
     DUAL_RUNNING = "dual_running"
     EVAL_PRESERVING_CUTOVER = "eval_preserving_cutover"
     NO_CHANGE_REQUIRED = "no_change_required"
+
+
+# ---------------------------------------------------------------- content digests
+def content_digest(data: "str | bytes") -> str:
+    """Lowercase SHA-256 of the exact canonical bytes: UTF-8 of the text exactly as released, no normalisation."""
+    raw = data.encode("utf-8") if isinstance(data, str) else bytes(data)
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _is_digest(v: Any) -> bool:
+    return isinstance(v, str) and bool(_SHA256.match(v))
+
+
+# ---------------------------------------------------------------- trusted runtime provenance
+PROVENANCE_KINDS = frozenset({"ROUTER", "DETERMINISTIC_AUTHORITY", "CLAIM_EXTRACTOR", "EPISTEMIC_SCREENER", "VERIFIER"})
+
+# Fields a payload that arrives from a model, a user or any untrusted deserialisation may never supply:
+# they are stripped (or the payload rejected) before it is turned into a protocol object.
+PRIVILEGED_FIELDS = frozenset({
+    "seal", "provenance", "classification_provenance", "deterministic_provenance", "claim_extraction_provenance",
+    "screening_provenance", "output_kind", "presented_as", "model_calls", "contract_status", "contract_evidence_ref",
+    "contract_output_digest", "claims_trusted", "verifications"})
+
+
+def strip_privileged(payload: Any) -> tuple[Any, list[str]]:
+    """Remove privileged provenance/authority fields from an untrusted mapping (recursively).
+
+    Returns (clean_copy, sorted list of stripped dotted paths). Callers that prefer rejection must reject
+    when the list is non-empty. Nothing removed here is ever re-derivable from the payload itself.
+    """
+    stripped: list[str] = []
+
+    def walk(node: Any, path: str) -> Any:
+        if isinstance(node, Mapping):
+            out = {}
+            for k, v in node.items():
+                here = f"{path}.{k}" if path else str(k)
+                if k in PRIVILEGED_FIELDS:
+                    stripped.append(here)
+                    continue
+                out[k] = walk(v, here)
+            return out
+        if isinstance(node, (list, tuple)):
+            return [walk(v, f"{path}[{i}]") for i, v in enumerate(node)]
+        return node
+
+    return walk(payload, ""), sorted(stripped)
+
+
+@dataclass(frozen=True)
+class RuntimeProvenance(_Contract):
+    """Evidence that a TRUSTED ORNEUR runtime component produced/observed something.
+
+    ``seal`` is an HMAC over every other field under a key that only a ``ProvenanceLedger`` holds. A string
+    such as "ORNEUR_ROUTER" typed into a payload therefore carries no authority: without a ledger-issued seal
+    the provenance does not verify. This is deliberately light (an in-process trust anchor, not PKI); a later
+    generation may replace the seal with signatures without changing this contract's fields.
+    """
+
+    provenance_id: str
+    component_id: str
+    component_kind: str
+    execution_ref: str
+    authority_evidence_ref: str
+    input_digest: str
+    output_digest: str
+    seal: str
+
+    def problems(self) -> list[str]:
+        out: list[str] = []
+        _need(self, ["provenance_id", "component_id", "execution_ref", "authority_evidence_ref"], out)
+        if self.component_kind not in PROVENANCE_KINDS:
+            out.append(f"component_kind must be one of {sorted(PROVENANCE_KINDS)}")
+        for n in ("input_digest", "output_digest", "seal"):
+            if not _is_digest(getattr(self, n)):
+                out.append(f"{n} must be a lowercase sha256 hex digest")
+        return out
+
+    def _body(self) -> bytes:
+        d = {k: getattr(self, k) for k in ("provenance_id", "component_id", "component_kind", "execution_ref",
+                                           "authority_evidence_ref", "input_digest", "output_digest")}
+        return json.dumps(d, sort_keys=True, separators=(",", ":")).encode()
+
+
+class ProvenanceLedger:
+    """The trust anchor. Only code holding a ledger instance can mint or verify RuntimeProvenance."""
+
+    def __init__(self, secret: Optional[bytes] = None):
+        self._key = secret if secret is not None else secrets.token_bytes(32)
+        self._issued: set[str] = set()
+
+    def issue(self, *, component_id: str, component_kind: str, execution_ref: str, authority_evidence_ref: str,
+              input_digest: str, output_digest: str) -> RuntimeProvenance:
+        pid = hashlib.sha256(f"{component_id}|{component_kind}|{execution_ref}|{input_digest}|{output_digest}".encode()).hexdigest()
+        unsealed = RuntimeProvenance(pid, component_id, component_kind, execution_ref, authority_evidence_ref,
+                                     input_digest, output_digest, "0" * 64)
+        seal = hmac.new(self._key, unsealed._body(), hashlib.sha256).hexdigest()
+        self._issued.add(pid)
+        return replace(unsealed, seal=seal)
+
+    def verify(self, prov: Any) -> bool:
+        if not isinstance(prov, RuntimeProvenance) or prov.problems() or prov.provenance_id not in self._issued:
+            return False
+        want = hmac.new(self._key, prov._body(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(want, prov.seal)
+
+
+def classification_digest(kind: "OutputKind") -> str:
+    """The digest a router provenance must carry to vouch for an output_kind assignment."""
+    return content_digest(f"output_kind={kind.value}")
+
+
+def _prov_problems(label: str, prov: Optional[RuntimeProvenance], ledger: "ProvenanceLedger", *, kind: str,
+                   output_digest: Optional[str] = None, authority_ref: Optional[str] = None,
+                   component_id: Optional[str] = None, input_digest: Optional[str] = None) -> list[str]:
+    if prov is None:
+        return [f"{label} requires trusted runtime provenance"]
+    if not ledger.verify(prov):
+        return [f"{label} provenance is not verifiable by the trusted ledger (self-asserted or forged)"]
+    out: list[str] = []
+    if prov.component_kind != kind:
+        out.append(f"{label} provenance must come from a {kind} component")
+    if output_digest is not None and prov.output_digest != output_digest:
+        out.append(f"{label} provenance output_digest does not match the bound digest")
+    if authority_ref is not None and prov.authority_evidence_ref != authority_ref:
+        out.append(f"{label} provenance authority_evidence_ref does not match the contract evidence")
+    if component_id is not None and prov.component_id != component_id:
+        out.append(f"{label} provenance component_id does not match")
+    if input_digest is not None and prov.input_digest != input_digest:
+        out.append(f"{label} provenance input_digest does not match what was verified")
+    return out
 
 
 # ---------------------------------------------------------------- evidence
@@ -349,7 +482,60 @@ VERIFICATION_METHODS = frozenset({"DETERMINISTIC", "TOOL", "ADVERSARIAL_EXPERT",
 
 
 @dataclass(frozen=True)
+class ClaimBinding(_Contract):
+    """A claim-bearing span of one specific output, identified by content, not by a mutable reference.
+
+    Extensibility hook for claim-level (progressive) verification: non-claim prose needs no verification,
+    while the factual claims are enumerated, digest-bound and individually verifiable. Only the claim's
+    canonical representation or span digest is stored: never hidden reasoning.
+    """
+
+    claim_id: str
+    output_ref: str
+    output_digest: str
+    claim_digest: str
+    span_start: Optional[int] = None
+    span_end: Optional[int] = None
+    canonical_claim: Optional[str] = None
+
+    def problems(self) -> list[str]:
+        out: list[str] = []
+        _need(self, ["claim_id", "output_ref"], out)
+        for n in ("output_digest", "claim_digest"):
+            if not _is_digest(getattr(self, n)):
+                out.append(f"{n} must be a lowercase sha256 hex digest")
+        has_span = self.span_start is not None or self.span_end is not None
+        if has_span and not (isinstance(self.span_start, int) and isinstance(self.span_end, int)
+                             and 0 <= self.span_start < self.span_end):
+            out.append("span must be integers with 0 <= span_start < span_end")
+        if not has_span and _blank(self.canonical_claim):
+            out.append("a claim needs a span or a canonical_claim representation")
+        if self.canonical_claim is not None and not _blank(self.canonical_claim) and _is_digest(self.claim_digest) \
+                and content_digest(self.canonical_claim) != self.claim_digest:
+            out.append("claim_digest must equal the sha256 of canonical_claim")
+        return out
+
+    def matches_output(self, released_text: str) -> bool:
+        """True iff ``released_text`` is exactly the bound output and (for span claims) the span is the bound claim."""
+        if content_digest(released_text) != self.output_digest:
+            return False
+        if self.span_start is not None and self.span_end is not None:
+            if self.span_end > len(released_text):
+                return False
+            return content_digest(released_text[self.span_start:self.span_end]) == self.claim_digest
+        return True
+
+
+@dataclass(frozen=True)
 class VerificationResult(_Contract):
+    """Verification of either a whole output or one claim, bound to immutable content by digest.
+
+    ``subject_ref`` names the output; ``subject_digest`` is the sha256 of the exact canonical bytes the
+    verifier was given (the immutable identity). A reference alone is never enough: a mutable reference could
+    be re-pointed after verification (time-of-check/time-of-use). With ``claim_id`` set the verdict covers only
+    that claim (``claim_digest``), still inside the output identified by ``subject_digest``.
+    """
+
     verification_id: str
     subject_ref: str
     method: str
@@ -357,6 +543,10 @@ class VerificationResult(_Contract):
     evidence_refs: tuple[str, ...]
     verifier_id: str
     producer_id: str
+    subject_digest: str = ""
+    claim_id: Optional[str] = None
+    claim_digest: Optional[str] = None
+    provenance: Optional[RuntimeProvenance] = None
 
     def problems(self) -> list[str]:
         out: list[str] = []
@@ -369,7 +559,19 @@ class VerificationResult(_Contract):
             out.append("verifier must be independent of the producer")
         if self.verdict == "PASSED" and not self.evidence_refs:
             out.append("a PASSED verification requires evidence_refs")
+        if not _is_digest(self.subject_digest):
+            out.append("subject_digest must be a lowercase sha256 hex digest of the exact verified output")
+        if (self.claim_id is None) != (self.claim_digest is None):
+            out.append("claim_id and claim_digest must be set together")
+        if self.claim_digest is not None and not _is_digest(self.claim_digest):
+            out.append("claim_digest must be a lowercase sha256 hex digest")
         return out
+
+    def trusted_problems(self, ledger: ProvenanceLedger) -> list[str]:
+        """Shape problems plus proof that a trusted VERIFIER component actually consumed this exact content."""
+        seen = self.claim_digest if self.claim_digest is not None else self.subject_digest
+        return self.problems() + _prov_problems("verification", self.provenance, ledger, kind="VERIFIER",
+                                                component_id=self.verifier_id, input_digest=seen)
 
 
 # ---------------------------------------------------------------- compute / request / result
@@ -435,34 +637,54 @@ class InformationGainQuery(_Contract):
 
 
 class OutputKind(str, Enum):
-    """Assigned by the ORNEUR router, never by a model."""
+    """Assigned by the ORNEUR router from trusted runtime state, never by a model or a payload."""
 
     DETERMINISTIC_EXACT_TEXT = "DETERMINISTIC_EXACT_TEXT"
     DETERMINISTIC_MATH = "DETERMINISTIC_MATH"
     DETERMINISTIC_JSON_LITERAL = "DETERMINISTIC_JSON_LITERAL"
-    GENERATED_STRUCTURED = "GENERATED_STRUCTURED"  # includes model-generated JSON_SCHEMA output
-    GENERATED_FREE_TEXT = "GENERATED_FREE_TEXT"
+    GENERATED_EPISTEMIC = "GENERATED_EPISTEMIC"                          # makes factual/inferential claims
+    GENERATED_STRUCTURED_EPISTEMIC = "GENERATED_STRUCTURED_EPISTEMIC"    # schema-shaped output that makes factual claims
+    GENERATED_TRANSFORMATIVE = "GENERATED_TRANSFORMATIVE"                # rewrite/translate/format/summarise supplied material
+    GENERATED_CREATIVE = "GENERATED_CREATIVE"                            # fiction, brainstorming presented as ideas
 
 
-# The only outputs whose correctness is completely established by an authoritative deterministic
-# mechanism (no model involved), so they alone may complete without a separate factual Verification.
+# Outputs whose correctness is completely established by an authoritative deterministic mechanism (no model).
 DETERMINISTIC_KINDS = {
     OutputKind.DETERMINISTIC_EXACT_TEXT: "EXACT_TEXT",
     OutputKind.DETERMINISTIC_MATH: "DETERMINISTIC_MATH",
     OutputKind.DETERMINISTIC_JSON_LITERAL: "JSON_LITERAL",
 }
+EPISTEMIC_KINDS = frozenset({OutputKind.GENERATED_EPISTEMIC, OutputKind.GENERATED_STRUCTURED_EPISTEMIC})
+NON_EPISTEMIC_GENERATED_KINDS = frozenset({OutputKind.GENERATED_TRANSFORMATIVE, OutputKind.GENERATED_CREATIVE})
+
+# How a result may be represented to the user for each kind (rule D: creative content is never presented as fact).
+PRESENTATION = {
+    OutputKind.DETERMINISTIC_EXACT_TEXT: "DETERMINISTIC_OUTPUT",
+    OutputKind.DETERMINISTIC_MATH: "DETERMINISTIC_OUTPUT",
+    OutputKind.DETERMINISTIC_JSON_LITERAL: "DETERMINISTIC_OUTPUT",
+    OutputKind.GENERATED_EPISTEMIC: "VERIFIED_CLAIMS",
+    OutputKind.GENERATED_STRUCTURED_EPISTEMIC: "VERIFIED_CLAIMS",
+    OutputKind.GENERATED_TRANSFORMATIVE: "TRANSFORMATION_OF_SUPPLIED_MATERIAL",
+    OutputKind.GENERATED_CREATIVE: "FICTION_OR_IDEATION",
+}
 
 
 @dataclass(frozen=True)
 class CognitiveResult(_Contract):
-    """Contract Compliance and factual Verification are DISTINCT concepts.
+    """Contract Compliance, factual Verification and provenance are three DISTINCT concepts.
 
-    ``contract_status``/``contract_evidence_ref`` say the output satisfied its format contract.
-    ``verifications`` say the content is supported by evidence. A model-generated result completes
-    only with a passing, independent, evidence-backed Verification of that exact output, even when its
-    contract is SATISFIED. Only router-typed deterministic outputs (exact text, deterministic math,
-    canonical JSON literal produced with zero model calls) may complete on their deterministic
-    authority alone.
+    * ``contract_*`` fields say the output satisfied its format contract; they never say it is true.
+    * ``verifications`` (whole-output, or claim-level through ``claim_bindings``) say the *claims* are supported.
+      They qualify only when bound to this exact output by ``output_ref`` AND ``output_digest`` and only when a
+      trusted VERIFIER provenance proves the verifier consumed those bytes.
+    * ``*_provenance`` fields prove a trusted ORNEUR runtime component made the privileged statement
+      (router classification, deterministic authority, claim extraction, epistemic screening). Strings such as
+      "ORNEUR_ROUTER" are not authority; a ``ProvenanceLedger`` must verify the seal.
+
+    Which outputs need factual verification: epistemic ones (they assert things about the world). Deterministic
+    outputs are established by their authoritative mechanism; transformative and creative outputs need none for
+    the content they merely reshape or invent, but any *new factual claim* they carry is enumerated in
+    ``claim_bindings`` and verified individually. COMPLETED results are validated only against a trusted ledger.
     """
 
     request_id: str
@@ -472,15 +694,22 @@ class CognitiveResult(_Contract):
     verifications: tuple[VerificationResult, ...]
     confidence: Optional[float]
     output_kind: Optional[OutputKind] = None
-    output_kind_assigned_by: str = "ORNEUR_ROUTER"
+    output_digest: Optional[str] = None
+    presented_as: Optional[str] = None
     contract_type: Optional[str] = None
     contract_status: Optional[str] = None
     contract_evidence_ref: Optional[str] = None
-    deterministic_authority: Optional[str] = None
+    contract_output_digest: Optional[str] = None
     model_calls: int = 0
+    claim_bindings: tuple[ClaimBinding, ...] = ()
+    source_digests: tuple[str, ...] = ()
+    classification_provenance: Optional[RuntimeProvenance] = None
+    deterministic_provenance: Optional[RuntimeProvenance] = None
+    claim_extraction_provenance: Optional[RuntimeProvenance] = None
+    screening_provenance: Optional[RuntimeProvenance] = None
     information_request: Optional[InformationGainQuery] = None
 
-    def problems(self) -> list[str]:
+    def problems(self, trust: Optional[ProvenanceLedger] = None) -> list[str]:
         out: list[str] = []
         _need(self, ["request_id"], out)
         if self.status not in {"COMPLETED", "FAILED_CLOSED", "NEEDS_INFORMATION"}:
@@ -495,49 +724,105 @@ class CognitiveResult(_Contract):
         if self.confidence is not None:
             _unit("confidence", self.confidence, out)
         if self.status == "COMPLETED":
-            out += self._completion_problems()
+            out += self._completion_problems(trust)
         return out
 
-    def _completion_problems(self) -> list[str]:
+    def release_matches(self, released: "str | bytes") -> bool:
+        """TOCTOU guard: the bytes about to be emitted must hash to the digest that was verified."""
+        return self.output_digest is not None and content_digest(released) == self.output_digest
+
+    # -- completion -----------------------------------------------------------------------------------
+    def _completion_problems(self, trust: Optional[ProvenanceLedger]) -> list[str]:
         out: list[str] = []
         if _blank(self.output_ref):
             out.append("COMPLETED requires output_ref")
         if self.confidence is None:
             out.append("COMPLETED requires a calibrated confidence")
+        if not _is_digest(self.output_digest):
+            out.append("COMPLETED requires output_digest (sha256 of the exact canonical bytes released)")
+        if trust is None:
+            return out + ["COMPLETED results are only valid against a trusted ProvenanceLedger (fail closed)"]
         if self.output_kind is None:
             return out + ["COMPLETED requires an output_kind assigned by the ORNEUR router"]
-        if self.output_kind_assigned_by != "ORNEUR_ROUTER":
-            out.append("output_kind must be assigned by the ORNEUR router, never declared by a model")
-        contract_ok = self.contract_status == "SATISFIED" and not _blank(self.contract_evidence_ref)
-        if self.output_kind in DETERMINISTIC_KINDS:
-            want = DETERMINISTIC_KINDS[self.output_kind]
-            if self.contract_type != want:
-                out.append(f"{self.output_kind.value} requires contract_type {want}")
-            if not contract_ok:
-                out.append("a deterministic output requires a SATISFIED contract with contract_evidence_ref")
-            if _blank(self.deterministic_authority):
-                out.append("a deterministic output requires the authoritative deterministic_authority that produced it")
-            if self.model_calls != 0:
-                out.append("a deterministic output must have been produced with zero model calls")
-            return out
-        # Model-generated outputs: contract compliance is necessary for structured output, never sufficient.
-        if self.deterministic_authority is not None:
-            out.append("deterministic_authority may only be set for deterministic outputs")
-        if self.output_kind is OutputKind.GENERATED_STRUCTURED:
-            if self.contract_type != "JSON_SCHEMA":
-                out.append("GENERATED_STRUCTURED requires contract_type JSON_SCHEMA")
-            if not contract_ok:
-                out.append("GENERATED_STRUCTURED requires a SATISFIED contract with contract_evidence_ref")
-        elif self.contract_type not in (None, "FREE_TEXT"):
-            out.append("GENERATED_FREE_TEXT may only carry contract_type FREE_TEXT")
+        kind = self.output_kind
+        out += _prov_problems("output_kind classification", self.classification_provenance, trust, kind="ROUTER",
+                              output_digest=classification_digest(kind))
+        if self.presented_as != PRESENTATION[kind]:
+            out.append(f"{kind.value} must be presented as {PRESENTATION[kind]} (creative/transformative output is never "
+                       "presented as verified fact; epistemic output only as verified claims)")
+        if kind in DETERMINISTIC_KINDS:
+            return out + self._deterministic_problems(kind, trust)
         if any(v.verdict == "FAILED" for v in self.verifications):
             out.append("a FAILED verification blocks completion")
-        qualifying = [v for v in self.verifications
-                      if v.verdict == "PASSED" and v.subject_ref == self.output_ref and not v.problems()]
-        if not qualifying:
-            out.append("a model-generated result requires a passing, independent, evidence-backed Verification "
-                       "of this exact output; contract compliance does not substitute for factual verification")
+        if self.deterministic_provenance is not None:
+            out.append("deterministic provenance may only accompany deterministic outputs")
+        if kind is OutputKind.GENERATED_STRUCTURED_EPISTEMIC:
+            if self.contract_type != "JSON_SCHEMA":
+                out.append("GENERATED_STRUCTURED_EPISTEMIC requires contract_type JSON_SCHEMA")
+            if not (self.contract_status == "SATISFIED" and not _blank(self.contract_evidence_ref)):
+                out.append("GENERATED_STRUCTURED_EPISTEMIC requires a SATISFIED contract with contract_evidence_ref")
+            if self.contract_output_digest is not None and self.contract_output_digest != self.output_digest:
+                out.append("contract_output_digest must equal output_digest")
+        elif self.contract_type not in (None, "FREE_TEXT"):
+            out.append(f"{kind.value} may only carry contract_type FREE_TEXT")
+        if kind in EPISTEMIC_KINDS:
+            return out + self._epistemic_coverage_problems(trust)
+        return out + self._non_epistemic_problems(trust)
+
+    def _deterministic_problems(self, kind: OutputKind, trust: ProvenanceLedger) -> list[str]:
+        out: list[str] = []
+        want = DETERMINISTIC_KINDS[kind]
+        if self.contract_type != want:
+            out.append(f"{kind.value} requires contract_type {want}")
+        if not (self.contract_status == "SATISFIED" and not _blank(self.contract_evidence_ref)):
+            out.append("a deterministic output requires a SATISFIED contract with contract_evidence_ref")
+        if self.contract_output_digest != self.output_digest:
+            out.append("a deterministic output requires contract_output_digest equal to output_digest")
+        if self.model_calls != 0:
+            out.append("a deterministic output must have been produced with zero model calls")
+        out += _prov_problems("deterministic authority", self.deterministic_provenance, trust, kind="DETERMINISTIC_AUTHORITY",
+                              output_digest=self.output_digest, authority_ref=self.contract_evidence_ref)
         return out
+
+    def _qualifies(self, v: VerificationResult, trust: ProvenanceLedger, claim: Optional[ClaimBinding]) -> bool:
+        if v.verdict != "PASSED" or v.trusted_problems(trust):
+            return False
+        if v.subject_ref != self.output_ref or v.subject_digest != self.output_digest:
+            return False
+        if claim is None:
+            return v.claim_id is None
+        return v.claim_id == claim.claim_id and v.claim_digest == claim.claim_digest
+
+    def _claims_problems(self, trust: ProvenanceLedger) -> list[str]:
+        out: list[str] = []
+        for c in self.claim_bindings:
+            out += [f"claim {c.claim_id}: {p}" for p in c.problems()]
+            if c.output_ref != self.output_ref or c.output_digest != self.output_digest:
+                out.append(f"claim {c.claim_id} is not bound to this exact output (ref and digest must match)")
+            elif not any(self._qualifies(v, trust, c) for v in self.verifications):
+                out.append(f"claim {c.claim_id} has no passing, trusted, digest-bound claim verification")
+        return out
+
+    def _epistemic_coverage_problems(self, trust: ProvenanceLedger) -> list[str]:
+        whole = any(self._qualifies(v, trust, None) for v in self.verifications)
+        if whole:
+            return self._claims_problems(trust) if self.claim_bindings else []
+        if self.claim_bindings:
+            out = _prov_problems("claim extraction", self.claim_extraction_provenance, trust, kind="CLAIM_EXTRACTOR",
+                                 output_digest=self.output_digest)
+            return out + self._claims_problems(trust)
+        return ["an epistemic result requires a passing, trusted, digest-bound Verification of this exact output "
+                "(or trusted claim-level coverage of every factual claim); contract compliance does not substitute for "
+                "factual verification"]
+
+    def _non_epistemic_problems(self, trust: ProvenanceLedger) -> list[str]:
+        out = _prov_problems("epistemic screening", self.screening_provenance, trust, kind="EPISTEMIC_SCREENER",
+                             output_digest=self.output_digest)
+        if self.output_kind is OutputKind.GENERATED_TRANSFORMATIVE:
+            if not self.source_digests or not all(_is_digest(d) for d in self.source_digests):
+                out.append("a transformation requires the sha256 digests of the supplied source material")
+        # Rule C: any NEW factual claim carried by a transformation or a creative work is epistemic for that claim.
+        return out + self._claims_problems(trust)
 
 
 # ---------------------------------------------------------------- experts
