@@ -1118,6 +1118,13 @@ def test_the_lightning_serving_function_is_the_modal_function_apart_from_the_int
     assert normalise(light_src) == normalise(modal_src)
 
 
+def _modal_run_path_source(text=None):
+    """cmd_run plus the two functions it delegates to (outcome classification and record assembly): the complete GPU run path, as one unparsed source string."""
+    tree = ast.parse(MODAL_H100.read_text() if text is None else text)
+    names = ("cmd_run", "classify_attempt_outcome", "assemble_attempt_record")
+    return "\n".join(ast.unparse(next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == nm)) for nm in names)
+
+
 def _runner_module():
     spec = importlib.util.spec_from_file_location("p21b420_lightning_runner", LIGHTNING_RUNNER)
     mod = importlib.util.module_from_spec(spec)
@@ -1968,7 +1975,7 @@ def test_smoke_acceptance_functions_never_execute_generated_text():
 
 def test_modal_harness_run_judges_technical_success_by_the_locked_smoke_semantics():
     text = MODAL_H100.read_text()
-    run = ast.unparse(next(n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run"))
+    run = _modal_run_path_source(text)
     assert "smoke_locked_acceptance" in run and "smokes_ok" in run and "compute_smoke_acceptance" in run
 
 
@@ -2297,7 +2304,7 @@ def test_the_modal_harness_proves_the_canonical_protocol_from_inside_the_contain
     assert "runtime_configuration_proof" in serve and "_container_proof(runner, cfg, result)" in serve and "runner.serving_config(control" in serve
     for key in ("runtime_configuration_id", "chat_template_kwargs_sent", "smoke_protocol_sha256", "prompt_sha256_sent", "model_id", "revision", "precision", "quantization"):
         assert f"'{key}'" in proof
-    run = ast.unparse(next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run"))
+    run = _modal_run_path_source()
     assert "container_proof_problems" in run and "proof_problems" in run and "HARNESS_FAILURE" in run
 
 
@@ -2626,8 +2633,8 @@ def _run_env(monkeypatch, tmp_path, result_builder):
     remote_calls = []
     runner = _runner_module()
 
-    def fake_remote(control):
-        remote_calls.append(control)
+    def fake_remote(control, *rest):
+        remote_calls.append(control if not rest else (control, *rest))          # canonical: the bare control; explicit candidate: (control, candidate)
         return result_builder(mod, runner)
 
     monkeypatch.setattr(mod, "serve_and_smoke", types.SimpleNamespace(remote=fake_remote))         # NOTHING real runs: no GPU, no Modal, no network
@@ -3527,7 +3534,7 @@ def test_a_new_harness_record_persists_the_container_execution_proof_for_every_c
     rec = json.loads((ev / "GENESIS_CONTROL_QWEN3_8B_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
     assert rec["container_execution_proof"]["provenance"] == "CONTAINER_RETURNED" and rec["container_execution_proof"]["runtime_policy_sha256"] == PINNED_POLICY_SHA256
     assert {k: v for k, v in rec["container_execution_proof"].items() if k != "provenance"} == rec["runtime_configuration"]["container_proof"]
-    assert "container_execution_proof" in ast.unparse(next(n for n in ast.walk(ast.parse(MODAL_H100.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run"))
+    assert "container_execution_proof" in _modal_run_path_source()
     validate_control_runtime_record(rec, evidence_root=ev)
 
 
@@ -3704,7 +3711,7 @@ def test_an_otherwise_identical_future_attempt_with_reconstructed_provenance_fai
 
 def test_the_harness_can_only_record_a_container_returned_proof_and_a_missing_one_is_a_harness_failure(monkeypatch, tmp_path):
     text = MODAL_H100.read_text()
-    run = ast.unparse(next(n for n in ast.walk(ast.parse(text)) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run"))
+    run = _modal_run_path_source(text)
     assert "RECONSTRUCTED" not in run and "provenance='CONTAINER_RETURNED'" in run.replace('"', "'")            # the run path can only stamp CONTAINER_RETURNED
     mod, ev, remote_calls = _run_env(monkeypatch, tmp_path, lambda m, r: {k: v for k, v in _fake_container_result(m, r).items() if k != "runtime_configuration_proof"})
     mod.cmd_run(types.SimpleNamespace(control="qwen3_8b"))
@@ -4597,3 +4604,245 @@ def test_the_native_v1_implementation_script_refuses_a_readiness_artifact_that_d
     imported = {n.names[0].name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import)} | {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
     assert not ({"modal", "subprocess", "torch", "vllm"} & imported) and not [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in ("remote", "spawn")]
     assert "differs from its independently pinned sha256" in script and "readiness_mod.verify_inputs()" in script
+
+
+# ══ Attempt-3 launch-path wiring for the CANDIDATE `mistral_nemo_native_v1` (CPU-only; every provider/GPU call is a stub) ═══════════════════
+A2_FINALIZED = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_FINALIZED_SNAPSHOT_2026-09-26.json"
+A2_FINALIZED_SHA256 = "c43aeecd31d556f33c7a786fe1c94934043af19e7fbf7de1ec3e4f2ee190a914"
+A2_PRECORRECTION_SHA256 = "7eabbd15d5b7a6ef89edb2641de7d259db11fa5779a23e6cac648fe690d7b929"
+CAND_SHA = "88a9cfec24af45da3dd4b969e24a3e44e82a6b3a850cb152a76cddbfb135459a"
+
+
+def _fake_mistral_result(mod, runner, *, use_candidate=True, extra_argv=(), kwargs_sent=None):
+    cfg = runner.serving_config("mistral_nemo", 420, CAND_ID if use_candidate else None)
+    ident = LOCKED_CONTROL_IDENTITIES["Mistral-Nemo-Instruct-2407"]
+    good = {"A": "READY", "B": "5", "C": '{"status":"ready"}'}
+    smokes = [{"smoke_id": sid, "http_status": 200, "raw_response": json.dumps({"choices": [{"message": {"content": good[sid]}}]}), "content": good[sid], "finish_reason": "stop",
+               "usage": {"completion_tokens": 2}, "latency_seconds": 0.5, "ttft_seconds": None, "matches_expected_exactly": True,
+               "chat_template_kwargs_sent": kwargs_sent, "prompt_sha256_sent": locked_protocol.prompt_sha256(sid)} for sid in "ABC"]
+    argv = ["/usr/local/bin/python", "-m", "vllm.entrypoints.openai.api_server", "--model", "<local pinned-revision snapshot dir>", "--served-model-name", MISTRAL_MODEL, "--dtype", "bfloat16",
+            "--max-model-len", "4096", "--gpu-memory-utilization", "0.9", "--host", "127.0.0.1", "--port", "8000", "--seed", "0", *cfg["extra_args"], *extra_argv]
+    result = {"server_ready": True, "error": None, "server_argv_sanitized": argv, "orphan_vllm_processes_after_shutdown": 0, "server_exit_code": 0,
+              "snapshot_dir_name": ident["revision"], "snapshot_dir_names": [ident["revision"]], "weight_bytes_observed": ident["expected_weight_bytes"],
+              "weight_shard_files": ["model-00001-of-00005.safetensors"], "models_endpoint": {"data": [{"id": MISTRAL_MODEL}]}, "versions": {"vllm": "0.29.0"}, "server_log": "",
+              "events": ["synthetic"], "cold_start_seconds": 100.0, "peak_gpu_memory_used_mib": 70000, "steady_gpu_memory_used_mib": 60000, "smoke_results": smokes,
+              "runtime_configuration_id_applied": (cfg.get("runtime_configuration") or {}).get("id"), "generation_config_sent": {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 64},
+              "stage_manifest": {"all_lfs_sha256_match": True}}
+    result["runtime_configuration_proof"] = mod._container_proof(runner, cfg, result)
+    return result
+
+
+def _mistral_run_env(monkeypatch, tmp_path, result_builder, *, decision_allowed=True):
+    mod, _ = _load_modal_h100(monkeypatch)
+    ev = tmp_path / "evidence"
+    shutil.copytree(EVIDENCE_DIR, ev)                                                             # the REAL persisted state (attempts 1-2, finalized attempt-2 record); never the real dir
+    monkeypatch.setattr(mod, "EVIDENCE_DIR", ev)
+    lc = mod._load_lightning_control()
+    baseline = {"billed_cost": "0E-8", "metered_cost": "21.05627853", "adjustments": {"credits": "-20.86000000", "free_storage": "-0.19627853", "plan_cost": "0E-8"},
+                "metered_cost_breakdown": {"ephemeral_apps": "20.85643982", "deployed_apps": "0.00101405", "volumes": "0.19627853"}}
+    decision = {"allowed": decision_allowed, "reasons": [] if decision_allowed else ["synthetic block"], "remaining_credit_usd": "8.72"}
+    preflights = []
+    monkeypatch.setattr(mod, "_preflight", lambda kind, key, gpu: preflights.append((kind, key, gpu)) or (lc.CONTROLS[key], {"h100": Decimal("3.95"), "cpu": Decimal("0.0473"), "mem": Decimal("0.008")},
+                                                                                                   Decimal("1.0828"), baseline, {"live_resources": 0}, Decimal("0.0380"), decision))
+    monkeypatch.setattr(mod, "billing_summary", lambda: baseline)
+    monkeypatch.setattr(mod, "cleanup_snapshot", lambda: {"live_resources": 0, "containers": [], "apps": [], "volumes": []})
+    monkeypatch.setattr(mod, "_app_row", lambda name, app_id: {"app_id": "ap-TEST", "state": "stopped", "tasks": "0"})
+    monkeypatch.setattr(mod, "_cli_json", lambda *a: [])
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)
+    remote_calls = []
+    runner = _runner_module()
+
+    def fake_remote(control, *rest):
+        remote_calls.append(control if not rest else (control, *rest))
+        return result_builder(mod, runner)
+
+    monkeypatch.setattr(mod, "serve_and_smoke", types.SimpleNamespace(remote=fake_remote))
+    monkeypatch.setattr(mod, "app", types.SimpleNamespace(run=lambda: contextlib.nullcontext(), app_id="ap-TEST", name="orneur-p21b420-h100-control-runtime"))
+    return mod, ev, remote_calls, preflights
+
+
+def _persisted_mistral_attempts(ev):
+    return json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json").read_text())["attempts"]
+
+
+def test_the_finalized_attempt_2_archive_is_distinct_byte_identical_and_pinned():
+    assert hashlib.sha256(A2_FINALIZED.read_bytes()).hexdigest() == A2_FINALIZED_SHA256
+    live = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json"
+    assert live.read_bytes() == A2_FINALIZED.read_bytes()                                                     # the live record IS the finalized attempt-2 record (until attempt 3 overwrites it)
+    pre = EVIDENCE_DIR / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_SNAPSHOT_2026-09-24.json"
+    assert pre.name != A2_FINALIZED.name and hashlib.sha256(pre.read_bytes()).hexdigest() == A2_PRECORRECTION_SHA256 and pre.read_bytes() != A2_FINALIZED.read_bytes()
+    rec = json.loads(A2_FINALIZED.read_text())
+    assert rec["attempts"][-1]["attempt_number"] == 2 and rec["billing_settlement"]["status"] == "OBSERVED" and "runtime_candidate_configuration_id" not in rec
+    idx = {e["path"].rsplit("/", 1)[-1]: e["sha256"] for e in json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_RUNTIME_SHA256_INDEX_2026-09-24.json").read_text())["entries"]}
+    assert idx[A2_FINALIZED.name] == A2_FINALIZED_SHA256 and idx[pre.name] == A2_PRECORRECTION_SHA256
+
+
+def test_the_exact_remote_call_shape_and_the_cli_selection_mechanism(monkeypatch):
+    mod, _ = _load_modal_h100(monkeypatch)
+    assert mod.remote_call_args("mistral_nemo") == ("mistral_nemo",) and mod.remote_call_args("mistral_nemo", CAND_ID) == ("mistral_nemo", "mistral_nemo_native_v1")
+    text = MODAL_H100.read_text()
+    tree = ast.parse(text)
+    run = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "cmd_run")
+    remotes = [n for n in ast.walk(run) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "remote"]
+    assert len(remotes) == 1 and ast.unparse(remotes[0]) == "serve_and_smoke.remote(*remote_call_args(a.control, candidate))"                     # ONE GPU call site, candidate only if explicit
+    src = ast.unparse(run)
+    assert src.index("candidate_launch_problems") < src.index("_preflight(") < src.index("serve_and_smoke.remote")                                    # refused from persisted evidence before any billing read / GPU call
+    assert "getattr(a, 'candidate', None)" in src and 'ap.add_argument("--candidate", default=None' in text
+    fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "serve_and_smoke")
+    assert [a.arg for a in fn.args.args] == ["control", "candidate"] and ast.unparse(fn.args.defaults[0]) == "None"                                # the remote function defaults to canonical
+    for bad_mode in ("preflight", "precache", "reconcile"):                                                                                            # --candidate is accepted only with --mode run
+        monkeypatch.setattr(sys, "argv", ["x", "--mode", bad_mode, "--control", "mistral_nemo", "--candidate", CAND_ID])
+        assert mod.main() == 2
+
+
+def test_a_normal_mistral_run_without_an_explicit_candidate_stays_canonical_hf_and_never_selects_the_candidate(monkeypatch, tmp_path):
+    mod, ev, remote_calls, _ = _mistral_run_env(monkeypatch, tmp_path, lambda m, r: _fake_mistral_result(m, r, use_candidate=False))
+    assert mod.cmd_run(types.SimpleNamespace(control="mistral_nemo")) in (0, 1) and remote_calls == ["mistral_nemo"]           # one positional argument: canonical
+    rec = json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert "runtime_candidate_configuration_id" not in rec and rec["runtime_configuration"] is None and "validator_note" not in rec
+    assert rec["container_execution_proof"]["tokenizer_mode"] == "hf" and rec["container_execution_proof"]["runtime_configuration_id"] is None
+
+
+def test_a_candidate_shaped_container_result_without_the_explicit_selection_is_a_harness_failure_never_a_silent_candidate(monkeypatch, tmp_path):
+    mod, ev, remote_calls, _ = _mistral_run_env(monkeypatch, tmp_path, lambda m, r: _fake_mistral_result(m, r, use_candidate=True))
+    mod.cmd_run(types.SimpleNamespace(control="mistral_nemo", candidate=None))
+    assert remote_calls == ["mistral_nemo"]
+    a3 = _persisted_mistral_attempts(ev)[-1]
+    assert a3["attempt_number"] == 3 and a3["outcome"] == "HARNESS_FAILURE" and "did not prove" in a3["reason"] and a3["valid_runtime_attempt"] is False
+
+
+def test_the_candidate_launch_gate_is_attempt_3_only_and_fail_closed(monkeypatch, tmp_path):
+    mod, ev, _, _ = _mistral_run_env(monkeypatch, tmp_path, lambda m, r: {})
+    monkeypatch.setattr(mod, "_cli_json", lambda *a: (_ for _ in ()).throw(AssertionError("no provider call")))
+    monkeypatch.setattr(mod, "billing_summary", lambda: (_ for _ in ()).throw(AssertionError("no provider call")))
+    assert mod.candidate_launch_problems("mistral_nemo", CAND_ID) == []                                                      # the audited base state is launchable for exactly this candidate
+    assert mod.candidate_launch_problems("mistral_nemo", "mistral_nemo_native_v2") and mod.candidate_launch_problems("mistral_nemo", "qwen3_8b_non_thinking_v1")
+    for control in ("qwen3_8b", "phi4"):
+        assert any("may only be used with control" in p for p in mod.candidate_launch_problems(control, CAND_ID))
+    attempts_path = ev / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json"
+    doc = json.loads(attempts_path.read_text())
+
+    def with_attempts(fn):
+        d = json.loads(json.dumps(doc))
+        fn(d)
+        attempts_path.write_text(json.dumps(d))
+        return mod.candidate_launch_problems("mistral_nemo", CAND_ID)
+
+    assert any("attempt 3 only" in p for p in with_attempts(lambda d: d["attempts"].pop()))                                 # latest attempt is 1, not 2
+    assert any("attempt 3 only" in p for p in with_attempts(lambda d: d["attempts"].append(dict(d["attempts"][-1], attempt_number=3))))   # attempt 3 already exists
+    assert any("not OBSERVED" in p for p in with_attempts(lambda d: d["attempts"][-1].update(billing_settlement_status="BILLING_SETTLEMENT_NOT_YET_OBSERVABLE")))
+    assert any("nonzero" in p for p in with_attempts(lambda d: d["attempts"][-1].update(owner_billed_delta_usd="0.01")))
+    assert any("unreadable" in p for p in with_attempts(lambda d: d["attempts"][-1].update(owner_billed_delta_usd="x")))
+    attempts_path.write_text(json.dumps(doc))
+    assert mod.candidate_launch_problems("mistral_nemo", CAND_ID) == []
+    rec_path = ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json"                                    # live record no longer equals the finalized archive
+    original = rec_path.read_bytes()
+    rec_path.write_bytes(original + b" ")
+    assert any("finalized attempt-2 archive" in p for p in mod.candidate_launch_problems("mistral_nemo", CAND_ID))
+    rec_path.write_bytes(original)
+    archive = ev / A2_FINALIZED.name
+    archive.rename(ev / "moved.json")
+    assert any("missing" in p for p in mod.candidate_launch_problems("mistral_nemo", CAND_ID))
+    (ev / "moved.json").rename(archive)
+    ready = ev / NATIVE_V1_READINESS.name
+    good_ready = ready.read_bytes()
+    ready.write_bytes(good_ready + b" ")                                                                                   # readiness artifact differs from its indexed sha
+    assert any("indexed sha256" in p for p in mod.candidate_launch_problems("mistral_nemo", CAND_ID))
+    ready.write_bytes(good_ready)
+    idx_path = ev / "GENESIS_CONTROL_RUNTIME_SHA256_INDEX_2026-09-24.json"
+    idx_good = idx_path.read_text()
+    idx = json.loads(idx_good)
+    for e in idx["entries"]:
+        if e["path"].endswith(A2_FINALIZED.name):
+            e["sha256"] = "0" * 64
+    idx_path.write_text(json.dumps(idx))
+    assert any("archive differs from its indexed" in p for p in mod.candidate_launch_problems("mistral_nemo", CAND_ID))
+    idx_path.write_text(idx_good)
+    monkeypatch.setitem(runtime_cfg.PINNED_CANDIDATE_SHA256, CAND_ID, "0" * 64)                                             # candidate fingerprint differs from its pin
+    assert any("fingerprint" in p or "drift" in p for p in mod.candidate_launch_problems("mistral_nemo", CAND_ID))
+    monkeypatch.setitem(runtime_cfg.PINNED_CANDIDATE_SHA256, CAND_ID, CAND_SHA)
+    monkeypatch.setattr(mod.locked_protocol, "protocol_sha256", lambda *a, **k: "0" * 64)                                   # canonical smoke protocol differs
+    assert any("smoke protocol" in p for p in mod.candidate_launch_problems("mistral_nemo", CAND_ID))
+
+
+def test_cmd_run_refuses_a_bad_candidate_launch_before_any_billing_read_or_gpu_call(monkeypatch, tmp_path):
+    mod, ev, remote_calls, preflights = _mistral_run_env(monkeypatch, tmp_path, lambda m, r: _fake_mistral_result(m, r))
+    for bad in ("mistral_nemo_native_v2", "qwen3_8b_non_thinking_v1"):
+        assert mod.cmd_run(types.SimpleNamespace(control="mistral_nemo", candidate=bad)) == 2
+    for control in ("qwen3_8b", "phi4"):
+        assert mod.cmd_run(types.SimpleNamespace(control=control, candidate=CAND_ID)) == 2
+    doc = json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json").read_text())
+    doc["attempts"].pop()
+    (ev / "GENESIS_CONTROL_MISTRAL_NEMO_ATTEMPTS_2026-09-24.json").write_text(json.dumps(doc))
+    assert mod.cmd_run(types.SimpleNamespace(control="mistral_nemo", candidate=CAND_ID)) == 2
+    assert remote_calls == [] and preflights == []                                                                           # nothing was called: no preflight, no billing read, no GPU
+
+
+def test_a_candidate_run_through_the_real_path_persists_the_candidate_and_preserves_attempts_1_and_2(monkeypatch, tmp_path):
+    mod, ev, remote_calls, _ = _mistral_run_env(monkeypatch, tmp_path, lambda m, r: _fake_mistral_result(m, r))
+    before_attempts = _persisted_mistral_attempts(ev)
+    assert [a["attempt_number"] for a in before_attempts] == [1, 2]
+    protected = {p.name: p.read_bytes() for p in ev.iterdir() if "ATTEMPT1" in p.name or "ATTEMPT2" in p.name}
+    rc = mod.cmd_run(types.SimpleNamespace(control="mistral_nemo", candidate=CAND_ID))
+    assert rc in (0, 1) and remote_calls == [("mistral_nemo", "mistral_nemo_native_v1")]                                      # the EXACT future remote call shape
+    attempts = _persisted_mistral_attempts(ev)
+    assert [a["attempt_number"] for a in attempts] == [1, 2, 3] and attempts[:2] == before_attempts
+    assert attempts[2]["outcome"] == "TECHNICAL_SUCCESS" and attempts[2]["valid_runtime_attempt"] is True
+    rec = json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert rec["runtime_candidate_configuration_id"] == CAND_ID and rec["runtime_configuration"] is None and "validator_note" not in rec
+    p = rec["container_execution_proof"]
+    assert p["provenance"] == "CONTAINER_RETURNED" and p["runtime_configuration_id"] == p["runtime_configuration_id_applied"] == CAND_ID and p["runtime_configuration_sha256"] == CAND_SHA
+    assert (p["tokenizer_mode"], p["config_format"], p["load_format"], p["reasoning_parser"], p["chat_template_flag"]) == ("mistral", "hf", "safetensors", None, None)
+    assert p["chat_template_kwargs_sent"] == {"A": None, "B": None, "C": None} and p["model_id"] == MISTRAL_MODEL and p["precision"] == "bfloat16" and p["quantization"] is None
+    assert p["smoke_protocol_sha256"] == CANONICAL_PROTOCOL_SHA256 and p["prompt_sha256_sent"] == {sid: locked_protocol.prompt_sha256(sid) for sid in "ABC"}
+    assert "no HF Jinja chat template" in rec["chat_template_source"] and "mistral-common path NOT used" not in rec["chat_template_source"]
+    pre = json.loads(next(ev.glob("GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT3_FINANCIAL_PREFLIGHT_*.json")).read_text())
+    assert pre["runtime_candidate_configuration_id"] == CAND_ID and pre["attempt_number"] == 3
+    validate_control_runtime_record(rec, evidence_root=ev)                                                                     # REAL validator on the REAL builder's record
+    for name, data in protected.items():                                                                                       # attempt-1/2 files (incl. both attempt-2 snapshots) untouched
+        assert (ev / name).read_bytes() == data, name
+    # the record mutated in the ways a bad/forged candidate attempt could look is rejected by the same validator
+    def rejects(mutator):
+        bad = json.loads(json.dumps(rec))
+        mutator(bad)
+        with pytest.raises(ControlRuntimeError):
+            validate_control_runtime_record(bad, evidence_root=ev)
+    rejects(lambda r: r["container_execution_proof"].update(tokenizer_mode="hf"))                                              # hf substitution
+    rejects(lambda r: r.pop("runtime_candidate_configuration_id"))                                                             # missing declaration => canonical hf expected
+    rejects(lambda r: r.update(runtime_candidate_configuration_id="mistral_nemo_native_v2"))                                   # id mismatch
+    rejects(lambda r: r["container_execution_proof"].update(runtime_configuration_id_applied="qwen3_8b_non_thinking_v1"))
+    rejects(lambda r: r["container_execution_proof"].update(runtime_configuration_sha256="0" * 64))                            # wrong fingerprint
+    rejects(lambda r: r["container_execution_proof"].update(chat_template_flag="t.jinja"))                                     # chat-template flag
+    rejects(lambda r: r["container_execution_proof"].update(chat_template_kwargs_sent={"A": None, "B": {"x": 1}, "C": None}))  # non-null template kwargs
+
+
+def test_every_candidate_proof_mismatch_in_a_real_run_is_a_harness_failure_never_reinterpreted_as_canonical(monkeypatch, tmp_path):
+    cases = {"hf_substitution": dict(use_candidate=False), "chat_template_flag": dict(extra_argv=("--chat-template", "t.jinja")),
+             "kwargs_sent": dict(kwargs_sent={"enable_thinking": False}), "reasoning_parser_flag": dict(extra_argv=("--reasoning-parser", "qwen3"))}
+    for i, (name, kw) in enumerate(cases.items()):
+        mod, ev, remote_calls, _ = _mistral_run_env(monkeypatch, tmp_path / name, lambda m, r, kw=kw: _fake_mistral_result(m, r, **kw))
+        mod.cmd_run(types.SimpleNamespace(control="mistral_nemo", candidate=CAND_ID))
+        assert remote_calls == [("mistral_nemo", CAND_ID)], name
+        a3 = _persisted_mistral_attempts(ev)[-1]
+        assert a3["attempt_number"] == 3 and a3["outcome"] == "HARNESS_FAILURE" and a3["valid_runtime_attempt"] is False and "did not prove" in a3["reason"], name
+        rec = json.loads((ev / "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+        assert rec["technical_serving_status"] != "QUALIFIED" and rec["runtime_qualification_status"] != "RUNTIME_QUALIFIED", name
+
+
+def test_a_blocked_financial_gate_stops_a_candidate_launch_before_the_gpu_and_the_hard_gates_are_untouched(monkeypatch, tmp_path):
+    mod, ev, remote_calls, preflights = _mistral_run_env(monkeypatch, tmp_path, lambda m, r: _fake_mistral_result(m, r), decision_allowed=False)
+    assert mod.cmd_run(types.SimpleNamespace(control="mistral_nemo", candidate=CAND_ID)) == 3 and remote_calls == [] and preflights == [("gpu", "mistral_nemo", True)]
+    from orca.eval.control_runtime_qualification import MAX_AUTHORIZED_RUN_COST_USD, financial_gate_decision
+    assert mod.RESERVE_USD == "5.00" and mod.HARD_TIMEOUT_SECONDS == 900 and MAX_AUTHORIZED_RUN_COST_USD == Decimal("1.25")
+    worst = mod.worst_case_cost({"h100": Decimal("3.95"), "cpu": Decimal("0.0473"), "mem": Decimal("0.008")}, gpu=True, cores=mod.CPU_CORES, memory_mib=mod.GPU_MEMORY_MIB, seconds=mod.HARD_TIMEOUT_SECONDS)
+    assert worst <= MAX_AUTHORIZED_RUN_COST_USD
+    summary = {"metered_cost": "21.05627853", "billed_cost": "0E-8", "adjustments": {"credits": "-20.86000000", "free_storage": "-0.19627853"}}
+    ok = financial_gate_decision(summary, worst_case_job_cost_usd=str(worst), credit_pool_usd="29.74643194", reserve_usd=mod.RESERVE_USD)
+    assert ok["allowed"] is True
+    for kw, why in ((dict(prior_positive_billing_seen=True), "positive"), (dict(prior_settlement_unresolved=True), "settlement")):
+        assert financial_gate_decision(summary, worst_case_job_cost_usd=str(worst), credit_pool_usd="29.74643194", reserve_usd=mod.RESERVE_USD, **kw)["allowed"] is False
+    assert financial_gate_decision(dict(summary, billed_cost="0.01"), worst_case_job_cost_usd=str(worst), credit_pool_usd="29.74643194", reserve_usd=mod.RESERVE_USD)["allowed"] is False
+    assert financial_gate_decision(summary, worst_case_job_cost_usd=str(worst), credit_pool_usd="10.00", reserve_usd=mod.RESERVE_USD)["allowed"] is False         # runway below reserve + run
+    assert financial_gate_decision(summary, worst_case_job_cost_usd="1.26", credit_pool_usd="29.74643194", reserve_usd=mod.RESERVE_USD)["allowed"] is False      # over the authorized ceiling
+    pre = ast.unparse(next(n for n in ast.walk(ast.parse(MODAL_H100.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "_preflight"))
+    assert "financial_gate_decision" in pre and "prior_settlement_unresolved=unresolved" in pre and "live Modal resource" in pre and "prior_positive_billing_seen" in pre

@@ -562,7 +562,170 @@ def _app_row(name: str, app_id: str | None):
     return None
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Explicit, fail-closed selection of a CANDIDATE runtime configuration for ONE owner-authorized attempt (never the default)
+# ══════════════════════════════════════════════════════════════════════════
+NATIVE_V1_READINESS_NAME = "GENESIS_MISTRAL_NEMO_NATIVE_V1_IMPLEMENTATION_READINESS_2026-09-26.json"
+ATTEMPT2_FINALIZED_SNAPSHOT_NAME = "GENESIS_CONTROL_MISTRAL_NEMO_RUNTIME_QUALIFICATION_ATTEMPT2_FINALIZED_SNAPSHOT_2026-09-26.json"
+SHA_INDEX_NAME = "GENESIS_CONTROL_RUNTIME_SHA256_INDEX_2026-09-24.json"
+# candidate id -> (control key it may be used with, the ONLY attempt number it may be used for). Deliberately NOT a general permission: a further attempt needs a new owner instruction.
+CANDIDATE_LAUNCH_ATTEMPT = {"mistral_nemo_native_v1": ("mistral_nemo", 3)}
+
+
+def remote_call_args(control: str, candidate: str | None = None) -> tuple:
+    """The exact positional arguments of the ONE GPU call. Canonical: (control,). Explicit candidate: (control, candidate). Never anything else."""
+    return (control,) if candidate is None else (control, candidate)
+
+
+def candidate_launch_problems(control: str, candidate: str) -> list[str]:
+    """Every reason a candidate launch must be REFUSED (empty list == permitted for exactly one attempt). Pure/CPU: reads only persisted evidence and pinned code."""
+    if candidate not in runtime_config.CANDIDATE_CONFIGURATIONS or candidate not in CANDIDATE_LAUNCH_ATTEMPT:
+        return [f"unknown candidate configuration {candidate!r}"]
+    want_control, want_attempt = CANDIDATE_LAUNCH_ATTEMPT[candidate]
+    if control != want_control:
+        return [f"candidate {candidate} may only be used with control {want_control!r}, not {control!r}"]
+    lc = _load_lightning_control()
+    cfg = lc.CONTROLS[control]
+    ident = LOCKED_CONTROL_IDENTITIES[cfg["control_name"]]
+    ref = runtime_config.CANDIDATE_CONFIGURATIONS[candidate]
+    bad: list[str] = []
+    if ident["model_id"] != ref["model_id"] or ident["revision"] != ref["revision"]:
+        bad.append("the locked model id/revision differ from the candidate's")
+    try:
+        runtime_config.verify_candidate_integrity()
+    except RuntimeError as e:
+        bad.append(str(e))
+    bad += runtime_config.candidate_problems(ref, model_id=ident["model_id"])
+    if runtime_config.candidate_configuration_sha256(candidate) != runtime_config.PINNED_CANDIDATE_SHA256[candidate]:
+        bad.append("candidate fingerprint differs from its pin")
+    if locked_protocol.protocol_sha256() != ref["smoke_protocol_sha256"]:
+        bad.append("the canonical smoke protocol differs from the candidate's")
+    tag = cfg["tag"]
+    attempts = _load_attempts(tag)
+    latest = attempts[-1]["attempt_number"] if attempts else 0
+    if latest != want_attempt - 1 or len(attempts) != latest:
+        bad.append(f"candidate {candidate} is for attempt {want_attempt} only; the latest persisted attempt is {latest}")
+    else:
+        prev = attempts[-1]
+        if prev.get("billing_settlement_status") != "OBSERVED":
+            bad.append(f"attempt {latest} settlement is {prev.get('billing_settlement_status')!r}, not OBSERVED")
+        try:
+            if to_decimal(prev.get("owner_billed_delta_usd"), "owner billed delta") != 0:
+                bad.append(f"attempt {latest} owner billed delta is nonzero")
+        except Exception:  # noqa: BLE001
+            bad.append(f"attempt {latest} owner billed delta is unreadable")
+    rec_path = EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_{DATE_TAG}.json"
+    snap_path = EVIDENCE_DIR / ATTEMPT2_FINALIZED_SNAPSHOT_NAME
+    if not rec_path.is_file() or not snap_path.is_file():
+        bad.append("the live record or the finalized attempt-2 archive is missing")
+    else:
+        live = json.loads(rec_path.read_text())
+        if (live.get("attempts") or [{}])[-1].get("attempt_number") != want_attempt - 1 or (live.get("billing_settlement") or {}).get("status") != "OBSERVED":
+            bad.append("the live record is not the finalized attempt-2 record (settlement OBSERVED)")
+        if rec_path.read_bytes() != snap_path.read_bytes():
+            bad.append("the live record differs from the finalized attempt-2 archive (it must be preserved byte-identically before attempt 3)")
+    idx_path = EVIDENCE_DIR / SHA_INDEX_NAME
+    ready_path = EVIDENCE_DIR / NATIVE_V1_READINESS_NAME
+    if not idx_path.is_file() or not ready_path.is_file():
+        bad.append("the SHA index or the native-v1 readiness artifact is missing")
+    else:
+        entries = {e["path"].rsplit("/", 1)[-1]: e["sha256"] for e in json.loads(idx_path.read_text())["entries"]}
+        if entries.get(NATIVE_V1_READINESS_NAME) != sha_of(ready_path):
+            bad.append("the native-v1 readiness artifact differs from its indexed sha256")
+        else:
+            ready = json.loads(ready_path.read_text())
+            if (ready.get("candidate_configuration_sha256") != runtime_config.candidate_configuration_sha256(candidate) or ready.get("candidate_implementation_ready_cpu_side") is not True
+                    or ready.get("canonical_mistral_config_still_hf") is not True):
+                bad.append("the native-v1 readiness artifact does not attest this candidate as CPU-ready")
+        if entries.get(ATTEMPT2_FINALIZED_SNAPSHOT_NAME) != (sha_of(snap_path) if snap_path.is_file() else None):
+            bad.append("the finalized attempt-2 archive differs from its indexed sha256")
+    return bad
+
+
+def classify_attempt_outcome(result, error_text, locked_identity, extra_args, candidate=None) -> dict:
+    """Outcome/reason/validity of ONE attempt from what the container returned (or the exception text). Pure. With `candidate` the container proof must establish exactly that
+    candidate configuration (its own flags, id, fingerprint); ANY proof problem is a HARNESS_FAILURE -- a candidate run is never reinterpreted as the canonical hf configuration."""
+    outcome, reason = "HARNESS_FAILURE", "unset"
+    # LOCKED smoke semantics: HTTP 200 + non-empty content is NOT enough; each response must satisfy its exact locked requirement
+    smokes_ok = bool(result and len(result.get("smoke_results", [])) == 3
+                     and all(smoke_locked_acceptance(x.get("smoke_id"), x.get("content"))[0] for x in result["smoke_results"]))
+    tech_ok = bool(result and not result.get("error") and result.get("server_ready") and smokes_ok
+                   and all(x.get("http_status") == 200 and x.get("content") and not x.get("error") for x in result["smoke_results"])
+                   and result.get("orphan_vllm_processes_after_shutdown") == 0)
+    proof_problems = (container_proof_problems(result, locked_identity["model_id"], locked_identity["revision"], None if candidate else extra_args, candidate_id=candidate)
+                      if result is not None else [])
+    if error_text is None and result is not None and proof_problems:
+        outcome, reason = "HARNESS_FAILURE", "the container did not prove the approved runtime configuration and canonical locked smoke protocol: " + "; ".join(proof_problems)
+    elif error_text is None:
+        smoke_statuses = [x.get("http_status") for x in (result or {}).get("smoke_results", [])]
+        http_rejected = bool(result and result.get("server_ready") and smoke_statuses and any(st != 200 for st in smoke_statuses))
+        if result is not None and (result.get("server_argv_sanitized") or result.get("error")):
+            outcome = "TECHNICAL_SUCCESS" if tech_ok else ("UNATTRIBUTED_REQUEST_REJECTION" if http_rejected else "TECHNICAL_FAILURE")
+            reason = ("server ready, all 3 LOCKED smokes matched exactly, clean shutdown" if tech_ok else
+                      ("server ready and identity proven, but the API rejected smoke call(s) at HTTP level (statuses %s); the rejection is not attributable to the model without diagnosis (see http_error)" % smoke_statuses
+                       if http_rejected else result.get("error") or ("locked smoke contract not met: " + "; ".join(f"{x.get('smoke_id')}: {smoke_locked_acceptance(x.get('smoke_id'), x.get('content'))[1]}"
+                                                                                           for x in result.get("smoke_results", []) if not smoke_locked_acceptance(x.get("smoke_id"), x.get("content"))[0])
+                                               if result.get("server_ready") and not smokes_ok else "smoke/teardown criteria not met")))
+        else:
+            outcome, reason = "HARNESS_FAILURE", "no usable result returned"
+    else:
+        outcome = "ABORTED_FINANCIAL_GUARD" if "Timeout" in error_text else "HARNESS_FAILURE"
+        reason = error_text
+    valid_runtime = bool(result and result.get("server_argv_sanitized") and outcome in ("TECHNICAL_SUCCESS", "TECHNICAL_FAILURE", "UNATTRIBUTED_REQUEST_REJECTION"))
+    return {"outcome": outcome, "reason": reason, "valid_runtime": valid_runtime, "tech_ok": tech_ok, "smokes_ok": smokes_ok, "proof_problems": proof_problems}
+
+
+def assemble_attempt_record(lc, control, candidate, result, n, attempt, delta, cleanup, log_path, log_sha, started, finished, attempts, financial_evidence, recon, settlement,
+                            locked_identity) -> dict:
+    """The record of ONE Modal H100 attempt, from the container's result and the harness's own financial/cleanup evidence. The ONLY record-assembly path.
+    A candidate attempt persists `runtime_candidate_configuration_id`, keeps `runtime_configuration` None (it is not the canonical Qwen-style configuration) and never claims that
+    an HF Jinja template was used."""
+    stage = (result or {}).get("stage_manifest")
+    fin = {"owner_cash_delta_usd": str(delta), "credits_after_nonnegative": True, "live_gpu_machines_after": cleanup["live_resources"]}
+    record = lc.build_lightning_record(control, result, n, attempt, fin, log_path, log_sha, started, finished, stage)
+    record.pop("lightning_financial", None)
+    record.update({
+        "gpu_provider": "Modal", "gpu_type": "NVIDIA H100 80GB (Modal H100)", "container_image": VLLM_IMAGE_TAG, "container_digest": VLLM_IMAGE_DIGEST,
+        "runtime_name": "vLLM (official vllm/vllm-openai image on Modal, OpenAI-compatible server; model from a verified Modal Volume cache)",
+        "attempts": attempts,
+        "financial_evidence": financial_evidence,
+        "financial_reconciliation": recon, "billing_settlement": settlement,
+        "billing_discrepancy_observation": {"artifact": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json",
+                                            "sha256": sha_of(EVIDENCE_DIR / "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json")},
+        "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests. Generated output was "
+                 "treated as data and never executed. Executed on Modal (canonical provider) on 1 x H100 80GB with weights from a hash-verified Modal Volume cache; earlier Modal, Lightning, "
+                 "Hugging Face and razorBridge attempts are preserved in attempts.",
+    })
+    for k in ("container_image", "container_digest"):
+        record["unobservable_reasons"].pop(k, None)
+    approved_cfg = runtime_config.configuration_for_model(locked_identity["model_id"])
+    record["runtime_configuration"] = None if approved_cfg is None else {
+        "id": approved_cfg["id"], "chat_template_kwargs": approved_cfg["chat_template_kwargs"],
+        "configuration_sha256": runtime_config.configuration_sha256(locked_identity["model_id"]),
+        "runtime_policy_sha256": runtime_config.PINNED_RUNTIME_POLICY_SHA256,
+        "container_proof": (result or {}).get("runtime_configuration_proof")}
+    proof_returned = (result or {}).get("runtime_configuration_proof")
+    record["container_execution_proof"] = None if proof_returned is None else dict(proof_returned, provenance="CONTAINER_RETURNED")     # persisted for EVERY control
+    record["reasoning_mode"] = runtime_config.effective_reasoning_mode(record.get("reasoning_mode"), record["runtime_configuration"])   # effective config, not template capability
+    record["smoke_acceptance"] = compute_smoke_acceptance(record)      # derived from the raw outputs; the raw outputs themselves are never altered
+    record["runtime_qualification_status"] = derive_runtime_status(
+        technical=record["technical_serving_status"], financial_acceptance=record["financial_acceptance_status"], cleanup=record["cleanup_status"],
+        owner_billed_delta_usd=record["owner_billed_delta_usd"], live_resources_after_cleanup=record["live_resources_after_cleanup"],
+        settlement_status=settlement["status"])          # delayed settlement => PENDING_SETTLEMENT_OBSERVATION, never a false RUNTIME_QUALIFIED
+    if candidate is not None:
+        record["runtime_candidate_configuration_id"] = candidate
+        record["chat_template_source"] = ("native Mistral tokenizer mode (mistral_common Tekkenizer from tekken.json; vLLM MistralRenderer); no HF Jinja chat template is used, "
+                                          "overridden or claimed, and no --chat-template flag is passed")
+    return record
+
+
 def cmd_run(a) -> int:
+    candidate = getattr(a, "candidate", None)           # None (the default) == the canonical configuration, byte-for-byte the previous behaviour
+    if candidate is not None:                            # explicit + fail-closed, decided from persisted evidence BEFORE any billing read or GPU call
+        problems = candidate_launch_problems(a.control, candidate)
+        if problems:
+            print("REFUSING TO START (candidate launch gate): " + "; ".join(problems))
+            return 2
     lc = _load_lightning_control()
     cfg, r, worst, before, snap, deduction, decision = _preflight("gpu", a.control, gpu=True)
     tag = cfg["tag"]
@@ -577,7 +740,8 @@ def cmd_run(a) -> int:
                "cpu_cores": CPU_CORES, "memory_mib": GPU_MEMORY_MIB, "worst_case_cost_usd": str(worst.quantize(Decimal('0.0001'))), "billing_summary_live": before,
                "credit_pool_usd": CREDIT_POOL_USD, "unresolved_prior_settlement_upper_bound_deducted_usd": str(deduction.quantize(Decimal('0.0001'))),
                "reserve_usd": RESERVE_USD, "cleanup_snapshot_before": snap, "gate_decision": decision, "precache_manifest": pre_manifest.name,
-               "billing_discrepancy_observation": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json"}
+               "billing_discrepancy_observation": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json",
+               "runtime_candidate_configuration_id": candidate}
     pre_path = EVIDENCE_DIR / f"{prefix}_FINANCIAL_PREFLIGHT_{DATE_TAG}.json"
     pre_sha = write_json(pre_path, pre_art)
     before_path = EVIDENCE_DIR / f"{prefix}_BILLING_BEFORE_{DATE_TAG}.json"
@@ -600,7 +764,7 @@ def cmd_run(a) -> int:
     try:
         with app.run():
             app_id = app.app_id
-            result = serve_and_smoke.remote(a.control)          # blocking; Modal's function timeout is the hard active-H100 cap
+            result = serve_and_smoke.remote(*remote_call_args(a.control, candidate))          # blocking; Modal's function timeout is the hard active-H100 cap
     except BaseException as e:  # noqa: BLE001  (includes Modal's function-timeout error)
         error_text = f"{type(e).__name__}: {str(e)[:300]}"
         app_id = getattr(app, "app_id", None)
@@ -636,32 +800,9 @@ def cmd_run(a) -> int:
                                         "app_row": row, "app_id": app_id, "itemized_rows_for_app": mine, "duration_seconds_wall": duration, "cleanup_snapshot": cleanup,
                                         "object_specific_note": "the app's own created/stopped timestamps (Modal) are the authoritative active window; itemized billing rows may lag"})
 
-    # LOCKED smoke semantics: HTTP 200 + non-empty content is NOT enough; each response must satisfy its exact locked requirement
-    smokes_ok = bool(result and len(result.get("smoke_results", [])) == 3
-                     and all(smoke_locked_acceptance(x.get("smoke_id"), x.get("content"))[0] for x in result["smoke_results"]))
-    tech_ok = bool(result and not result.get("error") and result.get("server_ready") and smokes_ok
-                   and all(x.get("http_status") == 200 and x.get("content") and not x.get("error") for x in result["smoke_results"])
-                   and result.get("orphan_vllm_processes_after_shutdown") == 0)
     locked_identity = LOCKED_CONTROL_IDENTITIES[cfg["control_name"]]
-    proof_problems = container_proof_problems(result, locked_identity["model_id"], locked_identity["revision"], cfg["extra_args"]) if result is not None else []
-    if error_text is None and result is not None and proof_problems:
-        outcome, reason = "HARNESS_FAILURE", "the container did not prove the approved runtime configuration and canonical locked smoke protocol: " + "; ".join(proof_problems)
-    elif error_text is None:
-        smoke_statuses = [x.get("http_status") for x in (result or {}).get("smoke_results", [])]
-        http_rejected = bool(result and result.get("server_ready") and smoke_statuses and any(st != 200 for st in smoke_statuses))
-        if result is not None and (result.get("server_argv_sanitized") or result.get("error")):
-            outcome = "TECHNICAL_SUCCESS" if tech_ok else ("UNATTRIBUTED_REQUEST_REJECTION" if http_rejected else "TECHNICAL_FAILURE")
-            reason = ("server ready, all 3 LOCKED smokes matched exactly, clean shutdown" if tech_ok else
-                      ("server ready and identity proven, but the API rejected smoke call(s) at HTTP level (statuses %s); the rejection is not attributable to the model without diagnosis (see http_error)" % smoke_statuses
-                       if http_rejected else result.get("error") or ("locked smoke contract not met: " + "; ".join(f"{x.get('smoke_id')}: {smoke_locked_acceptance(x.get('smoke_id'), x.get('content'))[1]}"
-                                                                                           for x in result.get("smoke_results", []) if not smoke_locked_acceptance(x.get("smoke_id"), x.get("content"))[0])
-                                               if result.get("server_ready") and not smokes_ok else "smoke/teardown criteria not met")))
-        else:
-            outcome, reason = "HARNESS_FAILURE", "no usable result returned"
-    else:
-        outcome = "ABORTED_FINANCIAL_GUARD" if "Timeout" in error_text else "HARNESS_FAILURE"
-        reason = error_text
-    valid_runtime = bool(result and result.get("server_argv_sanitized") and outcome in ("TECHNICAL_SUCCESS", "TECHNICAL_FAILURE", "UNATTRIBUTED_REQUEST_REJECTION"))
+    cls = classify_attempt_outcome(result, error_text, locked_identity, cfg["extra_args"], candidate)
+    outcome, reason, valid_runtime = cls["outcome"], cls["reason"], cls["valid_runtime"]
     cleanup_pass = cleanup["live_resources"] == 0
     log_path = EVIDENCE_DIR / f"{prefix}_RAW_LOG_{DATE_TAG}.txt"
     log_path.write_text(("\n".join(result.get("events", [])) + "\n\n===== vLLM server log (tail) =====\n" + result.get("server_log", "")) if result else f"NO RESULT RETURNED: {reason}\n")
@@ -674,39 +815,10 @@ def cmd_run(a) -> int:
     attempts = _load_attempts(tag) + [attempt]
     write_json(_attempts_path(tag), {"control_name": cfg["control_name"], "attempts": attempts})
 
-    stage = (result or {}).get("stage_manifest")
-    fin = {"owner_cash_delta_usd": str(delta), "credits_after_nonnegative": True, "live_gpu_machines_after": cleanup["live_resources"]}
-    record = lc.build_lightning_record(a.control, result, n, attempt, fin, log_path, log_sha, started, finished, stage)
-    record.pop("lightning_financial", None)
-    record.update({
-        "gpu_provider": "Modal", "gpu_type": "NVIDIA H100 80GB (Modal H100)", "container_image": VLLM_IMAGE_TAG, "container_digest": VLLM_IMAGE_DIGEST,
-        "runtime_name": "vLLM (official vllm/vllm-openai image on Modal, OpenAI-compatible server; model from a verified Modal Volume cache)",
-        "attempts": attempts,
-        "financial_evidence": {"preflight_artifact": pre_path.name, "preflight_sha256": pre_sha, "billing_before_artifact": before_path.name,
-                               "billing_before_sha256": before_sha, "billing_after_artifact": after_path.name, "billing_after_sha256": after_sha},
-        "financial_reconciliation": recon, "billing_settlement": settlement,
-        "billing_discrepancy_observation": {"artifact": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json",
-                                            "sha256": sha_of(EVIDENCE_DIR / "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json")},
-        "notes": "Runtime-compatibility evidence only. Capability is UNPROVEN: no benchmark, Genesis eval item, or holdout was run. Metrics come from tiny smoke requests. Generated output was "
-                 "treated as data and never executed. Executed on Modal (canonical provider) on 1 x H100 80GB with weights from a hash-verified Modal Volume cache; earlier Modal, Lightning, "
-                 "Hugging Face and razorBridge attempts are preserved in attempts.",
-    })
-    for k in ("container_image", "container_digest"):
-        record["unobservable_reasons"].pop(k, None)
-    approved_cfg = runtime_config.configuration_for_model(locked_identity["model_id"])
-    record["runtime_configuration"] = None if approved_cfg is None else {
-        "id": approved_cfg["id"], "chat_template_kwargs": approved_cfg["chat_template_kwargs"],
-        "configuration_sha256": runtime_config.configuration_sha256(locked_identity["model_id"]),
-        "runtime_policy_sha256": runtime_config.PINNED_RUNTIME_POLICY_SHA256,
-        "container_proof": (result or {}).get("runtime_configuration_proof")}
-    proof_returned = (result or {}).get("runtime_configuration_proof")
-    record["container_execution_proof"] = None if proof_returned is None else dict(proof_returned, provenance="CONTAINER_RETURNED")     # persisted for EVERY control
-    record["reasoning_mode"] = runtime_config.effective_reasoning_mode(record.get("reasoning_mode"), record["runtime_configuration"])   # effective config, not template capability
-    record["smoke_acceptance"] = compute_smoke_acceptance(record)      # derived from the raw outputs; the raw outputs themselves are never altered
-    record["runtime_qualification_status"] = derive_runtime_status(
-        technical=record["technical_serving_status"], financial_acceptance=record["financial_acceptance_status"], cleanup=record["cleanup_status"],
-        owner_billed_delta_usd=record["owner_billed_delta_usd"], live_resources_after_cleanup=record["live_resources_after_cleanup"],
-        settlement_status=settlement["status"])          # delayed settlement => PENDING_SETTLEMENT_OBSERVATION, never a false RUNTIME_QUALIFIED
+    financial_evidence = {"preflight_artifact": pre_path.name, "preflight_sha256": pre_sha, "billing_before_artifact": before_path.name, "billing_before_sha256": before_sha,
+                          "billing_after_artifact": after_path.name, "billing_after_sha256": after_sha}
+    record = assemble_attempt_record(lc, a.control, candidate, result, n, attempt, delta, cleanup, log_path, log_sha, started, finished, attempts, financial_evidence, recon,
+                                     settlement, locked_identity)
     validation_error = None
     try:
         validate_control_runtime_record(record, evidence_root=EVIDENCE_DIR)
@@ -1247,7 +1359,11 @@ def main() -> int:
     ap.add_argument("--control", required=True, choices=CONTROL_KEYS)
     ap.add_argument("--attempt", type=int, help="reconcile only: the completed attempt number")
     ap.add_argument("--kind", choices=("gpu", "cpu"), default="gpu", help="preflight only")
+    ap.add_argument("--candidate", default=None, help="run only: explicitly select a CANDIDATE runtime configuration (e.g. mistral_nemo_native_v1); omitted == canonical")
     a = ap.parse_args()
+    if a.candidate is not None and a.mode != "run":
+        print("--candidate is accepted only with --mode run; refusing")
+        return 2
     if a.mode == "preflight":
         return cmd_preflight(a)
     if a.mode == "precache":
