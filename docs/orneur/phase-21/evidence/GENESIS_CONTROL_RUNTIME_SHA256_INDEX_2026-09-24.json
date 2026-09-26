@@ -4,8 +4,8 @@
     {
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md",
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "fe56f8657592296b067285be3f3e6fe0693681fc6c33f3f86b3c81d179175971",
-      "size_bytes": 52642
+      "sha256": "034e2b8bff40ae01efaa899b12fc7841b6e4a9d3694cd20d643ecd6fc293934f",
+      "size_bytes": 53636
     },
     {
       "evidence_role": "genesis_billing_discrepancy_observation_2026-09-24.json",
@@ -606,6 +606,12 @@
       "path": "docs/orneur/phase-21/GENESIS_FOUNDATION_DECISION_PACKAGE_2026-09-26.json",
       "sha256": "bf79cf94aa0ddf35979e0c2c26372ed76addc15373213c6cb47162987b1bafb2",
       "size_bytes": 31241
+    },
+    {
+      "evidence_role": "orneur_system_contract_qualification_2026-09-26.json",
+      "path": "docs/orneur/phase-21/evidence/ORNEUR_SYSTEM_CONTRACT_QUALIFICATION_2026-09-26.json",
+      "sha256": "9b14c4cf90d1022cfd76467d73d82202177698e6c4c16d98a39988938111ca19",
+      "size_bytes": 20030
     }
   ],
   "evidence_type": "GENESIS_CONTROL_RUNTIME_QUALIFICATION_INTEGRITY_INDEX",
