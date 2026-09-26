@@ -802,6 +802,10 @@ def _check_container_execution_proof(record: dict, evidence_root: Path | None = 
     for key, want in _expected_flags(record).items():
         if proof.get(key) != want:
             raise ControlRuntimeError(f"container proof: {key} proven as {proof.get(key)!r}, locked value {want!r}")
+    if proof.get("chat_template_flag") is not None:        # no control may run with a --chat-template override (historical proofs simply lack the key)
+        raise ControlRuntimeError("container proof: a --chat-template server flag was used; the canonical chat template of the pinned revision must be the one in use")
+    if record.get("control_name") == "Phi-4" and provenance == "CONTAINER_RETURNED" and "chat_template_flag" not in proof:
+        raise ControlRuntimeError("container proof: a Phi-4 attempt must prove that no --chat-template server flag was used (chat_template_flag)")
     if provenance == "CONTAINER_RETURNED":
         if proof.get("runtime_policy_sha256") != _rc.PINNED_RUNTIME_POLICY_SHA256:
             raise ControlRuntimeError("container proof: runtime-policy sha256 must equal the pinned runtime-policy sha256")

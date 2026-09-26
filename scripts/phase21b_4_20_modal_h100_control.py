@@ -473,6 +473,10 @@ def container_proof_problems(result, model_id: str, locked_revision: str, extra_
         bad.append("runtime configuration fingerprint differs from the canonical one")
     if candidate_id is not None and ("chat_template_flag" not in proof or proof.get("chat_template_flag") is not None):
         bad.append("a candidate attempt must prove that no --chat-template server flag was used")
+    elif candidate_id is None and proof.get("chat_template_flag") is not None:
+        bad.append("a --chat-template server flag was used; the canonical chat template of the pinned revision must be the one in use")
+    if candidate_id is None and model_id == "microsoft/phi-4" and "chat_template_flag" not in proof:
+        bad.append("a Phi-4 attempt must prove that no --chat-template server flag was used (chat_template_flag)")
     if proof.get("runtime_policy_sha256") != runtime_config.PINNED_RUNTIME_POLICY_SHA256:
         bad.append("container runtime-policy sha256 differs from the locally pinned runtime-policy sha256")
     if proof.get("smoke_protocol_sha256") != locked_protocol.protocol_sha256():

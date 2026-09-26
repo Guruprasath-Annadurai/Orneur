@@ -2512,7 +2512,8 @@ def _proof_for(mod, model_key="Qwen3-8B", **over):
         "runtime_policy_sha256": runtime_cfg.PINNED_RUNTIME_POLICY_SHA256,
         "chat_template_kwargs_sent": {sid: None for sid in "ABC"}, "smoke_protocol_sha256": CANONICAL_PROTOCOL_SHA256,
         "prompt_sha256_sent": {sid: locked_protocol.prompt_sha256(sid) for sid in "ABC"}, "model_id": locked["model_id"], "served_model_id": locked["model_id"],
-        "revision": locked["revision"], "precision": "bfloat16", "quantization": None, "reasoning_parser": None}
+        "revision": locked["revision"], "precision": "bfloat16", "quantization": None, "reasoning_parser": None,
+        "chat_template_flag": None}                                            # the harness's container proof now always reports the --chat-template flag (None == not used)
     proof.update(over)
     return {"runtime_configuration_proof": proof}
 
@@ -4875,3 +4876,145 @@ def test_a_blocked_financial_gate_stops_a_candidate_launch_before_the_gpu_and_th
     assert financial_gate_decision(summary, worst_case_job_cost_usd="1.26", credit_pool_usd="29.74643194", reserve_usd=mod.RESERVE_USD)["allowed"] is False      # over the authorized ceiling
     pre = ast.unparse(next(n for n in ast.walk(ast.parse(MODAL_H100.read_text())) if isinstance(n, ast.FunctionDef) and n.name == "_preflight"))
     assert "financial_gate_decision" in pre and "prior_settlement_unresolved=unresolved" in pre and "live Modal resource" in pre and "prior_positive_billing_seen" in pre
+
+
+# ══ Phi-4 CPU-only runtime readiness (no GPU, no generation; Phi stays NOT_TESTED) ═════════════════════════════════════════════════════════
+PHI_MODEL = "microsoft/phi-4"
+PHI_REV = "2db69c1c3e91a05d2c64a3185acfbaf36f744e25"
+PHI_READINESS = EVIDENCE_DIR / "GENESIS_PHI4_RUNTIME_READINESS_2026-09-26.json"
+PHI_SCRIPT = REPO_ROOT / "scripts/phase21b_4_20_phi4_cpu_readiness.py"
+
+
+def test_phi4_readiness_artifact_states_cpu_ready_and_the_canonical_configuration_unchanged():
+    d = json.loads(PHI_READINESS.read_text())
+    assert d["readiness_verdict"] == "PHI4_CPU_READY" and d["model_id"] == PHI_MODEL and d["revision"] == PHI_REV and d["expected_weight_bytes"] == 29319042992
+    assert set(d["statements"]) == {"CPU readiness is NOT runtime qualification", "CPU readiness is NOT capability qualification", "NO GPU was used", "NO generation occurred"}
+    for k in ("no_gpu_used", "no_modal_used", "no_provider_call", "no_model_weights_loaded", "no_generation"):
+        assert d[k] is True
+    assert d["generated_output_executed"] is False and d["canonical_phi_configuration_changed"] is False and d["no_new_candidate_created"] is True and d["not_covered"]
+    c = d["canonical_phi4_configuration"]
+    assert (c["extra_args"], c["runtime_configuration"], c["chat_template_kwargs"], c["tokenizer_mode"], c["config_format"], c["load_format"], c["reasoning_parser"]) == ([], None, None, None, None, None, None)
+    assert (c["max_model_len"], c["smoke_max_tokens"], c["gpu_memory_utilization"]) == (4096, 64, 0.9) and c["sampling_generation_config"] == {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 64}
+    r = _runner_module().serving_config("phi4")                                                                       # the artifact reflects the ACTUAL source of truth today
+    assert r["extra_args"] == [] and r["runtime_configuration"] is None and r["model_id"] == PHI_MODEL and r["revision"] == PHI_REV
+    assert all(d["server_argv_checks"].values()) and d["server_argv_sanitized"][-2:] == ["--seed", "0"] and "--tokenizer-mode" not in d["server_argv_sanitized"] and "--chat-template" not in d["server_argv_sanitized"]
+
+
+def test_phi4_readiness_input_verification_and_tokenizer_results_are_recorded_fail_closed_style():
+    d = json.loads(PHI_READINESS.read_text())
+    iv = d["input_verification"]
+    assert iv["snapshot_integrity_verified"] and iv["source_integrity_verified"] and "mutable ref" in iv["method"]
+    for f, v in iv["verified_snapshot"].items():
+        assert v["matches_container_manifest_size"] and v["matches_hf_tree_at_exact_revision"] and len(v["sha256"]) == 64 and len(v["git_blob_sha1"]) == 40, f
+    manifest = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_MODAL_PRECACHE_MANIFEST_2026-09-24.json").read_text())["manifest"]
+    sizes = {f["filename"]: f["bytes"] for f in manifest["files"]}
+    assert all(sizes[f] == v["bytes"] for f, v in iv["verified_snapshot"].items()) and manifest["revision"] == PHI_REV
+    t = d["tokenizer"]
+    assert t["chat_template_present"] and t["get_chat_template"]["ok"] and t["is_fast"] and t["bos"]["id"] == 100257 and t["eos"]["id"] == 100265 and t["pad"]["id"] == 100349
+    assert t["chat_template_source"].startswith("tokenizer_config.json") and t["chat_template_utf8_bytes"] == 462
+    for sid, v in d["chat_preprocessing_transformers"].items():
+        assert v["ok"] and v["deterministic"] and v["decoded_equals_rendered"] and v["chat_template_exception"] is None and v["token_ids"] and len(v["token_ids_sha256"]) == 64, sid
+    h = d["vllm_hf_renderer_path_real_functions"]
+    assert not h["resolve_chat_template"]["returned_none"] and h["resolve_chat_template"]["equals_tokenizer_config_template"] and all(not v["raised"] and v["equals_transformers_render"] for v in h["safe_apply"].values())
+    m = d["tokenizer_mode_resolution_real_vllm"]
+    assert (m["resolved_on_local_snapshot_dir"], m["resolved_on_exact_hf_tree_listing"], m["mistral_native_path_selected"]) == ("hf", "hf", False) and m["renderer"] == ["hf", "HfRenderer"]
+    for sid, v in d["request_payloads_real_builder"].items():
+        assert v["keys"] == ["max_tokens", "messages", "model", "seed", "temperature", "top_p"] and not v["has_forbidden_field"] and v["messages_canonical"], sid
+        assert v["expected_prompt_sha256"] == locked_protocol.prompt_sha256(sid)
+
+
+def test_phi4_readiness_script_verifies_pins_and_uses_no_provider_or_subprocess_or_gpu_call():
+    text = PHI_SCRIPT.read_text()
+    tree = ast.parse(text)
+    imported = {n.names[0].name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import)} | {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    assert not ({"modal", "subprocess", "torch", "vllm"} & imported) and not [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in ("remote", "spawn")]
+    pins = re.findall(r'"([a-z_.]+\.(?:json|txt))": "([0-9a-f]{64})"', text.split("PHI_SNAPSHOT_SHA256 = {")[1].split("}")[0])
+    assert len(pins) == 9 and PHI_REV == re.search(r'^REV = "([0-9a-f]{40})"', text, re.M).group(1)
+    d = json.loads(PHI_READINESS.read_text())
+    assert dict(pins) == {f: v["sha256"] for f, v in d["input_verification"]["verified_snapshot"].items()}             # pinned constants == what was verified
+    for needle in ("never a mutable ref", "does not match the Hugging Face tree of the exact revision", "differs from its pinned sha256", "pinned snapshot file missing", "differs from the container's persisted manifest"):
+        assert needle in text, needle
+
+
+def _fake_phi_result(mod, runner, *, extra_argv=(), kwargs_sent=None, drop_flag_key=False, model_leak=None):
+    cfg = runner.serving_config("phi4", 420)
+    ident = LOCKED_CONTROL_IDENTITIES["Phi-4"]
+    good = {"A": "READY", "B": "5", "C": '{"status":"ready"}'}
+    smokes = [{"smoke_id": sid, "http_status": 200, "raw_response": json.dumps({"choices": [{"message": {"content": good[sid]}}]}), "content": good[sid], "finish_reason": "stop",
+               "usage": {"completion_tokens": 2}, "latency_seconds": 0.5, "ttft_seconds": None, "matches_expected_exactly": True, "chat_template_kwargs_sent": kwargs_sent,
+               "prompt_sha256_sent": locked_protocol.prompt_sha256(sid)} for sid in "ABC"]
+    argv = ["/usr/local/bin/python", "-m", "vllm.entrypoints.openai.api_server", "--model", "<local pinned-revision snapshot dir>", "--served-model-name", PHI_MODEL, "--dtype", "bfloat16",
+            "--max-model-len", "4096", "--gpu-memory-utilization", "0.9", "--host", "127.0.0.1", "--port", "8000", "--seed", "0", *cfg["extra_args"], *extra_argv]
+    result = {"server_ready": True, "error": None, "server_argv_sanitized": argv, "orphan_vllm_processes_after_shutdown": 0, "server_exit_code": 0, "snapshot_dir_name": ident["revision"],
+              "snapshot_dir_names": [ident["revision"]], "weight_bytes_observed": ident["expected_weight_bytes"], "weight_shard_files": ["model-00001-of-00006.safetensors"],
+              "models_endpoint": {"data": [{"id": PHI_MODEL}]}, "versions": {"vllm": "0.29.0"}, "server_log": "", "events": ["synthetic"], "cold_start_seconds": 100.0, "peak_gpu_memory_used_mib": 70000,
+              "steady_gpu_memory_used_mib": 60000, "smoke_results": smokes, "runtime_configuration_id_applied": None, "generation_config_sent": {"temperature": 0, "top_p": 1, "seed": 0, "max_tokens": 64},
+              "stage_manifest": {"all_lfs_sha256_match": True}}
+    result["runtime_configuration_proof"] = mod._container_proof(runner, cfg, result)
+    if drop_flag_key:
+        del result["runtime_configuration_proof"]["chat_template_flag"]
+    if model_leak:
+        result["runtime_configuration_proof"].update(model_leak)
+    return result
+
+
+def _phi_run_env(monkeypatch, tmp_path, builder):
+    mod, ev, remote_calls, preflights = _mistral_run_env(monkeypatch, tmp_path, builder)               # same stubbed harness; only the control differs (Phi has no attempts in the real state)
+    return mod, ev, remote_calls, preflights
+
+
+def test_a_future_phi4_run_through_the_real_path_needs_the_full_canonical_proof_including_no_chat_template_flag(monkeypatch, tmp_path):
+    mod, ev, remote_calls, _ = _phi_run_env(monkeypatch, tmp_path / "ok", lambda m, r: _fake_phi_result(m, r))
+    protected = {p.name: p.read_bytes() for p in ev.iterdir() if "QWEN3_8B" in p.name or "MISTRAL_NEMO" in p.name}
+    assert mod.cmd_run(types.SimpleNamespace(control="phi4")) in (0, 1) and remote_calls == ["phi4"]                       # canonical: the bare control, no candidate
+    attempts = json.loads((ev / "GENESIS_CONTROL_PHI4_ATTEMPTS_2026-09-24.json").read_text())["attempts"]
+    assert [a["attempt_number"] for a in attempts] == [1] and attempts[0]["outcome"] == "TECHNICAL_SUCCESS" and attempts[0]["valid_runtime_attempt"] is True
+    rec = json.loads((ev / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert "validator_note" not in rec and rec["runtime_configuration"] is None and "runtime_candidate_configuration_id" not in rec
+    p = rec["container_execution_proof"]
+    assert p["provenance"] == "CONTAINER_RETURNED" and p["runtime_configuration_id"] is None and p["chat_template_kwargs_sent"] == {"A": None, "B": None, "C": None} and p["chat_template_flag"] is None
+    assert (p["tokenizer_mode"], p["config_format"], p["load_format"], p["reasoning_parser"], p["quantization"], p["precision"]) == (None, None, None, None, None, "bfloat16")
+    assert p["model_id"] == PHI_MODEL and p["revision"] == PHI_REV and p["smoke_protocol_sha256"] == CANONICAL_PROTOCOL_SHA256
+    validate_control_runtime_record(rec, evidence_root=ev)
+    for name, data in protected.items():                                                                                    # Qwen and Mistral evidence untouched by a Phi run
+        assert (ev / name).read_bytes() == data, name
+
+    def rejects(mutator):
+        bad = json.loads(json.dumps(rec))
+        mutator(bad)
+        with pytest.raises(ControlRuntimeError):
+            validate_control_runtime_record(bad, evidence_root=ev)
+    rejects(lambda r: r["container_execution_proof"].pop("chat_template_flag"))                                              # Phi-4 must PROVE no --chat-template flag
+    rejects(lambda r: r["container_execution_proof"].update(chat_template_flag="t.jinja"))
+    rejects(lambda r: r["container_execution_proof"].update(reasoning_parser="qwen3"))                                        # Qwen leakage
+    rejects(lambda r: r["container_execution_proof"].update(runtime_configuration_id="qwen3_8b_non_thinking_v1", runtime_configuration_id_applied="qwen3_8b_non_thinking_v1"))
+    rejects(lambda r: r["container_execution_proof"].update(chat_template_kwargs_sent={sid: {"enable_thinking": False} for sid in "ABC"}))
+    rejects(lambda r: r["container_execution_proof"].update(tokenizer_mode="hf"))                                             # Mistral canonical flags must not appear on Phi
+    rejects(lambda r: r["container_execution_proof"].update(tokenizer_mode="mistral", config_format="hf", load_format="safetensors"))
+    rejects(lambda r: r.update(runtime_candidate_configuration_id="mistral_nemo_native_v1"))                                  # the Mistral candidate is refused for Phi
+    rejects(lambda r: r["container_execution_proof"].update(smoke_protocol_sha256="0" * 64))
+    rejects(lambda r: r["container_execution_proof"].update(prompt_sha256_sent={"A": "0" * 64, "B": "0" * 64, "C": "0" * 64}))
+    rejects(lambda r: r["container_execution_proof"].update(revision="0" * 40))
+    rejects(lambda r: r["container_execution_proof"].update(precision="float16"))
+    rejects(lambda r: r["container_execution_proof"].update(quantization="fp8"))
+    for name, kw in {"chat_template_flag_in_argv": dict(extra_argv=("--chat-template", "t.jinja")), "reasoning_parser_flag": dict(extra_argv=("--reasoning-parser", "qwen3")),
+                     "mistral_flags": dict(extra_argv=("--tokenizer-mode", "hf")), "kwargs_leak": dict(kwargs_sent={"enable_thinking": False}), "proof_without_flag_key": dict(drop_flag_key=True)}.items():
+        mod2, ev2, calls2, _ = _phi_run_env(monkeypatch, tmp_path / name, lambda m, r, kw=kw: _fake_phi_result(m, r, **kw))
+        mod2.cmd_run(types.SimpleNamespace(control="phi4"))
+        a = json.loads((ev2 / "GENESIS_CONTROL_PHI4_ATTEMPTS_2026-09-24.json").read_text())["attempts"][-1]
+        assert a["outcome"] == "HARNESS_FAILURE" and a["valid_runtime_attempt"] is False and "did not prove" in a["reason"], name
+
+
+def test_the_real_persisted_state_after_the_phi4_readiness_step_is_unchanged_and_no_retry_is_enabled(monkeypatch):
+    phi = json.loads((EVIDENCE_DIR / "GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+    assert phi["attempts"] == [] and phi["technical_serving_status"] == "NOT_TESTED" and phi["runtime_qualification_status"] == "NOT_TESTED" and phi["capability_status"] == "UNPROVEN"
+    assert not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT*")) and not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_PHI4_ATTEMPTS_*"))   # no Phi run artifacts (the old preflight-ONLY file is history)
+    assert not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_MISTRAL_NEMO_*ATTEMPT4*")) and not list(EVIDENCE_DIR.glob("GENESIS_CONTROL_QWEN3_8B_*ATTEMPT6*"))   # no Mistral attempt 4 / Qwen attempt 6
+    mist, qwen = _mistral_live(), _persisted_qwen()
+    assert (mist["attempts"][-1]["attempt_number"], mist["technical_serving_status"], mist["runtime_qualification_status"]) == (3, "FAILED", "FAILED")
+    assert (qwen["attempts"][-1]["attempt_number"], qwen["runtime_qualification_status"]) == (5, "FAILED")
+    mod, _ = _load_modal_h100(monkeypatch)
+    monkeypatch.setattr(mod, "_cli_json", lambda *a: (_ for _ in ()).throw(AssertionError("no provider call")))
+    assert any("attempt 3 only" in p for p in mod.candidate_launch_problems("mistral_nemo", "mistral_nemo_native_v1"))     # the spent candidate cannot launch another Mistral attempt
+    assert LOCKED_SERVER_FLAGS["Phi-4"] == {"reasoning_parser": None, "tokenizer_mode": None, "config_format": None, "load_format": None} and runtime_cfg.configuration_for_model(PHI_MODEL) is None
+    assert _runner_module().LOCKED["phi4"]["extra_args"] == [] and LOCKED_SERVER_FLAGS["Mistral-Nemo-Instruct-2407"]["tokenizer_mode"] == "hf"

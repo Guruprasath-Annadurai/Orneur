@@ -1,0 +1,510 @@
+{
+  "canonical_phi4_configuration": {
+    "chat_template_kwargs": null,
+    "config_format": null,
+    "extra_args": [],
+    "gpu_memory_utilization": 0.9,
+    "load_format": null,
+    "max_model_len": 4096,
+    "model_id": "microsoft/phi-4",
+    "phi_specific_server_flags": [],
+    "reasoning_parser": null,
+    "revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+    "runtime_configuration": null,
+    "sampling_generation_config": {
+      "max_tokens": 64,
+      "seed": 0,
+      "temperature": 0,
+      "top_p": 1
+    },
+    "smoke_max_tokens": 64,
+    "source_of_truth": "scripts/phase21b_4_20_lightning_runner.py serving_config('phi4') + the argv expression of serve_and_smoke (ast-extracted)",
+    "tokenizer_mode": null,
+    "vllm_defaults_relied_on": "no --tokenizer-mode (vLLM default 'auto'), no --config-format/--load-format (defaults), no --generation-config override (vLLM default 'auto' reads the pinned generation_config.json, which has no sampling defaults)"
+  },
+  "canonical_phi_configuration_changed": false,
+  "captured_at_utc": "2026-09-26T10:32:50Z",
+  "chat_preprocessing_transformers": {
+    "A": {
+      "chat_template_exception": null,
+      "decoded_equals_rendered": true,
+      "deterministic": true,
+      "ok": true,
+      "rendered": "<|im_start|>user<|im_sep|>Reply exactly:\nREADY<|im_end|><|im_start|>assistant<|im_sep|>",
+      "rendered_sha256": "477416f93c3a0c257a7f982c7162a4152c9aed6ce5565f4ca1af148fb3dff1d8",
+      "token_count": 11,
+      "token_ids": [
+        100264,
+        882,
+        100266,
+        21509,
+        7041,
+        512,
+        46678,
+        100265,
+        100264,
+        78191,
+        100266
+      ],
+      "token_ids_sha256": "2cfee122cbf5f1146fb322424d99805c4f93963589041f8f7f907f417214942a"
+    },
+    "B": {
+      "chat_template_exception": null,
+      "decoded_equals_rendered": true,
+      "deterministic": true,
+      "ok": true,
+      "rendered": "<|im_start|>user<|im_sep|>2 + 3<|im_end|><|im_start|>assistant<|im_sep|>",
+      "rendered_sha256": "6910d2511dc65a6b1fa21eaecc04424a63ac52b0a95d7f1889037a5829759412",
+      "token_count": 11,
+      "token_ids": [
+        100264,
+        882,
+        100266,
+        17,
+        489,
+        220,
+        18,
+        100265,
+        100264,
+        78191,
+        100266
+      ],
+      "token_ids_sha256": "6168d9fc1e98c00a0e7f2ffd9b77c2ce3f8ebc0ce1552ab353f5865afe201cb6"
+    },
+    "C": {
+      "chat_template_exception": null,
+      "decoded_equals_rendered": true,
+      "deterministic": true,
+      "ok": true,
+      "rendered": "<|im_start|>user<|im_sep|>Return valid JSON:\n{\"status\":\"ready\"}<|im_end|><|im_start|>assistant<|im_sep|>",
+      "rendered_sha256": "46f9a183a5edbbbe8992ad144429d568aefcf538e8aa94fd9d280ec43baf0c58",
+      "token_count": 16,
+      "token_ids": [
+        100264,
+        882,
+        100266,
+        5715,
+        2764,
+        4823,
+        512,
+        5018,
+        2899,
+        3332,
+        2359,
+        9388,
+        100265,
+        100264,
+        78191,
+        100266
+      ],
+      "token_ids_sha256": "d86ebab952452b061ac93fe52b30611185a13bc3b95d7477bccf5bdbe0a5b1af"
+    }
+  },
+  "container_proof_contract": {
+    "drift_problems": {
+      "chat_template_flag": [
+        "a --chat-template server flag was used; the canonical chat template of the pinned revision must be the one in use"
+      ],
+      "chat_template_flag_unproven": [
+        "a Phi-4 attempt must prove that no --chat-template server flag was used (chat_template_flag)"
+      ],
+      "mistral_candidate_id": [
+        "runtime_configuration_id (declared 'mistral_nemo_native_v1', applied 'mistral_nemo_native_v1') != None"
+      ],
+      "mistral_hf_flags": [
+        "server flag --tokenizer-mode proven as 'hf', locked value None",
+        "server flag --config-format proven as 'hf', locked value None",
+        "server flag --load-format proven as 'safetensors', locked value None"
+      ],
+      "mistral_native_mode": [
+        "server flag --tokenizer-mode proven as 'mistral', locked value None"
+      ],
+      "model": [
+        "served model id differs from the locked model id"
+      ],
+      "no_proof": [
+        "the container returned no runtime_configuration_proof"
+      ],
+      "precision": [
+        "precision/quantization ('float16'/None) != bfloat16/None"
+      ],
+      "prompt_hashes": [
+        "per-prompt sha256 values sent differ from the canonical prompts"
+      ],
+      "protocol_sha": [
+        "locked smoke protocol fingerprint differs from the canonical one"
+      ],
+      "quantization": [
+        "precision/quantization ('bfloat16'/'fp8') != bfloat16/None"
+      ],
+      "qwen_config_fingerprint": [
+        "runtime configuration fingerprint differs from the canonical one"
+      ],
+      "qwen_config_id": [
+        "runtime_configuration_id (declared 'qwen3_8b_non_thinking_v1', applied 'qwen3_8b_non_thinking_v1') != None"
+      ],
+      "qwen_kwargs_sent": [
+        "chat_template_kwargs actually sent {'A': {'enable_thinking': False}, 'B': {'enable_thinking': False}, 'C': {'enable_thinking': False}} != None for every locked smoke"
+      ],
+      "qwen_reasoning_parser": [
+        "server flag --reasoning-parser proven as 'qwen3', locked value None"
+      ],
+      "revision": [
+        "served revision differs from the locked revision"
+      ],
+      "runtime_policy": [
+        "container runtime-policy sha256 differs from the locally pinned runtime-policy sha256"
+      ]
+    },
+    "every_drift_rejected": true,
+    "mistral_candidate_refused_for_phi": true,
+    "note": "SYNTHETIC proofs exercising the real functions; NOT runtime evidence",
+    "synthetic_good_phi_proof_problems": [],
+    "validator_side": "orca.eval.control_runtime_qualification._check_container_execution_proof: Phi-4 has no approved runtime configuration (runtime_configuration_id must be None), null kwargs for A/B/C, tokenizer_mode/config_format/load_format/reasoning_parser all None, chat_template_flag must be present and null for Phi-4, canonical protocol/prompt hashes, exact model/revision, bfloat16, no quantization; a declared candidate id is refused (restricted to Mistral)"
+  },
+  "container_versions_from_prior_attempt_logs": {
+    "huggingface_hub": "1.30.0",
+    "tokenizers": "0.23.2",
+    "transformers": "5.16.1"
+  },
+  "cpu_library_versions_used": {
+    "huggingface_hub": "1.30.0",
+    "jinja2": "3.1.6",
+    "tokenizers": "0.23.2",
+    "transformers": "5.16.1"
+  },
+  "evidence_type": "GENESIS_PHI4_RUNTIME_READINESS",
+  "expected_weight_bytes": 29319042992,
+  "generated_output_executed": false,
+  "input_verification": {
+    "hf_tree_file_list": [
+      ".gitattributes",
+      "CODE_OF_CONDUCT.md",
+      "LICENSE",
+      "README.md",
+      "SECURITY.md",
+      "added_tokens.json",
+      "config.json",
+      "data_summary_card.md",
+      "generation_config.json",
+      "merges.txt",
+      "model-00001-of-00006.safetensors",
+      "model-00002-of-00006.safetensors",
+      "model-00003-of-00006.safetensors",
+      "model-00004-of-00006.safetensors",
+      "model-00005-of-00006.safetensors",
+      "model-00006-of-00006.safetensors",
+      "model.safetensors.index.json",
+      "special_tokens_map.json",
+      "tokenizer.json",
+      "tokenizer_config.json",
+      "vocab.json"
+    ],
+    "method": "pinned sha256 constants + container pre-cache manifest sizes + Hugging Face tree at the exact revision (git blob sha1 and size); a mutable ref, missing file or mismatch refuses",
+    "snapshot_integrity_verified": true,
+    "source_integrity_verified": true,
+    "verified_snapshot": {
+      "added_tokens.json": {
+        "bytes": 2495,
+        "git_blob_sha1": "c410491b4c95d889958ff4480f37ab235018a67f",
+        "matches_container_manifest_size": true,
+        "matches_hf_tree_at_exact_revision": true,
+        "sha256": "e2c8dff553db16508eb2bbaf1de51c13256727ddde88b5c65e1e75c224e277f0"
+      },
+      "config.json": {
+        "bytes": 802,
+        "git_blob_sha1": "ab17e0b5838762a837102af7269223b5a20d52fd",
+        "matches_container_manifest_size": true,
+        "matches_hf_tree_at_exact_revision": true,
+        "sha256": "07eedad2c48798b6e3728e4a1b75e0e092019a375ba725a40e40c78d13664045"
+      },
+      "generation_config.json": {
+        "bytes": 184,
+        "git_blob_sha1": "aaad1bd08a7521c56ff79061403d43a04bd1a6b9",
+        "matches_container_manifest_size": true,
+        "matches_hf_tree_at_exact_revision": true,
+        "sha256": "6acf48d95f0a1deb97acf54d946636243e299bf315b068efd719708ceea5741d"
+      },
+      "merges.txt": {
+        "bytes": 916646,
+        "git_blob_sha1": "354558edcdbd64ca7abd407b8be3d5d09d39d781",
+        "matches_container_manifest_size": true,
+        "matches_hf_tree_at_exact_revision": true,
+        "sha256": "b6fe424e334903f7fb84d3a106d9730455f4744b9fe3c21ee136d97a00e72502"
+      },
+      "model.safetensors.index.json": {
+        "bytes": 20364,
+        "git_blob_sha1": "d9c4e28d4f7cc72949fdc86940c8a67583750436",
+        "matches_container_manifest_size": true,
+        "matches_hf_tree_at_exact_revision": true,
+        "sha256": "51f3004b8d5b478473f26eb8cb5ac7e5aacc39938ad365f0c8933b18dfa9a158"
+      },
+      "special_tokens_map.json": {
+        "bytes": 95,
+        "git_blob_sha1": "ea8cb2e2c57355312c3ff7b0e0f1beaf8e88ce8e",
+        "matches_container_manifest_size": true,
+        "matches_hf_tree_at_exact_revision": true,
+        "sha256": "b0e1617caf68ebcd6af7426d6afdbe62a3fb8fbe56ea84782a88fc8cbd464b1d"
+      },
+      "tokenizer.json": {
+        "bytes": 4253055,
+        "git_blob_sha1": "4cc07e6ec369bc5bdfd719da75f411373d8b436a",
+        "matches_container_manifest_size": true,
+        "matches_hf_tree_at_exact_revision": true,
+        "sha256": "9f38d05d9d25756bb2f181ab5a0cebcd59e638df10336fc7ed1010f7296d0298"
+      },
+      "tokenizer_config.json": {
+        "bytes": 17737,
+        "git_blob_sha1": "25c30b707a88b5e5fc715fb81d2221d1162380b4",
+        "matches_container_manifest_size": true,
+        "matches_hf_tree_at_exact_revision": true,
+        "sha256": "2b707658c7c2b41580155a45503d7d3b42dc2f530bef678f67a39bf5d10b0510"
+      },
+      "vocab.json": {
+        "bytes": 1612637,
+        "git_blob_sha1": "c5dc46ce1c830966b5e947da6d471ea3c2e1e57e",
+        "matches_container_manifest_size": true,
+        "matches_hf_tree_at_exact_revision": true,
+        "sha256": "741943243bd0035a8082ef0ccc09ef62e7ce7ec2f2f053aeedd808dba1c2ffc5"
+      }
+    },
+    "verified_vllm_sources_sha256": {
+      "vllm/entrypoints/openai/chat_completion/protocol.py": "8a1f1138f79557aa5b5add12e81b9745fd5e286fa35f0502a97f2a377d41665b",
+      "vllm/renderers/hf.py": "2b24612a7163f176f205f9a976ebabafc2ac7840ed5516574b0776272c02ed26",
+      "vllm/renderers/mistral.py": "586b99a78050d99172b742fa81be535eea91b82967f2837f8c43a8ed6f5434d8",
+      "vllm/renderers/params.py": "30104415b818465eb1114852104a9b52b9792a4eed9bc3f32a355d8cf33dd8e0",
+      "vllm/renderers/registry.py": "a08f893773e22d4b249726f2cec930ea70eb508f32a4903bacffba37b07fdf5b",
+      "vllm/tokenizers/mistral.py": "923bd30cd82b685c2cd51586f933bf1e893d31c348b204af9d54bb578968eb65",
+      "vllm/tokenizers/registry.py": "9515c9d30b5b87e1706d1905c51dfac45ff75eb72bb34957181b7907dc29ca73",
+      "vllm/transformers_utils/chat_templates/registry.py": "ab10d6c7edfdd78eefb08591db02749689b1f02227dcbcd0320e8768e89360e7",
+      "vllm/transformers_utils/repo_utils.py": "e49f14267604cf7e5a9b95e09c7be2801cf4364e06ea9b3fe7226d6654731793"
+    }
+  },
+  "model_id": "microsoft/phi-4",
+  "no_generation": true,
+  "no_gpu_used": true,
+  "no_modal_used": true,
+  "no_model_weights_loaded": true,
+  "no_new_candidate_created": true,
+  "no_provider_call": true,
+  "not_covered": [
+    "engine initialization and weight loading of Phi-4",
+    "generation behaviour and EOS/stop behaviour",
+    "whether the model answers the locked prompts with the exact required outputs (response behaviour)",
+    "the container's mistral_common/other library versions beyond those logged"
+  ],
+  "phase": "21B.4.20",
+  "phi4_record_state": {
+    "attempts": [],
+    "capability_status": "UNPROVEN",
+    "runtime_qualification_status": "NOT_TESTED",
+    "technical_serving_status": "NOT_TESTED"
+  },
+  "readiness_verdict": "PHI4_CPU_READY",
+  "request_payloads_real_builder": {
+    "A": {
+      "expected_prompt_sha256": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2",
+      "has_forbidden_field": false,
+      "keys": [
+        "max_tokens",
+        "messages",
+        "model",
+        "seed",
+        "temperature",
+        "top_p"
+      ],
+      "messages_canonical": true,
+      "payload": {
+        "max_tokens": 64,
+        "messages": [
+          {
+            "content": "Reply exactly:\nREADY",
+            "role": "user"
+          }
+        ],
+        "model": "microsoft/phi-4",
+        "seed": 0,
+        "temperature": 0,
+        "top_p": 1
+      },
+      "user_content_sha256": "89a2b0d5435f6de4d5e5c54e55431d914ab4a644663517e7df22b5f603367ed2"
+    },
+    "B": {
+      "expected_prompt_sha256": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2",
+      "has_forbidden_field": false,
+      "keys": [
+        "max_tokens",
+        "messages",
+        "model",
+        "seed",
+        "temperature",
+        "top_p"
+      ],
+      "messages_canonical": true,
+      "payload": {
+        "max_tokens": 64,
+        "messages": [
+          {
+            "content": "2 + 3",
+            "role": "user"
+          }
+        ],
+        "model": "microsoft/phi-4",
+        "seed": 0,
+        "temperature": 0,
+        "top_p": 1
+      },
+      "user_content_sha256": "777e6971be9f36a99a2731f434d1bbaf8534ebd1be7cb2857573eefc50b43ed2"
+    },
+    "C": {
+      "expected_prompt_sha256": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42",
+      "has_forbidden_field": false,
+      "keys": [
+        "max_tokens",
+        "messages",
+        "model",
+        "seed",
+        "temperature",
+        "top_p"
+      ],
+      "messages_canonical": true,
+      "payload": {
+        "max_tokens": 64,
+        "messages": [
+          {
+            "content": "Return valid JSON:\n{\"status\":\"ready\"}",
+            "role": "user"
+          }
+        ],
+        "model": "microsoft/phi-4",
+        "seed": 0,
+        "temperature": 0,
+        "top_p": 1
+      },
+      "user_content_sha256": "663885dab4e982cbe2d9c58e7653b5cb581454ccf091edf8b709f395aef81a42"
+    }
+  },
+  "revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+  "runtime": "vLLM 0.29.0, existing pinned container digest, bfloat16, no quantization (unchanged)",
+  "server_argv_checks": {
+    "dtype_bfloat16": true,
+    "identity_equals_locked_pin": true,
+    "max_model_len_4096": true,
+    "model_flag_is_local_pinned_snapshot_placeholder": true,
+    "no_chat_template_flag": true,
+    "no_config_or_load_format_flag": true,
+    "no_extra_args_beyond_the_common_argv": true,
+    "no_quantization_flag": true,
+    "no_reasoning_parser": true,
+    "no_tokenizer_mode_flag": true,
+    "served_model_name": true
+  },
+  "server_argv_sanitized": [
+    "<python interpreter>",
+    "-m",
+    "vllm.entrypoints.openai.api_server",
+    "--model",
+    "<local pinned-revision snapshot dir>",
+    "--served-model-name",
+    "microsoft/phi-4",
+    "--dtype",
+    "bfloat16",
+    "--max-model-len",
+    "4096",
+    "--gpu-memory-utilization",
+    "0.9",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8000",
+    "--seed",
+    "0"
+  ],
+  "statements": [
+    "CPU readiness is NOT runtime qualification",
+    "CPU readiness is NOT capability qualification",
+    "NO GPU was used",
+    "NO generation occurred"
+  ],
+  "stubs_and_approximations": [
+    "vLLM itself is not imported; the real functions are extracted by ast from the pinned v0.29.0 sources and executed with recorded stubs (logger, load_chat_template, cached_get_processor approximated by AutoProcessor.from_pretrained, resolve_chat_template_kwargs identity, list_repo_files/with_retry/envs for the repo_utils helpers)",
+    "the vLLM CachedHfTokenizer wrapper itself is not executed; the underlying tokenizer is AutoTokenizer's return value"
+  ],
+  "tokenizer": {
+    "bos": {
+      "id": 100257,
+      "token": "<|endoftext|>"
+    },
+    "chat_template_present": true,
+    "chat_template_sha256": "fe4120415a3858b873955c92ce3a103a95bc97c2cb00b72e62659aaf0f891ee5",
+    "chat_template_source": "tokenizer_config.json chat_template @ the pinned revision",
+    "chat_template_utf8_bytes": 462,
+    "declared_tokenizer_class": "GPT2Tokenizer",
+    "eos": {
+      "id": 100265,
+      "token": "<|im_end|>"
+    },
+    "generation_config_eos_token_ids": [
+      100257,
+      100265
+    ],
+    "get_chat_template": {
+      "ok": true,
+      "sha256": "fe4120415a3858b873955c92ce3a103a95bc97c2cb00b72e62659aaf0f891ee5"
+    },
+    "is_fast": true,
+    "name_or_path": "/tmp/p4420/phi4/snap",
+    "pad": {
+      "id": 100349,
+      "token": "<|dummy_85|>"
+    },
+    "tokenizer_class": "transformers.tokenization_utils_tokenizers.TokenizersBackend",
+    "vocab_size": 100352
+  },
+  "tokenizer_mode_resolution_real_vllm": {
+    "hf_tree_has_consolidated_or_tekken_or_tokenizer_model_v": false,
+    "mistral_native_path_selected": false,
+    "note": "vLLM 0.29.0 'auto' picks the Mistral tokenizer only for repos with consolidated*.safetensors AND tekken.json/tokenizer.model.v*; Phi-4 has neither, so the HF renderer + a chat template in tokenizer_config.json is the path",
+    "renderer": [
+      "hf",
+      "HfRenderer"
+    ],
+    "resolved_on_exact_hf_tree_listing": "hf",
+    "resolved_on_local_snapshot_dir": "hf",
+    "tokenizer": [
+      "hf",
+      "CachedHfTokenizer"
+    ],
+    "tokenizer_mode_default": "auto"
+  },
+  "vllm_hf_renderer_path_real_functions": {
+    "content_format_detected": "string",
+    "logged_events": [],
+    "model_type": "phi3",
+    "processor_stage_calls": [
+      {
+        "ok": true,
+        "returned_class": "transformers.tokenization_utils_tokenizers.TokenizersBackend"
+      }
+    ],
+    "resolve_chat_template": {
+      "equals_tokenizer_config_template": true,
+      "resolved_template_sha256": "fe4120415a3858b873955c92ce3a103a95bc97c2cb00b72e62659aaf0f891ee5",
+      "returned_none": false
+    },
+    "safe_apply": {
+      "A": {
+        "equals_transformers_render": true,
+        "raised": false
+      },
+      "B": {
+        "equals_transformers_render": true,
+        "raised": false
+      },
+      "C": {
+        "equals_transformers_render": true,
+        "raised": false
+      }
+    }
+  }
+}
