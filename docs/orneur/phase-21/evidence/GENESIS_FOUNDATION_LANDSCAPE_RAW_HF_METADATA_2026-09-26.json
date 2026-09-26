@@ -1,0 +1,3585 @@
+{
+ "collected_at_utc": "2026-09-26T13:33:52+00:00",
+ "ecosystem": {
+  "license_probes": {
+   "LiquidAI/LFM2.5-2.6B": {
+    "bytes": 10574,
+    "clauses": [
+     "\"Qualified Non-Profit Organization\" shall mean a Legal Entity that is organized and operated exclusively for religious, charitable, scientific, testing for public safety, literary, or educational purposes, and which is exempt from federal income tax under Section 501(c)(3) of the United States Inter",
+     "\"Non-Commercial or Research Purposes\" shall mean purposes that do not involve any use of the Work or a Derivative Work for Commercial Use.",
+     "\"Threshold\" shall mean annual revenue of 10 million United States dollars ($10,000,000) or more.",
+     "(a) The rights granted under this License for Commercial Use are conditioned upon You or Your Legal Entity not exceeding the Threshold.",
+     "(b) Any Commercial Use of the Work or a Derivative Work by a Legal Entity that exceeds the Threshold is not licensed under this Agreement.",
+     "(c) The Threshold shall not apply to a Qualified Non-Profit Organization's use of the Work or a Derivative Work for Non-Commercial or Research Purposes."
+    ],
+    "sha256": "4d28ca14dedc0b3d0fcc2b3339f0e79931faa33874f3d24f522183a8fc70068c"
+   },
+   "Qwen/Qwen3.8-2.4T-A95B": {
+    "bytes": 3386,
+    "clauses": [
+     "1. The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. If the Software (or any derivative works thereof) is Used for any of the licensee's commercial products or services that have more than 100,000,000 monthly active users o",
+     "2. If the licensee or any of its affiliates conducts a Model as a Service or AI Work Assistant business, and the aggregate revenue of the licensee and its affiliates exceeds US$50,000,000 (or the equivalent amount in any other currencies) during any consecutive twelve (12) months, the licensee shall",
+     "\"Model as a Service\" means giving a third party access to language model inference or fine-tuning (e.g., via API or a hosted endpoint) in a manner that allows such third parties to exercise meaningful control over the inputs, parameters, or training data. This does not include the mere relaying of r",
+     "\u201cAI Work Assistant\u201d means an independent AI-powered product primarily designed for AI-assisted coding or office productivity (e.g., Qoder and QwenWork). It does not include: (a) a single-purpose AI tool (such as an AI translation tool); (b) an AI assistant primarily designed for a domain other than "
+    ],
+    "sha256": "a136bc4137ef3d7a7a54963164a47270f73e497917728ea0f4407a0115db1290"
+   },
+   "Qwen/Qwen3.8-Flash-Next": {
+    "bytes": 3231,
+    "clauses": [
+     "1. The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. If the Software (or any derivative works thereof) is Used for any of the licensee's commercial products or services that have more than 100,000,000 monthly active users o",
+     "2. If the licensee or any of its affiliates conducts a Model as a Service or AI Work Assistant business, the licensee shall obtain a separate license from Qwen before Using the Software or its derivative works for any commercial purpose. The foregoing requirement shall not apply to the licensee's in",
+     "\"Model as a Service\" means giving a third party access to language model inference or fine-tuning (e.g., via API or a hosted endpoint) in a manner that allows such third parties to exercise meaningful control over the inputs, parameters, or training data. This does not include the mere relaying of r",
+     "\u201cAI Work Assistant\u201d means an independent AI-powered product primarily designed for AI-assisted coding or office productivity (e.g., Qoder and QwenWork). It does not include: (a) a single-purpose AI tool (such as an AI translation tool); (b) an AI assistant primarily designed for a domain other than "
+    ],
+    "sha256": "a0dc422560841fd68e06d974907f8b4c709bca44a67daad2b528437bdf676c08"
+   },
+   "zai-org/GLM-5.3": {
+    "bytes": 3085,
+    "clauses": [
+     "2. \"Model as a Service\" means giving a third party access to language model inference or fine-tuning (e.g., via API) in a manner that allows such third party to exercise meaningful control over the inputs, parameters, or training data. This does not include (a) end-user products with model capabilit",
+     "If the Licensee or any of its affiliates operates a Model as a Service business, and the aggregate revenue of the Licensee and its affiliates exceeds 10 billion US dollars (or the equivalent in other currencies) in total over any consecutive 12 months, the Licensee must pass Z.AI's security review b"
+    ],
+    "sha256": "96e1622099fc9d6b70c9760f007d99e66d7497eec636b63c60fe208401e9170c"
+   }
+  },
+  "pypi_latest": {
+   "accelerate": "1.15.0",
+   "bitsandbytes": "0.50.2",
+   "peft": "0.21.0",
+   "transformers": "5.17.0",
+   "trl": "1.14.0",
+   "vllm": "0.30.0"
+  },
+  "template_and_layer_probes": {
+   "HuggingFaceTB/SmolLM3-3B": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "LiquidAI/LFM2.5-2.6B": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "conv",
+     "full_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "Qwen/Qwen3-8B": {
+    "files_of_interest": [
+     "LICENSE",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "Qwen/Qwen3.5-27B": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "Qwen/Qwen3.5-35B-A3B": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "Qwen/Qwen3.5-4B": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "Qwen/Qwen3.5-9B": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "Qwen/Qwen3.6-27B": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "Qwen/Qwen3.6-35B-A3B": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "Qwen/Qwen3.8-2.4T-A95B": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "Qwen/Qwen3.8-27B": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "Qwen/Qwen3.8-Flash-Next": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "allenai/Olmo-3-7B-Instruct": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "template_mentions_thinking": false,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B": {
+    "files_of_interest": [
+     "LICENSE",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": false,
+    "template_present": true
+   },
+   "deepseek-ai/DeepSeek-V4-Pro-0813": {
+    "files_of_interest": [
+     "LICENSE",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_present": false
+   },
+   "deepseek-ai/DeepSeek-V4.1-Flash": {
+    "files_of_interest": [
+     "LICENSE",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_present": false
+   },
+   "google/gemma-4-12B": {
+    "files_of_interest": [
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "template_present": false
+   },
+   "google/gemma-4-12B-it": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "google/gemma-4-26B-A4B-it": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "google/gemma-4-31B-it": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "google/gemma-4-E4B-it": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "ibm-granite/granite-4.2-30b": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "ibm-granite/granite-4.2-3b": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "ibm-granite/granite-4.2-8b": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "meta-llama/Llama-3.3-70B-Instruct": {
+    "error": "<HTTPError 401: 'Unauthorized'>",
+    "files_of_interest": [
+     "LICENSE",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_present": false
+   },
+   "meta-llama/Llama-4-Scout-17B-16E-Instruct": {
+    "error": "<HTTPError 401: 'Unauthorized'>",
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer.model",
+     "tokenizer_config.json"
+    ],
+    "template_present": false
+   },
+   "microsoft/Fara1.5-9B": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "microsoft/MagenticBrain": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "microsoft/Phi-4-mini-instruct": {
+    "files_of_interest": [
+     "LICENSE",
+     "NOTICE.md",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": false,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "microsoft/phi-4": {
+    "files_of_interest": [
+     "LICENSE",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": false,
+    "template_mentions_tools": false,
+    "template_present": true
+   },
+   "mistralai/Ministral-3-14B-Base-2512": {
+    "files_of_interest": [
+     "params.json",
+     "tekken.json",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_present": false
+   },
+   "mistralai/Ministral-3-14B-Instruct-2512": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "params.json",
+     "tekken.json",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": false,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "mistralai/Ministral-3-14B-Reasoning-2512": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "params.json",
+     "tekken.json",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "mistralai/Ministral-3-8B-Instruct-2512": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "params.json",
+     "tekken.json",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": false,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "mistralai/Mistral-Large-3-675B-Instruct-2512": {
+    "error": "<HTTPError 404: 'Not Found'>",
+    "files_of_interest": [
+     "chat_template.jinja",
+     "params.json",
+     "tekken.json",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "mistralai/Mistral-Nemo-Instruct-2407": {
+    "files_of_interest": [
+     "params.json",
+     "tekken.json",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": false,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "mistralai/Mistral-Small-4-119B-2603": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "params.json",
+     "tekken.json",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16": {
+    "files_of_interest": [
+     "LICENSE",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_present": false
+   },
+   "openai/gpt-oss-120b": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "openai/gpt-oss-20b": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "full_attention",
+     "sliding_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "zai-org/GLM-4.7-Flash": {
+    "files_of_interest": [
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "zai-org/GLM-5.3": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   },
+   "zai-org/GLM-5.3-Flash": {
+    "files_of_interest": [
+     "LICENSE",
+     "chat_template.jinja",
+     "tokenizer.json",
+     "tokenizer_config.json"
+    ],
+    "layer_types": [
+     "deepseek_sparse_attention",
+     "linear_attention"
+    ],
+    "template_mentions_thinking": true,
+    "template_mentions_tools": true,
+    "template_present": true
+   }
+  },
+  "transformers_main_model_dirs": [
+   "__init__.py",
+   "afmoe",
+   "aimv2",
+   "albert",
+   "align",
+   "altclip",
+   "apertus",
+   "arcee",
+   "aria",
+   "audio_spectrogram_transformer",
+   "audioflamingo3",
+   "auto",
+   "autoformer",
+   "axk1",
+   "axk2",
+   "aya_vision",
+   "bamba",
+   "bark",
+   "bart",
+   "barthez",
+   "bartpho",
+   "beit",
+   "bert",
+   "bert_generation",
+   "bert_japanese",
+   "bertweet",
+   "big_bird",
+   "bigbird_pegasus",
+   "biogpt",
+   "bit",
+   "bitnet",
+   "blenderbot",
+   "blenderbot_small",
+   "blip",
+   "blip_2",
+   "bloom",
+   "blt",
+   "bridgetower",
+   "bros",
+   "byt5",
+   "camembert",
+   "canary",
+   "canine",
+   "chameleon",
+   "chinese_clip",
+   "chmv2",
+   "clap",
+   "clip",
+   "clipseg",
+   "clvp",
+   "code_llama",
+   "codegen",
+   "cohere",
+   "cohere2",
+   "cohere2_moe",
+   "cohere2_vision",
+   "cohere_asr",
+   "cohere_compass",
+   "colmodernvbert",
+   "colpali",
+   "colqwen2",
+   "conditional_detr",
+   "convbert",
+   "convnext",
+   "convnextv2",
+   "cosmos3_edge",
+   "cosmos3_omni",
+   "cpm",
+   "cpmant",
+   "csm",
+   "ctrl",
+   "cvt",
+   "cwm",
+   "d_fine",
+   "dab_detr",
+   "dac",
+   "data2vec",
+   "dbrx",
+   "deberta",
+   "deberta_v2",
+   "decision_transformer",
+   "deepseek_ocr2",
+   "deepseek_v2",
+   "deepseek_v3",
+   "deepseek_v32",
+   "deepseek_v4",
+   "deepseek_vl",
+   "deepseek_vl_hybrid",
+   "deformable_detr",
+   "deimv2",
+   "deit",
+   "deprecated",
+   "depth_anything",
+   "depth_pro",
+   "detr",
+   "dia",
+   "diffllama",
+   "diffusion_gemma",
+   "dinat",
+   "dinov2",
+   "dinov2_with_registers",
+   "dinov3_convnext",
+   "dinov3_vit",
+   "distilbert",
+   "doge",
+   "donut",
+   "dots1",
+   "dpr",
+   "dpt",
+   "edgetam",
+   "edgetam_video",
+   "efficientloftr",
+   "efficientnet",
+   "electra",
+   "emu3",
+   "encodec",
+   "encoder_decoder",
+   "eomt",
+   "eomt_dinov3",
+   "ernie",
+   "ernie4_5",
+   "ernie4_5_moe",
+   "ernie4_5_vl_moe",
+   "esm",
+   "esmc",
+   "esmfold2",
+   "eurobert",
+   "evolla",
+   "exaone4",
+   "exaone4_5",
+   "exaone_moe",
+   "falcon",
+   "falcon_h1",
+   "falcon_mamba",
+   "fast_vlm",
+   "fastspeech2_conformer",
+   "flaubert",
+   "flava",
+   "flex_olmo",
+   "florence2",
+   "fnet",
+   "focalnet",
+   "fsmt",
+   "fun_asr_nano",
+   "funnel",
+   "fuyu",
+   "gemma",
+   "gemma2",
+   "gemma3",
+   "gemma3n",
+   "gemma4",
+   "gemma4_assistant",
+   "gemma4_unified",
+   "gemma4_unified_assistant",
+   "git",
+   "glm",
+   "glm4",
+   "glm46v",
+   "glm4_moe",
+   "glm4_moe_lite",
+   "glm4v",
+   "glm4v_moe",
+   "glm5_next",
+   "glm_image",
+   "glm_moe_dsa",
+   "glm_ocr",
+   "glmasr",
+   "glmga",
+   "glpn",
+   "got_ocr2",
+   "gpt2",
+   "gpt_bigcode",
+   "gpt_neo",
+   "gpt_neox",
+   "gpt_neox_japanese",
+   "gpt_oss",
+   "gpt_sw3",
+   "gptj",
+   "granite",
+   "granite4_vision",
+   "granite_speech",
+   "granite_speech5",
+   "granite_speech_plus",
+   "granite_swa",
+   "granitemoe",
+   "granitemoe_swa",
+   "granitemoehybrid",
+   "granitemoeshared",
+   "grounding_dino",
+   "groupvit",
+   "helium",
+   "herbert",
+   "hgnet_v2",
+   "hiera",
+   "higgs_audio_v2",
+   "higgs_audio_v2_tokenizer",
+   "hrm_text",
+   "hubert",
+   "hunyuan_v1_dense",
+   "hunyuan_v1_moe",
+   "hunyuan_vl",
+   "hy_v3",
+   "hy_v4",
+   "hyperclovax",
+   "hyperclovax_vision_v2",
+   "ibert",
+   "idefics",
+   "idefics2",
+   "idefics3",
+   "ijepa",
+   "imagegpt",
+   "informer",
+   "inkling",
+   "instructblip",
+   "instructblipvideo",
+   "internvl",
+   "jais2",
+   "jamba",
+   "janus",
+   "jetmoe",
+   "jina_embeddings_v3",
+   "kimi_k25",
+   "kimi_linear",
+   "kosmos2",
+   "kosmos2_5",
+   "kyutai_speech_to_text",
+   "laguna",
+   "lasr",
+   "layoutlm",
+   "layoutlmv2",
+   "layoutlmv3",
+   "layoutxlm",
+   "led",
+   "levit",
+   "lfm2",
+   "lfm2_moe",
+   "lfm2_vl",
+   "lightglue",
+   "lighton_ocr",
+   "lilt",
+   "llama",
+   "llama4",
+   "llava",
+   "llava_next",
+   "llava_next_video",
+   "llava_onevision",
+   "longcat_flash",
+   "longformer",
+   "longt5",
+   "luke",
+   "lw_detr",
+   "lxmert",
+   "m2m_100",
+   "mamba",
+   "mamba2",
+   "marian",
+   "markuplm",
+   "mask2former",
+   "maskformer",
+   "mbart",
+   "mbart50",
+   "megatron_bert",
+   "mellum",
+   "metaclip_2",
+   "mgp_str",
+   "mimi",
+   "mimo_v2_flash",
+   "minicpm3",
+   "minicpmv4_6",
+   "minicpmv4_7",
+   "minimax",
+   "minimax_m2",
+   "minimax_m3_vl",
+   "ministral",
+   "ministral3",
+   "mistral",
+   "mistral3",
+   "mistral4",
+   "mixtral",
+   "mlcd",
+   "mllama",
+   "mluke",
+   "mm_grounding_dino",
+   "mobilebert",
+   "mobilenet_v1",
+   "mobilenet_v2",
+   "mobilevit",
+   "mobilevitv2",
+   "modernbert",
+   "modernbert_decoder",
+   "modernvbert",
+   "moonshine",
+   "moonshine_streaming",
+   "moshi",
+   "mpnet",
+   "mpt",
+   "mra",
+   "mt5",
+   "muse_glimmer",
+   "muse_glimmer_assistant",
+   "musicflamingo",
+   "musicgen",
+   "musicgen_melody",
+   "mvp",
+   "myt5",
+   "nanochat",
+   "nemotron",
+   "nemotron3_5_asr",
+   "nemotron3_diarization",
+   "nemotron_asr_streaming",
+   "nemotron_h",
+   "nemotron_h_omni",
+   "neomme",
+   "neucodec",
+   "nllb",
+   "nllb_moe",
+   "nomic_bert",
+   "nougat",
+   "nystromformer",
+   "olmo",
+   "olmo2",
+   "olmo3",
+   "olmo_hybrid",
+   "olmoe",
+   "omdet_turbo",
+   "oneformer",
+   "openai",
+   "openai_privacy_filter",
+   "opt",
+   "ovis2",
+   "owlv2",
+   "owlvit",
+   "paddleocr_vl",
+   "paligemma",
+   "parakeet",
+   "patchtsmixer",
+   "patchtst",
+   "pe_audio",
+   "pe_audio_video",
+   "pe_video",
+   "pegasus",
+   "pegasus_x",
+   "perceiver",
+   "perception_lm",
+   "persimmon",
+   "phi",
+   "phi3",
+   "phi4_multimodal",
+   "phimoe",
+   "phobert",
+   "pi0",
+   "pix2struct",
+   "pixio",
+   "pixtral",
+   "plbart",
+   "poolformer",
+   "pop2piano",
+   "pp_chart2table",
+   "pp_doclayout_v2",
+   "pp_doclayout_v3",
+   "pp_formulanet",
+   "pp_lcnet",
+   "pp_lcnet_v3",
+   "pp_lcnet_v4",
+   "pp_ocrv5_mobile_det",
+   "pp_ocrv5_mobile_rec",
+   "pp_ocrv5_server_det",
+   "pp_ocrv5_server_rec",
+   "pp_ocrv6_medium_det",
+   "pp_ocrv6_small_det",
+   "pp_ocrv6_small_rec",
+   "pp_ocrv6_tiny_rec",
+   "prompt_depth_anything",
+   "prophetnet",
+   "pvt",
+   "pvt_v2",
+   "qianfan_ocr",
+   "qwen2",
+   "qwen2_5_omni",
+   "qwen2_5_vl",
+   "qwen2_audio",
+   "qwen2_moe",
+   "qwen2_vl",
+   "qwen3",
+   "qwen3_5",
+   "qwen3_5_moe",
+   "qwen3_asr",
+   "qwen3_moe",
+   "qwen3_next",
+   "qwen3_omni_moe",
+   "qwen3_vl",
+   "qwen3_vl_moe",
+   "qwen4_exp",
+   "radio",
+   "rag",
+   "recurrent_gemma",
+   "reformer",
+   "regnet",
+   "rembert",
+   "resnet",
+   "rf_detr",
+   "roberta",
+   "roberta_prelayernorm",
+   "roc_bert",
+   "roformer",
+   "rt_detr",
+   "rt_detr_v2",
+   "rwkv",
+   "sam",
+   "sam2",
+   "sam2_video",
+   "sam3",
+   "sam3_lite_text",
+   "sam3_tracker",
+   "sam3_tracker_video",
+   "sam3_video",
+   "sam_hq",
+   "sapiens2",
+   "seamless_m4t",
+   "seamless_m4t_v2",
+   "seed_oss",
+   "segformer",
+   "seggpt",
+   "sew",
+   "sew_d",
+   "shieldgemma2",
+   "siglip",
+   "siglip2",
+   "slanet",
+   "slanext",
+   "smollm3",
+   "smolvlm",
+   "solar_open",
+   "speech_encoder_decoder",
+   "speech_to_text",
+   "speecht5",
+   "splinter",
+   "squeezebert",
+   "stablelm",
+   "starcoder2",
+   "step3p7",
+   "superglue",
+   "superpoint",
+   "swiftformer",
+   "swin",
+   "swin2sr",
+   "swinv2",
+   "switch_transformers",
+   "t5",
+   "t5gemma",
+   "t5gemma2",
+   "table_transformer",
+   "tapas",
+   "textnet",
+   "time_series_transformer",
+   "timesfm",
+   "timesfm2_5",
+   "timesformer",
+   "timm_backbone",
+   "timm_wrapper",
+   "tipsv2",
+   "tipsv2_dpt",
+   "trocr",
+   "tvp",
+   "udop",
+   "umt5",
+   "unispeech",
+   "unispeech_sat",
+   "univnet",
+   "upernet",
+   "uvdoc",
+   "vaultgemma",
+   "vibevoice",
+   "vibevoice_acoustic_tokenizer",
+   "vibevoice_asr",
+   "video_llama_3",
+   "video_llava",
+   "videomae",
+   "videomt",
+   "videoprism",
+   "vilt",
+   "vipllava",
+   "vision_encoder_decoder",
+   "vision_text_dual_encoder",
+   "visual_bert",
+   "vit",
+   "vit_mae",
+   "vit_msn",
+   "vitdet",
+   "vitmatte",
+   "vitpose",
+   "vitpose_backbone",
+   "vits",
+   "vivit",
+   "vjepa2",
+   "voxtral",
+   "voxtral_realtime",
+   "wav2vec2",
+   "wav2vec2_bert",
+   "wav2vec2_conformer",
+   "wav2vec2_phoneme",
+   "wav2vec2_with_lm",
+   "wavlm",
+   "whisper",
+   "x_clip",
+   "xcodec",
+   "xcodec2",
+   "xglm",
+   "xlm",
+   "xlm_roberta",
+   "xlm_roberta_xl",
+   "xlnet",
+   "xlstm",
+   "xmod",
+   "yolos",
+   "yoso",
+   "youtu",
+   "zamba",
+   "zamba2",
+   "zaya",
+   "zoedepth"
+  ],
+  "vllm_supported_models_lines": {
+   "DeepseekV41ForCausalLM": null,
+   "DeepseekV4ForCausalLM": "| `DeepseekV4ForCausalLM` | DeepSeek-V4 | `deepseek-ai/DeepSeek-V4-Flash`, `deepseek-ai/DeepSeek-V4-Pro`, etc. | | \u2705\ufe0e |",
+   "Gemma4ForConditionalGeneration": "| `Gemma4ForConditionalGeneration` | Gemma 4 | T + I<sup>+</sup> + V + A<sup>*</sup> | `google/gemma-4-E2B-it`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "Gemma4UnifiedForConditionalGeneration": "| `Gemma4UnifiedForConditionalGeneration` | Gemma 4 Unified | T + I<sup>+</sup> + V + A | `google/gemma-4-12B-it`, etc. | | \u2705\ufe0e |",
+   "Glm4MoeLiteForCausalLM": "| `Glm4MoeLiteForCausalLM` | GLM-4.7-Flash | `zai-org/GLM-4.7-Flash`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "Glm5NextForConditionalGeneration": null,
+   "GlmMoeDsaForCausalLM": "| `GlmMoeDsaForCausalLM` | GLM-5, GLM-5.1, GLM-5.2 | `zai-org/GLM-5`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "GptOssForCausalLM": "| `GptOssForCausalLM` | GPT-OSS | `openai/gpt-oss-120b`, `openai/gpt-oss-20b` | \u2705\ufe0e | \u2705\ufe0e |",
+   "GraniteForCausalLM": "| `GraniteForCausalLM` | Granite 3.0, Granite 3.1, PowerLM | `ibm-granite/granite-3.0-2b-base`, `ibm-granite/granite-3.1-8b-instruct`, `ibm/PowerLM-3b`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "Lfm2ForCausalLM": "| `Lfm2ForCausalLM` | LFM2 | `LiquidAI/LFM2-1.2B`, `LiquidAI/LFM2-700M`, `LiquidAI/LFM2-350M`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "Mistral3ForConditionalGeneration": "| `Mistral3ForConditionalGeneration` | Mistral3 (HF Transformers) | T + I<sup>+</sup> | `mistralai/Mistral-Small-3.1-24B-Instruct-2503`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "MistralForCausalLM": "| `MistralForCausalLM` | Ministral-3, Mistral, Mistral-Instruct | `mistralai/Ministral-3-3B-Instruct-2512`, `mistralai/Mistral-7B-v0.1`, `mistralai/Mistral-7B-Instruct-v0.1`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "NemotronHForCausalLM": "| `NemotronHForCausalLM` | Nemotron-H | `nvidia/Nemotron-H-8B-Base-8K`, `nvidia/Nemotron-H-47B-Base-8K`, `nvidia/Nemotron-H-56B-Base-8K`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "Olmo3ForCausalLM": "| `Olmo3ForCausalLM` | OLMo3 | `allenai/Olmo-3-7B-Instruct`, `allenai/Olmo-3-32B-Think`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "Phi3ForCausalLM": "| `Phi3ForCausalLM` | Phi-4, Phi-3 | `microsoft/Phi-4-mini-instruct`, `microsoft/Phi-4`, `microsoft/Phi-3-mini-4k-instruct`, `microsoft/Phi-3-mini-128k-instruct`, `microsoft/Phi-3-medium-128k-instruct",
+   "Qwen3ForCausalLM": "| `Qwen3ForCausalLM` | Qwen3 | `Qwen/Qwen3-8B`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "Qwen3_5ForConditionalGeneration": "| `Qwen3_5ForConditionalGeneration` | Qwen3.5 | T + I<sup>E+</sup> + V<sup>E+</sup> | `Qwen/Qwen3.5-9B-Instruct`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "Qwen3_5MoeForCausalLM": null,
+   "Qwen3_5MoeForConditionalGeneration": "| `Qwen3_5MoeForConditionalGeneration` | Qwen3.5-MOE | T + I<sup>E+</sup> + V<sup>E+</sup> | `Qwen/Qwen3.5-35B-A3B-Instruct`, etc. | \u2705\ufe0e | \u2705\ufe0e |",
+   "Qwen4ExpForConditionalGeneration": null,
+   "SmolLM3ForCausalLM": "| `SmolLM3ForCausalLM` | SmolLM3 | `HuggingFaceTB/SmolLM3-3B` | \u2705\ufe0e | \u2705\ufe0e |"
+  }
+ },
+ "gpu_used": false,
+ "models": {
+  "HuggingFaceTB/SmolLM3-3B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "SmolLM3ForCausalLM"
+    ],
+    "hidden_size": 2048,
+    "intermediate_size": 11008,
+    "max_position_embeddings": 65536,
+    "model_type": "smollm3",
+    "num_attention_heads": 16,
+    "num_hidden_layers": 36,
+    "num_key_value_heads": 4,
+    "sliding_window": null,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 128256
+   },
+   "created_at": "2025-07-08T10:11:45.000Z",
+   "gated": false,
+   "last_modified": "2025-09-10T12:28:11.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "HuggingFaceTB/SmolLM3-3B",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "a07cc9a04f16550a088caea529712d1d335b0ac1",
+   "safetensors": {
+    "parameters": {
+     "BF16": 3075098624
+    },
+    "total": 3075098624
+   },
+   "siblings_count": 12,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "smollm3",
+    "text-generation",
+    "conversational",
+    "en",
+    "fr",
+    "es",
+    "it",
+    "pt",
+    "zh",
+    "ar",
+    "ru",
+    "base_model:HuggingFaceTB/SmolLM3-3B-Base",
+    "base_model:finetune:HuggingFaceTB/SmolLM3-3B-Base",
+    "license:apache-2.0",
+    "endpoints_compatible",
+    "deploy:azure"
+   ]
+  },
+  "LiquidAI/LFM2.5-2.6B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Lfm2ForCausalLM"
+    ],
+    "dtype": "bfloat16",
+    "hidden_size": 2048,
+    "intermediate_size": 10752,
+    "max_position_embeddings": 131072,
+    "model_type": "lfm2",
+    "num_attention_heads": 32,
+    "num_hidden_layers": 30,
+    "num_key_value_heads": 8,
+    "vocab_size": 128000
+   },
+   "created_at": "2026-07-28T22:14:32.000Z",
+   "gated": false,
+   "last_modified": "2026-08-24T21:06:45.000Z",
+   "library_name": "transformers",
+   "license_card": "other",
+   "license_link": "LICENSE",
+   "license_name": "lfm1.0",
+   "model": "LiquidAI/LFM2.5-2.6B",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "654f9463ce32b05d0429d76fe1f580b27d4c1ac0",
+   "safetensors": {
+    "parameters": {
+     "BF16": 2697198592
+    },
+    "total": 2697198592
+   },
+   "siblings_count": 11,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "lfm2",
+    "text-generation",
+    "liquid",
+    "lfm2.5",
+    "edge",
+    "conversational",
+    "ar",
+    "zh",
+    "en",
+    "fr",
+    "de",
+    "hi",
+    "id",
+    "it",
+    "ja",
+    "ko",
+    "pl",
+    "pt",
+    "ru",
+    "es",
+    "th",
+    "vi",
+    "arxiv:2511.23404",
+    "base_model:LiquidAI/LFM2.5-2.6B-Base",
+    "base_model:finetune:LiquidAI/LFM2.5-2.6B-Base",
+    "license:other",
+    "eval-results",
+    "endpoints_compatible"
+   ]
+  },
+  "Qwen/Qwen3-8B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3ForCausalLM"
+    ],
+    "head_dim": 128,
+    "hidden_size": 4096,
+    "intermediate_size": 12288,
+    "max_position_embeddings": 40960,
+    "model_type": "qwen3",
+    "num_attention_heads": 32,
+    "num_hidden_layers": 36,
+    "num_key_value_heads": 8,
+    "sliding_window": null,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 151936
+   },
+   "created_at": "2025-04-27T03:42:21.000Z",
+   "gated": false,
+   "last_modified": "2025-07-26T03:49:13.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://huggingface.co/Qwen/Qwen3-8B/blob/main/LICENSE",
+   "license_name": null,
+   "model": "Qwen/Qwen3-8B",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "b968826d9c46dd6066d109eabc6255188de91218",
+   "safetensors": {
+    "parameters": {
+     "BF16": 8190735360
+    },
+    "total": 8190735360
+   },
+   "siblings_count": 15,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3",
+    "text-generation",
+    "conversational",
+    "arxiv:2309.00071",
+    "arxiv:2505.09388",
+    "base_model:Qwen/Qwen3-8B-Base",
+    "base_model:finetune:Qwen/Qwen3-8B-Base",
+    "license:apache-2.0",
+    "eval-results",
+    "text-generation-inference",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "Qwen/Qwen3.5-27B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3_5ForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 5120,
+    "text_config.intermediate_size": 17408,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "qwen3_5_text",
+    "text_config.num_attention_heads": 24,
+    "text_config.num_hidden_layers": 64,
+    "text_config.num_key_value_heads": 4,
+    "text_config.vocab_size": 248320
+   },
+   "created_at": "2026-02-24T09:41:56.000Z",
+   "gated": false,
+   "last_modified": "2026-04-24T02:54:49.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://huggingface.co/Qwen/Qwen3.5-27B/blob/main/LICENSE",
+   "license_name": null,
+   "model": "Qwen/Qwen3.5-27B",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "fc05daec18b0a78c049392ed2e771dde82bdf654",
+   "safetensors": {
+    "parameters": {
+     "BF16": 27781419504,
+     "F32": 8448
+    },
+    "total": 27781427952
+   },
+   "siblings_count": 24,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3_5",
+    "image-text-to-text",
+    "conversational",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "Qwen/Qwen3.5-35B-A3B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3_5MoeForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5_moe",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 2048,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "qwen3_5_moe_text",
+    "text_config.moe_intermediate_size": 512,
+    "text_config.num_attention_heads": 16,
+    "text_config.num_experts": 256,
+    "text_config.num_experts_per_tok": 8,
+    "text_config.num_hidden_layers": 40,
+    "text_config.num_key_value_heads": 2,
+    "text_config.vocab_size": 248320
+   },
+   "created_at": "2026-02-24T09:39:25.000Z",
+   "gated": false,
+   "last_modified": "2026-04-24T02:38:38.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://huggingface.co/Qwen/Qwen3.5-35B-A3B/blob/main/LICENSE",
+   "license_name": null,
+   "model": "Qwen/Qwen3.5-35B-A3B",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "59d61f3ce65a6d9863b86d2e96597125219dc754",
+   "safetensors": {
+    "parameters": {
+     "BF16": 35951817904,
+     "F32": 4800
+    },
+    "total": 35951822704
+   },
+   "siblings_count": 27,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3_5_moe",
+    "image-text-to-text",
+    "conversational",
+    "base_model:Qwen/Qwen3.5-35B-A3B-Base",
+    "base_model:finetune:Qwen/Qwen3.5-35B-A3B-Base",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:azure"
+   ]
+  },
+  "Qwen/Qwen3.5-4B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3_5ForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 2560,
+    "text_config.intermediate_size": 9216,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "qwen3_5_text",
+    "text_config.num_attention_heads": 16,
+    "text_config.num_hidden_layers": 32,
+    "text_config.num_key_value_heads": 4,
+    "text_config.vocab_size": 248320
+   },
+   "created_at": "2026-02-27T14:45:03.000Z",
+   "gated": false,
+   "last_modified": "2026-03-02T00:52:52.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/LICENSE",
+   "license_name": null,
+   "model": "Qwen/Qwen3.5-4B",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+   "safetensors": {
+    "parameters": {
+     "BF16": 4659861248,
+     "F32": 3840
+    },
+    "total": 4659865088
+   },
+   "siblings_count": 14,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3_5",
+    "image-text-to-text",
+    "conversational",
+    "base_model:Qwen/Qwen3.5-4B-Base",
+    "base_model:finetune:Qwen/Qwen3.5-4B-Base",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "Qwen/Qwen3.5-9B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3_5ForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 4096,
+    "text_config.intermediate_size": 12288,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "qwen3_5_text",
+    "text_config.num_attention_heads": 16,
+    "text_config.num_hidden_layers": 32,
+    "text_config.num_key_value_heads": 4,
+    "text_config.vocab_size": 248320
+   },
+   "created_at": "2026-02-27T12:58:26.000Z",
+   "gated": false,
+   "last_modified": "2026-03-02T00:51:43.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE",
+   "license_name": null,
+   "model": "Qwen/Qwen3.5-9B",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+   "safetensors": {
+    "parameters": {
+     "BF16": 9653100528,
+     "F32": 3840
+    },
+    "total": 9653104368
+   },
+   "siblings_count": 16,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3_5",
+    "image-text-to-text",
+    "conversational",
+    "base_model:Qwen/Qwen3.5-9B-Base",
+    "base_model:finetune:Qwen/Qwen3.5-9B-Base",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "Qwen/Qwen3.6-27B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3_5ForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 5120,
+    "text_config.intermediate_size": 17408,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "qwen3_5_text",
+    "text_config.num_attention_heads": 24,
+    "text_config.num_hidden_layers": 64,
+    "text_config.num_key_value_heads": 4,
+    "text_config.vocab_size": 248320
+   },
+   "created_at": "2026-04-21T07:50:43.000Z",
+   "gated": false,
+   "last_modified": "2026-04-24T02:39:16.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://huggingface.co/Qwen/Qwen3.6-27B/blob/main/LICENSE",
+   "license_name": null,
+   "model": "Qwen/Qwen3.6-27B",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "6a9e13bd6fc8f0983b9b99948120bc37f49c13e9",
+   "safetensors": {
+    "parameters": {
+     "BF16": 27781427952
+    },
+    "total": 27781427952
+   },
+   "siblings_count": 29,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3_5",
+    "image-text-to-text",
+    "conversational",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "Qwen/Qwen3.6-35B-A3B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3_5MoeForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5_moe",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 2048,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "qwen3_5_moe_text",
+    "text_config.moe_intermediate_size": 512,
+    "text_config.num_attention_heads": 16,
+    "text_config.num_experts": 256,
+    "text_config.num_experts_per_tok": 8,
+    "text_config.num_hidden_layers": 40,
+    "text_config.num_key_value_heads": 2,
+    "text_config.vocab_size": 248320
+   },
+   "created_at": "2026-04-15T05:59:19.000Z",
+   "gated": false,
+   "last_modified": "2026-04-24T02:53:42.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://huggingface.co/Qwen/Qwen3.6-35B-A3B/blob/main/LICENSE",
+   "license_name": null,
+   "model": "Qwen/Qwen3.6-35B-A3B",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "995ad96eacd98c81ed38be0c5b274b04031597b0",
+   "safetensors": {
+    "parameters": {
+     "BF16": 35951822704
+    },
+    "total": 35951822704
+   },
+   "siblings_count": 40,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3_5_moe",
+    "image-text-to-text",
+    "conversational",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "Qwen/Qwen3.8-2.4T-A95B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3_5MoeForCausalLM"
+    ],
+    "dtype": "bfloat16",
+    "head_dim": 256,
+    "hidden_size": 8192,
+    "max_position_embeddings": 262144,
+    "model_type": "qwen3_5_moe_text",
+    "moe_intermediate_size": 2048,
+    "num_attention_heads": 64,
+    "num_experts": 512,
+    "num_experts_per_tok": 10,
+    "num_hidden_layers": 92,
+    "num_key_value_heads": 4,
+    "vocab_size": 248320
+   },
+   "created_at": "2026-08-08T01:50:52.000Z",
+   "gated": false,
+   "last_modified": "2026-08-12T10:24:04.000Z",
+   "library_name": "transformers",
+   "license_card": "other",
+   "license_link": "LICENSE",
+   "license_name": "qwen3.8-max",
+   "model": "Qwen/Qwen3.8-2.4T-A95B",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "207bd685a7e3696cfaff12ded7c6a7ea0f88c996",
+   "safetensors": {
+    "parameters": {
+     "BF16": 2446182725504
+    },
+    "total": 2446182725504
+   },
+   "siblings_count": 224,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3_5_moe_text",
+    "text-generation",
+    "conversational",
+    "license:other",
+    "eval-results",
+    "endpoints_compatible"
+   ]
+  },
+  "Qwen/Qwen3.8-27B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3_5ForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 5120,
+    "text_config.intermediate_size": 17408,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "qwen3_5_text",
+    "text_config.num_attention_heads": 24,
+    "text_config.num_hidden_layers": 64,
+    "text_config.num_key_value_heads": 4,
+    "text_config.vocab_size": 248320
+   },
+   "created_at": "2026-08-05T08:22:59.000Z",
+   "gated": false,
+   "last_modified": "2026-08-14T15:00:01.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "Qwen/Qwen3.8-27B",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+   "safetensors": {
+    "parameters": {
+     "BF16": 27781427952
+    },
+    "total": 27781427952
+   },
+   "siblings_count": 32,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3_5",
+    "image-text-to-text",
+    "conversational",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:azure",
+    "deploy:sagemaker"
+   ]
+  },
+  "Qwen/Qwen3.8-Flash-Next": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen4ExpForConditionalGeneration"
+    ],
+    "model_type": "qwen4_exp",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 2560,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "qwen4_exp_text",
+    "text_config.moe_intermediate_size": 640,
+    "text_config.num_attention_heads": 24,
+    "text_config.num_experts": 512,
+    "text_config.num_experts_per_tok": 10,
+    "text_config.num_hidden_layers": 48,
+    "text_config.num_key_value_heads": 2,
+    "text_config.vocab_size": 248320
+   },
+   "created_at": "2026-08-24T08:24:59.000Z",
+   "gated": false,
+   "last_modified": "2026-08-27T05:03:36.000Z",
+   "library_name": "transformers",
+   "license_card": "other",
+   "license_link": "LICENSE",
+   "license_name": "qwen-community-1.0",
+   "model": "Qwen/Qwen3.8-Flash-Next",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+   "safetensors": {
+    "parameters": {
+     "BF16": 179999981424,
+     "I64": 35
+    },
+    "total": 179999981459
+   },
+   "siblings_count": 144,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen4_exp",
+    "image-text-to-text",
+    "conversational",
+    "license:other",
+    "eval-results",
+    "endpoints_compatible"
+   ]
+  },
+  "allenai/Olmo-3-7B-Instruct": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Olmo3ForCausalLM"
+    ],
+    "dtype": "bfloat16",
+    "hidden_size": 4096,
+    "intermediate_size": 11008,
+    "max_position_embeddings": 65536,
+    "model_type": "olmo3",
+    "num_attention_heads": 32,
+    "num_hidden_layers": 32,
+    "num_key_value_heads": 32,
+    "sliding_window": 4096,
+    "vocab_size": 100278
+   },
+   "created_at": "2025-11-19T20:49:53.000Z",
+   "gated": false,
+   "last_modified": "2026-06-25T21:41:37.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "allenai/Olmo-3-7B-Instruct",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "6e5971d9eba42665f5bd5a0fcf047f299ce1dccc",
+   "safetensors": {
+    "parameters": {
+     "BF16": 7298011136
+    },
+    "total": 7298011136
+   },
+   "siblings_count": 15,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "olmo3",
+    "text-generation",
+    "conversational",
+    "en",
+    "dataset:allenai/Dolci-Instruct-RL-7B",
+    "arxiv:2512.13961",
+    "base_model:allenai/Olmo-3-7B-Instruct-DPO",
+    "base_model:finetune:allenai/Olmo-3-7B-Instruct-DPO",
+    "license:apache-2.0",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3ForCausalLM"
+    ],
+    "head_dim": 128,
+    "hidden_size": 4096,
+    "intermediate_size": 12288,
+    "max_position_embeddings": 131072,
+    "model_type": "qwen3",
+    "num_attention_heads": 32,
+    "num_hidden_layers": 36,
+    "num_key_value_heads": 8,
+    "sliding_window": null,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 151936
+   },
+   "created_at": "2025-05-29T11:07:47.000Z",
+   "gated": false,
+   "last_modified": "2025-05-29T13:13:34.000Z",
+   "library_name": "transformers",
+   "license_card": "mit",
+   "license_link": null,
+   "license_name": null,
+   "model": "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "6e8885a6ff5c1dc5201574c8fd700323f23c25fa",
+   "safetensors": {
+    "parameters": {
+     "BF16": 8190735360
+    },
+    "total": 8190735360
+   },
+   "siblings_count": 10,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3",
+    "text-generation",
+    "conversational",
+    "arxiv:2501.12948",
+    "license:mit",
+    "text-generation-inference",
+    "endpoints_compatible"
+   ]
+  },
+  "deepseek-ai/DeepSeek-V4-Pro-0813": {
+   "config_has_quantization_config": true,
+   "config_subset": {
+    "architectures": [
+     "DeepseekV4ForCausalLM"
+    ],
+    "head_dim": 512,
+    "hidden_size": 7168,
+    "max_position_embeddings": 1048576,
+    "model_type": "deepseek_v4",
+    "moe_intermediate_size": 3072,
+    "n_routed_experts": 384,
+    "num_attention_heads": 128,
+    "num_experts_per_tok": 6,
+    "num_hidden_layers": 61,
+    "num_key_value_heads": 1,
+    "sliding_window": 128,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 129280
+   },
+   "created_at": "2026-08-13T03:05:06.000Z",
+   "gated": false,
+   "last_modified": "2026-08-13T16:28:28.000Z",
+   "library_name": "transformers",
+   "license_card": "mit",
+   "license_link": null,
+   "license_name": null,
+   "model": "deepseek-ai/DeepSeek-V4-Pro-0813",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "72e1d3230f6c080a530b0a1d46f8eb4602340597",
+   "safetensors": {
+    "parameters": {
+     "BF16": 2954820352,
+     "F32": 90530058,
+     "F8_E4M3": 23952621568,
+     "I64": 2327040,
+     "I8": 1623497637888
+    },
+    "total": 1650497936906
+   },
+   "siblings_count": 92,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "deepseek_v4",
+    "text-generation",
+    "arxiv:2606.19348",
+    "license:mit",
+    "eval-results",
+    "endpoints_compatible",
+    "8-bit",
+    "fp8"
+   ]
+  },
+  "deepseek-ai/DeepSeek-V4.1-Flash": {
+   "config_has_quantization_config": true,
+   "config_subset": {
+    "architectures": [
+     "DeepseekV41ForCausalLM"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "deepseek_v41",
+    "text_config.head_dim": 512,
+    "text_config.hidden_size": 5120,
+    "text_config.max_position_embeddings": 1048576,
+    "text_config.model_type": "deepseek_v41_text",
+    "text_config.moe_intermediate_size": 2304,
+    "text_config.n_routed_experts": 384,
+    "text_config.num_attention_heads": 64,
+    "text_config.num_experts_per_tok": 6,
+    "text_config.num_hidden_layers": 40,
+    "text_config.num_key_value_heads": 1,
+    "text_config.sliding_window": 128,
+    "text_config.vocab_size": 129280
+   },
+   "created_at": "2026-09-10T02:17:58.000Z",
+   "gated": false,
+   "last_modified": "2026-09-10T08:18:10.000Z",
+   "library_name": "transformers",
+   "license_card": "mit",
+   "license_link": null,
+   "license_name": null,
+   "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "dba1be0a40aa45a94ad051997016db3960a90277",
+   "safetensors": {
+    "parameters": {
+     "BF16": 1976441856,
+     "F32": 42307282,
+     "F8_E4M3": 204015223296,
+     "I8": 557171343360
+    },
+    "total": 763205315794
+   },
+   "siblings_count": 88,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "deepseek_v41",
+    "text-generation",
+    "image-text-to-text",
+    "license:mit",
+    "eval-results",
+    "endpoints_compatible",
+    "8-bit",
+    "fp8"
+   ]
+  },
+  "google/gemma-4-12B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Gemma4UnifiedForConditionalGeneration"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "gemma4_unified",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 3840,
+    "text_config.intermediate_size": 15360,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "gemma4_unified_text",
+    "text_config.moe_intermediate_size": null,
+    "text_config.num_attention_heads": 16,
+    "text_config.num_experts": null,
+    "text_config.num_hidden_layers": 48,
+    "text_config.num_key_value_heads": 8,
+    "text_config.sliding_window": 1024,
+    "text_config.vocab_size": 262144
+   },
+   "created_at": "2026-05-23T02:43:54.000Z",
+   "gated": false,
+   "last_modified": "2026-07-15T16:40:57.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://ai.google.dev/gemma/docs/gemma_4_license",
+   "license_name": null,
+   "model": "google/gemma-4-12B",
+   "pipeline_tag": "any-to-any",
+   "revision_sha": "023679ed352de9bb66cc873c9009ce3482585c08",
+   "safetensors": {
+    "parameters": {
+     "BF16": 11959730224
+    },
+    "total": 11959730224
+   },
+   "siblings_count": 8,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "gemma4_unified",
+    "image-text-to-text",
+    "any-to-any",
+    "arxiv:2607.02770",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible"
+   ]
+  },
+  "google/gemma-4-12B-it": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Gemma4UnifiedForConditionalGeneration"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "gemma4_unified",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 3840,
+    "text_config.intermediate_size": 15360,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "gemma4_unified_text",
+    "text_config.moe_intermediate_size": null,
+    "text_config.num_attention_heads": 16,
+    "text_config.num_experts": null,
+    "text_config.num_hidden_layers": 48,
+    "text_config.num_key_value_heads": 8,
+    "text_config.sliding_window": 1024,
+    "text_config.vocab_size": 262144
+   },
+   "created_at": "2026-05-23T01:17:15.000Z",
+   "gated": false,
+   "last_modified": "2026-07-20T16:42:08.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://ai.google.dev/gemma/docs/gemma_4_license",
+   "license_name": null,
+   "model": "google/gemma-4-12B-it",
+   "pipeline_tag": "any-to-any",
+   "revision_sha": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+   "safetensors": {
+    "parameters": {
+     "BF16": 11959730224
+    },
+    "total": 11959730224
+   },
+   "siblings_count": 9,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "gemma4_unified",
+    "image-text-to-text",
+    "any-to-any",
+    "arxiv:2607.02770",
+    "base_model:google/gemma-4-12B",
+    "base_model:finetune:google/gemma-4-12B",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:sagemaker"
+   ]
+  },
+  "google/gemma-4-26B-A4B-it": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Gemma4ForConditionalGeneration"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "gemma4",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 2816,
+    "text_config.intermediate_size": 2112,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "gemma4_text",
+    "text_config.moe_intermediate_size": 704,
+    "text_config.num_attention_heads": 16,
+    "text_config.num_experts": 128,
+    "text_config.num_hidden_layers": 30,
+    "text_config.num_key_value_heads": 8,
+    "text_config.sliding_window": 1024,
+    "text_config.vocab_size": 262144
+   },
+   "created_at": "2026-03-11T21:25:57.000Z",
+   "gated": false,
+   "last_modified": "2026-07-20T16:42:12.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://ai.google.dev/gemma/docs/gemma_4_license",
+   "license_name": null,
+   "model": "google/gemma-4-26B-A4B-it",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "4d7ae4984b7db7de8f8457170b3f1a419ee76d52",
+   "safetensors": {
+    "parameters": {
+     "BF16": 25805936206
+    },
+    "total": 25805936206
+   },
+   "siblings_count": 12,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "gemma4",
+    "image-text-to-text",
+    "conversational",
+    "arxiv:2607.02770",
+    "base_model:google/gemma-4-26B-A4B",
+    "base_model:finetune:google/gemma-4-26B-A4B",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "google/gemma-4-31B-it": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Gemma4ForConditionalGeneration"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "gemma4",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 5376,
+    "text_config.intermediate_size": 21504,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "gemma4_text",
+    "text_config.num_attention_heads": 32,
+    "text_config.num_experts": null,
+    "text_config.num_hidden_layers": 60,
+    "text_config.num_key_value_heads": 16,
+    "text_config.sliding_window": 1024,
+    "text_config.vocab_size": 262144
+   },
+   "created_at": "2026-03-11T18:22:36.000Z",
+   "gated": false,
+   "last_modified": "2026-07-20T16:42:18.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://ai.google.dev/gemma/docs/gemma_4_license",
+   "license_name": null,
+   "model": "google/gemma-4-31B-it",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "842da3794eaa0b77d5f08bae87a17459d91ff475",
+   "safetensors": {
+    "parameters": {
+     "BF16": 31273088876
+    },
+    "total": 31273088876
+   },
+   "siblings_count": 12,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "gemma4",
+    "image-text-to-text",
+    "conversational",
+    "arxiv:2607.02770",
+    "base_model:google/gemma-4-31B",
+    "base_model:finetune:google/gemma-4-31B",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "google/gemma-4-E4B-it": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Gemma4ForConditionalGeneration"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "gemma4",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 2560,
+    "text_config.intermediate_size": 10240,
+    "text_config.max_position_embeddings": 131072,
+    "text_config.model_type": "gemma4_text",
+    "text_config.num_attention_heads": 8,
+    "text_config.num_experts": null,
+    "text_config.num_hidden_layers": 42,
+    "text_config.num_key_value_heads": 2,
+    "text_config.sliding_window": 512,
+    "text_config.vocab_size": 262144
+   },
+   "created_at": "2026-03-02T19:57:40.000Z",
+   "gated": false,
+   "last_modified": "2026-07-20T16:42:03.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": "https://ai.google.dev/gemma/docs/gemma_4_license",
+   "license_name": null,
+   "model": "google/gemma-4-E4B-it",
+   "pipeline_tag": "any-to-any",
+   "revision_sha": "ee0ef6023621cff504d758262d4e04895a5af4a2",
+   "safetensors": {
+    "parameters": {
+     "BF16": 7996156490
+    },
+    "total": 7996156490
+   },
+   "siblings_count": 9,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "gemma4",
+    "image-text-to-text",
+    "any-to-any",
+    "arxiv:2607.02770",
+    "base_model:google/gemma-4-E4B",
+    "base_model:finetune:google/gemma-4-E4B",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "ibm-granite/granite-4.2-30b": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "GraniteForCausalLM"
+    ],
+    "dtype": "bfloat16",
+    "hidden_size": 4096,
+    "intermediate_size": 32768,
+    "max_position_embeddings": 131072,
+    "model_type": "granite",
+    "num_attention_heads": 32,
+    "num_hidden_layers": 64,
+    "num_key_value_heads": 8,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 100352
+   },
+   "created_at": "2026-08-07T16:29:50.000Z",
+   "gated": false,
+   "last_modified": "2026-09-04T21:08:46.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "ibm-granite/granite-4.2-30b",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "9e668ce1c538387ef24d3644e9b0606647762636",
+   "safetensors": {
+    "parameters": {
+     "BF16": 29276770304
+    },
+    "total": 29276770304
+   },
+   "siblings_count": 24,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "granite",
+    "text-generation",
+    "granite-4.2",
+    "reasoning",
+    "thinking",
+    "tool-calling",
+    "ibm",
+    "conversational",
+    "en",
+    "de",
+    "es",
+    "fr",
+    "ja",
+    "pt",
+    "ar",
+    "cs",
+    "it",
+    "ko",
+    "nl",
+    "zh",
+    "base_model:ibm-granite/granite-4.1-30b-base",
+    "base_model:finetune:ibm-granite/granite-4.1-30b-base",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible"
+   ]
+  },
+  "ibm-granite/granite-4.2-3b": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "GraniteForCausalLM"
+    ],
+    "dtype": "bfloat16",
+    "hidden_size": 2560,
+    "intermediate_size": 8192,
+    "max_position_embeddings": 131072,
+    "model_type": "granite",
+    "num_attention_heads": 40,
+    "num_hidden_layers": 40,
+    "num_key_value_heads": 8,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 100352
+   },
+   "created_at": "2026-08-07T16:26:43.000Z",
+   "gated": false,
+   "last_modified": "2026-09-02T21:57:50.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "ibm-granite/granite-4.2-3b",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "e459acceac81e5fe67c07d9cfc72329a332e7eb1",
+   "safetensors": {
+    "parameters": {
+     "BF16": 3659737600
+    },
+    "total": 3659737600
+   },
+   "siblings_count": 15,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "granite",
+    "text-generation",
+    "granite-4.2",
+    "reasoning",
+    "thinking",
+    "tool-calling",
+    "ibm",
+    "conversational",
+    "en",
+    "de",
+    "es",
+    "fr",
+    "ja",
+    "pt",
+    "ar",
+    "cs",
+    "it",
+    "ko",
+    "nl",
+    "zh",
+    "base_model:ibm-granite/granite-4.1-3b-base",
+    "base_model:finetune:ibm-granite/granite-4.1-3b-base",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible"
+   ]
+  },
+  "ibm-granite/granite-4.2-8b": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "GraniteForCausalLM"
+    ],
+    "dtype": "bfloat16",
+    "hidden_size": 4096,
+    "intermediate_size": 12800,
+    "max_position_embeddings": 131072,
+    "model_type": "granite",
+    "num_attention_heads": 32,
+    "num_hidden_layers": 40,
+    "num_key_value_heads": 8,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 100352
+   },
+   "created_at": "2026-08-07T16:29:09.000Z",
+   "gated": false,
+   "last_modified": "2026-09-04T21:02:25.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "ibm-granite/granite-4.2-8b",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "f8de16cdcdbc6c779ca517604e050d82cc119e44",
+   "safetensors": {
+    "parameters": {
+     "BF16": 8791592960
+    },
+    "total": 8791592960
+   },
+   "siblings_count": 17,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "granite",
+    "text-generation",
+    "granite-4.2",
+    "reasoning",
+    "thinking",
+    "tool-calling",
+    "ibm",
+    "conversational",
+    "en",
+    "de",
+    "es",
+    "fr",
+    "ja",
+    "pt",
+    "ar",
+    "cs",
+    "it",
+    "ko",
+    "nl",
+    "zh",
+    "base_model:ibm-granite/granite-4.1-8b-base",
+    "base_model:finetune:ibm-granite/granite-4.1-8b-base",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible"
+   ]
+  },
+  "meta-llama/Llama-3.3-70B-Instruct": {
+   "config_error": "<HTTPError 401: 'Unauthorized'>",
+   "created_at": "2024-11-26T16:08:47.000Z",
+   "gated": "manual",
+   "last_modified": "2024-12-21T18:28:01.000Z",
+   "library_name": "transformers",
+   "license_card": "llama3.3",
+   "license_link": null,
+   "license_name": null,
+   "model": "meta-llama/Llama-3.3-70B-Instruct",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "6f6073b423013f6a7d4d9f39144961bfbfbc386b",
+   "safetensors": {
+    "parameters": {
+     "BF16": 70553706496
+    },
+    "total": 70553706496
+   },
+   "siblings_count": 53,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "llama",
+    "text-generation",
+    "facebook",
+    "meta",
+    "pytorch",
+    "llama-3",
+    "conversational",
+    "en",
+    "fr",
+    "it",
+    "pt",
+    "hi",
+    "es",
+    "th",
+    "de",
+    "arxiv:2204.05149",
+    "base_model:meta-llama/Llama-3.1-70B",
+    "base_model:finetune:meta-llama/Llama-3.1-70B",
+    "license:llama3.3",
+    "eval-results",
+    "text-generation-inference",
+    "endpoints_compatible"
+   ]
+  },
+  "meta-llama/Llama-4-Scout-17B-16E-Instruct": {
+   "config_error": "<HTTPError 401: 'Unauthorized'>",
+   "created_at": "2025-04-02T13:34:17.000Z",
+   "gated": "manual",
+   "last_modified": "2025-05-22T23:44:50.000Z",
+   "library_name": "transformers",
+   "license_card": "other",
+   "license_link": null,
+   "license_name": "llama4",
+   "model": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "92f3b1597a195b523d8d9e5700e57e4fbb8f20d3",
+   "safetensors": {
+    "parameters": {
+     "BF16": 108641793536
+    },
+    "total": 108641793536
+   },
+   "siblings_count": 64,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "llama4",
+    "image-text-to-text",
+    "facebook",
+    "meta",
+    "pytorch",
+    "llama",
+    "conversational",
+    "ar",
+    "de",
+    "en",
+    "es",
+    "fr",
+    "hi",
+    "id",
+    "it",
+    "pt",
+    "th",
+    "tl",
+    "vi",
+    "arxiv:2204.05149",
+    "base_model:meta-llama/Llama-4-Scout-17B-16E",
+    "base_model:finetune:meta-llama/Llama-4-Scout-17B-16E",
+    "license:other",
+    "eval-results",
+    "text-generation-inference",
+    "endpoints_compatible"
+   ]
+  },
+  "microsoft/Fara1.5-9B": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3_5ForConditionalGeneration"
+    ],
+    "model_type": "qwen3_5",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 256,
+    "text_config.hidden_size": 4096,
+    "text_config.intermediate_size": 12288,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "qwen3_5_text",
+    "text_config.num_attention_heads": 16,
+    "text_config.num_hidden_layers": 32,
+    "text_config.num_key_value_heads": 4,
+    "text_config.vocab_size": 248320
+   },
+   "created_at": "2026-05-12T16:31:18.000Z",
+   "gated": false,
+   "last_modified": "2026-07-27T15:40:03.000Z",
+   "library_name": "transformers",
+   "license_card": "mit",
+   "license_link": null,
+   "license_name": null,
+   "model": "microsoft/Fara1.5-9B",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "1a93677cd89d5601bc2ed759791e981f3a520032",
+   "safetensors": {
+    "parameters": {
+     "BF16": 9409813744
+    },
+    "total": 9409813744
+   },
+   "siblings_count": 17,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3_5",
+    "image-text-to-text",
+    "computer-use",
+    "cua",
+    "web-agent",
+    "multimodal",
+    "vision-language",
+    "agent",
+    "browser-automation",
+    "magentic",
+    "fara",
+    "conversational",
+    "en",
+    "arxiv:2606.20785",
+    "base_model:Qwen/Qwen3.5-9B",
+    "base_model:finetune:Qwen/Qwen3.5-9B",
+    "license:mit",
+    "endpoints_compatible",
+    "deploy:azure"
+   ]
+  },
+  "microsoft/MagenticBrain": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Qwen3ForCausalLM"
+    ],
+    "dtype": "float32",
+    "head_dim": 128,
+    "hidden_size": 5120,
+    "intermediate_size": 17408,
+    "max_position_embeddings": 40960,
+    "model_type": "qwen3",
+    "num_attention_heads": 40,
+    "num_hidden_layers": 40,
+    "num_key_value_heads": 8,
+    "sliding_window": null,
+    "vocab_size": 151936
+   },
+   "created_at": "2026-05-12T20:48:55.000Z",
+   "gated": false,
+   "last_modified": "2026-07-20T16:45:55.000Z",
+   "library_name": "transformers",
+   "license_card": "mit",
+   "license_link": null,
+   "license_name": null,
+   "model": "microsoft/MagenticBrain",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "db8eb9340a90eaa4424dd13067373d1f9e8887f7",
+   "safetensors": {
+    "parameters": {
+     "F32": 14768307200
+    },
+    "total": 14768307200
+   },
+   "siblings_count": 25,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "qwen3",
+    "text-generation",
+    "agent",
+    "agentic",
+    "tool-use",
+    "function-calling",
+    "orchestration",
+    "magentic",
+    "conversational",
+    "en",
+    "arxiv:2505.09388",
+    "base_model:Qwen/Qwen3-14B",
+    "base_model:finetune:Qwen/Qwen3-14B",
+    "license:mit",
+    "text-generation-inference",
+    "endpoints_compatible"
+   ]
+  },
+  "microsoft/Phi-4-mini-instruct": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Phi3ForCausalLM"
+    ],
+    "hidden_size": 3072,
+    "intermediate_size": 8192,
+    "max_position_embeddings": 131072,
+    "model_type": "phi3",
+    "num_attention_heads": 24,
+    "num_hidden_layers": 32,
+    "num_key_value_heads": 8,
+    "sliding_window": 262144,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 200064
+   },
+   "created_at": "2025-02-19T01:00:58.000Z",
+   "gated": false,
+   "last_modified": "2025-12-10T20:24:40.000Z",
+   "library_name": "transformers",
+   "license_card": "mit",
+   "license_link": "https://huggingface.co/microsoft/Phi-4-mini-instruct/resolve/main/LICENSE",
+   "license_name": null,
+   "model": "microsoft/Phi-4-mini-instruct",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "cfbefacb99257ffa30c83adab238a50856ac3083",
+   "safetensors": {
+    "parameters": {
+     "BF16": 3836021760
+    },
+    "total": 3836021760
+   },
+   "siblings_count": 21,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "phi3",
+    "text-generation",
+    "nlp",
+    "code",
+    "conversational",
+    "custom_code",
+    "multilingual",
+    "ar",
+    "zh",
+    "cs",
+    "da",
+    "nl",
+    "en",
+    "fi",
+    "fr",
+    "de",
+    "he",
+    "hu",
+    "it",
+    "ja",
+    "ko",
+    "no",
+    "pl",
+    "pt",
+    "ru",
+    "es",
+    "sv",
+    "th",
+    "tr",
+    "uk",
+    "arxiv:2503.01743",
+    "license:mit",
+    "eval-results",
+    "text-generation-inference",
+    "endpoints_compatible",
+    "deploy:sagemaker"
+   ]
+  },
+  "microsoft/phi-4": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Phi3ForCausalLM"
+    ],
+    "hidden_size": 5120,
+    "intermediate_size": 17920,
+    "max_position_embeddings": 16384,
+    "model_type": "phi3",
+    "num_attention_heads": 40,
+    "num_hidden_layers": 40,
+    "num_key_value_heads": 10,
+    "sliding_window": null,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 100352
+   },
+   "created_at": "2024-12-11T11:47:29.000Z",
+   "gated": false,
+   "last_modified": "2026-07-14T14:22:25.000Z",
+   "library_name": "transformers",
+   "license_card": "mit",
+   "license_link": "https://huggingface.co/microsoft/phi-4/resolve/main/LICENSE",
+   "license_name": null,
+   "model": "microsoft/phi-4",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+   "safetensors": {
+    "parameters": {
+     "BF16": 14659507200
+    },
+    "total": 14659507200
+   },
+   "siblings_count": 21,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "phi3",
+    "text-generation",
+    "phi",
+    "nlp",
+    "math",
+    "code",
+    "chat",
+    "conversational",
+    "en",
+    "arxiv:2412.08905",
+    "license:mit",
+    "eval-results",
+    "text-generation-inference",
+    "endpoints_compatible",
+    "deploy:azure"
+   ]
+  },
+  "mistralai/Ministral-3-14B-Base-2512": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Mistral3ForConditionalGeneration"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "mistral3",
+    "text_config.head_dim": 128,
+    "text_config.hidden_size": 5120,
+    "text_config.intermediate_size": 16384,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "ministral3",
+    "text_config.num_attention_heads": 32,
+    "text_config.num_hidden_layers": 40,
+    "text_config.num_key_value_heads": 8,
+    "text_config.sliding_window": null,
+    "text_config.vocab_size": 131072
+   },
+   "created_at": "2025-10-31T08:41:49.000Z",
+   "gated": false,
+   "last_modified": "2026-01-15T11:16:43.000Z",
+   "library_name": "vllm",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "mistralai/Ministral-3-14B-Base-2512",
+   "pipeline_tag": null,
+   "revision_sha": "5b0ceedbb42dff466ae60b258ba296f32da51384",
+   "safetensors": {
+    "parameters": {
+     "BF16": 13945031680
+    },
+    "total": 13945031680
+   },
+   "siblings_count": 18,
+   "tags": [
+    "vllm",
+    "safetensors",
+    "mistral3",
+    "mistral-common",
+    "en",
+    "fr",
+    "es",
+    "de",
+    "it",
+    "pt",
+    "nl",
+    "zh",
+    "ja",
+    "ko",
+    "ar",
+    "arxiv:2601.08584",
+    "license:apache-2.0"
+   ]
+  },
+  "mistralai/Ministral-3-14B-Instruct-2512": {
+   "config_has_quantization_config": true,
+   "config_subset": {
+    "architectures": [
+     "Mistral3ForConditionalGeneration"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "mistral3",
+    "text_config.head_dim": 128,
+    "text_config.hidden_size": 5120,
+    "text_config.intermediate_size": 16384,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "ministral3",
+    "text_config.num_attention_heads": 32,
+    "text_config.num_hidden_layers": 40,
+    "text_config.num_key_value_heads": 8,
+    "text_config.sliding_window": null,
+    "text_config.vocab_size": 131072
+   },
+   "created_at": "2025-10-31T08:43:24.000Z",
+   "gated": false,
+   "last_modified": "2026-07-15T12:20:59.000Z",
+   "library_name": "vllm",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "mistralai/Ministral-3-14B-Instruct-2512",
+   "pipeline_tag": null,
+   "revision_sha": "29439f81c2be264d8d393273f99e7db9c0961120",
+   "safetensors": {
+    "parameters": {
+     "BF16": 1781550080,
+     "F8_E4M3": 12163481600
+    },
+    "total": 13945032240
+   },
+   "siblings_count": 17,
+   "tags": [
+    "vllm",
+    "safetensors",
+    "mistral3",
+    "mistral-common",
+    "en",
+    "fr",
+    "es",
+    "de",
+    "it",
+    "pt",
+    "nl",
+    "zh",
+    "ja",
+    "ko",
+    "ar",
+    "arxiv:2601.08584",
+    "base_model:mistralai/Ministral-3-14B-Base-2512",
+    "base_model:quantized:mistralai/Ministral-3-14B-Base-2512",
+    "license:apache-2.0",
+    "fp8",
+    "deploy:sagemaker"
+   ]
+  },
+  "mistralai/Ministral-3-14B-Reasoning-2512": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Mistral3ForConditionalGeneration"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "mistral3",
+    "text_config.head_dim": 128,
+    "text_config.hidden_size": 5120,
+    "text_config.intermediate_size": 16384,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "ministral3",
+    "text_config.num_attention_heads": 32,
+    "text_config.num_hidden_layers": 40,
+    "text_config.num_key_value_heads": 8,
+    "text_config.sliding_window": null,
+    "text_config.vocab_size": 131072
+   },
+   "created_at": "2025-10-31T08:42:28.000Z",
+   "gated": false,
+   "last_modified": "2026-07-15T12:21:23.000Z",
+   "library_name": "vllm",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "mistralai/Ministral-3-14B-Reasoning-2512",
+   "pipeline_tag": null,
+   "revision_sha": "51f9210f3cd20f3452a80d5819d15dc61cc50630",
+   "safetensors": {
+    "parameters": {
+     "BF16": 13945031680
+    },
+    "total": 13945031680
+   },
+   "siblings_count": 20,
+   "tags": [
+    "vllm",
+    "safetensors",
+    "mistral3",
+    "mistral-common",
+    "en",
+    "fr",
+    "es",
+    "de",
+    "it",
+    "pt",
+    "nl",
+    "zh",
+    "ja",
+    "ko",
+    "ar",
+    "arxiv:2601.08584",
+    "base_model:mistralai/Ministral-3-14B-Base-2512",
+    "base_model:finetune:mistralai/Ministral-3-14B-Base-2512",
+    "license:apache-2.0"
+   ]
+  },
+  "mistralai/Ministral-3-8B-Instruct-2512": {
+   "config_has_quantization_config": true,
+   "config_subset": {
+    "architectures": [
+     "Mistral3ForConditionalGeneration"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "mistral3",
+    "text_config.head_dim": 128,
+    "text_config.hidden_size": 4096,
+    "text_config.intermediate_size": 14336,
+    "text_config.max_position_embeddings": 262144,
+    "text_config.model_type": "ministral3",
+    "text_config.num_attention_heads": 32,
+    "text_config.num_hidden_layers": 34,
+    "text_config.num_key_value_heads": 8,
+    "text_config.sliding_window": null,
+    "text_config.vocab_size": 131072
+   },
+   "created_at": "2025-10-31T08:43:35.000Z",
+   "gated": false,
+   "last_modified": "2026-07-15T12:22:08.000Z",
+   "library_name": "vllm",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "mistralai/Ministral-3-8B-Instruct-2512",
+   "pipeline_tag": null,
+   "revision_sha": "5b26027e7b19eeb4b7352e1fed3926375dd2cb4d",
+   "safetensors": {
+    "parameters": {
+     "BF16": 1502496768,
+     "F8_E4M3": 7415529472
+    },
+    "total": 8918026716
+   },
+   "siblings_count": 16,
+   "tags": [
+    "vllm",
+    "safetensors",
+    "mistral3",
+    "mistral-common",
+    "en",
+    "fr",
+    "es",
+    "de",
+    "it",
+    "pt",
+    "nl",
+    "zh",
+    "ja",
+    "ko",
+    "ar",
+    "arxiv:2601.08584",
+    "base_model:mistralai/Ministral-3-8B-Base-2512",
+    "base_model:quantized:mistralai/Ministral-3-8B-Base-2512",
+    "license:apache-2.0",
+    "fp8",
+    "deploy:sagemaker"
+   ]
+  },
+  "mistralai/Mistral-Large-3-675B-Instruct-2512": {
+   "config_error": "<HTTPError 404: 'Not Found'>",
+   "created_at": "2025-11-28T18:05:12.000Z",
+   "gated": false,
+   "last_modified": "2026-07-15T12:22:43.000Z",
+   "library_name": "vllm",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "mistralai/Mistral-Large-3-675B-Instruct-2512",
+   "pipeline_tag": null,
+   "revision_sha": "383ffea2c7d60dfd44ca960e8e691709d4fdb9cd",
+   "safetensors": null,
+   "siblings_count": 283,
+   "tags": [
+    "vllm",
+    "mistral-common",
+    "compressed-tensors",
+    "en",
+    "fr",
+    "es",
+    "de",
+    "it",
+    "pt",
+    "nl",
+    "zh",
+    "ja",
+    "ko",
+    "ar",
+    "base_model:mistralai/Mistral-Large-3-675B-Base-2512",
+    "base_model:finetune:mistralai/Mistral-Large-3-675B-Base-2512",
+    "license:apache-2.0",
+    "eval-results"
+   ]
+  },
+  "mistralai/Mistral-Nemo-Instruct-2407": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "MistralForCausalLM"
+    ],
+    "head_dim": 128,
+    "hidden_size": 5120,
+    "intermediate_size": 14336,
+    "max_position_embeddings": 131072,
+    "model_type": "mistral",
+    "num_attention_heads": 32,
+    "num_hidden_layers": 40,
+    "num_key_value_heads": 8,
+    "sliding_window": null,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 131072
+   },
+   "created_at": "2024-07-17T17:26:49.000Z",
+   "gated": false,
+   "last_modified": "2025-07-28T17:16:02.000Z",
+   "library_name": "vllm",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "mistralai/Mistral-Nemo-Instruct-2407",
+   "pipeline_tag": null,
+   "revision_sha": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+   "safetensors": {
+    "parameters": {
+     "BF16": 12247782400
+    },
+    "total": 12247782400
+   },
+   "siblings_count": 18,
+   "tags": [
+    "vllm",
+    "safetensors",
+    "mistral",
+    "mistral-common",
+    "en",
+    "fr",
+    "de",
+    "es",
+    "it",
+    "pt",
+    "ru",
+    "zh",
+    "ja",
+    "base_model:mistralai/Mistral-Nemo-Base-2407",
+    "base_model:finetune:mistralai/Mistral-Nemo-Base-2407",
+    "license:apache-2.0",
+    "eval-results",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "mistralai/Mistral-Small-4-119B-2603": {
+   "config_has_quantization_config": true,
+   "config_subset": {
+    "architectures": [
+     "Mistral3ForConditionalGeneration"
+    ],
+    "dtype": "bfloat16",
+    "model_type": "mistral3",
+    "text_config.head_dim": 128,
+    "text_config.hidden_size": 4096,
+    "text_config.intermediate_size": 12288,
+    "text_config.max_position_embeddings": 1048576,
+    "text_config.model_type": "mistral4",
+    "text_config.moe_intermediate_size": 2048,
+    "text_config.n_routed_experts": 128,
+    "text_config.num_attention_heads": 32,
+    "text_config.num_experts_per_tok": 4,
+    "text_config.num_hidden_layers": 36,
+    "text_config.num_key_value_heads": 32,
+    "text_config.sliding_window": null,
+    "text_config.vocab_size": 131072
+   },
+   "created_at": "2026-01-23T13:14:14.000Z",
+   "gated": false,
+   "last_modified": "2026-07-15T12:23:29.000Z",
+   "library_name": null,
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "mistralai/Mistral-Small-4-119B-2603",
+   "pipeline_tag": null,
+   "revision_sha": "a11f36bebf709121056b1dbcc943d1c6afbe494d",
+   "safetensors": {
+    "parameters": {
+     "BF16": 1521452032,
+     "F8_E4M3": 117879865344
+    },
+    "total": 119401317952
+   },
+   "siblings_count": 28,
+   "tags": [
+    "safetensors",
+    "mistral3",
+    "vLLM",
+    "en",
+    "fr",
+    "de",
+    "es",
+    "pt",
+    "it",
+    "ja",
+    "ko",
+    "ru",
+    "zh",
+    "ar",
+    "fa",
+    "id",
+    "ms",
+    "ne",
+    "pl",
+    "ro",
+    "sr",
+    "sv",
+    "tr",
+    "uk",
+    "vi",
+    "hi",
+    "bn",
+    "license:apache-2.0",
+    "eval-results",
+    "fp8",
+    "deploy:azure"
+   ]
+  },
+  "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "NemotronHForCausalLM"
+    ],
+    "head_dim": 128,
+    "hidden_size": 2688,
+    "intermediate_size": 1856,
+    "max_position_embeddings": 262144,
+    "model_type": "nemotron_h",
+    "moe_intermediate_size": 1856,
+    "n_routed_experts": 128,
+    "num_attention_heads": 32,
+    "num_experts_per_tok": 6,
+    "num_hidden_layers": 52,
+    "num_key_value_heads": 2,
+    "sliding_window": null,
+    "torch_dtype": "bfloat16",
+    "vocab_size": 131072
+   },
+   "created_at": "2025-12-04T03:37:11.000Z",
+   "gated": false,
+   "last_modified": "2026-08-24T23:50:04.000Z",
+   "library_name": "transformers",
+   "license_card": "other",
+   "license_link": "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-nemotron-open-model-license/",
+   "license_name": "nvidia-nemotron-open-model-license",
+   "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "bf77c3174f68ad409e1c2aa60daeb46e32d1c606",
+   "safetensors": {
+    "parameters": {
+     "BF16": 31577934400,
+     "F32": 5888
+    },
+    "total": 31577937344
+   },
+   "siblings_count": 35,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "nemotron_h",
+    "text-generation",
+    "nvidia",
+    "pytorch",
+    "conversational",
+    "custom_code",
+    "en",
+    "es",
+    "fr",
+    "de",
+    "ja",
+    "it",
+    "dataset:nvidia/Nemotron-Pretraining-Code-v1",
+    "dataset:nvidia/Nemotron-CC-v2",
+    "dataset:nvidia/Nemotron-Pretraining-SFT-v1",
+    "dataset:nvidia/Nemotron-CC-Math-v1",
+    "dataset:nvidia/Nemotron-Pretraining-Code-v2",
+    "dataset:nvidia/Nemotron-Pretraining-Specialized-v1",
+    "dataset:nvidia/Nemotron-CC-v2.1",
+    "dataset:nvidia/Nemotron-CC-Code-v1",
+    "dataset:nvidia/Nemotron-Pretraining-Dataset-sample",
+    "dataset:nvidia/Nemotron-Competitive-Programming-v1",
+    "dataset:nvidia/Nemotron-Math-v2",
+    "dataset:nvidia/Nemotron-Agentic-v1",
+    "dataset:nvidia/Nemotron-Math-Proofs-v1",
+    "dataset:nvidia/Nemotron-Instruction-Following-Chat-v1",
+    "dataset:nvidia/Nemotron-Science-v1",
+    "dataset:nvidia/Nemotron-3-Nano-RL-Training-Blend",
+    "arxiv:2512.20848",
+    "arxiv:2512.20856",
+    "license:other",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "NemotronHForCausalLM"
+    ],
+    "dtype": "bfloat16",
+    "head_dim": 128,
+    "hidden_size": 2688,
+    "intermediate_size": 1856,
+    "max_position_embeddings": 262144,
+    "model_type": "nemotron_h",
+    "moe_intermediate_size": 1856,
+    "n_routed_experts": 128,
+    "num_attention_heads": 32,
+    "num_experts_per_tok": 6,
+    "num_hidden_layers": 52,
+    "num_key_value_heads": 2,
+    "sliding_window": null,
+    "vocab_size": 131072
+   },
+   "created_at": "2026-08-05T22:50:37.000Z",
+   "gated": false,
+   "last_modified": "2026-08-11T11:52:10.000Z",
+   "library_name": "transformers",
+   "license_card": "other",
+   "license_link": "https://openmdw.ai/license/1-1/",
+   "license_name": "openmdw-1.1",
+   "model": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-Base-BF16",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "434456c9a6753f29d24e23c95d622aaf17111b3b",
+   "safetensors": {
+    "parameters": {
+     "BF16": 32913263168,
+     "F32": 3072
+    },
+    "total": 31577937344
+   },
+   "siblings_count": 27,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "nemotron_h",
+    "text-generation",
+    "nvidia",
+    "pytorch",
+    "nemotron-3.5",
+    "mtp",
+    "en",
+    "es",
+    "fr",
+    "de",
+    "it",
+    "ja",
+    "dataset:nvidia/nemotron-pre-training-datasets",
+    "license:other",
+    "endpoints_compatible"
+   ]
+  },
+  "openai/gpt-oss-120b": {
+   "config_has_quantization_config": true,
+   "config_subset": {
+    "architectures": [
+     "GptOssForCausalLM"
+    ],
+    "head_dim": 64,
+    "hidden_size": 2880,
+    "intermediate_size": 2880,
+    "max_position_embeddings": 131072,
+    "model_type": "gpt_oss",
+    "num_attention_heads": 64,
+    "num_experts_per_tok": 4,
+    "num_hidden_layers": 36,
+    "num_key_value_heads": 8,
+    "num_local_experts": 128,
+    "sliding_window": 128,
+    "vocab_size": 201088
+   },
+   "created_at": "2025-08-04T22:33:06.000Z",
+   "gated": false,
+   "last_modified": "2025-08-26T17:25:03.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "openai/gpt-oss-120b",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "b5c939de8f754692c1647ca79fbf85e8c1e70f8a",
+   "safetensors": {
+    "parameters": {
+     "BF16": 2167371072,
+     "U8": 114661785600
+    },
+    "total": 116829156672
+   },
+   "siblings_count": 37,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "gpt_oss",
+    "text-generation",
+    "vllm",
+    "conversational",
+    "arxiv:2508.10925",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "8-bit",
+    "mxfp4",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "openai/gpt-oss-20b": {
+   "config_has_quantization_config": true,
+   "config_subset": {
+    "architectures": [
+     "GptOssForCausalLM"
+    ],
+    "head_dim": 64,
+    "hidden_size": 2880,
+    "intermediate_size": 2880,
+    "max_position_embeddings": 131072,
+    "model_type": "gpt_oss",
+    "num_attention_heads": 64,
+    "num_experts_per_tok": 4,
+    "num_hidden_layers": 24,
+    "num_key_value_heads": 8,
+    "num_local_experts": 32,
+    "sliding_window": 128,
+    "vocab_size": 201088
+   },
+   "created_at": "2025-08-04T22:33:29.000Z",
+   "gated": false,
+   "last_modified": "2025-08-26T17:25:47.000Z",
+   "library_name": "transformers",
+   "license_card": "apache-2.0",
+   "license_link": null,
+   "license_name": null,
+   "model": "openai/gpt-oss-20b",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "6cee5e81ee83917806bbde320786a8fb61efebee",
+   "safetensors": {
+    "parameters": {
+     "BF16": 1804459584,
+     "U8": 19110297600
+    },
+    "total": 20914757184
+   },
+   "siblings_count": 18,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "gpt_oss",
+    "text-generation",
+    "vllm",
+    "conversational",
+    "arxiv:2508.10925",
+    "license:apache-2.0",
+    "eval-results",
+    "endpoints_compatible",
+    "8-bit",
+    "mxfp4",
+    "deploy:sagemaker",
+    "deploy:azure"
+   ]
+  },
+  "zai-org/GLM-4.7-Flash": {
+   "config_has_quantization_config": false,
+   "config_subset": {
+    "architectures": [
+     "Glm4MoeLiteForCausalLM"
+    ],
+    "dtype": "bfloat16",
+    "hidden_size": 2048,
+    "intermediate_size": 10240,
+    "max_position_embeddings": 202752,
+    "model_type": "glm4_moe_lite",
+    "moe_intermediate_size": 1536,
+    "n_routed_experts": 64,
+    "num_attention_heads": 20,
+    "num_experts_per_tok": 4,
+    "num_hidden_layers": 47,
+    "num_key_value_heads": 20,
+    "vocab_size": 154880
+   },
+   "created_at": "2026-01-19T06:28:10.000Z",
+   "gated": false,
+   "last_modified": "2026-01-29T08:06:19.000Z",
+   "library_name": "transformers",
+   "license_card": "mit",
+   "license_link": null,
+   "license_name": null,
+   "model": "zai-org/GLM-4.7-Flash",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "7dd20894a642a0aa287e9827cb1a1f7f91386b67",
+   "safetensors": {
+    "parameters": {
+     "BF16": 31221485568,
+     "F32": 3008
+    },
+    "total": 31221488576
+   },
+   "siblings_count": 58,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "glm4_moe_lite",
+    "text-generation",
+    "conversational",
+    "en",
+    "zh",
+    "arxiv:2508.06471",
+    "license:mit",
+    "eval-results",
+    "endpoints_compatible",
+    "deploy:azure"
+   ]
+  },
+  "zai-org/GLM-5.3": {
+   "config_has_quantization_config": true,
+   "config_subset": {
+    "architectures": [
+     "GlmMoeDsaForCausalLM"
+    ],
+    "dtype": "bfloat16",
+    "head_dim": 192,
+    "hidden_size": 6144,
+    "intermediate_size": 12288,
+    "max_position_embeddings": 1048576,
+    "model_type": "glm_moe_dsa",
+    "moe_intermediate_size": 2048,
+    "n_routed_experts": 256,
+    "num_attention_heads": 64,
+    "num_experts_per_tok": 8,
+    "num_hidden_layers": 78,
+    "num_key_value_heads": 64,
+    "vocab_size": 154880
+   },
+   "created_at": "2026-08-25T06:42:50.000Z",
+   "gated": false,
+   "last_modified": "2026-09-04T06:41:23.000Z",
+   "library_name": "transformers",
+   "license_card": "other",
+   "license_link": null,
+   "license_name": "glm-5.3",
+   "model": "zai-org/GLM-5.3",
+   "pipeline_tag": "text-generation",
+   "revision_sha": "aca966e4e02791568aa6a4ced368624b3d897f42",
+   "safetensors": {
+    "parameters": {
+     "BF16": 2103729152,
+     "F32": 19456,
+     "F8_E4M3": 751226191872
+    },
+    "total": 753329940480
+   },
+   "siblings_count": 155,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "glm_moe_dsa",
+    "text-generation",
+    "conversational",
+    "en",
+    "zh",
+    "arxiv:2602.15763",
+    "license:other",
+    "eval-results",
+    "endpoints_compatible",
+    "fp8",
+    "deploy:sagemaker"
+   ]
+  },
+  "zai-org/GLM-5.3-Flash": {
+   "config_has_quantization_config": true,
+   "config_subset": {
+    "architectures": [
+     "Glm5NextForConditionalGeneration"
+    ],
+    "model_type": "glm5_next",
+    "text_config.dtype": "bfloat16",
+    "text_config.head_dim": 0,
+    "text_config.hidden_size": 4096,
+    "text_config.intermediate_size": 12288,
+    "text_config.max_position_embeddings": 1048576,
+    "text_config.model_type": "glm5_next_text",
+    "text_config.moe_intermediate_size": 2048,
+    "text_config.n_routed_experts": 288,
+    "text_config.num_attention_heads": 64,
+    "text_config.num_experts_per_tok": 8,
+    "text_config.num_hidden_layers": 45,
+    "text_config.num_key_value_heads": 64,
+    "text_config.vocab_size": 154880
+   },
+   "created_at": "2026-08-25T06:43:14.000Z",
+   "gated": false,
+   "last_modified": "2026-09-07T12:13:47.000Z",
+   "library_name": "transformers",
+   "license_card": "mit",
+   "license_link": null,
+   "license_name": null,
+   "model": "zai-org/GLM-5.3-Flash",
+   "pipeline_tag": "image-text-to-text",
+   "revision_sha": "eb9eb208eb0d988989d07a6a12d0fdeb5f52574a",
+   "safetensors": {
+    "parameters": {
+     "BF16": 6926096640,
+     "F32": 295518,
+     "F8_E4M3": 314396639232
+    },
+    "total": 321323031390
+   },
+   "siblings_count": 73,
+   "tags": [
+    "transformers",
+    "safetensors",
+    "glm5_next",
+    "image-text-to-text",
+    "conversational",
+    "en",
+    "zh",
+    "arxiv:2602.15763",
+    "license:mit",
+    "eval-results",
+    "endpoints_compatible",
+    "fp8"
+   ]
+  }
+ },
+ "provider_inference": false,
+ "source": "https://huggingface.co/api/models/<id> and resolve/main/config.json",
+ "weights_downloaded": false
+}

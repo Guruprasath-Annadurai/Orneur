@@ -1,0 +1,422 @@
+{
+  "architecture_migration": {
+    "first_class_contract": "ArchitectureMigrationManifest",
+    "no_architecture_is_permanent": true,
+    "self_obsolescence_rule": "Every major generation must evaluate what is now unnecessary or inferior; proven-better replacements retire the old mechanism."
+  },
+  "architecture_version": "orneur.eternal-architecture/1.0.0",
+  "authorizations": {
+    "foundation_selected": false,
+    "gpu": false,
+    "phase_21c": false,
+    "provider_inference": false,
+    "training": false
+  },
+  "base_sha": "1eb31d92508a1da227d9457dd0e16ee370217c9a",
+  "cognitive_primitives": {
+    "qualification_required": true,
+    "stores_raw_reasoning_traces": false,
+    "versioned": true
+  },
+  "compute_modes": {
+    "current_implementation_binding": null,
+    "defined_as": "compute/capability expressions realised by whichever implementation is qualified",
+    "defined_by_parameter_count": false,
+    "future_modes_allowed": true,
+    "modes": {
+      "FAST": {
+        "definition": "minimum compute necessary for a reliable response",
+        "properties": [
+          "extremely low first-token latency",
+          "deterministic/tool path where possible",
+          "lightweight expert activation",
+          "everyday multimodal intelligence",
+          "normal conversational use"
+        ]
+      },
+      "FRONTIER": {
+        "definition": "maximum available ORNEUR intelligence configuration at that generation",
+        "properties": [
+          "dynamic expert ensemble",
+          "discovery loops",
+          "hypothesis generation",
+          "adversarial verification",
+          "search / simulation / tools",
+          "highest compute budget"
+        ]
+      },
+      "REASON": {
+        "definition": "adaptive deeper compute with an adjustable reasoning budget",
+        "properties": [
+          "multiple experts when useful",
+          "coding",
+          "mathematics",
+          "science",
+          "research",
+          "planning",
+          "tool orchestration",
+          "stronger verification"
+        ]
+      }
+    }
+  },
+  "core_protocol_interfaces": [
+    "CognitiveRequest",
+    "CognitiveResult",
+    "Objective",
+    "WorldState",
+    "WorldDelta",
+    "Discovery",
+    "Hypothesis",
+    "EvidenceReference",
+    "VerificationResult",
+    "ExpertCapability",
+    "ExpertRequest",
+    "ExpertResult",
+    "Outcome",
+    "FailureGenomeEntry",
+    "CognitivePrimitive",
+    "ArchitectureMigrationManifest",
+    "PromotionDecision"
+  ],
+  "cross_cutting": {
+    "instant_response_fabric": {
+      "design_targets": [
+        {
+          "ms": 50,
+          "path": "strict deterministic contract",
+          "target": "server-side overhead well under one human-perceptible frame"
+        },
+        {
+          "ms": 300,
+          "path": "FAST model path",
+          "target": "first token"
+        },
+        {
+          "ms": 1000,
+          "path": "REASON",
+          "target": "first visible progress signal"
+        },
+        {
+          "ms": 1500,
+          "path": "FRONTIER",
+          "target": "acknowledgement plus progressively verified updates"
+        }
+      ],
+      "free_text": "progressively verified streaming",
+      "latency_targets_are_design_targets_only": true,
+      "measured_slo_claimed": false,
+      "operates_across_entire_system": true,
+      "parallel_lanes": [
+        "model generation",
+        "memory retrieval",
+        "search",
+        "tool preparation",
+        "evidence construction",
+        "verification",
+        "confidence calculation"
+      ],
+      "rules": [
+        "never serialize independent work",
+        "never invoke more intelligence than the request requires",
+        "verification runs beside generation when safe",
+        "trustworthiness must increase without making ORNEUR feel visibly slower"
+      ],
+      "strict_contracts": "validate before release"
+    }
+  },
+  "doctrine": "Models are replaceable organs. ORNEUR itself is permanent.",
+  "document": "ORNEUR_ETERNAL_INTELLIGENCE_ARCHITECTURE",
+  "eval_families": {
+    "CROSS_DOMAIN_TRANSFER": "future category; capability not claimed today",
+    "GENESIS_CAPABILITY_EVAL_V1_categories": [
+      "instruction_following",
+      "strict_contracts",
+      "structured_outputs",
+      "reasoning",
+      "coding",
+      "mathematics",
+      "research",
+      "tool_use",
+      "long_context",
+      "multilingual",
+      "multimodal_where_applicable",
+      "verification",
+      "evidence_use",
+      "counterfactual_reasoning",
+      "hypothesis_testing",
+      "discovery_quality",
+      "cross_domain_transfer",
+      "information_gain_reasoning",
+      "latency",
+      "cost",
+      "trainability"
+    ],
+    "ORNEUR_DISCOVERY_EVAL_dimensions": [
+      "novelty",
+      "relevance",
+      "evidence_quality",
+      "counter_evidence_awareness",
+      "actionability",
+      "falsifiability",
+      "importance",
+      "non_obviousness"
+    ],
+    "ORNEUR_SELF_IMPROVEMENT_EVAL": "designed, not executed",
+    "single_smartness_score": false
+  },
+  "historical_integrity": {
+    "contract_engine_qualification": "SYSTEM_CONTRACT_QUALIFIED",
+    "raw_model_runtime_qualified": {
+      "Mistral-Nemo": false,
+      "Phi-4": false,
+      "Qwen3-8B": false
+    }
+  },
+  "living_world_model": {
+    "delta_explicit": true,
+    "immutable_versions": true,
+    "update_rule": "V(n) + WorldDelta -> V(n+1) without full recomputation",
+    "versioned": true
+  },
+  "non_claims": [
+    "AGI",
+    "self-awareness",
+    "consciousness",
+    "autonomous self-evolution",
+    "perfect reasoning",
+    "20-year guaranteed survival",
+    "superiority over any named commercial model",
+    "frontier capability",
+    "any measured latency SLO",
+    "cross-domain transfer capability today"
+  ],
+  "outcome_learning": {
+    "distinct_from_preference_feedback": true,
+    "tenant_boundaries_preserved": true
+  },
+  "permanent_components": [
+    "ORNEUR Core Intelligence Protocol",
+    "persistent objectives",
+    "Reality Compiler",
+    "Living World Model",
+    "World Delta",
+    "Discovery Intelligence",
+    "hypothesis/falsification system",
+    "Outcome Learning",
+    "Failure Genome",
+    "Self-Evolving Expert Mesh",
+    "evaluation suites",
+    "qualified cognitive strategies",
+    "Verification + Evidence",
+    "Authority Runtime",
+    "Contract Compliance",
+    "memory / knowledge state",
+    "architecture migration machinery"
+  ],
+  "pipeline": [
+    {
+      "contract": "CognitiveRequest",
+      "id": "user",
+      "name": "User",
+      "order": 1
+    },
+    {
+      "contract": "Objective",
+      "id": "objective_graph",
+      "name": "Persistent Objective Graph",
+      "order": 2
+    },
+    {
+      "contract": "CompiledReality (canonical IR)",
+      "id": "reality_compiler",
+      "name": "Reality Compiler",
+      "order": 3
+    },
+    {
+      "contract": "WorldState",
+      "id": "living_world_model",
+      "name": "Living World Model",
+      "order": 4
+    },
+    {
+      "contract": "WorldDelta",
+      "id": "world_delta_engine",
+      "name": "World Delta Engine",
+      "order": 5
+    },
+    {
+      "contract": "Discovery",
+      "id": "discovery_intelligence",
+      "name": "Discovery Intelligence",
+      "order": 6
+    },
+    {
+      "contract": "Hypothesis",
+      "id": "hypothesis_laboratory",
+      "name": "Hypothesis Laboratory",
+      "order": 7
+    },
+    {
+      "contract": "ExpertCapability/ExpertRequest/ExpertResult",
+      "id": "expert_mesh",
+      "name": "Self-Evolving Expert Mesh",
+      "order": 8
+    },
+    {
+      "contract": "ComputeBudget",
+      "id": "adaptive_compute",
+      "name": "Adaptive Compute Engine",
+      "order": 9
+    },
+    {
+      "contract": "CognitiveRequest.mode",
+      "id": "compute_modes",
+      "name": "Fast / Reason / Frontier / future modes",
+      "order": 10
+    },
+    {
+      "contract": "VerificationResult",
+      "id": "verification_engine",
+      "name": "Verification Engine",
+      "order": 11
+    },
+    {
+      "contract": "EvidenceReference",
+      "id": "evidence_graph",
+      "name": "Evidence Graph",
+      "order": 12
+    },
+    {
+      "contract": "CognitiveResult.confidence",
+      "id": "confidence_calibration",
+      "name": "Confidence Calibration",
+      "order": 13
+    },
+    {
+      "contract": "authority decision (existing ORNEUR runtime)",
+      "id": "authority_runtime",
+      "name": "Authority Runtime",
+      "order": 14
+    },
+    {
+      "contract": "orca.contracts (SYSTEM_CONTRACT_QUALIFIED)",
+      "id": "contract_compliance",
+      "name": "Contract Compliance",
+      "order": 15
+    },
+    {
+      "contract": "CognitiveResult",
+      "id": "action",
+      "name": "Action",
+      "order": 16
+    },
+    {
+      "contract": "Outcome",
+      "id": "outcome_capture",
+      "name": "Outcome Capture",
+      "order": 17
+    },
+    {
+      "contract": "FailureGenomeEntry",
+      "id": "failure_genome",
+      "name": "Failure Genome",
+      "order": 18
+    },
+    {
+      "contract": "candidate data / expert / strategy",
+      "id": "learning_pipeline",
+      "name": "Learning Pipeline",
+      "order": 19
+    },
+    {
+      "contract": "PromotionDecision",
+      "id": "qualification_promotion",
+      "name": "Qualification / Promotion",
+      "order": 20
+    },
+    {
+      "contract": "ArchitectureMigrationManifest",
+      "id": "architecture_migration",
+      "name": "Architecture Migration Engine",
+      "order": 21
+    }
+  ],
+  "pipeline_closes_loop_into": "improved ORNEUR (next qualified generation)",
+  "protocol_version": "orneur.core-protocol/1.0.0",
+  "reality_compiler": {
+    "canonical_objects": [
+      "entities",
+      "relationships",
+      "events",
+      "claims",
+      "evidence",
+      "contradictions",
+      "timelines",
+      "objectives",
+      "constraints",
+      "obligations",
+      "decisions",
+      "risks",
+      "assumptions",
+      "unknowns"
+    ],
+    "connectors_built_now": false,
+    "inputs": [
+      "text",
+      "documents",
+      "email",
+      "calendar",
+      "spreadsheets",
+      "databases",
+      "web",
+      "images",
+      "video",
+      "audio",
+      "code",
+      "tools",
+      "sensors",
+      "agent results"
+    ],
+    "model_independent": true
+  },
+  "replaceable_components": [
+    "any neural architecture (Transformers, MoE, state-space, hybrid, future)",
+    "retrieval mechanisms (RAG included)",
+    "tokenizers",
+    "checkpoint families",
+    "parameter-count targets",
+    "individual experts and adapters",
+    "serving stacks",
+    "training recipes",
+    "quantization formats"
+  ],
+  "self_improvement": {
+    "every_promotion_evidence_gated": true,
+    "live_weight_mutation_allowed": false,
+    "loop": [
+      "real failure / successful outcome",
+      "Failure Genome",
+      "capability gap",
+      "candidate training data",
+      "candidate expert / adapter / strategy",
+      "frozen eval",
+      "adversarial eval",
+      "regression eval",
+      "shadow deployment",
+      "promotion decision",
+      "qualified capability",
+      "periodic distillation into next ORNEUR generation"
+    ],
+    "self_promotion_allowed": false
+  },
+  "status": "ROADMAP_AND_CONTRACTS_NOT_A_CAPABILITY_CLAIM",
+  "world_delta_propagation": [
+    "World Delta",
+    "dependency graph",
+    "impacted assumptions",
+    "impacted conclusions",
+    "impacted objectives",
+    "selective re-verification"
+  ]
+}
