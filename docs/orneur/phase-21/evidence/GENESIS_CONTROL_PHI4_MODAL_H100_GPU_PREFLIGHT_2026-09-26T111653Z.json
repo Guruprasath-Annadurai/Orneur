@@ -1,0 +1,101 @@
+{
+  "billing_discrepancy_observation": "GENESIS_BILLING_DISCREPANCY_OBSERVATION_2026-09-24.json",
+  "billing_summary_live": {
+    "adjustments": {
+      "credits": "-21.02000000",
+      "free_storage": "-0.19627853",
+      "network_egress_allowance": "0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "billed_cost": "0E-8",
+    "metered_cost": "21.21627853",
+    "metered_cost_breakdown": {
+      "deployed_apps": "0.00101405",
+      "ephemeral_apps": "21.02317867",
+      "llm_tokens": "0E-8",
+      "volumes": "0.19627853"
+    }
+  },
+  "captured_at_utc": "2026-09-26T11:16:53Z",
+  "cleanup_snapshot_before": {
+    "apps": [
+      {
+        "app_id": "ap-3SsUyZqsrF40kCD1LqgGl8",
+        "created_at": "2026-09-18 18:50:37+05:30",
+        "description": "orca-genesis-eval-sandbox",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-DZEWfb4YcEE2s2bXh7ifnD",
+        "created_at": "2026-09-18 23:18:29+05:30",
+        "description": "orca-genesis-eval-sandbox-v2",
+        "state": "deployed",
+        "stopped_at": null,
+        "tasks": "0"
+      },
+      {
+        "app_id": "ap-x0yjxHJqSn3C8crMGUYOxK",
+        "created_at": "2026-09-26 15:08:45+05:30",
+        "description": "orneur-p21b420-h100-control-runtime",
+        "state": "stopped",
+        "stopped_at": "2026-09-26 15:11:12+05:30",
+        "tasks": "0"
+      }
+    ],
+    "captured_at_utc": "2026-09-26T11:16:53Z",
+    "containers": [],
+    "expected_cache_volume": "orneur-p21b420-model-cache",
+    "live_resources": 0,
+    "non_idle_apps": [],
+    "running_tasks_total": 0,
+    "volumes": [
+      {
+        "created_at": "2026-09-25 00:50:00+05:30",
+        "created_by": "guruprasath-annadurai",
+        "name": "orneur-p21b420-model-cache"
+      }
+    ]
+  },
+  "control_name": "Phi-4",
+  "cpu_cores": 4,
+  "credit_pool_usd": "30.00",
+  "evidence_type": "MODAL_H100_FINANCIAL_PREFLIGHT",
+  "gate_decision": {
+    "adjustments_usd": {
+      "credits": "-21.02000000",
+      "free_storage": "-0.19627853",
+      "network_egress_allowance": "0E-8",
+      "plan_cost": "0E-8",
+      "reservation_adjustment": "-0E-8"
+    },
+    "allowed": true,
+    "billed_cost_usd": "0E-8",
+    "credit_pool_total_usd": "29.74643194444444444444444444",
+    "credits_applied_usd": "21.02000000",
+    "current_owner_payable_covered": true,
+    "headroom_usd": "2.64363194444444444444444444",
+    "maximum_authorized_run_cost_usd": "1.08280",
+    "metered_cost_usd": "21.21627853",
+    "non_credit_adjustments_usd": "-0.19627853",
+    "provider_recomputed_billed_usd": "0E-8",
+    "reasons": [],
+    "remaining_credit_usd": "8.72643194444444444444444444",
+    "remaining_promotional_credit_usd": "8.72643194444444444444444444",
+    "reserve_usd": "5.00"
+  },
+  "hard_timeout_seconds": 900,
+  "kind": "gpu",
+  "memory_mib": 24576,
+  "phase": "21B.4.20",
+  "rates_usd_per_hour": {
+    "cpu": "0.04730",
+    "h100": "3.95000",
+    "mem": "0.00800"
+  },
+  "reserve_usd": "5.00",
+  "unresolved_prior_settlement_upper_bound_deducted_usd": "0.2536",
+  "worst_case_cost_usd": "1.0828"
+}
