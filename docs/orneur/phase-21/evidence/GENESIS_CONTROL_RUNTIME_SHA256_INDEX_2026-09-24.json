@@ -4,8 +4,8 @@
     {
       "evidence_role": "genesis_control_runtime_qualification_matrix_2026-09-24.md",
       "path": "docs/orneur/phase-21/GENESIS_CONTROL_RUNTIME_QUALIFICATION_MATRIX_2026-09-24.md",
-      "sha256": "d9593125a97077825dac5201959c55981a5735ee9449adfa25c7b1f648cacd5c",
-      "size_bytes": 51299
+      "sha256": "fe56f8657592296b067285be3f3e6fe0693681fc6c33f3f86b3c81d179175971",
+      "size_bytes": 52642
     },
     {
       "evidence_role": "genesis_billing_discrepancy_observation_2026-09-24.json",
@@ -594,6 +594,18 @@
       "path": "docs/orneur/phase-21/evidence/GENESIS_CONTROL_PHI4_RUNTIME_QUALIFICATION_PRE_ATTEMPT1_NOT_TESTED_SNAPSHOT_2026-09-26.json",
       "sha256": "e4ef26aa22b0a89da1aab0cfcd6d696d50d811f5fc846283bcfe45d5d00e8492",
       "size_bytes": 9339
+    },
+    {
+      "evidence_role": "genesis_foundation_decision_package_2026-09-26.md",
+      "path": "docs/orneur/phase-21/GENESIS_FOUNDATION_DECISION_PACKAGE_2026-09-26.md",
+      "sha256": "6cad55422a1f94c308c04c828d925296364d83b98bc602c8d8ede6ff8ec9aa96",
+      "size_bytes": 19928
+    },
+    {
+      "evidence_role": "genesis_foundation_decision_package_2026-09-26.json",
+      "path": "docs/orneur/phase-21/GENESIS_FOUNDATION_DECISION_PACKAGE_2026-09-26.json",
+      "sha256": "bf79cf94aa0ddf35979e0c2c26372ed76addc15373213c6cb47162987b1bafb2",
+      "size_bytes": 31241
     }
   ],
   "evidence_type": "GENESIS_CONTROL_RUNTIME_QUALIFICATION_INTEGRITY_INDEX",

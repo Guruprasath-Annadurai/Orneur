@@ -5046,3 +5046,85 @@ def test_phi4_attempt_1_is_the_honest_technical_failure_with_a_container_proof_o
     assert phi["technical_serving_status"] == "FAILED" and phi["runtime_qualification_status"] == "FAILED" and phi["capability_status"] == "UNPROVEN"
     assert "runtime_candidate_configuration_id" not in phi and phi["runtime_configuration"] is None
     validate_control_runtime_record(phi, evidence_root=EVIDENCE_DIR)
+
+
+# ══ Phase 21B.4.20 final closeout: Genesis foundation decision package (machine-readable invariants) ═════════════════════════════════════════
+DP_JSON = REPO_ROOT / "docs/orneur/phase-21/GENESIS_FOUNDATION_DECISION_PACKAGE_2026-09-26.json"
+DP_MD = REPO_ROOT / "docs/orneur/phase-21/GENESIS_FOUNDATION_DECISION_PACKAGE_2026-09-26.md"
+DP_SCRIPT = REPO_ROOT / "scripts/phase21b_4_20_foundation_decision_package.py"
+
+
+def test_the_decision_package_verdict_is_honest_and_authorizes_nothing():
+    d = json.loads(DP_JSON.read_text())
+    assert d["verdict"] == "FOUNDATION_DECISION_REQUIRES_CAPABILITY_EVAL" and d["selected_foundation"] is None
+    assert d["phase_21c_authorized"] is False and d["training_authorized"] is False and d["gpu_authorized"] is False
+    assert d["closeout"]["verdict"] == "PHASE_21B_4_20_CLOSED" and d["closeout"]["no_control_runtime_qualified"] is True
+    conf = d["confirmations"]
+    assert conf["no_gpu_used"] and conf["no_modal_used"] and conf["no_provider_call"] and conf["control_evidence_mutated"] is False
+    assert "selection by intuition" in d["verdict_reason"] and "smoke" in d["interpretation"] and "NOT capability" in d["interpretation"]
+    md = DP_MD.read_text()
+    assert "FOUNDATION_DECISION_REQUIRES_CAPABILITY_EVAL" in md and "PHASE_21B_4_20_CLOSED" in md and "No control is RUNTIME_QUALIFIED" in md and "No training, GPU run or Phase 21C entry is authorized" in md
+
+
+def test_the_decision_package_control_matrix_equals_the_persisted_evidence():
+    d = json.loads(DP_JSON.read_text())
+    m = d["final_control_matrix"]
+    assert {k: (v["latest_authorized_attempt"], v["locked_smokes"]) for k, v in m.items()} == {"Qwen3-8B": (5, ["PASS", "FAIL", "PASS"]), "Mistral-Nemo-Instruct-2407": (3, ["FAIL", "FAIL", "FAIL"]), "Phi-4": (1, ["PASS", "FAIL", "FAIL"])}
+    for name, tag in (("Qwen3-8B", "QWEN3_8B"), ("Mistral-Nemo-Instruct-2407", "MISTRAL_NEMO"), ("Phi-4", "PHI4")):
+        rec = json.loads((EVIDENCE_DIR / f"GENESIS_CONTROL_{tag}_RUNTIME_QUALIFICATION_2026-09-24.json").read_text())
+        v, a = m[name], rec["attempts"][-1]
+        assert (v["revision"], v["latest_authorized_attempt"], v["outcome"], v["failure_domain"], v["modal_app_id"], v["raw_log_sha256"]) == (rec["model_revision"], a["attempt_number"], a["outcome"], a["failure_domain"], a["modal_app_id"], a["raw_log_sha256"])
+        assert (v["technical_serving_status"], v["runtime_qualification_status"], v["capability_status"]) == (rec["technical_serving_status"], rec["runtime_qualification_status"], rec["capability_status"])
+        assert v["runtime_qualification_status"] != "RUNTIME_QUALIFIED" and v["capability_status"] == "UNPROVEN" and Decimal(v["owner_billed_delta_usd"]) == 0 and v["settlement"] == "OBSERVED" and v["cleanup"] == "PASS"
+        assert v["revision"] == LOCKED_CONTROL_IDENTITIES[name]["revision"] and v["live_resources_after_cleanup"] == 0
+    assert Decimal(d["program_financials"]["owner_billed_cost_usd"]) == 0 and d["program_financials"]["live_resources_after_last_run"] == 0
+
+
+def test_the_decision_package_criteria_gates_weights_and_rule_are_complete_and_pre_registered():
+    d = json.loads(DP_JSON.read_text())
+    crit = {c["id"]: c for c in d["decision_criteria"]}
+    required = set("ABDEFGHIJKLMNOPQR")                                                                              # C (QLoRA/PEFT feasibility) is folded into gate B and criteria N/P
+    assert required <= set(crit) and "K" in crit
+    assert {i for i, c in crit.items() if c["kind"] == "gate"} == {"A", "B", "K"}
+    assert sum(c["weight"] for c in crit.values() if c["kind"] == "weighted") == 100 == d["criteria_weight_total"] and all(c["measure"] for c in crit.values())
+    assert d["selection_rule"]["pre_registered"] is True and ">= 5 weighted points" in d["selection_rule"]["decision"] and "tie-break" in d["selection_rule"]["decision"]
+    ex = " ".join(json.dumps(c) for c in crit.values())
+    assert "QLoRA" in ex and "quantization" in ex.lower()
+
+
+def test_the_decision_package_facts_and_estimates_are_labelled_and_internally_consistent():
+    d = json.loads(DP_JSON.read_text())
+    for name, f in d["foundation_options"].items():
+        assert f["revision"] == LOCKED_CONTROL_IDENTITIES[name]["revision"] and f["repo"] == LOCKED_CONTROL_IDENTITIES[name]["model_id"] and all(f["revision"] in u for u in f["source_urls"])
+        assert f["license"] in ("apache-2.0", "mit")
+    params = {k: v["parameters_b_from_checkpoint"] for k, v in d["estimates"].items()}
+    assert params["Qwen3-8B"] < params["Mistral-Nemo-Instruct-2407"] < params["Phi-4"]
+    for name, e in d["estimates"].items():
+        weight_bytes = LOCKED_CONTROL_IDENTITIES[name]["expected_weight_bytes"]
+        assert abs(e["bf16_weights_gb"] - weight_bytes / 1e9) < 0.1
+        lo, hi = e["qlora_tokens_per_second_on_1xH100_range"]
+        assert 0 < lo < hi and e["usd_per_million_training_tokens_range"][0] < e["usd_per_million_training_tokens_range"][1]
+        assert e["qlora_peak_gb_microbatch1"]["2048"]["plausible_range_gb"][0] < e["qlora_peak_gb_microbatch1"]["2048"]["estimated_peak_gb"] < e["qlora_peak_gb_microbatch1"]["2048"]["plausible_range_gb"][1]
+    a = d["estimate_assumptions"]
+    assert "usd_inr_range_assumed_not_a_live_quote" in a and a["budget_inr"] == 10000 and "no_fake_precision" in a and a["h100_usd_per_hour_from_persisted_preflight"] == "3.95"
+    cost = d["minimum_capability_evaluation"]["cost"]
+    assert cost["exceeds_current_promotional_headroom"] is True and cost["decision_evidence_total_usd_range"][0] < cost["decision_evidence_total_usd_range"][1]
+    assert "NOT for pretraining" in d["training_reality"]["budget"] and "always-on" in d["training_reality"]["one_time_training_vs_future_inference"]
+
+
+def test_the_decision_package_phase_21c_entry_gate_lists_every_required_condition_and_none_is_authorized():
+    d = json.loads(DP_JSON.read_text())
+    gate = {g["id"]: g for g in d["phase_21c_entry_gate"]}
+    text = " ".join(g["requirement"].lower() for g in gate.values())
+    for needle in ("foundation selected", "dataset v3", "contamination", "split frozen", "objective frozen", "budget ceiling", "hardware plan", "rollback", "reproducibility", "evaluation suite frozen", "control-runtime", "authorization"):
+        assert needle in text, needle
+    assert gate["G1"]["status"] == "NOT_MET" and gate["G12"]["status"] == "NOT_MET" and not any(g["status"] == "MET" for g in gate.values())
+
+
+def test_the_decision_package_generator_is_cpu_only_and_reads_but_never_writes_control_evidence():
+    text = DP_SCRIPT.read_text()
+    tree = ast.parse(text)
+    imported = {n.names[0].name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import)} | {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    assert not ({"modal", "subprocess", "torch", "vllm", "urllib", "requests"} & imported) and not [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in ("remote", "spawn")]
+    writes = [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in ("write_text", "write_bytes")]
+    assert len(writes) == 2 and all("OUT_" in ast.unparse(w) for w in writes)                                         # the ONLY writes are the two decision-package files

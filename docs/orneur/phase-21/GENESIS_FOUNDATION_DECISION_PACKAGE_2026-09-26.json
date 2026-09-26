@@ -1,0 +1,775 @@
+{
+  "base_sha": "dd4e0c13e48e6cb3c68fe46755e95d25d094637c",
+  "chain_alignment": {
+    "how_the_process_supports_the_chain": [
+      "Genesis Data -> Genesis Foundation: the eval, data and adapters are owned assets that are independent of the chosen base, so the base can be swapped by re-running the pipeline",
+      "-> ORNEUR behavior/intelligence training: behavior is expressed as data + adapters + evals, not as a vendor identity; vendor names are stripped from model outputs and product surfaces (license notices preserved as required)",
+      "-> ORNEUR model family (Fast / Reason / Frontier): the selected base is the first rung; later rungs (larger bases, distillation from ORNEUR-trained teachers, continued pretraining) reuse the same data/eval/adapter interfaces",
+      "-> Runtime/Router, Retrieval, Tools/Missions, Memory, Evidence, Public Product: served behind ORNEUR's own runtime contracts (the control program's exact-proof harness), so no layer depends on the base model's identity",
+      "licenses (Apache-2.0 / MIT) permit fine-tuning, redistribution of derived weights and commercial use with notice/attribution obligations; verify at freeze time"
+    ],
+    "principle": "ORNEUR is not a renamed external model; the foundation is a starting substrate for Genesis."
+  },
+  "closeout": {
+    "no_control_runtime_qualified": true,
+    "statements": [
+      "all authorized control runs are complete (Qwen3-8B attempt 5, Mistral-Nemo attempt 3, Phi-4 attempt 1)",
+      "no control achieved RUNTIME_QUALIFIED under the locked exact-output contract",
+      "capability remains UNPROVEN for all controls",
+      "no further control retry is authorized",
+      "historical evidence is immutable and was not rewritten",
+      "owner billing remained zero across the controlled program (every persisted attempt has owner billed delta 0)",
+      "all latest required settlements are resolved (OBSERVED, or covered by the existing Qwen attempt-1 waiver)",
+      "persisted evidence shows zero live GPU resources after the last run"
+    ],
+    "verdict": "PHASE_21B_4_20_CLOSED"
+  },
+  "confirmations": {
+    "control_evidence_mutated": false,
+    "external_reads": "public Hugging Face files at the exact pinned revisions (read-only)",
+    "no_gpu_used": true,
+    "no_modal_used": true,
+    "no_provider_call": true
+  },
+  "criteria_weight_total": 100,
+  "date": "2026-09-26",
+  "decision_criteria": [
+    {
+      "criterion": "Architecture suitability for ORNEUR",
+      "id": "A",
+      "kind": "gate",
+      "measure": "dense decoder-only transformer supported by mainstream PEFT/vLLM stacks; GQA; no custom code required",
+      "weight": null
+    },
+    {
+      "criterion": "Parameter count / memory requirements",
+      "id": "B",
+      "kind": "gate",
+      "measure": "must QLoRA-train within the frozen hardware plan and serve within the frozen deployment plan",
+      "weight": null
+    },
+    {
+      "criterion": "Licensing / redistribution",
+      "id": "K",
+      "kind": "gate",
+      "measure": "license must permit fine-tuning, redistribution of derived weights and commercial use with obligations that ORNEUR can meet",
+      "weight": null
+    },
+    {
+      "criterion": "Instruction-following characteristics",
+      "id": "F",
+      "kind": "weighted",
+      "measure": "strict-format instruction following measured on the frozen eval, base and after a format-adherence LoRA pilot",
+      "weight": 12
+    },
+    {
+      "criterion": "Structured-output characteristics",
+      "id": "G",
+      "kind": "weighted",
+      "measure": "JSON/schema validity and exactness on the frozen eval",
+      "weight": 12
+    },
+    {
+      "criterion": "Reasoning potential",
+      "id": "H",
+      "kind": "weighted",
+      "measure": "verifiable short-reasoning accuracy; gain after pilot SFT",
+      "weight": 12
+    },
+    {
+      "criterion": "Coding potential",
+      "id": "I",
+      "kind": "weighted",
+      "measure": "static + hermetic-sandbox scored coding items (execution only under a separate authorization)",
+      "weight": 12
+    },
+    {
+      "criterion": "Context-window characteristics",
+      "id": "J",
+      "kind": "weighted",
+      "measure": "usable context measured at 8k/16k retrieval; vendor-stated native context recorded",
+      "weight": 4
+    },
+    {
+      "criterion": "Tokenizer and chat-template stability",
+      "id": "D",
+      "kind": "weighted",
+      "measure": "template resolves identically across the pinned tooling versions; no path-dependent failure",
+      "weight": 4
+    },
+    {
+      "criterion": "Runtime compatibility",
+      "id": "E",
+      "kind": "weighted",
+      "measure": "loads and serves under the pinned vLLM; observed in the control program",
+      "weight": 4
+    },
+    {
+      "criterion": "Ecosystem / tooling maturity",
+      "id": "L",
+      "kind": "weighted",
+      "measure": "PEFT/TRL/vLLM/quantization support without workarounds",
+      "weight": 4
+    },
+    {
+      "criterion": "Training stability evidence from primary technical sources",
+      "id": "M",
+      "kind": "weighted",
+      "measure": "vendor/independent reports of stable fine-tuning; own pilot loss curves",
+      "weight": 4
+    },
+    {
+      "criterion": "Quantization compatibility",
+      "id": "N",
+      "kind": "weighted",
+      "measure": "NF4 QLoRA and 4-bit serving quantization quality retained on the frozen eval",
+      "weight": 4
+    },
+    {
+      "criterion": "Inference cost",
+      "id": "O",
+      "kind": "weighted",
+      "measure": "GPU class and throughput needed at the frozen quality bar",
+      "weight": 6
+    },
+    {
+      "criterion": "Expected training cost",
+      "id": "P",
+      "kind": "weighted",
+      "measure": "measured pilot cost extrapolated to the frozen training plan",
+      "weight": 6
+    },
+    {
+      "criterion": "Ability to create differentiated ORNEUR behavior",
+      "id": "Q",
+      "kind": "weighted",
+      "measure": "pilot behavior shift toward ORNEUR-specific formats/policies without capability regression",
+      "weight": 8
+    },
+    {
+      "criterion": "Long-term migration path to ORNEUR-owned model families",
+      "id": "R",
+      "kind": "weighted",
+      "measure": "license/data-flow permits distillation, continued pretraining and re-basing; adapters and data remain foundation-agnostic",
+      "weight": 8
+    }
+  ],
+  "document": "GENESIS_FOUNDATION_DECISION_PACKAGE",
+  "estimate_assumptions": {
+    "activation_and_logit_model": "rough analytic model; treat peak memory as +/-40%",
+    "budget_inr": 10000,
+    "budget_usd_range": [
+      111,
+      118
+    ],
+    "h100_bf16_dense_tflops_public_spec": 989,
+    "h100_usd_per_hour_from_persisted_preflight": "3.95",
+    "nf4_bytes_per_parameter": 0.53,
+    "no_fake_precision": "every number is an estimate with a stated formula and range; none is a measurement",
+    "qlora_mfu_range": [
+      0.15,
+      0.25
+    ],
+    "training_flops_per_token": "6 x parameters (forward + checkpoint recompute + activation-gradient; no weight-gradient for frozen base)",
+    "usable_share_of_budget_for_training_compute": [
+      0.4,
+      0.6
+    ],
+    "usd_inr_range_assumed_not_a_live_quote": [
+      85,
+      90
+    ]
+  },
+  "estimates": {
+    "Mistral-Nemo-Instruct-2407": {
+      "bf16_weights_gb": 24.5,
+      "kv_cache_bytes_per_token_bf16": 163840,
+      "kv_cache_gb_per_8k_context_sequence": 1.34,
+      "lora_rank16_all_linear_trainable_params_m": 57.0,
+      "parameters_b_from_checkpoint": 12.248,
+      "qlora_fits": {
+        "24GB_class": true,
+        "24GB_class_typical_only": true,
+        "40GB_class": true,
+        "80GB": true
+      },
+      "qlora_peak_gb_microbatch1": {
+        "2048": {
+          "estimated_peak_gb": 14.9,
+          "plausible_range_gb": [
+            11.9,
+            20.9
+          ]
+        },
+        "4096": {
+          "estimated_peak_gb": 19.0,
+          "plausible_range_gb": [
+            15.2,
+            26.6
+          ]
+        }
+      },
+      "qlora_static_gb": {
+        "lora_optimizer_states": 0.91,
+        "nf4_base_plus_bf16_embeddings": 8.5
+      },
+      "qlora_tokens_per_second_on_1xH100_range": [
+        2019,
+        3365
+      ],
+      "serving_4bit_weights_gb_approx": 8.5,
+      "serving_min_gpu_bf16": "40GB+ class",
+      "training_tokens_affordable_under_budget_millions_range": [
+        82,
+        216
+      ],
+      "usd_per_million_training_tokens_range": [
+        0.33,
+        0.54
+      ]
+    },
+    "Phi-4": {
+      "bf16_weights_gb": 29.3,
+      "kv_cache_bytes_per_token_bf16": 204800,
+      "kv_cache_gb_per_8k_context_sequence": 1.68,
+      "lora_rank16_all_linear_trainable_params_m": 65.5,
+      "parameters_b_from_checkpoint": 14.66,
+      "qlora_fits": {
+        "24GB_class": true,
+        "24GB_class_typical_only": true,
+        "40GB_class": true,
+        "80GB": true
+      },
+      "qlora_peak_gb_microbatch1": {
+        "2048": {
+          "estimated_peak_gb": 15.3,
+          "plausible_range_gb": [
+            12.2,
+            21.4
+          ]
+        },
+        "4096": {
+          "estimated_peak_gb": 18.8,
+          "plausible_range_gb": [
+            15.0,
+            26.3
+          ]
+        }
+      },
+      "qlora_static_gb": {
+        "lora_optimizer_states": 1.05,
+        "nf4_base_plus_bf16_embeddings": 9.3
+      },
+      "qlora_tokens_per_second_on_1xH100_range": [
+        1687,
+        2811
+      ],
+      "serving_4bit_weights_gb_approx": 9.3,
+      "serving_min_gpu_bf16": "40GB+ class (48/80GB for comfortable KV)",
+      "training_tokens_affordable_under_budget_millions_range": [
+        68,
+        181
+      ],
+      "usd_per_million_training_tokens_range": [
+        0.39,
+        0.65
+      ]
+    },
+    "Qwen3-8B": {
+      "bf16_weights_gb": 16.4,
+      "kv_cache_bytes_per_token_bf16": 147456,
+      "kv_cache_gb_per_8k_context_sequence": 1.21,
+      "lora_rank16_all_linear_trainable_params_m": 43.6,
+      "parameters_b_from_checkpoint": 8.191,
+      "qlora_fits": {
+        "24GB_class": true,
+        "24GB_class_typical_only": true,
+        "40GB_class": true,
+        "80GB": true
+      },
+      "qlora_peak_gb_microbatch1": {
+        "2048": {
+          "estimated_peak_gb": 12.5,
+          "plausible_range_gb": [
+            10.0,
+            17.5
+          ]
+        },
+        "4096": {
+          "estimated_peak_gb": 16.7,
+          "plausible_range_gb": [
+            13.3,
+            23.3
+          ]
+        }
+      },
+      "qlora_static_gb": {
+        "lora_optimizer_states": 0.7,
+        "nf4_base_plus_bf16_embeddings": 6.2
+      },
+      "qlora_tokens_per_second_on_1xH100_range": [
+        3019,
+        5031
+      ],
+      "serving_4bit_weights_gb_approx": 6.2,
+      "serving_min_gpu_bf16": "24GB class (tight, short context)",
+      "training_tokens_affordable_under_budget_millions_range": [
+        122,
+        324
+      ],
+      "usd_per_million_training_tokens_range": [
+        0.22,
+        0.36
+      ]
+    }
+  },
+  "evidence_known_now_by_criterion": {
+    "Mistral-Nemo-Instruct-2407": {
+      "A": "PASS (dense MistralForCausalLM, GQA 32/8)",
+      "B": "PASS on paper (12.248 B; NF4 base + bf16 embeddings \u2248 8.5 GB; estimated QLoRA peak \u2248 14.9\u201319.0 GB at seq 2k\u20134k, plausible range up to \u224826.6 GB: 24GB-class plausible, 40GB-class comfortable)",
+      "D": "FRICTION: HF-mode chat-template resolution failed under vLLM 0.29.0/transformers 5.16.1 (MistralCommonBackend selected because tekken.json is present); native tokenizer mode required",
+      "E": "OBSERVED: served under vLLM only after switching to native tokenizer mode (attempt 3)",
+      "F/G": "UNKNOWN: verbose chat-style answers on all three locked prompts (attempt 3)",
+      "J": "128k trained (vendor)",
+      "K": "PASS (Apache-2.0)",
+      "O": "mid (24.5 GB bf16)",
+      "P": "mid"
+    },
+    "Phi-4": {
+      "A": "PASS (dense Phi3ForCausalLM, GQA 40/10, fused projections)",
+      "B": "PASS on paper (14.66 B; NF4 base + bf16 embeddings \u2248 9.3 GB; estimated QLoRA peak \u2248 15.3\u201318.8 GB at seq 2k\u20134k, plausible range up to \u224826.3 GB: 24GB-class tight, 40GB-class comfortable)",
+      "D": "stable: template resolves on the canonical HF path (attempt 1)",
+      "E": "OBSERVED: served on the canonical path (attempt 1)",
+      "F/G": "UNKNOWN: passed the exact READY contract, verbose on B and C (attempt 1); English-centric, Python-centric code data (vendor)",
+      "J": "16K only (vendor)",
+      "K": "PASS (MIT)",
+      "O": "highest (29.3 GB bf16)",
+      "P": "highest"
+    },
+    "Qwen3-8B": {
+      "A": "PASS (dense Qwen3ForCausalLM, GQA 32/8)",
+      "B": "PASS on paper (8.191 B; NF4 base + bf16 embeddings \u2248 6.2 GB; estimated QLoRA peak \u2248 12.5\u201316.7 GB at seq 2k\u20134k, plausible range up to \u224823.3 GB: 24GB-class plausible)",
+      "D": "hybrid thinking template adds a mode switch; stable through the pinned stack (observed)",
+      "E": "OBSERVED: served and answered under vLLM 0.29.0 (attempts 4 and 5)",
+      "F/G": "UNKNOWN: locked greedy contract failed on B only (attempt 5, non-thinking); vendor advises against greedy decoding in thinking mode",
+      "J": "32,768 native; 131,072 with YaRN (vendor)",
+      "K": "PASS (Apache-2.0)",
+      "O": "cheapest of the three (16.4 GB bf16)",
+      "P": "cheapest of the three"
+    }
+  },
+  "final_control_matrix": {
+    "Mistral-Nemo-Instruct-2407": {
+      "attempt_count": 3,
+      "attempt_history": [
+        {
+          "attempt": 1,
+          "outcome": "UNATTRIBUTED_REQUEST_REJECTION",
+          "provider": "Modal"
+        },
+        {
+          "attempt": 2,
+          "outcome": "UNATTRIBUTED_REQUEST_REJECTION",
+          "provider": "Modal"
+        },
+        {
+          "attempt": 3,
+          "outcome": "TECHNICAL_FAILURE",
+          "provider": "Modal"
+        }
+      ],
+      "capability_status": "UNPROVEN",
+      "cleanup": "PASS",
+      "duration_seconds": 144.8,
+      "failure_domain": "MODEL_RUNTIME",
+      "financial_acceptance_status": "PASS",
+      "http_status": [
+        200,
+        200,
+        200
+      ],
+      "itemized_attempt_cost_usd": "0.16673885",
+      "latest_authorized_attempt": 3,
+      "live_resources_after_cleanup": 0,
+      "locked_smokes": [
+        "FAIL",
+        "FAIL",
+        "FAIL"
+      ],
+      "modal_app_id": "ap-x0yjxHJqSn3C8crMGUYOxK",
+      "model_id": "mistralai/Mistral-Nemo-Instruct-2407",
+      "outcome": "TECHNICAL_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "raw_log_artifact": "GENESIS_CONTROL_MISTRAL_NEMO_MODAL_H100_ATTEMPT3_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "b394527f5b8199db32ac241706aa1105e1430feeb9be86870a80df5d9ab1e839",
+      "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+      "runtime_candidate_configuration_id": "mistral_nemo_native_v1",
+      "runtime_qualification_status": "FAILED",
+      "settlement": "OBSERVED",
+      "technical_serving_status": "FAILED"
+    },
+    "Phi-4": {
+      "attempt_count": 1,
+      "attempt_history": [
+        {
+          "attempt": 1,
+          "outcome": "TECHNICAL_FAILURE",
+          "provider": "Modal"
+        }
+      ],
+      "capability_status": "UNPROVEN",
+      "cleanup": "PASS",
+      "duration_seconds": 163.9,
+      "failure_domain": "MODEL_RUNTIME",
+      "financial_acceptance_status": "PASS",
+      "http_status": [
+        200,
+        200,
+        200
+      ],
+      "itemized_attempt_cost_usd": "0.18931234",
+      "latest_authorized_attempt": 1,
+      "live_resources_after_cleanup": 0,
+      "locked_smokes": [
+        "PASS",
+        "FAIL",
+        "FAIL"
+      ],
+      "modal_app_id": "ap-17KVnh9cuxhvdsTjifYkbj",
+      "model_id": "microsoft/phi-4",
+      "outcome": "TECHNICAL_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "raw_log_artifact": "GENESIS_CONTROL_PHI4_MODAL_H100_ATTEMPT1_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "813b55988093c8a3c316a1e7ad9ba4fdad30986fb20f46ebb8d36d316334babd",
+      "revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+      "runtime_candidate_configuration_id": null,
+      "runtime_qualification_status": "FAILED",
+      "settlement": "OBSERVED",
+      "technical_serving_status": "FAILED"
+    },
+    "Qwen3-8B": {
+      "attempt_count": 5,
+      "attempt_history": [
+        {
+          "attempt": 1,
+          "outcome": "HARNESS_FAILURE",
+          "provider": null
+        },
+        {
+          "attempt": 2,
+          "outcome": "BLOCKED_NO_GPU",
+          "provider": "Lightning AI"
+        },
+        {
+          "attempt": 3,
+          "outcome": "BLOCKED_NO_GPU",
+          "provider": "razorBridge"
+        },
+        {
+          "attempt": 4,
+          "outcome": "TECHNICAL_FAILURE",
+          "provider": "Modal"
+        },
+        {
+          "attempt": 5,
+          "outcome": "TECHNICAL_FAILURE",
+          "provider": "Modal"
+        }
+      ],
+      "capability_status": "UNPROVEN",
+      "cleanup": "PASS",
+      "duration_seconds": 163.2,
+      "failure_domain": "MODEL_RUNTIME",
+      "financial_acceptance_status": "PASS",
+      "http_status": [
+        200,
+        200,
+        200
+      ],
+      "itemized_attempt_cost_usd": "0.18768559",
+      "latest_authorized_attempt": 5,
+      "live_resources_after_cleanup": 0,
+      "locked_smokes": [
+        "PASS",
+        "FAIL",
+        "PASS"
+      ],
+      "modal_app_id": "ap-b6PkVuAdoik7AvUELDwNuQ",
+      "model_id": "Qwen/Qwen3-8B",
+      "outcome": "TECHNICAL_FAILURE",
+      "owner_billed_delta_usd": "0E-8",
+      "raw_log_artifact": "GENESIS_CONTROL_QWEN3_8B_MODAL_H100_ATTEMPT5_RAW_LOG_2026-09-24.txt",
+      "raw_log_sha256": "3596fbd908ea8c92a2553a3d6c10e230b4b3a1bcb47f6127ece5a661f743abeb",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "runtime_candidate_configuration_id": null,
+      "runtime_qualification_status": "FAILED",
+      "settlement": "OBSERVED",
+      "technical_serving_status": "FAILED"
+    }
+  },
+  "foundation_options": {
+    "Mistral-Nemo-Instruct-2407": {
+      "architecture": "MistralForCausalLM (dense decoder-only, GQA)",
+      "extended_context": "trained with a 128k context window (model card)",
+      "head_dim": 128,
+      "heads": 32,
+      "hidden": 5120,
+      "intermediate": 14336,
+      "kv_heads": 8,
+      "layers": 40,
+      "license": "apache-2.0",
+      "max_position_embeddings_config": 131072,
+      "native_context": 131072,
+      "repo": "mistralai/Mistral-Nemo-Instruct-2407",
+      "revision": "04d8a90549d23fc6bd7f642064003592df51e9b3",
+      "safetensors_total_bytes": 24495564800,
+      "source_urls": [
+        "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/resolve/04d8a90549d23fc6bd7f642064003592df51e9b3/config.json",
+        "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/resolve/04d8a90549d23fc6bd7f642064003592df51e9b3/model.safetensors.index.json",
+        "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407/resolve/04d8a90549d23fc6bd7f642064003592df51e9b3/README.md"
+      ],
+      "tie_embeddings": false,
+      "vendor_notes": [
+        "Tekken tokenizer (tekken.json); the model card recommends mistral-inference / mistral_common; under vLLM 0.29.0 + transformers 5.16.1 the HF tokenizer path resolved no chat template (attempts 1-2) and the native Mistral tokenizer mode was required (attempt 3)",
+        "model card recommends a low sampling temperature (0.3) unlike earlier Mistral models",
+        "native function-calling format documented",
+        "no built-in moderation mechanisms (model card)"
+      ],
+      "vocab": 131072
+    },
+    "Phi-4": {
+      "architecture": "Phi3ForCausalLM (dense decoder-only, GQA, fused qkv / gate_up projections)",
+      "extended_context": "none documented (16K tokens)",
+      "head_dim": 128,
+      "heads": 40,
+      "hidden": 5120,
+      "intermediate": 17920,
+      "kv_heads": 10,
+      "layers": 40,
+      "license": "mit",
+      "max_position_embeddings_config": 16384,
+      "native_context": 16384,
+      "repo": "microsoft/phi-4",
+      "revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+      "safetensors_total_bytes": 29319014400,
+      "source_urls": [
+        "https://huggingface.co/microsoft/phi-4/resolve/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/config.json",
+        "https://huggingface.co/microsoft/phi-4/resolve/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/model.safetensors.index.json",
+        "https://huggingface.co/microsoft/phi-4/resolve/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/README.md"
+      ],
+      "tie_embeddings": false,
+      "vendor_notes": [
+        "9.8T training tokens including newly created synthetic 'textbook-like' data for math, coding and reasoning (model card)",
+        "trained primarily on English text; non-English performance is worse (model card)",
+        "majority of code training data is Python with common packages (model card)",
+        "best suited to prompts in the chat format (model card)"
+      ],
+      "vocab": 100352
+    },
+    "Qwen3-8B": {
+      "architecture": "Qwen3ForCausalLM (dense decoder-only, GQA)",
+      "extended_context": "131,072 tokens with YaRN (model card)",
+      "head_dim": 128,
+      "heads": 32,
+      "hidden": 4096,
+      "intermediate": 12288,
+      "kv_heads": 8,
+      "layers": 36,
+      "license": "apache-2.0",
+      "max_position_embeddings_config": 40960,
+      "native_context": 32768,
+      "repo": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "safetensors_total_bytes": 16381470720,
+      "source_urls": [
+        "https://huggingface.co/Qwen/Qwen3-8B/resolve/b968826d9c46dd6066d109eabc6255188de91218/config.json",
+        "https://huggingface.co/Qwen/Qwen3-8B/resolve/b968826d9c46dd6066d109eabc6255188de91218/model.safetensors.index.json",
+        "https://huggingface.co/Qwen/Qwen3-8B/resolve/b968826d9c46dd6066d109eabc6255188de91218/README.md"
+      ],
+      "tie_embeddings": false,
+      "vendor_notes": [
+        "single model with hybrid thinking / non-thinking modes (enable_thinking switch in the chat template)",
+        "model card recommends Temperature 0.7 / TopP 0.8 / TopK 20 for non-thinking mode and says NOT to use greedy decoding in thinking mode (the locked smoke protocol uses temperature 0)",
+        "100+ languages"
+      ],
+      "vocab": 151936
+    }
+  },
+  "generated_at_utc": "2026-09-26T12:22:31Z",
+  "gpu_authorized": false,
+  "interpretation": "The locked A/B/C smokes were runtime/control-contract tests (exact-string / exact-JSON acceptance at temperature 0). They are NOT capability, reasoning, coding or knowledge benchmarks, NOT Genesis training evaluations and NOT quality rankings. No foundation may be selected by counting smoke passes. Verbose chat-style answers to terse exact-output prompts are ordinary instruct-model behavior that behavior/format tuning is designed to change.",
+  "minimum_capability_evaluation": {
+    "cost": {
+      "decision_evidence_total_inr_range_with_contingency": [
+        784,
+        1253
+      ],
+      "decision_evidence_total_usd_range": [
+        6.15,
+        9.28
+      ],
+      "decision_evidence_total_with_1_5x_contingency_usd_range": [
+        9.23,
+        13.92
+      ],
+      "estimated_eval_usd_per_model_range": [
+        0.48,
+        0.51
+      ],
+      "estimated_eval_usd_three_models_range": [
+        1.45,
+        1.53
+      ],
+      "estimated_output_tokens_per_model": 210000,
+      "exceeds_current_promotional_headroom": true,
+      "items": {
+        "coding_static_and_hermetic": 80,
+        "long_context_retrieval_8k_16k": 40,
+        "short_verifiable_reasoning": 100,
+        "strict_format_instruction_following": 120,
+        "structured_json_schema_output": 80,
+        "total": 420
+      },
+      "pilot": {
+        "note": "5M-token QLoRA format-adherence pilot per candidate; cost = 5 x usd_per_million_training_tokens from the estimates block",
+        "qlora_format_adherence_tokens_m": 5
+      },
+      "pilot_usd_per_model_range": {
+        "Mistral-Nemo-Instruct-2407": [
+          1.65,
+          2.7
+        ],
+        "Phi-4": [
+          1.95,
+          3.25
+        ],
+        "Qwen3-8B": [
+          1.1,
+          1.8
+        ]
+      },
+      "requests_per_model": 840,
+      "sampling_configurations": [
+        "locked greedy (temperature 0, top_p 1, seed 0)",
+        "vendor-recommended sampling per model card, fixed seeds"
+      ]
+    },
+    "cpu_only_alternative": "CPU inference of 8-15B models is too slow for even this workload (days), so a small amount of GPU time is unavoidable; the workload is deliberately tiny",
+    "design": [
+      "ORNEUR-authored, novel items (no public benchmark items) to avoid contamination; hash-frozen before any model is run; train/eval split frozen",
+      "identical prompts and shipped chat templates for all candidates; both locked greedy and vendor-recommended sampling, fixed seeds",
+      "scoring by exact/JSON-schema/regex checks; code items scored by static analysis and, only under a separate authorization, a hermetic sandbox",
+      "a 5M-token QLoRA format-adherence pilot per candidate to measure trainability toward ORNEUR formats (the smoke failures were format-behaviour failures)",
+      "results reported with paired-bootstrap confidence intervals; nothing is averaged into a single 'smartness' number"
+    ],
+    "name": "Genesis Foundation Capability Eval v0 (CPU-authored, frozen before any model is run)",
+    "prerequisites": [
+      "owner authorization of the (small) evidence budget, since promotional headroom is insufficient",
+      "eval item authoring and freezing (CPU-only)",
+      "separate authorization for any hermetic code-execution sandbox"
+    ],
+    "why": "no capability evidence exists for any control; selecting by intuition or smoke counts is not permitted"
+  },
+  "phase": "21B.4.20",
+  "phase_21c_authorized": false,
+  "phase_21c_entry_gate": [
+    {
+      "id": "G1",
+      "requirement": "Genesis foundation selected by the pre-registered rule from the frozen capability eval + pilot",
+      "status": "NOT_MET"
+    },
+    {
+      "id": "G2",
+      "requirement": "Dataset V3 integrity green (manifest, hashes, provenance, license per source)",
+      "status": "NOT_VERIFIED_IN_THIS_PACKAGE"
+    },
+    {
+      "id": "G3",
+      "requirement": "Contamination and de-duplication gates green against the frozen eval and public benchmarks",
+      "status": "NOT_MET"
+    },
+    {
+      "id": "G4",
+      "requirement": "Train / eval split frozen and hash-pinned",
+      "status": "NOT_MET"
+    },
+    {
+      "id": "G5",
+      "requirement": "Training objective frozen (stages, loss, hyperparameter ranges, stop rules)",
+      "status": "NOT_MET"
+    },
+    {
+      "id": "G6",
+      "requirement": "Budget ceiling frozen by the owner (including the funding decision and the zero-cash policy change it implies)",
+      "status": "NOT_MET"
+    },
+    {
+      "id": "G7",
+      "requirement": "Hardware plan frozen (GPU class, provider, region, max hours, kill-switch)",
+      "status": "NOT_MET"
+    },
+    {
+      "id": "G8",
+      "requirement": "Checkpoint and rollback plan (adapter checkpoints, resume, byte-identical restore)",
+      "status": "NOT_MET"
+    },
+    {
+      "id": "G9",
+      "requirement": "Reproducibility manifest (code SHA, data hashes, library versions, seeds, container digest)",
+      "status": "NOT_MET"
+    },
+    {
+      "id": "G10",
+      "requirement": "Evaluation suite frozen (items, scorers, thresholds, decision rule)",
+      "status": "NOT_MET"
+    },
+    {
+      "basis": "all attempt settlements resolved, owner billed 0, zero live resources, exact-SHA CI green; the only known caveat is host-load flakiness of two unrelated local tests",
+      "id": "G11",
+      "requirement": "No unresolved control-runtime evidence issue",
+      "status": "MET_PENDING_INDEPENDENT_AUDIT"
+    },
+    {
+      "id": "G12",
+      "requirement": "Explicit owner authorization to enter Phase 21C",
+      "status": "NOT_MET"
+    }
+  ],
+  "program_financials": {
+    "billing_read_at_utc": "2026-09-26T11:41:32Z",
+    "containers_after_last_run": 0,
+    "effective_credit_pool_usd": "29.7464",
+    "free_storage_adjustment_usd": "-0.19627853",
+    "headroom_above_reserve_usd": "3.4564",
+    "live_resources_after_last_run": 0,
+    "metered_cost_usd": "21.48627853",
+    "note": "promotional credit only; the owner's cash spend across the controlled program is exactly zero (every persisted attempt has owner billed delta 0)",
+    "owner_billed_cost_usd": "0E-8",
+    "promotional_credits_applied_usd": "21.29000000",
+    "remaining_promotional_credit_usd": "8.4564",
+    "reserve_usd": "5.00"
+  },
+  "selected_foundation": null,
+  "selection_rule": {
+    "decision": "select the top candidate only if it leads by >= 5 weighted points AND the paired-bootstrap 95% interval of the lead excludes 0 on the eval axes; otherwise apply the tie-break (lowest projected total cost, then longest usable context, then most permissive license) and record the tie",
+    "gates": "a candidate must pass gates A, B, K",
+    "pre_registered": true,
+    "score": "weighted sum of F,G,H,I,J,D,E,L,M,N,O,P,Q,R on the frozen Genesis Foundation Capability Eval v0 + pilot (weights sum to 100)"
+  },
+  "training_authorized": false,
+  "training_reality": {
+    "budget": "approximately INR 10,000 for the first Genesis training (owner statement); enough for parameter-efficient adaptation of an 8-15B model, NOT for pretraining any frontier-scale model from scratch",
+    "inference_note": "serving memory = weights + KV cache; see estimates.kv_cache_gb_per_8k_context_sequence and serving_min_gpu_bf16",
+    "one_time_training_vs_future_inference": "training is a one-time cost per run; serving cost recurs and depends on hosting design (always-on H100 at the persisted list rate is about USD 2,844/month = far above this budget; scale-to-zero or quantized small-GPU serving is required)",
+    "recommended_path_if_selected": [
+      "QLoRA (NF4 + bf16 compute, paged 8-bit AdamW, gradient checkpointing), rank 16-64 on all linear layers, sequence 2k-4k, learning rate around 1e-4-2e-4, 1-3 epochs",
+      "stage 1: format/behavior SFT (strict formats, JSON, refusal/citation/evidence behavior)",
+      "stage 2: capability/domain SFT on Genesis data",
+      "stage 3: preference/behavior tuning (DPO/ORPO-class) only if stage-2 evals justify its cost",
+      "evaluate after every stage on the frozen suite; keep adapters + data + eval as foundation-agnostic ORNEUR assets; merge and quantize only after the final stage"
+    ],
+    "reserve_note": "the current promotional-credit headroom above the 5.00 USD reserve is far below any training budget; training therefore needs an explicit owner funding decision and would end the program's zero-cash constraint"
+  },
+  "verdict": "FOUNDATION_DECISION_REQUIRES_CAPABILITY_EVAL",
+  "verdict_reason": "The current evidence contains no capability measurement for any candidate. The locked smokes are runtime contract tests; all three failed them for response-format behavior, none is RUNTIME_QUALIFIED, and public vendor facts alone (size, license, context) do not determine which base best serves ORNEUR. Selecting now would be selection by intuition."
+}
