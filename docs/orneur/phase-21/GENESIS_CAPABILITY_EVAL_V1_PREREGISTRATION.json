@@ -1,0 +1,808 @@
+{
+ "GENESIS_CAPABILITY_EVAL_V1_FROZEN": false,
+ "architecture_version": "orneur.eternal-architecture/1.1.0",
+ "authorizations": {
+  "foundation_selected": false,
+  "gpu_authorized": false,
+  "phase_21c_authorized": false,
+  "provider_inference_authorized": false,
+  "spending_authorized": false,
+  "training_authorized": false
+ },
+ "candidate_runs": 0,
+ "category_definitions": {
+  "coding": {
+   "floor": 0.3,
+   "role": "GATING",
+   "why": "small, specified functions with hidden tests; requires the hermetic sandbox (results without it are INCOMPLETE, never guessed)"
+  },
+  "cost": {
+   "floor": null,
+   "role": "PROTOCOL",
+   "why": "derived from measured GPU time x the persisted rate; report-only"
+  },
+  "counterfactual_reasoning": {
+   "floor": 0.35,
+   "role": "GATING",
+   "why": "exact set/number answers computed from dependency graphs and formula systems; chance near 0.05; hard for small models so the floor is modest"
+  },
+  "cross_domain_transfer": {
+   "floor": null,
+   "role": "REPORT_ONLY",
+   "why": "capability not claimed today; n=60 is LOW_POWER; reserved so the roadmap cannot silently omit it"
+  },
+  "discovery_quality": {
+   "floor": null,
+   "role": "REPORT_ONLY",
+   "why": "anchor-matched discoveries; n=60 is LOW_POWER; V1 reports precision/recall/decoy rate only"
+  },
+  "evidence_use": {
+   "floor": 0.5,
+   "role": "GATING",
+   "why": "strategic; correct answer AND exact supporting evidence ids or a correct abstention; chance is near 0.05"
+  },
+  "hypothesis_testing": {
+   "floor": 0.5,
+   "role": "GATING",
+   "why": "choose a discriminating experiment or a verdict; chance about 0.25-0.33, so 0.50 is comfortably above guessing"
+  },
+  "information_gain_reasoning": {
+   "floor": 0.35,
+   "role": "GATING",
+   "why": "pick the single question with maximal information gain (ties accepted) or recognise sufficiency; chance about 0.2-0.25"
+  },
+  "instruction_following": {
+   "floor": 0.45,
+   "role": "GATING",
+   "why": "every item needs 2-4 jointly satisfiable verifiable constraints ALL met (chance is near 0); a competent instruction-tuned model commonly meets multi-constraint prompts on roughly half to most items, so 0.45 rejects models that cannot follow explicit format rules without rejecting borderline ones"
+  },
+  "latency": {
+   "floor": null,
+   "role": "PROTOCOL",
+   "why": "measured by the harness under recorded hardware; report-only"
+  },
+  "long_context": {
+   "floor": 0.45,
+   "role": "GATING",
+   "why": "gated on the 8k slice only (n=100); 16k and 40k are LOW_POWER report-only slices because vendor-supported context differs across models"
+  },
+  "mathematics": {
+   "floor": 0.45,
+   "role": "GATING",
+   "why": "exact numeric answers (chance near 0); short multi-step arithmetic/number-theory items, so 0.45 separates models that compute from those that pattern-match"
+  },
+  "multilingual": {
+   "floor": 0.4,
+   "role": "GATING",
+   "why": "overall over English/Hindi/Tamil/Kannada (50 each); per-language results are LOW_POWER report-only; the floor is lower than monolingual floors because low-resource-script items are harder for small models"
+  },
+  "multimodal_where_applicable": {
+   "floor": null,
+   "role": "REPORT_ONLY",
+   "why": "N/A for text-only models (not a fail); n=60 is LOW_POWER"
+  },
+  "reasoning": {
+   "floor": 0.35,
+   "role": "GATING",
+   "why": "unique-answer logic puzzles with answer spaces of 3-6 (chance about 0.2); 0.35 requires clearly better than guessing while accepting small models"
+  },
+  "research": {
+   "floor": 0.45,
+   "role": "GATING",
+   "why": "multi-hop answer AND exact citation set must both be right (chance near 0); 0.45 accepts models that ground answers in supplied documents"
+  },
+  "strict_contracts": {
+   "floor": null,
+   "role": "REPORT_ONLY",
+   "why": "raw-model contract behaviour is a recovery-cost signal only; SYSTEM_CONTRACT_QUALIFICATION belongs to ORNEUR itself"
+  },
+  "structured_outputs": {
+   "floor": 0.65,
+   "role": "GATING",
+   "why": "extraction from an explicit passage into a stated schema is the easiest gated skill; the Contract Engine can retry once, so the floor is set below the earlier 0.85 no-repair proposal but well above chance (which is near 0 for exact field values)"
+  },
+  "tool_use": {
+   "floor": 0.55,
+   "role": "GATING",
+   "why": "tool name plus exact arguments, including refusal when no tool applies or an argument is missing; explicit specs make this comparatively easy"
+  },
+  "trainability": {
+   "floor": null,
+   "role": "PROTOCOL",
+   "why": "Stage-3 finalists only: common pilot on PILOT_TRAIN, then re-run of format categories and a regression check; a measurement, never an entry floor"
+  },
+  "verification": {
+   "floor": 0.5,
+   "role": "GATING",
+   "why": "strategic; planted-error step identification and claim-vs-evidence labels have chance about 0.2-0.33, so 0.50 requires real checking ability"
+  }
+ },
+ "confidence_interval_method": {
+  "applied_to": "mean item score",
+  "decisions_use_nominal_intervals": true,
+  "low_power_n": 100,
+  "name": "wilson_score_95",
+  "note": "nominal Wilson intervals; template clustering is reported, not used in decisions (see uncertainties)",
+  "stage1_min_probe_n": 30,
+  "z": 1.959963984540054
+ },
+ "contamination_policy": {
+  "allowed_purposes": [
+   "QUALIFICATION"
+  ],
+  "any_contamination_invalidates_this_eval_version": true,
+  "checks": [
+   "exact duplicate",
+   "near duplicate (instance text)",
+   "instance-key uniqueness",
+   "8-gram overlap against training corpora",
+   "semantic overlap hook (protocol; not configured)",
+   "split-boundary check (ids, hashes, private flag)"
+  ],
+  "few_shot_source": "DEV split only",
+  "private_holdout_forbidden_purposes": [
+   "SFT",
+   "QLORA",
+   "PEFT_TRAINING",
+   "PROMPT_TUNING",
+   "FEW_SHOT_EXAMPLES",
+   "ROUTER_TUNING",
+   "THRESHOLD_TUNING",
+   "MODEL_SELECTION_DEBUGGING",
+   "DATA_AUGMENTATION",
+   "SYNTHETIC_DATA_SEEDING"
+  ],
+  "training_exclusion_manifest": "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V1_TRAINING_EXCLUSION_MANIFEST.json"
+ },
+ "corpus_file_sha256": {
+  "dev.jsonl": "833c55042c441778d611e0b1f6c9d7d475537417c5864ebf79128cc00fc9641d",
+  "holdout.jsonl": "8439d14b8d5a3da6c2487a4cb5c6470117070c88b293c41f49bb05185cd11d42",
+  "holdout_fingerprints.json": "39c92f4db4637ae4cdd5eb60d3e0dba594cc1141677d6488da906e549dc4ba61",
+  "images_aggregate": "efe0a05a470f39f70d1391ffb5cf57e7adf07cc71b55bb0475fe340c5047f127",
+  "pilot_train.jsonl": "c0f1705ed2d111af35bdfd4fa9efc48e606dd67f714fa19b503183e50e0bfc20",
+  "protocol.jsonl": "20c62dbb2d8bd541a3336e5bd221c051b80b7b2628532902764f402c950c07e2"
+ },
+ "corpus_version": "genesis-corpus/1.0.0",
+ "cost_caps_usd": {
+  "h100_usd_per_hour": 3.95,
+  "kind": "PLANNING_ONLY_NOT_AUTHORIZATION",
+  "stage1_per_model_gpu_hours": 0.25,
+  "stage1_total_for_15_models": 14.81,
+  "stage2_total": 40.0,
+  "stage3_total": 25.0
+ },
+ "dataset_manifest_file_sha256": "c5bf1bcc34dc40aa9105ead9700ee9f2f078c3bac148df728da3d29dc9381f4d",
+ "dataset_manifest_sha": "c8dfba1b3c479f197081fa4d374a2da71d0732c70ef7511f2512b45ccf2dda4d",
+ "design_level_readiness_historical": {
+  "GENESIS_CAPABILITY_EVAL_V1_FREEZE_READY": true,
+  "meaning": "the funnel DESIGN was structurally ready (Eternal Architecture 1.1 pre-freeze check). It is not the freeze of the actual eval."
+ },
+ "document": "GENESIS_CAPABILITY_EVAL_V1_PREREGISTRATION",
+ "eval_version": "genesis-capability-eval/1.0.0",
+ "floors": {
+  "coding": {
+   "chance_baseline": 0.0,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0288,
+   "floor": 0.3,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.3,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.18,
+   "min_detectable_true_rate_80pct_power_stage1": 0.1,
+   "sample_count": 100,
+   "stage1_probe_n": 30,
+   "why": "small, specified functions with hidden tests; requires the hermetic sandbox (results without it are INCOMPLETE, never guessed)",
+   "wilson95_half_width_at_floor": 0.096
+  },
+  "counterfactual_reasoning": {
+   "chance_baseline": 0.03,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0204,
+   "floor": 0.35,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.32,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.23,
+   "min_detectable_true_rate_80pct_power_stage1": 0.13,
+   "sample_count": 120,
+   "stage1_probe_n": 30,
+   "why": "exact set/number answers computed from dependency graphs and formula systems; chance near 0.05; hard for small models so the floor is modest",
+   "wilson95_half_width_at_floor": 0.089
+  },
+  "evidence_use": {
+   "chance_baseline": 0.03,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0213,
+   "floor": 0.5,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.47,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.385,
+   "min_detectable_true_rate_80pct_power_stage1": 0.25,
+   "sample_count": 165,
+   "stage1_probe_n": 30,
+   "why": "strategic; correct answer AND exact supporting evidence ids or a correct abstention; chance is near 0.05",
+   "wilson95_half_width_at_floor": 0.075
+  },
+  "hypothesis_testing": {
+   "chance_baseline": 0.3139,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0274,
+   "floor": 0.5,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.186,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.375,
+   "min_detectable_true_rate_80pct_power_stage1": 0.25,
+   "sample_count": 120,
+   "stage1_probe_n": 30,
+   "why": "choose a discriminating experiment or a verdict; chance about 0.25-0.33, so 0.50 is comfortably above guessing",
+   "wilson95_half_width_at_floor": 0.088
+  },
+  "information_gain_reasoning": {
+   "chance_baseline": 0.1864,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0204,
+   "floor": 0.35,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.164,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.23,
+   "min_detectable_true_rate_80pct_power_stage1": 0.13,
+   "sample_count": 120,
+   "stage1_probe_n": 30,
+   "why": "pick the single question with maximal information gain (ties accepted) or recognise sufficiency; chance about 0.2-0.25",
+   "wilson95_half_width_at_floor": 0.089
+  },
+  "instruction_following": {
+   "chance_baseline": 0.02,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.027,
+   "floor": 0.45,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.43,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.35,
+   "min_detectable_true_rate_80pct_power_stage1": 0.22,
+   "sample_count": 200,
+   "stage1_probe_n": 30,
+   "why": "every item needs 2-4 jointly satisfiable verifiable constraints ALL met (chance is near 0); a competent instruction-tuned model commonly meets multi-constraint prompts on roughly half to most items, so 0.45 rejects models that cannot follow explicit format rules without rejecting borderline ones",
+   "wilson95_half_width_at_floor": 0.069
+  },
+  "long_context": {
+   "chance_baseline": 0.0,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0272,
+   "floor": 0.45,
+   "gating_slice": "8k",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.45,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.315,
+   "min_detectable_true_rate_80pct_power_stage1": 0.22,
+   "sample_count": 100,
+   "stage1_probe_n": 30,
+   "why": "gated on the 8k slice only (n=100); 16k and 40k are LOW_POWER report-only slices because vendor-supported context differs across models",
+   "wilson95_half_width_at_floor": 0.098
+  },
+  "mathematics": {
+   "chance_baseline": 0.0,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.021,
+   "floor": 0.45,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.45,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.345,
+   "min_detectable_true_rate_80pct_power_stage1": 0.22,
+   "sample_count": 180,
+   "stage1_probe_n": 30,
+   "why": "exact numeric answers (chance near 0); short multi-step arithmetic/number-theory items, so 0.45 separates models that compute from those that pattern-match",
+   "wilson95_half_width_at_floor": 0.073
+  },
+  "multilingual": {
+   "chance_baseline": 0.1781,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0247,
+   "floor": 0.4,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.222,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.305,
+   "min_detectable_true_rate_80pct_power_stage1": 0.16,
+   "sample_count": 200,
+   "stage1_probe_n": 30,
+   "why": "overall over English/Hindi/Tamil/Kannada (50 each); per-language results are LOW_POWER report-only; the floor is lower than monolingual floors because low-resource-script items are harder for small models",
+   "wilson95_half_width_at_floor": 0.069
+  },
+  "reasoning": {
+   "chance_baseline": 0.1469,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0239,
+   "floor": 0.35,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.203,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.25,
+   "min_detectable_true_rate_80pct_power_stage1": 0.13,
+   "sample_count": 180,
+   "stage1_probe_n": 30,
+   "why": "unique-answer logic puzzles with answer spaces of 3-6 (chance about 0.2); 0.35 requires clearly better than guessing while accepting small models",
+   "wilson95_half_width_at_floor": 0.072
+  },
+  "research": {
+   "chance_baseline": 0.01,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0263,
+   "floor": 0.45,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.44,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.325,
+   "min_detectable_true_rate_80pct_power_stage1": 0.22,
+   "sample_count": 120,
+   "stage1_probe_n": 30,
+   "why": "multi-hop answer AND exact citation set must both be right (chance near 0); 0.45 accepts models that ground answers in supplied documents",
+   "wilson95_half_width_at_floor": 0.089
+  },
+  "structured_outputs": {
+   "chance_baseline": 0.0,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0265,
+   "floor": 0.65,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.65,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.545,
+   "min_detectable_true_rate_80pct_power_stage1": 0.405,
+   "sample_count": 180,
+   "stage1_probe_n": 30,
+   "why": "extraction from an explicit passage into a stated schema is the easiest gated skill; the Contract Engine can retry once, so the floor is set below the earlier 0.85 no-repair proposal but well above chance (which is near 0 for exact field values)",
+   "wilson95_half_width_at_floor": 0.066
+  },
+  "tool_use": {
+   "chance_baseline": 0.05,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0273,
+   "floor": 0.55,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.5,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.42,
+   "min_detectable_true_rate_80pct_power_stage1": 0.31,
+   "sample_count": 120,
+   "stage1_probe_n": 30,
+   "why": "tool name plus exact arguments, including refusal when no tool applies or an argument is missing; explicit specs make this comparatively easy",
+   "wilson95_half_width_at_floor": 0.086
+  },
+  "verification": {
+   "chance_baseline": 0.2466,
+   "ci_policy": "wilson_score_95 on the mean item score; n >= 100 is adequately powered",
+   "failure_semantics": "INCOMPLETE => cannot be judged (fail closed); adequately powered: FAIL iff point estimate < floor; Stage 1: drop iff upper95 < floor with probe slice n >= 30",
+   "false_drop_probability_at_floor_stage2": 0.0219,
+   "floor": 0.5,
+   "gating_slice": "ALL",
+   "low_power": false,
+   "low_power_handling": "n < 100: may only FAIL a model, and only when the 95% upper bound < floor; otherwise INCONCLUSIVE_LOW_POWER (never a pass, never a ranking signal)",
+   "margin_over_chance": 0.253,
+   "min_detectable_true_rate_80pct_power_full_holdout": 0.39,
+   "min_detectable_true_rate_80pct_power_stage1": 0.25,
+   "sample_count": 180,
+   "stage1_probe_n": 30,
+   "why": "strategic; planted-error step identification and claim-vs-evidence labels have chance about 0.2-0.33, so 0.50 requires real checking ability",
+   "wilson95_half_width_at_floor": 0.072
+  }
+ },
+ "floors_supersede_design_proposals": {
+  "proposed_in_design_doc": {
+   "coding": 0.4,
+   "counterfactual_reasoning": 0.4,
+   "evidence_use": 0.6,
+   "hypothesis_testing": 0.4,
+   "information_gain_reasoning": 0.4,
+   "instruction_following": 0.7,
+   "long_context_8k": 0.6,
+   "mathematics": 0.5,
+   "multilingual": 0.5,
+   "reasoning": 0.5,
+   "research": 0.5,
+   "structured_outputs": 0.85,
+   "tool_use": 0.6,
+   "verification": 0.6
+  },
+  "reason": "the design-time proposals were unreviewed round numbers; the frozen floors are set from item difficulty, chance baselines and the power arithmetic recorded per category. Every frozen floor is at least 0.10 above the category's chance baseline."
+ },
+ "freeze": {
+  "audit_passed": false,
+  "corpus_complete": true,
+  "exact_sha_ci_passes": false,
+  "floors_finalized": true,
+  "frozen_only_when": [
+   "corpus complete",
+   "floors frozen",
+   "manifests complete",
+   "hashes frozen",
+   "pre-registration frozen",
+   "harness tests pass",
+   "exact-SHA CI passes",
+   "independent ChatGPT audit passes"
+  ],
+  "harness_tests_pass": "PENDING_EXACT_SHA_CI",
+  "hashes_frozen": true,
+  "independent_audit_passed": false,
+  "manifests_complete": true,
+  "preregistration_hashed": true
+ },
+ "gating_categories": [
+  "instruction_following",
+  "structured_outputs",
+  "reasoning",
+  "coding",
+  "mathematics",
+  "research",
+  "tool_use",
+  "long_context",
+  "multilingual",
+  "verification",
+  "evidence_use",
+  "counterfactual_reasoning",
+  "hypothesis_testing",
+  "information_gain_reasoning"
+ ],
+ "harness_files": [
+  "orca/contracts/jsonutil.py",
+  "orca/contracts/schema.py",
+  "orca/eval/genesis/gen_format.py",
+  "orca/eval/genesis_contamination.py",
+  "orca/eval/genesis_corpus.py",
+  "orca/eval/genesis_eval_v1.py",
+  "orca/eval/genesis_funnel.py",
+  "orca/eval/genesis_harness.py",
+  "orca/eval/genesis_prereg.py",
+  "orca/eval/genesis_sandbox.py",
+  "orca/eval/genesis_scorers.py",
+  "orca/eval/genesis_stats.py"
+ ],
+ "harness_sha": "01a6b3b0b69bfba23053261b010de11ca91b2529cdc31259c82e777b600ea880",
+ "immutability": "any substantive change to any hashed input (corpus, floors, rules, harness, scorers) requires Eval V2",
+ "item_counts": {
+  "coding": {
+   "DEV": 10,
+   "HOLDOUT": 100,
+   "PILOT_TRAIN": 0
+  },
+  "cost": {
+   "DEV": 0,
+   "HOLDOUT": 0,
+   "PILOT_TRAIN": 0
+  },
+  "counterfactual_reasoning": {
+   "DEV": 12,
+   "HOLDOUT": 120,
+   "PILOT_TRAIN": 0
+  },
+  "cross_domain_transfer": {
+   "DEV": 6,
+   "HOLDOUT": 60,
+   "PILOT_TRAIN": 0
+  },
+  "discovery_quality": {
+   "DEV": 6,
+   "HOLDOUT": 60,
+   "PILOT_TRAIN": 0
+  },
+  "evidence_use": {
+   "DEV": 16,
+   "HOLDOUT": 165,
+   "PILOT_TRAIN": 0
+  },
+  "hypothesis_testing": {
+   "DEV": 12,
+   "HOLDOUT": 120,
+   "PILOT_TRAIN": 0
+  },
+  "information_gain_reasoning": {
+   "DEV": 12,
+   "HOLDOUT": 120,
+   "PILOT_TRAIN": 0
+  },
+  "instruction_following": {
+   "DEV": 20,
+   "HOLDOUT": 200,
+   "PILOT_TRAIN": 100
+  },
+  "latency": {
+   "DEV": 0,
+   "HOLDOUT": 0,
+   "PILOT_TRAIN": 0,
+   "protocol_probes": 12
+  },
+  "long_context": {
+   "DEV": 6,
+   "HOLDOUT": 170,
+   "PILOT_TRAIN": 0,
+   "holdout_slices": {
+    "16k": 40,
+    "40k": 30,
+    "8k": 100
+   }
+  },
+  "mathematics": {
+   "DEV": 18,
+   "HOLDOUT": 180,
+   "PILOT_TRAIN": 0
+  },
+  "multilingual": {
+   "DEV": 20,
+   "HOLDOUT": 200,
+   "PILOT_TRAIN": 0,
+   "holdout_languages": {
+    "English": 50,
+    "Hindi": 50,
+    "Kannada": 50,
+    "Tamil": 50
+   }
+  },
+  "multimodal_where_applicable": {
+   "DEV": 6,
+   "HOLDOUT": 60,
+   "PILOT_TRAIN": 0
+  },
+  "reasoning": {
+   "DEV": 18,
+   "HOLDOUT": 180,
+   "PILOT_TRAIN": 0
+  },
+  "research": {
+   "DEV": 12,
+   "HOLDOUT": 120,
+   "PILOT_TRAIN": 0
+  },
+  "strict_contracts": {
+   "DEV": 15,
+   "HOLDOUT": 150,
+   "PILOT_TRAIN": 100
+  },
+  "structured_outputs": {
+   "DEV": 18,
+   "HOLDOUT": 180,
+   "PILOT_TRAIN": 100
+  },
+  "tool_use": {
+   "DEV": 12,
+   "HOLDOUT": 120,
+   "PILOT_TRAIN": 60
+  },
+  "trainability": {
+   "DEV": 0,
+   "HOLDOUT": 0,
+   "PILOT_TRAIN": 0
+  },
+  "verification": {
+   "DEV": 18,
+   "HOLDOUT": 180,
+   "PILOT_TRAIN": 0
+  }
+ },
+ "languages": {
+  "additional_languages_included": false,
+  "authoring_note": "language-appropriate items authored per language (not word-for-word translations); native-speaker review has NOT been performed",
+  "included": [
+   "English",
+   "Hindi",
+   "Tamil",
+   "Kannada"
+  ]
+ },
+ "model_inference_performed_in_this_phase": false,
+ "no_model_qualifies_rule": "if no finalist clears every frozen floor the result is NO_MODEL_QUALIFIES: nothing is selected, floors are never lowered after the fact (that requires Eval V2), and the owner decides the next step",
+ "preregistration_sha256": "b8b7e7430c2938c95980618bf9b0ffd2113c5234148fc5e896a910ec8750ad97",
+ "private_holdout_manifest_sha": "997d87967e804bd462fca25e9c7c4d5151a9451c41d42cc7b4408815770287b5",
+ "protocol_categories": [
+  "latency",
+  "cost",
+  "trainability"
+ ],
+ "protocol_version": "orneur.core-protocol/1.1.0",
+ "ranking_order": [
+  "verification",
+  "evidence_use",
+  "trainability",
+  "cost"
+ ],
+ "remaining_uncertainties": [
+  "items are template instances; correlated within template, so nominal intervals overstate power (cluster sizes in the manifest)",
+  "floors are reasoned from chance baselines and task design, not from any model result; they may reject every model or none",
+  "Hindi/Tamil/Kannada items were authored by an AI assistant and have not been reviewed by native speakers",
+  "the coding category cannot be scored until an attested hermetic sandbox exists; until then Stage 2 cannot complete",
+  "semantic-overlap checking is a protocol hook only; no embedding model is configured",
+  "long-context lengths are approximate (fixed words-per-token ratio); tokenizer-specific lengths differ",
+  "the Stage-1 GPU-time cap of 0.25 h per model is a planning assumption, unmeasured",
+  "discovery scoring uses evidence anchors plus keyword diagnostics, which is brittle for paraphrased falsifiers and actions"
+ ],
+ "report_only_categories": [
+  "strict_contracts",
+  "multimodal_where_applicable",
+  "discovery_quality",
+  "cross_domain_transfer"
+ ],
+ "reproducibility": {
+  "prereg_verified_before_any_run": true,
+  "run_must_not_modify_preregistration": true,
+  "run_provenance_fields": [
+   "model_revision",
+   "tokenizer_revision",
+   "runtime_name",
+   "runtime_version",
+   "harness_sha256",
+   "dataset_manifest_sha256",
+   "holdout_manifest_sha256",
+   "preregistration_sha256",
+   "sampling_config",
+   "hardware",
+   "started_at"
+  ],
+  "run_records_are_write_once": true
+ },
+ "sandbox_requirements": {
+  "captured_streams": "stdout and stderr captured separately, truncated at max_output_bytes, stored in the evidence record",
+  "determinism": "fixed hash seed, fixed locale and timezone, no clock or randomness access beyond what tests supply",
+  "filesystem": "read-only root; single ephemeral writable tmpfs; no host mounts; no access to the corpus, the repository, credentials or environment secrets",
+  "isolation": "one fresh container/VM per candidate response; no state shared between candidates; killed and destroyed after scoring",
+  "network": "DISABLED (no interfaces except loopback; DNS and egress blocked)",
+  "process_limits": "no fork bombs (process cap), no privilege escalation (non-root, no-new-privileges, dropped capabilities, seccomp allow-list)",
+  "resource_limits": {
+   "cpu_seconds_per_test": 5,
+   "max_file_size_bytes": 1048576,
+   "max_open_files": 64,
+   "max_output_bytes": 65536,
+   "max_processes": 32,
+   "memory_bytes": 536870912,
+   "wall_seconds_per_test": 10
+  },
+  "supported_language": "Python 3, standard library only",
+  "test_result_evidence": [
+   "per-test pass/fail",
+   "exit status or signal",
+   "wall and cpu time",
+   "stdout/stderr digests",
+   "sandbox image digest",
+   "executor version",
+   "the exact code digest that ran"
+  ],
+  "timeout": "hard wall-clock kill per test and per response; a timeout scores the test as failed and is recorded"
+ },
+ "sandbox_version": "genesis-sandbox-requirements/1",
+ "scorer_version": "genesis-scorers/1.0.0",
+ "scoring": {
+  "code_items": "PENDING_SANDBOX in this phase: never executed; coding is INCOMPLETE until an attested hermetic sandbox scores it",
+  "deterministic": true,
+  "discovery_scoring": "anchor-matching against ground-truth evidence anchors and decoys; keyword checks for falsifier/action are diagnostics only",
+  "json_categories_accept_one_fenced_block": true,
+  "methods": [
+   "answer_citations",
+   "answer_evidence",
+   "answer_line",
+   "code_tests",
+   "contract_raw",
+   "discovery_anchor",
+   "if_constraints",
+   "json_fields",
+   "tool_call"
+  ],
+  "model_or_human_judges_used": false,
+  "raw_format_cleanliness_recorded_not_penalised_outside_strict_contracts": true
+ },
+ "selection_rule": "No model is selected in this phase. A future selection must use per-capability results from the frozen Genesis Capability Eval V1 and this pre-registered rule, applied only after every finalist has completed the same trainability pilot: (1) a model must clear every frozen floor on the gating categories; (2) among survivors, drop any model Pareto-dominated on every gating category at equal or lower cost; (3) rank the remainder lexicographically by verification, then evidence_use, then trainability, then cost; (4) ties or irreconcilable trade-offs go to an explicit owner decision. strict_contracts is a report-only recovery-cost signal and is never a floor or a ranking input. Release date, parameter count and popularity are never inputs.",
+ "split_counts": {
+  "DEV": 237,
+  "HOLDOUT": 2485,
+  "PILOT_TRAIN": 360
+ },
+ "splits": {
+  "DEV": "eval development examples (harness/prompt development, few-shot)",
+  "HOLDOUT": "private qualification holdout; QUALIFICATION only",
+  "PILOT_TRAIN": "pilot-training examples for the Stage-3 trainability pilot only"
+ },
+ "stage0_checks": [
+  "tokenizer_round_trip_on_fixed_multilingual_probe",
+  "chat_template_renders_system_user_tool_and_thinking_modes",
+  "config_and_architecture_load_on_cpu_under_pinned_runtime",
+  "exact_40_hex_revision_pinned",
+  "all_weight_shard_hashes_verified",
+  "license_text_archived",
+  "context_length_recorded_config_vs_vendor",
+  "architecture_supported_by_pinned_runtime_version"
+ ],
+ "stage1": {
+  "drop_rule": "drop only if the 95% upper bound of a gating slice with n >= 30 is below its frozen floor; report-only and LOW_POWER slices never drop a model",
+  "max_gpu_hours_per_model": 0.25,
+  "name": "small common screening probe",
+  "probe": {
+   "per_gating_category": 30,
+   "probe_ids_manifest_sha256": "f1e86333fee62be83da47352d243566e156dcdc3e5ca8dd69fdeca0d230865bf",
+   "probe_items": 420,
+   "selection": "first 30 holdout items of each gating category in ascending item-sha256 order"
+  },
+  "stage": 1,
+  "who": "ALL Stage-0-compatible models"
+ },
+ "stage2": {
+  "cost_cap_usd": 40.0,
+  "family_name_carries_no_priority": true,
+  "incomplete_results": "a candidate missing, NaN, infinite, boolean or out-of-range on any mandatory gating category is INCOMPLETE and cannot enter Stage 3 (IncompleteStage2Results)",
+  "mandatory_gating_categories": [
+   "instruction_following",
+   "structured_outputs",
+   "reasoning",
+   "coding",
+   "mathematics",
+   "research",
+   "tool_use",
+   "long_context",
+   "multilingual",
+   "verification",
+   "evidence_use",
+   "counterfactual_reasoning",
+   "hypothesis_testing",
+   "information_gain_reasoning"
+  ],
+  "name": "full capability eval",
+  "over_cap_order": "family representatives (cheapest per family, ties by model id) ordered by projected cost then model id, admitted while the cap permits; then remaining survivors by ascending cost then id",
+  "over_cap_rule": "cheapest survivor per architecture family, then ascending projected cost then id (explicit resource gate)",
+  "stage": 2,
+  "who": "Stage-1 survivors"
+ },
+ "stage3": {
+  "cost_cap_usd": 25.0,
+  "entry_order": "Pareto-non-dominated on capability and cost, then one per architecture family, then ascending cost, then id",
+  "max_finalists": 3,
+  "name": "trainability pilot",
+  "no_selection_until_all_finalists_complete_same_pilot": true,
+  "pilot_categories": [
+   "instruction_following",
+   "strict_contracts",
+   "structured_outputs",
+   "tool_use"
+  ],
+  "pilot_protocol_id": "genesis-trainability-pilot-v1",
+  "pilot_training_split": "PILOT_TRAIN",
+  "protocol_id": "genesis-trainability-pilot-v1",
+  "regression_categories": [
+   "reasoning",
+   "mathematics",
+   "verification"
+  ],
+  "stage": 3,
+  "who": "up to 3 finalists chosen from PRE-TRAINABILITY criteria only"
+ },
+ "strict_contracts_role": "report-only recovery-cost signal; never a floor and never a ranking input",
+ "tie_rule": "if two or more finalists are identical on verification, evidence_use, trainability and cost, the result is OWNER_DECISION_REQUIRED_TIE; no automatic tie-break by name, size, date or popularity",
+ "training_exclusion_manifest_sha": "7c6b98c326d1c53cce2f1ba33cc27f51b82348304bc88113ccc22a93f3576286"
+}

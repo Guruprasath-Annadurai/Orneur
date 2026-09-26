@@ -11,9 +11,11 @@ No stage authorizes spending, GPU use or training; the caps are planning constan
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Mapping, Sequence
 
 from orca.eval.foundation_landscape import H100_USD_PER_HOUR
+from orca.eval.genesis_eval_v1 import MANDATORY_STAGE2_GATING
 
 FUNNEL_VERSION = "genesis-capability-eval-v1-funnel/2"
 
@@ -71,24 +73,76 @@ def _cost_order(models: Mapping[str, Mapping[str, Any]]) -> list[str]:
 
 def stage2_entrants(survivors: Mapping[str, Mapping[str, Any]], cap_usd: float = STAGE2_COST_CAP_USD) -> dict[str, Any]:
     """Admit every survivor when the projected total fits the cap. Otherwise apply the transparent resource gate:
-    first the cheapest survivor of each architecture family (diversity), then remaining survivors by ascending
-    projected cost then id, until the cap is consumed. Cost is an explicit resource gate, not a quality signal."""
+
+    1. take the cheapest survivor of each architecture family as that family's representative (ties by model id);
+    2. order the representatives by projected cost, then model id, and admit them while the cap permits;
+    3. fill the remaining capacity with the other survivors by ascending projected cost, then model id.
+
+    A family NAME is only a grouping key. It carries no priority and never orders anything: two runs that differ
+    only in family names (or their alphabetical order) admit the same models. Cost is an explicit resource gate,
+    not a quality signal."""
     total = sum(float(v["cost_usd"]) for v in survivors.values())
     if total <= cap_usd:
         return {"entrants": sorted(survivors), "cost_cap_applied": False, "deferred_for_cost": []}
+    by_family: dict[str, list[str]] = {}
+    for m in _cost_order(survivors):
+        by_family.setdefault(str(survivors[m]["family"]), []).append(m)
+    representatives = sorted((ms[0] for ms in by_family.values()), key=lambda m: (float(survivors[m]["cost_usd"]), m))
+    order = representatives + [m for m in _cost_order(survivors) if m not in set(representatives)]
     chosen: list[str] = []
     spent = 0.0
-    fams: dict[str, list[str]] = {}
-    for m in _cost_order(survivors):
-        fams.setdefault(str(survivors[m]["family"]), []).append(m)
-    order = [ms[0] for _, ms in sorted(fams.items())] + [m for m in _cost_order(survivors)]
     for m in order:
         c = float(survivors[m]["cost_usd"])
-        if m not in chosen and spent + c <= cap_usd:
+        if spent + c <= cap_usd:
             chosen.append(m)
             spent += c
-    return {"entrants": sorted(chosen), "cost_cap_applied": True,
-            "deferred_for_cost": sorted(set(survivors) - set(chosen))}
+    return {"entrants": sorted(chosen), "cost_cap_applied": True, "deferred_for_cost": sorted(set(survivors) - set(chosen))}
+
+
+class IncompleteStage2Results(ValueError):
+    """Raised (fail closed) when any candidate lacks a valid mandatory Stage-2 result. Carries {model: [problems]}."""
+
+    def __init__(self, incomplete: Mapping[str, Sequence[str]]):
+        super().__init__("INCOMPLETE Stage-2 results: " + "; ".join(f"{m}: {', '.join(p)}" for m, p in sorted(incomplete.items())))
+        self.incomplete = {m: list(p) for m, p in incomplete.items()}
+
+
+def _valid_unit(x: Any) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and 0.0 <= x <= 1.0
+
+
+def stage2_completeness(results: Mapping[str, Mapping[str, Any]],
+                        mandatory: Sequence[str] = MANDATORY_STAGE2_GATING) -> dict[str, list[str]]:
+    """{candidate: problems} for every candidate that is not fully specified. Empty dict == every candidate complete.
+
+    A candidate is INCOMPLETE if any mandatory gating capability is missing, None, NaN, infinite, non-numeric, boolean
+    or outside [0, 1], or if its cost/family are unusable. Nothing is imputed and no comparison set is silently shrunk."""
+    out: dict[str, list[str]] = {}
+    for m, r in sorted(results.items()):
+        probs: list[str] = []
+        cap = r.get("capability")
+        if not isinstance(cap, Mapping):
+            probs.append("capability results missing")
+            cap = {}
+        for c in mandatory:
+            if c not in cap:
+                probs.append(f"missing:{c}")
+            elif not _valid_unit(cap[c]):
+                probs.append(f"invalid:{c}")
+        cost = r.get("cost_usd")
+        if not (isinstance(cost, (int, float)) and not isinstance(cost, bool) and math.isfinite(cost) and cost >= 0):
+            probs.append("invalid:cost_usd")
+        if not (isinstance(r.get("family"), str) and r["family"].strip()):
+            probs.append("invalid:family")
+        if probs:
+            out[m] = probs
+    return out
+
+
+def require_complete(results: Mapping[str, Mapping[str, Any]], mandatory: Sequence[str] = MANDATORY_STAGE2_GATING) -> None:
+    incomplete = stage2_completeness(results, mandatory)
+    if incomplete:
+        raise IncompleteStage2Results(incomplete)
 
 
 def _dominates(a: Mapping[str, Any], b: Mapping[str, Any], cats: Sequence[str]) -> bool:
@@ -97,25 +151,30 @@ def _dominates(a: Mapping[str, Any], b: Mapping[str, Any], cats: Sequence[str]) 
     return ge and gt
 
 
-def pareto_nondominated(finalists: Mapping[str, Mapping[str, Any]]) -> list[str]:
-    cats = sorted(set.intersection(*(set(v["capability"]) for v in finalists.values()))) if finalists else []
-    cats = [c for c in cats if c not in REPORT_ONLY_CATEGORIES and c != "trainability"]
+def pareto_nondominated(finalists: Mapping[str, Mapping[str, Any]], mandatory: Sequence[str] = MANDATORY_STAGE2_GATING) -> list[str]:
+    """Pareto-non-dominated set over EVERY mandatory gating capability plus cost. Fails closed on incomplete data:
+    the comparison set is never shrunk to the intersection of whatever keys happen to be present."""
+    require_complete(finalists, mandatory)
+    cats = sorted(c for c in mandatory if c not in REPORT_ONLY_CATEGORIES and c != "trainability")
     return sorted(m for m, v in finalists.items()
                   if not any(_dominates(o, v, cats) for k, o in finalists.items() if k != m))
 
 
-def stage3_entrants(finalists: Mapping[str, Mapping[str, Any]], max_n: int = STAGE3_MAX_FINALISTS) -> list[str]:
+def stage3_entrants(finalists: Mapping[str, Mapping[str, Any]], max_n: int = STAGE3_MAX_FINALISTS,
+                    mandatory: Sequence[str] = MANDATORY_STAGE2_GATING) -> list[str]:
     """Choose pilot finalists from PRE-TRAINABILITY information only (capability results, projected cost, family).
 
-    Any ``trainability`` value present in the input is ignored by construction: it does not exist yet, and if it
-    did it must not decide who gets to be measured. Order: Pareto-non-dominated set, then one per architecture
-    family (ascending cost), then ascending cost, then id."""
-    pool = {m: v for m, v in finalists.items() if m in set(pareto_nondominated(finalists))}
-    fams: dict[str, list[str]] = {}
+    Raises ``IncompleteStage2Results`` if any candidate is INCOMPLETE: it cannot enter Stage 3 until resolved.
+    Any ``trainability`` value present is ignored by construction. Order: Pareto-non-dominated set; then one
+    representative per architecture family (family name never orders anything: representatives are ordered by
+    cost then model id); then ascending cost, then id; capped at ``max_n``."""
+    keep = set(pareto_nondominated(finalists, mandatory))
+    pool = {m: v for m, v in finalists.items() if m in keep}
+    by_family: dict[str, list[str]] = {}
     for m in _cost_order(pool):
-        fams.setdefault(str(pool[m]["family"]), []).append(m)
-    order = [ms[0] for _, ms in sorted(fams.items(), key=lambda kv: (float(pool[kv[1][0]]["cost_usd"]), kv[0]))]
-    order += [m for m in _cost_order(pool) if m not in order]
+        by_family.setdefault(str(pool[m]["family"]), []).append(m)
+    reps = sorted((ms[0] for ms in by_family.values()), key=lambda m: (float(pool[m]["cost_usd"]), m))
+    order = reps + [m for m in _cost_order(pool) if m not in set(reps)]
     return order[:max_n]
 
 
@@ -128,19 +187,21 @@ def selection_allowed(finalists: Sequence[str], pilots: Mapping[str, Mapping[str
 
 
 def rank_finalists(results: Mapping[str, Mapping[str, Any]], pilots: Mapping[str, Mapping[str, Any]],
-                   floors: Mapping[str, float]) -> dict[str, Any]:
+                   floors: Mapping[str, float], mandatory: Sequence[str] | None = None) -> dict[str, Any]:
     """Pre-registered selection rule. Returns NO_SELECTION_YET until selection_allowed; ties go to the owner.
 
     Inputs used: frozen floors, Pareto dominance, then verification -> evidence_use -> trainability -> cost.
     strict_contracts, parameter count, release date and popularity are not read."""
     finalists = sorted(results)
+    require_complete(results, list(mandatory) if mandatory is not None else list(MANDATORY_STAGE2_GATING))
     if not selection_allowed(finalists, pilots):
         return {"status": "NO_SELECTION_YET", "reason": "not every finalist completed the same trainability pilot", "ranking": []}
+    mand = list(mandatory) if mandatory is not None else list(MANDATORY_STAGE2_GATING)
     ok = {m: r for m, r in results.items()
-          if all(r["capability"].get(c, 0.0) >= f for c, f in floors.items() if c not in REPORT_ONLY_CATEGORIES)}
+          if all(r["capability"][c] >= f for c, f in floors.items() if c not in REPORT_ONLY_CATEGORIES)}
     if not ok:
         return {"status": "NO_MODEL_QUALIFIES", "ranking": []}
-    keep = pareto_nondominated(ok)
+    keep = pareto_nondominated(ok, mand)
 
     def key(m: str) -> tuple:
         cap = ok[m]["capability"]

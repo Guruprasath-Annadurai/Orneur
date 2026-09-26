@@ -472,6 +472,7 @@ def test_stage2_admits_all_when_under_cap_and_applies_a_transparent_cost_gate_ot
     assert "b" in over["deferred_for_cost"] and sum(s[m]["cost_usd"] for m in over["entrants"]) <= 30
 
 
+MAND = ("reasoning", "coding", "verification", "evidence_use")
 FIN = {"x": {"capability": {"reasoning": 0.8, "coding": 0.7, "verification": 0.7, "evidence_use": 0.7}, "cost_usd": 4, "family": "A"},
        "y": {"capability": {"reasoning": 0.6, "coding": 0.9, "verification": 0.8, "evidence_use": 0.6}, "cost_usd": 6, "family": "B"},
        "z": {"capability": {"reasoning": 0.5, "coding": 0.5, "verification": 0.5, "evidence_use": 0.5}, "cost_usd": 9, "family": "C"},   # dominated
@@ -480,27 +481,27 @@ FIN = {"x": {"capability": {"reasoning": 0.8, "coding": 0.7, "verification": 0.7
 
 
 def test_stage3_entrants_come_from_pre_trainability_information_only():
-    base = gf.stage3_entrants(FIN)
+    base = gf.stage3_entrants(FIN, mandatory=MAND)
     assert "z" not in base and len(base) <= gf.STAGE3_MAX_FINALISTS
     with_t = {m: {**r, "trainability": 0.99 if m == "z" else 0.0} for m, r in FIN.items()}
     reversed_t = {m: {**r, "trainability": 0.0 if m == "z" else 0.99} for m, r in FIN.items()}
-    assert gf.stage3_entrants(with_t) == base == gf.stage3_entrants(reversed_t)      # a trainability value is ignored by construction
+    assert gf.stage3_entrants(with_t, mandatory=MAND) == base == gf.stage3_entrants(reversed_t, mandatory=MAND)      # a trainability value is ignored by construction
     capability_with_t = {m: {**r, "capability": {**r["capability"], "trainability": 1.0 if m == "z" else 0.0}} for m, r in FIN.items()}
-    assert gf.stage3_entrants(capability_with_t) == base
-    assert gf.stage3_entrants(capability_with_t, max_n=10) == gf.stage3_entrants(FIN, max_n=10)   # z stays dominated even with room for all
-    assert "z" not in gf.stage3_entrants(capability_with_t, max_n=10)
+    assert gf.stage3_entrants(capability_with_t, mandatory=MAND) == base
+    assert gf.stage3_entrants(capability_with_t, max_n=10, mandatory=MAND) == gf.stage3_entrants(FIN, max_n=10, mandatory=MAND)   # z stays dominated even with room for all
+    assert "z" not in gf.stage3_entrants(capability_with_t, max_n=10, mandatory=MAND)
 
 
 def test_stage3_entry_ignores_size_date_and_popularity():
     noisy = {m: {**r, "parameter_count": 10 ** (9 + i), "release_date": f"2026-0{i + 1}-01", "popularity": 100 - i} for i, (m, r) in enumerate(FIN.items())}
     flipped = {m: {**r, "parameter_count": 10 ** (13 - i), "release_date": f"2020-0{i + 1}-01", "popularity": i} for i, (m, r) in enumerate(FIN.items())}
-    assert gf.stage3_entrants(noisy) == gf.stage3_entrants(flipped) == gf.stage3_entrants(FIN)
+    assert gf.stage3_entrants(noisy, mandatory=MAND) == gf.stage3_entrants(flipped, mandatory=MAND) == gf.stage3_entrants(FIN, mandatory=MAND)
 
 
 def test_stage3_prefers_architecture_diversity_before_filling_by_cost():
-    order = gf.stage3_entrants(FIN)
+    order = gf.stage3_entrants(FIN, mandatory=MAND)
     fams = [FIN[m]["family"] for m in order]
-    assert len(set(fams)) == len(fams) or len(fams) > len({FIN[m]["family"] for m in gf.pareto_nondominated(FIN)})
+    assert len(set(fams)) == len(fams) or len(fams) > len({FIN[m]["family"] for m in gf.pareto_nondominated(FIN, MAND)})
     assert order == sorted(order, key=lambda m: (FIN[m]["cost_usd"], m)) or len(set(fams)) == len(fams)
 
 
@@ -513,20 +514,20 @@ def test_no_foundation_may_be_selected_until_all_finalists_complete_the_same_pil
     assert not gf.selection_allowed(fin, {m: p for m, p in ok.items() if m != "y"})
     assert not gf.selection_allowed([], ok)
     results = {m: FIN[m] for m in fin}
-    partial = gf.rank_finalists(results, {"x": ok["x"]}, floors={"reasoning": 0.4})
+    partial = gf.rank_finalists(results, {"x": ok["x"]}, floors={"reasoning": 0.4}, mandatory=MAND)
     assert partial["status"] == "NO_SELECTION_YET" and partial["ranking"] == []
 
 
 def test_ranking_uses_verification_evidence_trainability_cost_and_ignores_strict_contracts_size_and_dates():
     fin = ["x", "y", "v"]
     pilots = {m: {"status": "COMPLETE", "protocol_id": gf.PILOT_PROTOCOL_ID, "trainability_score": t} for m, t in zip(fin, (0.5, 0.5, 0.5))}
-    base = gf.rank_finalists({m: FIN[m] for m in fin}, pilots, floors={"reasoning": 0.4})
+    base = gf.rank_finalists({m: FIN[m] for m in fin}, pilots, floors={"reasoning": 0.4}, mandatory=MAND)
     assert base["status"] == "RANKED" and base["ranking"][0] == "y"                           # highest verification
     noisy = {m: {**FIN[m], "capability": {**FIN[m]["capability"], "strict_contracts": (i * 0.4) % 1},
                  "parameter_count": 10 ** (9 + i), "release_date": f"2026-0{i + 1}-01"} for i, m in enumerate(fin)}
-    assert gf.rank_finalists(noisy, pilots, floors={"reasoning": 0.4}) == base                # strict_contracts / size / date are not read
+    assert gf.rank_finalists(noisy, pilots, floors={"reasoning": 0.4}, mandatory=MAND) == base                # strict_contracts / size / date are not read
     tie_break = {m: {**p, "trainability_score": 0.9 if m == "x" else 0.1} for m, p in pilots.items()}
-    assert gf.rank_finalists({m: FIN[m] for m in fin}, tie_break, floors={"reasoning": 0.4})["ranking"][0] == "y"   # verification outranks trainability
+    assert gf.rank_finalists({m: FIN[m] for m in fin}, tie_break, floors={"reasoning": 0.4}, mandatory=MAND)["ranking"][0] == "y"   # verification outranks trainability
     assert gf.RANKING_ORDER == ("verification", "evidence_use", "trainability", "cost") and "strict_contracts" not in gf.RANKING_ORDER
     assert "strict_contracts" in gf.REPORT_ONLY_CATEGORIES
 
@@ -534,9 +535,10 @@ def test_ranking_uses_verification_evidence_trainability_cost_and_ignores_strict
 def test_ties_go_to_the_owner():
     same = {m: {"capability": {"verification": 0.7, "evidence_use": 0.7, "reasoning": 0.7}, "cost_usd": 5, "family": m} for m in ("p", "q")}
     pilots = {m: {"status": "COMPLETE", "protocol_id": gf.PILOT_PROTOCOL_ID, "trainability_score": 0.5} for m in same}
-    out = gf.rank_finalists(same, pilots, floors={"reasoning": 0.5})
+    TM = ("verification", "evidence_use", "reasoning")
+    out = gf.rank_finalists(same, pilots, floors={"reasoning": 0.5}, mandatory=TM)
     assert out["status"] == "OWNER_DECISION_REQUIRED_TIE" and out["tied_for_first"] == ["p", "q"]
-    assert gf.rank_finalists(same, pilots, floors={"reasoning": 0.9})["status"] == "NO_MODEL_QUALIFIES"
+    assert gf.rank_finalists(same, pilots, floors={"reasoning": 0.9}, mandatory=TM)["status"] == "NO_MODEL_QUALIFIES"
 
 
 def test_funnel_module_never_reads_forbidden_selection_inputs():

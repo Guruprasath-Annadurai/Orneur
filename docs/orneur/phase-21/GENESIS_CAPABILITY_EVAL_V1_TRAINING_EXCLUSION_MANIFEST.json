@@ -1,0 +1,53 @@
+{
+ "document": "GENESIS_CAPABILITY_EVAL_V1_TRAINING_EXCLUSION_MANIFEST",
+ "eval_version": "genesis-capability-eval/1.0.0",
+ "excluded_item_count": 2485,
+ "excluded_item_ids_sha256": "4ee21675ceb4993602b875e4d244d8c924e52e1c57976a9b420d8935d3071c48",
+ "exclusion_manifest_sha256": "7c6b98c326d1c53cce2f1ba33cc27f51b82348304bc88113ccc22a93f3576286",
+ "existing_training_corpora_clean": true,
+ "existing_training_corpora_screened": {
+  "notebooks/data/orca_core_combined_eval_v2.jsonl": {
+   "flagged_count": 0,
+   "records": 7
+  },
+  "notebooks/data/orca_core_combined_train_v2.jsonl": {
+   "flagged_count": 0,
+   "records": 65
+  },
+  "notebooks/data/orca_nano_combined_eval_v1.jsonl": {
+   "flagged_count": 0,
+   "records": 3
+  },
+  "notebooks/data/orca_nano_combined_train_v1.jsonl": {
+   "flagged_count": 0,
+   "records": 34
+  },
+  "notebooks/data/orneur_genesis_v2_eval.jsonl": {
+   "flagged_count": 0,
+   "records": 3
+  },
+  "notebooks/data/orneur_genesis_v2_train.jsonl": {
+   "flagged_count": 0,
+   "records": 16
+  },
+  "notebooks/data/orneur_genesis_v3_eval.jsonl": {
+   "flagged_count": 0,
+   "records": 13
+  },
+  "notebooks/data/orneur_genesis_v3_train.jsonl": {
+   "flagged_count": 0,
+   "records": 71
+  }
+ },
+ "fingerprint_file": "eval_private/genesis_capability_eval_v1/holdout_fingerprints.json",
+ "fingerprint_file_sha256": "39c92f4db4637ae4cdd5eb60d3e0dba594cc1141677d6488da906e549dc4ba61",
+ "fingerprint_method": "sha256-truncated-32-bit hashes of word 8-grams of the prompt tail and the answer text; contains no holdout text",
+ "rule": "No private holdout item, prompt, answer, paraphrase or n-gram window may enter any Genesis training, adaptation, distillation, few-shot, router-tuning, threshold-tuning or debugging data. Any contamination invalidates this eval version.",
+ "screen_threshold_fraction_of_item_ngrams": 0.2,
+ "screening_function": "orca.eval.genesis_contamination.screen_training_texts",
+ "semantic_overlap": {
+  "flagged": [],
+  "note": "semantic overlap is NOT checked; exact, near-duplicate and n-gram checks still apply",
+  "status": "HOOK_NOT_CONFIGURED"
+ }
+}

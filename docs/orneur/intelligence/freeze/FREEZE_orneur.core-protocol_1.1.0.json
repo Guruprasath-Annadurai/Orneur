@@ -1,0 +1,31 @@
+{
+ "artifact": "orneur.core-protocol",
+ "audit": {
+  "auditor": "independent ChatGPT audit",
+  "date": "2026-09-26",
+  "provenance": "reported by the owner in the phase instruction; this record cannot itself prove the audit",
+  "result": "FREEZE APPROVED"
+ },
+ "audited_sha": "9f42f814ffd16756a6960c255911e411e77e9059",
+ "exact_sha_ci": {
+  "conclusion": "success",
+  "jobs": [
+   "Deterministic Unit Tests",
+   "Training Math Unit Tests (Torch)",
+   "Production Container Build + Boot Smoke",
+   "Dependency Vulnerability Scan (informational, base install only)"
+  ],
+  "run_id": "36252659258",
+  "verified_by": "gh run list --commit <audited_sha> at record creation: run 36252659258, conclusion success",
+  "workflow": "Test Suite"
+ },
+ "frozen_files": {
+  "orca/intelligence/protocol.py": "1f909fe3ab6f709e56b67d87b55fdf93f4f6a2be32f49335f758db692ead900d"
+ },
+ "future_changes_require_new_semantic_version": true,
+ "note": "Any semantic change to the protocol requires a new protocol version and a new freeze record.",
+ "record_sha256": "06b32e2241b53da90230c5c178d1bab349471c41bfe2e9b689765a1efb29e941",
+ "record_type": "SEMANTIC_VERSION_FREEZE",
+ "status": "FROZEN",
+ "version": "1.1.0"
+}

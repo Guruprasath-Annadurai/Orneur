@@ -33,3 +33,5 @@ Dockerfile.fly
 fly.toml
 docker-compose.yml
 install.sh
+# private evaluation corpus (never ship in images or build contexts)
+eval_private

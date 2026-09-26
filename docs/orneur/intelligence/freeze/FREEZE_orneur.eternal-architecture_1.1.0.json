@@ -1,0 +1,36 @@
+{
+ "artifact": "orneur.eternal-architecture",
+ "audit": {
+  "auditor": "independent ChatGPT audit",
+  "date": "2026-09-26",
+  "provenance": "reported by the owner in the phase instruction; this record cannot itself prove the audit",
+  "result": "FREEZE APPROVED"
+ },
+ "audited_sha": "9f42f814ffd16756a6960c255911e411e77e9059",
+ "exact_sha_ci": {
+  "conclusion": "success",
+  "jobs": [
+   "Deterministic Unit Tests",
+   "Training Math Unit Tests (Torch)",
+   "Production Container Build + Boot Smoke",
+   "Dependency Vulnerability Scan (informational, base install only)"
+  ],
+  "run_id": "36252659258",
+  "verified_by": "gh run list --commit <audited_sha> at record creation: run 36252659258, conclusion success",
+  "workflow": "Test Suite"
+ },
+ "frozen_files": {
+  "docs/orneur/intelligence/ORNEUR_ARCHITECTURE_MIGRATION_PROTOCOL.md": "bc5c7b3d1ab838fc4df26913871001e550614cebc7126e9fbaa2b76c0a46a089",
+  "docs/orneur/intelligence/ORNEUR_DISCOVERY_INTELLIGENCE.md": "59499c48c0c933404f6783322cf07ea685bff683973b5c8c367a0bad6db50957",
+  "docs/orneur/intelligence/ORNEUR_ETERNAL_INTELLIGENCE_ARCHITECTURE.json": "84a6e62052b1ba726fa54676339e820aca93e4bcaf153f5d6f1f1b5e194bee2b",
+  "docs/orneur/intelligence/ORNEUR_ETERNAL_INTELLIGENCE_ARCHITECTURE.md": "8418aa755b161d323f4937a01f98cb86c98626ec869d38103394baf36dd14744",
+  "docs/orneur/intelligence/ORNEUR_SELF_EVOLVING_EXPERT_MESH.md": "fc1d998e00036db129282d53205410b381d821332da3deb64bf76d67577f1a67",
+  "orca/intelligence/spec.py": "2e60ee58983d97bdf0c0ebdfde1a9e1bf2f50a23358cf58d0fbc7d4037b967a0"
+ },
+ "future_changes_require_new_semantic_version": true,
+ "note": "The frozen JSON's own freeze_status block was computed before the freeze (READY, frozen=false). That artifact is deliberately not edited; this record is the freeze.",
+ "record_sha256": "004f9cad1c7f21d8d7a6a6a5c71e017434a8475e02dba59bfa37c503ec003a5c",
+ "record_type": "SEMANTIC_VERSION_FREEZE",
+ "status": "FROZEN",
+ "version": "1.1.0"
+}
