@@ -19,7 +19,7 @@
   "orca/eval/genesis_v2/identity_registry.py": "f9d8e48bc61ea1f668d62ea3f6f4787ee4a94809d615565e63037ae422120f9e",
   "orca/eval/genesis_v2/inventory.py": "246de4fd8fa6a12646f36dd319c7911327c4bb5f4b91e2176da62003bb535599",
   "orca/eval/genesis_v2/ledger_admin.py": "e60a2a76a2a08bb3066b4f29c6976a579c8d4dfdfc525b1757eede0836c1a7fb",
-  "orca/eval/genesis_v2/owner_preflight.py": "03a119e21c528f9044d5949241df316553edc261327a327ef0b983d12395d3d3",
+  "orca/eval/genesis_v2/owner_preflight.py": "f5cf90f5c12edd58b5fed4e98d49bc9df9497aadc8119dfc140e56c7845f9a96",
   "orca/eval/genesis_v2/prereg.py": "535b944f8476765a906324c2a6cc9228d0a2babaa1b08dd755bc3caffc2ba22a",
   "orca/eval/genesis_v2/privacy_scan.py": "a15210767997655da04d4a0b8da37be3dfcea559407b68e4d0a83b51f5d9128b",
   "orca/eval/genesis_v2/review.py": "a5c8162c51134429d01f3b4db4c06bd1f654a47e1d1972118129ad7c0a97b7bc",
@@ -48,13 +48,18 @@
   "training_authorized": false,
   "v2_frozen": false
  },
+ "built_from_parent_commit_sha": "65e12cdabb3946ed749c30deb35e536723fbcdf5",
  "document": "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST",
- "exact_sha": "0b8b1ab06686788b22bc8642ba4b7690e5ba9b7b",
- "manifest_sha256": "7e23d65b5334c516efbbe23ffc369fcd2a97489c4805eb78ee745b8490c069da",
+ "manifest_commit_sha": null,
+ "manifest_sha256": "68066ae0310cdc0b26cd291d7b2617f8438fdc9467380c3d56ae7c176f3dd0c8",
  "missing_artifacts": [],
+ "note": "built_from_parent_commit_sha is the commit that existed when this manifest was generated (most bundled artifacts, including some in this same phase's commit, are hashed by content here, not claimed to live at that SHA). manifest_commit_sha is intentionally null: the commit that actually introduces this file is only knowable after it is made, and is reported in the phase's final report instead of self-referenced.",
  "owner_preflight_checks": {
   "authority_key_registered_and_valid": false,
   "authority_registry_valid": true,
+  "canonical_status_agrees_with_semantic_engine_record": true,
+  "closure_manifest_evidence_fresh": true,
+  "closure_manifest_present": true,
   "corpus_inventory_attested_pass": false,
   "corpus_inventory_state_known": true,
   "ledger_operational_ready": true,
@@ -80,7 +85,7 @@
   "vault_verification_record_present_and_pass": true
  },
  "owner_preflight_result": "NOT_READY",
- "schema_version": "genesis-v2-pre-corpus-closure-manifest/1",
+ "schema_version": "genesis-v2-pre-corpus-closure-manifest/2",
  "status": "PRE_CORPUS_CLOSURE_EVIDENCE_ONLY",
- "timestamp": "2026-09-27T17:03:36Z"
+ "timestamp": "2026-09-27T17:32:13Z"
 }

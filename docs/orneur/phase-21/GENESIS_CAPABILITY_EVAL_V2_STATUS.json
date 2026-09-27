@@ -47,7 +47,7 @@
  "contamination_status": {
   "contamination_controls_pass": false,
   "manual_review": "IMPLEMENTED_NO_REVIEWER_KEY_REGISTERED",
-  "semantic_overlap": "NOT_CONFIGURED",
+  "semantic_overlap": "CONFIGURED_LOCAL_ONLY_NOT_QUALIFIED",
   "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (inventory reviewed but unsigned; one class genuinely unresolved)"
  },
  "corpus_inventory": {

@@ -171,3 +171,49 @@ def test_closure_manifest_never_embeds_a_private_path_or_key():
     text = (PH / "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST.json").read_text()
     assert "/Users/" not in text and "/home/" not in text
     assert "-----BEGIN" not in text
+
+
+# ---------------------------------------------------------------- re-audit fix #1: manifest is never self-referential / never stale
+def test_manifest_does_not_claim_a_future_or_self_referential_commit_sha():
+    rec = json.loads((PH / "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST.json").read_text())
+    assert "exact_sha" not in rec   # the old, misleading field name is gone
+    assert rec["manifest_commit_sha"] is None   # only knowable after this exact commit is made; reported in the phase report, not self-referenced
+    assert re.fullmatch(r"[0-9a-f]{40}", rec["built_from_parent_commit_sha"])
+
+
+def test_manifest_freshness_detects_a_stale_evidence_binding():
+    rec = json.loads((PH / "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST.json").read_text())
+    assert CM.freshness_problems(ROOT, rec) == []          # committed manifest is fresh against the committed artifacts
+    tampered = dict(rec)
+    tampered["artifact_hashes"] = {**rec["artifact_hashes"], "docker/genesis_v2_sandbox/Dockerfile": "0" * 64}
+    problems = CM.freshness_problems(ROOT, tampered)
+    assert any("stale evidence binding" in p for p in problems)
+
+
+# ---------------------------------------------------------------- re-audit fix #2: STATUS.json <-> semantic engine record agreement
+def test_status_semantic_overlap_agrees_with_engine_record_state():
+    st = json.loads((PH / "GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text())
+    sem = json.loads((PH / "GENESIS_V2_SEMANTIC_ENGINE_RECORD.json").read_text())
+    assert sem["state"] == "CONFIGURED_LOCAL_ONLY"
+    assert st["contamination_status"]["semantic_overlap"] == "CONFIGURED_LOCAL_ONLY_NOT_QUALIFIED"
+    assert st["contamination_status"]["semantic_overlap"] != "NOT_CONFIGURED"   # the stale value the audit flagged
+
+
+def test_owner_preflight_detects_status_semantic_disagreement_and_stale_manifest():
+    r = OP.run(ROOT)
+    assert r["checks"]["canonical_status_agrees_with_semantic_engine_record"] is True
+    assert r["checks"]["closure_manifest_present"] is True
+    assert r["checks"]["closure_manifest_evidence_fresh"] is True
+    # simulate what the audit found: status disagreeing with the engine record
+    real = PH / "GENESIS_CAPABILITY_EVAL_V2_STATUS.json"
+    backup = real.read_text()
+    st = json.loads(backup)
+    st["contamination_status"]["semantic_overlap"] = "NOT_CONFIGURED"
+    try:
+        real.write_text(json.dumps(st))
+        r2 = OP.run(ROOT)
+        assert r2["checks"]["canonical_status_agrees_with_semantic_engine_record"] is False
+        assert r2["result"] == "NOT_READY"
+        assert "canonical_status_agrees_with_semantic_engine_record" in r2["outstanding_for_ready"]
+    finally:
+        real.write_text(backup)

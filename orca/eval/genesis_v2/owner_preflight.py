@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from orca.eval.genesis_v2 import authority_registry as AR
+from orca.eval.genesis_v2 import closure_manifest as CM
 from orca.eval.genesis_v2 import contamination as C
 from orca.eval.genesis_v2 import inventory as INV
 from orca.eval.genesis_v2 import prereg as PR
@@ -53,6 +54,15 @@ def run(root: Path) -> dict:
     checks["semantic_engine_configured"] = bool(sem_rec and sem_rec.get("state") == "CONFIGURED_LOCAL_ONLY")
     checks["semantic_or_reviewer_path_operational"] = checks["semantic_engine_configured"] or reviewer_path_operational
 
+    # Cross-check: the canonical status file's contamination_status.semantic_overlap must agree with the semantic-engine record's
+    # actual `state` (an audit finding: these had drifted — record said CONFIGURED_LOCAL_ONLY while status said NOT_CONFIGURED).
+    SEMANTIC_STATE_TO_STATUS = {"CONFIGURED_LOCAL_ONLY": "CONFIGURED_LOCAL_ONLY_NOT_QUALIFIED", "NOT_CONFIGURED": "NOT_CONFIGURED"}
+    status_path = root / "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_STATUS.json"
+    status_doc = json.loads(status_path.read_text()) if status_path.is_file() else {}
+    reported_semantic = (status_doc.get("contamination_status") or {}).get("semantic_overlap")
+    expected_semantic = SEMANTIC_STATE_TO_STATUS.get((sem_rec or {}).get("state"))
+    checks["canonical_status_agrees_with_semantic_engine_record"] = bool(expected_semantic is not None and reported_semantic == expected_semantic)
+
     sandbox_rec_path = root / "docs/orneur/phase-21/GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD.json"
     sandbox_rec = json.loads(sandbox_rec_path.read_text()) if sandbox_rec_path.is_file() else None
     checks["sandbox_image_pinned_by_digest"] = bool(sandbox_rec and sandbox_rec.get("image_digest"))
@@ -81,6 +91,11 @@ def run(root: Path) -> dict:
     checks["preregistration_draft_consistent"] = PR.validate_draft(draft) == []
     checks["preregistration_not_frozen"] = draft.get("status") == "DRAFT_NOT_FROZEN"
 
+    manifest_path = root / CM.RECORD_PATH
+    manifest_doc = json.loads(manifest_path.read_text()) if manifest_path.is_file() else None
+    checks["closure_manifest_present"] = manifest_doc is not None
+    checks["closure_manifest_evidence_fresh"] = bool(manifest_doc is not None and CM.freshness_problems(root, manifest_doc) == [])
+
     checks["v2_not_frozen"] = spec.GENESIS_CAPABILITY_EVAL_V2_FROZEN is False
     from orca.eval.genesis_v2 import privacy_scan as PS
     scan = PS.scan_repository(root)
@@ -95,7 +110,8 @@ def run(root: Path) -> dict:
                         "separation_of_duties_clean", "preregistration_draft_consistent", "ledger_operational_ready", "vault_verification_record_present_and_pass",
                         "sandbox_image_pinned_by_digest", "sandbox_containment_evidence_present", "sandbox_exact_sha_evidence_valid",
                         "runner_identity_registered", "authority_key_registered_and_valid", "corpus_inventory_attested_pass",
-                        "semantic_or_reviewer_path_operational", "qualification_runner_qualified", "sandbox_runner_class_matches_qualification_runner"]
+                        "semantic_or_reviewer_path_operational", "qualification_runner_qualified", "sandbox_runner_class_matches_qualification_runner",
+                        "canonical_status_agrees_with_semantic_engine_record", "closure_manifest_present", "closure_manifest_evidence_fresh"]
     ready = all(checks.get(k) is True for k in hard_requirements)
     result = "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION" if ready else "NOT_READY"
     return {"schema_version": SCHEMA_VERSION, "current_main_sha": _current_main_sha(), "checks": checks, "result": result,

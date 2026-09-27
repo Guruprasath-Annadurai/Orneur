@@ -256,7 +256,11 @@ def test_inconclusive_review_blocks_split_isolation_and_contamination_pass(signe
     assert {r.name: r for r in ISO.check_split_isolation([scr, hol], rej)}["isolation_structure_review"].status == C.FAIL
 
 
-def test_operational_state_is_still_not_configured():
+def test_operational_state_matches_semantic_engine_record_and_is_not_qualified():
     st = json.loads((ROOT / "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text())
-    assert st["contamination_status"]["semantic_overlap"] == "NOT_CONFIGURED" and st["freeze_prerequisites"]["contamination_controls_pass"] is False
+    sem = json.loads((ROOT / "docs/orneur/phase-21/GENESIS_V2_SEMANTIC_ENGINE_RECORD.json").read_text())
+    assert sem["state"] == "CONFIGURED_LOCAL_ONLY"
+    assert st["contamination_status"]["semantic_overlap"] == "CONFIGURED_LOCAL_ONLY_NOT_QUALIFIED"
+    assert "QUALIFIED" not in st["contamination_status"]["semantic_overlap"].replace("NOT_QUALIFIED", "")
+    assert st["freeze_prerequisites"]["contamination_controls_pass"] is False  # engine configured, but review is still not signed-attested/qualified
     assert st["component_states"]["semantic_manual_review_framework"] == "IMPLEMENTED_TESTED_CONFIGURED_LOCAL_ONLY"
