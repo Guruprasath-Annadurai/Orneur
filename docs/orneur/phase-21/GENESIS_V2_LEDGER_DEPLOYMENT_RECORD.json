@@ -1,0 +1,24 @@
+{
+ "backend": "sqlite",
+ "document": "GENESIS_V2_LEDGER_DEPLOYMENT_RECORD",
+ "evidence_digests": {
+  "db_file_exists": "9b536a3c3c7c87ed",
+  "db_permissions_restrictive": "b0c6d94aedbef4ba",
+  "dir_permissions_restrictive": "d9417e64beff4367",
+  "empty_and_chain_verifies": "9e82556121d2f8f7",
+  "immutability_triggers_present": "cd0d1864295aba81",
+  "initializes_without_error": "986574d048bff963",
+  "no_benchmark_content": "255b6f9157ecc283",
+  "outside_repository": "d7ef3cc60d77379c",
+  "uniqueness_indexes_present": "adba527c975072f7"
+ },
+ "integrity_controls_result": true,
+ "location_digest": "e6be1f7e4b7a8bb2ff8a771e550101fc8e87b1a7272e01df64c38d0341427088",
+ "no_benchmark_content_result": true,
+ "note": "The ledger is initialized EMPTY at this location and stays empty until a real, pre-registered, frozen-eval-gated request occurs. No benchmark content is ever stored in it (digests/ids/metadata only).",
+ "outside_repository_result": true,
+ "pass": true,
+ "permissions_result": true,
+ "schema_version": "genesis-v2-ledger-deployment/1",
+ "verification_timestamp": "2026-09-27T09:22:30Z"
+}

@@ -2,11 +2,11 @@
  "class_coverage": {
   "candidate_specific_adaptation_sets": {
    "corpus_ids": [],
-   "declaration": "NONE_KNOWN_UNATTESTED"
+   "declaration": "NONE_EXIST_ATTESTED"
   },
   "coding_datasets": {
    "corpus_ids": [],
-   "declaration": "NONE_KNOWN_UNATTESTED"
+   "declaration": "NONE_EXIST_ATTESTED"
   },
   "distillation_data": {
    "corpus_ids": [
@@ -55,7 +55,7 @@
   },
   "future_fine_tuning_datasets": {
    "corpus_ids": [],
-   "declaration": "NONE_KNOWN_UNATTESTED"
+   "declaration": "NONE_EXIST_ATTESTED"
   },
   "instruction_tuning_datasets": {
    "corpus_ids": [
@@ -94,7 +94,7 @@
   },
   "prompt_tuning_few_shot_stores": {
    "corpus_ids": [],
-   "declaration": "NONE_KNOWN_UNATTESTED"
+   "declaration": "NONE_EXIST_ATTESTED"
   },
   "public_benchmark_v1": {
    "corpus_ids": [
@@ -124,19 +124,19 @@
   },
   "reasoning_datasets": {
    "corpus_ids": [],
-   "declaration": "NONE_KNOWN_UNATTESTED"
+   "declaration": "NONE_EXIST_ATTESTED"
   },
   "retrieval_corpora": {
    "corpus_ids": [],
-   "declaration": "NONE_KNOWN_UNATTESTED"
+   "declaration": "NONE_EXIST_ATTESTED"
   },
   "rlhf_rlaif_data": {
    "corpus_ids": [],
-   "declaration": "NONE_KNOWN_UNATTESTED"
+   "declaration": "NONE_EXIST_ATTESTED"
   },
   "router_expert_training_data": {
    "corpus_ids": [],
-   "declaration": "NONE_KNOWN_UNATTESTED"
+   "declaration": "NONE_EXIST_ATTESTED"
   },
   "synthetic_generation_corpora": {
    "corpus_ids": [
@@ -159,12 +159,29 @@
   },
   "tool_use_datasets": {
    "corpus_ids": [],
-   "declaration": "NONE_KNOWN_UNATTESTED"
+   "declaration": "NONE_EXIST_ATTESTED"
   }
  },
  "completeness_attestation": {
-  "attested_at": null,
-  "attested_by": null,
+  "record": {
+   "completeness_status": "COMPLETE_WITH_DECLARED_UNAVAILABLE",
+   "corpus_inventory_digest": "1e81ec3303ea6cb80a3b52f0627c39d7787715972a7ac8b16c9095594bb7bd27",
+   "inventory_version": "1",
+   "owner_identity": "ORNEUR owner (Guruprasath Annadurai)",
+   "review_timestamp": "2026-09-27T09:30:00Z",
+   "schema_version": "genesis-v2-corpus-inventory-attestation/1",
+   "scope_reviewed": [
+    "repository notebooks/data (public SFT)",
+    "eval_private/genesis_capability_eval_v1 (pilot_train + exposed dev/holdout)",
+    "~/.orca/training/{raw,formatted,dpo,distill_logs} (owner's local machine)",
+    "notebooks/*.ipynb dataset references (Kaggle-derived)",
+    "every corpus class in orca.eval.genesis_v2.inventory.CORPUS_CLASSES"
+   ],
+   "signature": null,
+   "unresolved_classes": [
+    "external_uploaded_datasets"
+   ]
+  },
   "status": "NOT_ATTESTED"
  },
  "corpora": [

@@ -66,7 +66,8 @@ def test_committed_record_is_not_authorized_and_no_key_is_registered():
     assert rec == A.default_record() and rec["status"] == "NOT_AUTHORIZED" and rec["signature"] is None
     assert rec["gpu_allowed"] is False and rec["network_provider_inference_allowed"] is False and rec["max_runs"] == 0
     assert set(rec) == A.RECORD_KEYS
-    assert json.loads((ROOT / A.KEYS_PATH).read_text())["keys"] == []
+    from orca.eval.genesis_v2 import authority_registry as AR
+    assert json.loads((ROOT / AR.REGISTRY_PATH).read_text())["records"] == []
     v = A.verify(rec, req(), A.load_keys(ROOT))
     assert not v.authorized and "NOT_AUTHORIZED" in v.reasons
 
@@ -157,11 +158,12 @@ def test_signature_and_key_registry_are_enforced(signer):
 
 
 def test_unreadable_key_registry_means_no_authority(tmp_path):
+    from orca.eval.genesis_v2 import authority_registry as AR
     assert A.load_keys(tmp_path) == []
     (tmp_path / "docs/orneur/authorization").mkdir(parents=True)
-    (tmp_path / A.KEYS_PATH).write_text("not json")
+    (tmp_path / AR.REGISTRY_PATH).write_text("not json")
     assert A.load_keys(tmp_path) == []
-    (tmp_path / A.KEYS_PATH).write_text('{"keys": "nope"}')
+    (tmp_path / AR.REGISTRY_PATH).write_text('{"schema_version": "genesis-v2-authority-registry/1", "records": "nope"}')
     assert A.load_keys(tmp_path) == []
     assert A.load_record(tmp_path) == "UNREADABLE"
 

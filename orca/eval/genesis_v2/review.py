@@ -16,7 +16,7 @@ from orca.eval.genesis_v2 import contamination as C
 from orca.eval.genesis_v2 import spec
 
 SCHEMA_VERSION = "genesis-v2-manual-review/1"
-KEYS_PATH = "docs/orneur/authorization/TRUSTED_REVIEWER_KEYS.json"
+KEYS_PATH = "docs/orneur/authorization/TRUSTED_REVIEWER_KEYS.json"  # deprecated; kept only as a legacy artifact, no longer read (see REVIEWER_REGISTRY.json)
 DISPOSITIONS = ("CLEAR", "REJECT_CONTAMINATED", "NEEDS_REGENERATION", "INCONCLUSIVE")
 PURPOSES = ("CONTAMINATION_REVIEW", "SPLIT_ISOLATION_REVIEW", "STRUCTURAL_UNASSESSABLE_REVIEW", "SEMANTIC_AMBIGUITY_REVIEW", "FULL_MANUAL_REVIEW")
 ROLES = ("PRIVATE_BENCHMARK_REVIEWER", "OWNER")
@@ -49,11 +49,12 @@ def build_manifest(reviews: list, corpus_digest: str) -> dict:
 
 
 def load_keys(root: Path) -> list:
-    try:
-        ks = json.loads((Path(root) / KEYS_PATH).read_text())["keys"]
-        return ks if isinstance(ks, list) else []
-    except Exception:
+    """Active reviewer public keys, derived from the canonical REVIEWER_REGISTRY.json (see reviewer_registry.py)."""
+    from orca.eval.genesis_v2 import reviewer_registry as RR
+    doc, problems = RR.load(Path(root) / RR.REGISTRY_PATH)
+    if problems or doc is None:
         return []
+    return RR.active_reviewer_keys(doc)
 
 
 def _verify_sig(review: dict, keys: list) -> str | None:

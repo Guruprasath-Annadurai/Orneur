@@ -140,7 +140,8 @@ def test_review_manifest_with_no_registered_reviewer_key_cannot_validate(signer)
     iid = item(1, "x")["item_id"]
     m = R.build_manifest([make(iid, "e" * 64)], CD)
     assert "NO_TRUSTED_REVIEWER_KEY_REGISTERED" in R.validate_manifest(m, [], CD)
-    assert R.load_keys(ROOT) == [] and json.loads((ROOT / R.KEYS_PATH).read_text())["keys"] == []
+    from orca.eval.genesis_v2 import reviewer_registry as RR
+    assert R.load_keys(ROOT) == [] and json.loads((ROOT / RR.REGISTRY_PATH).read_text())["records"] == []
     assert R.review_status(m, {iid: "e" * 64}, [], CD).status == C.FAIL
 
 

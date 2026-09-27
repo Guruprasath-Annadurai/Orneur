@@ -6,7 +6,9 @@ python -c "import cryptography.hazmat.primitives.ciphers.aead as a; a.AESGCM(byt
 out=$(mktemp)
 pytest -q -rs -p no:cacheprovider tests/test_genesis_v2_privacy.py tests/test_genesis_v2_storage.py tests/test_genesis_v2_ledger.py \
   tests/test_genesis_v2_contamination.py tests/test_genesis_v2_integrity.py \
-  tests/test_genesis_v2_authorization.py tests/test_genesis_v2_inventory.py tests/test_genesis_v2_review.py tests/test_genesis_v2_prereg_vault.py 2>&1 | tee "$out"
+  tests/test_genesis_v2_authorization.py tests/test_genesis_v2_inventory.py tests/test_genesis_v2_review.py tests/test_genesis_v2_prereg_vault.py \
+  tests/test_genesis_v2_identity_registries.py tests/test_genesis_v2_vault_ledger_activation.py tests/test_genesis_v2_runner_and_sandbox_qual.py \
+  tests/test_genesis_v2_owner_preflight.py 2>&1 | tee "$out"
 if grep -Eq "[0-9]+ (skipped|xfailed|deselected)" "$out"; then
   echo "::error::security suite had skipped/xfailed/deselected tests; encryption and privacy tests must execute"
   exit 1

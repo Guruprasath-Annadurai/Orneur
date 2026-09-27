@@ -35,7 +35,10 @@ def test_draft_is_not_frozen_has_no_results_and_defers_unknowns():
 def test_bindings_reflect_the_v2_design():
     b = DRAFT["bindings"]
     assert b["eval_version"] == spec.EVAL_VERSION and b["corpus_version"] == spec.CORPUS_VERSION
-    assert b["sandbox_policy_version"] == "genesis-v2-coding-sandbox-policy/1"
+    assert b["sandbox_policy_version"]["policy_version"] == "genesis-v2-coding-sandbox-policy/1"
+    assert b["sandbox_policy_version"]["sandbox_ready"] is False and b["sandbox_policy_version"]["qualification_candidate_image_digest"]
+    assert b["runner_identity"]["runner_id"] and b["storage_verification_digest"] and b["code_hashes"]
+    assert b["resource_spend_limits"]["max_spend_usd_per_stage"]["STAGE_1"] == 0
     assert b["qualification_holdout_policy"]["write_once_per_candidate_lineage"] is True
     assert b["qualification_holdout_policy"]["adaptation_after_open_requires_fresh_holdout_version"] is True
     assert b["semantic_review_mechanism_version"]["operational_state"] == "NOT_CONFIGURED"
@@ -46,8 +49,9 @@ def test_bindings_reflect_the_v2_design():
 
 MUTATIONS = [
     (lambda d: d.__setitem__("frozen", True), True), (lambda d: d.__setitem__("status", "FROZEN"), True), (lambda d: d["candidate_results"].append({"m": 1}), True),
-    (lambda d: d.__setitem__("first_candidate_run_at", "2026-09-27T00:00:00Z"), True), (lambda d: d["bindings"].__setitem__("code_hashes", {"a": "b"}), True),
-    (lambda d: d["bindings"].__setitem__("runner_identity", "x"), True), (lambda d: d["bindings"].pop("floors"), True),
+    (lambda d: d.__setitem__("first_candidate_run_at", "2026-09-27T00:00:00Z"), True),
+    (lambda d: d["bindings"].__setitem__("private_corpus_aggregate_commitment", "sha256:fake"), True), (lambda d: d["bindings"].__setitem__("code_hashes", None), True),
+    (lambda d: d["bindings"].__setitem__("runner_identity", None), True), (lambda d: d["bindings"].pop("floors"), True),
     (lambda d: d.__setitem__("floors_status", "LOCKED"), True), (lambda d: d["bindings"].__setitem__("eval_version", "genesis-capability-eval/1.0.0"), True),
     (lambda d: d.__setitem__("record_sha256", "0" * 64), False), (lambda d: d["bindings"]["floors"].__setitem__("reasoning", 0.01), False),
     (lambda d: d.__setitem__("schema_version", "x"), False)]
@@ -185,12 +189,14 @@ def test_status_terminology_is_strict():
     st = json.loads((PH / "GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text())
     allowed = {"DESIGNED", "IMPLEMENTED", "TESTED", "QUALIFIED", "FROZEN", "PRODUCTION_READY"}
     for name, state in st["component_states"].items():
-        core = state.replace("NOT_FROZEN", "").replace("NOT_QUALIFIED", "")
-        assert state.startswith(("DESIGNED", "IMPLEMENTED", "NOT_")) and "QUALIFIED" not in core and "FROZEN" not in core and "PRODUCTION" not in core, (name, state)
+        core = state.replace("NOT_FROZEN", "").replace("NOT_QUALIFIED", "").replace("QUALIFICATION_CANDIDATE", "").replace("REQUALIFY", "")
+        assert state.startswith(("DESIGNED", "IMPLEMENTED", "NOT_", "ACTIVATED", "CONFIGURED", "REGISTERED")) and "QUALIFIED" not in core and "FROZEN" not in core and "PRODUCTION" not in core, (name, state)
     assert st["terminology"]["levels"] == sorted(allowed, key=lambda x: ["DESIGNED", "IMPLEMENTED", "TESTED", "QUALIFIED", "FROZEN", "PRODUCTION_READY"].index(x))
     assert "unit-tested" in st["terminology"]["rule"]
-    exp = {"model_eval_authorization_gate": "IMPLEMENTED_TESTED", "corpus_inventory": "IMPLEMENTED_POPULATED_UNATTESTED",
-           "semantic_manual_review_framework": "IMPLEMENTED_TESTED_NOT_CONFIGURED", "coding_sandbox": "IMPLEMENTED_TESTED", "private_storage": "IMPLEMENTED_TESTED_NOT_CONFIGURED",
-           "v2_corpus": "NOT_GENERATED", "v2_freeze": "NOT_FROZEN", "preregistration": "DESIGNED_DRAFT_NOT_FROZEN"}
+    exp = {"model_eval_authorization_gate": "IMPLEMENTED_TESTED", "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_UNSIGNED_DRAFT_ATTESTATION",
+           "semantic_manual_review_framework": "IMPLEMENTED_TESTED_NOT_CONFIGURED", "coding_sandbox": "IMPLEMENTED_TESTED", "private_storage": "ACTIVATED_VERIFIED_TEST_ONLY",
+           "v2_corpus": "NOT_GENERATED", "v2_freeze": "NOT_FROZEN", "preregistration": "DESIGNED_DRAFT_NOT_FROZEN_MOSTLY_BOUND",
+           "authority_registry": "CONFIGURED_ZERO_KEYS_REGISTERED", "reviewer_registry": "CONFIGURED_ZERO_KEYS_REGISTERED", "runner_identity": "REGISTERED_NOT_AUTHORIZED",
+           "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY", "owner_preflight": "IMPLEMENTED_TESTED_RESULT_NOT_READY"}
     assert {k: st["component_states"][k] for k in exp} == exp
     assert st["freeze_prerequisites"]["sandbox_ready"] is False and st["freeze_prerequisites"]["private_storage_genuinely_configured"] is False

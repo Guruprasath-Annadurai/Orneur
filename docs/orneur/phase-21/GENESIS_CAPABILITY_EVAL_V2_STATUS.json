@@ -2,6 +2,11 @@
  "GENESIS_CAPABILITY_EVAL_V1_FROZEN": false,
  "GENESIS_CAPABILITY_EVAL_V1_PRIVATE_HOLDOUT_VALID": false,
  "GENESIS_CAPABILITY_EVAL_V2_FROZEN": false,
+ "authority_registry": {
+  "path": "docs/orneur/authorization/AUTHORITY_REGISTRY.json",
+  "registered_keys": 0,
+  "state": "CONFIGURED_ZERO_KEYS_REGISTERED"
+ },
  "authorizations": {
   "foundation_selection": false,
   "gpu": false,
@@ -12,14 +17,21 @@
  },
  "component_states": {
   "access_ledger": "IMPLEMENTED_TESTED",
+  "authority_registry": "CONFIGURED_ZERO_KEYS_REGISTERED",
   "coding_sandbox": "IMPLEMENTED_TESTED",
   "contamination_framework": "IMPLEMENTED_TESTED",
-  "corpus_inventory": "IMPLEMENTED_POPULATED_UNATTESTED",
+  "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_UNSIGNED_DRAFT_ATTESTATION",
+  "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY",
   "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
+  "owner_preflight": "IMPLEMENTED_TESTED_RESULT_NOT_READY",
   "owner_vault_procedure": "DESIGNED_NOT_ACTIVATED",
-  "preregistration": "DESIGNED_DRAFT_NOT_FROZEN",
+  "preregistration": "DESIGNED_DRAFT_NOT_FROZEN_MOSTLY_BOUND",
   "privacy_scanner": "IMPLEMENTED_TESTED",
-  "private_storage": "IMPLEMENTED_TESTED_NOT_CONFIGURED",
+  "private_storage": "ACTIVATED_VERIFIED_TEST_ONLY",
+  "reviewer_registry": "CONFIGURED_ZERO_KEYS_REGISTERED",
+  "runner_identity": "REGISTERED_NOT_AUTHORIZED",
+  "sandbox_qualification_candidate": "IMPLEMENTED_QUALIFICATION_CANDIDATE_NOT_APPROVED",
+  "secret_manager": "IMPLEMENTED_READY_MACOS_KEYCHAIN_MECHANISM_PROBED_NO_SECRETS_STORED",
   "semantic_manual_review_framework": "IMPLEMENTED_TESTED_NOT_CONFIGURED",
   "split_isolation_policy": "IMPLEMENTED_TESTED",
   "v2_corpus": "NOT_GENERATED",
@@ -29,12 +41,17 @@
   "contamination_controls_pass": false,
   "manual_review": "IMPLEMENTED_NO_REVIEWER_KEY_REGISTERED",
   "semantic_overlap": "NOT_CONFIGURED",
-  "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (inventory unattested, unavailable sources)"
+  "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (inventory reviewed but unsigned; one class genuinely unresolved)"
  },
  "corpus_inventory": {
+  "attestation_status": "NOT_ATTESTED",
   "attested_complete": false,
+  "draft_completeness_status": "COMPLETE_WITH_DECLARED_UNAVAILABLE",
   "path": "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
-  "verdict": "CONTAMINATION_DATASET_UNAVAILABLE / INCOMPLETE (never PASS)"
+  "unresolved_classes": [
+   "external_uploaded_datasets"
+  ],
+  "verdict": "CONTAMINATION_DATASET_UNAVAILABLE (never PASS without a real signed OWNER attestation)"
  },
  "descriptor_only_backends_not_operational": [
   "PRIVATE_GITHUB_REPO",
@@ -56,36 +73,56 @@
  },
  "infrastructure_implemented": [
   "aes256gcm_encrypted_artifact_store_with_seal",
+  "authority_registry",
   "contamination_similarity_framework",
   "corpus_inventory",
+  "corpus_inventory_signed_attestation_schema",
   "fail_closed_public_repo_privacy_scan",
   "hardened_privacy_scanner",
   "hash_chained_create_exclusive_access_ledger",
   "hermetic_coding_sandbox_contract",
+  "ledger_deployment_admin",
   "local_semantic_engine_framework",
   "model_eval_authorization_gate",
+  "owner_preflight_aggregator",
   "owner_vault_verification",
   "preregistration_draft_and_validators",
+  "qualification_runner_registry",
+  "reviewer_registry",
   "salted_commitment_public_manifest",
+  "sandbox_dockerfile_pinned_by_digest",
+  "sandbox_qualification_candidate_record",
   "secret_entropy_and_hmac_derivation",
+  "secret_manager_policy_contract",
   "signed_manual_review_pipeline",
   "split_isolation_policy_table",
   "split_separation_check",
   "sqlite_transactional_access_ledger",
   "storage_interface_with_fail_closed_NoStore",
   "v1_reuse_check",
+  "vault_activation_admin",
   "write_once_holdout_lifecycle"
  ],
  "infrastructure_subchecks": {
+  "authority_reviewer_runner_registries_implemented": true,
   "contamination_control_framework_implemented": true,
   "encrypted_store_backend_qualified_by_tests": true,
+  "ledger_deployment_verified": true,
   "ledger_transactional_concurrency_hardened": true,
   "model_eval_authorization_gate_tested": true,
   "note": "Infrastructure subchecks are NOT freeze prerequisites and do not make any prerequisite true.",
+  "owner_preflight_implemented": true,
   "privacy_scanner_hardened": true,
   "public_sft_dataset_classified": true,
   "sandbox_containment_tests_in_ci": true,
-  "split_isolation_policy_implemented": true
+  "sandbox_pinned_and_containment_run": true,
+  "split_isolation_policy_implemented": true,
+  "vault_activated_and_verified_test_only": true
+ },
+ "ledger_deployment": {
+  "backend": "sqlite",
+  "pass": true,
+  "record": "docs/orneur/phase-21/GENESIS_V2_LEDGER_DEPLOYMENT_RECORD.json"
  },
  "model_eval_authorization": {
   "authority_keys_registered": 0,
@@ -94,9 +131,23 @@
   "state": "NOT_AUTHORIZED"
  },
  "operational_storage_backend": "ENCRYPTED_ARTIFACT",
+ "owner_preflight": {
+  "outstanding_for_ready": [
+   "corpus_inventory_attested_pass",
+   "semantic_engine_configured",
+   "sandbox_ready"
+  ],
+  "result": "NOT_READY",
+  "script": "scripts/genesis_v2_owner_preflight.py"
+ },
  "owner_setup_required": "see GENESIS_CAPABILITY_EVAL_V2_OWNER_SETUP.md; run scripts/genesis_v2_preflight.py",
  "preregistration": {
+  "bindings_honestly_filled": 22,
+  "bindings_total": 23,
   "candidate_results": [],
+  "deferred_until_corpus_exists": [
+   "private_corpus_aggregate_commitment"
+  ],
   "draft": "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_PREREGISTRATION_DRAFT.json",
   "state": "DRAFT_NOT_FROZEN"
  },
@@ -104,14 +155,39 @@
  "private_corpus_generated": false,
  "private_storage_state": "NOT_CONFIGURED",
  "repository_visibility": "PUBLIC",
+ "reviewer_registry": {
+  "path": "docs/orneur/authorization/REVIEWER_REGISTRY.json",
+  "registered_keys": 0,
+  "state": "CONFIGURED_ZERO_KEYS_REGISTERED"
+ },
+ "runner_identity": {
+  "holdout_access_granted": false,
+  "path": "docs/orneur/authorization/QUALIFICATION_RUNNER_REGISTRY.json",
+  "state": "REGISTERED_NOT_AUTHORIZED"
+ },
  "sandbox_readiness": {
+  "containment_suite_run_against_exact_pinned_image": true,
   "implementation": "IMPLEMENTED_TESTED (containment tests in the mandatory 'Genesis V2 Sandbox' CI job)",
   "model_generated_code_executed": false,
   "policy_version": "genesis-v2-coding-sandbox-policy/1",
+  "qualification_candidate_image_digest": "sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
+  "qualification_candidate_record": "docs/orneur/phase-21/GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD.json",
   "sandbox_ready": false,
   "why_not_ready": "sandbox_ready needs (1) the runtime image pinned by digest and recorded in the frozen preregistration, (2) the containment suite executed on the exact runner class that will score items, (3) the sandbox policy hash bound in the preregistration, and (4) independent audit; none of these exist yet. Passing tests on a CI runner is evidence, not qualification."
  },
  "secret_available": false,
+ "secret_manager": {
+  "mechanism_available": true,
+  "mechanism_probed": "macos_keychain",
+  "policy_defined_for_classes": [
+   "corpus_secret",
+   "aes_encryption_key",
+   "authority_signing_key",
+   "reviewer_signing_key",
+   "runner_credential"
+  ],
+  "real_secrets_stored": false
+ },
  "terminology": {
   "levels": [
    "DESIGNED",
@@ -122,5 +198,11 @@
    "PRODUCTION_READY"
   ],
   "rule": "'QUALIFIED' is never used for something merely unit-tested; 'TESTED' means its own tests pass; 'QUALIFIED' needs independent qualification evidence; 'FROZEN' needs a frozen record; 'PRODUCTION_READY' needs production evidence. Nothing in V2 is QUALIFIED, FROZEN or PRODUCTION_READY."
+ },
+ "vault": {
+  "note": "A real, isolated, on-machine vault directory was round-tripped with an EPHEMERAL TEST key and destroyed; no real corpus secret or AES key exists.",
+  "operational_state": "ACTIVATED_VERIFIED_TEST_ONLY",
+  "pass": true,
+  "record": "docs/orneur/phase-21/GENESIS_V2_VAULT_VERIFICATION.json"
  }
 }

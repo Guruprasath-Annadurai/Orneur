@@ -1,0 +1,5 @@
+{
+ "note": "Owner-managed. A record registers WHO may later sign a manual-review disposition (orca.eval.genesis_v2.review), scoped by allowed_review_domains. Separation of duties: an authority identity may not also be a reviewer unless allow_dual_role=true. No private item is reviewed in this phase. Only public keys belong here. Empty: no reviewer is registered yet.",
+ "records": [],
+ "schema_version": "genesis-v2-reviewer-registry/1"
+}

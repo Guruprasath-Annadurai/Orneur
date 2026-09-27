@@ -15,7 +15,7 @@ from pathlib import Path
 
 SCHEMA_VERSION = "orneur-model-eval-authorization/1"
 RECORD_PATH = "docs/orneur/authorization/MODEL_EVAL_AUTHORIZATION.json"
-KEYS_PATH = "docs/orneur/authorization/TRUSTED_AUTHORITY_KEYS.json"
+KEYS_PATH = "docs/orneur/authorization/TRUSTED_AUTHORITY_KEYS.json"  # deprecated; kept only as a legacy artifact, no longer read (see AUTHORITY_REGISTRY.json)
 STAGES = ("STAGE_0", "STAGE_1", "STAGE_2", "STAGE_3")
 RUNNER_CLASSES = ("GITHUB_HOSTED_CPU", "SELF_HOSTED_CPU", "SELF_HOSTED_GPU")
 PURPOSES = ("QUALIFICATION", "SCREENING", "TRAINABILITY_PILOT", "DATA_SEEDING", "REGRESSION")
@@ -167,12 +167,13 @@ def verify(record, req: Request, keys: list, now: datetime | None = None) -> Ver
 
 
 def load_keys(root: Path) -> list:
-    try:
-        d = json.loads((Path(root) / KEYS_PATH).read_text())
-        ks = d["keys"]
-        return ks if isinstance(ks, list) else []
-    except Exception:
-        return []          # unreadable registry => no trusted keys => nothing authorized
+    """Active authority public keys, derived from the canonical AUTHORITY_REGISTRY.json (see authority_registry.py). Any read/schema error, or an
+    empty registry, means no key is trusted — nothing can be authorized."""
+    from orca.eval.genesis_v2 import authority_registry as AR
+    doc, problems = AR.load(Path(root) / AR.REGISTRY_PATH)
+    if problems or doc is None:
+        return []
+    return AR.active_authority_keys(doc)          # unreadable registry => no trusted keys => nothing authorized
 
 
 def load_record(root: Path):

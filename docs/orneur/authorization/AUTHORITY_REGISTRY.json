@@ -1,0 +1,5 @@
+{
+ "note": "Owner-managed. A record registers WHO may later sign a model-execution authorization (orca.eval.genesis_v2.authorization), scoped by permitted_authorization_classes/permitted_eval_stages/gpu_permission/spend_permission/provider_inference_permission. Registration never authorizes a run by itself. Only public keys belong here. Empty: no authority is registered yet.",
+ "records": [],
+ "schema_version": "genesis-v2-authority-registry/1"
+}

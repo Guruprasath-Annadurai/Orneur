@@ -33,19 +33,79 @@ CORPUS_REQUIRED = ("corpus_id", "version", "corpus_class", "purpose", "provenanc
 
 def empty_inventory() -> dict:
     return {"document": "GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY", "schema_version": SCHEMA_VERSION, "inventory_version": "1",
-            "completeness_attestation": {"status": "NOT_ATTESTED", "attested_by": None, "attested_at": None},
+            "completeness_attestation": {"status": "NOT_ATTESTED", "record": None},
             "class_coverage": {c: {"declaration": "NONE_KNOWN_UNATTESTED", "corpus_ids": []} for c in CORPUS_CLASSES}, "corpora": [], "excluded_artifacts": []}
 
 
-def validate(inv) -> list:
+ATTESTATION_VERDICTS = ("COMPLETE", "INCOMPLETE", "COMPLETE_WITH_DECLARED_UNAVAILABLE")
+ATTESTATION_SCHEMA_VERSION = "genesis-v2-corpus-inventory-attestation/1"
+
+
+def attestation_signing_bytes(att: dict) -> bytes:
+    import json as _json
+    return _json.dumps({k: v for k, v in att.items() if k != "signature"}, sort_keys=True, separators=(",", ":")).encode()
+
+
+def validate_attestation_record(att, inventory_digest: str, *, authority_keys: list | None = None) -> list:
+    """Full owner-attestation schema: inventory version, corpus inventory digest, owner identity, review timestamp, scope reviewed, unresolved
+    classes, completeness status, signature, schema version. A signature is verified against a registered OWNER-role authority key when
+    `authority_keys` is supplied; without a valid signature, an attestation can never make contamination_controls_pass true."""
+    p = []
+    if not isinstance(att, dict):
+        return ["attestation is not an object"]
+    required = {"schema_version", "inventory_version", "corpus_inventory_digest", "owner_identity", "review_timestamp", "scope_reviewed",
+                "unresolved_classes", "completeness_status", "signature"}
+    if set(att) != required:
+        return [f"attestation schema mismatch: expected {sorted(required)}"]
+    if att["schema_version"] != ATTESTATION_SCHEMA_VERSION:
+        p.append("attestation schema_version mismatch")
+    if att["corpus_inventory_digest"] != inventory_digest:
+        p.append("corpus_inventory_digest does not match this inventory")
+    if att["completeness_status"] not in ATTESTATION_VERDICTS:
+        p.append(f"completeness_status must be one of {ATTESTATION_VERDICTS}")
+    if not isinstance(att["unresolved_classes"], list):
+        p.append("unresolved_classes must be a list")
+    elif att["completeness_status"] == "COMPLETE" and att["unresolved_classes"]:
+        p.append("completeness_status=COMPLETE is inconsistent with a non-empty unresolved_classes list")
+    if not att.get("owner_identity"):
+        p.append("owner_identity required")
+    if authority_keys is None:
+        p.append("SIGNATURE_NOT_VERIFIED: no authority-key registry supplied")
+    else:
+        sig = att.get("signature")
+        key = next((k for k in authority_keys if k.get("identity") == att.get("owner_identity") and k.get("role") == "OWNER"), None)
+        if key is None:
+            p.append("SIGNATURE_NOT_VERIFIED: owner_identity is not a registered, active OWNER authority key")
+        else:
+            try:
+                from cryptography.exceptions import InvalidSignature
+                from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+                Ed25519PublicKey.from_public_bytes(bytes.fromhex(key["public_key_hex"])).verify(bytes.fromhex(str(sig)), attestation_signing_bytes(att))
+            except Exception:
+                p.append("SIGNATURE_NOT_VERIFIED: invalid signature")
+    return p
+
+
+def inventory_digest(inv: dict) -> str:
+    import hashlib as _h
+    import json as _json
+    body = {k: v for k, v in inv.items() if k not in ("completeness_attestation",)}
+    return _h.sha256(_json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def validate(inv, *, authority_keys: list | None = None) -> list:
     p = []
     if not isinstance(inv, dict) or inv.get("schema_version") != SCHEMA_VERSION:
         return ["inventory missing or wrong schema_version"]
     att = inv.get("completeness_attestation")
-    if not isinstance(att, dict) or att.get("status") not in ("NOT_ATTESTED", "ATTESTED_COMPLETE"):
+    if not isinstance(att, dict) or att.get("status") not in ("NOT_ATTESTED", "ATTESTED"):
         p.append("completeness_attestation.status invalid")
-    elif att["status"] == "ATTESTED_COMPLETE" and not (att.get("attested_by") and att.get("attested_at")):
-        p.append("an attested inventory must name who attested and when")
+    elif att["status"] == "ATTESTED":
+        record = att.get("record")
+        if not isinstance(record, dict):
+            p.append("an ATTESTED status requires an attestation record")
+        else:
+            p += validate_attestation_record(record, inventory_digest(inv), authority_keys=authority_keys)
     ids = set()
     for i, c in enumerate(inv.get("corpora") or []):
         if not isinstance(c, dict):
@@ -109,10 +169,10 @@ def _sha(path: Path) -> str:
     return h.hexdigest()
 
 
-def evaluate(inv, root: Path, orca_home: Path | None = None) -> C.CheckResult:
+def evaluate(inv, root: Path, orca_home: Path | None = None, *, authority_keys: list | None = None) -> C.CheckResult:
     """The fail-closed verdict on inventory completeness for contamination purposes."""
     name = "training_corpora_inventory"
-    p = validate(inv)
+    p = validate(inv, authority_keys=authority_keys)
     if p:
         return C.CheckResult(name, C.FAIL, [{"problem": x} for x in p[:20]], "inventory schema violations")
     corpora = inv["corpora"]
@@ -141,8 +201,10 @@ def evaluate(inv, root: Path, orca_home: Path | None = None) -> C.CheckResult:
     if unavailable:
         return C.CheckResult(name, C.DATASET_UNAVAILABLE, unavailable, "unresolved UNAVAILABLE / not-present / non-resolvable sources")
     gaps = [{"class": k, "declaration": v["declaration"]} for k, v in inv["class_coverage"].items() if v["declaration"] == "NONE_KNOWN_UNATTESTED"]
-    if inv["completeness_attestation"]["status"] != "ATTESTED_COMPLETE" or gaps:
-        return C.CheckResult(name, C.INCOMPLETE, gaps, "completeness not attested (owner attestation and per-class coverage declarations required)")
+    att = inv["completeness_attestation"]
+    verdict = (att.get("record") or {}).get("completeness_status") if att.get("status") == "ATTESTED" else None
+    if att.get("status") != "ATTESTED" or verdict not in ("COMPLETE", "COMPLETE_WITH_DECLARED_UNAVAILABLE") or gaps:
+        return C.CheckResult(name, C.INCOMPLETE, gaps, "completeness not signed-attested by a registered OWNER authority as COMPLETE / COMPLETE_WITH_DECLARED_UNAVAILABLE, or per-class coverage gaps remain")
     if unresolved:
         return C.CheckResult(name, C.INCOMPLETE, unresolved, "unresolved usage/visibility flags or contamination checks not PASS")
     return C.CheckResult(name, C.PASS, [], f"{len(corpora)} corpora inventoried, resolved, hash-verified and attested complete")

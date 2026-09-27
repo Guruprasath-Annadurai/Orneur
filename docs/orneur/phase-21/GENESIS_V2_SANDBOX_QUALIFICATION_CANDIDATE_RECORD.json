@@ -1,0 +1,20 @@
+{
+ "base_image_digest": "sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+ "containment_test_result_digest": "f6e5998b0af2efa1b347e7817dd45fdf347d36d58922244c0cc288aeccfe2ef2",
+ "containment_test_summary": "18 passed in 19.10s (tests/test_genesis_v2_sandbox_containment.py against the pinned qualification-candidate image, local Docker Desktop)",
+ "dockerfile_sha256": "ebdf3f8b6e42659d0d3393e80a0fe76637d35a4d5262b5990e8228e5f7c6bd9d",
+ "document": "GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD",
+ "exact_commit_sha": "PENDING_COMMIT_WILL_BE_SET_AT_PUSH_TIME",
+ "image_digest": "sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
+ "image_reference": "orneur-genesis-v2-sandbox@sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
+ "note": "Passing this containment run makes the image a QUALIFICATION CANDIDATE. sandbox_ready stays false until the preregistration binds this exact image_digest and independent audit approves it.",
+ "runtime_versions": {
+  "docker_server": "29.6.2",
+  "python_in_container": "3.11.16"
+ },
+ "sandbox_policy_version": "genesis-v2-coding-sandbox-policy/1",
+ "sandbox_ready": false,
+ "schema_version": "genesis-v2-sandbox-qualification-candidate/1",
+ "test_runner_class": "LOCAL_DEV_MACHINE_DOCKER_DESKTOP",
+ "timestamp": "2026-09-27T09:21:46Z"
+}

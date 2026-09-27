@@ -17,8 +17,9 @@ BINDINGS = ("eval_version", "corpus_version", "private_corpus_aggregate_commitme
             "semantic_review_mechanism_version", "sandbox_policy_version", "model_run_constraints", "allowed_candidate_lineage_rules", "stage_protocols",
             "resource_spend_limits", "trainability_protocol", "latency_cost_protocols", "code_hashes", "runner_identity", "storage_verification_digest")
 
-# bindings that can only be filled once the private corpus / vault / runner exist; they MUST be null in a draft
-DEFERRED = ("private_corpus_aggregate_commitment", "code_hashes", "runner_identity", "storage_verification_digest", "resource_spend_limits")
+# bindings that can only be filled once the private corpus itself exists; they MUST be null in a draft. Everything else (code hashes, runner
+# identity, storage verification digest, resource/spend limits) can be bound honestly before any corpus exists, once the owner environment is set up.
+DEFERRED = ("private_corpus_aggregate_commitment",)
 
 
 def schema() -> dict:
@@ -47,7 +48,10 @@ def validate_draft(d) -> list:
         return p + ["bindings must be exactly the required set"]
     for k in DEFERRED:
         if b[k] is not None:
-            p.append(f"{k} can only be bound after the corpus/vault/runner exist and must be null in a draft")
+            p.append(f"{k} can only be bound after the private corpus exists and must be null in a draft")
+    for k in BINDINGS:
+        if k not in DEFERRED and b.get(k) is None:
+            p.append(f"{k} must be honestly bound before freeze-readiness (only {DEFERRED} may remain null in a draft)")
     if d.get("floors_status") != "PROPOSED_NOT_LOCKED":
         p.append("draft floors must be PROPOSED_NOT_LOCKED")
     if b["eval_version"] != spec.EVAL_VERSION or b["corpus_version"] != spec.CORPUS_VERSION:

@@ -33,7 +33,12 @@ from orca.eval.sandbox_docker import is_docker_available
 
 POLICY_VERSION = "genesis-v2-coding-sandbox-policy/1"
 LABEL = "orneur.genesis.v2.sandbox=1"
-SUPPORTED_RUNTIMES = {"python3.11": "python:3.11-slim"}
+SUPPORTED_RUNTIMES = {
+    "python3.11": "python:3.11-slim",
+    # Genesis Capability Eval V2 qualification-candidate image: docker/genesis_v2_sandbox/Dockerfile, built FROM the same base pinned by digest,
+    # addressed here by ITS OWN content digest (a locally built image, never pushed to a registry). See GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD.json.
+    "python3.11-qualification-candidate": "orneur-genesis-v2-sandbox@sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
+}
 MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, MAX_PATH_LEN = 64, 1 << 20, 2 << 20, 200
 
 

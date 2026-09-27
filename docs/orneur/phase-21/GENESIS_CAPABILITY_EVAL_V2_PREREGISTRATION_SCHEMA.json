@@ -1,10 +1,6 @@
 {
  "deferred_until_corpus_exists": [
-  "private_corpus_aggregate_commitment",
-  "code_hashes",
-  "runner_identity",
-  "storage_verification_digest",
-  "resource_spend_limits"
+  "private_corpus_aggregate_commitment"
  ],
  "floors_status_values": [
   "PROPOSED_NOT_LOCKED",
