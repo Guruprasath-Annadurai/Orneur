@@ -25,9 +25,10 @@ def test_real_repository_preflight_is_structurally_sound_but_not_ready():
 def test_hard_requirement_failure_forces_not_ready(tmp_path):
     import shutil
     shutil.copytree(ROOT, tmp_path / "repo", ignore=shutil.ignore_patterns(".git"))
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path / "repo", check=True)
-    subprocess.run(["git", "add", "-A"], cwd=tmp_path / "repo", check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "snapshot"], cwd=tmp_path / "repo", check=True)
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=test@example.invalid", "-c", "user.name=test", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=test@example.invalid", "-c", "user.name=test", "commit", "-q", "-m", "snapshot"], cwd=repo, check=True)
     rec_path = tmp_path / "repo/docs/orneur/authorization/MODEL_EVAL_AUTHORIZATION.json"
     d = json.loads(rec_path.read_text())
     d["status"] = "AUTHORIZED"        # would-be authorized: must force NOT_READY regardless of everything else
