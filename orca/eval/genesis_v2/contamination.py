@@ -153,7 +153,10 @@ class FileTrainingCorpus:
         for i, l in enumerate(self._path.read_text().splitlines()):
             if l.strip():
                 d = json.loads(l)
-                out.append(S.make_rec({"item_id": f"{self.name}#{i}", "category": "training", "prompt": d.get(self._key, "") if isinstance(d, dict) else str(d)}))
+                text = d.get(self._key) if isinstance(d, dict) else None
+                if not isinstance(text, str):                       # other layouts (prompt/response, messages, logs): compare every string in the record
+                    text = "\n".join(S.string_leaves(d))
+                out.append(S.make_rec({"item_id": f"{self.name}#{i}", "category": "training", "prompt": text}))
         return out
 
 

@@ -1,0 +1,4 @@
+{
+ "note": "Public keys of authorities who may sign model-execution authorizations. EMPTY: no authority key is registered, so no model execution can be authorized. Only the owner adds a key (public half only; the private key never enters the repository).",
+ "keys": []
+}

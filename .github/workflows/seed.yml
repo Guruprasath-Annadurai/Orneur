@@ -9,13 +9,58 @@ on:
         default: "1000"
       model:
         description: "Ollama model to use for generation"
-        required: false
-        default: ""
+        required: true
+      candidate_revision:
+        description: "Exact model revision (must match the authorization record)"
+        required: true
+      eval_version:
+        description: "Eval version this seeding is authorized under"
+        required: true
+      stage:
+        description: "Authorized stage label (STAGE_0..STAGE_3)"
+        required: true
 
 # Seed data on self-hosted runner with Ollama — runs on-demand
+permissions:
+  contents: read
+
 jobs:
+  authorize:
+    # Model-execution boundary: seeding invokes Ollama, so it needs the same fail-closed authorization proof as model evaluation.
+    name: Verify model-execution authorization (no model is invoked here)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      authorized: ${{ steps.gate.outputs.authorized }}
+    steps:
+      - name: Checkout the exact commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Orca (qualification extra provides the signature verifier)
+        run: |
+          pip install uv
+          uv pip install --system -e ".[qualification]"
+      - name: Fail-closed authorization gate
+        id: gate
+        env:
+          EVAL_VERSION: ${{ github.event.inputs.eval_version }}
+          CANDIDATE_MODEL_ID: ${{ github.event.inputs.model }}
+          CANDIDATE_REVISION: ${{ github.event.inputs.candidate_revision }}
+          EVAL_STAGE: ${{ github.event.inputs.stage }}
+          RUNNER_CLASS: SELF_HOSTED_CPU
+          EVAL_PURPOSE: DATA_SEEDING
+          REQUESTED_RUNS: "1"
+        run: python scripts/ci/verify_model_eval_authorization.py
+
   seed:
     name: Generate Training Data
+    needs: authorize
+    if: github.event_name == 'workflow_dispatch' && needs.authorize.outputs.authorized == 'true'
     runs-on: self-hosted
     timeout-minutes: 120
 

@@ -10,10 +10,31 @@
   "spending": false,
   "training": false
  },
+ "component_states": {
+  "access_ledger": "IMPLEMENTED_TESTED",
+  "coding_sandbox": "IMPLEMENTED_TESTED",
+  "contamination_framework": "IMPLEMENTED_TESTED",
+  "corpus_inventory": "IMPLEMENTED_POPULATED_UNATTESTED",
+  "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
+  "owner_vault_procedure": "DESIGNED_NOT_ACTIVATED",
+  "preregistration": "DESIGNED_DRAFT_NOT_FROZEN",
+  "privacy_scanner": "IMPLEMENTED_TESTED",
+  "private_storage": "IMPLEMENTED_TESTED_NOT_CONFIGURED",
+  "semantic_manual_review_framework": "IMPLEMENTED_TESTED_NOT_CONFIGURED",
+  "split_isolation_policy": "IMPLEMENTED_TESTED",
+  "v2_corpus": "NOT_GENERATED",
+  "v2_freeze": "NOT_FROZEN"
+ },
  "contamination_status": {
   "contamination_controls_pass": false,
+  "manual_review": "IMPLEMENTED_NO_REVIEWER_KEY_REGISTERED",
   "semantic_overlap": "NOT_CONFIGURED",
-  "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE_until_owner_declares_complete_corpus_list"
+  "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (inventory unattested, unavailable sources)"
+ },
+ "corpus_inventory": {
+  "attested_complete": false,
+  "path": "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
+  "verdict": "CONTAMINATION_DATASET_UNAVAILABLE / INCOMPLETE (never PASS)"
  },
  "descriptor_only_backends_not_operational": [
   "PRIVATE_GITHUB_REPO",
@@ -36,11 +57,18 @@
  "infrastructure_implemented": [
   "aes256gcm_encrypted_artifact_store_with_seal",
   "contamination_similarity_framework",
+  "corpus_inventory",
   "fail_closed_public_repo_privacy_scan",
   "hardened_privacy_scanner",
   "hash_chained_create_exclusive_access_ledger",
+  "hermetic_coding_sandbox_contract",
+  "local_semantic_engine_framework",
+  "model_eval_authorization_gate",
+  "owner_vault_verification",
+  "preregistration_draft_and_validators",
   "salted_commitment_public_manifest",
   "secret_entropy_and_hmac_derivation",
+  "signed_manual_review_pipeline",
   "split_isolation_policy_table",
   "split_separation_check",
   "sqlite_transactional_access_ledger",
@@ -52,16 +80,47 @@
   "contamination_control_framework_implemented": true,
   "encrypted_store_backend_qualified_by_tests": true,
   "ledger_transactional_concurrency_hardened": true,
+  "model_eval_authorization_gate_tested": true,
   "note": "Infrastructure subchecks are NOT freeze prerequisites and do not make any prerequisite true.",
   "privacy_scanner_hardened": true,
   "public_sft_dataset_classified": true,
+  "sandbox_containment_tests_in_ci": true,
   "split_isolation_policy_implemented": true
+ },
+ "model_eval_authorization": {
+  "authority_keys_registered": 0,
+  "model_execution_workflows": "workflow_dispatch only, behind a fail-closed authorization job",
+  "record": "docs/orneur/authorization/MODEL_EVAL_AUTHORIZATION.json",
+  "state": "NOT_AUTHORIZED"
  },
  "operational_storage_backend": "ENCRYPTED_ARTIFACT",
  "owner_setup_required": "see GENESIS_CAPABILITY_EVAL_V2_OWNER_SETUP.md; run scripts/genesis_v2_preflight.py",
+ "preregistration": {
+  "candidate_results": [],
+  "draft": "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_PREREGISTRATION_DRAFT.json",
+  "state": "DRAFT_NOT_FROZEN"
+ },
  "private_corpus_committed": false,
  "private_corpus_generated": false,
  "private_storage_state": "NOT_CONFIGURED",
  "repository_visibility": "PUBLIC",
- "secret_available": false
+ "sandbox_readiness": {
+  "implementation": "IMPLEMENTED_TESTED (containment tests in the mandatory 'Genesis V2 Sandbox' CI job)",
+  "model_generated_code_executed": false,
+  "policy_version": "genesis-v2-coding-sandbox-policy/1",
+  "sandbox_ready": false,
+  "why_not_ready": "sandbox_ready needs (1) the runtime image pinned by digest and recorded in the frozen preregistration, (2) the containment suite executed on the exact runner class that will score items, (3) the sandbox policy hash bound in the preregistration, and (4) independent audit; none of these exist yet. Passing tests on a CI runner is evidence, not qualification."
+ },
+ "secret_available": false,
+ "terminology": {
+  "levels": [
+   "DESIGNED",
+   "IMPLEMENTED",
+   "TESTED",
+   "QUALIFIED",
+   "FROZEN",
+   "PRODUCTION_READY"
+  ],
+  "rule": "'QUALIFIED' is never used for something merely unit-tested; 'TESTED' means its own tests pass; 'QUALIFIED' needs independent qualification evidence; 'FROZEN' needs a frozen record; 'PRODUCTION_READY' needs production evidence. Nothing in V2 is QUALIFIED, FROZEN or PRODUCTION_READY."
+ }
 }

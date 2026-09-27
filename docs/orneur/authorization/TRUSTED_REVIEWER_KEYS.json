@@ -1,0 +1,4 @@
+{
+ "note": "Public keys of registered private-benchmark reviewers. EMPTY: no reviewer key is registered, so no manual-review decision can validate. Only the owner adds a key (public half only).",
+ "keys": []
+}

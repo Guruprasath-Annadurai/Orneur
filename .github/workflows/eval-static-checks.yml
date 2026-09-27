@@ -1,0 +1,46 @@
+name: Eval Static Checks (CPU only, no model)
+
+# STATIC / CPU DATA CHECKS. Nothing here pulls or invokes Ollama or any model: GitHub-hosted runner, no self-hosted labels, no inference commands.
+# tests/test_genesis_v2_authorization.py enforces that this file and every other workflow keep that boundary.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "orca/train/**"
+      - "orca/data/**"
+      - "orca/brain/**"
+      - ".github/workflows/eval*.yml"
+      - "docs/orneur/authorization/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "orca/train/**"
+      - "orca/data/**"
+      - "orca/brain/**"
+      - ".github/workflows/eval*.yml"
+      - "docs/orneur/authorization/**"
+
+permissions:
+  contents: read
+
+jobs:
+  static-data-check:
+    name: Training Data Static Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Orca
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+      - name: Verify the model-execution boundary (workflow triggers, gate, NOT_AUTHORIZED record)
+        run: python -m pytest -q tests/test_genesis_v2_authorization.py
+      - name: Check training data readiness (static; informational on a runner without local corpora)
+        run: orca train prepare
+        continue-on-error: true

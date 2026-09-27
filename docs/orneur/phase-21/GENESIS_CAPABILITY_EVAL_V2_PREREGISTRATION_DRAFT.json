@@ -1,0 +1,206 @@
+{
+ "bindings": {
+  "allowed_candidate_lineage_rules": {
+   "derived_from_opened_lineage": "FRESH_HOLDOUT_VERSION_REQUIRED",
+   "independent_lineages": "each gets its own single run",
+   "one_holdout_run_per_lineage": true
+  },
+  "category_counts": {
+   "coding": {
+    "QUALIFICATION_HOLDOUT": 100,
+    "SCREEN": 30
+   },
+   "cost": {
+    "QUALIFICATION_HOLDOUT": 0,
+    "SCREEN": 0
+   },
+   "counterfactual_reasoning": {
+    "QUALIFICATION_HOLDOUT": 120,
+    "SCREEN": 36
+   },
+   "cross_domain_transfer": {
+    "QUALIFICATION_HOLDOUT": 60,
+    "SCREEN": 18
+   },
+   "discovery_quality": {
+    "QUALIFICATION_HOLDOUT": 60,
+    "SCREEN": 18
+   },
+   "evidence_use": {
+    "QUALIFICATION_HOLDOUT": 165,
+    "SCREEN": 50
+   },
+   "hypothesis_testing": {
+    "QUALIFICATION_HOLDOUT": 120,
+    "SCREEN": 36
+   },
+   "information_gain_reasoning": {
+    "QUALIFICATION_HOLDOUT": 120,
+    "SCREEN": 36
+   },
+   "instruction_following": {
+    "QUALIFICATION_HOLDOUT": 200,
+    "SCREEN": 60
+   },
+   "latency": {
+    "QUALIFICATION_HOLDOUT": 0,
+    "SCREEN": 0
+   },
+   "long_context": {
+    "QUALIFICATION_HOLDOUT": 170,
+    "SCREEN": 51
+   },
+   "mathematics": {
+    "QUALIFICATION_HOLDOUT": 180,
+    "SCREEN": 54
+   },
+   "multilingual": {
+    "QUALIFICATION_HOLDOUT": 200,
+    "SCREEN": 60
+   },
+   "multimodal_where_applicable": {
+    "QUALIFICATION_HOLDOUT": 60,
+    "SCREEN": 18
+   },
+   "reasoning": {
+    "QUALIFICATION_HOLDOUT": 180,
+    "SCREEN": 54
+   },
+   "research": {
+    "QUALIFICATION_HOLDOUT": 120,
+    "SCREEN": 36
+   },
+   "strict_contracts": {
+    "QUALIFICATION_HOLDOUT": 150,
+    "SCREEN": 45
+   },
+   "structured_outputs": {
+    "QUALIFICATION_HOLDOUT": 180,
+    "SCREEN": 54
+   },
+   "tool_use": {
+    "QUALIFICATION_HOLDOUT": 120,
+    "SCREEN": 36
+   },
+   "trainability": {
+    "QUALIFICATION_HOLDOUT": 0,
+    "SCREEN": 0
+   },
+   "verification": {
+    "QUALIFICATION_HOLDOUT": 180,
+    "SCREEN": 54
+   }
+  },
+  "code_hashes": null,
+  "confidence_statistical_method": {
+   "interval": "Wilson score interval (orca/eval/genesis_stats.py)",
+   "low_power_rule": "categories/slices with fewer than 100 scored items are LOW_POWER and report-only"
+  },
+  "contamination_algorithm_versions": {
+   "minhash_lsh": "64 perms, 32 bands x 2 rows, exact verification",
+   "near_duplicate": "word-5-gram Jaccard >= 0.6",
+   "similarity_module": "orca/eval/genesis_v2/similarity.py",
+   "structural_clone": "skeleton Jaccard >= 0.75"
+  },
+  "corpus_version": "genesis-corpus/2.0.0",
+  "eval_version": "genesis-capability-eval/2.0.0",
+  "floors": {
+   "coding": 0.3,
+   "counterfactual_reasoning": 0.35,
+   "evidence_use": 0.5,
+   "hypothesis_testing": 0.5,
+   "information_gain_reasoning": 0.35,
+   "instruction_following": 0.45,
+   "long_context": 0.45,
+   "mathematics": 0.45,
+   "multilingual": 0.4,
+   "reasoning": 0.35,
+   "research": 0.45,
+   "structured_outputs": 0.65,
+   "tool_use": 0.55,
+   "verification": 0.5
+  },
+  "gating_report_only_status": {
+   "coding": "GATING",
+   "cost": "PROTOCOL",
+   "counterfactual_reasoning": "GATING",
+   "cross_domain_transfer": "REPORT_ONLY",
+   "discovery_quality": "REPORT_ONLY",
+   "evidence_use": "GATING",
+   "hypothesis_testing": "GATING",
+   "information_gain_reasoning": "GATING",
+   "instruction_following": "GATING",
+   "latency": "PROTOCOL",
+   "long_context": "GATING",
+   "mathematics": "GATING",
+   "multilingual": "GATING",
+   "multimodal_where_applicable": "REPORT_ONLY",
+   "reasoning": "GATING",
+   "research": "GATING",
+   "strict_contracts": "REPORT_ONLY",
+   "structured_outputs": "GATING",
+   "tool_use": "GATING",
+   "trainability": "PROTOCOL",
+   "verification": "GATING"
+  },
+  "latency_cost_protocols": {
+   "reference": "GENESIS_CAPABILITY_EVAL_V1_DESIGN.md latency/cost; report-only, measured under recorded hardware"
+  },
+  "model_run_constraints": {
+   "gpu": "only if the authorization allows it",
+   "model_execution_requires": "signed authorization record verified per exact request (orneur-model-eval-authorization/1)",
+   "provider_inference": "only if the authorization allows it",
+   "runs": "bounded by max_runs"
+  },
+  "private_corpus_aggregate_commitment": null,
+  "qualification_holdout_policy": {
+   "adaptation_after_open_requires_fresh_holdout_version": true,
+   "ground_truth_disclosure_only_after_retirement": true,
+   "no_tuning_or_answer_inspection": true,
+   "used_by": "Stage 2 / final qualification only",
+   "write_once_per_candidate_lineage": true
+  },
+  "resource_spend_limits": null,
+  "runner_identity": null,
+  "sandbox_policy_version": "genesis-v2-coding-sandbox-policy/1",
+  "scoring_algorithms": {
+   "coding": "executed only inside the hermetic sandbox policy genesis-v2-coding-sandbox-policy/1; results without the sandbox are INCOMPLETE",
+   "scorers": "genesis-scorers/1.0.0 (orca/eval/genesis_scorers.py, deterministic, CPU)"
+  },
+  "screen_policy": {
+   "access": "pre-registered process, access ledger record per access",
+   "never_reused_for": "final qualification",
+   "used_by": "Stage 1 only"
+  },
+  "semantic_review_mechanism_version": {
+   "engine": "orca/eval/genesis_v2/semantic.py (local, CPU, no provider)",
+   "manual_review": "orca/eval/genesis_v2/review.py genesis-v2-manual-review/1",
+   "operational_state": "NOT_CONFIGURED"
+  },
+  "stage_protocols": {
+   "STAGE_0": "protocol/harness probes on DEV only (see funnel doctrine)",
+   "STAGE_1": "SCREEN only",
+   "STAGE_2": "QUALIFICATION_HOLDOUT only; incomplete results fail closed; family-order correction preserved",
+   "STAGE_3": "trainability pilot on PILOT_TRAIN then regression check; incomplete data fails closed"
+  },
+  "storage_verification_digest": null,
+  "template_cluster_methodology": {
+   "cluster_labels": "every private item carries a generation-cluster label; shared clusters between SCREEN and QUALIFICATION_HOLDOUT FAIL (isolation.SEPARATION_POLICY)",
+   "limited_categories_require_manual_review": true,
+   "structural_fingerprint": "function-word skeleton Jaccard, thresholds in contamination.py"
+  },
+  "trainability_protocol": {
+   "reference": "GENESIS_CAPABILITY_EVAL_V1_DESIGN.md trainability section; a measurement, never an entry floor"
+  }
+ },
+ "candidate_results": [],
+ "document": "GENESIS_CAPABILITY_EVAL_V2_PREREGISTRATION_DRAFT",
+ "first_candidate_run_at": null,
+ "floors_status": "PROPOSED_NOT_LOCKED",
+ "frozen": false,
+ "frozen_at": null,
+ "note": "DRAFT. Floors are proposals carried over from V1 design and become immutable only at freeze. Deferred bindings stay null until the private corpus, vault, runner and code hashes exist.",
+ "record_sha256": "e2d179a4c739b73cd44a8129576fd6011d4cd96e9a52def2dcf09f3d87a2de5a",
+ "schema_version": "genesis-v2-preregistration/1",
+ "status": "DRAFT_NOT_FROZEN"
+}

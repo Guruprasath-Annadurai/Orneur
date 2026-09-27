@@ -45,7 +45,7 @@ def policy_problems() -> list:
     return out
 
 
-def check_split_isolation(items: list) -> list:
+def check_split_isolation(items: list, manual_structure_review: CheckResult | None = None) -> list:
     scr = [i for i in items if i.get("split") == "SCREEN"]
     hold = [i for i in items if i.get("split") == "QUALIFICATION_HOLDOUT"]
     if not scr or not hold:
@@ -105,8 +105,10 @@ def check_split_isolation(items: list) -> list:
         shared.append({"problem": "items without a cluster label", "count": len(missing_cluster)})
     res.append(CheckResult("isolation_shared_cluster", C.FAIL if shared else C.PASS, shared, "category separation policy: shared clusters FAIL"))
     limited = sorted({r.category for r in a + b if SEPARATION_POLICY.get(r.category, {}).get("structural_fingerprint") != "RELIABLE"})
-    res.append(CheckResult("isolation_structure_review", C.PASS if not limited else C.INCOMPLETE, [{"category": c} for c in limited],
-                           "categories whose structural fingerprint is limited require private manual/semantic review before freeze"))
+    st, note = (C.PASS, "") if not limited else (C.INCOMPLETE, "categories whose structural fingerprint is limited require private manual/semantic review before freeze")
+    if limited and manual_structure_review is not None:
+        st, note = manual_structure_review.status, f"manual review: {manual_structure_review.note}"   # PASS only if every required item is CLEAR; INCONCLUSIVE => INCOMPLETE
+    res.append(CheckResult("isolation_structure_review", st, [{"category": c} for c in limited], note))
     return res
 
 

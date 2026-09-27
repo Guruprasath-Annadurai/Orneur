@@ -59,6 +59,30 @@ Gates (any violation FAILS, nothing is only reported): item-id overlap = 0, cano
 
 `notebooks/data/*.jsonl` (including the legacy-named `orneur_genesis_v2_{train,eval}.jsonl`) are **PUBLIC_SFT** training data classified by `PUBLIC_SFT_DATASET_CLASSIFICATION.json` (hash-pinned; `may_be_qualification_evidence=false`; `is_genesis_capability_eval_v2=false`). They were not renamed because the V1 training-exclusion manifest references those paths; the builder now writes `genesis_sft_v2_public_{train,eval}.jsonl`. The scanner rejects unclassified or modified files there.
 
+## 9d. Model-execution authorization boundary (IMPLEMENTED + TESTED)
+
+Ordinary repository activity can never invoke a model. `eval.yml` (model evaluation) and `seed.yml` (Ollama seeding) are `workflow_dispatch` only and their self-hosted jobs `need` an `authorize` job (GitHub-hosted, no model) that runs `scripts/ci/verify_model_eval_authorization.py`. The gate verifies the committed record `docs/orneur/authorization/MODEL_EVAL_AUTHORIZATION.json` (schema `orneur-model-eval-authorization/1`: authorization id, exact commit SHA, eval version, candidate model + revision, permitted stage/runner class/purpose, max runs and spend, issued/expiry, authorizing authority, GPU and provider-inference permissions, Ed25519 signature) against THIS exact request. The committed state is **NOT_AUTHORIZED** and `TRUSTED_AUTHORITY_KEYS.json` has no key, so nothing can be authorized (an agent cannot forge approval by editing the record). Static CPU data checks live in `eval-static-checks.yml` (GitHub-hosted, no model command). Tests parse every workflow and fail if any auto-triggered job runs a model command or a self-hosted runner.
+
+## 9e. Corpus inventory (IMPLEMENTED, populated, UNATTESTED)
+
+`GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json` lists every known corpus (public SFT sets, V1 pilot/dev/exposed holdout, and the owner's machine-local raw/distilled/formatted/DPO/synthetic/distill-log corpora, by hash and count only) with class, provenance, classification, storage descriptor, hash, usage/visibility flags, lifecycle, contamination-check status, owner and PRESENT/DECLARED_NOT_PRESENT/UNAVAILABLE/RETIRED status. Fail closed: an empty inventory is INCOMPLETE; an unattested inventory, an unattested class (`NONE_KNOWN_UNATTESTED`: reasoning, coding, tool-use, RLHF/RLAIF, few-shot stores, retrieval, router/expert data, future and candidate-specific sets), any UNAVAILABLE or non-resolvable source, any UNKNOWN flag or non-PASS contamination check blocks `contamination_controls_pass`. The Kaggle-uploaded datasets cannot be inspected from the repository and stay UNAVAILABLE.
+
+## 9f. Semantic overlap and manual review (IMPLEMENTED + TESTED, operationally NOT_CONFIGURED)
+
+`semantic.py`: local, CPU-only, provider-free engine (deterministic preprocessing, cosine similarity, per-category thresholds, ambiguity band, IDs-and-scores-only artifact, model hash recorded, no auto-download). The only bundled embedder is a lexical feature-hash proxy that is never accepted as semantic review; a local model requires an explicit directory with a pre-registered content hash. `review.py`: signed manual-review decisions binding item id, eval version, reviewer identity/role/key, purpose, exact corpus digest, similarity-evidence digest, disposition (CLEAR / REJECT_CONTAMINATED / NEEDS_REGENERATION / INCONCLUSIVE), timestamp and schema version; INCONCLUSIVE, missing or stale-evidence reviews never PASS, and `TRUSTED_REVIEWER_KEYS.json` is empty. `combine_semantic_and_manual` passes only with (accepted local engine PASS + flagged items cleared) or a FULL manual review; the split-isolation structure review accepts a manual review as its evidence.
+
+## 9g. Hermetic coding sandbox (IMPLEMENTED + TESTED; `sandbox_ready` = false)
+
+`sandbox.py` extends the hardened Docker primitive: one fresh container per item; `--network none`, read-only root, tmpfs `/work` and `/tmp` (size-capped, noexec), the staged job directory as the only host mount (read-only), uid 65534, all capabilities dropped, no-new-privileges, private PID/IPC, memory/cpu/pids/ulimits, `env -i` allow-list, `--pull never`, host-side wall-clock kill of the named container, streamed output cap, digest-only `ExecutionRecord` (item id, candidate revision, image digest, command, exit status, timeout/limit flags, stdout/stderr/test-result digests, duration, policy version). The pure policy tests and the Docker containment suite (host filesystem, network egress, localhost/metadata, fork bomb, infinite loop, oversized stdout and file, memory bomb, environment secrets, path traversal, symlink escape, Docker socket, persistence) run in the mandatory *Genesis V2 Sandbox* CI job with zero skips. No model-generated code is executed. `sandbox_ready` stays false: it needs the image pinned by digest in the frozen preregistration, the suite executed on the scoring runner class, and independent audit.
+
+## 9h. Preregistration draft and owner procedure (DESIGNED)
+
+`GENESIS_CAPABILITY_EVAL_V2_PREREGISTRATION_DRAFT.json` (+ schema) binds the 23 required fields; unknowns (aggregate commitment, code hashes, runner identity, storage verification digest, spend limits) are null; floors are PROPOSED_NOT_LOCKED; no candidate results may exist; a frozen record needs every binding and LOCKED floors, and floors cannot change after freeze or after the first candidate run. `GENESIS_CAPABILITY_EVAL_V2_OWNER_VAULT_PROCEDURE.md` is the placeholder-only owner procedure; `scripts/genesis_v2_vault_verify.py` proves the vault is outside every git work tree and unreachable from the public repo.
+
+## 9i. Status terminology
+
+DESIGNED < IMPLEMENTED < TESTED < QUALIFIED < FROZEN < PRODUCTION READY. Unit-tested code is TESTED, never "qualified". Nothing in V2 is QUALIFIED, FROZEN or PRODUCTION READY.
+
 ## 10. Freeze (not done)
 
 V2 stays `FROZEN=false` until: private storage genuinely configured · new secret corpus generated · privacy audit pass · SCREEN/HOLDOUT separation pass · contamination controls pass · hashes/prereg frozen · sandbox ready · exact-SHA CI green · independent ChatGPT audit approval.

@@ -1,0 +1,60 @@
+{
+ "deferred_until_corpus_exists": [
+  "private_corpus_aggregate_commitment",
+  "code_hashes",
+  "runner_identity",
+  "storage_verification_digest",
+  "resource_spend_limits"
+ ],
+ "floors_status_values": [
+  "PROPOSED_NOT_LOCKED",
+  "LOCKED"
+ ],
+ "required_bindings": [
+  "eval_version",
+  "corpus_version",
+  "private_corpus_aggregate_commitment",
+  "category_counts",
+  "gating_report_only_status",
+  "floors",
+  "scoring_algorithms",
+  "confidence_statistical_method",
+  "template_cluster_methodology",
+  "screen_policy",
+  "qualification_holdout_policy",
+  "contamination_algorithm_versions",
+  "semantic_review_mechanism_version",
+  "sandbox_policy_version",
+  "model_run_constraints",
+  "allowed_candidate_lineage_rules",
+  "stage_protocols",
+  "resource_spend_limits",
+  "trainability_protocol",
+  "latency_cost_protocols",
+  "code_hashes",
+  "runner_identity",
+  "storage_verification_digest"
+ ],
+ "required_top_level": [
+  "schema_version",
+  "status",
+  "frozen",
+  "bindings",
+  "floors_status",
+  "first_candidate_run_at",
+  "candidate_results",
+  "frozen_at",
+  "record_sha256"
+ ],
+ "rules": [
+  "a FROZEN record has every binding non-null and floors LOCKED",
+  "candidate_results must be empty until frozen_at is set",
+  "floors may not change after freeze or after first_candidate_run_at",
+  "record_sha256 covers every other field"
+ ],
+ "schema_version": "genesis-v2-preregistration/1",
+ "status_values": [
+  "DRAFT_NOT_FROZEN",
+  "FROZEN"
+ ]
+}

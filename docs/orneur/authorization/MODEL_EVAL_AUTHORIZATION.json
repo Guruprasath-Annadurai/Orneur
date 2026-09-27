@@ -1,0 +1,26 @@
+{
+ "authorization_id": null,
+ "authorizing_authority": {
+  "identity": null,
+  "key_id": null,
+  "role": null
+ },
+ "candidate": {
+  "model_id": null,
+  "revision": null
+ },
+ "commit_sha": null,
+ "eval_version": null,
+ "expires_at": null,
+ "gpu_allowed": false,
+ "issued_at": null,
+ "max_runs": 0,
+ "max_spend_usd": 0,
+ "network_provider_inference_allowed": false,
+ "permitted_purpose": null,
+ "permitted_runner_class": null,
+ "permitted_stage": null,
+ "schema_version": "orneur-model-eval-authorization/1",
+ "signature": null,
+ "status": "NOT_AUTHORIZED"
+}
