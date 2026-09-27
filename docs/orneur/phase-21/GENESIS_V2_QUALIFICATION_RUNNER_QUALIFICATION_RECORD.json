@@ -1,0 +1,31 @@
+{
+ "bindings": {
+  "code_sha256": "e680fff0f5b243fe0689c71df0d91188170271be9d80435a6e2902cb8547360b",
+  "ledger_database_identity_digest": "e6be1f7e4b7a8bb2ff8a771e550101fc8e87b1a7272e01df64c38d0341427088",
+  "sandbox_image_digest": "sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
+  "semantic_engine_digest": "d340056d3f7a38ad335bc6639d4e97f76c72558278dffe45b6f70811b1c7c1f6",
+  "storage_backend_verification_digest": "ba533ece6c8c661adf91cb8af1a8db4374d86ddfc72a0271e484e641fe34f11c"
+ },
+ "canonical_statement": "This local owner machine IS the qualification runner for this phase \u2014 no separate hosted infrastructure exists yet. It is bound explicitly as the canonical SELF_HOSTED_CPU runner rather than left as 'TBD by owner'. If a different runner is stood up later for scoring, this record must be regenerated against that runner before it is treated as canonical.",
+ "document": "GENESIS_V2_QUALIFICATION_RUNNER_QUALIFICATION_RECORD",
+ "machine_facts": {
+  "architecture": "arm64",
+  "cpu_count": 10,
+  "docker_runtime": "29.6.2",
+  "network_policy": "none",
+  "os": "Darwin",
+  "runner_class": "SELF_HOSTED_CPU",
+  "storage_location_class": "local-filesystem-outside-repository"
+ },
+ "memory_floor_bytes": 8589934592,
+ "runner_id": "gce2-qualification-runner-1",
+ "same_environment_proof": {
+  "match": true,
+  "qualification_runner_class": "SELF_HOSTED_CPU",
+  "sandbox_test_runner_class": "SELF_HOSTED_CPU",
+  "sandbox_test_summary": "18 passed, 1 warning in 16.70s (tests/test_genesis_v2_sandbox_containment.py)"
+ },
+ "schema_version": "genesis-v2-qualification-runner-qualification-record/1",
+ "state": "REGISTERED_NOT_AUTHORIZED",
+ "timestamp": "2026-09-27T16:36:03Z"
+}

@@ -2,11 +2,11 @@
  "class_coverage": {
   "candidate_specific_adaptation_sets": {
    "corpus_ids": [],
-   "declaration": "NONE_EXIST_ATTESTED"
+   "declaration": "NONE_DECLARED_OWNER_REVIEWED"
   },
   "coding_datasets": {
    "corpus_ids": [],
-   "declaration": "NONE_EXIST_ATTESTED"
+   "declaration": "NONE_DECLARED_OWNER_REVIEWED"
   },
   "distillation_data": {
    "corpus_ids": [
@@ -55,7 +55,7 @@
   },
   "future_fine_tuning_datasets": {
    "corpus_ids": [],
-   "declaration": "NONE_EXIST_ATTESTED"
+   "declaration": "NONE_DECLARED_OWNER_REVIEWED"
   },
   "instruction_tuning_datasets": {
    "corpus_ids": [
@@ -94,7 +94,7 @@
   },
   "prompt_tuning_few_shot_stores": {
    "corpus_ids": [],
-   "declaration": "NONE_EXIST_ATTESTED"
+   "declaration": "NONE_DECLARED_OWNER_REVIEWED"
   },
   "public_benchmark_v1": {
    "corpus_ids": [
@@ -124,19 +124,19 @@
   },
   "reasoning_datasets": {
    "corpus_ids": [],
-   "declaration": "NONE_EXIST_ATTESTED"
+   "declaration": "NONE_DECLARED_OWNER_REVIEWED"
   },
   "retrieval_corpora": {
    "corpus_ids": [],
-   "declaration": "NONE_EXIST_ATTESTED"
+   "declaration": "NONE_DECLARED_OWNER_REVIEWED"
   },
   "rlhf_rlaif_data": {
    "corpus_ids": [],
-   "declaration": "NONE_EXIST_ATTESTED"
+   "declaration": "NONE_DECLARED_OWNER_REVIEWED"
   },
   "router_expert_training_data": {
    "corpus_ids": [],
-   "declaration": "NONE_EXIST_ATTESTED"
+   "declaration": "NONE_DECLARED_OWNER_REVIEWED"
   },
   "synthetic_generation_corpora": {
    "corpus_ids": [
@@ -159,13 +159,13 @@
   },
   "tool_use_datasets": {
    "corpus_ids": [],
-   "declaration": "NONE_EXIST_ATTESTED"
+   "declaration": "NONE_DECLARED_OWNER_REVIEWED"
   }
  },
  "completeness_attestation": {
   "record": {
    "completeness_status": "COMPLETE_WITH_DECLARED_UNAVAILABLE",
-   "corpus_inventory_digest": "1e81ec3303ea6cb80a3b52f0627c39d7787715972a7ac8b16c9095594bb7bd27",
+   "corpus_inventory_digest": "972312ea3abc7200272045e8b150431ad093bbfb3699f8c942c1a177b8f5e131",
    "inventory_version": "1",
    "owner_identity": "ORNEUR owner (Guruprasath Annadurai)",
    "review_timestamp": "2026-09-27T09:30:00Z",

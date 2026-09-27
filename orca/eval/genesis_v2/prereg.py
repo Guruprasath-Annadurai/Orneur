@@ -21,14 +21,45 @@ BINDINGS = ("eval_version", "corpus_version", "private_corpus_aggregate_commitme
 # identity, storage verification digest, resource/spend limits) can be bound honestly before any corpus exists, once the owner environment is set up.
 DEFERRED = ("private_corpus_aggregate_commitment",)
 
+# A filled JSON binding is not automatically an APPROVED one (audit finding: "22/23 filled must NOT be interpreted as 22/23 approved").
+# binding_status makes that distinction explicit per binding:
+#   BOUND                  — a real, non-corpus-dependent value (protocol/design constant, a computed hash of committed code, etc.)
+#                             that needs no further operational qualification to be trustworthy as bound.
+#   OPERATIONALLY_CONFIGURED — bound to a real running system/artifact that exists and works, but is NOT yet independently qualified
+#                             (e.g. sandbox_ready=false, semantic engine CONFIGURED_LOCAL_ONLY not QUALIFIED, runner REGISTERED_NOT_AUTHORIZED).
+#   QUALIFIED               — bound AND independently audited/approved. Nothing reaches this state before independent ChatGPT audit.
+#   DEFERRED                — intentionally null; only legal for keys in DEFERRED.
+#   NOT_APPLICABLE          — reserved for a future binding that does not apply in the current phase.
+BINDING_STATUS_VALUES = ("BOUND", "OPERATIONALLY_CONFIGURED", "QUALIFIED", "DEFERRED", "NOT_APPLICABLE")
+
+
+def validate_binding_status(d) -> list:
+    p = []
+    bs = d.get("binding_status")
+    if not isinstance(bs, dict) or set(bs) != set(BINDINGS):
+        return [f"binding_status must cover exactly {sorted(BINDINGS)}"]
+    b = d.get("bindings") or {}
+    for k, v in bs.items():
+        if v not in BINDING_STATUS_VALUES:
+            p.append(f"binding_status[{k}]: must be one of {BINDING_STATUS_VALUES}")
+        elif k in DEFERRED:
+            if v != "DEFERRED":
+                p.append(f"binding_status[{k}]: a DEFERRED binding must have binding_status DEFERRED")
+        elif v == "DEFERRED":
+            p.append(f"binding_status[{k}]: DEFERRED is only legal for {DEFERRED}")
+        elif v == "QUALIFIED" and b.get(k) is None:
+            p.append(f"binding_status[{k}]: cannot be QUALIFIED while the binding itself is null")
+    return p
+
 
 def schema() -> dict:
-    return {"schema_version": SCHEMA_VERSION, "required_top_level": ["schema_version", "status", "frozen", "bindings", "floors_status", "first_candidate_run_at",
-                                                                       "candidate_results", "frozen_at", "record_sha256"],
-            "required_bindings": list(BINDINGS), "deferred_until_corpus_exists": list(DEFERRED),
+    return {"schema_version": SCHEMA_VERSION, "required_top_level": ["schema_version", "status", "frozen", "bindings", "binding_status", "floors_status",
+                                                                       "first_candidate_run_at", "candidate_results", "frozen_at", "record_sha256"],
+            "required_bindings": list(BINDINGS), "deferred_until_corpus_exists": list(DEFERRED), "binding_status_values": list(BINDING_STATUS_VALUES),
             "status_values": ["DRAFT_NOT_FROZEN", "FROZEN"], "floors_status_values": ["PROPOSED_NOT_LOCKED", "LOCKED"],
             "rules": ["a FROZEN record has every binding non-null and floors LOCKED", "candidate_results must be empty until frozen_at is set",
-                      "floors may not change after freeze or after first_candidate_run_at", "record_sha256 covers every other field"]}
+                      "floors may not change after freeze or after first_candidate_run_at", "record_sha256 covers every other field",
+                      "a filled binding is not automatically an approved one: binding_status distinguishes BOUND/OPERATIONALLY_CONFIGURED/QUALIFIED/DEFERRED/NOT_APPLICABLE per binding"]}
 
 
 def record_hash(d: dict) -> str:
@@ -56,6 +87,7 @@ def validate_draft(d) -> list:
         p.append("draft floors must be PROPOSED_NOT_LOCKED")
     if b["eval_version"] != spec.EVAL_VERSION or b["corpus_version"] != spec.CORPUS_VERSION:
         p.append("eval/corpus version mismatch")
+    p += validate_binding_status(d)
     if d.get("record_sha256") != record_hash(d):
         p.append("record_sha256 mismatch")
     return p
@@ -76,6 +108,7 @@ def validate_for_freeze(d) -> list:
         p.append("floors are not LOCKED")
     if d.get("candidate_results") and not d.get("frozen_at"):
         p.append("candidate results exist before freeze")
+    p += validate_binding_status(d)
     if d.get("record_sha256") != record_hash(d):
         p.append("record_sha256 mismatch")
     return p

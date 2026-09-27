@@ -3,6 +3,8 @@
  "GENESIS_CAPABILITY_EVAL_V1_PRIVATE_HOLDOUT_VALID": false,
  "GENESIS_CAPABILITY_EVAL_V2_FROZEN": false,
  "authority_registry": {
+  "doctrine": "Human owner holds private authority. ORNEUR verifies signatures. No automated process generates this key.",
+  "key_generation_procedure": "docs/orneur/authorization/OWNER_AUTHORITY_KEY_GENERATION_PROCEDURE.md",
   "path": "docs/orneur/authorization/AUTHORITY_REGISTRY.json",
   "registered_keys": 0,
   "state": "CONFIGURED_ZERO_KEYS_REGISTERED"
@@ -23,17 +25,22 @@
   "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_UNSIGNED_DRAFT_ATTESTATION",
   "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY",
   "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
+  "owner_authority_key_procedure": "DESIGNED_NOT_ACTIVATED",
   "owner_preflight": "IMPLEMENTED_TESTED_RESULT_NOT_READY",
   "owner_vault_procedure": "DESIGNED_NOT_ACTIVATED",
+  "pre_corpus_closure_manifest": "IMPLEMENTED_TESTED",
   "preregistration": "DESIGNED_DRAFT_NOT_FROZEN_MOSTLY_BOUND",
   "privacy_scanner": "IMPLEMENTED_TESTED",
   "private_storage": "ACTIVATED_VERIFIED_TEST_ONLY",
+  "reviewer_path": "IMPLEMENTED_DOCUMENTED_NOT_OPERATIONAL_SEMANTIC_PATH_SUBSTITUTES",
   "reviewer_registry": "CONFIGURED_ZERO_KEYS_REGISTERED",
   "runner_identity": "REGISTERED_NOT_AUTHORIZED",
+  "runner_qualification": "IMPLEMENTED_TESTED_MATCHES_SANDBOX_RUNNER",
   "sandbox_qualification_candidate": "IMPLEMENTED_QUALIFICATION_CANDIDATE_NOT_APPROVED",
   "secret_manager": "IMPLEMENTED_READY_MACOS_KEYCHAIN_MECHANISM_PROBED_NO_SECRETS_STORED",
-  "semantic_manual_review_framework": "IMPLEMENTED_TESTED_NOT_CONFIGURED",
+  "semantic_manual_review_framework": "IMPLEMENTED_TESTED_CONFIGURED_LOCAL_ONLY",
   "split_isolation_policy": "IMPLEMENTED_TESTED",
+  "unavailable_corpus_acceptance_policy": "DESIGNED_POLICY_LOCKED_INDEPENDENT_OF_CORPUS",
   "v2_corpus": "NOT_GENERATED",
   "v2_freeze": "NOT_FROZEN"
  },
@@ -48,6 +55,8 @@
   "attested_complete": false,
   "draft_completeness_status": "COMPLETE_WITH_DECLARED_UNAVAILABLE",
   "path": "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
+  "terminology_note": "class_coverage declarations for classes with no known corpora are NONE_DECLARED_OWNER_REVIEWED (genuinely reviewed, but the overall attestation is unsigned) until a signed ATTESTED record exists; NONE_EXIST_ATTESTED is reserved for after signature verification succeeds.",
+  "unavailable_corpus_policy": "docs/orneur/phase-21/GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json",
   "unresolved_classes": [
    "external_uploaded_datasets"
   ],
@@ -133,14 +142,17 @@
  "operational_storage_backend": "ENCRYPTED_ARTIFACT",
  "owner_preflight": {
   "outstanding_for_ready": [
-   "corpus_inventory_attested_pass",
-   "semantic_engine_configured",
-   "sandbox_ready"
+   "authority_key_registered_and_valid",
+   "corpus_inventory_attested_pass"
   ],
   "result": "NOT_READY",
   "script": "scripts/genesis_v2_owner_preflight.py"
  },
  "owner_setup_required": "see GENESIS_CAPABILITY_EVAL_V2_OWNER_SETUP.md; run scripts/genesis_v2_preflight.py",
+ "pre_corpus_closure_manifest": {
+  "path": "docs/orneur/phase-21/GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST.json",
+  "public_safe": true
+ },
  "preregistration": {
   "bindings_honestly_filled": 22,
   "bindings_total": 23,
@@ -161,8 +173,11 @@
   "state": "CONFIGURED_ZERO_KEYS_REGISTERED"
  },
  "runner_identity": {
+  "canonical_note": "This local owner machine is bound explicitly as the canonical qualification runner (no longer 'TBD by owner').",
   "holdout_access_granted": false,
   "path": "docs/orneur/authorization/QUALIFICATION_RUNNER_REGISTRY.json",
+  "qualification_record": "docs/orneur/phase-21/GENESIS_V2_QUALIFICATION_RUNNER_QUALIFICATION_RECORD.json",
+  "runner_class": "SELF_HOSTED_CPU",
   "state": "REGISTERED_NOT_AUTHORIZED"
  },
  "sandbox_readiness": {
@@ -172,7 +187,10 @@
   "policy_version": "genesis-v2-coding-sandbox-policy/1",
   "qualification_candidate_image_digest": "sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
   "qualification_candidate_record": "docs/orneur/phase-21/GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD.json",
+  "runner_class_matches_qualification_runner": true,
+  "sandbox_qualification_status": "QUALIFICATION_CANDIDATE_PENDING_FREEZE",
   "sandbox_ready": false,
+  "tested_implementation_sha": "10ffbed6a507f7c37e54a90a9f24a323b1c24a71",
   "why_not_ready": "sandbox_ready needs (1) the runtime image pinned by digest and recorded in the frozen preregistration, (2) the containment suite executed on the exact runner class that will score items, (3) the sandbox policy hash bound in the preregistration, and (4) independent audit; none of these exist yet. Passing tests on a CI runner is evidence, not qualification."
  },
  "secret_available": false,

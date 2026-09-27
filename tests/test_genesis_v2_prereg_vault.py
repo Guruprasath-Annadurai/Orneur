@@ -41,7 +41,7 @@ def test_bindings_reflect_the_v2_design():
     assert b["resource_spend_limits"]["max_spend_usd_per_stage"]["STAGE_1"] == 0
     assert b["qualification_holdout_policy"]["write_once_per_candidate_lineage"] is True
     assert b["qualification_holdout_policy"]["adaptation_after_open_requires_fresh_holdout_version"] is True
-    assert b["semantic_review_mechanism_version"]["operational_state"] == "NOT_CONFIGURED"
+    assert b["semantic_review_mechanism_version"]["operational_state"] == "CONFIGURED_LOCAL_ONLY"
     assert b["model_run_constraints"]["model_execution_requires"].startswith("signed authorization")
     assert set(b["stage_protocols"]) == {"STAGE_0", "STAGE_1", "STAGE_2", "STAGE_3"}
     assert b["category_counts"]["reasoning"]["QUALIFICATION_HOLDOUT"] == 180 and "latency" in b["gating_report_only_status"]
@@ -194,7 +194,7 @@ def test_status_terminology_is_strict():
     assert st["terminology"]["levels"] == sorted(allowed, key=lambda x: ["DESIGNED", "IMPLEMENTED", "TESTED", "QUALIFIED", "FROZEN", "PRODUCTION_READY"].index(x))
     assert "unit-tested" in st["terminology"]["rule"]
     exp = {"model_eval_authorization_gate": "IMPLEMENTED_TESTED", "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_UNSIGNED_DRAFT_ATTESTATION",
-           "semantic_manual_review_framework": "IMPLEMENTED_TESTED_NOT_CONFIGURED", "coding_sandbox": "IMPLEMENTED_TESTED", "private_storage": "ACTIVATED_VERIFIED_TEST_ONLY",
+           "semantic_manual_review_framework": "IMPLEMENTED_TESTED_CONFIGURED_LOCAL_ONLY", "coding_sandbox": "IMPLEMENTED_TESTED", "private_storage": "ACTIVATED_VERIFIED_TEST_ONLY",
            "v2_corpus": "NOT_GENERATED", "v2_freeze": "NOT_FROZEN", "preregistration": "DESIGNED_DRAFT_NOT_FROZEN_MOSTLY_BOUND",
            "authority_registry": "CONFIGURED_ZERO_KEYS_REGISTERED", "reviewer_registry": "CONFIGURED_ZERO_KEYS_REGISTERED", "runner_identity": "REGISTERED_NOT_AUTHORIZED",
            "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY", "owner_preflight": "IMPLEMENTED_TESTED_RESULT_NOT_READY"}

@@ -60,7 +60,7 @@ def good(tmp_path, signer):
     inv = INV.empty_inventory()
     inv["corpora"] = [corpus("c1", "d.jsonl", data)]
     for cls in INV.CORPUS_CLASSES:
-        inv["class_coverage"][cls] = {"declaration": "NONE_EXIST_ATTESTED", "corpus_ids": []}
+        inv["class_coverage"][cls] = {"declaration": "NONE_DECLARED_OWNER_REVIEWED", "corpus_ids": []}
     inv["class_coverage"]["public_sft_datasets"] = {"declaration": "LISTED", "corpus_ids": ["c1"]}
     inv["completeness_attestation"] = {"status": "ATTESTED", "record": _sign_attestation(inv, sk)}
     return inv, tmp_path, keys, sk
@@ -248,7 +248,7 @@ def test_committed_inventory_classes_reviewed_absent_vs_genuinely_unresolved():
     assert {"public_sft_datasets", "private_sft_datasets", "instruction_tuning_datasets", "preference_dpo_data", "synthetic_generation_corpora", "distillation_data",
             "evaluation_derived_adaptation_data", "manually_authored_internal_examples", "public_benchmark_v1", "public_pilot_train_v1", "external_uploaded_datasets"} <= classes
     assert set(inv["class_coverage"]) == set(INV.CORPUS_CLASSES)
-    reviewed_absent = {k for k, v in inv["class_coverage"].items() if v["declaration"] == "NONE_EXIST_ATTESTED"}
+    reviewed_absent = {k for k, v in inv["class_coverage"].items() if v["declaration"] == "NONE_DECLARED_OWNER_REVIEWED"}
     assert {"reasoning_datasets", "coding_datasets", "tool_use_datasets", "rlhf_rlaif_data", "prompt_tuning_few_shot_stores", "retrieval_corpora",
             "router_expert_training_data", "future_fine_tuning_datasets", "candidate_specific_adaptation_sets"} <= reviewed_absent
     assert not any(v["declaration"] == "NONE_KNOWN_UNATTESTED" for v in inv["class_coverage"].values())          # nothing left as a mere placeholder

@@ -86,8 +86,40 @@ class _SentenceTransformerEmbedder:
         return [list(map(float, v)) for v in self._m.encode([preprocess(t) for t in texts], normalize_embeddings=True, show_progress_bar=False)]
 
 
+class _TransformersMeanPoolEmbedder:
+    """Loads a local sentence-embedding checkpoint via the already-installed `transformers`+`torch` stack (no sentence-transformers
+    dependency required). Implements the standard mean-pooling + L2-normalize recipe (matches sentence-transformers' own encoding for
+    models trained that way, e.g. all-MiniLM-L6-v2). `local_files_only=True` and the offline env vars are set BEFORE any HF call, so a
+    missing/incomplete local directory raises instead of silently reaching the network."""
+    local_only, semantic_capable = True, True
+
+    def __init__(self, model_dir: Path, sha: str):
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        import torch
+        from transformers import AutoModel, AutoTokenizer
+        self._torch = torch
+        self._tok = AutoTokenizer.from_pretrained(str(model_dir), local_files_only=True)
+        self._model = AutoModel.from_pretrained(str(model_dir), local_files_only=True)
+        self._model.eval()
+        self.model_id, self.model_sha256 = f"local:{model_dir.name}", sha
+
+    def embed(self, texts: list) -> list:
+        torch = self._torch
+        enc = self._tok([preprocess(t) for t in texts], padding=True, truncation=True, return_tensors="pt")
+        with torch.no_grad():
+            out = self._model(**enc)
+        mask = enc["attention_mask"].unsqueeze(-1).float()
+        pooled = (out.last_hidden_state * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+        normed = pooled / pooled.norm(dim=1, keepdim=True).clamp(min=1e-9)
+        return [list(map(float, v)) for v in normed]
+
+
 def load_local_embedder(model_dir, expected_sha256: str) -> Embedder:
-    """Explicit local directory + pre-registered content hash. Raises NotConfiguredError otherwise. Never downloads, never calls a provider."""
+    """Explicit local directory + pre-registered content hash. Raises NotConfiguredError otherwise. Never downloads, never calls a provider.
+
+    Tries sentence-transformers first (if the owner has it installed), then falls back to a manual mean-pooling encoder built on the
+    transformers+torch stack this repo already depends on for other purposes. Either path is local-only and offline-forced."""
     if not model_dir or not expected_sha256:
         raise NotConfiguredError("no local embedding model directory / pre-registered hash supplied")
     d = Path(model_dir)
@@ -97,6 +129,12 @@ def load_local_embedder(model_dir, expected_sha256: str) -> Embedder:
         raise NotConfiguredError("local embedding model content does not match the pre-registered hash")
     try:
         return _SentenceTransformerEmbedder(d, expected_sha256)
+    except ImportError:
+        pass
+    except Exception as e:
+        raise NotConfiguredError(f"local embedding runtime unavailable: {type(e).__name__}") from None
+    try:
+        return _TransformersMeanPoolEmbedder(d, expected_sha256)
     except Exception as e:
         raise NotConfiguredError(f"local embedding runtime unavailable: {type(e).__name__}") from None
 

@@ -1,0 +1,22 @@
+{
+ "document": "GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY",
+ "policy_version": "genesis-v2-unavailable-corpus-acceptance-policy/1",
+ "frozen": true,
+ "note": "This governance policy is frozen independently of the corpus inventory attestation itself (it does not depend on any private V2 corpus or on the attestation being signed). It defines, in advance, when COMPLETE_WITH_DECLARED_UNAVAILABLE is an acceptable completeness verdict, and what happens to the specific unresolved class it currently covers.",
+ "applies_to_unresolved_classes": ["external_uploaded_datasets"],
+ "current_unresolved_reason": "Kaggle-derived historical datasets referenced by legacy notebooks; content is not recoverable/verifiable in this environment. This is NOT claimed to be resolved, recovered, or absent.",
+ "acceptance_conditions": [
+  "COMPLETE_WITH_DECLARED_UNAVAILABLE is acceptable ONLY when every unresolved class is explicitly named in the attestation's unresolved_classes list (never silently omitted).",
+  "COMPLETE_WITH_DECLARED_UNAVAILABLE never means the unresolved data was reviewed and found absent; it means the owner reviewed what IS resolvable and is declaring the remainder honestly unresolved.",
+  "An unresolved class may not later be silently reclassified as resolved without a new signed attestation referencing the specific evidence that resolved it."
+ ],
+ "fail_closed_rules": [
+  "Data belonging to an unresolved/unavailable corpus class must NOT be used for any future Genesis training or adaptation while it remains unresolved.",
+  "Any candidate model lineage with evidence (or credible suspicion) of exposure to an unresolved corpus must be treated as potentially contaminated for qualification purposes.",
+  "A candidate lineage with uncertain exposure to an unresolved corpus requires either exclusion from qualification or a fresh, independently-verifiable lineage before it may be scored.",
+  "Unresolved/unavailable corpora remain permanently listed in the contamination risk register; removal from the register requires a new signed attestation, never a silent edit.",
+  "No later discovery about an unresolved corpus (recovery, non-recovery, or new evidence of exposure) may retroactively alter prior qualification evidence that has already been recorded and audited; it can only trigger a new, forward-dated re-analysis.",
+  "If the unresolved corpus is later recovered, a full contamination re-analysis against it is mandatory before any qualification result that could plausibly be affected is treated as still valid."
+ ],
+ "review_cadence": "Re-evaluated at every corpus-inventory attestation cycle (i.e., whenever the owner re-signs the completeness attestation), not on a fixed calendar schedule."
+}

@@ -259,4 +259,4 @@ def test_inconclusive_review_blocks_split_isolation_and_contamination_pass(signe
 def test_operational_state_is_still_not_configured():
     st = json.loads((ROOT / "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text())
     assert st["contamination_status"]["semantic_overlap"] == "NOT_CONFIGURED" and st["freeze_prerequisites"]["contamination_controls_pass"] is False
-    assert st["component_states"]["semantic_manual_review_framework"] == "IMPLEMENTED_TESTED_NOT_CONFIGURED"
+    assert st["component_states"]["semantic_manual_review_framework"] == "IMPLEMENTED_TESTED_CONFIGURED_LOCAL_ONLY"

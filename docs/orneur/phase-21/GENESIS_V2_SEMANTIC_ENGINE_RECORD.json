@@ -1,0 +1,169 @@
+{
+ "calibration": {
+  "ambiguity_margin": 0.1,
+  "calibration_code_sha256": "bc0a926e1f27716af96fcfb7553253aeab9110c50d39bd1ae63d7564aa6e7ce0",
+  "calibration_dataset": "synthetic-genesis-v2-calibration-fixtures/1",
+  "false_negative_count": 1,
+  "false_positive_count": 0,
+  "limitation": "Small hand-authored synthetic fixture set (20 pairs); demonstrates gross semantic-vs-unrelated separation for sanity-checking the configured threshold. It is NOT a statistically powered calibration and does not bound real-world false-positive/false-negative rates on the eventual private corpus.",
+  "metric": "cosine",
+  "n_pairs": 20,
+  "per_category_overrides": {},
+  "result_sha256": "37262b57c492e8c3c34e3ed71b54b3bea0e9d9cb312d9c2507dff001a4c10dff",
+  "rows": [
+   {
+    "band": "OVERLAP",
+    "category": "reasoning",
+    "is_paraphrase": true,
+    "score": 0.9491
+   },
+   {
+    "band": "OVERLAP",
+    "category": "reasoning",
+    "is_paraphrase": true,
+    "score": 0.9579
+   },
+   {
+    "band": "AMBIGUOUS",
+    "category": "coding",
+    "is_paraphrase": true,
+    "score": 0.7719
+   },
+   {
+    "band": "OVERLAP",
+    "category": "coding",
+    "is_paraphrase": true,
+    "score": 0.8865
+   },
+   {
+    "band": "OVERLAP",
+    "category": "tool_use",
+    "is_paraphrase": true,
+    "score": 0.8973
+   },
+   {
+    "band": "OVERLAP",
+    "category": "reasoning",
+    "is_paraphrase": true,
+    "score": 0.8717
+   },
+   {
+    "band": "AMBIGUOUS",
+    "category": "tool_use",
+    "is_paraphrase": true,
+    "score": 0.7685
+   },
+   {
+    "band": "OVERLAP",
+    "category": "reasoning",
+    "is_paraphrase": true,
+    "score": 0.8876
+   },
+   {
+    "band": "DISTINCT",
+    "category": "tool_use",
+    "is_paraphrase": true,
+    "score": 0.5546
+   },
+   {
+    "band": "OVERLAP",
+    "category": "coding",
+    "is_paraphrase": true,
+    "score": 0.9447
+   },
+   {
+    "band": "DISTINCT",
+    "category": "reasoning",
+    "is_paraphrase": false,
+    "score": -0.051
+   },
+   {
+    "band": "DISTINCT",
+    "category": "reasoning",
+    "is_paraphrase": false,
+    "score": 0.2488
+   },
+   {
+    "band": "DISTINCT",
+    "category": "coding",
+    "is_paraphrase": false,
+    "score": -0.0331
+   },
+   {
+    "band": "DISTINCT",
+    "category": "coding",
+    "is_paraphrase": false,
+    "score": 0.0335
+   },
+   {
+    "band": "DISTINCT",
+    "category": "tool_use",
+    "is_paraphrase": false,
+    "score": -0.0317
+   },
+   {
+    "band": "DISTINCT",
+    "category": "reasoning",
+    "is_paraphrase": false,
+    "score": -0.0082
+   },
+   {
+    "band": "DISTINCT",
+    "category": "tool_use",
+    "is_paraphrase": false,
+    "score": -0.0641
+   },
+   {
+    "band": "DISTINCT",
+    "category": "reasoning",
+    "is_paraphrase": false,
+    "score": -0.0887
+   },
+   {
+    "band": "DISTINCT",
+    "category": "tool_use",
+    "is_paraphrase": false,
+    "score": -0.0272
+   },
+   {
+    "band": "DISTINCT",
+    "category": "coding",
+    "is_paraphrase": false,
+    "score": 0.0138
+   }
+  ],
+  "schema_version": "genesis-v2-semantic-calibration/1",
+  "threshold": 0.85
+ },
+ "model": {
+  "files_downloaded": [
+   "config.json",
+   "tokenizer.json",
+   "tokenizer_config.json",
+   "vocab.txt",
+   "special_tokens_map.json",
+   "model.safetensors"
+  ],
+  "license": "apache-2.0",
+  "loader": "orca.eval.genesis_v2.semantic._TransformersMeanPoolEmbedder (transformers+torch mean-pooling, no sentence-transformers dependency)",
+  "local_directory_content_sha256": "d340056d3f7a38ad335bc6639d4e97f76c72558278dffe45b6f70811b1c7c1f6",
+  "name": "sentence-transformers/all-MiniLM-L6-v2",
+  "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+  "source": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2"
+ },
+ "note": "Owner-setup artifact only. Not QUALIFIED. semantic_overlap engine state to be reported as CONFIGURED_LOCAL_ONLY, distinct from QUALIFIED.",
+ "offline_proof": {
+  "env_forced": [
+   "HF_HUB_OFFLINE=1",
+   "TRANSFORMERS_OFFLINE=1"
+  ],
+  "local_files_only": true,
+  "method": "socket.socket.connect monkeypatched to raise OSError for the duration of load+embed; load and scoring both succeeded",
+  "sample_scores": {
+   "paraphrase_pair_cosine": 0.9491,
+   "unrelated_pair_cosine": -0.051
+  }
+ },
+ "schema_version": "genesis-v2-semantic-engine-owner-setup/1",
+ "state": "CONFIGURED_LOCAL_ONLY"
+}

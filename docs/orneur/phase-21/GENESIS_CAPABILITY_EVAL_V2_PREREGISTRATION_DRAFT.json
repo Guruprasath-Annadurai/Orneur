@@ -1,4 +1,29 @@
 {
+ "binding_status": {
+  "allowed_candidate_lineage_rules": "BOUND",
+  "category_counts": "BOUND",
+  "code_hashes": "BOUND",
+  "confidence_statistical_method": "BOUND",
+  "contamination_algorithm_versions": "BOUND",
+  "corpus_version": "BOUND",
+  "eval_version": "BOUND",
+  "floors": "BOUND",
+  "gating_report_only_status": "BOUND",
+  "latency_cost_protocols": "BOUND",
+  "model_run_constraints": "BOUND",
+  "private_corpus_aggregate_commitment": "DEFERRED",
+  "qualification_holdout_policy": "BOUND",
+  "resource_spend_limits": "BOUND",
+  "runner_identity": "OPERATIONALLY_CONFIGURED",
+  "sandbox_policy_version": "OPERATIONALLY_CONFIGURED",
+  "scoring_algorithms": "BOUND",
+  "screen_policy": "BOUND",
+  "semantic_review_mechanism_version": "OPERATIONALLY_CONFIGURED",
+  "stage_protocols": "BOUND",
+  "storage_verification_digest": "OPERATIONALLY_CONFIGURED",
+  "template_cluster_methodology": "BOUND",
+  "trainability_protocol": "BOUND"
+ },
  "bindings": {
   "allowed_candidate_lineage_rules": {
    "derived_from_opened_lineage": "FRESH_HOLDOUT_VERSION_REQUIRED",
@@ -92,32 +117,38 @@
    }
   },
   "code_hashes": {
-   "docker/genesis_v2_sandbox/Dockerfile": "ebdf3f8b6e42659d0d3393e80a0fe76637d35a4d5262b5990e8228e5f7c6bd9d",
-   "orca/eval/genesis_v2/__init__.py": "a25bb36a8e2d77eddabb569e1c4b8c4287cc049d7a4268a4ba39d8f1a82d3ccb",
-   "orca/eval/genesis_v2/authority_registry.py": "0d21b9e68a904234bac21e98f5bc2db94968a2f41137f537dca3d4e9c563b303",
-   "orca/eval/genesis_v2/authorization.py": "d05802999a43e6e21a0c21de8a45032ca8b0f58a0c84b03cbac8359ce5361d2e",
-   "orca/eval/genesis_v2/contamination.py": "e4b68f28f5127a0eda7ef7519ba6fbfa9e4c869b642e974b4e62443144559de5",
-   "orca/eval/genesis_v2/identity_registry.py": "f9d8e48bc61ea1f668d62ea3f6f4787ee4a94809d615565e63037ae422120f9e",
-   "orca/eval/genesis_v2/inventory.py": "2dc95b40f3dbbf8d77c163405a4853af69c62482dd00de6c8753d0c180ab9b5a",
-   "orca/eval/genesis_v2/isolation.py": "9e9aac6c5a167c8549a8edfe4a9ee7a1f5d27126169ba1a4da1b04f07906e4e8",
-   "orca/eval/genesis_v2/ledger.py": "bc9e5c4be71b8ad0f301e1c252821b7a4729744f549fb02f8f030f5a98d7007b",
-   "orca/eval/genesis_v2/ledger_admin.py": "e60a2a76a2a08bb3066b4f29c6976a579c8d4dfdfc525b1757eede0836c1a7fb",
-   "orca/eval/genesis_v2/manifest.py": "2d2ef9576fd629bf054c2f0502a90ec8f61a43cf1c9472c13b8cf3ba38ea5dd3",
-   "orca/eval/genesis_v2/prereg.py": "69db7c3ad4c9e0ac453f0a251d98dd171866483524b21f563082b1353ebac51f",
-   "orca/eval/genesis_v2/privacy_scan.py": "a15210767997655da04d4a0b8da37be3dfcea559407b68e4d0a83b51f5d9128b",
-   "orca/eval/genesis_v2/review.py": "a5c8162c51134429d01f3b4db4c06bd1f654a47e1d1972118129ad7c0a97b7bc",
-   "orca/eval/genesis_v2/reviewer_registry.py": "f9b2aa3e082fc16b2d4d1c484244b9ac8783520d0b4262756b9ee4f9d340ac61",
-   "orca/eval/genesis_v2/runner_registry.py": "c9f909e3a5d1f23aa0090440d256f61a16afd2aa4084b72726b302cb4243a780",
-   "orca/eval/genesis_v2/sandbox.py": "d66d6f138339274ef668340fabbad8673d3ca1df506d8f4f4f9e7fc9583b083e",
-   "orca/eval/genesis_v2/sandbox_qualification.py": "d3ecfb4f3a42681b6400c67a40fdff4cd64f96927491d94e172a789c223b8b97",
-   "orca/eval/genesis_v2/secret.py": "8c60ede77a9dd4d0e8c3915fe42a89fc844de1771ef2a54f0a10625184eb4353",
-   "orca/eval/genesis_v2/secret_manager.py": "290b8a5edb0cbe7c2e673c0aa4721a3d26da07fa8fcc7fd0428e04095126ac80",
-   "orca/eval/genesis_v2/semantic.py": "d7294af55b051f4e6c787e23a2a54e62aec9361c0466611db61ebe50124310ba",
-   "orca/eval/genesis_v2/similarity.py": "261ad0a1d5431a847b44bf6700892b112ec1bf654be2988ef23203aab33a0105",
-   "orca/eval/genesis_v2/spec.py": "4b013c079cfa16316fa5bf725816f462c366902d5f95596f3dae1236f1b5eb13",
-   "orca/eval/genesis_v2/store.py": "80850cd049c7f017c45643d78587d4d1df0a675c3b5e1c7765135b7666b5b592",
-   "orca/eval/genesis_v2/vault_admin.py": "128f599cd67d9777a6eb1a33721c28dbd669282d9fd30be7d4ddc9a1570fd4f8",
-   "orca/eval/genesis_v2/vault_verify.py": "ecdab0ba105801f64230900eb0065bfd5b0cd211e3cebcf933488dbb90339b23"
+   "aggregate_sha256": "5e3f3047d982c1b640df6585cad06992405f5a0572c84664d37006a8b249be8a",
+   "per_file": {
+    "docker/genesis_v2_sandbox/Dockerfile": "ebdf3f8b6e42659d0d3393e80a0fe76637d35a4d5262b5990e8228e5f7c6bd9d",
+    "orca/eval/genesis_v2/__init__.py": "a25bb36a8e2d77eddabb569e1c4b8c4287cc049d7a4268a4ba39d8f1a82d3ccb",
+    "orca/eval/genesis_v2/authority_registry.py": "0d21b9e68a904234bac21e98f5bc2db94968a2f41137f537dca3d4e9c563b303",
+    "orca/eval/genesis_v2/authorization.py": "d05802999a43e6e21a0c21de8a45032ca8b0f58a0c84b03cbac8359ce5361d2e",
+    "orca/eval/genesis_v2/contamination.py": "e4b68f28f5127a0eda7ef7519ba6fbfa9e4c869b642e974b4e62443144559de5",
+    "orca/eval/genesis_v2/identity_registry.py": "f9d8e48bc61ea1f668d62ea3f6f4787ee4a94809d615565e63037ae422120f9e",
+    "orca/eval/genesis_v2/inventory.py": "246de4fd8fa6a12646f36dd319c7911327c4bb5f4b91e2176da62003bb535599",
+    "orca/eval/genesis_v2/isolation.py": "9e9aac6c5a167c8549a8edfe4a9ee7a1f5d27126169ba1a4da1b04f07906e4e8",
+    "orca/eval/genesis_v2/ledger.py": "bc9e5c4be71b8ad0f301e1c252821b7a4729744f549fb02f8f030f5a98d7007b",
+    "orca/eval/genesis_v2/ledger_admin.py": "e60a2a76a2a08bb3066b4f29c6976a579c8d4dfdfc525b1757eede0836c1a7fb",
+    "orca/eval/genesis_v2/manifest.py": "2d2ef9576fd629bf054c2f0502a90ec8f61a43cf1c9472c13b8cf3ba38ea5dd3",
+    "orca/eval/genesis_v2/owner_preflight.py": "d7c06defc116aaf811b02b6d186edf93f2d30b3051f54455f84c7f518bdf974d",
+    "orca/eval/genesis_v2/prereg.py": "535b944f8476765a906324c2a6cc9228d0a2babaa1b08dd755bc3caffc2ba22a",
+    "orca/eval/genesis_v2/privacy_scan.py": "a15210767997655da04d4a0b8da37be3dfcea559407b68e4d0a83b51f5d9128b",
+    "orca/eval/genesis_v2/review.py": "a5c8162c51134429d01f3b4db4c06bd1f654a47e1d1972118129ad7c0a97b7bc",
+    "orca/eval/genesis_v2/reviewer_registry.py": "f9b2aa3e082fc16b2d4d1c484244b9ac8783520d0b4262756b9ee4f9d340ac61",
+    "orca/eval/genesis_v2/runner_qualification.py": "a93bc6c8a689e58b8828bceb9d8f9bcebcd9d2df0d666fd8b08f6dc226057139",
+    "orca/eval/genesis_v2/runner_registry.py": "c9f909e3a5d1f23aa0090440d256f61a16afd2aa4084b72726b302cb4243a780",
+    "orca/eval/genesis_v2/sandbox.py": "d66d6f138339274ef668340fabbad8673d3ca1df506d8f4f4f9e7fc9583b083e",
+    "orca/eval/genesis_v2/sandbox_qualification.py": "c7bec87d3eeceac479bae59119dbb5a2aabb04dcedc42f8ba4f8c0a49557efbf",
+    "orca/eval/genesis_v2/secret.py": "8c60ede77a9dd4d0e8c3915fe42a89fc844de1771ef2a54f0a10625184eb4353",
+    "orca/eval/genesis_v2/secret_manager.py": "290b8a5edb0cbe7c2e673c0aa4721a3d26da07fa8fcc7fd0428e04095126ac80",
+    "orca/eval/genesis_v2/semantic.py": "e37703be90397a0e74cdaaade730f60d5455783968fadd2c02a4c035b1290055",
+    "orca/eval/genesis_v2/semantic_calibration.py": "bc0a926e1f27716af96fcfb7553253aeab9110c50d39bd1ae63d7564aa6e7ce0",
+    "orca/eval/genesis_v2/similarity.py": "261ad0a1d5431a847b44bf6700892b112ec1bf654be2988ef23203aab33a0105",
+    "orca/eval/genesis_v2/spec.py": "4b013c079cfa16316fa5bf725816f462c366902d5f95596f3dae1236f1b5eb13",
+    "orca/eval/genesis_v2/store.py": "80850cd049c7f017c45643d78587d4d1df0a675c3b5e1c7765135b7666b5b592",
+    "orca/eval/genesis_v2/vault_admin.py": "128f599cd67d9777a6eb1a33721c28dbd669282d9fd30be7d4ddc9a1570fd4f8",
+    "orca/eval/genesis_v2/vault_verify.py": "ecdab0ba105801f64230900eb0065bfd5b0cd211e3cebcf933488dbb90339b23"
+   }
   },
   "confidence_statistical_method": {
    "interval": "Wilson score interval (orca/eval/genesis_stats.py)",
@@ -202,16 +233,21 @@
     "backend": "sqlite",
     "location_digest": "e6be1f7e4b7a8bb2ff8a771e550101fc8e87b1a7272e01df64c38d0341427088"
    },
+   "qualification_record": "GENESIS_V2_QUALIFICATION_RUNNER_QUALIFICATION_RECORD",
    "registry": "docs/orneur/authorization/QUALIFICATION_RUNNER_REGISTRY.json",
    "registry_schema_version": "genesis-v2-qualification-runner-registry/1",
+   "runner_class": "SELF_HOSTED_CPU",
    "runner_id": "gce2-qualification-runner-1",
+   "same_environment_as_sandbox_test": true,
    "state": "REGISTERED_NOT_AUTHORIZED"
   },
   "sandbox_policy_version": {
    "policy_version": "genesis-v2-coding-sandbox-policy/1",
    "qualification_candidate_image_digest": "sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
    "record": "GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD",
-   "sandbox_ready": false
+   "sandbox_qualification_status": "QUALIFICATION_CANDIDATE_PENDING_FREEZE",
+   "sandbox_ready": false,
+   "tested_implementation_sha": "10ffbed6a507f7c37e54a90a9f24a323b1c24a71"
   },
   "scoring_algorithms": {
    "coding": "executed only inside the hermetic sandbox policy genesis-v2-coding-sandbox-policy/1; results without the sandbox are INCOMPLETE",
@@ -225,7 +261,10 @@
   "semantic_review_mechanism_version": {
    "engine": "orca/eval/genesis_v2/semantic.py (local, CPU, no provider)",
    "manual_review": "orca/eval/genesis_v2/review.py genesis-v2-manual-review/1",
-   "operational_state": "NOT_CONFIGURED"
+   "model": "sentence-transformers/all-MiniLM-L6-v2",
+   "model_directory_content_sha256": "d340056d3f7a38ad335bc6639d4e97f76c72558278dffe45b6f70811b1c7c1f6",
+   "model_revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+   "operational_state": "CONFIGURED_LOCAL_ONLY"
   },
   "stage_protocols": {
    "STAGE_0": "protocol/harness probes on DEV only (see funnel doctrine)",
@@ -249,8 +288,8 @@
  "floors_status": "PROPOSED_NOT_LOCKED",
  "frozen": false,
  "frozen_at": null,
- "note": "DRAFT. Floors are proposals carried over from V1 design and become immutable only at freeze. Deferred bindings stay null until the private corpus, vault, runner and code hashes exist.",
- "record_sha256": "a2fed2eda8f6dda40501b4c5baabb3e5c59986170c7e57b3727a142bdd41997b",
+ "note": "DRAFT. Floors are proposals carried over from V1 design and become immutable only at freeze. Deferred bindings stay null until the private corpus, vault, runner and code hashes exist. binding_status distinguishes a filled JSON value from an approved one: OPERATIONALLY_CONFIGURED bindings (semantic engine, sandbox, runner, storage) are real but not yet independently QUALIFIED.",
+ "record_sha256": "763233975c4999057080e54adf51c39ad9f0c85b1aae371dc574ed4b78aad0e2",
  "schema_version": "genesis-v2-preregistration/1",
  "status": "DRAFT_NOT_FROZEN"
 }

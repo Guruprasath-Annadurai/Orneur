@@ -37,23 +37,37 @@ def run(root: Path) -> dict:
 
     ar_doc, ar_problems = AR.load(root / AR.REGISTRY_PATH)
     checks["authority_registry_valid"] = ar_doc is not None and not ar_problems
+    checks["authority_key_registered_and_valid"] = bool(ar_doc is not None and not ar_problems and AR.active_authority_keys(ar_doc))
     rr_doc, rr_problems = RR.load(root / RR.REGISTRY_PATH)
     checks["reviewer_registry_valid"] = rr_doc is not None and not rr_problems
     checks["separation_of_duties_clean"] = bool(ar_doc is not None and rr_doc is not None and not RR.check_separation_of_duties(ar_doc, rr_doc))
+    reviewer_path_operational = bool(rr_doc is not None and not rr_problems and rr_doc.get("records"))
 
     inv = json.loads((root / INV.INVENTORY_PATH).read_text())
     inv_res = INV.evaluate(inv, root, authority_keys=(AR.active_authority_keys(ar_doc) if ar_doc else None))
     checks["corpus_inventory_state_known"] = True   # always knowable; PASS is a separate, harder bar tracked below
     checks["corpus_inventory_attested_pass"] = inv_res.status == C.PASS
 
-    from orca.eval.genesis_v2 import semantic as SEM
-    checks["semantic_engine_configured"] = False   # honestly NOT_CONFIGURED in this phase; see GENESIS_CAPABILITY_EVAL_V2_STATUS.json
+    sem_rec_path = root / "docs/orneur/phase-21/GENESIS_V2_SEMANTIC_ENGINE_RECORD.json"
+    sem_rec = json.loads(sem_rec_path.read_text()) if sem_rec_path.is_file() else None
+    checks["semantic_engine_configured"] = bool(sem_rec and sem_rec.get("state") == "CONFIGURED_LOCAL_ONLY")
+    checks["semantic_or_reviewer_path_operational"] = checks["semantic_engine_configured"] or reviewer_path_operational
 
     sandbox_rec_path = root / "docs/orneur/phase-21/GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD.json"
     sandbox_rec = json.loads(sandbox_rec_path.read_text()) if sandbox_rec_path.is_file() else None
     checks["sandbox_image_pinned_by_digest"] = bool(sandbox_rec and sandbox_rec.get("image_digest"))
     checks["sandbox_containment_evidence_present"] = bool(sandbox_rec and sandbox_rec.get("containment_test_result_digest"))
+    checks["sandbox_exact_sha_evidence_valid"] = bool(sandbox_rec and sandbox_rec.get("tested_implementation_sha")
+                                                       and sandbox_rec["tested_implementation_sha"] != "PENDING_COMMIT_WILL_BE_SET_AT_PUSH_TIME")
     checks["sandbox_ready"] = bool(sandbox_rec and sandbox_rec.get("sandbox_ready") is True)
+
+    runner_qual_path = root / "docs/orneur/phase-21/GENESIS_V2_QUALIFICATION_RUNNER_QUALIFICATION_RECORD.json"
+    runner_qual = json.loads(runner_qual_path.read_text()) if runner_qual_path.is_file() else None
+    checks["qualification_runner_qualified"] = bool(runner_qual and runner_qual.get("same_environment_proof", {}).get("match") is True)
+    checks["sandbox_runner_class_matches_qualification_runner"] = bool(
+        runner_qual and sandbox_rec
+        and runner_qual["same_environment_proof"]["sandbox_test_runner_class"] == sandbox_rec.get("test_runner_class")
+        and runner_qual["same_environment_proof"]["qualification_runner_class"] == runner_qual["machine_facts"]["runner_class"])
 
     rn_doc = json.loads((root / RN.REGISTRY_PATH).read_text())
     checks["runner_identity_registered"] = RN.validate(rn_doc) == [] and len(rn_doc["records"]) > 0
@@ -73,13 +87,16 @@ def run(root: Path) -> dict:
     checks["no_private_corpus_exists"] = scan["pass"] is True
     checks["model_authorization_not_authorized"] = json.loads((root / "docs/orneur/authorization/MODEL_EVAL_AUTHORIZATION.json").read_text())["status"] == "NOT_AUTHORIZED"
 
+    # Everything WORKSTREAM 9 (Final Pre-Corpus Closure) requires, at minimum, for READY_FOR_PRIVATE_CORPUS_AUTHORIZATION.
+    # Deliberately NOT required here: private_corpus_aggregate_commitment, a corpus secret, or a real benchmark AES key —
+    # those intentionally do not exist yet and never gate this preflight.
     hard_requirements = ["v2_not_frozen", "no_private_corpus_exists", "model_authorization_not_authorized", "preregistration_not_frozen",
                         "runner_not_authorized_for_holdout_yet", "secret_manager_policy_valid", "authority_registry_valid", "reviewer_registry_valid",
                         "separation_of_duties_clean", "preregistration_draft_consistent", "ledger_operational_ready", "vault_verification_record_present_and_pass",
-                        "sandbox_image_pinned_by_digest", "sandbox_containment_evidence_present", "runner_identity_registered"]
+                        "sandbox_image_pinned_by_digest", "sandbox_containment_evidence_present", "sandbox_exact_sha_evidence_valid",
+                        "runner_identity_registered", "authority_key_registered_and_valid", "corpus_inventory_attested_pass",
+                        "semantic_or_reviewer_path_operational", "qualification_runner_qualified", "sandbox_runner_class_matches_qualification_runner"]
     ready = all(checks.get(k) is True for k in hard_requirements)
     result = "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION" if ready else "NOT_READY"
-    if ready and not (checks["corpus_inventory_attested_pass"] and checks["semantic_engine_configured"] and checks["sandbox_ready"]):
-        result = "NOT_READY"  # these three remain honestly required before a real corpus authorization, and are known-false in this phase
     return {"schema_version": SCHEMA_VERSION, "current_main_sha": _current_main_sha(), "checks": checks, "result": result,
-            "outstanding_for_ready": [k for k in hard_requirements + ["corpus_inventory_attested_pass", "semantic_engine_configured", "sandbox_ready"] if not checks.get(k)]}
+            "outstanding_for_ready": [k for k in hard_requirements if not checks.get(k)]}

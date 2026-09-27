@@ -1,5 +1,5 @@
 {
- "note": "Registration only: binds the identity/environment that WOULD access SCREEN/QUALIFICATION_HOLDOUT. state=REGISTERED_NOT_AUTHORIZED means to_ledger_registered_processes() grants it nothing; the ledger additionally requires V2 to be frozen before any private-split access.",
+ "note": "Registration only: binds the identity/environment that WOULD access SCREEN/QUALIFICATION_HOLDOUT. state=REGISTERED_NOT_AUTHORIZED means to_ledger_registered_processes() grants it nothing; the ledger additionally requires V2 to be frozen before any private-split access. runner_class is now bound to a concrete, canonical machine (see GENESIS_V2_QUALIFICATION_RUNNER_QUALIFICATION_RECORD.json), not left as TBD.",
  "records": [
   {
    "allowed_purposes": [
@@ -21,11 +21,11 @@
    },
    "ledger_database_identity_digest": "e6be1f7e4b7a8bb2ff8a771e550101fc8e87b1a7272e01df64c38d0341427088",
    "network_policy": "none",
-   "os_runtime": "macOS (darwin) local dev machine; qualification-grade runner TBD by owner (self-hosted CPU runner recommended)",
+   "os_runtime": "macOS (darwin) arm64 \u2014 this local owner machine IS the canonical SELF_HOSTED_CPU qualification runner (bound explicitly; no separate hosted infra exists yet).",
    "runner_class": "SELF_HOSTED_CPU",
    "runner_id": "gce2-qualification-runner-1",
    "sandbox_image_digest": "sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
-   "semantic_engine_digest": null,
+   "semantic_engine_digest": "d340056d3f7a38ad335bc6639d4e97f76c72558278dffe45b6f70811b1c7c1f6",
    "state": "REGISTERED_NOT_AUTHORIZED",
    "storage_backend_verification_digest": "ba533ece6c8c661adf91cb8af1a8db4374d86ddfc72a0271e484e641fe34f11c"
   }

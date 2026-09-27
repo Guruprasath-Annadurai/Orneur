@@ -1,4 +1,11 @@
 {
+ "binding_status_values": [
+  "BOUND",
+  "OPERATIONALLY_CONFIGURED",
+  "QUALIFIED",
+  "DEFERRED",
+  "NOT_APPLICABLE"
+ ],
  "deferred_until_corpus_exists": [
   "private_corpus_aggregate_commitment"
  ],
@@ -36,6 +43,7 @@
   "status",
   "frozen",
   "bindings",
+  "binding_status",
   "floors_status",
   "first_candidate_run_at",
   "candidate_results",
@@ -46,7 +54,8 @@
   "a FROZEN record has every binding non-null and floors LOCKED",
   "candidate_results must be empty until frozen_at is set",
   "floors may not change after freeze or after first_candidate_run_at",
-  "record_sha256 covers every other field"
+  "record_sha256 covers every other field",
+  "a filled binding is not automatically an approved one: binding_status distinguishes BOUND/OPERATIONALLY_CONFIGURED/QUALIFIED/DEFERRED/NOT_APPLICABLE per binding"
  ],
  "schema_version": "genesis-v2-preregistration/1",
  "status_values": [

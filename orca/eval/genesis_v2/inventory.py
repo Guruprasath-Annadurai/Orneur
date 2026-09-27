@@ -24,7 +24,11 @@ STATUSES = ("PRESENT", "DECLARED_NOT_PRESENT", "UNAVAILABLE", "RETIRED")
 CLASSIFICATIONS = ("PUBLIC", "PRIVATE")
 LOCATION_KINDS = ("REPO_PATH", "ORCA_HOME_PATH", "EXTERNAL_DESCRIPTOR")
 CHECK_STATUSES = ("PENDING_V2_CORPUS", "PASS", "FAIL", "UNAVAILABLE")
-COVERAGE = ("LISTED", "NONE_KNOWN_UNATTESTED", "NONE_EXIST_ATTESTED")
+COVERAGE = ("LISTED", "NONE_KNOWN_UNATTESTED", "NONE_DECLARED_OWNER_REVIEWED", "NONE_EXIST_ATTESTED")
+# NONE_DECLARED_OWNER_REVIEWED: the owner has genuinely reviewed and found no corpora of this class, but the inventory's overall
+# completeness_attestation is not yet a signed ATTESTED record. NONE_EXIST_ATTESTED is a stronger claim ("...ATTESTED") and is only a
+# valid declaration once completeness_attestation.status == "ATTESTED" with a verified owner signature (see validate() below) — using
+# ATTESTED-sounding terminology before a real signature exists is exactly the premature-terminology failure this distinction prevents.
 TRISTATE_FIELDS = ("used_in_training", "used_in_adaptation", "visible_during_screen", "visible_during_qualification_holdout")
 
 CORPUS_REQUIRED = ("corpus_id", "version", "corpus_class", "purpose", "provenance", "classification", "storage", "manifest_id_or_sha256", "record_count",
@@ -136,6 +140,7 @@ def validate(inv, *, authority_keys: list | None = None) -> list:
             p.append(f"{c['corpus_id']}: bad record_count")
         if c["status"] == "PRESENT" and not (isinstance(c["manifest_id_or_sha256"], str) and len(c["manifest_id_or_sha256"]) == 64):
             p.append(f"{c['corpus_id']}: a PRESENT corpus needs a sha256")
+    attested = isinstance(att, dict) and att.get("status") == "ATTESTED"
     cov = inv.get("class_coverage")
     if not isinstance(cov, dict) or set(cov) != set(CORPUS_CLASSES):
         p.append("class_coverage must cover every corpus class")
@@ -143,6 +148,8 @@ def validate(inv, *, authority_keys: list | None = None) -> list:
         for cls, e in cov.items():
             if e.get("declaration") not in COVERAGE:
                 p.append(f"{cls}: bad coverage declaration")
+            elif e["declaration"] == "NONE_EXIST_ATTESTED" and not attested:
+                p.append(f"{cls}: NONE_EXIST_ATTESTED requires a signed ATTESTED completeness_attestation; use NONE_DECLARED_OWNER_REVIEWED until then")
             elif e["declaration"] == "LISTED":
                 listed = {c.get("corpus_id") for c in inv["corpora"] if c.get("corpus_class") == cls}
                 if not listed or set(e.get("corpus_ids", [])) != listed:

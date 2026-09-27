@@ -1,20 +1,24 @@
 {
  "base_image_digest": "sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
- "containment_test_result_digest": "f6e5998b0af2efa1b347e7817dd45fdf347d36d58922244c0cc288aeccfe2ef2",
- "containment_test_summary": "18 passed in 19.10s (tests/test_genesis_v2_sandbox_containment.py against the pinned qualification-candidate image, local Docker Desktop)",
+ "containment_test_code_hash": "7e2b2d3a2a64725960816539e8de45d50540b7cb366fda8e3f8e344e91bec6e1",
+ "containment_test_result_digest": "7aad186ae7e777b43e2543057b92a2d6a3999a8859c7b3f67d9d51ea0221d3a8",
+ "containment_test_summary": "18 passed, 1 warning in 16.70s (tests/test_genesis_v2_sandbox_containment.py against the pinned qualification-candidate image, on the canonical SELF_HOSTED_CPU qualification runner)",
  "dockerfile_sha256": "ebdf3f8b6e42659d0d3393e80a0fe76637d35a4d5262b5990e8228e5f7c6bd9d",
  "document": "GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD",
- "exact_commit_sha": "PENDING_COMMIT_WILL_BE_SET_AT_PUSH_TIME",
+ "evidence_record_commit": null,
  "image_digest": "sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
  "image_reference": "orneur-genesis-v2-sandbox@sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
- "note": "Passing this containment run makes the image a QUALIFICATION CANDIDATE. sandbox_ready stays false until the preregistration binds this exact image_digest and independent audit approves it.",
+ "note": "Passing this containment run makes the image a QUALIFICATION CANDIDATE, evaluated against tested_implementation_sha (an already-existing, CI-verified commit). evidence_record_commit is intentionally null here: it is the commit that introduces this exact file and is only knowable after that commit is made; it is reported separately in the phase's final report, not self-referenced. sandbox_ready stays false until the preregistration binds this exact image_digest, the qualification runner class matches the tested runner class, and independent audit approves it.",
  "runtime_versions": {
   "docker_server": "29.6.2",
   "python_in_container": "3.11.16"
  },
  "sandbox_policy_version": "genesis-v2-coding-sandbox-policy/1",
+ "sandbox_qualification_status": "QUALIFICATION_CANDIDATE_PENDING_FREEZE",
  "sandbox_ready": false,
- "schema_version": "genesis-v2-sandbox-qualification-candidate/1",
- "test_runner_class": "LOCAL_DEV_MACHINE_DOCKER_DESKTOP",
- "timestamp": "2026-09-27T09:21:46Z"
+ "schema_version": "genesis-v2-sandbox-qualification-candidate/2",
+ "test_runner_class": "SELF_HOSTED_CPU",
+ "tested_implementation_parent_sha": "d509fe61db6a7141cc0dd1729748ec54c0f755b8",
+ "tested_implementation_sha": "10ffbed6a507f7c37e54a90a9f24a323b1c24a71",
+ "timestamp": "2026-09-27T16:35:52Z"
 }

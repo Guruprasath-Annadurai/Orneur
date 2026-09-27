@@ -14,7 +14,7 @@ def test_real_repository_preflight_is_structurally_sound_but_not_ready():
     r = OP.run(ROOT)
     assert r["schema_version"] == OP.SCHEMA_VERSION and r["current_main_sha"]
     assert r["result"] == "NOT_READY"
-    assert set(r["outstanding_for_ready"]) == {"corpus_inventory_attested_pass", "semantic_engine_configured", "sandbox_ready"}
+    assert set(r["outstanding_for_ready"]) == {"authority_key_registered_and_valid", "corpus_inventory_attested_pass"}
     for k in ("vault_verification_record_present_and_pass", "secret_manager_policy_valid", "authority_registry_valid", "reviewer_registry_valid",
               "separation_of_duties_clean", "sandbox_image_pinned_by_digest", "sandbox_containment_evidence_present", "runner_identity_registered",
               "runner_not_authorized_for_holdout_yet", "ledger_operational_ready", "preregistration_draft_consistent", "preregistration_not_frozen",
