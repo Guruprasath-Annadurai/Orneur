@@ -237,3 +237,45 @@ def test_owner_preflight_detects_status_semantic_disagreement_and_stale_manifest
         assert "canonical_status_agrees_with_semantic_engine_record" in r2["outstanding_for_ready"]
     finally:
         real.write_text(backup)
+
+
+# ---------------------------------------------------------------- re-audit fix #3: STATUS.json <-> live preflight result agreement
+def test_owner_preflight_is_currently_ready_and_status_document_agrees():
+    # The owner's attestation is genuinely signed and verified (see commit history); every hard requirement holds.
+    r = OP.run(ROOT)
+    assert r["result"] == "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION"
+    assert r["outstanding_for_ready"] == []
+    assert r["checks"]["status_document_matches_live_preflight_result"] is True
+    st = json.loads((PH / "GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text())
+    assert st["owner_preflight"]["result"] == "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION"
+    assert st["owner_preflight"]["outstanding_for_ready"] == []
+    assert st["component_states"]["owner_preflight"] == "IMPLEMENTED_TESTED_RESULT_READY_FOR_PRIVATE_CORPUS_AUTHORIZATION"
+    assert "unsigned" not in st["contamination_status"]["training_corpora_check"]
+    assert "unsigned" not in st["corpus_inventory"]["terminology_note"]
+
+
+def test_owner_preflight_detects_a_stale_status_document_result():
+    """The exact class of drift the independent audit found: STATUS.json's owner_preflight.result silently falling behind the live
+    computed result. This must fail closed, not silently pass."""
+    real = PH / "GENESIS_CAPABILITY_EVAL_V2_STATUS.json"
+    backup = real.read_text()
+    st = json.loads(backup)
+    st["owner_preflight"]["result"] = "NOT_READY"
+    st["owner_preflight"]["outstanding_for_ready"] = ["corpus_inventory_attested_pass"]   # the old, no-longer-true blocker
+    try:
+        real.write_text(json.dumps(st))
+        r = OP.run(ROOT)
+        assert r["checks"]["status_document_matches_live_preflight_result"] is False
+        assert r["result"] == "NOT_READY"
+        assert "status_document_matches_live_preflight_result" in r["outstanding_for_ready"]
+        # the drift check does not itself claim which way STATUS.json is wrong — status_document_target says what it should be
+        assert r["status_document_target"] == {"result": "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION", "outstanding_for_ready": []}
+    finally:
+        real.write_text(backup)
+
+
+def test_owner_preflight_never_writes_the_status_document():
+    before = (PH / "GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text()
+    OP.run(ROOT)
+    after = (PH / "GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text()
+    assert before == after   # a read-only check; regeneration is always a separate, explicit step

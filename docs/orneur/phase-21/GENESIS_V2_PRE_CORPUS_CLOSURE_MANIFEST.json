@@ -20,7 +20,7 @@
   "orca/eval/genesis_v2/identity_registry.py": "f9d8e48bc61ea1f668d62ea3f6f4787ee4a94809d615565e63037ae422120f9e",
   "orca/eval/genesis_v2/inventory.py": "4112fa86536ed447ef20fc971d8f39d5ab20a67674cbde9bd4114077a741c5c3",
   "orca/eval/genesis_v2/ledger_admin.py": "e60a2a76a2a08bb3066b4f29c6976a579c8d4dfdfc525b1757eede0836c1a7fb",
-  "orca/eval/genesis_v2/owner_preflight.py": "fad22b1369a22c1bd306a448fc49be4574053b54aa07bb8695d3225b807b06fc",
+  "orca/eval/genesis_v2/owner_preflight.py": "077b132eba1f8f3b65b2ea359de337b940cbb6e6c6883599bc7f875182e67377",
   "orca/eval/genesis_v2/prereg.py": "535b944f8476765a906324c2a6cc9228d0a2babaa1b08dd755bc3caffc2ba22a",
   "orca/eval/genesis_v2/privacy_scan.py": "a15210767997655da04d4a0b8da37be3dfcea559407b68e4d0a83b51f5d9128b",
   "orca/eval/genesis_v2/review.py": "a5c8162c51134429d01f3b4db4c06bd1f654a47e1d1972118129ad7c0a97b7bc",
@@ -49,10 +49,10 @@
   "training_authorized": false,
   "v2_frozen": false
  },
- "built_from_parent_commit_sha": "d8c2b8c5cf8a5cdd7f91846e726caf50b66876d2",
+ "built_from_parent_commit_sha": "aa7d6b17049ffad7a5b339a1477991b8e66d3e9f",
  "document": "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST",
  "manifest_commit_sha": null,
- "manifest_sha256": "ddfb083d20d78225e47068447a0732fbfb3159fa6351da5f0fc460948f830a96",
+ "manifest_sha256": "5006cf812289093600cf14b04d073227715a57caa02ae2dab51a946f580f688d",
  "missing_artifacts": [],
  "note": "built_from_parent_commit_sha is the commit that existed when this manifest was generated (most bundled artifacts, including some in this same phase's commit, are hashed by content here, not claimed to live at that SHA). manifest_commit_sha is intentionally null: the commit that actually introduces this file is only knowable after it is made, and is reported in the phase's final report instead of self-referenced.",
  "owner_preflight_checks": {
@@ -83,11 +83,12 @@
   "semantic_engine_configured": true,
   "semantic_or_reviewer_path_operational": true,
   "separation_of_duties_clean": true,
+  "status_document_matches_live_preflight_result": true,
   "v2_not_frozen": true,
   "vault_verification_record_present_and_pass": true
  },
  "owner_preflight_result": "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
  "schema_version": "genesis-v2-pre-corpus-closure-manifest/2",
  "status": "PRE_CORPUS_CLOSURE_EVIDENCE_ONLY",
- "timestamp": "2026-09-28T17:40:39Z"
+ "timestamp": "2026-09-28T18:34:46Z"
 }

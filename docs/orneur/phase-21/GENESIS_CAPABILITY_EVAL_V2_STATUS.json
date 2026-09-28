@@ -29,7 +29,7 @@
   "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY",
   "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
   "owner_authority_key_procedure": "DESIGNED_ACTIVATED_ONE_KEY_REGISTERED",
-  "owner_preflight": "IMPLEMENTED_TESTED_RESULT_NOT_READY",
+  "owner_preflight": "IMPLEMENTED_TESTED_RESULT_READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
   "owner_vault_procedure": "DESIGNED_NOT_ACTIVATED",
   "pre_corpus_closure_manifest": "IMPLEMENTED_TESTED",
   "preregistration": "DESIGNED_DRAFT_NOT_FROZEN_MOSTLY_BOUND",
@@ -51,7 +51,7 @@
   "contamination_controls_pass": false,
   "manual_review": "IMPLEMENTED_NO_REVIEWER_KEY_REGISTERED",
   "semantic_overlap": "CONFIGURED_LOCAL_ONLY_NOT_QUALIFIED",
-  "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (inventory reviewed but unsigned; one class genuinely unresolved)"
+  "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (pre-corpus attestation ATTESTED and signature-verified; full contamination qualification remains pending the private V2 corpus; one class genuinely unresolved)"
  },
  "corpus_inventory": {
   "attestation_status": "ATTESTED",
@@ -61,7 +61,7 @@
   "next_step": "attestation is signed and verified; full contamination qualification remains pending the private V2 corpus (contamination_check_status=PENDING_V2_CORPUS on every entry)",
   "path": "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
   "pre_corpus_attestation_check": "orca.eval.genesis_v2.inventory.evaluate_pre_corpus_attestation (narrower than full contamination qualification; see design doc 9l)",
-  "terminology_note": "class_coverage declarations for classes with no known corpora are NONE_DECLARED_OWNER_REVIEWED (genuinely reviewed, but the overall attestation is unsigned) until a signed ATTESTED record exists; NONE_EXIST_ATTESTED is reserved for after signature verification succeeds.",
+  "terminology_note": "class_coverage declarations for classes with no known corpora were declared NONE_DECLARED_OWNER_REVIEWED BEFORE the attestation was signed (2026-09-28) and are correctly left as-is post-signature: changing them now would alter the inventory body and invalidate the already-verified signature's corpus_inventory_digest binding. NONE_EXIST_ATTESTED is reserved for a declaration made as part of a signed ATTESTED record covering it, never retrofitted after the fact.",
   "unavailable_corpus_policy": "docs/orneur/phase-21/GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json",
   "unresolved_classes": [
    "external_uploaded_datasets"
@@ -147,10 +147,8 @@
  },
  "operational_storage_backend": "ENCRYPTED_ARTIFACT",
  "owner_preflight": {
-  "outstanding_for_ready": [
-   "corpus_inventory_attested_pass"
-  ],
-  "result": "NOT_READY",
+  "outstanding_for_ready": [],
+  "result": "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
   "script": "scripts/genesis_v2_owner_preflight.py"
  },
  "owner_setup_required": "see GENESIS_CAPABILITY_EVAL_V2_OWNER_SETUP.md; run scripts/genesis_v2_preflight.py",

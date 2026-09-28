@@ -116,14 +116,34 @@ def run(root: Path) -> dict:
     # Everything WORKSTREAM 9 (Final Pre-Corpus Closure) requires, at minimum, for READY_FOR_PRIVATE_CORPUS_AUTHORIZATION.
     # Deliberately NOT required here: private_corpus_aggregate_commitment, a corpus secret, or a real benchmark AES key —
     # those intentionally do not exist yet and never gate this preflight.
-    hard_requirements = ["v2_not_frozen", "no_private_corpus_exists", "model_authorization_not_authorized", "preregistration_not_frozen",
+    base_hard_requirements = ["v2_not_frozen", "no_private_corpus_exists", "model_authorization_not_authorized", "preregistration_not_frozen",
                         "runner_not_authorized_for_holdout_yet", "secret_manager_policy_valid", "authority_registry_valid", "reviewer_registry_valid",
                         "separation_of_duties_clean", "preregistration_draft_consistent", "ledger_operational_ready", "vault_verification_record_present_and_pass",
                         "sandbox_image_pinned_by_digest", "sandbox_containment_evidence_present", "sandbox_exact_sha_evidence_valid",
                         "runner_identity_registered", "authority_key_registered_and_valid", "corpus_inventory_attested_pass",
                         "semantic_or_reviewer_path_operational", "qualification_runner_qualified", "sandbox_runner_class_matches_qualification_runner",
                         "canonical_status_agrees_with_semantic_engine_record", "closure_manifest_present", "closure_manifest_evidence_fresh"]
+
+    # PASS 1: the result this run would produce on its own merits, before checking STATUS.json against it.
+    provisional_ready = all(checks.get(k) is True for k in base_hard_requirements)
+    provisional_result = "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION" if provisional_ready else "NOT_READY"
+    provisional_outstanding = [k for k in base_hard_requirements if not checks.get(k)]
+
+    # Drift guard: STATUS.json carries its own copy of the result (for human/audit readability) that a future edit could leave
+    # stale relative to this live computation (exactly the class of bug this phase's audit found twice already — once for
+    # semantic_overlap, once for owner_preflight.result itself). Comparing them here, and gating readiness on agreement, makes a
+    # future drift fail closed instead of silently shipping a document that disagrees with the code that is supposed to govern it.
+    status_owner_preflight = status_doc.get("owner_preflight") or {}
+    checks["status_document_matches_live_preflight_result"] = bool(
+        status_owner_preflight.get("result") == provisional_result
+        and set(status_owner_preflight.get("outstanding_for_ready") or []) == set(provisional_outstanding))
+
+    hard_requirements = base_hard_requirements + ["status_document_matches_live_preflight_result"]
     ready = all(checks.get(k) is True for k in hard_requirements)
     result = "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION" if ready else "NOT_READY"
     return {"schema_version": SCHEMA_VERSION, "current_main_sha": _current_main_sha(), "checks": checks, "result": result,
-            "outstanding_for_ready": [k for k in hard_requirements if not checks.get(k)]}
+            "outstanding_for_ready": [k for k in hard_requirements if not checks.get(k)],
+            # What STATUS.json's owner_preflight.{result, outstanding_for_ready} SHOULD say to be non-stale. Deliberately excludes
+            # status_document_matches_live_preflight_result itself (comparing the drift check's target against its own outcome
+            # would be circular) — a regeneration script writes THIS into STATUS.json, never the top-level `result`/`outstanding_for_ready`.
+            "status_document_target": {"result": provisional_result, "outstanding_for_ready": provisional_outstanding}}
