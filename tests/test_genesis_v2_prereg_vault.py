@@ -193,7 +193,7 @@ def test_status_terminology_is_strict():
         assert state.startswith(("DESIGNED", "IMPLEMENTED", "NOT_", "ACTIVATED", "CONFIGURED", "REGISTERED")) and "QUALIFIED" not in core and "FROZEN" not in core and "PRODUCTION" not in core, (name, state)
     assert st["terminology"]["levels"] == sorted(allowed, key=lambda x: ["DESIGNED", "IMPLEMENTED", "TESTED", "QUALIFIED", "FROZEN", "PRODUCTION_READY"].index(x))
     assert "unit-tested" in st["terminology"]["rule"]
-    exp = {"model_eval_authorization_gate": "IMPLEMENTED_TESTED", "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_UNSIGNED_DRAFT_ATTESTATION",
+    exp = {"model_eval_authorization_gate": "IMPLEMENTED_TESTED", "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_SIGNED_ATTESTATION",
            "semantic_manual_review_framework": "IMPLEMENTED_TESTED_CONFIGURED_LOCAL_ONLY", "coding_sandbox": "IMPLEMENTED_TESTED", "private_storage": "ACTIVATED_VERIFIED_TEST_ONLY",
            "v2_corpus": "NOT_GENERATED", "v2_freeze": "NOT_FROZEN", "preregistration": "DESIGNED_DRAFT_NOT_FROZEN_MOSTLY_BOUND",
            "authority_registry": "CONFIGURED_ONE_OWNER_KEY_REGISTERED", "reviewer_registry": "CONFIGURED_ZERO_KEYS_REGISTERED", "runner_identity": "REGISTERED_NOT_AUTHORIZED",

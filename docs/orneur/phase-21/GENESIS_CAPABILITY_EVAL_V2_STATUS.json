@@ -25,7 +25,7 @@
   "authority_registry": "CONFIGURED_ONE_OWNER_KEY_REGISTERED",
   "coding_sandbox": "IMPLEMENTED_TESTED",
   "contamination_framework": "IMPLEMENTED_TESTED",
-  "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_UNSIGNED_DRAFT_ATTESTATION",
+  "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_SIGNED_ATTESTATION",
   "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY",
   "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
   "owner_authority_key_procedure": "DESIGNED_ACTIVATED_ONE_KEY_REGISTERED",
@@ -54,11 +54,11 @@
   "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (inventory reviewed but unsigned; one class genuinely unresolved)"
  },
  "corpus_inventory": {
-  "attestation_status": "NOT_ATTESTED",
+  "attestation_status": "ATTESTED",
   "attested_complete": false,
   "draft_completeness_status": "COMPLETE_WITH_DECLARED_UNAVAILABLE",
   "full_contamination_qualification_note": "structurally cannot PASS before the private V2 corpus exists; tracked informationally, not gated in owner_preflight pre-corpus",
-  "next_step": "docs/orneur/phase-21/GENESIS_V2_CORPUS_INVENTORY_ATTESTATION_PAYLOAD_TO_SIGN.signable awaits the owner's signature",
+  "next_step": "attestation is signed and verified; full contamination qualification remains pending the private V2 corpus (contamination_check_status=PENDING_V2_CORPUS on every entry)",
   "path": "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
   "pre_corpus_attestation_check": "orca.eval.genesis_v2.inventory.evaluate_pre_corpus_attestation (narrower than full contamination qualification; see design doc 9l)",
   "terminology_note": "class_coverage declarations for classes with no known corpora are NONE_DECLARED_OWNER_REVIEWED (genuinely reviewed, but the overall attestation is unsigned) until a signed ATTESTED record exists; NONE_EXIST_ATTESTED is reserved for after signature verification succeeds.",
@@ -66,7 +66,7 @@
   "unresolved_classes": [
    "external_uploaded_datasets"
   ],
-  "verdict": "CONTAMINATION_DATASET_UNAVAILABLE (never PASS without a real signed OWNER attestation)"
+  "verdict": "pre-corpus attestation ATTESTED and verified; full contamination qualification CONTAMINATION_DATASET_UNAVAILABLE pending the V2 corpus (never PASS before it exists)"
  },
  "descriptor_only_backends_not_operational": [
   "PRIVATE_GITHUB_REPO",

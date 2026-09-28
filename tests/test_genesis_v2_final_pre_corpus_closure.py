@@ -92,18 +92,24 @@ def test_reviewer_path_status_documents_semantic_substitution_honestly():
 
 
 # ---------------------------------------------------------------- WS6: inventory terminology + unavailable-corpus policy
-def test_inventory_uses_owner_reviewed_not_attested_terminology_pre_signature():
+def test_inventory_uses_owner_reviewed_not_attested_terminology_for_the_unsigned_classes():
+    # The committed inventory is now genuinely owner-signed (see 2026-09-28 attestation), but the 9 classes reviewed-and-found-empty
+    # were declared NONE_DECLARED_OWNER_REVIEWED BEFORE signing and are correctly left as-is (changing class_coverage content now
+    # would invalidate the already-verified signature's corpus_inventory_digest binding — a real security property).
     inv = json.loads((PH / "GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json").read_text())
-    assert inv["completeness_attestation"]["status"] == "NOT_ATTESTED"
+    from orca.eval.genesis_v2 import authority_registry as AR
+    ar_doc, ar_problems = AR.load(ROOT / AR.REGISTRY_PATH)
+    assert ar_problems == []
+    assert inv["completeness_attestation"]["status"] == "ATTESTED"
     declared = {c["declaration"] for c in inv["class_coverage"].values()}
-    assert "NONE_EXIST_ATTESTED" not in declared
     assert "NONE_DECLARED_OWNER_REVIEWED" in declared
-    assert INV.validate(inv) == []   # still schema-valid
+    assert INV.validate(inv, authority_keys=AR.active_authority_keys(ar_doc)) == []   # schema-valid AND signature verifies
 
 
-def test_none_exist_attested_rejected_before_signature():
+def test_none_exist_attested_rejected_before_a_real_signature_exists():
     inv = json.loads((PH / "GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json").read_text())
-    cls = next(k for k, v in inv["class_coverage"].items() if v["declaration"] == "NONE_DECLARED_OWNER_REVIEWED")
+    inv["completeness_attestation"] = {"status": "NOT_ATTESTED", "record": None}    # the pure pre-signature scenario, independent of
+    cls = next(k for k, v in inv["class_coverage"].items() if v["declaration"] == "NONE_DECLARED_OWNER_REVIEWED")  # the real file's current state
     inv["class_coverage"][cls]["declaration"] = "NONE_EXIST_ATTESTED"
     problems = INV.validate(inv)
     assert any("NONE_EXIST_ATTESTED" in p and "signed" in p for p in problems)
@@ -143,15 +149,22 @@ def test_binding_status_rejects_qualified_claim_on_null_binding():
 
 
 # ---------------------------------------------------------------- WS9: owner_preflight
-def test_owner_preflight_blocked_only_by_genuinely_owner_gated_items():
+def test_owner_preflight_reaches_ready_now_that_the_attestation_is_genuinely_signed():
     r = OP.run(ROOT)
-    assert r["result"] == "NOT_READY"
-    # narrowed to exactly one blocker now that the owner's public key is registered: signing the corpus-inventory attestation.
-    assert set(r["outstanding_for_ready"]) == {"corpus_inventory_attested_pass"}
-    # every OTHER hard requirement this phase closed must be genuinely true, not silently dropped from the check set
+    # Every hard requirement is now genuinely true: the owner registered a real public key AND personally signed the corpus-inventory
+    # attestation (verified cryptographically before being written into the repo — see the commit history).
+    assert r["result"] == "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION"
+    assert r["outstanding_for_ready"] == []
     for k in ("sandbox_exact_sha_evidence_valid", "qualification_runner_qualified", "sandbox_runner_class_matches_qualification_runner",
-              "semantic_or_reviewer_path_operational", "semantic_engine_configured", "authority_key_registered_and_valid"):
+              "semantic_or_reviewer_path_operational", "semantic_engine_configured", "authority_key_registered_and_valid",
+              "corpus_inventory_attested_pass", "closure_manifest_evidence_fresh"):
         assert r["checks"][k] is True, k
+    # READY_FOR_PRIVATE_CORPUS_AUTHORIZATION is explicitly NOT permission to generate anything: these all remain false/absent.
+    assert r["checks"]["no_private_corpus_exists"] is True
+    assert r["checks"]["model_authorization_not_authorized"] is True
+    assert r["checks"]["v2_not_frozen"] is True
+    assert r["checks"]["sandbox_ready"] is False
+    assert r["checks"]["runner_not_authorized_for_holdout_yet"] is True
 
 
 def test_owner_preflight_does_not_require_corpus_secret_or_aes_key_or_aggregate_commitment():

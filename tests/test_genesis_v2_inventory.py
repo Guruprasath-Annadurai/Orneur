@@ -3,6 +3,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -304,13 +305,18 @@ INV_FILE = ROOT / INV.INVENTORY_PATH
 
 
 def test_committed_inventory_is_schema_valid_and_realistically_reviewed():
+    from orca.eval.genesis_v2 import authority_registry as AR
+    ar_doc, ar_problems = AR.load(ROOT / AR.REGISTRY_PATH)
+    assert ar_problems == []
+    active_keys = AR.active_authority_keys(ar_doc)
     inv = json.loads(INV_FILE.read_text())
-    assert INV.validate(inv) == []                                                 # structurally valid even without a signing key available
+    assert INV.validate(inv, authority_keys=active_keys) == []                     # structurally valid AND signature verifies
     att = inv["completeness_attestation"]
-    assert att["status"] == "NOT_ATTESTED"                                          # no OWNER authority key is registered yet to sign it
+    assert att["status"] == "ATTESTED"                                              # real owner-signed, registered-key-verified attestation
     assert att["record"]["completeness_status"] == "COMPLETE_WITH_DECLARED_UNAVAILABLE"
     assert att["record"]["unresolved_classes"] == ["external_uploaded_datasets"]
-    assert att["record"]["signature"] is None
+    assert att["record"]["owner_identity"] == "orneur-owner-authority-1"
+    assert re.fullmatch(r"[0-9a-f]{128}", att["record"]["signature"])              # a real Ed25519 signature, not a placeholder
     assert att["record"]["corpus_inventory_digest"] == INV.inventory_digest(inv)
     assert len(inv["corpora"]) >= 60
 
@@ -353,7 +359,7 @@ def test_committed_inventory_never_evaluates_to_pass_and_keeps_contamination_fal
     assert here.status != C.PASS                                                  # unsigned attestation + unresolved external datasets: never PASS
     st = json.loads((ROOT / "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text())
     assert st["freeze_prerequisites"]["contamination_controls_pass"] is False and st["corpus_inventory"]["attested_complete"] is False
-    assert st["component_states"]["corpus_inventory"] == "IMPLEMENTED_POPULATED_REVIEWED_UNSIGNED_DRAFT_ATTESTATION"
+    assert st["component_states"]["corpus_inventory"] == "IMPLEMENTED_POPULATED_REVIEWED_SIGNED_ATTESTATION"
 
 
 def test_committed_inventory_carries_no_content():

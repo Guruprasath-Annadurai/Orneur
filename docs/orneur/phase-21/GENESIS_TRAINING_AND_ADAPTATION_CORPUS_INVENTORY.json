@@ -178,12 +178,12 @@
     "every corpus class in orca.eval.genesis_v2.inventory.CORPUS_CLASSES",
     "owner personally reviewed and approved the generated ORNEUR Genesis V2 Owner Review Report (read-only, all 70 entries, independently re-verified file existence and SHA-256 hash match for the 69 PRESENT entries, declared UNAVAILABLE status for the one Kaggle-derived entry, and all declared usage/visibility flags including the 57 UNKNOWN training-usage declarations); owner did not personally open or inspect each of the 69 underlying files individually"
    ],
-   "signature": null,
+   "signature": "d11fad994f5ad100ae9af5559b821cdd83c0bdba87fe0ec87145e4ea9b730deb03ea848863a1f2861d36b7783c9847a52e875298e0eb960f50a8d294e270b005",
    "unresolved_classes": [
     "external_uploaded_datasets"
    ]
   },
-  "status": "NOT_ATTESTED"
+  "status": "ATTESTED"
  },
  "corpora": [
   {
