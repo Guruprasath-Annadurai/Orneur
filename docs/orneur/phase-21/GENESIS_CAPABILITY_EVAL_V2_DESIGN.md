@@ -109,6 +109,23 @@ Continuation of 9j, closing the specific gaps an independent audit flagged in it
 - **Owner preflight**: rewritten to also require an authority key registered+valid, the corpus inventory attestation signed+accepted, at least one of the semantic/reviewer paths operational, the qualification runner qualified, and the sandbox runner class matching the qualification runner class. It correctly still returns `NOT_READY`, now narrowed to exactly two genuinely owner-gated blockers: `authority_key_registered_and_valid` and `corpus_inventory_attested_pass`.
 - **Pre-corpus closure manifest**: `closure_manifest.py` builds `GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST.json`, a public-safe SHA-256 bundle over every artifact this phase and the previous one touched, plus the current owner-preflight result and an explicit `authorizations` block confirming nothing was generated (corpus, SCREEN, holdout, secret, AES key, model inference, GPU, training, spend, foundation, freeze).
 
+## 9m. Pre-corpus attestation / full contamination qualification stage-boundary fix (this phase)
+
+An independent audit found that `owner_preflight.py`'s `corpus_inventory_attested_pass` check used the full `inventory.evaluate()`
+verdict, which requires every source corpus to be resolvable on disk, hash-verified, and `contamination_check_status == PASS` per
+corpus. Since the private V2 corpus does not exist yet, `evaluate()` can never legitimately reach `PASS` at this stage — the check
+was structurally impossible to satisfy, a stage-boundary defect, not a real safeguard.
+
+Fix: `inventory.evaluate_pre_corpus_attestation()` answers a narrower, genuinely pre-corpus-appropriate question — is the owner's
+SIGNED completeness attestation itself valid (real OWNER Ed25519 signature, exact `corpus_inventory_digest` binding, every class
+declared, and any unresolved class covered by a frozen `GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json`)? It never resolves a
+corpus file or checks `contamination_check_status`. `owner_preflight.corpus_inventory_attested_pass` now uses this function.
+
+`inventory.evaluate()` (full contamination qualification) is **unchanged** and remains fail-closed: it still requires every source
+resolvable, hash-matched, and per-corpus `contamination_check_status == PASS`, and correctly still cannot reach `PASS` before a real
+V2 corpus exists. `owner_preflight` now also reports `corpus_inventory_full_contamination_qualification_status` informationally
+(currently `CONTAMINATION_DATASET_UNAVAILABLE`), but never gates readiness on it pre-corpus.
+
 ## 10. Freeze (not done)
 
 V2 stays `FROZEN=false` until: private storage genuinely configured · new secret corpus generated · privacy audit pass · SCREEN/HOLDOUT separation pass · contamination controls pass · hashes/prereg frozen · sandbox ready · exact-SHA CI green · independent ChatGPT audit approval.

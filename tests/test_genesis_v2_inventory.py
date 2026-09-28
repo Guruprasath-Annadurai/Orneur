@@ -73,6 +73,64 @@ def test_a_complete_signed_attested_resolvable_inventory_passes(good):
     assert r.status == C.PASS, (r.status, r.findings)
 
 
+# ---------------------------------------------------------------- pre-corpus attestation vs. full contamination qualification
+def test_pre_corpus_attestation_can_pass_while_full_qualification_stays_incomplete(tmp_path, signer):
+    """The exact stage-boundary scenario the independent audit flagged: a real, validly-signed (test key) owner attestation that
+    honestly declares one class unresolved (covered by a frozen acceptance policy) must be able to PASS the pre-corpus attestation
+    gate, while FULL contamination qualification — which needs the private V2 corpus to compare against and every source resolvable
+    — correctly remains far from PASS (here: DATASET_UNAVAILABLE, because of the declared-unavailable corpus)."""
+    sk, keys = signer
+    data = b'{"text": "an unrelated training record about orchids"}\n'
+    (tmp_path / "d.jsonl").write_bytes(data)
+    inv = INV.empty_inventory()
+    present = corpus("c1", "d.jsonl", data)
+    unavailable = corpus("c2", "does-not-exist.jsonl", data, cls="external_uploaded_datasets", status="UNAVAILABLE", manifest_id_or_sha256=None)
+    inv["corpora"] = [present, unavailable]
+    for cls in INV.CORPUS_CLASSES:
+        inv["class_coverage"][cls] = {"declaration": "NONE_DECLARED_OWNER_REVIEWED", "corpus_ids": []}
+    inv["class_coverage"]["public_sft_datasets"] = {"declaration": "LISTED", "corpus_ids": ["c1"]}
+    inv["class_coverage"]["external_uploaded_datasets"] = {"declaration": "LISTED", "corpus_ids": ["c2"]}
+    inv["completeness_attestation"] = {"status": "ATTESTED", "record": _sign_attestation(
+        inv, sk, completeness_status="COMPLETE_WITH_DECLARED_UNAVAILABLE", unresolved=["external_uploaded_datasets"])}
+    policy = {"frozen": True, "applies_to_unresolved_classes": ["external_uploaded_datasets"]}
+
+    pre = INV.evaluate_pre_corpus_attestation(inv, authority_keys=keys, acceptance_policy=policy)
+    assert pre.status == C.PASS, (pre.status, pre.findings, pre.note)
+
+    full = INV.evaluate(inv, tmp_path, authority_keys=keys)
+    assert full.status != C.PASS
+    assert full.status == C.DATASET_UNAVAILABLE
+
+
+def test_pre_corpus_attestation_fails_when_unresolved_class_is_not_covered_by_policy(tmp_path, signer):
+    sk, keys = signer
+    inv = INV.empty_inventory()
+    for cls in INV.CORPUS_CLASSES:
+        inv["class_coverage"][cls] = {"declaration": "NONE_DECLARED_OWNER_REVIEWED", "corpus_ids": []}
+    inv["completeness_attestation"] = {"status": "ATTESTED", "record": _sign_attestation(
+        inv, sk, completeness_status="COMPLETE_WITH_DECLARED_UNAVAILABLE", unresolved=["external_uploaded_datasets"])}
+    r = INV.evaluate_pre_corpus_attestation(inv, authority_keys=keys, acceptance_policy={"frozen": True, "applies_to_unresolved_classes": []})
+    assert r.status == C.FAIL
+    r2 = INV.evaluate_pre_corpus_attestation(inv, authority_keys=keys, acceptance_policy=None)
+    assert r2.status == C.INCOMPLETE
+    r3 = INV.evaluate_pre_corpus_attestation(inv, authority_keys=keys, acceptance_policy={"frozen": False, "applies_to_unresolved_classes": ["external_uploaded_datasets"]})
+    assert r3.status == C.INCOMPLETE
+
+
+def test_pre_corpus_attestation_never_passes_unsigned_or_unattested(tmp_path, signer):
+    sk, keys = signer
+    inv = INV.empty_inventory()
+    for cls in INV.CORPUS_CLASSES:
+        inv["class_coverage"][cls] = {"declaration": "NONE_DECLARED_OWNER_REVIEWED", "corpus_ids": []}
+    assert INV.evaluate_pre_corpus_attestation(inv, authority_keys=keys).status == C.INCOMPLETE     # status NOT_ATTESTED
+    signed = _sign_attestation(inv, sk, completeness_status="COMPLETE")
+    inv["completeness_attestation"] = {"status": "ATTESTED", "record": signed}
+    assert INV.evaluate_pre_corpus_attestation(inv, authority_keys=None).status == C.FAIL           # no registry supplied => SIGNATURE_NOT_VERIFIED
+    inv2 = copy.deepcopy(inv)
+    inv2["completeness_attestation"]["record"]["signature"] = "00" * 64
+    assert INV.evaluate_pre_corpus_attestation(inv2, authority_keys=keys).status == C.FAIL           # forged signature
+
+
 def test_empty_inventory_never_means_pass(tmp_path):
     r = INV.evaluate(INV.empty_inventory(), tmp_path)
     assert r.status == C.INCOMPLETE and "empty" in r.note

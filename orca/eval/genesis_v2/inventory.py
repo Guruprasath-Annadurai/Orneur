@@ -176,6 +176,47 @@ def _sha(path: Path) -> str:
     return h.hexdigest()
 
 
+def evaluate_pre_corpus_attestation(inv, *, authority_keys: list | None = None, acceptance_policy: dict | None = None) -> C.CheckResult:
+    """A DIFFERENT, NARROWER question than evaluate(): is the owner's SIGNED completeness attestation itself valid — real OWNER
+    signature, exact inventory-digest binding, every class declared, and (if the owner declared some class unresolved) that
+    declaration covered by a frozen, pre-corpus-independent acceptance policy?
+
+    This deliberately does NOT resolve any corpus file on disk, check content hashes, or require per-corpus
+    contamination_check_status == PASS — those are properties of the (nonexistent, pre-corpus) V2 candidate comparison, not of the
+    attestation. Requiring them here would make corpus_inventory_attested_pass structurally impossible to satisfy before the private
+    corpus exists (a stage-boundary defect), while contributing nothing to catching a dishonest or unsigned attestation.
+
+    Full contamination qualification (evaluate(), below) is UNCHANGED and remains fail-closed: it still requires every source file
+    resolvable, hash-verified, and PASS contamination_check_status, and correctly never reaches PASS before a V2 corpus exists to
+    compare against. That is a separate, later-stage question this function does not answer or weaken."""
+    name = "corpus_inventory_pre_corpus_attestation"
+    problems = validate(inv, authority_keys=authority_keys)     # structural + signature validity only; never touches the filesystem
+    if problems:
+        return C.CheckResult(name, C.FAIL, [{"problem": p} for p in problems[:20]], "inventory or attestation schema/signature invalid")
+    att = inv["completeness_attestation"]
+    if att.get("status") != "ATTESTED":
+        return C.CheckResult(name, C.INCOMPLETE, [], "completeness_attestation is not yet a signed ATTESTED record")
+    gaps = [{"class": k, "declaration": v["declaration"]} for k, v in inv["class_coverage"].items() if v["declaration"] == "NONE_KNOWN_UNATTESTED"]
+    if gaps:
+        return C.CheckResult(name, C.INCOMPLETE, gaps, "per-class coverage gaps remain (a class was never reviewed)")
+    record = att["record"]
+    verdict = record.get("completeness_status")
+    if verdict not in ("COMPLETE", "COMPLETE_WITH_DECLARED_UNAVAILABLE"):
+        return C.CheckResult(name, C.INCOMPLETE, [], f"attestation completeness_status={verdict!r} is not an acceptable pre-corpus verdict")
+    unresolved = record.get("unresolved_classes") or []
+    if verdict == "COMPLETE_WITH_DECLARED_UNAVAILABLE":
+        if not unresolved:
+            return C.CheckResult(name, C.FAIL, [], "COMPLETE_WITH_DECLARED_UNAVAILABLE with an empty unresolved_classes list is inconsistent")
+        if not isinstance(acceptance_policy, dict) or not acceptance_policy.get("frozen"):
+            return C.CheckResult(name, C.INCOMPLETE, [{"unresolved_classes": unresolved}], "no frozen unavailable-corpus acceptance policy supplied")
+        covered = set(acceptance_policy.get("applies_to_unresolved_classes") or [])
+        missing = [c for c in unresolved if c not in covered]
+        if missing:
+            return C.CheckResult(name, C.FAIL, [{"uncovered_class": c} for c in missing],
+                                  "unresolved class(es) declared in the attestation are not covered by the frozen acceptance policy")
+    return C.CheckResult(name, C.PASS, [], f"signed OWNER attestation valid: completeness_status={verdict}, unresolved={unresolved}")
+
+
 def evaluate(inv, root: Path, orca_home: Path | None = None, *, authority_keys: list | None = None) -> C.CheckResult:
     """The fail-closed verdict on inventory completeness for contamination purposes."""
     name = "training_corpora_inventory"

@@ -45,9 +45,20 @@ def run(root: Path) -> dict:
     reviewer_path_operational = bool(rr_doc is not None and not rr_problems and rr_doc.get("records"))
 
     inv = json.loads((root / INV.INVENTORY_PATH).read_text())
-    inv_res = INV.evaluate(inv, root, authority_keys=(AR.active_authority_keys(ar_doc) if ar_doc else None))
+    active_keys = AR.active_authority_keys(ar_doc) if ar_doc else None
+    policy_path = root / "docs/orneur/phase-21/GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json"
+    acceptance_policy = json.loads(policy_path.read_text()) if policy_path.is_file() else None
     checks["corpus_inventory_state_known"] = True   # always knowable; PASS is a separate, harder bar tracked below
-    checks["corpus_inventory_attested_pass"] = inv_res.status == C.PASS
+    # The pre-corpus gate: is the owner's SIGNED attestation itself valid (real signature, digest binding, honest declarations,
+    # unresolved classes covered by a frozen policy)? This is deliberately narrower than full contamination qualification below,
+    # which structurally cannot PASS before the private corpus exists (nothing to resolve/compare yet) — requiring that here would
+    # make corpus_inventory_attested_pass permanently unsatisfiable pre-corpus, a stage-boundary defect, not a real safeguard.
+    pre_corpus_res = INV.evaluate_pre_corpus_attestation(inv, authority_keys=active_keys, acceptance_policy=acceptance_policy)
+    checks["corpus_inventory_attested_pass"] = pre_corpus_res.status == C.PASS
+    # Informational only, never a hard requirement pre-corpus: full contamination qualification remains fail-closed and correctly
+    # cannot reach PASS until a real V2 corpus exists to compare against (source resolvability, hashes, contamination_check_status).
+    full_res = INV.evaluate(inv, root, authority_keys=active_keys)
+    checks["corpus_inventory_full_contamination_qualification_status"] = full_res.status
 
     sem_rec_path = root / "docs/orneur/phase-21/GENESIS_V2_SEMANTIC_ENGINE_RECORD.json"
     sem_rec = json.loads(sem_rec_path.read_text()) if sem_rec_path.is_file() else None

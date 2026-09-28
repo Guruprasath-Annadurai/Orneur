@@ -57,8 +57,10 @@
   "attestation_status": "NOT_ATTESTED",
   "attested_complete": false,
   "draft_completeness_status": "COMPLETE_WITH_DECLARED_UNAVAILABLE",
-  "next_step": "docs/orneur/phase-21/GENESIS_V2_CORPUS_INVENTORY_ATTESTATION_PAYLOAD_TO_SIGN.bin awaits the owner's signature",
+  "full_contamination_qualification_note": "structurally cannot PASS before the private V2 corpus exists; tracked informationally, not gated in owner_preflight pre-corpus",
+  "next_step": "docs/orneur/phase-21/GENESIS_V2_CORPUS_INVENTORY_ATTESTATION_PAYLOAD_TO_SIGN.signable awaits the owner's signature",
   "path": "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
+  "pre_corpus_attestation_check": "orca.eval.genesis_v2.inventory.evaluate_pre_corpus_attestation (narrower than full contamination qualification; see design doc 9l)",
   "terminology_note": "class_coverage declarations for classes with no known corpora are NONE_DECLARED_OWNER_REVIEWED (genuinely reviewed, but the overall attestation is unsigned) until a signed ATTESTED record exists; NONE_EXIST_ATTESTED is reserved for after signature verification succeeds.",
   "unavailable_corpus_policy": "docs/orneur/phase-21/GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json",
   "unresolved_classes": [
