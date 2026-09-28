@@ -28,7 +28,7 @@
   "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_UNSIGNED_DRAFT_ATTESTATION",
   "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY",
   "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
-  "owner_authority_key_procedure": "DESIGNED_NOT_ACTIVATED",
+  "owner_authority_key_procedure": "DESIGNED_ACTIVATED_ONE_KEY_REGISTERED",
   "owner_preflight": "IMPLEMENTED_TESTED_RESULT_NOT_READY",
   "owner_vault_procedure": "DESIGNED_NOT_ACTIVATED",
   "pre_corpus_closure_manifest": "IMPLEMENTED_TESTED",
@@ -140,7 +140,7 @@
   "record": "docs/orneur/phase-21/GENESIS_V2_LEDGER_DEPLOYMENT_RECORD.json"
  },
  "model_eval_authorization": {
-  "authority_keys_registered": 0,
+  "authority_keys_registered": 1,
   "model_execution_workflows": "workflow_dispatch only, behind a fail-closed authorization job",
   "record": "docs/orneur/authorization/MODEL_EVAL_AUTHORIZATION.json",
   "state": "NOT_AUTHORIZED"

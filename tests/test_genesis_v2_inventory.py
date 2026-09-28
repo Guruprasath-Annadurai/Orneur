@@ -117,6 +117,35 @@ def test_pre_corpus_attestation_fails_when_unresolved_class_is_not_covered_by_po
     assert r3.status == C.INCOMPLETE
 
 
+def test_pre_corpus_attestation_rejects_a_false_complete_declaration_over_unavailable_data(tmp_path, signer):
+    """A dishonest or mistaken COMPLETE declaration — claiming nothing is unresolved while the inventory itself records a real
+    UNAVAILABLE corpus — must never pass, even with a genuine owner signature over it."""
+    sk, keys = signer
+    inv = INV.empty_inventory()
+    for cls in INV.CORPUS_CLASSES:
+        inv["class_coverage"][cls] = {"declaration": "NONE_DECLARED_OWNER_REVIEWED", "corpus_ids": []}
+    unavailable = corpus("c2", "does-not-exist.jsonl", b"x", cls="external_uploaded_datasets", status="UNAVAILABLE", manifest_id_or_sha256=None)
+    inv["corpora"] = [unavailable]
+    inv["class_coverage"]["external_uploaded_datasets"] = {"declaration": "LISTED", "corpus_ids": ["c2"]}
+    assert INV.actually_unavailable_classes(inv) == {"external_uploaded_datasets"}
+    # Signed, but falsely claims COMPLETE with no unresolved classes.
+    inv["completeness_attestation"] = {"status": "ATTESTED", "record": _sign_attestation(inv, sk, completeness_status="COMPLETE", unresolved=[])}
+    r = INV.evaluate_pre_corpus_attestation(inv, authority_keys=keys, acceptance_policy={"frozen": True, "applies_to_unresolved_classes": ["external_uploaded_datasets"]})
+    assert r.status == C.FAIL
+    assert any(f.get("undeclared_unavailable_class") == "external_uploaded_datasets" for f in r.findings)
+    # Correcting the declaration to name the real gap (still COMPLETE, which is itself inconsistent) still fails.
+    inv2 = copy.deepcopy(inv)
+    inv2["completeness_attestation"]["record"] = _sign_attestation(inv2, sk, completeness_status="COMPLETE", unresolved=["external_uploaded_datasets"])
+    r2 = INV.evaluate_pre_corpus_attestation(inv2, authority_keys=keys, acceptance_policy={"frozen": True, "applies_to_unresolved_classes": ["external_uploaded_datasets"]})
+    assert r2.status == C.FAIL
+    # Only the honest, correctly-typed declaration passes.
+    inv3 = copy.deepcopy(inv)
+    inv3["completeness_attestation"]["record"] = _sign_attestation(inv3, sk, completeness_status="COMPLETE_WITH_DECLARED_UNAVAILABLE",
+                                                                    unresolved=["external_uploaded_datasets"])
+    r3 = INV.evaluate_pre_corpus_attestation(inv3, authority_keys=keys, acceptance_policy={"frozen": True, "applies_to_unresolved_classes": ["external_uploaded_datasets"]})
+    assert r3.status == C.PASS
+
+
 def test_pre_corpus_attestation_never_passes_unsigned_or_unattested(tmp_path, signer):
     sk, keys = signer
     inv = INV.empty_inventory()

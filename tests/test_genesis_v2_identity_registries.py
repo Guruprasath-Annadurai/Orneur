@@ -13,7 +13,8 @@ from orca.eval.genesis_v2 import identity_registry as ID
 from orca.eval.genesis_v2 import reviewer_registry as RR
 
 ROOT = Path(__file__).resolve().parents[1]
-NOW = datetime(2026, 9, 27, 12, 0, 0, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)   # dynamic: a hardcoded date eventually falls into the past relative to real wall-clock time, making a
+                                    # "not yet active" (NOW + 1 day) fixture actually active by the time the suite runs — this bit us once
 
 
 def _need_crypto():

@@ -176,10 +176,18 @@ def _sha(path: Path) -> str:
     return h.hexdigest()
 
 
+def actually_unavailable_classes(inv: dict) -> set:
+    """Corpus classes that genuinely contain an UNAVAILABLE or DECLARED_NOT_PRESENT corpus entry, derived directly from the
+    inventory's own corpora list — independent of anything the attestation record claims. Used to catch an attestation that
+    declares COMPLETE (or omits a real gap from unresolved_classes) while the inventory itself records an unresolved risk."""
+    return {c["corpus_class"] for c in (inv.get("corpora") or []) if isinstance(c, dict) and c.get("status") in ("UNAVAILABLE", "DECLARED_NOT_PRESENT")}
+
+
 def evaluate_pre_corpus_attestation(inv, *, authority_keys: list | None = None, acceptance_policy: dict | None = None) -> C.CheckResult:
     """A DIFFERENT, NARROWER question than evaluate(): is the owner's SIGNED completeness attestation itself valid — real OWNER
-    signature, exact inventory-digest binding, every class declared, and (if the owner declared some class unresolved) that
-    declaration covered by a frozen, pre-corpus-independent acceptance policy?
+    signature, exact inventory-digest binding, every class declared, EVERY genuinely-unavailable class actually named in
+    unresolved_classes (never silently omitted, regardless of the declared completeness_status), and any declared-unresolved class
+    covered by a frozen, pre-corpus-independent acceptance policy?
 
     This deliberately does NOT resolve any corpus file on disk, check content hashes, or require per-corpus
     contamination_check_status == PASS — those are properties of the (nonexistent, pre-corpus) V2 candidate comparison, not of the
@@ -204,6 +212,14 @@ def evaluate_pre_corpus_attestation(inv, *, authority_keys: list | None = None, 
     if verdict not in ("COMPLETE", "COMPLETE_WITH_DECLARED_UNAVAILABLE"):
         return C.CheckResult(name, C.INCOMPLETE, [], f"attestation completeness_status={verdict!r} is not an acceptable pre-corpus verdict")
     unresolved = record.get("unresolved_classes") or []
+    real_unavailable = actually_unavailable_classes(inv)
+    undeclared = sorted(real_unavailable - set(unresolved))
+    if undeclared:
+        # This fires regardless of completeness_status, including a COMPLETE declaration: the inventory itself contains real
+        # UNAVAILABLE/DECLARED_NOT_PRESENT corpora that the signed attestation did not name. A signature over an incomplete or
+        # dishonest unresolved_classes list must never make this PASS.
+        return C.CheckResult(name, C.FAIL, [{"undeclared_unavailable_class": c} for c in undeclared],
+                              "the inventory contains unavailable/not-present corpora not named in the attestation's unresolved_classes")
     if verdict == "COMPLETE_WITH_DECLARED_UNAVAILABLE":
         if not unresolved:
             return C.CheckResult(name, C.FAIL, [], "COMPLETE_WITH_DECLARED_UNAVAILABLE with an empty unresolved_classes list is inconsistent")
@@ -214,6 +230,8 @@ def evaluate_pre_corpus_attestation(inv, *, authority_keys: list | None = None, 
         if missing:
             return C.CheckResult(name, C.FAIL, [{"uncovered_class": c} for c in missing],
                                   "unresolved class(es) declared in the attestation are not covered by the frozen acceptance policy")
+    elif unresolved:
+        return C.CheckResult(name, C.FAIL, [], "completeness_status=COMPLETE is inconsistent with a non-empty unresolved_classes list")
     return C.CheckResult(name, C.PASS, [], f"signed OWNER attestation valid: completeness_status={verdict}, unresolved={unresolved}")
 
 
