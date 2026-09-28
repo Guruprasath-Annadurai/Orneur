@@ -225,6 +225,22 @@ def test_empty_and_garbage_files_fail_closed(vault):
         st.read_split(CID, "SCREEN", expected_corpus_digest=cdig)
 
 
+def test_nonces_never_repeat_across_many_encryptions(vault):
+    """Fresh, non-repeating nonces per AES-256-GCM encryption: nonce reuse under the same key is a real key-recovery /
+    forgery risk for GCM, so this is checked directly, not just implied by os.urandom's design."""
+    st, key, cdir, cdig = vault
+    import struct
+    nonces = set()
+    for i in range(500):
+        blob = st._seal_blob({"i": i}, f"payload-{i}".encode())
+        (hl,) = struct.unpack(">I", blob[8:12])
+        nonce = blob[12 + hl:24 + hl]
+        assert len(nonce) == 12
+        assert nonce not in nonces, "nonce reuse detected"
+        nonces.add(nonce)
+    assert len(nonces) == 500
+
+
 def test_nonce_corruption_fails_closed(vault):
     st, key, cdir, cdig = vault
     b = bytearray((cdir / "SCREEN.enc").read_bytes())

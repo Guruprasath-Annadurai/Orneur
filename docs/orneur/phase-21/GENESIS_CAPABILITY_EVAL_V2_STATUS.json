@@ -13,6 +13,7 @@
   "state": "CONFIGURED_ONE_OWNER_KEY_REGISTERED"
  },
  "authorizations": {
+  "corpus_generation": false,
   "foundation_selection": false,
   "gpu": false,
   "phase_21c": false,
@@ -23,9 +24,12 @@
  "component_states": {
   "access_ledger": "IMPLEMENTED_TESTED",
   "authority_registry": "CONFIGURED_ONE_OWNER_KEY_REGISTERED",
+  "benchmark_partition_architecture": "DESIGNED_NOT_ACTIVATED",
   "coding_sandbox": "IMPLEMENTED_TESTED",
   "contamination_framework": "IMPLEMENTED_TESTED",
+  "corpus_generation_authorization_gate": "IMPLEMENTED_TESTED_NOT_AUTHORIZED",
   "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_SIGNED_ATTESTATION",
+  "historical_contamination_controls_consolidation": "DESIGNED_NOT_ACTIVATED",
   "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY",
   "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
   "owner_authority_key_procedure": "DESIGNED_ACTIVATED_ONE_KEY_REGISTERED",
@@ -52,6 +56,16 @@
   "manual_review": "IMPLEMENTED_NO_REVIEWER_KEY_REGISTERED",
   "semantic_overlap": "CONFIGURED_LOCAL_ONLY_NOT_QUALIFIED",
   "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (pre-corpus attestation ATTESTED and signature-verified; full contamination qualification remains pending the private V2 corpus; one class genuinely unresolved)"
+ },
+ "corpus_generation_authorization": {
+  "module": "orca/eval/genesis_v2/corpus_generation_authorization.py",
+  "path": "docs/orneur/authorization/CORPUS_GENERATION_AUTHORIZATION.json",
+  "separate_from": [
+   "authority_registry key registration",
+   "signed corpus inventory attestation",
+   "owner_preflight READY result"
+  ],
+  "state": "NOT_AUTHORIZED"
  },
  "corpus_inventory": {
   "attestation_status": "ATTESTED",

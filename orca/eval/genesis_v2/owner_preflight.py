@@ -107,6 +107,14 @@ def run(root: Path) -> dict:
     checks["closure_manifest_present"] = manifest_doc is not None
     checks["closure_manifest_evidence_fresh"] = bool(manifest_doc is not None and CM.freshness_problems(root, manifest_doc) == [])
 
+    # Informational only, never a hard requirement: corpus-generation authorization is a deliberately SEPARATE gate
+    # (corpus_generation_authorization.py) from everything this preflight checks. READY_FOR_PRIVATE_CORPUS_AUTHORIZATION
+    # never implies this is AUTHORIZED, and it correctly stays NOT_AUTHORIZED regardless of this preflight's own result.
+    from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
+    cga_path = root / CGA.RECORD_PATH
+    cga_rec = json.loads(cga_path.read_text()) if cga_path.is_file() else None
+    checks["corpus_generation_authorization_status"] = (cga_rec or {}).get("status", "MISSING")
+
     checks["v2_not_frozen"] = spec.GENESIS_CAPABILITY_EVAL_V2_FROZEN is False
     from orca.eval.genesis_v2 import privacy_scan as PS
     scan = PS.scan_repository(root)

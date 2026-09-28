@@ -68,7 +68,8 @@ def test_contract_engine_qualification_and_78_control_evidence_files_unchanged()
 def test_no_selection_and_all_authorizations_remain_false():
     st = json.loads((PH / "GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text())
     assert st["GENESIS_CAPABILITY_EVAL_V2_FROZEN"] is False and st["foundation_selected"] is None
-    assert st["authorizations"] == {"gpu": False, "training": False, "provider_inference": False, "spending": False, "foundation_selection": False, "phase_21c": False}
+    assert st["authorizations"] == {"gpu": False, "training": False, "provider_inference": False, "spending": False, "foundation_selection": False,
+                                     "phase_21c": False, "corpus_generation": False}
     assert st["private_corpus_generated"] is False and st["secret_available"] is False
     assert st["freeze_prerequisites"]["new_secret_corpus_generated"] is False
     assert not any(st["freeze_prerequisites"].values())          # infrastructure subchecks never flip a freeze prerequisite

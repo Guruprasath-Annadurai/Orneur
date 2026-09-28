@@ -1,0 +1,17 @@
+{
+ "authorization_id": null,
+ "authorized_artifact_digests": {},
+ "authorized_commit_sha": null,
+ "authorized_scope": [],
+ "authorizing_authority": {
+  "identity": null,
+  "key_id": null,
+  "role": null
+ },
+ "expires_at": null,
+ "issued_at": null,
+ "purpose": null,
+ "schema_version": "genesis-v2-corpus-generation-authorization/1",
+ "signature": null,
+ "status": "NOT_AUTHORIZED"
+}

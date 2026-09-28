@@ -2,13 +2,16 @@
  "artifact_hashes": {
   "docker/genesis_v2_sandbox/Dockerfile": "ebdf3f8b6e42659d0d3393e80a0fe76637d35a4d5262b5990e8228e5f7c6bd9d",
   "docs/orneur/authorization/AUTHORITY_REGISTRY.json": "06177e10cfbfff5e87b4137ca50649261c7b8ca37b218685fced475c7212b811",
+  "docs/orneur/authorization/CORPUS_GENERATION_AUTHORIZATION.json": "191edcb64eb2d822c1b7faa7f9d8c82191eddea2fe06c916fcf0be56aa444a7c",
   "docs/orneur/authorization/OWNER_AUTHORITY_KEY_GENERATION_PROCEDURE.md": "c9d4cc5b7a2403faa876c66b35fc1a5ff9ef312553d52ff6779d57940dddec9b",
   "docs/orneur/authorization/QUALIFICATION_RUNNER_REGISTRY.json": "83b2efc6d107e2dbc1ef6c1c65ad99c8ab2b3d838dc723526724b1658d7aa9d0",
   "docs/orneur/authorization/REVIEWER_PATH_STATUS.md": "09fe79d4c31b6c8196f2f1b7fc0e4301f5961b8bb0655bb9c2014d19a5dec34a",
   "docs/orneur/authorization/REVIEWER_REGISTRY.json": "d68294701d02af6c27d41ef616b80cf0c806ea7890a8333659a1b4375e87e221",
   "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_PREREGISTRATION_DRAFT.json": "50d734415496d98a51213c1866e0c603ff94a1238e58fef9fb9d0598de9ecad6",
   "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json": "c68d8655e332df2cd664bc13264aaa8a8095024b95d39c1cc816697458ddd977",
+  "docs/orneur/phase-21/GENESIS_V2_BENCHMARK_PARTITION_ARCHITECTURE.md": "7b824095622359fd82527e19e9a7288421a0910bb3b9fe0adac2826a56f3d81e",
   "docs/orneur/phase-21/GENESIS_V2_CORPUS_INVENTORY_ATTESTATION_PAYLOAD_TO_SIGN.signable": "b75aab3b29c79426542602bd61b7786f80b16cd7b9823ea9cf8a10ff772a773a",
+  "docs/orneur/phase-21/GENESIS_V2_HISTORICAL_CONTAMINATION_CONTROLS.md": "2b1bda307ebd1a1159eac8b271ac2073de618726ec80944ca42d2f6b8d27207d",
   "docs/orneur/phase-21/GENESIS_V2_LEDGER_DEPLOYMENT_RECORD.json": "86ad8563ab473ef6fe387a8c23d4fed4d5eef45cc245a500bf4cae37b03fa43c",
   "docs/orneur/phase-21/GENESIS_V2_QUALIFICATION_RUNNER_QUALIFICATION_RECORD.json": "6792effd164ad45c423b27cf34a1a6b4ad89cba38d98afd8b5a3626f0c3e1d6a",
   "docs/orneur/phase-21/GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD.json": "c9884672a33f8541faa9711454a8bb3f70fbf7664554774ddecc43e800b26899",
@@ -17,10 +20,12 @@
   "docs/orneur/phase-21/GENESIS_V2_VAULT_VERIFICATION.json": "531774ad91c235576b588b30cafb6167338fa49c60c1e5ca5075dd1fd98ca1ff",
   "orca/eval/genesis_v2/authority_registry.py": "0d21b9e68a904234bac21e98f5bc2db94968a2f41137f537dca3d4e9c563b303",
   "orca/eval/genesis_v2/authorization.py": "d05802999a43e6e21a0c21de8a45032ca8b0f58a0c84b03cbac8359ce5361d2e",
+  "orca/eval/genesis_v2/corpus_generation_authorization.py": "c39c183628a85521ea3d6eb08902b8bd53620a787c271dd7032717b3dcdd3143",
   "orca/eval/genesis_v2/identity_registry.py": "f9d8e48bc61ea1f668d62ea3f6f4787ee4a94809d615565e63037ae422120f9e",
   "orca/eval/genesis_v2/inventory.py": "4112fa86536ed447ef20fc971d8f39d5ab20a67674cbde9bd4114077a741c5c3",
+  "orca/eval/genesis_v2/isolation.py": "9e9aac6c5a167c8549a8edfe4a9ee7a1f5d27126169ba1a4da1b04f07906e4e8",
   "orca/eval/genesis_v2/ledger_admin.py": "e60a2a76a2a08bb3066b4f29c6976a579c8d4dfdfc525b1757eede0836c1a7fb",
-  "orca/eval/genesis_v2/owner_preflight.py": "077b132eba1f8f3b65b2ea359de337b940cbb6e6c6883599bc7f875182e67377",
+  "orca/eval/genesis_v2/owner_preflight.py": "4ad7c6dbde642ee0bc7c7b14a0c26e55ffdf17e4ff0536f2ff77cc466afe1240",
   "orca/eval/genesis_v2/prereg.py": "535b944f8476765a906324c2a6cc9228d0a2babaa1b08dd755bc3caffc2ba22a",
   "orca/eval/genesis_v2/privacy_scan.py": "a15210767997655da04d4a0b8da37be3dfcea559407b68e4d0a83b51f5d9128b",
   "orca/eval/genesis_v2/review.py": "a5c8162c51134429d01f3b4db4c06bd1f654a47e1d1972118129ad7c0a97b7bc",
@@ -49,10 +54,10 @@
   "training_authorized": false,
   "v2_frozen": false
  },
- "built_from_parent_commit_sha": "aa7d6b17049ffad7a5b339a1477991b8e66d3e9f",
+ "built_from_parent_commit_sha": "016f18646cf1c836bc5237db9855cc616709272f",
  "document": "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST",
  "manifest_commit_sha": null,
- "manifest_sha256": "5006cf812289093600cf14b04d073227715a57caa02ae2dab51a946f580f688d",
+ "manifest_sha256": "d7b09d598f67a1cbe5f5fe22c40e5ac3b73a0095f19aa2bcd18f5f8f2627302a",
  "missing_artifacts": [],
  "note": "built_from_parent_commit_sha is the commit that existed when this manifest was generated (most bundled artifacts, including some in this same phase's commit, are hashed by content here, not claimed to live at that SHA). manifest_commit_sha is intentionally null: the commit that actually introduces this file is only knowable after it is made, and is reported in the phase's final report instead of self-referenced.",
  "owner_preflight_checks": {
@@ -61,6 +66,7 @@
   "canonical_status_agrees_with_semantic_engine_record": true,
   "closure_manifest_evidence_fresh": true,
   "closure_manifest_present": true,
+  "corpus_generation_authorization_status": "NOT_AUTHORIZED",
   "corpus_inventory_attested_pass": true,
   "corpus_inventory_full_contamination_qualification_status": "CONTAMINATION_DATASET_UNAVAILABLE",
   "corpus_inventory_state_known": true,
@@ -90,5 +96,5 @@
  "owner_preflight_result": "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
  "schema_version": "genesis-v2-pre-corpus-closure-manifest/2",
  "status": "PRE_CORPUS_CLOSURE_EVIDENCE_ONLY",
- "timestamp": "2026-09-28T18:34:46Z"
+ "timestamp": "2026-09-28T19:14:21Z"
 }

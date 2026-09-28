@@ -20,6 +20,9 @@ ARTIFACT_PATHS = (
     "docs/orneur/authorization/QUALIFICATION_RUNNER_REGISTRY.json",
     "docs/orneur/authorization/OWNER_AUTHORITY_KEY_GENERATION_PROCEDURE.md",
     "docs/orneur/authorization/REVIEWER_PATH_STATUS.md",
+    "docs/orneur/authorization/CORPUS_GENERATION_AUTHORIZATION.json",
+    "docs/orneur/phase-21/GENESIS_V2_BENCHMARK_PARTITION_ARCHITECTURE.md",
+    "docs/orneur/phase-21/GENESIS_V2_HISTORICAL_CONTAMINATION_CONTROLS.md",
     "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
     "docs/orneur/phase-21/GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json",
     "docs/orneur/phase-21/GENESIS_V2_SEMANTIC_ENGINE_RECORD.json",
@@ -36,6 +39,7 @@ ARTIFACT_PATHS = (
     "orca/eval/genesis_v2/sandbox.py", "orca/eval/genesis_v2/sandbox_qualification.py", "orca/eval/genesis_v2/runner_registry.py",
     "orca/eval/genesis_v2/runner_qualification.py", "orca/eval/genesis_v2/semantic.py", "orca/eval/genesis_v2/semantic_calibration.py",
     "orca/eval/genesis_v2/prereg.py", "orca/eval/genesis_v2/owner_preflight.py", "orca/eval/genesis_v2/privacy_scan.py",
+    "orca/eval/genesis_v2/corpus_generation_authorization.py", "orca/eval/genesis_v2/isolation.py",
 )
 
 
