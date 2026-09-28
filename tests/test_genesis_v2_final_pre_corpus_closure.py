@@ -73,9 +73,15 @@ def test_owner_authority_key_procedure_documented_and_no_private_key_anywhere():
     assert not re.search(r"\b[0-9a-f]{64}\b", t)   # no concrete key material embedded
 
 
-def test_authority_registry_remains_empty_this_phase():
+def test_authority_registry_now_holds_exactly_the_owner_generated_public_key():
+    # The owner ran the documented procedure independently and provided only the resulting public key + key_id; Claude never
+    # generated, saw, or handled the private key (see OWNER_AUTHORITY_KEY_GENERATION_PROCEDURE.md).
     doc, problems = AR.load(AUTH / "AUTHORITY_REGISTRY.json")
-    assert problems == [] and doc["records"] == []
+    assert problems == [] and len(doc["records"]) == 1
+    rec = doc["records"][0]
+    assert rec["id"] == "orneur-owner-authority-1" and rec["role"] == "OWNER" and rec["revoked"] is False
+    assert rec["public_key_hex"] == "d5423d78ec059c4b1a3d6d2c0d7a26c51f26836e49d96fd009748bfbd84f0abe"
+    assert rec["gpu_permission"] is False and rec["spend_permission"] is False and rec["provider_inference_permission"] is False
 
 
 # ---------------------------------------------------------------- WS4: reviewer path
@@ -140,10 +146,11 @@ def test_binding_status_rejects_qualified_claim_on_null_binding():
 def test_owner_preflight_blocked_only_by_genuinely_owner_gated_items():
     r = OP.run(ROOT)
     assert r["result"] == "NOT_READY"
-    assert set(r["outstanding_for_ready"]) == {"authority_key_registered_and_valid", "corpus_inventory_attested_pass"}
+    # narrowed to exactly one blocker now that the owner's public key is registered: signing the corpus-inventory attestation.
+    assert set(r["outstanding_for_ready"]) == {"corpus_inventory_attested_pass"}
     # every OTHER hard requirement this phase closed must be genuinely true, not silently dropped from the check set
     for k in ("sandbox_exact_sha_evidence_valid", "qualification_runner_qualified", "sandbox_runner_class_matches_qualification_runner",
-              "semantic_or_reviewer_path_operational", "semantic_engine_configured"):
+              "semantic_or_reviewer_path_operational", "semantic_engine_configured", "authority_key_registered_and_valid"):
         assert r["checks"][k] is True, k
 
 

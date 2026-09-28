@@ -1,5 +1,28 @@
 {
- "note": "Owner-managed. A record registers WHO may later sign a model-execution authorization (orca.eval.genesis_v2.authorization), scoped by permitted_authorization_classes/permitted_eval_stages/gpu_permission/spend_permission/provider_inference_permission. Registration never authorizes a run by itself. Only public keys belong here. Empty: no authority is registered yet.",
- "records": [],
+ "note": "Owner-managed. A record registers WHO may later sign a model-execution authorization (orca.eval.genesis_v2.authorization), scoped by permitted_authorization_classes/permitted_eval_stages/gpu_permission/spend_permission/provider_inference_permission. Registration never authorizes a run by itself. Only public keys belong here. orneur-owner-authority-1 registered 2026-09-28 with gpu/spend/provider_inference permission all false.",
+ "records": [
+  {
+   "activation_timestamp": "2026-09-28T10:46:10Z",
+   "expiry": null,
+   "gpu_permission": false,
+   "id": "orneur-owner-authority-1",
+   "permitted_authorization_classes": [
+    "QUALIFICATION",
+    "SCREENING",
+    "TRAINABILITY_PILOT",
+    "DATA_SEEDING",
+    "REGRESSION"
+   ],
+   "permitted_eval_stages": [
+    "STAGE_1",
+    "STAGE_2"
+   ],
+   "provider_inference_permission": false,
+   "public_key_hex": "d5423d78ec059c4b1a3d6d2c0d7a26c51f26836e49d96fd009748bfbd84f0abe",
+   "revoked": false,
+   "role": "OWNER",
+   "spend_permission": false
+  }
+ ],
  "schema_version": "genesis-v2-authority-registry/1"
 }

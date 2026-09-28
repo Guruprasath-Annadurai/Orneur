@@ -167,7 +167,7 @@
    "completeness_status": "COMPLETE_WITH_DECLARED_UNAVAILABLE",
    "corpus_inventory_digest": "972312ea3abc7200272045e8b150431ad093bbfb3699f8c942c1a177b8f5e131",
    "inventory_version": "1",
-   "owner_identity": "ORNEUR owner (Guruprasath Annadurai)",
+   "owner_identity": "orneur-owner-authority-1",
    "review_timestamp": "2026-09-27T09:30:00Z",
    "schema_version": "genesis-v2-corpus-inventory-attestation/1",
    "scope_reviewed": [

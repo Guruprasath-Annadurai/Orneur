@@ -51,16 +51,29 @@ def reviewer_rec(**over):
 
 
 # ---------------------------------------------------------------- committed registries
-def test_committed_registries_are_valid_and_empty():
-    for mod in (AR, RR):
-        doc = json.loads((ROOT / mod.REGISTRY_PATH).read_text())
-        assert mod.validate(doc) == [] and doc["records"] == [] and doc["schema_version"] == mod.SCHEMA_VERSION
+def test_committed_registries_are_valid_reviewer_empty_authority_has_the_owner_key():
+    # The owner has since registered ONE real public key (orneur-owner-authority-1); the reviewer registry remains empty.
+    ar_doc = json.loads((ROOT / AR.REGISTRY_PATH).read_text())
+    assert AR.validate(ar_doc) == [] and ar_doc["schema_version"] == AR.SCHEMA_VERSION
+    assert len(ar_doc["records"]) == 1 and ar_doc["records"][0]["id"] == "orneur-owner-authority-1"
+    assert ar_doc["records"][0]["role"] == "OWNER" and ar_doc["records"][0]["revoked"] is False
+    for k in ("gpu_permission", "spend_permission", "provider_inference_permission"):
+        assert ar_doc["records"][0][k] is False
+    rr_doc = json.loads((ROOT / RR.REGISTRY_PATH).read_text())
+    assert RR.validate(rr_doc) == [] and rr_doc["records"] == [] and rr_doc["schema_version"] == RR.SCHEMA_VERSION
 
 
-def test_committed_registries_yield_no_active_keys_so_authorization_and_review_stay_blocked():
-    assert A.load_keys(ROOT) == []
+def test_registering_the_authority_key_does_not_by_itself_authorize_anything():
+    assert len(A.load_keys(ROOT)) == 1   # a real active authority key now exists
     from orca.eval.genesis_v2 import review as R
-    assert R.load_keys(ROOT) == []
+    assert R.load_keys(ROOT) == []       # reviewer registry unaffected, still empty
+    # MODEL_EVAL_AUTHORIZATION stays NOT_AUTHORIZED: registering a key is not authorizing a run.
+    record = json.loads((ROOT / "docs/orneur/authorization/MODEL_EVAL_AUTHORIZATION.json").read_text())
+    assert record["status"] == "NOT_AUTHORIZED"
+    req = A.Request(commit_sha="0" * 40, eval_version="genesis-capability-eval/2.0.0", candidate_model_id="x", candidate_revision="1",
+                     stage="STAGE_1", runner_class="SELF_HOSTED_CPU", purpose="QUALIFICATION", event_name="workflow_dispatch")
+    verdict = A.verify(record, req, A.load_keys(ROOT))
+    assert verdict.authorized is False and "NOT_AUTHORIZED" in verdict.reasons
 
 
 # ---------------------------------------------------------------- schema validation

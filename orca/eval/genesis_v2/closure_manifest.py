@@ -29,6 +29,7 @@ ARTIFACT_PATHS = (
     "docs/orneur/phase-21/GENESIS_V2_VAULT_VERIFICATION.json",
     "docs/orneur/phase-21/GENESIS_V2_LEDGER_DEPLOYMENT_RECORD.json",
     "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_PREREGISTRATION_DRAFT.json",
+    "docs/orneur/phase-21/GENESIS_V2_CORPUS_INVENTORY_ATTESTATION_PAYLOAD_TO_SIGN.signable",
     "orca/eval/genesis_v2/identity_registry.py", "orca/eval/genesis_v2/authority_registry.py", "orca/eval/genesis_v2/reviewer_registry.py",
     "orca/eval/genesis_v2/authorization.py", "orca/eval/genesis_v2/review.py", "orca/eval/genesis_v2/inventory.py",
     "orca/eval/genesis_v2/secret_manager.py", "orca/eval/genesis_v2/vault_admin.py", "orca/eval/genesis_v2/ledger_admin.py",

@@ -196,7 +196,7 @@ def test_status_terminology_is_strict():
     exp = {"model_eval_authorization_gate": "IMPLEMENTED_TESTED", "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_UNSIGNED_DRAFT_ATTESTATION",
            "semantic_manual_review_framework": "IMPLEMENTED_TESTED_CONFIGURED_LOCAL_ONLY", "coding_sandbox": "IMPLEMENTED_TESTED", "private_storage": "ACTIVATED_VERIFIED_TEST_ONLY",
            "v2_corpus": "NOT_GENERATED", "v2_freeze": "NOT_FROZEN", "preregistration": "DESIGNED_DRAFT_NOT_FROZEN_MOSTLY_BOUND",
-           "authority_registry": "CONFIGURED_ZERO_KEYS_REGISTERED", "reviewer_registry": "CONFIGURED_ZERO_KEYS_REGISTERED", "runner_identity": "REGISTERED_NOT_AUTHORIZED",
+           "authority_registry": "CONFIGURED_ONE_OWNER_KEY_REGISTERED", "reviewer_registry": "CONFIGURED_ZERO_KEYS_REGISTERED", "runner_identity": "REGISTERED_NOT_AUTHORIZED",
            "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY", "owner_preflight": "IMPLEMENTED_TESTED_RESULT_NOT_READY"}
     assert {k: st["component_states"][k] for k in exp} == exp
     assert st["freeze_prerequisites"]["sandbox_ready"] is False and st["freeze_prerequisites"]["private_storage_genuinely_configured"] is False

@@ -5,9 +5,12 @@
  "authority_registry": {
   "doctrine": "Human owner holds private authority. ORNEUR verifies signatures. No automated process generates this key.",
   "key_generation_procedure": "docs/orneur/authorization/OWNER_AUTHORITY_KEY_GENERATION_PROCEDURE.md",
+  "key_ids": [
+   "orneur-owner-authority-1"
+  ],
   "path": "docs/orneur/authorization/AUTHORITY_REGISTRY.json",
-  "registered_keys": 0,
-  "state": "CONFIGURED_ZERO_KEYS_REGISTERED"
+  "registered_keys": 1,
+  "state": "CONFIGURED_ONE_OWNER_KEY_REGISTERED"
  },
  "authorizations": {
   "foundation_selection": false,
@@ -19,7 +22,7 @@
  },
  "component_states": {
   "access_ledger": "IMPLEMENTED_TESTED",
-  "authority_registry": "CONFIGURED_ZERO_KEYS_REGISTERED",
+  "authority_registry": "CONFIGURED_ONE_OWNER_KEY_REGISTERED",
   "coding_sandbox": "IMPLEMENTED_TESTED",
   "contamination_framework": "IMPLEMENTED_TESTED",
   "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_UNSIGNED_DRAFT_ATTESTATION",
@@ -54,6 +57,7 @@
   "attestation_status": "NOT_ATTESTED",
   "attested_complete": false,
   "draft_completeness_status": "COMPLETE_WITH_DECLARED_UNAVAILABLE",
+  "next_step": "docs/orneur/phase-21/GENESIS_V2_CORPUS_INVENTORY_ATTESTATION_PAYLOAD_TO_SIGN.bin awaits the owner's signature",
   "path": "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
   "terminology_note": "class_coverage declarations for classes with no known corpora are NONE_DECLARED_OWNER_REVIEWED (genuinely reviewed, but the overall attestation is unsigned) until a signed ATTESTED record exists; NONE_EXIST_ATTESTED is reserved for after signature verification succeeds.",
   "unavailable_corpus_policy": "docs/orneur/phase-21/GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json",
@@ -142,7 +146,6 @@
  "operational_storage_backend": "ENCRYPTED_ARTIFACT",
  "owner_preflight": {
   "outstanding_for_ready": [
-   "authority_key_registered_and_valid",
    "corpus_inventory_attested_pass"
   ],
   "result": "NOT_READY",

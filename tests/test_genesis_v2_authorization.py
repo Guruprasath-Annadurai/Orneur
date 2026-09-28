@@ -61,13 +61,15 @@ def req(**over):
 
 
 # ------------------------------------------------------------ committed state
-def test_committed_record_is_not_authorized_and_no_key_is_registered():
+def test_committed_record_is_not_authorized_even_though_an_owner_key_is_now_registered():
     rec = json.loads((ROOT / A.RECORD_PATH).read_text())
     assert rec == A.default_record() and rec["status"] == "NOT_AUTHORIZED" and rec["signature"] is None
     assert rec["gpu_allowed"] is False and rec["network_provider_inference_allowed"] is False and rec["max_runs"] == 0
     assert set(rec) == A.RECORD_KEYS
     from orca.eval.genesis_v2 import authority_registry as AR
-    assert json.loads((ROOT / AR.REGISTRY_PATH).read_text())["records"] == []
+    # The owner has since registered one real authority public key (orneur-owner-authority-1) for signing FUTURE authorization
+    # records; the committed MODEL_EVAL_AUTHORIZATION record itself remains NOT_AUTHORIZED regardless.
+    assert len(json.loads((ROOT / AR.REGISTRY_PATH).read_text())["records"]) == 1
     v = A.verify(rec, req(), A.load_keys(ROOT))
     assert not v.authorized and "NOT_AUTHORIZED" in v.reasons
 
