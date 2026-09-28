@@ -7,8 +7,8 @@
   "docs/orneur/authorization/REVIEWER_PATH_STATUS.md": "09fe79d4c31b6c8196f2f1b7fc0e4301f5961b8bb0655bb9c2014d19a5dec34a",
   "docs/orneur/authorization/REVIEWER_REGISTRY.json": "d68294701d02af6c27d41ef616b80cf0c806ea7890a8333659a1b4375e87e221",
   "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_PREREGISTRATION_DRAFT.json": "50d734415496d98a51213c1866e0c603ff94a1238e58fef9fb9d0598de9ecad6",
-  "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json": "a061352d7c7021d41788b1fb11923220cd9d414ce40381ff2865b236fe78427c",
-  "docs/orneur/phase-21/GENESIS_V2_CORPUS_INVENTORY_ATTESTATION_PAYLOAD_TO_SIGN.signable": "6818599ee66c2c4c119c0126e94a34c5eae5f71708d30dd51b29bfde72e21973",
+  "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json": "38873539e0af6319e83a2bf1ac3d7de716aae231b6ea863ee55ac7404799dc44",
+  "docs/orneur/phase-21/GENESIS_V2_CORPUS_INVENTORY_ATTESTATION_PAYLOAD_TO_SIGN.signable": "b75aab3b29c79426542602bd61b7786f80b16cd7b9823ea9cf8a10ff772a773a",
   "docs/orneur/phase-21/GENESIS_V2_LEDGER_DEPLOYMENT_RECORD.json": "86ad8563ab473ef6fe387a8c23d4fed4d5eef45cc245a500bf4cae37b03fa43c",
   "docs/orneur/phase-21/GENESIS_V2_QUALIFICATION_RUNNER_QUALIFICATION_RECORD.json": "6792effd164ad45c423b27cf34a1a6b4ad89cba38d98afd8b5a3626f0c3e1d6a",
   "docs/orneur/phase-21/GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD.json": "c9884672a33f8541faa9711454a8bb3f70fbf7664554774ddecc43e800b26899",
@@ -49,10 +49,10 @@
   "training_authorized": false,
   "v2_frozen": false
  },
- "built_from_parent_commit_sha": "61ecba811250ab5ab50e429e7b3fb4d0184590e4",
+ "built_from_parent_commit_sha": "04d602a1dac3754cb1a61e4da0dea48fce4a6a0a",
  "document": "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST",
  "manifest_commit_sha": null,
- "manifest_sha256": "3d1a38c358e98df58fb25e8178dfd4e666be66c1535749e08ce430e0169a5dc8",
+ "manifest_sha256": "c3dd163c003fa656be252430a8e54282c388e0c1c062ba899590e7497812ea2e",
  "missing_artifacts": [],
  "note": "built_from_parent_commit_sha is the commit that existed when this manifest was generated (most bundled artifacts, including some in this same phase's commit, are hashed by content here, not claimed to live at that SHA). manifest_commit_sha is intentionally null: the commit that actually introduces this file is only knowable after it is made, and is reported in the phase's final report instead of self-referenced.",
  "owner_preflight_checks": {
@@ -89,5 +89,5 @@
  "owner_preflight_result": "NOT_READY",
  "schema_version": "genesis-v2-pre-corpus-closure-manifest/2",
  "status": "PRE_CORPUS_CLOSURE_EVIDENCE_ONLY",
- "timestamp": "2026-09-28T11:59:06Z"
+ "timestamp": "2026-09-28T13:58:41Z"
 }

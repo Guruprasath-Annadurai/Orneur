@@ -168,14 +168,15 @@
    "corpus_inventory_digest": "972312ea3abc7200272045e8b150431ad093bbfb3699f8c942c1a177b8f5e131",
    "inventory_version": "1",
    "owner_identity": "orneur-owner-authority-1",
-   "review_timestamp": "2026-09-27T09:30:00Z",
+   "review_timestamp": "2026-09-28T13:57:54Z",
    "schema_version": "genesis-v2-corpus-inventory-attestation/1",
    "scope_reviewed": [
     "repository notebooks/data (public SFT)",
     "eval_private/genesis_capability_eval_v1 (pilot_train + exposed dev/holdout)",
     "~/.orca/training/{raw,formatted,dpo,distill_logs} (owner's local machine)",
     "notebooks/*.ipynb dataset references (Kaggle-derived)",
-    "every corpus class in orca.eval.genesis_v2.inventory.CORPUS_CLASSES"
+    "every corpus class in orca.eval.genesis_v2.inventory.CORPUS_CLASSES",
+    "owner personally reviewed and approved the generated ORNEUR Genesis V2 Owner Review Report (read-only, all 70 entries, independently re-verified file existence and SHA-256 hash match for the 69 PRESENT entries, declared UNAVAILABLE status for the one Kaggle-derived entry, and all declared usage/visibility flags including the 57 UNKNOWN training-usage declarations); owner did not personally open or inspect each of the 69 underlying files individually"
    ],
    "signature": null,
    "unresolved_classes": [
