@@ -228,6 +228,134 @@ def test_bad_commit_sha_format_denied(signer):
     assert not v.authorized and "BAD_AUTHORIZED_COMMIT_SHA" in v.reasons
 
 
+# ---------------------------------------------------------------- item 1: event/scope hardening
+def test_empty_event_name_denied_not_special_cased(signer):
+    make, keys = signer
+    v = CGA.verify(make(), req(event_name=""), keys, now=NOW)
+    assert not v.authorized and "EVENT_NOT_EXPLICIT_DISPATCH" in v.reasons
+
+
+def test_empty_requested_scope_denied(signer):
+    make, keys = signer
+    v = CGA.verify(make(), req(requested_scope=()), keys, now=NOW)
+    assert not v.authorized and "EMPTY_REQUESTED_SCOPE" in v.reasons
+
+
+def test_duplicated_requested_scope_denied(signer):
+    make, keys = signer
+    v = CGA.verify(make(), req(requested_scope=("PILOT_TRAIN", "PILOT_TRAIN")), keys, now=NOW)
+    assert not v.authorized and "DUPLICATE_REQUESTED_SCOPE" in v.reasons
+
+
+def test_malformed_requested_scope_item_denied(signer):
+    make, keys = signer
+    v = CGA.verify(make(), req(requested_scope=("PILOT_TRAIN", "NOT_A_REAL_SPLIT")), keys, now=NOW)
+    assert not v.authorized and "MALFORMED_REQUESTED_SCOPE_ITEM" in v.reasons
+
+
+def test_authorized_scope_with_duplicates_denied(signer):
+    make, keys = signer
+    v = CGA.verify(make(authorized_scope=["PILOT_TRAIN", "PILOT_TRAIN"]), req(), keys, now=NOW)
+    assert not v.authorized and "BAD_AUTHORIZED_SCOPE" in v.reasons
+
+
+# ---------------------------------------------------------------- item 2: impossible timestamps / malformed input never crash
+def test_impossible_calendar_date_denied_not_raised(signer):
+    make, keys = signer
+    rec = make(issued_at="2026-13-40T25:99:99Z", expires_at="2026-13-41T25:99:99Z")   # matches the regex shape, not a real date
+    v = CGA.verify(rec, req(), keys, now=NOW)                                          # must not raise
+    assert not v.authorized and "IMPOSSIBLE_TIMESTAMP" in v.reasons
+
+
+def test_malformed_request_commit_sha_denied_not_raised():
+    make = None
+    v = CGA.verify({"not": "a valid record shape at all", "with": ["weird", 1, None]}, req(commit_sha=None), [], now=NOW)
+    assert not v.authorized   # never raises regardless of how malformed the record or request is
+
+
+def test_non_string_signature_never_raises(signer):
+    make, keys = signer
+    rec = make()
+    rec["signature"] = 12345   # wrong type entirely
+    v = CGA.verify(rec, req(), keys, now=NOW)
+    assert not v.authorized   # must not raise
+
+
+def test_verify_top_level_guard_survives_a_non_dict_keys_list(signer):
+    make, keys = signer
+    v = CGA.verify(make(), req(), [None, 42, "not-a-dict"], now=NOW)   # malformed keys list
+    assert not v.authorized   # must not raise
+
+
+# ---------------------------------------------------------------- item 3: revocation through the REAL registry-loading path
+def _write_authority_registry(root: Path, record: dict):
+    p = root / "docs/orneur/authorization/AUTHORITY_REGISTRY.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    from orca.eval.genesis_v2 import authority_registry as AR
+    p.write_text(json.dumps({"schema_version": AR.SCHEMA_VERSION, "records": [record]}))
+
+
+def test_revoked_key_is_excluded_by_the_real_registry_loading_path(tmp_path, signer):
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    _write_authority_registry(tmp_path, {"id": "k-real", "role": "OWNER", "public_key_hex": pub,
+                                          "activation_timestamp": ts(NOW - timedelta(days=1)), "expiry": None, "revoked": True})
+    loaded = CGA.load_keys(tmp_path)
+    assert loaded == []   # the real registry-loading path (identity_registry.is_active) excludes revoked keys, not a mock
+    rec = CGA.default_record()
+    rec.update({"authorization_id": "cgauth-" + "cd" * 8, "status": "AUTHORIZED", "purpose": CGA.PURPOSE,
+                "authorized_scope": ["PILOT_TRAIN"], "authorized_commit_sha": SHA,
+                "authorized_artifact_digests": {"corpus_inventory_digest": INV_DIGEST, "preregistration_record_sha256": PREREG_DIGEST},
+                "issued_at": ts(NOW - timedelta(hours=1)), "expires_at": ts(NOW + timedelta(days=1)),
+                "authorizing_authority": {"identity": "k-real", "role": "OWNER", "key_id": "k-real"}})
+    rec["signature"] = sk.sign(CGA.canonical_signing_bytes(rec)).hex()
+    v = CGA.verify(rec, req(requested_scope=("PILOT_TRAIN",)), loaded, now=NOW)
+    assert not v.authorized and "AUTHORITY_KEY_NOT_REGISTERED" in v.reasons
+
+
+def test_expired_key_is_excluded_by_the_real_registry_loading_path(tmp_path, signer):
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    _write_authority_registry(tmp_path, {"id": "k-real2", "role": "OWNER", "public_key_hex": pub,
+                                          "activation_timestamp": ts(NOW - timedelta(days=30)), "expiry": ts(NOW - timedelta(days=1)), "revoked": False})
+    loaded = CGA.load_keys(tmp_path)
+    assert loaded == []
+
+
+def test_not_yet_active_key_is_excluded_by_the_real_registry_loading_path(tmp_path):
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    _write_authority_registry(tmp_path, {"id": "k-future", "role": "OWNER", "public_key_hex": pub,
+                                          "activation_timestamp": ts(NOW + timedelta(days=1)), "expiry": None, "revoked": False})
+    assert CGA.load_keys(tmp_path) == []
+
+
+def test_delegated_owner_role_excluded_from_corpus_generation_load_keys(tmp_path):
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    _write_authority_registry(tmp_path, {"id": "k-delegate", "role": "DELEGATED_OWNER", "public_key_hex": pub,
+                                          "activation_timestamp": ts(NOW - timedelta(days=1)), "expiry": None, "revoked": False})
+    # load_keys() filters to role == OWNER only; a real, active, non-revoked DELEGATED_OWNER key still does not come back.
+    assert CGA.load_keys(tmp_path) == []
+
+
+def test_the_real_committed_authority_registry_currently_has_one_active_owner_key():
+    keys = CGA.load_keys(ROOT)
+    assert len(keys) == 1 and keys[0]["key_id"] == "orneur-owner-authority-1" and keys[0]["role"] == "OWNER"
+
+
 # ---------------------------------------------------------------- real integration: currently reachable digests
 def test_real_inventory_and_prereg_digests_are_computable_and_would_bind_correctly():
     inv = json.loads((ROOT / INV.INVENTORY_PATH).read_text())

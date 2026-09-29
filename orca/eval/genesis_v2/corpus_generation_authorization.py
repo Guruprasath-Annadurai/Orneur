@@ -101,9 +101,31 @@ def verify_signature(record: dict, keys: list) -> str | None:
     return None
 
 
+def _safe_parse(s: str) -> datetime | None:
+    """Like _parse(), but never raises: an impossible calendar date (e.g. month 13, day 32) matches the _TS regex's digit
+    pattern but is not a real date, and strptime raises ValueError for it. Returns None on any parse failure instead of
+    propagating an exception — the caller turns that into a deterministic denial."""
+    try:
+        return _parse(s)
+    except (ValueError, TypeError):
+        return None
+
+
 def verify(record, req: Request, keys: list, now: datetime | None = None) -> Verdict:
     """Fail closed: authorized only if `reasons` is empty. Registering a key or having a signed inventory attestation is never
-    sufficient here — `keys` only supplies the public key to check a signature THIS record must independently carry."""
+    sufficient here — `keys` only supplies the public key to check a signature THIS record must independently carry.
+
+    Never raises: every branch that could throw on malformed input (bad timestamps, non-hex signatures, wrong types) is
+    guarded and turned into a `Verdict(False, [...])` instead. A top-level guard below is defense in depth for anything
+    not individually anticipated — an authorization gate that can crash into an unhandled exception is not fail-closed,
+    it is merely fail-loud; the caller must always get back a definite yes/no."""
+    try:
+        return _verify_inner(record, req, keys, now)
+    except Exception as e:
+        return Verdict(False, [f"UNEXPECTED_VERIFY_ERROR:{type(e).__name__}"])
+
+
+def _verify_inner(record, req: Request, keys: list, now: datetime | None = None) -> Verdict:
     now = now or datetime.now(timezone.utc)
     r: list = []
     if not isinstance(record, dict):
@@ -120,12 +142,21 @@ def verify(record, req: Request, keys: list, now: datetime | None = None) -> Ver
     if record["purpose"] != PURPOSE:
         r.append("WRONG_PURPOSE")
     scope = record.get("authorized_scope")
-    if not isinstance(scope, list) or not scope or not set(scope) <= set(ARTIFACT_CLASSES):
-        r.append("BAD_AUTHORIZED_SCOPE")
-    elif not set(req.requested_scope) <= set(scope):
+    if not isinstance(scope, list) or not scope or len(scope) != len(set(scope)) or not set(scope) <= set(ARTIFACT_CLASSES):
+        r.append("BAD_AUTHORIZED_SCOPE")                       # covers empty, duplicate, and out-of-vocabulary entries
+    requested = req.requested_scope
+    if not isinstance(requested, (list, tuple)) or not requested:
+        r.append("EMPTY_REQUESTED_SCOPE")
+    elif len(requested) != len(set(requested)):
+        r.append("DUPLICATE_REQUESTED_SCOPE")
+    elif not set(requested) <= set(ARTIFACT_CLASSES):
+        r.append("MALFORMED_REQUESTED_SCOPE_ITEM")
+    elif isinstance(scope, list) and scope and not set(requested) <= set(scope):
         r.append("REQUESTED_SCOPE_EXCEEDS_AUTHORIZATION")
     if not (isinstance(record["authorized_commit_sha"], str) and _SHA40.match(record["authorized_commit_sha"])):
         r.append("BAD_AUTHORIZED_COMMIT_SHA")
+    elif not (isinstance(req.commit_sha, str) and _SHA40.match(req.commit_sha)):
+        r.append("BAD_REQUEST_COMMIT_SHA")
     elif record["authorized_commit_sha"] != req.commit_sha:
         r.append("COMMIT_SHA_MISMATCH")                       # the classic replay case: reusing an old authorization at a new commit
     digests = record.get("authorized_artifact_digests")
@@ -139,7 +170,10 @@ def verify(record, req: Request, keys: list, now: datetime | None = None) -> Ver
     if not _ts_ok(record.get("issued_at")) or not _ts_ok(record.get("expires_at")):
         r.append("BAD_TIMESTAMPS")
     else:
-        issued, expires = _parse(record["issued_at"]), _parse(record["expires_at"])
+        issued, expires = _safe_parse(record["issued_at"]), _safe_parse(record["expires_at"])
+        if issued is None or expires is None:
+            r.append("IMPOSSIBLE_TIMESTAMP")                   # regex-shaped but not a real calendar date/time
+            return Verdict(False, r)
         if expires <= issued:
             r.append("EXPIRES_BEFORE_ISSUED")
         if expires - issued > MAX_VALIDITY:
@@ -153,7 +187,8 @@ def verify(record, req: Request, keys: list, now: datetime | None = None) -> Ver
     sig_problem = verify_signature(record, keys)
     if sig_problem:
         r.append(sig_problem)
-    if req.event_name and req.event_name != "workflow_dispatch":
+    # An absent/empty event_name is exactly as unauthorized as any other non-dispatch event — never special-cased into a pass.
+    if req.event_name != "workflow_dispatch":
         r.append("EVENT_NOT_EXPLICIT_DISPATCH")
     return Verdict(len(r) == 0, r)
 

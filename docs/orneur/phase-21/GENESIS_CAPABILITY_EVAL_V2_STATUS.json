@@ -25,13 +25,17 @@
   "access_ledger": "IMPLEMENTED_TESTED",
   "authority_registry": "CONFIGURED_ONE_OWNER_KEY_REGISTERED",
   "benchmark_partition_architecture": "DESIGNED_NOT_ACTIVATED",
+  "candidate_lineage_attestation": "IMPLEMENTED_TESTED_PROPOSED_NOT_ACTIVATED",
   "coding_sandbox": "IMPLEMENTED_TESTED",
   "contamination_framework": "IMPLEMENTED_TESTED",
   "corpus_generation_authorization_gate": "IMPLEMENTED_TESTED_NOT_AUTHORIZED",
+  "corpus_generation_authorization_signing_runbook": "DESIGNED_NOT_ACTIVATED",
   "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_SIGNED_ATTESTATION",
+  "corpus_manifest_schema": "IMPLEMENTED_TESTED_PROPOSED_NOT_ACTIVATED",
   "historical_contamination_controls_consolidation": "DESIGNED_NOT_ACTIVATED",
   "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY",
   "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
+  "operational_authorization_boundary": "IMPLEMENTED_TESTED",
   "owner_authority_key_procedure": "DESIGNED_ACTIVATED_ONE_KEY_REGISTERED",
   "owner_preflight": "IMPLEMENTED_TESTED_RESULT_READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
   "owner_vault_procedure": "DESIGNED_NOT_ACTIVATED",
@@ -58,7 +62,14 @@
   "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (pre-corpus attestation ATTESTED and signature-verified; full contamination qualification remains pending the private V2 corpus; one class genuinely unresolved)"
  },
  "corpus_generation_authorization": {
+  "hardening_this_phase": [
+   "empty/absent/non-workflow_dispatch event fails closed",
+   "empty/duplicate/out-of-vocabulary requested/authorized scope rejected",
+   "impossible calendar timestamps and malformed input never raise (deterministic denial)",
+   "revocation/expiry/not-yet-active tested through the real AUTHORITY_REGISTRY-loading path"
+  ],
   "module": "orca/eval/genesis_v2/corpus_generation_authorization.py",
+  "operational_boundary_module": "orca/eval/genesis_v2/operational_boundary.py",
   "path": "docs/orneur/authorization/CORPUS_GENERATION_AUTHORIZATION.json",
   "separate_from": [
    "authority_registry key registration",
