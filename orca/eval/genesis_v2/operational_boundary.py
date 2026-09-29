@@ -118,10 +118,14 @@ def _trusted_generator_id(generator_id: str | None) -> str | None:
     return os.environ.get("GENESIS_V2_GENERATOR_ID") or None
 
 
-def _generator_authorized(root: Path, generator_id: str | None, live_code_sha256: str) -> tuple:
+def _generator_authorized(root: Path, generator_id: str | None, live_code_sha256: str, requested_scope: tuple) -> tuple:
     """(authorized: bool, state: str|None). Checks the SEPARATE generator_registry.py (never the qualification
     runner registry). A registry entry whose OWN declared code_sha256 no longer matches the code actually running
-    right now is treated exactly like an unregistered identity — the registry cannot silently drift from reality."""
+    right now is treated exactly like an unregistered identity — the registry cannot silently drift from reality.
+    Also enforces that EVERY requested artifact class is within the generator's own `allowed_artifact_classes` —
+    a generator record does not implicitly authorize every class merely by existing; requesting a class outside
+    its declared scope is treated as not-authorized, independent of whatever the CORPUS_GENERATION_AUTHORIZATION
+    record's own scope says (both must agree — see check_authorization, which intersects both checks)."""
     reg_path = root / GR.REGISTRY_PATH
     if not reg_path.is_file():
         return False, None
@@ -141,6 +145,8 @@ def _generator_authorized(root: Path, generator_id: str | None, live_code_sha256
         return False, None
     if rec.get("code_sha256") != live_code_sha256:
         return False, "CODE_SHA256_DRIFTED_FROM_REGISTRY"
+    if not set(requested_scope) <= set(rec.get("allowed_artifact_classes") or []):
+        return False, "REQUESTED_SCOPE_EXCEEDS_GENERATOR_ALLOWED_CLASSES"
     return rec.get("state") == "AUTHORIZED", rec.get("state")
 
 
@@ -159,7 +165,7 @@ def check_authorization(root: Path, *, requested_scope: tuple, event_name: str |
                        event_name=_trusted_event_name(event_name))
     keys = CGA.load_keys(root)
     verdict = CGA.verify(record, req, keys, now=now)
-    gen_ok, gen_state = _generator_authorized(root, _trusted_generator_id(generator_id), code_hash)
+    gen_ok, gen_state = _generator_authorized(root, _trusted_generator_id(generator_id), code_hash, tuple(requested_scope))
     authorized = verdict.authorized and gen_ok
     reasons = list(verdict.reasons)
     if not gen_ok:
@@ -209,22 +215,61 @@ def require_private_split_access(root: Path, ledger_dir: Path, *, process_id: st
 def authorized_manifest_verification_bytes(root: Path, ledger_dir: Path, store, *, process_id: str, code_sha256: str,
                                             corpus_id: str, expected_corpus_digest: str, eval_version: str, candidate_revision: str,
                                             candidate_lineage: str, run_id_prefix: str, timestamp_utc: str) -> tuple:
-    """The SEPARATELY AUTHORIZED verification capability: the only sanctioned way to obtain real plaintext bytes to
-    feed into `corpus_manifest.verify_against_artifacts()`. Makes TWO real, independent `require_private_split_access`
-    calls (one per split — the ledger's run-id uniqueness means each split read is its own grant, never reused) and
-    only reads the vault AFTER each grant succeeds. A caller that merely holds a `store` handle — e.g. a generator,
-    which per generator_registry.py must have vault_read=false anyway — cannot use this shortcut to read a holdout:
-    it still needs a genuinely AUTHORIZED qualification-runner identity and a real ledger grant for BOTH splits.
-    Returns (screen_plain, holdout_plain). Raises PrivateSplitAccessDenied on either split's denial."""
+    """The SEPARATELY AUTHORIZED, CREATION-TIME verification capability: the only sanctioned way to obtain real
+    plaintext bytes to feed into `corpus_manifest.verify_against_artifacts()`, right after generation and always
+    BEFORE V2 is frozen. Uses `spec.PURPOSE_CREATION_VERIFICATION` — a purpose DISTINCT from
+    `PURPOSE_QUALIFICATION`/`PURPOSE_STAGE1` — for BOTH splits, so this call:
+      - does NOT consume the QUALIFICATION_HOLDOUT's one-time-per-lineage qualification lifecycle (the ledger's
+        write-once/lineage bookkeeping in `_state_from` only counts PURPOSE_QUALIFICATION accesses),
+      - does NOT require V2 to be frozen (creation-time verification happens before freeze, by definition),
+      - the ledger additionally refuses this purpose once the holdout has left the SEALED state, so it can never be
+        used to sneak a read after a real qualification run has legitimately opened it.
+    Makes TWO real, independent `require_private_split_access` calls (one per split) and only reads the vault AFTER
+    each grant succeeds. A caller that merely holds a `store` handle — e.g. a generator, which per
+    generator_registry.py must have vault_read=false anyway — cannot use this shortcut: it still needs a genuinely
+    AUTHORIZED qualification-runner identity and a real ledger grant for BOTH splits. Refuses to run at all once V2
+    is frozen (frozen means real qualification has begun; verification must have already happened before then).
+    Returns (screen_plain, holdout_plain). Raises PrivateSplitAccessDenied on any denial."""
     from orca.eval.genesis_v2 import spec as SPEC
-    require_private_split_access(root, ledger_dir, process_id=process_id, code_sha256=code_sha256, purpose=SPEC.PURPOSE_STAGE1,
+    if SPEC.GENESIS_CAPABILITY_EVAL_V2_FROZEN:
+        raise PrivateSplitAccessDenied("creation-time verification is only valid before V2 is frozen")
+    require_private_split_access(root, ledger_dir, process_id=process_id, code_sha256=code_sha256, purpose=SPEC.PURPOSE_CREATION_VERIFICATION,
                                   split="SCREEN", eval_version=eval_version, corpus_digest=expected_corpus_digest,
                                   run_id=f"{run_id_prefix}-screen", candidate_revision=candidate_revision,
                                   candidate_lineage=candidate_lineage, timestamp_utc=timestamp_utc)
-    require_private_split_access(root, ledger_dir, process_id=process_id, code_sha256=code_sha256, purpose=SPEC.PURPOSE_QUALIFICATION,
+    require_private_split_access(root, ledger_dir, process_id=process_id, code_sha256=code_sha256, purpose=SPEC.PURPOSE_CREATION_VERIFICATION,
                                   split="QUALIFICATION_HOLDOUT", eval_version=eval_version, corpus_digest=expected_corpus_digest,
                                   run_id=f"{run_id_prefix}-holdout", candidate_revision=candidate_revision,
                                   candidate_lineage=candidate_lineage, timestamp_utc=timestamp_utc)
     screen_plain = store.read_split(corpus_id, "SCREEN", expected_corpus_digest=expected_corpus_digest)
     holdout_plain = store.read_split(corpus_id, "QUALIFICATION_HOLDOUT", expected_corpus_digest=expected_corpus_digest)
     return screen_plain, holdout_plain
+
+
+class GeneratorWriteHandle:
+    """A write-only capability: wraps a real `store.EncryptedFileStore` but exposes ONLY `write_corpus` — no
+    `read_split`, no attribute that could reach one. A generator holding this handle cannot read a private split
+    through it, full stop, independent of whatever `generator_registry.py`'s `vault_read` field says (that field is
+    a DECLARATION checked at registration time; this handle is the actual ENFORCEMENT — the class itself has no
+    read method to call, so there is no alternative API surface on this object to reach one through)."""
+
+    def __init__(self, store):
+        self._store = store
+
+    def write_corpus(self, corpus_id: str, splits: dict) -> str:
+        return self._store.write_corpus(corpus_id, splits)
+
+    def __repr__(self) -> str:
+        return "GeneratorWriteHandle(write_corpus only)"
+
+
+def protected_generate_write_handle(root: Path, store, *, requested_scope: tuple, event_name: str | None = None,
+                                     generator_id: str | None = None, now=None) -> GeneratorWriteHandle:
+    """THE protected operation: the only sanctioned way for real generation code to obtain something that can write
+    to the vault. Calls `require_authorization()` first (raises CorpusGenerationNotAuthorized on any denial — the
+    full composed boundary: signed authorization against the real execution context, generator identity+scope, code
+    drift). Only on success does it return a `GeneratorWriteHandle` — never the raw `store` — so a caller cannot
+    reach `read_split` through this path even if it wanted to. Real generation code should never call
+    `store.write_corpus()` directly; it should always go through this function."""
+    require_authorization(root, requested_scope=requested_scope, event_name=event_name, generator_id=generator_id, now=now)
+    return GeneratorWriteHandle(store)

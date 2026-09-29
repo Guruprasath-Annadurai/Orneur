@@ -236,6 +236,9 @@ class AccessLedger:
                         raise AccessDenied("FRESH_HOLDOUT_VERSION_REQUIRED", "adapted from a lineage that already opened this holdout")
                 elif req.purpose == spec.PURPOSE_RETIREMENT and st["state"] != spec.STATE_OPENED:
                     raise AccessDenied("NOT_OPENED", "disclosure is only allowed after the holdout was used and formally retired")
+                elif req.purpose == spec.PURPOSE_CREATION_VERIFICATION and st["state"] != spec.STATE_SEALED:
+                    raise AccessDenied("CREATION_VERIFICATION_ONLY_WHILE_SEALED",
+                                        "creation-time verification is only valid before any real qualification run has opened the holdout")
             return self._append_tx(c, {
                 "kind": "ACCESS", "who": req.process_id, "process_code_sha256": req.code_sha256, "purpose": req.purpose, "split": req.split,
                 "eval_version": req.eval_version, "timestamp_utc": req.timestamp_utc, "corpus_digest": req.corpus_digest, "run_id": req.run_id,

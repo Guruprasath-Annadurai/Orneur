@@ -22,25 +22,33 @@ import json
 import re
 from pathlib import Path
 
-SCHEMA_VERSION = "genesis-v2-candidate-lineage-attestation/3"
+SCHEMA_VERSION = "genesis-v2-candidate-lineage-attestation/4"
 EXPOSURE_STATES = ("UNDISCLOSED", "DISCLOSED_UNCERTAIN", "DISCLOSED_CLEAN")
+REVIEWER_DISPOSITIONS = ("CONFIRMED_CLEAN", "CONFIRMED_UNCERTAIN", "REJECTED")
 REQUIRED_FIELDS = frozenset({"schema_version", "candidate_id", "candidate_revision", "model_family", "attested_by",
                              "attestation_timestamp", "training_data_disclosure_source", "reproducible_training_log_digest",
                              "independent_verification", "exposure_to_unresolved_corpora", "notes"})
-_VERIFICATION_FIELDS = frozenset({"verifier_identity", "verification_method", "verified_at", "signature"})
+_VERIFICATION_FIELDS = frozenset({"verifier_identity", "verification_method", "verified_at", "reviewer_disposition", "signature"})
 _SHA64 = re.compile(r"^[0-9a-f]{64}$")
 _SIG128 = re.compile(r"^[0-9a-f]{128}$")
 _TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 def verification_signing_bytes(rec: dict) -> bytes:
-    """The exact canonical bytes the reviewer signs: binds the signature to THIS candidate/revision/log-digest/
-    verifier tuple, not just a bare "yes" floating free of what was actually reviewed."""
+    """The exact canonical bytes the reviewer signs — binds the COMPLETE lineage verdict, not just a floating "yes":
+    candidate identity/revision, the evidence digest actually reviewed, the FULL exposure state including exactly
+    which unresolved classes were considered, and the reviewer's own disposition (their independent verdict, not a
+    mirror of the provider's claim). Changing ANY of these after signing — including flipping
+    exposure_to_unresolved_corpora.state from DISCLOSED_UNCERTAIN to DISCLOSED_CLEAN post-signature, which schema /3
+    did not bind at all — invalidates the signature."""
     iv = rec.get("independent_verification") or {}
+    exposure = rec.get("exposure_to_unresolved_corpora") or {}
     body = {"candidate_id": rec.get("candidate_id"), "candidate_revision": rec.get("candidate_revision"),
             "reproducible_training_log_digest": rec.get("reproducible_training_log_digest"),
+            "exposure_state": exposure.get("state"),
+            "unresolved_classes_considered": sorted(exposure.get("unresolved_classes_considered") or []),
             "verifier_identity": iv.get("verifier_identity"), "verification_method": iv.get("verification_method"),
-            "verified_at": iv.get("verified_at")}
+            "verified_at": iv.get("verified_at"), "reviewer_disposition": iv.get("reviewer_disposition")}
     return json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
 
 
@@ -73,10 +81,22 @@ def validate_attestation(rec) -> list:
                 p.append("independent_verification.verification_method required")
             if not isinstance(iv.get("verified_at"), str) or not _TS.match(iv["verified_at"]):
                 p.append("independent_verification.verified_at invalid")
+            if iv.get("reviewer_disposition") not in REVIEWER_DISPOSITIONS:
+                p.append(f"independent_verification.reviewer_disposition must be one of {REVIEWER_DISPOSITIONS}")
             if not (isinstance(iv.get("signature"), str) and _SIG128.match(iv["signature"])):
                 p.append("independent_verification.signature must be a 128-hex-char Ed25519 signature — not a bare boolean claim")
             if isinstance(iv.get("verifier_identity"), str) and iv["verifier_identity"] == rec.get("attested_by"):
                 p.append("independent_verification.verifier_identity must differ from attested_by (not independent otherwise)")
+    # The reviewer's OWN disposition must agree with the exposure state it is meant to independently confirm -- a
+    # reviewer who only confirmed CONFIRMED_UNCERTAIN cannot leave a DISCLOSED_CLEAN claim standing unchallenged.
+    if isinstance(iv, dict) and isinstance(rec.get("exposure_to_unresolved_corpora"), dict):
+        disp, st = iv.get("reviewer_disposition"), rec["exposure_to_unresolved_corpora"].get("state")
+        if disp in REVIEWER_DISPOSITIONS and st in EXPOSURE_STATES:
+            expected = {"CONFIRMED_CLEAN": "DISCLOSED_CLEAN", "CONFIRMED_UNCERTAIN": "DISCLOSED_UNCERTAIN", "REJECTED": None}[disp]
+            if expected is not None and expected != st:
+                p.append(f"independent_verification.reviewer_disposition ({disp}) is inconsistent with exposure_to_unresolved_corpora.state ({st})")
+            if disp == "REJECTED" and st == "DISCLOSED_CLEAN":
+                p.append("a REJECTED reviewer disposition cannot coexist with a DISCLOSED_CLEAN exposure state")
     exposure = rec.get("exposure_to_unresolved_corpora")
     if not isinstance(exposure, dict) or not isinstance(exposure.get("state"), str) or exposure["state"] not in EXPOSURE_STATES:
         p.append(f"exposure_to_unresolved_corpora.state must be one of {EXPOSURE_STATES}")
@@ -126,13 +146,27 @@ def historical_exposure_complete(rec: dict, root) -> tuple:
     return (not missing), missing
 
 
-def qualification_eligibility(rec: dict, *, root=None, reviewer_keys: list | None = None) -> dict:
+def verify_real_evidence_digest(rec: dict, real_log_bytes: bytes | None) -> str | None:
+    """Recomputes SHA-256 of the ACTUAL evidence bytes the reviewer claims to have examined and compares it to
+    `reproducible_training_log_digest` — never accepts a syntactically valid digest as proof the reviewer looked at
+    real evidence. `real_log_bytes is None` means "no evidence was provided to check against" and fails closed."""
+    import hashlib
+    if real_log_bytes is None:
+        return "NO_REAL_EVIDENCE_SUPPLIED_TO_VERIFY_DIGEST_AGAINST"
+    if hashlib.sha256(bytes(real_log_bytes)).hexdigest() != rec.get("reproducible_training_log_digest"):
+        return "REPRODUCIBLE_TRAINING_LOG_DIGEST_DOES_NOT_MATCH_REAL_EVIDENCE_BYTES"
+    return None
+
+
+def qualification_eligibility(rec: dict, *, root=None, reviewer_keys: list | None = None, real_log_bytes: bytes | None = None) -> dict:
     """Derives what the fail-closed acceptance-policy rule (see GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json)
     means for THIS candidate. Never returns an eligibility claim for a structurally invalid record, an unverified
-    disclosure, or an attestation that omits a currently-real unresolved corpus class. `root` is required to check
-    historical-exposure completeness against the live inventory. `reviewer_keys` is required (active
-    PRIVATE_BENCHMARK_REVIEWER keys from reviewer_registry.py) to verify the independent verification's signature —
-    omitting either means the corresponding check cannot pass, by design."""
+    disclosure, an attestation that omits a currently-real unresolved corpus class, or a claimed evidence digest that
+    does not match real evidence bytes. `root` is required to check historical-exposure completeness against the
+    live inventory. `reviewer_keys` is required (active PRIVATE_BENCHMARK_REVIEWER keys from reviewer_registry.py)
+    to verify the independent verification's signature. `real_log_bytes` is required to independently confirm the
+    claimed log digest against actual evidence — omitting any of the three means the corresponding check cannot
+    pass, by design."""
     problems = validate_attestation(rec)
     if problems:
         return {"eligible": False, "reason": "INVALID_ATTESTATION", "problems": problems}
@@ -142,9 +176,17 @@ def qualification_eligibility(rec: dict, *, root=None, reviewer_keys: list | Non
         return {"eligible": False, "reason": reason, "problems": []}
     if not rec["reproducible_training_log_digest"]:
         return {"eligible": False, "reason": "CLEAN_CLAIM_WITHOUT_VERIFIABLE_LOG", "problems": []}
+    iv = rec.get("independent_verification")
+    if not isinstance(iv, dict):
+        return {"eligible": False, "reason": "CLEAN_CLAIM_WITHOUT_INDEPENDENT_VERIFICATION", "problems": []}
+    if iv.get("reviewer_disposition") != "CONFIRMED_CLEAN":
+        return {"eligible": False, "reason": "REVIEWER_DID_NOT_CONFIRM_CLEAN", "problems": []}
     sig_problem = verify_reviewer_signature(rec, reviewer_keys)
     if sig_problem:
         return {"eligible": False, "reason": "CLEAN_CLAIM_WITHOUT_INDEPENDENT_VERIFICATION", "problems": [sig_problem]}
+    evidence_problem = verify_real_evidence_digest(rec, real_log_bytes)
+    if evidence_problem:
+        return {"eligible": False, "reason": "CLEAN_CLAIM_EVIDENCE_NOT_VERIFIED", "problems": [evidence_problem]}
     if root is None:
         return {"eligible": False, "reason": "HISTORICAL_EXPOSURE_COMPLETENESS_NOT_CHECKED", "problems": []}
     complete, missing = historical_exposure_complete(rec, root)

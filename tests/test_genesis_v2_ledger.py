@@ -17,8 +17,10 @@ ROOT = Path(__file__).resolve().parents[1]
 CODE = hashlib.sha256(b"registered-qualifier").hexdigest()
 DIG = hashlib.sha256(b"corpus").hexdigest()
 REG = {"qual": L.RegisteredProcess("qual", CODE, (spec.PURPOSE_QUALIFICATION, spec.PURPOSE_RETIREMENT), ("QUALIFICATION_HOLDOUT",)),
-       "stage1": L.RegisteredProcess("stage1", CODE, (spec.PURPOSE_STAGE1,), ("SCREEN",))}
+       "stage1": L.RegisteredProcess("stage1", CODE, (spec.PURPOSE_STAGE1,), ("SCREEN",)),
+       "verifier": L.RegisteredProcess("verifier", CODE, (spec.PURPOSE_CREATION_VERIFICATION,), ("SCREEN", "QUALIFICATION_HOLDOUT"))}
 FROZEN = {"frozen": True}
+NOT_FROZEN = {"frozen": False}
 
 
 def req(**kw):
@@ -268,3 +270,43 @@ def test_process_killed_mid_transaction_leaves_consistent_ledger(tmp_path):
 def test_database_file_permissions_are_restrictive(tmp_path):
     L.AccessLedger(tmp_path, REG, freeze=FROZEN)
     assert (tmp_path / "ledger.sqlite3").stat().st_mode & 0o077 == 0
+
+
+# ---------------------------------------------------------------- PURPOSE_CREATION_VERIFICATION (creation-time manifest verification)
+def test_creation_verification_allowed_pre_freeze_while_holdout_still_sealed(tmp_path):
+    """Distinct from PURPOSE_QUALIFICATION/PURPOSE_STAGE1: this purpose is NOT gated by EVAL_NOT_FROZEN, because
+    creation-time verification happens right after generation, always before V2 is frozen."""
+    led = L.AccessLedger(tmp_path, REG, freeze=NOT_FROZEN)
+    r = led.request_access(req(process_id="verifier", purpose=spec.PURPOSE_CREATION_VERIFICATION, run_id="cv-holdout"))
+    assert r["purpose"] == spec.PURPOSE_CREATION_VERIFICATION
+    r2 = led.request_access(req(process_id="verifier", purpose=spec.PURPOSE_CREATION_VERIFICATION, split="SCREEN", run_id="cv-screen"))
+    assert r2["split"] == "SCREEN"
+
+
+def test_creation_verification_does_not_count_toward_opened_by_or_lineages(tmp_path):
+    """The ledger's holdout state machine (_state_from) keys specifically off PURPOSE_QUALIFICATION; a creation-time
+    verification access must never be mistaken for a real qualification-run open."""
+    led = L.AccessLedger(tmp_path, REG, freeze=NOT_FROZEN)
+    led.request_access(req(process_id="verifier", purpose=spec.PURPOSE_CREATION_VERIFICATION, run_id="cv-1", candidate_lineage="lin-cv"))
+    led.request_access(req(process_id="verifier", purpose=spec.PURPOSE_CREATION_VERIFICATION, run_id="cv-2", candidate_lineage="lin-cv2"))
+    st = led.holdout_state(spec.EVAL_VERSION)
+    assert st == {"state": spec.STATE_SEALED, "opened_by": None, "lineages": []}
+
+
+def test_creation_verification_denied_once_a_real_qualification_run_has_opened_the_holdout(tmp_path):
+    """Once a genuine QUALIFICATION_RUN access has opened the holdout (state OPENED), the creation-time verification
+    path must never be usable to sneak an additional read -- it is only valid while the holdout is still SEALED."""
+    led = L.AccessLedger(tmp_path, REG, freeze=FROZEN)
+    led.request_access(req())   # process "qual", PURPOSE_QUALIFICATION, opens the holdout for lineage "lin-a"
+    assert led.holdout_state(spec.EVAL_VERSION)["state"] == spec.STATE_OPENED
+    assert code_of(led.request_access, req(process_id="verifier", purpose=spec.PURPOSE_CREATION_VERIFICATION,
+                                            run_id="cv-after-open")) == "CREATION_VERIFICATION_ONLY_WHILE_SEALED"
+
+
+def test_creation_verification_denied_after_holdout_retirement_too(tmp_path):
+    led = L.AccessLedger(tmp_path, REG, freeze=FROZEN)
+    led.request_access(req())
+    led.request_access(req(process_id="qual", purpose=spec.PURPOSE_RETIREMENT, run_id="retire-1"))
+    assert led.holdout_state(spec.EVAL_VERSION)["state"] == spec.STATE_RETIRED
+    assert code_of(led.request_access, req(process_id="verifier", purpose=spec.PURPOSE_CREATION_VERIFICATION,
+                                            run_id="cv-after-retire")) == "CREATION_VERIFICATION_ONLY_WHILE_SEALED"

@@ -1,272 +1,272 @@
 {
- "GENESIS_CAPABILITY_EVAL_V1_FROZEN": false,
- "GENESIS_CAPABILITY_EVAL_V1_PRIVATE_HOLDOUT_VALID": false,
- "GENESIS_CAPABILITY_EVAL_V2_FROZEN": false,
- "authority_registry": {
-  "doctrine": "Human owner holds private authority. ORNEUR verifies signatures. No automated process generates this key.",
-  "key_generation_procedure": "docs/orneur/authorization/OWNER_AUTHORITY_KEY_GENERATION_PROCEDURE.md",
-  "key_ids": [
-   "orneur-owner-authority-1"
+  "GENESIS_CAPABILITY_EVAL_V1_FROZEN": false,
+  "GENESIS_CAPABILITY_EVAL_V1_PRIVATE_HOLDOUT_VALID": false,
+  "GENESIS_CAPABILITY_EVAL_V2_FROZEN": false,
+  "authority_registry": {
+    "doctrine": "Human owner holds private authority. ORNEUR verifies signatures. No automated process generates this key.",
+    "key_generation_procedure": "docs/orneur/authorization/OWNER_AUTHORITY_KEY_GENERATION_PROCEDURE.md",
+    "key_ids": [
+      "orneur-owner-authority-1"
+    ],
+    "path": "docs/orneur/authorization/AUTHORITY_REGISTRY.json",
+    "registered_keys": 1,
+    "state": "CONFIGURED_ONE_OWNER_KEY_REGISTERED"
+  },
+  "authorizations": {
+    "corpus_generation": false,
+    "foundation_selection": false,
+    "gpu": false,
+    "phase_21c": false,
+    "provider_inference": false,
+    "spending": false,
+    "training": false
+  },
+  "component_states": {
+    "access_ledger": "IMPLEMENTED_TESTED",
+    "authority_registry": "CONFIGURED_ONE_OWNER_KEY_REGISTERED",
+    "benchmark_partition_architecture": "DESIGNED_NOT_ACTIVATED",
+    "candidate_lineage_attestation": "IMPLEMENTED_TESTED_REVIEWER_SIGNATURE_BOUND",
+    "coding_sandbox": "IMPLEMENTED_TESTED",
+    "contamination_framework": "IMPLEMENTED_TESTED",
+    "corpus_generation_authorization_gate": "IMPLEMENTED_TESTED_HARDENED_NOT_AUTHORIZED",
+    "corpus_generation_authorization_signing_runbook": "DESIGNED_NOT_ACTIVATED",
+    "corpus_generator_registry": "IMPLEMENTED_TESTED_EMPTY",
+    "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_SIGNED_ATTESTATION",
+    "corpus_manifest_schema": "IMPLEMENTED_TESTED_LEDGER_GATED_VERIFICATION",
+    "historical_contamination_controls_consolidation": "DESIGNED_NOT_ACTIVATED",
+    "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY",
+    "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
+    "operational_authorization_boundary": "IMPLEMENTED_TESTED_SEPARATED_GENERATOR_AND_RUNNER_IDENTITIES",
+    "owner_authority_key_procedure": "DESIGNED_ACTIVATED_ONE_KEY_REGISTERED",
+    "owner_preflight": "IMPLEMENTED_TESTED_RESULT_READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
+    "owner_vault_procedure": "DESIGNED_NOT_ACTIVATED",
+    "pre_corpus_closure_manifest": "IMPLEMENTED_TESTED",
+    "preregistration": "DESIGNED_DRAFT_NOT_FROZEN_MOSTLY_BOUND",
+    "privacy_scanner": "IMPLEMENTED_TESTED",
+    "private_storage": "ACTIVATED_VERIFIED_TEST_ONLY",
+    "reviewer_path": "IMPLEMENTED_DOCUMENTED_NOT_OPERATIONAL_SEMANTIC_PATH_SUBSTITUTES",
+    "reviewer_registry": "CONFIGURED_ZERO_KEYS_REGISTERED",
+    "runner_identity": "REGISTERED_NOT_AUTHORIZED",
+    "runner_qualification": "IMPLEMENTED_TESTED_MATCHES_SANDBOX_RUNNER",
+    "sandbox_qualification_candidate": "IMPLEMENTED_QUALIFICATION_CANDIDATE_NOT_APPROVED",
+    "secret_manager": "IMPLEMENTED_READY_MACOS_KEYCHAIN_MECHANISM_PROBED_NO_SECRETS_STORED",
+    "semantic_manual_review_framework": "IMPLEMENTED_TESTED_CONFIGURED_LOCAL_ONLY",
+    "split_isolation_policy": "IMPLEMENTED_TESTED",
+    "unavailable_corpus_acceptance_policy": "DESIGNED_POLICY_LOCKED_INDEPENDENT_OF_CORPUS",
+    "v2_corpus": "NOT_GENERATED",
+    "v2_freeze": "NOT_FROZEN"
+  },
+  "contamination_status": {
+    "contamination_controls_pass": false,
+    "manual_review": "IMPLEMENTED_NO_REVIEWER_KEY_REGISTERED",
+    "semantic_overlap": "CONFIGURED_LOCAL_ONLY_NOT_QUALIFIED",
+    "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (pre-corpus attestation ATTESTED and signature-verified; full contamination qualification remains pending the private V2 corpus; one class genuinely unresolved)"
+  },
+  "corpus_generation_authorization": {
+    "binding_redesign_this_phase": [
+      "reviewed_commit_sha (ancestry-checked) + authorized_code_tree_sha256 (exact-match) replace circular exact-commit-SHA equality",
+      "working tree must be clean at execution time",
+      "generator identity (CORPUS_GENERATOR_REGISTRY.json) is now separate from the qualification runner identity",
+      "event_name and generator_id are derived from trusted runtime evidence (env vars) by default, not bare caller strings",
+      "corpus_manifest.verify_against_artifacts() checks real decrypted vault bytes, not just hash format",
+      "candidate_lineage now requires independent, non-self verification and complete historical-exposure consideration"
+    ],
+    "hardening_this_phase": [
+      "empty/absent/non-workflow_dispatch event fails closed",
+      "empty/duplicate/out-of-vocabulary requested/authorized scope rejected",
+      "impossible calendar timestamps and malformed input never raise (deterministic denial)",
+      "revocation/expiry/not-yet-active tested through the real AUTHORITY_REGISTRY-loading path"
+    ],
+    "hardening_this_phase_round3": [
+      "corpus_manifest.binding_problems() fixed to bind against schema /2 (reviewed_commit_sha ancestry + authorized_code_tree_sha256), replacing a stale schema /1 fixture reference",
+      "corpus_manifest.verify_against_artifacts() no longer reads the vault itself (was bypassing the ledger); now requires pre-authorized plaintext bytes",
+      "new operational_boundary.authorized_manifest_verification_bytes(): the only sanctioned way to obtain those bytes, via two real ledger grants",
+      "operational_boundary: removed the 'single registry record' implicit-identity fallback; an unset generator_id is never authenticated regardless of registry size",
+      "candidate_lineage schema /3: independent_verification now requires a real Ed25519 signature from an ACTIVE registered PRIVATE_BENCHMARK_REVIEWER key (reviewer_registry.py), replacing a self-declared boolean",
+      "signing runbook corrected: no longer implies literal commit-hash equality or names the obsolete COMMIT_SHA_MISMATCH reason"
+    ],
+    "module": "orca/eval/genesis_v2/corpus_generation_authorization.py",
+    "operational_boundary_module": "orca/eval/genesis_v2/operational_boundary.py",
+    "path": "docs/orneur/authorization/CORPUS_GENERATION_AUTHORIZATION.json",
+    "schema_version": "genesis-v2-corpus-generation-authorization/2",
+    "separate_from": [
+      "authority_registry key registration",
+      "signed corpus inventory attestation",
+      "owner_preflight READY result"
+    ],
+    "state": "NOT_AUTHORIZED"
+  },
+  "corpus_inventory": {
+    "attestation_status": "ATTESTED",
+    "attested_complete": false,
+    "draft_completeness_status": "COMPLETE_WITH_DECLARED_UNAVAILABLE",
+    "full_contamination_qualification_note": "structurally cannot PASS before the private V2 corpus exists; tracked informationally, not gated in owner_preflight pre-corpus",
+    "next_step": "attestation is signed and verified; full contamination qualification remains pending the private V2 corpus (contamination_check_status=PENDING_V2_CORPUS on every entry)",
+    "path": "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
+    "pre_corpus_attestation_check": "orca.eval.genesis_v2.inventory.evaluate_pre_corpus_attestation (narrower than full contamination qualification; see design doc 9l)",
+    "terminology_note": "class_coverage declarations for classes with no known corpora were declared NONE_DECLARED_OWNER_REVIEWED BEFORE the attestation was signed (2026-09-28) and are correctly left as-is post-signature: changing them now would alter the inventory body and invalidate the already-verified signature's corpus_inventory_digest binding. NONE_EXIST_ATTESTED is reserved for a declaration made as part of a signed ATTESTED record covering it, never retrofitted after the fact.",
+    "unavailable_corpus_policy": "docs/orneur/phase-21/GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json",
+    "unresolved_classes": [
+      "external_uploaded_datasets"
+    ],
+    "verdict": "pre-corpus attestation ATTESTED and verified; full contamination qualification CONTAMINATION_DATASET_UNAVAILABLE pending the V2 corpus (never PASS before it exists)"
+  },
+  "descriptor_only_backends_not_operational": [
+    "PRIVATE_GITHUB_REPO",
+    "PRIVATE_OBJECT_STORE"
   ],
-  "path": "docs/orneur/authorization/AUTHORITY_REGISTRY.json",
-  "registered_keys": 1,
-  "state": "CONFIGURED_ONE_OWNER_KEY_REGISTERED"
- },
- "authorizations": {
-  "corpus_generation": false,
-  "foundation_selection": false,
-  "gpu": false,
-  "phase_21c": false,
-  "provider_inference": false,
-  "spending": false,
-  "training": false
- },
- "component_states": {
-  "access_ledger": "IMPLEMENTED_TESTED",
-  "authority_registry": "CONFIGURED_ONE_OWNER_KEY_REGISTERED",
-  "benchmark_partition_architecture": "DESIGNED_NOT_ACTIVATED",
-  "candidate_lineage_attestation": "IMPLEMENTED_TESTED_REVIEWER_SIGNATURE_BOUND",
-  "coding_sandbox": "IMPLEMENTED_TESTED",
-  "contamination_framework": "IMPLEMENTED_TESTED",
-  "corpus_generation_authorization_gate": "IMPLEMENTED_TESTED_HARDENED_NOT_AUTHORIZED",
-  "corpus_generation_authorization_signing_runbook": "DESIGNED_NOT_ACTIVATED",
-  "corpus_generator_registry": "IMPLEMENTED_TESTED_EMPTY",
-  "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_SIGNED_ATTESTATION",
-  "corpus_manifest_schema": "IMPLEMENTED_TESTED_LEDGER_GATED_VERIFICATION",
-  "historical_contamination_controls_consolidation": "DESIGNED_NOT_ACTIVATED",
-  "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY",
-  "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
-  "operational_authorization_boundary": "IMPLEMENTED_TESTED_SEPARATED_GENERATOR_AND_RUNNER_IDENTITIES",
-  "owner_authority_key_procedure": "DESIGNED_ACTIVATED_ONE_KEY_REGISTERED",
-  "owner_preflight": "IMPLEMENTED_TESTED_RESULT_READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
-  "owner_vault_procedure": "DESIGNED_NOT_ACTIVATED",
-  "pre_corpus_closure_manifest": "IMPLEMENTED_TESTED",
-  "preregistration": "DESIGNED_DRAFT_NOT_FROZEN_MOSTLY_BOUND",
-  "privacy_scanner": "IMPLEMENTED_TESTED",
-  "private_storage": "ACTIVATED_VERIFIED_TEST_ONLY",
-  "reviewer_path": "IMPLEMENTED_DOCUMENTED_NOT_OPERATIONAL_SEMANTIC_PATH_SUBSTITUTES",
-  "reviewer_registry": "CONFIGURED_ZERO_KEYS_REGISTERED",
-  "runner_identity": "REGISTERED_NOT_AUTHORIZED",
-  "runner_qualification": "IMPLEMENTED_TESTED_MATCHES_SANDBOX_RUNNER",
-  "sandbox_qualification_candidate": "IMPLEMENTED_QUALIFICATION_CANDIDATE_NOT_APPROVED",
-  "secret_manager": "IMPLEMENTED_READY_MACOS_KEYCHAIN_MECHANISM_PROBED_NO_SECRETS_STORED",
-  "semantic_manual_review_framework": "IMPLEMENTED_TESTED_CONFIGURED_LOCAL_ONLY",
-  "split_isolation_policy": "IMPLEMENTED_TESTED",
-  "unavailable_corpus_acceptance_policy": "DESIGNED_POLICY_LOCKED_INDEPENDENT_OF_CORPUS",
-  "v2_corpus": "NOT_GENERATED",
-  "v2_freeze": "NOT_FROZEN"
- },
- "contamination_status": {
-  "contamination_controls_pass": false,
-  "manual_review": "IMPLEMENTED_NO_REVIEWER_KEY_REGISTERED",
-  "semantic_overlap": "CONFIGURED_LOCAL_ONLY_NOT_QUALIFIED",
-  "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (pre-corpus attestation ATTESTED and signature-verified; full contamination qualification remains pending the private V2 corpus; one class genuinely unresolved)"
- },
- "corpus_generation_authorization": {
-  "binding_redesign_this_phase": [
-   "reviewed_commit_sha (ancestry-checked) + authorized_code_tree_sha256 (exact-match) replace circular exact-commit-SHA equality",
-   "working tree must be clean at execution time",
-   "generator identity (CORPUS_GENERATOR_REGISTRY.json) is now separate from the qualification runner identity",
-   "event_name and generator_id are derived from trusted runtime evidence (env vars) by default, not bare caller strings",
-   "corpus_manifest.verify_against_artifacts() checks real decrypted vault bytes, not just hash format",
-   "candidate_lineage now requires independent, non-self verification and complete historical-exposure consideration"
+  "document": "GENESIS_CAPABILITY_EVAL_V2_STATUS",
+  "eval_version": "genesis-capability-eval/2.0.0",
+  "foundation_selected": null,
+  "freeze_prerequisites": {
+    "contamination_controls_pass": false,
+    "exact_sha_ci_green": false,
+    "hashes_and_preregistration_frozen": false,
+    "independent_chatgpt_audit_approval": false,
+    "new_secret_corpus_generated": false,
+    "privacy_audit_pass": false,
+    "private_storage_genuinely_configured": false,
+    "sandbox_ready": false,
+    "screen_holdout_separation_pass": false
+  },
+  "infrastructure_implemented": [
+    "aes256gcm_encrypted_artifact_store_with_seal",
+    "authority_registry",
+    "contamination_similarity_framework",
+    "corpus_inventory",
+    "corpus_inventory_signed_attestation_schema",
+    "fail_closed_public_repo_privacy_scan",
+    "hardened_privacy_scanner",
+    "hash_chained_create_exclusive_access_ledger",
+    "hermetic_coding_sandbox_contract",
+    "ledger_deployment_admin",
+    "local_semantic_engine_framework",
+    "model_eval_authorization_gate",
+    "owner_preflight_aggregator",
+    "owner_vault_verification",
+    "preregistration_draft_and_validators",
+    "qualification_runner_registry",
+    "reviewer_registry",
+    "salted_commitment_public_manifest",
+    "sandbox_dockerfile_pinned_by_digest",
+    "sandbox_qualification_candidate_record",
+    "secret_entropy_and_hmac_derivation",
+    "secret_manager_policy_contract",
+    "signed_manual_review_pipeline",
+    "split_isolation_policy_table",
+    "split_separation_check",
+    "sqlite_transactional_access_ledger",
+    "storage_interface_with_fail_closed_NoStore",
+    "v1_reuse_check",
+    "vault_activation_admin",
+    "write_once_holdout_lifecycle"
   ],
-  "hardening_this_phase": [
-   "empty/absent/non-workflow_dispatch event fails closed",
-   "empty/duplicate/out-of-vocabulary requested/authorized scope rejected",
-   "impossible calendar timestamps and malformed input never raise (deterministic denial)",
-   "revocation/expiry/not-yet-active tested through the real AUTHORITY_REGISTRY-loading path"
-  ],
-  "hardening_this_phase_round3": [
-   "corpus_manifest.binding_problems() fixed to bind against schema /2 (reviewed_commit_sha ancestry + authorized_code_tree_sha256), replacing a stale schema /1 fixture reference",
-   "corpus_manifest.verify_against_artifacts() no longer reads the vault itself (was bypassing the ledger); now requires pre-authorized plaintext bytes",
-   "new operational_boundary.authorized_manifest_verification_bytes(): the only sanctioned way to obtain those bytes, via two real ledger grants",
-   "operational_boundary: removed the 'single registry record' implicit-identity fallback; an unset generator_id is never authenticated regardless of registry size",
-   "candidate_lineage schema /3: independent_verification now requires a real Ed25519 signature from an ACTIVE registered PRIVATE_BENCHMARK_REVIEWER key (reviewer_registry.py), replacing a self-declared boolean",
-   "signing runbook corrected: no longer implies literal commit-hash equality or names the obsolete COMMIT_SHA_MISMATCH reason"
-  ],
-  "module": "orca/eval/genesis_v2/corpus_generation_authorization.py",
-  "operational_boundary_module": "orca/eval/genesis_v2/operational_boundary.py",
-  "path": "docs/orneur/authorization/CORPUS_GENERATION_AUTHORIZATION.json",
-  "schema_version": "genesis-v2-corpus-generation-authorization/2",
-  "separate_from": [
-   "authority_registry key registration",
-   "signed corpus inventory attestation",
-   "owner_preflight READY result"
-  ],
-  "state": "NOT_AUTHORIZED"
- },
- "corpus_inventory": {
-  "attestation_status": "ATTESTED",
-  "attested_complete": false,
-  "draft_completeness_status": "COMPLETE_WITH_DECLARED_UNAVAILABLE",
-  "full_contamination_qualification_note": "structurally cannot PASS before the private V2 corpus exists; tracked informationally, not gated in owner_preflight pre-corpus",
-  "next_step": "attestation is signed and verified; full contamination qualification remains pending the private V2 corpus (contamination_check_status=PENDING_V2_CORPUS on every entry)",
-  "path": "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
-  "pre_corpus_attestation_check": "orca.eval.genesis_v2.inventory.evaluate_pre_corpus_attestation (narrower than full contamination qualification; see design doc 9l)",
-  "terminology_note": "class_coverage declarations for classes with no known corpora were declared NONE_DECLARED_OWNER_REVIEWED BEFORE the attestation was signed (2026-09-28) and are correctly left as-is post-signature: changing them now would alter the inventory body and invalidate the already-verified signature's corpus_inventory_digest binding. NONE_EXIST_ATTESTED is reserved for a declaration made as part of a signed ATTESTED record covering it, never retrofitted after the fact.",
-  "unavailable_corpus_policy": "docs/orneur/phase-21/GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json",
-  "unresolved_classes": [
-   "external_uploaded_datasets"
-  ],
-  "verdict": "pre-corpus attestation ATTESTED and verified; full contamination qualification CONTAMINATION_DATASET_UNAVAILABLE pending the V2 corpus (never PASS before it exists)"
- },
- "descriptor_only_backends_not_operational": [
-  "PRIVATE_GITHUB_REPO",
-  "PRIVATE_OBJECT_STORE"
- ],
- "document": "GENESIS_CAPABILITY_EVAL_V2_STATUS",
- "eval_version": "genesis-capability-eval/2.0.0",
- "foundation_selected": null,
- "freeze_prerequisites": {
-  "contamination_controls_pass": false,
-  "exact_sha_ci_green": false,
-  "hashes_and_preregistration_frozen": false,
-  "independent_chatgpt_audit_approval": false,
-  "new_secret_corpus_generated": false,
-  "privacy_audit_pass": false,
-  "private_storage_genuinely_configured": false,
-  "sandbox_ready": false,
-  "screen_holdout_separation_pass": false
- },
- "infrastructure_implemented": [
-  "aes256gcm_encrypted_artifact_store_with_seal",
-  "authority_registry",
-  "contamination_similarity_framework",
-  "corpus_inventory",
-  "corpus_inventory_signed_attestation_schema",
-  "fail_closed_public_repo_privacy_scan",
-  "hardened_privacy_scanner",
-  "hash_chained_create_exclusive_access_ledger",
-  "hermetic_coding_sandbox_contract",
-  "ledger_deployment_admin",
-  "local_semantic_engine_framework",
-  "model_eval_authorization_gate",
-  "owner_preflight_aggregator",
-  "owner_vault_verification",
-  "preregistration_draft_and_validators",
-  "qualification_runner_registry",
-  "reviewer_registry",
-  "salted_commitment_public_manifest",
-  "sandbox_dockerfile_pinned_by_digest",
-  "sandbox_qualification_candidate_record",
-  "secret_entropy_and_hmac_derivation",
-  "secret_manager_policy_contract",
-  "signed_manual_review_pipeline",
-  "split_isolation_policy_table",
-  "split_separation_check",
-  "sqlite_transactional_access_ledger",
-  "storage_interface_with_fail_closed_NoStore",
-  "v1_reuse_check",
-  "vault_activation_admin",
-  "write_once_holdout_lifecycle"
- ],
- "infrastructure_subchecks": {
-  "authority_reviewer_runner_registries_implemented": true,
-  "contamination_control_framework_implemented": true,
-  "encrypted_store_backend_qualified_by_tests": true,
-  "ledger_deployment_verified": true,
-  "ledger_transactional_concurrency_hardened": true,
-  "model_eval_authorization_gate_tested": true,
-  "note": "Infrastructure subchecks are NOT freeze prerequisites and do not make any prerequisite true.",
-  "owner_preflight_implemented": true,
-  "privacy_scanner_hardened": true,
-  "public_sft_dataset_classified": true,
-  "sandbox_containment_tests_in_ci": true,
-  "sandbox_pinned_and_containment_run": true,
-  "split_isolation_policy_implemented": true,
-  "vault_activated_and_verified_test_only": true
- },
- "ledger_deployment": {
-  "backend": "sqlite",
-  "pass": true,
-  "record": "docs/orneur/phase-21/GENESIS_V2_LEDGER_DEPLOYMENT_RECORD.json"
- },
- "model_eval_authorization": {
-  "authority_keys_registered": 1,
-  "model_execution_workflows": "workflow_dispatch only, behind a fail-closed authorization job",
-  "record": "docs/orneur/authorization/MODEL_EVAL_AUTHORIZATION.json",
-  "state": "NOT_AUTHORIZED"
- },
- "operational_storage_backend": "ENCRYPTED_ARTIFACT",
- "owner_preflight": {
-  "outstanding_for_ready": [],
-  "result": "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
-  "script": "scripts/genesis_v2_owner_preflight.py"
- },
- "owner_setup_required": "see GENESIS_CAPABILITY_EVAL_V2_OWNER_SETUP.md; run scripts/genesis_v2_preflight.py",
- "pre_corpus_closure_manifest": {
-  "path": "docs/orneur/phase-21/GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST.json",
-  "public_safe": true
- },
- "preregistration": {
-  "bindings_honestly_filled": 22,
-  "bindings_total": 23,
-  "candidate_results": [],
-  "deferred_until_corpus_exists": [
-   "private_corpus_aggregate_commitment"
-  ],
-  "draft": "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_PREREGISTRATION_DRAFT.json",
-  "state": "DRAFT_NOT_FROZEN"
- },
- "private_corpus_committed": false,
- "private_corpus_generated": false,
- "private_storage_state": "NOT_CONFIGURED",
- "repository_visibility": "PUBLIC",
- "reviewer_registry": {
-  "path": "docs/orneur/authorization/REVIEWER_REGISTRY.json",
-  "registered_keys": 0,
-  "state": "CONFIGURED_ZERO_KEYS_REGISTERED"
- },
- "runner_identity": {
-  "canonical_note": "This local owner machine is bound explicitly as the canonical qualification runner (no longer 'TBD by owner').",
-  "holdout_access_granted": false,
-  "path": "docs/orneur/authorization/QUALIFICATION_RUNNER_REGISTRY.json",
-  "qualification_record": "docs/orneur/phase-21/GENESIS_V2_QUALIFICATION_RUNNER_QUALIFICATION_RECORD.json",
-  "runner_class": "SELF_HOSTED_CPU",
-  "state": "REGISTERED_NOT_AUTHORIZED"
- },
- "sandbox_readiness": {
-  "containment_suite_run_against_exact_pinned_image": true,
-  "implementation": "IMPLEMENTED_TESTED (containment tests in the mandatory 'Genesis V2 Sandbox' CI job)",
-  "model_generated_code_executed": false,
-  "policy_version": "genesis-v2-coding-sandbox-policy/1",
-  "qualification_candidate_image_digest": "sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
-  "qualification_candidate_record": "docs/orneur/phase-21/GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD.json",
-  "runner_class_matches_qualification_runner": true,
-  "sandbox_qualification_status": "QUALIFICATION_CANDIDATE_PENDING_FREEZE",
-  "sandbox_ready": false,
-  "tested_implementation_sha": "10ffbed6a507f7c37e54a90a9f24a323b1c24a71",
-  "why_not_ready": "sandbox_ready needs (1) the runtime image pinned by digest and recorded in the frozen preregistration, (2) the containment suite executed on the exact runner class that will score items, (3) the sandbox policy hash bound in the preregistration, and (4) independent audit; none of these exist yet. Passing tests on a CI runner is evidence, not qualification."
- },
- "secret_available": false,
- "secret_manager": {
-  "mechanism_available": true,
-  "mechanism_probed": "macos_keychain",
-  "policy_defined_for_classes": [
-   "corpus_secret",
-   "aes_encryption_key",
-   "authority_signing_key",
-   "reviewer_signing_key",
-   "runner_credential"
-  ],
-  "real_secrets_stored": false
- },
- "terminology": {
-  "levels": [
-   "DESIGNED",
-   "IMPLEMENTED",
-   "TESTED",
-   "QUALIFIED",
-   "FROZEN",
-   "PRODUCTION_READY"
-  ],
-  "rule": "'QUALIFIED' is never used for something merely unit-tested; 'TESTED' means its own tests pass; 'QUALIFIED' needs independent qualification evidence; 'FROZEN' needs a frozen record; 'PRODUCTION_READY' needs production evidence. Nothing in V2 is QUALIFIED, FROZEN or PRODUCTION_READY."
- },
- "vault": {
-  "note": "A real, isolated, on-machine vault directory was round-tripped with an EPHEMERAL TEST key and destroyed; no real corpus secret or AES key exists.",
-  "operational_state": "ACTIVATED_VERIFIED_TEST_ONLY",
-  "pass": true,
-  "record": "docs/orneur/phase-21/GENESIS_V2_VAULT_VERIFICATION.json"
- }
+  "infrastructure_subchecks": {
+    "authority_reviewer_runner_registries_implemented": true,
+    "contamination_control_framework_implemented": true,
+    "encrypted_store_backend_qualified_by_tests": true,
+    "ledger_deployment_verified": true,
+    "ledger_transactional_concurrency_hardened": true,
+    "model_eval_authorization_gate_tested": true,
+    "note": "Infrastructure subchecks are NOT freeze prerequisites and do not make any prerequisite true.",
+    "owner_preflight_implemented": true,
+    "privacy_scanner_hardened": true,
+    "public_sft_dataset_classified": true,
+    "sandbox_containment_tests_in_ci": true,
+    "sandbox_pinned_and_containment_run": true,
+    "split_isolation_policy_implemented": true,
+    "vault_activated_and_verified_test_only": true
+  },
+  "ledger_deployment": {
+    "backend": "sqlite",
+    "pass": true,
+    "record": "docs/orneur/phase-21/GENESIS_V2_LEDGER_DEPLOYMENT_RECORD.json"
+  },
+  "model_eval_authorization": {
+    "authority_keys_registered": 1,
+    "model_execution_workflows": "workflow_dispatch only, behind a fail-closed authorization job",
+    "record": "docs/orneur/authorization/MODEL_EVAL_AUTHORIZATION.json",
+    "state": "NOT_AUTHORIZED"
+  },
+  "operational_storage_backend": "ENCRYPTED_ARTIFACT",
+  "owner_preflight": {
+    "outstanding_for_ready": [],
+    "result": "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
+    "script": "scripts/genesis_v2_owner_preflight.py"
+  },
+  "owner_setup_required": "see GENESIS_CAPABILITY_EVAL_V2_OWNER_SETUP.md; run scripts/genesis_v2_preflight.py",
+  "pre_corpus_closure_manifest": {
+    "path": "docs/orneur/phase-21/GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST.json",
+    "public_safe": true
+  },
+  "preregistration": {
+    "bindings_honestly_filled": 22,
+    "bindings_total": 23,
+    "candidate_results": [],
+    "deferred_until_corpus_exists": [
+      "private_corpus_aggregate_commitment"
+    ],
+    "draft": "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_PREREGISTRATION_DRAFT.json",
+    "state": "DRAFT_NOT_FROZEN"
+  },
+  "private_corpus_committed": false,
+  "private_corpus_generated": false,
+  "private_storage_state": "NOT_CONFIGURED",
+  "repository_visibility": "PUBLIC",
+  "reviewer_registry": {
+    "path": "docs/orneur/authorization/REVIEWER_REGISTRY.json",
+    "registered_keys": 0,
+    "state": "CONFIGURED_ZERO_KEYS_REGISTERED"
+  },
+  "runner_identity": {
+    "canonical_note": "This local owner machine is bound explicitly as the canonical qualification runner (no longer 'TBD by owner').",
+    "holdout_access_granted": false,
+    "path": "docs/orneur/authorization/QUALIFICATION_RUNNER_REGISTRY.json",
+    "qualification_record": "docs/orneur/phase-21/GENESIS_V2_QUALIFICATION_RUNNER_QUALIFICATION_RECORD.json",
+    "runner_class": "SELF_HOSTED_CPU",
+    "state": "REGISTERED_NOT_AUTHORIZED"
+  },
+  "sandbox_readiness": {
+    "containment_suite_run_against_exact_pinned_image": true,
+    "implementation": "IMPLEMENTED_TESTED (containment tests in the mandatory 'Genesis V2 Sandbox' CI job)",
+    "model_generated_code_executed": false,
+    "policy_version": "genesis-v2-coding-sandbox-policy/1",
+    "qualification_candidate_image_digest": "sha256:4678e0aa4b31bbc0515b1522aef6c990c2b16cce8cd8085ad470a214c3a65dea",
+    "qualification_candidate_record": "docs/orneur/phase-21/GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD.json",
+    "runner_class_matches_qualification_runner": true,
+    "sandbox_qualification_status": "QUALIFICATION_CANDIDATE_PENDING_FREEZE",
+    "sandbox_ready": false,
+    "tested_implementation_sha": "10ffbed6a507f7c37e54a90a9f24a323b1c24a71",
+    "why_not_ready": "sandbox_ready needs (1) the runtime image pinned by digest and recorded in the frozen preregistration, (2) the containment suite executed on the exact runner class that will score items, (3) the sandbox policy hash bound in the preregistration, and (4) independent audit; none of these exist yet. Passing tests on a CI runner is evidence, not qualification."
+  },
+  "secret_available": false,
+  "secret_manager": {
+    "mechanism_available": true,
+    "mechanism_probed": "macos_keychain",
+    "policy_defined_for_classes": [
+      "corpus_secret",
+      "aes_encryption_key",
+      "authority_signing_key",
+      "reviewer_signing_key",
+      "runner_credential"
+    ],
+    "real_secrets_stored": false
+  },
+  "terminology": {
+    "levels": [
+      "DESIGNED",
+      "IMPLEMENTED",
+      "TESTED",
+      "QUALIFIED",
+      "FROZEN",
+      "PRODUCTION_READY"
+    ],
+    "rule": "'QUALIFIED' is never used for something merely unit-tested; 'TESTED' means its own tests pass; 'QUALIFIED' needs independent qualification evidence; 'FROZEN' needs a frozen record; 'PRODUCTION_READY' needs production evidence. Nothing in V2 is QUALIFIED, FROZEN or PRODUCTION_READY."
+  },
+  "vault": {
+    "note": "A real, isolated, on-machine vault directory was round-tripped with an EPHEMERAL TEST key and destroyed; no real corpus secret or AES key exists.",
+    "operational_state": "ACTIVATED_VERIFIED_TEST_ONLY",
+    "pass": true,
+    "record": "docs/orneur/phase-21/GENESIS_V2_VAULT_VERIFICATION.json"
+  }
 }

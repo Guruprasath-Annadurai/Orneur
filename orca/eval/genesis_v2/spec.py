@@ -20,7 +20,15 @@ STATE_SEALED, STATE_OPENED, STATE_RETIRED = "SEALED", "OPENED", "RETIRED"
 PURPOSE_STAGE1 = "STAGE1_SCREEN"
 PURPOSE_QUALIFICATION = "QUALIFICATION_RUN"
 PURPOSE_RETIREMENT = "POST_RETIREMENT_DISCLOSURE"
-ALLOWED_PURPOSES = {"SCREEN": (PURPOSE_STAGE1,), "QUALIFICATION_HOLDOUT": (PURPOSE_QUALIFICATION, PURPOSE_RETIREMENT)}
+# Creation-time manifest verification (right after generation, always pre-freeze): a SEPARATE purpose from
+# PURPOSE_QUALIFICATION on purpose so the ledger's write-once/lineage/EVAL_NOT_FROZEN logic (which keys specifically
+# off PURPOSE_QUALIFICATION -- see ledger.AccessLedger._state_from / request_access) never treats it as "opening"
+# the holdout for a real qualification run. It does NOT consume the one-time qualification lifecycle and does NOT
+# require V2 to be frozen; the ledger additionally requires the holdout to still be SEALED (see request_access) so
+# it can never be used to sneak a read after a real qualification run has already opened it.
+PURPOSE_CREATION_VERIFICATION = "CREATION_TIME_VERIFICATION"
+ALLOWED_PURPOSES = {"SCREEN": (PURPOSE_STAGE1, PURPOSE_CREATION_VERIFICATION),
+                     "QUALIFICATION_HOLDOUT": (PURPOSE_QUALIFICATION, PURPOSE_RETIREMENT, PURPOSE_CREATION_VERIFICATION)}
 FORBIDDEN_PURPOSES = ("DEBUGGING", "TUNING", "ERROR_ANALYSIS", "ANSWER_INSPECTION", "SFT", "QLORA", "PEFT_TRAINING",
                       "PROMPT_TUNING", "FEW_SHOT_EXAMPLES", "ROUTER_TUNING", "MODEL_SELECTION_BY_ITEM")
 
