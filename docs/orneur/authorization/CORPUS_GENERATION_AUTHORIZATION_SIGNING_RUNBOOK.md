@@ -4,8 +4,11 @@
 only verifies signatures. This runbook never asks for, receives, or handles the private key.**
 
 This authorizes exactly one thing: generating specific artifact classes (`PILOT_TRAIN`/`DEV`/`SCREEN`/
-`QUALIFICATION_HOLDOUT`) at the exact commit and exact evidence state you review before signing. It does **not**
-authorize model execution, GPU use, training, spending, or a V2 freeze — those each have their own separate gates.
+`QUALIFICATION_HOLDOUT`) at the reviewed commit (or any genuine git descendant of it, with the exact generator code
+you reviewed unchanged) and the exact evidence state you review before signing — **not** literal commit-hash
+equality, and **not** any code change after you sign, even on the same commit lineage (see §2's note below for why).
+It does **not** authorize model execution, GPU use, training, spending, or a V2 freeze — those each have their own
+separate gates.
 
 ## 1. Precondition
 
@@ -88,11 +91,20 @@ frozen. Signing a corpus-generation authorization is one necessary gate among se
 
 ## 8. Expiry and re-signing
 
-If the window in step 2 expires before you generate anything, or the commit/evidence state changes (a new commit,
-an updated inventory or preregistration), the previously-signed authorization no longer verifies
-(`COMMIT_SHA_MISMATCH` / `CORPUS_INVENTORY_DIGEST_MISMATCH` / `EXPIRED`) and this whole procedure must be repeated
-against the current state. This is intentional — an authorization can never be silently reused against a state you
-did not review.
+The signed authorization stops verifying, and this whole procedure must be repeated against the current state, if
+any of the following happen — each maps to a specific denial reason so you know exactly why:
+
+- the validity window from step 2 elapses (`EXPIRED`, or `STALE_BEYOND_MAX_VALIDITY` if `now` has drifted more than
+  `MAX_VALIDITY` past `issued_at` even though `expires_at` is still technically in the future),
+- execution happens at a commit that is not the reviewed commit or a genuine descendant of it — e.g. a rollback, a
+  different branch, or reuse against an unrelated repository state (`REVIEWED_COMMIT_NOT_ANCESTOR_OF_EXECUTION`),
+- the generator code (`orca/eval/genesis_v2/*.py`) changes after you signed, even on the very same commit lineage
+  you reviewed (`CODE_TREE_HASH_MISMATCH` — this is the real anti-drift binding, not the commit SHA itself),
+- the working tree is not clean at execution time (`DIRTY_WORKING_TREE`),
+- the corpus inventory or preregistration record changes after you reviewed them (`CORPUS_INVENTORY_DIGEST_MISMATCH`
+  / `PREREGISTRATION_DIGEST_MISMATCH`).
+
+This is intentional — an authorization can never be silently reused against code or evidence you did not review.
 
 ## 9. Revocation
 

@@ -4,17 +4,17 @@ GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json. No candidate exists yet; t
 of an attestation and derives the resulting qualification eligibility — it never asserts a candidate IS clean.
 
 Evidence requirements (never satisfied by a bare self-declaration):
-  - A DISCLOSED_CLEAN claim needs a reproducible training-log digest AND a genuinely INDEPENDENT verification of that
-    digest — someone other than the party making the disclosure (`independent_verification.verifier_identity` must
-    differ from `attested_by`, and its role must be exactly INDEPENDENT_OF_CANDIDATE_PROVIDER) who actually confirms
-    it (`confirms_log_digest: true`). A syntactically valid 64-hex digest with no independent confirmation is treated
-    exactly like no digest at all.
+  - A DISCLOSED_CLEAN claim needs a reproducible training-log digest AND a real, cryptographically verified signature
+    from a REGISTERED reviewer (`reviewer_registry.py`, role `PRIVATE_BENCHMARK_REVIEWER` — the SAME registry this
+    program already uses for corpus-inventory review authority; this is not a separate, invented trust root). A
+    self-declared boolean ("confirms_log_digest: true") is never accepted — schema /2 had exactly that self-declared
+    metadata weakness and is replaced here by an actual Ed25519 signature verified against an active, registered
+    reviewer key, the same way every other signed record in this program is verified.
   - The attestation binds to a specific `candidate_revision` — a disclosure about "the model" in general, not a
     named, pinned revision, is not eligibility evidence for any specific candidate run.
   - `exposure_to_unresolved_corpora.unresolved_classes_considered` must be checked against the REAL, current set of
     unresolved corpus classes (`historical_exposure_complete()`, cross-referencing the live signed inventory) — a
-    self-reported "considered" list that omits a real unresolved class is not trusted; eligibility requires the
-    attestation to have genuinely considered every class the inventory currently flags as unresolved.
+    self-reported "considered" list that omits a real unresolved class is not trusted.
 """
 from __future__ import annotations
 
@@ -22,15 +22,26 @@ import json
 import re
 from pathlib import Path
 
-SCHEMA_VERSION = "genesis-v2-candidate-lineage-attestation/2"
+SCHEMA_VERSION = "genesis-v2-candidate-lineage-attestation/3"
 EXPOSURE_STATES = ("UNDISCLOSED", "DISCLOSED_UNCERTAIN", "DISCLOSED_CLEAN")
-VERIFIER_ROLES = ("INDEPENDENT_OF_CANDIDATE_PROVIDER",)
 REQUIRED_FIELDS = frozenset({"schema_version", "candidate_id", "candidate_revision", "model_family", "attested_by",
                              "attestation_timestamp", "training_data_disclosure_source", "reproducible_training_log_digest",
                              "independent_verification", "exposure_to_unresolved_corpora", "notes"})
-_VERIFICATION_FIELDS = frozenset({"verifier_identity", "verifier_role", "verification_method", "verified_at", "confirms_log_digest"})
+_VERIFICATION_FIELDS = frozenset({"verifier_identity", "verification_method", "verified_at", "signature"})
 _SHA64 = re.compile(r"^[0-9a-f]{64}$")
+_SIG128 = re.compile(r"^[0-9a-f]{128}$")
 _TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+
+def verification_signing_bytes(rec: dict) -> bytes:
+    """The exact canonical bytes the reviewer signs: binds the signature to THIS candidate/revision/log-digest/
+    verifier tuple, not just a bare "yes" floating free of what was actually reviewed."""
+    iv = rec.get("independent_verification") or {}
+    body = {"candidate_id": rec.get("candidate_id"), "candidate_revision": rec.get("candidate_revision"),
+            "reproducible_training_log_digest": rec.get("reproducible_training_log_digest"),
+            "verifier_identity": iv.get("verifier_identity"), "verification_method": iv.get("verification_method"),
+            "verified_at": iv.get("verified_at")}
+    return json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
 
 
 def validate_attestation(rec) -> list:
@@ -58,14 +69,12 @@ def validate_attestation(rec) -> list:
         else:
             if not isinstance(iv.get("verifier_identity"), str) or not iv["verifier_identity"]:
                 p.append("independent_verification.verifier_identity required")
-            if iv.get("verifier_role") not in VERIFIER_ROLES:
-                p.append(f"independent_verification.verifier_role must be one of {VERIFIER_ROLES}")
             if not isinstance(iv.get("verification_method"), str) or not iv["verification_method"]:
                 p.append("independent_verification.verification_method required")
             if not isinstance(iv.get("verified_at"), str) or not _TS.match(iv["verified_at"]):
                 p.append("independent_verification.verified_at invalid")
-            if not isinstance(iv.get("confirms_log_digest"), bool):
-                p.append("independent_verification.confirms_log_digest must be a boolean")
+            if not (isinstance(iv.get("signature"), str) and _SIG128.match(iv["signature"])):
+                p.append("independent_verification.signature must be a 128-hex-char Ed25519 signature — not a bare boolean claim")
             if isinstance(iv.get("verifier_identity"), str) and iv["verifier_identity"] == rec.get("attested_by"):
                 p.append("independent_verification.verifier_identity must differ from attested_by (not independent otherwise)")
     exposure = rec.get("exposure_to_unresolved_corpora")
@@ -76,6 +85,33 @@ def validate_attestation(rec) -> list:
     if not isinstance(rec["notes"], str):
         p.append("notes must be a string (may be empty, never absent)")
     return p
+
+
+def verify_reviewer_signature(rec: dict, reviewer_keys: list | None) -> str | None:
+    """Returns None if the independent_verification signature verifies against an ACTIVE, registered reviewer key
+    (role PRIVATE_BENCHMARK_REVIEWER, from reviewer_registry.active_reviewer_keys — the SAME registry
+    corpus-inventory review already uses), else a reason string. Never raises. `reviewer_keys is None` (no registry
+    supplied) always fails closed — this mirrors inventory.validate_attestation_record's own "no keys => not
+    verified" default."""
+    iv = rec.get("independent_verification")
+    if not isinstance(iv, dict):
+        return "NO_INDEPENDENT_VERIFICATION"
+    if reviewer_keys is None:
+        return "REVIEWER_SIGNATURE_NOT_VERIFIED: no reviewer-key registry supplied"
+    key = next((k for k in reviewer_keys if isinstance(k, dict) and k.get("identity") == iv.get("verifier_identity")
+                and k.get("role") == "PRIVATE_BENCHMARK_REVIEWER"), None)
+    if key is None:
+        return "REVIEWER_SIGNATURE_NOT_VERIFIED: verifier_identity is not a registered, active PRIVATE_BENCHMARK_REVIEWER key"
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(key["public_key_hex"])).verify(
+            bytes.fromhex(iv["signature"]), verification_signing_bytes(rec))
+    except InvalidSignature:
+        return "REVIEWER_SIGNATURE_NOT_VERIFIED: invalid signature"
+    except Exception as e:
+        return f"REVIEWER_SIGNATURE_NOT_VERIFIED: {type(e).__name__}"
+    return None
 
 
 def historical_exposure_complete(rec: dict, root) -> tuple:
@@ -90,11 +126,13 @@ def historical_exposure_complete(rec: dict, root) -> tuple:
     return (not missing), missing
 
 
-def qualification_eligibility(rec: dict, *, root=None) -> dict:
+def qualification_eligibility(rec: dict, *, root=None, reviewer_keys: list | None = None) -> dict:
     """Derives what the fail-closed acceptance-policy rule (see GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json)
     means for THIS candidate. Never returns an eligibility claim for a structurally invalid record, an unverified
     disclosure, or an attestation that omits a currently-real unresolved corpus class. `root` is required to check
-    historical-exposure completeness against the live inventory; omitting it means that check cannot pass."""
+    historical-exposure completeness against the live inventory. `reviewer_keys` is required (active
+    PRIVATE_BENCHMARK_REVIEWER keys from reviewer_registry.py) to verify the independent verification's signature —
+    omitting either means the corresponding check cannot pass, by design."""
     problems = validate_attestation(rec)
     if problems:
         return {"eligible": False, "reason": "INVALID_ATTESTATION", "problems": problems}
@@ -104,9 +142,9 @@ def qualification_eligibility(rec: dict, *, root=None) -> dict:
         return {"eligible": False, "reason": reason, "problems": []}
     if not rec["reproducible_training_log_digest"]:
         return {"eligible": False, "reason": "CLEAN_CLAIM_WITHOUT_VERIFIABLE_LOG", "problems": []}
-    iv = rec.get("independent_verification")
-    if not iv or iv.get("confirms_log_digest") is not True:
-        return {"eligible": False, "reason": "CLEAN_CLAIM_WITHOUT_INDEPENDENT_VERIFICATION", "problems": []}
+    sig_problem = verify_reviewer_signature(rec, reviewer_keys)
+    if sig_problem:
+        return {"eligible": False, "reason": "CLEAN_CLAIM_WITHOUT_INDEPENDENT_VERIFICATION", "problems": [sig_problem]}
     if root is None:
         return {"eligible": False, "reason": "HISTORICAL_EXPOSURE_COMPLETENESS_NOT_CHECKED", "problems": []}
     complete, missing = historical_exposure_complete(rec, root)

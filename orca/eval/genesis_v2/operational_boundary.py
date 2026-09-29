@@ -13,10 +13,17 @@ Two DISTINCT identities, never conflated (an id registered as both is itself fla
      is a genuine descendant of the reviewed commit, whether the working tree is clean, a freshly recomputed
      generator-code-tree hash, the REAL current corpus-inventory digest, the REAL current preregistration record
      hash — never caller-supplied values a caller could lie about.
-  2. The execution EVENT and GENERATOR IDENTITY are derived from trusted runtime evidence (the real
-     `GITHUB_EVENT_NAME`/`GENESIS_V2_GENERATOR_ID` environment variables CI itself sets, cross-checked against the
-     registry's own declared code_sha256 recomputed fresh) rather than accepted as arbitrary caller-supplied strings;
-     an explicit override is accepted ONLY for tests (never used by the real CI call site, which always reads env).
+  2. The execution EVENT and GENERATOR IDENTITY are derived from environment variables CI itself sets
+     (`GITHUB_EVENT_NAME`/`GENESIS_V2_GENERATOR_ID`) rather than accepted as arbitrary caller-supplied strings, and
+     the claimed identity is cross-checked against a cryptographic fact (the registry's declared `code_sha256`
+     recomputed fresh from the actually-running code) rather than trusted on its own. HONEST LIMITATION: a bare
+     environment variable is not itself an authenticated credential — anyone able to set process environment can
+     set it. This module does not claim full runtime attestation (e.g. an OIDC token bound to a specific CI job);
+     that is an unresolved capability for a future phase. What IS enforced here: (a) no implicit "if exactly one
+     record exists, use it" fallback — an unset/empty identity is never silently accepted regardless of registry
+     size; (b) the identity must resolve to a registry entry whose OWN declared code hash matches what is actually
+     executing right now, so a stolen/misconfigured identity string still cannot make DRIFTED code pass. An explicit
+     override parameter exists ONLY for tests (never used by the real CI call site, which always reads env).
   3. The generator registry must show `state == "AUTHORIZED"` for that identity, AND its declared `code_sha256` must
      match the freshly recomputed one — a registry entry whose declared hash no longer matches the running code is
      treated exactly like an unregistered identity.
@@ -124,7 +131,12 @@ def _generator_authorized(root: Path, generator_id: str | None, live_code_sha256
     if GR.validate(doc, qualification_runner_doc=qual_doc):
         return False, None
     records = doc.get("records", [])
-    rec = next((r for r in records if r.get("generator_id") == generator_id), None) if generator_id else (records[0] if len(records) == 1 else None)
+    # No "if exactly one record exists, use it" convenience fallback: an unset/empty generator_id is NEVER treated
+    # as authenticated identity, however few or many records the registry happens to hold — ambient state (how many
+    # rows a JSON file has) is not evidence of who is executing.
+    if not generator_id:
+        return False, None
+    rec = next((r for r in records if r.get("generator_id") == generator_id), None)
     if rec is None:
         return False, None
     if rec.get("code_sha256") != live_code_sha256:
@@ -192,3 +204,27 @@ def require_private_split_access(root: Path, ledger_dir: Path, *, process_id: st
         return ledger.request_access(req)
     except LG.AccessDenied as e:
         raise PrivateSplitAccessDenied(str(e)) from e
+
+
+def authorized_manifest_verification_bytes(root: Path, ledger_dir: Path, store, *, process_id: str, code_sha256: str,
+                                            corpus_id: str, expected_corpus_digest: str, eval_version: str, candidate_revision: str,
+                                            candidate_lineage: str, run_id_prefix: str, timestamp_utc: str) -> tuple:
+    """The SEPARATELY AUTHORIZED verification capability: the only sanctioned way to obtain real plaintext bytes to
+    feed into `corpus_manifest.verify_against_artifacts()`. Makes TWO real, independent `require_private_split_access`
+    calls (one per split — the ledger's run-id uniqueness means each split read is its own grant, never reused) and
+    only reads the vault AFTER each grant succeeds. A caller that merely holds a `store` handle — e.g. a generator,
+    which per generator_registry.py must have vault_read=false anyway — cannot use this shortcut to read a holdout:
+    it still needs a genuinely AUTHORIZED qualification-runner identity and a real ledger grant for BOTH splits.
+    Returns (screen_plain, holdout_plain). Raises PrivateSplitAccessDenied on either split's denial."""
+    from orca.eval.genesis_v2 import spec as SPEC
+    require_private_split_access(root, ledger_dir, process_id=process_id, code_sha256=code_sha256, purpose=SPEC.PURPOSE_STAGE1,
+                                  split="SCREEN", eval_version=eval_version, corpus_digest=expected_corpus_digest,
+                                  run_id=f"{run_id_prefix}-screen", candidate_revision=candidate_revision,
+                                  candidate_lineage=candidate_lineage, timestamp_utc=timestamp_utc)
+    require_private_split_access(root, ledger_dir, process_id=process_id, code_sha256=code_sha256, purpose=SPEC.PURPOSE_QUALIFICATION,
+                                  split="QUALIFICATION_HOLDOUT", eval_version=eval_version, corpus_digest=expected_corpus_digest,
+                                  run_id=f"{run_id_prefix}-holdout", candidate_revision=candidate_revision,
+                                  candidate_lineage=candidate_lineage, timestamp_utc=timestamp_utc)
+    screen_plain = store.read_split(corpus_id, "SCREEN", expected_corpus_digest=expected_corpus_digest)
+    holdout_plain = store.read_split(corpus_id, "QUALIFICATION_HOLDOUT", expected_corpus_digest=expected_corpus_digest)
+    return screen_plain, holdout_plain

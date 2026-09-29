@@ -49,39 +49,36 @@ def manifest_digest(manifest: dict) -> str:
     return hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def verify_against_artifacts(manifest: dict, *, store, generator_code_root, expected_corpus_digest: str) -> list:
+def verify_against_artifacts(manifest: dict, *, screen_plain: bytes, holdout_plain: bytes, generator_code_root,
+                              expected_corpus_digest: str) -> list:
     """Verifies manifest fields against ACTUAL bytes, not just their syntactic hash shape:
       - `generator_code_sha256` is recomputed fresh from the real generator code on disk and compared — a
         syntactically valid but WRONG hash in the manifest is caught here, not accepted on the manifest's own word.
-      - `screen_digest` / `qualification_holdout_digest` are checked by actually reading and decrypting both splits
-        from the real encrypted vault (`store.read_split`, which itself fails closed on any tamper/wrong-key/
-        truncation) and re-hashing the REAL plaintext bytes — never trusting the manifest's self-reported digest as
-        proof an artifact was verified.
-      - the combined corpus digest recomputed from those two REAL split digests must equal `expected_corpus_digest`
-        (the value the generation process itself recorded, e.g. in the ledger or the authorization evidence) — this
-        is the SEAL's own binding (`store.write_corpus`'s return value), independently reproduced here.
+      - `screen_digest` / `qualification_holdout_digest` are checked against the REAL decrypted plaintext bytes —
+        never trusting the manifest's self-reported digest as proof an artifact was verified.
+      - the combined corpus digest recomputed from those two REAL split digests must equal `expected_corpus_digest`.
 
-    `store` must be an already-opened `store.EncryptedFileStore` (or compatible) with the real decryption key; this
-    function only ever reads through its public API, never handles key material itself. Requires the vault to
-    exist — this is the after-generation verification step, not a pre-generation check."""
+    IMPORTANT — this function does NOT read the vault itself and never holds a store or key. `screen_plain` /
+    `holdout_plain` must already be authorized, decrypted bytes the CALLER obtained through
+    `operational_boundary.require_private_split_access()` (the real ledger-gated path — qualification-runner
+    identity, V2-frozen state, purpose, and an actual ledger grant, all enforced there). Handing this function a raw
+    `store` to read from directly would let verification silently bypass the ledger entirely, exactly the class of
+    bug an earlier version of this function had (a generator or any other caller with a store handle could
+    "verify" — and thereby read — a holdout without ever being an authorized qualification runner). This function
+    is deliberately read-nothing: it only ever hashes bytes it is handed."""
     from orca.eval.genesis_v2 import runner_registry as RN
-    from orca.eval.genesis_v2 import spec as SPEC
     from orca.eval.genesis_v2 import store as ST
     p = validate_manifest(manifest)
     if p:
         return p
+    if not isinstance(screen_plain, (bytes, bytearray)) or not isinstance(holdout_plain, (bytes, bytearray)):
+        return p + ["screen_plain/holdout_plain must be the actual authorized plaintext bytes, not read here"]
     real_code_files = sorted(Path(generator_code_root).glob("*.py"))
     real_code_sha256 = RN.code_sha256_of(real_code_files)
     if real_code_sha256 != manifest["generator_code_sha256"]:
         p.append("generator_code_sha256 does not match the ACTUAL current generator code on disk")
-    try:
-        screen_plain = store.read_split(manifest["corpus_id"], "SCREEN", expected_corpus_digest=expected_corpus_digest)
-        holdout_plain = store.read_split(manifest["corpus_id"], "QUALIFICATION_HOLDOUT", expected_corpus_digest=expected_corpus_digest)
-    except Exception as e:
-        return p + [f"could not read/decrypt the real vault artifacts to verify against: {type(e).__name__}"]
-    import hashlib as _hashlib
-    real_screen_digest = _hashlib.sha256(screen_plain).hexdigest()
-    real_holdout_digest = _hashlib.sha256(holdout_plain).hexdigest()
+    real_screen_digest = hashlib.sha256(bytes(screen_plain)).hexdigest()
+    real_holdout_digest = hashlib.sha256(bytes(holdout_plain)).hexdigest()
     if real_screen_digest != manifest["screen_digest"]:
         p.append("screen_digest does not match the ACTUAL decrypted SCREEN plaintext")
     if real_holdout_digest != manifest["qualification_holdout_digest"]:
@@ -92,9 +89,16 @@ def verify_against_artifacts(manifest: dict, *, store, generator_code_root, expe
     return p
 
 
-def binding_problems(manifest: dict, authorization_record: dict) -> list:
-    """Cross-checks the manifest against the SPECIFIC authorization record that must have permitted it. Never trusts
-    the manifest's own claims about the authorization — looks the authorization up and compares independently."""
+def binding_problems(manifest: dict, authorization_record: dict, *, commit_is_descendant: bool) -> list:
+    """Cross-checks the manifest against the SPECIFIC authorization schema /2 record that must have permitted it.
+    Never trusts the manifest's own claims about the authorization — looks the authorization up and compares
+    independently, using the SAME ancestry + code-tree-hash binding as corpus_generation_authorization.py itself
+    (never literal commit-SHA equality — see that module's docstring for why that would be circular/always-false).
+
+    `commit_is_descendant` — whether `manifest["generated_at_commit_sha"]` is `authorization_record["reviewed_commit_sha"]`
+    itself or a genuine git descendant of it — MUST be computed by the caller (e.g. via
+    `operational_boundary._is_ancestor` / `git merge-base --is-ancestor`); this module does no git I/O itself so it
+    stays trivially testable with synthetic fixtures."""
     p = validate_manifest(manifest)
     if p:
         return p
@@ -104,8 +108,13 @@ def binding_problems(manifest: dict, authorization_record: dict) -> list:
         return ["referenced authorization is not AUTHORIZED"]
     if authorization_record.get("authorization_id") != manifest["corpus_generation_authorization_id"]:
         p.append("manifest.corpus_generation_authorization_id does not match the authorization record's own id")
-    if authorization_record.get("authorized_commit_sha") != manifest["generated_at_commit_sha"]:
-        p.append("manifest.generated_at_commit_sha does not match the authorization's authorized_commit_sha")
+    reviewed_sha = authorization_record.get("reviewed_commit_sha")
+    if not (isinstance(reviewed_sha, str) and reviewed_sha):
+        p.append("authorization record has no reviewed_commit_sha to bind against")
+    elif commit_is_descendant is not True:
+        p.append("manifest.generated_at_commit_sha is not the authorization's reviewed_commit_sha or a verified descendant of it")
+    if authorization_record.get("authorized_code_tree_sha256") != manifest["generator_code_sha256"]:
+        p.append("manifest.generator_code_sha256 does not match the authorization's authorized_code_tree_sha256")
     scope = authorization_record.get("authorized_scope") or []
     if not {"SCREEN", "QUALIFICATION_HOLDOUT"} <= set(scope):
         p.append("authorization did not scope both SCREEN and QUALIFICATION_HOLDOUT, but the manifest claims both digests")

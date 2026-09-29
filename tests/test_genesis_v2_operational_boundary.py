@@ -150,6 +150,21 @@ def test_bypass_attempt_authorized_generator_alone_is_not_enough_without_a_signe
     assert result.generator_authorized is True   # confirms the generator check alone WAS satisfied — the CGA check is what blocks it
 
 
+def test_unset_generator_id_is_never_authenticated_even_when_exactly_one_registry_record_exists(repo):
+    """Hardening: an earlier version of this check silently used 'the one record' when generator_id was omitted --
+    ambient registry state (how many rows a JSON file has) is not evidence of who is executing. Even with exactly
+    one AUTHORIZED record present, an unset/empty generator_id must never be treated as that identity."""
+    _, _, code_hash = _real_context()
+    _authorize_generator(repo, code_hash)   # exactly one record, AUTHORIZED
+    _git_init_with_head(repo)
+    result = OB.check_authorization(repo, requested_scope=("PILOT_TRAIN",), event_name="workflow_dispatch", now=NOW, generator_id=None)
+    assert result.authorized is False
+    assert result.generator_authorized is False
+    assert result.generator_state is None
+    with pytest.raises(OB.CorpusGenerationNotAuthorized):
+        OB.require_authorization(repo, requested_scope=("PILOT_TRAIN",), event_name="workflow_dispatch", now=NOW, generator_id=None)
+
+
 def test_bypass_attempt_stale_reviewed_commit_denied_when_not_an_ancestor(repo):
     _need_crypto()
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
