@@ -39,7 +39,14 @@ def main() -> int:
         print("ERROR: --scope entries must be unique", file=sys.stderr)
         return 2
 
-    commit_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+    dirty = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+    if dirty:
+        print("ERROR: working tree is not clean. Commit or stash your changes before preparing an authorization --", file=sys.stderr)
+        print("an authorization can only ever be reviewed against a committed, reproducible state.", file=sys.stderr)
+        return 2
+
+    reviewed_commit_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+    code_tree_sha256 = CGA.code_tree_sha256(ROOT)
     inv = json.loads((ROOT / INV.INVENTORY_PATH).read_text())
     inv_digest = INV.inventory_digest(inv)
     draft = json.loads((ROOT / PR.DRAFT_PATH).read_text())
@@ -48,13 +55,13 @@ def main() -> int:
     now = datetime.now(timezone.utc)
     issued_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     expires_at = (now + window).strftime("%Y-%m-%dT%H:%M:%SZ")
-    auth_id = "cgauth-" + commit_sha[:16]
+    auth_id = "cgauth-" + reviewed_commit_sha[:16]
 
     record = CGA.default_record()
     record.update({
         "authorization_id": auth_id, "status": "AUTHORIZED", "purpose": CGA.PURPOSE, "authorized_scope": list(args.scope),
-        "authorized_commit_sha": commit_sha, "authorized_artifact_digests": {"corpus_inventory_digest": inv_digest,
-                                                                              "preregistration_record_sha256": prereg_sha},
+        "reviewed_commit_sha": reviewed_commit_sha, "authorized_code_tree_sha256": code_tree_sha256,
+        "authorized_artifact_digests": {"corpus_inventory_digest": inv_digest, "preregistration_record_sha256": prereg_sha},
         "issued_at": issued_at, "expires_at": expires_at,
         "authorizing_authority": {"identity": args.identity, "role": "OWNER", "key_id": args.key_id},
     })

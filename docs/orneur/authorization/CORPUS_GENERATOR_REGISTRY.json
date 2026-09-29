@@ -1,0 +1,5 @@
+{
+ "note": "Deliberately empty and separate from QUALIFICATION_RUNNER_REGISTRY.json. A pre-freeze corpus generator identity must never also be a post-freeze qualification runner.",
+ "records": [],
+ "schema_version": "genesis-v2-corpus-generator-registry/1"
+}

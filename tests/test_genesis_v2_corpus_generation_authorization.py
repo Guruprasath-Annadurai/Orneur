@@ -16,6 +16,7 @@ from orca.eval.genesis_v2 import prereg as PR
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = "b" * 40
+CODE_DIGEST = "3" * 64
 NOW = datetime(2026, 9, 29, 12, 0, 0, tzinfo=timezone.utc)
 INV_DIGEST = "1" * 64
 PREREG_DIGEST = "2" * 64
@@ -44,7 +45,7 @@ def signer():
     def make(**over):
         r = CGA.default_record()
         r.update({"authorization_id": "cgauth-" + "ab" * 8, "status": "AUTHORIZED", "purpose": CGA.PURPOSE,
-                  "authorized_scope": ["PILOT_TRAIN", "DEV"], "authorized_commit_sha": SHA,
+                  "authorized_scope": ["PILOT_TRAIN", "DEV"], "reviewed_commit_sha": SHA, "authorized_code_tree_sha256": CODE_DIGEST,
                   "authorized_artifact_digests": {"corpus_inventory_digest": INV_DIGEST, "preregistration_record_sha256": PREREG_DIGEST},
                   "issued_at": ts(NOW - timedelta(hours=1)), "expires_at": ts(NOW + timedelta(days=1)),
                   "authorizing_authority": {"identity": "owner-1", "role": "OWNER", "key_id": "k-owner"}})
@@ -55,7 +56,8 @@ def signer():
 
 
 def req(**over):
-    base = dict(commit_sha=SHA, requested_scope=("PILOT_TRAIN", "DEV"), current_inventory_digest=INV_DIGEST,
+    base = dict(commit_sha=SHA, commit_is_descendant=True, working_tree_clean=True, current_code_tree_sha256=CODE_DIGEST,
+                requested_scope=("PILOT_TRAIN", "DEV"), current_inventory_digest=INV_DIGEST,
                 current_prereg_record_sha256=PREREG_DIGEST, event_name="workflow_dispatch")
     base.update(over)
     return CGA.Request(**base)
@@ -106,10 +108,31 @@ def test_scope_must_be_a_real_artifact_class(signer):
     assert not v.authorized and "BAD_AUTHORIZED_SCOPE" in v.reasons
 
 
-def test_commit_mismatch_is_the_classic_replay_case(signer):
+def test_non_ancestor_commit_is_the_classic_replay_rollback_case(signer):
     make, keys = signer
-    v = CGA.verify(make(), req(commit_sha="c" * 40), keys, now=NOW)
-    assert not v.authorized and "COMMIT_SHA_MISMATCH" in v.reasons
+    v = CGA.verify(make(), req(commit_sha="c" * 40, commit_is_descendant=False), keys, now=NOW)
+    assert not v.authorized and "REVIEWED_COMMIT_NOT_ANCESTOR_OF_EXECUTION" in v.reasons
+
+
+def test_dirty_working_tree_denied(signer):
+    make, keys = signer
+    v = CGA.verify(make(), req(working_tree_clean=False), keys, now=NOW)
+    assert not v.authorized and "DIRTY_WORKING_TREE" in v.reasons
+
+
+def test_code_tree_hash_mismatch_denied_when_code_has_drifted(signer):
+    make, keys = signer
+    v = CGA.verify(make(), req(current_code_tree_sha256="9" * 64), keys, now=NOW)
+    assert not v.authorized and "CODE_TREE_HASH_MISMATCH" in v.reasons
+
+
+def test_execution_at_a_descendant_of_the_reviewed_commit_is_accepted(signer):
+    """The design goal of this whole redesign: the authorization was reviewed/signed at SHA (an already-existing
+    commit), and is executed at a LATER commit ("c"*40, standing in for the evidence commit that adds the signed
+    record itself) that is a genuine descendant -- this must NOT be treated as a mismatch, unlike schema /1."""
+    make, keys = signer
+    v = CGA.verify(make(), req(commit_sha="c" * 40, commit_is_descendant=True), keys, now=NOW)
+    assert v.authorized, v.reasons
 
 
 def test_inventory_digest_mismatch_denied_when_evidence_changed(signer):
@@ -222,10 +245,16 @@ def test_bad_authorization_id_format_denied(signer):
     assert not v.authorized and "BAD_AUTHORIZATION_ID" in v.reasons
 
 
-def test_bad_commit_sha_format_denied(signer):
+def test_bad_reviewed_commit_sha_format_denied(signer):
     make, keys = signer
-    v = CGA.verify(make(authorized_commit_sha="not-40-hex"), req(), keys, now=NOW)
-    assert not v.authorized and "BAD_AUTHORIZED_COMMIT_SHA" in v.reasons
+    v = CGA.verify(make(reviewed_commit_sha="not-40-hex"), req(), keys, now=NOW)
+    assert not v.authorized and "BAD_REVIEWED_COMMIT_SHA" in v.reasons
+
+
+def test_bad_authorized_code_tree_hash_format_denied(signer):
+    make, keys = signer
+    v = CGA.verify(make(authorized_code_tree_sha256="not-64-hex"), req(), keys, now=NOW)
+    assert not v.authorized and "BAD_AUTHORIZED_CODE_TREE_HASH" in v.reasons
 
 
 # ---------------------------------------------------------------- item 1: event/scope hardening
@@ -307,7 +336,7 @@ def test_revoked_key_is_excluded_by_the_real_registry_loading_path(tmp_path, sig
     assert loaded == []   # the real registry-loading path (identity_registry.is_active) excludes revoked keys, not a mock
     rec = CGA.default_record()
     rec.update({"authorization_id": "cgauth-" + "cd" * 8, "status": "AUTHORIZED", "purpose": CGA.PURPOSE,
-                "authorized_scope": ["PILOT_TRAIN"], "authorized_commit_sha": SHA,
+                "authorized_scope": ["PILOT_TRAIN"], "reviewed_commit_sha": SHA, "authorized_code_tree_sha256": CODE_DIGEST,
                 "authorized_artifact_digests": {"corpus_inventory_digest": INV_DIGEST, "preregistration_record_sha256": PREREG_DIGEST},
                 "issued_at": ts(NOW - timedelta(hours=1)), "expires_at": ts(NOW + timedelta(days=1)),
                 "authorizing_authority": {"identity": "k-real", "role": "OWNER", "key_id": "k-real"}})

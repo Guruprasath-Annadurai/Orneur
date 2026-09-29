@@ -22,6 +22,7 @@ ARTIFACT_PATHS = (
     "docs/orneur/authorization/REVIEWER_PATH_STATUS.md",
     "docs/orneur/authorization/CORPUS_GENERATION_AUTHORIZATION.json",
     "docs/orneur/authorization/CORPUS_GENERATION_AUTHORIZATION_SIGNING_RUNBOOK.md",
+    "docs/orneur/authorization/CORPUS_GENERATOR_REGISTRY.json",
     "docs/orneur/phase-21/GENESIS_V2_BENCHMARK_PARTITION_ARCHITECTURE.md",
     "docs/orneur/phase-21/GENESIS_V2_HISTORICAL_CONTAMINATION_CONTROLS.md",
     "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
@@ -42,6 +43,7 @@ ARTIFACT_PATHS = (
     "orca/eval/genesis_v2/prereg.py", "orca/eval/genesis_v2/owner_preflight.py", "orca/eval/genesis_v2/privacy_scan.py",
     "orca/eval/genesis_v2/corpus_generation_authorization.py", "orca/eval/genesis_v2/isolation.py",
     "orca/eval/genesis_v2/operational_boundary.py", "orca/eval/genesis_v2/corpus_manifest.py", "orca/eval/genesis_v2/candidate_lineage.py",
+    "orca/eval/genesis_v2/generator_registry.py",
 )
 
 

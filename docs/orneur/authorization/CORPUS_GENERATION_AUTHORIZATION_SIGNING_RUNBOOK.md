@@ -32,9 +32,17 @@ This script:
   sign) and `CORPUS_GENERATION_AUTHORIZATION_UNSIGNED_DRAFT.json` (the full record, for your review, unsigned),
 - prints the payload's SHA-256 digest and the exact signing command below.
 
-**Read the printed record before signing.** Confirm `authorized_scope`, `authorized_commit_sha`, both digests, and
-the validity window are what you intend. If anything looks wrong, do not sign — re-run with corrected flags, or on
-the commit you actually intend to authorize.
+**Read the printed record before signing.** Confirm `authorized_scope`, `reviewed_commit_sha`,
+`authorized_code_tree_sha256`, both digests, and the validity window are what you intend. If anything looks wrong,
+do not sign — re-run with corrected flags, or on the commit you actually intend to authorize. The script refuses to
+run at all on a dirty (uncommitted-changes) working tree — commit or stash first.
+
+Note on the commit binding: `reviewed_commit_sha` is the commit that existed when you ran this script, not
+necessarily the commit the signed authorization ends up stored in (a later commit that only adds the signed record
+is fine and expected — see the module's own docstring for why literal commit-SHA equality would be circular).
+`authorized_code_tree_sha256` is the real anti-drift binding: it is a hash of the actual generator code
+(`orca/eval/genesis_v2/*.py`) at the moment you ran this, and any change to that code after you sign invalidates
+the authorization even on the same commit lineage.
 
 ## 3. Verify the payload digest
 
@@ -69,11 +77,14 @@ not, nothing changes and you are told why.
 
 ## 7. This still does not, by itself, permit generation
 
-Per `operational_boundary.require_authorization()`, generation additionally requires the qualification-runner
-identity to be `state: AUTHORIZED` in `QUALIFICATION_RUNNER_REGISTRY.json` (currently
-`REGISTERED_NOT_AUTHORIZED`, and V2 remaining unfrozen for any private-split read further gates through
-`AccessLedger`). Signing a corpus-generation authorization is one necessary gate among several, never sufficient
-alone.
+Per `operational_boundary.require_authorization()`, generation additionally requires a SEPARATE **generator**
+identity to be `state: AUTHORIZED` in `CORPUS_GENERATOR_REGISTRY.json` (currently empty — no generator is
+registered). The generator identity is deliberately distinct from the **qualification runner** identity in
+`QUALIFICATION_RUNNER_REGISTRY.json` (still `REGISTERED_NOT_AUTHORIZED`): a generator may write PILOT_TRAIN/DEV/
+SCREEN/QUALIFICATION_HOLDOUT to the vault before freeze, but must never also hold read access to the sealed private
+splits — that is the qualification runner's distinct, later-stage role, itself additionally gated through the real
+`AccessLedger` (`operational_boundary.require_private_split_access()`), which independently requires V2 to be
+frozen. Signing a corpus-generation authorization is one necessary gate among several, never sufficient alone.
 
 ## 8. Expiry and re-signing
 

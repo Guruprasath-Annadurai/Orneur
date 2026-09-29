@@ -25,17 +25,18 @@
   "access_ledger": "IMPLEMENTED_TESTED",
   "authority_registry": "CONFIGURED_ONE_OWNER_KEY_REGISTERED",
   "benchmark_partition_architecture": "DESIGNED_NOT_ACTIVATED",
-  "candidate_lineage_attestation": "IMPLEMENTED_TESTED_PROPOSED_NOT_ACTIVATED",
+  "candidate_lineage_attestation": "IMPLEMENTED_TESTED_REQUIRES_INDEPENDENT_VERIFICATION",
   "coding_sandbox": "IMPLEMENTED_TESTED",
   "contamination_framework": "IMPLEMENTED_TESTED",
-  "corpus_generation_authorization_gate": "IMPLEMENTED_TESTED_NOT_AUTHORIZED",
+  "corpus_generation_authorization_gate": "IMPLEMENTED_TESTED_HARDENED_NOT_AUTHORIZED",
   "corpus_generation_authorization_signing_runbook": "DESIGNED_NOT_ACTIVATED",
+  "corpus_generator_registry": "IMPLEMENTED_TESTED_EMPTY",
   "corpus_inventory": "IMPLEMENTED_POPULATED_REVIEWED_SIGNED_ATTESTATION",
-  "corpus_manifest_schema": "IMPLEMENTED_TESTED_PROPOSED_NOT_ACTIVATED",
+  "corpus_manifest_schema": "IMPLEMENTED_TESTED_VERIFIES_REAL_ARTIFACTS",
   "historical_contamination_controls_consolidation": "DESIGNED_NOT_ACTIVATED",
   "ledger_deployment": "IMPLEMENTED_OPERATIONAL_READY",
   "model_eval_authorization_gate": "IMPLEMENTED_TESTED",
-  "operational_authorization_boundary": "IMPLEMENTED_TESTED",
+  "operational_authorization_boundary": "IMPLEMENTED_TESTED_SEPARATED_GENERATOR_AND_RUNNER_IDENTITIES",
   "owner_authority_key_procedure": "DESIGNED_ACTIVATED_ONE_KEY_REGISTERED",
   "owner_preflight": "IMPLEMENTED_TESTED_RESULT_READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
   "owner_vault_procedure": "DESIGNED_NOT_ACTIVATED",
@@ -62,6 +63,14 @@
   "training_corpora_check": "CONTAMINATION_DATASET_UNAVAILABLE (pre-corpus attestation ATTESTED and signature-verified; full contamination qualification remains pending the private V2 corpus; one class genuinely unresolved)"
  },
  "corpus_generation_authorization": {
+  "binding_redesign_this_phase": [
+   "reviewed_commit_sha (ancestry-checked) + authorized_code_tree_sha256 (exact-match) replace circular exact-commit-SHA equality",
+   "working tree must be clean at execution time",
+   "generator identity (CORPUS_GENERATOR_REGISTRY.json) is now separate from the qualification runner identity",
+   "event_name and generator_id are derived from trusted runtime evidence (env vars) by default, not bare caller strings",
+   "corpus_manifest.verify_against_artifacts() checks real decrypted vault bytes, not just hash format",
+   "candidate_lineage now requires independent, non-self verification and complete historical-exposure consideration"
+  ],
   "hardening_this_phase": [
    "empty/absent/non-workflow_dispatch event fails closed",
    "empty/duplicate/out-of-vocabulary requested/authorized scope rejected",
@@ -71,6 +80,7 @@
   "module": "orca/eval/genesis_v2/corpus_generation_authorization.py",
   "operational_boundary_module": "orca/eval/genesis_v2/operational_boundary.py",
   "path": "docs/orneur/authorization/CORPUS_GENERATION_AUTHORIZATION.json",
+  "schema_version": "genesis-v2-corpus-generation-authorization/2",
   "separate_from": [
    "authority_registry key registration",
    "signed corpus inventory attestation",
