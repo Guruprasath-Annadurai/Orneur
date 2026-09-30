@@ -19,7 +19,7 @@
     "docs/orneur/phase-21/GENESIS_V2_SANDBOX_QUALIFICATION_CANDIDATE_RECORD.json": "c9884672a33f8541faa9711454a8bb3f70fbf7664554774ddecc43e800b26899",
     "docs/orneur/phase-21/GENESIS_V2_SEMANTIC_ENGINE_RECORD.json": "2a79913caa7660750ec8f75bf6919ebc8220734c567c00a93605c957766fc9a5",
     "docs/orneur/phase-21/GENESIS_V2_UNAVAILABLE_CORPUS_ACCEPTANCE_POLICY.json": "3860bfdafa63a7204513e9906b0955c02c3242bc0c93f4d7cdbc54dc94ff3942",
-    "docs/orneur/phase-21/GENESIS_V2_VAULT_VERIFICATION.json": "23e65d7ea4d020d5c65f49fda1e2ab33827cec332ec835286cf205cbff1ad79c",
+    "docs/orneur/phase-21/GENESIS_V2_VAULT_VERIFICATION.json": "eb712500695ef5af6d0c34bc78ebf0edfe1956d312c999a2c1b58cc1f922160c",
     "orca/eval/genesis_v2/authority_registry.py": "0d21b9e68a904234bac21e98f5bc2db94968a2f41137f537dca3d4e9c563b303",
     "orca/eval/genesis_v2/authorization.py": "d05802999a43e6e21a0c21de8a45032ca8b0f58a0c84b03cbac8359ce5361d2e",
     "orca/eval/genesis_v2/candidate_lineage.py": "4483622fc6db89451172b5031c6603aae4f81caf184b13c388ae123a832bf92a",
@@ -30,7 +30,7 @@
     "orca/eval/genesis_v2/inventory.py": "4112fa86536ed447ef20fc971d8f39d5ab20a67674cbde9bd4114077a741c5c3",
     "orca/eval/genesis_v2/isolation.py": "9e9aac6c5a167c8549a8edfe4a9ee7a1f5d27126169ba1a4da1b04f07906e4e8",
     "orca/eval/genesis_v2/ledger_admin.py": "e60a2a76a2a08bb3066b4f29c6976a579c8d4dfdfc525b1757eede0836c1a7fb",
-    "orca/eval/genesis_v2/operational_boundary.py": "88e654e8c64b025aae96ee36e44ed5d86f0935b4b01c68e43021276bf7f525cf",
+    "orca/eval/genesis_v2/operational_boundary.py": "19b4de80f109af6c9fd4f7e5dd8f7f89ebdd9b27fc36aa7a008fdd53b57d2668",
     "orca/eval/genesis_v2/owner_preflight.py": "4ad7c6dbde642ee0bc7c7b14a0c26e55ffdf17e4ff0536f2ff77cc466afe1240",
     "orca/eval/genesis_v2/prereg.py": "535b944f8476765a906324c2a6cc9228d0a2babaa1b08dd755bc3caffc2ba22a",
     "orca/eval/genesis_v2/privacy_scan.py": "a15210767997655da04d4a0b8da37be3dfcea559407b68e4d0a83b51f5d9128b",
@@ -43,7 +43,7 @@
     "orca/eval/genesis_v2/secret_manager.py": "290b8a5edb0cbe7c2e673c0aa4721a3d26da07fa8fcc7fd0428e04095126ac80",
     "orca/eval/genesis_v2/semantic.py": "e37703be90397a0e74cdaaade730f60d5455783968fadd2c02a4c035b1290055",
     "orca/eval/genesis_v2/semantic_calibration.py": "bc0a926e1f27716af96fcfb7553253aeab9110c50d39bd1ae63d7564aa6e7ce0",
-    "orca/eval/genesis_v2/vault_admin.py": "892e970bfda6de8b5d7580ea38ef2bfc1f8fff7ebb37a8c19f554bb593fb5f49"
+    "orca/eval/genesis_v2/vault_admin.py": "21d8ed65c92f22e1bd30d8a845d7aed92be6a709fb89a5d5ff410d14d9bb4493"
   },
   "authorizations": {
     "corpus_generated": false,
@@ -60,10 +60,10 @@
     "training_authorized": false,
     "v2_frozen": false
   },
-  "built_from_parent_commit_sha": "c32bf0fbf2f2d379d4ec27fdcdcf6e56ad182d6c",
+  "built_from_parent_commit_sha": "9926c5de57b02678592f1fff7809a637926cdfe0",
   "document": "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST",
   "manifest_commit_sha": null,
-  "manifest_sha256": "30f05b18458af5395ae29346af0199be4356426bfa7905d3f66f4197601dc289",
+  "manifest_sha256": "c5fbb956ef30b232d1e69c9e9099b6423e0b3f5a285bd505d432a1e9aeb09a17",
   "missing_artifacts": [],
   "note": "built_from_parent_commit_sha is the commit that existed when this manifest was generated (most bundled artifacts, including some in this same phase's commit, are hashed by content here, not claimed to live at that SHA). manifest_commit_sha is intentionally null: the commit that actually introduces this file is only knowable after it is made, and is reported in the phase's final report instead of self-referenced.",
   "owner_preflight_checks": {
@@ -102,5 +102,5 @@
   "owner_preflight_result": "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
   "schema_version": "genesis-v2-pre-corpus-closure-manifest/2",
   "status": "PRE_CORPUS_CLOSURE_EVIDENCE_ONLY",
-  "timestamp": "2026-09-30T09:21:42Z"
+  "timestamp": "2026-09-30T10:40:37Z"
 }

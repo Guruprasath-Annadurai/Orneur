@@ -754,13 +754,17 @@ def test_digest_only_same_process_verification_preserves_ledger_evidence_and_sea
 
 
 def test_digest_only_same_process_verifier_is_honestly_named_not_process_isolated():
-    """Item 5: the function's own name and docstring must not overstate a process-isolation guarantee it does not
-    provide -- a same-process function claiming 'restricted process' was the exact problem being corrected."""
+    """Item 5 (prior round): the function's own name and docstring must not overstate a process-isolation guarantee
+    it does not provide -- a same-process function claiming 'restricted process' was the exact problem being
+    corrected. Item 6 (this round): verifier process isolation must be explicitly marked as requiring REAL
+    DEPLOYMENT validation -- never established merely by this same-process wrapper existing."""
     assert not hasattr(OB, "verify_manifest_in_restricted_process")   # the old, overstated name is gone
     doc = OB.verify_manifest_digest_only_same_process.__doc__
     assert "does NOT provide operating-system process isolation" in doc
     assert "SAME Python process" in doc
     assert "DIGEST-ONLY DIAGNOSTICS" in doc
+    assert "REQUIRES REAL DEPLOYMENT VALIDATION" in doc
+    assert "UNVERIFIED until" in doc
 
 
 def test_digest_only_same_process_verifier_has_no_training_inference_or_publishing_imports():

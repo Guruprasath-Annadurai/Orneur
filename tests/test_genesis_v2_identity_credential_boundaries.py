@@ -187,6 +187,9 @@ def test_owner_activation_checklist_exists_with_all_four_categories():
     # every row in category D must be about something genuinely NOT authorized right now -- spot-check the two
     # hardest facts a stale checklist could get wrong.
     assert "NOT_AUTHORIZED" in t and "GENESIS_CAPABILITY_EVAL_V2_FROZEN = False" in t
+    # item 6 this round: verifier process isolation must remain explicitly marked as requiring real deployment
+    # validation, never presented as established by the same-process wrapper.
+    assert "REAL DEPLOYMENT VALIDATION" in t and "UNVERIFIED" in t
     import re
     assert not re.search(r"\b[0-9a-f]{64}\b", t) and "/Users/" not in t and "/home/" not in t
 

@@ -1,9 +1,11 @@
 {
  "backup_policy_result": true,
+ "cleanup_verified_result": true,
  "document": "GENESIS_V2_VAULT_VERIFICATION",
  "encryption_policy_result": true,
  "evidence_digests": {
   "backup_ciphertext_only": "22adefa137f2743a",
+  "cleanup_complete": "1d43e6dd737dabb4",
   "encryption_algorithm_is_x25519_hkdf_aes_256_gcm": "e07574e3821a9441",
   "isolation.no_tracked_or_untracked_enc_artifacts_in_repo": "b7ec39095130419e",
   "isolation.no_tracked_symlink_points_into_vault": "b5f85b7f2c1a4a0e",
@@ -32,8 +34,8 @@
  "permission_policy_result": true,
  "repository_isolation_result": true,
  "schema_version": "genesis-v2-vault-verification/1",
- "store_descriptor_digest": "eeccf1bd991f383c4d1ba5099df937d26ac04ea126c40a443391797702efb00b",
+ "store_descriptor_digest": "e36eeecce0350399d26daef85c62da9ccb21df643f3f74c383397b5eb80605da",
  "store_type": "ENCRYPTED_ARTIFACT",
- "verification_timestamp": "2026-09-30T09:21:26Z",
- "verifier_code_sha256": "7577a0577279d5fdd199581fb4374b17f25b35947a461ab29a3cdb82d5a6147f"
+ "verification_timestamp": "2026-09-30T10:40:23Z",
+ "verifier_code_sha256": "8e6a4e05f3fdc45f64b3a2627fefbff5151dae9f4cc29e1f4a506984d28d7dcd"
 }

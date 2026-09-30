@@ -11,14 +11,23 @@ key_isolation_result (the writer object holds no private-key material and expose
 evidence_digests.
 
 SAFETY: `activate_test_vault()` NEVER deletes pre-existing contents of the `vault_dir` it is given, in any code
-path, including when isolation verification fails. It tracks exactly the paths it itself created during THIS
-invocation and removes only those — see that function's own docstring for the full guarantee, and
-`tests/test_genesis_v2_vault_ledger_activation.py`'s sentinel-preservation and failure-path regression tests.
+path, including when isolation verification fails, a write fails partway, or the backup fails partway. It claims
+EXCLUSIVE ownership of a single, uniquely-named, freshly-created workspace directory BEFORE performing any write
+(the `mkdir` call itself, with its default exclusive-creation semantics, IS the ownership claim), writes every
+artifact this activation produces -- the test corpus AND the test backup -- ONLY inside that one workspace, and
+removes ONLY that one workspace in its `finally` block. This means a failure at ANY point after the workspace is
+claimed (mid-`write_corpus`, mid-`export_backup`, or anything else) still leaves cleanup with an unambiguous, single
+target: the whole workspace, whatever partial state it holds, gone in one `rmtree` — never a traversal of
+`vault_dir` itself, never a chance of reaching content this invocation did not create. See that function's own
+docstring for the full guarantee, and `tests/test_genesis_v2_vault_ledger_activation.py`'s sentinel-preservation,
+fault-injection (mid-write failure, partial-backup failure, cleanup failure) regression tests.
 
 EVIDENCE, NOT ASSUMPTIONS: every field in the produced record depends on a genuinely executed check performed
 during THIS invocation. In particular `backup_policy_result` is computed from an ACTUAL `export_backup()` call
 verified byte-for-byte against the live ciphertext (never hardcoded), executed BEFORE the destructive
-tamper/truncation tests below it so the backup reflects real, uncorrupted content.
+tamper/truncation tests below it so the backup reflects real, uncorrupted content. `cleanup_verified_result` reports
+whether the workspace was genuinely, completely removed -- an incomplete cleanup is reported as an ACTIVATION
+FAILURE (`pass: false`), never masked as a successful activation.
 """
 from __future__ import annotations
 
@@ -53,19 +62,29 @@ def activate_test_vault(vault_dir: Path, repo_root: Path) -> dict:
     only) to write, store.EncryptedVaultReader (private key) to read -- using an EPHEMERAL X25519 test keypair,
     checks wrong-key failure, confirms the WRITER itself holds no private-key material (genuine key isolation, not
     just a round-trip check), GENUINELY verifies the ciphertext-only backup (byte-for-byte, before any destructive
-    test touches the vault's own copy), THEN checks tamper/truncation detection, then destroys ONLY the specific
-    artifacts THIS invocation created, then destroys the keys. Returns {'pass': bool, 'checks': {...}, 'error': str|None}.
+    test touches the vault's own copy), THEN checks tamper/truncation detection, then destroys the ENTIRE isolated
+    workspace this invocation exclusively created (and nothing else), then destroys the keys. Returns
+    {'pass': bool, 'checks': {...}, 'error': str|None}.
 
-    SAFETY: this function NEVER removes pre-existing contents of `vault_dir`. It tracks exactly which paths it
-    itself created (the one `corpus_id` subdirectory it wrote, and the one backup directory it created) and, in its
-    `finally` block, removes ONLY those tracked paths -- never `vault_dir.iterdir()`. If `vault_dir` already
-    contained other files or directories before this call (a real vault the owner is checking, a directory reused
-    by mistake), they are left completely untouched, whether this call succeeds, fails, or raises. If isolation
-    verification fails before anything is created, the tracked-paths list stays empty and nothing is removed at
-    all -- the early-failure path performs NO filesystem writes to `vault_dir` in the first place."""
+    OWNERSHIP AND CLEANUP: before writing a single byte, this function exclusively creates ONE workspace directory
+    inside `vault_dir` (`Path.mkdir()`'s default exclusive-creation semantics -- it raises `FileExistsError` on any
+    collision rather than silently reusing something already there -- IS the ownership claim, made before any write
+    is attempted). Every artifact this invocation produces (the test corpus, the test backup) is written ONLY
+    inside that one workspace; nothing this function does ever touches any other path under `vault_dir`. Cleanup in
+    the `finally` block below removes that ONE workspace, whatever state it is in -- fully written, partially
+    written after a mid-`write_corpus` or mid-`export_backup` failure, or anything else -- via a single `rmtree`
+    that can never traverse into or delete unrelated pre-existing vault content, because it is never given any path
+    other than the workspace it itself exclusively created. If isolation verification fails before the workspace is
+    even created, nothing under `vault_dir` is touched at all.
+
+    CLEANUP IS ITSELF A PASS/FAIL CONDITION: `checks["cleanup_complete"]` is genuinely computed (workspace removed
+    AND confirmed gone afterward, not merely "no exception raised") and is included in the overall `pass`
+    computation -- an activation whose test artifacts could not be fully cleaned up is reported as a FAILURE, never
+    as a successful activation with a silently leftover workspace."""
     vault_dir = Path(vault_dir)
     checks: dict = {}
-    created_paths: list = []          # exactly what THIS invocation created; the only things ever removed below
+    workspace: Path | None = None
+    error: str | None = None
     priv, pub = ST.generate_vault_keypair()   # TEST keypair only; never written to disk; discarded at the end of this function
     corpus_id = "gce2c-" + os.urandom(8).hex()   # a fresh, unique corpus id -- collision with any pre-existing content is not credible
     try:
@@ -73,85 +92,101 @@ def activate_test_vault(vault_dir: Path, repo_root: Path) -> dict:
         checks["repository_isolation"] = iso["pass"]
         checks.update({f"isolation.{k}": v for k, v in iso.get("checks", {}).items()})
         if not iso["pass"]:
-            return {"pass": False, "checks": checks, "error": "vault is not isolated from the repository"}
+            error = "vault is not isolated from the repository"
+        else:
+            # EXCLUSIVE ownership claim, before any write: mkdir's default exist_ok=False raises FileExistsError on
+            # collision (astronomically unlikely given os.urandom(8)) rather than silently adopting an existing
+            # directory. Every subsequent write in this function stays INSIDE `workspace`.
+            workspace = vault_dir / (".genesis-v2-vault-activation-test-" + os.urandom(8).hex())
+            workspace.mkdir(mode=0o700)
 
-        writer = ST.EncryptedVaultWriter(vault_dir, pub)
-        checks["writer_exposes_no_read_method"] = not hasattr(writer, "read_split")
-        checks["writer_holds_no_private_key_bytes"] = not any(v == priv for v in vars(writer).values())
-        plain = {"SCREEN": _TEST_MARKER + b"-SCREEN", "QUALIFICATION_HOLDOUT": _TEST_MARKER + b"-HOLDOUT"}
-        digest = writer.write_corpus(corpus_id, plain)
-        created_paths.append(vault_dir / corpus_id)   # the ONLY thing write_corpus created; track it for cleanup
-        checks["round_trip_write"] = True
+            writer = ST.EncryptedVaultWriter(workspace, pub)
+            checks["writer_exposes_no_read_method"] = not hasattr(writer, "read_split")
+            checks["writer_holds_no_private_key_bytes"] = not any(v == priv for v in vars(writer).values())
+            plain = {"SCREEN": _TEST_MARKER + b"-SCREEN", "QUALIFICATION_HOLDOUT": _TEST_MARKER + b"-HOLDOUT"}
+            digest = writer.write_corpus(corpus_id, plain)   # any failure here leaves only partial content INSIDE workspace, still fully covered by cleanup below
+            checks["round_trip_write"] = True
 
-        reader = ST.EncryptedVaultReader(vault_dir, priv)
-        got = {s: reader.read_split(corpus_id, s, expected_corpus_digest=digest) for s in plain}
-        checks["round_trip_read_matches"] = got == plain
+            reader = ST.EncryptedVaultReader(workspace, priv)
+            got = {s: reader.read_split(corpus_id, s, expected_corpus_digest=digest) for s in plain}
+            checks["round_trip_read_matches"] = got == plain
 
-        wrong_priv, _ = ST.generate_vault_keypair()
-        wrong_reader = ST.EncryptedVaultReader(vault_dir, wrong_priv)
-        try:
-            wrong_reader.read_split(corpus_id, "SCREEN", expected_corpus_digest=digest)
-            checks["wrong_key_fails"] = False
-        except ST.PrivateStorageIntegrityError:
-            checks["wrong_key_fails"] = True
+            wrong_priv, _ = ST.generate_vault_keypair()
+            wrong_reader = ST.EncryptedVaultReader(workspace, wrong_priv)
+            try:
+                wrong_reader.read_split(corpus_id, "SCREEN", expected_corpus_digest=digest)
+                checks["wrong_key_fails"] = False
+            except ST.PrivateStorageIntegrityError:
+                checks["wrong_key_fails"] = True
 
-        # GENUINE ciphertext-only backup verification -- BEFORE any destructive tamper/truncation test below, so the
-        # backup is verified against the real, uncorrupted vault content, and the result is never hardcoded.
-        backup_dir = vault_dir.parent / (vault_dir.name + "-backup-test-" + os.urandom(4).hex())   # uniquely named per invocation
-        try:
-            names = reader.export_backup(corpus_id, backup_dir, expected_corpus_digest=digest)
-            created_paths.append(backup_dir)
-            expected_names = {"SCREEN.enc", "QUALIFICATION_HOLDOUT.enc", "SEAL.enc"}
-            names_match = set(names) == expected_names
-            live_dir = vault_dir / corpus_id
-            content_matches = names_match and all((backup_dir / n).read_bytes() == (live_dir / n).read_bytes() for n in expected_names)
-            no_plaintext_leaked = names_match and not any(
-                _TEST_MARKER in (backup_dir / n).read_bytes() for n in expected_names)
-            checks["backup_ciphertext_only"] = bool(names_match and content_matches and no_plaintext_leaked)
-        except ST.PrivateStorageIntegrityError as e:
-            checks["backup_ciphertext_only"] = False
-            checks["backup_test_error"] = f"NOT_TESTED: export_backup raised {type(e).__name__} against a freshly-written, uncorrupted corpus"
+            # GENUINE ciphertext-only backup verification -- BEFORE any destructive tamper/truncation test below, so
+            # the backup is verified against the real, uncorrupted vault content, and the result is never hardcoded.
+            # backup_dir lives INSIDE `workspace` too -- a partial `export_backup` failure is covered by the SAME
+            # single cleanup as everything else, never separately tracked.
+            backup_dir = workspace / "backup"
+            try:
+                names = reader.export_backup(corpus_id, backup_dir, expected_corpus_digest=digest)
+                expected_names = {"SCREEN.enc", "QUALIFICATION_HOLDOUT.enc", "SEAL.enc"}
+                names_match = set(names) == expected_names
+                live_dir = workspace / corpus_id
+                content_matches = names_match and all((backup_dir / n).read_bytes() == (live_dir / n).read_bytes() for n in expected_names)
+                no_plaintext_leaked = names_match and not any(
+                    _TEST_MARKER in (backup_dir / n).read_bytes() for n in expected_names)
+                checks["backup_ciphertext_only"] = bool(names_match and content_matches and no_plaintext_leaked)
+            except ST.PrivateStorageIntegrityError as e:
+                checks["backup_ciphertext_only"] = False
+                checks["backup_test_error"] = f"NOT_TESTED: export_backup raised {type(e).__name__} against a freshly-written, uncorrupted corpus"
 
-        target = vault_dir / corpus_id / "SCREEN.enc"
-        blob = bytearray(target.read_bytes())
-        blob[-3] ^= 0xFF
-        os.chmod(target, 0o600)
-        target.write_bytes(bytes(blob))
-        os.chmod(target, 0o400)
-        try:
-            reader.read_split(corpus_id, "SCREEN", expected_corpus_digest=digest)
-            checks["tamper_detected"] = False
-        except ST.PrivateStorageIntegrityError:
-            checks["tamper_detected"] = True
-        os.chmod(target, 0o600)
-        target.write_bytes(bytes(blob)[:-40])
-        os.chmod(target, 0o400)
-        try:
-            reader.read_split(corpus_id, "SCREEN", expected_corpus_digest=digest)
-            checks["truncation_detected"] = False
-        except ST.PrivateStorageIntegrityError:
-            checks["truncation_detected"] = True
+            target = workspace / corpus_id / "SCREEN.enc"
+            blob = bytearray(target.read_bytes())
+            blob[-3] ^= 0xFF
+            os.chmod(target, 0o600)
+            target.write_bytes(bytes(blob))
+            os.chmod(target, 0o400)
+            try:
+                reader.read_split(corpus_id, "SCREEN", expected_corpus_digest=digest)
+                checks["tamper_detected"] = False
+            except ST.PrivateStorageIntegrityError:
+                checks["tamper_detected"] = True
+            os.chmod(target, 0o600)
+            target.write_bytes(bytes(blob)[:-40])
+            os.chmod(target, 0o400)
+            try:
+                reader.read_split(corpus_id, "SCREEN", expected_corpus_digest=digest)
+                checks["truncation_detected"] = False
+            except ST.PrivateStorageIntegrityError:
+                checks["truncation_detected"] = True
 
-        checks["encryption_algorithm_is_x25519_hkdf_aes_256_gcm"] = writer.describe()["cipher"] == "X25519+HKDF-SHA256+AES-256-GCM"
-        try:
-            writer.write_corpus(corpus_id, plain)   # a genuine second write attempt against the SAME corpus_id, executed right here
-            checks["write_once_publication"] = False
-        except FileExistsError:
-            checks["write_once_publication"] = True
-        checks["seal_last_publication"] = (vault_dir / corpus_id / "SEAL.enc").exists()   # SEAL.enc is never touched by the SCREEN.enc-only tamper/truncation tests above
-        checks["no_plaintext_temp_survives"] = not list((vault_dir / corpus_id).glob(".tmp-*"))
-        vs = VV.P.scan_vault_dir(vault_dir)
-        checks["permission_and_no_plaintext_siblings"] = vs["pass"]
-        return {"pass": all(bool(v) for v in checks.values() if not isinstance(v, str)), "checks": checks, "error": None}
+            checks["encryption_algorithm_is_x25519_hkdf_aes_256_gcm"] = writer.describe()["cipher"] == "X25519+HKDF-SHA256+AES-256-GCM"
+            try:
+                writer.write_corpus(corpus_id, plain)   # a genuine second write attempt against the SAME corpus_id, executed right here
+                checks["write_once_publication"] = False
+            except FileExistsError:
+                checks["write_once_publication"] = True
+            checks["seal_last_publication"] = (workspace / corpus_id / "SEAL.enc").exists()   # SEAL.enc is never touched by the SCREEN.enc-only tamper/truncation tests above
+            checks["no_plaintext_temp_survives"] = not list((workspace / corpus_id).glob(".tmp-*"))
+            vs = VV.P.scan_vault_dir(workspace)
+            checks["permission_and_no_plaintext_siblings"] = vs["pass"]
     except Exception as e:
         checks["exception"] = False
-        return {"pass": False, "checks": checks, "error": f"{type(e).__name__}: {str(e)[:160]}"}
+        error = f"{type(e).__name__}: {str(e)[:160]}"
     finally:
         priv = b"\x00" * 32          # best-effort scrub of the local reference
         del priv
-        for p in created_paths:      # remove ONLY what this invocation created -- never touch anything else in vault_dir
-            if p.exists():
-                shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
+        cleanup_ok = True
+        if workspace is not None:
+            try:
+                if workspace.exists():
+                    shutil.rmtree(workspace)
+            except Exception:
+                cleanup_ok = False
+            if workspace.exists():
+                cleanup_ok = False
+        checks["cleanup_complete"] = cleanup_ok
+
+    if error is not None:
+        return {"pass": False, "checks": checks, "error": error}
+    return {"pass": all(bool(v) for v in checks.values() if not isinstance(v, str)), "checks": checks, "error": None}
 
 
 def build_storage_verification_record(activation: dict, *, vault_dir: Path) -> dict:
@@ -166,6 +201,7 @@ def build_storage_verification_record(activation: dict, *, vault_dir: Path) -> d
                                          and c.get("truncation_detected") and c.get("seal_last_publication") and c.get("no_plaintext_temp_survives")),
         "key_isolation_result": bool(c.get("writer_exposes_no_read_method") and c.get("writer_holds_no_private_key_bytes")),
         "backup_policy_result": bool(c.get("backup_ciphertext_only")),
+        "cleanup_verified_result": bool(c.get("cleanup_complete")),
         "verifier_code_sha256": _verifier_code_sha(),
         "pass": bool(activation["pass"]),
         "evidence_digests": {k: hashlib.sha256(f"{k}={v}".encode()).hexdigest()[:16] for k, v in sorted(c.items())},

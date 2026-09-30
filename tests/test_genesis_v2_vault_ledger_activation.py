@@ -2,6 +2,7 @@
 that carry no path/key/plaintext."""
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def test_vault_activation_public_record_carries_no_path_or_key(tmp_path):
     assert str(vault) not in blob and "vault-name-xyz" not in blob and "specific" not in blob
     assert set(rec) == {"document", "schema_version", "store_type", "verification_timestamp", "store_descriptor_digest", "permission_policy_result",
                         "repository_isolation_result", "encryption_policy_result", "key_isolation_result", "backup_policy_result",
-                        "verifier_code_sha256", "pass", "evidence_digests", "note"}
+                        "cleanup_verified_result", "verifier_code_sha256", "pass", "evidence_digests", "note"}
     assert rec["pass"] is True and len(rec["store_descriptor_digest"]) == 64
 
 
@@ -161,6 +162,106 @@ def test_vault_activation_backup_is_verified_before_destructive_tamper_test(tmp_
     assert act["pass"] is True
     assert act["checks"]["backup_ciphertext_only"] is True
     assert act["checks"]["tamper_detected"] is True   # both ran, in that order, and both genuinely passed
+
+
+# ---------------------------------------------------------------- item 4: fault-injection regression tests
+def _workspace_dirs(vault: Path) -> set:
+    return {p.name for p in vault.iterdir() if p.name.startswith(".genesis-v2-vault-activation-test-")}
+
+
+def test_vault_activation_cleans_up_after_a_mid_write_failure(tmp_path, monkeypatch):
+    """Item 1: a failure INSIDE write_corpus() (after the workspace and the corpus directory already exist, before
+    all split files are written) must leave no untracked artifacts -- the exclusively-owned workspace is removed
+    in its entirety regardless of how far write_corpus got before raising."""
+    _need_crypto()
+    from orca.eval.genesis_v2 import store as ST
+    repo = _repo(tmp_path)
+    vault = tmp_path / "vault"
+    vault.mkdir(mode=0o700)
+    sentinel = vault / "pre-existing-real-file.txt"
+    sentinel.write_text("must survive a mid-write failure")
+
+    call_count = {"n": 0}
+    real_publish = ST.EncryptedVaultWriter._publish
+
+    def flaky_publish(self, path, blob):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("simulated mid-write failure -- first split file never gets written")
+        return real_publish(self, path, blob)
+    monkeypatch.setattr(ST.EncryptedVaultWriter, "_publish", flaky_publish)
+
+    act = VA.activate_test_vault(vault, repo)
+    assert act["pass"] is False and act["error"] is not None
+    assert sentinel.is_file() and sentinel.read_text() == "must survive a mid-write failure"
+    assert _workspace_dirs(vault) == set()   # the half-written workspace (corpus dir created, no split files) is fully gone
+    assert {p.name for p in vault.iterdir()} == {"pre-existing-real-file.txt"}
+
+
+def test_vault_activation_cleans_up_after_a_partial_backup_failure(tmp_path, monkeypatch):
+    """Item 2: a failure INSIDE export_backup() partway through (one file copied, then a simulated failure) must
+    leave no untracked artifacts either -- the backup lives inside the same exclusively-owned workspace as the
+    corpus, so the same single cleanup covers it."""
+    _need_crypto()
+    repo = _repo(tmp_path)
+    vault = tmp_path / "vault"
+    vault.mkdir(mode=0o700)
+    sentinel = vault / "pre-existing-real-file.txt"
+    sentinel.write_text("must survive a partial backup failure")
+
+    call_count = {"n": 0}
+    real_copyfile = shutil.copyfile
+
+    def flaky_copyfile(src, dst):
+        call_count["n"] += 1
+        if call_count["n"] == 2:   # let the first file copy succeed, fail on the second
+            raise OSError("simulated partial backup failure")
+        return real_copyfile(src, dst)
+    monkeypatch.setattr(shutil, "copyfile", flaky_copyfile)
+
+    act = VA.activate_test_vault(vault, repo)
+    assert act["pass"] is False and act["error"] is not None
+    assert sentinel.is_file() and sentinel.read_text() == "must survive a partial backup failure"
+    assert _workspace_dirs(vault) == set()   # the partially-copied backup directory is fully gone, along with everything else in the workspace
+    assert {p.name for p in vault.iterdir()} == {"pre-existing-real-file.txt"}
+
+
+def test_vault_activation_reports_cleanup_failure_as_activation_failure(tmp_path, monkeypatch):
+    """Item 5: an activation whose OWN test artifacts could not be fully cleaned up must be reported as a FAILURE,
+    never as a successful activation with a silently leftover workspace -- even when every other check genuinely
+    passed."""
+    _need_crypto()
+    from orca.eval.genesis_v2 import vault_admin as VA_mod
+    repo = _repo(tmp_path)
+    vault = tmp_path / "vault"
+    vault.mkdir(mode=0o700)
+
+    def broken_rmtree(path, *a, **k):
+        raise OSError("simulated cleanup failure")
+    monkeypatch.setattr(VA_mod.shutil, "rmtree", broken_rmtree)
+
+    act = VA.activate_test_vault(vault, repo)
+    assert act["checks"]["cleanup_complete"] is False
+    assert act["pass"] is False   # every OTHER check may have genuinely passed; cleanup failure alone must fail the activation
+    rec = VA.build_storage_verification_record(act, vault_dir=vault)
+    assert rec["cleanup_verified_result"] is False and rec["pass"] is False
+    # clean up the test's own mess now that the real rmtree is restored (monkeypatch auto-reverts on teardown, but
+    # this assertion runs while it's still patched, so do it after by reading what's left)
+    monkeypatch.undo()
+    for p in vault.iterdir():
+        shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
+
+
+def test_vault_activation_workspace_naming_is_exclusive_and_hidden(tmp_path):
+    """The workspace directory name is unpredictable (os.urandom-derived) and hidden (dot-prefixed), reducing any
+    chance of an unrelated process or a human operator colliding with or mistaking it for real content."""
+    _need_crypto()
+    repo = _repo(tmp_path)
+    vault = tmp_path / "vault"
+    vault.mkdir(mode=0o700)
+    act = VA.activate_test_vault(vault, repo)
+    assert act["pass"] is True
+    assert list(vault.iterdir()) == []   # the workspace, whatever it was named, is gone after a clean run
 
 
 def test_committed_vault_verification_record_is_valid_and_passed():

@@ -353,7 +353,16 @@ def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reade
     top-level docstring's "RESIDUAL RUNTIME-IDENTITY LIMITATIONS" section. If genuine process isolation is required
     for a future deployment, that means literally running this call in a separate OS process (e.g. `subprocess`,
     a container, or a sandboxed worker) and treating its stdout as the digest-only diagnostic channel — this
-    function does not do that itself, and does not claim to."""
+    function does not do that itself, and does not claim to.
+
+    VERIFIER PROCESS ISOLATION EXPLICITLY REQUIRES REAL DEPLOYMENT VALIDATION: no unit test, no code review, and no
+    property of this function's implementation can establish that a REAL verifier deployment actually runs in a
+    separate, isolated OS process from the generator or from anything else on the same host. That is a deployment-
+    configuration fact (which container, which VM, which sandbox), not a code-level guarantee this same-process
+    Python function could ever provide by construction. Treat "the verifier is process-isolated" as UNVERIFIED until
+    the owner independently confirms the real deployment topology — this function's digest-only return-value
+    guarantee is a genuinely useful, narrower property that holds regardless, but it is not a substitute for that
+    separate, real-deployment check."""
     from orca.eval.genesis_v2 import corpus_manifest as CMAN
     screen_plain, holdout_plain = authorized_manifest_verification_bytes(
         root, ledger_dir, reader, process_id=process_id, code_sha256=code_sha256, corpus_id=corpus_id,
