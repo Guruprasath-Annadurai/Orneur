@@ -330,3 +330,46 @@ def load_keys(root: Path) -> list:
     if problems or doc is None:
         return []
     return [k for k in AR.active_authority_keys(doc) if k.get("role") == "OWNER"]
+
+
+# The authorization class and eval stages REAL corpus generation actually requires (item 3, generation-provenance-
+# closure phase). `spec.STAGE_SPLIT` maps STAGE_1 -> SCREEN and STAGE_2 -> QUALIFICATION_HOLDOUT; a CGA/receipt
+# authorizing/attesting both of PURPOSE's artifact classes therefore requires a key scoped for BOTH stages, not
+# merely one of them.
+CORPUS_GENERATION_AUTHORIZATION_CLASS = "DATA_SEEDING"
+CORPUS_GENERATION_REQUIRED_STAGES = frozenset({"STAGE_1", "STAGE_2"})
+
+
+def load_keys_for_corpus_generation(root: Path) -> list:
+    """Authority keys scoped for REAL corpus-generation authorization/attestation (item 3, generation-provenance-
+    closure phase) -- narrower than `load_keys()` above. In addition to `role == "OWNER"`, also requires the live
+    registry record to explicitly permit `permitted_authorization_classes` including
+    `CORPUS_GENERATION_AUTHORIZATION_CLASS` ("DATA_SEEDING") AND `permitted_eval_stages` including BOTH of
+    `CORPUS_GENERATION_REQUIRED_STAGES` ("STAGE_1" and "STAGE_2").
+
+    This is a DELIBERATE narrowing, not a restatement of `load_keys()`: an OWNER key registered for some OTHER
+    purpose (say, only QUALIFICATION/STAGE_1 review signing) must NEVER be treated as authorized to sign a
+    CORPUS_GENERATION_AUTHORIZATION or a generation receipt merely because it is an active, registered OWNER key --
+    scope is never assumed to follow automatically from role. Used by `operational_boundary.check_authorization()`
+    (the REAL generation-time gate) and by the receiving path's CGA/receipt authentication
+    (`verify_referenced()`/`generation_receipt.verify_receipt()` callers) -- deliberately NOT used for
+    `corpus_manifest.verify_manifest_signature()`'s key source, which continues to use the broader, already-
+    accepted `load_keys()` (role == OWNER only) per the receiving-boundary-integration phase's frozen signed-
+    manifest-verification control -- this phase closes a different, separate gap without redesigning that one."""
+    from orca.eval.genesis_v2 import authority_registry as AR
+    from orca.eval.genesis_v2 import identity_registry as ID
+    doc, problems = AR.load(Path(root) / AR.REGISTRY_PATH)
+    if problems or doc is None:
+        return []
+    out = []
+    for r in doc.get("records", []):
+        if not isinstance(r, dict) or not ID.is_active(r):
+            continue
+        if r.get("role") != "OWNER":
+            continue
+        if CORPUS_GENERATION_AUTHORIZATION_CLASS not in (r.get("permitted_authorization_classes") or []):
+            continue
+        if not CORPUS_GENERATION_REQUIRED_STAGES <= set(r.get("permitted_eval_stages") or []):
+            continue
+        out.append({"key_id": r["id"], "public_key_hex": r["public_key_hex"], "identity": r["id"], "role": r["role"]})
+    return out

@@ -682,10 +682,20 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
 
     # 9a. The SAME check through the composed, ledger-gated top-level function -- a SECOND, independent
     #     require_private_split_access grant per split, proving the whole authenticated flow composes end-to-end
-    #     (a fresh run_id_prefix avoids RUN_ALREADY_GRANTED against the ledger calls in step 8).
+    #     (a fresh run_id_prefix avoids RUN_ALREADY_GRANTED against the ledger calls in step 8). Also requires a
+    #     real, signed GENERATION RECEIPT (generation-provenance-closure phase, items 1/2) proving WHEN this
+    #     corpus was actually generated, within the CGA's own issued_at/expires_at window.
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    unsigned_receipt = {"schema_version": GRC.SCHEMA_VERSION, "corpus_generation_authorization_id": auth["authorization_id"],
+                         "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION, "corpus_digest": corpus_digest,
+                         "generator_code_tree_sha256": code_hash, "generating_commit_sha": reviewed_sha,
+                         "generator_identity": "gen-e2e", "generated_at": ts(NOW),
+                         "attesting_authority": {"identity": "e2e-owner-1", "role": "OWNER", "key_id": "e2e-owner-1"},
+                         "signature": "0" * 128}
+    receipt = {**unsigned_receipt, "signature": owner_sk.sign(GRC.receipt_signing_bytes(unsigned_receipt)).hex()}
     reader2 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
     composed_problems = OB.verify_manifest_digest_only_same_process(
-        repo, tmp_path / "ledger", reader2, manifest, auth, process_id="verifier-e2e",
+        repo, tmp_path / "ledger", reader2, manifest, auth, receipt, process_id="verifier-e2e",
         code_sha256=verifier_code_hash, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
         candidate_lineage="lineage-e2e", run_id_prefix="e2e-composed", timestamp_utc=ts(NOW),
         generator_code_root=repo / "orca" / "eval" / "genesis_v2")
@@ -717,7 +727,7 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
     # or attempting to read, the substituted artifacts
     reader3 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
     forged_problems = OB.verify_manifest_digest_only_same_process(
-        repo, tmp_path / "ledger", reader3, forged_no_sig, auth, process_id="verifier-e2e",
+        repo, tmp_path / "ledger", reader3, forged_no_sig, auth, GRC.default_receipt(), process_id="verifier-e2e",
         code_sha256=verifier_code_hash, corpus_id=forged_corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
         candidate_lineage="lineage-e2e", run_id_prefix="e2e-forged", timestamp_utc=ts(NOW),
         generator_code_root=repo / "orca" / "eval" / "genesis_v2")
@@ -730,7 +740,7 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
     fabricated_auth = {**auth, "signature": "ab" * 64}
     reader4 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
     fabricated_problems = OB.verify_manifest_digest_only_same_process(
-        repo, tmp_path / "ledger", reader4, manifest, fabricated_auth, process_id="verifier-e2e",
+        repo, tmp_path / "ledger", reader4, manifest, fabricated_auth, GRC.default_receipt(), process_id="verifier-e2e",
         code_sha256=verifier_code_hash, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
         candidate_lineage="lineage-e2e", run_id_prefix="e2e-fabricated", timestamp_utc=ts(NOW),
         generator_code_root=repo / "orca" / "eval" / "genesis_v2")
@@ -740,11 +750,24 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
     # actually claims -- must be rejected before any vault read or ledger grant is attempted.
     reader5 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
     replay_problems = OB.verify_manifest_digest_only_same_process(
-        repo, tmp_path / "ledger", reader5, manifest, auth, process_id="verifier-e2e",
+        repo, tmp_path / "ledger", reader5, manifest, auth, GRC.default_receipt(), process_id="verifier-e2e",
         code_sha256=verifier_code_hash, corpus_id="gce2c-" + "00" * 16, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
         candidate_lineage="lineage-e2e", run_id_prefix="e2e-replay-cid", timestamp_utc=ts(NOW),
         generator_code_root=repo / "orca" / "eval" / "genesis_v2")
     assert len(replay_problems) == 1 and replay_problems[0].startswith("MANIFEST_CORPUS_ID_MISMATCH:")
+
+    # 9e. ADVERSARIAL (item 1, generation-provenance-closure phase): the SAME authentic manifest+CGA pairing, but
+    # with a receipt claiming generation happened AFTER the authorization's own expires_at -- rejected before any
+    # further vault read or ledger grant, even though the manifest and CGA both independently authenticate fine.
+    out_of_window_unsigned = {**unsigned_receipt, "generated_at": ts(NOW + timedelta(days=30))}
+    out_of_window_receipt = {**out_of_window_unsigned, "signature": owner_sk.sign(GRC.receipt_signing_bytes(out_of_window_unsigned)).hex()}
+    reader6 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
+    window_problems = OB.verify_manifest_digest_only_same_process(
+        repo, tmp_path / "ledger", reader6, manifest, auth, out_of_window_receipt, process_id="verifier-e2e",
+        code_sha256=verifier_code_hash, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
+        candidate_lineage="lineage-e2e", run_id_prefix="e2e-receipt-window", timestamp_utc=ts(NOW),
+        generator_code_root=repo / "orca" / "eval" / "genesis_v2")
+    assert window_problems == ["GENERATION_RECEIPT_INVALID:GENERATED_AT_AFTER_AUTHORIZATION_EXPIRED"]
 
     # 10. Final integration point: independent-verification-backed candidate-lineage qualification eligibility, using
     #     the SAME pattern as the rest of this file (synthetic candidate, ephemeral reviewer key, real evidence bytes).

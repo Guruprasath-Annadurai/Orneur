@@ -189,7 +189,13 @@ def _generator_authorized(root: Path, generator_id: str | None, live_code_sha256
 def check_authorization(root: Path, *, requested_scope: tuple, event_name: str | None = None, generator_id: str | None = None,
                          now=None) -> BoundaryResult:
     """Read-only: builds the real execution context, loads the real committed records, and returns a BoundaryResult.
-    Never raises on a denial — only `require_authorization()` (below) turns a denial into an exception."""
+    Never raises on a denial — only `require_authorization()` (below) turns a denial into an exception.
+
+    ITEM 3 (generation-provenance-closure phase): authority keys are loaded via
+    `CGA.load_keys_for_corpus_generation()`, not the broader `CGA.load_keys()` -- an active, registered OWNER key
+    is authorized to sign a REAL corpus-generation authorization only if its own registry record explicitly
+    permits the DATA_SEEDING authorization class and both STAGE_1/STAGE_2 eval stages. Scope is never assumed to
+    follow automatically from OWNER role alone; see that function's own docstring."""
     root = Path(root)
     cga_path = root / CGA.RECORD_PATH
     record = json.loads(cga_path.read_text()) if cga_path.is_file() else CGA.default_record()
@@ -199,7 +205,7 @@ def check_authorization(root: Path, *, requested_scope: tuple, event_name: str |
                        current_code_tree_sha256=code_hash, requested_scope=tuple(requested_scope),
                        current_inventory_digest=inv_digest, current_prereg_record_sha256=prereg_sha,
                        event_name=_trusted_event_name(event_name))
-    keys = CGA.load_keys(root)
+    keys = CGA.load_keys_for_corpus_generation(root)
     verdict = CGA.verify(record, req, keys, now=now)
     gen_ok, gen_state = _generator_authorized(root, _trusted_generator_id(generator_id), code_hash, tuple(requested_scope))
     authorized = verdict.authorized and gen_ok
@@ -314,7 +320,8 @@ def authorized_manifest_verification_bytes(root: Path, ledger_dir: Path, reader,
     return screen_plain, holdout_plain
 
 
-def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reader, manifest: dict, authorization_record: dict, *,
+def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reader, manifest: dict, authorization_record: dict,
+                                              receipt: dict, *,
                                               process_id: str, code_sha256: str, corpus_id: str,
                                               eval_version: str, candidate_revision: str, candidate_lineage: str, run_id_prefix: str,
                                               timestamp_utc: str, generator_code_root) -> list:
@@ -401,9 +408,33 @@ def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reade
     See `tests/test_genesis_v2_cross_machine_transfer.py`'s replay-across-corpus-id/eval-version regression tests
     and `tests/test_genesis_v2_corpus_generation_authorization.py`'s `verify_referenced()` adversarial tests
     (unsigned CGA, forged signature, revoked/inappropriate authority, unrelated CGA, fabricated authorization
-    fields paired with a validly signed manifest)."""
+    fields paired with a validly signed manifest).
+
+    ITEM 1 (generation-provenance-closure phase): `verify_referenced()` correctly allows an authentic HISTORICAL CGA
+    (one whose own validity window has since elapsed) to still authenticate -- that is the right behavior for
+    auditing the AUTHORIZATION's own signature. It does not, by itself, prove generation actually happened while
+    that authorization was valid. This function now ALSO requires a separate, signed `receipt` (see
+    `generation_receipt.py`) proving `authorization.issued_at <= receipt.generated_at <= authorization.expires_at`
+    -- using the AUTHORIZATION's OWN window, never the current verification-time clock. A corpus with an authentic
+    but expired historical CGA and no valid in-window generation receipt is never accepted as proven authorized-
+    generation output.
+
+    ITEM 2 (generation-provenance-closure phase): the receipt is cross-bound against every OTHER already-
+    authenticated object -- `receipt.corpus_generation_authorization_id`/`corpus_id`/`eval_version`/`corpus_digest`/
+    `generator_code_tree_sha256`/`generating_commit_sha` must all exactly agree with the authenticated CGA, the
+    signed manifest, and the actual receiving request. Any mismatch is rejected here, before any private-split
+    read or ledger grant, exactly like every other check in this function.
+
+    ITEM 3 (generation-provenance-closure phase): authority keys used to authenticate the referenced CGA and the
+    generation receipt are loaded via `corpus_generation_authorization.load_keys_for_corpus_generation()` -- an
+    active, registered OWNER key is treated as valid for REAL corpus-generation authorization/attestation only if
+    its own registry record explicitly permits the DATA_SEEDING authorization class and both STAGE_1/STAGE_2 eval
+    stages. An OWNER key registered for some unrelated purpose is never assumed to have this scope merely by being
+    an active OWNER key. This is DELIBERATELY NARROWER than the key source `corpus_manifest.verify_manifest_signature()`
+    still uses (`load_keys()`, role == OWNER only) -- that already-accepted, frozen control is not redesigned here."""
     from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
     from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    from orca.eval.genesis_v2 import generation_receipt as GRC
     from orca.eval.genesis_v2 import store as ST
     root = Path(root)
     problems = CMAN.validate_manifest(manifest)
@@ -416,16 +447,20 @@ def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reade
         return [f"MANIFEST_CORPUS_ID_MISMATCH: manifest claims {manifest.get('corpus_id')!r}, request is for {corpus_id!r}"]
     if manifest.get("eval_version") != eval_version:
         return [f"MANIFEST_EVAL_VERSION_MISMATCH: manifest claims {manifest.get('eval_version')!r}, request is for {eval_version!r}"]
-    # ITEM 2: authority-key material originates from the validated, LIVE authority registry -- never an arbitrary
-    # caller-supplied list. Used for BOTH the manifest's own signature and the referenced CGA's signature below.
+    # (final-receiving-boundary-integration phase) authority-key material for the MANIFEST's own signature
+    # originates from the validated, LIVE authority registry -- never an arbitrary caller-supplied list. This
+    # specific key source (role == OWNER only) is the already-accepted, frozen control and is NOT narrowed here.
     authority_keys = CGA.load_keys(root)
     sig_problem = CMAN.verify_manifest_signature(manifest, authority_keys)
     if sig_problem:
         return [f"MANIFEST_SIGNATURE_INVALID:{sig_problem}"]
+    # ITEM 3: a SEPARATE, more narrowly SCOPED key set (role == OWNER AND DATA_SEEDING/STAGE_1/STAGE_2 permitted)
+    # for the referenced CGA's authentication and the generation receipt's authentication below.
+    generation_scoped_keys = CGA.load_keys_for_corpus_generation(root)
     # ITEM 1: independently authenticate the REFERENCED CGA record -- never trusted merely because it says
     # status: AUTHORIZED and has matching fields. A fabricated or unsigned authorization_record is rejected here,
     # even when paired with a genuinely, validly signed manifest.
-    cga_problems = CGA.verify_referenced(authorization_record, authority_keys)
+    cga_problems = CGA.verify_referenced(authorization_record, generation_scoped_keys)
     if cga_problems:
         return [f"AUTHORIZATION_RECORD_NOT_AUTHENTICATED:{p}" for p in cga_problems]
     # ITEM 2: ancestry is RECOMPUTED from real repository evidence, never accepted as a caller-supplied boolean.
@@ -438,6 +473,13 @@ def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reade
     # repository evidence -- is the manifest a trusted source. Never derived from, or verified against, the
     # ciphertext-transfer channel itself.
     expected_corpus_digest = ST.corpus_digest_of({"SCREEN": manifest["screen_digest"], "QUALIFICATION_HOLDOUT": manifest["qualification_holdout_digest"]})
+    # ITEMS 1+2: the generation receipt is verified LAST, after everything it cross-checks against is itself
+    # already authenticated -- still strictly BEFORE any private-split read or ledger grant below.
+    receipt_problems = GRC.verify_receipt(receipt, authorization_record=authorization_record, manifest=manifest,
+                                           expected_corpus_digest=expected_corpus_digest, requested_eval_version=eval_version,
+                                           authority_keys=generation_scoped_keys)
+    if receipt_problems:
+        return [f"GENERATION_RECEIPT_INVALID:{p}" for p in receipt_problems]
     screen_plain = holdout_plain = None
     try:
         screen_plain, holdout_plain = authorized_manifest_verification_bytes(

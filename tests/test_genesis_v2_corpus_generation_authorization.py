@@ -495,3 +495,134 @@ def test_verify_referenced_never_raises_on_malformed_input():
     assert CGA.verify_referenced(None, []) == ["RECORD_NOT_AN_OBJECT"]
     assert CGA.verify_referenced({"not": "a real record"}, []) == ["RECORD_SCHEMA_MISMATCH"]
     assert CGA.verify_referenced(CGA.default_record(), [None, 42, "not-a-dict"]) == ["NOT_AUTHORIZED"]
+
+
+# ---------------------------------------------------------------- load_keys_for_corpus_generation() (generation-
+# provenance-closure phase, item 3): an active, registered OWNER key is authorized for REAL corpus-generation
+# authorization/attestation only if its OWN registry record explicitly permits DATA_SEEDING and BOTH STAGE_1/
+# STAGE_2 -- scope is never assumed to follow automatically from OWNER role alone.
+def test_load_keys_for_corpus_generation_includes_a_correctly_scoped_owner_key(tmp_path):
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    _write_authority_registry(tmp_path, {"id": "k-scoped", "role": "OWNER", "public_key_hex": pub,
+                                          "activation_timestamp": ts(NOW - timedelta(days=1)), "expiry": None, "revoked": False,
+                                          "permitted_authorization_classes": ["DATA_SEEDING"], "permitted_eval_stages": ["STAGE_1", "STAGE_2"],
+                                          "gpu_permission": False, "spend_permission": False, "provider_inference_permission": False})
+    keys = CGA.load_keys_for_corpus_generation(tmp_path)
+    assert len(keys) == 1 and keys[0]["key_id"] == "k-scoped" and keys[0]["role"] == "OWNER"
+
+
+def test_load_keys_for_corpus_generation_excludes_an_owner_key_missing_data_seeding(tmp_path):
+    """An active, registered OWNER key that permits every OTHER authorization class but NOT DATA_SEEDING must not
+    be treated as scoped for corpus generation, even though it would still pass load_keys() (role == OWNER only)."""
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    _write_authority_registry(tmp_path, {"id": "k-noseed", "role": "OWNER", "public_key_hex": pub,
+                                          "activation_timestamp": ts(NOW - timedelta(days=1)), "expiry": None, "revoked": False,
+                                          "permitted_authorization_classes": ["QUALIFICATION", "SCREENING", "TRAINABILITY_PILOT", "REGRESSION"],
+                                          "permitted_eval_stages": ["STAGE_1", "STAGE_2"],
+                                          "gpu_permission": False, "spend_permission": False, "provider_inference_permission": False})
+    assert CGA.load_keys_for_corpus_generation(tmp_path) == []
+    # the broader, already-accepted key source used by corpus_manifest.verify_manifest_signature() is UNAFFECTED
+    assert len(CGA.load_keys(tmp_path)) == 1
+
+
+def test_load_keys_for_corpus_generation_excludes_an_owner_key_missing_one_required_stage(tmp_path):
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    _write_authority_registry(tmp_path, {"id": "k-onestage", "role": "OWNER", "public_key_hex": pub,
+                                          "activation_timestamp": ts(NOW - timedelta(days=1)), "expiry": None, "revoked": False,
+                                          "permitted_authorization_classes": ["DATA_SEEDING"], "permitted_eval_stages": ["STAGE_1"],
+                                          "gpu_permission": False, "spend_permission": False, "provider_inference_permission": False})
+    assert CGA.load_keys_for_corpus_generation(tmp_path) == []
+    assert len(CGA.load_keys(tmp_path)) == 1
+
+
+def test_load_keys_for_corpus_generation_excludes_revoked_and_non_owner_keys(tmp_path):
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from orca.eval.genesis_v2 import authority_registry as AR
+    revoked_sk = Ed25519PrivateKey.generate()
+    revoked_pub = revoked_sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    delegate_sk = Ed25519PrivateKey.generate()
+    delegate_pub = delegate_sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    doc = {"schema_version": AR.SCHEMA_VERSION, "records": [
+        {"id": "k-revoked", "role": "OWNER", "public_key_hex": revoked_pub,
+         "activation_timestamp": ts(NOW - timedelta(days=1)), "expiry": None, "revoked": True,
+         "permitted_authorization_classes": ["DATA_SEEDING"], "permitted_eval_stages": ["STAGE_1", "STAGE_2"],
+         "gpu_permission": False, "spend_permission": False, "provider_inference_permission": False},
+        {"id": "k-delegate", "role": "DELEGATED_OWNER", "public_key_hex": delegate_pub,
+         "activation_timestamp": ts(NOW - timedelta(days=1)), "expiry": None, "revoked": False,
+         "permitted_authorization_classes": ["DATA_SEEDING"], "permitted_eval_stages": ["STAGE_1", "STAGE_2"],
+         "gpu_permission": False, "spend_permission": False, "provider_inference_permission": False}]}
+    (tmp_path / AR.REGISTRY_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / AR.REGISTRY_PATH).write_text(json.dumps(doc))
+    assert CGA.load_keys_for_corpus_generation(tmp_path) == []
+
+
+def test_the_real_committed_authority_registry_is_correctly_scoped_for_corpus_generation():
+    keys = CGA.load_keys_for_corpus_generation(ROOT)
+    assert len(keys) == 1 and keys[0]["key_id"] == "orneur-owner-authority-1"
+
+
+def test_check_authorization_denies_generation_when_the_authority_key_lacks_data_seeding_scope(tmp_path):
+    """Item 3's regression test at the REAL generation-time gate: check_authorization()/require_authorization() --
+    the actual function a future corpus-generation entry point must call -- now uses the scoped key loader too, so
+    a key active and registered as OWNER but missing DATA_SEEDING scope can never authorize real generation, even
+    with an otherwise perfectly valid, signed CGA record."""
+    import shutil
+    import subprocess
+    from orca.eval.genesis_v2 import operational_boundary as OB
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    repo = tmp_path / "repo"
+    shutil.copytree(ROOT / "docs" / "orneur", repo / "docs" / "orneur")
+    (repo / "orca" / "eval" / "genesis_v2").mkdir(parents=True)
+    for f in (ROOT / "orca" / "eval" / "genesis_v2").glob("*.py"):
+        shutil.copy(f, repo / "orca" / "eval" / "genesis_v2" / f.name)
+
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    from orca.eval.genesis_v2 import authority_registry as AR
+    ar_doc = {"schema_version": AR.SCHEMA_VERSION, "records": [{
+        "id": "k-noseed-gate", "role": "OWNER", "public_key_hex": pub,
+        "activation_timestamp": ts(NOW - timedelta(days=1)), "expiry": None, "revoked": False,
+        "permitted_authorization_classes": ["QUALIFICATION"], "permitted_eval_stages": ["STAGE_1", "STAGE_2"],   # no DATA_SEEDING
+        "gpu_permission": False, "spend_permission": False, "provider_inference_permission": False}]}
+    (repo / AR.REGISTRY_PATH).write_text(json.dumps(ar_doc))
+
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "commit", "-q", "-m", "snap"], cwd=repo, check=True)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+
+    code_hash = CGA.code_tree_sha256(repo)
+    inv = json.loads((repo / INV.INVENTORY_PATH).read_text())
+    inv_digest = INV.inventory_digest(inv)
+    prereg_sha = json.loads((repo / PR.DRAFT_PATH).read_text())["record_sha256"]
+    cga_rec = CGA.default_record()
+    cga_rec.update({"authorization_id": "cgauth-" + "ab" * 8, "status": "AUTHORIZED", "purpose": CGA.PURPOSE,
+                    "authorized_scope": ["PILOT_TRAIN"], "reviewed_commit_sha": head, "authorized_code_tree_sha256": code_hash,
+                    "authorized_artifact_digests": {"corpus_inventory_digest": inv_digest, "preregistration_record_sha256": prereg_sha},
+                    "issued_at": ts(NOW - timedelta(hours=1)), "expires_at": ts(NOW + timedelta(days=1)),
+                    "authorizing_authority": {"identity": "k-noseed-gate", "role": "OWNER", "key_id": "k-noseed-gate"}})
+    cga_rec["signature"] = sk.sign(CGA.canonical_signing_bytes(cga_rec)).hex()
+    (repo / CGA.RECORD_PATH).write_text(json.dumps(cga_rec))
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "commit", "-q", "-m", "authz"], cwd=repo, check=True)
+
+    result = OB.check_authorization(repo, requested_scope=("PILOT_TRAIN",), event_name="workflow_dispatch")
+    assert result.authorized is False
+    assert any("AUTHORITY_KEY_NOT_REGISTERED" in r or "NOT_AUTHORIZED" in r for r in result.reasons)

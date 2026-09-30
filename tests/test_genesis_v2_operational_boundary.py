@@ -684,6 +684,22 @@ def _sign_manifest(manifest: dict, sk, identity: str = "owner-1") -> dict:
     return {**unsigned, "signature": sk.sign(CMAN.manifest_signing_bytes(unsigned)).hex()}
 
 
+def _signed_receipt(sk, identity: str, *, authorization_id: str, corpus_id: str, eval_version: str, corpus_digest: str,
+                     code_hash: str, generating_commit_sha: str, generator_identity: str = "gen-1", generated_at=None, **over) -> dict:
+    """A REAL, validly signed generation-receipt dict (generation-provenance-closure phase, items 1/2) -- proving
+    WHEN a specific corpus was actually generated, bound to the CGA that permitted it and the manifest describing
+    its content. `generated_at` defaults to inside the standard `_signed_cga_record()` validity window."""
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    rec = GRC.default_receipt()
+    rec.update({"corpus_generation_authorization_id": authorization_id, "corpus_id": corpus_id, "eval_version": eval_version,
+                "corpus_digest": corpus_digest, "generator_code_tree_sha256": code_hash, "generating_commit_sha": generating_commit_sha,
+                "generator_identity": generator_identity, "generated_at": ts(generated_at or NOW),
+                "attesting_authority": {"identity": identity, "role": "OWNER", "key_id": identity}})
+    rec.update(over)
+    rec["signature"] = sk.sign(GRC.receipt_signing_bytes(rec)).hex()
+    return rec
+
+
 def test_digest_only_same_process_verification_never_returns_plaintext(tmp_path):
     """The core item-3 claim, checked directly: the function's return value is a list of diagnostic strings that
     never contains the real plaintext, even though it genuinely had access to it internally to compute the result."""
@@ -717,9 +733,13 @@ def test_digest_only_same_process_verification_never_returns_plaintext(tmp_path)
                                 "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
                                 "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": auth_id}, sk, identity)
     authorization_record = _signed_cga_record(sk, identity, authorization_id=auth_id, reviewed_commit_sha=reviewed_sha, code_hash=code_sha)
+    expected_corpus_digest = ST.corpus_digest_of({"SCREEN": __import__("hashlib").sha256(screen_bytes).hexdigest(),
+                                                   "QUALIFICATION_HOLDOUT": __import__("hashlib").sha256(holdout_bytes).hexdigest()})
+    receipt = _signed_receipt(sk, identity, authorization_id=auth_id, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
+                               corpus_digest=expected_corpus_digest, code_hash=code_sha, generating_commit_sha=reviewed_sha)
 
     problems = OB.verify_manifest_digest_only_same_process(
-        root, tmp_path / "ledger", reader, manifest, authorization_record, process_id="verifier-restricted",
+        root, tmp_path / "ledger", reader, manifest, authorization_record, receipt, process_id="verifier-restricted",
         code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
         run_id_prefix="restricted-verify", timestamp_utc=ts(NOW), generator_code_root=code_dir)
     assert problems == []
@@ -760,9 +780,15 @@ def test_digest_only_same_process_verification_detects_tampering_without_leaking
                                 "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
                                 "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": auth_id}, sk, identity)
     authorization_record = _signed_cga_record(sk, identity, authorization_id=auth_id, reviewed_commit_sha=reviewed_sha, code_hash=code_sha)
+    # the receipt's corpus_digest must bind to what the (deliberately WRONG) manifest itself claims, so the
+    # mismatch is caught later at the real vault read -- not rejected earlier as a receipt-binding problem.
+    expected_corpus_digest = ST.corpus_digest_of({"SCREEN": "0" * 64,
+                                                   "QUALIFICATION_HOLDOUT": __import__("hashlib").sha256(holdout_bytes).hexdigest()})
+    receipt = _signed_receipt(sk, identity, authorization_id=auth_id, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
+                               corpus_digest=expected_corpus_digest, code_hash=code_sha, generating_commit_sha=reviewed_sha)
 
     problems = OB.verify_manifest_digest_only_same_process(
-        root, tmp_path / "ledger", reader, manifest, authorization_record, process_id="verifier-restricted-2",
+        root, tmp_path / "ledger", reader, manifest, authorization_record, receipt, process_id="verifier-restricted-2",
         code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
         run_id_prefix="restricted-tamper", timestamp_utc=ts(NOW), generator_code_root=code_dir)
     assert problems and any("CORPUS_DIGEST_MISMATCH" in p for p in problems)
@@ -801,9 +827,13 @@ def test_digest_only_same_process_verification_preserves_ledger_evidence_and_sea
                                 "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
                                 "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": auth_id}, sk, identity)
     authorization_record = _signed_cga_record(sk, identity, authorization_id=auth_id, reviewed_commit_sha=reviewed_sha, code_hash=code_sha)
+    expected_corpus_digest = ST.corpus_digest_of({"SCREEN": __import__("hashlib").sha256(screen_bytes).hexdigest(),
+                                                   "QUALIFICATION_HOLDOUT": __import__("hashlib").sha256(holdout_bytes).hexdigest()})
+    receipt = _signed_receipt(sk, identity, authorization_id=auth_id, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
+                               corpus_digest=expected_corpus_digest, code_hash=code_sha, generating_commit_sha=reviewed_sha)
 
     OB.verify_manifest_digest_only_same_process(
-        root, tmp_path / "ledger", reader, manifest, authorization_record, process_id="verifier-restricted-3",
+        root, tmp_path / "ledger", reader, manifest, authorization_record, receipt, process_id="verifier-restricted-3",
         code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
         run_id_prefix="restricted-ledger", timestamp_utc=ts(NOW), generator_code_root=code_dir)
     led = LG.AccessLedger(tmp_path / "ledger", {})
@@ -838,9 +868,11 @@ def test_digest_only_same_process_verification_refuses_an_unsigned_manifest_befo
                 "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": auth_id,
                 "signing_authority": {"identity": identity, "role": "OWNER", "key_id": identity}, "signature": "0" * 128}
     authorization_record = _signed_cga_record(sk, identity, authorization_id=auth_id, reviewed_commit_sha="b" * 40, code_hash="a" * 64)
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    receipt = GRC.default_receipt()   # never reached: the manifest signature check fails before any receipt work
 
     problems = OB.verify_manifest_digest_only_same_process(
-        root, tmp_path / "ledger", reader, manifest, authorization_record,
+        root, tmp_path / "ledger", reader, manifest, authorization_record, receipt,
         process_id="never-registered-process", code_sha256="a" * 64, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
         candidate_revision="rev-1", candidate_lineage="lineage-1", run_id_prefix="unsigned-attack", timestamp_utc=ts(NOW),
         generator_code_root=tmp_path)
@@ -880,23 +912,28 @@ def _valid_setup(tmp_path, suffix: str):
                                 "qualification_holdout_digest": hashlib.sha256(holdout_bytes).hexdigest(),
                                 "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": auth_id}, sk, identity)
     authorization_record = _signed_cga_record(sk, identity, authorization_id=auth_id, reviewed_commit_sha=reviewed_sha, code_hash=code_sha)
+    expected_corpus_digest = ST.corpus_digest_of({"SCREEN": hashlib.sha256(screen_bytes).hexdigest(),
+                                                   "QUALIFICATION_HOLDOUT": hashlib.sha256(holdout_bytes).hexdigest()})
+    receipt = _signed_receipt(sk, identity, authorization_id=auth_id, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
+                               corpus_digest=expected_corpus_digest, code_hash=code_sha, generating_commit_sha=reviewed_sha,
+                               generator_identity=f"gen-{suffix}")
     kwargs = dict(process_id=f"verifier-{suffix}", code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
                   candidate_revision="rev-1", candidate_lineage="lineage-1", run_id_prefix=f"valid-{suffix}", timestamp_utc=ts(NOW),
                   generator_code_root=code_dir)
-    return root, sk, identity, reader, manifest, authorization_record, kwargs
+    return root, sk, identity, reader, manifest, authorization_record, receipt, kwargs
 
 
 def test_item1_a_fully_valid_scenario_is_accepted(tmp_path):
     """Sanity baseline: the exact same construction the adversarial tests below each break, unmodified, passes."""
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "baseline")
-    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_baseline", reader, manifest, authorization_record, **kwargs)
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "baseline")
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_baseline", reader, manifest, authorization_record, receipt, **kwargs)
     assert problems == []
 
 
 def test_item1_unsigned_cga_is_rejected(tmp_path):
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "unsignedcga")
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "unsignedcga")
     authorization_record = {**authorization_record, "signature": "0" * 128}
-    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_unsignedcga", reader, manifest, authorization_record, **kwargs)
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_unsignedcga", reader, manifest, authorization_record, receipt, **kwargs)
     assert len(problems) == 1 and problems[0].startswith("AUTHORIZATION_RECORD_NOT_AUTHENTICATED:")
     assert "INVALID_SIGNATURE" in problems[0]
 
@@ -904,11 +941,11 @@ def test_item1_unsigned_cga_is_rejected(tmp_path):
 def test_item1_forged_cga_signature_from_an_unregistered_attacker_key_is_rejected(tmp_path):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "forgedcga")
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "forgedcga")
     attacker_sk = Ed25519PrivateKey.generate()
     forged = {**authorization_record, "signature": "0" * 128}
     forged["signature"] = attacker_sk.sign(CGA.canonical_signing_bytes(forged)).hex()
-    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_forgedcga", reader, manifest, forged, **kwargs)
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_forgedcga", reader, manifest, forged, receipt, **kwargs)
     # the forged signature still carries the registered key_id/role/identity (an attacker copying the real
     # authorizing_authority fields exactly), so the lookup finds the real key -- and Ed25519 verification against
     # it is what actually fails, since the bytes were signed by the attacker's own, different private key.
@@ -919,11 +956,11 @@ def test_item1_revoked_authority_key_is_rejected(tmp_path):
     """The owner key that signed BOTH the manifest and the CGA record is revoked in the live registry by the time
     verification runs -- CGA.load_keys() excludes revoked entries, so neither signature can verify against it."""
     from orca.eval.genesis_v2 import authority_registry as AR
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "revoked")
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "revoked")
     doc = json.loads((root / AR.REGISTRY_PATH).read_text())
     doc["records"][0]["revoked"] = True
     (root / AR.REGISTRY_PATH).write_text(json.dumps(doc))
-    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_revoked", reader, manifest, authorization_record, **kwargs)
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_revoked", reader, manifest, authorization_record, receipt, **kwargs)
     # the MANIFEST signature check runs first and also fails now that its key is revoked -- either way, nothing
     # downstream of authentication is ever reached
     assert problems and problems[0].startswith("MANIFEST_SIGNATURE_INVALID:")
@@ -933,11 +970,11 @@ def test_item1_inappropriate_non_owner_authority_is_rejected(tmp_path):
     """A key that is active and registered, but NOT an OWNER role, must never authenticate a CGA record -- only
     OWNER identities may sign corpus-generation authorizations."""
     from orca.eval.genesis_v2 import authority_registry as AR
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "nonowner")
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "nonowner")
     doc = json.loads((root / AR.REGISTRY_PATH).read_text())
     doc["records"][0]["role"] = "DELEGATED_OWNER"   # active, registered, but a DIFFERENT role than what signed it claims
     (root / AR.REGISTRY_PATH).write_text(json.dumps(doc))
-    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_nonowner", reader, manifest, authorization_record, **kwargs)
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_nonowner", reader, manifest, authorization_record, receipt, **kwargs)
     assert problems   # both manifest and CGA signature checks now see a role mismatch; either fails closed
 
 
@@ -945,10 +982,10 @@ def test_item1_manifest_referencing_an_unrelated_but_independently_valid_cga_is_
     """The authorization_record is itself a GENUINE, validly signed CGA -- just not the one the manifest actually
     references. binding_problems() catches this only AFTER the record has independently authenticated; a forged
     or unsigned record would never even reach this check."""
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "unrelated")
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "unrelated")
     unrelated = _signed_cga_record(sk, identity, authorization_id="cgauth-" + "99" * 8,   # a DIFFERENT, but genuinely signed, authorization id
                                     reviewed_commit_sha="b" * 40, code_hash=kwargs["code_sha256"])
-    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_unrelated", reader, manifest, unrelated, **kwargs)
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_unrelated", reader, manifest, unrelated, receipt, **kwargs)
     assert any("corpus_generation_authorization_id" in p for p in problems)
 
 
@@ -957,24 +994,24 @@ def test_item1_correctly_signed_manifest_paired_with_fabricated_authorization_fi
     authorization_record whose FIELDS are a perfect structural/content match (status AUTHORIZED, matching id,
     matching commit, matching code hash, matching scope) but whose signature is entirely fabricated -- proving the
     verifier no longer trusts field agreement alone."""
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "fabricated")
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "fabricated")
     fabricated = {**authorization_record, "signature": ("de" * 64)}   # plausible-looking, but not a real signature over this record
-    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_fabricated", reader, manifest, fabricated, **kwargs)
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_fabricated", reader, manifest, fabricated, receipt, **kwargs)
     assert len(problems) == 1 and problems[0].startswith("AUTHORIZATION_RECORD_NOT_AUTHENTICATED:")
 
 
 # --------------------------- final-receiving-boundary-integration phase: item 2 -- binding to the ACTUAL request
 def test_item2_manifest_cannot_be_replayed_against_a_different_corpus_id(tmp_path):
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "replaycid")
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "replaycid")
     other_kwargs = {**kwargs, "corpus_id": "gce2c-" + "00" * 16}   # a DIFFERENT corpus_id than the manifest actually claims
-    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_replaycid", reader, manifest, authorization_record, **other_kwargs)
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_replaycid", reader, manifest, authorization_record, receipt, **other_kwargs)
     assert len(problems) == 1 and problems[0].startswith("MANIFEST_CORPUS_ID_MISMATCH:")
 
 
 def test_item2_manifest_cannot_be_replayed_against_a_different_eval_version(tmp_path):
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "replayver")
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "replayver")
     other_kwargs = {**kwargs, "eval_version": "genesis-v2-eval/some-other-version"}
-    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_replayver", reader, manifest, authorization_record, **other_kwargs)
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_replayver", reader, manifest, authorization_record, receipt, **other_kwargs)
     assert len(problems) == 1 and problems[0].startswith("MANIFEST_EVAL_VERSION_MISMATCH:")
 
 
@@ -983,19 +1020,196 @@ def test_item2_ancestry_is_recomputed_from_real_repository_evidence_not_a_caller
     caller) could simply pass True regardless of the truth. The new API removes that parameter entirely; this
     proves the replacement -- a same-commit manifest/CGA pairing (ancestor == descendant, no real git needed) --
     genuinely passes, and that the parameter no longer exists to override."""
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "ancestryreal")
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "ancestryreal")
     with pytest.raises(TypeError):
-        OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_ancestryreal_bad", reader, manifest, authorization_record,
+        OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_ancestryreal_bad", reader, manifest, authorization_record, receipt,
                                                       commit_is_descendant=True, **kwargs)
-    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_ancestryreal", reader, manifest, authorization_record, **kwargs)
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_ancestryreal", reader, manifest, authorization_record, receipt, **kwargs)
     assert problems == []
 
 
 def test_item2_authority_keys_are_no_longer_a_caller_supplied_parameter(tmp_path):
-    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "nokeysparam")
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "nokeysparam")
     with pytest.raises(TypeError):
-        OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_nokeysparam", reader, manifest, authorization_record,
+        OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_nokeysparam", reader, manifest, authorization_record, receipt,
                                                       authority_keys=[], **kwargs)
+
+
+# --------------------------- generation-provenance-closure phase: items 1/2/4 -- the generation receipt proves WHEN
+# a corpus was actually generated, bound to the authenticated CGA and manifest, rejected before any private-split
+# read or ledger grant
+def _assert_no_ledger_evidence(ledger_dir):
+    from orca.eval.genesis_v2 import ledger as LG
+    from orca.eval.genesis_v2 import spec as SPEC
+    led = LG.AccessLedger(ledger_dir, {})
+    assert led.records() == []
+    assert led.holdout_state(SPEC.EVAL_VERSION) == {"state": SPEC.STATE_SEALED, "opened_by": None, "lineages": []}
+
+
+def test_genprov_fully_valid_receipt_is_accepted_and_produces_real_ledger_evidence(tmp_path):
+    from orca.eval.genesis_v2 import ledger as LG
+    from orca.eval.genesis_v2 import spec as SPEC
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "genprovbaseline")
+    ledger_dir = tmp_path / "ledger_genprovbaseline"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, receipt, **kwargs)
+    assert problems == []
+    led = LG.AccessLedger(ledger_dir, {})
+    recs = [r for r in led.records() if r["purpose"] == SPEC.PURPOSE_CREATION_VERIFICATION]
+    assert len(recs) == 2
+
+
+def test_genprov_receipt_timestamp_before_authorization_issued_is_rejected(tmp_path):
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "receiptbeforeissued")
+    early = {**receipt, "generated_at": ts(NOW - timedelta(days=2))}   # authorization issued only 1 hour before NOW
+    early["signature"] = sk.sign(GRC.receipt_signing_bytes(early)).hex()
+    ledger_dir = tmp_path / "ledger_receiptbeforeissued"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, early, **kwargs)
+    assert len(problems) == 1 and problems[0] == "GENERATION_RECEIPT_INVALID:GENERATED_AT_BEFORE_AUTHORIZATION_ISSUED"
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_receipt_timestamp_after_authorization_expired_is_rejected(tmp_path):
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "receiptafterexpired")
+    late = {**receipt, "generated_at": ts(NOW + timedelta(days=2))}   # authorization expires 1 day after NOW
+    late["signature"] = sk.sign(GRC.receipt_signing_bytes(late)).hex()
+    ledger_dir = tmp_path / "ledger_receiptafterexpired"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, late, **kwargs)
+    assert len(problems) == 1 and problems[0] == "GENERATION_RECEIPT_INVALID:GENERATED_AT_AFTER_AUTHORIZATION_EXPIRED"
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_unsigned_receipt_is_rejected(tmp_path):
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "unsignedreceipt")
+    unsigned = {**receipt, "signature": "0" * 128}
+    ledger_dir = tmp_path / "ledger_unsignedreceipt"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, unsigned, **kwargs)
+    assert len(problems) == 1 and problems[0] == "GENERATION_RECEIPT_INVALID:SIGNATURE_INVALID:INVALID_SIGNATURE"
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_attacker_signed_receipt_is_rejected(tmp_path):
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "attackerreceipt")
+    attacker_sk = Ed25519PrivateKey.generate()
+    forged = {**receipt, "signature": "0" * 128}
+    forged["signature"] = attacker_sk.sign(GRC.receipt_signing_bytes(forged)).hex()
+    ledger_dir = tmp_path / "ledger_attackerreceipt"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, forged, **kwargs)
+    assert len(problems) == 1 and problems[0] == "GENERATION_RECEIPT_INVALID:SIGNATURE_INVALID:INVALID_SIGNATURE"
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_receipt_for_another_corpus_is_rejected(tmp_path):
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "receiptothercorpus")
+    other = {**receipt, "corpus_id": "gce2c-" + "00" * 16}
+    other["signature"] = sk.sign(GRC.receipt_signing_bytes(other)).hex()   # genuinely signed, just for the WRONG corpus
+    ledger_dir = tmp_path / "ledger_receiptothercorpus"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, other, **kwargs)
+    assert len(problems) == 1 and "receipt.corpus_id does not match" in problems[0]
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_receipt_for_another_authorization_is_rejected(tmp_path):
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "receiptotherauth")
+    other = {**receipt, "corpus_generation_authorization_id": "cgauth-" + "99" * 8}
+    other["signature"] = sk.sign(GRC.receipt_signing_bytes(other)).hex()   # genuinely signed, just for the WRONG authorization
+    ledger_dir = tmp_path / "ledger_receiptotherauth"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, other, **kwargs)
+    assert len(problems) == 1 and "receipt.corpus_generation_authorization_id does not match" in problems[0]
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_receipt_digest_mismatch_is_rejected(tmp_path):
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "receiptdigestmismatch")
+    wrong = {**receipt, "corpus_digest": "0" * 64}
+    wrong["signature"] = sk.sign(GRC.receipt_signing_bytes(wrong)).hex()
+    ledger_dir = tmp_path / "ledger_receiptdigestmismatch"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, wrong, **kwargs)
+    assert len(problems) == 1 and "receipt.corpus_digest does not match" in problems[0]
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_receipt_generating_commit_mismatch_is_rejected(tmp_path):
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "receiptcommitmismatch")
+    wrong = {**receipt, "generating_commit_sha": "d" * 40}
+    wrong["signature"] = sk.sign(GRC.receipt_signing_bytes(wrong)).hex()
+    ledger_dir = tmp_path / "ledger_receiptcommitmismatch"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, wrong, **kwargs)
+    assert len(problems) == 1 and "receipt.generating_commit_sha does not match" in problems[0]
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_receipt_code_tree_mismatch_is_rejected(tmp_path):
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "receiptcodemismatch")
+    wrong = {**receipt, "generator_code_tree_sha256": "f" * 64}
+    wrong["signature"] = sk.sign(GRC.receipt_signing_bytes(wrong)).hex()
+    ledger_dir = tmp_path / "ledger_receiptcodemismatch"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, wrong, **kwargs)
+    # the receipt now disagrees with BOTH the manifest's and the authenticated CGA's generator_code_tree_sha256 --
+    # both independent cross-checks correctly fire.
+    assert len(problems) == 2 and all(p.startswith("GENERATION_RECEIPT_INVALID:receipt.generator_code_tree_sha256 does not match") for p in problems)
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_correctly_signed_historical_cga_with_no_valid_receipt_is_rejected(tmp_path):
+    """Item 1's core claim: `verify_referenced()` correctly allows an authentic HISTORICAL CGA (its own validity
+    window long elapsed) to still authenticate -- that property is preserved and NOT broken here. But a corpus
+    whose only receipt does not fall within THAT historical window must still be rejected: an authentic CGA alone
+    is never accepted as proof that generation itself happened while it was valid."""
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "historicalcga")
+    historical_auth = {**authorization_record, "issued_at": ts(NOW - timedelta(days=60)), "expires_at": ts(NOW - timedelta(days=53))}
+    from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
+    historical_auth["signature"] = sk.sign(CGA.canonical_signing_bytes(historical_auth)).hex()
+    # the CGA itself still authenticates fine despite being long expired (verify_referenced()'s deliberate property)
+    assert CGA.verify_referenced(historical_auth, CGA.load_keys_for_corpus_generation(root)) == []
+    # but the ONLY receipt available (generated_at == NOW, from _valid_setup) falls outside that historical window
+    ledger_dir = tmp_path / "ledger_historicalcga"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, historical_auth, receipt, **kwargs)
+    assert len(problems) == 1 and problems[0] == "GENERATION_RECEIPT_INVALID:GENERATED_AT_AFTER_AUTHORIZATION_EXPIRED"
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_authority_lacking_data_seeding_scope_is_rejected(tmp_path):
+    """Item 3's regression test: an active, registered OWNER key that does NOT permit the DATA_SEEDING
+    authorization class must never authenticate a CGA or a generation receipt, even though it would still
+    authenticate the manifest itself (that already-accepted control uses the broader, role-only key source)."""
+    from orca.eval.genesis_v2 import authority_registry as AR
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "nodataseeding")
+    doc = json.loads((root / AR.REGISTRY_PATH).read_text())
+    doc["records"][0]["permitted_authorization_classes"] = ["QUALIFICATION", "SCREENING"]   # no DATA_SEEDING
+    (root / AR.REGISTRY_PATH).write_text(json.dumps(doc))
+    from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
+    assert CGA.load_keys_for_corpus_generation(root) == []   # the scoped loader correctly excludes this key now
+    assert CGA.load_keys(root) != []   # the manifest's own (broader, frozen) key source is UNAFFECTED
+    ledger_dir = tmp_path / "ledger_nodataseeding"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, receipt, **kwargs)
+    assert len(problems) == 1 and problems[0] == "AUTHORIZATION_RECORD_NOT_AUTHENTICATED:AUTHORITY_KEY_NOT_REGISTERED"
+    _assert_no_ledger_evidence(ledger_dir)
+
+
+def test_genprov_authority_lacking_required_stage_scope_is_rejected(tmp_path):
+    """The stage half of item 3's scope requirement: an OWNER key permitted for DATA_SEEDING but only ONE of the
+    two required eval stages (STAGE_1 covers SCREEN, STAGE_2 covers QUALIFICATION_HOLDOUT; CGA authorizes both)
+    must not authenticate a CGA/receipt for full-scope corpus generation either."""
+    from orca.eval.genesis_v2 import authority_registry as AR
+    root, sk, identity, reader, manifest, authorization_record, receipt, kwargs = _valid_setup(tmp_path, "onestageonly")
+    doc = json.loads((root / AR.REGISTRY_PATH).read_text())
+    doc["records"][0]["permitted_eval_stages"] = ["STAGE_1"]   # missing STAGE_2
+    (root / AR.REGISTRY_PATH).write_text(json.dumps(doc))
+    from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
+    assert CGA.load_keys_for_corpus_generation(root) == []
+    ledger_dir = tmp_path / "ledger_onestageonly"
+    problems = OB.verify_manifest_digest_only_same_process(root, ledger_dir, reader, manifest, authorization_record, receipt, **kwargs)
+    assert len(problems) == 1 and problems[0] == "AUTHORIZATION_RECORD_NOT_AUTHENTICATED:AUTHORITY_KEY_NOT_REGISTERED"
+    _assert_no_ledger_evidence(ledger_dir)
 
 
 def test_digest_only_same_process_verifier_is_honestly_named_not_process_isolated():

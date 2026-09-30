@@ -230,6 +230,7 @@ def _build_item3_scenario(tmp_path, suffix: str):
     from orca.eval.genesis_v2 import authority_registry as AR
     from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
     from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    from orca.eval.genesis_v2 import generation_receipt as GRC
     from orca.eval.genesis_v2 import operational_boundary as OB
     from orca.eval.genesis_v2 import runner_registry as RN
     from orca.eval.genesis_v2 import spec as SPEC
@@ -313,13 +314,26 @@ def _build_item3_scenario(tmp_path, suffix: str):
     (verifier_root / AR.REGISTRY_PATH).parent.mkdir(parents=True, exist_ok=True)
     (verifier_root / AR.REGISTRY_PATH).write_text(json.dumps(ar_doc))
 
+    # --- a real, signed GENERATION RECEIPT (generation-provenance-closure phase, items 1/2) proving WHEN this
+    # corpus was actually generated, within the CGA's own issued_at/expires_at window -- bound to the CGA, the
+    # manifest, and the actual receiving request.
+    expected_corpus_digest = ST.corpus_digest_of({"SCREEN": unsigned_manifest["screen_digest"],
+                                                   "QUALIFICATION_HOLDOUT": unsigned_manifest["qualification_holdout_digest"]})
+    unsigned_receipt = {"schema_version": GRC.SCHEMA_VERSION, "corpus_generation_authorization_id": auth_id,
+                         "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION, "corpus_digest": expected_corpus_digest,
+                         "generator_code_tree_sha256": generator_code_sha, "generating_commit_sha": reviewed_sha,
+                         "generator_identity": f"gen-{suffix}", "generated_at": "2026-01-01T00:00:00Z",
+                         "attesting_authority": {"identity": "owner-item3", "role": "OWNER", "key_id": "owner-item3"},
+                         "signature": "0" * 128}
+    receipt = {**unsigned_receipt, "signature": owner_sk.sign(GRC.receipt_signing_bytes(unsigned_receipt)).hex()}
+
     reader = ST.EncryptedVaultReader(verifier_machine, priv)
     ledger_dir = tmp_path / f"ledger-{suffix}"
     kwargs = dict(process_id=process_id, code_sha256=verifier_code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
                   candidate_revision="rev-item3", candidate_lineage="lineage-item3", run_id_prefix=f"item3-{suffix}",
                   timestamp_utc="2026-01-01T00:00:00Z", generator_code_root=code_dir)
     return dict(verifier_root=verifier_root, ledger_dir=ledger_dir, reader=reader, manifest=manifest,
-                authorization_record=authorization_record, kwargs=kwargs, dst_corpus_dir=dst_corpus_dir,
+                authorization_record=authorization_record, receipt=receipt, kwargs=kwargs, dst_corpus_dir=dst_corpus_dir,
                 owner_sk=owner_sk)
 
 
@@ -339,7 +353,7 @@ def test_transferred_corpus_passes_the_real_ledger_gated_creation_time_verifier_
     s = _build_item3_scenario(tmp_path, "valid")
 
     problems = OB.verify_manifest_digest_only_same_process(
-        s["verifier_root"], s["ledger_dir"], s["reader"], s["manifest"], s["authorization_record"], **s["kwargs"])
+        s["verifier_root"], s["ledger_dir"], s["reader"], s["manifest"], s["authorization_record"], s["receipt"], **s["kwargs"])
     assert problems == []
 
     # --- real ledger evidence: two grants (one per split), same creation-verification purpose, holdout still sealed
@@ -370,7 +384,7 @@ def test_item3_invalid_authorization_is_rejected_before_any_private_split_read_o
     forged_auth = {**s["authorization_record"], "signature": "ab" * 64}
 
     problems = OB.verify_manifest_digest_only_same_process(
-        s["verifier_root"], s["ledger_dir"], s["reader"], s["manifest"], forged_auth, **s["kwargs"])
+        s["verifier_root"], s["ledger_dir"], s["reader"], s["manifest"], forged_auth, s["receipt"], **s["kwargs"])
     assert len(problems) == 1 and problems[0].startswith("AUTHORIZATION_RECORD_NOT_AUTHENTICATED:")
 
     # no ledger evidence of any kind was created -- the rejection happened before authorized_manifest_verification_bytes
@@ -390,8 +404,26 @@ def test_item3_mismatched_corpus_identity_is_rejected_before_any_private_split_r
     other_kwargs = {**s["kwargs"], "corpus_id": "gce2c-" + "00" * 16}
 
     problems = OB.verify_manifest_digest_only_same_process(
-        s["verifier_root"], s["ledger_dir"], s["reader"], s["manifest"], s["authorization_record"], **other_kwargs)
+        s["verifier_root"], s["ledger_dir"], s["reader"], s["manifest"], s["authorization_record"], s["receipt"], **other_kwargs)
     assert len(problems) == 1 and problems[0].startswith("MANIFEST_CORPUS_ID_MISMATCH:")
+
+
+def test_item4_invalid_generation_receipt_is_rejected_before_any_private_split_read_or_ledger_grant(tmp_path):
+    """Generation-provenance-closure phase, item 4: an unsigned generation receipt is rejected before any read or
+    grant, even though the manifest and CGA both independently authenticate fine."""
+    from orca.eval.genesis_v2 import ledger as LG
+    from orca.eval.genesis_v2 import operational_boundary as OB
+    from orca.eval.genesis_v2 import spec as SPEC
+    s = _build_item3_scenario(tmp_path, "unsignedreceipt")
+    unsigned_receipt = {**s["receipt"], "signature": "0" * 128}
+
+    problems = OB.verify_manifest_digest_only_same_process(
+        s["verifier_root"], s["ledger_dir"], s["reader"], s["manifest"], s["authorization_record"], unsigned_receipt, **s["kwargs"])
+    assert len(problems) == 1 and problems[0] == "GENERATION_RECEIPT_INVALID:SIGNATURE_INVALID:INVALID_SIGNATURE"
+
+    led = LG.AccessLedger(s["ledger_dir"], {})
+    assert led.records() == []
+    assert led.holdout_state(SPEC.EVAL_VERSION) == {"state": SPEC.STATE_SEALED, "opened_by": None, "lineages": []}
 
     led = LG.AccessLedger(s["ledger_dir"], {})
     assert led.records() == []
