@@ -32,6 +32,7 @@ generation receipt is never accepted as proven authorized-generation output -- r
 receipt, a mismatched binding, or an out-of-window timestamp are all hard failures, never soft warnings."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -52,6 +53,75 @@ def default_receipt() -> dict:
             "eval_version": None, "corpus_digest": None, "generator_code_tree_sha256": None, "generating_commit_sha": None,
             "generator_identity": None, "generated_at": None, "attesting_authority": {"identity": None, "role": None, "key_id": None},
             "signature": None}
+
+
+# The GENERATOR-emitted portion of a receipt -- every REQUIRED_FIELDS entry EXCEPT `attesting_authority` and
+# `signature`, which only the OWNER ever adds (generation-event-emission-integration phase, items 2-3). The
+# generator process never holds an OWNER signing key and never decides who attests -- it only emits these facts,
+# derived from its own trusted authorization context and the real write outcome, never as arbitrary caller claims.
+PAYLOAD_FIELDS = frozenset(REQUIRED_FIELDS - {"attesting_authority", "signature"})
+
+
+def build_unsigned_payload(*, corpus_generation_authorization_id: str, corpus_id: str, eval_version: str, corpus_digest: str,
+                            generator_code_tree_sha256: str, generating_commit_sha: str, generator_identity: str,
+                            generated_at: str) -> dict:
+    """Constructs the canonical, GENERATOR-emitted receipt payload -- the exact and ONLY inputs a real generation
+    write path (`operational_boundary.GeneratorWriteHandle.write_corpus()`) ever supplies. Every argument here is
+    positional-only by convention (all keyword-only in the signature) so a call site cannot accidentally pass the
+    wrong fact into the wrong field. This function performs no authorization or trust decision of its own -- it is
+    pure construction; the CALLER (the write handle) is responsible for passing only trusted-boundary values, never
+    caller-supplied claims. See `payload_digest()` for the tamper-evident digest of this payload, and
+    `attest_receipt()` for how an OWNER later signs over it without being able to silently alter it first."""
+    return {"schema_version": SCHEMA_VERSION, "corpus_generation_authorization_id": corpus_generation_authorization_id,
+            "corpus_id": corpus_id, "eval_version": eval_version, "corpus_digest": corpus_digest,
+            "generator_code_tree_sha256": generator_code_tree_sha256, "generating_commit_sha": generating_commit_sha,
+            "generator_identity": generator_identity, "generated_at": generated_at}
+
+
+def payload_digest(payload: dict) -> str:
+    """A tamper-evident SHA-256 digest over the canonical JSON encoding of an emitted payload (see
+    `build_unsigned_payload()`). Editing ANY field -- generator identity, commit, code hash, corpus digest, corpus
+    ID, authorization ID, or generation timestamp -- after emission changes this digest. An owner-attestation
+    workflow that independently captures this digest at emission time (e.g. displayed alongside the payload) and
+    later supplies it to `attest_receipt()`'s `expected_payload_digest` can then detect any tampering in transit
+    BEFORE ever producing a signature over the wrong payload."""
+    body = {k: v for k, v in payload.items() if k in PAYLOAD_FIELDS}
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+class ReceiptAttestationError(ValueError):
+    """Raised by `attest_receipt()` when the payload is malformed or does not match an independently supplied
+    expected digest -- never silently signed over in either case."""
+
+
+def attest_receipt(payload: dict, *, attesting_authority: dict, sign_bytes, expected_payload_digest: str | None = None) -> dict:
+    """The OWNER ATTESTATION step (item 3, generation-event-emission-integration phase): takes the GENERATOR's
+    emitted, unsigned payload (see `build_unsigned_payload()`), adds the attesting OWNER's own identity, and signs
+    the FULL canonical record (via `sign_bytes`, a caller-supplied `bytes -> bytes` signing callable -- this module
+    never holds or imports a private key itself, and NEVER accepts the OWNER's private key as a parameter, only a
+    signing operation). `sign_bytes` is called on exactly `receipt_signing_bytes(full_record)` -- the SAME canonical
+    bytes `verify_receipt_signature()` recomputes at verification time, so this is the identical signature contract
+    the receiving path already trusts, never a new one.
+
+    Fail-closed integrity check: if `expected_payload_digest` is supplied (the digest the owner independently
+    captured at emission time, via `payload_digest()`, through some trusted side channel), this function refuses
+    to sign -- raising `ReceiptAttestationError`, never silently proceeding -- unless the SUPPLIED `payload` still
+    hashes to that exact digest. This is what makes post-emission tampering with ANY payload field detectable
+    before a signature is ever produced over the wrong payload, closing the exact gap item 3 describes.
+
+    The returned record is shaped exactly like `REQUIRED_FIELDS` and is verified by the UNCHANGED, already-accepted
+    `verify_receipt()` / `verify_receipt_signature()` path -- this function adds no new verification logic of its
+    own; it only PRODUCES a record those functions can already check."""
+    if not isinstance(payload, dict) or set(payload) != PAYLOAD_FIELDS:
+        raise ReceiptAttestationError(f"payload schema mismatch: expected exactly {sorted(PAYLOAD_FIELDS)}, got {sorted(payload) if isinstance(payload, dict) else type(payload).__name__}")
+    if expected_payload_digest is not None and payload_digest(payload) != expected_payload_digest:
+        raise ReceiptAttestationError("payload_digest(payload) does not match expected_payload_digest -- refusing to sign a payload that does not match what was independently captured at emission time")
+    if not isinstance(attesting_authority, dict) or set(attesting_authority) != {"identity", "role", "key_id"}:
+        raise ReceiptAttestationError("attesting_authority must be an object with identity/role/key_id")
+    unsigned = {**payload, "attesting_authority": dict(attesting_authority), "signature": "0" * 128}
+    signature_bytes = sign_bytes(receipt_signing_bytes(unsigned))
+    signed = {**unsigned, "signature": signature_bytes.hex() if isinstance(signature_bytes, (bytes, bytearray)) else str(signature_bytes)}
+    return signed
 
 
 def _parse(s) -> datetime | None:

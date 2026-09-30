@@ -278,3 +278,130 @@ def test_verify_receipt_reaches_window_check_only_once_everything_else_is_valid(
 def test_verify_receipt_never_raises_on_malformed_input():
     assert GRC.verify_receipt(None, authorization_record={}, manifest={}, expected_corpus_digest="x",
                                requested_eval_version="x", authority_keys=[None, 42]) == ["RECEIPT_NOT_AN_OBJECT"]
+
+
+# ---------------------------------------------------------------- build_unsigned_payload() / payload_digest() /
+# attest_receipt() (generation-event-emission-integration phase, items 2-3): the generator emits, the owner attests
+@pytest.fixture
+def owner_signer():
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    keys = [{"key_id": "k-owner", "public_key_hex": pub, "identity": "owner-1", "role": "OWNER"}]
+    authority = {"identity": "owner-1", "role": "OWNER", "key_id": "k-owner"}
+    return sk, keys, authority
+
+
+def _payload(**over):
+    p = GRC.build_unsigned_payload(corpus_generation_authorization_id=AUTH_ID, corpus_id=CORPUS_ID, eval_version=EVAL_VERSION,
+                                    corpus_digest=CORPUS_DIGEST, generator_code_tree_sha256=CODE_HASH,
+                                    generating_commit_sha=COMMIT_SHA, generator_identity="gen-1", generated_at=ts(NOW))
+    p.update(over)
+    return p
+
+
+def test_build_unsigned_payload_has_exactly_the_generator_emitted_fields():
+    p = _payload()
+    assert set(p) == GRC.PAYLOAD_FIELDS
+    assert GRC.PAYLOAD_FIELDS == GRC.REQUIRED_FIELDS - {"attesting_authority", "signature"}
+
+
+def test_payload_digest_changes_when_any_field_changes():
+    base = _payload()
+    base_digest = GRC.payload_digest(base)
+    for field, bad in [("generator_identity", "attacker-gen"), ("generating_commit_sha", "d" * 40),
+                        ("generator_code_tree_sha256", "f" * 64), ("corpus_digest", "0" * 64),
+                        ("corpus_id", "gce2c-" + "00" * 16), ("corpus_generation_authorization_id", "cgauth-" + "99" * 8),
+                        ("generated_at", ts(NOW + timedelta(days=1))), ("eval_version", "some-other-version")]:
+        tampered = {**base, field: bad}
+        assert GRC.payload_digest(tampered) != base_digest, f"digest did not change for tampered field {field!r}"
+
+
+def test_attest_receipt_produces_a_receipt_that_passes_the_unchanged_verify_receipt_path(owner_signer):
+    sk, keys, authority = owner_signer
+    payload = _payload()
+    receipt = GRC.attest_receipt(payload, attesting_authority=authority, sign_bytes=sk.sign,
+                                  expected_payload_digest=GRC.payload_digest(payload))
+    assert set(receipt) == GRC.REQUIRED_FIELDS
+    assert GRC.verify_receipt_signature(receipt, keys) is None
+    problems = GRC.verify_receipt(receipt, authorization_record=_auth_record(), manifest=_manifest(),
+                                   expected_corpus_digest=CORPUS_DIGEST, requested_eval_version=EVAL_VERSION, authority_keys=keys)
+    assert problems == []
+
+
+def test_attest_receipt_works_without_an_expected_digest_but_that_is_the_less_safe_path(owner_signer):
+    """expected_payload_digest is optional -- omitting it still produces a valid receipt, but forgoes the
+    tamper-detection guarantee. Tests below always supply it to exercise the safer path."""
+    sk, keys, authority = owner_signer
+    receipt = GRC.attest_receipt(_payload(), attesting_authority=authority, sign_bytes=sk.sign)
+    assert GRC.verify_receipt_signature(receipt, keys) is None
+
+
+@pytest.mark.parametrize("field,bad", [
+    ("generator_identity", "attacker-substituted-generator"),
+    ("generating_commit_sha", "d" * 40),
+    ("generator_code_tree_sha256", "f" * 64),
+    ("corpus_digest", "0" * 64),
+    ("corpus_id", "gce2c-" + "00" * 16),
+    ("corpus_generation_authorization_id", "cgauth-" + "99" * 8),
+    ("generated_at", "2099-01-01T00:00:00Z"),
+])
+def test_attest_receipt_refuses_to_sign_a_payload_tampered_after_emission(owner_signer, field, bad):
+    """Item 3's core claim, item 4's 'modification of any signable receipt field' case: the owner's attestation
+    tool is handed the digest captured at TRUE emission time; if the payload it is asked to sign has since been
+    altered in ANY field, the digest no longer matches and signing is refused BEFORE any signature is produced."""
+    sk, keys, authority = owner_signer
+    original = _payload()
+    expected_digest = GRC.payload_digest(original)
+    tampered = {**original, field: bad}
+    with pytest.raises(GRC.ReceiptAttestationError):
+        GRC.attest_receipt(tampered, attesting_authority=authority, sign_bytes=sk.sign, expected_payload_digest=expected_digest)
+
+
+def test_attest_receipt_refuses_a_payload_for_a_different_successful_write():
+    """Item 4: a receipt 'created for a different successful write' -- the owner tool is expected to sign payload
+    A (digest captured from write A) but is handed payload B (a genuinely real, well-formed payload from a
+    DIFFERENT write) instead. Caught by the same digest mismatch, before any signature is produced."""
+    sk, keys, authority = None, None, None
+    import os
+    if os.environ.get("ORNEUR_REQUIRE_CRYPTOGRAPHY") == "1":
+        import cryptography.hazmat.primitives.asymmetric.ed25519  # noqa: F401
+    else:
+        pytest.importorskip("cryptography")
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    authority = {"identity": "owner-1", "role": "OWNER", "key_id": "k-owner"}
+
+    payload_a = _payload(corpus_id=CORPUS_ID)
+    digest_a = GRC.payload_digest(payload_a)
+    payload_b = _payload(corpus_id="gce2c-" + "00" * 16, corpus_digest="0" * 64)   # a genuinely different real write
+    with pytest.raises(GRC.ReceiptAttestationError):
+        GRC.attest_receipt(payload_b, attesting_authority=authority, sign_bytes=sk.sign, expected_payload_digest=digest_a)
+
+
+def test_attest_receipt_rejects_a_malformed_payload_schema(owner_signer):
+    sk, keys, authority = owner_signer
+    with pytest.raises(GRC.ReceiptAttestationError):
+        GRC.attest_receipt({"only": "one field"}, attesting_authority=authority, sign_bytes=sk.sign)
+    with pytest.raises(GRC.ReceiptAttestationError):
+        GRC.attest_receipt("not a dict", attesting_authority=authority, sign_bytes=sk.sign)
+
+
+def test_attest_receipt_rejects_a_malformed_attesting_authority(owner_signer):
+    sk, keys, authority = owner_signer
+    with pytest.raises(GRC.ReceiptAttestationError):
+        GRC.attest_receipt(_payload(), attesting_authority={"identity": "owner-1"}, sign_bytes=sk.sign)
+
+
+def test_attest_receipt_never_holds_or_imports_a_private_key_itself():
+    """The generator must never be handed the OWNER's private signing key (item 2's explicit constraint) --
+    confirmed here by scanning attest_receipt()'s own source for any private-key-loading capability; it only ever
+    calls the caller-supplied `sign_bytes` callable."""
+    import inspect
+    src = inspect.getsource(GRC.attest_receipt)
+    for forbidden in ("PrivateKey", "private_key", "load_pem", "load_der"):
+        assert forbidden not in src

@@ -778,3 +778,173 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
     # Absolute-stop confirmation: nothing above ever set V2 frozen, activated a real vault outside this tmp_path, or
     # performed a real owner signature -- purely synthetic content and ephemeral test keys throughout.
     assert SPEC.GENESIS_CAPABILITY_EVAL_V2_FROZEN is False
+
+
+def test_full_synthetic_generation_event_emission_through_ledger_gated_receipt(tmp_path):
+    """Generation-event-emission-integration phase: the COMPLETE requested synthetic path, end to end --
+
+        authorized generator -> protected write handle -> successful encrypted private-corpus write ->
+        immutable generation-event payload -> ephemeral OWNER signature -> signed manifest -> ciphertext
+        transfer -> receiving verification -> real creation-verification ledger evidence.
+
+    Unlike the older adversarial e2e test above (which hand-builds manifest/receipt dicts to probe individual
+    failure modes), this test exercises the REAL emission path: `GeneratorWriteHandle.write_corpus()` auto-builds
+    the generation-event payload from the trusted boundary context, and `generation_receipt.attest_receipt()` is
+    the only thing that ever touches the (ephemeral, test-only) owner signing key -- the generator process itself
+    never does. Synthetic content and ephemeral keys only; no real vault activation, no real owner signature, no
+    model execution, no GPU, no spend, no training, no V2 freeze."""
+    import hashlib
+    import json
+    import os
+    import subprocess
+    from datetime import datetime, timedelta, timezone
+
+    import pytest as _pytest
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from orca.eval.genesis_v2 import authority_registry as AR
+    from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
+    from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    from orca.eval.genesis_v2 import generator_registry as GR
+    from orca.eval.genesis_v2 import inventory as INV
+    from orca.eval.genesis_v2 import ledger as LG
+    from orca.eval.genesis_v2 import operational_boundary as OB
+    from orca.eval.genesis_v2 import prereg as PR
+    from orca.eval.genesis_v2 import runner_registry as RN
+    from orca.eval.genesis_v2 import spec as SPEC
+    from orca.eval.genesis_v2 import store as ST
+    if os.environ.get("ORNEUR_REQUIRE_CRYPTOGRAPHY") == "1":
+        import cryptography.hazmat.primitives.asymmetric.ed25519  # noqa: F401
+    else:
+        _pytest.importorskip("cryptography")
+
+    NOW = datetime(2026, 9, 30, 12, 0, 0, tzinfo=timezone.utc)
+
+    def ts(dt):
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    repo = _e2e_repo(tmp_path)
+
+    # 1. Owner authority, SCOPED for real corpus-generation authorization/attestation (DATA_SEEDING + both stages
+    # -- generation-provenance-closure phase, item 3).
+    owner_sk = Ed25519PrivateKey.generate()
+    owner_pub = owner_sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    ar_doc = {"schema_version": AR.SCHEMA_VERSION, "records": [{
+        "id": "emit-owner-1", "role": "OWNER", "public_key_hex": owner_pub,
+        "activation_timestamp": ts(NOW - timedelta(days=1)), "expiry": None, "revoked": False,
+        "permitted_authorization_classes": list(AR.AUTHORIZATION_CLASSES), "permitted_eval_stages": ["STAGE_1", "STAGE_2"],
+        "gpu_permission": False, "spend_permission": False, "provider_inference_permission": False}]}
+    (repo / AR.REGISTRY_PATH).write_text(json.dumps(ar_doc))
+
+    # 2. A SEPARATE, AUTHORIZED generator identity, scoped only for SCREEN + QUALIFICATION_HOLDOUT.
+    inv = json.loads((ROOT / "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json").read_text())
+    inv_digest = INV.inventory_digest(inv)
+    prereg_sha = json.loads((ROOT / PR.DRAFT_PATH).read_text())["record_sha256"]
+    code_hash = CGA.code_tree_sha256(repo)
+    gr_doc = json.loads((repo / GR.REGISTRY_PATH).read_text())
+    gr_doc["records"] = [{"generator_id": "gen-emit", "os_runtime": "test", "code_sha256": code_hash,
+                           "allowed_artifact_classes": ["SCREEN", "QUALIFICATION_HOLDOUT"], "network_policy": "none",
+                           "credential_scope": {"vault_write": True, "vault_read": False, "public_repo_write": False,
+                                                 "training_credentials": False, "unrelated_cloud_credentials": False, "developer_tokens": False},
+                           "state": "AUTHORIZED"}]
+    (repo / GR.REGISTRY_PATH).write_text(json.dumps(gr_doc))
+
+    reviewed_sha = _e2e_git_init_with_head(repo)
+
+    # 3. The owner's signed CGA, binding reviewed_commit_sha + the exact code-tree hash.
+    auth_id = "cgauth-" + "e3" * 8
+    auth = CGA.default_record()
+    auth.update({"authorization_id": auth_id, "status": "AUTHORIZED", "purpose": CGA.PURPOSE,
+                 "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"], "reviewed_commit_sha": reviewed_sha,
+                 "authorized_code_tree_sha256": code_hash,
+                 "authorized_artifact_digests": {"corpus_inventory_digest": inv_digest, "preregistration_record_sha256": prereg_sha},
+                 "issued_at": ts(NOW - timedelta(hours=1)), "expires_at": ts(NOW + timedelta(days=1)),
+                 "authorizing_authority": {"identity": "emit-owner-1", "role": "OWNER", "key_id": "emit-owner-1"}})
+    auth["signature"] = owner_sk.sign(CGA.canonical_signing_bytes(auth)).hex()
+    (repo / CGA.RECORD_PATH).write_text(json.dumps(auth))
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "commit", "-q", "-m", "evidence"], cwd=repo, check=True)
+
+    # 4. AUTHORIZED GENERATOR -> PROTECTED WRITE HANDLE. The handle carries the trusted boundary context
+    # (generator identity, live code hash, real commit, CGA authorization id) that require_authorization() just
+    # verified -- captured here, never re-supplied by generation code.
+    vault_priv, vault_pub = ST.generate_vault_keypair()
+    generator_vault = tmp_path / "generator-vault"
+    writer = ST.EncryptedVaultWriter(generator_vault, vault_pub, repo_root=repo)
+    handle = OB.protected_generate_write_handle(repo, writer, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
+                                                 event_name="workflow_dispatch", generator_id="gen-emit", now=NOW)
+
+    # 5. SUCCESSFUL ENCRYPTED PRIVATE-CORPUS WRITE.
+    screen_bytes = b'{"marker":"EMIT-SYNTHETIC-SCREEN-CONTENT"}'
+    holdout_bytes = b'{"marker":"EMIT-SYNTHETIC-HOLDOUT-CONTENT"}'
+    corpus_id = "gce2c-" + "e3" * 16
+    corpus_digest = handle.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
+
+    # 6. IMMUTABLE GENERATION-EVENT PAYLOAD, auto-built by the write path from runtime facts only. Note the
+    # generating commit is the REAL current HEAD at write time (the "evidence" commit just made above, which is a
+    # genuine descendant of reviewed_sha) -- not reviewed_sha itself; see corpus_generation_authorization.py's own
+    # docstring on why ancestry, not literal equality, is the correct binding.
+    payload = handle.last_emitted_generation_event_payload()
+    expected_payload_digest = handle.last_emitted_generation_event_payload_digest()
+    generating_commit_sha = payload["generating_commit_sha"]
+    assert payload == {"schema_version": GRC.SCHEMA_VERSION, "corpus_generation_authorization_id": auth_id,
+                        "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION, "corpus_digest": corpus_digest,
+                        "generator_code_tree_sha256": code_hash, "generating_commit_sha": generating_commit_sha,
+                        "generator_identity": "gen-emit", "generated_at": payload["generated_at"]}
+
+    # 7. EPHEMERAL OWNER SIGNATURE -- the generator process itself never held or used this key; attest_receipt()
+    # is called here standing in for a SEPARATE owner-side attestation tool/process.
+    receipt = GRC.attest_receipt(payload, attesting_authority={"identity": "emit-owner-1", "role": "OWNER", "key_id": "emit-owner-1"},
+                                  sign_bytes=owner_sk.sign, expected_payload_digest=expected_payload_digest)
+    assert set(receipt) == GRC.REQUIRED_FIELDS
+
+    # 8. SIGNED MANIFEST, independently describing the same generated content.
+    unsigned_manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+                          "generator_code_sha256": code_hash, "generated_at_commit_sha": generating_commit_sha,
+                          "screen_digest": hashlib.sha256(screen_bytes).hexdigest(),
+                          "qualification_holdout_digest": hashlib.sha256(holdout_bytes).hexdigest(),
+                          "per_category_item_counts": {"reasoning": 10}, "corpus_generation_authorization_id": auth_id,
+                          "signing_authority": {"identity": "emit-owner-1", "role": "OWNER", "key_id": "emit-owner-1"}, "signature": "0" * 128}
+    manifest = {**unsigned_manifest, "signature": owner_sk.sign(CMAN.manifest_signing_bytes(unsigned_manifest)).hex()}
+
+    # 9. CIPHERTEXT TRANSFER -- only .enc files cross, to a genuinely separate vault directory.
+    verifier_vault = tmp_path / "verifier-vault"
+    verifier_vault.mkdir(mode=0o700)
+    src_corpus_dir = generator_vault / corpus_id
+    dst_corpus_dir = verifier_vault / corpus_id
+    dst_corpus_dir.mkdir(mode=0o700)
+    for name in ("SCREEN.enc", "QUALIFICATION_HOLDOUT.enc", "SEAL.enc"):
+        (dst_corpus_dir / name).write_bytes((src_corpus_dir / name).read_bytes())
+        os.chmod(dst_corpus_dir / name, 0o400)
+    os.chmod(dst_corpus_dir, 0o700)
+
+    # 10. A SEPARATE, restricted qualification-runner identity for creation-time verification only.
+    verifier_code_hash = "9" * 64
+    rn_doc = {"schema_version": RN.SCHEMA_VERSION, "records": [{
+        "runner_id": "verifier-emit", "runner_class": "SELF_HOSTED_CPU", "os_runtime": "test", "code_sha256": verifier_code_hash,
+        "allowed_purposes": [SPEC.PURPOSE_CREATION_VERIFICATION], "allowed_splits": ["SCREEN", "QUALIFICATION_HOLDOUT"],
+        "sandbox_image_digest": "sha256:" + "b" * 64, "semantic_engine_digest": "c" * 64, "storage_backend_verification_digest": "d" * 64,
+        "ledger_database_identity_digest": "e" * 64, "network_policy": "none",
+        "credential_scope": {"private_store_read": True, "public_repo_write": False, "training_credentials": False,
+                              "unrelated_cloud_credentials": False, "developer_tokens": False}, "state": "AUTHORIZED"}]}
+    (repo / RN.REGISTRY_PATH).write_text(json.dumps(rn_doc))
+
+    # 11. RECEIVING VERIFICATION through the real, ledger-gated, composed function.
+    reader = ST.EncryptedVaultReader(verifier_vault, vault_priv, repo_root=repo)
+    ledger_dir = tmp_path / "ledger-emit"
+    problems = OB.verify_manifest_digest_only_same_process(
+        repo, ledger_dir, reader, manifest, auth, receipt, process_id="verifier-emit", code_sha256=verifier_code_hash,
+        corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-emit", candidate_lineage="lineage-emit",
+        run_id_prefix="emit-e2e", timestamp_utc=ts(NOW), generator_code_root=repo / "orca" / "eval" / "genesis_v2")
+    assert problems == []
+
+    # 12. REAL creation-verification ledger evidence.
+    led = LG.AccessLedger(ledger_dir, {})
+    recs = [r for r in led.records() if r["purpose"] == SPEC.PURPOSE_CREATION_VERIFICATION]
+    assert len(recs) == 2 and {r["split"] for r in recs} == {"SCREEN", "QUALIFICATION_HOLDOUT"}
+    assert all(r["who"] == "verifier-emit" for r in recs)
+    assert led.holdout_state(SPEC.EVAL_VERSION) == {"state": SPEC.STATE_SEALED, "opened_by": None, "lineages": []}
+
+    assert SPEC.GENESIS_CAPABILITY_EVAL_V2_FROZEN is False

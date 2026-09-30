@@ -100,6 +100,17 @@ class BoundaryResult:
     reasons: list = field(default_factory=list)
     generator_authorized: bool = False
     generator_state: str | None = None
+    # ITEM 1 (generation-event-emission-integration phase): the EXACT trusted context `check_authorization()`
+    # actually verified against -- never re-derived, and never accepted from a caller, anywhere downstream. These
+    # are populated REGARDLESS of `authorized` (they describe what was checked, not a trust claim on their own);
+    # callers must still gate on `authorized` before treating them as meaningful. `protected_generate_write_handle()`
+    # captures these from the `BoundaryResult` `require_authorization()` returns and binds them into the
+    # `GeneratorWriteHandle` it issues, so a later generation-receipt payload is built from THIS trusted context,
+    # never from an arbitrary caller-supplied `generator_identity`/code hash/commit/authorization id.
+    generator_identity: str | None = None
+    generator_code_sha256: str | None = None
+    commit_sha: str | None = None
+    authorization_id: str | None = None
 
 
 def _run_git(root: Path, *args: str) -> subprocess.CompletedProcess:
@@ -207,12 +218,15 @@ def check_authorization(root: Path, *, requested_scope: tuple, event_name: str |
                        event_name=_trusted_event_name(event_name))
     keys = CGA.load_keys_for_corpus_generation(root)
     verdict = CGA.verify(record, req, keys, now=now)
-    gen_ok, gen_state = _generator_authorized(root, _trusted_generator_id(generator_id), code_hash, tuple(requested_scope))
+    trusted_generator_id = _trusted_generator_id(generator_id)
+    gen_ok, gen_state = _generator_authorized(root, trusted_generator_id, code_hash, tuple(requested_scope))
     authorized = verdict.authorized and gen_ok
     reasons = list(verdict.reasons)
     if not gen_ok:
         reasons.append(f"GENERATOR_NOT_AUTHORIZED:{gen_state or 'NOT_REGISTERED'}")
-    return BoundaryResult(authorized=authorized, reasons=reasons, generator_authorized=gen_ok, generator_state=gen_state)
+    return BoundaryResult(authorized=authorized, reasons=reasons, generator_authorized=gen_ok, generator_state=gen_state,
+                           generator_identity=trusted_generator_id, generator_code_sha256=code_hash, commit_sha=commit_sha,
+                           authorization_id=record.get("authorization_id") if isinstance(record.get("authorization_id"), str) else None)
 
 
 def require_authorization(root: Path, *, requested_scope: tuple, event_name: str | None = None, generator_id: str | None = None,
@@ -509,22 +523,66 @@ class GeneratorWriteHandle:
     cannot request a broad scope, get a handle, then call `write_corpus` with a DIFFERENT split set than what was
     actually authorized. For a purely public-split request (e.g. PILOT_TRAIN/DEV, which never go through this
     encrypted private vault), `store` is None: no vault-capable object is constructed or retained AT ALL, so there is
-    no structural path from a public-only authorization to private storage, independent of any runtime check."""
+    no structural path from a public-only authorization to private storage, independent of any runtime check.
 
-    def __init__(self, store, *, authorized_scope: frozenset = frozenset()):
+    ITEMS 1-2 (generation-event-emission-integration phase): this handle ALSO carries the EXACT trusted-boundary
+    context `protected_generate_write_handle()` captured from `require_authorization()`'s `BoundaryResult` --
+    `generator_identity`/`generator_code_sha256`/`commit_sha`/`authorization_id` — and, after each successful
+    PRIVATE-split write, automatically constructs the canonical, unsigned generation-receipt PAYLOAD from that
+    trusted context plus the REAL return value of the write (`corpus_digest`), the REAL `corpus_id` passed to this
+    call, the REAL `spec.EVAL_VERSION`, and the REAL wall-clock time of the write. None of these nine fields is
+    ever accepted as a caller-supplied argument to `write_corpus()` itself — there is no parameter through which a
+    caller could substitute a different generator identity, commit, code hash, authorization id, corpus id, or
+    timestamp into the emitted payload. The OWNER never signs anything here — see `generation_receipt.attest_receipt()`
+    for the separate, later, owner-only attestation step this handle's output feeds into."""
+
+    def __init__(self, store, *, authorized_scope: frozenset = frozenset(), generator_identity: str | None = None,
+                 generator_code_sha256: str | None = None, commit_sha: str | None = None, authorization_id: str | None = None):
         if store is not None and hasattr(store, "read_split"):
             raise PrivateStorageWriteHandleViolation(
                 "refusing to build a generator write handle from an object that also exposes read_split -- a "
                 "generator's write capability must be backed by a genuinely write-only object")
         self._store = store
         self._authorized_scope = frozenset(authorized_scope)
+        self._generator_identity = generator_identity
+        self._generator_code_sha256 = generator_code_sha256
+        self._commit_sha = commit_sha
+        self._authorization_id = authorization_id
+        self._last_emitted_payload: dict | None = None
 
     def write_corpus(self, corpus_id: str, splits: dict) -> str:
         requested = set(splits)
         if self._store is None or not requested or not requested <= self._authorized_scope:
             denied = sorted(requested - self._authorized_scope) or sorted(requested)
             raise PrivateStorageWriteHandleViolation(f"this generator identity is not authorized to write {denied}")
-        return self._store.write_corpus(corpus_id, splits)
+        digest = self._store.write_corpus(corpus_id, splits)
+        # ITEM 2: emit the canonical payload from the ACTUAL successful write outcome plus the trusted boundary
+        # context captured at construction time -- never from anything write_corpus()'s own caller supplied.
+        from datetime import datetime, timezone
+
+        from orca.eval.genesis_v2 import generation_receipt as GRC
+        from orca.eval.genesis_v2 import spec as SPEC
+        self._last_emitted_payload = GRC.build_unsigned_payload(
+            corpus_generation_authorization_id=self._authorization_id, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
+            corpus_digest=digest, generator_code_tree_sha256=self._generator_code_sha256, generating_commit_sha=self._commit_sha,
+            generator_identity=self._generator_identity, generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        return digest
+
+    def last_emitted_generation_event_payload(self) -> dict | None:
+        """A fresh COPY of the payload emitted by the most recent successful `write_corpus()` call, or `None` if
+        no write has succeeded yet on this handle. A copy, never the internal dict itself — mutating the returned
+        value can never retroactively alter what this handle considers "emitted" (see `last_emitted_generation_event_payload_digest()`,
+        which is always recomputed from the INTERNAL copy, not from anything a caller could have mutated)."""
+        return dict(self._last_emitted_payload) if self._last_emitted_payload is not None else None
+
+    def last_emitted_generation_event_payload_digest(self) -> str | None:
+        """`generation_receipt.payload_digest()` of the internally held emitted payload -- the value an owner
+        attestation workflow should independently capture at emission time and later supply to
+        `generation_receipt.attest_receipt()`'s `expected_payload_digest` to detect any tampering in transit."""
+        if self._last_emitted_payload is None:
+            return None
+        from orca.eval.genesis_v2 import generation_receipt as GRC
+        return GRC.payload_digest(self._last_emitted_payload)
 
     def __repr__(self) -> str:
         return f"GeneratorWriteHandle(write_corpus only, authorized_scope={sorted(self._authorized_scope)})"
@@ -550,10 +608,18 @@ def protected_generate_write_handle(root: Path, store, *, requested_scope: tuple
     eliminating any path from a public-only authorization to the private vault, not merely blocking it at runtime.
 
     The returned handle independently re-enforces the authorized scope on every `write_corpus` call (see
-    GeneratorWriteHandle), so a generator cannot use a handle issued for one scope to write a different one."""
+    GeneratorWriteHandle), so a generator cannot use a handle issued for one scope to write a different one.
+
+    ITEM 1 (generation-event-emission-integration phase): the `BoundaryResult` `require_authorization()` returns is
+    CAPTURED here (previously discarded) and its `generator_identity`/`generator_code_sha256`/`commit_sha`/
+    `authorization_id` are bound into the returned `GeneratorWriteHandle` — the EXACT trusted context that actually
+    passed authorization, never re-derived or re-supplied by a caller. This is what lets the handle later emit a
+    genuinely trustworthy generation-receipt payload (see `GeneratorWriteHandle.write_corpus()`)."""
     from orca.eval.genesis_v2 import spec as SPEC
-    require_authorization(root, requested_scope=requested_scope, event_name=event_name, generator_id=generator_id, now=now)
+    result = require_authorization(root, requested_scope=requested_scope, event_name=event_name, generator_id=generator_id, now=now)
     private_scope = frozenset(s for s in requested_scope if s in SPEC.PRIVATE_SPLITS)
     if not private_scope:
         return GeneratorWriteHandle(None, authorized_scope=frozenset())
-    return GeneratorWriteHandle(store, authorized_scope=private_scope)
+    return GeneratorWriteHandle(store, authorized_scope=private_scope, generator_identity=result.generator_identity,
+                                 generator_code_sha256=result.generator_code_sha256, commit_sha=result.commit_sha,
+                                 authorization_id=result.authorization_id)

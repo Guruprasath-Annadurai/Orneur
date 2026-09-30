@@ -476,6 +476,101 @@ def test_generator_with_both_splits_authorized_still_cannot_smuggle_a_read_capab
                                             event_name="workflow_dispatch", now=NOW, generator_id=gid)
 
 
+# --------------------------- generation-event-emission-integration phase: items 1-2 -- the generation-receipt
+# payload is emitted automatically from the TRUSTED boundary context + the actual write outcome, never from a
+# caller-suppliable parameter
+_CGA_AUTH_ID = "cgauth-" + "ef" * 8   # _write_signed_cga()'s own default authorization_id, unless overridden
+
+
+def test_protected_generate_write_handle_binds_the_trusted_boundary_context_not_a_caller_supplied_one(repo):
+    """Item 1: the handle's emitted payload must reflect EXACTLY the generator identity/code hash/commit/
+    authorization id that `require_authorization()` actually verified -- never anything a caller could inject."""
+    _need_crypto()
+    import inspect
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from orca.eval.genesis_v2 import spec as SPEC
+    sk = Ed25519PrivateKey.generate()
+    _write_authority_registry_with_real_key(repo, sk)
+    _, _, code_hash = _real_context()
+    gid = _authorize_and_commit(repo, sk, ("SCREEN", "QUALIFICATION_HOLDOUT"), ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    reviewed_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    store = _FakeWriteOnlyStore()
+
+    # protected_generate_write_handle() itself has NO parameter through which a caller could supply a generator
+    # identity, code hash, commit sha, or authorization id directly -- `generator_id` only SELECTS which registered
+    # identity to resolve and cross-check, it is not trusted verbatim (see check_authorization()/_generator_authorized()).
+    sig_params = set(inspect.signature(OB.protected_generate_write_handle).parameters)
+    assert sig_params == {"root", "store", "requested_scope", "event_name", "generator_id", "now"}
+
+    handle = OB.protected_generate_write_handle(repo, store, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
+                                                 event_name="workflow_dispatch", now=NOW, generator_id=gid)
+    assert handle.last_emitted_generation_event_payload() is None   # nothing emitted before any write
+    corpus_id = "gce2c-" + "4" * 16
+    digest = handle.write_corpus(corpus_id, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"})
+
+    payload = handle.last_emitted_generation_event_payload()
+    assert payload == {"schema_version": "genesis-v2-generation-receipt/1", "corpus_generation_authorization_id": _CGA_AUTH_ID,
+                        "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION, "corpus_digest": digest,
+                        "generator_code_tree_sha256": code_hash, "generating_commit_sha": reviewed_sha,
+                        "generator_identity": gid, "generated_at": payload["generated_at"]}
+    import re
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", payload["generated_at"])
+
+    # mutating the returned copy never affects the handle's own internal state or its digest
+    payload["corpus_digest"] = "0" * 64
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    real_payload = handle.last_emitted_generation_event_payload()
+    assert real_payload["corpus_digest"] == digest
+    assert handle.last_emitted_generation_event_payload_digest() == GRC.payload_digest(real_payload)
+
+
+def test_write_corpus_has_no_parameter_through_which_generator_identity_could_be_substituted():
+    """Item 1's core adversarial claim: write_corpus() itself accepts only corpus_id and splits -- there is no
+    generator_identity/commit/code-hash argument a caller could pass to override what was bound at construction."""
+    import inspect
+    assert set(inspect.signature(OB.GeneratorWriteHandle.write_corpus).parameters) == {"self", "corpus_id", "splits"}
+    with pytest.raises(TypeError):
+        OB.GeneratorWriteHandle(_FakeWriteOnlyStore(), authorized_scope=frozenset({"SCREEN", "QUALIFICATION_HOLDOUT"})).write_corpus(
+            "gce2c-" + "5" * 16, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"}, generator_identity="attacker-injected")
+
+
+def test_generation_attempted_without_an_authorized_generator_never_reaches_a_handle_or_emits_anything(repo):
+    """Item 4: no handle, hence no emission, is ever possible without first passing the full composed boundary."""
+    store = _FakeWriteOnlyStore()
+    with pytest.raises(OB.CorpusGenerationNotAuthorized):
+        OB.protected_generate_write_handle(repo, store, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
+                                            event_name="workflow_dispatch", now=NOW, generator_id="never-registered")
+    assert store.written == []
+
+
+def test_a_second_write_overwrites_the_first_writes_emitted_payload_not_merges_with_it(repo):
+    """Item 4 ('receipt created for a different successful write'): each successful write REPLACES the handle's
+    emitted payload -- an attempt to attest a STALE payload against expectations captured from an EARLIER write is
+    caught by the digest check, since the earlier payload's own digest no longer describes the handle's current state."""
+    _need_crypto()
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from orca.eval.genesis_v2 import generation_receipt as GRC
+    sk = Ed25519PrivateKey.generate()
+    _write_authority_registry_with_real_key(repo, sk)
+    gid = _authorize_and_commit(repo, sk, ("SCREEN", "QUALIFICATION_HOLDOUT"), ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    store = _FakeWriteOnlyStore()
+    handle = OB.protected_generate_write_handle(repo, store, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
+                                                 event_name="workflow_dispatch", now=NOW, generator_id=gid)
+    handle.write_corpus("gce2c-" + "6" * 16, {"SCREEN": b"s1", "QUALIFICATION_HOLDOUT": b"h1"})
+    payload_a = handle.last_emitted_generation_event_payload()
+    digest_a = handle.last_emitted_generation_event_payload_digest()
+
+    handle.write_corpus("gce2c-" + "7" * 16, {"SCREEN": b"s2", "QUALIFICATION_HOLDOUT": b"h2"})
+    payload_b = handle.last_emitted_generation_event_payload()
+    assert payload_b["corpus_id"] != payload_a["corpus_id"]
+    assert handle.last_emitted_generation_event_payload_digest() != digest_a
+
+    # attesting the STALE payload_a is still internally self-consistent (it is a genuine record of what DID happen)
+    # -- the real protection is that a receiving verification later checks its corpus_id/digest against the ACTUAL
+    # request, not that attest_receipt itself can detect staleness without an independent expected digest.
+    assert GRC.payload_digest(payload_a) == digest_a
+
+
 # ---------------------------------------------------------------- genuine asymmetric key isolation (store.EncryptedVaultWriter/Reader)
 def test_vault_writer_and_reader_key_isolation_end_to_end(tmp_path):
     """Item 3, proven with the REAL crypto (not a fake stand-in): a generator holding ONLY the vault's public key can
