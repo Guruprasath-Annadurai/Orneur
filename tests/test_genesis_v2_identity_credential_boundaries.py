@@ -206,3 +206,59 @@ def test_owner_activation_checklist_category_d_claims_are_currently_true():
     assert SPEC.GENESIS_CAPABILITY_EVAL_V2_FROZEN is False
     from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
     assert CGA.CODE_PATHS == ("orca/eval/genesis_v2",)
+
+
+# ---------------------------------------------------------------- owner-controlled deployment gate: new docs this round
+def _phase21_doc(name: str) -> str:
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[1]
+    return (root / "docs/orneur/phase-21" / name).read_text()
+
+
+def test_infrastructure_discovery_reports_no_suitable_infra_as_not_configured():
+    t = _phase21_doc("GENESIS_V2_INFRASTRUCTURE_DISCOVERY.md")
+    for s in ("Fly.io", "Northflank", "Supabase", "Cloudflare", "macOS Keychain", "NOT CONFIGURED",
+              "No option above is chosen or configured", "private_storage_genuinely_configured: false"):
+        assert s in t, s
+    import re
+    assert not re.search(r"\b[0-9a-f]{64}\b", t) and "/Users/" not in t and "/home/" not in t
+
+
+def test_three_identity_deployment_design_matches_the_real_code():
+    """The document's factual claims about enforcement are re-checked against the real registries/functions it
+    cites, not just asserted in prose."""
+    t = _phase21_doc("GENESIS_V2_THREE_IDENTITY_DEPLOYMENT_DESIGN.md")
+    for s in ("CORPUS_GENERATOR_REGISTRY.json", "QUALIFICATION_RUNNER_REGISTRY.json", "CREATION_TIME_VERIFICATION",
+              "QUALIFICATION_RUN", "protected_generate_write_handle", "verify_manifest_digest_only_same_process",
+              "Remains unauthorized until the later, separate qualification gate"):
+        assert s in t, s
+    from orca.eval.genesis_v2 import generator_registry as GR
+    from orca.eval.genesis_v2 import runner_registry as RN
+    assert "vault_read" in GR.REQUIRED_FIELDS or "credential_scope" in GR.REQUIRED_FIELDS
+    assert "allowed_purposes" in RN.REQUIRED_FIELDS
+
+
+def test_process_isolation_verification_procedure_is_honest_about_its_own_limits():
+    t = _phase21_doc("GENESIS_V2_PROCESS_ISOLATION_VERIFICATION_PROCEDURE.md")
+    for s in ("OWNER ACTION, not a unit test", "NO operating-system process isolation",
+              "does not (and cannot) prove", "Repeat after any deployment change"):
+        assert s in t, s
+
+
+def test_readonly_evidence_collection_doc_matches_the_real_script():
+    t = _phase21_doc("GENESIS_V2_READONLY_EVIDENCE_COLLECTION.md")
+    for s in ("genesis_v2_evidence_snapshot.py", "Never prints a secret value", "Never writes anything",
+              "Always exits 0"):
+        assert s in t, s
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[1]
+    assert (root / "scripts/genesis_v2_evidence_snapshot.py").is_file()
+
+
+def test_owner_setup_summary_is_no_longer_stale():
+    """The prior draft of this file referenced the retired symmetric ORNEUR_GENESIS_V2_ENCRYPTION_KEY var and a
+    preflight invocation with no --role -- both fixed this round."""
+    t = _phase21_doc("GENESIS_CAPABILITY_EVAL_V2_OWNER_SETUP.md")
+    assert "ORNEUR_GENESIS_V2_ENCRYPTION_KEY" not in t
+    assert "--role generator" in t and "--role verifier" in t
+    assert "GENESIS_V2_INFRASTRUCTURE_DISCOVERY.md" in t and "GENESIS_V2_THREE_IDENTITY_DEPLOYMENT_DESIGN.md" in t

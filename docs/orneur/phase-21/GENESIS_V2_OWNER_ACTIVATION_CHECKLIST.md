@@ -35,6 +35,8 @@ every item in category A is genuinely done — but `CORPUS_GENERATION_AUTHORIZAT
 | A16 | Vault activation NEVER deletes pre-existing vault content, on success, on isolation failure, on an unexpected exception, on a mid-write failure, or on a partial-backup failure | `pytest tests/test_genesis_v2_vault_ledger_activation.py -k "preserves_pre_existing or mid_write_failure or partial_backup_failure"` → all pass (5 scenarios) |
 | A17 | Vault activation's `backup_ciphertext_only` reflects a genuinely executed, byte-for-byte backup check — never hardcoded, and run BEFORE the destructive tamper test | `pytest tests/test_genesis_v2_vault_ledger_activation.py -k backup` → all pass |
 | A21 | Vault activation claims exclusive ownership of a single isolated workspace before any write, and reports incomplete cleanup as an activation FAILURE, never a silent success | `pytest tests/test_genesis_v2_vault_ledger_activation.py -k "workspace_naming or reports_cleanup_failure"` → all pass |
+| A22 | Read-only evidence snapshot aggregates every existing read-only check, never touches a secret, never writes anything, always exits 0 | `pytest tests/test_genesis_v2_evidence_snapshot.py` → all pass; `python scripts/genesis_v2_evidence_snapshot.py` → exit 0 |
+| A23 | Infrastructure discovery, three-identity deployment design, process-isolation verification procedure, and read-only evidence collection docs exist and match the real code they describe | `pytest tests/test_genesis_v2_identity_credential_boundaries.py -k "infrastructure_discovery or three_identity_deployment or process_isolation_verification_procedure or readonly_evidence_collection or owner_setup_summary"` → all pass |
 | A18 | Role-separated preflight: generator role never requires or accepts the private key without flagging it | `pytest tests/test_genesis_v2_storage.py -k "generator_preflight or verifier_preflight or owner_preflight_pair_matching or owner_preflight_is_the_only_role"` → all pass |
 | A19 | Owner-only pair-matching fails closed on missing `cryptography` or invalid key material | `pytest tests/test_genesis_v2_storage.py::test_owner_preflight_pair_matching_fails_closed_when_cryptography_is_unavailable` → pass |
 | A20 | Digest-only, same-process manifest verifier is honestly named and carries no training/inference/publishing imports | `pytest tests/test_genesis_v2_operational_boundary.py -k digest_only_same_process_verifier` → all pass |
@@ -54,6 +56,19 @@ every item in category A is genuinely done — but `CORPUS_GENERATION_AUTHORIZAT
 ---
 
 ## C. Requires real owner-side setup (no code change; owner action on a trusted machine, outside this repository)
+
+**Before C1, three infrastructure decisions are genuinely open — see `GENESIS_V2_INFRASTRUCTURE_DISCOVERY.md` for
+the full alternatives table. Nothing in category C below can proceed sensibly until these are made:**
+
+| # | Decision | Options presented | Status |
+|---|---|---|---|
+| C0a | Execution model | A1: two trusted local machines (ready today, $0) vs. A2: cloud/CI-driven (needs a generator implementation that does not exist yet, plus C0b) | **OPEN — return to owner** |
+| C0b | Secret-manager mechanism (only forced if C0a=A2, or if the owner wants more than local Keychain even under A1) | B1: OS-native Keychain (already probed, $0, single-machine) / B2: GitHub Environments (real precedent in this repo, $0 for basic secrets) / B3: a dedicated cloud secret manager (no integration exists; new cost + new code) | **OPEN — return to owner** |
+| C0c | Whether to create `genesis-v2-generator`/`genesis-v2-verifier` GitHub Environments now, purely as a governance anchor, even under A1 | Optional, no cost either way | **OPEN — return to owner** |
+
+The rows below assume C0a=A1 (the ready-today default) was chosen; if C0a=A2 is chosen instead, several rows below
+need re-scoping (see `GENESIS_V2_THREE_IDENTITY_DEPLOYMENT_DESIGN.md`'s A2 notes) and additional generator-
+implementation work is required first.
 
 | # | Item | Measurable PASS condition once done |
 |---|---|---|
