@@ -637,20 +637,50 @@ def test_authorized_manifest_verification_bytes_with_the_real_asymmetric_vault_r
     assert screen_plain == b"real-screen-content" and holdout_plain == b"real-holdout-content"
 
 
-# ---------------------------------------------------------------- verify_manifest_digest_only_same_process() (item 3: no plaintext leaves)
-def _signed_owner_key():
+# ---------------------------------------------------------------- verify_manifest_digest_only_same_process() (item 3: no plaintext leaves;
+# final-receiving-boundary-integration phase items 1/2: the referenced CGA is independently authenticated and
+# authority keys are loaded from a REAL registry at `root`, never caller-supplied)
+def _authenticated_owner(root: Path, *, identity: str = "owner-1"):
+    """Generates a real Ed25519 owner key and registers it in a REAL AUTHORITY_REGISTRY.json at `root` -- the SAME
+    live registry `corpus_generation_authorization.load_keys()` (and therefore
+    `verify_manifest_digest_only_same_process()`) now reads authority keys from, rather than accepting them as an
+    arbitrary caller-supplied list. Returns (signing_key, identity) for building real signed manifests/CGA records."""
     _need_crypto()
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from orca.eval.genesis_v2 import authority_registry as AR
     sk = Ed25519PrivateKey.generate()
     pub_hex = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
-    keys = [{"key_id": "k-owner", "public_key_hex": pub_hex, "identity": "owner-1", "role": "OWNER"}]
-    return sk, keys
+    doc = {"schema_version": AR.SCHEMA_VERSION, "records": [{
+        "id": identity, "role": "OWNER", "public_key_hex": pub_hex,
+        "activation_timestamp": ts(NOW - timedelta(days=1)), "expiry": None, "revoked": False,
+        "permitted_authorization_classes": list(AR.AUTHORIZATION_CLASSES), "permitted_eval_stages": ["STAGE_1", "STAGE_2"],
+        "gpu_permission": False, "spend_permission": False, "provider_inference_permission": False}]}
+    (root / AR.REGISTRY_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (root / AR.REGISTRY_PATH).write_text(json.dumps(doc))
+    return sk, identity
 
 
-def _sign_manifest(manifest: dict, sk) -> dict:
+def _signed_cga_record(sk, identity: str, *, authorization_id: str, reviewed_commit_sha: str, code_hash: str,
+                        scope=("SCREEN", "QUALIFICATION_HOLDOUT"), inv_digest="1" * 64, prereg_sha="2" * 64,
+                        issued=None, expires=None, **over) -> dict:
+    """A REAL, validly signed CORPUS_GENERATION_AUTHORIZATION-shaped dict -- item 1 (final-receiving-boundary-
+    integration phase): a bare dict with only a few matching fields and no real signature is no longer trusted by
+    the verifier, so every test that wants a genuinely authenticated authorization builds one through here."""
+    rec = CGA.default_record()
+    rec.update({"authorization_id": authorization_id, "status": "AUTHORIZED", "purpose": CGA.PURPOSE,
+                "authorized_scope": list(scope), "reviewed_commit_sha": reviewed_commit_sha, "authorized_code_tree_sha256": code_hash,
+                "authorized_artifact_digests": {"corpus_inventory_digest": inv_digest, "preregistration_record_sha256": prereg_sha},
+                "issued_at": ts(issued or (NOW - timedelta(hours=1))), "expires_at": ts(expires or (NOW + timedelta(days=1))),
+                "authorizing_authority": {"identity": identity, "role": "OWNER", "key_id": identity}})
+    rec.update(over)
+    rec["signature"] = sk.sign(CGA.canonical_signing_bytes(rec)).hex()
+    return rec
+
+
+def _sign_manifest(manifest: dict, sk, identity: str = "owner-1") -> dict:
     from orca.eval.genesis_v2 import corpus_manifest as CMAN
-    unsigned = {**manifest, "signing_authority": {"identity": "owner-1", "role": "OWNER", "key_id": "k-owner"}, "signature": "0" * 128}
+    unsigned = {**manifest, "signing_authority": {"identity": identity, "role": "OWNER", "key_id": identity}, "signature": "0" * 128}
     return {**unsigned, "signature": sk.sign(CMAN.manifest_signing_bytes(unsigned)).hex()}
 
 
@@ -678,21 +708,20 @@ def test_digest_only_same_process_verification_never_returns_plaintext(tmp_path)
     digest = writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
     reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
 
-    sk, authority_keys = _signed_owner_key()
+    sk, identity = _authenticated_owner(root)
     reviewed_sha = "b" * 40
+    auth_id = "cgauth-" + "ef" * 8
     manifest = _sign_manifest({"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
                                 "generator_code_sha256": code_sha, "generated_at_commit_sha": reviewed_sha,
                                 "screen_digest": __import__("hashlib").sha256(screen_bytes).hexdigest(),
                                 "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
-                                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}, sk)
-    authorization_record = {"status": "AUTHORIZED", "authorization_id": manifest["corpus_generation_authorization_id"],
-                             "reviewed_commit_sha": reviewed_sha, "authorized_code_tree_sha256": code_sha,
-                             "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"]}
+                                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": auth_id}, sk, identity)
+    authorization_record = _signed_cga_record(sk, identity, authorization_id=auth_id, reviewed_commit_sha=reviewed_sha, code_hash=code_sha)
 
     problems = OB.verify_manifest_digest_only_same_process(
-        root, tmp_path / "ledger", reader, manifest, authorization_record, authority_keys, process_id="verifier-restricted",
+        root, tmp_path / "ledger", reader, manifest, authorization_record, process_id="verifier-restricted",
         code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
-        run_id_prefix="restricted-verify", timestamp_utc=ts(NOW), generator_code_root=code_dir, commit_is_descendant=True)
+        run_id_prefix="restricted-verify", timestamp_utc=ts(NOW), generator_code_root=code_dir)
     assert problems == []
     blob = repr(problems)
     assert b"SECRET-SCREEN-PLAINTEXT-MUST-NEVER-LEAK".decode() not in blob and b"SECRET-HOLDOUT-PLAINTEXT-MUST-NEVER-LEAK".decode() not in blob
@@ -722,21 +751,20 @@ def test_digest_only_same_process_verification_detects_tampering_without_leaking
     digest = writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
     reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
 
-    sk, authority_keys = _signed_owner_key()
+    sk, identity = _authenticated_owner(root)
     reviewed_sha = "b" * 40
+    auth_id = "cgauth-" + "ef" * 8
     manifest = _sign_manifest({"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
                                 "generator_code_sha256": code_sha, "generated_at_commit_sha": reviewed_sha,
                                 "screen_digest": "0" * 64,   # WRONG on purpose
                                 "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
-                                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}, sk)
-    authorization_record = {"status": "AUTHORIZED", "authorization_id": manifest["corpus_generation_authorization_id"],
-                             "reviewed_commit_sha": reviewed_sha, "authorized_code_tree_sha256": code_sha,
-                             "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"]}
+                                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": auth_id}, sk, identity)
+    authorization_record = _signed_cga_record(sk, identity, authorization_id=auth_id, reviewed_commit_sha=reviewed_sha, code_hash=code_sha)
 
     problems = OB.verify_manifest_digest_only_same_process(
-        root, tmp_path / "ledger", reader, manifest, authorization_record, authority_keys, process_id="verifier-restricted-2",
+        root, tmp_path / "ledger", reader, manifest, authorization_record, process_id="verifier-restricted-2",
         code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
-        run_id_prefix="restricted-tamper", timestamp_utc=ts(NOW), generator_code_root=code_dir, commit_is_descendant=True)
+        run_id_prefix="restricted-tamper", timestamp_utc=ts(NOW), generator_code_root=code_dir)
     assert problems and any("CORPUS_DIGEST_MISMATCH" in p for p in problems)
     blob = repr(problems)
     assert "SECRET-SCREEN-TAMPER-TEST" not in blob and "SECRET-HOLDOUT-TAMPER-TEST" not in blob
@@ -764,21 +792,20 @@ def test_digest_only_same_process_verification_preserves_ledger_evidence_and_sea
     digest = writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
     reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
 
-    sk, authority_keys = _signed_owner_key()
+    sk, identity = _authenticated_owner(root)
     reviewed_sha = "b" * 40
+    auth_id = "cgauth-" + "ef" * 8
     manifest = _sign_manifest({"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
                                 "generator_code_sha256": code_sha, "generated_at_commit_sha": reviewed_sha,
                                 "screen_digest": __import__("hashlib").sha256(screen_bytes).hexdigest(),
                                 "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
-                                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}, sk)
-    authorization_record = {"status": "AUTHORIZED", "authorization_id": manifest["corpus_generation_authorization_id"],
-                             "reviewed_commit_sha": reviewed_sha, "authorized_code_tree_sha256": code_sha,
-                             "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"]}
+                                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": auth_id}, sk, identity)
+    authorization_record = _signed_cga_record(sk, identity, authorization_id=auth_id, reviewed_commit_sha=reviewed_sha, code_hash=code_sha)
 
     OB.verify_manifest_digest_only_same_process(
-        root, tmp_path / "ledger", reader, manifest, authorization_record, authority_keys, process_id="verifier-restricted-3",
+        root, tmp_path / "ledger", reader, manifest, authorization_record, process_id="verifier-restricted-3",
         code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
-        run_id_prefix="restricted-ledger", timestamp_utc=ts(NOW), generator_code_root=code_dir, commit_is_descendant=True)
+        run_id_prefix="restricted-ledger", timestamp_utc=ts(NOW), generator_code_root=code_dir)
     led = LG.AccessLedger(tmp_path / "ledger", {})
     recs = [r for r in led.records() if r["purpose"] == SPEC.PURPOSE_CREATION_VERIFICATION]
     assert len(recs) == 2   # one per split, same evidence-preservation guarantee as the underlying function
@@ -801,23 +828,174 @@ def test_digest_only_same_process_verification_refuses_an_unsigned_manifest_befo
     digest = writer.write_corpus(corpus_id, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"})
     reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
 
-    _, authority_keys = _signed_owner_key()   # a registered key exists, but the manifest below is NOT signed by it
+    root = tmp_path / "fakeroot"
+    sk, identity = _authenticated_owner(root)   # a registered key exists, but the manifest below is NOT signed by it
+    auth_id = "cgauth-" + "ef" * 8
     manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
                 "generator_code_sha256": "a" * 64, "generated_at_commit_sha": "b" * 40,
                 "screen_digest": __import__("hashlib").sha256(b"s").hexdigest(),
                 "qualification_holdout_digest": __import__("hashlib").sha256(b"h").hexdigest(),
-                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8,
-                "signing_authority": {"identity": "owner-1", "role": "OWNER", "key_id": "k-owner"}, "signature": "0" * 128}
-    authorization_record = {"status": "AUTHORIZED", "authorization_id": manifest["corpus_generation_authorization_id"],
-                             "reviewed_commit_sha": "b" * 40, "authorized_code_tree_sha256": "a" * 64,
-                             "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"]}
+                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": auth_id,
+                "signing_authority": {"identity": identity, "role": "OWNER", "key_id": identity}, "signature": "0" * 128}
+    authorization_record = _signed_cga_record(sk, identity, authorization_id=auth_id, reviewed_commit_sha="b" * 40, code_hash="a" * 64)
 
     problems = OB.verify_manifest_digest_only_same_process(
-        tmp_path / "fakeroot", tmp_path / "ledger", reader, manifest, authorization_record, authority_keys,
+        root, tmp_path / "ledger", reader, manifest, authorization_record,
         process_id="never-registered-process", code_sha256="a" * 64, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
         candidate_revision="rev-1", candidate_lineage="lineage-1", run_id_prefix="unsigned-attack", timestamp_utc=ts(NOW),
-        generator_code_root=tmp_path, commit_is_descendant=True)
+        generator_code_root=tmp_path)
     assert problems == ["MANIFEST_SIGNATURE_INVALID:INVALID_SIGNATURE"]
+
+
+# --------------------------- final-receiving-boundary-integration phase: item 1 -- the referenced CGA is
+# independently authenticated, never trusted merely for having status: AUTHORIZED and matching fields
+def _valid_setup(tmp_path, suffix: str):
+    """Builds a fully valid, end-to-end-authenticatable scenario (real owner key registered at `root`, real signed
+    manifest, real signed CGA record, a real sealed vault corpus) that every adversarial test below starts from and
+    then deliberately breaks exactly one thing."""
+    from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    from orca.eval.genesis_v2 import runner_registry as RN
+    from orca.eval.genesis_v2 import spec as SPEC
+    from orca.eval.genesis_v2 import store as ST
+    import hashlib
+    code_dir = tmp_path / f"generator_code_{suffix}"
+    code_dir.mkdir()
+    (code_dir / "gen_a.py").write_text("def a():\n    return 1\n")
+    code_sha = RN.code_sha256_of(sorted(code_dir.glob("*.py")))
+    root = tmp_path / f"fakeroot_{suffix}"
+    _write_runner_registry(root, f"verifier-{suffix}", code_sha, [SPEC.PURPOSE_CREATION_VERIFICATION], ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    sk, identity = _authenticated_owner(root)
+    priv, pub = ST.generate_vault_keypair()
+    vault_dir = tmp_path / f"vault_{suffix}"
+    writer = ST.EncryptedVaultWriter(vault_dir, pub, repo_root=tmp_path / "not-a-repo")
+    screen_bytes, holdout_bytes = f"screen-{suffix}".encode(), f"holdout-{suffix}".encode()
+    corpus_id = "gce2c-" + hashlib.sha256(suffix.encode()).hexdigest()[:32]   # must be [0-9a-f]{32} per corpus_manifest's _CORPUS_ID regex
+    writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
+    reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
+    reviewed_sha = "b" * 40
+    auth_id = "cgauth-" + "ef" * 8
+    manifest = _sign_manifest({"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+                                "generator_code_sha256": code_sha, "generated_at_commit_sha": reviewed_sha,
+                                "screen_digest": hashlib.sha256(screen_bytes).hexdigest(),
+                                "qualification_holdout_digest": hashlib.sha256(holdout_bytes).hexdigest(),
+                                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": auth_id}, sk, identity)
+    authorization_record = _signed_cga_record(sk, identity, authorization_id=auth_id, reviewed_commit_sha=reviewed_sha, code_hash=code_sha)
+    kwargs = dict(process_id=f"verifier-{suffix}", code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
+                  candidate_revision="rev-1", candidate_lineage="lineage-1", run_id_prefix=f"valid-{suffix}", timestamp_utc=ts(NOW),
+                  generator_code_root=code_dir)
+    return root, sk, identity, reader, manifest, authorization_record, kwargs
+
+
+def test_item1_a_fully_valid_scenario_is_accepted(tmp_path):
+    """Sanity baseline: the exact same construction the adversarial tests below each break, unmodified, passes."""
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "baseline")
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_baseline", reader, manifest, authorization_record, **kwargs)
+    assert problems == []
+
+
+def test_item1_unsigned_cga_is_rejected(tmp_path):
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "unsignedcga")
+    authorization_record = {**authorization_record, "signature": "0" * 128}
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_unsignedcga", reader, manifest, authorization_record, **kwargs)
+    assert len(problems) == 1 and problems[0].startswith("AUTHORIZATION_RECORD_NOT_AUTHENTICATED:")
+    assert "INVALID_SIGNATURE" in problems[0]
+
+
+def test_item1_forged_cga_signature_from_an_unregistered_attacker_key_is_rejected(tmp_path):
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "forgedcga")
+    attacker_sk = Ed25519PrivateKey.generate()
+    forged = {**authorization_record, "signature": "0" * 128}
+    forged["signature"] = attacker_sk.sign(CGA.canonical_signing_bytes(forged)).hex()
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_forgedcga", reader, manifest, forged, **kwargs)
+    # the forged signature still carries the registered key_id/role/identity (an attacker copying the real
+    # authorizing_authority fields exactly), so the lookup finds the real key -- and Ed25519 verification against
+    # it is what actually fails, since the bytes were signed by the attacker's own, different private key.
+    assert len(problems) == 1 and problems[0] == "AUTHORIZATION_RECORD_NOT_AUTHENTICATED:INVALID_SIGNATURE"
+
+
+def test_item1_revoked_authority_key_is_rejected(tmp_path):
+    """The owner key that signed BOTH the manifest and the CGA record is revoked in the live registry by the time
+    verification runs -- CGA.load_keys() excludes revoked entries, so neither signature can verify against it."""
+    from orca.eval.genesis_v2 import authority_registry as AR
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "revoked")
+    doc = json.loads((root / AR.REGISTRY_PATH).read_text())
+    doc["records"][0]["revoked"] = True
+    (root / AR.REGISTRY_PATH).write_text(json.dumps(doc))
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_revoked", reader, manifest, authorization_record, **kwargs)
+    # the MANIFEST signature check runs first and also fails now that its key is revoked -- either way, nothing
+    # downstream of authentication is ever reached
+    assert problems and problems[0].startswith("MANIFEST_SIGNATURE_INVALID:")
+
+
+def test_item1_inappropriate_non_owner_authority_is_rejected(tmp_path):
+    """A key that is active and registered, but NOT an OWNER role, must never authenticate a CGA record -- only
+    OWNER identities may sign corpus-generation authorizations."""
+    from orca.eval.genesis_v2 import authority_registry as AR
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "nonowner")
+    doc = json.loads((root / AR.REGISTRY_PATH).read_text())
+    doc["records"][0]["role"] = "DELEGATED_OWNER"   # active, registered, but a DIFFERENT role than what signed it claims
+    (root / AR.REGISTRY_PATH).write_text(json.dumps(doc))
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_nonowner", reader, manifest, authorization_record, **kwargs)
+    assert problems   # both manifest and CGA signature checks now see a role mismatch; either fails closed
+
+
+def test_item1_manifest_referencing_an_unrelated_but_independently_valid_cga_is_rejected(tmp_path):
+    """The authorization_record is itself a GENUINE, validly signed CGA -- just not the one the manifest actually
+    references. binding_problems() catches this only AFTER the record has independently authenticated; a forged
+    or unsigned record would never even reach this check."""
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "unrelated")
+    unrelated = _signed_cga_record(sk, identity, authorization_id="cgauth-" + "99" * 8,   # a DIFFERENT, but genuinely signed, authorization id
+                                    reviewed_commit_sha="b" * 40, code_hash=kwargs["code_sha256"])
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_unrelated", reader, manifest, unrelated, **kwargs)
+    assert any("corpus_generation_authorization_id" in p for p in problems)
+
+
+def test_item1_correctly_signed_manifest_paired_with_fabricated_authorization_fields_is_rejected(tmp_path):
+    """The exact scenario the audit named explicitly: a genuinely, validly signed manifest, paired with an
+    authorization_record whose FIELDS are a perfect structural/content match (status AUTHORIZED, matching id,
+    matching commit, matching code hash, matching scope) but whose signature is entirely fabricated -- proving the
+    verifier no longer trusts field agreement alone."""
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "fabricated")
+    fabricated = {**authorization_record, "signature": ("de" * 64)}   # plausible-looking, but not a real signature over this record
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_fabricated", reader, manifest, fabricated, **kwargs)
+    assert len(problems) == 1 and problems[0].startswith("AUTHORIZATION_RECORD_NOT_AUTHENTICATED:")
+
+
+# --------------------------- final-receiving-boundary-integration phase: item 2 -- binding to the ACTUAL request
+def test_item2_manifest_cannot_be_replayed_against_a_different_corpus_id(tmp_path):
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "replaycid")
+    other_kwargs = {**kwargs, "corpus_id": "gce2c-" + "00" * 16}   # a DIFFERENT corpus_id than the manifest actually claims
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_replaycid", reader, manifest, authorization_record, **other_kwargs)
+    assert len(problems) == 1 and problems[0].startswith("MANIFEST_CORPUS_ID_MISMATCH:")
+
+
+def test_item2_manifest_cannot_be_replayed_against_a_different_eval_version(tmp_path):
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "replayver")
+    other_kwargs = {**kwargs, "eval_version": "genesis-v2-eval/some-other-version"}
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_replayver", reader, manifest, authorization_record, **other_kwargs)
+    assert len(problems) == 1 and problems[0].startswith("MANIFEST_EVAL_VERSION_MISMATCH:")
+
+
+def test_item2_ancestry_is_recomputed_from_real_repository_evidence_not_a_caller_supplied_boolean(tmp_path):
+    """The old API accepted a bare `commit_is_descendant: bool` from the caller -- an attacker (or a careless
+    caller) could simply pass True regardless of the truth. The new API removes that parameter entirely; this
+    proves the replacement -- a same-commit manifest/CGA pairing (ancestor == descendant, no real git needed) --
+    genuinely passes, and that the parameter no longer exists to override."""
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "ancestryreal")
+    with pytest.raises(TypeError):
+        OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_ancestryreal_bad", reader, manifest, authorization_record,
+                                                      commit_is_descendant=True, **kwargs)
+    problems = OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_ancestryreal", reader, manifest, authorization_record, **kwargs)
+    assert problems == []
+
+
+def test_item2_authority_keys_are_no_longer_a_caller_supplied_parameter(tmp_path):
+    root, sk, identity, reader, manifest, authorization_record, kwargs = _valid_setup(tmp_path, "nokeysparam")
+    with pytest.raises(TypeError):
+        OB.verify_manifest_digest_only_same_process(root, tmp_path / "ledger_nokeysparam", reader, manifest, authorization_record,
+                                                      authority_keys=[], **kwargs)
 
 
 def test_digest_only_same_process_verifier_is_honestly_named_not_process_isolated():

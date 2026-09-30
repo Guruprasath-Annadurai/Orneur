@@ -240,6 +240,87 @@ def _verify_inner(record, req: Request, keys: list, now: datetime | None = None)
     return Verdict(len(r) == 0, r)
 
 
+def verify_referenced(record, keys: list, now: datetime | None = None) -> list:
+    """Independently authenticates a CGA record being REFERENCED by something ALREADY GENERATED (e.g. a corpus
+    manifest's `corpus_generation_authorization_id`) -- as opposed to `verify()`/`Request`, which authorizes a NEW
+    generation event about to happen right now. This closes the exact gap the final-receiving-boundary-integration
+    phase's audit identified: a verifier must never trust an arbitrary caller-supplied authorization dict merely
+    because it contains `status: "AUTHORIZED"` and fields that happen to match -- it must independently verify the
+    SAME real Ed25519 signature from a registered, active OWNER authority key that `verify()` checks, using this
+    module's own cryptographic machinery (`verify_signature()`), never re-implemented or bypassed.
+
+    Deliberately reuses the exact same structural/schema/scope/timestamp-sanity checks `_verify_inner()` performs,
+    but OMITS checks that only make sense for a generation event about to happen, never for something already
+    generated and now merely being verified:
+      - `commit_is_descendant` / `working_tree_clean` / `current_code_tree_sha256` -- these describe the EXECUTING
+        repo state at generation time; the code that actually ran is instead bound via `corpus_manifest.py`'s own
+        `generator_code_sha256` field and `binding_problems()`'s comparison against this record's
+        `authorized_code_tree_sha256` -- re-deriving them here would require the verifier to somehow be running
+        AT the generation commit, which is never true for a later verification.
+      - `requested_scope` / `current_inventory_digest` / `current_prereg_record_sha256` -- these compare CURRENT
+        evidence state to what was authorized, which is what gates a NEW generation, not whether a PAST
+        authorization was genuine.
+      - `event_name == "workflow_dispatch"` -- a CI-dispatch requirement for STARTING generation, not for later
+        verifying its result.
+      - `now < issued` / `now > expires` / `now - issued > MAX_VALIDITY` -- checking current wall-clock time against
+        the window would incorrectly deny a genuinely legitimate, already-generated corpus the moment its CGA's
+        short validity window elapses, even though generation itself already completed inside that window. What
+        IS still checked -- the "applicable authorization validity period" the audit asks for -- is that the
+        record's OWN window is internally well-formed (`expires_at` after `issued_at`, and no wider than
+        `MAX_VALIDITY`): a degenerate or manipulated window is rejected regardless of when verification runs.
+
+    Never raises. Fail closed: a non-empty return means NOT authenticated; only an empty list is trusted."""
+    try:
+        return _verify_referenced_inner(record, keys, now)
+    except Exception as e:
+        return [f"UNEXPECTED_VERIFY_REFERENCED_ERROR:{type(e).__name__}"]
+
+
+def _verify_referenced_inner(record, keys: list, now: datetime | None = None) -> list:
+    # `now` is accepted for API symmetry with verify()/_verify_inner() and reserved for a future check, but is
+    # deliberately UNUSED here -- see verify_referenced()'s own docstring for why wall-clock-bound expiry is
+    # intentionally not part of this check.
+    r: list = []
+    if not isinstance(record, dict):
+        return ["RECORD_NOT_AN_OBJECT"]
+    if set(record) != RECORD_KEYS:
+        return ["RECORD_SCHEMA_MISMATCH"]
+    if record["schema_version"] != SCHEMA_VERSION:
+        r.append("SCHEMA_VERSION_MISMATCH")
+    if record["status"] != "AUTHORIZED":
+        r.append("NOT_AUTHORIZED" if record["status"] == "NOT_AUTHORIZED" else "STATUS_INVALID")
+        return r
+    if not (isinstance(record["authorization_id"], str) and _ID.match(record["authorization_id"])):
+        r.append("BAD_AUTHORIZATION_ID")
+    if record["purpose"] != PURPOSE:
+        r.append("WRONG_PURPOSE")
+    scope = record.get("authorized_scope")
+    if not isinstance(scope, list) or not scope or len(scope) != len(set(scope)) or not set(scope) <= set(ARTIFACT_CLASSES):
+        r.append("BAD_AUTHORIZED_SCOPE")
+    if not (isinstance(record["reviewed_commit_sha"], str) and _SHA40.match(record["reviewed_commit_sha"])):
+        r.append("BAD_REVIEWED_COMMIT_SHA")
+    if not (isinstance(record["authorized_code_tree_sha256"], str) and _SHA64.match(record["authorized_code_tree_sha256"])):
+        r.append("BAD_AUTHORIZED_CODE_TREE_HASH")
+    digests = record.get("authorized_artifact_digests")
+    if not isinstance(digests, dict) or set(digests) != {"corpus_inventory_digest", "preregistration_record_sha256"}:
+        r.append("BAD_AUTHORIZED_ARTIFACT_DIGESTS")
+    if not _ts_ok(record.get("issued_at")) or not _ts_ok(record.get("expires_at")):
+        r.append("BAD_TIMESTAMPS")
+    else:
+        issued, expires = _safe_parse(record["issued_at"]), _safe_parse(record["expires_at"])
+        if issued is None or expires is None:
+            r.append("IMPOSSIBLE_TIMESTAMP")
+            return r
+        if expires <= issued:
+            r.append("EXPIRES_BEFORE_ISSUED")
+        if expires - issued > MAX_VALIDITY:
+            r.append("VALIDITY_WINDOW_TOO_LONG")
+    sig_problem = verify_signature(record, keys)
+    if sig_problem:
+        r.append(sig_problem)
+    return r
+
+
 def load_keys(root: Path) -> list:
     """Active OWNER authority keys, from the SAME registry authorization.py reads. Deliberately does NOT read
     CORPUS_GENERATION_AUTHORIZATION.json itself for keys — a signature is checked against a key that was registered

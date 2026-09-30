@@ -1,9 +1,9 @@
 {
   "document": "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST",
   "schema_version": "genesis-v2-pre-corpus-closure-manifest/2",
-  "built_from_parent_commit_sha": "e3a4c7eda6d9ac78d582845659f0be4ff77f520b",
+  "built_from_parent_commit_sha": "c721209ad079f09b7d87fe3e770b5f7d14e42105",
   "manifest_commit_sha": null,
-  "timestamp": "2026-09-30T13:19:40Z",
+  "timestamp": "2026-09-30T17:25:37Z",
   "artifact_hashes": {
     "docker/genesis_v2_sandbox/Dockerfile": "ebdf3f8b6e42659d0d3393e80a0fe76637d35a4d5262b5990e8228e5f7c6bd9d",
     "docs/orneur/authorization/AUTHORITY_REGISTRY.json": "06177e10cfbfff5e87b4137ca50649261c7b8ca37b218685fced475c7212b811",
@@ -28,14 +28,14 @@
     "orca/eval/genesis_v2/authority_registry.py": "0d21b9e68a904234bac21e98f5bc2db94968a2f41137f537dca3d4e9c563b303",
     "orca/eval/genesis_v2/authorization.py": "d05802999a43e6e21a0c21de8a45032ca8b0f58a0c84b03cbac8359ce5361d2e",
     "orca/eval/genesis_v2/candidate_lineage.py": "4483622fc6db89451172b5031c6603aae4f81caf184b13c388ae123a832bf92a",
-    "orca/eval/genesis_v2/corpus_generation_authorization.py": "75e4244764d5ccfd84f469205f438411773a3e7eefa7c4cbbee258b700b47460",
+    "orca/eval/genesis_v2/corpus_generation_authorization.py": "1780751af844ffab5860fe34af348c665c99c19352d444abacc3e2eb9c05c5ff",
     "orca/eval/genesis_v2/corpus_manifest.py": "f248d04cdc3052ddbb83c31e4ea7da4c076cbc1f6bd2c94e06801d12fd1066f7",
     "orca/eval/genesis_v2/generator_registry.py": "791b47eae81813b873a85720816b621a350b3a20d8b6a8bd204574c3789ae4d1",
     "orca/eval/genesis_v2/identity_registry.py": "f9d8e48bc61ea1f668d62ea3f6f4787ee4a94809d615565e63037ae422120f9e",
     "orca/eval/genesis_v2/inventory.py": "4112fa86536ed447ef20fc971d8f39d5ab20a67674cbde9bd4114077a741c5c3",
     "orca/eval/genesis_v2/isolation.py": "9e9aac6c5a167c8549a8edfe4a9ee7a1f5d27126169ba1a4da1b04f07906e4e8",
     "orca/eval/genesis_v2/ledger_admin.py": "e60a2a76a2a08bb3066b4f29c6976a579c8d4dfdfc525b1757eede0836c1a7fb",
-    "orca/eval/genesis_v2/operational_boundary.py": "377ee43d7d78b9361ab2e28ec6afea7564db05e1aa39ee706083f68f35521483",
+    "orca/eval/genesis_v2/operational_boundary.py": "aee7065dd96f41582c0bf47aeeaddb72b100de67a7c31bb6cfd5412890084a47",
     "orca/eval/genesis_v2/owner_preflight.py": "4ad7c6dbde642ee0bc7c7b14a0c26e55ffdf17e4ff0536f2ff77cc466afe1240",
     "orca/eval/genesis_v2/prereg.py": "535b944f8476765a906324c2a6cc9228d0a2babaa1b08dd755bc3caffc2ba22a",
     "orca/eval/genesis_v2/privacy_scan.py": "a15210767997655da04d4a0b8da37be3dfcea559407b68e4d0a83b51f5d9128b",
@@ -102,5 +102,5 @@
     "v2_frozen": false,
     "corpus_generated": false
   },
-  "manifest_sha256": "70bd77d0851e3205ad52dab8a98abd58a78d047505e1eb1230d8bd437eb14f6a"
+  "manifest_sha256": "40082af08fdf536c5029a53cb55ce4833160a5a45b7ca9ca21e84cb5200621b3"
 }

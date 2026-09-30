@@ -395,3 +395,103 @@ def test_real_inventory_and_prereg_digests_are_computable_and_would_bind_correct
     # a request built from the REAL current evidence state matches only a record binding those exact digests
     r = req(current_inventory_digest=real_inv_digest, current_prereg_record_sha256=real_prereg_sha)
     assert r.current_inventory_digest == real_inv_digest
+
+
+# ---------------------------------------------------------------- verify_referenced() (final-receiving-boundary-integration
+# phase, item 1): independently authenticating a CGA record REFERENCED by something already generated (a corpus
+# manifest), as opposed to verify()/Request which authorizes a NEW generation event about to happen.
+def test_verify_referenced_accepts_a_validly_signed_record(signer):
+    make, keys = signer
+    assert CGA.verify_referenced(make(), keys, now=NOW) == []
+
+
+def test_verify_referenced_rejects_an_unsigned_record(signer):
+    make, keys = signer
+    rec = make()
+    rec["signature"] = "0" * 128
+    problems = CGA.verify_referenced(rec, keys, now=NOW)
+    assert problems == ["INVALID_SIGNATURE"]
+
+
+def test_verify_referenced_rejects_a_forged_signature_from_an_unregistered_attacker_key(signer):
+    _need_crypto()
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    make, keys = signer
+    rec = make()
+    attacker_sk = Ed25519PrivateKey.generate()
+    rec["signature"] = attacker_sk.sign(CGA.canonical_signing_bytes(rec)).hex()
+    problems = CGA.verify_referenced(rec, keys, now=NOW)
+    assert problems == ["INVALID_SIGNATURE"]   # same key_id/role/identity claimed, but the real key does not verify it
+
+
+def test_verify_referenced_rejects_a_revoked_authority(tmp_path, signer):
+    """The key is genuinely registered and the signature is genuinely valid against it, but the key has since been
+    revoked in the live registry -- verify_referenced() is handed keys already filtered by the caller's
+    CGA.load_keys(root), so a revoked key simply never appears in `keys` at all."""
+    make, keys = signer
+    rec = make()
+    problems = CGA.verify_referenced(rec, [], now=NOW)   # simulates load_keys(root) excluding the now-revoked key
+    assert problems == ["AUTHORITY_KEY_NOT_REGISTERED"]
+
+
+def test_verify_referenced_rejects_a_non_owner_authority(signer):
+    make, keys = signer
+    keys = [{**keys[0], "role": "DELEGATED_OWNER"}]   # active, registered key, but not an OWNER
+    problems = CGA.verify_referenced(make(), keys, now=NOW)
+    assert problems == ["AUTHORITY_NOT_OWNER_OR_IDENTITY_MISMATCH"]
+
+
+def test_verify_referenced_rejects_status_not_authorized(signer):
+    make, keys = signer
+    rec = make(status="NOT_AUTHORIZED")
+    rec["signature"] = ""   # NOT_AUTHORIZED records are never meaningfully signable in the real system either
+    problems = CGA.verify_referenced(rec, keys, now=NOW)
+    assert problems == ["NOT_AUTHORIZED"]
+
+
+def test_verify_referenced_rejects_malformed_fields_even_when_signed(signer):
+    make, keys = signer
+    rec = make(purpose="SOMETHING_ELSE")
+    problems = CGA.verify_referenced(rec, keys, now=NOW)
+    assert "WRONG_PURPOSE" in problems
+
+
+def test_verify_referenced_rejects_a_degenerate_validity_window_even_when_signed(signer):
+    """The 'applicable authorization validity period' check: an internally nonsensical window (expires before
+    issued) is rejected regardless of signature validity -- but see the next test for what is deliberately NOT
+    checked here."""
+    make, keys = signer
+    rec = make(issued_at=ts(NOW), expires_at=ts(NOW - timedelta(hours=1)))
+    problems = CGA.verify_referenced(rec, keys, now=NOW)
+    assert "EXPIRES_BEFORE_ISSUED" in problems
+
+
+def test_verify_referenced_does_not_deny_a_record_whose_window_has_since_elapsed():
+    """Deliberately DIFFERENT from verify(): a record's wall-clock window having elapsed by the time verification
+    runs must NOT deny it -- the corpus it authorized may have been generated well within that window, long before
+    this later verification. Only verify()/_verify_inner() (which gates a NEW generation event happening NOW) checks
+    now against issued_at/expires_at; verify_referenced() checks only that the window was itself well-formed."""
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    keys = [{"key_id": "k-owner", "public_key_hex": pub, "identity": "owner-1", "role": "OWNER"}]
+    rec = CGA.default_record()
+    rec.update({"authorization_id": "cgauth-" + "ab" * 8, "status": "AUTHORIZED", "purpose": CGA.PURPOSE,
+                "authorized_scope": ["PILOT_TRAIN", "DEV"], "reviewed_commit_sha": SHA, "authorized_code_tree_sha256": CODE_DIGEST,
+                "authorized_artifact_digests": {"corpus_inventory_digest": INV_DIGEST, "preregistration_record_sha256": PREREG_DIGEST},
+                "issued_at": ts(NOW - timedelta(days=60)), "expires_at": ts(NOW - timedelta(days=53)),   # long elapsed, but well-formed
+                "authorizing_authority": {"identity": "owner-1", "role": "OWNER", "key_id": "k-owner"}})
+    rec["signature"] = sk.sign(CGA.canonical_signing_bytes(rec)).hex()
+    # verify() (gating a NEW generation event happening effectively "now") correctly denies this as expired/stale:
+    v = CGA.verify(rec, req(), keys, now=NOW)
+    assert not v.authorized and ("EXPIRED" in v.reasons or "STALE_BEYOND_MAX_VALIDITY" in v.reasons)
+    # verify_referenced() (authenticating a REFERENCE to something already generated under it) does not deny it:
+    assert CGA.verify_referenced(rec, keys, now=NOW) == []
+
+
+def test_verify_referenced_never_raises_on_malformed_input():
+    assert CGA.verify_referenced(None, []) == ["RECORD_NOT_AN_OBJECT"]
+    assert CGA.verify_referenced({"not": "a real record"}, []) == ["RECORD_SCHEMA_MISMATCH"]
+    assert CGA.verify_referenced(CGA.default_record(), [None, 42, "not-a-dict"]) == ["NOT_AUTHORIZED"]

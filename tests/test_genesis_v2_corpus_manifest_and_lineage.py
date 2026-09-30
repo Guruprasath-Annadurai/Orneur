@@ -685,10 +685,10 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
     #     (a fresh run_id_prefix avoids RUN_ALREADY_GRANTED against the ledger calls in step 8).
     reader2 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
     composed_problems = OB.verify_manifest_digest_only_same_process(
-        repo, tmp_path / "ledger", reader2, manifest, auth, authority_keys, process_id="verifier-e2e",
+        repo, tmp_path / "ledger", reader2, manifest, auth, process_id="verifier-e2e",
         code_sha256=verifier_code_hash, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
         candidate_lineage="lineage-e2e", run_id_prefix="e2e-composed", timestamp_utc=ts(NOW),
-        generator_code_root=repo / "orca" / "eval" / "genesis_v2", commit_is_descendant=True)
+        generator_code_root=repo / "orca" / "eval" / "genesis_v2")
     assert composed_problems == []
 
     # 9b. ADVERSARIAL (item 1's core ask): an attacker who knows ONLY the vault's PUBLIC key writes SUBSTITUTE
@@ -717,11 +717,34 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
     # or attempting to read, the substituted artifacts
     reader3 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
     forged_problems = OB.verify_manifest_digest_only_same_process(
-        repo, tmp_path / "ledger", reader3, forged_no_sig, auth, authority_keys, process_id="verifier-e2e",
+        repo, tmp_path / "ledger", reader3, forged_no_sig, auth, process_id="verifier-e2e",
         code_sha256=verifier_code_hash, corpus_id=forged_corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
         candidate_lineage="lineage-e2e", run_id_prefix="e2e-forged", timestamp_utc=ts(NOW),
-        generator_code_root=repo / "orca" / "eval" / "genesis_v2", commit_is_descendant=True)
+        generator_code_root=repo / "orca" / "eval" / "genesis_v2")
     assert forged_problems == ["MANIFEST_SIGNATURE_INVALID:INVALID_SIGNATURE"]
+
+    # 9c. ADVERSARIAL (item 1, final-receiving-boundary-integration phase): a FABRICATED authorization_record --
+    # structurally perfect, status AUTHORIZED, every field matching -- but never actually signed by a registered
+    # owner, paired with the genuinely, validly signed manifest from step 9. Proves field agreement alone is never
+    # sufficient: the referenced CGA must independently authenticate too.
+    fabricated_auth = {**auth, "signature": "ab" * 64}
+    reader4 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
+    fabricated_problems = OB.verify_manifest_digest_only_same_process(
+        repo, tmp_path / "ledger", reader4, manifest, fabricated_auth, process_id="verifier-e2e",
+        code_sha256=verifier_code_hash, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
+        candidate_lineage="lineage-e2e", run_id_prefix="e2e-fabricated", timestamp_utc=ts(NOW),
+        generator_code_root=repo / "orca" / "eval" / "genesis_v2")
+    assert len(fabricated_problems) == 1 and fabricated_problems[0].startswith("AUTHORIZATION_RECORD_NOT_AUTHENTICATED:")
+
+    # 9d. ADVERSARIAL (item 2): the SAME validly signed manifest, replayed against a DIFFERENT corpus_id than it
+    # actually claims -- must be rejected before any vault read or ledger grant is attempted.
+    reader5 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
+    replay_problems = OB.verify_manifest_digest_only_same_process(
+        repo, tmp_path / "ledger", reader5, manifest, auth, process_id="verifier-e2e",
+        code_sha256=verifier_code_hash, corpus_id="gce2c-" + "00" * 16, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
+        candidate_lineage="lineage-e2e", run_id_prefix="e2e-replay-cid", timestamp_utc=ts(NOW),
+        generator_code_root=repo / "orca" / "eval" / "genesis_v2")
+    assert len(replay_problems) == 1 and replay_problems[0].startswith("MANIFEST_CORPUS_ID_MISMATCH:")
 
     # 10. Final integration point: independent-verification-backed candidate-lineage qualification eligibility, using
     #     the SAME pattern as the rest of this file (synthetic candidate, ephemeral reviewer key, real evidence bytes).

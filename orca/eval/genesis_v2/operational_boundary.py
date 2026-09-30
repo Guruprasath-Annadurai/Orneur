@@ -314,10 +314,10 @@ def authorized_manifest_verification_bytes(root: Path, ledger_dir: Path, reader,
     return screen_plain, holdout_plain
 
 
-def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reader, manifest: dict, authorization_record: dict,
-                                              authority_keys: list, *, process_id: str, code_sha256: str, corpus_id: str,
+def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reader, manifest: dict, authorization_record: dict, *,
+                                              process_id: str, code_sha256: str, corpus_id: str,
                                               eval_version: str, candidate_revision: str, candidate_lineage: str, run_id_prefix: str,
-                                              timestamp_utc: str, generator_code_root, commit_is_descendant: bool) -> list:
+                                              timestamp_utc: str, generator_code_root) -> list:
     """HONEST NAME, HONEST SCOPE (item 5): this function does NOT provide operating-system process isolation. It
     runs in the SAME Python process as its caller, on the SAME thread, with no subprocess, container, or sandbox
     boundary of any kind — a previous name for this function ("restricted process") overstated that guarantee, which
@@ -375,20 +375,68 @@ def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reade
     key can encrypt arbitrary substitute content and write a self-consistent manifest claiming it, but cannot
     produce a valid signature over that manifest without the registered owner's private signing key -- so this
     function never even reaches the point of deriving a digest for, let alone verifying, the substituted artifacts.
-    See `tests/test_genesis_v2_corpus_manifest_and_lineage.py`'s adversarial substitution tests."""
+    See `tests/test_genesis_v2_corpus_manifest_and_lineage.py`'s adversarial substitution tests.
+
+    ITEM 1 (final-receiving-boundary-integration phase): the caller-supplied `authorization_record` is no longer
+    trusted merely because it has `status: "AUTHORIZED"` and matching fields -- it is now independently
+    cryptographically AUTHENTICATED via `corpus_generation_authorization.verify_referenced()`, the SAME Ed25519
+    signature-verification machinery `corpus_generation_authorization.verify()` itself uses to gate a NEW
+    generation event, applied here to a REFERENCE to a past one. A caller can no longer get a fabricated or
+    self-consistent-but-unsigned `authorization_record` trusted merely by pairing it with a genuinely, validly
+    signed manifest.
+
+    ITEM 2 (final-receiving-boundary-integration phase): before any private-vault read or ledger grant, this
+    function now ALSO requires:
+      - `manifest["corpus_id"] == corpus_id` and `manifest["eval_version"] == eval_version` -- the ACTUAL parameters
+        of THIS receiving request, never merely the manifest's own self-reported claims about itself. A validly
+        signed manifest for one corpus/eval-version can no longer be replayed against a request for a different one.
+      - commit ancestry between `authorization_record["reviewed_commit_sha"]` and `manifest["generated_at_commit_sha"]`
+        is RECOMPUTED here, from real repository evidence (`_is_ancestor()` / `git merge-base --is-ancestor` against
+        THIS `root`), never accepted as an arbitrary caller-supplied boolean -- the previous `commit_is_descendant:
+        bool` parameter is removed entirely.
+      - `authority_keys` is no longer a caller-supplied parameter either -- it is loaded here from the REAL, live
+        authority registry (`corpus_generation_authorization.load_keys(root)`), the SAME source
+        `require_authorization()` itself reads, so both the manifest's signature and the referenced CGA's signature
+        are checked against keys that genuinely originate from the validated, currently-active authority registry.
+    See `tests/test_genesis_v2_cross_machine_transfer.py`'s replay-across-corpus-id/eval-version regression tests
+    and `tests/test_genesis_v2_corpus_generation_authorization.py`'s `verify_referenced()` adversarial tests
+    (unsigned CGA, forged signature, revoked/inappropriate authority, unrelated CGA, fabricated authorization
+    fields paired with a validly signed manifest)."""
+    from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
     from orca.eval.genesis_v2 import corpus_manifest as CMAN
     from orca.eval.genesis_v2 import store as ST
+    root = Path(root)
     problems = CMAN.validate_manifest(manifest)
     if problems:
         return problems
+    # ITEM 2: bind to the ACTUAL receiving request before trusting anything else the manifest claims about its own
+    # identity -- checked before any signature/authorization work, since a mismatched identity makes everything
+    # downstream moot regardless of how well-formed or well-signed the manifest otherwise is.
+    if manifest.get("corpus_id") != corpus_id:
+        return [f"MANIFEST_CORPUS_ID_MISMATCH: manifest claims {manifest.get('corpus_id')!r}, request is for {corpus_id!r}"]
+    if manifest.get("eval_version") != eval_version:
+        return [f"MANIFEST_EVAL_VERSION_MISMATCH: manifest claims {manifest.get('eval_version')!r}, request is for {eval_version!r}"]
+    # ITEM 2: authority-key material originates from the validated, LIVE authority registry -- never an arbitrary
+    # caller-supplied list. Used for BOTH the manifest's own signature and the referenced CGA's signature below.
+    authority_keys = CGA.load_keys(root)
     sig_problem = CMAN.verify_manifest_signature(manifest, authority_keys)
     if sig_problem:
         return [f"MANIFEST_SIGNATURE_INVALID:{sig_problem}"]
+    # ITEM 1: independently authenticate the REFERENCED CGA record -- never trusted merely because it says
+    # status: AUTHORIZED and has matching fields. A fabricated or unsigned authorization_record is rejected here,
+    # even when paired with a genuinely, validly signed manifest.
+    cga_problems = CGA.verify_referenced(authorization_record, authority_keys)
+    if cga_problems:
+        return [f"AUTHORIZATION_RECORD_NOT_AUTHENTICATED:{p}" for p in cga_problems]
+    # ITEM 2: ancestry is RECOMPUTED from real repository evidence, never accepted as a caller-supplied boolean.
+    commit_is_descendant = _is_ancestor(root, authorization_record.get("reviewed_commit_sha"), manifest.get("generated_at_commit_sha"))
     binding = CMAN.binding_problems(manifest, authorization_record, commit_is_descendant=commit_is_descendant)
     if binding:
         return binding
-    # Only NOW -- signed by a registered owner AND bound to the authorization that permitted generation -- is the
-    # manifest a trusted source. Never derived from, or verified against, the ciphertext-transfer channel itself.
+    # Only NOW -- the manifest signed by a registered owner, the authorization it references independently
+    # authenticated, bound to the request's actual corpus_id/eval_version, and ancestry recomputed from real
+    # repository evidence -- is the manifest a trusted source. Never derived from, or verified against, the
+    # ciphertext-transfer channel itself.
     expected_corpus_digest = ST.corpus_digest_of({"SCREEN": manifest["screen_digest"], "QUALIFICATION_HOLDOUT": manifest["qualification_holdout_digest"]})
     screen_plain = holdout_plain = None
     try:
