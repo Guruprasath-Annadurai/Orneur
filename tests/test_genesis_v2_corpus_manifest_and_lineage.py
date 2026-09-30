@@ -597,18 +597,25 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
     subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "commit", "-q", "-m", "evidence"], cwd=repo, check=True)
 
-    # 4. ADVERSARIAL: an unauthorized process cannot reach a write handle at all.
-    vault_key = os.urandom(32)
-    store = ST.EncryptedFileStore(tmp_path / "vault", vault_key)
+    # 4. ADVERSARIAL: an unauthorized process cannot reach a write handle at all. The generator's writer is built
+    #    from ONLY the vault's PUBLIC key -- genuine asymmetric key isolation, not an API convention: there is no
+    #    private key byte anywhere in this object's state, so it cannot decrypt even in principle.
+    vault_priv, vault_pub = ST.generate_vault_keypair()
+    writer = ST.EncryptedVaultWriter(tmp_path / "vault", vault_pub, repo_root=repo)
+    assert not hasattr(writer, "read_split")
+    for v in vars(writer).values():
+        assert v != vault_priv
     with pytest.raises(OB.CorpusGenerationNotAuthorized):
-        OB.protected_generate_write_handle(repo, store, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
+        OB.protected_generate_write_handle(repo, writer, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
                                             event_name="workflow_dispatch", generator_id=None, now=NOW)
     with pytest.raises(OB.CorpusGenerationNotAuthorized):
-        OB.protected_generate_write_handle(repo, store, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
+        OB.protected_generate_write_handle(repo, writer, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
                                             event_name="workflow_dispatch", generator_id="never-registered", now=NOW)
 
-    # 5. The genuinely authorized generator obtains a WRITE-ONLY handle and writes synthetic split content.
-    handle = OB.protected_generate_write_handle(repo, store, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
+    # 5. The genuinely authorized generator obtains a WRITE-ONLY handle and writes synthetic split content. The
+    #    handle re-enforces its own authorized scope at the actual write call (item 1), on top of the underlying
+    #    writer object holding no decrypt capability at all (item 3).
+    handle = OB.protected_generate_write_handle(repo, writer, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
                                                  event_name="workflow_dispatch", generator_id="gen-e2e", now=NOW)
     assert not hasattr(handle, "read_split")   # no alternative API surface to reach a private read through this object
     screen_bytes = b'{"marker":"E2E-SYNTHETIC-SCREEN-CONTENT"}'
@@ -627,17 +634,24 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
                               "unrelated_cloud_credentials": False, "developer_tokens": False}, "state": "AUTHORIZED"}]}
     (repo / RN.REGISTRY_PATH).write_text(json.dumps(rn_doc))
 
+    # A SEPARATE reader object, holding ONLY the vault's PRIVATE key -- never given to the generator (only `writer`,
+    # holding the public key, was ever passed to the generator's write path above).
+    reader = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
+    assert not hasattr(reader, "write_corpus")
+
     # 7. ADVERSARIAL: an unregistered process cannot obtain verification bytes through this path either.
     with pytest.raises(OB.PrivateSplitAccessDenied):
         OB.authorized_manifest_verification_bytes(
-            repo, tmp_path / "ledger", store, process_id="rogue-process", code_sha256=verifier_code_hash, corpus_id=corpus_id,
+            repo, tmp_path / "ledger", reader, process_id="rogue-process", code_sha256=verifier_code_hash, corpus_id=corpus_id,
             expected_corpus_digest=corpus_digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
             candidate_lineage="lineage-e2e", run_id_prefix="e2e-rogue", timestamp_utc=ts(NOW))
 
-    # 8. The genuinely authorized qualification-runner obtains creation-time verification bytes through the real
-    #    ledger -- and this consumes NEITHER the holdout's one-time qualification lifecycle nor requires V2 frozen.
+    # 8. The genuinely authorized, PURPOSE-RESTRICTED qualification-runner (registered ONLY for
+    #    PURPOSE_CREATION_VERIFICATION, never PURPOSE_QUALIFICATION -- item 4's separately controlled verifier
+    #    identity) obtains creation-time verification bytes through the real ledger -- and this consumes NEITHER the
+    #    holdout's one-time qualification lifecycle nor requires V2 frozen.
     screen_plain, holdout_plain = OB.authorized_manifest_verification_bytes(
-        repo, tmp_path / "ledger", store, process_id="verifier-e2e", code_sha256=verifier_code_hash, corpus_id=corpus_id,
+        repo, tmp_path / "ledger", reader, process_id="verifier-e2e", code_sha256=verifier_code_hash, corpus_id=corpus_id,
         expected_corpus_digest=corpus_digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
         candidate_lineage="lineage-e2e", run_id_prefix="e2e-verify", timestamp_utc=ts(NOW))
     assert screen_plain == screen_bytes and holdout_plain == holdout_bytes

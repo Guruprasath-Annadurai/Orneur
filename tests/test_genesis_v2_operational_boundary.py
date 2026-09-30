@@ -217,6 +217,38 @@ def test_bypass_attempt_code_drift_after_review_denied_even_on_the_same_commit_l
     assert any("CODE_TREE_HASH_MISMATCH" in r for r in result.reasons)
 
 
+def test_code_tree_hash_does_not_cover_dependencies_outside_code_paths(repo):
+    """Item 5, honestly demonstrated rather than hidden: `corpus_generation_authorization.CODE_PATHS` currently binds
+    only `orca/eval/genesis_v2/`. A change to a file OUTSIDE that path -- code a real generator implementation might
+    still import -- is INVISIBLE to `code_tree_sha256()`, so an authorization signed before such a change still
+    verifies against it. This is the residual limitation documented in operational_boundary.py's module docstring;
+    the fix, when a real generator exists, is to extend CODE_PATHS to cover everything it genuinely depends on."""
+    _need_crypto()
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    _write_authority_registry_with_real_key(repo, sk)
+    inv_digest, prereg_sha, code_hash = _real_context()
+    reviewed_sha = _git_init_with_head(repo)
+    gid = _authorize_generator(repo, code_hash)
+    _write_signed_cga(repo, sk, reviewed_sha, code_hash, inv_digest, prereg_sha)
+    # a file OUTSIDE CODE_PATHS that a real generator could plausibly import from
+    outside_dep = repo / "orca" / "eval" / "_shared_dependency_outside_code_paths.py"
+    outside_dep.parent.mkdir(parents=True, exist_ok=True)
+    outside_dep.write_text("def helper():\n    return 1\n")
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "commit", "-q", "-m", "add outside dependency"], cwd=repo, check=True)
+    assert CGA.code_tree_sha256(repo) == code_hash   # unchanged -- the new file is invisible to this binding
+    result = OB.check_authorization(repo, requested_scope=("PILOT_TRAIN",), event_name="workflow_dispatch", now=NOW, generator_id=gid)
+    assert not any("CODE_TREE_HASH_MISMATCH" in r for r in result.reasons)   # the drift outside CODE_PATHS was NOT caught
+    # now modify a file THAT IS covered -- this one IS caught, confirming the boundary is exactly CODE_PATHS
+    target = next((repo / "orca/eval/genesis_v2").glob("*.py"))
+    target.write_text(target.read_text() + "\n# drift inside CODE_PATHS\n")
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "commit", "-q", "-m", "drift inside"], cwd=repo, check=True)
+    result2 = OB.check_authorization(repo, requested_scope=("PILOT_TRAIN",), event_name="workflow_dispatch", now=NOW, generator_id=gid)
+    assert any("CODE_TREE_HASH_MISMATCH" in r for r in result2.reasons)
+
+
 def test_generator_registry_flags_an_identity_shared_with_the_qualification_runner_registry(repo):
     _, _, code_hash = _real_context()
     gid = _authorize_generator(repo, code_hash)
@@ -315,56 +347,185 @@ def test_generator_authorized_for_its_own_declared_classes_still_works(repo):
 
 
 # ---------------------------------------------------------------- GeneratorWriteHandle / protected_generate_write_handle
-class _FakeStore:
-    """A minimal stand-in exposing BOTH write_corpus and read_split, so the test proves GeneratorWriteHandle itself
-    -- not an accident of the real store's API -- is what blocks read access."""
+class _FakeWriteOnlyStore:
+    """A minimal stand-in exposing ONLY write_corpus -- no read_split at all -- matching what a genuine
+    store.EncryptedVaultWriter looks like (see its own tests in test_genesis_v2_storage.py for the real crypto)."""
     def __init__(self):
         self.written = []
 
     def write_corpus(self, corpus_id: str, splits: dict) -> str:
-        self.written.append((corpus_id, splits))
+        self.written.append((corpus_id, dict(splits)))
+        return "gce2c-" + "a" * 16
+
+
+class _FakeReadCapableStore:
+    """A stand-in exposing BOTH write_corpus and read_split, used ONLY to prove GeneratorWriteHandle refuses to be
+    built from it at all -- a generator's write capability must never be backed by something that could also read."""
+    def write_corpus(self, corpus_id: str, splits: dict) -> str:
         return "gce2c-" + "a" * 16
 
     def read_split(self, corpus_id: str, split: str, *, expected_corpus_digest: str) -> bytes:
         raise AssertionError("read_split must never be reachable through GeneratorWriteHandle")
 
 
-def test_generator_write_handle_exposes_only_write_corpus():
-    store = _FakeStore()
-    handle = OB.GeneratorWriteHandle(store)
+def test_generator_write_handle_refuses_a_read_capable_backing_store():
+    """Item 3: genuine key/process isolation, not an API convention. Even before any scope check, the handle itself
+    refuses to be constructed from an object that ALSO exposes read_split."""
+    with pytest.raises(OB.PrivateStorageWriteHandleViolation):
+        OB.GeneratorWriteHandle(_FakeReadCapableStore(), authorized_scope=frozenset({"SCREEN", "QUALIFICATION_HOLDOUT"}))
+
+
+def test_generator_write_handle_exposes_only_write_corpus_and_enforces_its_own_authorized_scope():
+    store = _FakeWriteOnlyStore()
+    handle = OB.GeneratorWriteHandle(store, authorized_scope=frozenset({"SCREEN", "QUALIFICATION_HOLDOUT"}))
     assert not hasattr(handle, "read_split")
-    digest = handle.write_corpus("gce2c-" + "0" * 16, {"PILOT_TRAIN": b"plaintext"})
-    assert digest.startswith("gce2c-") and store.written == [("gce2c-" + "0" * 16, {"PILOT_TRAIN": b"plaintext"})]
+    digest = handle.write_corpus("gce2c-" + "0" * 16, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"})
+    assert digest.startswith("gce2c-") and store.written == [("gce2c-" + "0" * 16, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"})]
     assert "write_corpus only" in repr(handle)
+    # item 1: enforced at the ACTUAL write call, not merely at handle-issuance -- a handle authorized for a NARROWER
+    # scope refuses a write exceeding it, even though the underlying (fake, permissive) store would accept anything.
+    narrow_store = _FakeWriteOnlyStore()
+    narrow_handle = OB.GeneratorWriteHandle(narrow_store, authorized_scope=frozenset({"SCREEN"}))
+    with pytest.raises(OB.PrivateStorageWriteHandleViolation):
+        narrow_handle.write_corpus("gce2c-" + "9" * 16, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"})
+    assert narrow_store.written == []   # the bad call never reached the store
+
+
+def test_generator_write_handle_with_no_store_refuses_every_write():
+    """The structural case for a purely public-scoped authorization: no vault-capable object is even held."""
+    handle = OB.GeneratorWriteHandle(None, authorized_scope=frozenset())
+    with pytest.raises(OB.PrivateStorageWriteHandleViolation):
+        handle.write_corpus("gce2c-" + "0" * 16, {"SCREEN": b"x", "QUALIFICATION_HOLDOUT": b"y"})
 
 
 def test_protected_generate_write_handle_denied_without_authorization(repo):
     """An unauthorized process must never obtain a write handle at all -- proves there is no alternative API to
     reach private writes when the composed boundary itself denies."""
-    store = _FakeStore()
+    store = _FakeWriteOnlyStore()
     with pytest.raises(OB.CorpusGenerationNotAuthorized):
-        OB.protected_generate_write_handle(repo, store, requested_scope=("PILOT_TRAIN",), event_name="workflow_dispatch", now=NOW)
+        OB.protected_generate_write_handle(repo, store, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"), event_name="workflow_dispatch", now=NOW)
     assert store.written == []
 
 
-def test_protected_generate_write_handle_returns_write_only_handle_on_full_authorization(repo):
+def _authorize_generator_for(repo_dir: Path, code_hash: str, allowed_artifact_classes: list, generator_id: str = "gen-1"):
+    doc = json.loads((repo_dir / GR.REGISTRY_PATH).read_text())
+    doc["records"] = [{"generator_id": generator_id, "os_runtime": "test", "code_sha256": code_hash,
+                        "allowed_artifact_classes": allowed_artifact_classes, "network_policy": "none",
+                        "credential_scope": {"vault_write": True, "vault_read": False, "public_repo_write": False,
+                                              "training_credentials": False, "unrelated_cloud_credentials": False, "developer_tokens": False},
+                        "state": "AUTHORIZED"}]
+    (repo_dir / GR.REGISTRY_PATH).write_text(json.dumps(doc))
+    return generator_id
+
+
+def _authorize_and_commit(repo, sk, requested_scope: tuple, allowed_artifact_classes: list):
+    """Shared setup for the write-handle adversarial tests: a real signed authorization + a generator registered for
+    exactly `allowed_artifact_classes`, committed so the tree is clean."""
+    inv_digest, prereg_sha, code_hash = _real_context()
+    gid = _authorize_generator_for(repo, code_hash, allowed_artifact_classes)
+    reviewed_sha = _git_init_with_head(repo)
+    _write_signed_cga(repo, sk, reviewed_sha, code_hash, inv_digest, prereg_sha, authorized_scope=list(requested_scope))
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "commit", "-q", "-m", "evidence"], cwd=repo, check=True)
+    return gid
+
+
+def test_pilot_train_only_generator_gets_a_handle_with_no_vault_object_at_all(repo):
+    """Items 1+2: a generator authorized ONLY for PILOT_TRAIN must never receive a handle wrapping ANY vault-capable
+    object, and any attempt to write a private split through it -- even one it never should have been able to
+    request -- is refused at the actual write call."""
     _need_crypto()
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     sk = Ed25519PrivateKey.generate()
     _write_authority_registry_with_real_key(repo, sk)
-    inv_digest, prereg_sha, code_hash = _real_context()
-    reviewed_sha = _git_init_with_head(repo)
-    gid = _authorize_generator(repo, code_hash)
-    _write_signed_cga(repo, sk, reviewed_sha, code_hash, inv_digest, prereg_sha)
-    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "add", "-A"], cwd=repo, check=True)
-    subprocess.run(["git", "-c", "user.email=t@t.invalid", "-c", "user.name=t", "commit", "-q", "-m", "evidence"], cwd=repo, check=True)
-    store = _FakeStore()
+    gid = _authorize_and_commit(repo, sk, ("PILOT_TRAIN",), ["PILOT_TRAIN"])
+    store = _FakeWriteOnlyStore()   # even a genuinely write-only vault object must never be reachable here
     handle = OB.protected_generate_write_handle(repo, store, requested_scope=("PILOT_TRAIN",), event_name="workflow_dispatch",
                                                  now=NOW, generator_id=gid)
     assert isinstance(handle, OB.GeneratorWriteHandle)
-    assert not hasattr(handle, "read_split")
-    handle.write_corpus("gce2c-" + "1" * 16, {"PILOT_TRAIN": b"content"})
-    assert store.written == [("gce2c-" + "1" * 16, {"PILOT_TRAIN": b"content"})]
+    assert handle._store is None   # structurally eliminated, not merely blocked by a runtime check
+    with pytest.raises(OB.PrivateStorageWriteHandleViolation):
+        handle.write_corpus("gce2c-" + "2" * 16, {"SCREEN": b"x", "QUALIFICATION_HOLDOUT": b"y"})
+    assert store.written == []   # the underlying store was never touched
+
+
+def test_generator_authorized_for_both_private_splits_writes_through_a_write_only_handle(repo):
+    _need_crypto()
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    _write_authority_registry_with_real_key(repo, sk)
+    gid = _authorize_and_commit(repo, sk, ("SCREEN", "QUALIFICATION_HOLDOUT"), ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    store = _FakeWriteOnlyStore()
+    handle = OB.protected_generate_write_handle(repo, store, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
+                                                 event_name="workflow_dispatch", now=NOW, generator_id=gid)
+    assert handle._store is store
+    handle.write_corpus("gce2c-" + "3" * 16, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"})
+    assert store.written == [("gce2c-" + "3" * 16, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"})]
+
+
+def test_generator_with_both_splits_authorized_still_cannot_smuggle_a_read_capable_store(repo):
+    """Even a fully, legitimately authorized generator must not be able to reach private reads through an
+    alternative store object -- protected_generate_write_handle refuses a read-capable `store` outright."""
+    _need_crypto()
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    _write_authority_registry_with_real_key(repo, sk)
+    gid = _authorize_and_commit(repo, sk, ("SCREEN", "QUALIFICATION_HOLDOUT"), ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    with pytest.raises(OB.PrivateStorageWriteHandleViolation):
+        OB.protected_generate_write_handle(repo, _FakeReadCapableStore(), requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
+                                            event_name="workflow_dispatch", now=NOW, generator_id=gid)
+
+
+# ---------------------------------------------------------------- genuine asymmetric key isolation (store.EncryptedVaultWriter/Reader)
+def test_vault_writer_and_reader_key_isolation_end_to_end(tmp_path):
+    """Item 3, proven with the REAL crypto (not a fake stand-in): a generator holding ONLY the vault's public key can
+    write, but the same object graph contains no path to decrypt -- and the SEPARATE private-key-holding reader can
+    read exactly what was written."""
+    from orca.eval.genesis_v2 import store as ST
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    vault_dir = tmp_path / "vault"
+    writer = ST.EncryptedVaultWriter(vault_dir, pub, repo_root=tmp_path / "not-a-repo")
+    assert not hasattr(writer, "read_split")
+    # no private key byte exists anywhere in the writer's own state
+    for v in vars(writer).values():
+        assert v != priv
+    corpus_id = "gce2c-" + "4" * 16
+    digest = writer.write_corpus(corpus_id, {"SCREEN": b"real-screen", "QUALIFICATION_HOLDOUT": b"real-holdout"})
+
+    reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
+    assert not hasattr(reader, "write_corpus")
+    assert reader.read_split(corpus_id, "SCREEN", expected_corpus_digest=digest) == b"real-screen"
+    assert reader.read_split(corpus_id, "QUALIFICATION_HOLDOUT", expected_corpus_digest=digest) == b"real-holdout"
+
+
+def test_vault_writer_public_key_bytes_cannot_be_used_to_decrypt(tmp_path):
+    """Attempts to access underlying storage through internal attributes or alternative APIs: even taking the
+    writer's own stored bytes and feeding them into a reader as if they were a private key must fail closed."""
+    from orca.eval.genesis_v2 import store as ST
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    vault_dir = tmp_path / "vault"
+    writer = ST.EncryptedVaultWriter(vault_dir, pub, repo_root=tmp_path / "not-a-repo")
+    corpus_id = "gce2c-" + "5" * 16
+    digest = writer.write_corpus(corpus_id, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"})
+    forged_reader = ST.EncryptedVaultReader(vault_dir, writer._pub, repo_root=tmp_path / "not-a-repo")
+    with pytest.raises(ST.PrivateStorageIntegrityError):
+        forged_reader.read_split(corpus_id, "SCREEN", expected_corpus_digest=digest)
+
+
+def test_vault_reader_with_wrong_private_key_fails_closed(tmp_path):
+    from orca.eval.genesis_v2 import store as ST
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    other_priv, _ = ST.generate_vault_keypair()
+    vault_dir = tmp_path / "vault"
+    writer = ST.EncryptedVaultWriter(vault_dir, pub, repo_root=tmp_path / "not-a-repo")
+    corpus_id = "gce2c-" + "6" * 16
+    digest = writer.write_corpus(corpus_id, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"})
+    wrong_reader = ST.EncryptedVaultReader(vault_dir, other_priv, repo_root=tmp_path / "not-a-repo")
+    with pytest.raises(ST.PrivateStorageIntegrityError):
+        wrong_reader.read_split(corpus_id, "SCREEN", expected_corpus_digest=digest)
 
 
 # ---------------------------------------------------------------- authorized_manifest_verification_bytes() (PURPOSE_CREATION_VERIFICATION)
@@ -422,3 +583,55 @@ def test_authorized_manifest_verification_bytes_refuses_once_v2_is_frozen(tmp_pa
             expected_corpus_digest="b" * 64, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
             run_id_prefix="cv-run", timestamp_utc=ts(NOW))
     assert store.reads == []
+
+
+def test_authorized_manifest_verification_bytes_refuses_a_write_capable_reader_object(tmp_path):
+    from orca.eval.genesis_v2 import spec as SPEC
+    root = tmp_path / "fakeroot"
+    code_hash = "a" * 64
+    _write_runner_registry(root, "verifier-1", code_hash, [SPEC.PURPOSE_CREATION_VERIFICATION], ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    with pytest.raises(OB.PrivateSplitAccessDenied):
+        OB.authorized_manifest_verification_bytes(
+            root, tmp_path / "ledger", _FakeWriteOnlyStore(), process_id="verifier-1", code_sha256=code_hash, corpus_id="gce2c-" + "0" * 16,
+            expected_corpus_digest="b" * 64, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
+            run_id_prefix="cv-run", timestamp_utc=ts(NOW))
+
+
+def test_authorized_manifest_verification_bytes_refuses_a_verifier_also_authorized_for_real_qualification(tmp_path):
+    """Item 4: a creation-time verifier must be a SEPARATELY CONTROLLED, restricted-access identity -- one also
+    authorized for PURPOSE_QUALIFICATION could double as a real qualification runner, defeating the separation this
+    capability exists to provide."""
+    from orca.eval.genesis_v2 import spec as SPEC
+    root = tmp_path / "fakeroot"
+    code_hash = "a" * 64
+    _write_runner_registry(root, "dual-purpose-runner", code_hash, [SPEC.PURPOSE_CREATION_VERIFICATION, SPEC.PURPOSE_QUALIFICATION],
+                            ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    store = _FakeVaultStore()
+    with pytest.raises(OB.PrivateSplitAccessDenied, match="separately controlled"):
+        OB.authorized_manifest_verification_bytes(
+            root, tmp_path / "ledger", store, process_id="dual-purpose-runner", code_sha256=code_hash, corpus_id="gce2c-" + "0" * 16,
+            expected_corpus_digest="b" * 64, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
+            run_id_prefix="cv-run", timestamp_utc=ts(NOW))
+    assert store.reads == []
+
+
+def test_authorized_manifest_verification_bytes_with_the_real_asymmetric_vault_reader(tmp_path):
+    """End-to-end with the REAL EncryptedVaultReader (not the fake stand-in): proves the whole authorization chain
+    (restricted verifier identity + ledger grant) composes correctly with genuine key-isolated decryption."""
+    from orca.eval.genesis_v2 import spec as SPEC
+    from orca.eval.genesis_v2 import store as ST
+    _need_crypto()
+    root = tmp_path / "fakeroot"
+    code_hash = "a" * 64
+    _write_runner_registry(root, "verifier-real", code_hash, [SPEC.PURPOSE_CREATION_VERIFICATION], ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    priv, pub = ST.generate_vault_keypair()
+    vault_dir = tmp_path / "vault"
+    writer = ST.EncryptedVaultWriter(vault_dir, pub, repo_root=tmp_path / "not-a-repo")
+    corpus_id = "gce2c-" + "7" * 16
+    digest = writer.write_corpus(corpus_id, {"SCREEN": b"real-screen-content", "QUALIFICATION_HOLDOUT": b"real-holdout-content"})
+    reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
+    screen_plain, holdout_plain = OB.authorized_manifest_verification_bytes(
+        root, tmp_path / "ledger", reader, process_id="verifier-real", code_sha256=code_hash, corpus_id=corpus_id,
+        expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
+        run_id_prefix="cv-real", timestamp_utc=ts(NOW))
+    assert screen_plain == b"real-screen-content" and holdout_plain == b"real-holdout-content"

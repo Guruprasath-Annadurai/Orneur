@@ -362,3 +362,147 @@ def test_storage_policy_document_covers_backup_and_recovery():
     low = t.lower()
     for s in ("ciphertext-only", "key loss", "fresh corpus version", "two custodians", "no plaintext backup", "0700", "aes-256-gcm"):
         assert s in low, s
+
+
+# =============================================================== EncryptedVaultWriter / EncryptedVaultReader
+# The write-only/read-only asymmetric split used by operational_boundary's GeneratorWriteHandle and
+# authorized_manifest_verification_bytes: a generator holds ONLY the vault's public key and can never decrypt with
+# it, by construction -- not by convention. These tests exercise the SAME failure modes as EncryptedFileStore above
+# (tamper, truncation, wrong key, write-once) plus the property specific to this split: no private key material
+# anywhere in a writer's own state.
+@pytest.fixture
+def asym_vault(tmp_path):
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    writer = ST.EncryptedVaultWriter(tmp_path / "vault2", pub)
+    cdig = writer.write_corpus(CID, dict(PLAIN))
+    reader = ST.EncryptedVaultReader(tmp_path / "vault2", priv)
+    return writer, reader, priv, pub, tmp_path / "vault2" / CID, cdig
+
+
+def test_asym_vault_roundtrip(asym_vault):
+    writer, reader, priv, pub, cdir, cdig = asym_vault
+    got = {s: reader.read_split(CID, s, expected_corpus_digest=cdig) for s in PLAIN}
+    assert got == PLAIN
+    assert writer.describe()["capability"] == "WRITE_ONLY" and reader.describe()["capability"] == "READ"
+
+
+def test_asym_writer_holds_no_private_key_material(asym_vault):
+    writer, reader, priv, pub, cdir, cdig = asym_vault
+    assert not hasattr(writer, "read_split") and not hasattr(writer, "_priv")
+    for v in vars(writer).values():
+        assert v != priv
+    assert not hasattr(reader, "write_corpus")
+
+
+def test_asym_writer_and_reader_refuse_serialization(asym_vault):
+    writer, reader, priv, pub, cdir, cdig = asym_vault
+    with pytest.raises(TypeError):
+        pickle.dumps(writer)
+    with pytest.raises(TypeError):
+        pickle.dumps(reader)
+
+
+def test_asym_construction_validates_key_shape(tmp_path):
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    for bad in (os.urandom(31), os.urandom(33), b""):
+        with pytest.raises(ST.PrivateStorageViolation):
+            ST.EncryptedVaultWriter(tmp_path / "v", bad)
+        with pytest.raises(ST.PrivateStorageViolation):
+            ST.EncryptedVaultReader(tmp_path / "v", bad)
+    with pytest.raises(ST.PrivateStorageViolation):
+        ST.EncryptedVaultWriter(ROOT / "tmp_asym_vault_under_repo", pub)
+    with pytest.raises(ST.PrivateStorageViolation):
+        ST.EncryptedVaultReader(ROOT / "tmp_asym_vault_under_repo", priv)
+    assert not (ROOT / "tmp_asym_vault_under_repo").exists()
+
+
+def test_asym_wrong_private_key_fails_closed(asym_vault):
+    writer, reader, priv, pub, cdir, cdig = asym_vault
+    wrong_priv, _ = ST.generate_vault_keypair()
+    wrong_reader = ST.EncryptedVaultReader(cdir.parent, wrong_priv)
+    with pytest.raises(ST.PrivateStorageIntegrityError):
+        wrong_reader.read_split(CID, "SCREEN", expected_corpus_digest=cdig)
+
+
+def test_asym_public_key_bytes_cannot_decrypt(asym_vault):
+    writer, reader, priv, pub, cdir, cdig = asym_vault
+    forged = ST.EncryptedVaultReader(cdir.parent, pub)   # feeding the PUBLIC key in as if it were private
+    with pytest.raises(ST.PrivateStorageIntegrityError):
+        forged.read_split(CID, "SCREEN", expected_corpus_digest=cdig)
+
+
+@pytest.mark.parametrize("target", ["SCREEN.enc", "SEAL.enc"])
+def test_asym_bitflip_in_ciphertext_fails_closed(asym_vault, target):
+    writer, reader, priv, pub, cdir, cdig = asym_vault
+    p = cdir / target
+    blob = bytearray(p.read_bytes())
+    blob[-3] ^= 0xFF
+    os.chmod(p, 0o600)
+    p.write_bytes(bytes(blob))
+    os.chmod(p, 0o400)
+    with pytest.raises(ST.PrivateStorageIntegrityError):
+        reader.read_split(CID, "SCREEN", expected_corpus_digest=cdig)
+
+
+@pytest.mark.parametrize("cut", [1, 12, 40])
+def test_asym_truncation_fails_closed(asym_vault, cut):
+    writer, reader, priv, pub, cdir, cdig = asym_vault
+    p = cdir / "SCREEN.enc"
+    blob = p.read_bytes()
+    os.chmod(p, 0o600)
+    p.write_bytes(blob[:-cut])
+    os.chmod(p, 0o400)
+    with pytest.raises(ST.PrivateStorageIntegrityError):
+        reader.read_split(CID, "SCREEN", expected_corpus_digest=cdig)
+
+
+def test_asym_corpus_id_and_files_are_write_once(asym_vault):
+    writer, reader, priv, pub, cdir, cdig = asym_vault
+    with pytest.raises(FileExistsError):
+        writer.write_corpus(CID, dict(PLAIN))
+
+
+def test_asym_split_files_swapped_across_corpora_fail(asym_vault, tmp_path):
+    writer, reader, priv, pub, cdir, cdig = asym_vault
+    other_id = "gce2c-" + "cd" * 16
+    other_cdig = writer.write_corpus(other_id, {"SCREEN": b"other-screen", "QUALIFICATION_HOLDOUT": b"other-holdout"})
+    other_cdir = cdir.parent / other_id
+    victim, donor = cdir / "SCREEN.enc", other_cdir / "SCREEN.enc"
+    v_bytes, d_bytes = victim.read_bytes(), donor.read_bytes()
+    os.chmod(victim, 0o600)
+    victim.write_bytes(d_bytes)
+    os.chmod(victim, 0o400)
+    with pytest.raises(ST.PrivateStorageIntegrityError):
+        reader.read_split(CID, "SCREEN", expected_corpus_digest=cdig)
+    # the donor corpus itself is untouched and still reads correctly -- only the victim's swapped-in file is rejected
+    assert reader.read_split(other_id, "SCREEN", expected_corpus_digest=other_cdig) == b"other-screen"
+
+
+def test_asym_ephemeral_keys_never_repeat_across_many_writes(tmp_path):
+    """Each write uses a FRESH ephemeral X25519 keypair -- confirms no ephemeral-key reuse across many corpora, the
+    asymmetric analogue of the symmetric store's nonce-uniqueness guarantee."""
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    writer = ST.EncryptedVaultWriter(tmp_path / "vault3", pub)
+    eph_keys = set()
+    for i in range(200):
+        cid = f"gce2c-{i:016x}"
+        writer.write_corpus(cid, {"SCREEN": f"s{i}".encode(), "QUALIFICATION_HOLDOUT": f"h{i}".encode()})
+        blob = (tmp_path / "vault3" / cid / "SCREEN.enc").read_bytes()
+        n = int.from_bytes(blob[8:12], "big")
+        header = json.loads(blob[12:12 + n])
+        eph_keys.add(header["ephemeral_public_key"])
+    assert len(eph_keys) == 200
+
+
+def test_asym_export_backup_is_verbatim_ciphertext_outside_repo(asym_vault, tmp_path):
+    writer, reader, priv, pub, cdir, cdig = asym_vault
+    names = reader.export_backup(CID, tmp_path / "asym-backup", expected_corpus_digest=cdig)
+    assert set(names) == {"SCREEN.enc", "QUALIFICATION_HOLDOUT.enc", "SEAL.enc"}
+    for n in names:
+        assert (tmp_path / "asym-backup" / n).read_bytes() == (cdir / n).read_bytes()
+    with pytest.raises(ST.PrivateStorageViolation):
+        reader.export_backup(CID, ROOT / "tmp_asym_backup_under_repo", expected_corpus_digest=cdig)
+    assert not (ROOT / "tmp_asym_backup_under_repo").exists()

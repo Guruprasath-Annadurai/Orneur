@@ -30,7 +30,7 @@
     "orca/eval/genesis_v2/inventory.py": "4112fa86536ed447ef20fc971d8f39d5ab20a67674cbde9bd4114077a741c5c3",
     "orca/eval/genesis_v2/isolation.py": "9e9aac6c5a167c8549a8edfe4a9ee7a1f5d27126169ba1a4da1b04f07906e4e8",
     "orca/eval/genesis_v2/ledger_admin.py": "e60a2a76a2a08bb3066b4f29c6976a579c8d4dfdfc525b1757eede0836c1a7fb",
-    "orca/eval/genesis_v2/operational_boundary.py": "7eeb07ac9a21369abc6694cb4e3b12f1a6f83758e058987995afefedc4a69cb0",
+    "orca/eval/genesis_v2/operational_boundary.py": "7d4bc4c8c393b44725b2d2a7977997006fda5fea3973526a08a7c486d86346b4",
     "orca/eval/genesis_v2/owner_preflight.py": "4ad7c6dbde642ee0bc7c7b14a0c26e55ffdf17e4ff0536f2ff77cc466afe1240",
     "orca/eval/genesis_v2/prereg.py": "535b944f8476765a906324c2a6cc9228d0a2babaa1b08dd755bc3caffc2ba22a",
     "orca/eval/genesis_v2/privacy_scan.py": "a15210767997655da04d4a0b8da37be3dfcea559407b68e4d0a83b51f5d9128b",
@@ -60,10 +60,10 @@
     "training_authorized": false,
     "v2_frozen": false
   },
-  "built_from_parent_commit_sha": "4c9349fac8fd64f4a792ec5828f58ba56284a16f",
+  "built_from_parent_commit_sha": "d82cf87d121585412ce081e8176a38605ff10389",
   "document": "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST",
   "manifest_commit_sha": null,
-  "manifest_sha256": "09700ba49d481a6ae39052ce3289c44d7e6e30430504e19c0779f57e4fdfceb6",
+  "manifest_sha256": "c80f69ce3737598fff555940e3a005023aa155637824c7c5569f91b480ab7337",
   "missing_artifacts": [],
   "note": "built_from_parent_commit_sha is the commit that existed when this manifest was generated (most bundled artifacts, including some in this same phase's commit, are hashed by content here, not claimed to live at that SHA). manifest_commit_sha is intentionally null: the commit that actually introduces this file is only knowable after it is made, and is reported in the phase's final report instead of self-referenced.",
   "owner_preflight_checks": {
@@ -102,5 +102,5 @@
   "owner_preflight_result": "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
   "schema_version": "genesis-v2-pre-corpus-closure-manifest/2",
   "status": "PRE_CORPUS_CLOSURE_EVIDENCE_ONLY",
-  "timestamp": "2026-09-29T08:36:10Z"
+  "timestamp": "2026-09-29T18:39:55Z"
 }

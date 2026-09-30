@@ -224,6 +224,226 @@ class EncryptedFileStore:
         return out
 
 
+MAGIC_ASYM = b"GCE2ENC2"
+
+
+def generate_vault_keypair() -> tuple:
+    """A NEW X25519 keypair for the write-only/read-only vault split: (private_key_bytes, public_key_bytes), each 32
+    raw bytes. The public key is safe to hand to a generator identity -- it can encrypt but never decrypt anything
+    with it. The private key must be held ONLY by a genuinely authorized reader identity (the qualification-runner /
+    creation-time-verifier path through operational_boundary.py) and must never be given to a generator."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    sk = X25519PrivateKey.generate()
+    priv = sk.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption())
+    pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    return priv, pub
+
+
+def _hkdf_key(shared_secret: bytes) -> bytes:
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"orneur-genesis-v2-vault-envelope-v2").derive(shared_secret)
+
+
+class EncryptedVaultWriter:
+    """WRITE-ONLY vault capability: constructed from ONLY the vault's PUBLIC X25519 key -- there is no private key
+    byte anywhere in this object's state (see `vars()` of any instance), and this class defines no method that could
+    decrypt a blob. This is genuine cryptographic write/read isolation, not an API convention a caller could route
+    around: even a caller with full access to this object's internals (every attribute, every method) has no path to
+    plaintext, because the mathematical capability to derive the decryption key does not exist here.
+
+    Each write generates a FRESH, one-time X25519 ephemeral keypair, ECDH's it against the vault's public key to
+    derive a one-time AES-256-GCM key via HKDF, encrypts with it, stores the ephemeral PUBLIC key in the blob header
+    (needed by a genuine reader to reproduce the same derivation with the vault PRIVATE key), and discards the
+    ephemeral private key and derived AES key immediately after use -- this object never retains either."""
+
+    def __init__(self, directory: Path, vault_public_key: bytes, *, repo_root: Path | None = None):
+        if not isinstance(vault_public_key, (bytes, bytearray)) or len(vault_public_key) != 32:
+            raise PrivateStorageViolation("vault_public_key must be exactly 32 bytes (X25519 public key)")
+        directory = Path(directory)
+        if _inside_repo(directory, repo_root):
+            raise PrivateStorageViolation("encrypted private artifacts must live OUTSIDE the repository working tree")
+        try:
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey
+            X25519PublicKey.from_public_bytes(bytes(vault_public_key))   # validate shape now, fail closed early
+        except Exception as e:
+            raise PrivateStorageNotConfigured("the 'cryptography' package (pip install '.[qualification]') is required for the encrypted artifact store") from e
+        self._pub = bytes(vault_public_key)
+        self._dir = directory
+        self._dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self._dir, 0o700)
+
+    def __repr__(self) -> str:
+        return f"EncryptedVaultWriter(dir={self._dir.name!r}, capability=WRITE_ONLY, has_private_key=False)"
+
+    def __getstate__(self):
+        raise TypeError("EncryptedVaultWriter must not be serialized")
+
+    def describe(self) -> dict:
+        return {"kind": "ENCRYPTED_ARTIFACT", "configured": True, "cipher": "X25519+HKDF-SHA256+AES-256-GCM", "capability": "WRITE_ONLY", "write_once": True}
+
+    def _cdir(self, corpus_id: str) -> Path:
+        if not _CORPUS_ID.match(corpus_id):
+            raise PrivateStorageViolation("corpus_id must look like gce2c-<hex>")
+        return self._dir / corpus_id
+
+    def _seal_blob(self, header: dict, payload: bytes) -> bytes:
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        from cryptography.hazmat.primitives import serialization
+        eph_sk = X25519PrivateKey.generate()
+        eph_pub = eph_sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        shared = eph_sk.exchange(X25519PublicKey.from_public_bytes(self._pub))
+        aes_key = _hkdf_key(shared)
+        h = {**header, "ephemeral_public_key": eph_pub.hex()}
+        hjson = json.dumps(h, sort_keys=True, separators=(",", ":")).encode()
+        nonce = os.urandom(12)
+        blob = MAGIC_ASYM + struct.pack(">I", len(hjson)) + hjson + nonce + AESGCM(aes_key).encrypt(nonce, payload, MAGIC_ASYM + hjson)
+        del eph_sk, aes_key, shared   # not a memory-scrubbing guarantee, but nothing above stores these past this call
+        return blob
+
+    def _publish(self, path: Path, blob: bytes) -> None:
+        tmp = path.with_name(f".tmp-{os.urandom(8).hex()}")
+        fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o400)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(blob)
+                f.flush()
+                os.fsync(f.fileno())
+            os.link(tmp, path)
+        finally:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
+        dfd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+
+    def write_corpus(self, corpus_id: str, splits: dict) -> str:
+        """Encrypt and store both private splits, then SEAL. Returns the corpus digest. Always requires exactly the
+        two private splits together (an atomic corpus write) -- callers scoped to fewer classes never reach this
+        method with a mismatched set; see operational_boundary.GeneratorWriteHandle."""
+        if set(splits) != set(spec.PRIVATE_SPLITS) or not all(isinstance(v, (bytes, bytearray)) for v in splits.values()):
+            raise PrivateStorageViolation("write_corpus needs bytes for exactly " + str(spec.PRIVATE_SPLITS))
+        cdir = self._cdir(corpus_id)
+        cdir.mkdir(mode=0o700, exist_ok=False)
+        digests = {s: hashlib.sha256(bytes(v)).hexdigest() for s, v in splits.items()}
+        cdig = corpus_digest_of(digests)
+        for s in spec.PRIVATE_SPLITS:
+            hdr = {"eval_version": spec.EVAL_VERSION, "corpus_id": corpus_id, "split": s, "split_sha256": digests[s]}
+            self._publish(cdir / f"{s}.enc", self._seal_blob(hdr, bytes(splits[s])))
+        seal_hdr = {"eval_version": spec.EVAL_VERSION, "corpus_id": corpus_id, "split": "SEAL", "corpus_digest": cdig}
+        self._publish(cdir / "SEAL.enc", self._seal_blob(seal_hdr, json.dumps(digests, sort_keys=True).encode()))
+        return cdig
+
+    def stray_temp_files(self, corpus_id: str) -> list:
+        return sorted(p.name for p in self._cdir(corpus_id).glob(".tmp-*"))
+
+
+class EncryptedVaultReader:
+    """READ capability: constructed from the vault's PRIVATE X25519 key. Only an entity with a genuine, ledger-gated
+    read authorization (operational_boundary.require_private_split_access / authorized_manifest_verification_bytes)
+    should ever hold one of these -- never a generator. Reproduces the SAME per-blob AES key an `EncryptedVaultWriter`
+    derived, via ECDH(vault_private_key, ephemeral_public_key_from_header), so it can decrypt anything a writer for
+    the SAME vault public key produced, without ever needing to see or reuse an ephemeral private key."""
+
+    def __init__(self, directory: Path, vault_private_key: bytes, *, repo_root: Path | None = None):
+        if not isinstance(vault_private_key, (bytes, bytearray)) or len(vault_private_key) != 32:
+            raise PrivateStorageViolation("vault_private_key must be exactly 32 bytes (X25519 private key)")
+        directory = Path(directory)
+        if _inside_repo(directory, repo_root):
+            raise PrivateStorageViolation("encrypted private artifacts must live OUTSIDE the repository working tree")
+        try:
+            from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+            X25519PrivateKey.from_private_bytes(bytes(vault_private_key))   # validate shape now, fail closed early
+        except Exception as e:
+            raise PrivateStorageNotConfigured("the 'cryptography' package (pip install '.[qualification]') is required for the encrypted artifact store") from e
+        self._priv = bytes(vault_private_key)
+        self._dir = directory
+
+    def __repr__(self) -> str:
+        return f"EncryptedVaultReader(dir={self._dir.name!r}, capability=READ, key=<redacted>)"
+
+    def __getstate__(self):
+        raise TypeError("EncryptedVaultReader holds key material and must not be serialized")
+
+    def describe(self) -> dict:
+        return {"kind": "ENCRYPTED_ARTIFACT", "configured": True, "cipher": "X25519+HKDF-SHA256+AES-256-GCM", "capability": "READ", "write_once": True}
+
+    def _cdir(self, corpus_id: str) -> Path:
+        if not _CORPUS_ID.match(corpus_id):
+            raise PrivateStorageViolation("corpus_id must look like gce2c-<hex>")
+        return self._dir / corpus_id
+
+    def _open_blob(self, blob: bytes) -> tuple:
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        try:
+            if blob[:8] != MAGIC_ASYM:
+                raise ValueError
+            (n,) = struct.unpack(">I", blob[8:12])
+            h = blob[12:12 + n]
+            nonce = blob[12 + n:24 + n]
+            if len(h) != n or len(nonce) != 12:
+                raise ValueError
+            header = json.loads(h)
+            eph_pub = bytes.fromhex(header["ephemeral_public_key"])
+            sk = X25519PrivateKey.from_private_bytes(self._priv)
+            shared = sk.exchange(X25519PublicKey.from_public_bytes(eph_pub))
+            aes_key = _hkdf_key(shared)
+            plain = AESGCM(aes_key).decrypt(nonce, blob[24 + n:], MAGIC_ASYM + h)
+            return header, plain
+        except Exception:
+            raise PrivateStorageIntegrityError("private artifact failed authentication or is malformed (fail closed)") from None
+
+    def _verified_seal(self, corpus_id: str, expected_corpus_digest: str) -> dict:
+        cdir = self._cdir(corpus_id)
+        try:
+            header, payload = self._open_blob((cdir / "SEAL.enc").read_bytes())
+        except FileNotFoundError:
+            raise PrivateStorageIntegrityError("corpus has no SEAL (partial or missing write)") from None
+        digests = json.loads(payload)
+        if (header.get("eval_version"), header.get("corpus_id"), header.get("split")) != (spec.EVAL_VERSION, corpus_id, "SEAL"):
+            raise PrivateStorageIntegrityError("SEAL metadata mismatch")
+        if header.get("corpus_digest") != corpus_digest_of(digests) or header.get("corpus_digest") != expected_corpus_digest:
+            raise PrivateStorageIntegrityError("corpus digest mismatch")
+        return digests
+
+    def read_split(self, corpus_id: str, split: str, *, expected_corpus_digest: str) -> bytes:
+        if split not in spec.PRIVATE_SPLITS:
+            raise PrivateStorageViolation(f"{split!r} is not a private split")
+        digests = self._verified_seal(corpus_id, expected_corpus_digest)
+        try:
+            blob = (self._cdir(corpus_id) / f"{split}.enc").read_bytes()
+        except FileNotFoundError:
+            raise PrivateStorageIntegrityError("split artifact missing") from None
+        header, plain = self._open_blob(blob)
+        if (header.get("eval_version"), header.get("corpus_id"), header.get("split")) != (spec.EVAL_VERSION, corpus_id, split):
+            raise PrivateStorageIntegrityError("split metadata mismatch")
+        got = hashlib.sha256(plain).hexdigest()
+        if got != header.get("split_sha256") or got != digests.get(split):
+            raise PrivateStorageIntegrityError("split digest mismatch")
+        return plain
+
+    def export_backup(self, corpus_id: str, dest: Path, *, expected_corpus_digest: str) -> list:
+        """Copy the VERIFIED ciphertext files verbatim (no decryption performed to export; dest must be outside the repository)."""
+        self._verified_seal(corpus_id, expected_corpus_digest)
+        dest = Path(dest)
+        if _inside_repo(dest):
+            raise PrivateStorageViolation("backups must not be placed inside the repository")
+        dest.mkdir(parents=True, exist_ok=True, mode=0o700)
+        out = []
+        for name in ("SCREEN.enc", "QUALIFICATION_HOLDOUT.enc", "SEAL.enc"):
+            shutil.copyfile(self._cdir(corpus_id) / name, dest / name)
+            os.chmod(dest / name, 0o400)
+            out.append(name)
+        return out
+
+
 @dataclass(frozen=True)
 class PrivateStoreConfig:
     kind: str
