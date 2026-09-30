@@ -247,8 +247,9 @@ def test_process_isolation_verification_procedure_is_honest_about_its_own_limits
 
 def test_readonly_evidence_collection_doc_matches_the_real_script():
     t = _phase21_doc("GENESIS_V2_READONLY_EVIDENCE_COLLECTION.md")
-    for s in ("genesis_v2_evidence_snapshot.py", "Never prints a secret value", "Never writes anything",
-              "Always exits 0"):
+    for s in ("genesis_v2_evidence_snapshot.py", "Never prints or emits a secret VALUE", "Never writes anything",
+              "Always exits 0", "--role all", "NOT_ESTABLISHED_BY_THIS_TOOL", "Security contract",
+              "never proves cross-deployment separation"):
         assert s in t, s
     from pathlib import Path as _P
     root = _P(__file__).resolve().parents[1]
@@ -262,3 +263,25 @@ def test_owner_setup_summary_is_no_longer_stale():
     assert "ORNEUR_GENESIS_V2_ENCRYPTION_KEY" not in t
     assert "--role generator" in t and "--role verifier" in t
     assert "GENESIS_V2_INFRASTRUCTURE_DISCOVERY.md" in t and "GENESIS_V2_THREE_IDENTITY_DEPLOYMENT_DESIGN.md" in t
+
+
+def test_cross_machine_transfer_procedure_covers_all_six_required_properties():
+    """Item 1: the six properties the phase spec explicitly enumerated must all be addressed, each demonstrated by
+    a real test in test_genesis_v2_cross_machine_transfer.py, not just asserted in prose."""
+    t = _phase21_doc("GENESIS_V2_CROSS_MACHINE_TRANSFER_PROCEDURE.md")
+    for s in ("Ciphertext-only transfer", "File ownership and permissions", "Corpus digest and SEAL verification",
+              "Write-once preservation", "Ledger custody and evidence continuity",
+              "Prevention of plaintext or private-key transfer",
+              "Two-OS-accounts-on-one-machine: NOT simpler than two machines",
+              "not zero integration work"):
+        assert s in t, s
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[1]
+    assert (root / "tests/test_genesis_v2_cross_machine_transfer.py").is_file()
+
+
+def test_infrastructure_discovery_no_longer_claims_zero_integration_work_for_a1():
+    """Item 1's core correction: A1 must never be presented as literally zero steps."""
+    t = _phase21_doc("GENESIS_V2_INFRASTRUCTURE_DISCOVERY.md")
+    assert "NOT literally zero steps" in t
+    assert "GENESIS_V2_CROSS_MACHINE_TRANSFER_PROCEDURE.md" in t

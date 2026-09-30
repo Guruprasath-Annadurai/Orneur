@@ -40,7 +40,7 @@
     "orca/eval/genesis_v2/runner_registry.py": "c9f909e3a5d1f23aa0090440d256f61a16afd2aa4084b72726b302cb4243a780",
     "orca/eval/genesis_v2/sandbox.py": "d66d6f138339274ef668340fabbad8673d3ca1df506d8f4f4f9e7fc9583b083e",
     "orca/eval/genesis_v2/sandbox_qualification.py": "c7bec87d3eeceac479bae59119dbb5a2aabb04dcedc42f8ba4f8c0a49557efbf",
-    "orca/eval/genesis_v2/secret_manager.py": "290b8a5edb0cbe7c2e673c0aa4721a3d26da07fa8fcc7fd0428e04095126ac80",
+    "orca/eval/genesis_v2/secret_manager.py": "3803e2ebfee6af12e7ac1c2d6316862957f2facb32741f15e5f4f7838cb38102",
     "orca/eval/genesis_v2/semantic.py": "e37703be90397a0e74cdaaade730f60d5455783968fadd2c02a4c035b1290055",
     "orca/eval/genesis_v2/semantic_calibration.py": "bc0a926e1f27716af96fcfb7553253aeab9110c50d39bd1ae63d7564aa6e7ce0",
     "orca/eval/genesis_v2/vault_admin.py": "21d8ed65c92f22e1bd30d8a845d7aed92be6a709fb89a5d5ff410d14d9bb4493"
@@ -60,10 +60,10 @@
     "training_authorized": false,
     "v2_frozen": false
   },
-  "built_from_parent_commit_sha": "9926c5de57b02678592f1fff7809a637926cdfe0",
+  "built_from_parent_commit_sha": "1cfbc70c4a14590306638e95968e2721a4a46108",
   "document": "GENESIS_V2_PRE_CORPUS_CLOSURE_MANIFEST",
   "manifest_commit_sha": null,
-  "manifest_sha256": "c5fbb956ef30b232d1e69c9e9099b6423e0b3f5a285bd505d432a1e9aeb09a17",
+  "manifest_sha256": "483ed5e7e6ca59028b4378a39bbec69c69642735f93d2389ccdbff7f5e31953a",
   "missing_artifacts": [],
   "note": "built_from_parent_commit_sha is the commit that existed when this manifest was generated (most bundled artifacts, including some in this same phase's commit, are hashed by content here, not claimed to live at that SHA). manifest_commit_sha is intentionally null: the commit that actually introduces this file is only knowable after it is made, and is reported in the phase's final report instead of self-referenced.",
   "owner_preflight_checks": {
@@ -102,5 +102,5 @@
   "owner_preflight_result": "READY_FOR_PRIVATE_CORPUS_AUTHORIZATION",
   "schema_version": "genesis-v2-pre-corpus-closure-manifest/2",
   "status": "PRE_CORPUS_CLOSURE_EVIDENCE_ONLY",
-  "timestamp": "2026-09-30T10:40:37Z"
+  "timestamp": "2026-09-30T12:19:05Z"
 }

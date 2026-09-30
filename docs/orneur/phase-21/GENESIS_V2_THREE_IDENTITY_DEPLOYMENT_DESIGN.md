@@ -2,9 +2,11 @@
 
 Formalizes the concrete deployment separation for the three identities this program's code already distinguishes
 (`generator_registry.py`, `runner_registry.py`, `operational_boundary.py`). Written against Decision A1 (two trusted
-local machines — see `GENESIS_V2_INFRASTRUCTURE_DISCOVERY.md`), the ready-today, zero-cost default; the cloud/CI
+local machines — see `GENESIS_V2_INFRASTRUCTURE_DISCOVERY.md`), the $0-infrastructure-cost default; the cloud/CI
 alternative (A2) is noted where it would differ, but is NOT designed in full here since it remains an undecided,
-larger undertaking.
+larger undertaking. **A1 still requires an explicit, real ciphertext-transfer step between the generator's and the
+verifier's machines/accounts — see `GENESIS_V2_CROSS_MACHINE_TRANSFER_PROCEDURE.md`, which specifies and
+demonstrates it end-to-end; it is corrected there NOT to be presented as zero integration work.**
 
 ## Identity 1 — Generator
 

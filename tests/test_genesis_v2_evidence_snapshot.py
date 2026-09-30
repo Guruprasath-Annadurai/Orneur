@@ -1,20 +1,49 @@
 """Read-only evidence snapshot script: aggregates existing read-only checks, never touches a secret, never
-activates/authorizes/generates anything, always exits 0."""
+activates/authorizes/generates anything, always exits 0. Item 3 of the deployment-decision-accuracy-closure phase:
+role-aware collection, an explicit security contract, secret-shaped scrubbing on exceptions, and tests against
+SYNTHETIC POPULATED environments -- not only the current unconfigured baseline."""
+import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "genesis_v2_evidence_snapshot.py"
 
 
-def _run(*extra_args):
-    return subprocess.run([sys.executable, "scripts/genesis_v2_evidence_snapshot.py", *extra_args],
-                           cwd=ROOT, capture_output=True, text=True)
+def _need_crypto():
+    if os.environ.get("ORNEUR_REQUIRE_CRYPTOGRAPHY") == "1":
+        import cryptography.hazmat.primitives.ciphers.aead  # noqa: F401
+    else:
+        pytest.importorskip("cryptography")
+
+
+def _run(*extra_args, env=None):
+    full_env = {**os.environ, **(env or {})}
+    return subprocess.run([sys.executable, str(SCRIPT), *extra_args], cwd=ROOT, capture_output=True, text=True, env=full_env)
+
+
+def _load_module():
+    """Import the script directly (not via subprocess) so _scrub()/_safe() can be unit-tested in-process."""
+    spec = importlib.util.spec_from_file_location("genesis_v2_evidence_snapshot", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _clean_env(**extra):
+    """A minimal env with no pre-existing ORNEUR_GENESIS vars, plus whatever synthetic values are supplied."""
+    base = {k: v for k, v in os.environ.items() if not k.startswith("ORNEUR_GENESIS")}
+    base.update(extra)
+    return base
 
 
 def test_evidence_snapshot_runs_read_only_and_exits_zero_without_a_vault():
-    p = _run()
+    p = _run(env=_clean_env())
     assert p.returncode == 0
     doc = json.loads(p.stdout)
     assert doc["document"] == "GENESIS_V2_EVIDENCE_SNAPSHOT"
@@ -26,18 +55,17 @@ def test_evidence_snapshot_runs_read_only_and_exits_zero_without_a_vault():
 def test_evidence_snapshot_includes_vault_check_when_vault_given(tmp_path):
     vault = tmp_path / "vault"
     vault.mkdir(mode=0o700)
-    p = _run("--vault", str(vault))
+    p = _run("--vault", str(vault), env=_clean_env())
     assert p.returncode == 0
     doc = json.loads(p.stdout)
     assert "pass" in doc["vault_isolation"]   # real verify_vault_isolation() output, not the NOT_CONFIGURED placeholder
 
 
 def test_evidence_snapshot_never_contains_a_real_secret_shaped_value():
-    p = _run()
+    p = _run(env=_clean_env())
     assert p.returncode == 0
     blob = p.stdout
     import re
-    # no 64-hex-char string anywhere (a real vault key or corpus secret would be exactly this shape)
     assert not re.search(r"\b[0-9a-fA-F]{64}\b", blob)
     for forbidden in ("-----BEGIN", "/Users/", "/home/"):
         assert forbidden not in blob
@@ -47,7 +75,7 @@ def test_evidence_snapshot_role_preflights_agree_with_direct_calls():
     """Cross-check: the script's aggregated role_preflight_* sections must match calling the same functions directly
     -- proves the script is genuinely composing existing functions, not reimplementing or diverging from them."""
     from orca.eval.genesis_v2 import store as ST
-    p = _run()
+    p = _run(env=_clean_env())
     doc = json.loads(p.stdout)
     assert doc["role_preflight_owner"]["status"] == ST.owner_setup_preflight()["status"]
     assert doc["role_preflight_generator"]["status"] == ST.generator_setup_preflight()["status"]
@@ -58,6 +86,124 @@ def test_evidence_snapshot_never_writes_anything(tmp_path):
     """No registry, vault, or ledger write occurs -- confirmed by running twice and diffing the repository's own
     tracked/untracked state via git, which must show no new files this script could have created."""
     before = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout
-    _run()
+    _run(env=_clean_env())
     after = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True).stdout
     assert before == after
+
+
+# ---------------------------------------------------------------- item 3: role-awareness and the security contract
+def test_evidence_snapshot_declares_its_own_security_contract():
+    p = _run(env=_clean_env())
+    doc = json.loads(p.stdout)
+    sc = doc["security_contract"]
+    assert sc["checks_that_inspect_actual_secret_bytes"] == ["role_preflight_owner (X25519 pair-matching step only)"]
+    assert "role_preflight_generator" in " ".join(sc["checks_that_never_touch_a_secret_value_at_all"])
+    assert "never a secret value itself" in sc["values_ever_emitted_in_this_report"]
+
+
+def test_evidence_snapshot_never_claims_cross_environment_separation_evidence():
+    """The core item-3 correction: running all three role preflights in one invocation must never be presented as
+    proof that two real deployments keep credentials apart."""
+    p = _run(env=_clean_env())
+    doc = json.loads(p.stdout)
+    assert doc["cross_environment_separation_evidence"] == "NOT_ESTABLISHED_BY_THIS_TOOL"
+    assert doc["role_scope_of_this_invocation"] == "all"
+    assert "NOT proof" in doc["role_scope_note"] or "not proof" in doc["role_scope_note"].lower() or "NOT " in doc["role_scope_note"]
+
+
+def test_evidence_snapshot_role_flag_runs_only_the_requested_role(tmp_path):
+    _need_crypto()
+    from orca.eval.genesis_v2 import store as ST
+    priv, pub = ST.generate_vault_keypair()
+    env = _clean_env(**{"ORNEUR_GENESIS_V2_PRIVATE_STORE": "ENCRYPTED_ARTIFACT:/fake/vault",
+                         "ORNEUR_GENESIS_V2_CORPUS_SECRET": os.urandom(32).hex(),
+                         "ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY": pub.hex()})
+    p = _run("--role", "generator", env=env)
+    assert p.returncode == 0
+    doc = json.loads(p.stdout)
+    assert "role_preflight_generator" in doc
+    assert "role_preflight_owner" not in doc and "role_preflight_verifier" not in doc
+    assert doc["role_scope_of_this_invocation"] == "generator"
+    assert doc["role_preflight_generator"]["status"] == "GENERATOR_CONFIGURED_UNVERIFIED"
+
+
+def test_evidence_snapshot_role_flag_for_verifier_with_synthetic_populated_environment(tmp_path):
+    """Tests against a SYNTHETIC POPULATED environment, not only the unconfigured baseline -- required by item 3."""
+    _need_crypto()
+    from orca.eval.genesis_v2 import store as ST
+    priv, pub = ST.generate_vault_keypair()
+    env = _clean_env(**{"ORNEUR_GENESIS_V2_PRIVATE_STORE": "ENCRYPTED_ARTIFACT:/fake/vault",
+                         "ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY": priv.hex()})
+    p = _run("--role", "verifier", env=env)
+    assert p.returncode == 0
+    doc = json.loads(p.stdout)
+    assert "role_preflight_verifier" in doc
+    assert "role_preflight_owner" not in doc and "role_preflight_generator" not in doc
+    assert doc["role_preflight_verifier"]["status"] == "VERIFIER_CONFIGURED_UNVERIFIED"
+    # the private key hex value itself never appears in the report, even though it was genuinely read/used
+    assert priv.hex() not in p.stdout
+
+
+def test_evidence_snapshot_all_roles_against_a_shared_environment_flags_the_generator_violation(tmp_path):
+    """The dangerous scenario item 3 exists to prevent misinterpreting: BOTH key halves present in ONE environment
+    (e.g. an admin/setup machine). role_preflight_generator must report the violation, and the report must still
+    never claim this proves or disproves real separation -- cross_environment_separation_evidence stays
+    NOT_ESTABLISHED_BY_THIS_TOOL regardless."""
+    _need_crypto()
+    from orca.eval.genesis_v2 import store as ST
+    priv, pub = ST.generate_vault_keypair()
+    env = _clean_env(**{"ORNEUR_GENESIS_V2_PRIVATE_STORE": "ENCRYPTED_ARTIFACT:/fake/vault",
+                         "ORNEUR_GENESIS_V2_CORPUS_SECRET": os.urandom(32).hex(),
+                         "ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY": pub.hex(),
+                         "ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY": priv.hex()})
+    p = _run(env=env)
+    assert p.returncode == 0
+    doc = json.loads(p.stdout)
+    assert any(v["item"] == "ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY" for v in doc["role_preflight_generator"]["violations"])
+    assert doc["role_preflight_verifier"]["status"] == "VERIFIER_CONFIGURED_UNVERIFIED"   # verifier's own check still passes on its own terms
+    assert doc["cross_environment_separation_evidence"] == "NOT_ESTABLISHED_BY_THIS_TOOL"   # never upgraded, even here
+    assert priv.hex() not in p.stdout and pub.hex() not in p.stdout
+
+
+def test_evidence_snapshot_owner_role_with_a_synthetic_matching_keypair(tmp_path):
+    _need_crypto()
+    from orca.eval.genesis_v2 import store as ST
+    priv, pub = ST.generate_vault_keypair()
+    env = _clean_env(**{"ORNEUR_GENESIS_V2_PRIVATE_STORE": "ENCRYPTED_ARTIFACT:/fake/vault",
+                         "ORNEUR_GENESIS_V2_CORPUS_SECRET": os.urandom(32).hex(),
+                         "ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY": pub.hex(),
+                         "ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY": priv.hex()})
+    p = _run("--role", "owner", env=env)
+    assert p.returncode == 0
+    doc = json.loads(p.stdout)
+    assert doc["role_preflight_owner"]["status"] == "PRIVATE_STORAGE_CONFIGURED_UNVERIFIED"
+    assert priv.hex() not in p.stdout and pub.hex() not in p.stdout
+
+
+# ---------------------------------------------------------------- exception scrubbing
+def test_scrub_redacts_secret_shaped_substrings():
+    mod = _load_module()
+    fake_secret = "ab" * 32
+    scrubbed = mod._scrub(f"ValueError: bad key {fake_secret} rejected")
+    assert fake_secret not in scrubbed
+    assert "<redacted-secret-shaped-value>" in scrubbed
+
+
+def test_safe_wrapper_scrubs_a_secret_shaped_exception_message():
+    mod = _load_module()
+    fake_secret = "cd" * 32
+
+    def boom():
+        raise RuntimeError(f"leaked {fake_secret} in a hypothetical bug")
+    result = mod._safe("test_check", boom)
+    assert fake_secret not in json.dumps(result)
+    assert "<redacted-secret-shaped-value>" in result["error"]
+
+
+def test_safe_wrapper_passes_through_non_secret_shaped_exceptions_unscrubbed():
+    mod = _load_module()
+
+    def boom():
+        raise RuntimeError("ordinary error, no secret here")
+    result = mod._safe("test_check", boom)
+    assert "ordinary error, no secret here" in result["error"]
