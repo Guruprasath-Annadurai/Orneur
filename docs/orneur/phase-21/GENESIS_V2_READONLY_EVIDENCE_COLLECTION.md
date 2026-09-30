@@ -29,9 +29,9 @@ python scripts/genesis_v2_evidence_snapshot.py --vault <REAL_VAULT_DIR>  # also 
 | `owner_preflight` | No | Presence/shape/derived-boolean findings only |
 | `privacy_scan` | No | Whether the public repo contains private-shaped content |
 | `vault_isolation` | No | Path-permission/isolation booleans (never the path itself) |
-| `role_preflight_generator` | No — presence/shape of env vars only | Boolean findings; a `violations` entry naming the offending env var if the private key is present, never its value |
-| `role_preflight_verifier` | No — presence/shape of env vars only | Boolean findings |
-| `role_preflight_owner` | **Yes — the ONLY check here that does.** Its X25519 pair-matching step reads the actual public/private key bytes to confirm they form a genuine keypair | Only a boolean match/mismatch finding — the bytes themselves are never included in its return value or in this report |
+| `role_preflight_generator` | Vault-key bytes: No — public key SHAPE only, private key NON-PRESENCE only. Corpus secret: **Yes — decodes and validates its entropy** (via `secret.load_secret_from_env`), since generation needs a real seed | Boolean/shape findings; a `violations` entry naming the offending env var if the private key is present, never its value |
+| `role_preflight_verifier` | Vault-key bytes: No — private key SHAPE only. Corpus secret: never required or touched at all | Boolean findings |
+| `role_preflight_owner` | Vault-key bytes: **Yes — the ONLY check here that reads actual key bytes.** Its X25519 pair-matching step reads the real public/private key bytes to confirm they form a genuine keypair. Corpus secret: **Yes — decodes and validates its entropy**, same as the generator | Only a boolean match/mismatch finding — the bytes themselves are never included in its return value or in this report |
 
 **`--role all` (the default) never proves cross-deployment separation.** Running `role_preflight_generator` and
 `role_preflight_verifier` in the SAME invocation only tells you what ONE environment (this process's own) exposes
@@ -55,9 +55,14 @@ Genuine separation evidence requires running this script SEPARATELY, once per re
 - **A missing or unconfigured component is reported `NOT_CONFIGURED`, never silently omitted or manufactured as a
   PASS** — if any underlying call raises, the exception is caught and reported as an error entry, never swallowed
   into a false-positive result.
-- **Exception messages are scrubbed of any secret-shaped (64-hex-character) substring** before being included in
-  this report — defense in depth on top of the fact that no underlying check's exception path is expected to embed
-  a real secret value in the first place.
+- **No part of an underlying exception's own message text is ever forwarded into this report, in any form**
+  (item 3 of the authenticated-transfer-and-evidence-integrity-closure phase). An earlier version of this script
+  forwarded a truncated exception message scrubbed only of 64-hex-character substrings — a pattern that would miss
+  a base64-encoded secret, a variable-length secret, or a secret embedded in a path. Instead, `_safe()` returns a
+  FIXED, ALLOWLISTED error code (`"UNEXPECTED_EXCEPTION"`), a static per-check description written into the script
+  ahead of time, and the exception's class name only (a safe, non-secret Python identifier) — see
+  `tests/test_genesis_v2_evidence_snapshot.py` for adversarial coverage across hex-, base64-, variable-length-, and
+  path-shaped secrets, and deliberately hostile exception strings.
 
 ## Suggested use
 

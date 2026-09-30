@@ -314,9 +314,10 @@ def authorized_manifest_verification_bytes(root: Path, ledger_dir: Path, reader,
     return screen_plain, holdout_plain
 
 
-def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reader, manifest: dict, *, process_id: str, code_sha256: str,
-                                              corpus_id: str, expected_corpus_digest: str, eval_version: str, candidate_revision: str,
-                                              candidate_lineage: str, run_id_prefix: str, timestamp_utc: str, generator_code_root) -> list:
+def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reader, manifest: dict, authorization_record: dict,
+                                              authority_keys: list, *, process_id: str, code_sha256: str, corpus_id: str,
+                                              eval_version: str, candidate_revision: str, candidate_lineage: str, run_id_prefix: str,
+                                              timestamp_utc: str, generator_code_root, commit_is_descendant: bool) -> list:
     """HONEST NAME, HONEST SCOPE (item 5): this function does NOT provide operating-system process isolation. It
     runs in the SAME Python process as its caller, on the SAME thread, with no subprocess, container, or sandbox
     boundary of any kind — a previous name for this function ("restricted process") overstated that guarantee, which
@@ -362,12 +363,45 @@ def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reade
     Python function could ever provide by construction. Treat "the verifier is process-isolated" as UNVERIFIED until
     the owner independently confirms the real deployment topology — this function's digest-only return-value
     guarantee is a genuinely useful, narrower property that holds regardless, but it is not a substitute for that
-    separate, real-deployment check."""
+    separate, real-deployment check.
+
+    ITEM 1 (deployment-decision-accuracy-closure phase): the manifest is now AUTHENTICATED before anything it
+    claims is trusted. `expected_corpus_digest` is no longer a caller-supplied parameter at all — it is DERIVED,
+    internally, from the manifest's OWN `screen_digest`/`qualification_holdout_digest`, but ONLY after the manifest
+    has independently passed BOTH `corpus_manifest.verify_manifest_signature()` (a real Ed25519 signature from a
+    registered OWNER authority key -- the X25519 vault keypair provides confidentiality, never sender
+    authentication, so this is a SEPARATE check) AND `corpus_manifest.binding_problems()` (cross-checked against
+    the SPECIFIC `authorization_record` that permitted generation). An attacker who knows only the vault's PUBLIC
+    key can encrypt arbitrary substitute content and write a self-consistent manifest claiming it, but cannot
+    produce a valid signature over that manifest without the registered owner's private signing key -- so this
+    function never even reaches the point of deriving a digest for, let alone verifying, the substituted artifacts.
+    See `tests/test_genesis_v2_corpus_manifest_and_lineage.py`'s adversarial substitution tests."""
     from orca.eval.genesis_v2 import corpus_manifest as CMAN
-    screen_plain, holdout_plain = authorized_manifest_verification_bytes(
-        root, ledger_dir, reader, process_id=process_id, code_sha256=code_sha256, corpus_id=corpus_id,
-        expected_corpus_digest=expected_corpus_digest, eval_version=eval_version, candidate_revision=candidate_revision,
-        candidate_lineage=candidate_lineage, run_id_prefix=run_id_prefix, timestamp_utc=timestamp_utc)
+    from orca.eval.genesis_v2 import store as ST
+    problems = CMAN.validate_manifest(manifest)
+    if problems:
+        return problems
+    sig_problem = CMAN.verify_manifest_signature(manifest, authority_keys)
+    if sig_problem:
+        return [f"MANIFEST_SIGNATURE_INVALID:{sig_problem}"]
+    binding = CMAN.binding_problems(manifest, authorization_record, commit_is_descendant=commit_is_descendant)
+    if binding:
+        return binding
+    # Only NOW -- signed by a registered owner AND bound to the authorization that permitted generation -- is the
+    # manifest a trusted source. Never derived from, or verified against, the ciphertext-transfer channel itself.
+    expected_corpus_digest = ST.corpus_digest_of({"SCREEN": manifest["screen_digest"], "QUALIFICATION_HOLDOUT": manifest["qualification_holdout_digest"]})
+    screen_plain = holdout_plain = None
+    try:
+        screen_plain, holdout_plain = authorized_manifest_verification_bytes(
+            root, ledger_dir, reader, process_id=process_id, code_sha256=code_sha256, corpus_id=corpus_id,
+            expected_corpus_digest=expected_corpus_digest, eval_version=eval_version, candidate_revision=candidate_revision,
+            candidate_lineage=candidate_lineage, run_id_prefix=run_id_prefix, timestamp_utc=timestamp_utc)
+    except ST.PrivateStorageIntegrityError:
+        # The manifest is authenticated (signed + bound) but its OWN claimed screen_digest/qualification_holdout_digest
+        # do not correspond to what is actually sealed in the vault under expected_corpus_digest -- a tampered-content
+        # manifest, distinct from a forged-signature one. Fail closed with a diagnostic, never let the store's own
+        # integrity exception (which could otherwise propagate raw) escape this digest-only, never-raises contract.
+        return ["CORPUS_DIGEST_MISMATCH: manifest screen_digest/qualification_holdout_digest do not match sealed vault content"]
     try:
         problems = CMAN.verify_against_artifacts(manifest, screen_plain=screen_plain, holdout_plain=holdout_plain,
                                                    generator_code_root=generator_code_root, expected_corpus_digest=expected_corpus_digest)

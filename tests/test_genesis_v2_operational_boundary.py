@@ -638,6 +638,22 @@ def test_authorized_manifest_verification_bytes_with_the_real_asymmetric_vault_r
 
 
 # ---------------------------------------------------------------- verify_manifest_digest_only_same_process() (item 3: no plaintext leaves)
+def _signed_owner_key():
+    _need_crypto()
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    sk = Ed25519PrivateKey.generate()
+    pub_hex = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    keys = [{"key_id": "k-owner", "public_key_hex": pub_hex, "identity": "owner-1", "role": "OWNER"}]
+    return sk, keys
+
+
+def _sign_manifest(manifest: dict, sk) -> dict:
+    from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    unsigned = {**manifest, "signing_authority": {"identity": "owner-1", "role": "OWNER", "key_id": "k-owner"}, "signature": "0" * 128}
+    return {**unsigned, "signature": sk.sign(CMAN.manifest_signing_bytes(unsigned)).hex()}
+
+
 def test_digest_only_same_process_verification_never_returns_plaintext(tmp_path):
     """The core item-3 claim, checked directly: the function's return value is a list of diagnostic strings that
     never contains the real plaintext, even though it genuinely had access to it internally to compute the result."""
@@ -662,16 +678,21 @@ def test_digest_only_same_process_verification_never_returns_plaintext(tmp_path)
     digest = writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
     reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
 
-    manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
-                "generator_code_sha256": code_sha, "generated_at_commit_sha": "b" * 40,
-                "screen_digest": __import__("hashlib").sha256(screen_bytes).hexdigest(),
-                "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
-                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}
+    sk, authority_keys = _signed_owner_key()
+    reviewed_sha = "b" * 40
+    manifest = _sign_manifest({"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+                                "generator_code_sha256": code_sha, "generated_at_commit_sha": reviewed_sha,
+                                "screen_digest": __import__("hashlib").sha256(screen_bytes).hexdigest(),
+                                "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
+                                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}, sk)
+    authorization_record = {"status": "AUTHORIZED", "authorization_id": manifest["corpus_generation_authorization_id"],
+                             "reviewed_commit_sha": reviewed_sha, "authorized_code_tree_sha256": code_sha,
+                             "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"]}
 
     problems = OB.verify_manifest_digest_only_same_process(
-        root, tmp_path / "ledger", reader, manifest, process_id="verifier-restricted", code_sha256=code_sha, corpus_id=corpus_id,
-        expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
-        run_id_prefix="restricted-verify", timestamp_utc=ts(NOW), generator_code_root=code_dir)
+        root, tmp_path / "ledger", reader, manifest, authorization_record, authority_keys, process_id="verifier-restricted",
+        code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
+        run_id_prefix="restricted-verify", timestamp_utc=ts(NOW), generator_code_root=code_dir, commit_is_descendant=True)
     assert problems == []
     blob = repr(problems)
     assert b"SECRET-SCREEN-PLAINTEXT-MUST-NEVER-LEAK".decode() not in blob and b"SECRET-HOLDOUT-PLAINTEXT-MUST-NEVER-LEAK".decode() not in blob
@@ -701,17 +722,22 @@ def test_digest_only_same_process_verification_detects_tampering_without_leaking
     digest = writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
     reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
 
-    manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
-                "generator_code_sha256": code_sha, "generated_at_commit_sha": "b" * 40,
-                "screen_digest": "0" * 64,   # WRONG on purpose
-                "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
-                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}
+    sk, authority_keys = _signed_owner_key()
+    reviewed_sha = "b" * 40
+    manifest = _sign_manifest({"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+                                "generator_code_sha256": code_sha, "generated_at_commit_sha": reviewed_sha,
+                                "screen_digest": "0" * 64,   # WRONG on purpose
+                                "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
+                                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}, sk)
+    authorization_record = {"status": "AUTHORIZED", "authorization_id": manifest["corpus_generation_authorization_id"],
+                             "reviewed_commit_sha": reviewed_sha, "authorized_code_tree_sha256": code_sha,
+                             "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"]}
 
     problems = OB.verify_manifest_digest_only_same_process(
-        root, tmp_path / "ledger", reader, manifest, process_id="verifier-restricted-2", code_sha256=code_sha, corpus_id=corpus_id,
-        expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
-        run_id_prefix="restricted-tamper", timestamp_utc=ts(NOW), generator_code_root=code_dir)
-    assert problems and any("SCREEN" in p for p in problems)
+        root, tmp_path / "ledger", reader, manifest, authorization_record, authority_keys, process_id="verifier-restricted-2",
+        code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
+        run_id_prefix="restricted-tamper", timestamp_utc=ts(NOW), generator_code_root=code_dir, commit_is_descendant=True)
+    assert problems and any("CORPUS_DIGEST_MISMATCH" in p for p in problems)
     blob = repr(problems)
     assert "SECRET-SCREEN-TAMPER-TEST" not in blob and "SECRET-HOLDOUT-TAMPER-TEST" not in blob
 
@@ -737,20 +763,61 @@ def test_digest_only_same_process_verification_preserves_ledger_evidence_and_sea
     corpus_id = "gce2c-" + "f" * 32
     digest = writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
     reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
-    manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
-                "generator_code_sha256": code_sha, "generated_at_commit_sha": "b" * 40,
-                "screen_digest": __import__("hashlib").sha256(screen_bytes).hexdigest(),
-                "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
-                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}
+
+    sk, authority_keys = _signed_owner_key()
+    reviewed_sha = "b" * 40
+    manifest = _sign_manifest({"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+                                "generator_code_sha256": code_sha, "generated_at_commit_sha": reviewed_sha,
+                                "screen_digest": __import__("hashlib").sha256(screen_bytes).hexdigest(),
+                                "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
+                                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}, sk)
+    authorization_record = {"status": "AUTHORIZED", "authorization_id": manifest["corpus_generation_authorization_id"],
+                             "reviewed_commit_sha": reviewed_sha, "authorized_code_tree_sha256": code_sha,
+                             "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"]}
 
     OB.verify_manifest_digest_only_same_process(
-        root, tmp_path / "ledger", reader, manifest, process_id="verifier-restricted-3", code_sha256=code_sha, corpus_id=corpus_id,
-        expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
-        run_id_prefix="restricted-ledger", timestamp_utc=ts(NOW), generator_code_root=code_dir)
+        root, tmp_path / "ledger", reader, manifest, authorization_record, authority_keys, process_id="verifier-restricted-3",
+        code_sha256=code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
+        run_id_prefix="restricted-ledger", timestamp_utc=ts(NOW), generator_code_root=code_dir, commit_is_descendant=True)
     led = LG.AccessLedger(tmp_path / "ledger", {})
     recs = [r for r in led.records() if r["purpose"] == SPEC.PURPOSE_CREATION_VERIFICATION]
     assert len(recs) == 2   # one per split, same evidence-preservation guarantee as the underlying function
     assert led.holdout_state(SPEC.EVAL_VERSION) == {"state": SPEC.STATE_SEALED, "opened_by": None, "lineages": []}
+
+
+def test_digest_only_same_process_verification_refuses_an_unsigned_manifest_before_touching_the_vault(tmp_path):
+    """Item 1's core adversarial claim, isolated at the operational_boundary level: a structurally perfect but
+    UNSIGNED manifest must be refused before authorized_manifest_verification_bytes is ever called -- proven here
+    by using a process_id that isn't even registered, confirming the signature check runs first and the (nonexistent)
+    ledger grant is never attempted."""
+    from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    from orca.eval.genesis_v2 import spec as SPEC
+    from orca.eval.genesis_v2 import store as ST
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    vault_dir = tmp_path / "vault"
+    writer = ST.EncryptedVaultWriter(vault_dir, pub, repo_root=tmp_path / "not-a-repo")
+    corpus_id = "gce2c-" + "77" * 16
+    digest = writer.write_corpus(corpus_id, {"SCREEN": b"s", "QUALIFICATION_HOLDOUT": b"h"})
+    reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
+
+    _, authority_keys = _signed_owner_key()   # a registered key exists, but the manifest below is NOT signed by it
+    manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+                "generator_code_sha256": "a" * 64, "generated_at_commit_sha": "b" * 40,
+                "screen_digest": __import__("hashlib").sha256(b"s").hexdigest(),
+                "qualification_holdout_digest": __import__("hashlib").sha256(b"h").hexdigest(),
+                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8,
+                "signing_authority": {"identity": "owner-1", "role": "OWNER", "key_id": "k-owner"}, "signature": "0" * 128}
+    authorization_record = {"status": "AUTHORIZED", "authorization_id": manifest["corpus_generation_authorization_id"],
+                             "reviewed_commit_sha": "b" * 40, "authorized_code_tree_sha256": "a" * 64,
+                             "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"]}
+
+    problems = OB.verify_manifest_digest_only_same_process(
+        tmp_path / "fakeroot", tmp_path / "ledger", reader, manifest, authorization_record, authority_keys,
+        process_id="never-registered-process", code_sha256="a" * 64, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
+        candidate_revision="rev-1", candidate_lineage="lineage-1", run_id_prefix="unsigned-attack", timestamp_utc=ts(NOW),
+        generator_code_root=tmp_path, commit_is_descendant=True)
+    assert problems == ["MANIFEST_SIGNATURE_INVALID:INVALID_SIGNATURE"]
 
 
 def test_digest_only_same_process_verifier_is_honestly_named_not_process_isolated():

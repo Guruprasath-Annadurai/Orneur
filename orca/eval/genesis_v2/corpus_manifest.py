@@ -2,7 +2,23 @@
 corpus-generation authorization that permitted it. Implements the schema PROPOSED in
 GENESIS_V2_BENCHMARK_PARTITION_ARCHITECTURE.md §5. No corpus exists yet — this module only validates the SHAPE and
 the BINDING of a manifest a future generation step would produce; it never generates content and is never called
-with real data in this phase."""
+with real data in this phase.
+
+## Schema /2: the manifest is a SIGNED, post-generation authenticated record — not the pre-generation authorization
+
+`corpus_generation_authorization.py`'s CGA record is signed BEFORE generation and binds the reviewed code and
+evidence state that PERMITS generation to happen — it cannot and does not contain the digest of content that does
+not exist yet at signing time. The X25519 vault keypair provides CONFIDENTIALITY (only the private-key holder can
+decrypt) but NOT sender authentication — anyone who obtains the vault's public key can encrypt arbitrary content
+into a syntactically valid, well-formed sealed corpus. The manifest is therefore the SEPARATE, POST-generation
+authenticated record that binds corpus identity + real split digests + the combined corpus digest to the SPECIFIC
+authorization that permitted its creation, via a real Ed25519 signature from a registered OWNER authority key
+(the SAME authority_registry.py / role vocabulary already used for CGA) — `manifest_signing_bytes()` /
+`verify_manifest_signature()` below, mirroring `corpus_generation_authorization.py`'s own
+`canonical_signing_bytes()`/`verify_signature()` pattern exactly. A manifest without a valid signature from a
+registered OWNER key is never a trusted source of `expected_corpus_digest` for anything downstream — see
+`operational_boundary.verify_manifest_digest_only_same_process()`, which now derives that digest ONLY from a
+manifest that has independently passed BOTH this signature check AND `binding_problems()`."""
 from __future__ import annotations
 
 import hashlib
@@ -10,10 +26,10 @@ import json
 import re
 from pathlib import Path
 
-SCHEMA_VERSION = "genesis-v2-corpus-manifest/1"
+SCHEMA_VERSION = "genesis-v2-corpus-manifest/2"
 REQUIRED_FIELDS = frozenset({"schema_version", "corpus_id", "eval_version", "generator_code_sha256", "generated_at_commit_sha",
                              "screen_digest", "qualification_holdout_digest", "per_category_item_counts",
-                             "corpus_generation_authorization_id"})
+                             "corpus_generation_authorization_id", "signing_authority", "signature"})
 _SHA64 = re.compile(r"^[0-9a-f]{64}$")
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _CORPUS_ID = re.compile(r"^gce2c-[0-9a-f]{32}$")
@@ -42,7 +58,48 @@ def validate_manifest(manifest) -> list:
         p.append("per_category_item_counts must be a non-empty dict of non-negative integers")
     if not (isinstance(manifest["corpus_generation_authorization_id"], str) and manifest["corpus_generation_authorization_id"].startswith("cgauth-")):
         p.append("corpus_generation_authorization_id must reference a real cgauth-<hex> authorization id")
+    sa = manifest.get("signing_authority")
+    if not isinstance(sa, dict) or set(sa) != {"identity", "role", "key_id"} or not all(isinstance(sa[k], str) and sa[k] for k in sa):
+        p.append("signing_authority must be an object with non-empty identity/role/key_id strings")
+    if not isinstance(manifest.get("signature"), str) or not manifest["signature"]:
+        p.append("signature must be a non-empty string")
     return p
+
+
+def manifest_signing_bytes(manifest: dict) -> bytes:
+    """Canonical bytes the manifest's signature covers -- every field EXCEPT `signature` itself, mirroring
+    corpus_generation_authorization.canonical_signing_bytes() exactly (the same self-referential-exclusion
+    pattern: a record cannot sign over its own signature field)."""
+    body = {k: v for k, v in manifest.items() if k != "signature"}
+    return json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+
+
+def verify_manifest_signature(manifest: dict, keys: list) -> str | None:
+    """Returns None if the manifest's signature is genuinely valid AND from a registered, active OWNER authority
+    key; else a reason string. Never raises. Mirrors corpus_generation_authorization.verify_signature() exactly —
+    same role restriction (OWNER only), same registered-key lookup, same Ed25519 verification, same fail-closed
+    exception handling."""
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    except Exception:
+        return "SIGNATURE_VERIFIER_UNAVAILABLE"
+    sa = manifest.get("signing_authority") or {}
+    if not isinstance(sa, dict):
+        return "MALFORMED_SIGNING_AUTHORITY"
+    key = next((k for k in keys if isinstance(k, dict) and k.get("key_id") == sa.get("key_id")), None)
+    if key is None:
+        return "AUTHORITY_KEY_NOT_REGISTERED"
+    if key.get("role") != "OWNER" or key.get("role") != sa.get("role") or key.get("identity") != sa.get("identity"):
+        return "AUTHORITY_NOT_OWNER_OR_IDENTITY_MISMATCH"
+    try:
+        pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(key["public_key_hex"]))
+        pub.verify(bytes.fromhex(str(manifest.get("signature") or "")), manifest_signing_bytes(manifest))
+    except InvalidSignature:
+        return "INVALID_SIGNATURE"
+    except Exception as e:
+        return f"SIGNATURE_CHECK_ERROR:{type(e).__name__}"
+    return None
 
 
 def manifest_digest(manifest: dict) -> str:

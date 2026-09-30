@@ -1,7 +1,12 @@
 """Read-only evidence snapshot script: aggregates existing read-only checks, never touches a secret, never
 activates/authorizes/generates anything, always exits 0. Item 3 of the deployment-decision-accuracy-closure phase:
-role-aware collection, an explicit security contract, secret-shaped scrubbing on exceptions, and tests against
-SYNTHETIC POPULATED environments -- not only the current unconfigured baseline."""
+role-aware collection, an explicit security contract, and tests against SYNTHETIC POPULATED environments -- not only
+the current unconfigured baseline. Item 3 of the authenticated-transfer-and-evidence-integrity-closure phase:
+`_safe()` no longer forwards ANY part of an underlying exception's message text (previously scrubbed only via a
+64-hex-character regex, which the audit correctly flagged as insufficient alone -- it would miss a base64-encoded
+secret, a variable-length secret, or a secret embedded in a path). It now returns a fixed, allowlisted error code
+plus a static per-check description, proven below against hex-, base64-, variable-length-, and path-shaped
+adversarial exception messages."""
 import importlib.util
 import json
 import os
@@ -28,7 +33,7 @@ def _run(*extra_args, env=None):
 
 
 def _load_module():
-    """Import the script directly (not via subprocess) so _scrub()/_safe() can be unit-tested in-process."""
+    """Import the script directly (not via subprocess) so _safe() can be unit-tested in-process."""
     spec = importlib.util.spec_from_file_location("genesis_v2_evidence_snapshot", SCRIPT)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -96,9 +101,13 @@ def test_evidence_snapshot_declares_its_own_security_contract():
     p = _run(env=_clean_env())
     doc = json.loads(p.stdout)
     sc = doc["security_contract"]
-    assert sc["checks_that_inspect_actual_secret_bytes"] == ["role_preflight_owner (X25519 pair-matching step only)"]
-    assert "role_preflight_generator" in " ".join(sc["checks_that_never_touch_a_secret_value_at_all"])
+    assert sc["checks_that_inspect_actual_vault_key_bytes"] == ["role_preflight_owner (X25519 pair-matching step only)"]
+    assert sc["checks_that_decode_and_validate_the_corpus_secret"] == ["role_preflight_generator", "role_preflight_owner"]
+    assert sc["checks_that_never_touch_the_corpus_secret_at_all"] == ["role_preflight_verifier", "owner_preflight", "privacy_scan", "vault_isolation"]
+    assert "role_preflight_generator" in " ".join(sc["checks_that_only_check_vault_key_shape"])
+    assert "role_preflight_verifier" in " ".join(sc["checks_that_only_check_vault_key_shape"])
     assert "never a secret value itself" in sc["values_ever_emitted_in_this_report"]
+    assert "NO part" in sc["values_ever_emitted_in_this_report"]
 
 
 def test_evidence_snapshot_never_claims_cross_environment_separation_evidence():
@@ -180,30 +189,98 @@ def test_evidence_snapshot_owner_role_with_a_synthetic_matching_keypair(tmp_path
     assert priv.hex() not in p.stdout and pub.hex() not in p.stdout
 
 
-# ---------------------------------------------------------------- exception scrubbing
-def test_scrub_redacts_secret_shaped_substrings():
+# ---------------------------------------------------------------- item 3: fixed, allowlisted error codes (never a
+# regex-based scrub of exception message text) -- adversarial coverage across hex, base64, variable-length, and
+# path-shaped secrets, plus ordinary and deliberately hostile exception strings.
+def test_safe_wrapper_never_forwards_any_part_of_a_64_hex_secret_shaped_exception_message():
     mod = _load_module()
-    fake_secret = "ab" * 32
-    scrubbed = mod._scrub(f"ValueError: bad key {fake_secret} rejected")
-    assert fake_secret not in scrubbed
-    assert "<redacted-secret-shaped-value>" in scrubbed
-
-
-def test_safe_wrapper_scrubs_a_secret_shaped_exception_message():
-    mod = _load_module()
-    fake_secret = "cd" * 32
+    fake_secret = "ab" * 32   # exactly the shape the OLD regex-based scrubber targeted
 
     def boom():
         raise RuntimeError(f"leaked {fake_secret} in a hypothetical bug")
-    result = mod._safe("test_check", boom)
-    assert fake_secret not in json.dumps(result)
-    assert "<redacted-secret-shaped-value>" in result["error"]
+    result = mod._safe("role_preflight_generator", boom)
+    blob = json.dumps(result)
+    assert fake_secret not in blob
+    assert "leaked" not in blob and "hypothetical bug" not in blob
+    assert result["error_code"] == "UNEXPECTED_EXCEPTION"
+    assert result["exception_type"] == "RuntimeError"
+    assert result["description"] == mod._CHECK_DESCRIPTIONS["role_preflight_generator"]
 
 
-def test_safe_wrapper_passes_through_non_secret_shaped_exceptions_unscrubbed():
+def test_safe_wrapper_never_forwards_a_base64_shaped_secret_the_old_hex_regex_would_have_missed():
+    """The audit's core point: a 64-hex-char regex would never have caught THIS shape at all -- proving the fix
+    does not merely widen the regex, it removes exception-text forwarding entirely."""
+    import base64
+    mod = _load_module()
+    fake_secret_b64 = base64.b64encode(os.urandom(32)).decode()
+
+    def boom():
+        raise ValueError(f"corpus secret {fake_secret_b64} failed validation")
+    result = mod._safe("role_preflight_owner", boom)
+    blob = json.dumps(result)
+    assert fake_secret_b64 not in blob
+    assert "corpus secret" not in blob and "failed validation" not in blob
+
+
+def test_safe_wrapper_never_forwards_a_variable_length_secret():
+    mod = _load_module()
+    for length in (16, 33, 47, 129):
+        fake_secret = os.urandom(length).hex()
+
+        def boom(s=fake_secret):
+            raise RuntimeError(f"bad secret: {s}")
+        result = mod._safe("role_preflight_verifier", boom)
+        blob = json.dumps(result)
+        assert fake_secret not in blob
+        assert "bad secret" not in blob
+
+
+def test_safe_wrapper_never_forwards_a_secret_embedded_in_a_filesystem_path():
+    """A secret-shaped value embedded inside a path (e.g. a key file whose name or containing directory leaked into
+    an exception message) is exactly the kind of thing a 64-hex regex might miss depending on surrounding
+    punctuation -- proving the fix removes forwarding entirely, not just widening the pattern."""
+    mod = _load_module()
+    fake_secret = "ef" * 32
+    hostile_path = f"/Users/owner/.secrets/vault_private_key_{fake_secret}.pem"
+
+    def boom():
+        raise FileNotFoundError(f"could not read key material at {hostile_path}")
+    result = mod._safe("vault_isolation", boom)
+    blob = json.dumps(result)
+    assert fake_secret not in blob
+    assert hostile_path not in blob
+    assert "/Users/owner" not in blob
+
+
+def test_safe_wrapper_never_forwards_an_adversarial_exception_string_even_one_crafted_to_look_safe():
+    """An exception message deliberately crafted to look like harmless diagnostic text (no hex/base64 shape at all)
+    must still never appear -- proving the guarantee does not depend on recognizing any particular shape."""
+    mod = _load_module()
+
+    class _AdversarialError(RuntimeError):
+        pass
+
+    def boom():
+        raise _AdversarialError("this looks totally safe but actually embeds owner_password=hunter2 right here")
+    result = mod._safe("owner_preflight", boom)
+    blob = json.dumps(result)
+    assert "hunter2" not in blob
+    assert "totally safe" not in blob
+    assert result["exception_type"] == "_AdversarialError"
+    assert result["description"] == mod._CHECK_DESCRIPTIONS["owner_preflight"]
+
+
+def test_safe_wrapper_uses_the_unknown_check_description_for_an_unrecognized_label():
     mod = _load_module()
 
     def boom():
-        raise RuntimeError("ordinary error, no secret here")
-    result = mod._safe("test_check", boom)
-    assert "ordinary error, no secret here" in result["error"]
+        raise RuntimeError("some detail that must never appear")
+    result = mod._safe("some_future_check_not_yet_allowlisted", boom)
+    assert result["description"] == mod._UNKNOWN_CHECK_DESCRIPTION
+    assert "some detail that must never appear" not in json.dumps(result)
+
+
+def test_safe_wrapper_returns_the_underlying_value_unchanged_on_success():
+    mod = _load_module()
+    result = mod._safe("owner_preflight", lambda: {"status": "OK", "missing": []})
+    assert result == {"status": "OK", "missing": []}

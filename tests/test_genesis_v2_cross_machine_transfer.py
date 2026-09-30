@@ -5,6 +5,7 @@ separate OS accounts), that: only ciphertext ever crosses the transfer, the SEAL
 introduced during transfer, permissions must be explicitly re-applied on receipt, and the private key never needs
 to move at all (it was never on the sending side in the first place)."""
 import hashlib
+import json
 import os
 import shutil
 import stat
@@ -207,3 +208,117 @@ def test_two_os_accounts_one_machine_still_requires_an_explicit_export_import_st
     assert reader.read_split(corpus_id, "SCREEN", expected_corpus_digest=corpus_digest) == b"s"
     # the two locations are genuinely independent directories -- proving this was a real copy, not a shared mount
     assert shared_disk_generator_side != verifier_owned_vault
+
+
+def test_transferred_corpus_passes_the_real_ledger_gated_creation_time_verifier_flow(tmp_path):
+    """Item 2 (authenticated-transfer-and-evidence-integrity-closure phase): extends the cross-machine transfer all
+    the way through the REAL authorized creation-time verifier -- a genuine, registered qualification-runner
+    identity, a real `AccessLedger` grant (via `operational_boundary.authorized_manifest_verification_bytes`,
+    composed inside `verify_manifest_digest_only_same_process`), and a real, Ed25519-signed corpus manifest bound to
+    a real `CORPUS_GENERATION_AUTHORIZATION` record -- not just the raw `store.EncryptedVaultReader.read_split`
+    round trip the other tests in this file exercise.
+
+    HONEST SCOPE, stated explicitly per item 2: this is still a SAME-PROCESS `tmp_path` test. The "generator
+    machine" / "verifier machine" split below is two genuinely separate directories and a real copy step (exactly
+    like the other tests in this file), but it is NOT a separate OS process, separate UID, or separate physical
+    host -- Python interpreter state (including decrypted plaintext, briefly, inside
+    `operational_boundary.verify_manifest_digest_only_same_process`) is shared for the whole test. That a real
+    separate-machine or separate-UID deployment enforces genuine process isolation is NOT something any unit test
+    can establish by construction -- it remains an owner-side deployment acceptance check, per
+    `GENESIS_V2_PROCESS_ISOLATION_VERIFICATION_PROCEDURE.md`. What THIS test DOES prove, with real crypto and a
+    real ledger: after a genuine cross-machine ciphertext transfer, complete receipt, correct permissions, manifest
+    authentication (signature + CGA binding), and ledger evidence all check out end-to-end through the actual
+    verifier code path -- not a hand-rolled substitute for it."""
+    import hashlib as _hashlib
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    from orca.eval.genesis_v2 import ledger as LG
+    from orca.eval.genesis_v2 import operational_boundary as OB
+    from orca.eval.genesis_v2 import runner_registry as RN
+    from orca.eval.genesis_v2 import spec as SPEC
+    _need_crypto()
+
+    # --- GENERATION, on the "generator machine": write the real sealed corpus.
+    priv, pub = ST.generate_vault_keypair()
+    generator_machine = tmp_path / "generator-machine-vault"
+    generator_machine.mkdir(mode=0o700)
+    writer = ST.EncryptedVaultWriter(generator_machine, pub)
+    corpus_id = "gce2c-" + "56" * 16
+    screen_bytes = b'{"marker":"ITEM2-LEDGER-GATED-SCREEN"}'
+    holdout_bytes = b'{"marker":"ITEM2-LEDGER-GATED-HOLDOUT"}'
+    writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
+
+    # --- a real, Ed25519-SIGNED manifest binding this corpus to a real authorization record (item 1's format).
+    owner_sk = Ed25519PrivateKey.generate()
+    owner_pub_hex = owner_sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    authority_keys = [{"key_id": "k-owner-item2", "public_key_hex": owner_pub_hex, "identity": "owner-item2", "role": "OWNER"}]
+    code_dir = tmp_path / "generator_code"
+    code_dir.mkdir()
+    (code_dir / "gen_a.py").write_text("def a():\n    return 1\n")
+    generator_code_sha = RN.code_sha256_of(sorted(code_dir.glob("*.py")))
+    reviewed_sha = "c" * 40
+    unsigned_manifest = {
+        "schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+        "generator_code_sha256": generator_code_sha, "generated_at_commit_sha": reviewed_sha,
+        "screen_digest": _hashlib.sha256(screen_bytes).hexdigest(),
+        "qualification_holdout_digest": _hashlib.sha256(holdout_bytes).hexdigest(),
+        "per_category_item_counts": {"reasoning": 5}, "corpus_generation_authorization_id": "cgauth-" + "12" * 8,
+        "signing_authority": {"identity": "owner-item2", "role": "OWNER", "key_id": "k-owner-item2"}, "signature": "0" * 128}
+    manifest = {**unsigned_manifest, "signature": owner_sk.sign(CMAN.manifest_signing_bytes(unsigned_manifest)).hex()}
+    authorization_record = {"status": "AUTHORIZED", "authorization_id": manifest["corpus_generation_authorization_id"],
+                             "reviewed_commit_sha": reviewed_sha, "authorized_code_tree_sha256": generator_code_sha,
+                             "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"]}
+
+    # --- THE TRANSFER: only ciphertext crosses, exactly like the other tests in this file.
+    verifier_machine = tmp_path / "verifier-machine-vault"
+    verifier_machine.mkdir(mode=0o700)
+    src_corpus_dir = generator_machine / corpus_id
+    dst_corpus_dir = verifier_machine / corpus_id
+    dst_corpus_dir.mkdir(mode=0o700)
+    for name in ("SCREEN.enc", "QUALIFICATION_HOLDOUT.enc", "SEAL.enc"):
+        (dst_corpus_dir / name).write_bytes((src_corpus_dir / name).read_bytes())
+        os.chmod(dst_corpus_dir / name, 0o400)
+    os.chmod(dst_corpus_dir, 0o700)
+
+    # --- a REAL, registered qualification-runner identity, restricted to creation-time verification only (never
+    # PURPOSE_QUALIFICATION) -- the same separation-of-duties the runner registry already enforces elsewhere.
+    verifier_root = tmp_path / "verifier-fakeroot"
+    verifier_code_dir = tmp_path / "verifier_code"
+    verifier_code_dir.mkdir()
+    (verifier_code_dir / "verify_a.py").write_text("def v():\n    return 2\n")
+    verifier_code_sha = RN.code_sha256_of(sorted(verifier_code_dir.glob("*.py")))
+    doc = {"schema_version": RN.SCHEMA_VERSION, "records": [{
+        "runner_id": "item2-verifier", "runner_class": "SELF_HOSTED_CPU", "os_runtime": "test", "code_sha256": verifier_code_sha,
+        "allowed_purposes": [SPEC.PURPOSE_CREATION_VERIFICATION], "allowed_splits": ["SCREEN", "QUALIFICATION_HOLDOUT"],
+        "sandbox_image_digest": "sha256:" + "b" * 64, "semantic_engine_digest": "c" * 64,
+        "storage_backend_verification_digest": "d" * 64, "ledger_database_identity_digest": "e" * 64, "network_policy": "none",
+        "credential_scope": {"private_store_read": True, "public_repo_write": False, "training_credentials": False,
+                              "unrelated_cloud_credentials": False, "developer_tokens": False}, "state": "AUTHORIZED"}]}
+    (verifier_root / RN.REGISTRY_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (verifier_root / RN.REGISTRY_PATH).write_text(json.dumps(doc))
+
+    reader = ST.EncryptedVaultReader(verifier_machine, priv)
+    ledger_dir = tmp_path / "ledger"
+    problems = OB.verify_manifest_digest_only_same_process(
+        verifier_root, ledger_dir, reader, manifest, authorization_record, authority_keys, process_id="item2-verifier",
+        code_sha256=verifier_code_sha, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-item2",
+        candidate_lineage="lineage-item2", run_id_prefix="item2-transfer-verify", timestamp_utc="2026-01-01T00:00:00Z",
+        generator_code_root=code_dir, commit_is_descendant=True)
+    assert problems == []
+
+    # --- real ledger evidence: two grants (one per split), same creation-verification purpose, holdout still sealed
+    # afterward (this path never consumes the one-time qualification lifecycle).
+    led = LG.AccessLedger(ledger_dir, {})
+    recs = [r for r in led.records() if r["purpose"] == SPEC.PURPOSE_CREATION_VERIFICATION]
+    assert len(recs) == 2
+    assert {r["split"] for r in recs} == {"SCREEN", "QUALIFICATION_HOLDOUT"}
+    assert all(r["who"] == "item2-verifier" for r in recs)
+    assert led.holdout_state(SPEC.EVAL_VERSION) == {"state": SPEC.STATE_SEALED, "opened_by": None, "lineages": []}
+
+    # --- correct permissions preserved on the receiving side (same discipline as the raw-store transfer tests).
+    assert stat.S_IMODE(dst_corpus_dir.stat().st_mode) == 0o700
+    for name in ("SCREEN.enc", "QUALIFICATION_HOLDOUT.enc", "SEAL.enc"):
+        assert stat.S_IMODE((dst_corpus_dir / name).stat().st_mode) == 0o400

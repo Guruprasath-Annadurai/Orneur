@@ -96,6 +96,52 @@ def test_validate_policy_still_catches_missing_fields_and_low_entropy(monkeypatc
     assert any("entropy floor too low" in p for p in SM.validate_policy())
 
 
+# --------------------------------- item 4: permitted_readers checked INDEPENDENTLY of access_scope, catching a
+# contradiction where one field is correct and the other still names the wrong role
+def test_validate_policy_catches_corpus_secret_permitted_readers_contradicting_a_correct_access_scope(monkeypatch):
+    bad = copy.deepcopy(SM.SECRET_CLASSES)
+    assert "generator" in bad["corpus_secret"]["access_scope"].lower()   # access_scope stays CORRECT
+    bad["corpus_secret"]["permitted_readers"] = ["qualification runner identity"]   # but permitted_readers is WRONG
+    monkeypatch.setattr(SM, "SECRET_CLASSES", bad)
+    problems = SM.validate_policy()
+    assert any("corpus_secret" in p and "permitted_readers" in p for p in problems)
+    # the access_scope-only checks must NOT also fire -- proving this is a genuinely independent check, not a
+    # duplicate of the access_scope logic re-reading the same field
+    assert not any("corpus_secret: access_scope" in p for p in problems)
+
+
+def test_validate_policy_catches_vault_public_key_permitted_readers_contradicting_a_correct_access_scope(monkeypatch):
+    bad = copy.deepcopy(SM.SECRET_CLASSES)
+    assert "generator" in bad["vault_public_key"]["access_scope"].lower()
+    bad["vault_public_key"]["permitted_readers"] = ["creation-time-verifier identity"]
+    monkeypatch.setattr(SM, "SECRET_CLASSES", bad)
+    problems = SM.validate_policy()
+    assert any("vault_public_key" in p and "permitted_readers" in p for p in problems)
+    assert not any("vault_public_key: access_scope" in p for p in problems)
+
+
+def test_validate_policy_catches_vault_private_key_permitted_readers_contradicting_a_correct_access_scope(monkeypatch):
+    bad = copy.deepcopy(SM.SECRET_CLASSES)
+    assert "qualification" in bad["vault_private_key"]["access_scope"].lower() or "verifier" in bad["vault_private_key"]["access_scope"].lower()
+    bad["vault_private_key"]["permitted_readers"] = ["generator identity"]   # the exact credential-boundary mistake this class must never allow
+    monkeypatch.setattr(SM, "SECRET_CLASSES", bad)
+    problems = SM.validate_policy()
+    assert any("vault_private_key" in p and "permitted_readers" in p for p in problems)
+    assert not any("vault_private_key: access_scope" in p for p in problems)
+
+
+def test_validate_policy_catches_access_scope_contradicting_a_correct_permitted_readers(monkeypatch):
+    """The mirror image: permitted_readers is correct, access_scope is the one that's wrong -- proving neither
+    field is treated as authoritative over the other; both are independently checked."""
+    bad = copy.deepcopy(SM.SECRET_CLASSES)
+    assert bad["corpus_secret"]["permitted_readers"] == ["generator identity"]   # permitted_readers stays CORRECT
+    bad["corpus_secret"]["access_scope"] = "qualification runner process only"   # but access_scope is WRONG
+    monkeypatch.setattr(SM, "SECRET_CLASSES", bad)
+    problems = SM.validate_policy()
+    assert any("corpus_secret: access_scope" in p for p in problems)
+    assert not any("corpus_secret: permitted_readers" in p for p in problems)
+
+
 def test_env_var_cross_reference_catches_drift(monkeypatch):
     bad = copy.deepcopy(SM.SECRET_CLASSES)
     bad["vault_private_key"]["env_var"] = "ORNEUR_GENESIS_V2_WRONG_VAR_NAME"

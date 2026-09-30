@@ -80,29 +80,52 @@ def validate_policy() -> list:
 
     # Semantic cross-checks against the CURRENT X25519 architecture and the identity-separation model this
     # program enforces in code (generator_registry.py, operational_boundary.py) -- not merely field presence.
+    # `access_scope` (a single descriptive string) and `permitted_readers` (a list of identity strings) are
+    # checked INDEPENDENTLY of each other (item 4, authenticated-transfer-and-evidence-integrity-closure phase):
+    # a policy where one field is correct but the other still names the wrong role is just as wrong as either
+    # field being wrong alone, and a check that only inspected access_scope would miss it entirely.
+    def _readers_text(pol: dict) -> str:
+        readers = pol.get("permitted_readers") or []
+        return " ".join(str(r) for r in readers).lower()
+
     corpus = SECRET_CLASSES.get("corpus_secret")
     if corpus is not None:
         scope = corpus["access_scope"].lower()
+        readers = _readers_text(corpus)
         if "generator" not in scope:
             p.append("corpus_secret: access_scope must name the generator role -- it seeds generation, not a reader role")
         if "qualification" in scope or "verifier" in scope:
             p.append("corpus_secret: access_scope must NOT name a reader role (qualification runner / verifier)")
+        if "generator" not in readers:
+            p.append("corpus_secret: permitted_readers must name the generator identity -- it seeds generation, not a reader role")
+        if "qualification" in readers or "verifier" in readers:
+            p.append("corpus_secret: permitted_readers must NOT name a reader identity (qualification runner / verifier)")
 
     pub = SECRET_CLASSES.get("vault_public_key")
     if pub is not None:
         scope = pub["access_scope"].lower()
+        readers = _readers_text(pub)
         if "generator" not in scope:
             p.append("vault_public_key: access_scope must name the generator role")
         if "qualification" in scope or "verifier" in scope:
             p.append("vault_public_key: access_scope must NOT name a reader role -- it is the generator's own key")
+        if "generator" not in readers:
+            p.append("vault_public_key: permitted_readers must name the generator identity")
+        if "qualification" in readers or "verifier" in readers:
+            p.append("vault_public_key: permitted_readers must NOT name a reader identity -- it is the generator's own key")
 
     priv = SECRET_CLASSES.get("vault_private_key")
     if priv is not None:
         scope = priv["access_scope"].lower()
+        readers = _readers_text(priv)
         if "generator" in scope:
             p.append("vault_private_key: access_scope must NEVER name the generator role")
         if "qualification" not in scope and "verifier" not in scope:
             p.append("vault_private_key: access_scope must name a reader role (creation-time-verifier / qualification runner)")
+        if "generator" in readers:
+            p.append("vault_private_key: permitted_readers must NEVER name the generator identity")
+        if "qualification" not in readers and "verifier" not in readers:
+            p.append("vault_private_key: permitted_readers must name a reader identity (creation-time-verifier / qualification runner)")
 
     if "aes_encryption_key_LEGACY_RETIRED" not in SECRET_CLASSES:
         p.append("the retired symmetric-key class must be kept (clearly marked RETIRED) for historical/audit continuity, not deleted")

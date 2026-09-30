@@ -21,6 +21,10 @@ GOOD_MANIFEST = {
     "generator_code_sha256": "a" * 64, "generated_at_commit_sha": "b" * 40, "screen_digest": "c" * 64,
     "qualification_holdout_digest": "d" * 64, "per_category_item_counts": {"reasoning": 100, "coding": 50},
     "corpus_generation_authorization_id": "cgauth-" + "ef" * 8,
+    # schema /2: a structurally-shaped (but not cryptographically verified -- these tests don't call
+    # verify_manifest_signature) signing_authority + signature, present so validate_manifest()/binding_problems()
+    # (which check SHAPE only) accept this fixture as structurally well-formed.
+    "signing_authority": {"identity": "owner-1", "role": "OWNER", "key_id": "k-owner"}, "signature": "0" * 128,
 }
 # schema /2: reviewed_commit_sha (ancestry-checked by the CALLER) + authorized_code_tree_sha256 (exact-match), never
 # a literal "authorized_commit_sha" field (that was the schema /1 field this redesign replaced).
@@ -659,16 +663,65 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
     led = LG.AccessLedger(tmp_path / "ledger", {})
     assert led.holdout_state(SPEC.EVAL_VERSION) == {"state": SPEC.STATE_SEALED, "opened_by": None, "lineages": []}
 
-    # 9. Manifest binding (to the OWNER's signed authorization) and real-bytes content verification.
-    manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
-                "generator_code_sha256": code_hash, "generated_at_commit_sha": reviewed_sha,
-                "screen_digest": hashlib.sha256(screen_bytes).hexdigest(), "qualification_holdout_digest": hashlib.sha256(holdout_bytes).hexdigest(),
-                "per_category_item_counts": {"reasoning": 10}, "corpus_generation_authorization_id": auth["authorization_id"]}
+    # 9. Manifest AUTHENTICATION (item 1): a real Ed25519 signature from the SAME registered OWNER authority key
+    #    that signed the CGA record above -- the X25519 vault keypair provides confidentiality, never sender
+    #    authentication, so this is a genuinely SEPARATE cryptographic binding, not a restatement of the same fact.
+    authority_keys = AR.active_authority_keys(ar_doc)
+    unsigned_manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+                          "generator_code_sha256": code_hash, "generated_at_commit_sha": reviewed_sha,
+                          "screen_digest": hashlib.sha256(screen_bytes).hexdigest(), "qualification_holdout_digest": hashlib.sha256(holdout_bytes).hexdigest(),
+                          "per_category_item_counts": {"reasoning": 10}, "corpus_generation_authorization_id": auth["authorization_id"],
+                          "signing_authority": {"identity": "e2e-owner-1", "role": "OWNER", "key_id": "e2e-owner-1"}, "signature": "0" * 128}
+    manifest = {**unsigned_manifest, "signature": owner_sk.sign(CMAN.manifest_signing_bytes(unsigned_manifest)).hex()}
+    assert CMAN.verify_manifest_signature(manifest, authority_keys) is None
     assert CMAN.binding_problems(manifest, auth, commit_is_descendant=True) == []
     problems = CMAN.verify_against_artifacts(manifest, screen_plain=screen_plain, holdout_plain=holdout_plain,
                                               generator_code_root=repo / "orca" / "eval" / "genesis_v2",
                                               expected_corpus_digest=corpus_digest)
     assert problems == [], problems
+
+    # 9a. The SAME check through the composed, ledger-gated top-level function -- a SECOND, independent
+    #     require_private_split_access grant per split, proving the whole authenticated flow composes end-to-end
+    #     (a fresh run_id_prefix avoids RUN_ALREADY_GRANTED against the ledger calls in step 8).
+    reader2 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
+    composed_problems = OB.verify_manifest_digest_only_same_process(
+        repo, tmp_path / "ledger", reader2, manifest, auth, authority_keys, process_id="verifier-e2e",
+        code_sha256=verifier_code_hash, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
+        candidate_lineage="lineage-e2e", run_id_prefix="e2e-composed", timestamp_utc=ts(NOW),
+        generator_code_root=repo / "orca" / "eval" / "genesis_v2", commit_is_descendant=True)
+    assert composed_problems == []
+
+    # 9b. ADVERSARIAL (item 1's core ask): an attacker who knows ONLY the vault's PUBLIC key writes SUBSTITUTE
+    #     content -- perfectly valid ciphertext, a perfectly self-consistent manifest (correct digests for THEIR
+    #     content, the REAL authorization id copied verbatim, since none of that is secret) -- but has no access to
+    #     the owner's Ed25519 PRIVATE signing key, so cannot produce a valid signature. Verification must refuse
+    #     before ever trusting a digest derived from this forged manifest.
+    # Deliberately uses the RAW EncryptedVaultWriter, not protected_generate_write_handle -- this is the point: the
+    # attacker's only assumed capability is knowledge of the PUBLIC key (which is safe to share, by the crypto's own
+    # design), not a genuinely authorized generation identity. The public key alone is enough to encrypt.
+    attacker_writer = ST.EncryptedVaultWriter(tmp_path / "vault", vault_pub, repo_root=repo)
+    forged_corpus_id = "gce2c-" + "f0" * 16
+    forged_screen, forged_holdout = b'{"marker":"ATTACKER-SUBSTITUTED-SCREEN"}', b'{"marker":"ATTACKER-SUBSTITUTED-HOLDOUT"}'
+    forged_digest = attacker_writer.write_corpus(forged_corpus_id, {"SCREEN": forged_screen, "QUALIFICATION_HOLDOUT": forged_holdout})
+    forged_unsigned = {**unsigned_manifest, "corpus_id": forged_corpus_id,
+                        "screen_digest": hashlib.sha256(forged_screen).hexdigest(),
+                        "qualification_holdout_digest": hashlib.sha256(forged_holdout).hexdigest()}
+    # (a) no signature at all / garbage signature -- self-consistent digests, but unsigned
+    forged_no_sig = {**forged_unsigned, "signature": "0" * 128}
+    assert CMAN.verify_manifest_signature(forged_no_sig, authority_keys) == "INVALID_SIGNATURE"
+    # (b) signed with the ATTACKER's own (unregistered) key -- still fails, since it never matches a registered owner
+    attacker_sk = Ed25519PrivateKey.generate()
+    forged_attacker_signed = {**forged_unsigned, "signature": attacker_sk.sign(CMAN.manifest_signing_bytes(forged_unsigned)).hex()}
+    assert CMAN.verify_manifest_signature(forged_attacker_signed, authority_keys) == "INVALID_SIGNATURE"
+    # end-to-end: the composed verification function refuses the forged manifest before ever deriving a digest for,
+    # or attempting to read, the substituted artifacts
+    reader3 = ST.EncryptedVaultReader(tmp_path / "vault", vault_priv, repo_root=repo)
+    forged_problems = OB.verify_manifest_digest_only_same_process(
+        repo, tmp_path / "ledger", reader3, forged_no_sig, auth, authority_keys, process_id="verifier-e2e",
+        code_sha256=verifier_code_hash, corpus_id=forged_corpus_id, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-e2e",
+        candidate_lineage="lineage-e2e", run_id_prefix="e2e-forged", timestamp_utc=ts(NOW),
+        generator_code_root=repo / "orca" / "eval" / "genesis_v2", commit_is_descendant=True)
+    assert forged_problems == ["MANIFEST_SIGNATURE_INVALID:INVALID_SIGNATURE"]
 
     # 10. Final integration point: independent-verification-backed candidate-lineage qualification eligibility, using
     #     the SAME pattern as the rest of this file (synthetic candidate, ephemeral reviewer key, real evidence bytes).
