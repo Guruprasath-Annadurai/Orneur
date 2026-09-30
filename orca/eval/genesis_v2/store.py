@@ -467,6 +467,7 @@ def owner_setup_preflight(env: dict | None = None, *, public_repo: str = PUBLIC_
     """Report exactly what the owner must set up. Never prints values; never invents anything."""
     env = os.environ if env is None else env
     missing = []
+    warnings = []
     store = env.get(spec.STORE_ENV, "")
     if not store:
         missing.append({"item": spec.STORE_ENV, "need": "'<KIND>:<location>' naming a PRIVATE GitHub repo / private object store / encrypted artifact location outside the repo"})
@@ -485,7 +486,36 @@ def owner_setup_preflight(env: dict | None = None, *, public_repo: str = PUBLIC_
             _s.load_secret_from_env(env)
         except _s.SecretEntropyError as e:
             missing.append({"item": spec.SECRET_ENV, "need": f"present but invalid: {e}"})
-    if store.startswith("ENCRYPTED_ARTIFACT") and not env.get(spec.ENC_KEY_ENV):
-        missing.append({"item": spec.ENC_KEY_ENV, "need": "32-byte AES key from a secret manager (never committed)"})
+    if store.startswith("ENCRYPTED_ARTIFACT"):
+        pub_hex = env.get(spec.VAULT_PUBLIC_KEY_ENV, "")
+        priv_hex = env.get(spec.VAULT_PRIVATE_KEY_ENV, "")
+        if not pub_hex:
+            missing.append({"item": spec.VAULT_PUBLIC_KEY_ENV,
+                             "need": "64-hex-char X25519 public key (32 bytes) from generate_vault_keypair() -- safe for the GENERATOR's deployment scope only"})
+        elif not re.fullmatch(r"[0-9a-fA-F]{64}", pub_hex):
+            missing.append({"item": spec.VAULT_PUBLIC_KEY_ENV, "need": "present but malformed: must be exactly 64 hex characters (32 bytes)"})
+        if not priv_hex:
+            missing.append({"item": spec.VAULT_PRIVATE_KEY_ENV,
+                             "need": "64-hex-char X25519 private key (32 bytes) from generate_vault_keypair() -- must be scoped ONLY to the "
+                                     "creation-time-verifier / qualification-runner deployment, never the generator's"})
+        elif not re.fullmatch(r"[0-9a-fA-F]{64}", priv_hex):
+            missing.append({"item": spec.VAULT_PRIVATE_KEY_ENV, "need": "present but malformed: must be exactly 64 hex characters (32 bytes)"})
+        if pub_hex and priv_hex and re.fullmatch(r"[0-9a-fA-F]{64}", pub_hex) and re.fullmatch(r"[0-9a-fA-F]{64}", priv_hex):
+            try:
+                from cryptography.hazmat.primitives import serialization
+                from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+                sk = X25519PrivateKey.from_private_bytes(bytes.fromhex(priv_hex))
+                derived_pub = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+                if derived_pub != pub_hex.lower():
+                    missing.append({"item": spec.VAULT_PUBLIC_KEY_ENV,
+                                     "need": "does not match the supplied private key -- these must be the SAME keypair from one generate_vault_keypair() call"})
+            except Exception:
+                pass   # shape already validated above; a crypto import failure is reported by the store construction itself, not duplicated here
+    if env.get(spec.LEGACY_SYMMETRIC_ENC_KEY_ENV):
+        warnings.append({"item": spec.LEGACY_SYMMETRIC_ENC_KEY_ENV,
+                          "note": "set but UNUSED by the current X25519 writer/reader architecture -- this looks like a leftover from the retired "
+                                  "symmetric-key setup. It grants no access on its own and no code path reads it, but its presence suggests stale "
+                                  "tooling or documentation; remove it to avoid confusion."})
     return {"status": "PRIVATE_STORAGE_CONFIGURED_UNVERIFIED" if not missing else "PRIVATE_STORAGE_NOT_CONFIGURED",
-            "missing": missing, "note": "configuration presence is not proof of privacy; visibility must be independently verified by the owner"}
+            "missing": missing, "warnings": warnings,
+            "note": "configuration presence is not proof of privacy; visibility must be independently verified by the owner"}

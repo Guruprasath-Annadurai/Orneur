@@ -635,3 +635,119 @@ def test_authorized_manifest_verification_bytes_with_the_real_asymmetric_vault_r
         expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
         run_id_prefix="cv-real", timestamp_utc=ts(NOW))
     assert screen_plain == b"real-screen-content" and holdout_plain == b"real-holdout-content"
+
+
+# ---------------------------------------------------------------- verify_manifest_in_restricted_process() (item 3: no plaintext leaves)
+def test_restricted_process_verification_never_returns_plaintext(tmp_path):
+    """The core item-3 claim, checked directly: the function's return value is a list of diagnostic strings that
+    never contains the real plaintext, even though it genuinely had access to it internally to compute the result."""
+    from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    from orca.eval.genesis_v2 import runner_registry as RN
+    from orca.eval.genesis_v2 import spec as SPEC
+    from orca.eval.genesis_v2 import store as ST
+    _need_crypto()
+    code_dir = tmp_path / "generator_code"
+    code_dir.mkdir()
+    (code_dir / "gen_a.py").write_text("def a():\n    return 1\n")
+    code_sha = RN.code_sha256_of(sorted(code_dir.glob("*.py")))
+
+    root = tmp_path / "fakeroot"
+    _write_runner_registry(root, "verifier-restricted", code_sha, [SPEC.PURPOSE_CREATION_VERIFICATION], ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    priv, pub = ST.generate_vault_keypair()
+    vault_dir = tmp_path / "vault"
+    writer = ST.EncryptedVaultWriter(vault_dir, pub, repo_root=tmp_path / "not-a-repo")
+    screen_bytes = b'{"marker":"SECRET-SCREEN-PLAINTEXT-MUST-NEVER-LEAK"}'
+    holdout_bytes = b'{"marker":"SECRET-HOLDOUT-PLAINTEXT-MUST-NEVER-LEAK"}'
+    corpus_id = "gce2c-" + "8" * 32
+    digest = writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
+    reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
+
+    manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+                "generator_code_sha256": code_sha, "generated_at_commit_sha": "b" * 40,
+                "screen_digest": __import__("hashlib").sha256(screen_bytes).hexdigest(),
+                "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
+                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}
+
+    problems = OB.verify_manifest_in_restricted_process(
+        root, tmp_path / "ledger", reader, manifest, process_id="verifier-restricted", code_sha256=code_sha, corpus_id=corpus_id,
+        expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
+        run_id_prefix="restricted-verify", timestamp_utc=ts(NOW), generator_code_root=code_dir)
+    assert problems == []
+    blob = repr(problems)
+    assert b"SECRET-SCREEN-PLAINTEXT-MUST-NEVER-LEAK".decode() not in blob and b"SECRET-HOLDOUT-PLAINTEXT-MUST-NEVER-LEAK".decode() not in blob
+
+
+def test_restricted_process_verification_detects_tampering_without_leaking_plaintext(tmp_path):
+    """A manifest claiming the wrong content is still caught -- and the problem list, while informative, never
+    embeds the real plaintext bytes that proved the claim wrong."""
+    from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    from orca.eval.genesis_v2 import runner_registry as RN
+    from orca.eval.genesis_v2 import spec as SPEC
+    from orca.eval.genesis_v2 import store as ST
+    _need_crypto()
+    code_dir = tmp_path / "generator_code"
+    code_dir.mkdir()
+    (code_dir / "gen_a.py").write_text("def a():\n    return 1\n")
+    code_sha = RN.code_sha256_of(sorted(code_dir.glob("*.py")))
+
+    root = tmp_path / "fakeroot"
+    _write_runner_registry(root, "verifier-restricted-2", code_sha, [SPEC.PURPOSE_CREATION_VERIFICATION], ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    priv, pub = ST.generate_vault_keypair()
+    vault_dir = tmp_path / "vault"
+    writer = ST.EncryptedVaultWriter(vault_dir, pub, repo_root=tmp_path / "not-a-repo")
+    screen_bytes = b'{"marker":"SECRET-SCREEN-TAMPER-TEST"}'
+    holdout_bytes = b'{"marker":"SECRET-HOLDOUT-TAMPER-TEST"}'
+    corpus_id = "gce2c-" + "9" * 32
+    digest = writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
+    reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
+
+    manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+                "generator_code_sha256": code_sha, "generated_at_commit_sha": "b" * 40,
+                "screen_digest": "0" * 64,   # WRONG on purpose
+                "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
+                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}
+
+    problems = OB.verify_manifest_in_restricted_process(
+        root, tmp_path / "ledger", reader, manifest, process_id="verifier-restricted-2", code_sha256=code_sha, corpus_id=corpus_id,
+        expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
+        run_id_prefix="restricted-tamper", timestamp_utc=ts(NOW), generator_code_root=code_dir)
+    assert problems and any("SCREEN" in p for p in problems)
+    blob = repr(problems)
+    assert "SECRET-SCREEN-TAMPER-TEST" not in blob and "SECRET-HOLDOUT-TAMPER-TEST" not in blob
+
+
+def test_restricted_process_verification_preserves_ledger_evidence_and_sealed_lifecycle(tmp_path):
+    from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    from orca.eval.genesis_v2 import ledger as LG
+    from orca.eval.genesis_v2 import runner_registry as RN
+    from orca.eval.genesis_v2 import spec as SPEC
+    from orca.eval.genesis_v2 import store as ST
+    _need_crypto()
+    code_dir = tmp_path / "generator_code"
+    code_dir.mkdir()
+    (code_dir / "gen_a.py").write_text("def a():\n    return 1\n")
+    code_sha = RN.code_sha256_of(sorted(code_dir.glob("*.py")))
+
+    root = tmp_path / "fakeroot"
+    _write_runner_registry(root, "verifier-restricted-3", code_sha, [SPEC.PURPOSE_CREATION_VERIFICATION], ["SCREEN", "QUALIFICATION_HOLDOUT"])
+    priv, pub = ST.generate_vault_keypair()
+    vault_dir = tmp_path / "vault"
+    writer = ST.EncryptedVaultWriter(vault_dir, pub, repo_root=tmp_path / "not-a-repo")
+    screen_bytes, holdout_bytes = b"s", b"h"
+    corpus_id = "gce2c-" + "f" * 32
+    digest = writer.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
+    reader = ST.EncryptedVaultReader(vault_dir, priv, repo_root=tmp_path / "not-a-repo")
+    manifest = {"schema_version": CMAN.SCHEMA_VERSION, "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION,
+                "generator_code_sha256": code_sha, "generated_at_commit_sha": "b" * 40,
+                "screen_digest": __import__("hashlib").sha256(screen_bytes).hexdigest(),
+                "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
+                "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}
+
+    OB.verify_manifest_in_restricted_process(
+        root, tmp_path / "ledger", reader, manifest, process_id="verifier-restricted-3", code_sha256=code_sha, corpus_id=corpus_id,
+        expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
+        run_id_prefix="restricted-ledger", timestamp_utc=ts(NOW), generator_code_root=code_dir)
+    led = LG.AccessLedger(tmp_path / "ledger", {})
+    recs = [r for r in led.records() if r["purpose"] == SPEC.PURPOSE_CREATION_VERIFICATION]
+    assert len(recs) == 2   # one per split, same evidence-preservation guarantee as the underlying function
+    assert led.holdout_state(SPEC.EVAL_VERSION) == {"state": SPEC.STATE_SEALED, "opened_by": None, "lineages": []}

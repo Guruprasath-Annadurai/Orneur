@@ -59,6 +59,50 @@ def test_preflight_reports_exact_owner_setup_when_unconfigured():
     assert ok["status"] == "PRIVATE_STORAGE_CONFIGURED_UNVERIFIED"          # presence of variables is never 'genuinely configured'
 
 
+def test_preflight_requires_the_x25519_vault_keypair_for_encrypted_artifact_kind():
+    r = ST.owner_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/some/vault/path", spec.SECRET_ENV: os.urandom(32).hex()})
+    items = {m["item"] for m in r["missing"]}
+    assert spec.VAULT_PUBLIC_KEY_ENV in items and spec.VAULT_PRIVATE_KEY_ENV in items
+    assert r["status"] == "PRIVATE_STORAGE_NOT_CONFIGURED"
+
+
+def test_preflight_rejects_malformed_vault_key_shape():
+    r = ST.owner_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/some/vault/path", spec.SECRET_ENV: os.urandom(32).hex(),
+                                   spec.VAULT_PUBLIC_KEY_ENV: "not-hex-and-wrong-length", spec.VAULT_PRIVATE_KEY_ENV: "ab" * 32})
+    assert any(m["item"] == spec.VAULT_PUBLIC_KEY_ENV and "malformed" in m["need"] for m in r["missing"])
+
+
+def test_preflight_rejects_a_public_private_key_pair_that_does_not_match():
+    _need_crypto()
+    priv1, pub1 = ST.generate_vault_keypair()
+    priv2, pub2 = ST.generate_vault_keypair()
+    r = ST.owner_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/some/vault/path", spec.SECRET_ENV: os.urandom(32).hex(),
+                                   spec.VAULT_PUBLIC_KEY_ENV: pub2.hex(), spec.VAULT_PRIVATE_KEY_ENV: priv1.hex()})   # mismatched pair
+    assert any(m["item"] == spec.VAULT_PUBLIC_KEY_ENV and "does not match" in m["need"] for m in r["missing"])
+
+
+def test_preflight_accepts_a_genuinely_matching_vault_keypair():
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    r = ST.owner_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/some/vault/path", spec.SECRET_ENV: os.urandom(32).hex(),
+                                   spec.VAULT_PUBLIC_KEY_ENV: pub.hex(), spec.VAULT_PRIVATE_KEY_ENV: priv.hex()})
+    assert not any(m["item"] in (spec.VAULT_PUBLIC_KEY_ENV, spec.VAULT_PRIVATE_KEY_ENV) for m in r["missing"])
+    assert r["status"] == "PRIVATE_STORAGE_CONFIGURED_UNVERIFIED"
+
+
+def test_preflight_warns_on_legacy_symmetric_key_env_var_without_blocking():
+    """Item 1: identify and prevent accidental use of the legacy symmetric-key setup -- its presence is flagged as a
+    WARNING (stale tooling, grants nothing) rather than silently ignored, but never treated as if it configured
+    anything -- the vault keypair vars above are still separately required."""
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    r = ST.owner_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/some/vault/path", spec.SECRET_ENV: os.urandom(32).hex(),
+                                   spec.VAULT_PUBLIC_KEY_ENV: pub.hex(), spec.VAULT_PRIVATE_KEY_ENV: priv.hex(),
+                                   spec.LEGACY_SYMMETRIC_ENC_KEY_ENV: "ab" * 32})
+    assert any(w["item"] == spec.LEGACY_SYMMETRIC_ENC_KEY_ENV for w in r["warnings"])
+    assert r["status"] == "PRIVATE_STORAGE_CONFIGURED_UNVERIFIED"   # the warning does not block configuration
+
+
 def test_descriptor_backends_are_not_operational_and_status_says_so():
     st = json.loads((ROOT / "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text())
     assert st["freeze_prerequisites"]["private_storage_genuinely_configured"] is False
@@ -346,6 +390,18 @@ def test_public_split_is_not_a_storable_private_split(vault):
         st.read_split(CID, "DEV", expected_corpus_digest=cdig)
 
 
+def test_output_paths_document_matches_the_code_it_describes():
+    """Item 4: the operational-output-paths document is tested against the actual code, not just asserted in prose."""
+    t = (ROOT / "docs/orneur/phase-21/GENESIS_V2_OUTPUT_PATHS.md").read_text()
+    for s in ("PILOT_TRAIN", "QUALIFICATION_HOLDOUT", "GeneratorWriteHandle", "EncryptedVaultWriter", "EncryptedVaultReader",
+              "protected_generate_write_handle", "never go through the private vault"):
+        assert s in t, s
+    # the document's structural claim, verified directly: a purely public-split GeneratorWriteHandle holds no store.
+    from orca.eval.genesis_v2 import operational_boundary as OB
+    handle = OB.GeneratorWriteHandle(None, authorized_scope=frozenset())
+    assert handle._store is None
+
+
 # ------------------------------------------------------------- dependency + CI declaration
 def test_cryptography_is_a_declared_extra_and_a_mandatory_ci_job_exists():
     pp = tomllib.loads((ROOT / "pyproject.toml").read_text())
@@ -360,7 +416,8 @@ def test_cryptography_is_a_declared_extra_and_a_mandatory_ci_job_exists():
 def test_storage_policy_document_covers_backup_and_recovery():
     t = (ROOT / "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_STORAGE_POLICY.md").read_text()
     low = t.lower()
-    for s in ("ciphertext-only", "key loss", "fresh corpus version", "two custodians", "no plaintext backup", "0700", "aes-256-gcm"):
+    for s in ("ciphertext-only", "key loss", "fresh corpus version", "two custodians", "no plaintext backup", "0700", "aes-256-gcm",
+              "x25519", "encryptedvaultwriter", "encryptedvaultreader", "generate_vault_keypair", "legacy"):
         assert s in low, s
 
 

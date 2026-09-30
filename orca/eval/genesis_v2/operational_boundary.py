@@ -314,6 +314,49 @@ def authorized_manifest_verification_bytes(root: Path, ledger_dir: Path, reader,
     return screen_plain, holdout_plain
 
 
+def verify_manifest_in_restricted_process(root: Path, ledger_dir: Path, reader, manifest: dict, *, process_id: str, code_sha256: str,
+                                           corpus_id: str, expected_corpus_digest: str, eval_version: str, candidate_revision: str,
+                                           candidate_lineage: str, run_id_prefix: str, timestamp_utc: str, generator_code_root) -> list:
+    """THE restricted creation-time verification operation (item 3): composes `authorized_manifest_verification_bytes()`
+    (real plaintext, ledger-gated, from a separately controlled and purpose-restricted verifier identity — see that
+    function's own docstring) with `corpus_manifest.verify_against_artifacts()` (checks the plaintext against the
+    manifest), and returns ONLY the resulting `problems: list[str]` — never the plaintext itself.
+
+    This is what "operates in a restricted process" means at the code level: private plaintext bytes exist ONLY as
+    local variables inside this function's own stack frame. There is no `return screen_plain` / `return holdout_plain`
+    anywhere in this function, no `print`/`log` call touching them, no write to any file, cache, queue, or global —
+    the only thing that crosses this function's boundary back to the caller is a list of short diagnostic strings
+    (e.g. `"generator_code_sha256 (...) does not match the ACTUAL current generator code"`), which by construction
+    (see `corpus_manifest.verify_against_artifacts`) never embeds the plaintext itself. The local plaintext names are
+    cleared (best-effort — CPython offers no memory-scrubbing guarantee) as soon as verification completes, in a
+    `finally` block that runs whether verification passed, failed, or raised.
+
+    There is nowhere in this repository for these bytes to reach training or candidate-selection code even if this
+    function DID leak them: no training loop, no candidate-selection routine, and no logging call anywhere in this
+    module or `corpus_manifest.py` ever references `screen_plain`/`holdout_plain` outside this one function's local
+    scope. Preserves the SAME ledger evidence and sealed-holdout lifecycle guarantees as
+    `authorized_manifest_verification_bytes()` (PURPOSE_CREATION_VERIFICATION, SEALED-only, no freeze requirement,
+    never counted toward the holdout's one-time qualification lifecycle) — this function adds no NEW ledger
+    interaction of its own; it is a strict, plaintext-hiding wrapper around the existing one.
+
+    Real process-level isolation (so that even OTHER code running in the SAME OS process cannot reach these local
+    variables through, say, a debugger or a core dump) remains a deployment responsibility — see this module's
+    top-level docstring's "RESIDUAL RUNTIME-IDENTITY LIMITATIONS" section. What this function guarantees is narrower
+    and unconditional: its OWN return value never contains plaintext, regardless of deployment."""
+    from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    screen_plain, holdout_plain = authorized_manifest_verification_bytes(
+        root, ledger_dir, reader, process_id=process_id, code_sha256=code_sha256, corpus_id=corpus_id,
+        expected_corpus_digest=expected_corpus_digest, eval_version=eval_version, candidate_revision=candidate_revision,
+        candidate_lineage=candidate_lineage, run_id_prefix=run_id_prefix, timestamp_utc=timestamp_utc)
+    try:
+        problems = CMAN.verify_against_artifacts(manifest, screen_plain=screen_plain, holdout_plain=holdout_plain,
+                                                   generator_code_root=generator_code_root, expected_corpus_digest=expected_corpus_digest)
+        return list(problems)
+    finally:
+        screen_plain = None
+        holdout_plain = None
+
+
 class GeneratorWriteHandle:
     """A write-only capability wrapping a genuinely write-only vault object (`store.EncryptedVaultWriter`, holding
     only the vault's PUBLIC key — no decrypt capability exists anywhere in that object's state, see its own

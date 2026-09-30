@@ -178,7 +178,10 @@ def test_vault_script_exit_codes(tmp_path):
 def test_owner_procedure_is_placeholder_only_and_complete():
     t = (PH / "GENESIS_CAPABILITY_EVAL_V2_OWNER_VAULT_PROCEDURE.md").read_text()
     for s in ("NOT ACTIVATED", "<VAULT_DIR>", "<SECRET_MANAGER_CLI>", "0700", "0400", "two custodians", "openssl rand -hex 32", "VAULT ISOLATION PASS", "Emergency revocation",
-              "privacy incident", "Incident response", "Destruction", "Rotation", "runner", "Backup", "not inside any git work tree"):
+              "privacy incident", "Incident response", "Destruction", "Rotation", "runner", "Backup", "not inside any git work tree",
+              # item 1 this round: X25519 writer/reader architecture, explicit legacy-symmetric-key retirement, and separate key-role handling
+              "ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY", "ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY", "ORNEUR_GENESIS_V2_ENCRYPTION_KEY", "retired",
+              "generate_vault_keypair", "never the generator"):
         assert s.lower() in t.lower(), s
     import re
     assert not re.search(r"\b[0-9a-f]{64}\b", t) and "/Users/" not in t and "/home/" not in t

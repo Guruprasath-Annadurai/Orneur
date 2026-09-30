@@ -50,8 +50,8 @@ def test_vault_activation_public_record_carries_no_path_or_key(tmp_path):
     blob = json.dumps(rec)
     assert str(vault) not in blob and "vault-name-xyz" not in blob and "specific" not in blob
     assert set(rec) == {"document", "schema_version", "store_type", "verification_timestamp", "store_descriptor_digest", "permission_policy_result",
-                        "repository_isolation_result", "encryption_policy_result", "backup_policy_result", "verifier_code_sha256", "pass",
-                        "evidence_digests", "note"}
+                        "repository_isolation_result", "encryption_policy_result", "key_isolation_result", "backup_policy_result",
+                        "verifier_code_sha256", "pass", "evidence_digests", "note"}
     assert rec["pass"] is True and len(rec["store_descriptor_digest"]) == 64
 
 

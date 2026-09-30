@@ -33,10 +33,22 @@ FORBIDDEN_PURPOSES = ("DEBUGGING", "TUNING", "ERROR_ANALYSIS", "ANSWER_INSPECTIO
                       "PROMPT_TUNING", "FEW_SHOT_EXAMPLES", "ROUTER_TUNING", "MODEL_SELECTION_BY_ITEM")
 
 SECRET_ENV = "ORNEUR_GENESIS_V2_CORPUS_SECRET"
-ENC_KEY_ENV = "ORNEUR_GENESIS_V2_ENCRYPTION_KEY"
 STORE_ENV = "ORNEUR_GENESIS_V2_PRIVATE_STORE"
 STORE_TOKEN_ENV = "ORNEUR_GENESIS_V2_STORE_TOKEN"
 MIN_SECRET_BYTES = 32
+
+# X25519 vault keypair env vars (current architecture -- store.EncryptedVaultWriter/EncryptedVaultReader). The
+# PUBLIC key is safe for the generator's deployment credential scope: it can encrypt but never decrypt with it. The
+# PRIVATE key must be scoped ONLY to the creation-time-verifier / qualification-runner deployment and must NEVER be
+# present in a generator's environment.
+VAULT_PUBLIC_KEY_ENV = "ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY"
+VAULT_PRIVATE_KEY_ENV = "ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY"
+
+# LEGACY, RETIRED: the old EncryptedFileStore symmetric-key env var. No code path for the private-vault write/read
+# boundary reads this anymore (store.owner_setup_preflight actively warns if it is set, to catch a stale setup
+# script before it causes confusion). It grants no access on its own; it is listed here only so the retirement is
+# an explicit, documented fact rather than a silent rename.
+LEGACY_SYMMETRIC_ENC_KEY_ENV = "ORNEUR_GENESIS_V2_ENCRYPTION_KEY"
 
 GENESIS_CAPABILITY_EVAL_V2_FROZEN = False
 FREEZE_PREREQUISITES = (

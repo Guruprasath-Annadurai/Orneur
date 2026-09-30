@@ -4,7 +4,7 @@
  "encryption_policy_result": true,
  "evidence_digests": {
   "backup_ciphertext_only": "22adefa137f2743a",
-  "encryption_algorithm_is_aes_256_gcm": "ed2ede8899ccf983",
+  "encryption_algorithm_is_x25519_hkdf_aes_256_gcm": "e07574e3821a9441",
   "isolation.no_tracked_or_untracked_enc_artifacts_in_repo": "b7ec39095130419e",
   "isolation.no_tracked_symlink_points_into_vault": "b5f85b7f2c1a4a0e",
   "isolation.vault_exists_and_is_directory": "1dac89f74b200309",
@@ -22,15 +22,18 @@
   "tamper_detected": "e7a29c7cd626a406",
   "truncation_detected": "64818c4e3ff49dcb",
   "write_once_publication": "fe53e881593b51be",
+  "writer_exposes_no_read_method": "39bd15d749b8abba",
+  "writer_holds_no_private_key_bytes": "36fc89cf93f6ee40",
   "wrong_key_fails": "f057710ac90a9c45"
  },
- "note": "TEST activation only: an ephemeral key and synthetic plaintext were used and destroyed immediately after verification. No real corpus secret, AES key, or benchmark content exists as a result of this record.",
+ "key_isolation_result": true,
+ "note": "TEST activation only: an ephemeral X25519 test keypair (public key for writing, private key for reading) and synthetic plaintext were used and destroyed immediately after verification. No real corpus secret, vault key, or benchmark content exists as a result of this record.",
  "pass": true,
  "permission_policy_result": true,
  "repository_isolation_result": true,
  "schema_version": "genesis-v2-vault-verification/1",
- "store_descriptor_digest": "ba533ece6c8c661adf91cb8af1a8db4374d86ddfc72a0271e484e641fe34f11c",
+ "store_descriptor_digest": "26233561863a8056bce461567e5601398a436e969856090e8ca8cde49a73effa",
  "store_type": "ENCRYPTED_ARTIFACT",
- "verification_timestamp": "2026-09-27T09:19:44Z",
- "verifier_code_sha256": "3ab38f927ab108bf8a51e85e0e10ee0fb8313efd4bec055b618c7c45f081a3c3"
+ "verification_timestamp": "2026-09-30T07:54:57Z",
+ "verifier_code_sha256": "75beb50c07d3a5298432f04b09bae0ed26846cc0f8e26d3c8171bc72984c8e96"
 }
