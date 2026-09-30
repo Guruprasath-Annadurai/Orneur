@@ -314,35 +314,46 @@ def authorized_manifest_verification_bytes(root: Path, ledger_dir: Path, reader,
     return screen_plain, holdout_plain
 
 
-def verify_manifest_in_restricted_process(root: Path, ledger_dir: Path, reader, manifest: dict, *, process_id: str, code_sha256: str,
-                                           corpus_id: str, expected_corpus_digest: str, eval_version: str, candidate_revision: str,
-                                           candidate_lineage: str, run_id_prefix: str, timestamp_utc: str, generator_code_root) -> list:
-    """THE restricted creation-time verification operation (item 3): composes `authorized_manifest_verification_bytes()`
-    (real plaintext, ledger-gated, from a separately controlled and purpose-restricted verifier identity — see that
+def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reader, manifest: dict, *, process_id: str, code_sha256: str,
+                                              corpus_id: str, expected_corpus_digest: str, eval_version: str, candidate_revision: str,
+                                              candidate_lineage: str, run_id_prefix: str, timestamp_utc: str, generator_code_root) -> list:
+    """HONEST NAME, HONEST SCOPE (item 5): this function does NOT provide operating-system process isolation. It
+    runs in the SAME Python process as its caller, on the SAME thread, with no subprocess, container, or sandbox
+    boundary of any kind — a previous name for this function ("restricted process") overstated that guarantee, which
+    is why the name changed rather than the implementation growing a real process boundary it does not need for what
+    it actually promises.
+
+    What it DOES guarantee, narrowly and unconditionally: composes `authorized_manifest_verification_bytes()` (real
+    plaintext, ledger-gated, from a separately controlled and purpose-restricted verifier identity — see that
     function's own docstring) with `corpus_manifest.verify_against_artifacts()` (checks the plaintext against the
-    manifest), and returns ONLY the resulting `problems: list[str]` — never the plaintext itself.
+    manifest), and returns ONLY the resulting `problems: list[str]` — DIGEST-ONLY DIAGNOSTICS, never the plaintext
+    itself. Every problem string this function can return describes a DIGEST or HASH comparison outcome (e.g.
+    `"screen_digest does not match the ACTUAL decrypted SCREEN plaintext"`, `"generator_code_sha256 does not match
+    the ACTUAL current generator code"`) — see `corpus_manifest.verify_against_artifacts`'s fixed set of possible
+    messages, none of which embeds content. Private plaintext bytes exist ONLY as local variables inside this
+    function's own stack frame: there is no `return screen_plain` / `return holdout_plain` anywhere in this
+    function, no `print`/`log` call touching them, no write to any file, cache, queue, or global. The local
+    plaintext names are cleared (best-effort — CPython offers no memory-scrubbing guarantee) in a `finally` block
+    that runs whether verification passed, failed, or raised.
 
-    This is what "operates in a restricted process" means at the code level: private plaintext bytes exist ONLY as
-    local variables inside this function's own stack frame. There is no `return screen_plain` / `return holdout_plain`
-    anywhere in this function, no `print`/`log` call touching them, no write to any file, cache, queue, or global —
-    the only thing that crosses this function's boundary back to the caller is a list of short diagnostic strings
-    (e.g. `"generator_code_sha256 (...) does not match the ACTUAL current generator code"`), which by construction
-    (see `corpus_manifest.verify_against_artifacts`) never embeds the plaintext itself. The local plaintext names are
-    cleared (best-effort — CPython offers no memory-scrubbing guarantee) as soon as verification completes, in a
-    `finally` block that runs whether verification passed, failed, or raised.
+    NO TRAINING, INFERENCE, OR PUBLISHING CAPABILITY: this function imports only `corpus_manifest` (a pure hashing/
+    comparison module — see its own docstring) and calls `authorized_manifest_verification_bytes()`. It contains no
+    model-loading code, no network call, no file write outside what `authorized_manifest_verification_bytes()`
+    itself performs (a read, not a write), and no publishing/commit/push call of any kind — confirmed by
+    `tests/test_genesis_v2_operational_boundary.py::test_digest_only_same_process_verifier_has_no_training_inference_or_publishing_imports`,
+    which scans this function's actual module dependencies.
 
-    There is nowhere in this repository for these bytes to reach training or candidate-selection code even if this
-    function DID leak them: no training loop, no candidate-selection routine, and no logging call anywhere in this
-    module or `corpus_manifest.py` ever references `screen_plain`/`holdout_plain` outside this one function's local
-    scope. Preserves the SAME ledger evidence and sealed-holdout lifecycle guarantees as
+    Preserves the SAME ledger evidence and sealed-holdout lifecycle guarantees as
     `authorized_manifest_verification_bytes()` (PURPOSE_CREATION_VERIFICATION, SEALED-only, no freeze requirement,
     never counted toward the holdout's one-time qualification lifecycle) — this function adds no NEW ledger
-    interaction of its own; it is a strict, plaintext-hiding wrapper around the existing one.
+    interaction of its own; it is a strict, plaintext-hiding, same-process wrapper around the existing one.
 
-    Real process-level isolation (so that even OTHER code running in the SAME OS process cannot reach these local
+    Real OS-level process isolation (so that even OTHER code running in the SAME process cannot reach these local
     variables through, say, a debugger or a core dump) remains a deployment responsibility — see this module's
-    top-level docstring's "RESIDUAL RUNTIME-IDENTITY LIMITATIONS" section. What this function guarantees is narrower
-    and unconditional: its OWN return value never contains plaintext, regardless of deployment."""
+    top-level docstring's "RESIDUAL RUNTIME-IDENTITY LIMITATIONS" section. If genuine process isolation is required
+    for a future deployment, that means literally running this call in a separate OS process (e.g. `subprocess`,
+    a container, or a sandboxed worker) and treating its stdout as the digest-only diagnostic channel — this
+    function does not do that itself, and does not claim to."""
     from orca.eval.genesis_v2 import corpus_manifest as CMAN
     screen_plain, holdout_plain = authorized_manifest_verification_bytes(
         root, ledger_dir, reader, process_id=process_id, code_sha256=code_sha256, corpus_id=corpus_id,

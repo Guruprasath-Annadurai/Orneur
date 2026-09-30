@@ -32,8 +32,8 @@
  "permission_policy_result": true,
  "repository_isolation_result": true,
  "schema_version": "genesis-v2-vault-verification/1",
- "store_descriptor_digest": "26233561863a8056bce461567e5601398a436e969856090e8ca8cde49a73effa",
+ "store_descriptor_digest": "eeccf1bd991f383c4d1ba5099df937d26ac04ea126c40a443391797702efb00b",
  "store_type": "ENCRYPTED_ARTIFACT",
- "verification_timestamp": "2026-09-30T07:54:57Z",
- "verifier_code_sha256": "75beb50c07d3a5298432f04b09bae0ed26846cc0f8e26d3c8171bc72984c8e96"
+ "verification_timestamp": "2026-09-30T09:21:26Z",
+ "verifier_code_sha256": "7577a0577279d5fdd199581fb4374b17f25b35947a461ab29a3cdb82d5a6147f"
 }

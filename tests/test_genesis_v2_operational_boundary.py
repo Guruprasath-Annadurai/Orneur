@@ -637,8 +637,8 @@ def test_authorized_manifest_verification_bytes_with_the_real_asymmetric_vault_r
     assert screen_plain == b"real-screen-content" and holdout_plain == b"real-holdout-content"
 
 
-# ---------------------------------------------------------------- verify_manifest_in_restricted_process() (item 3: no plaintext leaves)
-def test_restricted_process_verification_never_returns_plaintext(tmp_path):
+# ---------------------------------------------------------------- verify_manifest_digest_only_same_process() (item 3: no plaintext leaves)
+def test_digest_only_same_process_verification_never_returns_plaintext(tmp_path):
     """The core item-3 claim, checked directly: the function's return value is a list of diagnostic strings that
     never contains the real plaintext, even though it genuinely had access to it internally to compute the result."""
     from orca.eval.genesis_v2 import corpus_manifest as CMAN
@@ -668,7 +668,7 @@ def test_restricted_process_verification_never_returns_plaintext(tmp_path):
                 "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
                 "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}
 
-    problems = OB.verify_manifest_in_restricted_process(
+    problems = OB.verify_manifest_digest_only_same_process(
         root, tmp_path / "ledger", reader, manifest, process_id="verifier-restricted", code_sha256=code_sha, corpus_id=corpus_id,
         expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
         run_id_prefix="restricted-verify", timestamp_utc=ts(NOW), generator_code_root=code_dir)
@@ -677,7 +677,7 @@ def test_restricted_process_verification_never_returns_plaintext(tmp_path):
     assert b"SECRET-SCREEN-PLAINTEXT-MUST-NEVER-LEAK".decode() not in blob and b"SECRET-HOLDOUT-PLAINTEXT-MUST-NEVER-LEAK".decode() not in blob
 
 
-def test_restricted_process_verification_detects_tampering_without_leaking_plaintext(tmp_path):
+def test_digest_only_same_process_verification_detects_tampering_without_leaking_plaintext(tmp_path):
     """A manifest claiming the wrong content is still caught -- and the problem list, while informative, never
     embeds the real plaintext bytes that proved the claim wrong."""
     from orca.eval.genesis_v2 import corpus_manifest as CMAN
@@ -707,7 +707,7 @@ def test_restricted_process_verification_detects_tampering_without_leaking_plain
                 "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
                 "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}
 
-    problems = OB.verify_manifest_in_restricted_process(
+    problems = OB.verify_manifest_digest_only_same_process(
         root, tmp_path / "ledger", reader, manifest, process_id="verifier-restricted-2", code_sha256=code_sha, corpus_id=corpus_id,
         expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
         run_id_prefix="restricted-tamper", timestamp_utc=ts(NOW), generator_code_root=code_dir)
@@ -716,7 +716,7 @@ def test_restricted_process_verification_detects_tampering_without_leaking_plain
     assert "SECRET-SCREEN-TAMPER-TEST" not in blob and "SECRET-HOLDOUT-TAMPER-TEST" not in blob
 
 
-def test_restricted_process_verification_preserves_ledger_evidence_and_sealed_lifecycle(tmp_path):
+def test_digest_only_same_process_verification_preserves_ledger_evidence_and_sealed_lifecycle(tmp_path):
     from orca.eval.genesis_v2 import corpus_manifest as CMAN
     from orca.eval.genesis_v2 import ledger as LG
     from orca.eval.genesis_v2 import runner_registry as RN
@@ -743,7 +743,7 @@ def test_restricted_process_verification_preserves_ledger_evidence_and_sealed_li
                 "qualification_holdout_digest": __import__("hashlib").sha256(holdout_bytes).hexdigest(),
                 "per_category_item_counts": {"reasoning": 1}, "corpus_generation_authorization_id": "cgauth-" + "ef" * 8}
 
-    OB.verify_manifest_in_restricted_process(
+    OB.verify_manifest_digest_only_same_process(
         root, tmp_path / "ledger", reader, manifest, process_id="verifier-restricted-3", code_sha256=code_sha, corpus_id=corpus_id,
         expected_corpus_digest=digest, eval_version=SPEC.EVAL_VERSION, candidate_revision="rev-1", candidate_lineage="lineage-1",
         run_id_prefix="restricted-ledger", timestamp_utc=ts(NOW), generator_code_root=code_dir)
@@ -751,3 +751,39 @@ def test_restricted_process_verification_preserves_ledger_evidence_and_sealed_li
     recs = [r for r in led.records() if r["purpose"] == SPEC.PURPOSE_CREATION_VERIFICATION]
     assert len(recs) == 2   # one per split, same evidence-preservation guarantee as the underlying function
     assert led.holdout_state(SPEC.EVAL_VERSION) == {"state": SPEC.STATE_SEALED, "opened_by": None, "lineages": []}
+
+
+def test_digest_only_same_process_verifier_is_honestly_named_not_process_isolated():
+    """Item 5: the function's own name and docstring must not overstate a process-isolation guarantee it does not
+    provide -- a same-process function claiming 'restricted process' was the exact problem being corrected."""
+    assert not hasattr(OB, "verify_manifest_in_restricted_process")   # the old, overstated name is gone
+    doc = OB.verify_manifest_digest_only_same_process.__doc__
+    assert "does NOT provide operating-system process isolation" in doc
+    assert "SAME Python process" in doc
+    assert "DIGEST-ONLY DIAGNOSTICS" in doc
+
+
+def test_digest_only_same_process_verifier_has_no_training_inference_or_publishing_imports():
+    """Item 5: an isolated verifier must have no training, inference or publishing capabilities. Scans the actual
+    module dependencies this function's own code pulls in -- corpus_manifest.py and operational_boundary.py itself
+    -- for anything resembling model loading, network access, or a repository-publishing action."""
+    import ast
+    from orca.eval.genesis_v2 import corpus_manifest as CMAN
+    import inspect
+    forbidden_substrings = ("torch", "transformers", "openai", "anthropic", "requests", "httpx", "urllib",
+                             "subprocess.Popen", "git push", "git commit")
+    for module in (OB, CMAN):
+        src = inspect.getsource(module)
+        low = src.lower()
+        for bad in forbidden_substrings:
+            assert bad.lower() not in low, f"{module.__name__} unexpectedly references {bad!r}"
+    # AST-level: no `import torch`/`import requests`/etc. anywhere in either module, not just absent from source text
+    for module in (OB, CMAN):
+        tree = ast.parse(inspect.getsource(module))
+        imported_names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_names |= {a.name.split(".")[0] for a in node.names}
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported_names.add(node.module.split(".")[0])
+        assert not (imported_names & {"torch", "transformers", "requests", "httpx", "urllib", "openai", "anthropic"})

@@ -171,18 +171,34 @@ def test_vault_script_exit_codes(tmp_path):
     import sys
     p = subprocess.run([sys.executable, "scripts/genesis_v2_vault_verify.py", "--vault", str(tmp_path / "nope")], cwd=ROOT, capture_output=True, text=True)
     assert p.returncode == 2 and "VAULT ISOLATION FAIL" in p.stdout
-    p = subprocess.run([sys.executable, "scripts/genesis_v2_preflight.py"], cwd=ROOT, capture_output=True, text=True, env={k: v for k, v in os.environ.items() if not k.startswith("ORNEUR_GENESIS")})
+    clean_env = {k: v for k, v in os.environ.items() if not k.startswith("ORNEUR_GENESIS")}
+    p = subprocess.run([sys.executable, "scripts/genesis_v2_preflight.py"], cwd=ROOT, capture_output=True, text=True, env=clean_env)
+    assert p.returncode == 2 and "PRIVATE_STORAGE_NOT_CONFIGURED" in p.stdout   # default --role owner, unchanged for backward compatibility
+    p = subprocess.run([sys.executable, "scripts/genesis_v2_preflight.py", "--role", "owner"], cwd=ROOT, capture_output=True, text=True, env=clean_env)
     assert p.returncode == 2 and "PRIVATE_STORAGE_NOT_CONFIGURED" in p.stdout
+    p = subprocess.run([sys.executable, "scripts/genesis_v2_preflight.py", "--role", "generator"], cwd=ROOT, capture_output=True, text=True, env=clean_env)
+    assert p.returncode == 2 and "GENERATOR_NOT_CONFIGURED" in p.stdout
+    p = subprocess.run([sys.executable, "scripts/genesis_v2_preflight.py", "--role", "verifier"], cwd=ROOT, capture_output=True, text=True, env=clean_env)
+    assert p.returncode == 2 and "VERIFIER_NOT_CONFIGURED" in p.stdout
+    p = subprocess.run([sys.executable, "scripts/genesis_v2_preflight.py", "--role", "not-a-real-role"], cwd=ROOT, capture_output=True, text=True, env=clean_env)
+    assert p.returncode != 0   # argparse rejects an unrecognized role rather than silently defaulting to owner
 
 
 def test_owner_procedure_is_placeholder_only_and_complete():
     t = (PH / "GENESIS_CAPABILITY_EVAL_V2_OWNER_VAULT_PROCEDURE.md").read_text()
     for s in ("NOT ACTIVATED", "<VAULT_DIR>", "<SECRET_MANAGER_CLI>", "0700", "0400", "two custodians", "openssl rand -hex 32", "VAULT ISOLATION PASS", "Emergency revocation",
               "privacy incident", "Incident response", "Destruction", "Rotation", "runner", "Backup", "not inside any git work tree",
-              # item 1 this round: X25519 writer/reader architecture, explicit legacy-symmetric-key retirement, and separate key-role handling
+              # item 1 (prior round): X25519 writer/reader architecture, explicit legacy-symmetric-key retirement, and separate key-role handling
               "ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY", "ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY", "ORNEUR_GENESIS_V2_ENCRYPTION_KEY", "retired",
-              "generate_vault_keypair", "never the generator"):
+              "generate_vault_keypair", "never the generator",
+              # item 3/4 this round: role-separated preflight CLI, and honest non-executable key-generation procedure
+              "--role generator", "--role verifier", "--role owner", "GENERATOR_CONFIGURED_UNVERIFIED", "fails closed",
+              "not an executable"):
         assert s.lower() in t.lower(), s
+    # item 4: the specific unsafe pattern from the prior draft must never reappear -- a shell redirect combining
+    # both key halves into one stream, or a fictitious combined-secret-write command presented as if it were real.
+    # (Naming sys.stderr.write/sys.stdout.write in cautionary prose -- "never do this" -- is fine and expected.)
+    assert "2>&1" not in t and "put-both" not in t
     import re
     assert not re.search(r"\b[0-9a-f]{64}\b", t) and "/Users/" not in t and "/home/" not in t
 

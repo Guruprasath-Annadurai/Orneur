@@ -103,6 +103,86 @@ def test_preflight_warns_on_legacy_symmetric_key_env_var_without_blocking():
     assert r["status"] == "PRIVATE_STORAGE_CONFIGURED_UNVERIFIED"   # the warning does not block configuration
 
 
+def test_owner_preflight_pair_matching_fails_closed_when_cryptography_is_unavailable(tmp_path, monkeypatch):
+    """Item 3: missing cryptography (or genuinely invalid key material despite matching hex shape) must fail closed
+    -- never silently treated as a matching pair, which was the exact bug in the prior round's implementation
+    (the except-pass branch)."""
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name.startswith("cryptography"):
+            raise ImportError("blocked for test")
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    r = ST.owner_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/some/vault/path", spec.SECRET_ENV: os.urandom(32).hex(),
+                                   spec.VAULT_PUBLIC_KEY_ENV: pub.hex(), spec.VAULT_PRIVATE_KEY_ENV: priv.hex()})
+    assert any(m["item"] == spec.VAULT_PUBLIC_KEY_ENV and "could not verify" in m["need"] for m in r["missing"])
+    assert r["status"] == "PRIVATE_STORAGE_NOT_CONFIGURED"   # fails closed, never silently accepted
+
+
+# ---------------------------------------------------------------- item 3: role-separated preflights (generator/verifier/owner)
+def test_generator_preflight_never_requires_the_private_key():
+    r = ST.generator_setup_preflight({spec.STORE_ENV: "PRIVATE_OBJECT_STORE:s3://bucket/p", spec.STORE_TOKEN_ENV: "t",
+                                       spec.SECRET_ENV: os.urandom(32).hex()})
+    assert not any(m["item"] == spec.VAULT_PRIVATE_KEY_ENV for m in r["missing"])
+    assert r["role"] == "GENERATOR"
+
+
+def test_generator_preflight_requires_only_the_public_key_for_encrypted_artifact():
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    r = ST.generator_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/vault", spec.SECRET_ENV: os.urandom(32).hex(),
+                                       spec.VAULT_PUBLIC_KEY_ENV: pub.hex()})
+    assert not any(m["item"] == spec.VAULT_PUBLIC_KEY_ENV for m in r["missing"])
+    assert not any(m["item"] == spec.VAULT_PRIVATE_KEY_ENV for m in r["missing"])   # never required
+    assert r["violations"] == [] and r["status"] == "GENERATOR_CONFIGURED_UNVERIFIED"
+
+
+def test_generator_preflight_flags_a_leaked_private_key_as_a_violation_not_a_missing_item():
+    """The critical safety property: if the generator's OWN environment somehow contains the private key, that is a
+    genuine security finding (surfaced in 'violations'), never merely noted as configuration progress."""
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    r = ST.generator_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/vault", spec.SECRET_ENV: os.urandom(32).hex(),
+                                       spec.VAULT_PUBLIC_KEY_ENV: pub.hex(), spec.VAULT_PRIVATE_KEY_ENV: priv.hex()})
+    assert any(v["item"] == spec.VAULT_PRIVATE_KEY_ENV for v in r["violations"])
+    assert r["status"] == "GENERATOR_NOT_CONFIGURED"
+
+
+def test_verifier_preflight_never_requires_the_corpus_secret_or_public_key():
+    _need_crypto()
+    priv, pub = ST.generate_vault_keypair()
+    r = ST.verifier_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/vault", spec.VAULT_PRIVATE_KEY_ENV: priv.hex()})
+    assert not any(m["item"] == spec.SECRET_ENV for m in r["missing"])
+    assert not any(m["item"] == spec.VAULT_PUBLIC_KEY_ENV for m in r["missing"])   # never required
+    assert r["role"] == "VERIFIER" and r["status"] == "VERIFIER_CONFIGURED_UNVERIFIED"
+
+
+def test_verifier_preflight_requires_only_the_private_key_for_encrypted_artifact():
+    r = ST.verifier_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/vault"})
+    assert any(m["item"] == spec.VAULT_PRIVATE_KEY_ENV for m in r["missing"])
+    assert r["status"] == "VERIFIER_NOT_CONFIGURED"
+
+
+def test_owner_preflight_is_the_only_role_that_pair_matches():
+    """generator_setup_preflight and verifier_setup_preflight never cross-validate the pair -- only
+    owner_setup_preflight does, since only the owner legitimately sees both halves at once."""
+    _need_crypto()
+    priv1, pub1 = ST.generate_vault_keypair()
+    priv2, pub2 = ST.generate_vault_keypair()
+    # generator preflight given a public key alone has nothing to mismatch against
+    r_gen = ST.generator_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/vault", spec.SECRET_ENV: os.urandom(32).hex(),
+                                           spec.VAULT_PUBLIC_KEY_ENV: pub1.hex()})
+    assert r_gen["status"] == "GENERATOR_CONFIGURED_UNVERIFIED"
+    # only the owner preflight, given BOTH (mismatched) halves, catches the mismatch
+    r_owner = ST.owner_setup_preflight({spec.STORE_ENV: "ENCRYPTED_ARTIFACT:/vault", spec.SECRET_ENV: os.urandom(32).hex(),
+                                         spec.VAULT_PUBLIC_KEY_ENV: pub2.hex(), spec.VAULT_PRIVATE_KEY_ENV: priv1.hex()})
+    assert any("does not match" in m["need"] for m in r_owner["missing"])
+
+
 def test_descriptor_backends_are_not_operational_and_status_says_so():
     st = json.loads((ROOT / "docs/orneur/phase-21/GENESIS_CAPABILITY_EVAL_V2_STATUS.json").read_text())
     assert st["freeze_prerequisites"]["private_storage_genuinely_configured"] is False

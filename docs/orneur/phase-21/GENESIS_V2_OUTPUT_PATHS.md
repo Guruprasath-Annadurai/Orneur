@@ -31,7 +31,7 @@ encrypted, and the ONLY path that ever touches `store.py`'s vault classes.
   a genuinely write-only `store.EncryptedVaultWriter` (holds only the vault's X25519 PUBLIC key). The handle
   re-enforces its own authorized scope at every `write_corpus()` call.
 - Read mechanism (creation-time verification only, pre-freeze): `operational_boundary.authorized_manifest_verification_bytes()`
-  / `verify_manifest_in_restricted_process()`, using a `store.EncryptedVaultReader` (holds the vault's X25519 PRIVATE
+  / `verify_manifest_digest_only_same_process()`, using a `store.EncryptedVaultReader` (holds the vault's X25519 PRIVATE
   key) obtained by a SEPARATELY CONTROLLED, purpose-restricted verifier identity — never the generator.
 - Read mechanism (real qualification, post-freeze only): `operational_boundary.require_private_split_access()`,
   gated by the real `ledger.AccessLedger` and a genuinely `AUTHORIZED` qualification-runner identity.

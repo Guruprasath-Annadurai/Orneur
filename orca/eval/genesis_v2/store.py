@@ -463,11 +463,14 @@ class PrivateStoreConfig:
         return out
 
 
-def owner_setup_preflight(env: dict | None = None, *, public_repo: str = PUBLIC_REPO_SLUG) -> dict:
-    """Report exactly what the owner must set up. Never prints values; never invents anything."""
-    env = os.environ if env is None else env
+_HEX64 = re.compile(r"[0-9a-fA-F]{64}")
+
+
+def _store_and_secret_checks(env: dict, public_repo: str, *, require_secret: bool) -> tuple:
+    """Shared STORE_ENV (+ STORE_TOKEN_ENV for non-encrypted-artifact backends) checks, common to every role, plus
+    SECRET_ENV only when `require_secret` (true for the generator/owner roles that actually seed generation; the
+    verifier role never needs the corpus secret). Returns (missing: list, store: str)."""
     missing = []
-    warnings = []
     store = env.get(spec.STORE_ENV, "")
     if not store:
         missing.append({"item": spec.STORE_ENV, "need": "'<KIND>:<location>' naming a PRIVATE GitHub repo / private object store / encrypted artifact location outside the repo"})
@@ -478,29 +481,97 @@ def owner_setup_preflight(env: dict | None = None, *, public_repo: str = PUBLIC_
             missing.append({"item": spec.STORE_ENV, "need": p})
         if kind != "ENCRYPTED_ARTIFACT" and not env.get(spec.STORE_TOKEN_ENV):
             missing.append({"item": spec.STORE_TOKEN_ENV, "need": "least-privilege read credential for the private store, available only to the qualification runner"})
-    if not env.get(spec.SECRET_ENV):
-        missing.append({"item": spec.SECRET_ENV, "need": f">= {spec.MIN_SECRET_BYTES} cryptographically random bytes (hex/base64), generated once on a trusted machine and kept in a secret manager; never in git, CI logs or source"})
-    else:
-        from orca.eval.genesis_v2 import secret as _s
-        try:
-            _s.load_secret_from_env(env)
-        except _s.SecretEntropyError as e:
-            missing.append({"item": spec.SECRET_ENV, "need": f"present but invalid: {e}"})
+    if require_secret:
+        if not env.get(spec.SECRET_ENV):
+            missing.append({"item": spec.SECRET_ENV, "need": f">= {spec.MIN_SECRET_BYTES} cryptographically random bytes (hex/base64), generated once on a trusted machine and kept in a secret manager; never in git, CI logs or source"})
+        else:
+            from orca.eval.genesis_v2 import secret as _s
+            try:
+                _s.load_secret_from_env(env)
+            except _s.SecretEntropyError as e:
+                missing.append({"item": spec.SECRET_ENV, "need": f"present but invalid: {e}"})
+    return missing, store
+
+
+def _legacy_symmetric_key_warning(env: dict) -> list:
+    if not env.get(spec.LEGACY_SYMMETRIC_ENC_KEY_ENV):
+        return []
+    return [{"item": spec.LEGACY_SYMMETRIC_ENC_KEY_ENV,
+             "note": "set but UNUSED by the current X25519 writer/reader architecture -- this looks like a leftover from the retired "
+                     "symmetric-key setup. It grants no access on its own and no code path reads it, but its presence suggests stale "
+                     "tooling or documentation; remove it to avoid confusion."}]
+
+
+def _one_key_half_missing(env: dict, env_var: str, role_label: str) -> list:
+    """Presence + SHAPE only for ONE key half -- no pair-matching (that is owner-only, see owner_setup_preflight)."""
+    hex_val = env.get(env_var, "")
+    if not hex_val:
+        return [{"item": env_var, "need": f"64-hex-char X25519 key (32 bytes) from generate_vault_keypair() -- {role_label}"}]
+    if not _HEX64.fullmatch(hex_val):
+        return [{"item": env_var, "need": "present but malformed: must be exactly 64 hex characters (32 bytes)"}]
+    return []
+
+
+def generator_setup_preflight(env: dict | None = None, *, public_repo: str = PUBLIC_REPO_SLUG) -> dict:
+    """What a GENERATOR deployment's OWN environment needs, and ONLY that: STORE_ENV (to know the vault's kind and
+    location), SECRET_ENV (to seed corpus generation), and — for the ENCRYPTED_ARTIFACT backend — ONLY the vault's
+    PUBLIC X25519 key. This function NEVER requires or checks the PRIVATE key's presence; if the private key IS
+    found in this environment, that is reported as a `violations` entry (a genuine credential-boundary breach, not
+    a missing-configuration note) — a generator's environment must never contain decrypt capability, full stop."""
+    env = os.environ if env is None else env
+    missing, store = _store_and_secret_checks(env, public_repo, require_secret=True)
+    violations = []
+    if store.startswith("ENCRYPTED_ARTIFACT"):
+        missing += _one_key_half_missing(env, spec.VAULT_PUBLIC_KEY_ENV, "safe for the generator's deployment scope; it can encrypt but never decrypt")
+        if env.get(spec.VAULT_PRIVATE_KEY_ENV):
+            violations.append({"item": spec.VAULT_PRIVATE_KEY_ENV,
+                                "problem": "the vault PRIVATE key must NEVER be present in a generator's deployment environment -- this is a "
+                                           "credential-boundary violation, not a missing-configuration note. Remove it and confirm this identity's "
+                                           "secret-manager grant does not include the private-key secret at all."})
+    warnings = _legacy_symmetric_key_warning(env)
+    ok = not missing and not violations
+    return {"role": "GENERATOR", "status": "GENERATOR_CONFIGURED_UNVERIFIED" if ok else "GENERATOR_NOT_CONFIGURED",
+            "missing": missing, "violations": violations, "warnings": warnings,
+            "note": "configuration presence is not proof of privacy; visibility must be independently verified by the owner. "
+                    "A non-empty 'violations' list is a security finding, not a setup checklist item."}
+
+
+def verifier_setup_preflight(env: dict | None = None, *, public_repo: str = PUBLIC_REPO_SLUG) -> dict:
+    """What a CREATION-TIME-VERIFIER or (post-freeze) QUALIFICATION-RUNNER deployment's OWN environment needs, and
+    ONLY that: STORE_ENV, and — for the ENCRYPTED_ARTIFACT backend — ONLY the vault's PRIVATE X25519 key. This
+    function NEVER requires SECRET_ENV (verifying/qualifying never generates anything) and NEVER requires the
+    PUBLIC key (decryption needs only the private key; the ephemeral public key travels in each blob's own header).
+    The public key being present here is harmless (public keys are safe to share) and is not flagged."""
+    env = os.environ if env is None else env
+    missing, store = _store_and_secret_checks(env, public_repo, require_secret=False)
+    if store.startswith("ENCRYPTED_ARTIFACT"):
+        missing += _one_key_half_missing(env, spec.VAULT_PRIVATE_KEY_ENV,
+                                          "restricted to the creation-time-verifier / qualification-runner deployment, never the generator's")
+    warnings = _legacy_symmetric_key_warning(env)
+    ok = not missing
+    return {"role": "VERIFIER", "status": "VERIFIER_CONFIGURED_UNVERIFIED" if ok else "VERIFIER_NOT_CONFIGURED",
+            "missing": missing, "violations": [], "warnings": warnings,
+            "note": "configuration presence is not proof of privacy; visibility must be independently verified by the owner."}
+
+
+def owner_setup_preflight(env: dict | None = None, *, public_repo: str = PUBLIC_REPO_SLUG) -> dict:
+    """OWNER-CONTROLLED CONTEXT ONLY. Report exactly what the owner must set up. Never prints values; never invents
+    anything. This is the ONE place both vault-key halves are legitimately checked TOGETHER, including
+    cross-validating that they form a genuine matching X25519 keypair — a check that only makes sense where an
+    operator legitimately has visibility into both halves at once (e.g. immediately after generation, before
+    distributing each half to its own separately-scoped secret-manager entry). NEVER run this preflight from a real
+    generator or verifier DEPLOYMENT — use `generator_setup_preflight()` / `verifier_setup_preflight()` there
+    instead, each of which requires only that role's own key half and never the other. Missing the `cryptography`
+    package, or key material that fails to parse despite matching the hex-shape check, is treated as NOT verified
+    (fails closed) — never silently skipped."""
+    env = os.environ if env is None else env
+    missing, store = _store_and_secret_checks(env, public_repo, require_secret=True)
     if store.startswith("ENCRYPTED_ARTIFACT"):
         pub_hex = env.get(spec.VAULT_PUBLIC_KEY_ENV, "")
         priv_hex = env.get(spec.VAULT_PRIVATE_KEY_ENV, "")
-        if not pub_hex:
-            missing.append({"item": spec.VAULT_PUBLIC_KEY_ENV,
-                             "need": "64-hex-char X25519 public key (32 bytes) from generate_vault_keypair() -- safe for the GENERATOR's deployment scope only"})
-        elif not re.fullmatch(r"[0-9a-fA-F]{64}", pub_hex):
-            missing.append({"item": spec.VAULT_PUBLIC_KEY_ENV, "need": "present but malformed: must be exactly 64 hex characters (32 bytes)"})
-        if not priv_hex:
-            missing.append({"item": spec.VAULT_PRIVATE_KEY_ENV,
-                             "need": "64-hex-char X25519 private key (32 bytes) from generate_vault_keypair() -- must be scoped ONLY to the "
-                                     "creation-time-verifier / qualification-runner deployment, never the generator's"})
-        elif not re.fullmatch(r"[0-9a-fA-F]{64}", priv_hex):
-            missing.append({"item": spec.VAULT_PRIVATE_KEY_ENV, "need": "present but malformed: must be exactly 64 hex characters (32 bytes)"})
-        if pub_hex and priv_hex and re.fullmatch(r"[0-9a-fA-F]{64}", pub_hex) and re.fullmatch(r"[0-9a-fA-F]{64}", priv_hex):
+        missing += _one_key_half_missing(env, spec.VAULT_PUBLIC_KEY_ENV, "safe for the generator's deployment scope only")
+        missing += _one_key_half_missing(env, spec.VAULT_PRIVATE_KEY_ENV, "restricted to the verifier/qualification-runner deployment only")
+        if pub_hex and priv_hex and _HEX64.fullmatch(pub_hex) and _HEX64.fullmatch(priv_hex):
             try:
                 from cryptography.hazmat.primitives import serialization
                 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
@@ -509,13 +580,13 @@ def owner_setup_preflight(env: dict | None = None, *, public_repo: str = PUBLIC_
                 if derived_pub != pub_hex.lower():
                     missing.append({"item": spec.VAULT_PUBLIC_KEY_ENV,
                                      "need": "does not match the supplied private key -- these must be the SAME keypair from one generate_vault_keypair() call"})
-            except Exception:
-                pass   # shape already validated above; a crypto import failure is reported by the store construction itself, not duplicated here
-    if env.get(spec.LEGACY_SYMMETRIC_ENC_KEY_ENV):
-        warnings.append({"item": spec.LEGACY_SYMMETRIC_ENC_KEY_ENV,
-                          "note": "set but UNUSED by the current X25519 writer/reader architecture -- this looks like a leftover from the retired "
-                                  "symmetric-key setup. It grants no access on its own and no code path reads it, but its presence suggests stale "
-                                  "tooling or documentation; remove it to avoid confusion."})
-    return {"status": "PRIVATE_STORAGE_CONFIGURED_UNVERIFIED" if not missing else "PRIVATE_STORAGE_NOT_CONFIGURED",
+            except Exception as e:
+                # FAIL CLOSED: missing 'cryptography' or genuinely invalid key material must never be silently treated
+                # as "matched" -- the hex-shape check above cannot substitute for actually parsing the key.
+                missing.append({"item": spec.VAULT_PUBLIC_KEY_ENV,
+                                 "need": f"could not verify the key pair matches ({type(e).__name__}: cryptography package missing or key "
+                                         "material invalid despite matching hex shape) -- treated as NOT configured until this can be verified"})
+    warnings = _legacy_symmetric_key_warning(env)
+    return {"role": "OWNER", "status": "PRIVATE_STORAGE_CONFIGURED_UNVERIFIED" if not missing else "PRIVATE_STORAGE_NOT_CONFIGURED",
             "missing": missing, "warnings": warnings,
             "note": "configuration presence is not proof of privacy; visibility must be independently verified by the owner"}

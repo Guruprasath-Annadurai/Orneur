@@ -30,39 +30,85 @@ Two SEPARATE secret-manager entries, with **separate access-control policies**, 
 
 General requirements (both key entries): two custodians; audit log on read; versioned secrets; **CI and public workflows never receive these secrets**; secrets never appear in workflow inputs, logs or artifacts. The critical NEW requirement in this architecture: **the private-key entry's access policy must name a strictly smaller set of identities than the public-key entry's** — if your secret manager would let the generator's service account read the private key, the access-control policy is wrong, independent of anything this codebase can enforce in software. Verify this explicitly (see step 7).
 
-## 4. Key generation (run by the owner, on the trusted machine)
+## 4. Key generation (run by the owner, on the trusted machine, OWNER-CONTROLLED CONTEXT ONLY)
+
+**This section describes a PROCEDURE, not an executable script.** This document cannot know which secret manager
+you use, so it deliberately does NOT give you a copy-pasteable shell command that combines both key halves into one
+stream — doing so was a real mistake in an earlier draft of this document (both halves printed to `stderr` and piped
+through a single combined-stream shell redirect into a fictitious two-value-at-once command that no real secret manager provides). Follow
+the procedure below with YOUR secret manager's own SDK; do not invent a CLI incantation to make it look executable.
+
+**Procedure:**
+
+1. On the trusted machine, in a single interactive Python process (or a script whose entire output is consumed
+   programmatically — never a script that `print`s to a terminal or a shared log), call `generate_vault_keypair()`:
+   ```python
+   from orca.eval.genesis_v2.store import generate_vault_keypair
+   priv, pub = generate_vault_keypair()
+   ```
+2. Pass `priv` and `pub` DIRECTLY, as in-memory Python values, to your secret manager's own SDK create/put call —
+   e.g. (illustrating the SHAPE of such a call, not any specific real SDK) `secret_client.create_secret(name=...,
+   value=priv.hex())`. Make TWO SEPARATE calls, to TWO SEPARATE secret entries with DIFFERENT access-control
+   policies (see step 3's table). Do this in the SAME process that generated the keys — never write `priv`/`pub` to
+   a variable that outlives this step, never `print()`/`sys.stdout.write()`/`sys.stderr.write()` either value, never
+   combine both values into one output stream or one combined-redirect pipe.
+3. If your secret manager's ONLY interface is a CLI that reads a single secret from stdin, pipe ONE value at a time,
+   directly from the Python process that generated it, with your shell's history disabled for that command (e.g.
+   `set +o history`, or run in a subshell with `HISTFILE=/dev/null`) — and run this as two entirely separate
+   invocations for the two halves, never as one combined pipeline.
+4. Once you know your actual secret-manager provider, replace this section with THAT provider's own real, tested,
+   executable single-secret-write command. Until then, this section stays deliberately non-executable prose — do
+   not treat any code block above as a command to paste into a terminal.
 
 ```bash
-# Generates ONE X25519 keypair and writes each half to its OWN secret-manager entry with its OWN access policy.
-# (Placeholder commands, NOT executed here.) The private() function's return value MUST be piped straight to a
-# secret-manager scoped to the verifier/qualification-runner identity; the public() value is separately scoped to
-# the generator identity. Do not write both to the same secret or the same access-controlled group.
-python -c "
-from orca.eval.genesis_v2.store import generate_vault_keypair
-priv, pub = generate_vault_keypair()
-import sys
-sys.stderr.write('private (verifier/qualification-runner ONLY, pipe to its own secret): ' + priv.hex() + chr(10))
-sys.stderr.write('public  (generator, safe to distribute to that identity): ' + pub.hex() + chr(10))
-" 2>&1 | <SECRET_MANAGER_CLI> put-both --split-by-line \
-    ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY:<VERIFIER_SCOPE> \
-    ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY:<GENERATOR_SCOPE>
-
-# corpus secret: unrelated to the vault keypair, generated separately, same handling
+# The corpus secret is a SEPARATE, single random value (unrelated to the vault keypair) with no combined-stream
+# risk -- one value flows through one pipe. This pattern IS safe to use as-is once <SECRET_MANAGER_CLI> is your
+# real CLI's name: a single `openssl rand` output piped once into a single secret write.
 openssl rand -hex 32 | <SECRET_MANAGER_CLI> put ORNEUR_GENESIS_V2_CORPUS_SECRET --stdin
 ```
 
-Never echo these values, never store them in a file inside a repository, and never generate them in CI. `python -c "..."` above is illustrative — the point is that the script MUST NOT print the private key to a location the generator's identity can read (stdout piped to a shared CI log, for instance, defeats the entire point of the split). Generate on a trusted machine, pipe directly into the secret manager, never leave a copy on disk. The corpus secret is validated by `orca.eval.genesis_v2.secret.validate_secret` (length, diversity, not public-derivable); the vault keypair's SHAPE (64 hex chars each) and MATCH (the private key genuinely derives the stated public key) are validated by `store.owner_setup_preflight()` — see step 5.
+Never echo any of these values, never store them in a file inside a repository, and never generate them in CI. The
+corpus secret is validated by `orca.eval.genesis_v2.secret.validate_secret` (length, diversity, not
+public-derivable); the vault keypair's SHAPE (64 hex chars each) and MATCH (the private key genuinely derives the
+stated public key) are validated ONLY by `store.owner_setup_preflight()` (the owner-controlled, both-halves-visible
+context) — see step 5. That pair-matching check itself fails closed if the `cryptography` package is unavailable or
+the key material is otherwise invalid; it never silently treats an unverifiable pair as matching.
 
-## 5. Preflight and expected output
+## 5. Preflight and expected output — ROLE-SEPARATED, never run the combined check from a real deployment
+
+`scripts/genesis_v2_preflight.py` takes `--role {owner,generator,verifier}`. Each role's preflight checks ONLY that
+role's own key material — **a generator's deployment must never be asked for the private key, and a
+verifier's/qualification-runner's deployment must never be asked for the public key.** Only `--role owner` checks
+both halves together (and is the only role that cross-validates the pair actually matches); run it ONLY in a
+context where you, the owner, legitimately have visibility into both halves at once — never as a real generator's
+or verifier's own deployment health check.
+
 ```bash
-python scripts/genesis_v2_preflight.py                       # expect exit 0 and status PRIVATE_STORAGE_CONFIGURED_UNVERIFIED
+# Run FROM the generator's own deployment environment:
+python scripts/genesis_v2_preflight.py --role generator   # expect exit 0, status GENERATOR_CONFIGURED_UNVERIFIED,
+                                                            # violations: [] (a non-empty violations list here means
+                                                            # the private key leaked into this environment -- treat
+                                                            # that as a security incident, not a config gap)
+
+# Run FROM the verifier's / qualification-runner's own deployment environment:
+python scripts/genesis_v2_preflight.py --role verifier    # expect exit 0, status VERIFIER_CONFIGURED_UNVERIFIED
+
+# Run ONLY in the owner's own, both-halves-visible context (e.g. immediately after key generation, step 4):
+python scripts/genesis_v2_preflight.py --role owner       # expect exit 0, status PRIVATE_STORAGE_CONFIGURED_UNVERIFIED
+
 python scripts/genesis_v2_vault_verify.py --vault <VAULT_DIR>  # expect exit 0 and "VAULT ISOLATION PASS"
 ```
-- Unconfigured today: preflight exits **2** with `PRIVATE_STORAGE_NOT_CONFIGURED`, listing `ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY` and `ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY` (among others) as missing.
-- If the two key values are present but do not form a genuine keypair (a copy-paste error, an old key half paired with a new one), preflight reports `"does not match the supplied private key"` against `ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY` and still reports `PRIVATE_STORAGE_NOT_CONFIGURED` — a mismatched pair is never accepted as configured.
-- If `ORNEUR_GENESIS_V2_ENCRYPTION_KEY` (the legacy symmetric var) is set anywhere in the environment preflight runs in, the report's `warnings` list includes an entry naming it explicitly — check for this on every environment you run preflight in, not just the one you intend to configure.
+- Unconfigured today: every role's preflight exits **2** (`GENERATOR_NOT_CONFIGURED` / `VERIFIER_NOT_CONFIGURED` /
+  `PRIVATE_STORAGE_NOT_CONFIGURED`).
+- `--role owner`, given a mismatched pair (a copy-paste error, an old key half paired with a new one), reports
+  `"does not match the supplied private key"` and still reports `PRIVATE_STORAGE_NOT_CONFIGURED` — a mismatched
+  pair is never accepted as configured. If `cryptography` is not installed, or the key material fails to parse
+  despite matching the hex-shape check, the SAME fail-closed report applies — never silently accepted.
+- If `ORNEUR_GENESIS_V2_ENCRYPTION_KEY` (the legacy symmetric var) is set in the environment any preflight role runs
+  in, the report's `warnings` list includes an entry naming it explicitly — check for this on every environment.
 - Any vault isolation check false ⇒ `VAULT ISOLATION FAIL`, exit 2.
-- `CONFIGURED_UNVERIFIED` is not proof of privacy: the owner independently confirms access control on the vault and BOTH secret-manager entries, with their DIFFERENT scopes (step 3).
+- `CONFIGURED_UNVERIFIED` is not proof of privacy: the owner independently confirms access control on the vault and
+  BOTH secret-manager entries, with their DIFFERENT scopes (step 3).
 
 ## 6. Proving public Git cannot reach the vault
 `vault_verify` checks: absolute, existing, non-symlink directory; real path outside the repository tree; **not inside any git work tree**; no tracked symlink resolves into the vault; no `.enc` artifact tracked or untracked in the repo; vault permissions and no plaintext siblings. Independently: `git -C <REPO> ls-files | grep -c '\.enc$'` must print `0`, and `git -C <VAULT_DIR> rev-parse --is-inside-work-tree` must fail. The public CI privacy scan additionally fails on any `.enc`, corpus path or secret in the repo. None of this changed with the key-split — isolation is a property of the DIRECTORY, orthogonal to which key any given process holds.
@@ -71,7 +117,7 @@ python scripts/genesis_v2_vault_verify.py --vault <VAULT_DIR>  # expect exit 0 a
 
 Before generating any real content, verify — on the actual deployment, not just by reading this document:
 
-1. **The generator's deployment environment has `ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY` set and does NOT have `ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY` set, accessible, or derivable.** Check the generator's actual secret-manager grant, not just its env-var list — a broader IAM role that happens to also grant the private-key secret defeats the split even if the generator's own script never reads it.
+1. **The generator's deployment environment has `ORNEUR_GENESIS_V2_VAULT_PUBLIC_KEY` set and does NOT have `ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY` set, accessible, or derivable.** Run `python scripts/genesis_v2_preflight.py --role generator` FROM that deployment and confirm `violations` is empty — a non-empty entry there means the private key IS visible to this environment, a genuine finding, not a checklist item. Also check the generator's actual secret-manager grant, not just its env-var list — a broader IAM role that happens to also grant the private-key secret defeats the split even if the generator's own script never reads it.
 2. **The creation-time-verifier identity is registered in `QUALIFICATION_RUNNER_REGISTRY.json` with `allowed_purposes` that do NOT include `QUALIFICATION_RUN`** (only `CREATION_TIME_VERIFICATION`) — `operational_boundary.authorized_manifest_verification_bytes()` enforces this in code (denies a dual-purpose identity), but the registry entry itself is owner-authored, so get it right at registration time.
 3. **The real qualification-runner identity (used only after V2 is frozen) is a DIFFERENT `runner_id` than the creation-time verifier**, even though both may legitimately hold the private key. Register them as separate rows.
 4. **One dedicated generator identity** with write-only access to the vault (public key + the vault directory's write path) and the corpus secret; no read access to `ORNEUR_GENESIS_V2_VAULT_PRIVATE_KEY`; no push rights beyond what `generator_registry.py`'s `credential_scope` declares (`vault_read: false` is REQUIRED and validated); no provider or GPU credentials unless a signed model-execution authorization allows them.
