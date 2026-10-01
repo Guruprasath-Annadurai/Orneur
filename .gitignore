@@ -50,3 +50,11 @@ htmlcov/
 dist/
 *.tar.gz
 /scratchpad/
+
+# Genesis V2 infrastructure-as-code: never commit real Terraform/OpenTofu state or variable values
+# (see infra/README.md rules 2-3) -- only *.tfvars.example with placeholder values may be committed.
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/.terraform/
+infra/**/*.tfvars
+!infra/**/*.tfvars.example
