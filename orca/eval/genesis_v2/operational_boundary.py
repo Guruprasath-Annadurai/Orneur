@@ -77,6 +77,7 @@ import json
 import os
 import subprocess
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from pathlib import Path
 
 from orca.eval.genesis_v2 import corpus_generation_authorization as CGA
@@ -515,6 +516,29 @@ def verify_manifest_digest_only_same_process(root: Path, ledger_dir: Path, reade
         holdout_plain = None
 
 
+@dataclass(frozen=True)
+class GenerationWriteResult:
+    """The CANONICAL, immutable evidence of exactly ONE successful private-corpus write (item 2, final-emission-
+    evidence-hardening phase). Returned directly by `GeneratorWriteHandle.write_corpus()` — this, not
+    `GeneratorWriteHandle`'s mutable last-event accessors (kept only as non-authoritative diagnostic state, see
+    their own docstrings), is THE canonical handoff from the generator process to the owner-attestation process.
+
+    A frozen dataclass: `corpus_digest` / `generation_event_payload_digest` cannot be reassigned after construction,
+    and `generation_event_payload` is itself a read-only `types.MappingProxyType` (not a plain dict) — external
+    code that tries `result.generation_event_payload["corpus_digest"] = "x"` gets a `TypeError`, not a silent
+    mutation. Even that belt-and-braces protection aside, `generation_event_payload_digest` was computed ONCE, at
+    construction, from the TRUE payload at the moment of the successful write — it is never recomputed from
+    whatever a caller might later hold, so `generation_receipt.attest_receipt()`'s mandatory digest check still
+    catches any divergence regardless.
+
+    Two separate `write_corpus()` calls on the SAME handle each return their OWN, independently constructed
+    `GenerationWriteResult` — writing a second corpus never mutates, replaces, or otherwise affects a
+    `GenerationWriteResult` a caller already received from an earlier write."""
+    corpus_digest: str
+    generation_event_payload: MappingProxyType
+    generation_event_payload_digest: str
+
+
 class GeneratorWriteHandle:
     """A write-only capability wrapping a genuinely write-only vault object (`store.EncryptedVaultWriter`, holding
     only the vault's PUBLIC key — no decrypt capability exists anywhere in that object's state, see its own
@@ -534,7 +558,19 @@ class GeneratorWriteHandle:
     ever accepted as a caller-supplied argument to `write_corpus()` itself — there is no parameter through which a
     caller could substitute a different generator identity, commit, code hash, authorization id, corpus id, or
     timestamp into the emitted payload. The OWNER never signs anything here — see `generation_receipt.attest_receipt()`
-    for the separate, later, owner-only attestation step this handle's output feeds into."""
+    for the separate, later, owner-only attestation step this handle's output feeds into.
+
+    ITEM 2 (final-emission-evidence-hardening phase): `write_corpus()` now returns a `GenerationWriteResult`
+    directly — the canonical evidence for that ONE write — instead of a bare digest string. A process that exits,
+    or a caller that only looks at the handle's own mutable state later, is no longer the only way to recover the
+    emitted provenance: it was already handed back at the moment of success.
+
+    ITEM 3 (final-emission-evidence-hardening phase): the mutable `_last_emitted_payload` state and its accessors
+    (`last_emitted_generation_event_payload()` / `last_emitted_generation_event_payload_digest()`) are kept ONLY as
+    non-authoritative, best-effort diagnostic/backward-compatible state (option B) — they reflect whatever the MOST
+    RECENT write happened to be, and are overwritten by every subsequent write. No security-sensitive flow may rely
+    on them; every such flow must consume the `GenerationWriteResult` returned directly by the specific
+    `write_corpus()` call it cares about."""
 
     def __init__(self, store, *, authorized_scope: frozenset = frozenset(), generator_identity: str | None = None,
                  generator_code_sha256: str | None = None, commit_sha: str | None = None, authorization_id: str | None = None):
@@ -548,9 +584,9 @@ class GeneratorWriteHandle:
         self._generator_code_sha256 = generator_code_sha256
         self._commit_sha = commit_sha
         self._authorization_id = authorization_id
-        self._last_emitted_payload: dict | None = None
+        self._last_emitted_payload: dict | None = None   # NON-AUTHORITATIVE -- see class docstring, item 3
 
-    def write_corpus(self, corpus_id: str, splits: dict) -> str:
+    def write_corpus(self, corpus_id: str, splits: dict) -> GenerationWriteResult:
         requested = set(splits)
         if self._store is None or not requested or not requested <= self._authorized_scope:
             denied = sorted(requested - self._authorized_scope) or sorted(requested)
@@ -562,23 +598,24 @@ class GeneratorWriteHandle:
 
         from orca.eval.genesis_v2 import generation_receipt as GRC
         from orca.eval.genesis_v2 import spec as SPEC
-        self._last_emitted_payload = GRC.build_unsigned_payload(
+        payload = GRC.build_unsigned_payload(
             corpus_generation_authorization_id=self._authorization_id, corpus_id=corpus_id, eval_version=SPEC.EVAL_VERSION,
             corpus_digest=digest, generator_code_tree_sha256=self._generator_code_sha256, generating_commit_sha=self._commit_sha,
             generator_identity=self._generator_identity, generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-        return digest
+        payload_digest = GRC.payload_digest(payload)
+        self._last_emitted_payload = payload   # NON-AUTHORITATIVE diagnostic state only -- see class docstring
+        return GenerationWriteResult(corpus_digest=digest, generation_event_payload=MappingProxyType(dict(payload)),
+                                      generation_event_payload_digest=payload_digest)
 
     def last_emitted_generation_event_payload(self) -> dict | None:
-        """A fresh COPY of the payload emitted by the most recent successful `write_corpus()` call, or `None` if
-        no write has succeeded yet on this handle. A copy, never the internal dict itself — mutating the returned
-        value can never retroactively alter what this handle considers "emitted" (see `last_emitted_generation_event_payload_digest()`,
-        which is always recomputed from the INTERNAL copy, not from anything a caller could have mutated)."""
+        """NON-AUTHORITATIVE diagnostic state (item 3) — reflects only the MOST RECENT `write_corpus()` call on
+        this handle and is silently overwritten by every subsequent write. A fresh COPY of that payload, or `None`
+        if no write has succeeded yet. No security-sensitive flow should use this; consume the
+        `GenerationWriteResult` returned directly by `write_corpus()` instead."""
         return dict(self._last_emitted_payload) if self._last_emitted_payload is not None else None
 
     def last_emitted_generation_event_payload_digest(self) -> str | None:
-        """`generation_receipt.payload_digest()` of the internally held emitted payload -- the value an owner
-        attestation workflow should independently capture at emission time and later supply to
-        `generation_receipt.attest_receipt()`'s `expected_payload_digest` to detect any tampering in transit."""
+        """NON-AUTHORITATIVE diagnostic state (item 3) — see `last_emitted_generation_event_payload()`."""
         if self._last_emitted_payload is None:
             return None
         from orca.eval.genesis_v2 import generation_receipt as GRC

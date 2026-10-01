@@ -625,7 +625,7 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
     screen_bytes = b'{"marker":"E2E-SYNTHETIC-SCREEN-CONTENT"}'
     holdout_bytes = b'{"marker":"E2E-SYNTHETIC-HOLDOUT-CONTENT"}'
     corpus_id = "gce2c-" + "e2" * 16
-    corpus_digest = handle.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
+    corpus_digest = handle.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes}).corpus_digest
 
     # 6. A SEPARATE qualification-runner identity, registered ONLY for creation-time verification (pre-freeze).
     verifier_code_hash = "9" * 64
@@ -781,18 +781,23 @@ def test_full_adversarial_end_to_end_flow_owner_authorization_through_lineage_el
 
 
 def test_full_synthetic_generation_event_emission_through_ledger_gated_receipt(tmp_path):
-    """Generation-event-emission-integration phase: the COMPLETE requested synthetic path, end to end --
+    """Final-emission-evidence-hardening phase, item 6: the COMPLETE requested synthetic path, end to end, using
+    the FINAL production path --
 
-        authorized generator -> protected write handle -> successful encrypted private-corpus write ->
-        immutable generation-event payload -> ephemeral OWNER signature -> signed manifest -> ciphertext
-        transfer -> receiving verification -> real creation-verification ledger evidence.
+        owner-scoped authority -> signed synthetic CGA -> authorized synthetic generator -> protected write
+        handle -> encrypted private split write -> immutable GenerationWriteResult -> emitted payload digest ->
+        owner attest_receipt() using the MANDATORY expected digest -> signed generation receipt -> signed corpus
+        manifest -> ciphertext-only transfer -> receiving verifier -> authenticated CGA -> authenticated
+        generation receipt -> manifest verification -> creation-verification ledger grants -> holdout remains
+        SEALED.
 
     Unlike the older adversarial e2e test above (which hand-builds manifest/receipt dicts to probe individual
-    failure modes), this test exercises the REAL emission path: `GeneratorWriteHandle.write_corpus()` auto-builds
-    the generation-event payload from the trusted boundary context, and `generation_receipt.attest_receipt()` is
-    the only thing that ever touches the (ephemeral, test-only) owner signing key -- the generator process itself
-    never does. Synthetic content and ephemeral keys only; no real vault activation, no real owner signature, no
-    model execution, no GPU, no spend, no training, no V2 freeze."""
+    failure modes), this test exercises the REAL emission path: `GeneratorWriteHandle.write_corpus()` returns the
+    canonical `GenerationWriteResult` directly -- this test never manually reconstructs the generation-event
+    payload -- and `generation_receipt.attest_receipt()` is the only thing that ever touches the (ephemeral,
+    test-only) owner signing key -- the generator process itself never does. Synthetic content and ephemeral keys
+    only; no real vault activation, no real owner signature, no model execution, no GPU, no spend, no training,
+    no V2 freeze."""
     import hashlib
     import json
     import os
@@ -853,14 +858,19 @@ def test_full_synthetic_generation_event_emission_through_ledger_gated_receipt(t
 
     reviewed_sha = _e2e_git_init_with_head(repo)
 
-    # 3. The owner's signed CGA, binding reviewed_commit_sha + the exact code-tree hash.
+    # 3. The owner's signed CGA, binding reviewed_commit_sha + the exact code-tree hash. The issued_at/expires_at
+    # window is anchored to the REAL wall clock (not the synthetic NOW used elsewhere) with a generous margin,
+    # since write_corpus() below stamps the generation-event payload's generated_at with the REAL current time --
+    # the receiving verification's window check (generation_receipt.window_problems()) compares that real
+    # timestamp against this authorization's own window, never against the synthetic NOW.
+    real_clock_now = datetime.now(timezone.utc)
     auth_id = "cgauth-" + "e3" * 8
     auth = CGA.default_record()
     auth.update({"authorization_id": auth_id, "status": "AUTHORIZED", "purpose": CGA.PURPOSE,
                  "authorized_scope": ["SCREEN", "QUALIFICATION_HOLDOUT"], "reviewed_commit_sha": reviewed_sha,
                  "authorized_code_tree_sha256": code_hash,
                  "authorized_artifact_digests": {"corpus_inventory_digest": inv_digest, "preregistration_record_sha256": prereg_sha},
-                 "issued_at": ts(NOW - timedelta(hours=1)), "expires_at": ts(NOW + timedelta(days=1)),
+                 "issued_at": ts(real_clock_now - timedelta(hours=1)), "expires_at": ts(real_clock_now + timedelta(hours=1)),
                  "authorizing_authority": {"identity": "emit-owner-1", "role": "OWNER", "key_id": "emit-owner-1"}})
     auth["signature"] = owner_sk.sign(CGA.canonical_signing_bytes(auth)).hex()
     (repo / CGA.RECORD_PATH).write_text(json.dumps(auth))
@@ -874,29 +884,35 @@ def test_full_synthetic_generation_event_emission_through_ledger_gated_receipt(t
     generator_vault = tmp_path / "generator-vault"
     writer = ST.EncryptedVaultWriter(generator_vault, vault_pub, repo_root=repo)
     handle = OB.protected_generate_write_handle(repo, writer, requested_scope=("SCREEN", "QUALIFICATION_HOLDOUT"),
-                                                 event_name="workflow_dispatch", generator_id="gen-emit", now=NOW)
+                                                 event_name="workflow_dispatch", generator_id="gen-emit")   # now=None -> real wall clock, matching the CGA's real-clock-anchored window above
 
-    # 5. SUCCESSFUL ENCRYPTED PRIVATE-CORPUS WRITE.
+    # 5. SUCCESSFUL ENCRYPTED PRIVATE-CORPUS WRITE -- returns the CANONICAL, immutable GenerationWriteResult
+    # directly (item 2): this test never manually reconstructs the generation-event payload from separately
+    # entered fields anywhere below.
     screen_bytes = b'{"marker":"EMIT-SYNTHETIC-SCREEN-CONTENT"}'
     holdout_bytes = b'{"marker":"EMIT-SYNTHETIC-HOLDOUT-CONTENT"}'
     corpus_id = "gce2c-" + "e3" * 16
-    corpus_digest = handle.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
+    write_result = handle.write_corpus(corpus_id, {"SCREEN": screen_bytes, "QUALIFICATION_HOLDOUT": holdout_bytes})
+    assert isinstance(write_result, OB.GenerationWriteResult)
+    corpus_digest = write_result.corpus_digest
 
-    # 6. IMMUTABLE GENERATION-EVENT PAYLOAD, auto-built by the write path from runtime facts only. Note the
+    # 6. IMMUTABLE GENERATION-EVENT PAYLOAD + its digest, both taken directly from the write result. Note the
     # generating commit is the REAL current HEAD at write time (the "evidence" commit just made above, which is a
     # genuine descendant of reviewed_sha) -- not reviewed_sha itself; see corpus_generation_authorization.py's own
     # docstring on why ancestry, not literal equality, is the correct binding.
-    payload = handle.last_emitted_generation_event_payload()
-    expected_payload_digest = handle.last_emitted_generation_event_payload_digest()
+    payload = write_result.generation_event_payload
+    expected_payload_digest = write_result.generation_event_payload_digest
     generating_commit_sha = payload["generating_commit_sha"]
-    assert payload == {"schema_version": GRC.SCHEMA_VERSION, "corpus_generation_authorization_id": auth_id,
-                        "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION, "corpus_digest": corpus_digest,
-                        "generator_code_tree_sha256": code_hash, "generating_commit_sha": generating_commit_sha,
-                        "generator_identity": "gen-emit", "generated_at": payload["generated_at"]}
+    assert dict(payload) == {"schema_version": GRC.SCHEMA_VERSION, "corpus_generation_authorization_id": auth_id,
+                              "corpus_id": corpus_id, "eval_version": SPEC.EVAL_VERSION, "corpus_digest": corpus_digest,
+                              "generator_code_tree_sha256": code_hash, "generating_commit_sha": generating_commit_sha,
+                              "generator_identity": "gen-emit", "generated_at": payload["generated_at"]}
+    assert expected_payload_digest == GRC.payload_digest(dict(payload))
 
-    # 7. EPHEMERAL OWNER SIGNATURE -- the generator process itself never held or used this key; attest_receipt()
-    # is called here standing in for a SEPARATE owner-side attestation tool/process.
-    receipt = GRC.attest_receipt(payload, attesting_authority={"identity": "emit-owner-1", "role": "OWNER", "key_id": "emit-owner-1"},
+    # 7. EPHEMERAL OWNER SIGNATURE, using the MANDATORY expected digest captured directly from the write result --
+    # the generator process itself never held or used this key; attest_receipt() is called here standing in for a
+    # SEPARATE owner-side attestation tool/process.
+    receipt = GRC.attest_receipt(dict(payload), attesting_authority={"identity": "emit-owner-1", "role": "OWNER", "key_id": "emit-owner-1"},
                                   sign_bytes=owner_sk.sign, expected_payload_digest=expected_payload_digest)
     assert set(receipt) == GRC.REQUIRED_FIELDS
 

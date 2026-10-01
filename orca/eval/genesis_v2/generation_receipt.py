@@ -94,27 +94,34 @@ class ReceiptAttestationError(ValueError):
     expected digest -- never silently signed over in either case."""
 
 
-def attest_receipt(payload: dict, *, attesting_authority: dict, sign_bytes, expected_payload_digest: str | None = None) -> dict:
-    """The OWNER ATTESTATION step (item 3, generation-event-emission-integration phase): takes the GENERATOR's
-    emitted, unsigned payload (see `build_unsigned_payload()`), adds the attesting OWNER's own identity, and signs
-    the FULL canonical record (via `sign_bytes`, a caller-supplied `bytes -> bytes` signing callable -- this module
-    never holds or imports a private key itself, and NEVER accepts the OWNER's private key as a parameter, only a
-    signing operation). `sign_bytes` is called on exactly `receipt_signing_bytes(full_record)` -- the SAME canonical
-    bytes `verify_receipt_signature()` recomputes at verification time, so this is the identical signature contract
-    the receiving path already trusts, never a new one.
+def attest_receipt(payload: dict, *, attesting_authority: dict, sign_bytes, expected_payload_digest: str) -> dict:
+    """The OWNER ATTESTATION step (generation-event-emission-integration / final-emission-evidence-hardening
+    phases): takes the GENERATOR's emitted, unsigned payload (see `build_unsigned_payload()`), adds the attesting
+    OWNER's own identity, and signs the FULL canonical record (via `sign_bytes`, a caller-supplied
+    `bytes -> bytes` signing callable -- this module never holds or imports a private key itself, and NEVER accepts
+    the OWNER's private key as a parameter, only a signing operation). `sign_bytes` is called on exactly
+    `receipt_signing_bytes(full_record)` -- the SAME canonical bytes `verify_receipt_signature()` recomputes at
+    verification time, so this is the identical signature contract the receiving path already trusts, never a
+    new one.
 
-    Fail-closed integrity check: if `expected_payload_digest` is supplied (the digest the owner independently
-    captured at emission time, via `payload_digest()`, through some trusted side channel), this function refuses
-    to sign -- raising `ReceiptAttestationError`, never silently proceeding -- unless the SUPPLIED `payload` still
-    hashes to that exact digest. This is what makes post-emission tampering with ANY payload field detectable
-    before a signature is ever produced over the wrong payload, closing the exact gap item 3 describes.
+    `expected_payload_digest` is a REQUIRED, non-optional parameter (item 1, final-emission-evidence-hardening
+    phase) -- there is no weaker call shape and no alternate unsafe signing helper anywhere in this module. The
+    caller must supply the digest it independently captured at emission time (via
+    `GenerationWriteResult.generation_event_payload_digest` -- see `operational_boundary.py` -- or, equivalently,
+    `payload_digest()` applied to a payload obtained the same way). This function refuses to sign -- raising
+    `ReceiptAttestationError`, BEFORE `sign_bytes` is ever called -- unless the SUPPLIED `payload` still hashes to
+    that exact digest. This is what makes post-emission tampering with ANY payload field detectable before a
+    signature is ever produced over the wrong payload: the owner signing workflow can never silently sign an
+    independently reconstructed or mutated generation-receipt payload.
 
     The returned record is shaped exactly like `REQUIRED_FIELDS` and is verified by the UNCHANGED, already-accepted
     `verify_receipt()` / `verify_receipt_signature()` path -- this function adds no new verification logic of its
     own; it only PRODUCES a record those functions can already check."""
     if not isinstance(payload, dict) or set(payload) != PAYLOAD_FIELDS:
         raise ReceiptAttestationError(f"payload schema mismatch: expected exactly {sorted(PAYLOAD_FIELDS)}, got {sorted(payload) if isinstance(payload, dict) else type(payload).__name__}")
-    if expected_payload_digest is not None and payload_digest(payload) != expected_payload_digest:
+    if not isinstance(expected_payload_digest, str) or not expected_payload_digest:
+        raise ReceiptAttestationError("expected_payload_digest is required and must be a non-empty string -- there is no supported attestation path that omits it")
+    if payload_digest(payload) != expected_payload_digest:
         raise ReceiptAttestationError("payload_digest(payload) does not match expected_payload_digest -- refusing to sign a payload that does not match what was independently captured at emission time")
     if not isinstance(attesting_authority, dict) or set(attesting_authority) != {"identity", "role", "key_id"}:
         raise ReceiptAttestationError("attesting_authority must be an object with identity/role/key_id")

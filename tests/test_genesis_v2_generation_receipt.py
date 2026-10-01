@@ -331,12 +331,16 @@ def test_attest_receipt_produces_a_receipt_that_passes_the_unchanged_verify_rece
     assert problems == []
 
 
-def test_attest_receipt_works_without_an_expected_digest_but_that_is_the_less_safe_path(owner_signer):
-    """expected_payload_digest is optional -- omitting it still produces a valid receipt, but forgoes the
-    tamper-detection guarantee. Tests below always supply it to exercise the safer path."""
+def test_attest_receipt_requires_expected_payload_digest_as_a_mandatory_parameter(owner_signer):
+    """Item 1, final-emission-evidence-hardening phase: the weaker, digest-optional call shape is removed
+    entirely. Calling the production attestation API without expected_payload_digest must be impossible --
+    proven here as a TypeError (missing required keyword-only argument), never a permissive fallback."""
     sk, keys, authority = owner_signer
-    receipt = GRC.attest_receipt(_payload(), attesting_authority=authority, sign_bytes=sk.sign)
-    assert GRC.verify_receipt_signature(receipt, keys) is None
+    with pytest.raises(TypeError):
+        GRC.attest_receipt(_payload(), attesting_authority=authority, sign_bytes=sk.sign)
+    import inspect
+    params = inspect.signature(GRC.attest_receipt).parameters
+    assert params["expected_payload_digest"].default is inspect.Parameter.empty   # no default -- truly required
 
 
 @pytest.mark.parametrize("field,bad", [
@@ -347,17 +351,44 @@ def test_attest_receipt_works_without_an_expected_digest_but_that_is_the_less_sa
     ("corpus_id", "gce2c-" + "00" * 16),
     ("corpus_generation_authorization_id", "cgauth-" + "99" * 8),
     ("generated_at", "2099-01-01T00:00:00Z"),
+    ("eval_version", "genesis-capability-eval/9.9.9"),
 ])
 def test_attest_receipt_refuses_to_sign_a_payload_tampered_after_emission(owner_signer, field, bad):
-    """Item 3's core claim, item 4's 'modification of any signable receipt field' case: the owner's attestation
-    tool is handed the digest captured at TRUE emission time; if the payload it is asked to sign has since been
-    altered in ANY field, the digest no longer matches and signing is refused BEFORE any signature is produced."""
+    """Item 1, final-emission-evidence-hardening phase, regression tests 2-9: every one of the nine payload fields
+    -- generator identity, commit, code digest, corpus digest, corpus ID, CGA authorization ID, timestamp, and eval
+    version -- is independently proven to invalidate the mandatory digest check when tampered with after emission.
+    The owner's attestation tool is handed the digest captured at TRUE emission time; if the payload it is asked
+    to sign has since been altered in ANY field, the digest no longer matches and signing is refused BEFORE any
+    signature is produced."""
     sk, keys, authority = owner_signer
     original = _payload()
     expected_digest = GRC.payload_digest(original)
     tampered = {**original, field: bad}
     with pytest.raises(GRC.ReceiptAttestationError):
         GRC.attest_receipt(tampered, attesting_authority=authority, sign_bytes=sk.sign, expected_payload_digest=expected_digest)
+
+
+def test_attest_receipt_never_invokes_the_signing_callback_when_the_digest_comparison_fails(owner_signer):
+    """Item 1, regression test 10: the signing callback must never even be CALLED when the digest mismatches --
+    not merely that its result is discarded. Proven with a callback that records every invocation and would raise
+    AssertionError if somehow invoked on tampered input."""
+    sk, keys, authority = owner_signer
+    calls = []
+
+    def recording_sign(b):
+        calls.append(b)
+        return sk.sign(b)
+
+    original = _payload()
+    expected_digest = GRC.payload_digest(original)
+    tampered = {**original, "corpus_digest": "0" * 64}
+    with pytest.raises(GRC.ReceiptAttestationError):
+        GRC.attest_receipt(tampered, attesting_authority=authority, sign_bytes=recording_sign, expected_payload_digest=expected_digest)
+    assert calls == []   # never invoked
+
+    # sanity: the SAME callback genuinely IS invoked on a correct, matching payload
+    GRC.attest_receipt(original, attesting_authority=authority, sign_bytes=recording_sign, expected_payload_digest=expected_digest)
+    assert len(calls) == 1
 
 
 def test_attest_receipt_refuses_a_payload_for_a_different_successful_write():
@@ -385,16 +416,27 @@ def test_attest_receipt_refuses_a_payload_for_a_different_successful_write():
 
 def test_attest_receipt_rejects_a_malformed_payload_schema(owner_signer):
     sk, keys, authority = owner_signer
+    digest = GRC.payload_digest(_payload())
     with pytest.raises(GRC.ReceiptAttestationError):
-        GRC.attest_receipt({"only": "one field"}, attesting_authority=authority, sign_bytes=sk.sign)
+        GRC.attest_receipt({"only": "one field"}, attesting_authority=authority, sign_bytes=sk.sign, expected_payload_digest=digest)
     with pytest.raises(GRC.ReceiptAttestationError):
-        GRC.attest_receipt("not a dict", attesting_authority=authority, sign_bytes=sk.sign)
+        GRC.attest_receipt("not a dict", attesting_authority=authority, sign_bytes=sk.sign, expected_payload_digest=digest)
 
 
 def test_attest_receipt_rejects_a_malformed_attesting_authority(owner_signer):
     sk, keys, authority = owner_signer
+    payload = _payload()
     with pytest.raises(GRC.ReceiptAttestationError):
-        GRC.attest_receipt(_payload(), attesting_authority={"identity": "owner-1"}, sign_bytes=sk.sign)
+        GRC.attest_receipt(payload, attesting_authority={"identity": "owner-1"}, sign_bytes=sk.sign,
+                            expected_payload_digest=GRC.payload_digest(payload))
+
+
+def test_attest_receipt_rejects_an_empty_or_non_string_expected_payload_digest(owner_signer):
+    sk, keys, authority = owner_signer
+    payload = _payload()
+    for bad in ("", None, 12345):
+        with pytest.raises(GRC.ReceiptAttestationError):
+            GRC.attest_receipt(payload, attesting_authority=authority, sign_bytes=sk.sign, expected_payload_digest=bad)
 
 
 def test_attest_receipt_never_holds_or_imports_a_private_key_itself():
@@ -405,3 +447,32 @@ def test_attest_receipt_never_holds_or_imports_a_private_key_itself():
     src = inspect.getsource(GRC.attest_receipt)
     for forbidden in ("PrivateKey", "private_key", "load_pem", "load_der"):
         assert forbidden not in src
+
+
+# ---------------------------------------------------------------- item 5.B: attestation substitution across TWO
+# genuinely different, real payloads (not just one payload tampered in place)
+def test_attest_receipt_refuses_payload_a_paired_with_digest_b(owner_signer):
+    sk, keys, authority = owner_signer
+    payload_a = _payload(corpus_id=CORPUS_ID)
+    payload_b = _payload(corpus_id="gce2c-" + "00" * 16, corpus_digest="0" * 64)
+    digest_b = GRC.payload_digest(payload_b)
+    with pytest.raises(GRC.ReceiptAttestationError):
+        GRC.attest_receipt(payload_a, attesting_authority=authority, sign_bytes=sk.sign, expected_payload_digest=digest_b)
+
+
+def test_attest_receipt_refuses_payload_b_paired_with_digest_a(owner_signer):
+    sk, keys, authority = owner_signer
+    payload_a = _payload(corpus_id=CORPUS_ID)
+    digest_a = GRC.payload_digest(payload_a)
+    payload_b = _payload(corpus_id="gce2c-" + "00" * 16, corpus_digest="0" * 64)
+    with pytest.raises(GRC.ReceiptAttestationError):
+        GRC.attest_receipt(payload_b, attesting_authority=authority, sign_bytes=sk.sign, expected_payload_digest=digest_a)
+
+
+def test_attest_receipt_over_the_authentic_matching_pairing_succeeds(owner_signer):
+    """The positive control for the two tests above: payload A paired with digest A (its OWN digest) succeeds."""
+    sk, keys, authority = owner_signer
+    payload_a = _payload(corpus_id=CORPUS_ID)
+    digest_a = GRC.payload_digest(payload_a)
+    receipt = GRC.attest_receipt(payload_a, attesting_authority=authority, sign_bytes=sk.sign, expected_payload_digest=digest_a)
+    assert GRC.verify_receipt_signature(receipt, keys) is None
