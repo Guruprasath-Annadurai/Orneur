@@ -7,4 +7,6 @@
 
 Topology = **Tier0-B (container variant)**: weaker than two physical machines; no distinct host OS users; no host firewall. See `docs/orneur/phase-21/infrastructure/GENESIS_V2_TIER0_TOPOLOGY_AND_HOST_CAPABILITIES.md`. Acceptance status: `GENESIS_V2_TIER0_ACCEPTANCE_STATUS.md` (no item is PROVEN_REAL).
 
-**Not built / not authorized:** real keys or secrets, real vault, owner-key creation, host OS users (needs sudo), host firewall, real Reliquary drive, anything cloud. The earlier planned `create_*_user.sh` scripts remain intentionally unwritten (they need owner sudo).
+**Host hardening evaluated (not implemented):** host OS users / `pf` / app firewall add no boundary on single-owner Docker Desktop; see `GENESIS_V2_TIER0_HOST_HARDENING_FINDINGS.md` (`TIER0_SINGLE_HOST_REAL_ISOLATION_LIMIT_REACHED`; Tier0-A required for real secrets).
+
+**Not built / not authorized:** real keys or secrets, real vault, owner-key creation, real Reliquary drive, anything cloud. The earlier planned `create_*_user.sh` scripts remain intentionally unwritten (they need owner sudo).

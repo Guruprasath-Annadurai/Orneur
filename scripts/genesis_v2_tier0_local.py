@@ -146,6 +146,28 @@ class Tier0Run:
                             ("CHOWN", "FOWNER", "DAC_OVERRIDE"), ["python", "/roles/courier.py", "/src", "/dst", str(uid), "1" if manifest else "0"])
         return json.loads(out.strip().splitlines()[-1])
 
+    def control_plane_crossing(self) -> dict:
+        """ADVERSARIAL, SYNTHETIC: what can the holder of the Docker control plane (the single host user that owns this Docker Desktop daemon) do to
+        the role boundaries? Records only booleans/lengths -- never a key byte. A True here is a documented LIMIT of single-host Tier-0, not a defect to hide."""
+        res = {}
+        # (a) exec into the Witness container AS the Witness uid and read its (ephemeral) private key
+        out = docker("exec", "-u", f"{WITNESS_UID}:{WITNESS_UID}", f"{self.p}-witness", "python", "-c", "print(len(open('/secrets/vault_private_key').read().strip()))", check=False)
+        res["exec_into_witness_reads_its_private_key"] = out.strip() == "64"
+        # (b) mount the Witness secret volume into a NEW container (one the Forge-side role could never create) and read it with DAC override
+        out = docker(*hardened_run_args(name=f"{self.p}-cp-mount", image=IMAGES["harness"], run_id=self.run_id, user="0:0", caps=("DAC_OVERRIDE",),
+                                        volumes=[(self._vol("witness-secrets"), "/w", "ro")], cmd=["python", "-c", "print(len(open('/w/vault_private_key').read().strip()))"]), check=False)
+        res["arbitrary_volume_mount_reads_witness_key"] = out.strip() == "64"
+        out = docker(*hardened_run_args(name=f"{self.p}-cp-mount2", image=IMAGES["harness"], run_id=self.run_id, user="0:0", caps=("DAC_OVERRIDE",),
+                                        volumes=[(self._vol("owner"), "/o", "ro")], cmd=["python", "-c", "import os;print(len(os.listdir('/o')))"]), check=False)
+        res["arbitrary_volume_mount_reaches_owner_standin"] = out.strip() == "1"
+        # (c) a privileged container is launchable (network still none so the probe stays hermetic)
+        out = docker("run", "--rm", "--privileged", "--network", "none", "--label", f"{RUN_LABEL}={self.run_id}", IMAGES["harness"], "python", "-c",
+                     "print([l.split()[1] for l in open('/proc/self/status') if l.startswith('CapEff')][0])", check=False)
+        res["privileged_container_launchable"] = bool(out.strip()) and int(out.strip(), 16) != 0
+        # (d) full enumeration of every role's containers and volumes
+        res["enumerates_both_roles"] = (f"{self.p}-forge" in docker("ps", "--format", "{{.Names}}")) and (f"{self.p}-witness" in docker("ps", "--format", "{{.Names}}"))
+        return res
+
     def restored_verify(self, cid, dig) -> dict:
         """Item 14: decrypt FROM the restored copy with the correct witness identity (one-shot witness-image container, no network)."""
         out = self._harness("restored-verify", "witness", f"{WITNESS_UID}:{WITNESS_UID}",
@@ -179,6 +201,7 @@ class Tier0Run:
         ev["restore"] = self.courier("reliquary", "vault-restored", WITNESS_UID, False)
         ev["restore_equals_backup"] = {k: v for k, v in ev["restore"].items()} == {k: v for k, v in ev["backup"].items() if k != "MANIFEST.json"}
         ev["restored_verify"] = self.restored_verify(cid, dig)
+        ev["control_plane_crossing"] = self.control_plane_crossing()
         ev["app_tree"] = {r: json.loads(self.exec(r, "python", "-c", "import os,json;print(json.dumps(sorted(os.path.relpath(os.path.join(d,f),'/app') for d,_,fs in os.walk('/app') for f in fs)))")) for r in ("forge", "witness")}
         ev["vault_perms"] = self.audit("perms", "/v/vault", vols=["vault"])
         ev["ingest_perms"] = self.audit("perms", "/v/ingest", vols=["ingest"])

@@ -33,11 +33,8 @@ Forge, Witness, and a key-less courier are separate containers (separate images;
 4. **Not physical-machine separation.** Tier0-A (two machines) remains strictly stronger.
 5. **Everything here is synthetic.** Ephemeral keys are generated *inside* a root provisioner container and written straight into role volumes; the host process never sees a key byte; volumes are removed at teardown. No real secret exists.
 
-## Owner actions that would strengthen it (none performed)
-- Create two dedicated unprivileged macOS users (needs sudo) and run Forge/Witness container tooling under separate host users (Tier0-B with host-user separation).
-- Enable/configure the host firewall (`pf`) — needs root.
-- Provide a second owner-controlled machine for Tier0-A.
-- Provide/authorize an external encrypted drive for the real Reliquary.
+## Strengthening options (updated by the host-hardening phase)
+Host OS users and `pf`/application-firewall changes were **evaluated and not implemented**: on single-owner Docker Desktop they add no boundary (see `GENESIS_V2_TIER0_HOST_HARDENING_FINDINGS.md`, verdict `TIER0_SINGLE_HOST_REAL_ISOLATION_LIMIT_REACHED`). What would change the answer: a second owner-controlled machine (Tier0-A) and, for the real Reliquary, an owner-authorized external encrypted drive.
 
 ## Reproduce (local, free; needs Docker)
 `python scripts/genesis_v2_tier0_local.py discover | build | verify` and `ORNEUR_TIER0_DOCKER=1 pytest tests/test_genesis_v2_tier0_local.py`. Teardown (`teardown <run_id>`) removes only resources labeled `orneur.tier0.run=<id>`; it never prunes. Container tests are **LOCAL evidence only** — CI's deterministic job skips them (no Docker-dependent step was added to any workflow).

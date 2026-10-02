@@ -225,3 +225,29 @@ def test_15_qualification_and_privileged_code_is_absent_from_every_role_image(ti
         assert not any(tier0[probe]["importable_privileged_modules"].values())
     for role in ("forge", "witness"):
         assert set(tier0["app_tree"][role]) == set(T.APP_FILES)
+
+
+def test_control_plane_holder_can_cross_every_role_boundary_so_single_host_isolation_has_a_hard_limit(tier0):
+    """ADVERSARIAL, SYNTHETIC. Documents (does not hide) the limit: whoever holds the Docker control plane on this single-host Tier-0 -- the one
+    host user that owns the Docker Desktop daemon -- can exec into either role, mount either role's secret volume, reach the owner stand-in volume,
+    and launch a privileged container. Role-container separation therefore protects against a compromised ROLE PROCESS, not against the control-plane
+    holder. This is why items 3 and 16 stay PARTIAL and why real-secret deployment acceptance needs Tier0-A (two physical machines)."""
+    cp = tier0["control_plane_crossing"]
+    assert cp == {"exec_into_witness_reads_its_private_key": True, "arbitrary_volume_mount_reads_witness_key": True,
+                  "arbitrary_volume_mount_reaches_owner_standin": True, "privileged_container_launchable": True, "enumerates_both_roles": True}, cp
+
+
+def test_role_containers_themselves_hold_no_control_plane_authority(tier0):
+    """The converse (what the host-hardening phase CAN show): a compromised Forge or Witness PROCESS has no docker socket, no capabilities, no
+    network, and no mount that reaches the other role, so it cannot perform any of the crossings above."""
+    for probe in ("forge_probe", "witness_probe"):
+        p = tier0[probe]
+        assert not p["docker_sock_present"] and p["cap_eff"] == "0000000000000000" and not p["net"]["tcp_egress"]
+
+
+def test_host_hardening_findings_doc_classifies_every_control_and_states_the_limit():
+    txt = (INFRA / "GENESIS_V2_TIER0_HOST_HARDENING_FINDINGS.md").read_text()
+    for label in ("MATERIALLY_STRENGTHENS_ISOLATION", "DEFENSE_IN_DEPTH_ONLY", "NO_MEANINGFUL_SECURITY_GAIN", "UNSAFE_OR_INCOMPATIBLE"):
+        assert label in txt
+    assert "TIER0_SINGLE_HOST_REAL_ISOLATION_LIMIT_REACHED" in txt and "Tier0-A" in txt
+    assert "No privileged operation was performed" in txt
