@@ -15,7 +15,7 @@ Each domain below states: purpose, exact holdings, exact forbidden holdings, net
 **Staged key custody** (see `GENESIS_V2_SECRET_CUSTODY_PLAN.md` for full detail):
 - Tier 0: macOS Keychain on an owner-controlled machine, key never exported as plaintext to an environment variable for any CI job.
 - Tier 1: hardware security key (YubiKey or equivalent) performing the Ed25519 signature; signing ceremony is a deliberate, multi-step owner action (`GENESIS_V2_OWNER_SIGNING_CEREMONY.md`), never a single CLI flag.
-- Tier 2: HSM/KMS-backed Ed25519 (e.g. a cloud KMS asymmetric-sign key, or a dedicated signing appliance), with a documented split-custody or quorum model if the owner later brings on a second signer (`DELEGATED_OWNER` role already exists in `authority_registry.ROLES`).
+- Tier 2: owner-controlled local hardware token or physically owner-controlled HSM holding the Ed25519 key (never a cloud KMS/HSM — see canonical owner-key policy), with a documented split-custody or quorum model if the owner later brings on a second signer (`DELEGATED_OWNER` role already exists in `authority_registry.ROLES`).
 
 **Network**: no inbound listener ever. Outbound only to fetch the evidence snapshot it needs to review, and (Tier 1+) to push a signed record back into the repository/registry.
 

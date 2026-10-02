@@ -56,7 +56,11 @@ ACCEPTANCE_ITEM_COVERAGE = {
     17: ("OS/file permissions verified", "partial"),
     18: ("evidence bundle captured", "code"),
     19: ("cleanup cannot delete unrelated data", "code"),
-    20: ("no real corpus content was used", "code"),
+    # Item 20 is "partial", NOT "code": the static check below proves only that this module does not import or
+    # reference the known inventory path/globals. It cannot establish that every synthetic literal was
+    # independently authored and not copied from protected corpus content. Owner/provenance confirmation remains
+    # required before real-deployment acceptance.
+    20: ("no real corpus content was used", "partial"),
 }
 
 
@@ -206,9 +210,12 @@ def test_item_19_cleanup_touches_only_what_this_suite_created(tmp_path):
 
 # ---------------------------------------------------------------- item 20: no real corpus content
 def test_item_20_no_real_corpus_content_anywhere_in_this_suite():
-    """Static check: this test module never imports the real inventory module (the only code path that reads the
-    real committed corpus inventory file) and defines no reference to that file's real path anywhere in its
-    globals -- every split value used by the tests above is a locally hardcoded, synthetic byte string."""
+    """PARTIAL evidence only. What this static check proves: this test module defines no `INV`/`inventory` global
+    and no module-level string referencing the known inventory file path. What it does NOT prove: that every
+    synthetic literal in this suite was independently authored rather than copied from protected corpus content --
+    no in-repo test can establish that without reading the protected material, which this program forbids. That
+    residual claim is owner/provenance-confirmed (see GENESIS_V2_REAL_DEPLOYMENT_ACCEPTANCE.md item 20)."""
+    assert ACCEPTANCE_ITEM_COVERAGE[20][1] == "partial"  # never silently re-upgraded to "code"
     import sys
     this_module = sys.modules[__name__]
     assert not hasattr(this_module, "INV")

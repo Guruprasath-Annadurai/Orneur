@@ -12,7 +12,7 @@ Status: **No decision below has been made on the owner's behalf.** Each is a gat
 
 | Component | Recommended Tier 0 | Recommended Tier 1+ |
 |---|---|---|
-| Owner signing key | macOS Keychain | Hardware token (YubiKey) → optionally HSM/KMS at Tier 2 |
+| Owner signing key | macOS Keychain | Owner-controlled hardware token (YubiKey) → optionally a physically owner-controlled local HSM at Tier 2 (never cloud KMS) |
 | Generator (Forge) | Local process/user | Ephemeral cloud compute, dedicated account |
 | Verifier (Witness) | Separate local process/user (or second machine) | Separate cloud account/machine from Forge |
 | Vault | Local encrypted directory | Object storage + Object Lock, dedicated account |
@@ -30,7 +30,7 @@ Status: **No decision below has been made on the owner's behalf.** Each is a gat
 
 - **A**: Software-only (Keychain), $0.
 - **B**: Hardware security key (YubiKey or equivalent), ~$25–55 one-time. **Recommended** — cheap enough that cost is not a real objection, and it is the single highest-leverage security upgrade available at Tier 0→1.
-- **C**: HSM/cloud-KMS-backed, Tier 2 only, cost varies.
+- **C**: Physically owner-controlled local HSM, Tier 2 only, cost varies. A cloud KMS holding the owner signing key is **not an available option** under the canonical owner-key policy: the owner Ed25519 signing private key MUST remain owner-controlled and non-cloud-resident at every tier. A local hardware token/HSM physically controlled by the owner is permitted; a cloud KMS/HSM holding the owner signing private key is NOT compatible with this architecture.**
 
 ## Decision 5 — Storage backend
 

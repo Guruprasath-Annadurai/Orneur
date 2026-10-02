@@ -29,16 +29,16 @@ Same-process Python unit tests (the existing `tests/test_genesis_v2_*` suite) pr
 | 17 | OS/file permissions verified | `0700`/`0400` (or cloud-equivalent ACL) actually holds on the real storage | partial — code enforces this when writing locally | ✓ — must inspect the real filesystem/bucket policy |
 | 18 | Evidence bundle captured | CGA + manifest + receipt + ledger records exist together for the test corpus | **✓ covered** by the full synthetic E2E test (`test_full_synthetic_generation_event_emission_through_ledger_gated_receipt`) | ✓ repeat for the real deployment's own test corpus |
 | 19 | Cleanup/self-test cannot delete unrelated data | The acceptance test's own cleanup is scoped to only what it created | **✓ covered** — `vault_admin.activate_test_vault()`'s exclusive-workspace pattern (prior-phase hardening) already guards against this class of bug | ✓ — confirm the real acceptance run's cleanup touched nothing else |
-| 20 | No real corpus content was used | Every item above was exercised with synthetic fixtures only | **✓ — this is a hard rule for every test in the repository**, enforced by convention and by this phase's own new synthetic acceptance suite never importing real corpus material | ✓ — owner must confirm the same discipline during the real run |
+| 20 | No real corpus content was used | Every item above was exercised with synthetic fixtures only | **partial — NOT code-proven.** The static test proves only that the synthetic acceptance module defines no inventory-path/`INV`/`inventory` reference and imports no inventory module. It cannot establish that every synthetic literal was independently authored and not copied from protected corpus content (that would require reading the protected material, which is forbidden). | ✓ — **required**: owner/provenance confirmation that all fixtures were independently authored, before real-deployment acceptance |
 
 ## Synthetic acceptance suite (this phase)
 
-`tests/test_genesis_v2_deployment_acceptance_synthetic.py` (added this phase) composes the already-covered items (9, 10, 11, 12, 18, 19, 20, and partial 3/4/5) into one coherent, clearly-labeled suite so a reviewer can see at a glance which of the 20 items have *any* code-level evidence today, and which are irreducibly owner/real-deployment-only. It uses only synthetic fixtures and ephemeral test keys, exactly like every other test in this program, and changes no production code.
+`tests/test_genesis_v2_deployment_acceptance_synthetic.py` (added this phase) composes the already-covered items (9, 10, 11, 12, 18, 19, and partial 3/4/5/13/17/20) into one coherent, clearly-labeled suite so a reviewer can see at a glance which of the 20 items have *any* code-level evidence today, and which are irreducibly owner/real-deployment-only. It uses only synthetic fixtures and ephemeral test keys, exactly like every other test in this program, and changes no production code.
 
 ## Gate
 
 `private_storage_genuinely_configured` moves from `false` to `true` only when:
-1. all "code-level" column items continue to pass in CI (already true today for 9/10/11/12/18/19/20), **and**
+1. all "code-level" column items continue to pass in CI (already true today for 9/10/11/12/18/19; item 20 is partial and requires owner provenance confirmation), **and**
 2. every "owner-only" column item has been independently performed and recorded as evidence by the owner against the real deployment, **and**
 3. the owner explicitly signs off — this is a human decision gate, not something this program's test suite can set on its own.
 

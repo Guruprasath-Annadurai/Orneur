@@ -33,3 +33,7 @@ Generator may be compromised. Verifier may be compromised. CI may be compromised
 - **As an attacker with backup access**: ciphertext only, harmless, confirmed above.
 
 No weakness was found in this review that required changing the already-accepted software controls (per the task's own instruction not to redesign them). The infrastructure-level patches applied during this review were: (1) explicit confirmation that CI never receives real secret material, including for the new synthetic acceptance suite; (2) explicit multi-account separation requirement at Tier 1+ specifically to contain a cloud-control-plane compromise; (3) explicit flagging of Witness compromise, not Forge compromise, as the single highest-severity infrastructure incident, driving the "real process isolation is mandatory, not optional" rule in the Trust Domain Model and the Deployment Acceptance criteria.
+
+## Canonical owner-key policy
+
+**Canonical owner-key policy (audit closure): the owner Ed25519 signing private key MUST remain owner-controlled and non-cloud-resident at every tier. A local hardware token/HSM physically controlled by the owner is permitted; a cloud KMS/HSM holding the owner signing private key is not compatible with this architecture.**

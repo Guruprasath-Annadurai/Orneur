@@ -32,7 +32,7 @@ Two (eventually three, once Qualification activates) genuinely separate physical
 
 Separate cloud accounts/projects per trust domain (e.g. one account for Forge, one for Witness, one for Vault+Reliquary, one for Evidence), each with its own IAM, its own secret manager, its own audit log, private networking, KMS-backed keys where supported.
 
-- **Security**: strongest *availability* and *audit* story; the owner key can be HSM/KMS-backed with real tamper-evidence; strongest blast-radius separation if account boundaries are genuinely separate (not just separate projects in one organization with a shared super-admin).
+- **Security**: strongest *availability* and *audit* story; cloud KMS/HSM is excluded for the owner signing key by the canonical owner-key policy (the owner key stays owner-controlled and non-cloud even under this strategy), but cloud-native audit/immutability applies to ciphertext, evidence and non-owner secrets; strongest blast-radius separation if account boundaries are genuinely separate (not just separate projects in one organization with a shared super-admin).
 - **Cost**: meaningfully higher — multiple accounts, KMS key costs, storage, egress, a secrets-manager subscription, and the owner's time to configure IAM correctly (this is also a security cost: misconfigured IAM is the single most common real-world cloud breach vector).
 - **Operations**: requires genuine cloud operational discipline (IaC, change review, audit log retention) to realize the security benefit — done poorly, a multi-account cloud setup is *worse* than Strategy A because it creates more attack surface (more accounts, more IAM policies, more things that can drift) without the owner yet having the operational maturity to monitor it.
 - **Compute isolation**: real container/VM isolation available natively; still requires the owner to actually configure it correctly (see `GENESIS_V2_REAL_DEPLOYMENT_ACCEPTANCE.md`).
@@ -57,3 +57,7 @@ This is not a new invention — it mirrors the "split online/offline authority m
 ## 4. IaC posture
 
 Introduce a minimal `infra/` skeleton now (this phase), not a full Terraform deployment. See the repository's `infra/README.md` for the proposed layout. Use Terraform/OpenTofu only once a cloud strategy (B or C's cloud-facing half) is actually approved and funded; use plain, reviewed shell scripts + Docker for the local/offline half (Strategy A pieces of C), since introducing a cloud IaC tool to manage a local machine's Docker containers would be complexity without benefit. **Kubernetes is explicitly rejected** for Genesis V2 at every tier evaluated here — the workload (two or three low-throughput, security-critical processes) does not justify it, and it would materially increase the audit surface the owner must reason about.
+
+## Canonical owner-key policy
+
+**Canonical owner-key policy (audit closure): the owner Ed25519 signing private key MUST remain owner-controlled and non-cloud-resident at every tier. A local hardware token/HSM physically controlled by the owner is permitted; a cloud KMS/HSM holding the owner signing private key is NOT compatible with this architecture.** Strategy B as written is therefore only compatible with the canonical recommendation for components other than the owner signing key.

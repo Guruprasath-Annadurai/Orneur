@@ -74,7 +74,7 @@ See `GENESIS_V2_PROVIDER_DECISION_MATRIX.md` for the full classification. Summar
 
 - **Tier 0 (now, $0 incremental)**: owner signing key in macOS Keychain or a cheap hardware security key (YubiKey, ~$25–55, one-time); Generator and Verifier as two separate local processes/users on owner-controlled machine(s), never both holding both key halves; vault = hardened local encrypted directory; backup = an external encrypted drive, ciphertext only; evidence = the existing SQLite-backed `AccessLedger` plus the existing read-only evidence-snapshot tooling, periodically git-committed as append-only JSON.
 - **Tier 1 (production-hardened)**: Generator and Verifier become genuinely separate machines (or separate cloud VMs in **separate cloud accounts**, not just separate processes); vault moves to immutable/WORM-capable object storage (e.g. S3 Object Lock or equivalent) in a dedicated cloud account used for nothing else; owner key moves to a hardware token used through a documented signing ceremony; backup becomes a second, geographically/provider-distinct ciphertext copy.
-- **Tier 2 (enterprise)**: HSM/KMS-backed owner key, multi-provider resilience for vault + backup, dedicated SIEM-grade observability, formal IaC with policy-as-code review gates.
+- **Tier 2 (enterprise)**: owner-controlled local hardware token/HSM for the owner key (never cloud KMS), multi-provider resilience for vault + backup, dedicated SIEM-grade observability, formal IaC with policy-as-code review gates.
 
 Full cost breakdown: `GENESIS_V2_COST_MODEL.md`. Full IAM matrix: `GENESIS_V2_IAM_MATRIX.md`. Full network policy: `GENESIS_V2_NETWORK_POLICY.md`. Full secret custody plan: `GENESIS_V2_SECRET_CUSTODY_PLAN.md`. Full vault storage design: `GENESIS_V2_VAULT_STORAGE_DESIGN.md`. Full backup/DR plan: `GENESIS_V2_BACKUP_AND_DR_PLAN.md`. Full owner signing ceremony: `GENESIS_V2_OWNER_SIGNING_CEREMONY.md`. Full deployment acceptance criteria: `GENESIS_V2_REAL_DEPLOYMENT_ACCEPTANCE.md`. Full incident/revocation runbook: `GENESIS_V2_INCIDENT_AND_REVOCATION_RUNBOOK.md`.
 
@@ -83,3 +83,7 @@ Full cost breakdown: `GENESIS_V2_COST_MODEL.md`. Full IAM matrix: `GENESIS_V2_IA
 Delivers: architecture, trust-domain contracts, provider analysis, IAM/network/secret design, vault/backup design, owner ceremony design, deployment-acceptance criteria (with a synthetic/code-level validation suite), incident runbook, cost model, threat matrix, and an IaC skeleton that provisions nothing.
 
 Does not: create any cloud account, purchase any hardware, generate any real key, touch `CORPUS_GENERATION_AUTHORIZATION.json`, activate the vault, register a real generator, or change `private_storage_genuinely_configured`. Every "OWNER DECISION REQUIRED" card in this package is a gate, not a default.
+
+## Canonical owner-key policy
+
+**Canonical owner-key policy (audit closure): the owner Ed25519 signing private key MUST remain owner-controlled and non-cloud-resident at every tier. A local hardware token/HSM physically controlled by the owner is permitted; a cloud KMS/HSM holding the owner signing private key is NOT compatible with this architecture.**

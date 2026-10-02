@@ -36,7 +36,7 @@ Operational complexity: meaningfully higher than Tier 0 — requires IAM policy 
 
 | Item | One-time | Monthly | Mandatory? |
 |---|---:|---:|---|
-| HSM-backed or cloud-KMS-backed owner signing key | $0–1,000+ (dedicated HSM appliance, if chosen over cloud KMS) | ~$1–50 (cloud KMS asymmetric key + per-operation cost) or $0 (self-hosted HSM after purchase) | Optional — cloud KMS is a reasonable middle ground before a dedicated HSM appliance |
+| Owner-controlled local hardware token or physically owner-controlled HSM for the owner signing key | $0–1,000+ (dedicated local HSM appliance, if chosen over a hardware token) | $0 (no cloud KMS is priced here: a cloud KMS holding the owner signing key is excluded by the canonical owner-key policy) | Optional upgrade over a hardware token; always owner-controlled, never cloud |
 | Multi-provider, multi-region Vault + Reliquary replication | $0 setup | ~$20–80 | Optional, for genuine multi-provider resilience |
 | Dedicated SIEM-grade observability (Sentinel) | $0–varies (platform-dependent) | ~$20–200 (highly variable by log volume and chosen platform) | Optional |
 | Formal IaC with policy-as-code review gates (e.g. a Terraform/OpenTofu pipeline with automated policy checks) | owner/engineering time, not a direct line cost | $0 incremental beyond existing CI | Recommended once Tier 1's cloud footprint is real |
@@ -49,7 +49,7 @@ At Tier 2, costs become genuinely workload- and vendor-dependent; the figures ab
 
 **Always mandatory, regardless of tier or cost**: role separation (Forge ≠ Witness ≠ Owner), ciphertext-only backup, no shared admin credential, write-once vault semantics, append-only evidence, the owner signing ceremony's review steps, network default-deny. None of these are "nice to have" — they are the actual security model, and every tier above implements them at increasing cost for increasing availability/operational convenience, never as a tradeoff against the core model.
 
-**Genuinely optional, tier-dependent**: hardware-backed key custody vs. Keychain-only, cloud multi-account vs. local machines, multi-region replication, SIEM-grade observability vs. basic logging, HSM vs. cloud KMS vs. hardware token.
+**Genuinely optional, tier-dependent**: hardware-backed key custody vs. Keychain-only, cloud multi-account vs. local machines, multi-region replication, SIEM-grade observability vs. basic logging, local HSM vs. hardware token for the owner key (cloud KMS is excluded for the owner signing key by policy; it may still be discussed for non-owner-key secrets).
 
 ## Recommendation
 
