@@ -1,0 +1,11 @@
+# Tier-0 local (forge role image). Synthetic fixtures + ephemeral keys only; contains no secret and no corpus material.
+# Base pinned by digest (same discipline as docker/genesis_v2_sandbox/Dockerfile). Build context is staged by
+# scripts/genesis_v2_tier0_local.py and contains ONLY: requirements-tier0.txt, the minimal orca code subset, and roles/.
+# Network is used at BUILD time only (hash-pinned wheel install); every role container runs with --network none.
+FROM python@sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e
+LABEL orneur.tier0="true" orneur.tier0.role="forge"
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app
+COPY requirements-tier0.txt /tmp/requirements-tier0.txt
+RUN pip install --no-cache-dir --require-hashes -r /tmp/requirements-tier0.txt && rm -f /tmp/requirements-tier0.txt
+COPY app/ /app/
+COPY roles/probe.py roles/forge_write.py /roles/

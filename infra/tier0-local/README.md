@@ -1,12 +1,10 @@
-# Tier 0 — local/owner-controlled setup (design only, not executed)
+# Tier 0 — Sovereign Local (Strategy A, owner-approved) — SYNTHETIC foundation only
 
-No script in this directory has been run. This describes the exact commands the owner would run, later, under their own authorization — see `docs/orneur/phase-21/infrastructure/GENESIS_V2_OWNER_SIGNING_CEREMONY.md` and `GENESIS_V2_REAL_DEPLOYMENT_ACCEPTANCE.md` for the procedure these scripts would be run as part of.
+**Built (this phase), synthetic fixtures + ephemeral keys only:**
+- `docker/Dockerfile.{forge,witness,harness}` — separate, digest-pinned base images; hash-pinned `cryptography` (`requirements-tier0.txt`, compiled from `requirements-tier0.in`); minimal code subset (no qualification/privileged modules).
+- `roles/` — in-container scripts: `probe.py`, `forge_write.py`, `witness_verify.py`, `provision.py`, `courier.py`, `audit.py`.
+- Driver: `scripts/genesis_v2_tier0_local.py` (`discover | build | verify | teardown <run_id>`). Tests: `tests/test_genesis_v2_tier0_local.py`.
 
-## Planned scripts (not yet written — placeholders for the next phase, once the owner approves Tier 0 provisioning)
+Topology = **Tier0-B (container variant)**: weaker than two physical machines; no distinct host OS users; no host firewall. See `docs/orneur/phase-21/infrastructure/GENESIS_V2_TIER0_TOPOLOGY_AND_HOST_CAPABILITIES.md`. Acceptance status: `GENESIS_V2_TIER0_ACCEPTANCE_STATUS.md` (no item is PROVEN_REAL).
 
-- `create_forge_user.sh` — creates a dedicated, unprivileged local OS user for the Generator process, with no access to the Verifier's key material.
-- `create_witness_user.sh` — creates a dedicated, unprivileged local OS user for the Verifier process, with no access to the Generator's corpus secret.
-- `init_vault_directory.sh` — creates the local vault directory with `0700` permissions, owned by neither the Forge nor Witness user directly but mounted/shared per the cross-machine (or cross-user) transfer procedure already documented in `GENESIS_V2_CROSS_MACHINE_TRANSFER_PROCEDURE.md`.
-- `build_forge_image.sh` / `build_witness_image.sh` — build minimal, pinned-digest Docker images for each role, following the same discipline already used for `docker/genesis_v2_sandbox/Dockerfile` (pinned digest, hermetic, no network).
-
-None of these exist yet as runnable scripts. They are named here so the IaC layout is legible before they are written, and so review of the *layout* can happen before review of the *content*.
+**Not built / not authorized:** real keys or secrets, real vault, owner-key creation, host OS users (needs sudo), host firewall, real Reliquary drive, anything cloud. The earlier planned `create_*_user.sh` scripts remain intentionally unwritten (they need owner sudo).

@@ -1,5 +1,7 @@
 # GENESIS V2 — Owner Decisions Required Before Provisioning
 
+> **Decision 1 — APPROVED (owner): Strategy A — Sovereign Local / Tier 0.** Recorded in `GENESIS_V2_TIER0_TOPOLOGY_AND_HOST_CAPABILITIES.md`. Scope: plan and build the minimum local boundary. Not authorized: corpus generation, CGA, benchmarks, models, qualification, foundation selection, GPU, training, cloud/KMS/paid services, hardware purchase, spending, V2 freeze, or `private_storage_genuinely_configured`. Decisions 2–8 remain open (Decision 2 is constrained to Tier 0 local by this choice).
+
 Status: **No decision below has been made on the owner's behalf.** Each is a gate. Nothing in this infrastructure package provisions anything until these are answered.
 
 ## Decision 1 — Infrastructure strategy
