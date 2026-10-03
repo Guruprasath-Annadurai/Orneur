@@ -54,3 +54,6 @@ Only relevant if Decision 1 = A/C and the owner's existing hardware is judged in
 ## How to answer these
 
 Each decision above links to the full reasoning in its referenced document. The owner may answer them individually, in any order, and partially (e.g. "Decision 1 = A, defer 2–8 until Tier 1 is actually being planned") — none of these block the other, and none are required to be answered before this phase can be reviewed and audited.
+
+## Decision 9 — Tier0-S (sequential, single machine) reduced-assurance acceptance — OPEN
+Tier0-A is blocked on a second machine. `GENESIS_V2_TIER0S_SEQUENTIAL_SOVEREIGN_ISOLATION.md` defines a weaker fallback (gate `TIER0_S_REDUCED_ASSURANCE_ONLY`). Options: **A** wait for Tier0-A hardware (no change); **B** accept Tier0-S as reduced-assurance and provision dedicated encrypted external environments (owner-supplied hardware, interactive installs), explicitly accepting that it does **not** defend against a malicious owner/root, firmware/boot-chain compromise, or cross-boot persistence by a privileged attacker; **C** neither (no real secrets until Tier0-A exists). Technical recommendation: **A**, with **B** only as a conscious owner-accepted fallback. Not decided; nothing here is authorized by being recommended.
