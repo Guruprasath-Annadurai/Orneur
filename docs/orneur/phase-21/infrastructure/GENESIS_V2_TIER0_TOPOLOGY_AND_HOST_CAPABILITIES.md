@@ -38,3 +38,5 @@ Host OS users and `pf`/application-firewall changes were **evaluated and not imp
 
 ## Reproduce (local, free; needs Docker)
 `python scripts/genesis_v2_tier0_local.py discover | build | verify` and `ORNEUR_TIER0_DOCKER=1 pytest tests/test_genesis_v2_tier0_local.py`. Teardown (`teardown <run_id>`) removes only resources labeled `orneur.tier0.run=<id>`; it never prunes. Container tests are **LOCAL evidence only** — CI's deterministic job skips them (no Docker-dependent step was added to any workflow).
+
+**Tier0-A status:** readiness, minimal second-machine requirements, transfer design and verdict `TIER0_A_BLOCKED_SECOND_MACHINE_REQUIRED` are in `GENESIS_V2_TIER0A_READINESS_AND_MACHINE_REQUIREMENTS.md`.
