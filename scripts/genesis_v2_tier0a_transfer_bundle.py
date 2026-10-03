@@ -1,24 +1,37 @@
 #!/usr/bin/env python3
-"""Genesis V2 Tier0-A ciphertext-only transfer bundle: builder + validator (STDLIB + store.MAGIC only; no key, no decryption).
+"""Genesis V2 ciphertext transfer bundle: builder + validators (used by Tier0-A and Tier0-S).
 
-Intended use (future, owner-mediated removable encrypted storage): on the Forge machine `seal` a bundle copied from the Vault write path; on the
-Witness machine `validate` it BEFORE anything is imported. Nothing here decrypts, reads a key, or touches a corpus: it checks that the bundle
-carries ONLY the permitted ciphertext files and metadata, and that nothing was altered in transit.
+CLAIM LEVELS (precise -- do not conflate):
+  EXPECTED_ENCRYPTED_ARTIFACT_FORMAT_VALIDATED  -- what `validate`/`seal`/`validate_and_stage` establish, WITHOUT any key: only the expected files exist, each starts
+      with the encrypted-artifact magic and a well-formed, allowlisted plaintext header that matches its path, sizes are plausible, and a strict manifest
+      of SHA-256 digests matches. This is a SHAPE check. A file with a valid magic+header followed by PLAINTEXT passes it (proven by test). It is NOT proof of
+      encryption, and entropy is deliberately not used as proof.
+  CRYPTOGRAPHICALLY_VERIFIED -- what `cryptographic_verify` establishes on the WITNESS side only, with the ephemeral/real vault PRIVATE key and the expected
+      corpus digest: every split and the SEAL decrypt under AES-256-GCM (the authentication tag verifies, so a plaintext payload FAILS) and the split/corpus
+      digests match. This is the only keyed, real proof, and it handles key material -- it is a library function, not a CLI command.
+Neither level is proof of authenticity of the generator: that comes from the signed generation receipt downstream. Nothing here authorizes anything.
 
-Bundle layout:  MANIFEST.json  +  <corpus_id>/{SCREEN,QUALIFICATION_HOLDOUT,SEAL}.enc   (nothing else, no symlinks, no extra files)
-This reuses the rules of the in-repo courier (infra/tier0-local/roles/courier.py): expected names, magic prefix, write-once, and adds header-metadata
-allowlisting + digest manifest checks. It is a transfer-hygiene check, NOT an authenticity proof (authenticity comes from AEAD + the signed
-generation receipt downstream).
+Bundle layout:  MANIFEST.json  +  <corpus_id>/{SCREEN,QUALIFICATION_HOLDOUT,SEAL}.enc   (no other entries, no symlinks, no hardlinks)
 
-CLI:  seal <dir> | validate <dir>      (exit 0 = clean; non-zero prints problems, never any file content)
+HANDOFF / TOCTOU: `validate_and_stage` reads every file exactly once (O_NOFOLLOW, fstat on the open descriptor), validates THOSE bytes, and writes a read-only
+staged copy from the same in-memory bytes; import must read only from the staged copy. A writer who controls the staging directory (same host user/root)
+can still alter it afterwards -- this narrows the race, it does not defeat a privileged local attacker.
+
+OPERATIONAL NOTE: removable media formatted exFAT/FAT create `._*`/`.DS_Store` entries that this validator rejects (fail closed). Use an encrypted APFS
+transfer volume and keep Finder/Spotlight metadata off it, or remove those entries by an owner-reviewed step.
+
+CLI:  seal <dir> | validate <dir> | stage <dir> <staging_parent>   (non-zero exit on any problem; never prints file content)
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import stat
 import struct
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +44,17 @@ SPLIT_HEADER_KEYS = {"eval_version", "corpus_id", "split", "split_sha256", "ephe
 SEAL_HEADER_KEYS = {"eval_version", "corpus_id", "split", "corpus_digest", "ephemeral_public_key"}
 MANIFEST = "MANIFEST.json"
 MAX_FILE_BYTES = 64 * 1024 * 1024
+FORMAT_CLAIM = "EXPECTED_ENCRYPTED_ARTIFACT_FORMAT_VALIDATED"
+CRYPTO_CLAIM = "CRYPTOGRAPHICALLY_VERIFIED"
+
+
+def _strict_manifest(text: str):
+    def hook(pairs):
+        keys = [k for k, _ in pairs]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate key")
+        return dict(pairs)
+    return json.loads(text, object_pairs_hook=hook)
 
 
 def _header(blob: bytes) -> dict:
@@ -38,105 +62,185 @@ def _header(blob: bytes) -> dict:
     (hlen,) = struct.unpack(">I", blob[n:n + 4])
     if hlen <= 0 or hlen > 4096:
         raise ValueError("implausible header length")
-    return json.loads(blob[n + 4:n + 4 + hlen])
+    h = json.loads(blob[n + 4:n + 4 + hlen])
+    if not isinstance(h, dict):
+        raise ValueError("header is not an object")
+    return h
 
 
-def _files(bundle: Path) -> dict:
-    out = {}
-    for cdir in sorted(bundle.iterdir()):
-        if cdir.name == MANIFEST:
-            continue
-        if cdir.is_symlink() or not cdir.is_dir():
-            out[cdir.name] = None
-            continue
-        for f in sorted(cdir.iterdir()):
-            out[f"{cdir.name}/{f.name}"] = f
-        out.setdefault(cdir.name + "/", cdir)
-    return out
+def _read_once(path: Path):
+    """Open without following symlinks, check the OPEN descriptor, read once. Returns (bytes|None, problem|None)."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        return None, "unreadable, or a symlink"
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return None, "not a regular file"
+        if st.st_nlink != 1:
+            return None, "hard-linked (link count != 1)"
+        if st.st_size > MAX_FILE_BYTES:
+            return None, "implausible size"
+        with os.fdopen(fd, "rb", closefd=False) as f:
+            return f.read(MAX_FILE_BYTES + 1), None
+    finally:
+        os.close(fd)
 
 
-def validate(bundle: Path) -> list:
-    """Returns a list of problem strings (empty == clean). Never includes file content."""
+def snapshot(bundle: Path) -> tuple:
+    """Single read of the whole bundle. Returns (problems, blobs{rel: bytes}, manifest|None). Never includes file content in problems."""
     bundle = Path(bundle)
-    problems = []
-    if not bundle.is_dir() or bundle.is_symlink():
-        return ["bundle is not a plain directory"]
-    mpath = bundle / MANIFEST
-    manifest = None
-    if mpath.is_symlink() or not mpath.is_file():
-        problems.append("MANIFEST.json missing or not a regular file")
-    else:
-        try:
-            manifest = json.loads(mpath.read_text())
-            if not isinstance(manifest, dict) or not all(isinstance(k, str) and isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v) for k, v in manifest.items()):
-                problems.append("MANIFEST.json must map relative paths to sha256 hex"); manifest = None
-        except Exception:
-            problems.append("MANIFEST.json unreadable"); manifest = None
-    seen = {}
-    for cdir in sorted(bundle.iterdir()):
-        if cdir.name == MANIFEST:
+    problems, blobs, manifest = [], {}, None
+    try:
+        if bundle.is_symlink() or not bundle.is_dir():
+            return ["bundle is not a plain directory"], blobs, None
+        entries = sorted(os.scandir(bundle), key=lambda e: e.name)
+    except OSError:
+        return ["bundle unreadable"], blobs, None
+    for e in entries:
+        if e.name == MANIFEST:
+            data, why = _read_once(Path(e.path))
+            if why:
+                problems.append(f"MANIFEST.json {why}")
+                continue
+            try:
+                manifest = _strict_manifest(data.decode())
+                if not isinstance(manifest, dict) or not all(isinstance(k, str) and isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v) for k, v in manifest.items()):
+                    raise ValueError("shape")
+            except Exception:
+                problems.append("MANIFEST.json must be strict JSON (no duplicate keys) mapping relative paths to sha256 hex")
+                manifest = None
             continue
-        if cdir.is_symlink() or not cdir.is_dir() or not CORPUS_ID.match(cdir.name):
-            problems.append(f"unexpected top-level entry {cdir.name[:40]!r}")
+        if e.is_symlink() or not e.is_dir(follow_symlinks=False) or not CORPUS_ID.match(e.name):
+            problems.append(f"unexpected top-level entry {e.name[:40]!r}")
             continue
         names = set()
-        for f in sorted(cdir.iterdir()):
-            rel = f"{cdir.name}/{f.name}"
-            if f.is_symlink() or not f.is_file() or f.name not in SPLIT_FILES:
-                problems.append(f"unexpected entry {rel[:80]!r}"); continue
+        for f in sorted(os.scandir(e.path), key=lambda x: x.name):
+            rel = f"{e.name}/{f.name}"
+            if f.name not in SPLIT_FILES:
+                problems.append(f"unexpected entry {rel[:80]!r}")
+                continue
+            data, why = _read_once(Path(f.path))
+            if why:
+                problems.append(f"{rel}: {why}")
+                continue
             names.add(f.name)
-            if f.stat().st_size > MAX_FILE_BYTES or f.stat().st_size < len(S.MAGIC_ASYM) + 4:
-                problems.append(f"{rel}: implausible size"); continue
-            blob = f.read_bytes()
-            if not blob.startswith(S.MAGIC_ASYM):
-                problems.append(f"{rel}: not ciphertext (magic prefix missing)"); continue
-            try:
-                h = _header(blob)
-            except Exception:
-                problems.append(f"{rel}: malformed header"); continue
-            want = SEAL_HEADER_KEYS if f.name == "SEAL.enc" else SPLIT_HEADER_KEYS
-            if set(h) != want:
-                problems.append(f"{rel}: header metadata outside the allowlist")
-            if h.get("corpus_id") != cdir.name or h.get("split") != SPLIT_FILES[f.name]:
-                problems.append(f"{rel}: header does not match its path")
-            seen[rel] = hashlib.sha256(blob).hexdigest()
+            blobs[rel] = data
         if names != set(SPLIT_FILES):
-            problems.append(f"{cdir.name[:24]}: corpus must contain exactly SCREEN, QUALIFICATION_HOLDOUT and SEAL")
-    if not seen:
+            problems.append(f"{e.name[:24]}: corpus must contain exactly SCREEN, QUALIFICATION_HOLDOUT and SEAL")
+    return problems, blobs, manifest
+
+
+def check_snapshot(problems: list, blobs: dict, manifest) -> list:
+    problems = list(problems)
+    seen = {}
+    for rel, blob in blobs.items():
+        cid, fname = rel.split("/")
+        if len(blob) < len(S.MAGIC_ASYM) + 4 or not blob.startswith(S.MAGIC_ASYM):
+            problems.append(f"{rel}: expected encrypted-artifact magic prefix missing")
+            continue
+        try:
+            h = _header(blob)
+        except Exception:
+            problems.append(f"{rel}: malformed header")
+            continue
+        if set(h) != (SEAL_HEADER_KEYS if fname == "SEAL.enc" else SPLIT_HEADER_KEYS):
+            problems.append(f"{rel}: header metadata outside the allowlist")
+        if h.get("corpus_id") != cid or h.get("split") != SPLIT_FILES[fname]:
+            problems.append(f"{rel}: header does not match its path")
+        seen[rel] = hashlib.sha256(blob).hexdigest()
+    if not blobs:
         problems.append("bundle contains no corpus")
-    if manifest is not None and manifest != seen:
+    if manifest is None:
+        if not any("MANIFEST.json" in p for p in problems):
+            problems.append("MANIFEST.json missing")
+    elif manifest != seen:
         problems.append("MANIFEST.json does not match bundle contents (missing, extra, or altered file)")
     return problems
 
 
+def validate(bundle: Path) -> list:
+    """KEYLESS. Establishes EXPECTED_ENCRYPTED_ARTIFACT_FORMAT_VALIDATED when the returned list is empty -- NOT proof of encryption."""
+    return check_snapshot(*snapshot(bundle))
+
+
 def seal(bundle: Path) -> dict:
-    """Writes MANIFEST.json for a bundle that currently validates apart from its manifest. Refuses to seal anything with other problems."""
+    """Write-once manifest for a bundle that is otherwise well-formed. Refuses to seal anything with other problems."""
     bundle = Path(bundle)
-    manifest_path = bundle / MANIFEST
-    if manifest_path.exists():
+    mpath = bundle / MANIFEST
+    if os.path.lexists(mpath):
         raise FileExistsError("MANIFEST.json already exists (write-once)")
-    digests = {}
-    for cdir in sorted(p for p in bundle.iterdir() if p.is_dir() and not p.is_symlink()):
-        for f in sorted(cdir.iterdir()):
-            if f.is_file() and not f.is_symlink():
-                digests[f"{cdir.name}/{f.name}"] = hashlib.sha256(f.read_bytes()).hexdigest()
-    manifest_path.write_text(json.dumps(digests, sort_keys=True))
-    problems = validate(bundle)
+    problems, blobs, _ = snapshot(bundle)
+    digests = {rel: hashlib.sha256(b).hexdigest() for rel, b in blobs.items()}
+    problems = check_snapshot(problems, blobs, digests)
     if problems:
-        manifest_path.unlink()
         raise ValueError("refusing to seal: " + "; ".join(problems))
+    fd = os.open(mpath, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(digests, sort_keys=True))
     return digests
 
 
+def validate_and_stage(bundle: Path, staging_parent: Path) -> Path:
+    """Read once, validate those bytes, write a read-only staged copy from the SAME bytes. Import must read only from the returned directory."""
+    problems, blobs, manifest = snapshot(bundle)
+    problems = check_snapshot(problems, blobs, manifest)
+    if problems:
+        raise ValueError("bundle rejected: " + "; ".join(problems))
+    staged = Path(tempfile.mkdtemp(prefix="staged-bundle-", dir=staging_parent))
+    os.chmod(staged, 0o700)
+    for rel, blob in blobs.items():
+        cid, fname = rel.split("/")
+        (staged / cid).mkdir(mode=0o700, exist_ok=True)
+        fd = os.open(staged / rel, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o400)
+        with os.fdopen(fd, "wb") as f:
+            f.write(blob)
+    fd = os.open(staged / MANIFEST, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o400)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(manifest, sort_keys=True))
+    if validate(staged):
+        raise ValueError("staged copy failed re-validation")
+    for d in staged.iterdir():
+        if d.is_dir():
+            os.chmod(d, 0o500)
+    os.chmod(staged, 0o500)
+    return staged
+
+
+def cryptographic_verify(bundle: Path, vault_private_key: bytes, expected_corpus_digest: str) -> list:
+    """WITNESS SIDE ONLY. Decrypts every split in memory (AES-GCM tag verification) and checks digests; returns problems (empty == CRYPTOGRAPHICALLY_VERIFIED).
+    Plaintext is discarded immediately and never returned, logged or persisted. The caller supplies the private key (ephemeral in tests); this module never
+    reads, stores or prints key material."""
+    problems = validate(bundle)
+    if problems:
+        return problems
+    reader = S.EncryptedVaultReader(Path(bundle), vault_private_key, repo_root=ROOT)
+    from orca.eval.genesis_v2 import spec
+    out = []
+    for cdir in sorted(p for p in Path(bundle).iterdir() if p.is_dir()):
+        for split in spec.PRIVATE_SPLITS:
+            try:
+                reader.read_split(cdir.name, split, expected_corpus_digest=expected_corpus_digest)
+            except Exception as e:
+                out.append(f"{cdir.name[:24]}/{split}: cryptographic verification failed ({type(e).__name__})")
+    return out
+
+
 def main(argv):
-    if len(argv) != 3 or argv[1] not in ("seal", "validate"):
+    if len(argv) < 3 or argv[1] not in ("seal", "validate", "stage"):
         print(__doc__); return 2
-    if argv[1] == "seal":
-        print(json.dumps(seal(Path(argv[2])), sort_keys=True)); return 0
+    try:
+        if argv[1] == "seal":
+            print(json.dumps(seal(Path(argv[2])), sort_keys=True)); return 0
+        if argv[1] == "stage":
+            print(validate_and_stage(Path(argv[2]), Path(argv[3]))); return 0
+    except (ValueError, FileExistsError, IndexError, OSError) as e:
+        print("PROBLEM:", str(e)[:300]); return 1
     problems = validate(Path(argv[2]))
     for p in problems:
         print("PROBLEM:", p)
-    print("CLEAN" if not problems else f"{len(problems)} problem(s)")
+    print(FORMAT_CLAIM if not problems else f"{len(problems)} problem(s)")
     return 0 if not problems else 1
 
 

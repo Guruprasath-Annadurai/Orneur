@@ -16,10 +16,23 @@ Tier0-S does **NOT** protect against, and must never claim to:
 - a privileged attacker with access to both encrypted environments over time.
 Real-secret activation under Tier0-S requires **explicit owner risk acceptance** (Decision 9, open).
 
-## 1. Definition
-Forge and Witness are **never simultaneously active**. Each runs in its own separately encrypted environment, entered only by a **full shutdown and cold boot** (not container stop/start, not sleep, not user switch). Only ciphertext crosses the boundary, through the already-audited transfer-bundle validator (`scripts/genesis_v2_tier0a_transfer_bundle.py`). The owner signing key is in none of the environments.
+The software phase gate (§9) is one-shot, advisory and bypassable by anyone who can write the files it reads or alter the machine; it is **not** a hardware or adversary-resistant boundary and it is not what provides cold-boot or detachment separation.
 
-Sequence: Crown/Owner → authorization signature → **BOOT F**: Forge (synthetic generation → ciphertext-only bundle → transfer medium) → **FULL SHUTDOWN** → **BOOT W**: Witness (validate bundle → decrypt/verify → evidence) → **FULL SHUTDOWN**. No persistent daemon bridges the sessions.
+## 1. Definition and lifecycle (with PHYSICAL DETACHMENT)
+Forge and Witness are **never simultaneously active**, and **the other role's storage is never simultaneously available**. Each role runs in its own separately encrypted environment, entered only by a **full shutdown and cold boot** (not container stop/start, not sleep, not user switch). Only ciphertext crosses the boundary, through the audited transfer-bundle tooling (`scripts/genesis_v2_tier0a_transfer_bundle.py`). The owner signing key is in none of the environments.
+
+**Cold boot and PHYSICAL DETACHMENT are owner-controlled physical procedures.** They are the actual separation controls. No software on the machine enforces them against the machine's owner, and the software gate (§9) earns NO acceptance credit for them.
+
+Exact lifecycle for S1 / S1+ (wherever the topology permits physical detachment; the floor design's internal drive cannot be detached, which is one reason it is weaker):
+1. Crown/Owner signs the authorization on the owner plane (off both machines' role storage).
+2. Forge storage attached/active; **Witness storage physically absent** (disconnected, not merely unmounted or locked). The transfer medium is blank/approved.
+3. Cold boot the Forge environment. Run the phase gate (`check`, then `begin`). Forge phase: generate; plaintext only in RAM.
+4. Seal the ciphertext bundle onto the transfer medium (`seal`). Forge shutdown (full power-off).
+5. After shutdown, remove Forge role storage where applicable (**physically disconnect it**). Attach **ONLY the approved transfer medium and the Witness storage**; the Forge storage stays absent.
+6. Cold boot the Witness environment. Run the phase gate. `validate_and_stage` the bundle (read-once validated copy), then `cryptographic_verify` with the Witness private key.
+7. Witness phase: decrypt/verify, write evidence. Full shutdown.
+8. Erase / re-encrypt the transfer medium per the owner procedure.
+**No simultaneous mounting of Forge and Witness secret-bearing storage, at any step.** Keeping networking disabled for the **whole** phase is also an owner procedure (the gate checks it once, at phase start only).
 
 ## 2. Host facts (sanitized; read-only discovery)
 Single arm64 Mac, internal SSD only. FileVault on, SIP enabled, swap encrypted. The main APFS container is ~97% used (~14.6 GB unallocated). No external physical disk attached; no macOS installer present. Time Machine not configured; 0 local snapshots. Sleep mode writes a sleep image (`hibernatemode 3`). Spotlight indexing enabled. Shell-history files exist; crash/diagnostic reports exist. An iCloud container directory with entries exists. A ~20 GB Docker VM disk image persists. Startup-security policy is not readable without root and was not read. (No identifiers recorded.)
@@ -35,7 +48,7 @@ Single arm64 Mac, internal SSD only. FileVault on, SIP enabled, swap encrypted. 
 | **S5** Two Docker contexts/users on one active macOS | `NO_MEANINGFUL_SEPARATION` | Re-confirmed, no new evidence: one daemon/control plane crosses both roles (`GENESIS_V2_TIER0_HOST_HARDENING_FINDINGS.md`). |
 
 ## 4. Recommended model
-**S1+**: two dedicated minimal environments on separate encrypted external drives, a third ciphertext-only transfer medium, owner signing key elsewhere. **Floor (explicitly weaker)**: S1 with the internal macOS as Forge, permitted only after the Forge-phase channels in §6 are mitigated and `genesis_v2_tier0s_phase_gate.py` passes. **Not acceptable**: the current daily-driver environment as-is (the gate fails 5 of 8 checks there: container daemon alive, network up, cloud-sync processes, AI-agent tooling, full repo including Qualification code).
+**S1+**: two dedicated minimal environments on separate encrypted external drives, a third ciphertext-only transfer medium, owner signing key elsewhere. **Floor (explicitly weaker)**: S1 with the internal macOS as Forge, permitted only after the Forge-phase channels in §6 are mitigated and `genesis_v2_tier0s_phase_gate.py` passes. **Not acceptable**: the current daily-driver environment as-is (the v2 gate, run read-only against it with the full repository as code root, passes 4 of 15 checks, FAILS 7 and FAILS CLOSED on 4: container runtime and sockets present, network addresses and default routes present, AI-agent processes running and agent transcript/index stores holding data, synchronized locations holding data, and the full repository outside the role-code allowlist; interlock and listener telemetry unverifiable in that invocation).
 
 ## 5. Storage separation
 - **Forge environment** (own encryption, own passphrase): corpus-generation secret, X25519 public key, Generator identity; plaintext only in RAM / an ephemeral RAM disk during generation, never written to persistent storage.
@@ -61,7 +74,7 @@ Classification is for the **daily-driver internal environment on this host** unl
 | APFS snapshots | `CONTROLLED` | 0 local snapshots now; re-check before/after each phase. |
 | Cloud sync (iCloud Drive / others) | `UNCONTROLLED` (on the daily-driver) | An iCloud container directory with entries and sync-daemon processes exist; sign-in/sync scope was not established. Role phases must run where sync is absent (dedicated environment). **A major secret-bearing channel left uncontrolled blocks Tier0-S on the daily-driver.** |
 | Clipboard persistence / Universal Clipboard | `MITIGATABLE` | In-RAM only on one machine, but can propagate to other signed-in devices. Control: no copying of secrets; Handoff off in role environments. |
-| **AI-agent / tooling transcripts and indexes** | `UNCONTROLLED` (on the daily-driver) | Agent sessions persist transcripts and searchable tool output under the home directory. Real role phases must not be driven by, or run beside, such tooling (gate check). New channel identified by this phase. |
+| **AI-agent / tooling transcripts, indexes, session databases, IDE recovery/cache** | `UNCONTROLLED` (on the daily-driver) | Agent sessions persist transcripts and searchable tool output under the home directory. The gate separates `PROCESS_NOT_RUNNING` from `NO_RESIDUAL_EXPOSURE_DETECTED` and checks known store locations for data (existence/non-emptiness only); a stopped agent with stores present still fails. Real role phases must not be driven by, or run beside, such tooling; a dedicated environment with none of these stores is required. |
 | Temporary directories | `MITIGATABLE` | Use RAM disk; SSD overwrite is unreliable, so rely on environment encryption + key destruction. |
 | Mounted shared volumes / attached images | `MITIGATABLE` | Several disk images are attached on this host; eject all in role phases. |
 | Firmware / NVRAM | `NOT_APPLICABLE` (for secrets) | NVRAM holds no role secrets; a privileged firmware attacker is out of scope (§0). |
@@ -72,13 +85,31 @@ Classification is for the **daily-driver internal environment on this host** unl
 **What survives a reboot and could be a cross-role channel:** internal-disk contents (locked but present), the transfer medium (ciphertext only), NVRAM/firmware state, logs and reports on persistent volumes, and anything the owner carries in their head or password manager (passphrases, recovery keys). Each is addressed above or listed as unproven.
 
 ## 7. Docker / runtime boundary
-No container daemon may be alive during a role phase (gate check `no_container_daemon_alive`); roles run as plain, non-persistent processes. Tier0-B container isolation does **not** transfer to Tier0-S as proof; Tier0-S relies on the boot boundary, not on a daemon boundary.
+No container daemon may be alive during a role phase (gate check `container_runtime_absent`); roles run as plain, non-persistent processes. Tier0-B container isolation does **not** transfer to Tier0-S as proof; Tier0-S relies on the owner-controlled boot and detachment procedure, not on a daemon boundary.
 
 ## 8. Transfer boundary
-Forge → validator `seal` → transfer medium → **shutdown / cold boot** → Witness runs validator `validate` before any import. Allowed: `SCREEN.enc`, `QUALIFICATION_HOLDOUT.enc`, `SEAL.enc`, `MANIFEST.json`. Forbidden: plaintext, corpus-generation secret, X25519 private key, owner key, Witness credentials. Auditable via the validator output and the phase receipts.
+Forge → `seal` → transfer medium → **shutdown / cold boot** (storage swapped per §1) → Witness runs `validate_and_stage` before any import, then `cryptographic_verify`. Allowed: `SCREEN.enc`, `QUALIFICATION_HOLDOUT.enc`, `SEAL.enc`, `MANIFEST.json`. Forbidden: plaintext, corpus-generation secret, X25519 private key, owner key, Witness credentials.
 
-## 9. Software guard added (honest scope)
-`scripts/genesis_v2_tier0s_phase_gate.py` runs at the start of a role phase and checks: no container daemon, network disabled, no cloud-sync processes, no AI-agent tooling, other role's secret store not visible, **the other role has not run in this boot session** (opaque boot-session hash + append-only receipts → forces a full reboot between phases), no owner-key/other-role-secret file names in the role's state directory, Qualification code absent. It is a guard against accidental mixing enforced by software on the machine it guards; a malicious root can bypass it (§0). Run as a read-only diagnostic on this host it **fails** (daemon, network, sync, agent tooling, Qualification code present), which is the correct result for the current daily-driver.
+**Claim levels (do not conflate):**
+- `EXPECTED_ENCRYPTED_ARTIFACT_FORMAT_VALIDATED` — keyless `validate` / `seal` / `validate_and_stage`: expected files only, encrypted-artifact magic, allowlisted well-formed header matching the path, plausible size, strict manifest (duplicate keys rejected), no symlinks, no hardlinks, digests match. **This is a shape check; a file with a valid header followed by plaintext passes it (tested).** It is not proof of encryption and entropy is not used as proof.
+- `CRYPTOGRAPHICALLY_VERIFIED` — `cryptographic_verify`, Witness side only, with the vault private key and the expected corpus digest: every split and the SEAL authenticate under AES-256-GCM (a plaintext payload fails the tag check) and digests match. The only keyed, real proof; library function only.
+Authenticity of the generator is a separate matter (signed generation receipt). The staged copy narrows the validate→import race (read-once, same bytes written read-only); a writer with control of the staging directory (same host user/root) can still alter it. Operational note: `._*` and `.DS_Store` entries on foreign filesystems are rejected (fail closed).
+
+## 9. Software phase gate (v2) — honest scope
+`scripts/genesis_v2_tier0s_phase_gate.py` is a **one-shot, advisory, software-level, fail-closed pre-flight** run at the start of a role phase. It passes only if **every** check is `PASS`; any missing input, failed host command, implausible output, or unparsable value is `FAIL_CLOSED`; mandatory inputs (state directory, role code root, at least one deny-listed path/volume naming the other role's storage) have no fail-open defaults.
+
+Checks: per-boot identifier (`kern.bootsessionuuid`); advisory interlock verification; container runtime / control-plane absence (process tokens, well-known sockets, runtime install directories, runtime environment variables; optional stricter process allowlist) — **not exhaustive**; network (interfaces with an address or active status incl. tunnels/bridges, default routes both families, non-loopback TCP listeners); cloud-sync and AI-agent **process** absence and, separately, **residual-exposure** absence; role workspace not under synchronized or Desktop/Documents paths; other role's storage absent/unmounted; **allowlisted** role code root (Qualification and all other code are excluded by allowlist, not by a filename blacklist; valid only within that root); weak owner-key / other-role-material scan.
+
+**What it cannot do:** it is not continuous (a process can pass and later re-enable networking, start a runtime, or launch a sync/agent process — the owner procedure must keep the whole phase clean); it is bypassable by a malicious owner/root or anyone who can alter the machine, the gate, or its inputs; it is a point-in-time check by software on the machine it guards; the owner-key/forbidden-material scan is filename + key-header evidence only (a renamed or encoded key is not detected); listener telemetry may be incomplete without sufficient privilege and fails closed when unreadable. Run as a read-only diagnostic on this host it fails (§4).
+
+### Interlock design (reboot-boundary "receipt") — decision: option B for the claim, local advisory log retained
+- **Decision:** cold-boot separation and physical detachment are owner-controlled physical procedures. The software log is **not** counted as a security boundary and **earns NO acceptance credit** (checks 11 and 13 and invariants 1 and 13 are `NOT_YET_PROVEN`).
+- **Where state lives:** inside the *currently booted environment's own* state directory (created by an explicit `init`, mode 0700). It is never shared between environments, so it creates no cross-role channel; consequently a Witness environment does **not** see Forge's log, and that is by design.
+- **What it contains:** non-secret — role, per-boot UUID, sequence number, hash-chain link, environment id, checksum; plus `HEAD.json` (expected last sequence and checksum).
+- **Who can write/delete it:** the OS user running the gate (and root). Anyone with that access can forge it by rewriting a consistent chain (tested).
+- **If unavailable/unverifiable:** `FAIL_CLOSED` — missing, deleted, truncated, edited, replayed, reordered, copied from another environment, malformed, duplicate-keyed, symlinked, unreadable or in a group/other-writable directory all refuse the phase.
+- **What it resists:** accidental mixing of roles inside **one booted OS** (e.g. starting the Witness workload inside the Forge session) and accidental corruption. **What it does not resist:** any deliberate writer, root, malicious owner, or firmware/boot-chain compromise.
+- **Why keep it:** it costs little and turns a silent same-OS mistake into a refusal; it adds nothing against an adversary and is not relied upon.
 
 ## 10. Owner actions required to provision Tier0-S (none performed)
 Supply external storage (≥1 for the floor design, ≥2 plus a transfer medium for S1+) — owner's purchase and choice; interactive installs of minimal macOS onto it; separate FileVault passphrases per environment; free or avoid internal space dependence; sign out / exclude cloud sync in role environments; set a non-sleep power policy and disable core dumps (privileged); no Time Machine; keep agent tooling off role environments; create the real owner key off-machine (separate authorization); Decision 9 risk acceptance. This phase did none of these and changed no boot, security, disk, or power setting.
