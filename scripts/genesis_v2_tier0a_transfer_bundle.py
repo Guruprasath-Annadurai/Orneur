@@ -68,16 +68,35 @@ def _header(blob: bytes) -> dict:
     return h
 
 
+def _kind_label(mode: int) -> str:
+    for label, fn in (("symlink", stat.S_ISLNK), ("directory", stat.S_ISDIR), ("fifo", stat.S_ISFIFO), ("socket", stat.S_ISSOCK),
+                      ("block device", stat.S_ISBLK), ("character device", stat.S_ISCHR)):
+        if fn(mode):
+            return label
+    return "special file"
+
+
 def _read_once(path: Path):
-    """Open without following symlinks, check the OPEN descriptor, read once. Returns (bytes|None, problem|None)."""
+    """lstat BEFORE any open (so a FIFO/socket/device/symlink/directory is rejected without ever blocking), then open with O_NOFOLLOW|O_NONBLOCK, re-check the
+    OPEN descriptor (same device/inode as the lstat, regular, single link, bounded size) and read once. Returns (bytes|None, problem|None)."""
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        pre = os.lstat(path)
     except OSError:
-        return None, "unreadable, or a symlink"
+        return None, "unreadable"
+    if not stat.S_ISREG(pre.st_mode):
+        return None, f"not a regular file ({_kind_label(pre.st_mode)})"
+    if pre.st_nlink != 1:
+        return None, "hard-linked (link count != 1)"
+    if pre.st_size > MAX_FILE_BYTES:
+        return None, "implausible size"
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None, "unreadable, or swapped for a symlink"
     try:
         st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode):
-            return None, "not a regular file"
+        if (st.st_dev, st.st_ino) != (pre.st_dev, pre.st_ino) or not stat.S_ISREG(st.st_mode):
+            return None, "changed between check and open"
         if st.st_nlink != 1:
             return None, "hard-linked (link count != 1)"
         if st.st_size > MAX_FILE_BYTES:

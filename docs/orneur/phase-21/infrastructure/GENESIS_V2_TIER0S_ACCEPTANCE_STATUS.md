@@ -5,7 +5,7 @@ Statuses: `PROVEN_SYNTHETIC_ONLY` · `PARTIAL` · `NOT_YET_PROVEN` · `OWNER_ACT
 ## A. Synthetic validation checks
 | # | Check | Status | Basis |
 |---|---|---|---|
-| 1 | Forge environment holds only public key + synthetic generation secret | `PARTIAL` | Gate scans a role state directory by name and key header (WEAK evidence); per-container evidence exists only for the (different) Tier0-B topology. No Tier0-S environment exists. |
+| 1 | Forge environment holds only public key + synthetic generation secret | `PARTIAL` | Gate scans the role's own state directory completely and strictly (any unreadable subtree, symlink or special file is `FAIL_CLOSED`) by file name and first-256-byte key header — WEAK evidence; per-container evidence exists only for the (different) Tier0-B topology. No Tier0-S environment exists. |
 | 2 | Witness environment holds only the private key | `PARTIAL` | Same. |
 | 3 | Forge cannot decrypt | `PROVEN_SYNTHETIC_ONLY` | Topology-independent cryptographic property (writer holds no private key); existing store/Tier-0 tests. |
 | 4 | Witness decrypts | `PROVEN_SYNTHETIC_ONLY` | Existing store and Tier-0 tests; `cryptographic_verify` with an ephemeral key. |
@@ -16,11 +16,11 @@ Statuses: `PROVEN_SYNTHETIC_ONLY` · `PARTIAL` · `NOT_YET_PROVEN` · `OWNER_ACT
 | 9 | Forge cannot see Witness secret store in its phase (storage physically absent) | `NOT_YET_PROVEN` | Needs two real environments and the detachment procedure. |
 | 10 | Witness cannot see Forge secret store in its phase (storage physically absent) | `NOT_YET_PROVEN` | Same. |
 | 11 | Full shutdown/reboot required between phases | `NOT_YET_PROVEN` | Owner-controlled physical procedure. The software interlock is advisory, same-environment, forgeable by any writer, and earns no credit. |
-| 12 | No shared container runtime / control plane survives between roles | `PARTIAL` | Gate detects known runtime processes, sockets, install dirs and env vars (not exhaustive); no cross-phase run exists. |
+| 12 | No shared container runtime / control plane survives between roles | `PARTIAL` | Gate detects known runtime processes, sockets, install dirs and env vars (not exhaustive; renamed binaries evade the process check); no cross-phase run exists. |
 | 13 | No role secret in a common mounted filesystem | `NOT_YET_PROVEN` | Needs provisioned storage. |
-| 14 | Network disabled independently per phase | `NOT_YET_PROVEN` | Gate checks interfaces, default routes and listeners once at phase start; not continuous; this host fails it; no per-phase run. |
-| 15 | Qualification code excluded from the role environment | `PARTIAL` | Role code root checked against an allowlist (valid within that root only); Tier-0 role images omit it; the full repository is rejected. |
-| 16 | Owner private key absent from both | `PARTIAL` | Filename-pattern and key-header scan of a role state directory is WEAK evidence only; no real key exists. |
+| 14 | Network disabled independently per phase | `NOT_YET_PROVEN` | Gate checks interfaces (by address, strict parsing), default routes and TCP/UDP sockets once at phase start; not continuous; UDP absence and inability to communicate are not established; this host fails it; no per-phase run. |
+| 15 | Qualification code excluded from the role environment | `PARTIAL` | Role code root must equal a hash-pinned manifest confined to a fixed role policy (byte-identical files, nothing else, no links/special files/bytecode); valid within that root only and only as good as the out-of-band pin; Tier-0 role images omit it; the full repository is rejected. |
+| 16 | Owner private key absent from both | `PARTIAL` | Filename-pattern and first-256-byte key-header scan of the role's own state directory is WEAK evidence only (renamed, encoded or late-header keys are not detected); no real key exists. |
 | 17 | No plaintext remains on transfer storage | `PARTIAL` | Format validator cannot see plaintext behind a valid header; erasure of real media not exercised. |
 | 18 | No secret-shaped data in logs | `NOT_YET_PROVEN` | Requires an actual phase. |
 | 19 | Teardown scoped | `PARTIAL` | Tier0-B scoped teardown only; none for Tier0-S. |
@@ -37,10 +37,10 @@ Statuses: `PROVEN_SYNTHETIC_ONLY` · `PARTIAL` · `NOT_YET_PROVEN` · `OWNER_ACT
 | 4 | No shared active container runtime across phases | `PARTIAL` | Gate check by process token, socket, install dir and env var (not exhaustive); this host fails it. |
 | 5 | No shared active secret manager | `PARTIAL` | Design rule; unverified. |
 | 6 | No automatic cloud-sync path between role secrets | `UNACCEPTABLE` | On the current daily-driver: synchronized locations hold data and agent stores exist. Acceptable only in a dedicated environment; process absence alone never satisfies it. |
-| 7 | No owner private key in either environment | `PARTIAL` | None exists; name/key-header scan is WEAK evidence only. |
+| 7 | No owner private key in either environment | `PARTIAL` | None exists; the name/first-256-byte key-header scan is WEAK evidence only. |
 | 8 | Ciphertext transfer explicit and auditable | `PARTIAL` | Validator output and staged-copy handoff; not exercised across boots. |
 | 9 | Plaintext corpus never crosses environments | `PARTIAL` | The keyless validator checks expected-format shape only and cannot detect plaintext behind a valid header; the keyed Witness-side check can. Plaintext handling inside Forge is unproven. |
-| 10 | Qualification unavailable | `PARTIAL` | Allowlisted role code root (within that root only). |
+| 10 | Qualification unavailable | `PARTIAL` | Role code root equals a hash-pinned manifest within a fixed policy (within that root only; not provenance). |
 | 11 | Both environments can run with networking disabled | `NOT_YET_PROVEN` | Needs the environments; the owner must keep networking off for the whole phase. |
 | 12 | Secret storage separately encrypted | `OWNER_ACTION_REQUIRED` | Requires owner provisioning of dedicated encrypted storage. |
 | 13 | Transition requires full shutdown/reboot | `NOT_YET_PROVEN` | Owner-controlled physical procedure; software log earns no credit. |

@@ -2,6 +2,9 @@
 
 Base audited: `721f00f13bf12fb0c1099d94748a25a066574e5c`. Audit verdict: `TIER0_S_AUDIT_PASS_WITH_REMEDIATION_REQUIRED`. This document records what changed; it does **not** declare Tier0-S provisionable, make Decision 9, or authorize any real-secret operation. Resulting statuses: `RESOLVED` (defect fixed and regression-tested), `MITIGATED` (improved, residual limitation documented), `ACCEPTED_LIMITATION` (cannot be fixed in software; documented), `DESIGN_CORRECTED` (design/claim corrected).
 
+
+> **Superseded in part.** The independent re-audit of this remediation (verdict `TIER0_S_REAUDIT_FAIL`) found rows 5, 6, 7 and 9 and additional requirement A incomplete or overstated. Their corrected state is recorded in `GENESIS_V2_TIER0S_FAILOPEN_REMEDIATION.md` (findings Q1–Q10). In particular: row 5 listed "every host query checks ..." but command-line and environment telemetry were not mandatory (Q3), malformed telemetry lines were ignored (Q4), and the code allowlist (row A) proved only file names (Q6). Read this matrix together with that document.
+
 ## Finding matrix
 | # | Finding (severity) | Remediation | Regression tests | Resulting status |
 |---|---|---|---|---|

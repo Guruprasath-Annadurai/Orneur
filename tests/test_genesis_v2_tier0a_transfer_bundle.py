@@ -228,3 +228,116 @@ def test_tier0a_readiness_doc_still_states_the_blocked_verdict_and_claims_no_sec
     assert "not evaluable" in txt and "INDEPENDENT_CONTROL_PLANES_CONFIRMED" in txt and "no hardware is chosen" in txt
     status = (ROOT / "docs/orneur/phase-21/infrastructure/GENESIS_V2_TIER0_ACCEPTANCE_STATUS.md").read_text()
     assert "`PROVEN_REAL` |" not in status and "| 20 | No real corpus content was used | `PARTIAL`" in status
+
+
+# ---------------------------------------------------------------- Q7: special files can never hang or be opened
+import socket as _socket
+import stat as _stat
+import time as _time
+
+
+def _replace_member_with(b, cid, maker):
+    p = b / cid / "SCREEN.enc"
+    p.unlink(missing_ok=True)
+    maker(p)
+    return p
+
+
+def _validate_in_subprocess(b, timeout=15):
+    t0 = _time.time()
+    p = subprocess.run([sys.executable, str(ROOT / "scripts/genesis_v2_tier0a_transfer_bundle.py"), "validate", str(b)], capture_output=True, text=True, timeout=timeout)
+    return p, _time.time() - t0
+
+
+import subprocess
+import sys
+
+
+def test_Q7_a_fifo_named_like_a_member_is_rejected_immediately_and_never_hangs(bundle):
+    b, cid, *_ = bundle
+    _replace_member_with(b, cid, os.mkfifo)
+    p, elapsed = _validate_in_subprocess(b)
+    assert p.returncode == 1 and elapsed < 10 and "not a regular file (fifo)" in p.stdout
+
+
+def test_Q7_a_fifo_as_the_manifest_or_a_top_level_entry_never_hangs(bundle):
+    b, cid, *_ = bundle
+    (b / B.MANIFEST).unlink(); os.mkfifo(b / B.MANIFEST)
+    p, elapsed = _validate_in_subprocess(b)
+    assert p.returncode == 1 and elapsed < 10
+    (b / B.MANIFEST).unlink(); os.mkfifo(b / "stray_fifo")
+    p, elapsed = _validate_in_subprocess(b)
+    assert p.returncode == 1 and elapsed < 10
+
+
+def test_Q7_a_unix_socket_named_like_a_member_is_rejected(bundle, monkeypatch):
+    b, cid, *_ = bundle
+    monkeypatch.chdir(b / cid)
+    (b / cid / "SCREEN.enc").unlink()
+    s = _socket.socket(_socket.AF_UNIX); s.bind("SCREEN.enc")
+    try:
+        assert any("not a regular file (socket)" in p for p in B.validate(b))
+    finally:
+        s.close()
+
+
+def test_Q7_a_directory_or_symlink_named_like_a_member_is_rejected(bundle, tmp_path):
+    b, cid, *_ = bundle
+    _replace_member_with(b, cid, lambda p: p.mkdir())
+    assert any("not a regular file (directory)" in p for p in B.validate(b))
+    (b / cid / "SCREEN.enc").rmdir()
+    _replace_member_with(b, cid, lambda p: p.symlink_to(tmp_path))
+    assert any("not a regular file (symlink)" in p for p in B.validate(b))
+
+
+def test_Q7_a_hardlinked_member_is_rejected_before_it_is_opened(bundle, tmp_path, monkeypatch):
+    b, cid, *_ = bundle
+    outside = tmp_path / "ext.enc"; outside.write_bytes((b / cid / "SEAL.enc").read_bytes())
+    (b / cid / "SEAL.enc").unlink(); os.link(outside, b / cid / "SEAL.enc")
+    opened = []
+    real_open = os.open
+    monkeypatch.setattr(B.os, "open", lambda p, *a, **k: (opened.append(str(p)), real_open(p, *a, **k))[1])
+    assert any("hard-linked" in p for p in B.validate(b))
+    assert not any(x.endswith("SEAL.enc") for x in opened), "a hardlinked member must be rejected on lstat, without opening"
+
+
+@pytest.mark.parametrize("mode,label", [(_stat.S_IFBLK, "block device"), (_stat.S_IFCHR, "character device")])
+def test_Q7_device_like_members_are_rejected_without_ever_being_opened(bundle, monkeypatch, mode, label):
+    """Platform-safe: devices cannot be created without privilege, so lstat is mocked for exactly one member and os.open is made to fail the test if reached."""
+    b, cid, *_ = bundle
+    target = str(b / cid / "SCREEN.enc")
+    real_lstat, real_open = os.lstat, os.open
+
+    def fake_lstat(path, *a, **k):
+        if str(path) == target:
+            return os.stat_result((mode | 0o600, 1, 1, 1, 0, 0, 10, 0, 0, 0))
+        return real_lstat(path, *a, **k)
+
+    def guarded_open(path, *a, **k):
+        assert str(path) != target, "a device-like member must never be opened"
+        return real_open(path, *a, **k)
+    monkeypatch.setattr(B.os, "lstat", fake_lstat); monkeypatch.setattr(B.os, "open", guarded_open)
+    assert any(f"not a regular file ({label})" in p for p in B.validate(b))
+
+
+def test_Q7_a_member_swapped_between_the_lstat_and_the_open_is_detected(bundle, monkeypatch, tmp_path):
+    b, cid, *_ = bundle
+    target = str(b / cid / "SCREEN.enc"); other = tmp_path / "other.enc"; other.write_bytes((b / cid / "SCREEN.enc").read_bytes())
+    real_open = os.open
+
+    def swap_then_open(path, flags, *a, **k):
+        if str(path) == target:
+            os.unlink(target); os.link(other, target); os.unlink(target); shutil.copy(other, target)         # replace the inode after the lstat
+        return real_open(path, flags, *a, **k)
+    monkeypatch.setattr(B.os, "open", swap_then_open)
+    assert any("changed between check and open" in p for p in B.validate(b))
+
+
+def test_Q7_stage_and_crypto_verify_inherit_the_special_file_rejection(bundle, tmp_path):
+    b, cid, priv, digest = bundle
+    _replace_member_with(b, cid, os.mkfifo)
+    par = tmp_path / "stg"; par.mkdir(mode=0o700)
+    with pytest.raises(ValueError):
+        B.validate_and_stage(b, par)
+    assert B.cryptographic_verify(b, priv, digest)
+    assert list(par.iterdir()) == []
