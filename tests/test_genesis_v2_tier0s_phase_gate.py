@@ -31,17 +31,34 @@ GOOD_IFCONFIG = ("lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384\n\top
                  "en0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 1500\n\toptions=6460<TSO4,TSO6,CHANNEL_IO,PARTIAL_CSUM,ZEROINVERT_CSUM>\n"
                  "\tether aa:bb:cc:dd:ee:ff\n\tnd6 options=201<PERFORMNUD,DAD>\n\tmedia: autoselect (none)\n\tstatus: inactive\n")
 GOOD_ROUTES = "Routing tables\n\nInternet:\nDestination        Gateway            Flags               Netif Expire\n127                127.0.0.1          UCS                   lo0\n"
+GOOD_ROUTES6 = ("Routing tables\n\nInternet6:\nDestination                             Gateway                                 Flags               Netif Expire\n"
+                "::1                                     ::1                                     UHL                   lo0\n")
+SOCK_TAIL = "\nActive Multipath Internet connections\nProto/ID  Flags      Local Address          Foreign Address        (state)\n\nActive LOCAL (UNIX) domain sockets\nAddress Type Recv-Q\n"
+GOOD_IFNAMES = "lo0 en0\n"
+GOOD_DISKS = [{"name": "Macintosh HD", "uuid": "", "dev": "disk3s1", "mount": "/"}]
 GOOD_SOCKETS = ("Active Internet connections (including servers)\nProto Recv-Q Send-Q  Local Address          Foreign Address        (state)\n"
                 "tcp4       0      0  127.0.0.1.8080         *.*                    LISTEN\nudp4       0      0  *.5353                 *.*                    \n"
-                "icm4       0      0  *.*                    *.*                    \n\nActive Multipath Internet connections\n")
+                "icm4       0      0  *.*                    *.*                    \n\nActive Multipath Internet connections\n"
+                "Proto/ID  Flags      Local Address          Foreign Address        (state)\n\nActive LOCAL (UNIX) domain sockets\nAddress Type Recv-Q\n")
+
+
+@pytest.fixture
+def fake_tools(monkeypatch):
+    """Lets tests that stub subprocess.run exercise collect_host on any OS (tool-path trust has its own N5 tests)."""
+    monkeypatch.setattr(G, "_resolve_tool", lambda name: "/sys/" + name)
 
 
 def good_host(tmp, **over):
     home = tmp / "home"; home.mkdir(exist_ok=True)
     h = {"processes": ["/sbin/launchd"] + [f"/usr/bin/proc{i}" for i in range(12)], "cmdlines": ["/sbin/launchd"] + [f"/usr/bin/proc{i} --flag" for i in range(12)],
-         "ifconfig": GOOD_IFCONFIG, "routes4": GOOD_ROUTES, "routes6": GOOD_ROUTES, "sockets": GOOD_SOCKETS, "boot_id": BOOT_A, "volumes": ["Macintosh HD"], "disks": [],
+         "ifconfig": GOOD_IFCONFIG, "ifnames": GOOD_IFNAMES, "routes4": GOOD_ROUTES, "routes6": GOOD_ROUTES6, "sockets": GOOD_SOCKETS, "boot_id": BOOT_A,
+         "volumes": ["Macintosh HD"], "disks": list(GOOD_DISKS),
          "home": home, "env": {}, "runtime_sockets_abs": ()}                       # absolute socket paths injected empty => hermetic
     h.update(over)
+    if "ifnames" not in over and isinstance(h.get("ifconfig"), str):         # keep `ifconfig -l` consistent with the (possibly modified) `ifconfig -a` fixture
+        names = re.findall(r"^([A-Za-z][A-Za-z0-9_.-]*): flags=", h["ifconfig"], re.M)
+        if names:
+            h["ifnames"] = " ".join(names) + "\n"
     return h
 
 
@@ -126,7 +143,7 @@ def test_AUDIT4_cli_without_required_arguments_prints_fail_closed_and_fails(tmp_
 
 
 # ======================================================================== AUDIT 5 + Q3: telemetry
-MANDATORY_SOURCES = ("processes", "cmdlines", "env", "home", "ifconfig", "routes4", "routes6", "sockets", "boot_id")
+MANDATORY_SOURCES = ("processes", "cmdlines", "env", "home", "ifconfig", "ifnames", "routes4", "routes6", "sockets", "boot_id")
 
 
 @pytest.mark.parametrize("key", MANDATORY_SOURCES)
@@ -184,7 +201,7 @@ def test_Q3_a_parser_failure_is_reported_as_MALFORMED(tmp_path):
     assert "ifconfig=MALFORMED" in res["telemetry_complete"]["detail"]
 
 
-def test_AUDIT5_collect_host_returns_none_when_a_command_fails_or_raises(monkeypatch):
+def test_AUDIT5_collect_host_returns_none_when_a_command_fails_or_raises(monkeypatch, fake_tools):
     class P:  # non-zero exit
         returncode, stdout, stderr = 1, "partial output", ""
     monkeypatch.setattr(G.subprocess, "run", lambda *a, **k: P())
@@ -199,7 +216,7 @@ def test_AUDIT5_collect_host_returns_none_when_a_command_fails_or_raises(monkeyp
     assert h["ifconfig"] is None and h["telemetry"]["ifconfig"] == "UNSUPPORTED"
 
 
-def test_Q3_collect_host_distinguishes_permission_denied_and_unavailable(monkeypatch):
+def test_Q3_collect_host_distinguishes_permission_denied_and_unavailable(monkeypatch, fake_tools):
     class Denied:
         returncode, stdout, stderr = 1, "", "ps: Operation not permitted"
     monkeypatch.setattr(G.subprocess, "run", lambda *a, **k: Denied())
@@ -210,7 +227,7 @@ def test_Q3_collect_host_distinguishes_permission_denied_and_unavailable(monkeyp
     assert G.collect_host()["telemetry"]["processes"] == "UNAVAILABLE"
 
 
-def test_Q3_collect_host_marks_unparsable_plist_MALFORMED(monkeypatch):
+def test_Q3_collect_host_marks_unparsable_plist_MALFORMED(monkeypatch, fake_tools):
     class Garbage:
         returncode, stdout, stderr = 0, "not a plist", ""
     monkeypatch.setattr(G.subprocess, "run", lambda *a, **k: Garbage())
@@ -220,7 +237,8 @@ def test_Q3_collect_host_marks_unparsable_plist_MALFORMED(monkeypatch):
 
 def test_Q3_environment_collection_always_yields_a_verified_mapping():
     h = G.collect_host()
-    assert isinstance(h["env"], dict) and h["telemetry"]["env"] == "OK" and isinstance(h["home"], Path)
+    assert isinstance(h["env"], dict) and h["telemetry"]["env"] == "OK"
+    assert isinstance(h["home"], Path) or (h["home"] is None and h["telemetry"]["home"] == "UNAVAILABLE")      # a uid without a passwd entry (e.g. a bare container) has NO home: fail closed
 
 
 def test_Q3_the_mandatory_telemetry_is_documented_exactly():
@@ -389,7 +407,7 @@ def test_Q8_a_planted_HEAD_tmp_symlink_is_never_followed(tmp_path):
 
 def test_Q8_exclusive_nofollow_create_defeats_a_racing_symlink_even_if_the_directory_check_is_bypassed(tmp_path, monkeypatch):
     cfg = _state(tmp_path); d = cfg["state_dir"]; victim = tmp_path / "victim.txt"; victim.write_text("PRECIOUS")
-    monkeypatch.setattr(G, "verify_state", lambda sd: ([], []))                  # simulate losing the race: the directory looked clean
+    monkeypatch.setattr(G, "verify_state", lambda sd, **k: ([], []))                  # simulate losing the race: the directory looked clean
     monkeypatch.setattr(G.secrets, "token_hex", lambda n: "deadbeefdeadbeef"[:2 * n])
     (d / ".HEAD.deadbeefdeadbeef.tmp").symlink_to(victim)
     with pytest.raises(OSError):
@@ -508,8 +526,8 @@ def test_Q4_malformed_route_telemetry_raises(bad):
 
 
 def test_Q4_route_destinations_are_case_insensitive_defaults_and_valid_forms_pass():
-    rows = G.parse_routes("Routing tables\n\nInternet:\nDestination Gateway Flags Netif Expire\nDEFAULT 1.2.3.4 UGSc en0\n169.254 link#4 UCS en0 !\n224.0.0/4 link#4 UmCS en0\n")
-    assert len(G.default_routes(rows)) == 1 and len(rows) == 3
+    rows = G.parse_routes("Routing tables\n\nInternet:\nDestination Gateway Flags Netif Expire\nDEFAULT 1.2.3.4 UGSc en0\n169.254 link#4 UCS en0 !\n224.0.0/4 link#4 UmCS en0\n127 127.0.0.1 UCS lo0\n")
+    assert len(G.default_routes(rows)) == 1 and len(rows) == 4
     assert G.parse_routes("Routing tables\n\nInternet6:\nDestination Gateway Flags Netif Expire\nfe80::%lo0/64 fe80::1%lo0 UcI lo0\nff00::/8 ::1 UmCI lo0\n")
 
 
@@ -581,10 +599,11 @@ def test_Q4_fuzz_a_single_character_corruption_never_silently_hides_a_default_ro
 
 def test_Q4_fuzz_a_single_character_corruption_never_silently_hides_an_external_listener():
     row = "tcp4       0      0  203.0.113.9.5000       *.*                    LISTEN\n"
-    base = GOOD_SOCKETS.split("\n\nActive")[0] + "\n" + row
+    head, tail = GOOD_SOCKETS.split("\n\nActive")[0] + "\n", "\n" + GOOD_SOCKETS[GOOD_SOCKETS.index("\n\nActive") + 2:]
+    base = head + row + tail
     lo = base.index("tcp4       0      0  203")
     survived = 0
-    for m in _mutate_chars(base, lo, len(base) - 1, seed=7, n=600):
+    for m in _mutate_chars(base, lo, lo + len(row) - 1, seed=7, n=600):
         try:
             rows = G.parse_sockets(m)
         except G.TelemetryError:
@@ -626,9 +645,10 @@ def test_Q10_loopback_is_recognized_by_ADDRESS_not_by_an_interface_name_prefix(t
 
 def test_AUDIT6_default_routes_fail_in_either_family_and_listeners_only_if_external(tmp_path):
     dflt = GOOD_ROUTES + "default            192.168.1.1        UGScg                 en0\n"
+    dflt6 = GOOD_ROUTES6 + "default                                 fe80::1%en0                             UGcg                  en0\n"
     assert st(run("forge", tmp_path, host=good_host(tmp_path, routes4=dflt)), "network_no_default_route") == G.FAIL
-    assert st(run("forge", tmp_path, host=good_host(tmp_path, routes6=dflt)), "network_no_default_route") == G.FAIL
-    ext = GOOD_SOCKETS.replace("\n\nActive", "\ntcp4       0      0  *.5000                 *.*                    LISTEN\n\nActive")
+    assert st(run("forge", tmp_path, host=good_host(tmp_path, routes6=dflt6)), "network_no_default_route") == G.FAIL
+    ext = GOOD_SOCKETS.replace("\n\nActive", "\ntcp4       0      0  *.5000                 *.*                    LISTEN\n\nActive", 1)
     assert st(run("forge", tmp_path, host=good_host(tmp_path, sockets=ext)), "network_no_external_sockets") == G.FAIL
     assert st(run("forge", tmp_path), "network_no_external_sockets") == G.PASS         # loopback-only TCP + wildcard UDP/ICMP binds are tolerated
 
@@ -640,7 +660,7 @@ def test_AUDIT6_default_routes_fail_in_either_family_and_listeners_only_if_exter
     ("udp6 0 0 fe80::1%lo0.123 *.*", True), ("icm4 0 0 *.* *.*", False), ("udp4 0 0 127.0.0.1.5000 *.*", False),
 ])
 def test_Q10_socket_table_covers_UDP_and_connections_and_tolerates_only_inert_wildcards(tmp_path, row, expect_fail):
-    sockets = "Active Internet connections (including servers)\nProto Recv-Q Send-Q  Local Address          Foreign Address        (state)\n" + row + "\n"
+    sockets = "Active Internet connections (including servers)\nProto Recv-Q Send-Q  Local Address          Foreign Address        (state)\n" + row + "\n" + SOCK_TAIL
     assert (st(run("forge", tmp_path, host=good_host(tmp_path, sockets=sockets)), "network_no_external_sockets") == G.FAIL) is expect_fail
 
 
@@ -773,6 +793,7 @@ def test_AUDIT14_dangling_symlink_to_the_other_role_store_counts_as_present(tmp_
 
 
 def _vol_run(tmp, volumes, disks, deny_volumes=(), deny_uuids=()):
+    volumes, disks = volumes or ["Macintosh HD"], disks or list(GOOD_DISKS)                  # a real host always lists at least one volume and disk (plausibility floor)
     return st(run("forge", tmp, host=good_host(tmp, volumes=volumes, disks=disks), deny_paths=[], deny_volumes=list(deny_volumes), deny_volume_uuids=list(deny_uuids)),
               "other_role_storage_unavailable")
 
@@ -878,10 +899,10 @@ def test_Q1_unreadable_nested_directory_is_fail_closed(tmp_path):
 def test_Q1_permission_error_from_the_directory_listing_is_fail_closed(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path); real = G._scandir
 
-    def deny(p):
-        if Path(p).name == "genesis_v2":
+    def deny(fd, rel=""):
+        if rel.rsplit("/", 1)[-1] == "genesis_v2":
             raise PermissionError(13, "denied")
-        return real(p)
+        return real(fd, rel)
     monkeypatch.setattr(G, "_scandir", deny)
     assert st(run("forge", tmp_path, cfg=cfg), "role_code_root_matches_manifest") == G.FAIL_CLOSED
 
@@ -889,11 +910,11 @@ def test_Q1_permission_error_from_the_directory_listing_is_fail_closed(tmp_path,
 def test_Q1_a_directory_that_disappears_mid_scan_is_fail_closed(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path); real = G._scandir; calls = {"n": 0}
 
-    def vanish(p):
+    def vanish(fd, rel=""):
         calls["n"] += 1
         if calls["n"] == 3:
             raise FileNotFoundError(2, "vanished")
-        return real(p)
+        return real(fd, rel)
     monkeypatch.setattr(G, "_scandir", vanish)
     assert st(run("forge", tmp_path, cfg=cfg), "role_code_root_matches_manifest") == G.FAIL_CLOSED
 
@@ -901,7 +922,7 @@ def test_Q1_a_directory_that_disappears_mid_scan_is_fail_closed(tmp_path, monkey
 @pytest.mark.parametrize("exc", [RuntimeError("boom"), OSError(5, "I/O error"), ValueError("weird")])
 def test_Q1_any_traversal_exception_including_non_oserror_is_fail_closed(tmp_path, monkeypatch, exc):
     cfg = make_cfg(tmp_path)
-    monkeypatch.setattr(G, "_scandir", lambda p: (_ for _ in ()).throw(exc))
+    monkeypatch.setattr(G, "_scandir", lambda fd, rel="": (_ for _ in ()).throw(exc))
     res = run("forge", tmp_path, cfg=cfg)
     assert st(res, "role_code_root_matches_manifest") == G.FAIL_CLOSED
 
@@ -918,7 +939,7 @@ def test_Q1_a_stat_failure_on_an_entry_is_fail_closed(tmp_path, monkeypatch):
         def __init__(self, it): self.l = [E(e) for e in it]
         def __enter__(self): return iter(self.l)
         def __exit__(self, *a): return False
-    monkeypatch.setattr(G, "_scandir", lambda p: Wrap(real(p)))
+    monkeypatch.setattr(G, "_scandir", lambda fd, rel="": Wrap(real(fd, rel)))
     assert st(run("forge", tmp_path, cfg=cfg), "role_code_root_matches_manifest") == G.FAIL_CLOSED
 
 
@@ -949,7 +970,7 @@ def test_Q1_a_code_root_that_is_itself_a_symlink_or_file_is_fail_closed(tmp_path
 def test_Q1_traversal_failure_details_never_leak_names_or_contents(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path); (cfg["code_root"] / "SENTINEL_DIR_NAME").mkdir()
     real = G._scandir
-    monkeypatch.setattr(G, "_scandir", lambda p: (_ for _ in ()).throw(PermissionError(13, "SENTINEL_DIR_NAME")) if Path(p).name == "SENTINEL_DIR_NAME" else real(p))
+    monkeypatch.setattr(G, "_scandir", lambda fd, rel="": (_ for _ in ()).throw(PermissionError(13, "SENTINEL_DIR_NAME")) if rel.rsplit("/", 1)[-1] == "SENTINEL_DIR_NAME" else real(fd, rel))
     blob = json.dumps(run("forge", tmp_path, cfg=cfg))
     assert "SENTINEL_DIR_NAME" not in blob
 
@@ -1038,7 +1059,7 @@ def test_Q6_build_manifest_refuses_anomalies_and_the_cli_prints_a_pin(tmp_path):
         G.build_code_manifest(cfg["code_root"])
     (cfg["code_root"] / "l").unlink()
     p = subprocess.run([sys.executable, str(ROOT / "scripts/genesis_v2_tier0s_phase_gate.py"), "build-manifest", "--code-root", str(cfg["code_root"])], capture_output=True, text=True, timeout=60)
-    assert p.returncode == 0 and "pin this out-of-band" in p.stderr and set(json.loads(p.stdout)["files"]) == set(G.ROLE_CODE_ALLOWLIST)
+    assert p.returncode == 0 and "MANIFEST_SHA256 " in p.stderr and set(json.loads(p.stdout)["files"]) == set(G.ROLE_CODE_ALLOWLIST)
 
 
 def test_Q6_the_documentation_states_precisely_what_the_allowlist_proves():
@@ -1082,15 +1103,15 @@ def test_Q2_unreadable_deeply_nested_state_directory_and_unreadable_file_are_fai
 
 def test_Q2_transient_scan_errors_are_fail_closed(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path); (cfg["role_state_dir"] / "sub").mkdir(); real = G._scandir
-    monkeypatch.setattr(G, "_scandir", lambda p: (_ for _ in ()).throw(OSError(5, "transient")) if Path(p).name == "sub" else real(p))
+    monkeypatch.setattr(G, "_scandir", lambda fd, rel="": (_ for _ in ()).throw(OSError(5, "transient")) if rel.rsplit("/", 1)[-1] == "sub" else real(fd, rel))
     assert st(run("forge", tmp_path, cfg=cfg), "role_state_forbidden_material_WEAK") == G.FAIL_CLOSED
 
 
 def test_Q2_traversal_exception_and_permission_exception_are_fail_closed(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path)
-    monkeypatch.setattr(G, "_scandir", lambda p: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(G, "_scandir", lambda fd, rel="": (_ for _ in ()).throw(RuntimeError("boom")))
     assert st(run("forge", tmp_path, cfg=cfg), "role_state_forbidden_material_WEAK") == G.FAIL_CLOSED
-    monkeypatch.setattr(G, "_scandir", lambda p: (_ for _ in ()).throw(PermissionError(13, "denied")))
+    monkeypatch.setattr(G, "_scandir", lambda fd, rel="": (_ for _ in ()).throw(PermissionError(13, "denied")))
     assert st(run("forge", tmp_path, cfg=cfg), "role_state_forbidden_material_WEAK") == G.FAIL_CLOSED
 
 

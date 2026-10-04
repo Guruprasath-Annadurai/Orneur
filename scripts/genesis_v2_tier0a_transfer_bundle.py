@@ -23,6 +23,11 @@ can still alter it afterwards -- this narrows the race, it does not defeat a pri
 OPERATIONAL NOTE: removable media formatted exFAT/FAT create `._*`/`.DS_Store` entries that this validator rejects (fail closed). Use an encrypted APFS
 transfer volume and keep Finder/Spotlight metadata off it, or remove those entries by an owner-reviewed step.
 
+ERROR CLASSES (never conflated): an INVALID transfer (wrong shape/digest/special file), an INACCESSIBLE transfer (the filesystem refused: permission denied,
+vanished, I/O error -- reported as a problem tagged `INACCESSIBLE:`, never as an exception, and never as success), a MALFORMED transfer (unparsable header/manifest) and
+an INTERNAL programming error (any other exception type: deliberately NOT caught -- it propagates so that a bug is never reported as a validation result).
+`validate_result` returns the class; `validate` keeps returning the plain problem list.
+
 CLI:  seal <dir> | validate <dir> | stage <dir> <staging_parent>   (non-zero exit on any problem; never prints file content)
 """
 from __future__ import annotations
@@ -46,6 +51,7 @@ SPLIT_FILES = {"SCREEN.enc": "SCREEN", "QUALIFICATION_HOLDOUT.enc": "QUALIFICATI
 SPLIT_HEADER_KEYS = {"eval_version", "corpus_id", "split", "split_sha256", "ephemeral_public_key"}
 SEAL_HEADER_KEYS = {"eval_version", "corpus_id", "split", "corpus_digest", "ephemeral_public_key"}
 MANIFEST = "MANIFEST.json"
+INACCESSIBLE = "INACCESSIBLE: "
 MAX_FILE_BYTES = 64 * 1024 * 1024
 FORMAT_CLAIM = "EXPECTED_ENCRYPTED_ARTIFACT_FORMAT_VALIDATED"
 CRYPTO_CLAIM = "CRYPTOGRAPHICALLY_VERIFIED"
@@ -85,7 +91,7 @@ def _read_once(path: Path):
     try:
         pre = os.lstat(path)
     except OSError:
-        return None, "unreadable"
+        return None, INACCESSIBLE + "unreadable"
     if not stat.S_ISREG(pre.st_mode):
         return None, f"not a regular file ({_kind_label(pre.st_mode)})"
     if pre.st_nlink != 1:
@@ -95,7 +101,7 @@ def _read_once(path: Path):
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError:
-        return None, "unreadable, or swapped for a symlink"
+        return None, INACCESSIBLE + "unreadable, or swapped for a symlink"
     try:
         st = os.fstat(fd)
         if (st.st_dev, st.st_ino) != (pre.st_dev, pre.st_ino) or not stat.S_ISREG(st.st_mode):
@@ -119,8 +125,15 @@ def snapshot(bundle: Path) -> tuple:
             return ["bundle is not a plain directory"], blobs, None
         entries = sorted(os.scandir(bundle), key=lambda e: e.name)
     except OSError:
-        return ["bundle unreadable"], blobs, None
+        return [INACCESSIBLE + "bundle unreadable"], blobs, None
     for e in entries:
+        try:
+            top_is_manifest = e.name == MANIFEST
+            top_ok = top_is_manifest or (not e.is_symlink() and e.is_dir(follow_symlinks=False) and bool(CORPUS_ID.match(e.name)))
+            members = None if (top_is_manifest or not top_ok) else sorted(os.scandir(e.path), key=lambda x: x.name)
+        except OSError:
+            problems.append(INACCESSIBLE + f"top-level entry {e.name[:40]!r} could not be inspected or listed")
+            continue
         if e.name == MANIFEST:
             data, why = _read_once(Path(e.path))
             if why:
@@ -130,15 +143,15 @@ def snapshot(bundle: Path) -> tuple:
                 manifest = _strict_manifest(data.decode())
                 if not isinstance(manifest, dict) or not all(isinstance(k, str) and isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v) for k, v in manifest.items()):
                     raise ValueError("shape")
-            except Exception:
+            except ValueError:                                  # JSON/Unicode/shape errors only; any other exception is a programming error and propagates
                 problems.append("MANIFEST.json must be strict JSON (no duplicate keys) mapping relative paths to sha256 hex")
                 manifest = None
             continue
-        if e.is_symlink() or not e.is_dir(follow_symlinks=False) or not CORPUS_ID.match(e.name):
+        if not top_ok:
             problems.append(f"unexpected top-level entry {e.name[:40]!r}")
             continue
         names = set()
-        for f in sorted(os.scandir(e.path), key=lambda x: x.name):
+        for f in members:
             rel = f"{e.name}/{f.name}"
             if f.name not in SPLIT_FILES:
                 problems.append(f"unexpected entry {rel[:80]!r}")
@@ -164,7 +177,7 @@ def check_snapshot(problems: list, blobs: dict, manifest) -> list:
             continue
         try:
             h = _header(blob)
-        except Exception:
+        except (ValueError, struct.error):                      # malformed bytes only; any other exception is a programming error and propagates
             problems.append(f"{rel}: malformed header")
             continue
         if set(h) != (SEAL_HEADER_KEYS if fname == "SEAL.enc" else SPLIT_HEADER_KEYS):
@@ -180,6 +193,22 @@ def check_snapshot(problems: list, blobs: dict, manifest) -> list:
     elif manifest != seen:
         problems.append("MANIFEST.json does not match bundle contents (missing, extra, or altered file)")
     return problems
+
+
+def classify(problems: list) -> str:
+    """VALID | INACCESSIBLE | MALFORMED | INVALID for a problem list (precedence: INACCESSIBLE > MALFORMED > INVALID)."""
+    if not problems:
+        return "VALID"
+    if any(p.startswith(INACCESSIBLE) for p in problems):
+        return "INACCESSIBLE"
+    if any("malformed" in p or "strict JSON" in p for p in problems):
+        return "MALFORMED"
+    return "INVALID"
+
+
+def validate_result(bundle: Path) -> dict:
+    problems = validate(bundle)
+    return {"status": classify(problems), "problems": problems}
 
 
 def validate(bundle: Path) -> list:
@@ -262,7 +291,7 @@ def main(argv):
     problems = validate(Path(argv[2]))
     for p in problems:
         print("PROBLEM:", p)
-    print(FORMAT_CLAIM if not problems else f"{len(problems)} problem(s)")
+    print(FORMAT_CLAIM if not problems else f"{classify(problems)}: {len(problems)} problem(s)")
     return 0 if not problems else 1
 
 

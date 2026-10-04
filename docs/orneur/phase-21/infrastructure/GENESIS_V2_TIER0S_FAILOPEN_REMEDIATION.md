@@ -1,5 +1,7 @@
 # Genesis V2 — Tier0-S fail-open remediation (re-audit findings Q1–Q10)
 
+> **Supersession note (N1–N10 phase).** The final re-audit of this remediation (`TIER0_S_FINAL_REAUDIT_FAIL`) showed that the Q3/Q4/Q5/Q10 rows below overstated how strictly telemetry was parsed: a blank line could end the socket table, `$HOME` was trusted, `volumes`/`disks` were not type-checked, header-only output was accepted, tools were resolved through `PATH`, and the traversal could be raced. Those gaps are corrected in `GENESIS_V2_TIER0S_N1_N10_REMEDIATION.md`; where this document says a parser is "strict", read it together with that document's limits. The regression tests named here remain in force.
+
 Base: `39c44f692670ad1c56204c05ad42d1311434d765`. Re-audit verdict: `TIER0_S_REAUDIT_FAIL` (driven by the decision rule "no known fail-open security control"; no HIGH or CRITICAL finding). This document records the narrow remediation. It does **not** declare Tier0-S provisionable, make Decision 9, or authorize anything. Governing rule for every fix: **unknown state is unsafe state.**
 
 Design decisions that were deliberately **not** changed: the interlock log earns zero security-boundary credit; cold boot and physical detachment are owner procedures; Tier0-S stays reduced assurance; the daily-driver stays rejected; AES-256-GCM verification stays Witness-side; the keyless validator stays a format/shape check (no entropy-as-encryption claim); the staging TOCTOU limit stays documented; runtime and residual-exposure lists stay explicitly non-exhaustive.

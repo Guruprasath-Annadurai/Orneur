@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Genesis V2 Tier0-S (Sequential Sovereign Isolation) -- phase gate v3. REDUCED-ASSURANCE, SOFTWARE-LEVEL, ONE-SHOT, ADVISORY.
+"""Genesis V2 Tier0-S (Sequential Sovereign Isolation) -- phase gate v4. REDUCED-ASSURANCE, SOFTWARE-LEVEL, ONE-SHOT, ADVISORY.
 
 WHAT THIS IS: a fail-closed pre-flight run by the operator at the START of a Forge or Witness phase on the single physical machine. It checks what software
 on that machine can check, then (only via `begin`) appends an entry to a local same-environment interlock log.
@@ -15,37 +15,64 @@ WHAT THIS IS NOT (read before relying on it):
   * NOT proof of network absence. The socket check sees only sockets that exist at this instant (TCP/UDP bound or connected to a non-loopback address); it
     does not establish that no process could communicate.
 
-FAIL-CLOSED RULE ("unknown state is unsafe state"): every security-relevant input must be supplied, every host query must succeed, produce plausible
-output, and parse STRICTLY. Anything missing, unavailable, unreadable, malformed, unsupported, permission-denied, or unverifiable yields FAIL_CLOSED.
-Unrecognized syntax inside a security-relevant telemetry source is never ignored. The gate passes only if every check is PASS.
+FAIL-CLOSED RULE ("unknown state is unsafe state"): every security-relevant input must be supplied, every host query must succeed, and each result is put
+through a parser that RAISES on any shape it does not recognise. The parsers enforce the structural rules documented on them (newline termination, ASCII-only,
+exact column headers, plausibility floors, no data after a blank line, a terminating section where one exists). A rejected source is FAIL_CLOSED with its reason.
+This bounds what is accepted as well-formed; it does NOT prove that well-formed telemetry is complete or true (a source that deletes whole, well-formed rows, or a
+host that lies, is not detectable here). The gate passes only if every check is PASS.
+
+ENFORCED (checked once, at start, by this code):  the sixteen checks returned by evaluate(); telemetry shape and plausibility; the hash-pinned role-code manifest;
+descriptor-relative tree traversal; deny-list configuration validity; the advisory interlock's hash chain and exact file set; serialized interlock appends.
+ADVISORY (forgeable by any same-user writer): the interlock log; volume matching by label (spoofable) or UUID (only as good as `diskutil`); the name/header scan
+of the role state (WEAK). PROCEDURAL (owner, not checked): cold boot, physical detachment, keeping the network off for the whole phase, out-of-band transcription
+of the manifest pin, every NOT_CHECKED / OWNER_PROCEDURE channel in the design doc's persistence table. UNPROVEN: that a real Tier0-S environment can pass, mutual
+invisibility of the two roles, log hygiene, and anything involving a malicious owner, root or kernel.
 
 MANDATORY HOST TELEMETRY (each is a distinct source; an unavailable source is FAIL_CLOSED and reported with its reason):
   processes (`ps -axo comm=`), cmdlines (`ps -axo command=`), env (this process's environment, must be a str->str mapping; EMPTY is a legitimately verified
-  value), home (the inspected home directory, no silent fallback), ifconfig (`ifconfig -a`), routes4/routes6 (`netstat -rn -f inet|inet6`), sockets
-  (`netstat -an`, must contain the Internet-connections section), boot_id (`kern.bootsessionuuid`), and -- when any deny volume/UUID is supplied --
-  volumes (/Volumes) and disks (`diskutil list -plist`). A verified-empty cmdline list is IMPOSSIBLE on a live system (it must contain launchd), so an empty
-  or launchd-less cmdline set is treated as unavailable. Telemetry failure reasons are distinguished: UNAVAILABLE, PERMISSION_DENIED, UNSUPPORTED, MALFORMED.
+  value; it describes only the gate process), home (the user's home directory from the PASSWORD DATABASE for the effective UID -- never $HOME -- which must be an
+  existing, canonical, non-symlink directory owned by that user), ifconfig (`ifconfig -a`) cross-checked against ifnames (`ifconfig -l`), routes4/routes6
+  (`netstat -rn -f inet|inet6`), sockets (`netstat -an`), boot_id (`kern.bootsessionuuid`), and -- when any deny volume/UUID is supplied -- volumes (/Volumes,
+  non-empty list of plain names) and disks (`diskutil list -plist`, validated records). Every tool is invoked by ABSOLUTE system path (/bin/ps, /sbin/ifconfig,
+  /usr/sbin/netstat, /usr/sbin/sysctl, /usr/sbin/diskutil), never through PATH, in a clean locale/environment; the tool and its directories must be root-owned,
+  not group/other-writable, and the tool a regular file. A verified-empty cmdline list is IMPOSSIBLE on a live system (it must contain launchd), so an empty or
+  launchd-less cmdline set is treated as unavailable. Telemetry failure reasons are distinguished: UNAVAILABLE, PERMISSION_DENIED, UNSUPPORTED, MALFORMED.
+  WHAT THE PLAUSIBILITY FLOORS PROVE: ifconfig lists >= 2 interfaces including a loopback carrying 127/8 and exactly the names `ifconfig -l` reports; each route
+  table has its own family section, the exact column header and at least one loopback-interface row; the socket output begins and is sectioned by `Active ...`
+  headers, every examined section is followed by another section, and no row follows a blank line. They prove the output was not obviously truncated or cut
+  inside those structures. They do NOT prove that no row was removed from within a well-formed table, and exit status 0 is never treated as completeness.
 
 MANDATORY CONFIGURATION: interlock state dir (--state-dir), the role's own state dir to scan (--role-state-dir), role code root (--code-root), a code manifest
 (--code-manifest) AND its SHA-256 pinned out-of-band (--code-manifest-sha256), and at least one deny-listed path / volume / volume UUID naming the other
-role's storage. Missing configuration is FAIL_CLOSED.
+role's storage. Missing configuration is FAIL_CLOSED. Deny configuration is validated: UUIDs must be well-formed and non-duplicated, labels non-empty without
+control/format characters or confusable-script letters, paths absolute and canonical. Volume matching by label alone is reported as LABEL_ONLY (weaker, advisory);
+prefer --deny-volume-uuid. A well-formed UUID that is simply wrong matches nothing and cannot be detected.
 
 PROCESS ABSENCE != EXPOSURE ABSENCE: a stopped sync/agent process does not satisfy the residual-exposure checks. Those look (existence and non-emptiness
-only, never contents or names) at known synchronized paths and known agent transcript/index/session/recovery stores. NO_RESIDUAL_EXPOSURE_DETECTED
+only, never contents or names) at known synchronized paths and known agent transcript/index/session/recovery stores under the TRUSTED home. NO_RESIDUAL_EXPOSURE_DETECTED
 means "none of the known locations has data", not a proof that no exposure exists.
 
 CODE ALLOWLIST SEMANTICS: the role code root must equal a MANIFEST (relative path, SHA-256, size) exactly, every manifest path must be inside the fixed role
 policy (ROLE_CODE_ALLOWLIST), and the manifest's own SHA-256 must match a value pinned out-of-band. This proves: the files under THIS root are byte-identical to
 that manifest, nothing else is there, none is a symlink/hardlink/special file, none is group/other-writable, and no unlisted bytecode exists. It does NOT
 prove the manifest is the reviewed one unless the pin was transcribed from a reviewed source, does not cover anything outside the root, and is not
-cryptographic provenance. Path names alone are never treated as proof of Qualification absence.
+cryptographic provenance. Path names alone are never treated as proof of Qualification absence. The tree is read descriptor-relative (O_DIRECTORY|O_NOFOLLOW at
+every level, members opened relative to the open directory descriptor and compared with the listed device/inode), so a directory or file swapped after it was
+listed is detected. RESIDUAL: the ancestors of the root are resolved normally; hashing is point-in-time; a same-authority attacker who can replace BOTH the
+manifest and the pin passes.
+
+MANIFEST WORKFLOW: `build-manifest` emits ONE canonical byte sequence (sorted keys, indent 1, one trailing newline). The pin is the SHA-256 of exactly those bytes.
+Without --out they go to stdout (so `> M` produces a file whose digest is the pin; the pin is printed to stderr as `MANIFEST_SHA256 <hex>`); with --out they are
+written to a new file and the pin is printed to stdout. --pin-out writes `<hex>` plus one newline. The verifier hashes the file bytes as they are and accepts only a 64-hex pin.
 
 INTERLOCK (advisory, same-environment, operator-safety only -- NOT a security isolation boundary): lives INSIDE the currently booted environment's own state
 directory (never shared across environments, so it creates no cross-role channel). Non-secret: role, per-boot UUID, sequence, hash chain, environment id.
-Anyone who can write the directory can forge it.
+Anyone who can write the directory can forge it. Appends are serialized with an exclusive flock() on the directory (verification takes a shared lock); a writer that
+cannot get the lock fails closed, and the kernel drops the lock when its holder dies (no stale lock). If a writer crashes between the receipt append and the HEAD
+replace, receipts and HEAD disagree and every later verification FAILS CLOSED until the owner creates a new interlock directory.
 
 CLI:  init  --state-dir D
-      build-manifest --code-root C                      (prints a manifest to stdout; review it before pinning its SHA-256)
+      build-manifest --code-root C [--out M] [--pin-out P]   (review the manifest before pinning its SHA-256 out-of-band)
       check --role forge|witness --state-dir D --role-state-dir R --code-root C --code-manifest M --code-manifest-sha256 H
             --deny-path P [--deny-path P ...] [--deny-volume NAME ...] [--deny-volume-uuid UUID ...] [--workspace W ...] [--process-allowlist FILE]
       begin (same as check; on GATE_PASSES appends an interlock entry)
@@ -53,27 +80,38 @@ CLI:  init  --state-dir D
 from __future__ import annotations
 
 import argparse
+import errno
+import fcntl
 import hashlib
 import ipaddress
 import json
 import os
 import plistlib
+import pwd
 import re
 import secrets
 import stat
 import subprocess
 import sys
+import time
 import unicodedata
 from pathlib import Path
 
 ROLES = ("forge", "witness")
 PASS, FAIL, FAIL_CLOSED = "PASS", "FAIL", "FAIL_CLOSED"
-UUID_RE = re.compile(r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$")
-ENV_ID_RE = re.compile(r"^[0-9a-f]{32}$")
-SUM_RE = re.compile(r"^[0-9a-f]{64}$")
+UUID_RE = re.compile(r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\Z")      # \Z, never '$': '$' also matches before a trailing newline
+ENV_ID_RE = re.compile(r"^[0-9a-f]{32}\Z")
+SUM_RE = re.compile(r"^[0-9a-f]{64}\Z")
 ZERO = "0" * 64
 MAX_HASHED_BYTES = 16 * 1024 * 1024
 STATE_FILES = frozenset({"INIT.json", "HEAD.json", "receipts.jsonl"})
+LOCK_TIMEOUT = 5.0                      # seconds to wait for the interlock directory lock before failing closed
+MAX_WALK_DEPTH = 64
+# Host telemetry tools are NEVER resolved through the ambient PATH. Fixed macOS system locations; each must be a regular, root-owned, non-group/other-writable
+# executable (not a symlink) inside root-owned, non-group/other-writable ancestor directories, or the source is not trusted.
+SYSTEM_TOOLS = {"ps": "/bin/ps", "ifconfig": "/sbin/ifconfig", "netstat": "/usr/sbin/netstat", "sysctl": "/usr/sbin/sysctl", "diskutil": "/usr/sbin/diskutil"}
+TOOL_ENV = {"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}      # clean, locale-stable environment for every host query
+_euid = os.geteuid                      # indirection so tests can simulate a different expected user
 
 # ---- runtime / control-plane detection (NOT exhaustive; names, sockets, install dirs, env)
 RUNTIME_TOKENS = {"docker", "dockerd", "containerd", "colima", "lima", "limactl", "podman", "gvproxy", "nerdctl", "buildkitd", "vfkit", "krunkit",
@@ -120,10 +158,42 @@ class TelemetryError(Exception):
 
 
 # =============================================================================== host queries (fail closed)
-def _run(cmd: list):
-    """Returns (status, stdout). status in OK | UNAVAILABLE | PERMISSION_DENIED | UNSUPPORTED."""
+def _resolve_tool(name: str) -> str:
+    """Absolute path of a fixed system tool, or raises TelemetryError. Never consults PATH. The tool must be a regular file (a symlink is refused), owned by root,
+    not group/other-writable and executable, and every ancestor directory must be root-owned and not group/other-writable."""
+    path = SYSTEM_TOOLS.get(name)
+    if path is None:
+        raise TelemetryError("UNSUPPORTED", "tool not in the fixed system-tool table")
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        st = os.lstat(path)
+    except FileNotFoundError:
+        raise TelemetryError("UNSUPPORTED", "system tool not present at its fixed location") from None
+    except PermissionError:
+        raise TelemetryError("PERMISSION_DENIED", "system tool not inspectable") from None
+    except OSError:
+        raise TelemetryError("UNAVAILABLE", "system tool not inspectable") from None
+    if not stat.S_ISREG(st.st_mode):
+        raise TelemetryError("MALFORMED", "system tool is not a regular file (symlink or other object)")
+    if st.st_uid != 0 or (st.st_mode & 0o022) or not (st.st_mode & 0o111):
+        raise TelemetryError("MALFORMED", "system tool has an unexpected owner or mode")
+    for parent in Path(path).parents:
+        try:
+            pst = os.lstat(parent)
+        except OSError:
+            raise TelemetryError("UNAVAILABLE", "system tool directory not inspectable") from None
+        if not stat.S_ISDIR(pst.st_mode) or pst.st_uid != 0 or (pst.st_mode & 0o022):
+            raise TelemetryError("MALFORMED", "system tool directory has an unexpected type, owner or mode")
+    return path
+
+
+def _run(cmd: list):
+    """Returns (status, stdout). status in OK | UNAVAILABLE | PERMISSION_DENIED | UNSUPPORTED | MALFORMED. cmd[0] is a tool NAME from SYSTEM_TOOLS."""
+    try:
+        argv = [_resolve_tool(cmd[0])] + list(cmd[1:])
+    except TelemetryError as e:
+        return e.reason, None
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=30, env=dict(TOOL_ENV))
     except FileNotFoundError:
         return "UNSUPPORTED", None
     except PermissionError:
@@ -136,23 +206,70 @@ def _run(cmd: list):
     return "OK", p.stdout
 
 
-def _parse_disks(blob: str) -> list:
-    d = plistlib.loads(blob.encode() if isinstance(blob, str) else blob)
+_DEV_RE = re.compile(r"disk\d+(?:s\d+)*\Z")
+
+
+def _text_field(d: dict, key: str) -> str:
+    v = d.get(key, "")
+    if not isinstance(v, str) or "\0" in v:
+        raise TelemetryError("MALFORMED", f"disk record field {key}")
+    return v
+
+
+def _parse_disks(blob) -> list:
+    """`diskutil list -plist` -> validated records. ANY structural surprise raises TelemetryError (never a bare TypeError/KeyError)."""
+    try:
+        d = plistlib.loads(blob.encode() if isinstance(blob, str) else blob)
+    except Exception:
+        raise TelemetryError("MALFORMED", "diskutil output is not a plist") from None
     if not isinstance(d, dict) or not isinstance(d.get("AllDisksAndPartitions"), list):
         raise TelemetryError("MALFORMED", "diskutil plist shape")
     out = []
     for disk in d["AllDisksAndPartitions"]:
         if not isinstance(disk, dict):
             raise TelemetryError("MALFORMED", "disk entry")
-        for item in [disk] + list(disk.get("Partitions", [])) + list(disk.get("APFSVolumes", [])):
-            if isinstance(item, dict) and any(k in item for k in ("VolumeName", "VolumeUUID", "MountPoint")):
-                out.append({"name": str(item.get("VolumeName", "")), "uuid": str(item.get("VolumeUUID", "")), "dev": str(item.get("DeviceIdentifier", "")),
-                            "mount": str(item.get("MountPoint", ""))})
-    return out
+        subs = []
+        for key in ("Partitions", "APFSVolumes"):
+            v = disk.get(key, [])
+            if not isinstance(v, list) or not all(isinstance(x, dict) for x in v):
+                raise TelemetryError("MALFORMED", f"disk {key} shape")
+            subs += v
+        for item in [disk] + subs:
+            if any(k in item for k in ("VolumeName", "VolumeUUID", "MountPoint")):
+                out.append({"name": _text_field(item, "VolumeName"), "uuid": _text_field(item, "VolumeUUID"), "dev": _text_field(item, "DeviceIdentifier"),
+                            "mount": _text_field(item, "MountPoint")})
+    return parse_disk_records(out)
 
 
-def collect_host(home: Path | None = None) -> dict:
-    """Raw host telemetry. A source that failed has value None and a reason in host['telemetry'][source]; evaluate() turns that into FAIL_CLOSED."""
+def parse_disk_records(recs) -> list:
+    """Strict validation of the disk records handed to the gate (also applied to injected telemetry). A real host always has at least one volume record."""
+    if not isinstance(recs, list) or not recs:
+        raise TelemetryError("MALFORMED", "disk records must be a non-empty list")
+    for r in recs:
+        if not isinstance(r, dict) or set(r) != {"name", "uuid", "dev", "mount"} or not all(isinstance(r[k], str) for k in r):
+            raise TelemetryError("MALFORMED", "disk record shape")
+        if r["uuid"] and not UUID_RE.match(r["uuid"]):
+            raise TelemetryError("MALFORMED", "disk record uuid")
+        if not _DEV_RE.match(r["dev"]):
+            raise TelemetryError("MALFORMED", "disk record device reference")
+        if r["mount"] and (not os.path.isabs(r["mount"]) or "\0" in r["mount"] or "\0" in r["name"]):
+            raise TelemetryError("MALFORMED", "disk record mount point")
+    return recs
+
+
+def parse_volumes(vols) -> list:
+    """/Volumes listing: a non-empty list of plain entry names (macOS always lists the startup volume)."""
+    if not isinstance(vols, list) or not vols:
+        raise TelemetryError("MALFORMED", "volume list must be a non-empty list")
+    for v in vols:
+        if not isinstance(v, str) or not v or "/" in v or "\0" in v:
+            raise TelemetryError("MALFORMED", "volume entry")
+    return vols
+
+
+def collect_host() -> dict:
+    """Raw host telemetry. A source that failed has value None and a reason in host['telemetry'][source]; evaluate() turns that into FAIL_CLOSED.
+    The home directory comes from the password database for the effective UID, NEVER from $HOME (which any same-user process can set)."""
     tele, host = {}, {}
 
     def get(key, cmd, post=None):
@@ -162,12 +279,15 @@ def collect_host(home: Path | None = None) -> dict:
                 host[key] = post(out) if post else out
                 tele[key] = "OK"
                 return
+            except TelemetryError as e:
+                status = e.reason
             except Exception:
                 status = "MALFORMED"
         host[key], tele[key] = None, status
     get("processes", ["ps", "-axo", "comm="], lambda o: o.splitlines())
     get("cmdlines", ["ps", "-axo", "command="], lambda o: o.splitlines())
     get("ifconfig", ["ifconfig", "-a"])
+    get("ifnames", ["ifconfig", "-l"])
     get("routes4", ["netstat", "-rn", "-f", "inet"])
     get("routes6", ["netstat", "-rn", "-f", "inet6"])
     get("sockets", ["netstat", "-an"])
@@ -179,13 +299,31 @@ def collect_host(home: Path | None = None) -> dict:
         host["volumes"], tele["volumes"] = None, "PERMISSION_DENIED"
     except OSError:
         host["volumes"], tele["volumes"] = None, "UNAVAILABLE"
-    host["home"], tele["home"] = Path(home) if home else Path.home(), "OK"
+    try:
+        host["home"], tele["home"] = Path(pwd.getpwuid(_euid()).pw_dir), "OK"
+    except Exception:                                                                    # no password-database entry / lookup error: no silent fallback
+        host["home"], tele["home"] = None, "UNAVAILABLE"
     host["env"], tele["env"] = dict(os.environ), "OK"
     host["telemetry"] = tele
     return host
 
 
 # =============================================================================== strict parsers (raise TelemetryError => FAIL_CLOSED)
+_BAD_CHAR = re.compile(r"[^\n\t\x20-\x7e]")
+
+
+def _strict_lines(text, what: str) -> list:
+    """Splits ONLY on '\\n'. Output must be newline-terminated (an unterminated tail means truncation) and contain nothing but printable ASCII, TAB and LF:
+    CR, VT, FF, NUL, other controls and non-ASCII are rejected rather than interpreted (str.splitlines() would silently turn them into line breaks)."""
+    if not isinstance(text, str) or not text:
+        raise TelemetryError("MALFORMED", f"{what}: empty or not text")
+    if not text.endswith("\n"):
+        raise TelemetryError("MALFORMED", f"{what}: output is not newline-terminated (possible truncation)")
+    if _BAD_CHAR.search(text):
+        raise TelemetryError("MALFORMED", f"{what}: unexpected character (CR, NUL, control or non-ASCII)")
+    return text[:-1].split("\n")
+
+
 def parse_processes(lines):
     if not isinstance(lines, list) or not all(isinstance(l, str) for l in lines) or len(lines) < 10:
         raise TelemetryError("MALFORMED", "process list shape/size")
@@ -219,10 +357,8 @@ _IF_HARMLESS = ("ether", "nd6", "media:", "member:", "ifmaxaddr", "root", "maxag
 
 def parse_interfaces(text):
     """Strict `ifconfig -a` grammar. Unrecognized security-relevant syntax raises MALFORMED instead of being skipped."""
-    if not isinstance(text, str) or not text.strip():
-        raise TelemetryError("MALFORMED", "ifconfig output empty")
     out, cur = [], None
-    for raw in text.splitlines():
+    for raw in _strict_lines(text, "ifconfig"):
         if not raw.strip():
             continue
         if not raw[0].isspace():
@@ -259,12 +395,57 @@ def parse_interfaces(text):
                 raise TelemetryError("MALFORMED", "unrecognized interface status value")        # e.g. a corrupted 'active' must not silently become 'not active'
             cur["status"] = m.group(1).strip()
         elif tok.startswith("options=") or tok in _IF_HARMLESS:
+            if "\t" in raw.lstrip() or ": flags=" in raw:                      # a joined line (its successor starts with TAB, or is a header) must not swallow an address
+                raise TelemetryError("MALFORMED", "interface line carries embedded line-joining artifacts")
             continue
         else:
             raise TelemetryError("MALFORMED", "unrecognized interface line")
-    if not any(i["name"].startswith("lo") and i["loopback_flag"] for i in out):
-        raise TelemetryError("MALFORMED", "no loopback interface in ifconfig output")
+    names = [i["name"] for i in out]
+    if len(set(names)) != len(names):
+        raise TelemetryError("MALFORMED", "duplicate interface name")
+    if not any(i["name"].startswith("lo") and i["loopback_flag"] and any(a.is_loopback for a in i["v4"]) for i in out):
+        raise TelemetryError("MALFORMED", "no loopback interface carrying a 127/8 address (plausibility floor)")
+    if len(out) < 2:
+        raise TelemetryError("MALFORMED", "fewer than two interface blocks (a real macOS host lists more than the loopback; plausibility floor)")
     return out
+
+
+def parse_ifnames(text):
+    """`ifconfig -l`: ONE line of unique interface names. Cross-checked against the names parsed from `ifconfig -a` so that a truncated `-a` listing cannot
+    silently drop trailing interface blocks."""
+    lines = _strict_lines(text, "ifconfig -l")
+    if len(lines) != 1:
+        raise TelemetryError("MALFORMED", "ifconfig -l must be exactly one line")
+    toks = lines[0].split(" ")
+    if not toks or not all(re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]*", t) for t in toks) or len(set(toks)) != len(toks):
+        raise TelemetryError("MALFORMED", "ifconfig -l interface list")
+    return toks
+
+
+def parse_home(h):
+    """The trusted user home: an absolute, canonical (no symlink anywhere in the path), existing directory owned by the expected user."""
+    if not isinstance(h, (str, os.PathLike)) or not str(h) or "\0" in str(h):
+        raise TelemetryError("MALFORMED", "home is not a path")
+    p = str(h)
+    if not os.path.isabs(p):
+        raise TelemetryError("MALFORMED", "home is not absolute")
+    try:
+        st = os.lstat(p)
+    except FileNotFoundError:
+        raise TelemetryError("UNAVAILABLE", "home directory does not exist") from None
+    except PermissionError:
+        raise TelemetryError("PERMISSION_DENIED", "home directory not inspectable") from None
+    except OSError:
+        raise TelemetryError("UNAVAILABLE", "home directory not inspectable") from None
+    if stat.S_ISLNK(st.st_mode):
+        raise TelemetryError("MALFORMED", "home is a symlink")
+    if not stat.S_ISDIR(st.st_mode):
+        raise TelemetryError("MALFORMED", "home is not a directory")
+    if st.st_uid != _euid():
+        raise TelemetryError("MALFORMED", "home is not owned by the expected user")
+    if p != os.path.normpath(p) or os.path.realpath(p) != p:
+        raise TelemetryError("MALFORMED", "home path is not canonical")
+    return Path(p)
 
 
 def interface_violations(ifs: list) -> list:
@@ -283,18 +464,26 @@ def interface_violations(ifs: list) -> list:
 _ROUTE_DEST = re.compile(r"(?i:default)|\d{1,3}(?:\.\d{1,3}){0,3}(?:/\d{1,2})?|[0-9A-Fa-f:]*:[0-9A-Fa-f:]*(?:%[A-Za-z0-9]+)?(?:/\d{1,3})?")
 
 
-def parse_routes(text):
-    """Strict `netstat -rn` grammar. Returns data rows (destination, gateway, flags, netif). Malformed rows raise."""
-    if not isinstance(text, str) or not text.strip():
-        raise TelemetryError("MALFORMED", "routing output empty")
-    rows, seen_header = [], False
-    for raw in text.splitlines():
+def parse_routes(text, family=None):
+    """Strict `netstat -rn -f inet|inet6` grammar. Returns data rows (destination, gateway, flags, netif). Malformed rows raise.
+    Plausibility floors (all enforced): output newline-terminated; a recognized `Internet:`/`Internet6:` section header precedes a recognized column header;
+    when `family` is given ('inet' | 'inet6') ONLY that section may appear; and at least one row must use a loopback interface (`lo<N>`; for IPv6 with an IPv6
+    destination). A header-only table, or a table truncated before its loopback entries, therefore fails closed. Exit status 0 is never treated as proof of
+    completeness."""
+    if family not in (None, "inet", "inet6"):
+        raise ValueError(family)
+    rows, sections, sec, seen_header = [], [], None, False
+    for raw in _strict_lines(text, "routes"):
         line = raw.strip()
-        if not line or line in ("Routing tables", "Internet:", "Internet6:"):
+        if not line or line == "Routing tables":
+            continue
+        if line in ("Internet:", "Internet6:"):
+            sec = "inet" if line == "Internet:" else "inet6"
+            sections.append(sec); seen_header = False
             continue
         tok = line.split()
         if tok[0] == "Destination":
-            if tok[:4] != ["Destination", "Gateway", "Flags", "Netif"]:
+            if sec is None or tok not in (["Destination", "Gateway", "Flags", "Netif"], ["Destination", "Gateway", "Flags", "Netif", "Expire"]):      # EXACT header: a joined line must not swallow a row
                 raise TelemetryError("MALFORMED", "route table header")
             seen_header = True
             continue
@@ -302,10 +491,21 @@ def parse_routes(text):
             raise TelemetryError("MALFORMED", "route row before header")
         if len(tok) not in (4, 5) or not re.fullmatch(r"[A-Za-z0-9]+", tok[2]) or not re.fullmatch(r"[A-Za-z0-9_.-]+", tok[3]) or not _ROUTE_DEST.fullmatch(tok[0]):
             raise TelemetryError("MALFORMED", "route row")
-        rows.append(tuple(tok[:4]))
-    if not seen_header:
-        raise TelemetryError("MALFORMED", "no route table header")
-    return rows
+        rows.append((sec, *tok[:4]))
+    if not sections or (family and sections != [family]) or (not family and len(set(sections)) != len(sections)):
+        raise TelemetryError("MALFORMED", "route table sections missing, repeated or of the wrong address family")
+    loop = [r for r in rows if re.fullmatch(r"lo\d+", r[4]) and (r[0] == "inet" or ":" in r[1])]
+    if not loop:
+        raise TelemetryError("MALFORMED", "no loopback route (plausibility floor; header-only or truncated table)")
+    return [r[1:] for r in rows]
+
+
+def parse_routes4(text):
+    return parse_routes(text, "inet")
+
+
+def parse_routes6(text):
+    return parse_routes(text, "inet6")
 
 
 def default_routes(rows: list) -> list:
@@ -335,73 +535,196 @@ def _classify_sock_addr(a: str) -> str:
         raise TelemetryError("MALFORMED", "ipv4 socket address") from None
 
 
+_SOCK_HDR_INET = ["Proto", "Recv-Q", "Send-Q", "Local", "Address", "Foreign", "Address", "(state)"]
+_SOCK_HDR_MPTCP = ["Proto/ID", "Flags", "Local", "Address", "Foreign", "Address", "(state)"]
+
+
+def _sock_row(raw: str) -> tuple:
+    f = raw.split()
+    if not f or raw[0].isspace():
+        raise TelemetryError("MALFORMED", "socket row")
+    proto = f[0]
+    if proto.startswith("tcp"):
+        if len(f) != 6 or not re.fullmatch(r"[A-Z0-9_]+", f[5]):
+            raise TelemetryError("MALFORMED", "tcp row")
+        state = f[5]
+    elif proto.startswith(("udp", "icm")):                     # udp4/udp6/udp46 and ICMP sockets (icm4/icm6): 5 columns, no state
+        if len(f) != 5:
+            raise TelemetryError("MALFORMED", "udp/icmp row")
+        state = "UDP" if proto.startswith("udp") else "ICMP"
+    else:
+        raise TelemetryError("MALFORMED", "unrecognized protocol row")
+    if not (f[1].isdigit() and f[2].isdigit()):
+        raise TelemetryError("MALFORMED", "socket queue columns")
+    local, foreign = _classify_sock_addr(f[3]), _classify_sock_addr(f[4])
+    if proto.startswith("tcp"):
+        external = local in ("wildcard", "external") or foreign == "external"      # any TCP listener/connection beyond loopback
+    else:
+        # UDP: a socket bound to a specific non-loopback address, or connected to a non-loopback peer, is live traffic. A WILDCARD-only UDP bind
+        # (e.g. mDNSResponder `*.5353`) exists even with networking disabled and is inert without an addressed interface or route, which the interface
+        # and route checks establish -- it is not counted, and UDP absence is NOT claimed.
+        external = local == "external" or foreign == "external"
+    return (proto, state, external)
+
+
 def parse_sockets(text):
-    """Strict `netstat -an` Internet-connections section. Returns [(proto, state, external_bool)]."""
-    if not isinstance(text, str) or "Active Internet connections" not in text:
+    """Strict `netstat -an` Internet-connections grammar. Returns [(proto, state, external_bool)].
+
+    Structure (every rule is enforced; anything else raises MALFORMED):
+      * the output is newline-terminated, printable ASCII/TAB/LF only (a CR, VT, FF, NUL or other control character is NOT a line break and is rejected);
+      * it begins with an `Active ...` section header; sections are delimited ONLY by lines starting `Active `;
+      * each `Active Internet connections` section has the exact column header, then data rows; a blank (or whitespace-only) line is accepted ONLY as the end
+        of the table: after the first blank line every remaining line of the section must be blank, so a stray blank line can no longer hide later rows;
+      * EVERY examined section must be followed by another `Active ...` section. A table that runs to the end of the output is treated as truncated;
+      * an `Active Multipath Internet connections` section is parsed with the SAME row grammar and its rows are classified like any other (real macOS lists
+        icm6 sockets there); a row in an unrecognised format is refused; it too must be terminated;
+      * at least one Internet section must be present. A header-only table that IS terminated by a following section is structurally complete and is the
+        only 'verified empty' representation; an unterminated one is refused.
+    This proves the output was a complete, well-formed table. It does not prove no socket opened afterwards, and exit status 0 is not relied upon."""
+    lines = _strict_lines(text, "sockets")
+    if not lines[0].startswith("Active "):
+        raise TelemetryError("MALFORMED", "output does not begin with an Active section")
+    rows, n, i, saw_inet = [], len(lines), 0, False
+    while i < n:
+        head = lines[i]
+        i += 1
+        body = []
+        while i < n and not lines[i].startswith("Active "):
+            body.append(lines[i]); i += 1
+        terminated = i < n
+        if head.startswith("Active Internet connections"):
+            kind = "inet"
+        elif head.startswith("Active Multipath Internet connections"):
+            kind = "mptcp"
+        else:
+            continue                                                                    # unix-domain / kernel sockets: not network exposure
+        if not terminated:
+            raise TelemetryError("MALFORMED", "socket section not followed by another section (output may be truncated)")
+        if not body:
+            raise TelemetryError("MALFORMED", "socket section has no column header")
+        if body[0].split() != (_SOCK_HDR_INET if kind == "inet" else _SOCK_HDR_MPTCP):
+            raise TelemetryError("MALFORMED", "socket column header missing, partial or unrecognized")
+        seen_blank = False
+        for raw in body[1:]:
+            if not raw.strip():
+                seen_blank = True
+                continue
+            if seen_blank:
+                raise TelemetryError("MALFORMED", "data after a blank line inside a socket section")
+            rows.append(_sock_row(raw))                           # the multipath section also lists plain icm6/tcp/udp rows on real macOS: same grammar, same classification
+        saw_inet = saw_inet or kind == "inet"
+    if not saw_inet:
         raise TelemetryError("MALFORMED", "no Internet connections section")
-    lines = text.splitlines()
-    i = next(n for n, l in enumerate(lines) if l.startswith("Active Internet connections"))
-    if i + 1 >= len(lines) or not lines[i + 1].lstrip().startswith("Proto"):
-        raise TelemetryError("MALFORMED", "no column header")
-    rows = []
-    for raw in lines[i + 2:]:
-        if not raw.strip() or raw.startswith("Active "):
-            break
-        f = raw.split()
-        proto = f[0]
-        if proto.startswith("tcp"):
-            if len(f) != 6 or not re.fullmatch(r"[A-Z0-9_]+", f[5]):
-                raise TelemetryError("MALFORMED", "tcp row")
-            state = f[5]
-        elif proto.startswith(("udp", "icm")):                     # udp4/udp6/udp46 and ICMP sockets (icm4/icm6): 5 columns, no state
-            if len(f) != 5:
-                raise TelemetryError("MALFORMED", "udp/icmp row")
-            state = "UDP" if proto.startswith("udp") else "ICMP"
-        else:
-            raise TelemetryError("MALFORMED", "unrecognized protocol row")
-        local, foreign = _classify_sock_addr(f[3]), _classify_sock_addr(f[4])
-        if proto.startswith("tcp"):
-            external = local in ("wildcard", "external") or foreign == "external"      # any TCP listener/connection beyond loopback
-        else:
-            # UDP: a socket bound to a specific non-loopback address, or connected to a non-loopback peer, is live traffic. A WILDCARD-only UDP bind
-            # (e.g. mDNSResponder `*.5353`) exists even with networking disabled and is inert without an addressed interface or route, which the interface
-            # and route checks establish -- it is not counted, and UDP absence is NOT claimed.
-            external = local == "external" or foreign == "external"
-        rows.append((proto, state, external))
     return rows
 
 
 # =============================================================================== strict filesystem helpers
-_scandir = os.scandir          # indirection so tests can simulate transient scan errors
+def _scandir(dfd: int, rel: str = ""):
+    """Lists the directory behind the OPEN descriptor `dfd` (never a pathname). `rel` is informational (tests key fault injection on it)."""
+    return os.scandir(dfd)
+_openat = os.open              # indirection so tests can simulate a swap between listing and open
+_O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | _O_CLOEXEC
+_FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | _O_CLOEXEC
+
+
+def _read_member(dfd: int, name: str, lst, mode: str):
+    """Opens `name` RELATIVE TO the already-open directory descriptor `dfd` (never through a pathname), verifies that the open descriptor is the very object
+    the listing saw, and returns ('hash': (sha256, size)) or ('head': first 256 bytes). None on any anomaly."""
+    try:
+        fd = _openat(name, _FILE_FLAGS, dir_fd=dfd)
+    except Exception:
+        return None
+    try:
+        fst = os.fstat(fd)
+        if not stat.S_ISREG(fst.st_mode) or (fst.st_dev, fst.st_ino) != (lst.st_dev, lst.st_ino) or (fst.st_size, fst.st_mtime_ns) != (lst.st_size, lst.st_mtime_ns):
+            return None                                            # not the object the listing saw, or modified in place since the listing
+        if mode == "head":
+            return os.read(fd, 256)
+        if fst.st_nlink != 1 or fst.st_size > MAX_HASHED_BYTES:
+            return None
+        h = hashlib.sha256()
+        with os.fdopen(fd, "rb", closefd=False) as f:
+            data = f.read(MAX_HASHED_BYTES + 1)
+        after = os.fstat(fd)
+        if len(data) != fst.st_size or (after.st_size, after.st_mtime_ns) != (fst.st_size, fst.st_mtime_ns):
+            return None                                            # modified while being read
+        h.update(data)
+        return h.hexdigest(), fst.st_size
+    except Exception:
+        return None
+    finally:
+        os.close(fd)
+
+
+def _walk(root, mode: str = "none", only=None) -> tuple:
+    """DESCRIPTOR-RELATIVE traversal. The root is opened once with O_DIRECTORY|O_NOFOLLOW; every child directory is opened with O_DIRECTORY|O_NOFOLLOW relative
+    to its parent's open descriptor and must be the very (device, inode) the listing reported; members are read relative to the open directory descriptor. A
+    child is NEVER re-resolved through a mutable pathname after it was listed, so a directory swapped for a symlink (or another directory) is detected and
+    counted as an error. Returns (entries[(rel, lstat)], error_count, results{rel: hash|head|None}). mode: 'none' | 'hash' (regular, single-link members whose rel
+    is in `only` when given) | 'head' (first 256 bytes of every regular member).
+    RESIDUAL: the ANCESTORS of `root` are resolved by the kernel in the ordinary way (only the final component is O_NOFOLLOW); a same-user attacker who can
+    rewrite an ancestor symlink during the one-shot call is outside what this can detect, and the digest is point-in-time."""
+    entries, results, errors = [], {}, [0]
+    try:
+        rfd = _openat(os.fspath(root), _DIR_FLAGS)
+    except Exception:
+        return entries, 1, results
+    try:
+        rst = os.fstat(rfd)
+        try:
+            pst = os.lstat(root)
+        except Exception:
+            return entries, 1, results
+        if not stat.S_ISDIR(rst.st_mode) or (rst.st_dev, rst.st_ino) != (pst.st_dev, pst.st_ino):
+            return entries, 1, results
+
+        def scan(dfd: int, rel: str, depth: int):
+            if depth > MAX_WALK_DEPTH:
+                errors[0] += 1
+                return
+            try:
+                with _scandir(dfd, rel) as it:
+                    children = list(it)
+            except Exception:                  # unknown state is unsafe state: any failure (not only OSError) counts
+                errors[0] += 1
+                return
+            subdirs = []
+            for e in children:
+                r = f"{rel}/{e.name}" if rel else e.name
+                try:
+                    st = e.stat(follow_symlinks=False)
+                except Exception:
+                    errors[0] += 1
+                    continue
+                entries.append((r, st))
+                if stat.S_ISDIR(st.st_mode):
+                    subdirs.append((e.name, r, st))
+                elif mode != "none" and stat.S_ISREG(st.st_mode) and (only is None or r in only) and (mode == "head" or st.st_nlink == 1):
+                    results[r] = _read_member(dfd, e.name, st, mode)
+            for name, r, lst in subdirs:
+                try:
+                    cfd = _openat(name, _DIR_FLAGS, dir_fd=dfd)
+                except Exception:              # swapped for a symlink / removed / permission changed => unknown state
+                    errors[0] += 1
+                    continue
+                try:
+                    cst = os.fstat(cfd)
+                    if not stat.S_ISDIR(cst.st_mode) or (cst.st_dev, cst.st_ino) != (lst.st_dev, lst.st_ino):
+                        errors[0] += 1
+                        continue
+                    scan(cfd, r, depth + 1)
+                finally:
+                    os.close(cfd)
+        scan(rfd, "", 0)
+    finally:
+        os.close(rfd)
+    return entries, errors[0], results
 
 
 def walk_strict(root: Path) -> tuple:
-    """Iterative walk that NEVER silently skips: returns (entries[(rel, lstat)], error_count). Any listing/stat failure increments the error count."""
-    entries, errors, stack = [], 0, [""]
-    try:
-        st = os.lstat(root)
-        if not stat.S_ISDIR(st.st_mode):
-            return entries, 1
-    except Exception:
-        return entries, 1
-    while stack:
-        rel = stack.pop()
-        try:
-            with _scandir(Path(root) / rel if rel else root) as it:
-                children = list(it)
-        except Exception:                      # unknown state is unsafe state: any failure (not only OSError) counts
-            errors += 1
-            continue
-        for e in children:
-            r = f"{rel}/{e.name}" if rel else e.name
-            try:
-                st = e.stat(follow_symlinks=False)
-            except Exception:
-                errors += 1
-                continue
-            entries.append((r, st))
-            if stat.S_ISDIR(st.st_mode):
-                stack.append(r)
+    """Descriptor-relative walk that NEVER silently skips: returns (entries[(rel, lstat)], error_count). Any listing/stat/open failure increments the count."""
+    entries, errors, _ = _walk(root)
     return entries, errors
 
 
@@ -420,25 +743,10 @@ def stat_ok(st, *, allow_root: bool = False) -> bool:
     return bool(uid_ok and not (st.st_mode & 0o022) and not (st.st_mode & (stat.S_ISUID | stat.S_ISGID)))
 
 
-def _hash_fd(path: Path) -> tuple:
-    """(sha256, size) of a regular file opened without following symlinks or blocking; raises OSError on anything unusual."""
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    try:
-        st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_size > MAX_HASHED_BYTES:
-            raise OSError("not a single-link regular file within bounds")
-        h = hashlib.sha256()
-        with os.fdopen(fd, "rb", closefd=False) as f:
-            h.update(f.read(MAX_HASHED_BYTES + 1))
-        return h.hexdigest(), st.st_size
-    finally:
-        os.close(fd)
-
-
 # =============================================================================== code manifest
 def build_code_manifest(code_root: Path) -> dict:
-    """Reads the tree strictly and returns {'v':1,'files':{rel:{'sha256','size'}}}. Raises on any anomaly (symlink, special file, hardlink, error)."""
-    entries, errors = walk_strict(Path(code_root))
+    """Reads the tree strictly (descriptor-relative) and returns {'v':1,'files':{rel:{'sha256','size'}}}. Raises on any anomaly (symlink, special file, hardlink, error)."""
+    entries, errors, hashed = _walk(Path(code_root), "hash")
     if errors:
         raise OSError("traversal errors; refusing to build a manifest")
     files = {}
@@ -448,9 +756,17 @@ def build_code_manifest(code_root: Path) -> dict:
             continue
         if k != "file" or st.st_nlink != 1:
             raise OSError("anomalous filesystem object; refusing to build a manifest")
-        sha, size = _hash_fd(Path(code_root) / rel)
+        if hashed.get(rel) is None:
+            raise OSError("a member could not be hashed; refusing to build a manifest")
+        sha, size = hashed[rel]
         files[rel] = {"sha256": sha, "size": size}
     return {"v": 1, "files": dict(sorted(files.items()))}
+
+
+def canonical_manifest_bytes(m: dict) -> bytes:
+    """The ONE canonical serialization of a manifest: sorted keys, indent 1, exactly one trailing newline. The pin is the SHA-256 of THESE bytes, which are also
+    exactly the bytes a shell redirect of `build-manifest` stdout produces."""
+    return (json.dumps(m, sort_keys=True, indent=1) + "\n").encode()
 
 
 def _strict_loads(text: str):
@@ -500,10 +816,10 @@ def load_code_manifest(path, pinned_sha256) -> tuple:
 
 def check_code_root(code_root, manifest) -> tuple:
     """Returns (status, detail). FAIL_CLOSED if the tree cannot be completely and safely read; FAIL if it differs from the manifest."""
-    entries, errors = walk_strict(Path(code_root))
+    wanted = set(manifest["files"])
+    entries, errors, hashed = _walk(Path(code_root), "hash", only=wanted)
     if errors:
         return FAIL_CLOSED, f"{errors} traversal error(s); the complete tree could not be established"
-    wanted = set(manifest["files"])
     all_parents = set()
     for r in wanted:
         p = Path(r).parent
@@ -534,11 +850,10 @@ def check_code_root(code_root, manifest) -> tuple:
             continue
         if not stat_ok(st, allow_root=True):
             badperm += 1
-        try:
-            sha, size = _hash_fd(Path(code_root) / rel)
-        except OSError:
+        if hashed.get(rel) is None:
             unreadable += 1
             continue
+        sha, size = hashed[rel]
         if sha != manifest["files"][rel]["sha256"] or size != manifest["files"][rel]["size"]:
             mismatch += 1
     missing = len(wanted - seen)
@@ -551,7 +866,7 @@ def check_code_root(code_root, manifest) -> tuple:
 
 
 def check_role_state(role: str, role_state_dir) -> tuple:
-    entries, errors = walk_strict(Path(role_state_dir))
+    entries, errors, heads = _walk(Path(role_state_dir), "head")
     if errors:
         return FAIL_CLOSED, f"{errors} traversal error(s); the complete state could not be established"
     odd = [k for k in (_kind(st) for _, st in entries) if k not in ("file", "dir")]
@@ -564,17 +879,11 @@ def check_role_state(role: str, role_state_dir) -> tuple:
         n = os.path.basename(rel).lower()
         hit = any(re.search(p, n) for p in OWNER_KEY_PATTERNS) or any(re.search(p, n) for p in FORBIDDEN_BY_ROLE[role])
         if not hit:
-            try:
-                fd = os.open(Path(role_state_dir) / rel, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-                try:
-                    if not stat.S_ISREG(os.fstat(fd).st_mode):
-                        raise OSError("not regular")
-                    head = os.read(fd, 256)
-                finally:
-                    os.close(fd)
-                hit = any(m in head for m in KEY_HEADER_MARKERS)
-            except OSError:
+            head = heads.get(rel)
+            if head is None:
                 unreadable += 1
+            else:
+                hit = any(m in head for m in KEY_HEADER_MARKERS)
         bad += 1 if hit else 0
     if unreadable:
         return FAIL_CLOSED, f"{unreadable} role-state file(s) could not be read"
@@ -609,10 +918,72 @@ def _fc(detail):
     return _res(FAIL_CLOSED, detail)
 
 
+_CONFUSABLE_SCRIPTS = ("CYRILLIC", "GREEK", "ARMENIAN", "CHEROKEE", "COPTIC")
+
+
 def canon_volume_name(s: str) -> str:
-    """Case-insensitive, NFC-normalized, collision-suffix-aware ('Name 1' == 'Name'). Display labels only; UUIDs are the stable identifier."""
-    s = unicodedata.normalize("NFC", str(s)).casefold().strip()
-    return re.sub(r"\s+\d+$", "", s)
+    """Comparison form of a volume LABEL: NFKC (folds full-width and compatibility forms, NBSP -> space), format/control characters (zero-width space/joiner, BOM,
+    bidi marks, TAB/LF...) REMOVED, case-folded, whitespace collapsed and trimmed, and a trailing macOS collision suffix (' 2', ' (2)', '-2') removed. This is NOT
+    a confusables mapper: a lookalike from another script is not folded -- `suspicious_label` flags those instead. Labels are advisory; UUIDs are the identifier."""
+    s = unicodedata.normalize("NFKC", str(s))
+    s = "".join(c for c in s if unicodedata.category(c) not in ("Cf", "Cc"))
+    s = unicodedata.normalize("NFKC", s.casefold())
+    s = re.sub(r"\s+", " ", s).strip()
+    return re.sub(r"(?: \d+| \(\d+\)|-\d+)$", "", s)
+
+
+def suspicious_label(s: str) -> bool:
+    """True when a label cannot be compared reliably: it contains a script that has Latin lookalikes (Cyrillic, Greek, ...), or a control/format character. Such an
+    OBSERVED label makes the volume check FAIL_CLOSED rather than being silently non-matching."""
+    for c in str(s):
+        if unicodedata.category(c) in ("Cf", "Cc"):
+            return True
+        if c.isalpha() and any(unicodedata.name(c, "").startswith(sc) for sc in _CONFUSABLE_SCRIPTS):
+            return True
+    return False
+
+
+def validate_deny_config(deny_paths, deny_volumes, deny_volume_uuids, home) -> tuple:
+    """Returns (cfg|None, problem|None). cfg = {'paths': [...], 'names': set, 'uuids': set, 'label_only': bool}. Anything malformed, empty, duplicated or ambiguous
+    is a PROBLEM (=> FAIL_CLOSED): a typo'd or empty entry must not silently match nothing. Problems are reported as categories only (never the value)."""
+    def as_list(x, what):
+        if x is None:
+            return []
+        if isinstance(x, (str, bytes)) or not isinstance(x, (list, tuple)):
+            raise ValueError(f"{what} must be a list")
+        return list(x)
+    try:
+        paths, labels, uuids = as_list(deny_paths, "deny paths"), as_list(deny_volumes, "deny volumes"), as_list(deny_volume_uuids, "deny volume UUIDs")
+    except ValueError as e:
+        return None, str(e)
+    norm = []
+    for p in paths:
+        n = normalize_deny_path(p, home)
+        if n is None:
+            return None, "a deny path is not an absolute canonical path (relative, '..', unresolved '~' or empty)"
+        norm.append(n)
+    if len(set(norm)) != len(norm):
+        return None, "duplicate deny path"
+    names = []
+    for v in labels:
+        if not isinstance(v, str) or not v.strip():
+            return None, "a deny volume label is empty or not text"
+        if suspicious_label(v) or v != v.strip():
+            return None, "a deny volume label contains control/format characters, confusable-script letters or surrounding whitespace (use the volume UUID)"
+        c = canon_volume_name(v)
+        if not c:
+            return None, "a deny volume label is empty after normalization"
+        names.append(c)
+    if len(set(names)) != len(names):
+        return None, "duplicate deny volume label (after normalization)"
+    ids = []
+    for u in uuids:
+        if not isinstance(u, str) or not UUID_RE.match(u):
+            return None, "a deny volume UUID is empty or not a well-formed UUID"
+        ids.append(u.casefold())
+    if len(set(ids)) != len(ids):
+        return None, "duplicate deny volume UUID"
+    return {"paths": norm, "names": set(names), "uuids": set(ids), "label_only": bool(names) and not ids}, None
 
 
 def normalize_deny_path(p, home) -> str | None:
@@ -638,10 +1009,10 @@ def _sum(rec: dict) -> str:
     return hashlib.sha256(_canon({k: v for k, v in rec.items() if k != "sum"})).hexdigest()
 
 
-def _read_state_file(p: Path) -> str:
-    """Race-safe read: open without following symlinks or blocking, then check the OPEN descriptor (regular, single link, our owner, not group/other
-    writable)."""
-    fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+def _read_state_file(p, dir_fd: int | None = None) -> str:
+    """Race-safe read: open without following symlinks or blocking (relative to the already-open, locked interlock directory when `dir_fd` is given), then check
+    the OPEN descriptor (regular, single link, our owner, not group/other writable)."""
+    fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
     try:
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode):
@@ -654,6 +1025,29 @@ def _read_state_file(p: Path) -> str:
             return f.read(MAX_HASHED_BYTES).decode("utf-8")
     finally:
         os.close(fd)
+
+
+def _lock_dir(d: Path, *, exclusive: bool, timeout: float | None = None) -> int:
+    """Advisory flock() on the interlock DIRECTORY itself (no extra file is created, so the exact-file-set check is unaffected). Returns the held descriptor; the
+    caller closes it. Failure to obtain the lock within the timeout, or any lock error, raises PermissionError (=> fail closed). The kernel releases the lock when
+    the holding process dies, so there is no stale-lock state to clean up. The lock coordinates cooperating writers; it does not stop a same-user process that
+    ignores it."""
+    timeout = LOCK_TIMEOUT if timeout is None else timeout
+    try:
+        fd = os.open(d, _DIR_FLAGS)
+    except OSError as e:
+        raise PermissionError("interlock directory cannot be opened for locking") from e
+    op = (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(fd, op)
+            return fd
+        except OSError as e:
+            if e.errno not in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EINTR) or time.monotonic() >= deadline:
+                os.close(fd)
+                raise PermissionError("interlock lock not acquired (another writer is active, or locking is unsupported here)") from e
+            time.sleep(0.02)
 
 
 def init_state(state_dir: Path) -> str:
@@ -671,14 +1065,28 @@ def init_state(state_dir: Path) -> str:
     return env_id
 
 
-def verify_state(state_dir) -> tuple:
-    """Returns (problems, receipts). ANY problem => the caller must treat the interlock as unverifiable (FAIL_CLOSED)."""
-    problems, recs = [], []
+def verify_state(state_dir, *, _locked: bool = False, _dfd: int | None = None) -> tuple:
+    """Returns (problems, receipts). ANY problem => the caller must treat the interlock as unverifiable (FAIL_CLOSED). Takes a SHARED lock on the directory (so it
+    never observes a half-finished append); failure to obtain it is itself a problem. `_locked` is for the writer that already holds the exclusive lock."""
     if state_dir is None:
-        return ["state directory not supplied"], recs
-    d = Path(state_dir)
+        return ["state directory not supplied"], []
+    if _locked:
+        return _verify_state(_dfd)
     try:
-        st = os.lstat(d)
+        fd = _lock_dir(Path(state_dir), exclusive=False)
+    except PermissionError:
+        return ["interlock lock not acquired (a writer is active, or the directory is missing or unusable; run `init` first)"], []
+    try:
+        return _verify_state(fd)
+    finally:
+        os.close(fd)
+
+
+def _verify_state(dfd: int) -> tuple:
+    """Verifies the interlock through the OPEN directory descriptor only (no pathname is re-resolved after the directory was opened O_NOFOLLOW and locked)."""
+    problems, recs = [], []
+    try:
+        st = os.fstat(dfd)
     except OSError:
         return ["state directory missing or unreadable (run `init` first)"], recs
     if not stat.S_ISDIR(st.st_mode):
@@ -686,16 +1094,16 @@ def verify_state(state_dir) -> tuple:
     if not stat_ok(st):
         return ["state directory has an unsafe owner or mode (must be owned by the current user and not group/other-writable)"], recs
     try:
-        names = set(os.listdir(d))
+        names = set(os.listdir(dfd))
     except OSError:
         return ["state directory cannot be listed"], recs
     if names != STATE_FILES:
         return [f"state directory must contain exactly the interlock files ({len(names - STATE_FILES)} unexpected, {len(STATE_FILES - names)} missing; "
                 f"a stale or planted temporary file also fails here)"], recs
     try:
-        init = _strict_loads(_read_state_file(d / "INIT.json"))
-        head = _strict_loads(_read_state_file(d / "HEAD.json"))
-        raw = _read_state_file(d / "receipts.jsonl")
+        init = _strict_loads(_read_state_file("INIT.json", dfd))
+        head = _strict_loads(_read_state_file("HEAD.json", dfd))
+        raw = _read_state_file("receipts.jsonl", dfd)
     except Exception as e:
         return [f"INIT/HEAD/receipts unreadable, unsafe or malformed ({type(e).__name__})"], recs
     if set(init) != {"v", "env_id"} or init.get("v") != 2 or not ENV_ID_RE.match(str(init.get("env_id"))):
@@ -738,33 +1146,41 @@ def verify_state(state_dir) -> tuple:
 
 
 def append_receipt(state_dir: Path, role: str, boot_id: str) -> dict:
-    problems, recs = verify_state(state_dir)
-    if problems:
-        raise PermissionError("interlock state unverifiable: " + "; ".join(problems))
-    if role not in ROLES or not UUID_RE.match(boot_id or ""):
-        raise ValueError("role/boot id invalid")
+    """Serialized append. The whole verify -> append -> HEAD-replace sequence runs under an EXCLUSIVE lock on the interlock directory, so concurrent cooperating
+    writers cannot interleave and corrupt the chain; a writer that cannot get the lock fails closed (PermissionError). CRASH BEHAVIOUR: if the process dies between the
+    receipt append and the HEAD replace, receipts and HEAD disagree and every later verification FAILS CLOSED until the owner re-initializes a new interlock directory
+    (history is advisory and is not recovered automatically). A stale lock cannot exist: the kernel drops it with the process."""
     d = Path(state_dir)
-    env_id = _strict_loads((d / "INIT.json").read_text())["env_id"]
-    rec = {"v": 2, "env_id": env_id, "seq": len(recs) + 1, "role": role, "boot": boot_id, "prev": recs[-1]["sum"] if recs else ZERO}
-    rec["sum"] = _sum(rec)
-    fd = os.open(d / "receipts.jsonl", os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    lock = _lock_dir(d, exclusive=True)
     try:
-        st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or not stat_ok(st):
-            raise PermissionError("receipts file is not a safe regular file")
-        os.write(fd, (json.dumps(rec, sort_keys=True, separators=(",", ":")) + "\n").encode())
-        os.fsync(fd)
+        problems, recs = verify_state(state_dir, _locked=True, _dfd=lock)
+        if problems:
+            raise PermissionError("interlock state unverifiable: " + "; ".join(problems))
+        if role not in ROLES or not UUID_RE.match(boot_id or ""):
+            raise ValueError("role/boot id invalid")
+        env_id = _strict_loads(_read_state_file("INIT.json", lock))["env_id"]
+        rec = {"v": 2, "env_id": env_id, "seq": len(recs) + 1, "role": role, "boot": boot_id, "prev": recs[-1]["sum"] if recs else ZERO}
+        rec["sum"] = _sum(rec)
+        fd = os.open("receipts.jsonl", os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=lock)
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or not stat_ok(st):
+                raise PermissionError("receipts file is not a safe regular file")
+            os.write(fd, (json.dumps(rec, sort_keys=True, separators=(",", ":")) + "\n").encode())
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        tmp = f".HEAD.{secrets.token_hex(8)}.tmp"
+        fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600, dir_fd=lock)        # exclusive create; never follows a planted symlink
+        try:
+            os.write(fd, json.dumps({"v": 2, "env_id": env_id, "seq": rec["seq"], "sum": rec["sum"]}, sort_keys=True).encode())
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp, "HEAD.json", src_dir_fd=lock, dst_dir_fd=lock)                         # same-directory atomic replace
+        return rec
     finally:
-        os.close(fd)
-    tmp = d / f".HEAD.{secrets.token_hex(8)}.tmp"
-    fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)        # exclusive create; never follows a planted symlink
-    try:
-        os.write(fd, json.dumps({"v": 2, "env_id": env_id, "seq": rec["seq"], "sum": rec["sum"]}, sort_keys=True).encode())
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    os.replace(tmp, d / "HEAD.json")                                                       # same-directory atomic replace
-    return rec
+        os.close(lock)
 
 
 # =============================================================================== the gate
@@ -792,23 +1208,26 @@ def evaluate(role, *, host: dict, state_dir=None, role_state_dir=None, code_root
     if role not in ROLES:
         raise ValueError(role)
     r = {}
-    deny_paths, deny_volumes, deny_volume_uuids = list(deny_paths or []), list(deny_volumes or []), list(deny_volume_uuids or [])
     # -- telemetry sources (mandatory)
     names, why_names = _src(host, "processes", parse_processes)
     cmds, why_cmds = _src(host, "cmdlines", parse_cmdlines)
     env, why_env = _src(host, "env", parse_env)
-    home_v, why_home = _src(host, "home")
-    home = Path(home_v) if home_v is not None else None
+    home, why_home = _src(host, "home", parse_home)
     ifs, why_if = _src(host, "ifconfig", parse_interfaces)
-    r4, why_r4 = _src(host, "routes4", parse_routes)
-    r6, why_r6 = _src(host, "routes6", parse_routes)
+    ifn, why_ifn = _src(host, "ifnames", parse_ifnames)
+    if ifs is not None and why_ifn is None and [i["name"] for i in ifs] != ifn:
+        ifs, why_if = None, "MALFORMED"                                    # `ifconfig -a` lists different interfaces than `ifconfig -l`: truncated or tampered
+    elif ifs is not None and why_ifn is not None:
+        ifs, why_if = None, "UNVERIFIED"                                   # cannot cross-check the interface listing
+    r4, why_r4 = _src(host, "routes4", parse_routes4)
+    r6, why_r6 = _src(host, "routes6", parse_routes6)
     socks, why_sock = _src(host, "sockets", parse_sockets)
     boot, why_boot = _src(host, "boot_id")
     boot_ok = isinstance(boot, str) and bool(UUID_RE.match(boot))
     need_vol = bool(deny_volumes or deny_volume_uuids)
-    vols, why_vols = _src(host, "volumes") if need_vol else (None, None)
-    disks, why_disks = _src(host, "disks") if need_vol else (None, None)
-    failed = {k: w for k, w in (("processes", why_names), ("cmdlines", why_cmds), ("env", why_env), ("home", why_home), ("ifconfig", why_if),
+    vols, why_vols = _src(host, "volumes", parse_volumes) if need_vol else (None, None)
+    disks, why_disks = _src(host, "disks", parse_disk_records) if need_vol else (None, None)
+    failed = {k: w for k, w in (("processes", why_names), ("cmdlines", why_cmds), ("env", why_env), ("home", why_home), ("ifconfig", why_if), ("ifnames", why_ifn),
                                 ("routes4", why_r4), ("routes6", why_r6), ("sockets", why_sock), ("boot_id", why_boot)) if w}
     if not boot_ok and "boot_id" not in failed:
         failed["boot_id"] = "MALFORMED"
@@ -902,22 +1321,26 @@ def evaluate(role, *, host: dict, state_dir=None, role_state_dir=None, code_root
     if not (deny_paths or deny_volumes or deny_volume_uuids):
         r["other_role_storage_unavailable"] = _fc("no deny-listed path, volume or volume UUID supplied (the other role's storage must be named explicitly)")
     else:
-        norm = [normalize_deny_path(p, home) for p in deny_paths]
-        if any(n is None for n in norm):
-            r["other_role_storage_unavailable"] = _fc(f"{sum(n is None for n in norm)} deny path(s) are not absolute canonical paths (relative, '..' or unresolved '~')")
+        dcfg, dproblem = validate_deny_config(deny_paths, deny_volumes, deny_volume_uuids, home)
+        if dproblem:
+            r["other_role_storage_unavailable"] = _fc("malformed deny configuration: " + dproblem)
         elif need_vol and (vols is None or disks is None):
             r["other_role_storage_unavailable"] = _fc("volume telemetry unverified: " + unverified("volumes", "disks"))
         else:
-            present = sum(1 for n in norm if os.path.lexists(n))
+            present = sum(1 for n in dcfg["paths"] if os.path.lexists(n))
             if need_vol:
-                want_names = {canon_volume_name(v) for v in deny_volumes}
-                want_uuids = {u.casefold() for u in deny_volume_uuids}
-                seen_names = {canon_volume_name(v) for v in vols} | {canon_volume_name(d["name"]) for d in disks if d["name"]} | \
-                             {canon_volume_name(os.path.basename(d["mount"])) for d in disks if d["mount"]}
-                seen_uuids = {d["uuid"].casefold() for d in disks if d["uuid"]}
-                present += len(want_names & seen_names) + len(want_uuids & seen_uuids)
-            total = len(norm) + len(deny_volumes) + len(deny_volume_uuids)
-            r["other_role_storage_unavailable"] = _res(FAIL if present else PASS, f"{present} of {total} deny-listed path(s)/volume(s)/UUID(s) present, attached or mounted (advisory name/UUID evidence; NOT proof of physical disconnection)")
+                observed = list(vols) + [d["name"] for d in disks if d["name"]] + [os.path.basename(d["mount"]) for d in disks if d["mount"]]
+                if any(suspicious_label(o) for o in observed):
+                    r["other_role_storage_unavailable"] = _fc("an observed volume label contains confusable-script letters or control/format characters; labels cannot be compared reliably (use the volume UUID and physical detachment)")
+                    dcfg = None
+                else:
+                    seen_names = {canon_volume_name(o) for o in observed}
+                    seen_uuids = {d["uuid"].casefold() for d in disks if d["uuid"]}
+                    present += len(dcfg["names"] & seen_names) + len(dcfg["uuids"] & seen_uuids)
+            if dcfg is not None:
+                total = len(dcfg["paths"]) + len(dcfg["names"]) + len(dcfg["uuids"])
+                weak = " LABEL_ONLY: no volume UUID supplied, so volume matching rests on spoofable display labels (weaker, advisory)." if dcfg["label_only"] else ""
+                r["other_role_storage_unavailable"] = _res(FAIL if present else PASS, f"{present} of {total} deny-listed path(s)/volume(s)/UUID(s) present, attached or mounted (advisory name/UUID evidence; NOT proof of physical disconnection).{weak}")
     # -- role code root equals a hash-pinned manifest
     manifest, why_man = load_code_manifest(code_manifest, code_manifest_sha256)
     if code_root is None:
@@ -960,6 +1383,8 @@ def main(argv):
     ap.add_argument("--deny-volume-uuid", action="append", default=[])
     ap.add_argument("--workspace", action="append", default=[])
     ap.add_argument("--process-allowlist", type=Path)
+    ap.add_argument("--out", type=Path, help="build-manifest: write the canonical manifest bytes to this NEW file (exclusive create) instead of stdout")
+    ap.add_argument("--pin-out", type=Path, help="build-manifest: write the 64-hex pin followed by one newline to this NEW file")
     a = ap.parse_args(argv[1:])
     if a.cmd == "init":
         if not a.state_dir:
@@ -972,8 +1397,21 @@ def main(argv):
             m = build_code_manifest(a.code_root)
         except OSError as e:
             print("FAIL_CLOSED", e); return 1
-        txt = json.dumps(m, sort_keys=True, indent=1)
-        print(txt); print(f"# SHA-256 of the manifest bytes above (pin this out-of-band): {hashlib.sha256(txt.encode()).hexdigest()}", file=sys.stderr)
+        raw = canonical_manifest_bytes(m)
+        pin = hashlib.sha256(raw).hexdigest()
+        try:
+            for path, data in ((a.out, raw), (a.pin_out, (pin + "\n").encode())):
+                if path is not None:
+                    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+                    with os.fdopen(fd, "wb") as f:
+                        f.write(data)
+        except OSError as e:
+            print("FAIL_CLOSED cannot write output:", type(e).__name__); return 1
+        if a.out is None:
+            sys.stdout.buffer.write(raw); sys.stdout.buffer.flush()               # exactly the canonical bytes: `> M` yields a file whose SHA-256 is the pin
+            print(f"MANIFEST_SHA256 {pin}", file=sys.stderr)
+        else:
+            print(f"MANIFEST_SHA256 {pin}")
         return 0
     if not a.role:
         print("FAIL_CLOSED --role required"); return 1
@@ -983,10 +1421,14 @@ def main(argv):
             allow = [l.strip() for l in a.process_allowlist.read_text().splitlines() if l.strip()]
         except OSError:
             print("FAIL_CLOSED process allowlist unreadable"); return 1
-    host = collect_host()
-    res = evaluate(a.role, host=host, state_dir=a.state_dir, role_state_dir=a.role_state_dir, code_root=a.code_root, code_manifest=a.code_manifest,
-                   code_manifest_sha256=a.code_manifest_sha256, deny_paths=a.deny_path, deny_volumes=a.deny_volume, deny_volume_uuids=a.deny_volume_uuid,
-                   workspaces=a.workspace, process_allowlist=allow)
+    try:
+        host = collect_host()
+        res = evaluate(a.role, host=host, state_dir=a.state_dir, role_state_dir=a.role_state_dir, code_root=a.code_root, code_manifest=a.code_manifest,
+                       code_manifest_sha256=a.code_manifest_sha256, deny_paths=a.deny_path, deny_volumes=a.deny_volume, deny_volume_uuids=a.deny_volume_uuid,
+                       workspaces=a.workspace, process_allowlist=allow)
+    except Exception as e:                                         # a security gate never ends in a traceback: an unexpected failure is a refusal
+        print(f"FAIL_CLOSED internal error ({type(e).__name__}); the gate could not complete")
+        print("GATE_FAILS"); return 1
     for k, v in res.items():
         print(f"{v['status']:11} {k} -- {v['detail']}")
     ok = gate_passes(res)
