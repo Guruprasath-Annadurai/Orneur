@@ -320,17 +320,45 @@ def test_Q7_device_like_members_are_rejected_without_ever_being_opened(bundle, m
     assert any(f"not a regular file ({label})" in p for p in B.validate(b))
 
 
-def test_Q7_a_member_swapped_between_the_lstat_and_the_open_is_detected(bundle, monkeypatch, tmp_path):
+def test_Q7_a_member_swapped_for_a_symlink_between_the_lstat_and_the_open_is_refused_by_NOFOLLOW(bundle, monkeypatch, tmp_path):
+    """Deterministic on every filesystem (unlike an inode swap, whose detection depends on inode reuse): O_NOFOLLOW refuses a symlink that appears after the lstat."""
     b, cid, *_ = bundle
     target = str(b / cid / "SCREEN.enc"); other = tmp_path / "other.enc"; other.write_bytes((b / cid / "SCREEN.enc").read_bytes())
     real_open = os.open
 
     def swap_then_open(path, flags, *a, **k):
         if str(path) == target:
-            os.unlink(target); os.link(other, target); os.unlink(target); shutil.copy(other, target)         # replace the inode after the lstat
+            os.unlink(target); os.symlink(other, target)             # type change after the lstat
         return real_open(path, flags, *a, **k)
     monkeypatch.setattr(B.os, "open", swap_then_open)
+    assert any("SCREEN.enc" in p and ("symlink" in p or "unreadable" in p) for p in B.validate(b))
+
+
+def test_Q7_a_descriptor_whose_inode_differs_from_the_lstat_is_rejected(bundle, monkeypatch):
+    """Deterministic via mocked fstat (a real swap would not reliably change the inode: filesystems such as ext4 reuse freed inode numbers, so the inode
+    comparison is best-effort; O_NOFOLLOW, the regular-file and link-count checks and the manifest digests are the real guards)."""
+    b, cid, *_ = bundle
+    target = str(b / cid / "SCREEN.enc"); fds = set(); real_open, real_fstat = os.open, os.fstat
+
+    def open_rec(path, flags, *a, **k):
+        fd = real_open(path, flags, *a, **k)
+        if str(path) == target:
+            fds.add(fd)
+        return fd
+
+    def fstat_other_inode(fd):
+        st = real_fstat(fd)
+        if fd in fds:
+            vals = list(st); vals[1] = st.st_ino + 1                 # st_ino
+            return os.stat_result(tuple(vals))
+        return st
+    monkeypatch.setattr(B.os, "open", open_rec); monkeypatch.setattr(B.os, "fstat", fstat_other_inode)
     assert any("changed between check and open" in p for p in B.validate(b))
+
+
+def test_Q7_the_inode_comparison_is_documented_as_best_effort():
+    doc = " ".join(B.__doc__.split()).lower()
+    assert "best-effort" in doc and "reuses" in doc
 
 
 def test_Q7_stage_and_crypto_verify_inherit_the_special_file_rejection(bundle, tmp_path):

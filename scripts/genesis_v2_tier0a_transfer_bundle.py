@@ -13,6 +13,9 @@ Neither level is proof of authenticity of the generator: that comes from the sig
 
 Bundle layout:  MANIFEST.json  +  <corpus_id>/{SCREEN,QUALIFICATION_HOLDOUT,SEAL}.enc   (no other entries, no symlinks, no hardlinks)
 
+INODE COMPARISON IS BEST-EFFORT: the device/inode re-check after open can be defeated where a filesystem reuses a just-freed inode number (e.g. ext4); the
+real guards are O_NOFOLLOW, the regular-file and link-count checks, and the manifest digests (plus AEAD at Witness use time).
+
 HANDOFF / TOCTOU: `validate_and_stage` reads every file exactly once (O_NOFOLLOW, fstat on the open descriptor), validates THOSE bytes, and writes a read-only
 staged copy from the same in-memory bytes; import must read only from the staged copy. A writer who controls the staging directory (same host user/root)
 can still alter it afterwards -- this narrows the race, it does not defeat a privileged local attacker.
