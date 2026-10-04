@@ -136,7 +136,7 @@ def test_AUDIT8_cryptographic_verify_rejects_the_same_plaintext_payload(bundle):
     f.write_bytes(blob[:n + 4 + hl] + b"SYNTHETIC-TIER0A-this is plaintext, not ciphertext" * 3)
     _reseal(b)
     problems = B.cryptographic_verify(b, priv, digest)
-    assert any("SCREEN" in p and "cryptographic verification failed" in p for p in problems)
+    assert any("SCREEN" in p and B.VERIFICATION_FAILED in p for p in problems)            # typed verification failure for the plaintext-behind-a-valid-header split
 
 
 def test_AUDIT8_cryptographic_verify_passes_genuine_ciphertext_and_fails_wrong_key_or_digest(bundle):

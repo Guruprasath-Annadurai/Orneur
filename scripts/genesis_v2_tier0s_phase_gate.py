@@ -15,13 +15,18 @@ WHAT THIS IS NOT (read before relying on it):
   * NOT proof of network absence. The socket check sees only sockets that exist at this instant (TCP/UDP bound or connected to a non-loopback address); it
     does not establish that no process could communicate.
 
-FAIL-CLOSED RULE ("unknown state is unsafe state"): every security-relevant input must be supplied, every host query must succeed, and each result is put
-through a parser that RAISES on any shape it does not recognise. The parsers enforce the structural rules documented on them (newline termination, ASCII-only,
-exact column headers, plausibility floors, no data after a blank line, a terminating section where one exists). A rejected source is FAIL_CLOSED with its reason.
-This bounds what is accepted as well-formed; it does NOT prove that well-formed telemetry is complete or true (a source that deletes whole, well-formed rows, or a
-host that lies, is not detectable here). The gate passes only if every check is PASS.
+FAIL-CLOSED RULE ("unknown state is unsafe state"): every security-relevant input must be supplied, every host query must succeed, and the gate passes only if
+every check is PASS. TWO SEPARATE QUESTIONS ARE ANSWERED AND NEVER CONFLATED:
+  (1) STRUCTURAL VALIDITY. Each command output goes through a parser that RAISES on any shape it does not recognise (newline termination, ASCII-only, exact column
+      headers, no data after a blank line, terminated sections where one exists, loopback floors). A rejected source is FAIL_CLOSED with its reason. This shows only
+      that the received text is structurally well-formed and properly terminated. It does NOT prove that well-formed telemetry is complete or true.
+  (2) COMPLETENESS. Exit status 0 plus well-formed output does not establish it. macOS can return a REDUCED VIEW from its own trusted tools (observed: the Internet
+      socket section, neighbour routes and every hardware address vanish, with exit status 0, when the process lineage includes a non-Apple executable such as a
+      Homebrew or uv-managed Python). Completeness is therefore tested SEPARATELY, against sources the reduced view does not touch (see COMPLETENESS below). A view that
+      is structurally valid but whose completeness cannot be shown is STRUCTURALLY_VALID_BUT_COMPLETENESS_UNPROVEN and becomes FAIL_CLOSED with the sanitized reason
+      TELEMETRY_COMPLETENESS_UNPROVEN.
 
-ENFORCED (checked once, at start, by this code):  the sixteen checks returned by evaluate(); telemetry shape and plausibility; the hash-pinned role-code manifest;
+ENFORCED (checked once, at start, by this code):  the sixteen checks returned by evaluate(); telemetry shape and the completeness comparisons below; the hash-pinned role-code manifest;
 descriptor-relative tree traversal; deny-list configuration validity; the advisory interlock's hash chain and exact file set; serialized interlock appends.
 ADVISORY (forgeable by any same-user writer): the interlock log; volume matching by label (spoofable) or UUID (only as good as `diskutil`); the name/header scan
 of the role state (WEAK). PROCEDURAL (owner, not checked): cold boot, physical detachment, keeping the network off for the whole phase, out-of-band transcription
@@ -31,22 +36,42 @@ invisibility of the two roles, log hygiene, and anything involving a malicious o
 MANDATORY HOST TELEMETRY (each is a distinct source; an unavailable source is FAIL_CLOSED and reported with its reason):
   processes (`ps -axo comm=`), cmdlines (`ps -axo command=`), env (this process's environment, must be a str->str mapping; EMPTY is a legitimately verified
   value; it describes only the gate process), home (the user's home directory from the PASSWORD DATABASE for the effective UID -- never $HOME -- which must be an
-  existing, canonical, non-symlink directory owned by that user), ifconfig (`ifconfig -a`) cross-checked against ifnames (`ifconfig -l`), routes4/routes6
-  (`netstat -rn -f inet|inet6`), sockets (`netstat -an`), boot_id (`kern.bootsessionuuid`), and -- when any deny volume/UUID is supplied -- volumes (/Volumes,
+  existing, canonical, non-symlink directory owned by that user), ifconfig (`ifconfig -a`) cross-checked against ifnames (`ifconfig -l`) AND against the independent
+  inventories ifaddrs (libc getifaddrs) and ifindex (libc if_nameindex), routes4/routes6 (`netstat -rn -f inet|inet6`), sockets (`netstat -an`) compared with
+  pcbcounts (kernel PCB counters read before and after it), boot_id (`kern.bootsessionuuid`), and -- when any deny volume/UUID is supplied -- volumes (/Volumes,
   non-empty list of plain names) and disks (`diskutil list -plist`, validated records). Every tool is invoked by ABSOLUTE system path (/bin/ps, /sbin/ifconfig,
   /usr/sbin/netstat, /usr/sbin/sysctl, /usr/sbin/diskutil), never through PATH, in a clean locale/environment; the tool and its directories must be root-owned,
   not group/other-writable, and the tool a regular file. A verified-empty cmdline list is IMPOSSIBLE on a live system (it must contain launchd), so an empty or
   launchd-less cmdline set is treated as unavailable. Telemetry failure reasons are distinguished: UNAVAILABLE, PERMISSION_DENIED, UNSUPPORTED, MALFORMED.
-  WHAT THE PLAUSIBILITY FLOORS PROVE: ifconfig lists >= 2 interfaces including a loopback carrying 127/8 and exactly the names `ifconfig -l` reports; each route
-  table has its own family section, the exact column header and at least one loopback-interface row; the socket output begins and is sectioned by `Active ...`
-  headers, every examined section is followed by another section, and no row follows a blank line. They prove the output was not obviously truncated or cut
-  inside those structures. They do NOT prove that no row was removed from within a well-formed table, and exit status 0 is never treated as completeness.
+  WHAT THE STRUCTURAL CHECKS PROVE AND DO NOT PROVE: ifconfig lists >= 2 interfaces including a loopback carrying 127/8 and exactly the names `ifconfig -l` reports; each
+  route table has its own family section, the exact column header and at least one loopback-interface row; the socket output begins and is sectioned by `Active ...`
+  headers, every examined section is followed by another section, and no row follows a blank line. They show that the output was not obviously truncated or cut inside
+  those structures. They do NOT prove that no row was removed from within a well-formed table, and exit status 0 is never treated as completeness.
+
+COMPLETENESS (independent of the command parsers; every comparison source is mandatory, and a missing, malformed or implausible one is FAIL_CLOSED):
+  * interfaces: `ifconfig -a` must agree with libc getifaddrs() (read in-process through ctypes) and libc if_nameindex(): identical name sets, UP/LOOPBACK flags and IPv4/IPv6
+    address sets. In the reduced view both libc inventories were observed unfiltered. They are only PARTIALLY independent of ifconfig (the same kernel interface list).
+  * sockets: parsed TCP and raw/ICMP rows are compared with the kernel PCB counters net.inet.tcp.pcbcount and net.inet.raw.pcbcount, read BEFORE and AFTER the socket
+    query (the counters were observed unfiltered). Per class: rows >= max(1, floor(0.75 * lower counter)) and rows <= 2 * higher counter + 16. This detects removal of the
+    Internet section or of most TCP/raw rows. It does NOT detect removal of a few rows, and it says NOTHING about UDP: the kernel UDP counter equals the kernel pcblist
+    record count, but `netstat` omits some UDP PCBs by design and the omitted number is not stable, so no trustworthy UDP relationship exists. UDP rows are therefore
+    observation-only (they can add a failure, never a pass), UDP completeness is unproven and UDP absence is not claimed.
+  * routes: NO independent route source exists (the raw kernel route dump is filtered identically to `netstat -rn`), so the route table's completeness is NEVER claimed.
+    The network verdict rests on the interface addresses/status; the route table can only add a failure, and it must contain a route for every UP, addressed,
+    non-loopback interface of the independent inventory (otherwise COMPLETENESS is unproven).
+  * reduced-view signature: any `ether` line equal to 02:00:00:00:00:00 (the value substituted for every hardware address in the reduced view; observed 12 of 12 reduced,
+    0 of 12 full) is an INDICATOR, not proof. A host that really assigns that value fails closed, which is safe. When this signature, or a socket-counter inconsistency, is
+    present, ifconfig, routes4, routes6 and sockets are ALL treated as TELEMETRY_COMPLETENESS_UNPROVEN, because they share the filtering layer. A violation still
+    visible in a reduced view remains a violation (FAIL).
+  * RUN THE GATE FROM AN UNFILTERED LINEAGE (for example the Apple-signed /usr/bin/python3 started from Terminal). Which ancestor property triggers the reduced view is NOT
+    identified; every Apple-signed interpreter tested gave the full view and every non-Apple one tested (Homebrew node, uv, uv-managed Python, including their Apple-signed
+    children) gave the reduced view. The gate does not guess the lineage; it tests the symptoms above.
 
 MANDATORY CONFIGURATION: interlock state dir (--state-dir), the role's own state dir to scan (--role-state-dir), role code root (--code-root), a code manifest
 (--code-manifest) AND its SHA-256 pinned out-of-band (--code-manifest-sha256), and at least one deny-listed path / volume / volume UUID naming the other
 role's storage. Missing configuration is FAIL_CLOSED. Deny configuration is validated: UUIDs must be well-formed and non-duplicated, labels non-empty without
 control/format characters or confusable-script letters, paths absolute and canonical. Volume matching by label alone is reported as LABEL_ONLY (weaker, advisory);
-prefer --deny-volume-uuid. A well-formed UUID that is simply wrong matches nothing and cannot be detected.
+prefer --deny-volume-uuid. The check is named configured_other_role_storage_not_detected and is ADVISORY: PASS means only that the CONFIGURED identifiers were not observed. A well-formed UUID that is simply wrong matches nothing and cannot be detected.
 
 PROCESS ABSENCE != EXPOSURE ABSENCE: a stopped sync/agent process does not satisfy the residual-exposure checks. Those look (existence and non-emptiness
 only, never contents or names) at known synchronized paths and known agent transcript/index/session/recovery stores under the TRUSTED home. NO_RESIDUAL_EXPOSURE_DETECTED
@@ -76,6 +101,8 @@ CLI:  init  --state-dir D
       check --role forge|witness --state-dir D --role-state-dir R --code-root C --code-manifest M --code-manifest-sha256 H
             --deny-path P [--deny-path P ...] [--deny-volume NAME ...] [--deny-volume-uuid UUID ...] [--workspace W ...] [--process-allowlist FILE]
       begin (same as check; on GATE_PASSES appends an interlock entry)
+EXIT CODES: 0 = GATE_PASSES; 1 = GATE_FAILS or an EXPECTED operational failure (printed as FAIL_CLOSED ..., no traceback); 3 = an unexpected internal defect (the traceback is
+on stderr, the refusal on stdout). An unexpected exception is never swallowed or reported as an ordinary gate failure.
 """
 from __future__ import annotations
 
@@ -90,6 +117,7 @@ import plistlib
 import pwd
 import re
 import secrets
+import socket
 import stat
 import subprocess
 import sys
@@ -112,6 +140,16 @@ MAX_WALK_DEPTH = 64
 SYSTEM_TOOLS = {"ps": "/bin/ps", "ifconfig": "/sbin/ifconfig", "netstat": "/usr/sbin/netstat", "sysctl": "/usr/sbin/sysctl", "diskutil": "/usr/sbin/diskutil"}
 TOOL_ENV = {"LC_ALL": "C", "LANG": "C", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}      # clean, locale-stable environment for every host query
 _euid = os.geteuid                      # indirection so tests can simulate a different expected user
+COMPLETENESS = "TELEMETRY_COMPLETENESS_UNPROVEN"     # sanitized reason: the output is structurally valid but cannot be shown complete => FAIL_CLOSED
+MAC_REDACTED = "02:00:00:00:00:00"                   # value macOS substitutes for every hardware address in the reduced telemetry view (an INDICATOR, not proof)
+PCB_COUNTERS = {"tcp": "net.inet.tcp.pcbcount", "raw": "net.inet.raw.pcbcount"}      # NO udp: see check_socket_plausibility
+PCB_MAX = 10 ** 7                                    # a larger counter is implausible
+# Per-class plausibility floors for "parsed socket rows >= ratio * counter": measured on macOS 27.0.1 in the UNFILTERED view as rows/counter = tcp 1.01-1.06 (rows
+# slightly EXCEED the counter) and raw/ICMP 1.00. The floors sit well below those measurements; a host measuring lower FAILS CLOSED (availability), never open.
+# UDP is deliberately EXCLUDED: the kernel UDP counter equals the kernel pcblist record count, but `netstat` omits some UDP PCBs by design and the omitted number is
+# not stable (rows/counter measured 0.77, then 0.35 during a burst of 102 PCBs vs 36 rows), so NO trustworthy UDP relationship exists and none is invented.
+PCB_MIN_RATIO = {"tcp": 0.75, "raw": 0.75}
+IFF_UP, IFF_LOOPBACK = 0x1, 0x8
 
 # ---- runtime / control-plane detection (NOT exhaustive; names, sockets, install dirs, env)
 RUNTIME_TOKENS = {"docker", "dockerd", "containerd", "colima", "lima", "limactl", "podman", "gvproxy", "nerdctl", "buildkitd", "vfkit", "krunkit",
@@ -267,6 +305,66 @@ def parse_volumes(vols) -> list:
     return vols
 
 
+def read_ifaddrs() -> list:
+    """INDEPENDENT interface inventory straight from libc getifaddrs() (macOS/BSD sockaddr layout), not from the `ifconfig` tool. Returns
+    [{'name', 'flags', 'v4': [str], 'v6': [str]}]. Observed unfiltered in the lineage where `netstat`/`ifconfig` return a reduced view. The libc handle is the
+    already-loaded process image (ctypes.CDLL(None)); no library path is searched. Any surprise raises TelemetryError."""
+    if sys.platform != "darwin":
+        raise TelemetryError("UNSUPPORTED", "getifaddrs layout is implemented for macOS only")
+    import ctypes
+
+    class _Ifa(ctypes.Structure):
+        pass
+    _Ifa._fields_ = [("next", ctypes.POINTER(_Ifa)), ("name", ctypes.c_char_p), ("flags", ctypes.c_uint), ("addr", ctypes.c_void_p), ("mask", ctypes.c_void_p),
+                     ("dst", ctypes.c_void_p), ("data", ctypes.c_void_p)]
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.getifaddrs.argtypes = [ctypes.POINTER(ctypes.POINTER(_Ifa))]
+    libc.getifaddrs.restype = ctypes.c_int
+    libc.freeifaddrs.argtypes = [ctypes.POINTER(_Ifa)]
+    head = ctypes.POINTER(_Ifa)()
+    if libc.getifaddrs(ctypes.byref(head)) != 0:
+        raise TelemetryError("UNAVAILABLE", "getifaddrs failed")
+    out, byname, node, n = [], {}, head, 0
+    try:
+        while node:
+            n += 1
+            if n > 100000:
+                raise TelemetryError("MALFORMED", "getifaddrs list does not terminate")
+            e = node.contents
+            if not e.name:
+                raise TelemetryError("MALFORMED", "interface without a name")
+            rec = byname.get(e.name)
+            if rec is None:
+                rec = byname[e.name] = {"name": e.name.decode("ascii", "strict"), "flags": int(e.flags), "v4": [], "v6": []}
+                out.append(rec)
+            if e.addr:
+                sa_len, fam = ctypes.string_at(e.addr, 2)
+                if fam == 2 and sa_len >= 8:                                         # AF_INET
+                    rec["v4"].append(str(ipaddress.IPv4Address(ctypes.string_at(e.addr + 4, 4))))
+                elif fam == 30 and sa_len >= 24:                                     # AF_INET6
+                    rec["v6"].append(str(ipaddress.IPv6Address(ctypes.string_at(e.addr + 8, 16))))
+            node = e.next
+    except UnicodeDecodeError:
+        raise TelemetryError("MALFORMED", "interface name is not ASCII") from None
+    finally:
+        libc.freeifaddrs(head)
+    return out
+
+
+def _read_counters() -> dict:
+    """The kernel PCB counters (sysctl, read by the fixed absolute tool). Digits only, bounded; anything else raises."""
+    out = {}
+    for cls, key in PCB_COUNTERS.items():
+        status, txt = _run(["sysctl", "-n", key])
+        if status != "OK":
+            raise TelemetryError(status, "pcb counter not readable")
+        t = txt.strip()
+        if not re.fullmatch(r"[0-9]{1,8}", t):
+            raise TelemetryError("MALFORMED", "pcb counter is not a bounded non-negative integer")
+        out[cls] = int(t)
+    return out
+
+
 def collect_host() -> dict:
     """Raw host telemetry. A source that failed has value None and a reason in host['telemetry'][source]; evaluate() turns that into FAIL_CLOSED.
     The home directory comes from the password database for the effective UID, NEVER from $HOME (which any same-user process can set)."""
@@ -288,9 +386,23 @@ def collect_host() -> dict:
     get("cmdlines", ["ps", "-axo", "command="], lambda o: o.splitlines())
     get("ifconfig", ["ifconfig", "-a"])
     get("ifnames", ["ifconfig", "-l"])
+    for key, fn in (("ifaddrs", read_ifaddrs), ("ifindex", lambda: [name for _, name in socket.if_nameindex()])):        # independent of the ifconfig tool
+        try:
+            host[key], tele[key] = fn(), "OK"
+        except TelemetryError as e:
+            host[key], tele[key] = None, e.reason
+        except Exception:
+            host[key], tele[key] = None, "UNAVAILABLE"
     get("routes4", ["netstat", "-rn", "-f", "inet"])
     get("routes6", ["netstat", "-rn", "-f", "inet6"])
-    get("sockets", ["netstat", "-an"])
+    try:                                                                              # counters BRACKET the socket query so natural churn cannot cause a mismatch
+        before = _read_counters()
+        get("sockets", ["netstat", "-an"])
+        host["pcbcounts"], tele["pcbcounts"] = {"before": before, "after": _read_counters()}, "OK"
+    except TelemetryError as e:
+        host["pcbcounts"], tele["pcbcounts"] = None, e.reason
+        if "sockets" not in host:
+            get("sockets", ["netstat", "-an"])
     get("boot_id", ["sysctl", "-n", "kern.bootsessionuuid"], lambda o: o.strip())
     get("disks", ["diskutil", "list", "-plist"], _parse_disks)
     try:
@@ -365,7 +477,7 @@ def parse_interfaces(text):
             m = _IF_HDR.match(raw)
             if not m:
                 raise TelemetryError("MALFORMED", "interface header")
-            cur = {"name": m.group(1), "up": "UP" in m.group(3).split(","), "loopback_flag": "LOOPBACK" in m.group(3).split(","), "status": None, "v4": [], "v6": []}
+            cur = {"name": m.group(1), "up": "UP" in m.group(3).split(","), "loopback_flag": "LOOPBACK" in m.group(3).split(","), "status": None, "v4": [], "v6": [], "ether": []}
             out.append(cur)
             continue
         if cur is None:
@@ -397,6 +509,8 @@ def parse_interfaces(text):
         elif tok.startswith("options=") or tok in _IF_HARMLESS:
             if "\t" in raw.lstrip() or ": flags=" in raw:                      # a joined line (its successor starts with TAB, or is a header) must not swallow an address
                 raise TelemetryError("MALFORMED", "interface line carries embedded line-joining artifacts")
+            if tok == "ether":
+                cur["ether"].append(raw.split()[1].lower() if len(raw.split()) > 1 else "")
             continue
         else:
             raise TelemetryError("MALFORMED", "unrecognized interface line")
@@ -459,6 +573,120 @@ def interface_violations(ifs: list) -> list:
         if has_addr_issue or i["status"] == "active":
             bad.append(i)
     return bad
+
+
+# =============================================================================== telemetry COMPLETENESS (independent of the command parsers)
+# Parsers prove only that output is structurally well-formed and properly terminated. A reduced-but-well-formed view (observed on macOS when the process
+# lineage includes a non-Apple executable: the Internet socket section, neighbour routes and hardware addresses vanish while every command exits 0) is
+# "STRUCTURALLY_VALID_BUT_COMPLETENESS_UNPROVEN". The functions below compare that view with sources that the filter does not touch. Any discrepancy, and any
+# missing or implausible comparison source, raises TelemetryError(COMPLETENESS) and the affected checks become FAIL_CLOSED. They establish bounded consistency
+# between independently obtained facts; they are NOT a proof that every row is present.
+_IFNAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,31}\Z")
+
+
+def _kame_fix(a: "ipaddress.IPv6Address") -> "ipaddress.IPv6Address":
+    """getifaddrs returns link-local IPv6 with the scope id embedded in bytes 2-3 (KAME); ifconfig prints the bare address. Normalize to the bare form."""
+    b = bytearray(a.packed)
+    if b[0] == 0xFE and (b[1] & 0xC0) == 0x80:
+        b[2:4] = b"\0\0"
+    return ipaddress.IPv6Address(bytes(b))
+
+
+def parse_ifaddrs(v) -> list:
+    """Validates the getifaddrs inventory: non-empty list of {name, flags, v4, v6} with unique names, a loopback entry, and parseable addresses."""
+    if not isinstance(v, list) or not v:
+        raise TelemetryError("MALFORMED", "interface inventory must be a non-empty list")
+    out, seen = [], set()
+    for r in v:
+        if not isinstance(r, dict) or set(r) != {"name", "flags", "v4", "v6"}:
+            raise TelemetryError("MALFORMED", "interface record shape")
+        name, flags = r["name"], r["flags"]
+        if not isinstance(name, str) or not _IFNAME_RE.match(name) or name in seen:
+            raise TelemetryError("MALFORMED", "interface name malformed or duplicated")
+        if not isinstance(flags, int) or isinstance(flags, bool) or not 0 <= flags < 2 ** 32:
+            raise TelemetryError("MALFORMED", "interface flags")
+        if not isinstance(r["v4"], list) or not isinstance(r["v6"], list) or not all(isinstance(x, str) for x in r["v4"] + r["v6"]):
+            raise TelemetryError("MALFORMED", "interface address lists")
+        try:
+            v4 = {ipaddress.IPv4Address(x) for x in r["v4"]}
+            v6 = {_kame_fix(ipaddress.IPv6Address(x.split("%")[0])) for x in r["v6"]}
+        except ValueError:
+            raise TelemetryError("MALFORMED", "interface address") from None
+        seen.add(name)
+        out.append({"name": name, "up": bool(flags & IFF_UP), "loopback": bool(flags & IFF_LOOPBACK), "v4": v4, "v6": v6})
+    if not any(i["loopback"] and i["name"].startswith("lo") for i in out):
+        raise TelemetryError("MALFORMED", "no loopback interface in the independent inventory")
+    return out
+
+
+def parse_ifindex(v) -> list:
+    if not isinstance(v, list) or not v or not all(isinstance(x, str) and _IFNAME_RE.match(x) for x in v) or len(set(v)) != len(v):
+        raise TelemetryError("MALFORMED", "interface index list")
+    return v
+
+
+def check_interface_inventory(ifs: list, ifaddrs: list, ifindex: list) -> None:
+    """`ifconfig -a` must agree with two inventories that do not come from the ifconfig tool (libc getifaddrs; libc if_nameindex): identical name sets,
+    identical UP/LOOPBACK flags, identical IPv4 and IPv6 address sets. Raises COMPLETENESS on any discrepancy (an interface or address that silently
+    disappeared from one view)."""
+    a = {i["name"]: i for i in ifs}
+    b = {i["name"]: i for i in ifaddrs}
+    if set(a) != set(b) or set(a) != set(ifindex):
+        raise TelemetryError(COMPLETENESS, "interface name sets differ between ifconfig, getifaddrs and if_nameindex")
+    for n, i in a.items():
+        j = b[n]
+        if i["up"] != j["up"] or i["loopback_flag"] != j["loopback"] or set(i["v4"]) != j["v4"] or {_kame_fix(x) for x in i["v6"]} != j["v6"]:
+            raise TelemetryError(COMPLETENESS, "interface flags or addresses differ between ifconfig and getifaddrs")
+
+
+def redacted_hardware_addresses(ifs: list) -> int:
+    """Number of `ether` lines carrying the macOS redaction constant (02:00:00:00:00:00). An INDICATOR of the reduced telemetry view, not proof: it was observed
+    on 12 of 12 hardware addresses in the reduced view and 0 of 12 in the full view; the same value could in principle be assigned to a virtual NIC, which
+    then fails closed (safe)."""
+    return sum(1 for i in ifs for e in i.get("ether", []) if e == MAC_REDACTED)
+
+
+def parse_pcbcounts(v) -> dict:
+    if not isinstance(v, dict) or set(v) != {"before", "after"}:
+        raise TelemetryError("MALFORMED", "pcb counter structure")
+    for phase in v.values():
+        if not isinstance(phase, dict) or set(phase) != set(PCB_COUNTERS):
+            raise TelemetryError("MALFORMED", "pcb counter classes")
+        for x in phase.values():
+            if not isinstance(x, int) or isinstance(x, bool) or not 0 <= x <= PCB_MAX:
+                raise TelemetryError(COMPLETENESS, "pcb counter value implausible")
+    return v
+
+
+def check_socket_plausibility(rows: list, pcb: dict) -> None:
+    """Parsed TCP (tcp*) and raw/ICMP (icm*) socket rows against the kernel PCB counters (read before AND after the socket query). Required, per class:
+    rows >= max(1, floor(ratio * min(bracket))) when the counter is >= 1, and rows <= 2 * max(bracket) + 16. This detects removal of the Internet section or of
+    the majority of TCP/raw rows; it deliberately does NOT detect removal of a few rows, and it says NOTHING about UDP rows (no stable relationship exists, so UDP
+    completeness is unproven and UDP absence is not claimed). Raises COMPLETENESS on a violation."""
+    have = {"tcp": 0, "raw": 0}
+    for proto, _state, _ext in rows:
+        if proto.startswith("tcp"):
+            have["tcp"] += 1
+        elif proto.startswith("icm"):
+            have["raw"] += 1                                                    # UDP rows are intentionally not counted: see PCB_MIN_RATIO
+    for cls, n in have.items():
+        lo, hi = min(pcb["before"][cls], pcb["after"][cls]), max(pcb["before"][cls], pcb["after"][cls])
+        need = max(1, int(PCB_MIN_RATIO[cls] * lo)) if lo >= 1 else 0
+        if n < need or n > 2 * hi + 16:
+            raise TelemetryError(COMPLETENESS, f"{cls} socket rows are inconsistent with the kernel PCB counter")
+
+
+def check_route_interface_consistency(r4: list, r6: list, ifaddrs: list) -> None:
+    """Every non-loopback interface that is UP and carries an address must appear as the interface of at least one route row of that family. This ties the
+    route table to the independent interface inventory. It says nothing about neighbour (host) routes, which the reduced view omits and which no check uses."""
+    n4, n6 = {r[3] for r in r4}, {r[3] for r in r6}
+    for i in ifaddrs:
+        if i["loopback"] or not i["up"]:
+            continue
+        if any(not a.is_loopback for a in i["v4"]) and i["name"] not in n4:
+            raise TelemetryError(COMPLETENESS, "an addressed UP interface has no IPv4 route in the table")
+        if i["v6"] and i["name"] not in n6:
+            raise TelemetryError(COMPLETENESS, "an addressed UP interface has no IPv6 route in the table")
 
 
 _ROUTE_DEST = re.compile(r"(?i:default)|\d{1,3}(?:\.\d{1,3}){0,3}(?:/\d{1,2})?|[0-9A-Fa-f:]*:[0-9A-Fa-f:]*(?:%[A-Za-z0-9]+)?(?:/\d{1,3})?")
@@ -578,9 +806,10 @@ def parse_sockets(text):
       * EVERY examined section must be followed by another `Active ...` section. A table that runs to the end of the output is treated as truncated;
       * an `Active Multipath Internet connections` section is parsed with the SAME row grammar and its rows are classified like any other (real macOS lists
         icm6 sockets there); a row in an unrecognised format is refused; it too must be terminated;
-      * at least one Internet section must be present. A header-only table that IS terminated by a following section is structurally complete and is the
+      * at least one Internet section must be present. A header-only table that IS terminated by a following section is structurally well-formed and is the
         only 'verified empty' representation; an unterminated one is refused.
-    This proves the output was a complete, well-formed table. It does not prove no socket opened afterwards, and exit status 0 is not relied upon."""
+    This establishes that the received text is STRUCTURALLY WELL-FORMED AND PROPERLY TERMINATED. It does NOT establish that every socket is listed: completeness is tested
+    separately by check_socket_plausibility against the kernel PCB counters, and exit status 0 is not relied upon. It does not show that no socket opened afterwards."""
     lines = _strict_lines(text, "sockets")
     if not lines[0].startswith("Active "):
         raise TelemetryError("MALFORMED", "output does not begin with an Active section")
@@ -1222,13 +1451,53 @@ def evaluate(role, *, host: dict, state_dir=None, role_state_dir=None, code_root
     r4, why_r4 = _src(host, "routes4", parse_routes4)
     r6, why_r6 = _src(host, "routes6", parse_routes6)
     socks, why_sock = _src(host, "sockets", parse_sockets)
+    ifa, why_ifa = _src(host, "ifaddrs", parse_ifaddrs)
+    idx, why_idx = _src(host, "ifindex", parse_ifindex)
+    pcb, why_pcb = _src(host, "pcbcounts", parse_pcbcounts)
+    # ---- COMPLETENESS: structurally valid is not complete. Compare the command views with sources the reduced-view filter does not touch.
+    incomplete, signals = {}, 0
+    if ifs is not None and ifa is not None and idx is not None:
+        try:
+            check_interface_inventory(ifs, ifa, idx)
+        except TelemetryError as e:
+            incomplete["ifconfig"] = e.reason
+    elif ifs is not None:
+        incomplete["ifconfig"] = COMPLETENESS                              # no independent inventory to compare with => completeness unproven
+    if ifs is not None:
+        signals += 1 if redacted_hardware_addresses(ifs) else 0          # hardware addresses redacted: the reduced telemetry view
+    if socks is not None and pcb is not None:
+        try:
+            check_socket_plausibility(socks, pcb)
+        except TelemetryError as e:
+            incomplete["sockets"] = e.reason
+            signals += 1
+    elif socks is not None:
+        incomplete["sockets"] = COMPLETENESS                               # no counter to compare with
+    elif pcb is not None and why_sock is not None and max(pcb["before"].values()) >= 1:
+        incomplete["sockets"] = COMPLETENESS                               # sockets exist (kernel counter) but the table is unusable: reduced view, not a clean parse failure
+        signals += 1
+    if r4 is not None and r6 is not None and ifa is not None:
+        try:
+            check_route_interface_consistency(r4, r6, ifa)
+        except TelemetryError as e:
+            incomplete["routes4"] = incomplete["routes6"] = e.reason
+    else:
+        for k, v in (("routes4", r4), ("routes6", r6)):
+            if v is not None:
+                incomplete[k] = COMPLETENESS                              # no independent inventory to tie the route table to
+    if signals:                                                            # a known reduced-view signature: every network command shares the filter => none is trusted
+        for k, src in (("ifconfig", ifs), ("routes4", r4), ("routes6", r6), ("sockets", socks)):
+            if src is not None:
+                incomplete.setdefault(k, COMPLETENESS)
     boot, why_boot = _src(host, "boot_id")
     boot_ok = isinstance(boot, str) and bool(UUID_RE.match(boot))
     need_vol = bool(deny_volumes or deny_volume_uuids)
     vols, why_vols = _src(host, "volumes", parse_volumes) if need_vol else (None, None)
     disks, why_disks = _src(host, "disks", parse_disk_records) if need_vol else (None, None)
     failed = {k: w for k, w in (("processes", why_names), ("cmdlines", why_cmds), ("env", why_env), ("home", why_home), ("ifconfig", why_if), ("ifnames", why_ifn),
-                                ("routes4", why_r4), ("routes6", why_r6), ("sockets", why_sock), ("boot_id", why_boot)) if w}
+                                ("routes4", why_r4), ("routes6", why_r6), ("sockets", why_sock), ("ifaddrs", why_ifa), ("ifindex", why_idx), ("pcbcounts", why_pcb),
+                                ("boot_id", why_boot)) if w}
+    failed.update(incomplete)                                               # an explicit COMPLETENESS reason replaces a bare parse failure of the same source
     if not boot_ok and "boot_id" not in failed:
         failed["boot_id"] = "MALFORMED"
     if need_vol:
@@ -1268,24 +1537,41 @@ def evaluate(role, *, host: dict, state_dir=None, role_state_dir=None, code_root
         else:
             extra = sorted({n for n in names if n not in set(process_allowlist)})
             r["process_allowlist_respected"] = _res(FAIL if extra else PASS, f"{len(extra)} running process name(s) outside the supplied allowlist")
-    # -- network (one-shot; point-in-time)
+    # -- network (one-shot; point-in-time). The PRIMARY facts are the interface addresses/status (cross-checked against independent libc inventories);
+    #    the route table and socket table are corroborating evidence that can only ADD failures: a violation seen in a reduced view is still a violation.
     if ifs is None:
         r["network_interfaces_disabled"] = _fc("ifconfig " + (why_if or "UNAVAILABLE"))
     else:
         bad = interface_violations(ifs)
         kinds = sorted({re.sub(r"\d+$", "", i["name"]) for i in bad})
-        r["network_interfaces_disabled"] = _res(FAIL if bad else PASS, f"{len(bad)} interface(s) with a non-loopback address or active status (kinds: {','.join(kinds) or 'none'})")
+        if bad:
+            r["network_interfaces_disabled"] = _res(FAIL, f"{len(bad)} interface(s) with a non-loopback address or active status (kinds: {','.join(kinds) or 'none'})")
+        elif "ifconfig" in incomplete:
+            r["network_interfaces_disabled"] = _fc(f"{COMPLETENESS}: the interface view could not be shown complete")
+        else:
+            r["network_interfaces_disabled"] = _res(PASS, "0 interface(s) with a non-loopback address or active status; the interface list, flags and addresses agree with two independent libc inventories")
     if r4 is None or r6 is None:
         r["network_no_default_route"] = _fc("routing tables: " + unverified("routes4", "routes6"))
     else:
         d4, d6 = default_routes(r4), default_routes(r6)
-        r["network_no_default_route"] = _res(FAIL if (d4 or d6) else PASS, f"{len(d4)} IPv4 / {len(d6)} IPv6 default route(s)")
+        if d4 or d6:
+            r["network_no_default_route"] = _res(FAIL, f"{len(d4)} IPv4 / {len(d6)} IPv6 default route(s) observed")
+        elif "routes4" in incomplete or "routes6" in incomplete:
+            r["network_no_default_route"] = _fc(f"{COMPLETENESS}: the route table could not be shown consistent with the interface inventory")
+        else:
+            r["network_no_default_route"] = _res(PASS, "ADVISORY: no default route observed; the route table's completeness is NOT claimed (the OS may omit rows) -- the network verdict rests on the interface addresses, which are cross-checked independently")
+            r["network_no_default_route"]["advisory"] = True
     if socks is None:
-        r["network_no_external_sockets"] = _fc("socket table " + (why_sock or "UNAVAILABLE"))
+        r["network_no_external_sockets"] = _fc("socket table " + (incomplete.get("sockets") or why_sock or "UNAVAILABLE"))
     else:
         ext = [s for s in socks if s[2]]
         udp = sum(1 for s in ext if s[0].startswith("udp"))
-        r["network_no_external_sockets"] = _res(FAIL if ext else PASS, f"{len(ext)} socket(s) bound or connected beyond loopback ({udp} UDP); point-in-time only, not proof that nothing could communicate")
+        if ext:
+            r["network_no_external_sockets"] = _res(FAIL, f"{len(ext)} socket(s) bound or connected beyond loopback ({udp} UDP) observed; point-in-time only")
+        elif "sockets" in incomplete:
+            r["network_no_external_sockets"] = _fc(f"{COMPLETENESS}: the socket table is not consistent with the kernel PCB counters")
+        else:
+            r["network_no_external_sockets"] = _res(PASS, "0 external socket(s) observed, TCP and raw/ICMP rows are consistent with the kernel PCB counters within a bounded plausibility band (not a proof that every row is present); UDP rows are NOT cross-checked (no stable relationship exists) and UDP absence is NOT claimed; point-in-time only, not proof that nothing could communicate")
     # -- cloud sync / agent: process vs exposure
     if names is None:
         r["cloud_sync_process_absent"] = _fc("process list unverified")
@@ -1319,19 +1605,19 @@ def evaluate(role, *, host: dict, state_dir=None, role_state_dir=None, code_root
         r["workspace_not_in_synced_or_user_documents_path"] = _res(FAIL if inside else PASS, f"{inside} of {len(ws)} workspace/state dir(s) under a synchronized or Desktop/Documents location")
     # -- other role's storage unavailable (advisory evidence only; physical detachment is an owner procedure)
     if not (deny_paths or deny_volumes or deny_volume_uuids):
-        r["other_role_storage_unavailable"] = _fc("no deny-listed path, volume or volume UUID supplied (the other role's storage must be named explicitly)")
+        r["configured_other_role_storage_not_detected"] = _fc("no deny-listed path, volume or volume UUID supplied (the other role's storage must be named explicitly)")
     else:
         dcfg, dproblem = validate_deny_config(deny_paths, deny_volumes, deny_volume_uuids, home)
         if dproblem:
-            r["other_role_storage_unavailable"] = _fc("malformed deny configuration: " + dproblem)
+            r["configured_other_role_storage_not_detected"] = _fc("malformed deny configuration: " + dproblem)
         elif need_vol and (vols is None or disks is None):
-            r["other_role_storage_unavailable"] = _fc("volume telemetry unverified: " + unverified("volumes", "disks"))
+            r["configured_other_role_storage_not_detected"] = _fc("volume telemetry unverified: " + unverified("volumes", "disks"))
         else:
             present = sum(1 for n in dcfg["paths"] if os.path.lexists(n))
             if need_vol:
                 observed = list(vols) + [d["name"] for d in disks if d["name"]] + [os.path.basename(d["mount"]) for d in disks if d["mount"]]
                 if any(suspicious_label(o) for o in observed):
-                    r["other_role_storage_unavailable"] = _fc("an observed volume label contains confusable-script letters or control/format characters; labels cannot be compared reliably (use the volume UUID and physical detachment)")
+                    r["configured_other_role_storage_not_detected"] = _fc("an observed volume label contains confusable-script letters or control/format characters; labels cannot be compared reliably (use the volume UUID and physical detachment)")
                     dcfg = None
                 else:
                     seen_names = {canon_volume_name(o) for o in observed}
@@ -1340,7 +1626,10 @@ def evaluate(role, *, host: dict, state_dir=None, role_state_dir=None, code_root
             if dcfg is not None:
                 total = len(dcfg["paths"]) + len(dcfg["names"]) + len(dcfg["uuids"])
                 weak = " LABEL_ONLY: no volume UUID supplied, so volume matching rests on spoofable display labels (weaker, advisory)." if dcfg["label_only"] else ""
-                r["other_role_storage_unavailable"] = _res(FAIL if present else PASS, f"{present} of {total} deny-listed path(s)/volume(s)/UUID(s) present, attached or mounted (advisory name/UUID evidence; NOT proof of physical disconnection).{weak}")
+                note = ("The configured identifiers were not observed; this is NOT evidence that the other role's storage is physically absent (a renamed label, a wrong UUID or an "
+                        "unconfigured drive would not be seen). " if not present else "") + "Physical detachment remains an owner procedure."
+                r["configured_other_role_storage_not_detected"] = _res(FAIL if present else PASS, f"ADVISORY: {present} of {total} configured path(s)/volume(s)/UUID(s) observed present, attached or mounted. {note}{weak}")
+                r["configured_other_role_storage_not_detected"]["advisory"] = True
     # -- role code root equals a hash-pinned manifest
     manifest, why_man = load_code_manifest(code_manifest, code_manifest_sha256)
     if code_root is None:
@@ -1389,7 +1678,13 @@ def main(argv):
     if a.cmd == "init":
         if not a.state_dir:
             print("FAIL_CLOSED --state-dir required"); return 1
-        init_state(a.state_dir); print("INITIALIZED"); return 0
+        try:
+            init_state(a.state_dir)
+        except FileExistsError:
+            print("FAIL_CLOSED interlock state directory already exists; refusing to re-initialize"); return 1
+        except OSError as e:                                                    # permission denied, read-only filesystem, missing parent ...: expected operational failure
+            print(f"FAIL_CLOSED interlock state directory could not be created ({type(e).__name__})"); return 1
+        print("INITIALIZED"); return 0
     if a.cmd == "build-manifest":
         if not a.code_root:
             print("FAIL_CLOSED --code-root required"); return 1
@@ -1426,14 +1721,25 @@ def main(argv):
         res = evaluate(a.role, host=host, state_dir=a.state_dir, role_state_dir=a.role_state_dir, code_root=a.code_root, code_manifest=a.code_manifest,
                        code_manifest_sha256=a.code_manifest_sha256, deny_paths=a.deny_path, deny_volumes=a.deny_volume, deny_volume_uuids=a.deny_volume_uuid,
                        workspaces=a.workspace, process_allowlist=allow)
-    except Exception as e:                                         # a security gate never ends in a traceback: an unexpected failure is a refusal
-        print(f"FAIL_CLOSED internal error ({type(e).__name__}); the gate could not complete")
-        print("GATE_FAILS"); return 1
+    except Exception as e:
+        # collect_host/evaluate are written never to raise for ANY host condition, so reaching this is a PROGRAMMING ERROR. It is not hidden: the full traceback goes to
+        # stderr (visible during development), stdout carries the refusal, and the exit code (3) differs from an ordinary gate failure (1).
+        import traceback
+        traceback.print_exc()
+        print(f"FAIL_CLOSED internal error ({type(e).__name__}); this is a defect in the gate, not a host condition")
+        print("GATE_FAILS"); return 3
     for k, v in res.items():
         print(f"{v['status']:11} {k} -- {v['detail']}")
     ok = gate_passes(res)
     if a.cmd == "begin" and ok:
-        begin(a.role, a.state_dir, host["boot_id"], res)
+        try:
+            begin(a.role, a.state_dir, host["boot_id"], res)
+        except PermissionError as e:                                           # lock not acquired / interlock unverifiable: expected, fail closed, nothing recorded
+            print(f"FAIL_CLOSED the phase start was NOT recorded: {str(e)[:160]}")
+            print("GATE_FAILS"); return 1
+        except OSError as e:
+            print(f"FAIL_CLOSED the phase start was NOT recorded ({type(e).__name__})")
+            print("GATE_FAILS"); return 1
     print("GATE_PASSES" if ok else "GATE_FAILS")
     return 0 if ok else 1
 

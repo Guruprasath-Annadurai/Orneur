@@ -264,7 +264,7 @@ BAD_VOLUMES = ["Macintosh HD", "", {}, {"a": 1}, 5, 5.5, True, [], [None], [5], 
 @pytest.mark.parametrize("vols", BAD_VOLUMES, ids=lambda v: repr(v)[:30])
 def test_N3_malformed_volumes_are_FAIL_CLOSED_and_never_pass(tmp_path, vols):
     res = run("forge", tmp_path, host=good_host(tmp_path, volumes=vols), **DENY)
-    assert st(res, "other_role_storage_unavailable") == G.FAIL_CLOSED and st(res, "telemetry_complete") == G.FAIL_CLOSED and not G.gate_passes(res)
+    assert st(res, "configured_other_role_storage_not_detected") == G.FAIL_CLOSED and st(res, "telemetry_complete") == G.FAIL_CLOSED and not G.gate_passes(res)
 
 
 def _d(**kw):
@@ -282,7 +282,7 @@ BAD_DISKS = ["Macintosh HD", {}, {"a": 1}, 5, True, [], [None], [5], ["x"], [[]]
 @pytest.mark.parametrize("disks", BAD_DISKS, ids=lambda v: repr(v)[:40])
 def test_N3_malformed_disks_never_crash_and_are_FAIL_CLOSED(tmp_path, disks):
     res = run("forge", tmp_path, host=good_host(tmp_path, disks=disks), **DENY)               # must not raise TypeError/KeyError/AttributeError
-    assert st(res, "other_role_storage_unavailable") == G.FAIL_CLOSED and st(res, "telemetry_complete") == G.FAIL_CLOSED and not G.gate_passes(res)
+    assert st(res, "configured_other_role_storage_not_detected") == G.FAIL_CLOSED and st(res, "telemetry_complete") == G.FAIL_CLOSED and not G.gate_passes(res)
 
 
 def test_N3_volume_telemetry_is_not_required_and_not_validated_when_no_volume_or_uuid_is_configured(tmp_path):
@@ -429,7 +429,7 @@ def test_N4_the_good_fixtures_still_parse():
 
 def test_N4_documentation_states_what_the_floors_do_and_do_not_prove():
     d = " ".join(G.__doc__.split())
-    assert "WHAT THE PLAUSIBILITY FLOORS PROVE" in d and "do NOT prove that no row was removed from within a well-formed table" in d
+    assert "WHAT THE STRUCTURAL CHECKS PROVE AND DO NOT PROVE" in d and "do NOT prove that no row was removed from within a well-formed table" in d
     assert "exit status 0 is never treated as completeness" in d
 
 
@@ -767,7 +767,7 @@ def _deny(tmp_path, **kw):
     base = dict(deny_paths=[], deny_volumes=[], deny_volume_uuids=[])
     base.update(kw)
     res = run("forge", tmp_path, host=good_host(tmp_path), **base)
-    return res["other_role_storage_unavailable"]
+    return res["configured_other_role_storage_not_detected"]
 
 
 @pytest.mark.parametrize("bad", ["", " ", "x", "ABCD0000-1111-2222-3333-44445555666", "ABCD0000-1111-2222-3333-4444555566666", "ABCD00001111222233334444555566666",
@@ -810,7 +810,7 @@ def test_N8_duplicate_and_malformed_paths_are_refused(tmp_path):
                                   "witnessvault  3"])
 def test_N8_label_spoofing_variants_are_detected_or_force_FAIL_CLOSED(tmp_path, seen):
     res = run("forge", tmp_path, host=good_host(tmp_path, volumes=["Macintosh HD", seen]), deny_paths=[], deny_volumes=["WitnessVault"])
-    assert st(res, "other_role_storage_unavailable") in (G.FAIL, G.FAIL_CLOSED) and not G.gate_passes(res)
+    assert st(res, "configured_other_role_storage_not_detected") in (G.FAIL, G.FAIL_CLOSED) and not G.gate_passes(res)
 
 
 def test_N8_label_only_configuration_is_explicitly_identified_as_weaker(tmp_path):
@@ -824,7 +824,7 @@ def test_N8_label_only_configuration_is_explicitly_identified_as_weaker(tmp_path
 def test_N8_UUID_matching_still_works_and_beats_a_spoofed_label(tmp_path):
     disks = list(GOOD_DISKS) + [{"name": "Innocent", "uuid": UU, "dev": "disk9s1", "mount": ""}]
     res = run("forge", tmp_path, host=good_host(tmp_path, disks=disks), deny_paths=[], deny_volume_uuids=[UU.lower()])
-    assert st(res, "other_role_storage_unavailable") == G.FAIL
+    assert st(res, "configured_other_role_storage_not_detected") == G.FAIL
 
 
 def test_N8_a_well_formed_but_wrong_uuid_cannot_be_detected_and_the_docs_say_so():
@@ -1110,9 +1110,11 @@ def test_N7_the_N1_N10_matrix_maps_every_finding_to_regression_tests_that_exist(
     assert set(seen) == {f"N{i}" for i in range(1, 11)}
 
 
-def test_N3_the_gate_never_ends_in_a_traceback_an_unexpected_exception_is_a_refusal(tmp_path, monkeypatch, capsys):
+def test_N3_an_unexpected_exception_is_a_refusal_AND_stays_visible(tmp_path, monkeypatch, capsys):
+    """W3 revision: a programming error inside collect/evaluate is not swallowed. stdout carries the refusal, stderr carries the traceback, exit code 3."""
     monkeypatch.setattr(G, "collect_host", lambda: good_host(tmp_path))
     monkeypatch.setattr(G, "evaluate", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("unexpected bug SENTINEL_DETAIL")))
     rc = G.main(["gate", "check", "--role", "forge"])
-    out = capsys.readouterr().out
-    assert rc == 1 and "FAIL_CLOSED internal error (RuntimeError)" in out and "GATE_FAILS" in out and "GATE_PASSES" not in out and "SENTINEL_DETAIL" not in out
+    cap = capsys.readouterr()
+    assert rc == 3 and "FAIL_CLOSED internal error (RuntimeError)" in cap.out and "GATE_FAILS" in cap.out and "GATE_PASSES" not in cap.out
+    assert "Traceback" in cap.err and "SENTINEL_DETAIL" in cap.err and "SENTINEL_DETAIL" not in cap.out

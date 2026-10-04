@@ -59,7 +59,29 @@ def good_host(tmp, **over):
         names = re.findall(r"^([A-Za-z][A-Za-z0-9_.-]*): flags=", h["ifconfig"], re.M)
         if names:
             h["ifnames"] = " ".join(names) + "\n"
+    derive_independent(h, over)
     return h
+
+
+def derive_independent(h, over):
+    """Keep the INDEPENDENT sources (libc interface inventory, if_nameindex, kernel PCB counters) consistent with the possibly modified command fixtures, unless a
+    test overrides them explicitly. Fixtures that cannot be parsed are left alone: they fail on their own."""
+    try:
+        ifs = G.parse_interfaces(h["ifconfig"])
+    except Exception:
+        ifs = None
+    if ifs is not None:
+        if "ifaddrs" not in over:
+            h["ifaddrs"] = [{"name": i["name"], "flags": (1 if i["up"] else 0) | (8 if i["loopback_flag"] else 0), "v4": [str(a) for a in i["v4"]], "v6": [str(a) for a in i["v6"]]} for i in ifs]
+        if "ifindex" not in over:
+            h["ifindex"] = [i["name"] for i in ifs]
+    if "pcbcounts" not in over:
+        try:
+            rows = G.parse_sockets(h["sockets"])
+            c = {"tcp": sum(1 for r in rows if r[0].startswith("tcp")), "raw": sum(1 for r in rows if r[0].startswith("icm"))}
+        except Exception:
+            c = {"tcp": 0, "raw": 0}
+        h["pcbcounts"] = {"before": dict(c), "after": dict(c)}
 
 
 def make_cfg(tmp, init=True):
@@ -120,7 +142,7 @@ def test_AUDIT4_missing_required_path_input_is_fail_closed_not_pass(tmp_path):
 
 def test_AUDIT4_empty_deny_list_is_fail_closed(tmp_path):
     res = run("forge", tmp_path, deny_paths=[], deny_volumes=[], deny_volume_uuids=[])
-    assert st(res, "other_role_storage_unavailable") == G.FAIL_CLOSED and not G.gate_passes(res)
+    assert st(res, "configured_other_role_storage_not_detected") == G.FAIL_CLOSED and not G.gate_passes(res)
 
 
 def test_AUDIT4_absent_or_uninitialized_state_directory_is_fail_closed(tmp_path):
@@ -143,7 +165,7 @@ def test_AUDIT4_cli_without_required_arguments_prints_fail_closed_and_fails(tmp_
 
 
 # ======================================================================== AUDIT 5 + Q3: telemetry
-MANDATORY_SOURCES = ("processes", "cmdlines", "env", "home", "ifconfig", "ifnames", "routes4", "routes6", "sockets", "boot_id")
+MANDATORY_SOURCES = ("processes", "cmdlines", "env", "home", "ifconfig", "ifnames", "ifaddrs", "ifindex", "pcbcounts", "routes4", "routes6", "sockets", "boot_id")
 
 
 @pytest.mark.parametrize("key", MANDATORY_SOURCES)
@@ -655,7 +677,7 @@ def test_AUDIT6_default_routes_fail_in_either_family_and_listeners_only_if_exter
 
 @pytest.mark.parametrize("row,expect_fail", [
     ("tcp4 0 0 *.5000 *.* LISTEN", True), ("tcp4 0 0 203.0.113.5.22 *.* LISTEN", True), ("tcp6 0 0 *.8000 *.* LISTEN", True), ("tcp4 0 0 127.0.0.1.80 *.* LISTEN", False),
-    ("tcp6 0 0 ::1.80 *.* LISTEN", False), ("tcp4 0 0 127.0.0.1.50000 203.0.113.8.443 ESTABLISHED", True), ("tcp6 0 0 2405:201:d04d:30.58170 2607:6bc0::10.443 LAST_ACK", True),
+    ("tcp6 0 0 ::1.80 *.* LISTEN", False), ("tcp4 0 0 127.0.0.1.50000 203.0.113.8.443 ESTABLISHED", True), ("tcp6 0 0 2001:db8:d04d:30.58170 2607:6bc0::10.443 LAST_ACK", True),
     ("udp4 0 0 203.0.113.5.123 *.*", True), ("udp4 0 0 127.0.0.1.5000 203.0.113.8.53", True), ("udp4 0 0 *.5353 *.*", False), ("udp46 0 0 *.5353 *.*", False),
     ("udp6 0 0 fe80::1%lo0.123 *.*", True), ("icm4 0 0 *.* *.*", False), ("udp4 0 0 127.0.0.1.5000 *.*", False),
 ])
@@ -780,22 +802,22 @@ def test_AUDIT9_role_workspace_inside_synced_or_user_documents_paths_fails(tmp_p
 # ======================================================================== AUDIT 10 + Q5 + Q10: other-role storage
 def test_AUDIT10_other_role_storage_present_or_mounted_fails_and_absent_passes(tmp_path):
     store = tmp_path / "witness_store"; store.mkdir()
-    assert st(run("forge", tmp_path, deny_paths=[store]), "other_role_storage_unavailable") == G.FAIL
-    assert st(run("forge", tmp_path), "other_role_storage_unavailable") == G.PASS
+    assert st(run("forge", tmp_path, deny_paths=[store]), "configured_other_role_storage_not_detected") == G.FAIL
+    assert st(run("forge", tmp_path), "configured_other_role_storage_not_detected") == G.PASS
     cfg = make_cfg(tmp_path)
     r = run("forge", tmp_path, host=good_host(tmp_path, volumes=["Macintosh HD", "WitnessVault"]), cfg=cfg, deny_paths=[], deny_volumes=["WitnessVault"])
-    assert st(r, "other_role_storage_unavailable") == G.FAIL
+    assert st(r, "configured_other_role_storage_not_detected") == G.FAIL
 
 
 def test_AUDIT14_dangling_symlink_to_the_other_role_store_counts_as_present(tmp_path):
     (tmp_path / "alias").symlink_to(tmp_path / "nowhere")
-    assert st(run("forge", tmp_path, deny_paths=[tmp_path / "alias"]), "other_role_storage_unavailable") == G.FAIL
+    assert st(run("forge", tmp_path, deny_paths=[tmp_path / "alias"]), "configured_other_role_storage_not_detected") == G.FAIL
 
 
 def _vol_run(tmp, volumes, disks, deny_volumes=(), deny_uuids=()):
     volumes, disks = volumes or ["Macintosh HD"], disks or list(GOOD_DISKS)                  # a real host always lists at least one volume and disk (plausibility floor)
     return st(run("forge", tmp, host=good_host(tmp, volumes=volumes, disks=disks), deny_paths=[], deny_volumes=list(deny_volumes), deny_volume_uuids=list(deny_uuids)),
-              "other_role_storage_unavailable")
+              "configured_other_role_storage_not_detected")
 
 
 @pytest.mark.parametrize("mounted", ["WitnessVault 1", "WitnessVault 2", "witnessvault", "WITNESSVAULT", "  WitnessVault ", "WitnessVault"])
@@ -825,12 +847,12 @@ def test_Q5_disk_metadata_names_and_mount_point_basenames_are_both_consulted(tmp
 def test_Q5_volume_telemetry_failure_is_fail_closed_when_volumes_are_named(tmp_path):
     for key in ("volumes", "disks"):
         res = run("forge", tmp_path, host=good_host(tmp_path, **{key: None}), deny_paths=[], deny_volumes=["WitnessVault"])
-        assert st(res, "other_role_storage_unavailable") == G.FAIL_CLOSED and st(res, "telemetry_complete") == G.FAIL_CLOSED
+        assert st(res, "configured_other_role_storage_not_detected") == G.FAIL_CLOSED and st(res, "telemetry_complete") == G.FAIL_CLOSED
 
 
 def test_Q5_physical_detachment_is_still_documented_as_not_software_proven():
     txt = (INFRA / "GENESIS_V2_TIER0S_SEQUENTIAL_SOVEREIGN_ISOLATION.md").read_text()
-    assert "NOT proof of physical disconnection" in open(ROOT / "scripts/genesis_v2_tier0s_phase_gate.py").read()
+    assert "NOT evidence that the other role" in open(ROOT / "scripts/genesis_v2_tier0s_phase_gate.py").read()          # W5: the PASS text claims no physical absence
     assert "owner-controlled physical procedures" in txt and "NOT" in txt
 
 
@@ -840,10 +862,10 @@ def test_Q10_deny_paths_must_be_absolute_canonical_or_a_supported_home_relative_
         r = run("forge", tmp_path, deny_paths=[bad], host=good_host(tmp_path))
         if bad == "~":
             continue
-        assert st(r, "other_role_storage_unavailable") == G.FAIL_CLOSED, bad
+        assert st(r, "configured_other_role_storage_not_detected") == G.FAIL_CLOSED, bad
     (home / "WitnessStore").mkdir()
-    assert st(run("forge", tmp_path, deny_paths=["~/WitnessStore"]), "other_role_storage_unavailable") == G.FAIL        # '~/' expanded against the supplied home
-    assert st(run("forge", tmp_path, deny_paths=["~/AbsentStore"]), "other_role_storage_unavailable") == G.PASS
+    assert st(run("forge", tmp_path, deny_paths=["~/WitnessStore"]), "configured_other_role_storage_not_detected") == G.FAIL        # '~/' expanded against the supplied home
+    assert st(run("forge", tmp_path, deny_paths=["~/AbsentStore"]), "configured_other_role_storage_not_detected") == G.PASS
 
 
 def test_Q10_normalize_deny_path_unit():

@@ -52,6 +52,10 @@ SPLIT_HEADER_KEYS = {"eval_version", "corpus_id", "split", "split_sha256", "ephe
 SEAL_HEADER_KEYS = {"eval_version", "corpus_id", "split", "corpus_digest", "ephemeral_public_key"}
 MANIFEST = "MANIFEST.json"
 INACCESSIBLE = "INACCESSIBLE: "
+INVALID_INPUT = "INVALID_INPUT: "                  # a caller-supplied key or digest is malformed (expected invalid input, reported as a typed problem)
+VERIFICATION_FAILED = "VERIFICATION_FAILED: "      # an artifact failed authentication or structure checks under the keyed verification
+UNAVAILABLE = "UNAVAILABLE: "                      # a required capability (the 'cryptography' package) is not installed
+_DIGEST_RE = re.compile(r"[0-9a-f]{64}\Z")
 MAX_FILE_BYTES = 64 * 1024 * 1024
 FORMAT_CLAIM = "EXPECTED_ENCRYPTED_ARTIFACT_FORMAT_VALIDATED"
 CRYPTO_CLAIM = "CRYPTOGRAPHICALLY_VERIFIED"
@@ -199,10 +203,15 @@ def classify(problems: list) -> str:
     """VALID | INACCESSIBLE | MALFORMED | INVALID for a problem list (precedence: INACCESSIBLE > MALFORMED > INVALID)."""
     if not problems:
         return "VALID"
+    for tag, label in ((INVALID_INPUT, "INVALID_INPUT"), (UNAVAILABLE, "UNAVAILABLE")):
+        if any(p.startswith(tag) for p in problems):
+            return label
     if any(p.startswith(INACCESSIBLE) for p in problems):
         return "INACCESSIBLE"
     if any("malformed" in p or "strict JSON" in p for p in problems):
         return "MALFORMED"
+    if any(VERIFICATION_FAILED in p for p in problems):
+        return "VERIFICATION_FAILED"
     return "INVALID"
 
 
@@ -262,19 +271,33 @@ def validate_and_stage(bundle: Path, staging_parent: Path) -> Path:
 def cryptographic_verify(bundle: Path, vault_private_key: bytes, expected_corpus_digest: str) -> list:
     """WITNESS SIDE ONLY. Decrypts every split in memory (AES-GCM tag verification) and checks digests; returns problems (empty == CRYPTOGRAPHICALLY_VERIFIED).
     Plaintext is discarded immediately and never returned, logged or persisted. The caller supplies the private key (ephemeral in tests); this module never
-    reads, stores or prints key material."""
+    reads, stores or prints key material.
+
+    EXPECTED invalid input and EXPECTED verification failures are returned as typed problems (never raised): `INVALID_INPUT:` (key not 32 bytes / not bytes, digest
+    not 64 lowercase hex, artifacts inside the repository), `UNAVAILABLE:` (the cryptography package is missing), keyless structure problems (`validate`), and
+    `VERIFICATION_FAILED:` (authentication or structure failure of a split). Anything else -- TypeError, AttributeError, a bug in this module or in the store -- is a
+    PROGRAMMING ERROR and propagates unchanged; it is never converted into a verification result."""
+    if not isinstance(vault_private_key, (bytes, bytearray)) or len(vault_private_key) != 32:
+        return [INVALID_INPUT + "the vault private key must be exactly 32 bytes"]
+    if not isinstance(expected_corpus_digest, str) or not _DIGEST_RE.match(expected_corpus_digest):
+        return [INVALID_INPUT + "the expected corpus digest must be 64 lowercase hexadecimal characters"]
     problems = validate(bundle)
     if problems:
         return problems
-    reader = S.EncryptedVaultReader(Path(bundle), vault_private_key, repo_root=ROOT)
+    try:
+        reader = S.EncryptedVaultReader(Path(bundle), vault_private_key, repo_root=ROOT)
+    except S.PrivateStorageNotConfigured:
+        return [UNAVAILABLE + "the 'cryptography' package is required for keyed verification"]
+    except S.PrivateStorageViolation:
+        return [INVALID_INPUT + "the vault key or bundle location was rejected by the store (for example: artifacts inside the repository)"]
     from orca.eval.genesis_v2 import spec
     out = []
     for cdir in sorted(p for p in Path(bundle).iterdir() if p.is_dir()):
         for split in spec.PRIVATE_SPLITS:
             try:
                 reader.read_split(cdir.name, split, expected_corpus_digest=expected_corpus_digest)
-            except Exception as e:
-                out.append(f"{cdir.name[:24]}/{split}: cryptographic verification failed ({type(e).__name__})")
+            except (S.PrivateStorageIntegrityError, S.PrivateStorageViolation):
+                out.append(f"{cdir.name[:24]}/{split}: {VERIFICATION_FAILED}authentication or structure check failed")
     return out
 
 

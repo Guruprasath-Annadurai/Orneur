@@ -5,7 +5,7 @@ Statuses: `PROVEN_SYNTHETIC_ONLY` · `PARTIAL` · `NOT_YET_PROVEN` · `OWNER_ACT
 ## A. Synthetic validation checks
 | # | Check | Status | Basis |
 |---|---|---|---|
-| 1 | Forge environment holds only public key + synthetic generation secret | `PARTIAL` | Gate scans the role's own state directory completely and strictly (any unreadable subtree, symlink or special file is `FAIL_CLOSED`) by file name and first-256-byte key header — WEAK evidence; per-container evidence exists only for the (different) Tier0-B topology. No Tier0-S environment exists. |
+| 1 | Forge environment holds only public key + synthetic generation secret | `PARTIAL` | Gate fully enumerates the role's own state directory (any unreadable subtree, symlink or special file is `FAIL_CLOSED`) by file name and first-256-byte key header — WEAK evidence; per-container evidence exists only for the (different) Tier0-B topology. No Tier0-S environment exists. |
 | 2 | Witness environment holds only the private key | `PARTIAL` | Same. |
 | 3 | Forge cannot decrypt | `PROVEN_SYNTHETIC_ONLY` | Topology-independent cryptographic property (writer holds no private key); existing store/Tier-0 tests. |
 | 4 | Witness decrypts | `PROVEN_SYNTHETIC_ONLY` | Existing store and Tier-0 tests; `cryptographic_verify` with an ephemeral key. |
