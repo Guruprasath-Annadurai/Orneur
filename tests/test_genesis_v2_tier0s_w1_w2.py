@@ -89,7 +89,7 @@ def test_W1_removal_of_most_rows_is_detected(have, counter):
 def test_W1_documented_limit_removal_of_a_FEW_rows_is_NOT_detected():
     """Honest residual: the band detects the section / the majority, not individual rows. This test pins that the documentation says so."""
     G.check_socket_plausibility(rows_of(sockets_text(tcp=99)), pcb(100))
-    assert "does NOT detect removal of a few rows" in " ".join(G.check_socket_plausibility.__doc__.split())
+    assert "NOT row-by-row completeness" in " ".join(G.check_socket_plausibility.__doc__.split())
 
 
 def test_W1_header_only_table_with_sockets_present_is_unproven_but_with_no_sockets_is_verified_empty():
@@ -254,7 +254,7 @@ def test_W1_a_temporary_failure_of_one_source_during_collection_fails_closed(mon
     h = G.collect_host()
     assert h["ifaddrs"] is None and h["telemetry"]["ifaddrs"] == "UNAVAILABLE"
     monkeypatch.setattr(G, "read_ifaddrs", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
-    assert G.collect_host()["telemetry"]["ifaddrs"] == "UNAVAILABLE"                                    # an unexpected error in the independent source is still a refusal
+    assert G.collect_host()["telemetry"]["ifaddrs"] == "COLLECTOR_DEFECT:RuntimeError"                  # an unexpected error is still a refusal, now with its class name kept
 
 
 def test_W1_read_ifaddrs_is_macOS_only_and_never_searches_a_library_path():
@@ -752,9 +752,43 @@ def _git_blob_id(path):
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
-def test_W6_the_crypto_implementation_is_untouched():
-    """The AES-256-GCM / HKDF / X25519 implementation audited in the previous phases is unchanged: git blob ids (computed here, no git needed) are pinned."""
-    assert _git_blob_id(ROOT / "orca/eval/genesis_v2/store.py") == "308a2cb9e73e8a7820174c7b0f5557cc9bef74e1"
+def _function_hashes(path):
+    import ast
+    import hashlib
+    src = Path(path).read_text(); out = {}
+
+    def visit(node, prefix=""):
+        for ch in ast.iter_child_nodes(node):
+            if isinstance(ch, (ast.FunctionDef, ast.ClassDef)):
+                q = prefix + ch.name
+                if isinstance(ch, ast.FunctionDef):
+                    out[q] = hashlib.sha256(ast.get_source_segment(src, ch).encode()).hexdigest()
+                visit(ch, q + ".")
+    visit(ast.parse(src))
+    return out
+
+
+# sha256 of the SOURCE of every cryptographic function of orca/eval/genesis_v2/store.py as AUDITED at 4016e361 (before the post-authentication payload validation was added)
+AUDITED_CRYPTO_FUNCTIONS = {
+    "EncryptedFileStore.__init__": "289b719f95cce9cfdfebf1325147eca314ed7e519b17569e903be52bb960928c",
+    "EncryptedFileStore._open_blob": "aa7c1e51485a574da41efd9498099fbdfb21d5ba097572b261e95f162ba5d00a",
+    "EncryptedFileStore._seal_blob": "5adf868e3f7a13eb711f067b3535311ac2d046ce2674f160fed58a3b612a2743",
+    "EncryptedVaultReader.__init__": "fbc67c794eea41ec2695b79664ae6303ac34ae59ac91030c79c08947a464bb5c",
+    "EncryptedVaultReader._open_blob": "f325089bfe10879ae079bedf6e7807122fc5813a01ede88a04cfc846b89719bd",
+    "EncryptedVaultWriter.__init__": "ff8e8f46f3e3cb76ed76f444bf51f2ba795efe4ce5d2a6ac280380691a8e1287",
+    "EncryptedVaultWriter._seal_blob": "081ff4a915ec94f0078920335eca6903e52229005a0df43015df103a6e7b92ef",
+    "_hkdf_key": "0c0830d1c5ec15c486511cc53c03961d72bdafb5dbf226344d38cf393d8924fc",
+    "generate_vault_keypair": "a9a64099df50b231f2be4a9a63f5acb196beb6886cd0a98eff2d8b80c6730ae8"
+}
+
+
+def test_W6_the_cryptographic_functions_are_byte_identical_to_the_audited_version():
+    """The AES-256-GCM / HKDF / X25519 code audited in the previous phases is unchanged: each cryptographic function's source hash is pinned. The ONLY allowed edit to
+    store.py is the post-authentication SEAL payload validation (`_seal_digests` and the two `_verified_seal` call sites)."""
+    now = _function_hashes(ROOT / "orca/eval/genesis_v2/store.py")
+    for name, digest in AUDITED_CRYPTO_FUNCTIONS.items():
+        assert now.get(name) == digest, name
+    assert "_seal_digests" in now
     assert _git_blob_id(ROOT / "orca/eval/genesis_v2/spec.py") == "babfc10c042305c996224306d485d9559aa0c01a"
 
 

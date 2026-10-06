@@ -70,6 +70,23 @@ MAGIC = b"GCE2ENC1"
 _CORPUS_ID = re.compile(r"^gce2c-[0-9a-f]{16,64}$")
 
 
+_SEAL_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def _seal_digests(payload: bytes) -> dict:
+    """Parses and validates the AUTHENTICATED SEAL plaintext. The payload is authentic once decryption succeeded, but authenticity is not well-formedness: whoever holds
+    the vault PUBLIC key can create a validly encrypted SEAL whose plaintext is not JSON, not an object, nested without bound, or carries malformed digests. All such
+    EXPECTED malformed content maps to PrivateStorageIntegrityError (fail closed). Only the decoding errors of this one json.loads call are caught (ValueError covers
+    JSON and UTF-8 decoding errors; RecursionError covers extreme nesting); any other exception is a defect and propagates."""
+    try:
+        digests = json.loads(payload)
+    except (ValueError, RecursionError):
+        raise PrivateStorageIntegrityError("SEAL payload is not decodable (fail closed)") from None
+    if not isinstance(digests, dict) or set(digests) != set(spec.PRIVATE_SPLITS) or not all(isinstance(v, str) and _SEAL_DIGEST.match(v) for v in digests.values()):
+        raise PrivateStorageIntegrityError("SEAL payload is not the expected split-digest map (fail closed)")
+    return digests
+
+
 def corpus_digest_of(split_digests: dict) -> str:
     """Corpus-level digest: SHA256 over the canonical map of per-split plaintext digests (both private splits are mandatory)."""
     if set(split_digests) != set(spec.PRIVATE_SPLITS):
@@ -182,7 +199,7 @@ class EncryptedFileStore:
             header, payload = self._open_blob((cdir / "SEAL.enc").read_bytes())
         except FileNotFoundError:
             raise PrivateStorageIntegrityError("corpus has no SEAL (partial or missing write)") from None
-        digests = json.loads(payload)
+        digests = _seal_digests(payload)
         if (header.get("eval_version"), header.get("corpus_id"), header.get("split")) != (spec.EVAL_VERSION, corpus_id, "SEAL"):
             raise PrivateStorageIntegrityError("SEAL metadata mismatch")
         if header.get("corpus_digest") != corpus_digest_of(digests) or header.get("corpus_digest") != expected_corpus_digest:
@@ -406,7 +423,7 @@ class EncryptedVaultReader:
             header, payload = self._open_blob((cdir / "SEAL.enc").read_bytes())
         except FileNotFoundError:
             raise PrivateStorageIntegrityError("corpus has no SEAL (partial or missing write)") from None
-        digests = json.loads(payload)
+        digests = _seal_digests(payload)
         if (header.get("eval_version"), header.get("corpus_id"), header.get("split")) != (spec.EVAL_VERSION, corpus_id, "SEAL"):
             raise PrivateStorageIntegrityError("SEAL metadata mismatch")
         if header.get("corpus_digest") != corpus_digest_of(digests) or header.get("corpus_digest") != expected_corpus_digest:

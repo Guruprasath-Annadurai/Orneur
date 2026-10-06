@@ -75,6 +75,8 @@ def derive_independent(h, over):
             h["ifaddrs"] = [{"name": i["name"], "flags": (1 if i["up"] else 0) | (8 if i["loopback_flag"] else 0), "v4": [str(a) for a in i["v4"]], "v6": [str(a) for a in i["v6"]]} for i in ifs]
         if "ifindex" not in over:
             h["ifindex"] = [i["name"] for i in ifs]
+        if "linkstate" not in over:                                                         # independent kernel link state consistent with the fixture's `status:` lines
+            h["linkstate"] = {i["name"]: {"active": "active", "inactive": "inactive", None: "no_media"}[i["status"]] for i in ifs}
     if "pcbcounts" not in over:
         try:
             rows = G.parse_sockets(h["sockets"])
@@ -165,7 +167,7 @@ def test_AUDIT4_cli_without_required_arguments_prints_fail_closed_and_fails(tmp_
 
 
 # ======================================================================== AUDIT 5 + Q3: telemetry
-MANDATORY_SOURCES = ("processes", "cmdlines", "env", "home", "ifconfig", "ifnames", "ifaddrs", "ifindex", "pcbcounts", "routes4", "routes6", "sockets", "boot_id")
+MANDATORY_SOURCES = ("processes", "cmdlines", "env", "home", "ifconfig", "ifnames", "ifaddrs", "ifindex", "linkstate", "pcbcounts", "routes4", "routes6", "sockets", "boot_id")
 
 
 @pytest.mark.parametrize("key", MANDATORY_SOURCES)
