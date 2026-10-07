@@ -1,0 +1,17 @@
+PROTOTYPE_ONLY — expected output of run.sh (STRUCTURAL_CODEC_EVIDENCE)
+py cases 20000 accepted 1744
+py verdict_digest d1b8488a6d1d603f156b663d76f172d6b526e15b87add83208353e38727cd863
+py baseline_accepts True
+js cases 20000 accepted 1744
+js verdict_digest d1b8488a6d1d603f156b663d76f172d6b526e15b87add83208353e38727cd863
+disagreements 0
+py NaN: {'n': nan}
+py duplicate key: {'a': 2}
+py big exponent: {'b': inf}
+js NaN: rejected
+js duplicate key: {"a":2}
+js big exponent: Infinity
+
+Reading: the accepted mutations are those that alter only opaque bytes (ciphertext, tag, signature) and leave every
+checked field and length intact; they are structurally valid by design. Nothing here tests a signature, KEM, AEAD,
+recipient binding, replay, key release or any repository parser.

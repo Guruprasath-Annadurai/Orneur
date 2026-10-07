@@ -1,3 +1,5 @@
+> `SUPERSEDED_BY_RSE_ARCH_1_2` — the closing claim "Unresolved HIGH blockers after this round: none" below is **withdrawn** (the re-audit found four, H1–H4).
+
 # RSE-ARCH-1.1 — Part 6: fresh architecture self-attack and corrections to 1.0 claims
 
 Paper attacks against 1.1 only; nothing was run against real systems. Result words: BLOCKED, DETECTED, CONTAINED, UNRESOLVED_DECLARED. (B12: the 1.0 report's claims were overstated; the column "1.0 claim" records the correction rather than rewriting history.)

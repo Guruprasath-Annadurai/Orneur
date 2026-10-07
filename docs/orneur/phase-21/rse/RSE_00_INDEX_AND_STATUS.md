@@ -1,3 +1,5 @@
+> `SUPERSEDED_BY_RSE_ARCH_1_2` — this 1.0 package was rejected on audit and is kept as history; see `v1.2/RSE12_00_INDEX_HISTORY_CLOSURE.md`. Some claims below (rollback "BLOCKED", ledger "DETECTED", "cannot decrypt", validators A/B, Sentinel independence, "two-party") are overstated and are corrected in 1.1 and 1.2.
+
 # ORNEUR / Genesis V2 — Advanced Real Secure Environment (RSE) architecture package
 
 Package version: **RSE-ARCH-1.0 (frozen for independent audit)**. Written 2026-10-07 against repository SHA `0264242cb5ea544ca3eefc7c1ab4b4c7294f2de7`.

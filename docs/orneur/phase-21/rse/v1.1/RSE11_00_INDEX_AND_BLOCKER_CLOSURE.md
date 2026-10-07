@@ -1,3 +1,5 @@
+> `SUPERSEDED_BY_RSE_ARCH_1_2` — 1.1 was rejected for freeze on re-audit (four unresolved HIGH gaps: H1–H4). Its statements that all of B1–B12 are RESOLVED and that no HIGH remains (`RSE11_06`) are **withdrawn**; see `../v1.2/RSE12_00_INDEX_HISTORY_CLOSURE.md`.
+
 # ORNEUR / Genesis V2 — RSE-ARCH-1.1 (architecture blocker remediation)
 
 Package version **RSE-ARCH-1.1**, written 2026-10-07 against canonical `main` `0264242cb5ea544ca3eefc7c1ab4b4c7294f2de7`; remediates the 1.0 candidate `8fa4100d77636fc0e7382dbdcf748d9567b9396f`. Version 1.0 files are retained unchanged as history. **Everything here is DESIGNED.** `DECISION_9R_P1_INDEPENDENT_WITNESS_REQUIRED`; P0 is `SYNTHETIC_REHEARSAL_ONLY`. Authorizations unchanged: no provisioning, hardware purchase, secret creation, corpus generation, Qualification, model selection, GPU or training. `main` is not advanced.
