@@ -165,6 +165,22 @@ def test_CHAR_keyed_open_blob_parses_header_json_before_aead_and_has_no_header_l
 def test_CHAR_symmetric_open_blob_parses_header_json_before_aead_and_has_no_header_length_cap(tmp_path, monkeypatch):
     """Characterization, not a fix: EncryptedFileStore._open_blob also parses header JSON before AEAD and has no length cap."""
     _need_crypto()
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    order: list[str] = []
+    real_loads = S.json.loads
+    real_decrypt = AESGCM.decrypt
+
+    def loads(text, *args, **kwargs):
+        order.append("json")
+        return real_loads(text, *args, **kwargs)
+
+    def decrypt(self, *args, **kwargs):
+        order.append("aead")
+        return real_decrypt(self, *args, **kwargs)
+
+    monkeypatch.setattr(S.json, "loads", loads)
+    monkeypatch.setattr(AESGCM, "decrypt", decrypt)
     store = S.EncryptedFileStore(tmp_path / "symmetric", bytes(range(1, 33)), repo_root=ROOT)
     payload = b"synthetic-symmetric"
     digest = hashlib.sha256(payload).hexdigest()
@@ -173,20 +189,6 @@ def test_CHAR_symmetric_open_blob_parses_header_json_before_aead_and_has_no_head
         {"eval_version": spec.EVAL_VERSION, "corpus_id": cid, "split": "SCREEN", "split_sha256": digest},
         payload,
     )
-    order: list[str] = []
-    real_loads = S.json.loads
-    real_decrypt = store._aead.decrypt
-
-    def loads(text, *args, **kwargs):
-        order.append("json")
-        return real_loads(text, *args, **kwargs)
-
-    def decrypt(*args, **kwargs):
-        order.append("aead")
-        return real_decrypt(*args, **kwargs)
-
-    monkeypatch.setattr(S.json, "loads", loads)
-    store._aead.decrypt = decrypt
     header, plain = store._open_blob(blob)
     assert plain == payload and header["corpus_id"] == cid
     assert order == ["json", "aead"]
