@@ -1,3 +1,5 @@
+> `FREEZE_CLASSIFICATION_SUPERSEDED_BY_RSE_ARCH_1_2_FREEZE_CANONICALITY_CORRECTION` — the normative classification in §3 (last row) and §4 below, and the class labels of `RSE_ARCH_1_2_FREEZE_MANIFEST.txt`, are superseded by `RSE_ARCH_1_2_FREEZE_CANONICALITY_CORRECTION.md` and `RSE_ARCH_1_2_FREEZE_MANIFEST_V2.txt`. In particular `RSE11_01`–`RSE11_05` are **not** "normative as amended": only the sections listed in the correction's incorporation register carry authority, by reference, as part of RSE-ARCH-1.2. All other content of this record (binding, guardrails, residuals, locks, gate rule) stands unchanged. This record was first committed at `6da3b7c75740f2056853e5b8ef32eecaefde6e8c`.
+
 # RSE_ARCH_1_2_ARCHITECTURE_FREEZE
 
 Immutable architecture-freeze record. It adds no design: it binds, classifies and locks what the independent audit accepted. A change to any governing file after this record requires a new RSE version, a new independent audit and a new freeze record; this file is never edited in place.
