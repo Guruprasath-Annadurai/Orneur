@@ -326,70 +326,13 @@ def test_FB_LIVE_reduced_lineages_stay_FAIL_CLOSED_and_the_link_state_check_does
         assert last["telemetry"] == "PASS", last
 
 
-# ================================================================================================================= PCB band: property tests tie the docs to the function
-def _max_removable(counter, extra=3):
-    """Largest number of rows that can be removed from a table of counter+extra rows while check_socket_plausibility still accepts (rows are loopback, so removal is the
-    only variable)."""
-    total = counter + extra; best = 0
-    for k in range(total + 1):
-        try:
-            G.check_socket_plausibility(rows_of(sockets_text(tcp=total - k)), pcb(counter))
-            best = k
-        except G.TelemetryError:
-            break
-    return total, best
-
-
-@pytest.mark.parametrize("c", [1, 2, 3, 5, 8, 12, 20, 50, 100, 300])
-def test_FB_whole_table_disappearance_is_always_detected_when_a_counter_is_nonzero(c):
-    with pytest.raises(G.TelemetryError):
-        G.check_socket_plausibility(rows_of(sockets_text(tcp=0)), pcb(c))
-
-
-def test_FB_the_blind_spot_matches_what_the_documentation_says():
-    total, best = _max_removable(3)
-    assert best / total > 0.5                                                                    # "a MAJORITY of the rows can [be removed] on a host with only a handful of PCBs"
-    total, best = _max_removable(300)
-    assert 0.2 <= best / total <= 0.34                                                           # "roughly a quarter to a third of the rows" on a busy host
-    total, best = _max_removable(50)
-    assert best >= 1                                                                             # "a single listener can always be hidden"
-    for c in (1, 2, 3, 5, 8, 20, 100, 300):
-        assert _max_removable(c)[1] >= 1
-
-
-def test_FB_the_multiplicative_upper_allowance_is_gone():
-    with pytest.raises(G.TelemetryError):
-        G.check_socket_plausibility(rows_of(sockets_text(tcp=1000)), pcb(500))                  # previously accepted (<= 2*500+16)
-    G.check_socket_plausibility(rows_of(sockets_text(tcp=500 + G.PCB_MAX_EXCESS)), pcb(500))
-    with pytest.raises(G.TelemetryError):
-        G.check_socket_plausibility(rows_of(sockets_text(tcp=500 + G.PCB_MAX_EXCESS + 1)), pcb(500))
-
-
-def test_FB_a_zero_counter_tolerates_exactly_the_measured_constant_excess_and_documents_it():
-    G.check_socket_plausibility(rows_of(sockets_text(tcp=G.PCB_MAX_EXCESS)), pcb(0))
-    with pytest.raises(G.TelemetryError):
-        G.check_socket_plausibility(rows_of(sockets_text(tcp=G.PCB_MAX_EXCESS + 1)), pcb(0))
-    assert "A counter of 0 therefore still tolerates up to 12 rows" in Path(G.__file__).read_text() and G.PCB_MAX_EXCESS == 12
-
-
-@pytest.mark.parametrize("seed", range(6))
-def test_FB_natural_churn_never_causes_a_false_PASS_only_possibly_a_false_failure(seed):
-    """Random bracket/row combinations: whenever the band accepts, the rows really are inside the documented limits."""
-    rnd = random.Random(seed)
-    for _ in range(400):
-        lo = rnd.randint(0, 400); hi = lo + rnd.randint(0, 60); n = rnd.randint(0, hi + 40)
-        try:
-            G.check_socket_plausibility(rows_of(sockets_text(tcp=n)), {"before": {"tcp": lo, "raw": 0}, "after": {"tcp": hi, "raw": 0}})
-            accepted = True
-        except G.TelemetryError:
-            accepted = False
-        need = max(1, int(0.75 * lo)) if lo >= 1 else 0
-        assert accepted == (need <= n <= hi + G.PCB_MAX_EXCESS)
+# PCB band tests were superseded by tests/test_genesis_v2_tier0s_pcb_remediation.py (the +12 / 0.75 band was withdrawn: the relationship it assumed does not hold).
 
 
 # ================================================================================================================= BLOCKER A: documentation
 WITHDRAWN = ("detects removal of the Internet section or of most", "most TCP/raw rows", "majority of TCP/raw rows", "independently cross-checked", "addresses/status (cross-checked",
-             "interface addresses and status (independently", "2 * higher counter", "2 × higher counter", "2x allowance has", "Internet section or of the majority")
+             "interface addresses and status (independently", "2 * higher counter", "2 × higher counter", "2x allowance has", "Internet section or of the majority",
+             "measured constant excess", "plausibility band", "bounded plausibility", "PLAUSIBILITY HEURISTIC", "PCB_MAX_EXCESS", "PCB_MIN_RATIO", "a quarter to a third of the rows", "+12", "hi + 12")
 
 
 def _doc_texts():
@@ -399,7 +342,7 @@ def _doc_texts():
 def test_FB_withdrawn_completeness_claims_do_not_return_anywhere():
     bad = {}
     for name, t in _doc_texts().items():
-        if name.endswith("FINAL_BLOCKERS_REMEDIATION.md") or name.endswith("W1_W2_REMEDIATION.md") or name.endswith("ACCEPTANCE_AUDIT.md"):
+        if name.endswith(("FINAL_BLOCKERS_REMEDIATION.md", "W1_W2_REMEDIATION.md", "ACCEPTANCE_AUDIT.md", "PCB_REMEDIATION.md")):
             continue                                                                             # the traceability documents quote the withdrawn wording in order to withdraw it
         hits = [w for w in WITHDRAWN if w in t]
         if hits:
@@ -408,18 +351,18 @@ def test_FB_withdrawn_completeness_claims_do_not_return_anywhere():
 
 
 def test_FB_the_historical_documents_mention_withdrawn_wording_only_as_withdrawn():
-    for name in ("GENESIS_V2_TIER0S_W1_W2_REMEDIATION.md", "GENESIS_V2_TIER0S_FINAL_BLOCKERS_REMEDIATION.md"):
+    for name in ("GENESIS_V2_TIER0S_W1_W2_REMEDIATION.md", "GENESIS_V2_TIER0S_FINAL_BLOCKERS_REMEDIATION.md", "GENESIS_V2_TIER0S_PCB_REMEDIATION.md"):
         t = " ".join((INFRA / name).read_text().split())
         for w in WITHDRAWN:
             for m in re.finditer(re.escape(w), t):
                 ctx = t[max(0, m.start() - 240):m.end() + 240].lower()
-                assert any(k in ctx for k in ("withdrawn", "removed", "inaccurate", "was single-sourced", "earlier", "replaced", "no longer", "found by the acceptance audit")), (name, w)
+                assert any(k in ctx for k in ("withdrawn", "removed", "inaccurate", "was single-sourced", "earlier", "replaced", "no longer", "found by the acceptance audit", "superseded", "falsified")), (name, w)
 
 
-def test_FB_the_gate_states_the_exact_blind_spot_of_the_socket_band():
+def test_FB_the_gate_states_the_exact_blind_spot_of_the_socket_check():
     d = " ".join(G.__doc__.split())
-    for must in ("PLAUSIBILITY HEURISTIC, NOT row-by-row completeness", "a MAJORITY of the rows can", "A single listener can always be hidden", "the disappearance of the whole table is always detected",
-                 "roughly a quarter to a third of the rows", "UDP completeness is unproven and UDP absence is not claimed"):
+    for must in ("ADVISORY CORROBORATION ONLY, NOT COMPLETENESS", "NON-EMPTINESS", "It does NOT detect the removal of some rows", "A single listener, or every external listener, can therefore be missing",
+                 "Anyone who can create loopback sockets can raise the counters at will", "UDP completeness is unproven and UDP absence is not claimed"):
         assert must in d, must
 
 

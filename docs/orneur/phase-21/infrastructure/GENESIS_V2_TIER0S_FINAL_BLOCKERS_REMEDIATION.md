@@ -1,14 +1,16 @@
 # Genesis V2 Tier0-S — final acceptance-blocker remediation
 
-Base SHA `4016e361b95efc14078b63f3d4b526e4658ca831` (previous verdict `TIER0_S_SOFTWARE_GATE_REJECTED`). Scope: the software gate `scripts/genesis_v2_tier0s_phase_gate.py` and the SEAL reader in `orca/eval/genesis_v2/store.py`. This document grants no permission of any kind. READY from the gate is readiness only. No real Tier0-S environment exists, no Decision 9 has been made, and all seven authorization flags stay false.
+Base SHA `4016e361b95efc14078b63f3d4b526e4658ca831` (previous verdict `TIER0_S_SOFTWARE_GATE_REJECTED`). Scope: the software gate `scripts/genesis_v2_tier0s_phase_gate.py` and the SEAL reader in `orca/eval/genesis_v2/store.py`. > **Superseded in part.** The `hi + 12` band described for BP and section 4 was falsified by later measurement and is withdrawn; see `GENESIS_V2_TIER0S_PCB_REMEDIATION.md`. The rest of this document stands.
+
+This document grants no permission of any kind. READY from the gate is readiness only. No real Tier0-S environment exists, no Decision 9 has been made, and all seven authorization flags stay false.
 
 ## 1. Traceability matrix
 
 | ID | Finding | Remediation | Regression tests |
 |---|---|---|---|
-| BA | Documentation wording exceeded the measured behaviour of the socket band and described the single-sourced `status:` line as cross-checked. Those statements are withdrawn. | Gate docstring and all Tier0-S documents rewritten; scanner and phrase-level regression tests keep the withdrawn wording from returning. | `test_FB_withdrawn_completeness_claims_do_not_return_anywhere`, `test_FB_the_historical_documents_mention_withdrawn_wording_only_as_withdrawn`, `test_FB_the_gate_states_the_exact_blind_spot_of_the_socket_band`, `test_FB_no_sentence_in_the_gate_or_the_docs_claims_the_completeness_of_telemetry_without_a_qualifier` |
+| BA | Documentation wording exceeded the measured behaviour of the socket band and described the single-sourced `status:` line as cross-checked. Those statements are withdrawn. | Gate docstring and all Tier0-S documents rewritten; scanner and phrase-level regression tests keep the withdrawn wording from returning. | `test_FB_withdrawn_completeness_claims_do_not_return_anywhere`, `test_FB_the_historical_documents_mention_withdrawn_wording_only_as_withdrawn`, `test_FB_the_gate_states_the_exact_blind_spot_of_the_socket_check`, `test_FB_no_sentence_in_the_gate_or_the_docs_claims_the_completeness_of_telemetry_without_a_qualifier` |
 | BB | An UP, link-local-only interface with its `status: active` line missing from `ifconfig` produced a PASS. | New in-process kernel link-state source (SIOCGIFMEDIA) and an explicit link policy; unestablished link state on an UP addressed interface is FAIL_CLOSED. | `test_FB_THE_ACCEPTANCE_AUDIT_CASE_UP_link_local_only_status_line_dropped_never_passes`, `test_FB_the_interface_verdict_equals_the_policy_oracle_for_every_combination`, `test_FB_unknown_link_state_on_an_UP_addressed_interface_is_FAIL_CLOSED_with_a_distinct_reason`, `test_FB_an_unavailable_independent_link_state_source_is_FAIL_CLOSED` |
-| BP | The socket plausibility band allowed `2 * hi + 16` rows, an allowance the evidence did not support. | Upper bound is `hi + PCB_MAX_EXCESS` (12, measured); lower floor 0.75 kept; blind spot characterized by property tests. | `test_FB_the_multiplicative_upper_allowance_is_gone`, `test_FB_the_blind_spot_matches_what_the_documentation_says`, `test_FB_whole_table_disappearance_is_always_detected_when_a_counter_is_nonzero`, `test_FB_natural_churn_never_causes_a_false_PASS_only_possibly_a_false_failure` |
+| BP | The socket plausibility band allowed `2 * hi + 16` rows, an allowance the evidence did not support. | Replaced by a `hi + 12` bound here, which was itself falsified later (withdrawn, superseded by the non-emptiness rule in the PCB remediation document). | `test_FB_the_gate_states_the_exact_blind_spot_of_the_socket_check` |
 | BW6 | An authentic but malformed SEAL plaintext raised a raw exception instead of a typed integrity failure. | `_seal_digests` in `store.py` validates the payload after authentication; only decoding errors are translated. | `test_FB_a_valid_encryption_of_a_malformed_SEAL_is_a_typed_VERIFICATION_FAILED_never_an_exception`, `test_FB_a_genuine_defect_inside_the_payload_handling_propagates`, `test_FB_only_the_documented_decoding_errors_are_translated`, `test_FB_the_symmetric_store_reader_has_the_same_protection` |
 | BD | A parser or collector defect was indistinguishable from a host condition. | Reasons `PARSER_DEFECT:<Class>` and `COLLECTOR_DEFECT:<Class>` carry the class name only; every defect still fails closed. | `test_FB_a_parser_defect_is_distinguished_from_a_host_condition_and_leaks_no_message`, `test_FB_every_unexpected_parser_exception_fails_closed_with_its_class_name`, `test_FB_collect_host_marks_post_processing_and_collector_defects` |
 | BX | Decisive false-PASS battery for a host with usable networking. | Every single and pairwise source reduction is tried against the whole gate. | `test_FB_no_single_source_or_pairwise_reduction_of_a_live_network_yields_a_network_PASS` |
@@ -43,7 +45,7 @@ Before and after the audit construction: the old logic gave PASS, the new gate g
 
 ## 4. PCB band adjudication (BP)
 
-The band is `max(1, int(0.75 * lo))` at the low end (0 when `lo` is 0) and `hi + 12` at the high end, where `lo` and `hi` bracket the `netstat` call. The constant 12 is the measured constant excess of `netstat` rows over the kernel counter (a counter of 0 therefore still tolerates up to 12 rows). No host row counts are hard-coded. Natural churn can cause a false failure; it cannot cause a false PASS. Blind spots are listed in section 2.
+SUPERSEDED. This section described a band of `max(1, int(0.75 * lo))` and `hi + 12` and called 12 the measured constant excess. That was falsified: the excess measured 8 to 17 and drifts, and closed PCBs lift the counter above the listed rows, so the band rejected the genuine table in 28 of 30 samples. It is withdrawn; see `GENESIS_V2_TIER0S_PCB_REMEDIATION.md`.
 
 ## 5. SEAL payload handling (BW6)
 
@@ -70,7 +72,7 @@ Closed vocabulary: ENFORCED (the gate or a test refuses on violation), ADVISORY 
 | C13 | ENFORCED | Malformed authentic SEAL plaintext gives a typed integrity failure |
 | C14 | ENFORCED | AES-256-GCM, HKDF and X25519 functions are pinned |
 | C15 | ADVISORY | The gate is a one-shot pre-flight with no isolation credit |
-| C16 | ADVISORY | Socket band plausibility, not row-by-row evidence |
+| C16 | ADVISORY | Socket non-emptiness corroboration only (superseded band withdrawn), not row-by-row evidence |
 | C17 | ADVISORY | Link-state source shares the kernel with `ifconfig` |
 | C18 | ADVISORY | Route table has no independent source and no integrity claim |
 | C19 | PROCEDURAL | Physical detachment of the second machine |

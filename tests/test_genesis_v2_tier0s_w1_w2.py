@@ -76,20 +76,23 @@ def test_W1_internet_section_removed_while_sockets_exist_is_COMPLETENESS_UNPROVE
     assert f"sockets={CODE}" in res["telemetry_complete"]["detail"] and not G.gate_passes(res)
 
 
-def test_W1_complete_rows_removed_is_detected():
+def test_W1_whole_table_removed_is_detected():
     e = raises(G.check_socket_plausibility, rows_of(sockets_text(tcp=0)), pcb(60))
-    assert e.reason == CODE and "tcp socket rows" in str(e)
+    assert e.reason == CODE and "socket table is empty" in str(e)
 
 
-@pytest.mark.parametrize("have,counter", [(10, 100), (30, 100), (74, 100), (1, 4), (0, 1), (2, 12)])
-def test_W1_removal_of_most_rows_is_detected(have, counter):
-    raises(G.check_socket_plausibility, rows_of(sockets_text(tcp=have)), pcb(counter))
+@pytest.mark.parametrize("counter", [1, 2, 4, 12, 100, 4000])
+def test_W1_any_nonzero_counter_with_an_empty_table_is_detected(counter):
+    raises(G.check_socket_plausibility, rows_of(sockets_text(tcp=0)), pcb(counter))
 
 
-def test_W1_documented_limit_removal_of_a_FEW_rows_is_NOT_detected():
-    """Honest residual: the band detects the section / the majority, not individual rows. This test pins that the documentation says so."""
-    G.check_socket_plausibility(rows_of(sockets_text(tcp=99)), pcb(100))
-    assert "NOT row-by-row completeness" in " ".join(G.check_socket_plausibility.__doc__.split())
+def test_W1_documented_limit_removal_of_rows_is_NOT_detected_so_no_count_relationship_is_claimed():
+    """Honest residual (final PCB remediation): ONLY an empty table is detected. Any non-empty table is accepted whatever the counter says, because no count relationship
+    is justified (the counter keeps closed PCBs; netstat lists PCBs the counter does not). This test pins that the code AND the documentation say exactly that."""
+    for have, counter in [(99, 100), (1, 100), (1, 4000), (10, 100), (400, 3), (100, 0), (60, 20)]:
+        G.check_socket_plausibility(rows_of(sockets_text(tcp=have)), pcb(counter))
+    d = " ".join(G.check_socket_plausibility.__doc__.split())
+    assert "ADVISORY corroboration, never completeness" in d and "one or all external listeners can be missing" in d
 
 
 def test_W1_header_only_table_with_sockets_present_is_unproven_but_with_no_sockets_is_verified_empty():
@@ -97,26 +100,23 @@ def test_W1_header_only_table_with_sockets_present_is_unproven_but_with_no_socke
     G.check_socket_plausibility(rows_of(sockets_text()), pcb(0))                                       # nothing exists, nothing is listed: consistent
 
 
-@pytest.mark.parametrize("rows,counter", [(400, 3), (100, 0), (60, 20)])
-def test_W1_rows_wildly_above_the_counter_are_implausible(rows, counter):
-    raises(G.check_socket_plausibility, rows_of(sockets_text(tcp=rows)), pcb(counter))
-
-
-def test_W1_counter_bracket_uses_both_reads_so_natural_churn_does_not_cause_failure_but_a_real_gap_does():
-    G.check_socket_plausibility(rows_of(sockets_text(tcp=55)), pcb(50, tcp_after=80))
-    raises(G.check_socket_plausibility, rows_of(sockets_text(tcp=30)), pcb(50, tcp_after=80))
+def test_W1_counter_bracket_requires_nonzero_at_BOTH_reads_so_natural_churn_does_not_cause_failure():
+    G.check_socket_plausibility(rows_of(sockets_text()), pcb(0, tcp_after=80))                         # sockets appeared during the query: not a violation
+    G.check_socket_plausibility(rows_of(sockets_text()), pcb(80, tcp_after=0))
+    raises(G.check_socket_plausibility, rows_of(sockets_text()), pcb(1, tcp_after=80))
 
 
 def test_W1_raw_icmp_class_is_checked_independently():
     G.check_socket_plausibility(rows_of(sockets_text(tcp=10, icm=3)), pcb(10, 3))
     raises(G.check_socket_plausibility, rows_of(sockets_text(tcp=10, icm=0)), pcb(10, 3))
+    G.check_socket_plausibility(rows_of(sockets_text(tcp=10, icm=0)), pcb(10, 0))
 
 
 def test_W1_UDP_is_deliberately_not_compared_and_the_documentation_says_why():
     assert set(G.PCB_COUNTERS) == {"tcp", "raw"} and "udp" not in G.PCB_COUNTERS
     G.check_socket_plausibility(rows_of(sockets_text(tcp=5, udp=0)), pcb(5))                           # UDP rows absent: no failure, no claim
     d = " ".join(G.__doc__.split())
-    assert "UDP rows are therefore observation-only" in d and "UDP completeness is unproven and UDP absence is not claimed" in d
+    assert "UDP rows are observation-only" in d and "UDP completeness is unproven and UDP absence is not claimed" in d
 
 
 def test_W1_udp_rows_are_still_observed_and_can_only_add_a_failure(tmp_path):

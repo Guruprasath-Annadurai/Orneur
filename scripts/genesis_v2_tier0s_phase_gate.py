@@ -12,8 +12,8 @@ WHAT THIS IS NOT (read before relying on it):
   * NOT the cold-boot/detachment control. Cold boot between roles and PHYSICAL DETACHMENT of the other role's storage are owner-controlled physical
     procedures (see the Tier0-S design doc). The interlock below adds NO assurance against any adversary and earns NO acceptance credit.
   * NOT exhaustive. Process, socket and path checks use known names/locations; absence of a known indicator is not proof of absence.
-  * NOT proof of network absence. The socket check sees only sockets that exist at this instant (TCP/UDP bound or connected to a non-loopback address); it
-    does not establish that no process could communicate.
+  * NOT proof of network absence. The socket check sees only sockets that exist at this instant (TCP/UDP bound or connected to a non-loopback address) and its PASS is
+    ADVISORY; it does not establish that no process could communicate.
 
 FAIL-CLOSED RULE ("unknown state is unsafe state"): every security-relevant input must be supplied, every host query must succeed, and the gate passes only if
 every check is PASS. TWO SEPARATE QUESTIONS ARE ANSWERED AND NEVER CONFLATED:
@@ -62,20 +62,23 @@ COMPLETENESS (independent of the command parsers; every comparison source is man
     independent state is status_invalid has a link state that cannot be established and is FAIL_CLOSED (availability is preferred over false isolation); an unavailable
     or unreadable link-state source is FAIL_CLOSED. Inactive and no_media interfaces are decided by their addresses. Whether a physical link is really up beyond what
     the kernel reports is not established.
-  * sockets: parsed TCP and raw/ICMP rows are compared with the kernel PCB counters net.inet.tcp.pcbcount and net.inet.raw.pcbcount, read BEFORE and AFTER the socket
-    query (the counters were observed unfiltered). Per class: rows >= max(1, floor(0.75 * lower counter)) and rows <= higher counter + 12. WHAT THAT ESTABLISHES, EXACTLY:
-    the disappearance of the whole table is always detected whenever a counter is >= 1. It is a PLAUSIBILITY HEURISTIC, NOT row-by-row completeness: on a busy host
-    roughly a quarter to a third of the rows can disappear and still be accepted, and on a host with only a handful of PCBs a MAJORITY of the rows can (for example 4 of 6
-    at a counter of 3). A single listener can always be hidden inside the band. It says NOTHING about UDP: the kernel UDP counter equals the kernel pcblist record count, but
-    `netstat` omits some UDP PCBs by design and the omitted number is not stable, so no trustworthy UDP relationship exists. UDP rows are therefore observation-only (they
-    can add a failure, never a pass), UDP completeness is unproven and UDP absence is not claimed. Under heavy connection churn the counter exceeds the listed rows and the
-    band fails closed (a false failure, never a false pass).
+  * sockets: ADVISORY CORROBORATION ONLY, NOT COMPLETENESS. The one relationship the evidence supports is NON-EMPTINESS: if a kernel PCB counter (net.inet.tcp.pcbcount,
+    net.inet.raw.pcbcount; read BEFORE and AFTER the `netstat -an` call) is >= 1 for the whole query, a table with ZERO parsed rows of that class is refused. That detects the
+    known reduction (the kernel hands the filtered process an empty PCB list: whole table gone, exit status 0). It does NOT detect the removal of some rows. No count
+    relationship is claimed beyond that: measured on macOS 27.0.1, the counter counts allocated PCBs including closed ones not yet reclaimed (it stayed at 472 while the
+    listed rows fell from 484 to 284 after sockets closed), while `netstat` lists a few PCBs the counter does not (an excess that measured 8 to 17 and is NOT constant), so
+    NO fixed or proportional bound on rows in either direction is justified and none is used. Anyone who can create loopback sockets can raise the counters at will. A single
+    listener, or every external listener, can therefore be missing from an accepted table. The socket check can only ADD failures (an external row is a FAIL); a PASS of
+    network_no_external_sockets is advisory and never the basis of the network verdict, which rests on interface addresses and the cross-checked link state. UDP: the kernel UDP
+    counter has no stable relationship to the rows `netstat` prints, so UDP rows are observation-only (they can add a failure, never a pass), UDP completeness is unproven and UDP
+    absence is not claimed.
   * routes: NO independent route source exists (the raw kernel route dump is filtered identically to `netstat -rn`), so the route table's completeness is NEVER claimed.
     The network verdict rests on the interface ADDRESSES and the cross-checked LINK STATE; the route table can only add a failure, and it must contain a route for every
-    UP, addressed, non-loopback interface of the independent inventory (otherwise COMPLETENESS is unproven).
+    UP, addressed, non-loopback interface of the independent inventory, and every interface a route row names must exist in that inventory (otherwise COMPLETENESS is
+    unproven; a route whose interface is merely unaddressed is NOT refused: no evidence shows that to be abnormal).
   * reduced-view signature: any `ether` line equal to 02:00:00:00:00:00 (the value substituted for every hardware address in the reduced view; observed 12 of 12 reduced,
-    0 of 12 full) is an INDICATOR, not proof. A host that really assigns that value fails closed, which is safe. When this signature, or a socket-counter inconsistency, is
-    present, ifconfig, routes4, routes6 and sockets are ALL treated as TELEMETRY_COMPLETENESS_UNPROVEN, because they share the filtering layer. A violation still
+    0 of 12 full) is an INDICATOR, not proof. A host that really assigns that value fails closed, which is safe. When this signature, or an empty socket table with a nonzero counter, is
+    present, ifconfig, routes4, routes6 and sockets are ALL treated as TELEMETRY_COMPLETENESS_UNPROVEN, because they share the filtering layer. (The socket-counter inconsistency is the empty-table case above.) A violation still
     visible in a reduced view remains a violation (FAIL).
   * RUN THE GATE FROM AN UNFILTERED LINEAGE (for example the Apple-signed /usr/bin/python3 started from Terminal). Which ancestor property triggers the reduced view is NOT
     identified; every Apple-signed interpreter tested gave the full view and every non-Apple one tested (Homebrew node, uv, uv-managed Python, including their Apple-signed
@@ -159,16 +162,13 @@ COMPLETENESS = "TELEMETRY_COMPLETENESS_UNPROVEN"     # sanitized reason: the out
 MAC_REDACTED = "02:00:00:00:00:00"                   # value macOS substitutes for every hardware address in the reduced telemetry view (an INDICATOR, not proof)
 PCB_COUNTERS = {"tcp": "net.inet.tcp.pcbcount", "raw": "net.inet.raw.pcbcount"}      # NO udp: see check_socket_plausibility
 PCB_MAX = 10 ** 7                                    # a larger counter is implausible
-# Per-class plausibility floors for "parsed socket rows >= ratio * counter": measured on macOS 27.0.1 in the UNFILTERED view as rows/counter = tcp ~0.89-1.12 at idle and light activity (rows
-# usually slightly EXCEED the counter) and raw/ICMP exactly 1.00. The floors sit below those measurements; a host measuring lower FAILS CLOSED (availability), never open.
-# UDP is deliberately EXCLUDED: the kernel UDP counter equals the kernel pcblist record count, but `netstat` omits some UDP PCBs by design and the omitted number is
-# not stable (rows/counter measured 0.77, then 0.35 during a burst of 102 PCBs vs 36 rows), so NO trustworthy UDP relationship exists and none is invented.
-PCB_MIN_RATIO = {"tcp": 0.75, "raw": 0.75}
-# Upper bound: rows <= higher counter + PCB_MAX_EXCESS. Measured (macOS 27.0.1, ~300 samples, idle and light connection activity): `netstat` lists up to 5-8 MORE TCP
-# rows than the counter and never more; under heavy connection churn rows fall far BELOW the counter (rows/counter 0.52 after 1000 short connections; lingering PCBs are
-# counted but not all listed). The earlier multiplicative allowance (2x) had no support in any measurement and was removed; +12 leaves ~1.5x margin over the measured
-# excess. A counter of 0 therefore still tolerates up to 12 rows: that is the measured constant excess, not an anomaly, and it cannot be tightened without false failures.
-PCB_MAX_EXCESS = 12
+# What the counters mean (macOS 27.0.1, measured; no public documentation gives a relationship): each socket created adds exactly 1 to the counter and 1 netstat row
+# (IPv4, IPv6 and dual-stack alike, one row per PCB); but the counter keeps PCBs that have closed and not yet been reclaimed, while netstat lists only live ones plus a few
+# the counter does not count. After closing 100 connections the counter stayed at 472 while the rows fell to 284; at idle the rows exceeded the counter by 8 to 17, drifting
+# with load. Therefore NO bound on rows relative to the counter holds in either direction, and a ratio floor or an additive allowance would only fit one load state (the
+# earlier ratio floor and additive allowance did exactly that and rejected the genuine table in 28 of 30 samples). The kernel PCB list itself (sysctl pcblist_n) is the data netstat
+# prints (record count equal to the rows in every sample) and is filtered identically in the reduced view (header count intact, zero records), so reading it directly would add a
+# private-layout dependency and no independence. Only non-emptiness is used. UDP is excluded: its kernel counter has no stable relationship to the rows `netstat` prints.
 # Link state: the kernel's SIOCGIFMEDIA answer (the source of `ifconfig`'s `status:` line), queried IN-PROCESS. Measured on macOS 27.0.1: the request is accepted with a
 # 40- or 44-byte ifmediareq and rejected (EOPNOTSUPP) with 48 bytes; 40 is used. ifm_status sits at offset 24.
 def _iowr(group: str, num: int, size: int) -> int:
@@ -749,23 +749,21 @@ def parse_pcbcounts(v) -> dict:
 
 
 def check_socket_plausibility(rows: list, pcb: dict) -> None:
-    """Parsed TCP (tcp*) and raw/ICMP (icm*) socket rows against the kernel PCB counters (read before AND after the socket query). Required, per class:
-    rows >= max(1, floor(ratio * min(bracket))) when the counter is >= 1, and rows <= max(bracket) + PCB_MAX_EXCESS. WHAT THIS ESTABLISHES, EXACTLY: the disappearance of the
-    whole table whenever a counter is >= 1 is always detected. Up to about (1 - ratio) = 25% of the rows PLUS the measured listing excess (a few rows) can be removed while the
-    band still accepts on a busy host, and on a host with only a handful of PCBs a MAJORITY of the rows can be removed (for example 4 of 6 at a counter of 3). It is a
-    plausibility heuristic, NOT row-by-row completeness, and it says NOTHING about UDP rows (no stable relationship exists, so UDP
-    completeness is unproven and UDP absence is not claimed). Raises COMPLETENESS on a violation."""
+    """NON-EMPTINESS corroboration of the socket table. For TCP and raw/ICMP: if the kernel PCB counter (read before AND after the socket query) is >= 1 at both reads, at
+    least one parsed row of that class must exist, else COMPLETENESS is unproven. WHAT THIS ESTABLISHES, EXACTLY: the known reduction (the table is empty while the kernel
+    counts PCBs) is detected. WHAT IT DOES NOT: it says nothing about how many rows are present. The counter includes closed PCBs awaiting reclamation and excludes some
+    PCBs `netstat` lists, so no count bound is justified; loopback sockets raise the counter freely; one or all external listeners can be missing from an accepted table.
+    It is ADVISORY corroboration, never completeness, and says nothing about UDP. It can only ever add a failure. Raises COMPLETENESS on a violation. A host whose every
+    PCB is closed-but-unreclaimed would fail here (a false failure; never a false pass)."""
     have = {"tcp": 0, "raw": 0}
     for proto, _state, _ext in rows:
         if proto.startswith("tcp"):
             have["tcp"] += 1
         elif proto.startswith("icm"):
-            have["raw"] += 1                                                    # UDP rows are intentionally not counted: see PCB_MIN_RATIO
+            have["raw"] += 1                                                    # UDP rows are intentionally not counted
     for cls, n in have.items():
-        lo, hi = min(pcb["before"][cls], pcb["after"][cls]), max(pcb["before"][cls], pcb["after"][cls])
-        need = max(1, int(PCB_MIN_RATIO[cls] * lo)) if lo >= 1 else 0
-        if n < need or n > hi + PCB_MAX_EXCESS:
-            raise TelemetryError(COMPLETENESS, f"{cls} socket rows are inconsistent with the kernel PCB counter")
+        if min(pcb["before"][cls], pcb["after"][cls]) >= 1 and n == 0:
+            raise TelemetryError(COMPLETENESS, f"{cls} socket table is empty while the kernel counts PCBs")
 
 
 def parse_linkstate(v) -> dict:
@@ -815,8 +813,12 @@ def link_state_report(ifs: list, ifa: list, ls: dict) -> dict:
 
 def check_route_interface_consistency(r4: list, r6: list, ifaddrs: list) -> None:
     """Every non-loopback interface that is UP and carries an address must appear as the interface of at least one route row of that family. This ties the
-    route table to the independent interface inventory. It says nothing about neighbour (host) routes, which the reduced view omits and which no check uses."""
+    route table to the independent interface inventory, and every interface a route row names must exist in that inventory (a route to an unknown interface means one of the
+    views is stale or reduced). A route via an interface that has no address is NOT refused. It says nothing about neighbour (host) routes, which the reduced view omits and which no check uses."""
     n4, n6 = {r[3] for r in r4}, {r[3] for r in r6}
+    known = {i["name"] for i in ifaddrs}
+    if (n4 | n6) - known:
+        raise TelemetryError(COMPLETENESS, "a route row names an interface that is absent from the independent interface inventory")
     for i in ifaddrs:
         if i["loopback"] or not i["up"]:
             continue
@@ -1725,7 +1727,8 @@ def evaluate(role, *, host: dict, state_dir=None, role_state_dir=None, code_root
         elif "sockets" in incomplete:
             r["network_no_external_sockets"] = _fc(f"{COMPLETENESS}: the socket table is not consistent with the kernel PCB counters")
         else:
-            r["network_no_external_sockets"] = _res(PASS, "0 external socket(s) observed, TCP and raw/ICMP rows are consistent with the kernel PCB counters within a bounded plausibility band (not a proof that every row is present); UDP rows are NOT cross-checked (no stable relationship exists) and UDP absence is NOT claimed; point-in-time only, not proof that nothing could communicate")
+            r["network_no_external_sockets"] = _res(PASS, "ADVISORY: 0 external socket(s) observed in a TCP/raw table that the kernel counters do not show to be empty (that is all they show; individual rows may be missing and loopback sockets can inflate the counters); UDP rows are NOT cross-checked and UDP absence is NOT claimed; point-in-time only; the network verdict rests on the interface addresses and link state")
+            r["network_no_external_sockets"]["advisory"] = True
     # -- cloud sync / agent: process vs exposure
     if names is None:
         r["cloud_sync_process_absent"] = _fc("process list unverified")
