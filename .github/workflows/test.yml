@@ -6,6 +6,7 @@ on:
       - main
       - session-update-2026-08-25
       - 'phase14b-*'
+      - 'cursor/**'
   pull_request:
     branches:
       - main
