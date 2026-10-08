@@ -7,6 +7,9 @@ of exact snapshot binding.
 
 N-2: ``highest_authenticated_version`` and the consumed/voided sets live here.
 Callers cannot supply a replacement ledger or a lower generation.
+
+Forfeited sequences are merged inclusive intervals. Set sections and the
+export share one cap so a journal this object writes can be parsed again.
 """
 
 from __future__ import annotations
@@ -18,6 +21,8 @@ from orca.rse.imp1.codec import OwnerToken, Registry
 from orca.rse.imp1.verdict import CHECKS_PASSED, FAIL_CLOSED, FailClosed
 
 _MAGIC = b"OFJ1"
+MAX_SET = 8192
+MAX_INTERVALS = 4096
 
 
 class RoleFreshness:
@@ -29,7 +34,7 @@ class RoleFreshness:
         self._voided: set[bytes] = set()
         self._consumed: set[bytes] = set()
         self._dead_grants: set[bytes] = set()
-        self._forfeited_sequences: set[int] = set()
+        self._forfeited: list[tuple[int, int]] = []
         self._highest = 0
         self._root = bytes(32)
         self._challenge_seq = 0
@@ -81,7 +86,7 @@ class RoleFreshness:
                 raise FailClosed("REGISTRY_FORK")
             return registry
         if self._outstanding is not None:
-            self._voided.add(self._outstanding)
+            self._remember(self._voided, self._outstanding)
             self._outstanding = None
         self._highest = registry.registry_version
         self._root = registry.registry_root
@@ -94,30 +99,57 @@ class RoleFreshness:
         if entropy in self._voided or entropy in self._consumed:
             raise FailClosed("CHALLENGE_REPLAY")
         if self._outstanding is not None:
-            self._voided.add(self._outstanding)
+            self._remember(self._voided, self._outstanding)
         self._outstanding = entropy
         self._challenge_seq += 1
         self.set_head(head)
         return entropy
 
     def note_dead_grant(self, grant_id: bytes) -> None:
-        self._dead_grants.add(bytes(grant_id))
+        if not isinstance(grant_id, (bytes, bytearray)) or len(grant_id) != 16:
+            raise FailClosed("GRANT_ID")
+        self._remember(self._dead_grants, bytes(grant_id))
 
     def forfeit_sequences(self, first: int, last: int) -> None:
-        if last < first:
-            raise FailClosed("SEQUENCE")
-        for value in range(first, last + 1):
-            self._forfeited_sequences.add(value)
+        self._forfeited = _add_interval(self._forfeited, first, last)
 
     def sequence_forfeited(self, value: int) -> bool:
-        return value in self._forfeited_sequences
+        for start, end in self._forfeited:
+            if start <= value <= end:
+                return True
+            if start > value:
+                return False
+        return False
 
     def consume_sequence(self) -> int:
         value = self._next_sequence
-        if value in self._forfeited_sequences:
+        if self.sequence_forfeited(value):
             raise FailClosed("FORFEITED_SEQUENCE")
         self._next_sequence = value + 1
         return value
+
+    def _remember(self, bucket: set[bytes], item: bytes) -> None:
+        if item in bucket:
+            return
+        bucket.add(item)
+        try:
+            self._compact_sets()
+        except FailClosed:
+            bucket.discard(item)
+            raise
+
+    def _compact_sets(self) -> None:
+        """Drop a voided challenge that is already consumed. Consumed still rejects replay."""
+        overlap = self._voided & self._consumed
+        if overlap:
+            self._voided -= overlap
+        if (
+            len(self._voided) > MAX_SET
+            or len(self._consumed) > MAX_SET
+            or len(self._dead_grants) > MAX_SET
+            or len(self._forfeited) > MAX_INTERVALS
+        ):
+            raise FailClosed("FRESHNESS")
 
     def evaluate(self, grant, registry: Registry) -> None:
         """Refuse stale grants without burning a challenge they do not carry."""
@@ -144,30 +176,31 @@ class RoleFreshness:
         challenge = bytes(challenge)
         if challenge != self._outstanding:
             raise FailClosed("CHALLENGE")
-        self._consumed.add(challenge)
+        self._remember(self._consumed, challenge)
         self._outstanding = None
 
     def export(self) -> bytes:
+        self._compact_sets()
         voided = b"".join(sorted(self._voided))
         consumed = b"".join(sorted(self._consumed))
         dead = b"".join(sorted(self._dead_grants))
-        forfeited = b"".join(struct.pack(">Q", item) for item in sorted(self._forfeited_sequences))
+        intervals = b"".join(struct.pack(">QQ", start, end) for start, end in self._forfeited)
         outstanding = self._outstanding if self._outstanding is not None else bytes(32)
         flag = 1 if self._outstanding is not None else 0
         body = b"".join((
-            _MAGIC, bytes([1, flag]), self.role_id, outstanding, self._root, self._head,
+            _MAGIC, bytes([2, flag]), self.role_id, outstanding, self._root, self._head,
             struct.pack(">III", self._highest, self._challenge_seq, self._next_sequence),
             struct.pack(">I", len(self._voided)), voided,
             struct.pack(">I", len(self._consumed)), consumed,
             struct.pack(">I", len(self._dead_grants)), dead,
-            struct.pack(">I", len(self._forfeited_sequences)), forfeited,
+            struct.pack(">I", len(self._forfeited)), intervals,
         ))
         return body
 
     @classmethod
     def parse(cls, raw: bytes) -> "RoleFreshness":
         data = bytes(raw)
-        if len(data) < 4 + 2 + 32 + 32 + 32 + 32 + 12 or data[:4] != _MAGIC or data[4] != 1:
+        if len(data) < 4 + 2 + 32 + 32 + 32 + 32 + 12 or data[:4] != _MAGIC or data[4] != 2:
             raise FailClosed("FRESHNESS")
         offset = 5
         flag = data[offset]
@@ -200,7 +233,7 @@ class RoleFreshness:
                 raise FailClosed("FRESHNESS")
             count = struct.unpack_from(">I", data, offset)[0]
             offset += 4
-            if count > 4096 or offset + count * width > len(data):
+            if count > MAX_SET or offset + count * width > len(data):
                 raise FailClosed("FRESHNESS")
             out = set()
             for _ in range(count):
@@ -214,10 +247,54 @@ class RoleFreshness:
         obj._voided = take_set(32)
         obj._consumed = take_set(32)
         obj._dead_grants = take_set(16)
-        raw_sequences = take_set(8)
-        obj._forfeited_sequences = {struct.unpack(">Q", item)[0] for item in raw_sequences}
+        if offset + 4 > len(data):
+            raise FailClosed("FRESHNESS")
+        count = struct.unpack_from(">I", data, offset)[0]
+        offset += 4
+        if count > MAX_INTERVALS or offset + count * 16 > len(data):
+            raise FailClosed("FRESHNESS")
+        intervals: list[tuple[int, int]] = []
+        previous_end: int | None = None
+        for _ in range(count):
+            start, end = struct.unpack_from(">QQ", data, offset)
+            offset += 16
+            if end < start or (previous_end is not None and start <= previous_end + 1):
+                raise FailClosed("FRESHNESS")
+            intervals.append((start, end))
+            previous_end = end
+        obj._forfeited = intervals
         if offset != len(data):
             raise FailClosed("TRAILING")
         if obj._outstanding is not None and obj._outstanding in obj._voided | obj._consumed:
             raise FailClosed("FRESHNESS")
+        obj._compact_sets()
         return obj
+
+
+def _add_interval(intervals: list[tuple[int, int]], first: int, last: int) -> list[tuple[int, int]]:
+    if (
+        not isinstance(first, int) or not isinstance(last, int)
+        or isinstance(first, bool) or isinstance(last, bool)
+        or first < 0 or last < first
+    ):
+        raise FailClosed("SEQUENCE")
+    start, end = first, last
+    merged: list[tuple[int, int]] = []
+    placed = False
+    for left, right in intervals:
+        if right + 1 < start:
+            merged.append((left, right))
+            continue
+        if end + 1 < left:
+            if not placed:
+                merged.append((start, end))
+                placed = True
+            merged.append((left, right))
+            continue
+        start = min(start, left)
+        end = max(end, right)
+    if not placed:
+        merged.append((start, end))
+    if len(merged) > MAX_INTERVALS:
+        raise FailClosed("FRESHNESS")
+    return merged

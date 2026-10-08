@@ -14,6 +14,7 @@ from orca.rse.imp4.ocr1 import (
     HEADER_LEN,
     RecipientJournal,
     Sender,
+    _reject_zero_shared,
     admit_rfc9180_base,
     build_header,
     enc_canonical,
@@ -87,9 +88,9 @@ def test_round_trip_and_signature_is_checked_before_decrypt():
         broken = bytearray(frames[0])
         broken[-1] ^= 0x01
         with pytest.raises(FailClosed, match="BAD_SIGNATURE"):
-            open_frames([bytes(broken)], sender_public=public_of(ed_key("forge")), recipient_private=x_key("witness"))
+            open_frames([bytes(broken)], sender_public=public_of(ed_key("forge")), recipient_private=x_key("witness"), journal=RecipientJournal())
         assert calls == []
-        opened = open_frames(frames, sender_public=public_of(ed_key("forge")), recipient_private=x_key("witness"))
+        opened = open_frames(frames, sender_public=public_of(ed_key("forge")), recipient_private=x_key("witness"), journal=RecipientJournal())
     finally:
         ocr1._SUITE.create_recipient_context = real
     assert opened == ochk(b"synthetic-payload")
@@ -118,9 +119,8 @@ def test_phase2_checker_pass_has_zero_acceptance_and_replay_dies():
     frames = list(_seal(parts, ochk(b"checked")))
     phase1 = ingest_phase1(witness, b"V" * 16, frames)
     assert witness.activate(b"V" * 16) == "ACTIVE"
-    journal = RecipientJournal()
     opened = ingest_phase2(
-        witness, b"V" * 16, frames, recipient_private=x_key("witness"), quarantine=phase1["quarantine"], journal=journal,
+        witness, b"V" * 16, frames, recipient_private=x_key("witness"), quarantine=phase1["quarantine"],
     )
     assert opened["verdict"] == "STRUCTURAL_OK"
     assert opened["acceptance"] == "ZERO_ACCEPTANCE_AUTHORITY"
@@ -128,7 +128,7 @@ def test_phase2_checker_pass_has_zero_acceptance_and_replay_dies():
     with pytest.raises(FailClosed, match="REPLAY"):
         ingest_phase2(
             witness, b"V" * 16, frames, recipient_private=x_key("witness"),
-            quarantine=phase1["quarantine"], journal=journal,
+            quarantine=phase1["quarantine"],
         )
 
 
@@ -140,7 +140,7 @@ def test_authenticated_malformed_plaintext_is_not_accepted():
     witness.activate(b"V" * 16)
     opened = ingest_phase2(
         witness, b"V" * 16, frames, recipient_private=x_key("witness"),
-        quarantine=phase1["quarantine"], journal=RecipientJournal(),
+        quarantine=phase1["quarantine"],
     )
     assert opened["verdict"] == "STRUCTURAL_REJECT"
     assert opened["acceptance"] == "ZERO_ACCEPTANCE_AUTHORITY"
@@ -190,7 +190,7 @@ def test_multi_frame_reordering_duplicate_and_digest_mismatch():
     frames = list(_seal(parts, body, entropy=hashlib.sha256(b"multi-frame").digest()))
     assert len(frames) == 2
     sender_public = public_of(ed_key("forge"))
-    opened = open_frames(frames, sender_public=sender_public, recipient_private=x_key("witness"))
+    opened = open_frames(frames, sender_public=sender_public, recipient_private=x_key("witness"), journal=RecipientJournal())
     assert opened == body
     with pytest.raises(FailClosed, match="FRAME_ORDER"):
         structural_phase([frames[1], frames[0]], sender_public=sender_public)
@@ -219,7 +219,7 @@ def test_zero_shared_secret_is_refused_before_open():
     ocr1._SUITE.create_recipient_context = lambda *a, **k: calls.append(1)
     try:
         with pytest.raises(FailClosed, match="ZERO_SHARED_SECRET"):
-            open_frames(frames, sender_public=public_of(ed_key("forge")), recipient_private=_ZeroKey())
+            open_frames(frames, sender_public=public_of(ed_key("forge")), recipient_private=_ZeroKey(), journal=RecipientJournal())
     finally:
         ocr1._SUITE.create_recipient_context = real_open
     assert calls == []
@@ -260,3 +260,40 @@ def test_deterministic_fuzz_never_accepts_a_mutant(seed):
             continue
         with pytest.raises((FailClosed, Quarantine)):
             open_frames([bytes(mutant)], sender_public=sender_public, recipient_private=x_key("witness"), journal=RecipientJournal())
+
+
+def test_n12_low_order_enc_is_zero_shared_secret_on_the_real_library():
+    """N12: a canonical low-order enc must not escape as ValueError.
+
+    This calls cryptography's X25519 exchange. It does not mock the library.
+    """
+    points = [
+        bytes.fromhex("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800"),
+        bytes.fromhex("0100000000000000000000000000000000000000000000000000000000000000"),
+        bytes.fromhex("5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157"),
+        bytes.fromhex("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+    ]
+    private = x_key("witness")
+    calls = []
+    real = ocr1._SUITE.create_recipient_context
+    ocr1._SUITE.create_recipient_context = lambda *a, **k: calls.append(1)
+    try:
+        for enc in points:
+            enc_canonical(enc)
+            with pytest.raises(FailClosed, match="ZERO_SHARED_SECRET"):
+                _reject_zero_shared(private, enc)
+            header = build_header(
+                typ=1, recipient_id=bytes(32), sender_id=public_of(ed_key("forge")), grant_id=b"V" * 16,
+                artifact_id=bytes([3]) + bytes(31), bundle_digest=hashlib.sha256(b"n12").digest(),
+                sequence=1, epoch=1, frame_index=0, frame_count=1, total_len=4, enc=enc,
+            )
+            ciphertext = bytes(20)
+            signature = ed_key("forge").sign(b"OCR1v2-SIG\x00" + header + ciphertext)
+            with pytest.raises(FailClosed, match="ZERO_SHARED_SECRET"):
+                open_frames(
+                    [header + ciphertext + signature], sender_public=public_of(ed_key("forge")),
+                    recipient_private=private, journal=RecipientJournal(),
+                )
+    finally:
+        ocr1._SUITE.create_recipient_context = real
+    assert calls == []

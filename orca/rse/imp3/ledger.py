@@ -2,6 +2,10 @@
 
 Witnesses are enrolled MONITOR_LITE keys. A container, a role key, or a
 second copy of the same witness is not an independent witness.
+
+``Monitor`` memory is not durable independent evidence. Fork history survives
+a restart only when ``export`` / ``boot`` restore the OMJ1 journal. OMJ1 is a
+bounded recommended layout; the freeze defines OCP1 and does not number OMJ1.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from orca.rse.imp1.codec import Registry, parse_enrolment
+from orca.rse.imp1.codec import Registry, parse_enrolment, parse_grant
 from orca.rse.imp1.profiles import APPROVED, ENROLMENT, ROLE_MONITOR_LITE
 from orca.rse.imp1.verdict import FailClosed, Quarantine
 from orca.rse.imp3.merkle import (
@@ -26,6 +30,7 @@ from orca.rse.imp3.merkle import (
 )
 from orca.rse.imp3.records import (
     KIND_GRANT,
+    OCA1_LEN,
     pack_ack,
     pack_checkpoint,
     pack_inclusion,
@@ -260,8 +265,18 @@ class EvidenceLog:
         return None
 
 
+_MAX_LOGS = 64
+_MAX_PACKETS = 256
+
+
 class Monitor:
-    """Secret-free witness. It stores sizes and roots, never grant plaintext."""
+    """Secret-free witness. It stores sizes and roots, never grant plaintext.
+
+    Fields on this object are process memory. They are not durable evidence
+    and they are not an independent witness. ``export`` writes the OMJ1
+    journal; ``boot`` is the recovery path. A new ``Monitor()`` has no fork
+    history.
+    """
 
     def __init__(self, witness_id: bytes, witness_key: Ed25519PrivateKey, *, epoch_floor: int) -> None:
         if len(witness_id) != 32:
@@ -269,10 +284,15 @@ class Monitor:
         self.witness_id = bytes(witness_id)
         self._key = witness_key
         self.epoch_floor = epoch_floor
+        self.generation = 0
+        self.registry_version = 0
+        self.prev_checkpoint = bytes(32)
+        self.log_root = bytes(32)
         self._last: dict[bytes, dict] = {}
         self._packets: dict[tuple[bytes, bytes], tuple[int, bytes, bytes]] = {}
 
-    def consider(self, request: bytes, *, source_public: bytes, witness_public: bytes) -> bytes:
+    def consider(self, request: bytes, *, source_public: bytes, witness_public: bytes,
+                 sink=None, fence=None) -> bytes:
         if witness_public != self._key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw):
             raise FailClosed("WITNESS_KEY")
         if source_public == witness_public:
@@ -318,11 +338,84 @@ class Monitor:
             tree_size=checkpoint["tree_size"], root=checkpoint["root"], epoch=checkpoint["epoch"],
             witness_time=0, witness_key=self._key,
         )
+        if len(self._last) >= _MAX_LOGS and checkpoint["log_id"] not in self._last:
+            raise FailClosed("JOURNAL")
+        if len(self._packets) >= _MAX_PACKETS and pair not in self._packets:
+            raise FailClosed("JOURNAL")
+        previous_last = dict(self._last)
+        previous_packets = dict(self._packets)
+        previous_generation = self.generation
+        previous_registry = self.registry_version
+        previous_prev = self.prev_checkpoint
+        previous_root = self.log_root
         self._last[checkpoint["log_id"]] = {
             "tree_size": checkpoint["tree_size"], "root": checkpoint["root"], "epoch": checkpoint["epoch"],
         }
         self._packets[pair] = (parsed["packet_seq"], hashlib.sha256(request).digest(), ack)
+        self.registry_version = checkpoint["registry_version"]
+        self.prev_checkpoint = checkpoint["prev_checkpoint_digest"]
+        self.log_root = checkpoint["root"]
+        self.generation = previous_generation + 1
+        if sink is not None:
+            blob = self.export()
+            try:
+                sink.commit(blob)
+                if fence is not None:
+                    fence.advance(self.generation, hashlib.sha256(blob).digest())
+            except FailClosed:
+                self._last = previous_last
+                self._packets = previous_packets
+                self.generation = previous_generation
+                self.registry_version = previous_registry
+                self.prev_checkpoint = previous_prev
+                self.log_root = previous_root
+                raise
+            except Exception as exc:
+                self._last = previous_last
+                self._packets = previous_packets
+                self.generation = previous_generation
+                self.registry_version = previous_registry
+                self.prev_checkpoint = previous_prev
+                self.log_root = previous_root
+                raise FailClosed("JOURNAL_COMMIT") from exc
         return ack
+
+    def export(self) -> bytes:
+        """OMJ1. Bounded. Not a freeze-numbered record and not hardware evidence."""
+        if len(self._last) > _MAX_LOGS or len(self._packets) > _MAX_PACKETS:
+            raise FailClosed("JOURNAL")
+        logs = bytearray()
+        for log_id in sorted(self._last):
+            item = self._last[log_id]
+            logs += log_id + struct.pack(">Q", item["tree_size"]) + item["root"] + struct.pack(">I", item["epoch"])
+        packets = bytearray()
+        for (source, witness), (seq, request_hash, ack) in sorted(self._packets.items()):
+            if len(ack) != OCA1_LEN:
+                raise FailClosed("JOURNAL")
+            packets += source + witness + struct.pack(">Q", seq) + request_hash + ack
+        return b"".join((
+            b"OMJ1", bytes([1]), struct.pack(">Q", self.generation), struct.pack(">I", self.epoch_floor),
+            self.witness_id, struct.pack(">I", self.registry_version), self.prev_checkpoint, self.log_root,
+            struct.pack(">I", len(self._last)), bytes(logs),
+            struct.pack(">I", len(self._packets)), bytes(packets),
+        ))
+
+    @classmethod
+    def boot(cls, blob: bytes, witness_key: Ed25519PrivateKey, *, fence=None) -> "Monitor":
+        """Restore fork history from OMJ1. Memory that was never exported is absent."""
+        data = bytes(blob)
+        digest = hashlib.sha256(data).digest()
+        parsed = _parse_omj1(data)
+        if fence is not None:
+            fence.pin_observed(parsed["generation"], digest)
+        monitor = cls(parsed["witness_id"], witness_key, epoch_floor=parsed["epoch_floor"])
+        monitor.generation = parsed["generation"]
+        monitor.registry_version = parsed["registry_version"]
+        monitor.prev_checkpoint = parsed["prev_checkpoint"]
+        monitor.log_root = parsed["log_root"]
+        monitor._last = parsed["last"]
+        monitor._packets = parsed["packets"]
+        return monitor
 
 
 def enrolment_key(registry: Registry, role_id: bytes, *, expect_type: int | None = None) -> bytes:
@@ -349,15 +442,105 @@ def verify_grant_inclusion(*, grant_raw: bytes, record: bytes, inclusion: bytes,
         raise FailClosed("GRANT_ID")
     if parsed_record["payload_digest"] != hashlib.sha256(grant_raw).digest():
         raise FailClosed("PAYLOAD")
+    grant = parse_grant(grant_raw)
+    if parsed_record["epoch"] != grant.incident_epoch:
+        raise FailClosed("EPOCH")
+    if parsed_record["registry_version"] != grant.registry_version:
+        raise FailClosed("REGISTRY")
     proof = parse_inclusion(inclusion)
     leaf = leaf_hash(record)
     if proof["leaf"] != leaf or proof["index"] != parsed_record["index"]:
         raise FailClosed("LEAF")
     head = parse_checkpoint(checkpoint, crown_public)
+    if head["epoch"] != grant.incident_epoch or head["registry_version"] != grant.registry_version:
+        raise FailClosed("CHECKPOINT")
     if proof["tree_size"] != head["tree_size"] or head["tree_size"] <= parsed_record["index"]:
         raise FailClosed("STALE_CHECKPOINT")
     verify_inclusion(leaf, proof["index"], proof["tree_size"], proof["proof"], head["root"])
     return head
+
+
+def _parse_omj1(data: bytes) -> dict:
+    if len(data) < 4 + 1 + 8 + 4 + 32 + 4 + 32 + 32 + 8 or data[:4] != b"OMJ1" or data[4] != 1:
+        raise FailClosed("JOURNAL")
+    offset = 5
+    generation = struct.unpack_from(">Q", data, offset)[0]
+    offset += 8
+    epoch_floor = struct.unpack_from(">I", data, offset)[0]
+    offset += 4
+    witness_id = data[offset:offset + 32]
+    offset += 32
+    registry_version = struct.unpack_from(">I", data, offset)[0]
+    offset += 4
+    prev_checkpoint = data[offset:offset + 32]
+    offset += 32
+    log_root = data[offset:offset + 32]
+    offset += 32
+    if offset + 4 > len(data):
+        raise FailClosed("JOURNAL")
+    log_count = struct.unpack_from(">I", data, offset)[0]
+    offset += 4
+    if log_count > _MAX_LOGS or offset + log_count * (32 + 8 + 32 + 4) > len(data):
+        raise FailClosed("JOURNAL")
+    last: dict[bytes, dict] = {}
+    for _ in range(log_count):
+        log_id = data[offset:offset + 32]
+        offset += 32
+        tree_size = struct.unpack_from(">Q", data, offset)[0]
+        offset += 8
+        root = data[offset:offset + 32]
+        offset += 32
+        epoch = struct.unpack_from(">I", data, offset)[0]
+        offset += 4
+        if log_id in last or tree_size < 1:
+            raise FailClosed("JOURNAL")
+        last[log_id] = {"tree_size": tree_size, "root": root, "epoch": epoch}
+    if offset + 4 > len(data):
+        raise FailClosed("JOURNAL")
+    packet_count = struct.unpack_from(">I", data, offset)[0]
+    offset += 4
+    row = 32 + 32 + 8 + 32 + OCA1_LEN
+    if packet_count > _MAX_PACKETS or offset + packet_count * row != len(data):
+        raise FailClosed("JOURNAL")
+    packets: dict[tuple[bytes, bytes], tuple[int, bytes, bytes]] = {}
+    for _ in range(packet_count):
+        source = data[offset:offset + 32]
+        offset += 32
+        witness = data[offset:offset + 32]
+        offset += 32
+        seq = struct.unpack_from(">Q", data, offset)[0]
+        offset += 8
+        request_hash = data[offset:offset + 32]
+        offset += 32
+        ack = data[offset:offset + OCA1_LEN]
+        offset += OCA1_LEN
+        if witness != witness_id or (source, witness) in packets:
+            raise FailClosed("JOURNAL")
+        parsed_ack = parse_ack(ack)
+        if parsed_ack["witness_id"] != witness_id or parsed_ack["source_role_id"] != source:
+            raise FailClosed("JOURNAL")
+        if parsed_ack["log_id"] != source or parsed_ack["tree_size"] < 1:
+            raise FailClosed("JOURNAL")
+        bound = last.get(parsed_ack["log_id"])
+        if bound is None or parsed_ack["tree_size"] > bound["tree_size"]:
+            raise FailClosed("JOURNAL")
+        if parsed_ack["tree_size"] == bound["tree_size"] and parsed_ack["root"] != bound["root"]:
+            raise FailClosed("JOURNAL")
+        packets[(source, witness)] = (seq, request_hash, ack)
+    if log_root != bytes(32) and last:
+        roots = {item["root"] for item in last.values()}
+        if log_root not in roots:
+            raise FailClosed("JOURNAL")
+    return {
+        "generation": generation,
+        "epoch_floor": epoch_floor,
+        "witness_id": witness_id,
+        "registry_version": registry_version,
+        "prev_checkpoint": prev_checkpoint,
+        "log_root": log_root,
+        "last": last,
+        "packets": packets,
+    }
 
 
 def ack_matches(ack: bytes, checkpoint: dict, witness_public: bytes) -> dict:

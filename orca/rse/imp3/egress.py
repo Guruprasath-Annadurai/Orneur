@@ -20,13 +20,20 @@ DOWNSTREAM = frozenset({
 class Egress:
     def __init__(self) -> None:
         self._witnessed: set[bytes] = set()
+        self._admit = object()
 
     def stage(self, digest: bytes) -> str:
         if not isinstance(digest, (bytes, bytearray)) or len(digest) != 32:
             raise FailClosed("DIGEST")
         return ZERO_ACCEPTANCE_AUTHORITY
 
-    def note_witnessed(self, digest: bytes) -> None:
+    def note_witnessed(self, digest: bytes, *, admit: object = None) -> None:
+        """Admit a digest only with the token ``accept_result`` holds.
+
+        A one-argument call is not acceptance authority.
+        """
+        if admit is not self._admit:
+            raise FailClosed("RESULT_EGRESS")
         if not isinstance(digest, (bytes, bytearray)) or len(digest) != 32:
             raise FailClosed("DIGEST")
         self._witnessed.add(bytes(digest))

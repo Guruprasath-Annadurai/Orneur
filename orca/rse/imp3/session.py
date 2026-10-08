@@ -38,7 +38,9 @@ from orca.rse.imp2.machine import (
 )
 from orca.rse.imp3.egress import Egress
 from orca.rse.imp3.freshness import RoleFreshness
+from orca.rse.imp3.journal import JournalSink, MemorySink, SyntheticFence
 from orca.rse.imp3.ledger import EvidenceLog, Monitor, ack_matches, enrolment_key, require_monitor, verify_grant_inclusion
+from orca.rse.imp4.ocr1 import CounterJournal, RecipientJournal, Sender
 from orca.rse.imp3.merkle import leaf_hash, verify_inclusion
 from orca.rse.imp3.records import (
     KIND_ACCEPTANCE,
@@ -67,7 +69,8 @@ def _public(key: Ed25519PrivateKey) -> bytes:
 class Session:
     def __init__(self, *, role_id: bytes, role_key: Ed25519PrivateKey, epoch: int, authority_version: int,
                  floors: Floors, tokens: list[OwnerToken], registry_raw: bytes, crown_image_id: bytes,
-                 m1_id: bytes, m2_id: bytes) -> None:
+                 m1_id: bytes, m2_id: bytes, sink: JournalSink | None = None,
+                 fence: SyntheticFence | None = None) -> None:
         registry = parse_registry(bytes(registry_raw))
         entry = registry.by_id(bytes(role_id))
         if entry is None or entry.entry_type != ENROLMENT:
@@ -104,6 +107,11 @@ class Session:
         self._live: set[bytes] = set()
         self._executed: set[bytes] = set()
         self.executions = 0
+        self.sink = sink if sink is not None else MemorySink()
+        self.fence = fence if fence is not None else SyntheticFence()
+        self.generation = 0
+        self.recipient = RecipientJournal()
+        self.counters = CounterJournal()
         self._freshness.authenticate(self.registry_raw, self.tokens, self.floors, None)
 
     @property
@@ -121,19 +129,30 @@ class Session:
         )
         bounds = b"".join(key + struct.pack(">Q", value) for key, value in sorted(self._bound.items()))
         parts = [
-            b"OBS1", bytes([1]), self.role_id, struct.pack(">IIQQ", self.epoch, self.authority_version, self._ticks, 0 if self._clock is None else self._clock + 1),
+            b"OBS1", bytes([2]), self.role_id,
+            struct.pack(
+                ">IIQQQ", self.epoch, self.authority_version, self._ticks,
+                0 if self._clock is None else self._clock + 1, self.generation,
+            ),
             self.crown_image_id, self.m1_id, self.m2_id,
             _len_blob(self.machine.export()), _len_blob(self.freshness.export()), _len_blob(self.log.export()),
             _len_blob(self.egress.export()), _len_blob(self.registry_raw),
             struct.pack(">I", len(self._grants)), grants,
             struct.pack(">I", len(self._delivery)), deliveries,
             struct.pack(">I", len(self._bound)), bounds,
+            _len_blob(self.recipient.export()), _len_blob(self.counters.export()),
         ]
         return b"".join(parts)
 
     @classmethod
-    def boot(cls, blob: bytes, *, role_key: Ed25519PrivateKey, floors: Floors, tokens: list[OwnerToken]) -> "Session":
-        parsed = _parse_blob(blob)
+    def boot(cls, blob: bytes, *, role_key: Ed25519PrivateKey, floors: Floors, tokens: list[OwnerToken],
+             fence: SyntheticFence | None = None, sink: JournalSink | None = None) -> "Session":
+        try:
+            parsed = _parse_blob(blob)
+        except (FailClosed, Quarantine):
+            raise
+        except (KeyError, ValueError, struct.error, IndexError) as exc:
+            raise FailClosed("JOURNAL") from exc
         session = cls.__new__(cls)
         session.role_key = role_key
         session.floors = floors
@@ -156,6 +175,11 @@ class Session:
         session._live = set()
         session._executed = set()
         session.executions = 0
+        session.generation = parsed["generation"]
+        session.recipient = parsed["recipient"]
+        session.counters = parsed["counters"]
+        session.sink = sink if sink is not None else MemorySink()
+        session.fence = fence if fence is not None else SyntheticFence()
         registry = parse_registry(session.registry_raw)
         entry = registry.by_id(session.role_id)
         if entry is None:
@@ -175,6 +199,8 @@ class Session:
             raise Quarantine("INDEPENDENT_WITNESS")
         if _monitor_env(registry, session.m1_id) == _monitor_env(registry, session.m2_id):
             raise Quarantine("INDEPENDENT_WITNESS")
+        session._validate_journal()
+        session.fence.pin_observed(parsed["generation"], hashlib.sha256(bytes(blob)).digest())
         session._recover()
         return session
 
@@ -191,10 +217,67 @@ class Session:
                 self.machine.move(slot.grant_id, QUARANTINED)
 
     def _forfeit(self, grant_id: bytes) -> None:
-        grant = parse_grant(self._grants[grant_id])
+        try:
+            raw = self._grants[bytes(grant_id)]
+        except KeyError as exc:
+            raise FailClosed("GRANT_ABSENT") from exc
+        try:
+            grant = parse_grant(raw)
+        except (FailClosed, Quarantine):
+            raise
+        except (KeyError, ValueError, struct.error) as exc:
+            raise FailClosed("JOURNAL") from exc
         if grant.klass == ord("V"):
             self.freshness.forfeit_sequences(grant.tail["seq_first"], grant.tail["seq_last"])
         self.freshness.note_dead_grant(grant_id)
+
+    def _validate_journal(self) -> None:
+        try:
+            slots = list(self.machine.slots())
+        except (KeyError, ValueError, struct.error) as exc:
+            raise FailClosed("JOURNAL") from exc
+        for slot in slots:
+            if slot.grant_id not in self._grants:
+                raise FailClosed("JOURNAL")
+            parse_grant(self._grants[slot.grant_id])
+        for key, index in self._bound.items():
+            if key not in self._grants or not isinstance(index, int) or index < 0 or index >= self.log.size:
+                raise FailClosed("JOURNAL")
+        for key in self._delivery:
+            if key not in self._grants:
+                raise FailClosed("JOURNAL")
+
+    def durable_commit(self) -> None:
+        """Commit the journal before a caller may observe ACTIVE or replay success.
+
+        The fence moves only after ``sink.commit`` returns. A failed commit
+        leaves an in-memory ACTIVE grant INTERRUPTED and does not return success.
+        """
+        self.generation += 1
+        blob = self.dump()
+        digest = hashlib.sha256(blob).digest()
+        try:
+            self.sink.commit(blob)
+            self.fence.advance(self.generation, digest)
+        except FailClosed:
+            self.generation -= 1
+            self._fail_closed_active()
+            raise FailClosed("JOURNAL_COMMIT")
+        except Exception as exc:
+            self.generation -= 1
+            self._fail_closed_active()
+            raise FailClosed("JOURNAL_COMMIT") from exc
+
+    def _fail_closed_active(self) -> None:
+        for slot in list(self.machine.slots()):
+            if slot.state != ACTIVE:
+                continue
+            try:
+                self._forfeit(slot.grant_id)
+            except FailClosed:
+                pass
+            self.machine.move(slot.grant_id, INTERRUPTED)
+            self._live.discard(slot.grant_id)
 
     def _commit_view(self) -> bytes:
         return self.dump()
@@ -406,6 +489,7 @@ class Session:
             kind=KIND_CONSUMPTION, payload_digest=hashlib.sha256(grant_id).digest(), grant_id=grant_id,
             epoch=self.epoch, registry_version=self.freshness.highest,
         )
+        self.durable_commit()
         return ACTIVE
 
     def rehearse(self, grant_id: bytes) -> str:
@@ -509,12 +593,21 @@ class Session:
         if parsed["kind"] != KIND_RESULT or parsed["payload_digest"] != digest:
             raise FailClosed("RESULT")
         proof = parse_inclusion(inclusion)
+        if proof["tree_size"] != head["tree_size"]:
+            raise FailClosed("CHECKPOINT")
         if proof["leaf"] != leaf_hash(record):
             raise FailClosed("LEAF")
         verify_inclusion(proof["leaf"], proof["index"], proof["tree_size"], proof["proof"], head["root"])
         witness = require_monitor(registry, self.m1_id)
         ack_matches(ack, head, witness)
-        self.egress.note_witnessed(digest)
+        self.egress.note_witnessed(digest, admit=self.egress._admit)
+
+    def seal_frames(self, sender: Sender, **kwargs) -> tuple[bytes, ...]:
+        """Seal with the session hedge counter and commit that counter first."""
+        if not isinstance(sender, Sender) or "before_return" in kwargs:
+            raise FailClosed("UNEXPECTED_ARGUMENT")
+        sender.counters = self.counters
+        return sender.seal(**kwargs, before_return=self.durable_commit)
 
     def classify(self, digest: bytes, status: str) -> str:
         return self.egress.classify(digest, status)
@@ -550,13 +643,13 @@ def _take(data: bytes, offset: int) -> tuple[bytes, int]:
 
 def _parse_blob(blob: bytes) -> dict:
     data = bytes(blob)
-    if len(data) < 4 + 1 + 32 + 24 + 96 or data[:4] != b"OBS1" or data[4] != 1:
+    if len(data) < 4 + 1 + 32 + 32 + 96 or data[:4] != b"OBS1" or data[4] != 2:
         raise FailClosed("JOURNAL")
     offset = 5
     role_id = data[offset:offset + 32]
     offset += 32
-    epoch, authority, ticks, clock_raw = struct.unpack_from(">IIQQ", data, offset)
-    offset += 24
+    epoch, authority, ticks, clock_raw, generation = struct.unpack_from(">IIQQQ", data, offset)
+    offset += 32
     crown = data[offset:offset + 32]
     offset += 32
     m1 = data[offset:offset + 32]
@@ -603,14 +696,19 @@ def _parse_blob(blob: bytes) -> dict:
         index = struct.unpack_from(">Q", data, offset + 16)[0]
         offset += 24
         bound[key] = index
+    recipient_raw, offset = _take(data, offset)
+    counter_raw, offset = _take(data, offset)
     if offset != len(data):
         raise FailClosed("TRAILING")
     return {
         "role_id": role_id, "epoch": epoch, "authority_version": authority, "ticks": ticks,
+        "generation": generation,
         "clock": None if clock_raw == 0 else clock_raw - 1, "crown_image": crown, "m1": m1, "m2": m2,
         "machine": GrantMachine.parse(machine_raw), "freshness": RoleFreshness.parse(fresh_raw),
         "egress": Egress.parse(egress_raw), "log": log_raw, "registry": registry,
         "grants": grants, "delivery": delivery, "bound": bound,
+        "recipient": RecipientJournal.parse(recipient_raw),
+        "counters": CounterJournal.parse(counter_raw),
     }
 
 

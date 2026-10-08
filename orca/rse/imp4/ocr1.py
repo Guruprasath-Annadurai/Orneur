@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -52,6 +54,11 @@ HPKE_PROFILE = {
     "ikm": "RFC8937-HKDF-then-derive_key_pair",
     "residual": "R-RNG1-not-used",
 }
+
+# A Python subprocess with rlimits is not a sandbox and not a security boundary.
+CHECKER_ISOLATION = "SYNTHETIC_NOT_A_SANDBOX"
+_MAX_REPLAY = 4096
+_MAX_COUNTERS = 4096
 
 
 def _u32(value: int) -> bytes:
@@ -126,23 +133,65 @@ def _exact(buf: bytes, n: int, reason: str) -> bytes:
 
 @dataclass
 class CounterJournal:
-    """Persisted hedge counter. A value is consumed before the seal that uses it."""
+    """Hedge counter. Session-bound journals are committed before a seal returns.
+
+    A ``CounterJournal`` that lives only on an unbound ``Sender`` does not
+    survive a restart. That object is not durable replay enforcement.
+    """
 
     nxt: int = 1
-    used: set[bytes] | None = None
+    used: dict[bytes, int] | None = None
 
     def __post_init__(self) -> None:
         if self.used is None:
-            self.used = set()
+            self.used = {}
 
     def take(self, grant_id: bytes, sequence: int) -> int:
         tag = _exact(grant_id, 16, "GRANT_ID") + _u64(sequence)
         if tag in self.used:
             raise FailClosed("COUNTER_REUSE")
+        if len(self.used) >= _MAX_COUNTERS:
+            raise FailClosed("JOURNAL")
         value = self.nxt
+        if value < 1:
+            raise FailClosed("COUNTER_REUSE")
         self.nxt += 1
-        self.used.add(tag)
+        self.used[tag] = value
         return value
+
+    def undo(self, grant_id: bytes, sequence: int) -> None:
+        tag = _exact(grant_id, 16, "GRANT_ID") + _u64(sequence)
+        value = self.used.pop(tag, None)
+        if value is not None and self.nxt == value + 1:
+            self.nxt = value
+
+    def export(self) -> bytes:
+        rows = bytearray()
+        for tag, counter in sorted(self.used.items()):
+            rows += tag + _u64(counter)
+        return b"OCJ1" + bytes([1]) + _u64(self.nxt) + struct.pack(">I", len(self.used)) + bytes(rows)
+
+    @classmethod
+    def parse(cls, raw: bytes) -> "CounterJournal":
+        data = bytes(raw)
+        if len(data) < 4 + 1 + 8 + 4 or data[:4] != b"OCJ1" or data[4] != 1:
+            raise FailClosed("JOURNAL")
+        nxt = int.from_bytes(data[5:13], "big")
+        count = int.from_bytes(data[13:17], "big")
+        if count > _MAX_COUNTERS or nxt < 1 or len(data) != 17 + count * 32:
+            raise FailClosed("JOURNAL")
+        used: dict[bytes, int] = {}
+        offset = 17
+        for _ in range(count):
+            tag = data[offset:offset + 24]
+            counter = int.from_bytes(data[offset + 24:offset + 32], "big")
+            offset += 32
+            if tag in used or counter < 1 or counter >= nxt:
+                raise FailClosed("JOURNAL")
+            used[tag] = counter
+        if used and max(used.values()) >= nxt:
+            raise FailClosed("JOURNAL")
+        return cls(nxt=nxt, used=used)
 
 
 class Sender:
@@ -162,10 +211,29 @@ class Sender:
         return HKDF(algorithm=hashes.SHA256(), length=32, salt=salt, info=info).derive(_exact(os_entropy, 32, "ENTROPY"))
 
     def seal(self, plaintext: bytes, *, typ: int, recipient_id: bytes, recipient_public: bytes, grant_id: bytes,
-             artifact_id: bytes, sequence: int, epoch: int, os_entropy: bytes | None = None) -> tuple[bytes, ...]:
+             artifact_id: bytes, sequence: int, epoch: int, os_entropy: bytes | None = None,
+             before_return=None) -> tuple[bytes, ...]:
         plaintext = bytes(plaintext)
         if not plaintext:
             raise FailClosed("TOTAL_LEN")
+        self._counter_taken = None
+        try:
+            frames = self._seal_body(
+                plaintext, typ=typ, recipient_id=recipient_id, recipient_public=recipient_public,
+                grant_id=grant_id, artifact_id=artifact_id, sequence=sequence, epoch=epoch,
+                os_entropy=os_entropy, before_return=before_return,
+            )
+        except Exception:
+            if self._counter_taken is not None:
+                self.counters.undo(grant_id, sequence)
+                self._counter_taken = None
+            raise
+        self._counter_taken = None
+        return frames
+
+    def _seal_body(self, plaintext: bytes, *, typ: int, recipient_id: bytes, recipient_public: bytes,
+                   grant_id: bytes, artifact_id: bytes, sequence: int, epoch: int,
+                   os_entropy: bytes | None, before_return) -> tuple[bytes, ...]:
         digest = hashlib.sha256(plaintext).digest()
         count = expected_count(len(plaintext))
         skeleton = build_header(
@@ -177,6 +245,7 @@ class Sender:
         info = info_bytes(skeleton)
         entropy = os.urandom(32) if os_entropy is None else os_entropy
         ikm = self._hedge_ikm(grant_id, sequence, entropy)
+        self._counter_taken = _exact(grant_id, 16, "GRANT_ID") + _u64(sequence)
         ephemeral = _SUITE.kem.derive_key_pair(ikm)
         recipient = KEMKey.from_pyca_cryptography_key(X25519PublicKey.from_public_bytes(_exact(recipient_public, 32, "KEM")))
         enc, context = _SUITE.create_sender_context(recipient, info, eks=ephemeral)
@@ -201,30 +270,113 @@ class Sender:
             frames.append(frame)
         if self._cached_eph is not None and any(self._cached_eph in frame for frame in frames):
             raise FailClosed("EPH_EXPOSED")
+        if before_return is not None:
+            before_return()
         return tuple(frames)
 
 
 class RecipientJournal:
+    """Session-owned replay journal. A caller-supplied replacement is not authoritative."""
+
     def __init__(self) -> None:
         self.last_sequence = 0
         self._seen_sequence: set[tuple[bytes, int]] = set()
         self._enc: dict[bytes, bytes] = {}
+        self._quarantined: set[bytes] = set()
+        self._rows: list[tuple[bytes, int, bytes, bytes]] = []
+
+    def grant_quarantined(self, grant_id: bytes) -> bool:
+        return bytes(grant_id) in self._quarantined
+
+    def quarantine_grant(self, grant_id: bytes) -> None:
+        self._quarantined.add(bytes(grant_id))
 
     def reject_replay(self, *, grant_id: bytes, sequence: int, enc: bytes, bundle_digest: bytes) -> None:
-        key = (bytes(grant_id), sequence)
+        grant_id = bytes(grant_id)
+        if grant_id in self._quarantined:
+            raise Quarantine("ENC_DIVERGENCE")
+        key = (grant_id, sequence)
         if key in self._seen_sequence or (self._seen_sequence and sequence <= self.last_sequence):
             raise FailClosed("REPLAY")
         prior = self._enc.get(bytes(enc))
         if prior is not None and prior != bundle_digest:
+            self._quarantined.add(grant_id)
             raise Quarantine("ENC_DIVERGENCE")
         if prior is not None:
             raise FailClosed("REPLAY")
 
     def admit(self, *, grant_id: bytes, sequence: int, enc: bytes, bundle_digest: bytes) -> None:
         self.reject_replay(grant_id=grant_id, sequence=sequence, enc=enc, bundle_digest=bundle_digest)
+        if len(self._rows) >= _MAX_REPLAY:
+            raise FailClosed("JOURNAL")
         self._enc[bytes(enc)] = bytes(bundle_digest)
         self._seen_sequence.add((bytes(grant_id), sequence))
+        self._rows.append((bytes(grant_id), sequence, bytes(enc), bytes(bundle_digest)))
         self.last_sequence = sequence
+
+    def forget(self, *, grant_id: bytes, sequence: int, enc: bytes) -> None:
+        key = (bytes(grant_id), sequence)
+        self._seen_sequence.discard(key)
+        self._rows = [row for row in self._rows if (row[0], row[1]) != key]
+        self._enc.pop(bytes(enc), None)
+        self.last_sequence = max((row[1] for row in self._rows), default=0)
+
+    def export(self) -> bytes:
+        quarantined = b"".join(sorted(self._quarantined))
+        rows = bytearray()
+        for grant_id, sequence, enc, digest in self._rows:
+            rows += grant_id + _u64(sequence) + enc + digest
+        return b"".join((
+            b"ORJ1", bytes([1]), _u64(self.last_sequence),
+            struct.pack(">I", len(self._quarantined)), quarantined,
+            struct.pack(">I", len(self._rows)), bytes(rows),
+        ))
+
+    @classmethod
+    def parse(cls, raw: bytes) -> "RecipientJournal":
+        data = bytes(raw)
+        if len(data) < 4 + 1 + 8 + 8 or data[:4] != b"ORJ1" or data[4] != 1:
+            raise FailClosed("JOURNAL")
+        last_sequence = int.from_bytes(data[5:13], "big")
+        offset = 13
+        qcount = struct.unpack_from(">I", data, offset)[0]
+        offset += 4
+        if qcount > 256 or offset + qcount * 16 > len(data):
+            raise FailClosed("JOURNAL")
+        quarantined = set()
+        for _ in range(qcount):
+            grant_id = data[offset:offset + 16]
+            offset += 16
+            if grant_id in quarantined:
+                raise FailClosed("JOURNAL")
+            quarantined.add(grant_id)
+        if offset + 4 > len(data):
+            raise FailClosed("JOURNAL")
+        count = struct.unpack_from(">I", data, offset)[0]
+        offset += 4
+        row_len = 16 + 8 + 32 + 32
+        if count > _MAX_REPLAY or offset + count * row_len != len(data):
+            raise FailClosed("JOURNAL")
+        journal = cls()
+        journal._quarantined = quarantined
+        highest = 0
+        for _ in range(count):
+            grant_id = data[offset:offset + 16]
+            sequence = int.from_bytes(data[offset + 16:offset + 24], "big")
+            enc = data[offset + 24:offset + 56]
+            digest = data[offset + 56:offset + 88]
+            offset += row_len
+            key = (grant_id, sequence)
+            if key in journal._seen_sequence or enc in journal._enc:
+                raise FailClosed("JOURNAL")
+            journal._seen_sequence.add(key)
+            journal._enc[enc] = digest
+            journal._rows.append((grant_id, sequence, enc, digest))
+            highest = max(highest, sequence)
+        if (count == 0 and last_sequence != 0) or (count and last_sequence != highest):
+            raise FailClosed("JOURNAL")
+        journal.last_sequence = last_sequence
+        return journal
 
 
 def parse_frame(frame: bytes) -> dict:
@@ -304,20 +456,32 @@ def structural_phase(frames: tuple[bytes, ...] | list[bytes], *, sender_public: 
 
 
 def _reject_zero_shared(recipient_private: X25519PrivateKey, enc: bytes) -> None:
-    shared = recipient_private.exchange(X25519PublicKey.from_public_bytes(enc))
+    """Map the library's low-order X25519 failure onto the frozen rejection.
+
+    cryptography raises ``ValueError`` from ``exchange`` for a low-order
+    public key. That exception is not a new primitive and it is not success.
+    """
+    try:
+        public = X25519PublicKey.from_public_bytes(enc)
+        shared = recipient_private.exchange(public)
+    except FailClosed:
+        raise
+    except (ValueError, TypeError) as exc:
+        raise FailClosed("ZERO_SHARED_SECRET") from exc
     if shared == bytes(32):
         raise FailClosed("ZERO_SHARED_SECRET")
 
 
 def open_frames(frames: tuple[bytes, ...] | list[bytes], *, sender_public: bytes,
-                recipient_private: X25519PrivateKey, journal: RecipientJournal | None = None) -> bytes:
+                recipient_private: X25519PrivateKey, journal: RecipientJournal) -> bytes:
+    if not isinstance(journal, RecipientJournal):
+        raise FailClosed("REPLAY")
     parsed = structural_phase(frames, sender_public=sender_public)
     first = parsed[0]
-    if journal is not None:
-        journal.reject_replay(
-            grant_id=first["grant_id"], sequence=first["sequence"], enc=first["enc"],
-            bundle_digest=first["bundle_digest"],
-        )
+    journal.reject_replay(
+        grant_id=first["grant_id"], sequence=first["sequence"], enc=first["enc"],
+        bundle_digest=first["bundle_digest"],
+    )
     _reject_zero_shared(recipient_private, first["enc"])
     info = info_bytes(first["header"])
     secret = KEMKey.from_pyca_cryptography_key(recipient_private)
@@ -334,31 +498,38 @@ def open_frames(frames: tuple[bytes, ...] | list[bytes], *, sender_public: bytes
     plaintext = b"".join(chunks)
     if len(plaintext) != first["total_len"] or hashlib.sha256(plaintext).digest() != first["bundle_digest"]:
         raise FailClosed("DIGEST")
-    if journal is not None:
-        journal.admit(
-            grant_id=first["grant_id"], sequence=first["sequence"], enc=first["enc"],
-            bundle_digest=first["bundle_digest"],
-        )
+    journal.admit(
+        grant_id=first["grant_id"], sequence=first["sequence"], enc=first["enc"],
+        bundle_digest=first["bundle_digest"],
+    )
     return plaintext
 
 
 def run_keyless_checker(plaintext: bytes) -> str:
-    """Bounded subprocess. The checker module has no key material."""
+    """Synthetic checker. ``CHECKER_ISOLATION`` is not a sandbox.
+
+    The child is a Python subprocess. Resource-limit failures fail closed
+    instead of running with no limit. The temporary directory is removed
+    before this function returns.
+    """
     paths = [os.path.abspath(item or os.getcwd()) for item in sys.path]
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONPATH": os.pathsep.join(paths),
         "PATH": "/usr/bin:/bin",
     }
+    work = tempfile.mkdtemp(prefix="rse-keyless-")
     try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "orca.rse.imp4.keyless_checker"],
-            input=plaintext, capture_output=True, timeout=2, check=False, env=env,
-            cwd=tempfile.mkdtemp(prefix="rse-keyless-"),
-            preexec_fn=_limits,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        raise FailClosed("CHECKER") from exc
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-m", "orca.rse.imp4.keyless_checker"],
+                input=plaintext, capture_output=True, timeout=2, check=False, env=env,
+                cwd=work, preexec_fn=_limits,
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            raise FailClosed("CHECKER") from exc
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     if proc.returncode != 0 or proc.stdout != judge(plaintext) or len(proc.stdout) > 64:
         raise FailClosed("CHECKER")
     text = proc.stdout.decode("ascii", "strict").strip()
@@ -371,9 +542,13 @@ def run_keyless_checker(plaintext: bytes) -> str:
 
 def _limits() -> None:
     import resource
-    resource.setrlimit(resource.RLIMIT_CPU, (1, 1))
-    resource.setrlimit(resource.RLIMIT_AS, (128 * 1024 * 1024, 128 * 1024 * 1024))
-    resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
+    try:
+        resource.setrlimit(resource.RLIMIT_CPU, (1, 1))
+        resource.setrlimit(resource.RLIMIT_AS, (128 * 1024 * 1024, 128 * 1024 * 1024))
+        resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
+    except (OSError, ValueError):
+        # macOS can reject these limits. Do not continue unlimited.
+        os._exit(71)
 
 
 def ingest_phase1(session, grant_id: bytes, frames: list[bytes], **extra) -> dict:
@@ -390,9 +565,17 @@ def ingest_phase1(session, grant_id: bytes, frames: list[bytes], **extra) -> dic
 
 
 def ingest_phase2(session, grant_id: bytes, frames: list[bytes], *, recipient_private: X25519PrivateKey,
-                  quarantine: bytes, journal: RecipientJournal, **extra) -> dict:
+                  quarantine: bytes, **extra) -> dict:
+    """Open a bundle with the session's recipient journal.
+
+    A caller journal cannot be substituted or omitted. Replay admission is
+    committed before this function returns success. ``ENC_DIVERGENCE`` is
+    persisted before it is reported as handled.
+    """
     if extra:
         raise FailClosed("UNEXPECTED_ARGUMENT")
+    if session.recipient.grant_quarantined(grant_id):
+        raise Quarantine("ENC_DIVERGENCE")
     if session.machine.get(grant_id).state != "ACTIVE":
         raise FailClosed("GRANT_STATE")
     if hashlib.sha256(b"".join(bytes(frame) for frame in frames)).digest() != bytes(quarantine):
@@ -402,8 +585,26 @@ def ingest_phase2(session, grant_id: bytes, frames: list[bytes], *, recipient_pr
     _bind_grant(parsed, grant, session)
     if session.freshness.sequence_forfeited(parsed[0]["sequence"]):
         raise FailClosed("FORFEITED_SEQUENCE")
-    plaintext = open_frames(frames, sender_public=sender_public, recipient_private=recipient_private, journal=journal)
-    verdict = run_keyless_checker(plaintext)
+    admitted = False
+    try:
+        try:
+            plaintext = open_frames(
+                frames, sender_public=sender_public, recipient_private=recipient_private,
+                journal=session.recipient,
+            )
+        except Quarantine as exc:
+            if str(exc) == "ENC_DIVERGENCE":
+                session.durable_commit()
+            raise
+        admitted = True
+        verdict = run_keyless_checker(plaintext)
+        session.durable_commit()
+    except FailClosed:
+        if admitted:
+            session.recipient.forget(
+                grant_id=parsed[0]["grant_id"], sequence=parsed[0]["sequence"], enc=parsed[0]["enc"],
+            )
+        raise
     return {
         "verdict": verdict,
         "digest": hashlib.sha256(plaintext).digest(),

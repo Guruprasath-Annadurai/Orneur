@@ -15,7 +15,7 @@ from orca.rse.imp1.locks import (
 )
 from orca.rse.imp1.profiles import DEFERRED_CLASSES
 from orca.rse.imp1.verdict import CHECKS_PASSED, FailClosed
-from orca.rse.imp4.ocr1 import RecipientJournal, ingest_phase1, ingest_phase2, ochk
+from orca.rse.imp4.ocr1 import ingest_phase1, ingest_phase2, ochk
 from orca.rse.imp2.machine import GrantMachine
 from tests.rse.block1_support import authorize, ed_key, g_intent, g_tail, grant_for, open_role, v_intent, v_tail, world, x_key
 from tests.rse.test_imp4_ocr1 import _seal
@@ -41,7 +41,7 @@ def test_g_then_v_rehearsal_leaves_every_lock_denied():
     assert witness.activate(b"V" * 16) == "ACTIVE"
     opened = ingest_phase2(
         witness, b"V" * 16, frames, recipient_private=x_key("witness"),
-        quarantine=phase1["quarantine"], journal=RecipientJournal(),
+        quarantine=phase1["quarantine"],
     )
     assert opened["acceptance"] == "ZERO_ACCEPTANCE_AUTHORITY"
     assert opened["executable"] is False

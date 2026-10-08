@@ -1,6 +1,8 @@
 """Keyless plaintext checker. Stdlib only: no HPKE, no signing keys, no network.
 
 The parent process pipes plaintext in and accepts only this verdict line.
+Running this module in a Python subprocess is ``SYNTHETIC_NOT_A_SANDBOX``.
+It is not an isolated execution environment.
 """
 
 from __future__ import annotations
