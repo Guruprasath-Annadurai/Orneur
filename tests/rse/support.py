@@ -96,43 +96,57 @@ def _entry(entry_type, name, version, tail, policy_id, *, approval=APPROVED, min
     )
 
 
-def policy_entry(name, *, operations: int, family: bytes, spend: int = 0, query: int = 0, bits: int = 0, batch: int = 1000):
+def revision(label: str) -> str:
+    text = "rev." + label
+    if len(text) > 64:
+        raise AssertionError("revision")
+    return text
+
+
+def policy_entry(name, *, operations: int, family: bytes, destinations=(), spend: int = 0, query: int = 0, bits: int = 0, batch: int = 1000):
     tail = pack_policy(
         max_batch_bytes=batch, max_runtime_s=100, max_spend=spend, max_run=10,
         max_query_budget=query, max_bit_budget=bits, min_grant_schema_version=1,
-        witness_requirement=WITNESS_ROUTINE, allowed_operations=operations, required_family_id=family,
+        witness_requirement=WITNESS_ROUTINE, allowed_operations=operations, family_scope=family,
+        destination_ids=list(destinations),
     )
     return _entry(POLICY, name, 1, tail, bytes(32), producer=bytes(32))
+
+
+def make_destination(name: str, digest_label: str | None = None):
+    return _entry(
+        DESTINATION, name, 1,
+        pack_destination(kind=DEST_MEDIUM, identifier_digest=dig(digest_label or (name + "-id"))),
+        bytes(32),
+    )
 
 
 def sign_entries(entries, version=1, previous=None):
     if previous is None:
         previous = bytes(32)
-    body = build_registry_body(version, previous, entries)
+    ordered = sorted(entries, key=lambda entry: entry.entry_id)
+    body = build_registry_body(version, previous, ordered)
     raw = sign_registry(body, OWNERS)
     return parse_registry(raw)
 
 
-def base_entries(policy):
-    pid = policy.entry_id
-    image = _entry(ROLE_IMAGE, "crown", 1, pack_role_image(1, dig("crown-measurement")), pid)
-    code = _entry(CODE, "verifier", 1, b"", pid)
+def base_entries(policy, dest):
+    zero = bytes(32)
+    image = _entry(ROLE_IMAGE, "crown", 1, pack_role_image(1, dig("crown-measurement")), zero)
+    code = _entry(CODE, "verifier", 1, b"", zero)
     forge = _entry(ENROLMENT, "forge", 1, pack_enrolment(
         role_type=ROLE_FORGE, ed25519_public_key=public_of(key("forge-role")),
         x25519_public_key=dig("forge-x25519"), environment_measurement=dig("env-forge"), key_version=3,
-    ), pid)
+    ), zero)
     witness = _entry(ENROLMENT, "witness", 1, pack_enrolment(
         role_type=ROLE_WITNESS, ed25519_public_key=public_of(key("witness-role")),
         x25519_public_key=dig("witness-x25519"), environment_measurement=dig("env-witness"), key_version=4,
-    ), pid)
-    dest = _entry(DESTINATION, "carried", 1, pack_destination(
-        kind=DEST_MEDIUM, identifier_digest=dig("dest-id"), recipient_role_entry_id=bytes(32),
-    ), pid)
+    ), zero)
     corpus = _entry(CORPUS, "batch", 1, pack_corpus(
         corpus_id=dig("corpus-id"), corpus_version=1, manifest_digest=dig("manifest"),
         source_provenance_digest=dig("corpus-source"), witness_acceptance_record_digest=dig("witness-accept"),
         contamination_status_ref=dig("contamination"), retirement_state=RETIREMENT_ACTIVE,
-    ), pid)
+    ), policy.entry_id)
     return {
         "policy": policy, "image": image, "code": code, "forge": forge, "witness": witness,
         "dest": dest, "corpus": corpus,
@@ -140,9 +154,12 @@ def base_entries(policy):
 
 
 def world(entries):
-    ordered = list(entries)
-    registry = sign_entries(ordered)
-    return registry
+    return sign_entries(list(entries))
+
+
+def consumer_args(parts, role="forge"):
+    env = dig("env-forge" if role == "forge" else "env-witness")
+    return parts[role].entry_id, env
 
 
 def g_grant(registry, parts, *, corpus=None, dest=None, batch_count=2, batch_bytes=100, runtime=30, challenge=None):
@@ -171,12 +188,14 @@ def g_intent(registry, grant_raw, parts):
     return IntentSheet(
         "G", parts["corpus"].name, parts["corpus"].version, parts["dest"].name,
         ceilings_of(grant), grant_sas(grant.klass, grant.signed),
+        target_role_name=parts["forge"].name, counterpart_name=parts["witness"].name,
     )
 
 
 def simple_g():
-    policy = policy_entry("caps", operations=1 << CLASS_BITS[ord("G")], family=bytes(32))
-    parts = base_entries(policy)
+    dest = make_destination("carried", "dest-id")
+    policy = policy_entry("caps", operations=1 << CLASS_BITS[ord("G")], family=bytes(32), destinations=[dest.entry_id])
+    parts = base_entries(policy, dest)
     registry = world(parts.values())
     grant = g_grant(registry, parts)
     return registry, parts, grant

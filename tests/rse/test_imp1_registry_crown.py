@@ -83,12 +83,14 @@ from tests.rse.support import (
     _entry,
     base_entries,
     bit,
+    consumer_args,
     dig,
     g_grant,
     g_intent,
     key,
+    make_destination,
     policy_entry,
-    rev,
+    revision,
     sign_entries,
     simple_g,
     world,
@@ -98,8 +100,9 @@ from orca.rse.imp1.authority import Floors
 
 
 def test_entry_reencode_and_identity_tracks_security_fields():
-    policy = policy_entry("caps", operations=bit("G"), family=bytes(32))
-    parts = base_entries(policy)
+    dest = make_destination("carried", "dest-id")
+    policy = policy_entry("caps", operations=bit("G"), family=bytes(32), destinations=[dest.entry_id])
+    parts = base_entries(policy, dest)
     code = parts["code"]
     again, consumed = decode_entry(code.canonical)
     assert consumed == len(code.canonical)
@@ -130,6 +133,8 @@ def test_entry_reencode_and_identity_tracks_security_fields():
             kwargs["min_permitted_version"] = 1
         if field == "min_permitted_version":
             kwargs["version"] = value
+        if field == "entry_type":
+            kwargs["policy_entry_id"] = dig("model-policy")
         other = encode_entry(**kwargs)
         assert other.entry_id != code.entry_id
 
@@ -137,8 +142,8 @@ def test_entry_reencode_and_identity_tracks_security_fields():
 def test_names_reject_charset_and_confusables_without_broadening_dots():
     assert unpack_name(pack_name("A")) == "A"
     assert unpack_name(pack_name("a" * 64)) == "a" * 64
-    assert unpack_name(pack_name("..")) == ".."
-    for bad in ["", "a" * 65, "has space", "a/b", "a\\b", "a\nb", "a\t", "a\x00b", "café", "А", "ﬁ", "a b"]:
+    assert unpack_name(pack_name("a.b")) == "a.b"
+    for bad in ["", ".", "..", "a" * 65, "has space", "a/b", "a\\b", "a\nb", "a\t", "a\x00b", "café", "А", "ﬁ", "a b"]:
         try:
             pack_name(bad)
         except Exception as exc:
@@ -158,8 +163,8 @@ def test_names_reject_charset_and_confusables_without_broadening_dots():
     assert name_skeleton("file0") != name_skeleton("fileo")
     policy = policy_entry("caps", operations=bit("G"), family=bytes(32))
     pid = policy.entry_id
-    first = _entry(CODE, "mod0", 1, b"", pid)
-    second = _entry(CODE, "modO", 1, b"", pid)
+    first = _entry(CODE, "mod0", 1, b"", bytes(32))
+    second = _entry(CODE, "modO", 1, b"", bytes(32))
     other_type = _entry(MODEL, "modO", 1, pack_model(
         family_id=synthetic_family_id("GENESIS"), parent_entry_id=dig("parent"),
         weights_digest=dig("weights"), lifecycle_state=LIFECYCLE_CANDIDATE,
@@ -183,22 +188,21 @@ def test_unknown_state_version_and_trailing_bytes_fail_closed():
         encode_entry(
             CODE, "verifier", 1, artifact_digest=dig("a"), provenance_digest=dig("p"),
             producer_entry_id=bytes(32), approval_state=9, min_permitted_version=1,
-            policy_entry_id=policy.entry_id, signing_key_id=dig("k"),
+            policy_entry_id=bytes(32), signing_key_id=dig("k"),
             approval_evidence_checkpoint=dig("c"), not_after=0, tail=b"",
         )
         raise AssertionError("state")
     except Exception as exc:
         assert exc.reason == "APPROVAL_STATE"
-    try:
-        encode_entry(
-            CODE, "verifier", 1, artifact_digest=dig("a"), provenance_digest=dig("p"),
-            producer_entry_id=bytes(32), approval_state=APPROVED, min_permitted_version=2,
-            policy_entry_id=policy.entry_id, signing_key_id=dig("k"),
-            approval_evidence_checkpoint=dig("c"), not_after=0, tail=b"",
-        )
-        raise AssertionError("floor")
-    except Exception as exc:
-        assert exc.reason == "VERSION_BELOW_MIN"
+    historical = encode_entry(
+        CODE, "verifier", 1, artifact_digest=dig("a"), provenance_digest=dig("p"),
+        producer_entry_id=bytes(32), approval_state=APPROVED, min_permitted_version=2,
+        policy_entry_id=bytes(32), signing_key_id=dig("k"),
+        approval_evidence_checkpoint=dig("c"), not_after=0, tail=b"",
+    )
+    decoded, _consumed = decode_entry(historical.canonical)
+    assert decoded.version == 1 and decoded.min_permitted_version == 2
+    assert decoded.entry_id == historical.entry_id
     registry, _parts, _grant = simple_g()
     flipped = bytearray(registry.raw)
     flipped[4] = 9
@@ -215,8 +219,9 @@ def test_unknown_state_version_and_trailing_bytes_fail_closed():
 
 
 def test_minimum_version_old_revoked_and_rollback_are_separate_from_authenticity():
-    policy = policy_entry("caps", operations=bit("G"), family=bytes(32))
-    parts = base_entries(policy)
+    dest = make_destination("carried", "dest-id")
+    policy = policy_entry("caps", operations=bit("G"), family=bytes(32), destinations=[dest.entry_id])
+    parts = base_entries(policy, dest)
     old = parts["corpus"]
     current = _entry(CORPUS, "batch", 2, old.tail, policy.entry_id, minimum=2)
     revoked = _entry(CORPUS, "batch", 3, old.tail, policy.entry_id, minimum=3, approval=REVOKED)
@@ -235,12 +240,12 @@ def test_minimum_version_old_revoked_and_rollback_are_separate_from_authenticity
     current_reg = world([*parts.values(), newer])
     grant_new = g_grant(current_reg, parts, corpus=newer)
     assert crown_validate(grant_new, current_reg.raw, TOKENS, FLOORS, parts["image"].entry_id).decision == CHECKS_PASSED
-    old_registry = sign_entries(list(base_entries(policy).values()), version=1)
+    old_registry = sign_entries(list(parts.values()), version=1)
     assert registry_authenticity(old_registry.raw, TOKENS).decision == CHECKS_PASSED
     raised = Floors(2, 1, 1, 1)
     assert registry_freshness(old_registry, raised, None).decision == FAIL_CLOSED
     assert registry_freshness(old_registry, raised, None).reason == "REGISTRY_FLOOR"
-    linked = sign_entries(list(base_entries(policy).values()) + [newer], version=2, previous=old_registry.registry_root)
+    linked = sign_entries(list(parts.values()) + [newer], version=2, previous=old_registry.registry_root)
     assert accept_registry(linked.raw, TOKENS, raised, old_registry).decision == CHECKS_PASSED
     forked = bytearray(linked.raw)
     # previous root sits at offset 9; damage it and the signature or the root check must fail closed
@@ -298,15 +303,15 @@ def test_consumer_does_not_call_crown_and_rechecks(monkeypatch):
         raise AssertionError("consumer called crown")
 
     monkeypatch.setattr("orca.rse.imp1.authority.crown_validate", explode)
-    checked = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE)
+    checked = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, *consumer_args(parts))
     assert checked.decision == CHECKS_PASSED
     assert checked.executable is False
     bad_root = bytearray(grant)
     # registry root is at offset 34 of the signed prefix; damaging it breaks the signature or the root
     bad_root[34] ^= 0xFF
     forged = sign_grant(bytes(bad_root[: -130]), OWNERS)
-    assert consumer_verify(forged, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE).decision == FAIL_CLOSED
-    skipped = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, crown_already_checked=True)
+    assert consumer_verify(forged, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, *consumer_args(parts)).decision == FAIL_CLOSED
+    skipped = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, *consumer_args(parts), crown_already_checked=True)
     assert skipped.decision == FAIL_CLOSED
     assert skipped.reason == "UNEXPECTED_ARGUMENT"
 
@@ -351,7 +356,7 @@ def test_intent_mismatch_fails_and_signed_grant_stays_authoritative():
     registry, parts, grant = simple_g()
     image = parts["image"].entry_id
     good = g_intent(registry, grant, parts)
-    assert consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, good, CHALLENGE).decision == CHECKS_PASSED
+    assert consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, good, CHALLENGE, *consumer_args(parts)).decision == CHECKS_PASSED
     wrongs = [
         good.__class__("V", good.artifact_name, good.artifact_version, good.destination_name, good.ceilings, good.sas),
         good.__class__("G", "other", good.artifact_version, good.destination_name, good.ceilings, good.sas),
@@ -361,10 +366,10 @@ def test_intent_mismatch_fails_and_signed_grant_stays_authoritative():
         good.__class__("G", good.artifact_name, good.artifact_version, good.destination_name, good.ceilings, "AAAA-AAAA-AAAA"),
     ]
     for sheet in wrongs:
-        result = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, sheet, CHALLENGE)
+        result = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, sheet, CHALLENGE, *consumer_args(parts))
         assert result.decision == FAIL_CLOSED
         assert result.reason.startswith("INTENT") or result.reason == "SAS"
-    assert consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, good, dig("other-challenge")).reason == "CHALLENGE"
+    assert consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, good, dig("other-challenge"), *consumer_args(parts)).reason == "CHALLENGE"
 
 
 def test_policy_caps_are_synthetic_and_refuse_raises():
@@ -377,12 +382,11 @@ def test_policy_caps_are_synthetic_and_refuse_raises():
     over_time = g_grant(registry, parts, runtime=1000)
     assert crown_validate(over_time, registry.raw, TOKENS, FLOORS, image).reason == "RUNTIME_CAP"
     # A destination under a different policy is outside this policy's destination scope.
-    other = policy_entry("other-caps", operations=bit("G"), family=bytes(32))
-    foreign = _entry(DESTINATION, "foreign", 1, parts["dest"].tail, other.entry_id)
-    mixed = world([other, *parts.values(), foreign])
-    # The grant still names the original policy, so the foreign destination is out of scope.
+    foreign = _entry(DESTINATION, "foreign", 1, parts["dest"].tail, bytes(32))
+    mixed = world([*parts.values(), foreign])
+    # The grant still names the original policy, which does not list the foreign destination.
     scoped = g_grant(mixed, parts, dest=foreign)
-    assert crown_validate(scoped, mixed.raw, TOKENS, FLOORS, image).reason == "POLICY_SCOPE"
+    assert crown_validate(scoped, mixed.raw, TOKENS, FLOORS, image).reason == "DESTINATION_SCOPE"
     blocked = crown_validate(grant, registry.raw, TOKENS, FLOORS, image)
     assert blocked.payload["spending"] is False
     assert spending_authorized() is False
@@ -394,141 +398,79 @@ def test_family_isolation_and_foundation_tokenizer_binding():
     novus = synthetic_family_id("NOVUS")
     aeternum = synthetic_family_id("AETERNUM")
     assert len({genesis, novus, aeternum}) == 3
-    g_policy = policy_entry("g-caps", operations=bit("G"), family=bytes(32))
-    n_policy = policy_entry("n-caps", operations=bit("T") | bit("W"), family=novus, spend=40, batch=5000)
+    dest = make_destination("carried", "dest-id")
+    g_policy = policy_entry("g-caps", operations=bit("G"), family=bytes(32), destinations=[dest.entry_id])
+    n_policy = policy_entry("n-caps", operations=bit("G") | bit("T") | bit("W"), family=novus, spend=40, batch=5000)
     a_policy = policy_entry("a-caps", operations=bit("T"), family=aeternum, spend=40)
-    base = base_entries(g_policy)
-    n_tok = _entry(TOKENIZER, "novus-tok", 1, pack_tokenizer(dig("novus-tokenizer-id"), dig("novus-vocab")), n_policy.entry_id)
-    a_tok = _entry(TOKENIZER, "aeternum-tok", 1, pack_tokenizer(dig("aeternum-tokenizer-id"), dig("aeternum-vocab")), a_policy.entry_id)
-    n_found = _entry(FOUNDATION_MODEL, "novus-base", 1, pack_foundation(
-        family_id=novus, foundation_model_id=dig("novus-foundation"), foundation_revision=rev("novus"),
-        tokenizer_entry_id=n_tok.entry_id, weights_digest=dig("novus-weights"),
-        license_record_digest=dig("novus-license"), architecture_config_digest=dig("novus-config"),
-    ), n_policy.entry_id, producer=n_policy.entry_id)
-    a_found = _entry(FOUNDATION_MODEL, "aeternum-base", 1, pack_foundation(
-        family_id=aeternum, foundation_model_id=dig("aeternum-foundation"), foundation_revision=rev("aeternum"),
-        tokenizer_entry_id=a_tok.entry_id, weights_digest=dig("aeternum-weights"),
-        license_record_digest=dig("aeternum-license"), architecture_config_digest=dig("aeternum-config"),
-    ), a_policy.entry_id, producer=a_policy.entry_id)
-    g_found = _entry(FOUNDATION_MODEL, "genesis-base", 1, pack_foundation(
-        family_id=genesis, foundation_model_id=dig("genesis-foundation"), foundation_revision=rev("genesis"),
-        tokenizer_entry_id=n_tok.entry_id, weights_digest=dig("genesis-weights"),
-        license_record_digest=dig("genesis-license"), architecture_config_digest=dig("genesis-config"),
-    ), n_policy.entry_id, producer=n_policy.entry_id)
-    # genesis foundation above points at the novus tokenizer on purpose for the substitution case below;
-    # the approved genesis model uses its own parent and the GENESIS family.
-    g_model = _entry(MODEL, "genesis-model", 1, pack_model(
-        family_id=genesis, parent_entry_id=g_found.entry_id, weights_digest=dig("genesis-model-weights"),
-        lifecycle_state=LIFECYCLE_ACCEPTED, qualification_record_digest=dig("genesis-qual"),
-    ), n_policy.entry_id)
-    n_corpus = _entry(CORPUS, "novus-corpus", 1, base["corpus"].tail, n_policy.entry_id)
-    n_code = _entry(CODE, "n-verifier", 1, b"", n_policy.entry_id)
-    n_forge = _entry(ENROLMENT, "n-forge", 1, base["forge"].tail, n_policy.entry_id)
-    n_witness = _entry(ENROLMENT, "n-witness", 1, base["witness"].tail, n_policy.entry_id)
+    base = base_entries(g_policy, dest)
+
+    def foundation(name, family, policy, tok_name):
+        tok = _entry(TOKENIZER, tok_name, 1, pack_tokenizer(dig(tok_name + "-id"), dig(tok_name + "-vocab")), policy.entry_id)
+        found = _entry(FOUNDATION_MODEL, name, 1, pack_foundation(
+            family_id=family, foundation_model_id=dig(name + "-id"), foundation_revision=revision(name),
+            tokenizer_entry_id=tok.entry_id, weights_digest=dig(name + "-weights"),
+            license_record_digest=dig(name + "-license"), architecture_config_digest=dig(name + "-config"),
+            artifact_format=1, inspection_evidence_digest=dig(name + "-inspect"),
+        ), policy.entry_id, producer=policy.entry_id)
+        model = _entry(MODEL, name + "-model", 1, pack_model(
+            family_id=family, parent_entry_id=found.entry_id, weights_digest=dig(name + "-model-weights"),
+            lifecycle_state=LIFECYCLE_ACCEPTED, qualification_record_digest=dig(name + "-qual"),
+        ), policy.entry_id)
+        return tok, found, model
+
+    n_tok, n_found, n_model = foundation("novus-base", novus, n_policy, "novus-tok")
+    a_tok, a_found, a_model = foundation("aeternum-base", aeternum, a_policy, "aeternum-tok")
+    genesis_policy = policy_entry("genesis-caps", operations=bit("G"), family=genesis)
+    g_tok, g_found, g_model = foundation("genesis-base", genesis, genesis_policy, "genesis-tok")
     registry = world([
-        n_policy, a_policy, *base.values(), n_tok, a_tok, n_found, a_found, g_found, g_model,
-        n_corpus, n_code, n_forge, n_witness,
+        *base.values(), n_policy, a_policy, genesis_policy,
+        g_tok, g_found, g_model, n_tok, n_found, n_model, a_tok, a_found, a_model,
     ])
-    fields = parse_foundation(n_found.tail)
-    assert fields["license_record_digest"] != bytes(32)
-    assert fields["architecture_config_digest"] != bytes(32)
-    assert fields["foundation_revision"] != bytes(64)
-    assert fields["tokenizer_entry_id"] == n_tok.entry_id
-    assert fields["weights_digest"] != a_found.entry_id
-    incomplete = _entry(FOUNDATION_MODEL, "bare", 1, pack_foundation(
-        family_id=novus, foundation_model_id=dig("id"), foundation_revision=rev("bare"),
-        tokenizer_entry_id=n_tok.entry_id, weights_digest=bytes(32),
-        license_record_digest=dig("lic"), architecture_config_digest=dig("cfg"),
-    ), n_policy.entry_id, producer=n_policy.entry_id)
-    bad_reg = sign_registry(build_registry_body(1, bytes(32), [n_policy, n_tok, incomplete]), OWNERS)
-    assert registry_authenticity(bad_reg, TOKENS).reason == "INCOMPLETE_FOUNDATION"
+    assert registry_authenticity(registry.raw, TOKENS).decision == CHECKS_PASSED
+    assert parse_foundation(n_found.tail)["tokenizer_entry_id"] == n_tok.entry_id
+    assert parse_foundation(n_found.tail)["artifact_format"] == 1
+    assert n_model.entry_id != a_model.entry_id
+    assert registry.by_id(n_model.entry_id).policy_entry_id == n_policy.entry_id
+    assert registry.by_id(a_model.entry_id).policy_entry_id != n_policy.entry_id
+    # Same enrolment bytes keep one ROLE_ID no matter which family policy sits beside them.
+    assert base["forge"].policy_entry_id == bytes(32)
+    again = _entry(ENROLMENT, "forge", 1, base["forge"].tail, bytes(32))
+    assert again.entry_id == base["forge"].entry_id
+
+    cross = _entry(MODEL, "cross-family", 1, pack_model(
+        family_id=genesis, parent_entry_id=n_found.entry_id, weights_digest=dig("cross-weights"),
+        lifecycle_state=LIFECYCLE_CANDIDATE, qualification_record_digest=dig("cross-qual"),
+    ), n_policy.entry_id)
+    bad = sign_registry(build_registry_body(1, bytes(32), sorted(
+        [n_policy, n_tok, n_found, cross], key=lambda item: item.entry_id,
+    )), OWNERS)
+    assert registry_authenticity(bad, TOKENS).reason == "FAMILY_LINEAGE"
+
     image = base["image"].entry_id
-
-    def training(foundation, policy, corpus, family):
-        prefix = build_grant_prefix(
-            klass="T", grant_id=b"T" * 16, owner_authority_version=1, incident_epoch=1,
-            registry_version=registry.registry_version, registry_root=registry.registry_root,
-            policy_entry_id=policy.entry_id, target_role_id=n_forge.entry_id,
-            env_measurement_digest=dig("env-forge"), code_entry_id=n_code.entry_id,
-            challenge=CHALLENGE, prev_role_checkpoint=dig("prev-checkpoint"), created_at=0, not_after=0,
-            max_runtime_s=20,
-            tail={
-                "corpus_entry_id": corpus.entry_id, "foundation_entry_id": foundation.entry_id,
-                "family_id": family, "spend_ceiling": 5, "run_ceiling": 1, "provider_env_digest": dig("provider-env"),
-            },
-        )
-        return sign_grant(prefix, OWNERS)
-
-    novus_grant = training(n_found, n_policy, n_corpus, novus)
-    assert crown_validate(novus_grant, registry.raw, TOKENS, FLOORS, image).decision == CHECKS_PASSED
-    from orca.rse.imp1.authority import IntentSheet, ceilings_of, typed_artifact
-
-    parsed_t = parse_grant(novus_grant)
-    ident, ident_version = typed_artifact(parsed_t, registry)
-    assert ident == f"novus-corpus v1+novus-base v1"
-    sheet = IntentSheet("T", ident, ident_version, "", ceilings_of(parsed_t), grant_sas(parsed_t.klass, parsed_t.signed))
-    assert consumer_verify(novus_grant, registry.raw, TOKENS, FLOORS, image, sheet, CHALLENGE).decision == CHECKS_PASSED
-    n_corpus_b = _entry(CORPUS, "other-corpus", 1, base["corpus"].tail, n_policy.entry_id)
-    registry_b = world([
-        n_policy, a_policy, *base.values(), n_tok, a_tok, n_found, a_found, g_found, g_model,
-        n_corpus, n_corpus_b, n_code, n_forge, n_witness,
-    ])
-    swapped_corpus = build_grant_prefix(
+    prefix = build_grant_prefix(
         klass="T", grant_id=b"T" * 16, owner_authority_version=1, incident_epoch=1,
-        registry_version=registry_b.registry_version, registry_root=registry_b.registry_root,
-        policy_entry_id=n_policy.entry_id, target_role_id=n_forge.entry_id,
-        env_measurement_digest=dig("env-forge"), code_entry_id=n_code.entry_id,
+        registry_version=registry.registry_version, registry_root=registry.registry_root,
+        policy_entry_id=n_policy.entry_id, target_role_id=base["forge"].entry_id,
+        env_measurement_digest=dig("env-forge"), code_entry_id=base["code"].entry_id,
         challenge=CHALLENGE, prev_role_checkpoint=dig("prev-checkpoint"), created_at=0, not_after=0,
         max_runtime_s=20,
         tail={
-            "corpus_entry_id": n_corpus_b.entry_id, "foundation_entry_id": n_found.entry_id,
+            "corpus_entry_id": base["corpus"].entry_id, "foundation_entry_id": n_found.entry_id,
             "family_id": novus, "spend_ceiling": 5, "run_ceiling": 1, "provider_env_digest": dig("provider-env"),
         },
     )
-    swapped_raw = sign_grant(swapped_corpus, OWNERS)
-    assert consumer_verify(swapped_raw, registry_b.raw, TOKENS, FLOORS, image, sheet, CHALLENGE).reason == "INTENT_ARTIFACT"
-    assert crown_validate(novus_grant, registry.raw, TOKENS, FLOORS, image).payload["training"] is False
-    swapped_family = training(a_found, n_policy, n_corpus, novus)
-    assert crown_validate(swapped_family, registry.raw, TOKENS, FLOORS, image).decision == FAIL_CLOSED
-    genesis_as_foundation = training(g_model, n_policy, n_corpus, novus)
-    assert crown_validate(genesis_as_foundation, registry.raw, TOKENS, FLOORS, image).reason == "WRONG_TYPE"
-    # Rebinding the Aeternum foundation to the Novus tokenizer is a different entry.
-    rebound = _entry(FOUNDATION_MODEL, "aeternum-base", 1, pack_foundation(
-        family_id=aeternum, foundation_model_id=dig("aeternum-foundation"), foundation_revision=rev("aeternum"),
-        tokenizer_entry_id=n_tok.entry_id, weights_digest=dig("aeternum-weights"),
-        license_record_digest=dig("aeternum-license"), architecture_config_digest=dig("aeternum-config"),
-    ), a_policy.entry_id, producer=a_policy.entry_id)
-    assert rebound.entry_id != a_found.entry_id
-    assert registry.by_id(rebound.entry_id) is None
-    n_dest = _entry(DESTINATION, "novus-out", 1, base["dest"].tail, n_policy.entry_id)
-    registry2 = world([
-        n_policy, a_policy, *base.values(), n_tok, a_tok, n_found, a_found, g_found, g_model,
-        n_corpus, n_code, n_forge, n_witness, n_dest,
-    ])
-    w_prefix = build_grant_prefix(
-        klass="W", grant_id=b"W" * 16, owner_authority_version=1, incident_epoch=1,
-        registry_version=registry2.registry_version, registry_root=registry2.registry_root,
-        policy_entry_id=n_policy.entry_id, target_role_id=n_forge.entry_id,
-        env_measurement_digest=dig("env-forge"), code_entry_id=n_code.entry_id,
-        challenge=CHALLENGE, prev_role_checkpoint=dig("prev-checkpoint"), created_at=0, not_after=0,
-        max_runtime_s=20,
-        tail={
-            "model_entry_id": g_model.entry_id, "qualification_record_digest": dig("genesis-qual"),
-            "source_entry_id": n_found.entry_id, "destination_entry_id": n_dest.entry_id,
-            "format": 1, "size_ceiling": 100, "recipient_role_id": n_witness.entry_id,
-        },
-    )
-    refused = crown_validate(sign_grant(w_prefix, OWNERS), registry2.raw, TOKENS, FLOORS, image)
-    assert refused.decision == FAIL_CLOSED
-    assert refused.reason == "FAMILY_SCOPE"
+    deferred = crown_validate(sign_grant(prefix, OWNERS), registry.raw, TOKENS, FLOORS, image)
+    assert deferred.decision == FAIL_CLOSED
+    assert deferred.reason == "UNSUPPORTED_CURRENT_MILESTONE"
     assert model_selection_authorized() is False
     assert gpu_authorized() is False
     assert provider_authorized() is False
 
 
 def test_enrolment_key_substitution_changes_role_id():
-    policy = policy_entry("caps", operations=bit("G"), family=bytes(32))
-    parts = base_entries(policy)
+    dest = make_destination("carried", "dest-id")
+    policy = policy_entry("caps", operations=bit("G"), family=bytes(32), destinations=[dest.entry_id])
+    parts = base_entries(policy, dest)
     original = parts["forge"]
     fields = parse_enrolment(original.tail)
     swapped = pack_enrolment(
@@ -536,7 +478,7 @@ def test_enrolment_key_substitution_changes_role_id():
         x25519_public_key=fields["x25519_public_key"], environment_measurement=fields["environment_measurement"],
         key_version=fields["key_version"],
     )
-    forged = _entry(ENROLMENT, "forge", 1, swapped, policy.entry_id)
+    forged = _entry(ENROLMENT, "forge", 1, swapped, bytes(32))
     assert forged.entry_id != original.entry_id
     registry = world(parts.values())
     assert registry.by_id(forged.entry_id) is None
@@ -608,6 +550,7 @@ def test_authorization_locks_and_posture_stay_denied():
     registry, parts, grant = simple_g()
     result = consumer_verify(
         grant, registry.raw, TOKENS, FLOORS, parts["image"].entry_id, g_intent(registry, grant, parts), CHALLENGE,
+        *consumer_args(parts),
     )
     assert result.decision == CHECKS_PASSED
     assert result.payload["corpus_generation"] == "NOT_AUTHORIZED"
@@ -663,7 +606,14 @@ def test_operation_scope_and_retirement_and_role_type():
             "provider_env_digest": dig("provider-env"),
         },
     )
-    assert crown_validate(sign_grant(prefix, OWNERS), registry.raw, TOKENS, FLOORS, parts["image"].entry_id).reason == "OPERATION_SCOPE"
+    assert crown_validate(sign_grant(prefix, OWNERS), registry.raw, TOKENS, FLOORS, parts["image"].entry_id).reason == "UNSUPPORTED_CURRENT_MILESTONE"
+    v_dest = make_destination("carried", "dest-id")
+    v_policy = policy_entry("v-only", operations=bit("V"), family=bytes(32), destinations=[v_dest.entry_id])
+    v_parts = base_entries(v_policy, v_dest)
+    v_reg = world(v_parts.values())
+    assert crown_validate(
+        g_grant(v_reg, v_parts), v_reg.raw, TOKENS, FLOORS, v_parts["image"].entry_id,
+    ).reason == "OPERATION_SCOPE"
     retired = _entry(CORPUS, "batch", 1, pack_corpus(
         corpus_id=dig("corpus-id"), corpus_version=1, manifest_digest=dig("manifest"),
         source_provenance_digest=dig("corpus-source"), witness_acceptance_record_digest=dig("witness-accept"),

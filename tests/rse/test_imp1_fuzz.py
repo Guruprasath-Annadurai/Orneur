@@ -1,15 +1,19 @@
-"""Deterministic mutations of the IMP-1 parsers. No path may return ALLOW, PASS, or APPROVED."""
+"""Deterministic mutations. A mutated object must not reach CHECKS_PASSED.
+
+Iteration count is fixed: 4 seeds x 100 mutations. Expected SAS and Merkle
+answers live in test_imp1r_clarification.py and are not produced here.
+"""
 
 from __future__ import annotations
 
-import hashlib
-
-from orca.rse.imp1.authority import consumer_verify, crown_validate, grant_sas
+from orca.rse.imp1.authority import consumer_verify, crown_validate
 from orca.rse.imp1.codec import parse_grant, parse_registry
 from orca.rse.imp1.verdict import CHECKS_PASSED, FAIL_CLOSED, QUARANTINE
-from tests.rse.support import CHALLENGE, FLOORS, TOKENS, g_intent, simple_g
+from tests.rse.support import CHALLENGE, FLOORS, TOKENS, consumer_args, g_intent, simple_g
 
-_CLOSED = {FAIL_CLOSED, QUARANTINE}
+SEEDS = (20261008, 0xC1A51F1E, 11, 99)
+PER_SEED = 100
+FUZZ_ITERATIONS = len(SEEDS) * PER_SEED
 
 
 def _rng(seed: int):
@@ -26,68 +30,67 @@ def _rng(seed: int):
     return nxt
 
 
-def test_fuzz_registry_grant_crown_consumer_and_sas():
+def _mutate(blob: bytes, kind: int, nxt) -> bytes:
+    data = bytearray(blob)
+    if kind == 0:
+        return bytes(data[: nxt() % len(data)])
+    if kind == 1:
+        return bytes(data) + bytes([nxt() & 0xFF])
+    if kind == 2 and data:
+        data[nxt() % len(data)] ^= 1 + (nxt() % 255)
+        return bytes(data)
+    if kind == 3 and len(data) > 4:
+        data[4] = 2 + (nxt() % 20)
+        return bytes(data)
+    if kind == 4 and len(data) > 45:
+        data[41:45] = (int.from_bytes(data[41:45], "big") ^ 0x01).to_bytes(4, "big")
+        return bytes(data)
+    if kind == 5 and len(data) > 80:
+        data[45], data[46] = data[46], data[45]
+        return bytes(data)
+    if kind == 6:
+        changed = bytes(data) + data[:32]
+    else:
+        changed = bytes(data[:-1] if data else b"")
+    if changed == blob:
+        changed = bytes(blob) + b"\xff"
+    return changed
+
+
+def test_fuzz_mutations_do_not_reach_semantic_success():
+    assert FUZZ_ITERATIONS == 400
     registry, parts, grant = simple_g()
     image = parts["image"].entry_id
+    role, env = consumer_args(parts)
     intent = g_intent(registry, grant, parts)
-    parsed = parse_grant(grant)
-    nxt = _rng(20261007)
-    seen_closed = set()
-    for i in range(400):
-        kind = nxt() % 8
-        blob = bytearray(registry.raw if kind < 4 else grant)
-        if kind == 0:
-            blob = blob[: nxt() % (len(blob) + 1)]
-        elif kind == 1:
-            blob += bytes([nxt() & 0xFF])
-        elif kind == 2:
-            if blob:
-                blob[nxt() % len(blob)] = nxt() & 0xFF
-            if len(blob) > 4:
-                blob[4] = 2 + (nxt() % 20)
-        elif kind == 3:
-            blob = b"\xff" * 8 + bytes(blob)
-        elif kind == 4:
-            blob = blob[: nxt() % (len(blob) + 1)]
-        elif kind == 5:
-            blob += b"\x00"
-        elif kind == 6:
-            if len(blob) > 40:
-                blob[34] ^= 0x01
-        else:
-            if len(blob) > 200:
-                blob[-1] ^= 0x01
-        raw = bytes(blob)
-        reg = _closed(lambda: parse_registry(raw))
-        gr = _closed(lambda: parse_grant(raw))
-        crown = crown_validate(raw, registry.raw, TOKENS, FLOORS, image)
-        consumer = consumer_verify(grant if kind < 4 else raw, raw if kind < 4 else registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE)
-        sas_decision = _sas(parsed.klass if kind % 2 == 0 else 0x99, raw[:64])
-        for decision in (reg, gr, crown.decision, consumer.decision, sas_decision):
-            assert decision in _CLOSED or decision == CHECKS_PASSED
-            assert decision not in {"ALLOW", "PASS", "APPROVED"}
-        if crown.decision == CHECKS_PASSED:
-            assert raw == grant
-        if kind == 0 and len(raw) < len(registry.raw):
-            seen_closed.add(reg)
-    assert seen_closed <= _CLOSED
-    assert FAIL_CLOSED in seen_closed
-    # Intact inputs still parse. Fuzz must not have mutated the fixtures.
+    assert crown_validate(grant, registry.raw, TOKENS, FLOORS, image).decision == CHECKS_PASSED
+    closed = 0
+    for seed in SEEDS:
+        nxt = _rng(seed)
+        for _ in range(PER_SEED):
+            kind = nxt() % 8
+            target_grant = kind % 2 == 0
+            raw = _mutate(grant if target_grant else registry.raw, kind, nxt)
+            assert raw != (grant if target_grant else registry.raw)
+            if target_grant:
+                crown = crown_validate(raw, registry.raw, TOKENS, FLOORS, image)
+                consumer = consumer_verify(
+                    raw, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, role, env,
+                )
+            else:
+                crown = crown_validate(grant, raw, TOKENS, FLOORS, image)
+                consumer = consumer_verify(
+                    grant, raw, TOKENS, FLOORS, image, intent, CHALLENGE, role, env,
+                )
+            assert crown.decision in {FAIL_CLOSED, QUARANTINE}
+            assert consumer.decision in {FAIL_CLOSED, QUARANTINE}
+            assert crown.decision != CHECKS_PASSED
+            assert consumer.decision != CHECKS_PASSED
+            for parser in (parse_registry, parse_grant):
+                try:
+                    parser(raw)
+                except Exception:
+                    closed += 1
+    assert closed > 0
     assert parse_registry(registry.raw).registry_root == registry.registry_root
-    assert hashlib.sha256(grant).digest() == hashlib.sha256(parse_grant(grant).raw).digest()
-
-
-def _closed(fn) -> str:
-    try:
-        fn()
-    except Exception:
-        return FAIL_CLOSED
-    return CHECKS_PASSED
-
-
-def _sas(klass, signed) -> str:
-    try:
-        grant_sas(klass, signed)
-    except Exception:
-        return FAIL_CLOSED
-    return CHECKS_PASSED
+    assert parse_grant(grant).raw == grant
