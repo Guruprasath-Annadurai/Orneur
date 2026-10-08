@@ -49,7 +49,8 @@ RETIREMENT_STATES = frozenset({RETIREMENT_ACTIVE, RETIREMENT_RETIRED})
 ROLE_CROWN = 1
 ROLE_FORGE = 2
 ROLE_WITNESS = 3
-ROLE_MONITOR = 4
+ROLE_MONITOR_LITE = 4
+ROLE_MONITOR = ROLE_MONITOR_LITE  # same wire code; the name is MONITOR_LITE
 ROLE_TYPES = frozenset(range(1, 5))
 
 DEST_MEDIUM = 1
@@ -62,11 +63,57 @@ WITNESS_IRREVERSIBLE = 2
 WITNESS_IRREVERSIBLE_OC = 3
 WITNESS_REQUIREMENTS = frozenset(range(1, 4))
 
-# W-grant format. Only a non-executable weight format is accepted. RECOMMENDED code.
-W_FORMAT_NO_CODE = 1
+# W format and foundation artifact_format share this code space (Clarification 1 §8, §12).
+DATA_ONLY_TENSOR_V1 = 1
+EXECUTABLE_OR_CODE_LOADING = 128
+UNINSPECTED = 255
+ARTIFACT_FORMATS = frozenset({DATA_ONLY_TENSOR_V1, EXECUTABLE_OR_CODE_LOADING, UNINSPECTED})
+W_FORMAT_NO_CODE = DATA_ONLY_TENSOR_V1
+APPROVABLE_ARTIFACT_FORMATS = frozenset({DATA_ONLY_TENSOR_V1})
 
-# R-grant reason. Opaque to the freeze; non-zero closed set. RECOMMENDED.
-RETIRE_REASONS = frozenset(range(1, 5))
+# R-grant reason codes. Parser constants only in this milestone.
+RETIRE_SUPERSEDED = 1
+RETIRE_COMPROMISED = 2
+RETIRE_POLICY = 3
+RETIRE_END_OF_LIFE = 4
+RETIRE_REASONS = frozenset({RETIRE_SUPERSEDED, RETIRE_COMPROMISED, RETIRE_POLICY, RETIRE_END_OF_LIFE})
+RETIRE_NAME = {
+    1: "SUPERSEDED",
+    2: "COMPROMISED OR SUSPECTED",
+    3: "POLICY VIOLATION",
+    4: "END OF LIFE",
+}
+
+# K scenario codes. Parser and display only; K is not executed.
+K_EPOCH_RAISE = 1
+K_FORGE_REBUILD = 2
+K_WITNESS_REBUILD = 3
+K_TPM_REPLACE = 4
+K_WITNESS_ENV_UPDATE = 5
+K_TOKEN_REPLACE = 6
+K_CHECKPOINT_HOLDER_REPLACE = 7
+K_CHECKPOINT_ROOT_REESTABLISH = 8
+K_ARTIFACT_REPO_RECOVERY = 9
+K_CORPUS_RESTORE = 10
+K_WEIGHTS_RESTORE = 11
+K_LUKS_SLOT_ROTATION = 12
+K_RE_ROOT = 13
+K_SCENARIO_NAME = {
+    1: "EPOCH RAISE",
+    2: "FORGE REBUILD",
+    3: "WITNESS REBUILD",
+    4: "TPM REPLACE",
+    5: "WITNESS ENV UPDATE",
+    6: "TOKEN REPLACE",
+    7: "CHECKPOINT HOLDER REPLACE",
+    8: "CHECKPOINT ROOT REESTABLISH",
+    9: "ARTIFACT REPO RECOVERY",
+    10: "CORPUS RESTORE",
+    11: "WEIGHTS RESTORE",
+    12: "LUKS SLOT ROTATION",
+    13: "RE-ROOT",
+}
+K_SCENARIOS = frozenset(K_SCENARIO_NAME)
 
 COMMON_LEN = 274
 NAME_LEN = 64
@@ -74,24 +121,31 @@ MAX_ENTRIES = 1024
 MAX_REGISTRY_BYTES = 1 << 20
 MAX_NAME_CHARS = 64
 
-# Tail sizes. POLICY, ENROLMENT, DESTINATION and HOLDOUT widths that the freeze
-# did not number are the recommended profiles below.
+# Tail sizes frozen by Clarification 1 §5.
 TAIL_LEN = {
     CODE: 0,
     ROLE_IMAGE: 36,
-    FOUNDATION_MODEL: 256,
+    FOUNDATION_MODEL: 289,
     TOKENIZER: 64,
     MODEL: 129,
     CORPUS: 165,
     ENROLMENT: 101,
-    POLICY: 70,
-    DESTINATION: 65,
+    POLICY: 199,
+    DESTINATION: 33,
     HOLDOUT_SET: 40,
 }
 
-REG_MAGIC = b"OREG"  # RECOMMENDED framing; the freeze does not name a magic
+# policy_entry_id is zero on these types. Family-bearing types must name a POLICY.
+FAMILY_NEUTRAL_TYPES = frozenset({CODE, ROLE_IMAGE, ENROLMENT, DESTINATION, POLICY})
+FAMILY_BEARING_TYPES = frozenset({TOKENIZER, FOUNDATION_MODEL, MODEL, CORPUS, HOLDOUT_SET})
+MAX_DESTINATIONS = 4
+UNSUPPORTED_CURRENT_MILESTONE = "UNSUPPORTED_CURRENT_MILESTONE"
+SEMANTIC_CLASSES = frozenset({ord("G"), ord("V")})
+DEFERRED_CLASSES = frozenset({ord("K"), ord("Q"), ord("T"), ord("W"), ord("D"), ord("R")})
+
+REG_MAGIC = b"OREG"
 REG_FORMAT_VERSION = 1
-REG_SIG_DOMAIN = b"OREG-SIG"  # RECOMMENDED; parallel to OCG1-SIG
+REG_SIG_DOMAIN = b"OREG-SIG"
 TOKEN_ID_DOMAIN = b"OREG-TOKEN"
 
 GRANT_MAGIC = b"OCG1"
@@ -99,7 +153,7 @@ GRANT_VERSION = 1
 GRANT_SIG_DOMAIN = b"OCG1-SIG"
 SAS_DOMAIN = b"OCR-SAS-v1"
 
-# Merkle profile applied to entry IDs. RECOMMENDED: RFC 6962 §2.1.
+# Registry integrity only. Not the Evidence Ledger tree.
 MERKLE_PROFILE = "RFC6962-SHA256-ENTRY-ID-LEAF"
 
 CLASS_BITS = {
@@ -132,7 +186,7 @@ CLASS_SIG_LEN = {klass: (65 if klass == ord("V") else 130) for klass in KNOWN_CL
 CLASS_TEXT = {
     ord("G"): ("CORPUS GENERATION", "GENERATE"),
     ord("V"): ("WITNESS VERIFICATION", "VERIFY"),
-    ord("K"): ("RECOVERY", "RE-ROOT"),
+    ord("K"): ("RECOVERY", "SCENARIO"),
     ord("Q"): ("QUALIFICATION", "QUALIFY"),
     ord("T"): ("TRAINING", "TRAIN"),
     ord("W"): ("WEIGHTS EXPORT", "EXPORT"),
@@ -140,11 +194,20 @@ CLASS_TEXT = {
     ord("R"): ("RETIREMENT", "RETIRE"),
 }
 
+# Already frozen elsewhere. Not executed in IMP-1. Not a success path.
+CARRY_FORWARD = (
+    "W must equal the model entry qualification_record_digest",
+    "T and Q-linked corpora need a non-zero witnessed acceptance record",
+    "D may reference an exported or accepted model",
+    "K epoch and authority-version rules apply only when K is executable",
+)
+
 # Synthetic family labels. Not a foundation-model selection.
 FAMILY_LABELS = ("GENESIS", "NOVUS", "AETERNUM")
 
 # Checks this milestone does not claim.
 NOT_CLAIMED = (
+    "foundation_backdoor_absence",
     "hardware_anti_rollback",
     "tpm_nv_fence",
     "witness_quorum",

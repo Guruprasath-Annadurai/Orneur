@@ -11,6 +11,7 @@ import hashlib
 import re
 import struct
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -18,24 +19,31 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from orca.rse.imp1.merkle import merkle_root
 from orca.rse.imp1.profiles import (
     APPROVAL_STATES,
+    APPROVED,
+    ARTIFACT_FORMATS,
+    DATA_ONLY_TENSOR_V1,
+    APPROVABLE_ARTIFACT_FORMATS,
     CLASS_SIG_LEN,
     CLASS_TOTAL,
     CODE,
     COMMON_LEN,
     CORPUS,
     DEST_KINDS,
-    DEST_RECIPIENT_ROLE,
     DESTINATION,
     ENROLMENT,
     ENTRY_TYPES,
+    FAMILY_BEARING_TYPES,
     FAMILY_LABELS,
+    FAMILY_NEUTRAL_TYPES,
     FOUNDATION_MODEL,
     GRANT_MAGIC,
     GRANT_SIG_DOMAIN,
     GRANT_VERSION,
     HOLDOUT_SET,
+    K_SCENARIOS,
     KNOWN_CLASSES,
     LIFECYCLE_STATES,
+    MAX_DESTINATIONS,
     MAX_ENTRIES,
     MAX_REGISTRY_BYTES,
     MODEL,
@@ -57,6 +65,8 @@ from orca.rse.imp1.profiles import (
 from orca.rse.imp1.verdict import FailClosed
 
 _NAME_RE = re.compile(rb"[A-Za-z0-9._-]{1,64}\Z")
+_REV_RE = re.compile(rb"[A-Za-z0-9._-]{1,64}\Z")
+_PATH_COMPONENTS = {b".", b".."}
 _CONFUSABLE = str.maketrans({"0": "0", "O": "0", "1": "1", "l": "1", "I": "1"})
 _U32 = 0xFFFFFFFF
 _U64 = 0xFFFFFFFFFFFFFFFF
@@ -93,7 +103,7 @@ def pack_name(name: str) -> bytes:
         raise FailClosed("NAME_CHARSET") from exc
     if raw != name.encode("utf-8"):
         raise FailClosed("NAME_CHARSET")
-    if not _NAME_RE.fullmatch(raw):
+    if not _NAME_RE.fullmatch(raw) or raw in _PATH_COMPONENTS:
         raise FailClosed("NAME_CHARSET")
     return raw + bytes(NAME_LEN - len(raw))
 
@@ -156,12 +166,11 @@ def _pack_common(
         raise FailClosed("ENTRY_TYPE")
     if approval_state not in APPROVAL_STATES:
         raise FailClosed("APPROVAL_STATE")
-    if not isinstance(version, int) or isinstance(version, bool):
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
         raise FailClosed("VERSION_TYPE")
     if not isinstance(min_permitted_version, int) or isinstance(min_permitted_version, bool):
         raise FailClosed("MIN_VERSION_TYPE")
-    if version < min_permitted_version:
-        raise FailClosed("VERSION_BELOW_MIN")
+    # version < min_permitted_version stays decodable (Clarification 1 §10). Use is a later check.
     return b"".join(
         (
             bytes([entry_type]),
@@ -189,6 +198,15 @@ def encode_entry(entry_type: int, name: str, version: int, *, artifact_digest: b
     if len(tail_b) != TAIL_LEN[entry_type]:
         raise FailClosed("TAIL_LEN")
     _check_tail(entry_type, tail_b)
+    if entry_type in FAMILY_NEUTRAL_TYPES and policy_entry_id != bytes(32):
+        raise FailClosed("POLICY_NEUTRAL")
+    if entry_type in FAMILY_BEARING_TYPES and policy_entry_id == bytes(32):
+        raise FailClosed("POLICY_SCOPE")
+    if entry_type == FOUNDATION_MODEL and approval_state == APPROVED:
+        if tail_b[256] not in APPROVABLE_ARTIFACT_FORMATS:
+            raise FailClosed("ARTIFACT_FORMAT")
+        if tail_b[257:289] == bytes(32) or provenance_digest == bytes(32):
+            raise FailClosed("INCOMPLETE_FOUNDATION")
     common = _pack_common(
         entry_type, name, version, artifact_digest, provenance_digest, producer_entry_id, approval_state,
         min_permitted_version, policy_entry_id, signing_key_id, approval_evidence_checkpoint, not_after,
@@ -206,6 +224,10 @@ def encode_entry(entry_type: int, name: str, version: int, *, artifact_digest: b
 def _check_tail(entry_type: int, tail: bytes) -> None:
     if entry_type == ROLE_IMAGE:
         _u32_at(tail, 0)
+    elif entry_type == FOUNDATION_MODEL:
+        _check_revision(tail[64:128])
+        if tail[256] not in ARTIFACT_FORMATS:
+            raise FailClosed("ARTIFACT_FORMAT")
     elif entry_type == MODEL:
         if tail[96] not in LIFECYCLE_STATES:
             raise FailClosed("LIFECYCLE")
@@ -216,25 +238,51 @@ def _check_tail(entry_type: int, tail: bytes) -> None:
         if tail[0] not in ROLE_TYPES:
             raise FailClosed("ROLE_TYPE")
     elif entry_type == POLICY:
-        witness = tail[36]
-        allowed = tail[37]
-        if witness not in WITNESS_REQUIREMENTS:
-            raise FailClosed("WITNESS_REQUIREMENT")
-        if allowed == 0:
-            raise FailClosed("OPERATION_SCOPE")
+        _check_policy_tail(tail)
     elif entry_type == DESTINATION:
-        kind = tail[0]
-        recipient = tail[33:65]
-        if kind not in DEST_KINDS:
+        if tail[0] not in DEST_KINDS:
             raise FailClosed("DESTINATION_KIND")
-        if kind == DEST_RECIPIENT_ROLE:
-            if recipient == bytes(32):
-                raise FailClosed("DESTINATION_ROLE")
-        elif recipient != bytes(32):
-            raise FailClosed("DESTINATION_ROLE")
+        if tail[1:33] == bytes(32):
+            raise FailClosed("DESTINATION")
     elif entry_type == HOLDOUT_SET:
         _u32_at(tail, 32)
         _u32_at(tail, 36)
+
+
+def _check_revision(field: bytes) -> None:
+    if len(field) != 64:
+        raise FailClosed("REVISION_LEN")
+    if b"\x00" in field:
+        raw, pad = field.split(b"\x00", 1)
+        if pad != bytes(len(pad)) or not raw:
+            raise FailClosed("REVISION_CHARSET")
+    else:
+        raw = field
+    if not _REV_RE.fullmatch(raw):
+        raise FailClosed("REVISION_CHARSET")
+
+
+def _check_policy_tail(tail: bytes) -> None:
+    if len(tail) != TAIL_LEN[POLICY]:
+        raise FailClosed("TAIL_LEN")
+    witness = tail[36]
+    allowed = tail[37]
+    if witness not in WITNESS_REQUIREMENTS:
+        raise FailClosed("WITNESS_REQUIREMENT")
+    if allowed == 0:
+        raise FailClosed("OPERATION_SCOPE")
+    count = tail[70]
+    if count > MAX_DESTINATIONS:
+        raise FailClosed("DESTINATION_COUNT")
+    slots = [tail[71 + i * 32:71 + (i + 1) * 32] for i in range(MAX_DESTINATIONS)]
+    for index, slot in enumerate(slots):
+        if index < count:
+            if slot == bytes(32):
+                raise FailClosed("DESTINATION")
+            if index and slot <= slots[index - 1]:
+                raise FailClosed("DESTINATION_ORDER")
+        elif slot != bytes(32):
+            raise FailClosed("DESTINATION_PADDING")
 
 
 def _u32_at(buf: bytes, offset: int) -> int:
@@ -262,8 +310,6 @@ def decode_entry(buf: bytes) -> tuple[Entry, int]:
     if approval not in APPROVAL_STATES:
         raise FailClosed("APPROVAL_STATE")
     min_version = struct.unpack_from(">I", common, 166)[0]
-    if version < min_version:
-        raise FailClosed("VERSION_BELOW_MIN")
     policy_id = common[170:202]
     signing_key = common[202:234]
     checkpoint = common[234:266]
@@ -295,6 +341,8 @@ def parse_foundation(tail: bytes) -> dict:
         "weights_digest": tail[160:192],
         "license_record_digest": tail[192:224],
         "architecture_config_digest": tail[224:256],
+        "artifact_format": tail[256],
+        "inspection_evidence_digest": tail[257:289],
     }
 
 
@@ -335,6 +383,8 @@ def parse_enrolment(tail: bytes) -> dict:
 
 
 def parse_policy(tail: bytes) -> dict:
+    count = tail[70]
+    slots = tuple(tail[71 + i * 32:71 + (i + 1) * 32] for i in range(count))
     return {
         "max_batch_bytes": struct.unpack_from(">Q", tail, 0)[0],
         "max_runtime_s": struct.unpack_from(">I", tail, 8)[0],
@@ -345,12 +395,14 @@ def parse_policy(tail: bytes) -> dict:
         "min_grant_schema_version": struct.unpack_from(">I", tail, 32)[0],
         "witness_requirement": tail[36],
         "allowed_operations": tail[37],
-        "required_family_id": tail[38:70],
+        "family_scope": tail[38:70],
+        "destination_count": count,
+        "permitted_destinations": slots,
     }
 
 
 def parse_destination(tail: bytes) -> dict:
-    return {"kind": tail[0], "identifier_digest": tail[1:33], "recipient_role_entry_id": tail[33:65]}
+    return {"kind": tail[0], "identifier_digest": tail[1:33]}
 
 
 def parse_holdout(tail: bytes) -> dict:
@@ -365,15 +417,37 @@ def pack_role_image(generation: int, measurement_set_digest: bytes) -> bytes:
     return _u32(generation) + _b32(measurement_set_digest, "MEASUREMENT")
 
 
-def pack_foundation(*, family_id: bytes, foundation_model_id: bytes, foundation_revision: bytes,
-                    tokenizer_entry_id: bytes, weights_digest: bytes, license_record_digest: bytes,
-                    architecture_config_digest: bytes) -> bytes:
-    if not isinstance(foundation_revision, (bytes, bytearray)) or len(foundation_revision) != 64:
+def pack_revision(revision: bytes | str) -> bytes:
+    if isinstance(revision, str):
+        try:
+            raw = revision.encode("ascii")
+        except UnicodeEncodeError as exc:
+            raise FailClosed("REVISION_CHARSET") from exc
+    elif isinstance(revision, (bytes, bytearray)):
+        raw = bytes(revision)
+    else:
+        raise FailClosed("REVISION_CHARSET")
+    if len(raw) == 64:
+        _check_revision(raw)
+        return raw
+    if len(raw) > 64:
         raise FailClosed("REVISION_LEN")
+    padded = raw + bytes(64 - len(raw))
+    _check_revision(padded)
+    return padded
+
+
+def pack_foundation(*, family_id: bytes, foundation_model_id: bytes, foundation_revision: bytes | str,
+                    tokenizer_entry_id: bytes, weights_digest: bytes, license_record_digest: bytes,
+                    architecture_config_digest: bytes, artifact_format: int = DATA_ONLY_TENSOR_V1,
+                    inspection_evidence_digest: bytes) -> bytes:
+    if artifact_format not in ARTIFACT_FORMATS:
+        raise FailClosed("ARTIFACT_FORMAT")
     return b"".join((
-        _b32(family_id, "FAMILY"), _b32(foundation_model_id, "FOUNDATION_ID"), bytes(foundation_revision),
+        _b32(family_id, "FAMILY"), _b32(foundation_model_id, "FOUNDATION_ID"), pack_revision(foundation_revision),
         _b32(tokenizer_entry_id, "TOKENIZER"), _b32(weights_digest, "WEIGHTS"),
         _b32(license_record_digest, "LICENSE"), _b32(architecture_config_digest, "CONFIG"),
+        bytes([artifact_format]), _b32(inspection_evidence_digest, "INSPECTION"),
     ))
 
 
@@ -414,28 +488,39 @@ def pack_enrolment(*, role_type: int, ed25519_public_key: bytes, x25519_public_k
 
 def pack_policy(*, max_batch_bytes: int, max_runtime_s: int, max_spend: int, max_run: int, max_query_budget: int,
                 max_bit_budget: int, min_grant_schema_version: int, witness_requirement: int, allowed_operations: int,
-                required_family_id: bytes) -> bytes:
+                family_scope: bytes, destination_ids: list | None = None) -> bytes:
     if witness_requirement not in WITNESS_REQUIREMENTS:
         raise FailClosed("WITNESS_REQUIREMENT")
     if not isinstance(allowed_operations, int) or isinstance(allowed_operations, bool) or not 1 <= allowed_operations <= 255:
         raise FailClosed("OPERATION_SCOPE")
-    return b"".join((
+    ids = [] if destination_ids is None else list(destination_ids)
+    if len(ids) > MAX_DESTINATIONS:
+        raise FailClosed("DESTINATION_COUNT")
+    packed_ids = [_b32(item, "DEST_ID") for item in ids]
+    for index in range(1, len(packed_ids)):
+        if packed_ids[index] <= packed_ids[index - 1]:
+            raise FailClosed("DESTINATION_ORDER")
+    if any(item == bytes(32) for item in packed_ids):
+        raise FailClosed("DESTINATION")
+    slots = b"".join(packed_ids) + bytes(32 * (MAX_DESTINATIONS - len(packed_ids)))
+    tail = b"".join((
         _u64(max_batch_bytes), _u32(max_runtime_s), _u64(max_spend), _u32(max_run), _u32(max_query_budget),
         _u32(max_bit_budget), _u32(min_grant_schema_version), bytes([witness_requirement, allowed_operations]),
-        _b32(required_family_id, "FAMILY"),
+        _b32(family_scope, "FAMILY"), bytes([len(packed_ids)]), slots,
     ))
+    if len(tail) != TAIL_LEN[POLICY]:
+        raise FailClosed("TAIL_LEN")
+    _check_policy_tail(tail)
+    return tail
 
 
-def pack_destination(*, kind: int, identifier_digest: bytes, recipient_role_entry_id: bytes) -> bytes:
+def pack_destination(*, kind: int, identifier_digest: bytes) -> bytes:
     if kind not in DEST_KINDS:
         raise FailClosed("DESTINATION_KIND")
-    recipient = _b32(recipient_role_entry_id, "DEST_ROLE")
-    if kind == DEST_RECIPIENT_ROLE:
-        if recipient == bytes(32):
-            raise FailClosed("DESTINATION_ROLE")
-    elif recipient != bytes(32):
-        raise FailClosed("DESTINATION_ROLE")
-    return bytes([kind]) + _b32(identifier_digest, "DEST_ID") + recipient
+    digest = _b32(identifier_digest, "DEST_ID")
+    if digest == bytes(32):
+        raise FailClosed("DESTINATION")
+    return bytes([kind]) + digest
 
 
 def pack_holdout(*, holdout_id: bytes, bit_budget_total: int, query_budget_total: int) -> bytes:
@@ -487,7 +572,7 @@ def _reject_duplicate_semantics(entries: list[Entry]) -> None:
     skeletons: dict[str, str] = {}
     for entry in entries:
         if entry.entry_id in seen_id:
-            raise QuarantineDuplicate()
+            raise FailClosed("DUPLICATE_ENTRY")
         seen_id.add(entry.entry_id)
         key = (entry.entry_type, entry.name, entry.version)
         if key in seen_key:
@@ -500,8 +585,14 @@ def _reject_duplicate_semantics(entries: list[Entry]) -> None:
         skeletons[sk] = entry.name
 
 
-class QuarantineDuplicate(Exception):
-    pass
+def _require_ascending(entries: list[Entry]) -> None:
+    previous = None
+    for entry in entries:
+        if previous is not None and entry.entry_id <= previous:
+            if entry.entry_id == previous:
+                raise FailClosed("DUPLICATE_ENTRY")
+            raise FailClosed("ENTRY_ORDER")
+        previous = entry.entry_id
 
 
 def build_registry_body(registry_version: int, previous_registry_root: bytes, entries: list[Entry]) -> bytes:
@@ -514,10 +605,8 @@ def build_registry_body(registry_version: int, previous_registry_root: bytes, en
         raise FailClosed("MISSING_PREVIOUS")
     if not entries or len(entries) > MAX_ENTRIES:
         raise FailClosed("ENTRY_COUNT")
-    try:
-        _reject_duplicate_semantics(entries)
-    except QuarantineDuplicate as exc:
-        raise FailClosed("DUPLICATE_ENTRY") from exc
+    _reject_duplicate_semantics(entries)
+    _require_ascending(entries)
     root = merkle_root([entry.entry_id for entry in entries])
     body = b"".join((
         REG_MAGIC, bytes([REG_FORMAT_VERSION]), _u32(registry_version), previous, _u32(len(entries)),
@@ -561,8 +650,6 @@ def _pack_sigs(domain: bytes, body: bytes, signers: list[tuple[int, Ed25519Priva
 
 
 def parse_registry(raw: bytes, *, expect_signatures: bool = True) -> Registry:
-    from orca.rse.imp1.verdict import Quarantine
-
     data = bytes(raw)
     if len(data) > MAX_REGISTRY_BYTES:
         raise FailClosed("REGISTRY_TOO_LARGE")
@@ -597,10 +684,8 @@ def parse_registry(raw: bytes, *, expect_signatures: bool = True) -> Registry:
     root = data[offset:offset + 32]
     offset += 32
     body = data[:offset]
-    try:
-        _reject_duplicate_semantics(entries)
-    except QuarantineDuplicate as exc:
-        raise Quarantine("DUPLICATE_ENTRY") from exc
+    _reject_duplicate_semantics(entries)
+    _require_ascending(entries)
     if registry_version == 1 and previous != bytes(32):
         raise FailClosed("GENESIS_PREVIOUS")
     if registry_version > 1 and previous == bytes(32):
@@ -729,7 +814,7 @@ def parse_grant(raw: bytes) -> Grant:
     signed = data[:-sig_len]
     signatures = _split_sigs(data[-sig_len:], sig_len // 65)
     view = _unpack_common(signed, klass)
-    tail = _unpack_tail(klass, signed[278:])
+    tail = _freeze_tail(_unpack_tail(klass, signed[278:]))
     rebuilt = _repack_signed(view, klass, tail)
     if rebuilt != signed:
         raise FailClosed("NONCANONICAL")
@@ -802,8 +887,10 @@ def _unpack_tail(klass: int, tail: bytes) -> dict:
                     raise FailClosed("REVOKED_ID")
             elif item != bytes(32):
                 raise FailClosed("REVOKED_PADDING")
-        if tail[0] == 0:
+        if tail[0] not in K_SCENARIOS:
             raise FailClosed("SCENARIO")
+        if tail[9:41] == bytes(32):
+            raise FailClosed("CHECKPOINT")
         return {
             "scenario": tail[0],
             "new_authority_version": struct.unpack_from(">I", tail, 1)[0],
@@ -869,6 +956,18 @@ def _unpack_tail(klass: int, tail: bytes) -> dict:
             raise FailClosed("RETIRE_REASON")
         return {"object_entry_id": tail[0:32], "reason": tail[32]}
     raise FailClosed("GRANT_CLASS")
+
+
+def _freeze_tail(tail: dict):
+    frozen = {}
+    for key, value in tail.items():
+        if isinstance(value, (bytes, bytearray)):
+            frozen[key] = bytes(value)
+        elif isinstance(value, tuple):
+            frozen[key] = tuple(bytes(item) if isinstance(item, (bytes, bytearray)) else item for item in value)
+        else:
+            frozen[key] = value
+    return MappingProxyType(frozen)
 
 
 def _repack_signed(view: dict, klass: int, tail: dict) -> bytes:

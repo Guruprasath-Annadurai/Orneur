@@ -36,28 +36,36 @@ from orca.rse.imp1.codec import (
 )
 from orca.rse.imp1.profiles import (
     APPROVAL_NAME,
+    APPROVABLE_ARTIFACT_FORMATS,
     APPROVED,
+    CARRY_FORWARD,
     CLASS_BITS,
     CLASS_TEXT,
     CODE,
     CORPUS,
+    DATA_ONLY_TENSOR_V1,
+    DEFERRED_CLASSES,
+    DEST_EXPORT_TARGET,
+    DEST_MEDIUM,
+    DEST_RECIPIENT_ROLE,
     DESTINATION,
     ENROLMENT,
+    FAMILY_BEARING_TYPES,
     FOUNDATION_MODEL,
     HOLDOUT_SET,
-    LIFECYCLE_ACCEPTED,
-    LIFECYCLE_CANDIDATE,
-    LIFECYCLE_EXPORTED,
-    LIFECYCLE_RETIRED,
+    K_SCENARIO_NAME,
     MODEL,
     NOT_CLAIMED,
     POLICY,
+    RETIRE_NAME,
     RETIREMENT_ACTIVE,
     ROLE_FORGE,
     ROLE_IMAGE,
     ROLE_WITNESS,
     SAS_DOMAIN,
+    SEMANTIC_CLASSES,
     TOKENIZER,
+    UNSUPPORTED_CURRENT_MILESTONE,
 )
 from orca.rse.imp1.verdict import CHECKS_PASSED, FAIL_CLOSED, FailClosed, Result, guard
 
@@ -82,6 +90,21 @@ class IntentSheet:
     destination_name: str
     ceilings: tuple
     sas: str
+    target_role_name: str = ""
+    counterpart_name: str = ""
+    sequence: tuple = ()
+
+
+@dataclass
+class ChallengeLedger:
+    """Outstanding challenge. A snapshot mismatch voids it. Not an authorization."""
+
+    challenge: bytes | None
+    void: bool = False
+
+    def void_challenge(self) -> None:
+        self.void = True
+        self.challenge = None
 
 
 def grant_sas(klass: int, signed: bytes) -> str:
@@ -129,32 +152,31 @@ def check_freshness(registry: Registry, floors: Floors, prior: Registry | None) 
 
 def _admit(registry: Registry) -> None:
     for entry in registry.entries:
-        if entry.policy_entry_id != bytes(32):
+        if entry.entry_type in FAMILY_BEARING_TYPES:
             policy = registry.by_id(entry.policy_entry_id)
-            if policy is None or policy.entry_type != POLICY:
+            if policy is None or policy.entry_type != POLICY or policy.policy_entry_id != bytes(32):
                 raise FailClosed("POLICY_SCOPE")
-        elif entry.entry_type != POLICY:
-            raise FailClosed("POLICY_SCOPE")
+        elif entry.policy_entry_id != bytes(32):
+            raise FailClosed("POLICY_NEUTRAL")
         if entry.producer_entry_id != bytes(32) and registry.by_id(entry.producer_entry_id) is None:
             raise FailClosed("PRODUCER")
+        if entry.entry_type == MODEL:
+            _admit_model_lineage(registry, entry)
         if entry.approval_state != APPROVED:
             continue
         if entry.entry_type == FOUNDATION_MODEL:
             _require_foundation_complete(entry)
-            parsed = parse_foundation(entry.tail)
-            tokenizer = registry.by_id(parsed["tokenizer_entry_id"])
-            if tokenizer is None or tokenizer.entry_type != TOKENIZER or tokenizer.approval_state != APPROVED:
-                raise FailClosed("TOKENIZER_BINDING")
+            _admit_foundation_use(registry, entry)
         elif entry.entry_type == TOKENIZER:
             parsed = parse_tokenizer(entry.tail)
             if parsed["tokenizer_id"] == bytes(32) or parsed["vocab_digest"] == bytes(32) or entry.artifact_digest == bytes(32):
                 raise FailClosed("INCOMPLETE_TOKENIZER")
         elif entry.entry_type == MODEL:
             parsed = parse_model(entry.tail)
-            if parsed["family_id"] == bytes(32) or parsed["weights_digest"] == bytes(32):
+            if parsed["weights_digest"] == bytes(32):
                 raise FailClosed("INCOMPLETE_MODEL")
-            parent = registry.by_id(parsed["parent_entry_id"])
-            if parent is None or parent.entry_type not in (FOUNDATION_MODEL, MODEL) or parent.approval_state != APPROVED:
+            parent = _usable(registry, parsed["parent_entry_id"], registry.by_id(parsed["parent_entry_id"]).entry_type)
+            if parent.entry_type not in (FOUNDATION_MODEL, MODEL):
                 raise FailClosed("PARENT")
         elif entry.entry_type == ENROLMENT:
             parsed = parse_enrolment(entry.tail)
@@ -162,6 +184,42 @@ def _admit(registry: Registry) -> None:
                 raise FailClosed("ENROLMENT_KEY")
             if parsed["environment_measurement"] == bytes(32):
                 raise FailClosed("ENVIRONMENT")
+
+
+def _admit_model_lineage(registry: Registry, entry) -> None:
+    parsed = parse_model(entry.tail)
+    if parsed["family_id"] == bytes(32):
+        raise FailClosed("FAMILY_SCOPE")
+    parent = registry.by_id(parsed["parent_entry_id"])
+    if parent is None or parent.entry_type not in (FOUNDATION_MODEL, MODEL):
+        raise FailClosed("PARENT")
+    parent_family = parse_foundation(parent.tail)["family_id"] if parent.entry_type == FOUNDATION_MODEL else parse_model(parent.tail)["family_id"]
+    if parsed["family_id"] != parent_family or entry.policy_entry_id != parent.policy_entry_id:
+        raise FailClosed("FAMILY_LINEAGE")
+    policy = parse_policy(registry.by_id(entry.policy_entry_id).tail)
+    if policy["family_scope"] == bytes(32) or policy["family_scope"] != parsed["family_id"]:
+        raise FailClosed("FAMILY_SCOPE")
+
+
+def _admit_foundation_use(registry: Registry, entry) -> None:
+    parsed = parse_foundation(entry.tail)
+    if parsed["artifact_format"] not in APPROVABLE_ARTIFACT_FORMATS:
+        raise FailClosed("ARTIFACT_FORMAT")
+    if parsed["artifact_format"] != DATA_ONLY_TENSOR_V1:
+        raise FailClosed("ARTIFACT_FORMAT")
+    policy = parse_policy(registry.by_id(entry.policy_entry_id).tail)
+    if policy["family_scope"] == bytes(32) or parsed["family_id"] != policy["family_scope"]:
+        raise FailClosed("FAMILY_SCOPE")
+    tokenizer = registry.by_id(parsed["tokenizer_entry_id"])
+    if tokenizer is None or tokenizer.entry_type != TOKENIZER:
+        raise FailClosed("TOKENIZER_BINDING")
+    if tokenizer.policy_entry_id != entry.policy_entry_id:
+        raise FailClosed("POLICY_SCOPE")
+    if tokenizer.approval_state != APPROVED:
+        raise FailClosed("TOKENIZER_BINDING")
+    floor = effective_min_version(registry, TOKENIZER, tokenizer.name)
+    if tokenizer.version < floor:
+        raise FailClosed("BELOW_FLOOR")
 
 
 def _require_foundation_complete(entry) -> None:
@@ -209,12 +267,7 @@ def _le(value: int, cap: int, reason: str) -> None:
 
 
 def _family_required(policy: dict, family_id: bytes) -> None:
-    if policy["required_family_id"] == bytes(32) or family_id != policy["required_family_id"]:
-        raise FailClosed("FAMILY_SCOPE")
-
-
-def _family_absent(policy: dict) -> None:
-    if policy["required_family_id"] != bytes(32):
+    if policy["family_scope"] == bytes(32) or family_id != policy["family_scope"]:
         raise FailClosed("FAMILY_SCOPE")
 
 
@@ -237,80 +290,52 @@ def _check_grant(grant: Grant, registry: Registry, floors: Floors, crown_image_e
     policy = parse_policy(policy_entry.tail)
     if grant.version < policy["min_grant_schema_version"]:
         raise FailClosed("SCHEMA_FLOOR")
+    if grant.klass not in SEMANTIC_CLASSES:
+        raise FailClosed(UNSUPPORTED_CURRENT_MILESTONE)
     _bit(grant.klass, policy["allowed_operations"])
+    if grant.max_runtime_s < 1:
+        raise FailClosed("RUNTIME_CAP")
     _le(grant.max_runtime_s, policy["max_runtime_s"], "RUNTIME_CAP")
-    code = _bound(registry, grant.code_entry_id, CODE, grant.policy_entry_id)
-    if code.version < effective_min_version(registry, CODE, code.name):
-        raise FailClosed("BELOW_FLOOR")
-    role = _bound(registry, grant.target_role_id, ENROLMENT, grant.policy_entry_id)
+    _usable(registry, grant.code_entry_id, CODE)
+    role = _usable(registry, grant.target_role_id, ENROLMENT)
     role_fields = parse_enrolment(role.tail)
     if grant.env_measurement_digest != role_fields["environment_measurement"]:
         raise FailClosed("ENVIRONMENT")
-    _check_class(grant, registry, policy, floors)
+    _check_class(grant, registry, policy, role_fields)
     return
 
 
-def _check_class(grant: Grant, registry: Registry, policy: dict, floors: Floors) -> None:
+def _check_class(grant: Grant, registry: Registry, policy: dict, role_fields: dict) -> None:
     tail = grant.tail
     policy_id = grant.policy_entry_id
     klass = grant.klass
     if klass == ord("G"):
-        _family_absent(policy)
+        if role_fields["role_type"] != ROLE_FORGE:
+            raise FailClosed("ROLE_TYPE")
         corpus = _corpus(registry, tail["corpus_entry_id"], policy_id, tail["source_provenance_digest"])
+        if tail["batch_ceiling_bytes"] < 1:
+            raise FailClosed("RESOURCE_CAP")
+        if tail["batch_count"] < 1:
+            raise FailClosed("RUN_CAP")
         _le(tail["batch_ceiling_bytes"], policy["max_batch_bytes"], "RESOURCE_CAP")
         _le(tail["batch_count"], policy["max_run"], "RUN_CAP")
-        _destination(registry, tail["destination_entry_id"], policy_id)
-        _role(registry, tail["recipient_role_id"], policy_id, None)
+        _destination(registry, tail["destination_entry_id"], policy, {DEST_MEDIUM, DEST_RECIPIENT_ROLE})
+        recipient = _usable(registry, tail["recipient_role_id"], ENROLMENT)
+        if parse_enrolment(recipient.tail)["role_type"] != ROLE_WITNESS:
+            raise FailClosed("ROLE_TYPE")
         if corpus.entry_type != CORPUS:
             raise FailClosed("WRONG_TYPE")
     elif klass == ord("V"):
-        sender = _role(registry, tail["sender_role_id"], policy_id, ROLE_FORGE)
-        if sender.entry_type != ENROLMENT:
-            raise FailClosed("WRONG_TYPE")
-        target = parse_enrolment(_usable(registry, grant.target_role_id, ENROLMENT).tail)
-        if target["role_type"] != ROLE_WITNESS:
+        if role_fields["role_type"] != ROLE_WITNESS:
+            raise FailClosed("ROLE_TYPE")
+        sender = _usable(registry, tail["sender_role_id"], ENROLMENT)
+        if parse_enrolment(sender.tail)["role_type"] != ROLE_FORGE:
             raise FailClosed("ROLE_TYPE")
         if tail["seq_last"] < tail["seq_first"]:
             raise FailClosed("SEQUENCE")
         _artifact(registry, tail["artifact_entry_id"], policy_id, policy)
-    elif klass == ord("K"):
-        _family_absent(policy)
-        if tail["new_epoch"] < floors.min_epoch or tail["new_authority_version"] < floors.min_authority_version:
-            raise FailClosed("FLOOR_LOWERED")
-        for revoked_id in tail["revoked_ids"]:
-            if registry.by_id(revoked_id) is None:
-                raise FailClosed("ABSENT")
-    elif klass == ord("Q"):
-        _model(registry, tail["candidate_model_entry_id"], policy_id, policy, LIFECYCLE_CANDIDATE)
-        holdout = _bound(registry, tail["holdout_set_entry_id"], HOLDOUT_SET, policy_id)
-        budgets = parse_holdout(holdout.tail)
-        _le(tail["run_budget"], policy["max_run"], "RUN_CAP")
-        _le(tail["query_budget"], min(policy["max_query_budget"], budgets["query_budget_total"]), "QUERY_CAP")
-        _le(tail["bit_budget"], min(policy["max_bit_budget"], budgets["bit_budget_total"]), "BIT_CAP")
-    elif klass == ord("T"):
-        _corpus(registry, tail["corpus_entry_id"], policy_id, None)
-        foundation = _foundation(registry, tail["foundation_entry_id"], policy_id, policy)
-        if tail["family_id"] != parse_foundation(foundation.tail)["family_id"]:
-            raise FailClosed("FAMILY_SCOPE")
-        _le(tail["spend_ceiling"], policy["max_spend"], "SPEND_CAP")
-        _le(tail["run_ceiling"], policy["max_run"], "RUN_CAP")
-    elif klass == ord("W"):
-        _model(registry, tail["model_entry_id"], policy_id, policy, LIFECYCLE_ACCEPTED)
-        _destination(registry, tail["destination_entry_id"], policy_id)
-        _role(registry, tail["recipient_role_id"], policy_id, None)
-        _le(tail["size_ceiling"], policy["max_batch_bytes"], "RESOURCE_CAP")
-        source = registry.by_id(tail["source_entry_id"])
-        if source is None or source.approval_state != APPROVED:
-            raise FailClosed("ABSENT")
-    elif klass == ord("D"):
-        _model(registry, tail["model_entry_id"], policy_id, policy, LIFECYCLE_EXPORTED)
-        _destination(registry, tail["revocation_endpoint_entry_id"], policy_id)
-        _le(tail["spend_ceiling"], policy["max_spend"], "SPEND_CAP")
-        _le(tail["run_ceiling"], policy["max_run"], "RUN_CAP")
-    elif klass == ord("R"):
-        _retire_object(registry, tail["object_entry_id"], policy_id, policy)
     else:
-        raise FailClosed("GRANT_CLASS")
+        raise FailClosed(UNSUPPORTED_CURRENT_MILESTONE)
 
 
 def _corpus(registry, entry_id, policy_id, source):
@@ -348,20 +373,26 @@ def _artifact(registry, entry_id, policy_id, policy):
     if entry is None:
         raise FailClosed("ABSENT")
     if entry.entry_type == CORPUS:
-        _family_absent(policy)
         return _corpus(registry, entry_id, policy_id, None)
-    parsed = parse_model(entry.tail)
-    if parsed["lifecycle_state"] == LIFECYCLE_RETIRED:
-        raise FailClosed("LIFECYCLE")
-    return _model(registry, entry_id, policy_id, policy, parsed["lifecycle_state"])
+    if entry.entry_type == CODE:
+        return _usable(registry, entry_id, CODE)
+    if entry.entry_type == MODEL:
+        parsed = parse_model(entry.tail)
+        if parsed["lifecycle_state"] == LIFECYCLE_RETIRED:
+            raise FailClosed("LIFECYCLE")
+        return _model(registry, entry_id, policy_id, policy, parsed["lifecycle_state"])
+    if entry.entry_type == FOUNDATION_MODEL:
+        return _foundation(registry, entry_id, policy_id, policy)
     raise FailClosed("WRONG_TYPE")
 
 
-def _destination(registry, entry_id, policy_id):
-    entry = _bound(registry, entry_id, DESTINATION, policy_id)
+def _destination(registry, entry_id, policy: dict, kinds: set):
+    entry = _usable(registry, entry_id, DESTINATION)
     parsed = parse_destination(entry.tail)
-    if parsed["identifier_digest"] == bytes(32):
+    if parsed["kind"] not in kinds or parsed["identifier_digest"] == bytes(32):
         raise FailClosed("DESTINATION")
+    if entry.entry_id not in policy["permitted_destinations"]:
+        raise FailClosed("DESTINATION_SCOPE")
     return entry
 
 
@@ -437,6 +468,10 @@ def destination_entry(grant: Grant, registry: Registry):
 def render_card(grant: Grant, registry: Registry, floors: Floors, crown_image_entry_id: bytes) -> str:
     """Fixed card. Every name and version is read from the registry or the signed grant."""
     label, operation = CLASS_TEXT[grant.klass]
+    if grant.klass == ord("K"):
+        operation = K_SCENARIO_NAME[grant.tail["scenario"]]
+    elif grant.klass == ord("R"):
+        operation = RETIRE_NAME[grant.tail["reason"]]
     role = registry.by_id(grant.target_role_id)
     if role is None:
         raise FailClosed("ABSENT")
@@ -469,6 +504,8 @@ def render_card(grant: Grant, registry: Registry, floors: Floors, crown_image_en
     if "FAIL" in floor_line:
         raise FailClosed("FLOOR_CHECK")
     lines.append(floor_line)
+    if grant.klass in DEFERRED_CLASSES:
+        lines.append("STATUS       UNSUPPORTED CURRENT MILESTONE")
     lines.append(f"GRANT SAS    {grant_sas(grant.klass, grant.signed)}")
     return "\n".join(lines)
 
@@ -566,6 +603,21 @@ def compare_intent(grant: Grant, registry: Registry, intent: IntentSheet) -> Non
         raise FailClosed("INTENT_CEILINGS")
     if intent.sas != grant_sas(grant.klass, grant.signed):
         raise FailClosed("SAS")
+    if grant.klass not in SEMANTIC_CLASSES:
+        raise FailClosed(UNSUPPORTED_CURRENT_MILESTONE)
+    role = registry.by_id(grant.target_role_id)
+    if role is None or intent.target_role_name != role.name:
+        raise FailClosed("INTENT_ROLE")
+    if grant.klass == ord("G"):
+        recipient = registry.by_id(grant.tail["recipient_role_id"])
+        if recipient is None or intent.counterpart_name != recipient.name:
+            raise FailClosed("INTENT_ROLE")
+    if grant.klass == ord("V"):
+        sender = registry.by_id(grant.tail["sender_role_id"])
+        if sender is None or intent.counterpart_name != sender.name:
+            raise FailClosed("INTENT_ROLE")
+        if tuple(intent.sequence) != (grant.tail["seq_first"], grant.tail["seq_last"]):
+            raise FailClosed("INTENT_SEQUENCE")
 
 
 def _load(grant_raw: bytes, registry_raw: bytes, tokens: list[OwnerToken]) -> tuple[Grant, Registry]:
@@ -577,6 +629,7 @@ def _load(grant_raw: bytes, registry_raw: bytes, tokens: list[OwnerToken]) -> tu
 
 def _success(reason: str, **payload) -> Result:
     payload.setdefault("not_claimed", NOT_CLAIMED)
+    payload.setdefault("carry_forward", CARRY_FORWARD)
     payload["spending"] = False
     payload["training"] = False
     payload["model_selection"] = False
@@ -587,12 +640,32 @@ def _success(reason: str, **payload) -> Result:
     return Result(CHECKS_PASSED, reason, MappingProxyType(payload))
 
 
+def _reject_deferred(grant: Grant) -> None:
+    if grant.klass in DEFERRED_CLASSES or grant.klass not in SEMANTIC_CLASSES:
+        raise FailClosed(UNSUPPORTED_CURRENT_MILESTONE)
+
+
+def _bind_snapshot(grant: Grant, registry: Registry, highest_authenticated_version: int | None,
+                   ledger: ChallengeLedger | None) -> None:
+    mismatch = (
+        registry.registry_version != grant.registry_version
+        or registry.registry_root != grant.registry_root
+        or (highest_authenticated_version is not None and highest_authenticated_version > grant.registry_version)
+    )
+    if mismatch:
+        if ledger is not None:
+            ledger.void_challenge()
+        raise FailClosed("SNAPSHOT")
+
+
 @guard
 def crown_validate(grant_raw: bytes, registry_raw: bytes, tokens: list[OwnerToken], floors: Floors,
                    crown_image_entry_id: bytes, **extra) -> Result:
     if extra:
         raise FailClosed("UNEXPECTED_ARGUMENT")
     grant, registry = _load(grant_raw, registry_raw, tokens)
+    _reject_deferred(grant)
+    _bind_snapshot(grant, registry, None, None)
     _check_grant(grant, registry, floors, crown_image_entry_id)
     card = render_card(grant, registry, floors, crown_image_entry_id)
     return _success("CROWN_CHECKS", card=card, sas=grant_sas(grant.klass, grant.signed))
@@ -601,11 +674,21 @@ def crown_validate(grant_raw: bytes, registry_raw: bytes, tokens: list[OwnerToke
 @guard
 def consumer_verify(grant_raw: bytes, registry_raw: bytes, tokens: list[OwnerToken], floors: Floors,
                     crown_image_entry_id: bytes, intent: IntentSheet, outstanding_challenge: bytes,
-                    **extra) -> Result:
+                    own_role_id: bytes, observed_environment: bytes, *,
+                    highest_authenticated_version: int | None = None,
+                    challenge_ledger: ChallengeLedger | None = None, **extra) -> Result:
     """Independent of Crown. There is no crown_already_checked input."""
     if extra:
         raise FailClosed("UNEXPECTED_ARGUMENT")
     grant, registry = _load(grant_raw, registry_raw, tokens)
+    _reject_deferred(grant)
+    _bind_snapshot(grant, registry, highest_authenticated_version, challenge_ledger)
+    if not isinstance(own_role_id, (bytes, bytearray)) or bytes(own_role_id) != grant.target_role_id:
+        raise FailClosed("ROLE_ID")
+    if not isinstance(observed_environment, (bytes, bytearray)) or len(observed_environment) != 32:
+        raise FailClosed("ENVIRONMENT")
+    if bytes(observed_environment) != grant.env_measurement_digest:
+        raise FailClosed("ENVIRONMENT")
     if not isinstance(outstanding_challenge, (bytes, bytearray)) or len(outstanding_challenge) != 32:
         raise FailClosed("CHALLENGE")
     if grant.challenge != bytes(outstanding_challenge):
