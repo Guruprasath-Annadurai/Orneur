@@ -200,6 +200,7 @@ CARRY_FORWARD = (
     "T and Q-linked corpora need a non-zero witnessed acceptance record",
     "D may reference an exported or accepted model",
     "K epoch and authority-version rules apply only when K is executable",
+    "K Q T and D Crown cards omit future signed fields; those classes stay unsupported and are not executable",
 )
 
 # Synthetic family labels. Not a foundation-model selection.

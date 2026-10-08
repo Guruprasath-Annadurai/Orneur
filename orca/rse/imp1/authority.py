@@ -12,7 +12,7 @@ Neither check is a hardware or TPM anti-rollback claim.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 
 from orca.rse.imp1.codec import (
@@ -97,14 +97,36 @@ class IntentSheet:
 
 @dataclass
 class ChallengeLedger:
-    """Outstanding challenge. A snapshot mismatch voids it. Not an authorization."""
+    """Outstanding challenge. A snapshot mismatch voids it forever. Not an authorization.
+
+    Void is sticky on this ledger. Clearing ``void`` does not revive a challenge
+    whose bytes were recorded in ``voided_challenges``.
+    """
 
     challenge: bytes | None
     void: bool = False
+    voided_challenges: set = field(default_factory=set)
 
-    def void_challenge(self) -> None:
+    def __post_init__(self) -> None:
+        if self.challenge is not None:
+            self.challenge = bytes(self.challenge)
+        if not isinstance(self.voided_challenges, set):
+            self.voided_challenges = set(self.voided_challenges)
+
+    def void_challenge(self, challenge: bytes | None = None) -> None:
+        if challenge is not None:
+            self.voided_challenges.add(bytes(challenge))
+        if self.challenge is not None:
+            self.voided_challenges.add(bytes(self.challenge))
         self.void = True
         self.challenge = None
+
+    def is_void(self, challenge: bytes | None = None) -> bool:
+        if self.void:
+            return True
+        if challenge is not None and bytes(challenge) in self.voided_challenges:
+            return True
+        return False
 
 
 def grant_sas(klass: int, signed: bytes) -> str:
@@ -266,11 +288,6 @@ def _le(value: int, cap: int, reason: str) -> None:
         raise FailClosed(reason)
 
 
-def _family_required(policy: dict, family_id: bytes) -> None:
-    if policy["family_scope"] == bytes(32) or family_id != policy["family_scope"]:
-        raise FailClosed("FAMILY_SCOPE")
-
-
 def _check_grant(grant: Grant, registry: Registry, floors: Floors, crown_image_entry_id: bytes) -> None:
     if grant.registry_version != registry.registry_version or grant.registry_root != registry.registry_root:
         raise FailClosed("REGISTRY_ROOT")
@@ -333,7 +350,16 @@ def _check_class(grant: Grant, registry: Registry, policy: dict, role_fields: di
             raise FailClosed("ROLE_TYPE")
         if tail["seq_last"] < tail["seq_first"]:
             raise FailClosed("SEQUENCE")
-        _artifact(registry, tail["artifact_entry_id"], policy_id, policy)
+        # IMP-1 class V verifies a corpus artifact only. Other types are not V semantics.
+        artifact_id = tail["artifact_entry_id"]
+        if not isinstance(artifact_id, (bytes, bytearray)) or len(artifact_id) != 32:
+            raise FailClosed("ENTRY_ID")
+        artifact = registry.by_id(bytes(artifact_id))
+        if artifact is None:
+            raise FailClosed("ABSENT")
+        if artifact.entry_type != CORPUS:
+            raise FailClosed("WRONG_TYPE")
+        _corpus(registry, bytes(artifact_id), policy_id, None)
     else:
         raise FailClosed(UNSUPPORTED_CURRENT_MILESTONE)
 
@@ -348,44 +374,6 @@ def _corpus(registry, entry_id, policy_id, source):
     return entry
 
 
-def _foundation(registry, entry_id, policy_id, policy):
-    entry = _bound(registry, entry_id, FOUNDATION_MODEL, policy_id)
-    _require_foundation_complete(entry)
-    parsed = parse_foundation(entry.tail)
-    _family_required(policy, parsed["family_id"])
-    tokenizer = _bound(registry, parsed["tokenizer_entry_id"], TOKENIZER, policy_id)
-    if tokenizer.approval_state != APPROVED:
-        raise FailClosed("TOKENIZER_BINDING")
-    return entry
-
-
-def _model(registry, entry_id, policy_id, policy, lifecycle: int):
-    entry = _bound(registry, entry_id, MODEL, policy_id)
-    parsed = parse_model(entry.tail)
-    if parsed["lifecycle_state"] != lifecycle:
-        raise FailClosed("LIFECYCLE")
-    _family_required(policy, parsed["family_id"])
-    return entry
-
-
-def _artifact(registry, entry_id, policy_id, policy):
-    entry = registry.by_id(entry_id)
-    if entry is None:
-        raise FailClosed("ABSENT")
-    if entry.entry_type == CORPUS:
-        return _corpus(registry, entry_id, policy_id, None)
-    if entry.entry_type == CODE:
-        return _usable(registry, entry_id, CODE)
-    if entry.entry_type == MODEL:
-        parsed = parse_model(entry.tail)
-        if parsed["lifecycle_state"] == LIFECYCLE_RETIRED:
-            raise FailClosed("LIFECYCLE")
-        return _model(registry, entry_id, policy_id, policy, parsed["lifecycle_state"])
-    if entry.entry_type == FOUNDATION_MODEL:
-        return _foundation(registry, entry_id, policy_id, policy)
-    raise FailClosed("WRONG_TYPE")
-
-
 def _destination(registry, entry_id, policy: dict, kinds: set):
     entry = _usable(registry, entry_id, DESTINATION)
     parsed = parse_destination(entry.tail)
@@ -394,29 +382,6 @@ def _destination(registry, entry_id, policy: dict, kinds: set):
     if entry.entry_id not in policy["permitted_destinations"]:
         raise FailClosed("DESTINATION_SCOPE")
     return entry
-
-
-def _role(registry, entry_id, policy_id, expected_role):
-    entry = _bound(registry, entry_id, ENROLMENT, policy_id)
-    parsed = parse_enrolment(entry.tail)
-    if expected_role is not None and parsed["role_type"] != expected_role:
-        raise FailClosed("ROLE_TYPE")
-    return entry
-
-
-def _retire_object(registry, entry_id, policy_id, policy):
-    entry = registry.by_id(entry_id)
-    if entry is None:
-        raise FailClosed("ABSENT")
-    if entry.entry_type in (MODEL, FOUNDATION_MODEL):
-        _usable(registry, entry_id, entry.entry_type)
-        family = parse_model(entry.tail)["family_id"] if entry.entry_type == MODEL else parse_foundation(entry.tail)["family_id"]
-        _family_required(policy, family)
-        if entry.policy_entry_id != policy_id:
-            raise FailClosed("POLICY_SCOPE")
-        return entry
-    _family_absent(policy)
-    return _bound(registry, entry_id, entry.entry_type, policy_id)
 
 
 def ceilings_of(grant: Grant) -> tuple:
@@ -487,6 +452,8 @@ def render_card(grant: Grant, registry: Registry, floors: Floors, crown_image_en
     dest = destination_entry(grant, registry)
     lines.append(f"DESTINATION  {dest.name if dest is not None else '-'}")
     lines.append(_limits_line(grant, registry))
+    if grant.klass == ord("V"):
+        lines.append(f"SEQUENCE     {grant.tail['seq_first']}..{grant.tail['seq_last']}")
     lines.append(
         f"EPOCH        {grant.incident_epoch}   REGISTRY v{grant.registry_version}   "
         f"AUTHORITY v{grant.owner_authority_version}"
@@ -645,16 +612,39 @@ def _reject_deferred(grant: Grant) -> None:
         raise FailClosed(UNSUPPORTED_CURRENT_MILESTONE)
 
 
-def _bind_snapshot(grant: Grant, registry: Registry, highest_authenticated_version: int | None,
-                   ledger: ChallengeLedger | None) -> None:
+def _exact_snapshot(grant: Grant, registry: Registry) -> None:
+    if registry.registry_version != grant.registry_version or registry.registry_root != grant.registry_root:
+        raise FailClosed("SNAPSHOT")
+
+
+_MISSING = object()
+
+
+def _require_authenticated_version(value) -> int:
+    """Caller must state the highest registry version it has authenticated.
+
+    There is no default. None, omission, booleans, and non-positive values are
+    not treated as "no newer registry".
+    """
+    if value is _MISSING or isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise FailClosed("AUTHENTICATED_VERSION")
+    return value
+
+
+def _consumer_snapshot(grant: Grant, registry: Registry, highest: int, ledger: ChallengeLedger) -> None:
+    if not isinstance(ledger, ChallengeLedger):
+        raise FailClosed("CHALLENGE_LEDGER")
+    if ledger.is_void(grant.challenge):
+        raise FailClosed("CHALLENGE_VOID")
+    if highest < grant.registry_version or highest < registry.registry_version:
+        raise FailClosed("AUTHENTICATED_VERSION")
     mismatch = (
         registry.registry_version != grant.registry_version
         or registry.registry_root != grant.registry_root
-        or (highest_authenticated_version is not None and highest_authenticated_version > grant.registry_version)
+        or highest > grant.registry_version
     )
     if mismatch:
-        if ledger is not None:
-            ledger.void_challenge()
+        ledger.void_challenge(grant.challenge)
         raise FailClosed("SNAPSHOT")
 
 
@@ -665,7 +655,7 @@ def crown_validate(grant_raw: bytes, registry_raw: bytes, tokens: list[OwnerToke
         raise FailClosed("UNEXPECTED_ARGUMENT")
     grant, registry = _load(grant_raw, registry_raw, tokens)
     _reject_deferred(grant)
-    _bind_snapshot(grant, registry, None, None)
+    _exact_snapshot(grant, registry)
     _check_grant(grant, registry, floors, crown_image_entry_id)
     card = render_card(grant, registry, floors, crown_image_entry_id)
     return _success("CROWN_CHECKS", card=card, sas=grant_sas(grant.klass, grant.signed))
@@ -675,14 +665,25 @@ def crown_validate(grant_raw: bytes, registry_raw: bytes, tokens: list[OwnerToke
 def consumer_verify(grant_raw: bytes, registry_raw: bytes, tokens: list[OwnerToken], floors: Floors,
                     crown_image_entry_id: bytes, intent: IntentSheet, outstanding_challenge: bytes,
                     own_role_id: bytes, observed_environment: bytes, *,
-                    highest_authenticated_version: int | None = None,
-                    challenge_ledger: ChallengeLedger | None = None, **extra) -> Result:
-    """Independent of Crown. There is no crown_already_checked input."""
+                    highest_authenticated_version=_MISSING,
+                    challenge_ledger=_MISSING, **extra) -> Result:
+    """Independent of Crown. There is no crown_already_checked input.
+
+    ``highest_authenticated_version`` and ``challenge_ledger`` are mandatory.
+    Omitting either fails closed. A voided ledger never returns CHECKS_PASSED.
+    """
     if extra:
         raise FailClosed("UNEXPECTED_ARGUMENT")
     grant, registry = _load(grant_raw, registry_raw, tokens)
     _reject_deferred(grant)
-    _bind_snapshot(grant, registry, highest_authenticated_version, challenge_ledger)
+    if highest_authenticated_version is _MISSING or challenge_ledger is _MISSING:
+        raise FailClosed("AUTHENTICATED_VERSION")
+    highest = _require_authenticated_version(highest_authenticated_version)
+    if not isinstance(challenge_ledger, ChallengeLedger):
+        raise FailClosed("CHALLENGE_LEDGER")
+    if isinstance(outstanding_challenge, (bytes, bytearray)) and challenge_ledger.is_void(bytes(outstanding_challenge)):
+        raise FailClosed("CHALLENGE_VOID")
+    _consumer_snapshot(grant, registry, highest, challenge_ledger)
     if not isinstance(own_role_id, (bytes, bytearray)) or bytes(own_role_id) != grant.target_role_id:
         raise FailClosed("ROLE_ID")
     if not isinstance(observed_environment, (bytes, bytearray)) or len(observed_environment) != 32:
@@ -693,6 +694,8 @@ def consumer_verify(grant_raw: bytes, registry_raw: bytes, tokens: list[OwnerTok
         raise FailClosed("CHALLENGE")
     if grant.challenge != bytes(outstanding_challenge):
         raise FailClosed("CHALLENGE")
+    if challenge_ledger.is_void(grant.challenge):
+        raise FailClosed("CHALLENGE_VOID")
     _check_grant(grant, registry, floors, crown_image_entry_id)
     compare_intent(grant, registry, intent)
     card = render_card(grant, registry, floors, crown_image_entry_id)

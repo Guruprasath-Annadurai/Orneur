@@ -57,6 +57,7 @@ from tests.rse.support import (
     _entry,
     bit,
     consumer_args,
+    consumer_binding,
     dig,
     g_grant,
     g_intent,
@@ -276,12 +277,15 @@ def test_consumer_binds_role_and_environment_and_exact_snapshot():
     role, env = consumer_args(parts)
     assert consumer_verify(
         grant, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, role, env,
+        **consumer_binding(registry),
     ).decision == CHECKS_PASSED
     assert consumer_verify(
         grant, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, parts["witness"].entry_id, env,
+        **consumer_binding(registry),
     ).reason == "ROLE_ID"
     assert consumer_verify(
         grant, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, role, dig("other-env"),
+        **consumer_binding(registry),
     ).reason == "ENVIRONMENT"
     body = parse_grant(grant).signed
     witness_env = dig("env-witness")
@@ -307,7 +311,7 @@ def test_consumer_binds_role_and_environment_and_exact_snapshot():
     ledger2 = ChallengeLedger(CHALLENGE)
     replaced = consumer_verify(
         grant, newer.raw, TOKENS, FLOORS, image, intent, CHALLENGE, role, env,
-        challenge_ledger=ledger2,
+        highest_authenticated_version=newer.registry_version, challenge_ledger=ledger2,
     )
     assert replaced.reason == "SNAPSHOT" and ledger2.void is True
 
@@ -352,6 +356,7 @@ def test_deferred_classes_parse_and_display_but_do_not_succeed():
         intent = IntentSheet(klass, "batch", 1, "carried", ceilings_of(parsed), grant_sas(parsed.klass, parsed.signed))
         consumer = consumer_verify(
             raw, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, *consumer_args(parts),
+            **consumer_binding(registry),
         )
         assert consumer.reason == UNSUPPORTED_CURRENT_MILESTONE
     for bad in (0, 14, 255):
@@ -417,18 +422,19 @@ def test_class_g_and_v_role_matrix_and_cross_protocol_replay():
         env_measurement_digest=dig("env-witness"), code_entry_id=parts["code"].entry_id,
         challenge=CHALLENGE, prev_role_checkpoint=dig("prev-checkpoint"), created_at=0, not_after=0,
         max_runtime_s=20,
-        tail={"sender_role_id": parts["forge"].entry_id, "artifact_entry_id": parts["code"].entry_id,
+        tail={"sender_role_id": parts["forge"].entry_id, "artifact_entry_id": parts["corpus"].entry_id,
               "seq_first": 1, "seq_last": 2},
     )
     v_raw = sign_grant(v_prefix, [(1, OWNER_A)])
     parsed = parse_grant(v_raw)
     sheet = IntentSheet(
-        "V", parts["code"].name, parts["code"].version, "", ceilings_of(parsed),
+        "V", parts["corpus"].name, parts["corpus"].version, "", ceilings_of(parsed),
         grant_sas(parsed.klass, parsed.signed), target_role_name=parts["witness"].name,
         counterpart_name=parts["forge"].name, sequence=(1, 2),
     )
     assert consumer_verify(
         v_raw, registry.raw, TOKENS, FLOORS, image, sheet, CHALLENGE, *consumer_args(parts, "witness"),
+        **consumer_binding(registry),
     ).decision == CHECKS_PASSED
     bad_sender = build_grant_prefix(
         klass="V", grant_id=b"V" * 16, owner_authority_version=1, incident_epoch=1,
@@ -437,7 +443,7 @@ def test_class_g_and_v_role_matrix_and_cross_protocol_replay():
         env_measurement_digest=dig("env-witness"), code_entry_id=parts["code"].entry_id,
         challenge=CHALLENGE, prev_role_checkpoint=dig("prev-checkpoint"), created_at=0, not_after=0,
         max_runtime_s=20,
-        tail={"sender_role_id": parts["witness"].entry_id, "artifact_entry_id": parts["code"].entry_id,
+        tail={"sender_role_id": parts["witness"].entry_id, "artifact_entry_id": parts["corpus"].entry_id,
               "seq_first": 1, "seq_last": 2},
     )
     assert crown_validate(sign_grant(bad_sender, [(1, OWNER_A)]), registry.raw, TOKENS, FLOORS, image).reason == "ROLE_TYPE"

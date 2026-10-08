@@ -6,7 +6,7 @@ import hashlib
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from orca.rse.imp1.authority import Floors, IntentSheet, ceilings_of, grant_sas
+from orca.rse.imp1.authority import ChallengeLedger, Floors, IntentSheet, ceilings_of, grant_sas
 from orca.rse.imp1.codec import (
     OwnerToken,
     build_grant_prefix,
@@ -160,6 +160,15 @@ def world(entries):
 def consumer_args(parts, role="forge"):
     env = dig("env-forge" if role == "forge" else "env-witness")
     return parts[role].entry_id, env
+
+
+def consumer_binding(registry, challenge=None):
+    """Explicit snapshot generation the consumer must state. No silent default."""
+    challenge = CHALLENGE if challenge is None else challenge
+    return {
+        "highest_authenticated_version": registry.registry_version,
+        "challenge_ledger": ChallengeLedger(challenge),
+    }
 
 
 def g_grant(registry, parts, *, corpus=None, dest=None, batch_count=2, batch_bytes=100, runtime=30, challenge=None):

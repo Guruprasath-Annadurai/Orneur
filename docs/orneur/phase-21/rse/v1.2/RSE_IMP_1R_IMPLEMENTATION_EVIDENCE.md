@@ -41,3 +41,13 @@ Not implemented, and not a success path:
 - Hardware anti-rollback, TPM, real enrolment, corpus generation, Qualification, model selection, GPU, spend, and training.
 
 `IMP_2_NOT_AUTHORIZED`. This evidence does not authorize them.
+
+## Final remediation after `924ad6c`
+
+Hostile re-audit returned `RSE_IMP_1_REMEDIATION_REQUIRED`. R-1 through R-5 only:
+
+- Consumer verification requires an explicit `highest_authenticated_version` and a `ChallengeLedger`. Omission fails `AUTHENTICATED_VERSION`. A voided challenge stays void on that ledger (`CHALLENGE_VOID`), including a retry of the old snapshot.
+- Class V accepts only a CORPUS artifact. Other entry types fail `WRONG_TYPE`.
+- The V card renders `SEQUENCE     {seq_first}..{seq_last}` from the signed tail. K, Q, T, and D display gaps stay in `CARRY_FORWARD` and are not executable.
+- The dead `_retire_object` path, which called the removed `_family_absent`, is gone. Deferred R still returns `UNSUPPORTED_CURRENT_MILESTONE`.
+- Fuzz covers G, V, K, Q, T, W, D, and R. No mutant is allowed to return `CHECKS_PASSED`.

@@ -84,6 +84,7 @@ from tests.rse.support import (
     base_entries,
     bit,
     consumer_args,
+    consumer_binding,
     dig,
     g_grant,
     g_intent,
@@ -303,14 +304,14 @@ def test_consumer_does_not_call_crown_and_rechecks(monkeypatch):
         raise AssertionError("consumer called crown")
 
     monkeypatch.setattr("orca.rse.imp1.authority.crown_validate", explode)
-    checked = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, *consumer_args(parts))
+    checked = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, *consumer_args(parts), **consumer_binding(registry))
     assert checked.decision == CHECKS_PASSED
     assert checked.executable is False
     bad_root = bytearray(grant)
     # registry root is at offset 34 of the signed prefix; damaging it breaks the signature or the root
     bad_root[34] ^= 0xFF
     forged = sign_grant(bytes(bad_root[: -130]), OWNERS)
-    assert consumer_verify(forged, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, *consumer_args(parts)).decision == FAIL_CLOSED
+    assert consumer_verify(forged, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, *consumer_args(parts), **consumer_binding(registry)).decision == FAIL_CLOSED
     skipped = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, intent, CHALLENGE, *consumer_args(parts), crown_already_checked=True)
     assert skipped.decision == FAIL_CLOSED
     assert skipped.reason == "UNEXPECTED_ARGUMENT"
@@ -356,7 +357,7 @@ def test_intent_mismatch_fails_and_signed_grant_stays_authoritative():
     registry, parts, grant = simple_g()
     image = parts["image"].entry_id
     good = g_intent(registry, grant, parts)
-    assert consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, good, CHALLENGE, *consumer_args(parts)).decision == CHECKS_PASSED
+    assert consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, good, CHALLENGE, *consumer_args(parts), **consumer_binding(registry)).decision == CHECKS_PASSED
     wrongs = [
         good.__class__("V", good.artifact_name, good.artifact_version, good.destination_name, good.ceilings, good.sas),
         good.__class__("G", "other", good.artifact_version, good.destination_name, good.ceilings, good.sas),
@@ -366,10 +367,10 @@ def test_intent_mismatch_fails_and_signed_grant_stays_authoritative():
         good.__class__("G", good.artifact_name, good.artifact_version, good.destination_name, good.ceilings, "AAAA-AAAA-AAAA"),
     ]
     for sheet in wrongs:
-        result = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, sheet, CHALLENGE, *consumer_args(parts))
+        result = consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, sheet, CHALLENGE, *consumer_args(parts), **consumer_binding(registry))
         assert result.decision == FAIL_CLOSED
         assert result.reason.startswith("INTENT") or result.reason == "SAS"
-    assert consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, good, dig("other-challenge"), *consumer_args(parts)).reason == "CHALLENGE"
+    assert consumer_verify(grant, registry.raw, TOKENS, FLOORS, image, good, dig("other-challenge"), *consumer_args(parts), **consumer_binding(registry)).reason == "CHALLENGE"
 
 
 def test_policy_caps_are_synthetic_and_refuse_raises():
@@ -550,7 +551,7 @@ def test_authorization_locks_and_posture_stay_denied():
     registry, parts, grant = simple_g()
     result = consumer_verify(
         grant, registry.raw, TOKENS, FLOORS, parts["image"].entry_id, g_intent(registry, grant, parts), CHALLENGE,
-        *consumer_args(parts),
+        *consumer_args(parts), **consumer_binding(registry),
     )
     assert result.decision == CHECKS_PASSED
     assert result.payload["corpus_generation"] == "NOT_AUTHORIZED"
