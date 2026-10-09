@@ -2638,11 +2638,18 @@ async function sendMessage() {
     let orcaEl = null;
     rawBuffer = '';
     _ragSources = null;
+    let sseBuf = '';
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const lines = dec.decode(value).split('\n');
+      // stream:true carries a multi-byte UTF-8 char split across chunks
+      // over to the next decode() call instead of emitting U+FFFD for it.
+      // sseBuf carries a line split across chunks the same way "\ndata: ..."
+      // lines don't align with network reads (matches sendUltra below).
+      sseBuf += dec.decode(value, { stream: true });
+      const lines = sseBuf.split('\n');
+      sseBuf = lines.pop();
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         try {
