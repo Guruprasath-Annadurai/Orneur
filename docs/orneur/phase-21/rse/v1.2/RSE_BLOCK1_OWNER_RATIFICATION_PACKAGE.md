@@ -4,13 +4,13 @@ NON_NORMATIVE. Not in Manifest V3. This file does not ratify anything. It does n
 
 Accepted implementation SHA: `da567d927b61c41e253b42732aad249b5fdbb104` on PR #8. Parent of that commit: `53de28d647038bdeb0509d5640828beb57a1bec1`. Canonical main baseline: `464b602f3f259b56f139c3304828baa660e6b860`. Exact-SHA push CI of the accepted implementation: run `37884389862`. Independent verdict on that SHA: `RSE_MASTER_BLOCK_1_ACCEPTED`, with IMP-2, IMP-3, and IMP-4 accepted for the software gate. B-1, B-2, and B-3 are not reopened here.
 
-This package asks the owner to decide. It does not record that the owner has decided.
+The owner decision is recorded in `RSE_BLOCK1_OWNER_APPROVAL_RECORD.md`. This file remains the byte specification. It is not Manifest V3 and it is not constitutional authority.
 
-## Decision requested
+## Decision status
 
-Ratify the five byte profiles below as non-normative implementation profiles. Do not add them to Manifest V3. Do not treat approval as a new authorization rule.
+The five profiles below are APPROVED for synthetic software-gate use. The approval is non-normative, version-specific, and restricted to the layouts on accepted SHA `da567d9`. It does not change signed bytes or fail-closed checks. Caps, including 8,192 challenge-set members and 4,096 forfeiture intervals, are synthetic-stage operational limits, not an unlimited production lifetime.
 
-Each profile is classified `NON_NORMATIVE_PROFILE_RATIFICATION_REQUESTED`. Approval does not change the signed bytes or the fail-closed checks already in the accepted SHA. Deferral leaves canonical integration blocked and leaves the profiles unratified. Deferral does not revert PR #8.
+Each profile stays classified `NON_NORMATIVE_PROFILE_RATIFICATION_REQUESTED` as the request class. The approval record is what marks that request approved. They are not added to Manifest V3.
 
 The separate items in `RSE_BLOCK1_ARCHITECTURE_CHANGE_REQUESTS.md` are `ARCHITECTURE_CHANGE_REQUIRED`. They are not part of this ratification.
 

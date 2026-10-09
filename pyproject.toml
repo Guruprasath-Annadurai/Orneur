@@ -53,7 +53,7 @@ code   = []   # sandboxed exec uses stdlib only
 voice  = []   # Web Speech API — browser-native, no Python deps
 mcp    = ["mcp>=1.0.0,<2.0.0"]
 stripe = ["stripe>=7.0.0"]
-dev    = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "mypy>=1.10.0", "build>=1.0.0", "pyyaml>=6.0", "cryptography>=49.0.0,<51.0.0", "pyhpke>=0.6.5,<0.7"]   # pyyaml: workflow-boundary tests parse .github/workflows; cryptography: vetted Ed25519; pyhpke: RFC 9180 Base for OCR1 v2 (cryptography's one-shot HPKE API has no AAD or sequence)
+dev    = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "mypy>=1.10.0", "build>=1.0.0", "pyyaml>=6.0", "cryptography>=49.0.0,<51.0.0", "pyhpke==0.6.5"]   # pyyaml: workflow-boundary tests parse .github/workflows; cryptography: vetted Ed25519; pyhpke: RFC 9180 Base for OCR1 v2, pinned to the reviewed 0.6.5 wheel (cryptography's one-shot HPKE API has no AAD or sequence)
 all    = [
     "chromadb>=0.5.0",
     "pypdf>=4.0.0", "python-docx>=1.1.0", "pdfminer.six>=20221105",
@@ -90,7 +90,7 @@ qualification = [
 # pyhpke is the RFC 9180 library named by RSE12_04. Presence in this extra is not an audit.
 rse = [
     "cryptography>=49.0.0,<51.0.0",
-    "pyhpke>=0.6.5,<0.7",
+    "pyhpke==0.6.5",
 ]
 frontier = [
     "openai>=1.0.0",

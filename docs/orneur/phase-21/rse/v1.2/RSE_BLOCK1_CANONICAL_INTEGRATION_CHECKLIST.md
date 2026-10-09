@@ -27,26 +27,34 @@ If any byte of that tree changes after Claude's acceptance, the new SHA needs it
 | 6 | IMP-1 regressions preserved | Met on the accepted tree: `tests/rse/test_imp1r_final.py` is in the 103 passed `tests/rse` run. IMP-1 modules were not edited for B-1, B-2, or B-3. Re-run on any new SHA. |
 | 7 | Authorization locks still denied | Met. `prove_authorization_locks` remains in the suite. Lock JSON files were not edited. Re-check the diff of any integration commit for `CORPUS_GENERATION_AUTHORIZATION.json`, `MODEL_EVAL_AUTHORIZATION.json`, and `QUALIFICATION_RUNNER_REGISTRY.json`. |
 | 8 | Protected benchmarks unchanged | Required at integration time. This preparation did not read or edit benchmark bodies. The integration diff must show no benchmark path changes. |
-| 9 | Owner ratification of OMJ1, OFJ1 v2, OBS1 v2, OCJ1, ORJ1 v2 | Open. Package: `RSE_BLOCK1_OWNER_RATIFICATION_PACKAGE.md`. Classification: non-normative profiles. Not signed. |
-| 10 | Owner decision on OCK1 and OCH1 domains | Open. `RSE_BLOCK1_ARCHITECTURE_CHANGE_REQUESTS.md` ACR-B1-1. No code change until the owner chooses. The recommended choice does not change signed bytes. |
-| 11 | Owner decision on cross-role quarantine and class K | Open. ACR-B1-2. Stays unimplemented and fail-closed. Not required to describe the software gate. Required before any later implementation. |
-| 12 | Documentation of the accepted behavior | Met for the software record in `RSE_MASTER_BLOCK_1_EVIDENCE.md` and `RSE_MASTER_BLOCK_1_TRACEABILITY.md` on `da567d9`, plus this package. Those evidence files are non-normative. |
-| 13 | Dependency and scan corrections | Open. Proposed patch only, in `RSE_BLOCK1_DEPENDENCY_AND_WORKFLOW_REVIEW.md`. Not applied. Base scan does not cover `.[rse]`. |
-| 14 | `cursor/**` workflow policy | Disclosed and recommended to keep until replaced. Not owner-signed. The workflow file on `da567d9` was not edited for this package. |
+| 9 | Owner ratification of OMJ1, OFJ1 v2, OBS1 v2, OCJ1, ORJ1 v2 | Approved for synthetic software-gate use. Non-normative. Not in Manifest V3. Record: `RSE_BLOCK1_OWNER_APPROVAL_RECORD.md` Approval 1. Caps are synthetic-stage limits. |
+| 10 | Owner decision on OCK1 and OCH1 domains | Conditions met. Addendum records the implemented domains. `records.py` and Manifest V3 are not edited. |
+| 11 | Owner decision on cross-role quarantine and class K | Deferred by Approval 3. Stays unimplemented and fail-closed. |
+| 12 | Documentation of the accepted behavior | Met for the software record on `da567d9`, plus this package and the approval record. Evidence files from `da567d9` are not rewritten. |
+| 13 | Dependency and scan corrections | Applied on the successor, not on `da567d9`. Hash lock `requirements/rse.txt`. Separate audit job. Base scan still does not cover pyhpke. Successor CI is required and is not run `37884389862`. |
+| 14 | `cursor/**` workflow policy | Approved to keep, push only. No new permissions. Six original jobs unchanged. |
 | 15 | Candidate integrity | `da567d9` is the reviewed tree. A later integration commit must name its parent. If the parent is not `da567d9`, publish the full diff and retest. |
 | 16 | Independent delta review | Required if the integration diff is not empty relative to `da567d9`. A docs-only delta needs a documentation review. It does not reopen B-1, B-2, or B-3. An implementation delta needs a new independent pass on the new SHA. |
 | 17 | Post-integration exact-main CI | Not started. After a future merge to `464b602` or its successor, the proof is a new push run on `main` whose `headSha` is the merge commit. Do not cite `37884389862` as that proof. |
 | 18 | IMP-5 and IMP-6 | Not authorized. Not started. |
 | 19 | Enterprise residuals | Recorded, not closed. `RSE_BLOCK1_ENTERPRISE_RESIDUAL_RISK_REGISTER.md`. They do not by themselves reopen the software gate. They do block a secure-environment claim. |
 
+## Integration sequence
+
+Do not merge under the governance-closure instruction. After a separate merge authorization, use this order so the stacked documentation is not applied twice and `da567d9` stays an ancestor:
+
+1. Merge PR #8 into `main`. The accepted implementation commit is `da567d9`. Proof is a new push run on `main`, not run `37884389862`.
+2. PR #9's base is the PR #8 branch, and its only commit is `c127780` (parent `da567d9`). After step 1, retarget PR #9 onto `main` and merge that documentation commit. Do not squash it into a second copy of the implementation.
+3. The governance-closure branch is parented on `c127780`. After step 2, retarget that pull request onto `main` and merge it. Its head is the combined tree. Proof is another new push run on `main`. Branch CI is not that proof.
+4. Claude's delta review must accept the combined head before step 3. Row 11 stays deferred and fail-closed. Rows 9 and 10 are satisfied only as recorded above: profiles are non-normative, and the signature addendum is not a Manifest V3 edit.
+
 ## Integration commit rules
 
-1. Do not merge while rows 9 and 10 are unsigned, unless the owner explicitly integrates with those items still marked unratified. Row 11 may remain an open ACR. It must remain fail-closed in the code.
-2. Do not edit hashed normative files to "make the profiles official."
-3. Do not apply the dependency patch in the same commit as a paperwork-only merge unless the owner authorized that patch and a new push CI is planned.
-4. Do not modify Docker, WhitePact, or protected benchmarks in the integration diff.
-5. Re-run `tests/rse`, the lock proof, and the manifest check on the SHA that will be merged. Then wait for that SHA's six-job push CI.
+1. Row 11 may remain an open ACR. It must remain fail-closed in the code.
+2. Do not edit hashed normative files to make the profiles or the signature addendum official.
+3. Do not modify Docker, WhitePact, or protected benchmarks in the integration diff.
+4. Re-run `tests/rse`, the lock proof, and the manifest check on the SHA that will be merged. Then wait for that SHA's push CI, including the RSE dependency audit.
 
 ## Current gate
 
-Canonical integration is blocked on the open owner rows above. The software gate on `da567d9` is the accepted input to that decision. It is not the merge.
+Owner decisions 1 through 5 are recorded. Canonical integration is not done. It waits on exact-SHA CI of the successor, Claude's delta review, and a separate merge authorization. The software gate on `da567d9` remains the accepted implementation identity.

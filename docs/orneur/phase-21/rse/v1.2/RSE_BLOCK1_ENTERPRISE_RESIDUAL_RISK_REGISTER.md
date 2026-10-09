@@ -94,9 +94,9 @@ Severity: low for the software gate. Medium as an availability limit in a long-l
 
 Mitigation: `MAX_SET` is 8192 for voided challenges, consumed challenges, and dead grants. Exceeding it fails `FRESHNESS` and rolls the mutation back (`test_freshness_ranges_round_trip_and_excess_fails_closed`). The role stops issuing rather than dropping history. The freeze requires the sets and does not set this number. The number is part of the OFJ1 profile request.
 
-Development-stage acceptance: accepted as a fail-closed cap, not as a sizing study.
+Development-stage acceptance: owner Approval 1 accepts 8192 as a synthetic-stage operational limit. It is not a production lifetime.
 
-Production-stage requirement: the owner either ratifies 8192 as the operational ceiling or names a different one before a role is expected to outlive it. A larger cap is a profile change, not a silent edit after ratification.
+Production-stage requirement: a production-lifetime design must name a ceiling before a role is expected to outlive 8192. A larger cap is a profile change, not a silent edit.
 
 Future phase: owner ratification of OFJ1. No implementation change is requested now.
 
@@ -108,9 +108,9 @@ Severity: low for the software gate. Medium if a role forfeits many disjoint ran
 
 Mitigation: forfeited sequences are merged inclusive intervals, cap 4096 (`MAX_INTERVALS`). Overlap and adjacency are rejected on parse. A merge that would exceed the cap fails `FRESHNESS`. A wide range such as 1..5000 is one interval, so the cap is on fragments, not on the numeric span. Test: the same freshness test as row 7.
 
-Development-stage acceptance: accepted as fail-closed compaction.
+Development-stage acceptance: owner Approval 1 accepts 4096 as a synthetic-stage operational limit. It is not a production lifetime.
 
-Production-stage requirement: ratify 4096 or replace it before production sizing. Do not drop intervals to stay under the cap.
+Production-stage requirement: a production-lifetime design must ratify 4096 or replace it. Do not drop intervals to stay under the cap.
 
 Future phase: the OFJ1 profile decision. Not a new grant class.
 
@@ -146,4 +146,4 @@ Blocks software canonicalization: no. Blocks a production power-loss claim: yes.
 
 ## Summary
 
-Rows 1 through 6 and row 10 block a real secure-environment release. They do not, by themselves, block software canonicalization of the accepted gate. Rows 7 and 8 are owner ceiling decisions inside the OFJ1 profile. Row 9 names the environment that already ran. None of these rows is closed by another green synthetic run.
+Rows 1 through 6 and row 10 block a real secure-environment release. They do not, by themselves, block software canonicalization of the accepted gate. Rows 7 and 8 are approved only as synthetic-stage ceilings. Row 9 names the Linux environment that ran `da567d9`. None of these rows is closed by another green synthetic run. No hardware readiness or production launch is claimed.
