@@ -16,11 +16,21 @@ Intermediate founder acts sit inside readiness because later evidence needs them
 
 ## Counting
 
-A counted row is complete only when a later independent review sets its own status to a value this file does not use, after that row's own evidence exists. A dependency becoming complete leaves the dependent row unchanged. `pass_rule` is `OWN_EVIDENCE` on every row. Aliases and covered rows are identifiable and add nothing to a denominator.
+The published status column is an observation. It is not an acceptance bit. `pass_rule` is `OWN_EVIDENCE` on every row. Aliases and covered rows are identifiable and add nothing to a denominator. A predecessor becoming complete leaves every dependent unchanged.
 
-Pre-training denominator size: 94. Numerator: 0. Application denominator size: 3. Post-training launch denominator size: 1. Execution denominator size: 2.
+Pre-training denominator size: 95. Numerator: 0. Application denominator size: 3. Post-training launch denominator size: 1. Execution denominator size: 2.
 
 No pre-training percentage is published. R65 is `NOT_VERIFIABLE` and stands for an unmapped set. G1 and AUTH-1 are also `NOT_VERIFIABLE`. When a founder-approved source of the 65 rules exists, R65 is replaced by one child row per rule and the denominator changes. Until then the child rules are absent on purpose.
+
+## Future acceptance
+
+A later row can advance only through `scripts/acceptance/acceptance_engine.py`. The engine reads a ledger that is separate from this register. Each record must carry a detached signature over the requirement id, evidence key, artifact class, artifact digest, git SHA, denominator, and reviewer role. The committed ledger `docs/orneur/acceptance/acceptance_ledger.json` is empty. The committed trust store `docs/orneur/acceptance/reviewer_trust.json` has no keys. This publication therefore accepts nothing and authorizes nothing.
+
+Editing a status cell, the Markdown, or the graph JSON does not accept a row. `--check` rejects a status of ACCEPTED and rejects a non-empty committed ledger or trust store. The engine ignores the published status field. A signature fails closed when it is missing, forged, duplicated, stale, aimed at the wrong requirement, reused for another control, signed by the implementer, signed by an unnamed reviewer, outside that row's denominator, or presented before a counted predecessor has its own accepted record. FINAL-2 stays after FINAL-1. EXEC-1 stays after FINAL-2. R65 cannot be signed into acceptance while it is the unmapped placeholder. FINAL-1 fails while any counted pre-training row, including R65, lacks its own acceptance.
+
+## Protected corpus
+
+Five counted artifacts stay separate. G8 is only the founder corpus-generation grant. DATA-3 is creation of the protected corpus. DATA-1 is the provenance manifest bound to that creation digest. DATA-5 is independent custody and integrity. DATA-2 is contamination and holdout separation. The grant does not pass DATA-3, DATA-1, DATA-5, or DATA-2, and it does not imply that a corpus exists. The small documented dataset note is not the protected corpus.
 
 ## Roles
 
@@ -86,7 +96,9 @@ Review this file and `docs/orneur/acceptance/register_graph.json`. Run `python3 
 4. Confirm R65 has no invented rule text.
 5. Confirm APP-1, APP-2, SUP-2, and MODEL-2C are outside the pre-training denominator for the reasons written on those rows.
 6. Confirm EV-AG-APP and EV-AG-DOCKER are not used as acceptance.
-7. Do not merge. Do not authorize a protected operation.
+7. Confirm the committed acceptance ledger and reviewer trust store are empty.
+8. Confirm the acceptance engine rejects a reused artifact, a wrong SHA, a missing reviewer, a self-review, a missing predecessor, a scope mismatch, and FINAL-1 while any counted pre-training row is open.
+9. Do not merge. Do not authorize a protected operation.
 
 ## Inventory
 
@@ -99,7 +111,7 @@ Review this file and `docs/orneur/acceptance/register_graph.json`. Run `python3 
 | G5 | MANDATORY | M | PRE_TRAINING | yes | NOT_AUTHORIZED | SOURCE_VERIFIED | FOUNDER | PRODUCT_MANAGEMENT | REQUIRED | G4 | Provisioning and key-creation authorization, then a ceremony record that contains no secret. | Locks return false. No ceremony record. | A founder act changes the authorization. This register does not create a secret. |
 | G6 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | NONE | UNRESOLVED_EXTERNAL | CLAUDE | NOT_REQUIRED | G5,C08,C22,C23,C24,C25,C26,C27,C28,C29,C30,C31,C32,C33,C34,C35,C36,C37,C38,C44,HW-01,HW-02,HW-03,HW-06,HW-08,HW-11,HW-16,HW-18,HW-19,HW-20,HW-21,HW-24,HW-FORGE | One acceptance-run record that cites each real-hardware artifact by its own id. The record is not a copy of those artifacts. | Synthetic tests only. No hardware log. | The run record exists. Each cited row still needs its own accepted artifact. |
 | G7 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | NONE | UNRESOLVED_EXTERNAL | CLAUDE | NOT_REQUIRED | G6 | Custody record for a Crown machine that is not the daily driver, with its own serial. | No Crown inventory. | The Crown serial is recorded and differs from Witness and Forge. |
-| G8 | MANDATORY | M | PRE_TRAINING | yes | NOT_AUTHORIZED | SOURCE_VERIFIED | FOUNDER | PRODUCT_MANAGEMENT | REQUIRED | G7 | A founder corpus grant. The JSON status change is the artifact. | CORPUS_GENERATION_AUTHORIZATION.json status is NOT_AUTHORIZED. | The founder changes that file. This register does not. |
+| G8 | MANDATORY | M | PRE_TRAINING | yes | NOT_AUTHORIZED | SOURCE_VERIFIED | FOUNDER | PRODUCT_MANAGEMENT | REQUIRED | G7 | A founder corpus-generation grant, and nothing else. The grant does not create a corpus and does not carry a corpus digest. | CORPUS_GENERATION_AUTHORIZATION.json status is NOT_AUTHORIZED. No protected corpus exists. | The founder changes that file. This register does not. |
 | G9 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | NONE | UNRESOLVED_EXTERNAL | CLAUDE | NOT_REQUIRED | G8 | A second Crown milestone: an independent dedicated Crown device, with its own serial, before qualification or training. | Not started. | The second Crown serial is recorded. |
 | G10 | MANDATORY | M | PRE_TRAINING | yes | NOT_AUTHORIZED | SOURCE_VERIFIED | CURSOR | CLAUDE | NOT_REQUIRED | G9 | A chamber-design review that names the design SHA and the tests the reviewer ran. | QUALIFICATION_RUNNER_REGISTRY.json state is REGISTERED_NOT_AUTHORIZED. | The reviewer accepts the design record. Runner authorization is QUAL-1, a separate artifact. |
 | G11 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | SOURCE_VERIFIED | UNRESOLVED_EXTERNAL | CLAUDE | NOT_REQUIRED | G10,P2-1,P2-2,C46,C47 | A P2 gate record that names the environment. Attestation, egress, and counter logs stay on their own rows. | R-EXF in RSE12_06 §5 says egress control blocks training authorization. No environment is named. | The gate record exists. P2-1, P2-2, C46, and C47 remain separately accepted. |
@@ -190,9 +202,10 @@ Review this file and `docs/orneur/acceptance/register_graph.json`. Run `python3 
 | P2-2 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | SOURCE_VERIFIED | CURSOR | CLAUDE | NOT_REQUIRED | G10 | An egress test showing the training identity cannot open a forbidden path. | Residual text only. | The egress test log is accepted. |
 | P2-3 | MANDATORY | M | NONE | no | NOT_STARTED | NONE | CURSOR | CLAUDE | NOT_REQUIRED | - | Covered by C46 and C47. | See those rows. | C46 and C47 each pass on their own artifacts. |
 | P2-4 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | SOURCE_VERIFIED | CURSOR | CLAUDE | NOT_REQUIRED | G10 | A training-environment test that a spend above the configured cap is refused. The cap value may remain 0. | max_spend_usd is 0. network_provider_inference_allowed is false. gpu_allowed is false. | The refusal test is accepted. Raising the cap is FINAL-2. |
-| DATA-1 | MANDATORY | M | PRE_TRAINING | yes | NOT_ACCEPTED | SOURCE_VERIFIED | UNRESOLVED_EXTERNAL | PRODUCT_MANAGEMENT | NOT_REQUIRED | - | A manifest with source, license, and digest for every record that would be trained on. | The note describes a small v1+v2+v3 set and a token proxy. It says it does not authorize training. | The manifest is accepted. |
-| DATA-2 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | SOURCE_VERIFIED | CURSOR | CLAUDE | NOT_REQUIRED | DATA-1,DATA-3,QUAL-2 | A set-level contamination result bound to a corpus digest, with no item-level holdout leak. | GENESIS_FRONTIER_HOLDOUT_SPEC.md says zero-contamination is not proven. | The oracle output is accepted. |
-| DATA-3 | MANDATORY | M | PRE_TRAINING | yes | NOT_AUTHORIZED | SOURCE_VERIFIED | FOUNDER | PRODUCT_MANAGEMENT | REQUIRED | G8 | The protected-corpus grant after P1. | Status NOT_AUTHORIZED. The small documented set is not that corpus. | The founder grant is recorded. This register does not generate a corpus. |
+| DATA-1 | MANDATORY | M | PRE_TRAINING | yes | NOT_ACCEPTED | SOURCE_VERIFIED | UNRESOLVED_EXTERNAL | PRODUCT_MANAGEMENT | NOT_REQUIRED | DATA-3 | A provenance manifest listing source, license, and per-record digest, bound to the creation digest from DATA-3. The founder grant is not this manifest. | The qualification note describes a small v1+v2+v3 set and a token proxy. That note is not a protected-corpus manifest and does not authorize training. | The manifest is accepted against the creation digest. G8 does not pass this row. |
+| DATA-2 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | SOURCE_VERIFIED | CURSOR | CLAUDE | NOT_REQUIRED | DATA-1,DATA-3,DATA-5,QUAL-2 | A contamination and holdout-separation result bound to the creation digest and the holdout fingerprint set, with no item-level leak. The founder grant is not this result. | GENESIS_FRONTIER_HOLDOUT_SPEC.md says zero-contamination is not proven. No protected corpus exists to test. | The oracle output is accepted. G8 does not pass this row. |
+| DATA-3 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | SOURCE_VERIFIED | UNRESOLVED_EXTERNAL | CLAUDE | NOT_REQUIRED | G8 | A protected-corpus creation record that names the corpus digest and the creating operator. The founder grant is not this record. | No creation record. CORPUS_GENERATION_AUTHORIZATION.json remains NOT_AUTHORIZED and contains no corpus. | The creation record exists. The grant alone leaves this row unmet. |
+| DATA-5 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | NONE | UNRESOLVED_EXTERNAL | PRODUCT_MANAGEMENT | NOT_REQUIRED | DATA-3 | An independent custody and integrity receipt that re-hashes the protected corpus and names a custodian who is not the creator. The founder grant is not this receipt. | No protected corpus and no custody receipt. | The receipt matches the creation digest. Creation alone does not pass this row. |
 | DATA-4 | NONBLOCKING |  | NONE | no | NOT_STARTED | NONE | PRODUCT_MANAGEMENT | CLAUDE | NOT_REQUIRED | - | A published data card. | No trained model and no public card. | The card is published after a model exists. |
 | MODEL-0 | NONBLOCKING |  | NONE | no | NOT_A_SELECTION | SOURCE_VERIFIED | RECORDED_ON_MAIN | PRODUCT_MANAGEMENT | NOT_REQUIRED | - | The code pin, read from the file. | base_model unsloth/Qwen2.5-3B-Instruct, revision and tokenizer revision 7548fff1f997f57b2e9e8ab1ec7be96949b00ed0, license_name qwen-research, license_commercial_use RESTRICTED. model_selection_authorized() returns false. | A reader can open the pin. Selection is MODEL-1. |
 | MODEL-2R | MANDATORY | M | PRE_TRAINING | yes | NOT_AUTHORIZED | SOURCE_VERIFIED | FOUNDER | PRODUCT_MANAGEMENT | REQUIRED | MODEL-0 | A founder scope record that the first run, when later authorized, is research or evaluation only under the qwen-research terms. | The qualification note quotes a non-commercial research license and says commercial release is blocked. It also says the term does not by itself block research or internal evaluation. No founder scope record exists. This row does not grant either scope. | The research-only scope record exists. Commercial rights remain MODEL-2C. |
@@ -214,7 +227,7 @@ Review this file and `docs/orneur/acceptance/register_graph.json`. Run `python3 
 | EV-AG-APP | NONBLOCKING |  | NONE | no | EXTERNALLY_REPORTED | EXTERNALLY_REPORTED | ANTIGRAVITY | PRODUCT_MANAGEMENT | NOT_REQUIRED | - | The Antigravity application retest report, including the SHA it tested and the result. | The directive states Antigravity previously retested the application. No report text, tested SHA, or result is in this repository. GitHub reviews on PR #11 and PR #12 have length 0. PR bodies are author narrative and are not this report. | The stored report can be read. Until then APP-1 and APP-2 stay unreviewed. |
 | EV-AG-DOCKER | NONBLOCKING |  | NONE | no | EXTERNALLY_REPORTED | EXTERNALLY_REPORTED | ANTIGRAVITY | PRODUCT_MANAGEMENT | NOT_REQUIRED | - | The Antigravity Docker retest report, including the SHA it tested and the result. | The directive states Antigravity previously retested Docker. No report text, tested SHA, or result is in this repository. GitHub reviews on PR #13 have length 0. The PR body is the author's local log, not Antigravity's report. | The stored report can be read. It does not pass SUP-1 or C39. |
 | R65 | MANDATORY | M | PRE_TRAINING | yes | NOT_VERIFIABLE | NONE | FOUNDER | PRODUCT_MANAGEMENT | REQUIRED | - | The exact source text, founder-approved, then one child row per rule. | No source. No child rule is listed. | Sixty-five child rows replace this placeholder after the source is approved. |
-| FINAL-1 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | NONE | CURSOR | PRODUCT_MANAGEMENT | NOT_REQUIRED | 93 pre-training ids, excluding FINAL-1 | An independent recomputation worksheet that lists every counted pre-training id and its own status. | Numerator is 0. G1, AUTH-1, and R65 are NOT_VERIFIABLE. | The worksheet matches a fresh run of the validator. Founder authorization is still FINAL-2. |
+| FINAL-1 | MANDATORY | M | PRE_TRAINING | yes | NOT_STARTED | NONE | CURSOR | PRODUCT_MANAGEMENT | NOT_REQUIRED | 94 pre-training ids, excluding FINAL-1 | An independent recomputation worksheet that lists every counted pre-training id and its own status. | Numerator is 0. G1, AUTH-1, and R65 are NOT_VERIFIABLE. | The worksheet matches a fresh run of the validator. Founder authorization is still FINAL-2. |
 | FINAL-2 | MANDATORY | M | EXECUTION | yes | NOT_AUTHORIZED | SOURCE_VERIFIED | FOUNDER | PRODUCT_MANAGEMENT | REQUIRED | FINAL-1 | One founder record naming the SHA, the dataset manifest, the foundation revision, the research-only scope, the spend cap, and the GPU permission. | Not present. gpu_allowed is false. max_spend_usd is 0. training_authorized() returns false. | The record exists after FINAL-1. This register is not that record. |
 | EXEC-1 | MANDATORY | M | EXECUTION | yes | NOT_AUTHORIZED | SOURCE_VERIFIED | FOUNDER | CLAUDE | REQUIRED | FINAL-2 | A start record, distinct from FINAL-2, showing the locks and the authorization files agree with FINAL-2 and that a run was permitted to start. | model_selection_authorized, qualification_authorized, gpu_authorized, and training_authorized return false. | The start record exists. Editing a lock to return true without FINAL-2 fails this row. |
 | AUTH-2 | MANDATORY | M | NONE | no | NOT_AUTHORIZED | SOURCE_VERIFIED | FOUNDER | PRODUCT_MANAGEMENT | REQUIRED | - | Same artifact as FINAL-2. | gpu_allowed false. max_spend_usd 0. status NOT_AUTHORIZED. | FINAL-2 carries the GPU and spend permission. |
@@ -359,10 +372,13 @@ Each edge points from a row to a predecessor. A predecessor completing does not 
 | P2-1 | G10 |
 | P2-2 | G10 |
 | P2-4 | G10 |
+| DATA-1 | DATA-3 |
 | DATA-2 | DATA-1 |
 | DATA-2 | DATA-3 |
+| DATA-2 | DATA-5 |
 | DATA-2 | QUAL-2 |
 | DATA-3 | G8 |
+| DATA-5 | DATA-3 |
 | MODEL-2R | MODEL-0 |
 | MODEL-1 | MODEL-2R |
 | QUAL-1 | G10 |
@@ -374,5 +390,5 @@ Each edge points from a row to a predecessor. A predecessor completing does not 
 | APP-2 | APP-1 |
 | FINAL-2 | FINAL-1 |
 | EXEC-1 | FINAL-2 |
-| FINAL-1 | each of the other 93 pre-training ids |
+| FINAL-1 | each of the other 94 pre-training ids |
 

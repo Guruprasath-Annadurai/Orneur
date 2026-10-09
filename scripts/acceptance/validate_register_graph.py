@@ -18,6 +18,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 JSON_PATH = ROOT / "docs" / "orneur" / "acceptance" / "register_graph.json"
 MD_PATH = ROOT / "docs" / "orneur" / "ORNEUR_MASTER_EXECUTION_AND_ACCEPTANCE_REGISTER.md"
+LEDGER_PATH = ROOT / "docs" / "orneur" / "acceptance" / "acceptance_ledger.json"
+TRUST_PATH = ROOT / "docs" / "orneur" / "acceptance" / "reviewer_trust.json"
+EMPTY_LEDGER = "[]\n"
+EMPTY_TRUST = '{\n  "keys": []\n}\n'
 
 BANNED = (
     "RSE_MASTER_BLOCK_1_ACCEPTED",
@@ -228,6 +232,7 @@ def R(
     exit="",
     rationale="",
     cross=(),
+    artifact_class="",
 ):
     return {
         "id": id,
@@ -255,6 +260,7 @@ def R(
         "exit": exit,
         "rationale": rationale,
         "cross_refs": list(cross),
+        "artifact_class": artifact_class,
     }
 
 
@@ -489,8 +495,9 @@ def build_nodes():
             frozen="M",
             source="RSE12_06 §7 step 10; CORPUS_GENERATION_AUTHORIZATION.json",
             founder_act="INTERMEDIATE",
-            evidence="A founder corpus grant. The JSON status change is the artifact.",
-            current="CORPUS_GENERATION_AUTHORIZATION.json status is NOT_AUTHORIZED.",
+            evidence="A founder corpus-generation grant, and nothing else. The grant does not create a corpus and does not carry a corpus digest.",
+            current="CORPUS_GENERATION_AUTHORIZATION.json status is NOT_AUTHORIZED. No protected corpus exists.",
+            artifact_class="founder-corpus-grant",
             states=("SOURCE_VERIFIED",),
             status="NOT_AUTHORIZED",
             impl="FOUNDER",
@@ -1366,15 +1373,16 @@ def build_nodes():
             "DATA-1",
             frozen="M",
             source="GENESIS_PRETRAINING_QUALIFICATION.md",
-            evidence="A manifest with source, license, and digest for every record that would be trained on.",
-            current="The note describes a small v1+v2+v3 set and a token proxy. It says it does not authorize training.",
+            evidence="A provenance manifest listing source, license, and per-record digest, bound to the creation digest from DATA-3. The founder grant is not this manifest.",
+            current="The qualification note describes a small v1+v2+v3 set and a token proxy. That note is not a protected-corpus manifest and does not authorize training.",
             states=("SOURCE_VERIFIED",),
             status="NOT_ACCEPTED",
             impl="UNRESOLVED_EXTERNAL",
             reviewer="PRODUCT_MANAGEMENT",
             escalation="Founder names who assembles the manifest. This row generates no corpus.",
-            depends=(),
-            exit="The manifest is accepted.",
+            depends=("DATA-3",),
+            exit="The manifest is accepted against the creation digest. G8 does not pass this row.",
+            artifact_class="corpus-provenance-manifest",
         )
     )
     nodes.append(
@@ -1382,32 +1390,49 @@ def build_nodes():
             "DATA-2",
             frozen="M",
             source="RSE12_05 contamination oracle; RSE12_01 contamination_status_ref",
-            evidence="A set-level contamination result bound to a corpus digest, with no item-level holdout leak.",
-            current="GENESIS_FRONTIER_HOLDOUT_SPEC.md says zero-contamination is not proven.",
+            evidence="A contamination and holdout-separation result bound to the creation digest and the holdout fingerprint set, with no item-level leak. The founder grant is not this result.",
+            current="GENESIS_FRONTIER_HOLDOUT_SPEC.md says zero-contamination is not proven. No protected corpus exists to test.",
             states=("SOURCE_VERIFIED",),
             status="NOT_STARTED",
             impl="CURSOR",
             reviewer="CLAUDE",
-            depends=("DATA-1", "DATA-3", "QUAL-2"),
-            exit="The oracle output is accepted.",
+            depends=("DATA-1", "DATA-3", "DATA-5", "QUAL-2"),
+            exit="The oracle output is accepted. G8 does not pass this row.",
+            artifact_class="contamination-holdout-separation",
         )
     )
     nodes.append(
         R(
             "DATA-3",
             frozen="M",
-            source="CORPUS_GENERATION_AUTHORIZATION.json; RSE12_06 §6",
-            founder_act="INTERMEDIATE",
-            evidence="The protected-corpus grant after P1.",
-            current="Status NOT_AUTHORIZED. The small documented set is not that corpus.",
+            source="RSE12_06 §6 real private corpus after P1; CORPUS_GENERATION_AUTHORIZATION.json is the grant, not the corpus",
+            evidence="A protected-corpus creation record that names the corpus digest and the creating operator. The founder grant is not this record.",
+            current="No creation record. CORPUS_GENERATION_AUTHORIZATION.json remains NOT_AUTHORIZED and contains no corpus.",
             states=("SOURCE_VERIFIED",),
-            status="NOT_AUTHORIZED",
-            impl="FOUNDER",
-            reviewer="PRODUCT_MANAGEMENT",
-            founder="REQUIRED",
+            status="NOT_STARTED",
+            impl="UNRESOLVED_EXTERNAL",
+            reviewer="CLAUDE",
+            escalation="Founder names the corpus operator after G8. This row does not generate a corpus and does not implement class K.",
             depends=("G8",),
-            exit="The founder grant is recorded. This register does not generate a corpus.",
-            rationale="Intermediate founder act. It is the same grant family as G8's exit file, checked again at corpus use. The artifact is the grant plus the corpus digest, which G8 does not contain.",
+            exit="The creation record exists. The grant alone leaves this row unmet.",
+            artifact_class="protected-corpus-creation",
+        )
+    )
+    nodes.append(
+        R(
+            "DATA-5",
+            frozen="M",
+            source="RSE12_06 §6 custody of the real private corpus",
+            evidence="An independent custody and integrity receipt that re-hashes the protected corpus and names a custodian who is not the creator. The founder grant is not this receipt.",
+            current="No protected corpus and no custody receipt.",
+            states=("NONE",),
+            status="NOT_STARTED",
+            impl="UNRESOLVED_EXTERNAL",
+            reviewer="PRODUCT_MANAGEMENT",
+            escalation="Founder names a custodian who did not create the corpus. This row does not generate a corpus.",
+            depends=("DATA-3",),
+            exit="The receipt matches the creation digest. Creation alone does not pass this row.",
+            artifact_class="corpus-custody-integrity",
         )
     )
     nodes.append(
@@ -1957,8 +1982,13 @@ def build_nodes():
     )
     by_id["FINAL-1"]["depends_on"] = readiness
     for node in nodes:
+        if not node["artifact_class"]:
+            node["artifact_class"] = node["evidence_key"]
+    for node in nodes:
         if node["canonical_id"]:
-            node["evidence_key"] = by_id[node["canonical_id"]]["evidence_key"]
+            canonical = by_id[node["canonical_id"]]
+            node["evidence_key"] = canonical["evidence_key"]
+            node["artifact_class"] = canonical["artifact_class"]
     return nodes
 
 
@@ -2074,6 +2104,7 @@ def validate(nodes):
         errors.append("contingent authorization entered the readiness inventory")
 
     keys = {}
+    classes = {}
     required = {}
     for node in nodes:
         if not node["counts"]:
@@ -2082,6 +2113,12 @@ def validate(nodes):
         if key in keys:
             errors.append(f"shared evidence key {key} on {keys[key]} and {node['id']}")
         keys[key] = node["id"]
+        artifact_class = node["artifact_class"]
+        if artifact_class in classes:
+            errors.append(
+                f"shared artifact class {artifact_class} on {classes[artifact_class]} and {node['id']}"
+            )
+        classes[artifact_class] = node["id"]
         text = " ".join(node["evidence_required"].split())
         if text in required:
             errors.append(f"shared evidence text {node['id']} and {required[text]}")
@@ -2097,6 +2134,7 @@ def validate(nodes):
         errors.append("invented founder rule")
     if by_id["R65"]["status"] != "NOT_VERIFIABLE":
         errors.append("R65 status")
+    errors.extend(check_corpus_partition(by_id))
 
     sorter = TopologicalSorter()
     for node in nodes:
@@ -2114,6 +2152,46 @@ def validate(nodes):
     if numerator != 0:
         errors.append("numerator is not 0")
     errors.extend(check_freeze(nodes))
+    return errors
+
+
+CORPUS_ARTIFACTS = {
+    "G8": "founder-corpus-grant",
+    "DATA-3": "protected-corpus-creation",
+    "DATA-1": "corpus-provenance-manifest",
+    "DATA-5": "corpus-custody-integrity",
+    "DATA-2": "contamination-holdout-separation",
+}
+
+
+def check_corpus_partition(by_id):
+    errors = []
+    if len(set(CORPUS_ARTIFACTS.values())) != len(CORPUS_ARTIFACTS):
+        errors.append("corpus artifact classes are not distinct")
+    for row_id, artifact_class in CORPUS_ARTIFACTS.items():
+        node = by_id.get(row_id)
+        if node is None or not node["counts"]:
+            errors.append(f"{row_id} missing from corpus partition")
+            continue
+        if node["artifact_class"] != artifact_class:
+            errors.append(f"{row_id} artifact class")
+        if node["evidence_key"] == by_id["G8"]["evidence_key"] and row_id != "G8":
+            errors.append(f"{row_id} reuses the grant key")
+    if "G8" not in by_id["DATA-3"]["depends_on"]:
+        errors.append("DATA-3 must follow the grant")
+    if by_id["DATA-3"]["depends_on"] == ["G8"] and "grant is not this record" not in by_id["DATA-3"]["evidence_required"]:
+        errors.append("DATA-3 evidence collapsed into the grant")
+    for row_id in ("DATA-1", "DATA-2", "DATA-5"):
+        if "founder grant is not" not in by_id[row_id]["evidence_required"]:
+            errors.append(f"{row_id} does not exclude the grant")
+    if "does not create a corpus" not in by_id["G8"]["evidence_required"]:
+        errors.append("G8 grant text implies creation")
+    if "DATA-3" not in by_id["DATA-1"]["depends_on"]:
+        errors.append("DATA-1 must follow creation")
+    if "DATA-5" not in by_id["DATA-2"]["depends_on"]:
+        errors.append("DATA-2 must follow custody")
+    if by_id["G9"]["depends_on"] == ["DATA-3"]:
+        errors.append("crown milestone must not be the corpus")
     return errors
 
 
@@ -2190,11 +2268,21 @@ def render_markdown(doc):
     a("")
     a("## Counting")
     a("")
-    a("A counted row is complete only when a later independent review sets its own status to a value this file does not use, after that row's own evidence exists. A dependency becoming complete leaves the dependent row unchanged. `pass_rule` is `OWN_EVIDENCE` on every row. Aliases and covered rows are identifiable and add nothing to a denominator.")
+    a("The published status column is an observation. It is not an acceptance bit. `pass_rule` is `OWN_EVIDENCE` on every row. Aliases and covered rows are identifiable and add nothing to a denominator. A predecessor becoming complete leaves every dependent unchanged.")
     a("")
     a(f"Pre-training denominator size: {len(doc['denominator_pretraining_ids'])}. Numerator: 0. Application denominator size: {len(doc['denominator_application_ids'])}. Post-training launch denominator size: {len(doc['denominator_post_training_ids'])}. Execution denominator size: {len(doc['denominator_execution_ids'])}.")
     a("")
     a("No pre-training percentage is published. R65 is `NOT_VERIFIABLE` and stands for an unmapped set. G1 and AUTH-1 are also `NOT_VERIFIABLE`. When a founder-approved source of the 65 rules exists, R65 is replaced by one child row per rule and the denominator changes. Until then the child rules are absent on purpose.")
+    a("")
+    a("## Future acceptance")
+    a("")
+    a("A later row can advance only through `scripts/acceptance/acceptance_engine.py`. The engine reads a ledger that is separate from this register. Each record must carry a detached signature over the requirement id, evidence key, artifact class, artifact digest, git SHA, denominator, and reviewer role. The committed ledger `docs/orneur/acceptance/acceptance_ledger.json` is empty. The committed trust store `docs/orneur/acceptance/reviewer_trust.json` has no keys. This publication therefore accepts nothing and authorizes nothing.")
+    a("")
+    a("Editing a status cell, the Markdown, or the graph JSON does not accept a row. `--check` rejects a status of ACCEPTED and rejects a non-empty committed ledger or trust store. The engine ignores the published status field. A signature fails closed when it is missing, forged, duplicated, stale, aimed at the wrong requirement, reused for another control, signed by the implementer, signed by an unnamed reviewer, outside that row's denominator, or presented before a counted predecessor has its own accepted record. FINAL-2 stays after FINAL-1. EXEC-1 stays after FINAL-2. R65 cannot be signed into acceptance while it is the unmapped placeholder. FINAL-1 fails while any counted pre-training row, including R65, lacks its own acceptance.")
+    a("")
+    a("## Protected corpus")
+    a("")
+    a("Five counted artifacts stay separate. G8 is only the founder corpus-generation grant. DATA-3 is creation of the protected corpus. DATA-1 is the provenance manifest bound to that creation digest. DATA-5 is independent custody and integrity. DATA-2 is contamination and holdout separation. The grant does not pass DATA-3, DATA-1, DATA-5, or DATA-2, and it does not imply that a corpus exists. The small documented dataset note is not the protected corpus.")
     a("")
     a("## Roles")
     a("")
@@ -2264,7 +2352,9 @@ def render_markdown(doc):
     a("4. Confirm R65 has no invented rule text.")
     a("5. Confirm APP-1, APP-2, SUP-2, and MODEL-2C are outside the pre-training denominator for the reasons written on those rows.")
     a("6. Confirm EV-AG-APP and EV-AG-DOCKER are not used as acceptance.")
-    a("7. Do not merge. Do not authorize a protected operation.")
+    a("7. Confirm the committed acceptance ledger and reviewer trust store are empty.")
+    a("8. Confirm the acceptance engine rejects a reused artifact, a wrong SHA, a missing reviewer, a self-review, a missing predecessor, a scope mismatch, and FINAL-1 while any counted pre-training row is open.")
+    a("9. Do not merge. Do not authorize a protected operation.")
     a("")
     a("## Inventory")
     a("")
@@ -2344,6 +2434,26 @@ def main(argv):
             return 1
         if MD_PATH.read_text(encoding="utf-8") != rendered_md:
             print("markdown drift", file=sys.stderr)
+            return 1
+        ledger_text = LEDGER_PATH.read_text(encoding="utf-8")
+        trust_text = TRUST_PATH.read_text(encoding="utf-8")
+        if ledger_text != EMPTY_LEDGER or trust_text != EMPTY_TRUST:
+            print("acceptance ledger or trust store is not the empty baseline", file=sys.stderr)
+            return 1
+        engine_dir = str(Path(__file__).resolve().parent)
+        if engine_dir not in sys.path:
+            sys.path.insert(0, engine_dir)
+        from acceptance_engine import assert_published_baseline, evaluate
+
+        ledger = json.loads(ledger_text)
+        trust = json.loads(trust_text)
+        baseline_errors = assert_published_baseline(nodes, rendered_md, ledger, trust)
+        if baseline_errors:
+            print("\n".join(baseline_errors), file=sys.stderr)
+            return 1
+        accepted = evaluate(nodes, ledger, trust_keys=trust["keys"], subject_sha="0" * 40)
+        if accepted:
+            print("empty ledger accepted a row", file=sys.stderr)
             return 1
     if args.self_test:
         broken = json.loads(rendered_json)

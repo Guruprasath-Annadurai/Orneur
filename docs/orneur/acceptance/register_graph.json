@@ -96,6 +96,7 @@
     "DATA-1",
     "DATA-2",
     "DATA-3",
+    "DATA-5",
     "MODEL-2R",
     "MODEL-1",
     "QUAL-1",
@@ -633,6 +634,10 @@
       "to": "G10"
     },
     {
+      "from": "DATA-1",
+      "to": "DATA-3"
+    },
+    {
       "from": "DATA-2",
       "to": "DATA-1"
     },
@@ -642,11 +647,19 @@
     },
     {
       "from": "DATA-2",
+      "to": "DATA-5"
+    },
+    {
+      "from": "DATA-2",
       "to": "QUAL-2"
     },
     {
       "from": "DATA-3",
       "to": "G8"
+    },
+    {
+      "from": "DATA-5",
+      "to": "DATA-3"
     },
     {
       "from": "MODEL-2R",
@@ -902,6 +915,10 @@
     },
     {
       "from": "FINAL-1",
+      "to": "DATA-5"
+    },
+    {
+      "from": "FINAL-1",
       "to": "DEC-K"
     },
     {
@@ -1072,6 +1089,7 @@
   ],
   "nodes": [
     {
+      "artifact_class": "G1",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1101,6 +1119,7 @@
       "status": "NOT_VERIFIABLE"
     },
     {
+      "artifact_class": "G2",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1132,6 +1151,7 @@
       "status": "PRESENT_ON_MAIN"
     },
     {
+      "artifact_class": "G3",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1163,6 +1183,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "G4",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1194,6 +1215,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "G5",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1225,6 +1247,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "G6",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1288,6 +1311,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "G7",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1323,12 +1347,13 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "founder-corpus-grant",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
       "covered_by": [],
       "cross_refs": [],
-      "current_evidence": "CORPUS_GENERATION_AUTHORIZATION.json status is NOT_AUTHORIZED.",
+      "current_evidence": "CORPUS_GENERATION_AUTHORIZATION.json status is NOT_AUTHORIZED. No protected corpus exists.",
       "denominator": "PRE_TRAINING",
       "depends_on": [
         "G7"
@@ -1336,7 +1361,7 @@
       "escalation": "",
       "event": "READINESS",
       "evidence_key": "G8",
-      "evidence_required": "A founder corpus grant. The JSON status change is the artifact.",
+      "evidence_required": "A founder corpus-generation grant, and nothing else. The grant does not create a corpus and does not carry a corpus digest.",
       "evidence_states": [
         "SOURCE_VERIFIED"
       ],
@@ -1354,6 +1379,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "G9",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1385,6 +1411,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "G10",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1416,6 +1443,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "G11",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1451,6 +1479,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "G12",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1484,6 +1513,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C01",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1517,6 +1547,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C02",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1550,6 +1581,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C04",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1583,6 +1615,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C05",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1616,6 +1649,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C09",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1649,6 +1683,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C10",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1682,6 +1717,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C11",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1715,6 +1751,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C12",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1748,6 +1785,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C13",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1781,6 +1819,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C14",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1814,6 +1853,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C17",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1847,6 +1887,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C18",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1880,6 +1921,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C19",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1913,6 +1955,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C20",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1946,6 +1989,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C21",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -1979,6 +2023,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C45",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2012,6 +2057,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C15",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2046,6 +2092,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "C03",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2079,6 +2126,7 @@
       "status": "DESIGNED_ONLY"
     },
     {
+      "artifact_class": "C06",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2112,6 +2160,7 @@
       "status": "DESIGNED_ONLY"
     },
     {
+      "artifact_class": "C07",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2145,6 +2194,7 @@
       "status": "DESIGNED_ONLY"
     },
     {
+      "artifact_class": "C08",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2176,6 +2226,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "C16",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2207,6 +2258,7 @@
       "status": "DESIGNED_ONLY"
     },
     {
+      "artifact_class": "C44",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2238,6 +2290,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "C22",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2270,6 +2323,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C23",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2302,6 +2356,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C24",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2334,6 +2389,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C25",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2366,6 +2422,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C26",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2398,6 +2455,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C28",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2430,6 +2488,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C29",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2462,6 +2521,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C30",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2493,6 +2553,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C31",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2524,6 +2585,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C32",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2555,6 +2617,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C33",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2587,6 +2650,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C34",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2618,6 +2682,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C35",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2649,6 +2714,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C36",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2681,6 +2747,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C37",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2713,6 +2780,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C38",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2744,6 +2812,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "DEC-K",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2773,6 +2842,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "C27",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2806,6 +2876,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C39",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2837,6 +2908,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C40",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2868,6 +2940,7 @@
       "status": "DESIGNED_ONLY"
     },
     {
+      "artifact_class": "C41",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2899,6 +2972,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C42",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2930,6 +3004,7 @@
       "status": "DESIGNED_ONLY"
     },
     {
+      "artifact_class": "C43",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2961,6 +3036,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C46",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -2992,6 +3068,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C47",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3023,6 +3100,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C48",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3056,6 +3134,7 @@
       "status": "DESIGNED_ONLY"
     },
     {
+      "artifact_class": "C49",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3087,6 +3166,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C50",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3118,6 +3198,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-01",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3152,6 +3233,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-02",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3183,6 +3265,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-03",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3217,6 +3300,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C28",
       "canonical_id": "C28",
       "class": "MANDATORY",
       "counts": false,
@@ -3248,6 +3332,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C29",
       "canonical_id": "C29",
       "class": "MANDATORY",
       "counts": false,
@@ -3279,6 +3364,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-06",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3310,6 +3396,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C24",
       "canonical_id": "C24",
       "class": "MANDATORY",
       "counts": false,
@@ -3341,6 +3428,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-08",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3372,6 +3460,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C36",
       "canonical_id": "C36",
       "class": "MANDATORY",
       "counts": false,
@@ -3403,6 +3492,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C24",
       "canonical_id": "C24",
       "class": "MANDATORY",
       "counts": false,
@@ -3434,6 +3524,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-11",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3465,6 +3556,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C35",
       "canonical_id": "C35",
       "class": "MANDATORY",
       "counts": false,
@@ -3496,6 +3588,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C34",
       "canonical_id": "C34",
       "class": "MANDATORY",
       "counts": false,
@@ -3527,6 +3620,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C30",
       "canonical_id": "C30",
       "class": "MANDATORY",
       "counts": false,
@@ -3558,6 +3652,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C32",
       "canonical_id": "C32",
       "class": "MANDATORY",
       "counts": false,
@@ -3589,6 +3684,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-16",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3622,6 +3718,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "C31",
       "canonical_id": "C31",
       "class": "MANDATORY",
       "counts": false,
@@ -3653,6 +3750,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-18",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3684,6 +3782,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-19",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3715,6 +3814,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-20",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3746,6 +3846,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-20P",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -3775,6 +3876,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-21",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3806,6 +3908,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-22",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -3835,6 +3938,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-23",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -3864,6 +3968,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-24",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3895,6 +4000,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-25",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -3924,6 +4030,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "HW-FORGE",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3958,6 +4065,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "SUP-1",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -3990,6 +4098,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "SUP-2",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4019,6 +4128,7 @@
       "status": "NOT_ACCEPTED"
     },
     {
+      "artifact_class": "SUP-3",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4050,6 +4160,7 @@
       "status": "UNMERGED_NOT_ACCEPTED"
     },
     {
+      "artifact_class": "SUP-4",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -4079,6 +4190,7 @@
       "status": "OPEN"
     },
     {
+      "artifact_class": "P2-1",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4110,6 +4222,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "P2-2",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4141,6 +4254,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "P2-3",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": false,
@@ -4173,6 +4287,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "P2-4",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4204,22 +4319,25 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "corpus-provenance-manifest",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
       "covered_by": [],
       "cross_refs": [],
-      "current_evidence": "The note describes a small v1+v2+v3 set and a token proxy. It says it does not authorize training.",
+      "current_evidence": "The qualification note describes a small v1+v2+v3 set and a token proxy. That note is not a protected-corpus manifest and does not authorize training.",
       "denominator": "PRE_TRAINING",
-      "depends_on": [],
+      "depends_on": [
+        "DATA-3"
+      ],
       "escalation": "Founder names who assembles the manifest. This row generates no corpus.",
       "event": "READINESS",
       "evidence_key": "DATA-1",
-      "evidence_required": "A manifest with source, license, and digest for every record that would be trained on.",
+      "evidence_required": "A provenance manifest listing source, license, and per-record digest, bound to the creation digest from DATA-3. The founder grant is not this manifest.",
       "evidence_states": [
         "SOURCE_VERIFIED"
       ],
-      "exit": "The manifest is accepted.",
+      "exit": "The manifest is accepted against the creation digest. G8 does not pass this row.",
       "founder_act": "NONE",
       "founder_approval": "NOT_REQUIRED",
       "freeze_row": null,
@@ -4233,26 +4351,28 @@
       "status": "NOT_ACCEPTED"
     },
     {
+      "artifact_class": "contamination-holdout-separation",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
       "covered_by": [],
       "cross_refs": [],
-      "current_evidence": "GENESIS_FRONTIER_HOLDOUT_SPEC.md says zero-contamination is not proven.",
+      "current_evidence": "GENESIS_FRONTIER_HOLDOUT_SPEC.md says zero-contamination is not proven. No protected corpus exists to test.",
       "denominator": "PRE_TRAINING",
       "depends_on": [
         "DATA-1",
         "DATA-3",
+        "DATA-5",
         "QUAL-2"
       ],
       "escalation": "",
       "event": "READINESS",
       "evidence_key": "DATA-2",
-      "evidence_required": "A set-level contamination result bound to a corpus digest, with no item-level holdout leak.",
+      "evidence_required": "A contamination and holdout-separation result bound to the creation digest and the holdout fingerprint set, with no item-level leak. The founder grant is not this result.",
       "evidence_states": [
         "SOURCE_VERIFIED"
       ],
-      "exit": "The oracle output is accepted.",
+      "exit": "The oracle output is accepted. G8 does not pass this row.",
       "founder_act": "NONE",
       "founder_approval": "NOT_REQUIRED",
       "freeze_row": null,
@@ -4266,37 +4386,71 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "protected-corpus-creation",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
       "covered_by": [],
       "cross_refs": [],
-      "current_evidence": "Status NOT_AUTHORIZED. The small documented set is not that corpus.",
+      "current_evidence": "No creation record. CORPUS_GENERATION_AUTHORIZATION.json remains NOT_AUTHORIZED and contains no corpus.",
       "denominator": "PRE_TRAINING",
       "depends_on": [
         "G8"
       ],
-      "escalation": "",
+      "escalation": "Founder names the corpus operator after G8. This row does not generate a corpus and does not implement class K.",
       "event": "READINESS",
       "evidence_key": "DATA-3",
-      "evidence_required": "The protected-corpus grant after P1.",
+      "evidence_required": "A protected-corpus creation record that names the corpus digest and the creating operator. The founder grant is not this record.",
       "evidence_states": [
         "SOURCE_VERIFIED"
       ],
-      "exit": "The founder grant is recorded. This register does not generate a corpus.",
-      "founder_act": "INTERMEDIATE",
-      "founder_approval": "REQUIRED",
+      "exit": "The creation record exists. The grant alone leaves this row unmet.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
       "freeze_row": null,
       "frozen_class": "M",
       "id": "DATA-3",
-      "implementation_owner": "FOUNDER",
-      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
       "pass_rule": "OWN_EVIDENCE",
-      "rationale": "Intermediate founder act. It is the same grant family as G8's exit file, checked again at corpus use. The artifact is the grant plus the corpus digest, which G8 does not contain.",
-      "source": "CORPUS_GENERATION_AUTHORIZATION.json; RSE12_06 \u00a76",
-      "status": "NOT_AUTHORIZED"
+      "rationale": "",
+      "source": "RSE12_06 \u00a76 real private corpus after P1; CORPUS_GENERATION_AUTHORIZATION.json is the grant, not the corpus",
+      "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "corpus-custody-integrity",
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No protected corpus and no custody receipt.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "DATA-3"
+      ],
+      "escalation": "Founder names a custodian who did not create the corpus. This row does not generate a corpus.",
+      "event": "READINESS",
+      "evidence_key": "DATA-5",
+      "evidence_required": "An independent custody and integrity receipt that re-hashes the protected corpus and names a custodian who is not the creator. The founder grant is not this receipt.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The receipt matches the creation digest. Creation alone does not pass this row.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "DATA-5",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a76 custody of the real private corpus",
+      "status": "NOT_STARTED"
+    },
+    {
+      "artifact_class": "DATA-4",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -4326,6 +4480,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "MODEL-0",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -4355,6 +4510,7 @@
       "status": "NOT_A_SELECTION"
     },
     {
+      "artifact_class": "MODEL-2R",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4386,6 +4542,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "MODEL-1",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4417,6 +4574,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "MODEL-2C",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4446,6 +4604,7 @@
       "status": "BLOCKED_LICENSE"
     },
     {
+      "artifact_class": "C49",
       "canonical_id": "C49",
       "class": "MANDATORY",
       "counts": false,
@@ -4475,6 +4634,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "MODEL-4",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -4504,6 +4664,7 @@
       "status": "NOT_A_SELECTION"
     },
     {
+      "artifact_class": "QUAL-1",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4535,6 +4696,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "QUAL-2",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4567,6 +4729,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "QUAL-3",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4598,6 +4761,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "QUAL-4",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -4627,6 +4791,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "TRAIN-1",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4658,6 +4823,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "TRAIN-2",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4689,6 +4855,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "TRAIN-3",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -4718,6 +4885,7 @@
       "status": "HISTORICAL"
     },
     {
+      "artifact_class": "AUTH-1",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4747,6 +4915,7 @@
       "status": "NOT_VERIFIABLE"
     },
     {
+      "artifact_class": "APP-1",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4776,6 +4945,7 @@
       "status": "OPEN_PR_UNREVIEWED"
     },
     {
+      "artifact_class": "APP-2",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4808,6 +4978,7 @@
       "status": "OPEN_PR_UNREVIEWED"
     },
     {
+      "artifact_class": "APP-3",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -4837,6 +5008,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "EV-AG-APP",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -4866,6 +5038,7 @@
       "status": "EXTERNALLY_REPORTED"
     },
     {
+      "artifact_class": "EV-AG-DOCKER",
       "canonical_id": "",
       "class": "NONBLOCKING",
       "counts": false,
@@ -4895,6 +5068,7 @@
       "status": "EXTERNALLY_REPORTED"
     },
     {
+      "artifact_class": "R65",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4924,6 +5098,7 @@
       "status": "NOT_VERIFIABLE"
     },
     {
+      "artifact_class": "FINAL-1",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -4986,6 +5161,7 @@
         "DATA-1",
         "DATA-2",
         "DATA-3",
+        "DATA-5",
         "DEC-K",
         "G1",
         "G10",
@@ -5047,6 +5223,7 @@
       "status": "NOT_STARTED"
     },
     {
+      "artifact_class": "FINAL-2",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -5078,6 +5255,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "EXEC-1",
       "canonical_id": "",
       "class": "MANDATORY",
       "counts": true,
@@ -5109,6 +5287,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "FINAL-2",
       "canonical_id": "FINAL-2",
       "class": "MANDATORY",
       "counts": false,
@@ -5138,6 +5317,7 @@
       "status": "NOT_AUTHORIZED"
     },
     {
+      "artifact_class": "EXEC-1",
       "canonical_id": "EXEC-1",
       "class": "MANDATORY",
       "counts": false,
