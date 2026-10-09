@@ -4,7 +4,7 @@ NON_NORMATIVE. Not in Manifest V3. This file does not amend RSE-ARCH-1.2, does n
 
 ## Scope label
 
-FACT: No repository file contains the title "ORNEUR Master Development and Model-Training Readiness Plan". A search of `docs/` found no that phrase. Historical "Phase 0" documents under `docs/orneur/phase-0/`, `docs/MASTER_PLAN.md`, and `docs/LAUNCH_PLAN.md` are earlier product plans. They are not this register.
+FACT: No repository file contains the title "ORNEUR Master Development and Model-Training Readiness Plan". A search of `docs/` did not find that phrase. Historical "Phase 0" documents under `docs/orneur/phase-0/`, `docs/MASTER_PLAN.md`, and `docs/LAUNCH_PLAN.md` are earlier product plans. They are not this register.
 
 ASSUMPTION: In this assignment, Phase 0 means the documentation gate that lists mandatory pre-training criteria and records what is actually true. It does not mean those historical plans, and it does not execute roadmap steps 6–14 in `RSE12_06` §7.
 
