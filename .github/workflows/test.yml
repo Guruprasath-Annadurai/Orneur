@@ -13,6 +13,24 @@ on:
       # feature-branch entry here -- a pull_request run checks out a merge
       # ref, which is not exact-SHA evidence for the commit under review.
       - 'claude/**'
+      # CI INTEGRATION REQUIREMENT (Phase 1 item 3): docker/rse-synthetic-
+      # integration-lab independently added 'docker/**' here and a sibling
+      # job (rse-docker-lab) near security-audit, on its own branch, in
+      # parallel with this branch's 'claude/**' + sse-diagnostics additions.
+      # `git merge-tree --write-tree` between the two branches (tree
+      # 1f12c8c92c6baac31cdbe1ca83a12bb7c21f0ed7 as of this writing) reports
+      # a CONTENT CONFLICT here and around the job list -- NOT a semantic
+      # incompatibility: both branches' edits are independent insertions near
+      # the same anchor lines, and a hand-reconciled file carrying BOTH push
+      # entries and BOTH new jobs validates cleanly (8 jobs: the original 6 +
+      # sse-diagnostics + rse-docker-lab). Whoever integrates these two
+      # branches must resolve this as a textual merge conflict (keep both
+      # insertions) and MUST see a subsequent CI run with all 8 jobs (pytest,
+      # torch-loss-tests, container-build, sse-diagnostics,
+      # genesis-v2-security, genesis-v2-sandbox, security-audit,
+      # rse-docker-lab) passing on the combined tree before treating
+      # integration as complete -- a clean merge of the CODE is not evidence
+      # the merged CI config is also correct.
   pull_request:
     branches:
       - main
