@@ -12,6 +12,24 @@ on:
       # be main with nothing to merge, so the two are identical today, but
       # the push trigger is the one that stays correct if that changes).
       - 'docker/**'
+      # CI INTEGRATION REQUIREMENT (Phase 1 item 3): claude/phase-a-checkpoint-2
+      # independently added 'claude/**' here and a sibling job (sse-diagnostics)
+      # near genesis-v2-security, on its own branch, in parallel with this
+      # branch's 'docker/**' + rse-docker-lab additions. `git merge-tree
+      # --write-tree HEAD origin/claude/phase-a-checkpoint-2` (tree
+      # 1f12c8c92c6baac31cdbe1ca83a12bb7c21f0ed7 as of this writing) reports a
+      # CONTENT CONFLICT here and around the job list -- NOT a semantic
+      # incompatibility: both branches' edits are independent insertions near
+      # the same anchor lines, and a hand-reconciled file carrying BOTH push
+      # entries and BOTH new jobs validates cleanly (8 jobs: the original 6 +
+      # sse-diagnostics + rse-docker-lab). Whoever integrates these two
+      # branches must resolve this as a textual merge conflict (keep both
+      # insertions) and MUST see a subsequent CI run with all 8 jobs
+      # (pytest, torch-loss-tests, container-build, sse-diagnostics,
+      # genesis-v2-security, genesis-v2-sandbox, security-audit,
+      # rse-docker-lab) passing on the combined tree before treating
+      # integration as complete -- a clean merge of the CODE is not evidence
+      # the merged CI config is also correct.
   pull_request:
     branches:
       - main

@@ -38,6 +38,19 @@ note "Source identity"
 SOURCE_SHA="$(git rev-parse HEAD)"
 echo "Source commit: $SOURCE_SHA"
 
+note "Working tree cleanliness (the content-hash comparison below is only meaningful if the image was built from EXACTLY this commit)"
+# `docker build .` builds from the WORKING TREE, not from a git ref -- an
+# uncommitted or untracked change would silently be baked into the image
+# while this script still reports it as commit $SOURCE_SHA. Refuse rather
+# than produce a reproducibility claim the recorded SHA doesn't back up.
+DIRTY="$(git status --porcelain)"
+if [[ -n "$DIRTY" ]]; then
+  bad "working tree has uncommitted/untracked changes -- refusing to claim the built image represents commit $SOURCE_SHA"
+  echo "$DIRTY" >&2
+  exit 1
+fi
+ok "working tree is clean -- the build context is exactly commit $SOURCE_SHA"
+
 note "Build image from this exact checkout"
 docker build -t "$IMAGE_TAG" . >/tmp/rse-lab-build.log 2>&1 || { cat /tmp/rse-lab-build.log; bad "image build"; exit 1; }
 IMAGE_ID="$(docker image inspect "$IMAGE_TAG" --format '{{.Id}}')"
@@ -90,11 +103,57 @@ run_scenario() {
   echo "NetworkMode=$net Memory=$mem MemorySwap=$memswap NanoCpus=$nanocpus PidsLimit=$pids ReadonlyRootfs=$ro CapDrop=$capdrop CapAdd=$capadd SecurityOpt=$secopt"
   [[ "$net" == "none" ]] && ok "effective network mode is 'none'" || bad "effective network mode is '$net', expected 'none'"
   [[ "$mem" == "268435456" ]] && ok "memory limit is 256MiB" || bad "memory limit is $mem, expected 268435456"
+  # memswap_limit == mem_limit means zero EXTRA swap beyond the memory
+  # limit itself (Docker's own convention: equal values disables additional
+  # swap) -- asserted explicitly now, not just printed, so a compose-file
+  # edit that silently dropped memswap_limit (re-enabling unbounded swap)
+  # would fail this check instead of only showing up in a value nobody re-reads.
+  [[ "$memswap" == "268435456" ]] && ok "no additional swap beyond the memory limit (MemorySwap == Memory)" || bad "MemorySwap is $memswap, expected 268435456 (== Memory, i.e. no extra swap)"
   [[ "$nanocpus" == "1000000000" ]] && ok "cpu limit is 1.0" || bad "cpu limit is $nanocpus, expected 1000000000"
   [[ "$pids" == "64" ]] && ok "pids limit is 64" || bad "pids limit is $pids, expected 64"
   [[ "$ro" == "true" ]] && ok "root filesystem is read-only" || bad "root filesystem read-only is $ro, expected true"
   [[ "$capdrop" == "[ALL]" ]] && ok "all capabilities dropped" || bad "CapDrop is $capdrop, expected [ALL]"
   [[ "$capadd" == "[]" || "$capadd" == "<no value>" ]] && ok "no capabilities added" || bad "CapAdd is $capadd, expected none"
+  if [[ "$secopt" == *"no-new-privileges:true"* ]]; then
+    ok "no-new-privileges is set"
+  else
+    bad "SecurityOpt is $secopt, expected to contain no-new-privileges:true"
+  fi
+
+  note "Fixture mount read-only enforcement"
+  set +e
+  python3 - "$CONTAINER" <<'PY'
+import json
+import subprocess
+import sys
+
+container = sys.argv[1]
+mounts = json.loads(subprocess.run(
+    ["docker", "inspect", container, "--format", "{{json .Mounts}}"],
+    capture_output=True, text=True, check=True,
+).stdout)
+expected_ro_destinations = {
+    "/app/docs/orneur/authorization",
+    "/test/entrypoint.sh",
+}
+seen = {m["Destination"]: m for m in mounts}
+missing = expected_ro_destinations - seen.keys()
+if missing:
+    print(f"FAIL expected bind mount(s) not present: {sorted(missing)}")
+    sys.exit(1)
+failed = False
+for dest in sorted(expected_ro_destinations):
+    m = seen[dest]
+    if m.get("RW") is False and m.get("Type") == "bind":
+        print(f"OK   {dest} is a read-only bind mount (RW=false)")
+    else:
+        print(f"FAIL {dest} is NOT a read-only bind mount: {m}")
+        failed = True
+sys.exit(1 if failed else 0)
+PY
+  local mount_check_exit=$?
+  set -e
+  [[ "$mount_check_exit" == "0" ]] || FAIL=1
 
   cleanup
 }
