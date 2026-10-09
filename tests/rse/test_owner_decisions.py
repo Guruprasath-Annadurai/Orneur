@@ -64,10 +64,14 @@ def test_ock1_and_och1_domains_match_the_accepted_bytes():
         Ed25519PublicKey.from_public_bytes(public).verify(challenge_signature, challenge_body)
 
 
-def test_ocr1_import_fails_closed_without_site_packages():
+def test_ocr1_import_fails_closed_without_site_packages(tmp_path):
+    """A base interpreter has no pyhpke. Isolated mode is not that check:
+    ``python -I`` still sees packages installed into the interpreter itself."""
+    venv = tmp_path / "empty"
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(venv)], check=True)
     proc = subprocess.run(
         [
-            sys.executable, "-I", "-c",
+            str(venv / "bin" / "python"), "-c",
             "import sys; sys.path.insert(0, sys.argv[1]); import orca.rse.imp4.ocr1",
             str(_REPO),
         ],
