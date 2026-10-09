@@ -76,9 +76,23 @@ Do not add them in the ratification commit.
 3. The compiled `requirements/rse.txt` contains `pyhpke==0.6.5` and a cryptography version inside `>=49,<51`, each with hashes.
 4. The new audit job's install line includes `.[rse]`. The old job's install line remains `uv pip install --system -e .`.
 
-## 6. Unresolved until the owner authorizes the patch
+## 6. What this review left open on `c127780`
 
-- pyhpke is ranged, not hashed, and absent from `uv.lock`.
-- No RSE-extra vulnerability scan has been recorded for SHA `da567d9`.
-- `cursor/**` is disclosed and recommended to remain, and it is not yet an owner-signed policy.
-- cryptography's window is intentional (`qualification` extra comment: floors that exclude named OpenSSL and X.509 advisories through the 49 series, upper bound before the next major). That comment is not a fresh advisory review of 50.0.2 against pyhpke 0.6.5.
+The list below is the state of the review commit. The successor applies Approvals 4 and 5. Do not read this section as the current tree.
+
+- pyhpke was ranged, not hashed, and absent from `uv.lock`.
+- No RSE-extra vulnerability scan had been recorded for SHA `da567d9`.
+- `cursor/**` was disclosed and not yet an owner-signed policy.
+- cryptography's window is intentional (`qualification` extra comment: floors that exclude named OpenSSL and X.509 advisories through the 49 series, upper bound before the next major).
+
+## 7. Applied after owner authorization
+
+Approval 4 and Approval 5 are recorded in `RSE_BLOCK1_OWNER_APPROVAL_RECORD.md`.
+
+- `dev` and `rse` now pin `pyhpke==0.6.5`. cryptography stays `>=49.0.0,<51.0.0`.
+- `requirements/rse.in` and `requirements/rse.txt` lock the extra's own closure with hashes for CPython 3.11, x86_64 manylinux. Resolved packages: cffi 2.1.1, cryptography 50.0.2, pycparser 3.1, pyhpke 0.6.5. pyhpke 0.6.5 requires `cryptography>=42.0.1,<52`, so 50.0.2 is inside both constraints.
+- The lock is what `uv pip install --require-hashes` installs. CI still does not use `uv sync`. `uv.lock` is not the RSE lock and was not regenerated.
+- Job `rse-dependency-audit` runs `scripts/ci/run_rse_dependency_audit.sh`. `pip-audit` has no `|| true`. The base job is unchanged and still does not cover pyhpke.
+- Local result on that closure before push: no known vulnerabilities. Base findings chromadb `PYSEC-2026-311` and diskcache `PYSEC-2026-2447` are not in `requirements/rse.txt`.
+- `cursor/**` stays on push only. No permissions key was added. The six original jobs are unchanged.
+- The RSE audit job is Python 3.11. It does not certify 3.12 or 3.13.

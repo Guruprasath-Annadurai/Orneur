@@ -2,11 +2,11 @@
 
 NON_NORMATIVE. Not in Manifest V3. Nothing in this file is ratified. No code change is authorized by writing it. The accepted implementation SHA remains `da567d927b61c41e253b42732aad249b5fdbb104`.
 
-Two requests are semantic. The five journal profiles are not repeated here. They are `NON_NORMATIVE_PROFILE_RATIFICATION_REQUESTED` in `RSE_BLOCK1_OWNER_RATIFICATION_PACKAGE.md`. Approving those profiles does not add a constitutional rule. Approving either request below would.
+Two requests are semantic. The five journal profiles are not repeated here. They are approved only as non-normative profiles. Approval 2 records the implemented OCK1 and OCH1 domains in a separate addendum and does not edit this file into the freeze. Approval 3 defers ACR-B1-2.
 
 ## ACR-B1-1 — OCK1 and OCH1 signature domains
 
-Classification: `ARCHITECTURE_CHANGE_REQUIRED` as a clarification of signed bytes. The recommended decision does not change the bytes the accepted code already signs. A different domain string would, and that alternative is not proposed for implementation.
+Classification: `ARCHITECTURE_CHANGE_REQUIRED` as a clarification of signed bytes. Status: owner Approval 2 conditions met. The approved domains are the ones this code already signs. The record is `RSE_BLOCK1_OCK1_OCH1_CLARIFICATION_ADDENDUM.md`. `records.py` is not edited. Manifest V3 is not edited. A different domain remains unauthorized.
 
 ### Frozen text
 
@@ -46,13 +46,13 @@ This resolution does not change signed bytes or verification behavior on SHA `da
 
 Signing the raw body with no domain, or reusing `"OCA1-SIG"`, would make every checkpoint and challenge produced by this tree fail verification, and the reverse. Grants, registries, and OCR1 frames would be unchanged, because they use `OCG1-SIG`, `OREG-SIG`, and `OCR1v2-SIG`. The carried medium would still need new OCK1 and OCH1 bytes. That alternative is not authorized.
 
-### Owner decision required
+### Owner decision
 
-Accept the implemented domains as the clarification, or specify a different domain and require a new implementation candidate plus independent retest. Until then the code stays as accepted and the clarification stays open. Deferral does not block describing the software gate. It does block calling the OCK1 and OCH1 domains constitutionally specified.
+Approval 2 accepted the implemented domains after the conditions in the approval record. The addendum is not a Manifest V3 row, so the domains are owner-approved for this implementation and are not yet a hashed constitutional file.
 
 ## ACR-B1-2 — Cross-role sender quarantine and class-K recovery
 
-Classification: `ARCHITECTURE_CHANGE_REQUIRED`. Not implemented. Do not implement under this request.
+Classification: `ARCHITECTURE_CHANGE_REQUIRED`. Status: owner Approval 3 DEFERS this request. Not implemented. Recipient-local quarantine stays. Unsupported classes stay fail-closed.
 
 ### What block 1 enforces today
 
@@ -94,6 +94,6 @@ Calling the recipient-local flag a substitute for those rules would be false. Th
 
 Until those sentences exist in an owner-approved amendment, implementation stays forbidden. IMP-5 is not that amendment and is not authorized.
 
-### Owner decision required
+### Owner decision
 
-Accept ACR-B1-2 as future work that stays fail-closed, or reject the wider scope and record that recipient-local quarantine is the whole requirement. Either decision is an owner act. This file does not choose it. Deferral leaves the accepted recipient-local behavior in place and leaves cross-role recovery unauthorized.
+Approval 3 defers ACR-B1-2. Recipient-local behavior stays. Cross-role recovery stays unauthorized.

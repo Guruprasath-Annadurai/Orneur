@@ -251,3 +251,23 @@ jobs:
       # a hard gate.
       - name: Run pip-audit (informational)
         run: pip-audit || true
+
+  rse-dependency-audit:
+    # Audits the optional RSE extra closure in requirements/rse.txt.
+    # It does not replace the base-install scan above and does not use `|| true`.
+    # Trigger policy is unchanged: push includes cursor/**; pull_request does not.
+    name: RSE dependency lock and vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install locked RSE dependencies and audit them
+        run: bash scripts/ci/run_rse_dependency_audit.sh
