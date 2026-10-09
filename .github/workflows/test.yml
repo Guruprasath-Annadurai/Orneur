@@ -6,6 +6,31 @@ on:
       - main
       - session-update-2026-08-25
       - 'phase14b-*'
+      # Stacked Phase A checkpoint branches (e.g. claude/phase-a-checkpoint-2,
+      # whose PR base is the prior checkpoint branch, not main) had NO CI at
+      # all before this: pull_request below only fires when the PR's base is
+      # main/session-update-2026-08-25. Push-only, same as every other
+      # feature-branch entry here -- a pull_request run checks out a merge
+      # ref, which is not exact-SHA evidence for the commit under review.
+      - 'claude/**'
+      # CI INTEGRATION REQUIREMENT (Phase 1 item 3): docker/rse-synthetic-
+      # integration-lab independently added 'docker/**' here and a sibling
+      # job (rse-docker-lab) near security-audit, on its own branch, in
+      # parallel with this branch's 'claude/**' + sse-diagnostics additions.
+      # `git merge-tree --write-tree` between the two branches (tree
+      # 1f12c8c92c6baac31cdbe1ca83a12bb7c21f0ed7 as of this writing) reports
+      # a CONTENT CONFLICT here and around the job list -- NOT a semantic
+      # incompatibility: both branches' edits are independent insertions near
+      # the same anchor lines, and a hand-reconciled file carrying BOTH push
+      # entries and BOTH new jobs validates cleanly (8 jobs: the original 6 +
+      # sse-diagnostics + rse-docker-lab). Whoever integrates these two
+      # branches must resolve this as a textual merge conflict (keep both
+      # insertions) and MUST see a subsequent CI run with all 8 jobs (pytest,
+      # torch-loss-tests, container-build, sse-diagnostics,
+      # genesis-v2-security, genesis-v2-sandbox, security-audit,
+      # rse-docker-lab) passing on the combined tree before treating
+      # integration as complete -- a clean merge of the CODE is not evidence
+      # the merged CI config is also correct.
   pull_request:
     branches:
       - main
@@ -156,6 +181,76 @@ jobs:
           assert payload.get('status') == 'alive', payload
           print('container_livez=PASS')
           PY
+
+  sse-diagnostics:
+    # Phase A CP2 post-audit hardening item 1: these Node tests existed
+    # (tests/frontend/test_sse_diagnostics.mjs) but were explicitly disclosed
+    # as NOT wired into CI. Required now, not optional/best-effort.
+    name: SSE Diagnostics (browser-loaded module, zero payload leakage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run SSE diagnostics regression suite
+        run: node --test tests/frontend/test_sse_diagnostics.mjs
+
+      - name: Set up Python (to actually serve the static file, not just read it off disk)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev)
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+
+      - name: Prove the Node test imported the SAME bytes the browser is served
+        # tests/frontend/test_sse_diagnostics.mjs imports
+        # orca/serve/web/sse_diagnostics.js directly off disk -- that alone
+        # doesn't prove it's the file a real browser actually receives (a
+        # future change to the static mount, a build step, or a reverse
+        # proxy rewrite could silently diverge the two). This starts the
+        # real FastAPI app, fetches /static/sse_diagnostics.js over real
+        # HTTP, and byte-diffs it against the file on disk.
+        run: |
+          python3 -c "
+          import subprocess, sys, time, urllib.request
+          proc = subprocess.Popen(
+              ['uvicorn', 'orca.serve.api:app', '--host', '127.0.0.1', '--port', '8099'],
+              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+          )
+          try:
+              deadline = time.time() + 20
+              served = None
+              last_err = b''
+              while time.time() < deadline:
+                  try:
+                      served = urllib.request.urlopen('http://127.0.0.1:8099/static/sse_diagnostics.js', timeout=2).read()
+                      break
+                  except Exception as exc:
+                      last_err = str(exc).encode()
+                      time.sleep(0.5)
+              if served is None:
+                  print('server never became ready:', last_err, file=sys.stderr)
+                  sys.exit(1)
+              on_disk = open('orca/serve/web/sse_diagnostics.js', 'rb').read()
+              if served != on_disk:
+                  print('MISMATCH: the served file differs from the file the Node test imported', file=sys.stderr)
+                  sys.exit(1)
+              print(f'OK served bytes ({len(served)}) match the file on disk byte-for-byte')
+          finally:
+              proc.terminate()
+              proc.wait(timeout=10)
+          "
 
   genesis-v2-security:
     # Genesis Capability Eval V2 private-holdout security suite. Unlike the lightweight jobs, the encrypted-store tests MUST EXECUTE here:

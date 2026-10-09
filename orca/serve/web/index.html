@@ -2377,6 +2377,13 @@ body {
   </div>
 </div>
 
+<!-- Classic (non-module) script, not type="module": this is a large legacy
+     inline script relying on implicit global scope (onclick="..." handlers
+     throughout this file call its top-level functions by name) -- switching
+     it to a module would break that. sse_diagnostics.js is deliberately
+     also a classic script for the same reason, exposing its one function
+     via a plain global instead of import/export. -->
+<script src="/static/sse_diagnostics.js"></script>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let sessionId = null;
@@ -2639,21 +2646,19 @@ async function sendMessage() {
     rawBuffer = '';
     _ragSources = null;
     let sseBuf = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      // stream:true carries a multi-byte UTF-8 char split across chunks
-      // over to the next decode() call instead of emitting U+FFFD for it.
-      // sseBuf carries a line split across chunks the same way "\ndata: ..."
-      // lines don't align with network reads (matches sendUltra below).
-      sseBuf += dec.decode(value, { stream: true });
-      const lines = sseBuf.split('\n');
-      sseBuf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const ev = JSON.parse(line.slice(6));
+    // DEF-CP1-03, hardened: a malformed event was previously swallowed by a
+    // bare catch{} with no signal at all, then (a prior pass) diagnosed with
+    // a truncated EXCERPT of the raw SSE line -- which could itself carry a
+    // user's own message content. orca/serve/web/sse_diagnostics.js is
+    // metadata-only (an ordinal + the parse error's name), never the
+    // payload; see that file's docstring. Bounded to 5 warnings per
+    // response either way, so a broken/hostile stream of malformed frames
+    // can't flood the console.
+    const logMalformedEvent = window.ORNEUR_SSE_DIAGNOSTICS.createMalformedEventLogger();
+    const processSseLine = (line) => {
+      if (!line.startsWith('data: ')) return;
+      try {
+        const ev = JSON.parse(line.slice(6));
           if (ev.type === 'session') {
             sessionId = ev.session_id;
           } else if (ev.type === 'rag') {
@@ -2709,9 +2714,29 @@ async function sendMessage() {
             thinkEl.remove();
             appendOrcaMsg('Error: ' + ev.text);
           }
-        } catch {}
+      } catch (err) {
+        logMalformedEvent(err); // metadata only -- `line` is deliberately not passed through
       }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // stream:true carries a multi-byte UTF-8 char split across chunks
+      // over to the next decode() call instead of emitting U+FFFD for it.
+      // sseBuf carries a line split across chunks the same way "\ndata: ..."
+      // lines don't align with network reads (matches sendUltra below).
+      sseBuf += dec.decode(value, { stream: true });
+      const lines = sseBuf.split('\n');
+      sseBuf = lines.pop();
+      for (const line of lines) processSseLine(line);
     }
+    // Flush the decoder (a trailing partial multi-byte char, if the
+    // response ended mid-character) and process whatever is left in
+    // sseBuf -- a final event with no trailing "\n\n" would otherwise be
+    // silently dropped instead of rendered.
+    sseBuf += dec.decode();
+    if (sseBuf) processSseLine(sseBuf);
   } catch(e) {
     thinkEl.remove();
     appendOrcaMsg('Connection error: ' + e.message);

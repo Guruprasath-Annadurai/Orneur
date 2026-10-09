@@ -18,6 +18,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -80,6 +81,7 @@ from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.brain.vision import is_vision_capable, encode_image, build_vision_message
 from orca.serve import session_store, ratelimit, metrics, dlp
 from orca.serve.errors import public_error
+from orca.serve import streaming
 from orca.serve.streaming import aiter_blocking
 from orca.serve.moderation import check_input, CRISIS_RESOURCES
 from orca.code import run_code
@@ -88,7 +90,20 @@ _START_TIME = time.time()
 WEB_DIR = Path(__file__).parent / "web"
 _logger = logging.getLogger("orca.serve")
 
-app = FastAPI(title="ORNEUR API", version="1.0.0", docs_url=None, redoc_url=None)
+@contextlib.asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    yield
+    # Clean shutdown for the bounded streaming worker pool (DEF-CP1-01).
+    # wait=False: blocking the event loop here to join every worker would
+    # itself hang shutdown behind a slow backend call -- the same class of
+    # problem this pool exists to avoid. Workers finish their current
+    # next()/close naturally; new submissions after this point raise, which
+    # aiter_blocking surfaces as an ordinary stream error to any request
+    # still in flight.
+    streaming.shutdown_streaming_pool(wait=False)
+
+
+app = FastAPI(title="ORNEUR API", version="1.0.0", docs_url=None, redoc_url=None, lifespan=_lifespan)
 
 
 def _is_public_edge() -> bool:
@@ -1442,13 +1457,30 @@ async def stream_chat(
                 if trace.plan_action == "tools":
                     yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
 
-                async for chunk in aiter_blocking(gen):
-                    full += chunk
-                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                # contextlib.aclosing, not a bare `async for`: breaking the
+                # loop below on client disconnect does not by itself call
+                # aclose() on an async generator (same rule as a sync
+                # generator abandoned mid-`for`) -- without this, a
+                # disconnected client's backend generator is only closed
+                # whenever Python eventually garbage-collects it, leaking
+                # the worker thread and the backend connection until then.
+                async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
+                    async for chunk in achunks:
+                        full += chunk
+                        yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                        if await request.is_disconnected():
+                            audit.log("stream_client_disconnected", user_id=user.id if user else None,
+                                      detail={"chars_sent": len(full)})
+                            return
 
                 tool_names = [tc.tool for tc in trace.tool_calls]
                 plan_action = trace.plan_action
 
+            except streaming.StreamingUnavailable as e:
+                err = public_error(e, route="/api/stream", user_id=user.id if user else None,
+                                   code="server_busy", message="The server is at capacity. Please retry shortly.")
+                yield f"data: {json.dumps(err.as_sse())}\n\n"
+                return
             except Exception as e:
                 yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
                 return
