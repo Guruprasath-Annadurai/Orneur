@@ -1,0 +1,72 @@
+# ORNEUR RSE Synthetic Integration Lab
+# Read-only proof that the frozen IMP-1 authorization locks behave correctly
+# inside this container image, plus an independent network-isolation check.
+# SYNTHETIC ONLY: no secret, no corpus, no model, no production deployment
+# configuration. Does not modify orca/rse/* or the real authorization
+# manifests under docs/orneur/authorization/ (mounted read-only below).
+#
+# Repair history (see docs/orneur/phase-21/rse/review/ for the full write-up):
+#   - The prior version of this file mounted nothing under docs/, so
+#     prove_authorization_locks() could not read its own evidence files and
+#     correctly (but unhelpfully, for a test harness) returned FAIL_CLOSED
+#     with reason UNEXPECTED.
+#   - The prior entrypoint was a single `sh -c "cmd1 && cmd2 && ... || \
+#     fallback && cmd_n"` chain. Once an early command failed, `&&` correctly
+#     skipped the following steps -- but the bare `|| fallback` later in the
+#     SAME chain absorbed that failure (its own success reset the chain), so
+#     everything written after it with `&&` ran anyway and the final exit
+#     code was 0. Replaced with docker/rse_synthetic_integration_lab/
+#     entrypoint.sh: a real, reviewable bash script under `set -euo
+#     pipefail`, with no `||` outside of self-contained `if` blocks that
+#     each end their own failing branch in an explicit `exit 1`.
+
+services:
+  rse-test-runner:
+    image: orneur-rse:latest
+    container_name: orneur-rse-test
+    # A real, reviewable script (bind-mounted read-only), not an inline
+    # shell chain -- see docker/rse_synthetic_integration_lab/entrypoint.sh.
+    # Wrapped in `timeout` as the backstop bound on total execution time
+    # (item: "verified timeout mechanism so tests cannot leave CPU-intensive
+    # Python containers running indefinitely") -- independent of, and in
+    # addition to, each individual socket probe's own 1-second timeout.
+    entrypoint: ["timeout", "--signal=KILL", "60", "bash", "/test/entrypoint.sh"]
+    environment:
+      - HARNESS_IMAGE_LABEL=orneur-rse:latest
+      # Set to "1" in a SEPARATE run (see README) to prove a real failure
+      # still aborts the harness with a nonzero exit; left unset here so
+      # this is the normal positive/negative suite, not a self-failing one.
+      - RSE_HARNESS_SELFTEST_CONTROL
+    volumes:
+      # Only the specific evidence directory the lock check reads -- never
+      # the whole docs/ tree, and never writable.
+      - ./docs/orneur/authorization:/app/docs/orneur/authorization:ro
+      - ./docker/rse_synthetic_integration_lab/entrypoint.sh:/test/entrypoint.sh:ro
+    # No network interface at all (stronger than a bridge network with no
+    # configured route): there is no veth/eth0 for a container escape or a
+    # host-routing misconfiguration to exploit in the first place. Mutually
+    # exclusive with a `networks:` block, which this file no longer has.
+    network_mode: none
+    restart: "no"
+    # Security bounds. cap_add removed entirely from the prior version --
+    # this harness binds no port, writes nothing outside its own tmpfs, and
+    # needs no elevated capability at all beyond the base image's defaults
+    # minus everything `cap_drop: ALL` removes.
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /root/.orca
+    cap_drop:
+      - ALL
+    # Resource and process-count bounds (the prior version had none at all).
+    # Matches the discipline already used by this repo's other Docker-based
+    # RSE-adjacent harness (infra/tier0-local/scripts/genesis_v2_tier0_local.py's
+    # hardened_run_args: --pids-limit 64 --memory 256m --cpus 1).
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1.0
+    pids_limit: 64
+
+volumes: {}
