@@ -53,7 +53,7 @@ code   = []   # sandboxed exec uses stdlib only
 voice  = []   # Web Speech API — browser-native, no Python deps
 mcp    = ["mcp>=1.0.0,<2.0.0"]
 stripe = ["stripe>=7.0.0"]
-dev    = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "mypy>=1.10.0", "build>=1.0.0", "pyyaml>=6.0", "cryptography>=49.0.0,<51.0.0"]   # pyyaml: workflow-boundary tests parse .github/workflows; cryptography: vetted Ed25519 for RSE-IMP-1 synthetic signatures
+dev    = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "mypy>=1.10.0", "build>=1.0.0", "pyyaml>=6.0", "cryptography>=49.0.0,<51.0.0", "pyhpke>=0.6.5,<0.7"]   # pyyaml: workflow-boundary tests parse .github/workflows; cryptography: vetted Ed25519; pyhpke: RFC 9180 Base for OCR1 v2 (cryptography's one-shot HPKE API has no AAD or sequence)
 all    = [
     "chromadb>=0.5.0",
     "pypdf>=4.0.0", "python-docx>=1.1.0", "pdfminer.six>=20221105",
@@ -85,6 +85,12 @@ nvidia = [
 # excluded; only AESGCM is used. <51 keeps a reviewed major-version window (50.0.0 additionally fixes a PKCS#7 issue in an API we do not use).
 qualification = [
     "cryptography>=49.0.0,<51.0.0",
+]
+# OCR1 v2 import path. Not a base dependency: `pip install .` cannot import OCR1.
+# pyhpke is the RFC 9180 library named by RSE12_04. Presence in this extra is not an audit.
+rse = [
+    "cryptography>=49.0.0,<51.0.0",
+    "pyhpke>=0.6.5,<0.7",
 ]
 frontier = [
     "openai>=1.0.0",
