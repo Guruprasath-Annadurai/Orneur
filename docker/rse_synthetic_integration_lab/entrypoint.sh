@@ -112,7 +112,84 @@ write(root, valid_corpus, {**valid_model, "gpu_allowed": True}, valid_runners)
 r = prove_authorization_locks(root=root)
 assert not r.ok and r.reason == "PROVIDER_LOCK", f"expected FAIL_CLOSED/PROVIDER_LOCK, got {r.decision} ({r.reason})"
 print(f"OK Tampered GPU-allowed manifest correctly refused: {r.decision} ({r.reason})")
+
+# 4. Qualification/model status -- a third, distinct branch (checked before
+#    the provider/spend checks in locks.py, so this value alone must trip it
+#    even though gpu_allowed/network_provider_inference_allowed stay valid).
+write(root, valid_corpus, {**valid_model, "status": "AUTHORIZED"}, valid_runners)
+r = prove_authorization_locks(root=root)
+assert not r.ok and r.reason == "QUALIFICATION_LOCK", f"expected FAIL_CLOSED/QUALIFICATION_LOCK, got {r.decision} ({r.reason})"
+print(f"OK Tampered qualification-status manifest correctly refused: {r.decision} ({r.reason})")
+
+# 5. Provider lock's OTHER field -- network_provider_inference_allowed, not
+#    just gpu_allowed (same reason, a genuinely different tampered field).
+write(root, valid_corpus, {**valid_model, "network_provider_inference_allowed": True}, valid_runners)
+r = prove_authorization_locks(root=root)
+assert not r.ok and r.reason == "PROVIDER_LOCK", f"expected FAIL_CLOSED/PROVIDER_LOCK, got {r.decision} ({r.reason})"
+print(f"OK Tampered network-provider-inference-allowed manifest correctly refused: {r.decision} ({r.reason})")
+
+# 6. Spend lock -- a nonzero, non-None max_spend_usd.
+write(root, valid_corpus, {**valid_model, "max_spend_usd": 1}, valid_runners)
+r = prove_authorization_locks(root=root)
+assert not r.ok and r.reason == "SPEND_LOCK", f"expected FAIL_CLOSED/SPEND_LOCK, got {r.decision} ({r.reason})"
+print(f"OK Tampered max-spend-usd manifest correctly refused: {r.decision} ({r.reason})")
+
+# 7. Runner lock, empty-records branch.
+write(root, valid_corpus, valid_model, {"records": []})
+r = prove_authorization_locks(root=root)
+assert not r.ok and r.reason == "RUNNER_LOCK", f"expected FAIL_CLOSED/RUNNER_LOCK (empty records), got {r.decision} ({r.reason})"
+print(f"OK Empty runner-registry manifest correctly refused: {r.decision} ({r.reason})")
+
+# 8. Runner lock, not-a-list branch (records present but malformed shape).
+write(root, valid_corpus, valid_model, {"records": "not-a-list"})
+r = prove_authorization_locks(root=root)
+assert not r.ok and r.reason == "RUNNER_LOCK", f"expected FAIL_CLOSED/RUNNER_LOCK (non-list records), got {r.decision} ({r.reason})"
+print(f"OK Non-list runner-registry manifest correctly refused: {r.decision} ({r.reason})")
+
+# 9. Runner lock, a registered runner whose state isn't REGISTERED_NOT_AUTHORIZED.
+write(root, valid_corpus, valid_model, {"records": [{"state": "REGISTERED_NOT_AUTHORIZED"}, {"state": "AUTHORIZED"}]})
+r = prove_authorization_locks(root=root)
+assert not r.ok and r.reason == "RUNNER_LOCK", f"expected FAIL_CLOSED/RUNNER_LOCK (bad runner state), got {r.decision} ({r.reason})"
+print(f"OK Runner-registry manifest with one non-REGISTERED_NOT_AUTHORIZED row correctly refused: {r.decision} ({r.reason})")
+
+# 10. Malformed JSON -- not even valid JSON syntax, as opposed to valid JSON
+#     with a tampered value (cases 2-9 above). A distinct failure mode: this
+#     must fail inside json.loads itself, caught by @guard's generic
+#     exception handler, same reason as the "missing manifests" case above.
+syntax_root = Path("$FIXTURE_ROOT") / "malformed-json"
+syntax_dir = syntax_root / "docs" / "orneur" / "authorization"
+syntax_dir.mkdir(parents=True)
+(syntax_dir / "CORPUS_GENERATION_AUTHORIZATION.json").write_text("{not valid json: ,,,")
+(syntax_dir / "MODEL_EVAL_AUTHORIZATION.json").write_text(json.dumps(valid_model))
+(syntax_dir / "QUALIFICATION_RUNNER_REGISTRY.json").write_text(json.dumps(valid_runners))
+r = prove_authorization_locks(root=syntax_root)
+assert not r.ok, f"expected FAIL_CLOSED for syntactically invalid JSON, got {r.decision}"
+assert r.decision == "FAIL_CLOSED"
+print(f"OK Syntactically invalid JSON correctly refused: {r.decision} ({r.reason})")
+
+# 11. Valid JSON, wrong top-level shape -- a JSON array instead of an
+#     object. _read_json() explicitly rejects any non-dict top level; this
+#     is a different code path from "doesn't parse at all" (case 10).
+shape_root = Path("$FIXTURE_ROOT") / "wrong-shape"
+shape_dir = shape_root / "docs" / "orneur" / "authorization"
+shape_dir.mkdir(parents=True)
+(shape_dir / "CORPUS_GENERATION_AUTHORIZATION.json").write_text(json.dumps(["not", "an", "object"]))
+(shape_dir / "MODEL_EVAL_AUTHORIZATION.json").write_text(json.dumps(valid_model))
+(shape_dir / "QUALIFICATION_RUNNER_REGISTRY.json").write_text(json.dumps(valid_runners))
+r = prove_authorization_locks(root=shape_root)
+assert not r.ok, f"expected FAIL_CLOSED for a non-object top-level JSON value, got {r.decision}"
+assert r.decision == "FAIL_CLOSED"
+print(f"OK Non-object top-level JSON correctly refused: {r.decision} ({r.reason})")
 PY
+echo
+echo "NOTE on branch coverage: orca/rse/imp1/locks.py has one more FAIL_CLOSED"
+echo "branch, \"POSTURE\" -- it checks orca.rse.imp1.verdict.POSTURE, a fixed"
+echo "code-level constant tuple, not a value read from any of these JSON"
+echo "files. It cannot be exercised by tampering with a mounted/synthetic"
+echo "manifest (that would require editing orca/rse/imp1/verdict.py itself,"
+echo "which this harness must not do -- frozen RSE kernel). Documented here"
+echo "as a known, structurally-unreachable-from-this-harness gap, not"
+echo "silently skipped."
 echo
 
 echo "--- Control: a deliberately failed required assertion must abort this harness with a nonzero exit ---"
@@ -128,6 +205,7 @@ echo
 
 echo "--- Network isolation (network_mode: none) ---"
 python3 <<'PY'
+import errno
 import socket
 import sys
 
@@ -149,23 +227,70 @@ import sys
 with open("/proc/net/route") as f:
     rows = [line for line in f.read().splitlines()[1:] if line.strip()]
 if rows:
-    print(f"FAIL: expected an empty routing table (network_mode: none), found {len(rows)} route(s): {rows}",
+    print(f"FAIL: expected an empty IPv4 routing table (network_mode: none), found {len(rows)} route(s): {rows}",
           file=sys.stderr)
     sys.exit(1)
-print("OK Routing table is empty -- no gateway exists for any address to be reachable through")
+print("OK IPv4 routing table is empty -- no gateway exists for any address to be reachable through")
 
-for host, port, label in (("8.8.8.8", 53, "8.8.8.8:53"), ("1.1.1.1", 53, "1.1.1.1:53")):
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# "Do not classify every network error as proof of isolation": only the
+# specific errno a missing route actually produces counts. ECONNREFUSED
+# (a packet reached somewhere and got rejected -- the OPPOSITE of
+# isolation), a timeout (ambiguous -- could mean a slow/filtered path
+# rather than no route at all), or any other OSError are each treated as a
+# DISTINCT, unexpected outcome and fail the check, rather than being folded
+# into "egress refused, so isolation must be working."
+EXPECTED_NO_ROUTE_ERRNOS = {errno.ENETUNREACH, errno.EHOSTUNREACH}
+
+def probe(family, host, port, label):
+    s = socket.socket(family, socket.SOCK_STREAM)
     s.settimeout(1)
     try:
         s.connect((host, port))
     except OSError as exc:
-        print(f"OK Egress to {label} refused ({type(exc).__name__}: {exc})")
+        if exc.errno in EXPECTED_NO_ROUTE_ERRNOS:
+            print(f"OK Egress to {label} refused with the expected no-route errno "
+                  f"({errno.errorcode.get(exc.errno, exc.errno)}: {exc})")
+        else:
+            print(f"FAIL: egress to {label} failed, but NOT with a no-route errno -- "
+                  f"got {errno.errorcode.get(exc.errno, exc.errno)}: {exc}. This is not "
+                  f"classified as proof of isolation.", file=sys.stderr)
+            sys.exit(1)
     else:
         print(f"FAIL: egress to {label} succeeded -- network isolation is not in effect", file=sys.stderr)
         sys.exit(1)
     finally:
         s.close()
+
+for host, port, label in (("8.8.8.8", 53, "8.8.8.8:53 (IPv4)"), ("1.1.1.1", 53, "1.1.1.1:53 (IPv4)")):
+    probe(socket.AF_INET, host, port, label)
+
+# IPv6. HONEST LIMITATION, not glossed over: on this Docker Desktop setup,
+# the host's Docker daemon does not provision IPv6 for ANY container
+# network, isolated or not -- a normal bridge-networked container shows the
+# IDENTICAL /proc/net/if_inet6 (loopback only) and /proc/net/ipv6_route
+# (three loopback-scoped rows, same as below) as a --network none one, and
+# gets the SAME ENETUNREACH on an IPv6 connect attempt (verified empirically
+# against this exact image before writing this check). So neither of these
+# IPv6 signals, on their own, discriminates "network_mode: none" from
+# "Docker on this host just doesn't do IPv6". They are still real, genuine
+# IPv6 egress-denial evidence (worth having), but the AUTHORITATIVE
+# confirmation of the effective Docker network mode is the external,
+# host-side `docker inspect --format '{{.HostConfig.NetworkMode}}'` check in
+# scripts/rse_docker_lab_verify.sh, run from outside the container (this
+# entrypoint deliberately has no docker.sock mount -- that would be a far
+# larger privilege-escalation surface than the property it would verify).
+with open("/proc/net/ipv6_route") as f:
+    v6_rows = [line for line in f.read().splitlines() if line.strip()]
+non_loopback_v6 = [row for row in v6_rows if not row.rstrip().endswith(" lo")]
+if non_loopback_v6:
+    print(f"FAIL: found a non-loopback IPv6 route: {non_loopback_v6}", file=sys.stderr)
+    sys.exit(1)
+print(f"OK IPv6 routing table has only loopback-scoped entries ({len(v6_rows)} row(s), all via 'lo'). "
+      f"NOTE: on this host this is also true under a normal (non-isolated) network -- see comment above.")
+
+for host, port, label in (("2001:4860:4860::8888", 53, "2001:4860:4860::8888:53 (IPv6)"),
+                          ("2606:4700:4700::1111", 53, "2606:4700:4700::1111:53 (IPv6)")):
+    probe(socket.AF_INET6, host, port, label)
 PY
 echo
 
