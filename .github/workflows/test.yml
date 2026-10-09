@@ -6,6 +6,30 @@ on:
       - main
       - session-update-2026-08-25
       - 'phase14b-*'
+      # Push-only, same pattern as every other feature-branch entry here: a
+      # pull_request run checks out a merge ref, which is not exact-SHA
+      # evidence for the commit under review (this branch's base happens to
+      # be main with nothing to merge, so the two are identical today, but
+      # the push trigger is the one that stays correct if that changes).
+      - 'docker/**'
+      # CI INTEGRATION REQUIREMENT (Phase 1 item 3): claude/phase-a-checkpoint-2
+      # independently added 'claude/**' here and a sibling job (sse-diagnostics)
+      # near genesis-v2-security, on its own branch, in parallel with this
+      # branch's 'docker/**' + rse-docker-lab additions. `git merge-tree
+      # --write-tree HEAD origin/claude/phase-a-checkpoint-2` (tree
+      # 1f12c8c92c6baac31cdbe1ca83a12bb7c21f0ed7 as of this writing) reports a
+      # CONTENT CONFLICT here and around the job list -- NOT a semantic
+      # incompatibility: both branches' edits are independent insertions near
+      # the same anchor lines, and a hand-reconciled file carrying BOTH push
+      # entries and BOTH new jobs validates cleanly (8 jobs: the original 6 +
+      # sse-diagnostics + rse-docker-lab). Whoever integrates these two
+      # branches must resolve this as a textual merge conflict (keep both
+      # insertions) and MUST see a subsequent CI run with all 8 jobs
+      # (pytest, torch-loss-tests, container-build, sse-diagnostics,
+      # genesis-v2-security, genesis-v2-sandbox, security-audit,
+      # rse-docker-lab) passing on the combined tree before treating
+      # integration as complete -- a clean merge of the CODE is not evidence
+      # the merged CI config is also correct.
   pull_request:
     branches:
       - main
@@ -250,3 +274,30 @@ jobs:
       # a hard gate.
       - name: Run pip-audit (informational)
         run: pip-audit || true
+
+  rse-docker-lab:
+    # Phase 1 targeted remediation items 2-8. Dedicated, bounded CI coverage
+    # for PR #13's docker-rse-integration-lab.yml: builds orneur-rse:latest
+    # from THIS checked-out commit (not a possibly-stale pre-built image),
+    # proves the image's /app/orca content is byte-for-byte identical to
+    # this commit's orca/ tree, runs both the normal and the
+    # deliberate-control-failure scenarios via `docker compose up
+    # --exit-code-from`, and verifies the effective Docker network mode and
+    # every resource limit from OUTSIDE the container via `docker inspect` --
+    # see scripts/rse_docker_lab_verify.sh for the single source of truth
+    # this step invokes (also runnable locally, unchanged).
+    name: RSE Docker Synthetic Integration Lab (bounded, exit-code enforced)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Record exact source SHA under test
+        run: |
+          echo "source_sha=$(git rev-parse HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
+          git rev-parse HEAD
+
+      - name: Run the full verification script (build, reproducibility, both exit-code scenarios, resource/network-mode checks, cleanup)
+        run: bash scripts/rse_docker_lab_verify.sh
