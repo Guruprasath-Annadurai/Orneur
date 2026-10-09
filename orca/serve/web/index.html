@@ -2377,6 +2377,13 @@ body {
   </div>
 </div>
 
+<!-- Classic (non-module) script, not type="module": this is a large legacy
+     inline script relying on implicit global scope (onclick="..." handlers
+     throughout this file call its top-level functions by name) -- switching
+     it to a module would break that. sse_diagnostics.js is deliberately
+     also a classic script for the same reason, exposing its one function
+     via a plain global instead of import/export. -->
+<script src="/static/sse_diagnostics.js"></script>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let sessionId = null;
@@ -2639,24 +2646,15 @@ async function sendMessage() {
     rawBuffer = '';
     _ragSources = null;
     let sseBuf = '';
-    // DEF-CP1-03: a malformed event was previously swallowed by a bare
-    // catch{} with no signal at all -- undiagnosable from the console if a
-    // backend change ever broke the event shape. Bounded: a short, truncated
-    // excerpt (never the full payload, which could be large or contain a
-    // user's own message text) and a hard cap on how many get logged, so a
-    // broken/hostile stream of malformed frames can't be used to flood the
-    // browser console.
-    let malformedLogged = 0;
-    const MALFORMED_LOG_CAP = 5;
-    const logMalformedEvent = (line, err) => {
-      malformedLogged += 1;
-      if (malformedLogged > MALFORMED_LOG_CAP) return;
-      const excerpt = line.length > 120 ? line.slice(0, 120) + '…' : line;
-      console.warn('[stream] could not parse SSE event:', err && err.message, excerpt);
-      if (malformedLogged === MALFORMED_LOG_CAP) {
-        console.warn(`[stream] suppressing further malformed-event warnings for this response (cap=${MALFORMED_LOG_CAP})`);
-      }
-    };
+    // DEF-CP1-03, hardened: a malformed event was previously swallowed by a
+    // bare catch{} with no signal at all, then (a prior pass) diagnosed with
+    // a truncated EXCERPT of the raw SSE line -- which could itself carry a
+    // user's own message content. orca/serve/web/sse_diagnostics.js is
+    // metadata-only (an ordinal + the parse error's name), never the
+    // payload; see that file's docstring. Bounded to 5 warnings per
+    // response either way, so a broken/hostile stream of malformed frames
+    // can't flood the console.
+    const logMalformedEvent = window.ORNEUR_SSE_DIAGNOSTICS.createMalformedEventLogger();
     const processSseLine = (line) => {
       if (!line.startsWith('data: ')) return;
       try {
@@ -2717,7 +2715,7 @@ async function sendMessage() {
             appendOrcaMsg('Error: ' + ev.text);
           }
       } catch (err) {
-        logMalformedEvent(line, err);
+        logMalformedEvent(err); // metadata only -- `line` is deliberately not passed through
       }
     };
 

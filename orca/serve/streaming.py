@@ -35,6 +35,32 @@ stream occupies exactly one admission slot and, while waiting on a token,
 exactly one worker thread; the two are kept in lockstep by using the same
 capacity for both, so "admitted" and "has a thread available when it needs
 one" are the same guarantee.
+
+DEF-CP1-01 hardening (post-Checkpoint-2-audit finding): that lockstep claim
+was wrong for the cancelled-mid-wait case. ``aiter_blocking`` previously
+wrapped its whole body in ``async with StreamAdmission():`` -- which
+releases on *Python-level scope exit*, i.e. the moment this async
+generator unwinds (cancellation, the consumer calling ``aclose()``). But
+when the consumer is cancelled while a ``next()`` call is genuinely stuck
+in a worker thread (a hung backend), that thread is NOT free yet -- it's
+still blocked inside ``next()`` and will stay that way until the backend
+eventually returns or the process is killed. Releasing admission at scope
+exit let a new stream be ADMITTED while the actual thread count available
+to serve it hadn't changed: repeat "start a stream against a hung backend,
+then cancel" ``MAX_CONCURRENT_STREAMS`` times, and every worker thread is
+now permanently wedged in a ``next()`` that will never return, while
+admission has long since reset to 0 and kept accepting -- new streams'
+``_POOL.submit()`` calls then queue forever behind threads that are never
+coming back. Exactly the unbounded-queuing failure mode this module exists
+to prevent, just reached via repeated cancellation instead of concurrency.
+
+The fix: admission is now acquired and released explicitly, not via
+``async with``, and release is deferred to the point where the worker
+thread is actually known to be free again -- the ``concurrent.futures``
+completion callback on the in-flight ``next()`` call, not this async
+generator's own cleanup. A cancelled/abandoned stream keeps its admission
+slot occupied for exactly as long as its thread stays occupied, which is
+the only thing admission is meant to track.
 """
 from __future__ import annotations
 
@@ -76,16 +102,21 @@ class StreamingUnavailable(Exception):
 
 
 class StreamAdmission:
-    """``async with StreamAdmission():`` around one stream's lifetime.
+    """One admission slot. ``acquire()``/``release()`` are plain, synchronous,
+    non-blocking calls -- there is nothing to await; the whole point is that
+    acquiring never waits for a slot to free up, it either gets one now or
+    raises immediately.
 
-    Raises :class:`StreamingUnavailable` immediately (never queues or waits)
-    if the pool is already at ``MAX_CONCURRENT_STREAMS`` or has been shut down.
+    Also usable as ``async with StreamAdmission():`` for callers who DO want
+    scope-tied acquire/release (tests, and anything that isn't deferring
+    release past its own exit) -- ``aiter_blocking`` below deliberately does
+    NOT use that form, for the reason in the module docstring.
     """
 
     def __init__(self) -> None:
         self._acquired = False
 
-    async def __aenter__(self) -> "StreamAdmission":
+    def acquire(self) -> None:
         global _in_use
         if _shut_down:
             raise StreamingUnavailable("streaming is shutting down")
@@ -94,14 +125,20 @@ class StreamAdmission:
                 raise StreamingUnavailable(f"at capacity ({MAX_CONCURRENT_STREAMS} concurrent streams)")
             _in_use += 1
             self._acquired = True
-        return self
 
-    async def __aexit__(self, *_exc) -> None:
+    def release(self) -> None:
         global _in_use
         if self._acquired:
             with _admission_lock:
                 _in_use -= 1
             self._acquired = False
+
+    async def __aenter__(self) -> "StreamAdmission":
+        self.acquire()
+        return self
+
+    async def __aexit__(self, *_exc) -> None:
+        self.release()
 
 
 def pool_stats() -> dict:
@@ -156,22 +193,47 @@ async def aiter_blocking(gen: Iterator[T]) -> AsyncIterator[T]:
     Does its own admission: raises :class:`StreamingUnavailable` immediately
     if the pool is saturated, instead of silently queuing behind it (the
     caller never even starts reading from the backend in that case).
+
+    Admission release is NOT tied to this async generator's own exit (see
+    the "DEF-CP1-01 hardening" module docstring section for why): it is
+    deferred to whenever the worker thread that was actually occupied is
+    confirmed free again, which may be well after this function has
+    returned/been cancelled, if a ``next()`` call is genuinely stuck.
     """
-    async with StreamAdmission():
-        inflight: concurrent.futures.Future | None = None
-        try:
-            while True:
-                inflight = _POOL.submit(next, gen, _END)
-                item = await asyncio.wrap_future(inflight)
-                inflight = None
-                if item is _END:
-                    return
-                yield item
-        finally:
-            if inflight is not None and not inflight.done():
-                # Cancelled mid-wait: the worker thread still owns the generator.
-                inflight.add_done_callback(lambda _fut: _close_quietly(gen))
-            else:
+    admission = StreamAdmission()
+    admission.acquire()  # raises StreamingUnavailable immediately; nothing to release yet if so
+    inflight: concurrent.futures.Future | None = None
+    try:
+        while True:
+            inflight = _POOL.submit(next, gen, _END)
+            item = await asyncio.wrap_future(inflight)
+            inflight = None
+            if item is _END:
+                return
+            yield item
+    finally:
+        if inflight is not None and not inflight.done():
+            # The worker thread still owns this next() call and is NOT free
+            # yet, regardless of what happens to this async generator from
+            # here (cancelled, closed, or the consumer just stopped reading).
+            # Release only once the callback actually fires -- i.e. only
+            # once the thread is confirmed free -- so admission can never
+            # outrun real thread availability, even under repeated
+            # cancellation against a backend that never returns.
+            def _on_worker_free(_fut: concurrent.futures.Future) -> None:
+                try:
+                    _close_quietly(gen)
+                finally:
+                    admission.release()
+
+            inflight.add_done_callback(_on_worker_free)
+        else:
+            # The thread that ran the last (or only) next() call has
+            # already returned -- it's free now, so release immediately
+            # after scheduling/awaiting the close.
+            try:
                 close_future = _schedule_close(gen)
                 if close_future is not None:
                     await asyncio.shield(asyncio.wrap_future(close_future))
+            finally:
+                admission.release()

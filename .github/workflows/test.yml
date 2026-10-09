@@ -6,6 +6,13 @@ on:
       - main
       - session-update-2026-08-25
       - 'phase14b-*'
+      # Stacked Phase A checkpoint branches (e.g. claude/phase-a-checkpoint-2,
+      # whose PR base is the prior checkpoint branch, not main) had NO CI at
+      # all before this: pull_request below only fires when the PR's base is
+      # main/session-update-2026-08-25. Push-only, same as every other
+      # feature-branch entry here -- a pull_request run checks out a merge
+      # ref, which is not exact-SHA evidence for the commit under review.
+      - 'claude/**'
   pull_request:
     branches:
       - main
