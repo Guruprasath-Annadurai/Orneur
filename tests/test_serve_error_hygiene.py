@@ -45,19 +45,54 @@ def _assert_no_leak(text: str):
         assert fragment not in text
 
 
-def test_chat_error_hides_upstream_text_and_logs_it(client, monkeypatch, caplog):
+def test_chat_error_hides_upstream_text_and_logs_only_metadata(client, monkeypatch, caplog):
+    """DEF-CP1-02: routine (default) logging is metadata-only. No part of the
+    upstream exception's own text -- not even a redacted form of it -- is
+    expected to appear here; this is an allowlist (route/error_id/user/type),
+    not a denylist over exception text (see orca/serve/errors.py docstring
+    for why a denylist can't be trusted to catch things like an org id or a
+    file path that have no fixed shape to pattern-match)."""
     _wire_failing_frontier(monkeypatch, RuntimeError(LEAK))
-    with caplog.at_level(logging.ERROR, logger="orca.serve.errors"):
+    with caplog.at_level(logging.DEBUG, logger="orca.serve.errors"):
         resp = client.post("/api/chat", json={"message": "hi", "model_variant": "nano"})
     assert resp.status_code == 500
     body = resp.json()
     _assert_no_leak(resp.text)
     assert body["code"] == "backend_error"
     assert len(body["error_id"]) == 12
-    # The operator can find the failure by the id the caller was given.
+    # The operator can find the failure by the id the caller was given...
     record = next(r for r in caplog.records if body["error_id"] in r.getMessage())
-    assert record.exc_info is not None
-    assert LEAK in str(record.exc_info[1])
+    assert record.exc_info is None
+    assert "RuntimeError" in record.getMessage()  # ...and knows what kind of failure it was
+    # ...but the exception's own text reached no log record at all, at any level.
+    full_log = "\n".join(r.getMessage() for r in caplog.records)
+    _assert_no_leak(full_log)
+
+
+def test_exception_detail_logging_is_opt_in_and_redacts_known_shapes(client, monkeypatch, caplog):
+    """ORNEUR_LOG_EXCEPTION_DETAIL=1 is a local-debugging escape hatch, not the
+    default -- and even then, only known-shaped secrets are guaranteed
+    redacted (the sk-... key here), not arbitrary text (the org id and file
+    path are NOT asserted absent below: see module docstring)."""
+    monkeypatch.setenv("ORNEUR_LOG_EXCEPTION_DETAIL", "1")
+    _wire_failing_frontier(monkeypatch, RuntimeError(LEAK))
+    with caplog.at_level(logging.DEBUG, logger="orca.serve.errors"):
+        resp = client.post("/api/chat", json={"message": "hi", "model_variant": "nano"})
+    assert resp.status_code == 500
+    body = resp.json()
+    detail_records = [r for r in caplog.records if body["error_id"] in r.getMessage() and r.levelno == logging.DEBUG]
+    assert detail_records, "expected a debug-level detail record when the opt-in is set"
+    detail = detail_records[0].getMessage()
+    assert "sk-" not in detail and "qqqqqqqqqqqqqqqqqqqqqqqq" not in detail  # known shape: redacted
+    assert "REDACTED-OPENAI_API_KEY" in detail
+
+
+def test_exception_detail_logging_defaults_off(client, monkeypatch, caplog):
+    assert "ORNEUR_LOG_EXCEPTION_DETAIL" not in __import__("os").environ
+    _wire_failing_frontier(monkeypatch, RuntimeError(LEAK))
+    with caplog.at_level(logging.DEBUG, logger="orca.serve.errors"):
+        client.post("/api/chat", json={"message": "hi", "model_variant": "nano"})
+    assert not any(r.levelno == logging.DEBUG for r in caplog.records)
 
 
 def test_stream_error_event_hides_upstream_text(client, monkeypatch):
