@@ -1,0 +1,5310 @@
+{
+  "denominator_application_ids": [
+    "SUP-2",
+    "APP-1",
+    "APP-2"
+  ],
+  "denominator_execution_ids": [
+    "FINAL-2",
+    "EXEC-1"
+  ],
+  "denominator_post_training_ids": [
+    "MODEL-2C"
+  ],
+  "denominator_pretraining_ids": [
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G5",
+    "G6",
+    "G7",
+    "G8",
+    "G9",
+    "G10",
+    "G11",
+    "G12",
+    "C01",
+    "C02",
+    "C04",
+    "C05",
+    "C09",
+    "C10",
+    "C11",
+    "C12",
+    "C13",
+    "C14",
+    "C17",
+    "C18",
+    "C19",
+    "C20",
+    "C21",
+    "C45",
+    "C15",
+    "C03",
+    "C06",
+    "C07",
+    "C08",
+    "C16",
+    "C44",
+    "C22",
+    "C23",
+    "C24",
+    "C25",
+    "C26",
+    "C28",
+    "C29",
+    "C30",
+    "C31",
+    "C32",
+    "C33",
+    "C34",
+    "C35",
+    "C36",
+    "C37",
+    "C38",
+    "DEC-K",
+    "C27",
+    "C39",
+    "C40",
+    "C41",
+    "C42",
+    "C43",
+    "C46",
+    "C47",
+    "C48",
+    "C49",
+    "C50",
+    "HW-01",
+    "HW-02",
+    "HW-03",
+    "HW-06",
+    "HW-08",
+    "HW-11",
+    "HW-16",
+    "HW-18",
+    "HW-19",
+    "HW-20",
+    "HW-21",
+    "HW-24",
+    "HW-FORGE",
+    "SUP-1",
+    "SUP-3",
+    "P2-1",
+    "P2-2",
+    "P2-4",
+    "DATA-1",
+    "DATA-2",
+    "DATA-3",
+    "MODEL-2R",
+    "MODEL-1",
+    "QUAL-1",
+    "QUAL-2",
+    "QUAL-3",
+    "TRAIN-1",
+    "TRAIN-2",
+    "AUTH-1",
+    "R65",
+    "FINAL-1"
+  ],
+  "edges": [
+    {
+      "from": "G2",
+      "to": "G1"
+    },
+    {
+      "from": "G3",
+      "to": "G2"
+    },
+    {
+      "from": "G4",
+      "to": "G3"
+    },
+    {
+      "from": "G5",
+      "to": "G4"
+    },
+    {
+      "from": "G6",
+      "to": "G5"
+    },
+    {
+      "from": "G6",
+      "to": "C08"
+    },
+    {
+      "from": "G6",
+      "to": "C22"
+    },
+    {
+      "from": "G6",
+      "to": "C23"
+    },
+    {
+      "from": "G6",
+      "to": "C24"
+    },
+    {
+      "from": "G6",
+      "to": "C25"
+    },
+    {
+      "from": "G6",
+      "to": "C26"
+    },
+    {
+      "from": "G6",
+      "to": "C27"
+    },
+    {
+      "from": "G6",
+      "to": "C28"
+    },
+    {
+      "from": "G6",
+      "to": "C29"
+    },
+    {
+      "from": "G6",
+      "to": "C30"
+    },
+    {
+      "from": "G6",
+      "to": "C31"
+    },
+    {
+      "from": "G6",
+      "to": "C32"
+    },
+    {
+      "from": "G6",
+      "to": "C33"
+    },
+    {
+      "from": "G6",
+      "to": "C34"
+    },
+    {
+      "from": "G6",
+      "to": "C35"
+    },
+    {
+      "from": "G6",
+      "to": "C36"
+    },
+    {
+      "from": "G6",
+      "to": "C37"
+    },
+    {
+      "from": "G6",
+      "to": "C38"
+    },
+    {
+      "from": "G6",
+      "to": "C44"
+    },
+    {
+      "from": "G6",
+      "to": "HW-01"
+    },
+    {
+      "from": "G6",
+      "to": "HW-02"
+    },
+    {
+      "from": "G6",
+      "to": "HW-03"
+    },
+    {
+      "from": "G6",
+      "to": "HW-06"
+    },
+    {
+      "from": "G6",
+      "to": "HW-08"
+    },
+    {
+      "from": "G6",
+      "to": "HW-11"
+    },
+    {
+      "from": "G6",
+      "to": "HW-16"
+    },
+    {
+      "from": "G6",
+      "to": "HW-18"
+    },
+    {
+      "from": "G6",
+      "to": "HW-19"
+    },
+    {
+      "from": "G6",
+      "to": "HW-20"
+    },
+    {
+      "from": "G6",
+      "to": "HW-21"
+    },
+    {
+      "from": "G6",
+      "to": "HW-24"
+    },
+    {
+      "from": "G6",
+      "to": "HW-FORGE"
+    },
+    {
+      "from": "G7",
+      "to": "G6"
+    },
+    {
+      "from": "G8",
+      "to": "G7"
+    },
+    {
+      "from": "G9",
+      "to": "G8"
+    },
+    {
+      "from": "G10",
+      "to": "G9"
+    },
+    {
+      "from": "G11",
+      "to": "G10"
+    },
+    {
+      "from": "G11",
+      "to": "P2-1"
+    },
+    {
+      "from": "G11",
+      "to": "P2-2"
+    },
+    {
+      "from": "G11",
+      "to": "C46"
+    },
+    {
+      "from": "G11",
+      "to": "C47"
+    },
+    {
+      "from": "G12",
+      "to": "G11"
+    },
+    {
+      "from": "G12",
+      "to": "TRAIN-1"
+    },
+    {
+      "from": "G12",
+      "to": "TRAIN-2"
+    },
+    {
+      "from": "C01",
+      "to": "G3"
+    },
+    {
+      "from": "C02",
+      "to": "G3"
+    },
+    {
+      "from": "C04",
+      "to": "G3"
+    },
+    {
+      "from": "C05",
+      "to": "G3"
+    },
+    {
+      "from": "C09",
+      "to": "G3"
+    },
+    {
+      "from": "C10",
+      "to": "G3"
+    },
+    {
+      "from": "C11",
+      "to": "G3"
+    },
+    {
+      "from": "C12",
+      "to": "G3"
+    },
+    {
+      "from": "C13",
+      "to": "G3"
+    },
+    {
+      "from": "C14",
+      "to": "G3"
+    },
+    {
+      "from": "C17",
+      "to": "G3"
+    },
+    {
+      "from": "C18",
+      "to": "G3"
+    },
+    {
+      "from": "C19",
+      "to": "G3"
+    },
+    {
+      "from": "C20",
+      "to": "G3"
+    },
+    {
+      "from": "C21",
+      "to": "G3"
+    },
+    {
+      "from": "C45",
+      "to": "G3"
+    },
+    {
+      "from": "C15",
+      "to": "G3"
+    },
+    {
+      "from": "C15",
+      "to": "C26"
+    },
+    {
+      "from": "C03",
+      "to": "G3"
+    },
+    {
+      "from": "C03",
+      "to": "C08"
+    },
+    {
+      "from": "C06",
+      "to": "G3"
+    },
+    {
+      "from": "C07",
+      "to": "G3"
+    },
+    {
+      "from": "C08",
+      "to": "G5"
+    },
+    {
+      "from": "C16",
+      "to": "G3"
+    },
+    {
+      "from": "C44",
+      "to": "C08"
+    },
+    {
+      "from": "C22",
+      "to": "G5"
+    },
+    {
+      "from": "C22",
+      "to": "HW-02"
+    },
+    {
+      "from": "C23",
+      "to": "G5"
+    },
+    {
+      "from": "C23",
+      "to": "HW-01"
+    },
+    {
+      "from": "C24",
+      "to": "G4"
+    },
+    {
+      "from": "C24",
+      "to": "HW-02"
+    },
+    {
+      "from": "C25",
+      "to": "G4"
+    },
+    {
+      "from": "C25",
+      "to": "HW-03"
+    },
+    {
+      "from": "C26",
+      "to": "G4"
+    },
+    {
+      "from": "C26",
+      "to": "HW-03"
+    },
+    {
+      "from": "C28",
+      "to": "G4"
+    },
+    {
+      "from": "C28",
+      "to": "HW-02"
+    },
+    {
+      "from": "C29",
+      "to": "G4"
+    },
+    {
+      "from": "C29",
+      "to": "HW-02"
+    },
+    {
+      "from": "C30",
+      "to": "G4"
+    },
+    {
+      "from": "C31",
+      "to": "G4"
+    },
+    {
+      "from": "C32",
+      "to": "G4"
+    },
+    {
+      "from": "C33",
+      "to": "G4"
+    },
+    {
+      "from": "C33",
+      "to": "HW-16"
+    },
+    {
+      "from": "C34",
+      "to": "G4"
+    },
+    {
+      "from": "C35",
+      "to": "G4"
+    },
+    {
+      "from": "C36",
+      "to": "G4"
+    },
+    {
+      "from": "C36",
+      "to": "HW-02"
+    },
+    {
+      "from": "C37",
+      "to": "G5"
+    },
+    {
+      "from": "C37",
+      "to": "HW-01"
+    },
+    {
+      "from": "C38",
+      "to": "G4"
+    },
+    {
+      "from": "C27",
+      "to": "DEC-K"
+    },
+    {
+      "from": "C27",
+      "to": "G5"
+    },
+    {
+      "from": "C27",
+      "to": "HW-02"
+    },
+    {
+      "from": "C39",
+      "to": "SUP-1"
+    },
+    {
+      "from": "C40",
+      "to": "C41"
+    },
+    {
+      "from": "C41",
+      "to": "G7"
+    },
+    {
+      "from": "C42",
+      "to": "C40"
+    },
+    {
+      "from": "C43",
+      "to": "G5"
+    },
+    {
+      "from": "C46",
+      "to": "G10"
+    },
+    {
+      "from": "C47",
+      "to": "G10"
+    },
+    {
+      "from": "C48",
+      "to": "G3"
+    },
+    {
+      "from": "C49",
+      "to": "MODEL-1"
+    },
+    {
+      "from": "C50",
+      "to": "G7"
+    },
+    {
+      "from": "HW-01",
+      "to": "G4"
+    },
+    {
+      "from": "HW-02",
+      "to": "G4"
+    },
+    {
+      "from": "HW-03",
+      "to": "G4"
+    },
+    {
+      "from": "HW-06",
+      "to": "G4"
+    },
+    {
+      "from": "HW-08",
+      "to": "G4"
+    },
+    {
+      "from": "HW-11",
+      "to": "G5"
+    },
+    {
+      "from": "HW-16",
+      "to": "G4"
+    },
+    {
+      "from": "HW-18",
+      "to": "G4"
+    },
+    {
+      "from": "HW-19",
+      "to": "G2"
+    },
+    {
+      "from": "HW-20",
+      "to": "G4"
+    },
+    {
+      "from": "HW-21",
+      "to": "G4"
+    },
+    {
+      "from": "HW-24",
+      "to": "G4"
+    },
+    {
+      "from": "HW-FORGE",
+      "to": "G4"
+    },
+    {
+      "from": "SUP-1",
+      "to": "G3"
+    },
+    {
+      "from": "SUP-3",
+      "to": "G3"
+    },
+    {
+      "from": "P2-1",
+      "to": "G10"
+    },
+    {
+      "from": "P2-2",
+      "to": "G10"
+    },
+    {
+      "from": "P2-4",
+      "to": "G10"
+    },
+    {
+      "from": "DATA-2",
+      "to": "DATA-1"
+    },
+    {
+      "from": "DATA-2",
+      "to": "DATA-3"
+    },
+    {
+      "from": "DATA-2",
+      "to": "QUAL-2"
+    },
+    {
+      "from": "DATA-3",
+      "to": "G8"
+    },
+    {
+      "from": "MODEL-2R",
+      "to": "MODEL-0"
+    },
+    {
+      "from": "MODEL-1",
+      "to": "MODEL-2R"
+    },
+    {
+      "from": "QUAL-1",
+      "to": "G10"
+    },
+    {
+      "from": "QUAL-2",
+      "to": "QUAL-1"
+    },
+    {
+      "from": "QUAL-2",
+      "to": "P2-2"
+    },
+    {
+      "from": "QUAL-3",
+      "to": "G10"
+    },
+    {
+      "from": "TRAIN-1",
+      "to": "G3"
+    },
+    {
+      "from": "TRAIN-2",
+      "to": "TRAIN-1"
+    },
+    {
+      "from": "APP-2",
+      "to": "APP-1"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "AUTH-1"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C01"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C02"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C03"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C04"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C05"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C06"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C07"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C08"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C09"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C10"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C11"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C12"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C13"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C14"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C15"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C16"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C17"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C18"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C19"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C20"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C21"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C22"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C23"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C24"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C25"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C26"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C27"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C28"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C29"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C30"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C31"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C32"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C33"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C34"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C35"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C36"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C37"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C38"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C39"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C40"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C41"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C42"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C43"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C44"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C45"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C46"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C47"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C48"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C49"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "C50"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "DATA-1"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "DATA-2"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "DATA-3"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "DEC-K"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G1"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G10"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G11"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G12"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G2"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G3"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G4"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G5"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G6"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G7"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G8"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "G9"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-01"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-02"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-03"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-06"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-08"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-11"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-16"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-18"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-19"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-20"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-21"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-24"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "HW-FORGE"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "MODEL-1"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "MODEL-2R"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "P2-1"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "P2-2"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "P2-4"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "QUAL-1"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "QUAL-2"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "QUAL-3"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "R65"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "SUP-1"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "SUP-3"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "TRAIN-1"
+    },
+    {
+      "from": "FINAL-1",
+      "to": "TRAIN-2"
+    },
+    {
+      "from": "FINAL-2",
+      "to": "FINAL-1"
+    },
+    {
+      "from": "EXEC-1",
+      "to": "FINAL-2"
+    }
+  ],
+  "events": [
+    "PRETRAINING_READINESS_ACCEPTED",
+    "FOUNDER_AUTHORIZATION_GRANTED",
+    "TRAINING_EXECUTION_ALLOWED"
+  ],
+  "nodes": [
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No such review file was found in this pass.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [],
+      "escalation": "Name a reviewer who did not author RSE-ARCH-1.2, and record where the review is stored.",
+      "event": "READINESS",
+      "evidence_key": "G1",
+      "evidence_required": "An architecture review, stored where a later reader can open it, by a person who did not author RSE-ARCH-1.2.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The review is identifiable without a verdict slogan.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G1",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "UNRESOLVED_EXTERNAL",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "The audit is an input to readiness. It is not the training authorization.",
+      "source": "RSE12_06 \u00a77 step 1 and \u00a78",
+      "status": "NOT_VERIFIABLE"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Main is 464b602f3f259b56f139c3304828baa660e6b860. Manifest V3 was not edited.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G1"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "G2",
+      "evidence_required": "Freeze commit on canonical main, re-checked against Manifest V3 at integration time.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The integration check still matches the manifest.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G2",
+      "implementation_owner": "RECORDED_ON_MAIN",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a77 step 2",
+      "status": "PRESENT_ON_MAIN"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "IMP-2/3/4 code is unmerged on PR #8. PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance. RSE_MASTER_BLOCK_1_EVIDENCE.md on that SHA still says independent acceptance is pending.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G2"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "G3",
+      "evidence_required": "Independent code review of the merged software SHA, plus that SHA's own main push CI.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "The merged SHA has its own main push CI and a review that is not a copied slogan.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G3",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a77 steps 4 and 5",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The freeze states nothing is bought. NO_HARDWARE_PURCHASE_AUTHORIZED stands.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "G4",
+      "evidence_required": "A founder purchase authorization and a named hardware selection.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The authorization names the machines. This register does not purchase them.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G4",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate founder act. Purchase is an input to hardware evidence. It is not contingent on full readiness.",
+      "source": "RSE12_06 \u00a77 step 6",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Locks return false. No ceremony record.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "G5",
+      "evidence_required": "Provisioning and key-creation authorization, then a ceremony record that contains no secret.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "A founder act changes the authorization. This register does not create a secret.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G5",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate founder act. Key creation is an input to later hardware tests. It is not the training authorization.",
+      "source": "RSE12_06 \u00a77 step 7",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Synthetic tests only. No hardware log.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G5",
+        "C08",
+        "C22",
+        "C23",
+        "C24",
+        "C25",
+        "C26",
+        "C27",
+        "C28",
+        "C29",
+        "C30",
+        "C31",
+        "C32",
+        "C33",
+        "C34",
+        "C35",
+        "C36",
+        "C37",
+        "C38",
+        "C44",
+        "HW-01",
+        "HW-02",
+        "HW-03",
+        "HW-06",
+        "HW-08",
+        "HW-11",
+        "HW-16",
+        "HW-18",
+        "HW-19",
+        "HW-20",
+        "HW-21",
+        "HW-24",
+        "HW-FORGE"
+      ],
+      "escalation": "Founder names the operator who runs the acceptance. The reviewer is not that operator. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "G6",
+      "evidence_required": "One acceptance-run record that cites each real-hardware artifact by its own id. The record is not a copy of those artifacts.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The run record exists. Each cited row still needs its own accepted artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G6",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a77 step 8",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "HW-01",
+        "HW-FORGE",
+        "C38"
+      ],
+      "current_evidence": "No Crown inventory.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G6"
+      ],
+      "escalation": "Founder names the Crown custodian. No purchase is authorized here. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "G7",
+      "evidence_required": "Custody record for a Crown machine that is not the daily driver, with its own serial.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The Crown serial is recorded and differs from Witness and Forge.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G7",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a77 step 9",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "CORPUS_GENERATION_AUTHORIZATION.json status is NOT_AUTHORIZED.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G7"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "G8",
+      "evidence_required": "A founder corpus grant. The JSON status change is the artifact.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The founder changes that file. This register does not.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G8",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate founder act. The corpus grant is an input to later data rows. It is not contingent on full training readiness.",
+      "source": "RSE12_06 \u00a77 step 10; CORPUS_GENERATION_AUTHORIZATION.json",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Not started.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G8"
+      ],
+      "escalation": "Founder names the device. This row does not purchase it. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "G9",
+      "evidence_required": "A second Crown milestone: an independent dedicated Crown device, with its own serial, before qualification or training.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The second Crown serial is recorded.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G9",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a77 step 11",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "QUALIFICATION_RUNNER_REGISTRY.json state is REGISTERED_NOT_AUTHORIZED.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G9"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "G10",
+      "evidence_required": "A chamber-design review that names the design SHA and the tests the reviewer ran.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The reviewer accepts the design record. Runner authorization is QUAL-1, a separate artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G10",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a77 step 12",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "R-EXF in RSE12_06 \u00a75 says egress control blocks training authorization. No environment is named.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G10",
+        "P2-1",
+        "P2-2",
+        "C46",
+        "C47"
+      ],
+      "escalation": "Founder names the P2 operator. No provider is selected here.",
+      "event": "READINESS",
+      "evidence_key": "G11",
+      "evidence_required": "A P2 gate record that names the environment. Attestation, egress, and counter logs stay on their own rows.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The gate record exists. P2-1, P2-2, C46, and C47 remain separately accepted.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G11",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a77 step 13",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "training_authorized() returns false. No infrastructure record.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G11",
+        "TRAIN-1",
+        "TRAIN-2"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "G12",
+      "evidence_required": "A training-infrastructure record: pinned software identity, dry-run log pointer, and the P2 environment id.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The infrastructure record exists. GPU permission is FINAL-2, after readiness.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "G12",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Technical infrastructure only. GPU and spend permission are contingent on readiness and are not inputs to this row.",
+      "source": "RSE12_06 \u00a77 step 14, infrastructure clause",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C01"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C01",
+      "evidence_required": "Refusal log from the signed registry path showing an unregistered id refused.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C01",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C02"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C02",
+      "evidence_required": "Consumer refusal record for a stale or unknown registry.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C02",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C04"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C04",
+      "evidence_required": "Refusal record for a ceiling above the policy cap.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C04",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C05"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C05",
+      "evidence_required": "Validator output refusing a confusable name.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C05",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C09"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C09",
+      "evidence_required": "Journal record of challenge reuse refused.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C09",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C10"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C10",
+      "evidence_required": "Refusal record showing a set-back clock does not extend a consumed challenge.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C10",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C11"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C11",
+      "evidence_required": "State log showing no ACTIVE state before a witnessed checkpoint.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C11",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C12"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C12",
+      "evidence_required": "Verify log of a witness cosignature, including a forged ack refused.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C12",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C13"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C13",
+      "evidence_required": "Witness log refusing a fork or a smaller tree. A synthetic fence is not this artifact.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C13",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C14"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C14",
+      "evidence_required": "Refusal record for a bundle that lacks a witnessed result.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C14",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C17"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C17",
+      "evidence_required": "Vector test for enc validity and the zero-shared-secret abort.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C17",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C18"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C18",
+      "evidence_required": "Test log reproducing the RFC 9180 vectors used by this profile.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C18",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C19"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C19",
+      "evidence_required": "Per-case verdicts for missing, duplicate, reordered, extra, truncated, and foreign frames.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C19",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C20"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C20",
+      "evidence_required": "Resolver log refusing an unknown or revoked sender.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C20",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C21"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C21",
+      "evidence_required": "Verify log showing a bad origin signature is rejected before key use.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C21",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C45"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C45",
+      "evidence_required": "Transition log refusing an impossible lifecycle edge. Class K remains a separate decision.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C45",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C15"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3",
+        "C26"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C15",
+      "evidence_required": "Journal replay report for a crash at each specified step, including the C26 power-cut report.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C15",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "IMP-1 registry code is on main. Distinct hardware tokens are not issued. PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3",
+        "C08"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C03",
+      "evidence_required": "Verify log of a canonical registry update with two distinct owner tokens.",
+      "evidence_states": [
+        "SOURCE_VERIFIED",
+        "SHA_CI_PASSED"
+      ],
+      "exit": "The verify log shows two distinct tokens. C08 remains its own row.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C03",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "DESIGNED_ONLY"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C06"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C06",
+      "evidence_required": "Rendered-card digest showing the consumer rendered the received signed bytes.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C06",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "DESIGNED_ONLY"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C07"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C07",
+      "evidence_required": "Typed-entry record for the SAS and the Intent Sheet fields.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C07",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "DESIGNED_ONLY"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No tokens issued. REAL_HW cell is tokens.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G5"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C08",
+      "evidence_required": "Verify log from two distinct physical tokens. One token used twice is refused.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "Two physical tokens produce the log. This row does not create a secret by itself.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C08",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate token ceremony after G5. It is not the training authorization.",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Freeze maturity is structural codec evidence only. PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "Name a second codec implementer who is not Cursor.",
+      "event": "READINESS",
+      "evidence_key": "C16",
+      "evidence_required": "A second codec implementation, not Cursor's, agrees on the OCR1 verdict vector.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "The second implementation's digest matches on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C16",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "UNRESOLVED_EXTERNAL",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "DESIGNED_ONLY"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No tokens issued.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "C08"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C44",
+      "evidence_required": "Verify log that one token cannot satisfy a two-token class.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The single-token refusal is logged on hardware tokens.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C44",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate token test after C08. The refusal log is its own artifact. It is not the training authorization.",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G5",
+        "HW-02"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C22",
+      "evidence_required": "Mount and key-state record showing the vault stayed locked through key-absent phase 1.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C22",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G5",
+        "HW-01"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C23",
+      "evidence_required": "Sandbox policy dump from a real checker showing no key, no network, and bounded I/O.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C23",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4",
+        "HW-02"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C24",
+      "evidence_required": "TPM policy test: image PCR and PCR 7 named, wrong PCR denied, wrong PIN denied, altered UKI denied.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C24",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4",
+        "HW-03"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C25",
+      "evidence_required": "TPM NV denial record for an older image, including the counter value.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C25",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4",
+        "HW-03"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C26",
+      "evidence_required": "Per-step power-cut report for the NV update. A simulator report is only the partial credit the freeze allows.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C26",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4",
+        "HW-02"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C28",
+      "evidence_required": "Firmware key list showing only owner Secure Boot keys.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C28",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4",
+        "HW-02"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C29",
+      "evidence_required": "Offline quote record against the pinned attestation key, including measured PCR values.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C29",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C30",
+      "evidence_required": "Kernel report that IOMMU groups are enforced, or that the named DMA buses are absent.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M: IOMMU mandatory when a DMA bus exists; D if such a bus exists and no IOMMU",
+      "id": "C30",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C31",
+      "evidence_required": "Kernel log of USB default-deny with the single allow-listed medium class.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C31",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C32",
+      "evidence_required": "Enumeration digest showing radios absent or hardware-off.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C32",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4",
+        "HW-16"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C33",
+      "evidence_required": "Measured netdev digest showing no usable network device per link class.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C33",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C34",
+      "evidence_required": "Platform report for management engine or out-of-band management. A network-capable controller that cannot be disabled disqualifies the machine.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M; D if present, network-capable and not disableable",
+      "id": "C34",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C35",
+      "evidence_required": "Firmware settings record: setup password, locked boot order, internal drive only, network boot disabled.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C35",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4",
+        "HW-02"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C36",
+      "evidence_required": "LUKS2 header check.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C36",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G5",
+        "HW-01"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C37",
+      "evidence_required": "Storage scan report, before and after, with a planted marker found by the negative test.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C37",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No hardware report for this control.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names the operator. This row authorizes no purchase and no secret. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C38",
+      "evidence_required": "Crown isolation inventory digest with its own serial.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The artifact named above is accepted on its own.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C38",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Approval 3 defers ACR-B1-2. Class K returns UNSUPPORTED_CURRENT_MILESTONE. No implementation is authorized by this row.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "DEC-K",
+      "evidence_required": "A founder decision that class K recovery stays deferred, and that C27 therefore stays unmet, until a later architecture-change authorization exists.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The decision is recorded. C27 is still a separate mandatory row.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "DEC-K",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate decision. It does not implement class K and it does not remove C27 from the denominator.",
+      "source": "RSE12_06 C27; ACR-B1-2 deferral on PR #10",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Class K is unsupported. No re-enrolment record.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "DEC-K",
+        "G5",
+        "HW-02"
+      ],
+      "escalation": "Do not implement class K under this row. Wait for a founder architecture-change authorization that is not this register.",
+      "event": "READINESS",
+      "evidence_key": "C27",
+      "evidence_required": "Re-enrolment records for a TPM or board replacement that refuse a lower-generation restore, produced by an authorized class-K path.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The re-enrolment record exists after class K is authorized elsewhere. A decision record alone does not pass C27.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C27",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate recovery evidence. It waits on DEC-K and does not itself authorize class K. It is not the training authorization.",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No pair of build reports was produced in this pass.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "SUP-1"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C39",
+      "evidence_required": "Two independent build reports whose digests match, compared on Crown.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The comparison record is accepted. SUP-1's harness log is not this comparison.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C39",
+      "implementation_owner": "CLAUDE",
+      "independent_reviewer": "ANTIGRAVITY",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Software floors are not a sealed Crown card.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "C41"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C40",
+      "evidence_required": "Floor-check log refusing a lower card and a lower sealed floor.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The floor-check log is accepted together with a sealed floor. C41 remains separate.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C40",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "DESIGNED_ONLY"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No floor card.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G7"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C41",
+      "evidence_required": "Signed comparison receipt containing both floor-card serials.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The receipt names both serials.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C41",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate custody act. It is not the training authorization.",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No recovery kit.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "C40"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C42",
+      "evidence_required": "Refusal log for a recovery kit below the effective floor.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The below-floor kit is refused in the log.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C42",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "DESIGNED_ONLY"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No ceremony record.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G5"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C43",
+      "evidence_required": "Epoch checkpoint and LUKS slot rotation record after recovery-media theft response.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The epoch record exists and contains no secret.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C43",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate ceremony. It is not the training authorization.",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Not implemented. Table marks P2 and future.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G10"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C46",
+      "evidence_required": "Qualification bit-budget counter log from the chamber.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The budget log is accepted. C47 is a separate monotonicity artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C46",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Not implemented.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G10"
+      ],
+      "escalation": "Name the chamber operator. A synthetic counter is not this artifact.",
+      "event": "READINESS",
+      "evidence_key": "C47",
+      "evidence_required": "Evidence that restoring qualification state does not refund the budget. The freeze types this UNP.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The monotonicity evidence is accepted.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C47",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C48"
+      ],
+      "current_evidence": "PR #8 head da567d927b61c41e253b42732aad249b5fdbb104, push run 37884389862 success. GitHub reviews length 0. The run is not row acceptance.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C48",
+      "evidence_required": "Refusal records showing a T-complete record cannot authorize W, and W-complete cannot authorize D.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "A reviewer accepts this row's own artifact on the merged SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C48",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a74",
+      "status": "DESIGNED_ONLY"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No approved foundation entry. model_selection_authorized() returns false.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "MODEL-1"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C49",
+      "evidence_required": "Registry entry containing the foundation provenance digests before any use.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The registry entry is accepted. The selection record remains MODEL-1.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C49",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate registry entry after selection. It is not the training authorization.",
+      "source": "RSE12_06 \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Budget numbers exist in the freeze. No drill record.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G7"
+      ],
+      "escalation": "Founder names the operator who runs the drill. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "C50",
+      "evidence_required": "A drill measurement of boots, media moves, witness trips, token touches, and typed SAS counts.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The measurement is recorded. A sentence that a drill happened is not the measurement.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "C50",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a73 and \u00a74",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "G7",
+        "HW-FORGE"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-01",
+      "evidence_required": "Witness serial recorded on a machine used for nothing else, different from the Crown serial and the Forge serial.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 1,
+      "frozen_class": "M",
+      "id": "HW-01",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-02",
+      "evidence_required": "TPM 2.0 capability record for the Witness. Absence disqualifies the machine.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 2,
+      "frozen_class": "D",
+      "id": "HW-02",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C25",
+        "C26"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-03",
+      "evidence_required": "TPM NV capability record showing a counter index and policy comparison on NV.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 3,
+      "frozen_class": "M",
+      "id": "HW-03",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "C28",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [
+        "C28"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "C28",
+      "evidence_required": "Same artifact as C28.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 4,
+      "frozen_class": "M",
+      "id": "HW-04",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen \u00a71 row 4 is the same firmware key list as C28. One achievement.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "C29",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [
+        "C29"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "C29",
+      "evidence_required": "Same artifact as C29.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 5,
+      "frozen_class": "M",
+      "id": "HW-05",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen \u00a71 row 5 is evidenced by the offline quote on C29. One achievement.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-06",
+      "evidence_required": "Measurement record showing the role code and its version inside the measured image.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 6,
+      "frozen_class": "M",
+      "id": "HW-06",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "C24",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [
+        "C24"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "C24",
+      "evidence_required": "Same artifact as C24.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 7,
+      "frozen_class": "M",
+      "id": "HW-07",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen \u00a71 row 7 is the PCR policy tested on C24. One achievement.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-08",
+      "evidence_required": "Build record of the owner-signed unified kernel image and the boot measurement that matches it.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 8,
+      "frozen_class": "M",
+      "id": "HW-08",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "C36",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [
+        "C36"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "C36",
+      "evidence_required": "Same artifact as C36.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 9,
+      "frozen_class": "M",
+      "id": "HW-09",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen \u00a71 row 9 is the LUKS2 header check on C36. One achievement.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "C24",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [
+        "C24"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "C24",
+      "evidence_required": "Same artifact as C24.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 10,
+      "frozen_class": "M",
+      "id": "HW-10",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen \u00a71 row 10 is the TPM-bound release plus PIN tested on C24. One achievement.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G5"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-11",
+      "evidence_required": "Custody record that a paper recovery passphrase exists, with no secret and no passphrase value in git.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 11,
+      "frozen_class": "M",
+      "id": "HW-11",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "C35",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [
+        "C35"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "C35",
+      "evidence_required": "Same artifact as C35.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 12,
+      "frozen_class": "M",
+      "id": "HW-12",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen \u00a71 row 12 is the firmware settings record on C35, including network boot disabled. One achievement.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "C34",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [
+        "C34"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "C34",
+      "evidence_required": "Same artifact as C34.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 13,
+      "frozen_class": "M; D if present, network-capable and not disableable",
+      "id": "HW-13",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen \u00a71 row 13 is the platform report on C34. One achievement. The disqualifying clause stays on C34.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "C30",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [
+        "C30"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "C30",
+      "evidence_required": "Same artifact as C30.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 14,
+      "frozen_class": "M: IOMMU mandatory when a DMA bus exists; D if such a bus exists and no IOMMU",
+      "id": "HW-14",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen \u00a71 row 14 is the DMA report on C30. One achievement. The disqualifying clause stays on C30.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "C32",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [
+        "C32"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "C32",
+      "evidence_required": "Same artifact as C32.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 15,
+      "frozen_class": "M",
+      "id": "HW-15",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen \u00a71 row 15 is the radio enumeration on C32. One achievement.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "C33"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-16",
+      "evidence_required": "Firmware or physical record that the wired port is unused, blocked, or firmware-disabled.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 16,
+      "frozen_class": "M",
+      "id": "HW-16",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "C31",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [
+        "C31"
+      ],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "C31",
+      "evidence_required": "Same artifact as C31.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 17,
+      "frozen_class": "M",
+      "id": "HW-17",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen \u00a71 row 17 is the USB policy log on C31. One achievement.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-18",
+      "evidence_required": "Update log showing firmware and OS updates came only from the owner-approved offline registry.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 18,
+      "frozen_class": "M",
+      "id": "HW-18",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G2"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-19",
+      "evidence_required": "Registry record of the approved artifacts and the offline distribution used to install them.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 19,
+      "frozen_class": "M",
+      "id": "HW-19",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-20",
+      "evidence_required": "Custody record for the Witness location. Seals are HW-20P and do not satisfy this row.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 20,
+      "frozen_class": "M (custody)",
+      "id": "HW-20",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-20P",
+      "evidence_required": "Photograph of tamper-evident seals. Preferred only.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 20,
+      "frozen_class": "P (seals)",
+      "id": "HW-20P",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen class P. Omitted from the mandatory denominator. Custody remains HW-20.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-21",
+      "evidence_required": "Capacity record for RAM, storage, and CPU against the largest planned bundle and the sandboxed checker.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 21,
+      "frozen_class": "M",
+      "id": "HW-21",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-22",
+      "evidence_required": "TPM RNG availability note.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 22,
+      "frozen_class": "P",
+      "id": "HW-22",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen class P. Omitted from the mandatory denominator.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-23",
+      "evidence_required": "Record of discrete TPM versus firmware TPM. Neither is claimed immune.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 23,
+      "frozen_class": "O",
+      "id": "HW-23",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen class O. Omitted from the mandatory denominator.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-24",
+      "evidence_required": "Inventory showing the Witness has no GPU.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 24,
+      "frozen_class": "M",
+      "id": "HW-24",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No serial, quote, photograph, purchase, or firmware record for this property is in the tree.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Founder names a P1 operator who is not the reviewer. No purchase is authorized by this row.",
+      "event": "READINESS",
+      "evidence_key": "HW-25",
+      "evidence_required": "Cold spare serial, if a spare is kept.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The named artifact exists and a reviewer accepts that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": 25,
+      "frozen_class": "O",
+      "id": "HW-25",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Frozen class O. Omitted from the mandatory denominator.",
+      "source": "RSE12_06 \u00a71",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [
+        "HW-01",
+        "G7"
+      ],
+      "current_evidence": "No Forge inventory.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G4"
+      ],
+      "escalation": "Founder names the Forge custodian. No purchase is authorized here. Purchase stays on G4.",
+      "event": "READINESS",
+      "evidence_key": "HW-FORGE",
+      "evidence_required": "Forge serial different from the Witness serial and the Crown serial.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The Forge serial is recorded.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "HW-FORGE",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a76 P1 definition: Crown + Forge + independent Witness",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "PR #13 live head 0328123361756b9732fc57886754d6d09c4b9c46. Push run 37973767347 succeeded for that head. Pull-request run 37973770477 also succeeded and is not the exact-SHA proof. Ancestor cd95befd196c57d1885be208532a1c9a32991a39 push run 37972786151 succeeded. GitHub reviews length 0. A green harness run is not two independent training-image digests.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "SUP-1",
+      "evidence_required": "Two independent build digests of the training image, plus the lock used to build them.",
+      "evidence_states": [
+        "SHA_CI_PASSED",
+        "SHA_CI_PASSED_ON_ANCESTOR"
+      ],
+      "exit": "C39's comparison exists. A harness repair log does not pass C39.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "SUP-1",
+      "implementation_owner": "CLAUDE",
+      "independent_reviewer": "ANTIGRAVITY",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 C39; docker/rse_synthetic_integration_lab and infra/tier0-local/docker",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The job is in the workflow file. A green run of the register branch does not qualify the application image.",
+      "denominator": "APPLICATION",
+      "depends_on": [],
+      "escalation": "",
+      "event": "APPLICATION",
+      "evidence_key": "SUP-2",
+      "evidence_required": "A green exact-SHA production-container job for the application SHA under claim.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The reviewer names the application SHA and the job log.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "SUP-2",
+      "implementation_owner": "CLAUDE",
+      "independent_reviewer": "ANTIGRAVITY",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "The production container serves the assistant. orca/train does not import orca.serve. The first Genesis training run is not defined to boot this image. Mandatory for the application denominator. Excluded from pre-training readiness.",
+      "source": ".github/workflows/test.yml job container-build",
+      "status": "NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "On f424dbf51eb8ed03f5fbe57cbd0ef3c2fa72fcdb, push run 37893124711 job RSE dependency lock and vulnerability scan reported no known vulnerabilities for that lock. Not on main. The base job does not include pyhpke.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "SUP-3",
+      "evidence_required": "Hash-locked install of the RSE extra and a fail-closed audit log of that lock, on the SHA that is merged to main.",
+      "evidence_states": [
+        "SHA_CI_PASSED"
+      ],
+      "exit": "The same job is green on the merge commit on main.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "SUP-3",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "requirements/rse.txt on PR #10",
+      "status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Disclosed on the base install. chromadb is not in the train extra. diskcache is a base dependency.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "APPLICATION",
+      "evidence_key": "SUP-4",
+      "evidence_required": "A fresh advisory decision.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "A separate advisory decision.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "",
+      "id": "SUP-4",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Not an RSE12_06 control. chromadb is in the memory and docs extras, not the train extra. Excluded from the pre-training denominator. The advisories stay open.",
+      "source": "Workflow comment naming chromadb PYSEC-2026-311 and diskcache PYSEC-2026-2447",
+      "status": "OPEN"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The freeze marks provider root of trust UNPROVEN.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G10"
+      ],
+      "escalation": "Founder names the environment operator. No provider contract is authorized here.",
+      "event": "READINESS",
+      "evidence_key": "P2-1",
+      "evidence_required": "Attestation evidence for a named training environment. No provider is selected by this row.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The attestation package is accepted.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "P2-1",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a72 cloud-provider row and \u00a77 step 13",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Residual text only.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G10"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "P2-2",
+      "evidence_required": "An egress test showing the training identity cannot open a forbidden path.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The egress test log is accepted.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "P2-2",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_06 \u00a75 R-EXF",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [
+        "C46",
+        "C47"
+      ],
+      "cross_refs": [],
+      "current_evidence": "See those rows.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "P2-3",
+      "evidence_required": "Covered by C46 and C47.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "C46 and C47 each pass on their own artifacts.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "P2-3",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Same controls as C46 and C47. Not a second achievement.",
+      "source": "RSE12_06 C46 and C47",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "max_spend_usd is 0. network_provider_inference_allowed is false. gpu_allowed is false.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G10"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "P2-4",
+      "evidence_required": "A training-environment test that a spend above the configured cap is refused. The cap value may remain 0.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The refusal test is accepted. Raising the cap is FINAL-2.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "P2-4",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "The enforcement test is a readiness input. Permission to spend or to use a GPU is contingent on readiness.",
+      "source": "MODEL_EVAL_AUTHORIZATION.json",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The note describes a small v1+v2+v3 set and a token proxy. It says it does not authorize training.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [],
+      "escalation": "Founder names who assembles the manifest. This row generates no corpus.",
+      "event": "READINESS",
+      "evidence_key": "DATA-1",
+      "evidence_required": "A manifest with source, license, and digest for every record that would be trained on.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The manifest is accepted.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "DATA-1",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "GENESIS_PRETRAINING_QUALIFICATION.md",
+      "status": "NOT_ACCEPTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "GENESIS_FRONTIER_HOLDOUT_SPEC.md says zero-contamination is not proven.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "DATA-1",
+        "DATA-3",
+        "QUAL-2"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "DATA-2",
+      "evidence_required": "A set-level contamination result bound to a corpus digest, with no item-level holdout leak.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The oracle output is accepted.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "DATA-2",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "RSE12_05 contamination oracle; RSE12_01 contamination_status_ref",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Status NOT_AUTHORIZED. The small documented set is not that corpus.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G8"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "DATA-3",
+      "evidence_required": "The protected-corpus grant after P1.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The founder grant is recorded. This register does not generate a corpus.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "DATA-3",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate founder act. It is the same grant family as G8's exit file, checked again at corpus use. The artifact is the grant plus the corpus digest, which G8 does not contain.",
+      "source": "CORPUS_GENERATION_AUTHORIZATION.json; RSE12_06 \u00a76",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No trained model and no public card.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "POST_TRAINING",
+      "evidence_key": "DATA-4",
+      "evidence_required": "A published data card.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The card is published after a model exists.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "",
+      "id": "DATA-4",
+      "implementation_owner": "PRODUCT_MANAGEMENT",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Public marketing after training. Excluded from pre-training readiness.",
+      "source": "Public dataset marketing claims",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "base_model unsloth/Qwen2.5-3B-Instruct, revision and tokenizer revision 7548fff1f997f57b2e9e8ab1ec7be96949b00ed0, license_name qwen-research, license_commercial_use RESTRICTED. model_selection_authorized() returns false.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "MODEL-0",
+      "evidence_required": "The code pin, read from the file.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "A reader can open the pin. Selection is MODEL-1.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "",
+      "id": "MODEL-0",
+      "implementation_owner": "RECORDED_ON_MAIN",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "A source fact. Not a second selection achievement and not an authorization.",
+      "source": "orca/registry/model_spec.py family genesis",
+      "status": "NOT_A_SELECTION"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The qualification note quotes a non-commercial research license and says commercial release is blocked. It also says the term does not by itself block research or internal evaluation. No founder scope record exists. This row does not grant either scope.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "MODEL-0"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "MODEL-2R",
+      "evidence_required": "A founder scope record that the first run, when later authorized, is research or evaluation only under the qwen-research terms.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The research-only scope record exists. Commercial rights remain MODEL-2C.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "MODEL-2R",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate scope decision. Research-only training and commercial release are different rights. This row records only the research scope.",
+      "source": "GENESIS_BASE_MODEL_QUALIFICATION.md license section",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The pin in MODEL-0 is present. model_selection_authorized() returns false.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "MODEL-2R"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "MODEL-1",
+      "evidence_required": "A founder selection record naming the repository and the exact revision. The code pin is not that record.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The selection record exists and stays inside the research-only scope. It does not set training_authorized().",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "MODEL-1",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate selection. It is an input to readiness. It does not depend on the training lock.",
+      "source": "orca/registry/model_spec.py; model_selection_authorized()",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The qualification note says commercial use of this base requires a license from Alibaba Cloud. No grant is in the tree.",
+      "denominator": "POST_TRAINING_LAUNCH",
+      "depends_on": [],
+      "escalation": "The rights holder is outside this repository. Founder requests a commercial grant through the rights holder's own channel. This row does not send that request.",
+      "event": "POST_TRAINING",
+      "evidence_key": "MODEL-2C",
+      "evidence_required": "A commercial grant from the rights holder, or a founder record that no commercial release will be made from this base.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The commercial grant or the no-commercial-release record exists.",
+      "founder_act": "NONE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "MODEL-2C",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Commercial release rights are mandatory for a commercial launch. They are not required to compute research-training readiness. Excluded from the pre-training denominator. Not deleted.",
+      "source": "GENESIS_BASE_MODEL_QUALIFICATION.md commercial clause",
+      "status": "BLOCKED_LICENSE"
+    },
+    {
+      "canonical_id": "C49",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "See C49.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "C49",
+      "evidence_required": "Same artifact as C49.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "C49 passes on its own registry entry.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "MODEL-3",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Same control as C49. Not a second achievement.",
+      "source": "RSE12_06 C49",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Other candidates are listed with license notes. The matrix says it is not legal advice and does not authorize a download.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "MODEL-4",
+      "evidence_required": "Not a selection.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "Readers use MODEL-1 for selection.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "",
+      "id": "MODEL-4",
+      "implementation_owner": "RECORDED_ON_MAIN",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "A survey. Not a selection and not a denominator row.",
+      "source": "GENESIS_STAGE0_LICENSE_MATRIX.md",
+      "status": "NOT_A_SELECTION"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "State REGISTERED_NOT_AUTHORIZED. runner_class SELF_HOSTED_CPU. os_runtime says the local Mac is the canonical CPU runner. Network policy in the record is none.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G10"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "QUAL-1",
+      "evidence_required": "Founder authorization of the qualification runner. The binding note is not that authorization.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The founder changes the runner state. This register does not.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "QUAL-1",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate runner authorization after the chamber design. It is not contingent on full training readiness.",
+      "source": "QUALIFICATION_RUNNER_REGISTRY.json",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The paths exist. No isolation proof was run in this pass.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "QUAL-1",
+        "P2-2"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "QUAL-2",
+      "evidence_required": "A failed read of the holdout by the training identity.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The failed-read log is accepted.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "QUAL-2",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "eval_private/genesis_capability_eval_v1/holdout.jsonl and holdout_fingerprints.json",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Critical categories are named. Numeric thresholds for the other categories are not set.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G10"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "QUAL-3",
+      "evidence_required": "Numeric thresholds frozen before any candidate result, for every category the policy says is critical and for the categories it leaves unset.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The threshold freeze is recorded before a candidate run.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "QUAL-3",
+      "implementation_owner": "PRODUCT_MANAGEMENT",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "GENESIS_PRETRAINING_QUALIFICATION.md regression policy",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No finished model.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "POST_TRAINING",
+      "evidence_key": "QUAL-4",
+      "evidence_required": "A report that keeps the holdout out of marketing.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The report exists after a model exists.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "",
+      "id": "QUAL-4",
+      "implementation_owner": "PRODUCT_MANAGEMENT",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Public claims after training. Excluded from pre-training readiness.",
+      "source": "Public benchmark claims",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The extra lists version ranges. No hash lock for the train extra was found. uv.lock is not what CI installs.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "G3"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "TRAIN-1",
+      "evidence_required": "A hash lock of the train extra and one dry-run command pinned to a SHA.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The lock and the command log name the same SHA.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "TRAIN-1",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "pyproject.toml extra train; orca/train",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No full-trainer dry-run log is in this pass.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "TRAIN-1"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "TRAIN-2",
+      "evidence_required": "A synthetic dry-run log showing corpus, qualification, model-selection, GPU, and training locks still false afterward.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The log shows the locks still false. The run does not flip them.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "TRAIN-2",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "orca/rse/imp1/locks.py",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Historical notes say no training was started.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "TRAIN-3",
+      "evidence_required": "Not used.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "Do not cite these notes as DATA-3.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "",
+      "id": "TRAIN-3",
+      "implementation_owner": "RECORDED_ON_MAIN",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Earlier product notes. Not this programme's corpus.",
+      "source": "docs/orneur/phase-0",
+      "status": "HISTORICAL"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No budget record found.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "AUTH-1",
+      "evidence_required": "A budget record with a number, a currency, and the founder's signature or equivalent.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The record exists. Until then this row blocks a readiness percentage.",
+      "founder_act": "INTERMEDIATE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "AUTH-1",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate budget act. It can exist before readiness is complete. It is not contingent on FINAL-1.",
+      "source": "Founder budget approval, which is not a file yet",
+      "status": "NOT_VERIFIABLE"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Head unchanged. GitHub reviews length 0. Pull-request run 37921622633 succeeded. No push run was listed. This register did not read the diff.",
+      "denominator": "APPLICATION",
+      "depends_on": [],
+      "escalation": "",
+      "event": "APPLICATION",
+      "evidence_key": "APP-1",
+      "evidence_required": "Independent review of head 6e30dd9f31215f0046a2612653794291ada6688f for the streaming and error-leak fix, plus an exact-SHA push CI for that head.",
+      "evidence_states": [
+        "PULL_REQUEST_CI_PASSED"
+      ],
+      "exit": "Antigravity's report names the SHA and is stored as an artifact. A PR-body sentence is not that artifact.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "APP-1",
+      "implementation_owner": "CLAUDE",
+      "independent_reviewer": "ANTIGRAVITY",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Assistant HTTP and SSE behaviour. orca/train does not import orca.serve. Not required for the first Genesis training run. Mandatory in the application denominator.",
+      "source": "PR #11",
+      "status": "OPEN_PR_UNREVIEWED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Live head 348fb882dce86d95b351a932a799a45d09f37940. Push run 37973804538 succeeded for that head. Ancestor 63ece2a5dd673d69a06effdf766d7046f1973fc8 push run 37972182734 succeeded. GitHub reviews length 0. Diff not read.",
+      "denominator": "APPLICATION",
+      "depends_on": [
+        "APP-1"
+      ],
+      "escalation": "",
+      "event": "APPLICATION",
+      "evidence_key": "APP-2",
+      "evidence_required": "Independent review of the live head for pool bounds, secret logging, and SSE diagnostics, plus that head's push CI.",
+      "evidence_states": [
+        "SHA_CI_PASSED",
+        "SHA_CI_PASSED_ON_ANCESTOR"
+      ],
+      "exit": "The retest report names 348fb882 or a later reviewed head.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "APP-2",
+      "implementation_owner": "CLAUDE",
+      "independent_reviewer": "ANTIGRAVITY",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Same public assistant path as APP-1. Not required for the first Genesis training run. Mandatory in the application denominator.",
+      "source": "PR #12",
+      "status": "OPEN_PR_UNREVIEWED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Planning text only.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "POST_TRAINING",
+      "evidence_key": "APP-3",
+      "evidence_required": "Launch evidence for public claims.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "After a trained model exists.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "",
+      "id": "APP-3",
+      "implementation_owner": "PRODUCT_MANAGEMENT",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Public launch planning. Excluded from pre-training and from the application security denominator.",
+      "source": "docs/LAUNCH_PLAN.md",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The directive states Antigravity previously retested the application. No report text, tested SHA, or result is in this repository. GitHub reviews on PR #11 and PR #12 have length 0. PR bodies are author narrative and are not this report.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Product Management places the report where a later reader can open it.",
+      "event": "APPLICATION",
+      "evidence_key": "EV-AG-APP",
+      "evidence_required": "The Antigravity application retest report, including the SHA it tested and the result.",
+      "evidence_states": [
+        "EXTERNALLY_REPORTED"
+      ],
+      "exit": "The stored report can be read. Until then APP-1 and APP-2 stay unreviewed.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "",
+      "id": "EV-AG-APP",
+      "implementation_owner": "ANTIGRAVITY",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "External report locator. Not a GitHub approval, not a committed audit artifact, and not an acceptance.",
+      "source": "Product Management remediation directive 2026-10-09",
+      "status": "EXTERNALLY_REPORTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "NONBLOCKING",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The directive states Antigravity previously retested Docker. No report text, tested SHA, or result is in this repository. GitHub reviews on PR #13 have length 0. The PR body is the author's local log, not Antigravity's report.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "Product Management places the report where a later reader can open it.",
+      "event": "APPLICATION",
+      "evidence_key": "EV-AG-DOCKER",
+      "evidence_required": "The Antigravity Docker retest report, including the SHA it tested and the result.",
+      "evidence_states": [
+        "EXTERNALLY_REPORTED"
+      ],
+      "exit": "The stored report can be read. It does not pass SUP-1 or C39.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "",
+      "id": "EV-AG-DOCKER",
+      "implementation_owner": "ANTIGRAVITY",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "External report locator. Not a GitHub approval, not a committed audit artifact, and not an acceptance.",
+      "source": "Product Management remediation directive 2026-10-09",
+      "status": "EXTERNALLY_REPORTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "No source. No child rule is listed.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [],
+      "escalation": "Founder supplies the complete exact text. Do not paraphrase it.",
+      "event": "READINESS",
+      "evidence_key": "R65",
+      "evidence_required": "The exact source text, founder-approved, then one child row per rule.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "Sixty-five child rows replace this placeholder after the source is approved.",
+      "founder_act": "NONE",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "R65",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Intermediate source requirement. The founder supplies the text before readiness can be complete. Child rules are not invented. A percentage stays unpublished while this row is NOT_VERIFIABLE. This row is not the training authorization.",
+      "source": "The founder's canonical 65 rules. No file in this tree contains that set.",
+      "status": "NOT_VERIFIABLE"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Numerator is 0. G1, AUTH-1, and R65 are NOT_VERIFIABLE.",
+      "denominator": "PRE_TRAINING",
+      "depends_on": [
+        "AUTH-1",
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13",
+        "C14",
+        "C15",
+        "C16",
+        "C17",
+        "C18",
+        "C19",
+        "C20",
+        "C21",
+        "C22",
+        "C23",
+        "C24",
+        "C25",
+        "C26",
+        "C27",
+        "C28",
+        "C29",
+        "C30",
+        "C31",
+        "C32",
+        "C33",
+        "C34",
+        "C35",
+        "C36",
+        "C37",
+        "C38",
+        "C39",
+        "C40",
+        "C41",
+        "C42",
+        "C43",
+        "C44",
+        "C45",
+        "C46",
+        "C47",
+        "C48",
+        "C49",
+        "C50",
+        "DATA-1",
+        "DATA-2",
+        "DATA-3",
+        "DEC-K",
+        "G1",
+        "G10",
+        "G11",
+        "G12",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "G7",
+        "G8",
+        "G9",
+        "HW-01",
+        "HW-02",
+        "HW-03",
+        "HW-06",
+        "HW-08",
+        "HW-11",
+        "HW-16",
+        "HW-18",
+        "HW-19",
+        "HW-20",
+        "HW-21",
+        "HW-24",
+        "HW-FORGE",
+        "MODEL-1",
+        "MODEL-2R",
+        "P2-1",
+        "P2-2",
+        "P2-4",
+        "QUAL-1",
+        "QUAL-2",
+        "QUAL-3",
+        "R65",
+        "SUP-1",
+        "SUP-3",
+        "TRAIN-1",
+        "TRAIN-2"
+      ],
+      "escalation": "",
+      "event": "READINESS",
+      "evidence_key": "FINAL-1",
+      "evidence_required": "An independent recomputation worksheet that lists every counted pre-training id and its own status.",
+      "evidence_states": [
+        "NONE"
+      ],
+      "exit": "The worksheet matches a fresh run of the validator. Founder authorization is still FINAL-2.",
+      "founder_act": "NONE",
+      "founder_approval": "NOT_REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "FINAL-1",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "",
+      "source": "This register",
+      "status": "NOT_STARTED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "Not present. gpu_allowed is false. max_spend_usd is 0. training_authorized() returns false.",
+      "denominator": "EXECUTION",
+      "depends_on": [
+        "FINAL-1"
+      ],
+      "escalation": "",
+      "event": "FOUNDER_AUTHORIZATION_GRANTED",
+      "evidence_key": "FINAL-2",
+      "evidence_required": "One founder record naming the SHA, the dataset manifest, the foundation revision, the research-only scope, the spend cap, and the GPU permission.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The record exists after FINAL-1. This register is not that record.",
+      "founder_act": "CONTINGENT",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "FINAL-2",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Contingent on readiness. Excluded from the readiness denominator so readiness can be computed before this authorization exists.",
+      "source": "Founder execution authorization",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "",
+      "class": "MANDATORY",
+      "counts": true,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "model_selection_authorized, qualification_authorized, gpu_authorized, and training_authorized return false.",
+      "denominator": "EXECUTION",
+      "depends_on": [
+        "FINAL-2"
+      ],
+      "escalation": "",
+      "event": "TRAINING_EXECUTION_ALLOWED",
+      "evidence_key": "EXEC-1",
+      "evidence_required": "A start record, distinct from FINAL-2, showing the locks and the authorization files agree with FINAL-2 and that a run was permitted to start.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "The start record exists. Editing a lock to return true without FINAL-2 fails this row.",
+      "founder_act": "CONTINGENT",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "EXEC-1",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Contingent on founder authorization. A third event after readiness and after the grant.",
+      "source": "orca/rse/imp1/locks.py and the authorization JSON files",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "FINAL-2",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "gpu_allowed false. max_spend_usd 0. status NOT_AUTHORIZED.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "FOUNDER_AUTHORIZATION_GRANTED",
+      "evidence_key": "FINAL-2",
+      "evidence_required": "Same artifact as FINAL-2.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "FINAL-2 carries the GPU and spend permission.",
+      "founder_act": "CONTINGENT",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "AUTH-2",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Contingent GPU permission. Same founder record as FINAL-2. Not a second achievement and not an input to G12.",
+      "source": "MODEL_EVAL_AUTHORIZATION.json",
+      "status": "NOT_AUTHORIZED"
+    },
+    {
+      "canonical_id": "EXEC-1",
+      "class": "MANDATORY",
+      "counts": false,
+      "covered_by": [],
+      "cross_refs": [],
+      "current_evidence": "The three authorization predicates return false.",
+      "denominator": "NONE",
+      "depends_on": [],
+      "escalation": "",
+      "event": "TRAINING_EXECUTION_ALLOWED",
+      "evidence_key": "EXEC-1",
+      "evidence_required": "Same artifact as EXEC-1.",
+      "evidence_states": [
+        "SOURCE_VERIFIED"
+      ],
+      "exit": "EXEC-1 checks the locks.",
+      "founder_act": "CONTINGENT",
+      "founder_approval": "REQUIRED",
+      "freeze_row": null,
+      "frozen_class": "M",
+      "id": "AUTH-3",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "CLAUDE",
+      "pass_rule": "OWN_EVIDENCE",
+      "rationale": "Contingent execution check. Same artifact as EXEC-1. MODEL-1 does not depend on it.",
+      "source": "orca/rse/imp1/locks.py",
+      "status": "NOT_AUTHORIZED"
+    }
+  ],
+  "non_normative": true,
+  "numerator_pretraining": 0,
+  "published_pretraining_percentage": null,
+  "reconciliation": {
+    "checked": "2026-10-09",
+    "main": "464b602f3f259b56f139c3304828baa660e6b860",
+    "pulls": [
+      {
+        "base": "main",
+        "head": "da567d927b61c41e253b42732aad249b5fdbb104",
+        "number": 8,
+        "reviews": 0,
+        "runs": [
+          {
+            "conclusion": "success",
+            "event": "push",
+            "id": 37884389862
+          }
+        ]
+      },
+      {
+        "base": "cursor/rse-master-imp2-imp4-c04e",
+        "head": "c127780abbe6790cd0ba76beb6755615752af9b2",
+        "number": 9,
+        "reviews": 0,
+        "runs": [
+          {
+            "conclusion": "success",
+            "event": "push",
+            "id": 37889422564
+          }
+        ]
+      },
+      {
+        "base": "cursor/rse-block1-owner-ratification-c04e",
+        "head": "f424dbf51eb8ed03f5fbe57cbd0ef3c2fa72fcdb",
+        "number": 10,
+        "reviews": 0,
+        "runs": [
+          {
+            "conclusion": "success",
+            "event": "push",
+            "id": 37893124711
+          },
+          {
+            "conclusion": "failure",
+            "event": "push",
+            "id": 37892311517,
+            "note": "Earlier head. Not evidence for f424dbf.",
+            "sha": "518488dbd404cc4b3cac662b30237a93bedba5bf"
+          }
+        ]
+      },
+      {
+        "base": "main",
+        "head": "6e30dd9f31215f0046a2612653794291ada6688f",
+        "number": 11,
+        "reviews": 0,
+        "runs": [
+          {
+            "conclusion": "success",
+            "event": "pull_request",
+            "id": 37921622633,
+            "note": "No push run was listed for this head. Not exact-SHA proof."
+          }
+        ]
+      },
+      {
+        "base": "claude/phase-a-assistant-baseline",
+        "head": "348fb882dce86d95b351a932a799a45d09f37940",
+        "number": 12,
+        "reviews": 0,
+        "runs": [
+          {
+            "conclusion": "success",
+            "event": "push",
+            "id": 37973804538,
+            "sha": "348fb882dce86d95b351a932a799a45d09f37940"
+          },
+          {
+            "conclusion": "success",
+            "event": "push",
+            "id": 37972182734,
+            "note": "Ancestor of the live head. Not proof of 348fb882.",
+            "sha": "63ece2a5dd673d69a06effdf766d7046f1973fc8"
+          }
+        ]
+      },
+      {
+        "base": "main",
+        "cited_ancestor": "cd95befd196c57d1885be208532a1c9a32991a39",
+        "head": "0328123361756b9732fc57886754d6d09c4b9c46",
+        "number": 13,
+        "reviews": 0,
+        "runs": [
+          {
+            "conclusion": "success",
+            "event": "push",
+            "id": 37973767347,
+            "sha": "0328123361756b9732fc57886754d6d09c4b9c46"
+          },
+          {
+            "conclusion": "success",
+            "event": "pull_request",
+            "id": 37973770477,
+            "note": "Pull-request run. Not exact-SHA proof.",
+            "sha": "0328123361756b9732fc57886754d6d09c4b9c46"
+          },
+          {
+            "conclusion": "success",
+            "event": "push",
+            "id": 37972786151,
+            "note": "Ancestor named by the remediation request. The live head is newer.",
+            "sha": "cd95befd196c57d1885be208532a1c9a32991a39"
+          }
+        ]
+      },
+      {
+        "base": "cursor/rse-block1-governance-closure-c04e",
+        "head": "55d133c94be65b1d9b843afa3da2f9a2cc4eb701",
+        "note": "Three Phase 0 notes. Preserved. This register does not replace them.",
+        "number": 14,
+        "reviews": 0
+      },
+      {
+        "base": "cursor/rse-phase0-register-c04e",
+        "head_before_this_remediation": "de7188d76a8db633886812277272c8e51080e11e",
+        "number": 15,
+        "reviews": 0
+      }
+    ],
+    "reviewed_register_push_run": {
+      "conclusion": "success",
+      "event": "push",
+      "id": 37972785102,
+      "sha": "de7188d76a8db633886812277272c8e51080e11e"
+    },
+    "reviewed_register_sha": "de7188d76a8db633886812277272c8e51080e11e"
+  },
+  "schema": "orneur-acceptance-graph-v1"
+}
