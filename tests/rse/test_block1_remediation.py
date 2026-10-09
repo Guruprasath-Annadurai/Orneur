@@ -37,7 +37,9 @@ from tests.rse.block1_support import (
     g_intent,
     g_tail,
     grant_for,
+    open_monitor,
     open_role,
+    reboot,
     v_intent,
     v_tail,
     world,
@@ -90,21 +92,20 @@ def _confirmed(label: bytes = b"fence"):
 
 def test_commit_before_active_and_rollback_cannot_execute_twice():
     _registry, _parts, forge, _raw = _confirmed(b"pre-activation")
-    pre = forge.dump()
+    pre = forge.sink.blob
     fence = forge.fence
+    floor = fence.floor
     assert fence.label == SYNTHETIC_NOT_REAL_HARDWARE_PROOF
-    assert fence.floor == 0
+    assert floor >= 1
     assert forge.activate(b"G" * 16) == "ACTIVE"
-    assert forge.fence.floor == 1
+    assert forge.fence.floor == floor + 1
     assert forge.sink.blob.startswith(b"OBS1")
     assert forge.rehearse(b"G" * 16) == "NOT_AUTHORIZED"
     with pytest.raises(FailClosed, match="FENCE"):
-        Session.boot(pre, role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens, fence=fence)
+        reboot(forge, pre)
     with pytest.raises(FailClosed, match="DOUBLE_EXECUTION"):
         forge.rehearse(b"G" * 16)
-    restored = Session.boot(
-        forge.sink.blob, role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens, fence=fence,
-    )
+    restored = reboot(forge)
     assert restored.machine.get(b"G" * 16).state == INTERRUPTED
     with pytest.raises(FailClosed, match="INTERRUPTED"):
         restored.rehearse(b"G" * 16)
@@ -112,39 +113,44 @@ def test_commit_before_active_and_rollback_cannot_execute_twice():
 
 def test_failed_and_partial_commit_do_not_return_active():
     _registry, _parts, forge, _raw = _confirmed(b"failed-commit")
-    pre = forge.dump()
+    floor = forge.fence.floor
     forge.sink = _Boom()
     with pytest.raises(FailClosed, match="JOURNAL_COMMIT"):
         forge.activate(b"G" * 16)
     assert forge.machine.get(b"G" * 16).state == INTERRUPTED
-    assert forge.fence.floor == 0
+    assert forge.fence.floor == floor
     with pytest.raises(FailClosed, match="INTERRUPTED"):
         forge.rehearse(b"G" * 16)
+    with pytest.raises(FailClosed, match="JOURNAL_COMMIT"):
+        forge.activate(b"G" * 16)
 
     _registry, _parts, live, _raw = _confirmed(b"partial-commit")
-    pre = live.dump()
+    pre = live.sink.blob
+    floor = live.fence.floor
     partial = _Partial()
     live.sink = partial
     with pytest.raises(FailClosed, match="JOURNAL_COMMIT"):
         live.activate(b"G" * 16)
-    assert live.fence.floor == 0
+    assert live.fence.floor == floor
     with pytest.raises(FailClosed, match="JOURNAL"):
-        Session.boot(partial.blob, role_key=ed_key("forge"), floors=live.floors, tokens=live.tokens, fence=live.fence)
-    retried = Session.boot(pre, role_key=ed_key("forge"), floors=live.floors, tokens=live.tokens, fence=live.fence)
-    assert retried.machine.get(b"G" * 16).state != "ACTIVE"
+        reboot(live, partial.blob)
+    retried = reboot(live, pre)
+    assert retried.machine.get(b"G" * 16).state == "CONSUMER_CONFIRMED"
 
     _registry, _parts, stored, _raw = _confirmed(b"store-then-fail")
+    authenticated = stored.sink.blob
+    floor = stored.fence.floor
     holder = _StoreThenFail()
     stored.sink = holder
     with pytest.raises(FailClosed, match="JOURNAL_COMMIT"):
         stored.activate(b"G" * 16)
-    assert stored.fence.floor == 0
-    booted = Session.boot(
-        holder.blob, role_key=ed_key("forge"), floors=stored.floors, tokens=stored.tokens, fence=stored.fence,
-    )
-    assert booted.machine.get(b"G" * 16).state == INTERRUPTED
+    assert stored.fence.floor == floor
+    with pytest.raises(FailClosed, match="FENCE"):
+        reboot(stored, holder.blob)
+    booted = reboot(stored, authenticated)
+    assert booted.machine.get(b"G" * 16).state == "CONSUMER_CONFIRMED"
     with pytest.raises(FailClosed, match="INTERRUPTED"):
-        booted.rehearse(b"G" * 16)
+        stored.rehearse(b"G" * 16)
 
 
 def test_recipient_journal_is_session_owned_and_survives_restart():
@@ -172,13 +178,12 @@ def test_recipient_journal_is_session_owned_and_survives_restart():
             witness, b"V" * 16, frames, recipient_private=x_key("witness"), quarantine=phase1["quarantine"],
         )
     with pytest.raises(FailClosed, match="FENCE"):
-        Session.boot(pre, role_key=ed_key("witness"), floors=witness.floors, tokens=witness.tokens, fence=fence)
-    restored = Session.boot(
-        witness.sink.blob, role_key=ed_key("witness"), floors=witness.floors, tokens=witness.tokens, fence=fence,
-    )
+        reboot(witness, pre)
+    restored = reboot(witness)
     with pytest.raises(FailClosed, match="REPLAY"):
         restored.recipient.reject_replay(
             grant_id=b"V" * 16, sequence=1, enc=frames[0][178:210], bundle_digest=frames[0][118:150],
+            sender_id=parts["forge"].entry_id,
         )
     with pytest.raises(FailClosed):
         ingest_phase2(
@@ -191,32 +196,38 @@ def test_monitor_journal_keeps_fork_history_across_restart():
     crown = open_role(registry, parts, "crown")
     crown.log.append(kind=1, payload_digest=dig("boot"), grant_id=bytes(16), epoch=1, registry_version=1)
     first = crown.log.checkpoint(crown.role_key, epoch=1, registry_version=1)
-    monitor = Monitor(parts["m1"].entry_id, ed_key("m1"), epoch_floor=1)
+    monitor = open_monitor(parts, "m1")
     source = public_of(ed_key("crown"))
     witness = public_of(ed_key("m1"))
     request = crown.log.witness_request(
         first, source_role_id=crown.role_id, witness_id=parts["m1"].entry_id, packet_seq=1, old_tree_size=0,
     )
-    fence = SyntheticFence()
-    sink = _Hold()
-    ack = monitor.consider(request, source_public=source, witness_public=witness, sink=sink, fence=fence)
-    assert ack == monitor.consider(request, source_public=source, witness_public=witness)
-    fresh = Monitor(parts["m1"].entry_id, ed_key("m1"), epoch_floor=1)
+    fence = monitor.fence
+    sink = monitor.sink
+    bound = dict(sink=sink, fence=fence)
+    ack = monitor.consider(request, source_public=source, witness_public=witness, **bound)
+    assert ack == monitor.consider(request, source_public=source, witness_public=witness, **bound)
+    fresh = open_monitor(parts, "m1")
     assert fresh._last == {}
-    restored = Monitor.boot(monitor.export(), ed_key("m1"), fence=fence)
+    with pytest.raises(FailClosed, match="FENCE"):
+        Monitor.boot(monitor.export(), ed_key("m1"), sink=MemorySink(), fence=fresh.fence)
+    with pytest.raises(FailClosed, match="FENCE"):
+        Monitor.boot(monitor.export(), ed_key("m1"), sink=MemorySink(), fence=SyntheticFence())
+    restored = Monitor.boot(monitor.export(), ed_key("m1"), sink=MemorySink(), fence=fence)
     assert restored.registry_version == 1
     assert restored.log_root == crown.log.root
     assert restored.generation == fence.floor
+    restored_bound = dict(sink=restored.sink, fence=restored.fence)
     genesis_again = pack_witness_request(
         packet_seq=2, source_role_id=crown.role_id, target_witness_id=parts["m1"].entry_id,
         checkpoint=first, old_tree_size=0, proof=(),
     )
     with pytest.raises(FailClosed, match="CONSISTENCY"):
-        restored.consider(genesis_again, source_public=source, witness_public=witness)
+        restored.consider(genesis_again, source_public=source, witness_public=witness, **restored_bound)
     replay = bytearray(request)
     replay[12] = 0
     with pytest.raises(FailClosed, match="PACKET_REPLAY"):
-        restored.consider(bytes(replay), source_public=source, witness_public=witness)
+        restored.consider(bytes(replay), source_public=source, witness_public=witness, **restored_bound)
     forged = pack_checkpoint(
         log_id=crown.role_id, tree_size=1, root=bytes(31) + b"\xff", epoch=1, registry_version=1,
         prev_checkpoint_digest=bytes(32), role_key=ed_key("crown"),
@@ -226,14 +237,14 @@ def test_monitor_journal_keeps_fork_history_across_restart():
         checkpoint=forged, old_tree_size=1, proof=(),
     )
     with pytest.raises(Quarantine, match="FORK"):
-        restored.consider(fork_request, source_public=source, witness_public=witness)
+        restored.consider(fork_request, source_public=source, witness_public=witness, **restored_bound)
     crown.log.append(kind=3, payload_digest=dig("tail"), grant_id=bytes(16), epoch=1, registry_version=1)
     second = crown.log.checkpoint(crown.role_key, epoch=1, registry_version=1)
     grown = crown.log.witness_request(
         second, source_role_id=crown.role_id, witness_id=parts["m1"].entry_id, packet_seq=3, old_tree_size=1,
     )
     first_journal = bytes(sink.blob)
-    restored.consider(grown, source_public=source, witness_public=witness, sink=sink, fence=fence)
+    restored.consider(grown, source_public=source, witness_public=witness, **restored_bound)
     rolled = pack_checkpoint(
         log_id=crown.role_id, tree_size=1, root=first[45:77], epoch=1, registry_version=1,
         prev_checkpoint_digest=bytes(32), role_key=ed_key("crown"),
@@ -242,11 +253,13 @@ def test_monitor_journal_keeps_fork_history_across_restart():
         packet_seq=4, source_role_id=crown.role_id, target_witness_id=parts["m1"].entry_id,
         checkpoint=rolled, old_tree_size=crown.log.size, proof=(),
     )
-    again = Monitor.boot(restored.export(), ed_key("m1"))
+    again = Monitor.boot(restored.export(), ed_key("m1"), sink=MemorySink(), fence=restored.fence)
     with pytest.raises(FailClosed, match="ROLLBACK"):
-        again.consider(rollback, source_public=source, witness_public=witness)
+        again.consider(
+            rollback, source_public=source, witness_public=witness, sink=again.sink, fence=again.fence,
+        )
     with pytest.raises(FailClosed, match="FENCE"):
-        Monitor.boot(first_journal, ed_key("m1"), fence=fence)
+        Monitor.boot(first_journal, ed_key("m1"), sink=MemorySink(), fence=restored.fence)
 
 
 def test_freshness_ranges_round_trip_and_excess_fails_closed():
@@ -306,17 +319,33 @@ def test_enc_divergence_quarantine_is_committed_before_it_is_reported():
         ingest_phase2(
             witness, b"V" * 16, diverged, recipient_private=x_key("witness"), quarantine=phase["quarantine"],
         )
-    restored = Session.boot(
-        witness.sink.blob, role_key=ed_key("witness"), floors=witness.floors, tokens=witness.tokens,
-        fence=witness.fence,
-    )
+    assert witness.machine.get(b"V" * 16).state == "QUARANTINED"
+    with pytest.raises(Quarantine, match="ENC_DIVERGENCE"):
+        ingest_phase1(witness, b"V" * 16, diverged)
+    with pytest.raises(Quarantine, match="ENC_DIVERGENCE"):
+        witness.consume(b"V" * 16)
+    with pytest.raises(Quarantine, match="ENC_DIVERGENCE"):
+        witness.commit_evidence(b"V" * 16, bytes(32))
+    with pytest.raises(Quarantine, match="ENC_DIVERGENCE"):
+        witness.finish(b"V" * 16)
+    with pytest.raises(FailClosed, match="OUTSTANDING_GRANT"):
+        witness.machine.add(b"N" * 16, witness.role_id, ord("V"))
+    restored = reboot(witness)
+    assert restored.machine.get(b"V" * 16).state == "QUARANTINED"
     assert restored.recipient.grant_quarantined(b"V" * 16) is True
+    assert restored.recipient.sender_quarantined(parts["forge"].entry_id) is True
     with pytest.raises(Quarantine, match="ENC_DIVERGENCE"):
         ingest_phase2(
             restored, b"V" * 16, diverged, recipient_private=x_key("witness"), quarantine=phase["quarantine"],
         )
+    with pytest.raises(Quarantine, match="ENC_DIVERGENCE"):
+        restored.recipient.reject_replay(
+            grant_id=b"Z" * 16, sequence=9, enc=bytes([9]) + bytes(31), bundle_digest=bytes([4]) * 32,
+            sender_id=parts["forge"].entry_id,
+        )
     restored.recipient.reject_replay(
-        grant_id=b"Z" * 16, sequence=9, enc=bytes([9]) + bytes(31), bundle_digest=bytes([4]) * 32,
+        grant_id=b"Y" * 16, sequence=9, enc=bytes([8]) + bytes(31), bundle_digest=bytes([5]) * 32,
+        sender_id=bytes([9]) * 32,
     )
 
 
@@ -370,8 +399,10 @@ def test_note_witnessed_is_not_acceptance_and_tree_size_is_checked():
     packet = forge.log.witness_request(
         checkpoint, source_role_id=forge.role_id, witness_id=parts["m1"].entry_id, packet_seq=7, old_tree_size=0,
     )
-    ack = Monitor(parts["m1"].entry_id, ed_key("m1"), epoch_floor=1).consider(
+    monitor = open_monitor(parts, "m1")
+    ack = monitor.consider(
         packet, source_public=public_of(ed_key("forge")), witness_public=public_of(ed_key("m1")),
+        sink=monitor.sink, fence=monitor.fence,
     )
     forged = bytearray(inclusion)
     forged[45:53] = (99).to_bytes(8, "big")
@@ -401,17 +432,24 @@ def test_malformed_session_journal_fails_closed():
     _registry, _parts, forge, _raw = _confirmed(b"malformed")
     with pytest.raises(FailClosed, match="GRANT_ABSENT"):
         forge._forfeit(b"\x11" * 16)
+    with pytest.raises(FailClosed, match="FENCE"):
+        Session.boot(forge.sink.blob, role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens)
+    with pytest.raises(FailClosed, match="FENCE"):
+        Session.boot(
+            forge.sink.blob, role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens,
+            sink=MemorySink(), fence=SyntheticFence(),
+        )
     with pytest.raises(FailClosed, match="JOURNAL"):
-        Session.boot(forge.dump()[:40], role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens)
-    broken = bytearray(forge.dump())
+        reboot(forge, forge.sink.blob[:40])
+    broken = bytearray(forge.sink.blob)
     broken[4] = 9
-    with pytest.raises(FailClosed, match="JOURNAL"):
-        Session.boot(bytes(broken), role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens)
-    replaced = bytearray(forge.dump())
+    with pytest.raises(FailClosed, match="JOURNAL|FENCE"):
+        reboot(forge, bytes(broken))
+    replaced = bytearray(forge.sink.blob)
     at = replaced.find(b"OFJ1")
     replaced[at + 4] = 0
-    with pytest.raises(FailClosed, match="JOURNAL|FRESHNESS"):
-        Session.boot(bytes(replaced), role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens)
+    with pytest.raises(FailClosed, match="JOURNAL|FRESHNESS|FENCE"):
+        reboot(forge, bytes(replaced))
 
 
 def test_hedge_counter_is_committed_before_seal_returns():
@@ -426,19 +464,20 @@ def test_hedge_counter_is_committed_before_seal_returns():
         recipient_public=x_pub("witness"), grant_id=b"V" * 16, artifact_id=parts["corpus"].entry_id,
         sequence=1, epoch=1, os_entropy=bytes([2]) * 32,
     )
+    authenticated = forge.sink.blob
     forge.sink = _Boom()
     with pytest.raises(FailClosed, match="JOURNAL_COMMIT"):
         forge.seal_frames(sender, **kwargs)
     assert forge.counters.nxt == 1
-    forge.sink = MemorySink()
-    frames = forge.seal_frames(sender, **kwargs)
+    with pytest.raises(FailClosed, match="JOURNAL_COMMIT"):
+        forge.seal_frames(sender, **kwargs)
+    restored = reboot(forge, authenticated)
+    frames = restored.seal_frames(sender, **kwargs)
     assert frames[0][:4] == b"OCR1"
-    restored = Session.boot(
-        forge.sink.blob, role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens, fence=forge.fence,
-    )
+    restarted = reboot(restored)
     again = Sender(ed_key("forge"), parts["forge"].entry_id, dig("env-forge"))
     with pytest.raises(FailClosed, match="COUNTER_REUSE"):
-        restored.seal_frames(again, **kwargs)
+        restarted.seal_frames(again, **kwargs)
 
 
 def test_authorization_locks_remain_denied_after_the_campaign():

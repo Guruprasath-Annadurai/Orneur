@@ -228,9 +228,18 @@ def test_zero_shared_secret_is_refused_before_open():
 def test_enc_divergence_is_quarantined():
     journal = RecipientJournal()
     enc = bytes([1]) + bytes(31)
-    journal.admit(grant_id=b"V" * 16, sequence=1, enc=enc, bundle_digest=b"\x01" * 32)
+    sender = bytes([7]) * 32
+    journal.admit(grant_id=b"V" * 16, sequence=1, enc=enc, bundle_digest=b"\x01" * 32, sender_id=sender)
     with pytest.raises(Quarantine, match="ENC_DIVERGENCE"):
-        journal.reject_replay(grant_id=b"V" * 16, sequence=2, enc=enc, bundle_digest=b"\x02" * 32)
+        journal.reject_replay(
+            grant_id=b"V" * 16, sequence=2, enc=enc, bundle_digest=b"\x02" * 32, sender_id=sender,
+        )
+    assert journal.sender_quarantined(sender) is True
+    with pytest.raises(Quarantine, match="ENC_DIVERGENCE"):
+        journal.reject_replay(
+            grant_id=b"Z" * 16, sequence=3, enc=bytes([3]) + bytes(31),
+            bundle_digest=b"\x03" * 32, sender_id=sender,
+        )
 
 
 def test_header_reencode_rejects_noncanonical_padding():

@@ -12,7 +12,7 @@ from orca.rse.imp1.profiles import ROLE_MONITOR_LITE
 from orca.rse.imp1.verdict import CHECKS_PASSED, FailClosed, Quarantine
 from orca.rse.imp1.locks import prove_authorization_locks
 from orca.rse.imp3.freshness import RoleFreshness
-from orca.rse.imp3.ledger import EvidenceLog, Monitor, require_monitor
+from orca.rse.imp3.ledger import EvidenceLog, require_monitor
 from orca.rse.imp3.merkle import (
     consistency_proof,
     inclusion_proof,
@@ -23,7 +23,9 @@ from orca.rse.imp3.merkle import (
 )
 from orca.rse.imp3.records import KIND_GRANT, pack_ack, pack_checkpoint, pack_witness_request
 from orca.rse.imp3.session import Session
-from tests.rse.block1_support import authorize, dig, ed_key, g_intent, g_tail, grant_for, open_role, world
+from tests.rse.block1_support import (
+    authorize, dig, ed_key, g_intent, g_tail, grant_for, open_monitor, open_role, reboot, world,
+)
 from tests.rse.support import sign_entries
 
 
@@ -95,18 +97,19 @@ def test_monitor_fork_rollback_and_idempotent_ack():
     crown = open_role(registry, parts, "crown")
     crown.log.append(kind=1, payload_digest=dig("boot"), grant_id=bytes(16), epoch=1, registry_version=1)
     first = crown.log.checkpoint(crown.role_key, epoch=1, registry_version=1)
-    monitor = Monitor(parts["m1"].entry_id, ed_key("m1"), epoch_floor=1)
+    monitor = open_monitor(parts, "m1")
     source = public_of(ed_key("crown"))
     witness = public_of(ed_key("m1"))
     request = crown.log.witness_request(
         first, source_role_id=crown.role_id, witness_id=parts["m1"].entry_id, packet_seq=1, old_tree_size=0,
     )
-    ack = monitor.consider(request, source_public=source, witness_public=witness)
-    assert monitor.consider(request, source_public=source, witness_public=witness) == ack
+    bound = dict(sink=monitor.sink, fence=monitor.fence)
+    ack = monitor.consider(request, source_public=source, witness_public=witness, **bound)
+    assert monitor.consider(request, source_public=source, witness_public=witness, **bound) == ack
     replay = bytearray(request)
     replay[12] = 0
     with pytest.raises(FailClosed, match="PACKET_REPLAY"):
-        monitor.consider(bytes(replay), source_public=source, witness_public=witness)
+        monitor.consider(bytes(replay), source_public=source, witness_public=witness, **bound)
     forged = pack_checkpoint(
         log_id=crown.role_id, tree_size=1, root=bytes(31) + b"\xff", epoch=1, registry_version=1,
         prev_checkpoint_digest=bytes(32), role_key=ed_key("crown"),
@@ -116,7 +119,7 @@ def test_monitor_fork_rollback_and_idempotent_ack():
         checkpoint=forged, old_tree_size=1, proof=(),
     )
     with pytest.raises(Quarantine, match="FORK"):
-        monitor.consider(fork_request, source_public=source, witness_public=witness)
+        monitor.consider(fork_request, source_public=source, witness_public=witness, **bound)
     rolled = pack_checkpoint(
         log_id=crown.role_id, tree_size=1, root=crown.log.root, epoch=1, registry_version=1,
         prev_checkpoint_digest=bytes(32), role_key=ed_key("crown"),
@@ -127,13 +130,13 @@ def test_monitor_fork_rollback_and_idempotent_ack():
     grown = crown.log.witness_request(
         second, source_role_id=crown.role_id, witness_id=parts["m1"].entry_id, packet_seq=3, old_tree_size=1,
     )
-    monitor.consider(grown, source_public=source, witness_public=witness)
+    monitor.consider(grown, source_public=source, witness_public=witness, **bound)
     rollback = pack_witness_request(
         packet_seq=4, source_role_id=crown.role_id, target_witness_id=parts["m1"].entry_id,
         checkpoint=rolled, old_tree_size=crown.log.size, proof=(),
     )
     with pytest.raises(FailClosed, match="ROLLBACK"):
-        monitor.consider(rollback, source_public=source, witness_public=witness)
+        monitor.consider(rollback, source_public=source, witness_public=witness, **bound)
 
 
 def forge_registry(session: Session):
@@ -172,11 +175,14 @@ def test_m2_cannot_replace_m1_and_later_checkpoint_is_not_the_ack():
         crown.activate(b"G" * 16)
     crown.append_authorization(b"G" * 16)
     first = crown.checkpoint_authorization(b"G" * 16)
-    m2 = Monitor(parts["m2"].entry_id, ed_key("m2"), epoch_floor=1)
+    m2 = open_monitor(parts, "m2")
     packet = crown.log.witness_request(
         first, source_role_id=crown.role_id, witness_id=parts["m2"].entry_id, packet_seq=1, old_tree_size=0,
     )
-    ack = m2.consider(packet, source_public=public_of(ed_key("crown")), witness_public=public_of(ed_key("m2")))
+    ack = m2.consider(
+        packet, source_public=public_of(ed_key("crown")), witness_public=public_of(ed_key("m2")),
+        sink=m2.sink, fence=m2.fence,
+    )
     assert crown.accept_ack(b"G" * 16, ack) == "CHECKPOINT_CREATED"
     with pytest.raises(FailClosed, match="GRANT_STATE"):
         crown.deliver(b"G" * 16)
@@ -187,9 +193,10 @@ def test_m2_cannot_replace_m1_and_later_checkpoint_is_not_the_ack():
     )
     # The witness has not seen the first tree, so an old_tree_size of 0 is its genesis.
     # A later checkpoint still does not acknowledge the earlier one.
-    m1 = Monitor(parts["m1"].entry_id, ed_key("m1"), epoch_floor=1)
+    m1 = open_monitor(parts, "m1")
     later_ack = m1.consider(
         later_packet, source_public=public_of(ed_key("crown")), witness_public=public_of(ed_key("m1")),
+        sink=m1.sink, fence=m1.fence,
     )
     with pytest.raises(FailClosed, match="STALE_CHECKPOINT"):
         crown.accept_ack(b"G" * 16, later_ack)
@@ -266,8 +273,10 @@ def test_tail_suppression_and_checkpoint_substitution():
     packet = crown.log.witness_request(
         checkpoint, source_role_id=crown.role_id, witness_id=parts["m1"].entry_id, packet_seq=1, old_tree_size=0,
     )
-    ack = Monitor(parts["m1"].entry_id, ed_key("m1"), epoch_floor=1).consider(
+    monitor = open_monitor(parts, "m1")
+    ack = monitor.consider(
         packet, source_public=public_of(ed_key("crown")), witness_public=public_of(ed_key("m1")),
+        sink=monitor.sink, fence=monitor.fence,
     )
     crown.accept_ack(b"G" * 16, ack)
     delivery = crown.deliver(b"G" * 16)
@@ -303,8 +312,10 @@ def test_signed_is_not_usable_and_result_label_does_not_open_locks():
     packet = forge.log.witness_request(
         checkpoint, source_role_id=forge.role_id, witness_id=parts["m1"].entry_id, packet_seq=7, old_tree_size=0,
     )
-    ack = Monitor(parts["m1"].entry_id, ed_key("m1"), epoch_floor=1).consider(
+    monitor = open_monitor(parts, "m1")
+    ack = monitor.consider(
         packet, source_public=public_of(ed_key("forge")), witness_public=public_of(ed_key("m1")),
+        sink=monitor.sink, fence=monitor.fence,
     )
     forge.accept_result(digest, record=record, inclusion=inclusion, checkpoint=checkpoint, ack=ack)
     assert forge.classify(digest, "ACCEPTED") == "ACCEPTED"
@@ -321,13 +332,13 @@ def test_crash_recovery_matrix():
         grant_id=b"G" * 16, entropy=hashlib.sha256(b"crash").digest(), runtime=30,
     )
     intent = g_intent(registry, raw, parts)
-    booted = Session.boot(forge.dump(), role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens)
+    booted = reboot(forge)
     assert booted.machine.get(b"G" * 16).reconfirm_required is True
     with pytest.raises(FailClosed, match="RECONFIRM"):
         booted.activate(b"G" * 16)
     booted.reconfirm(b"G" * 16, intent)
     assert booted.activate(b"G" * 16) == "ACTIVE"
-    interrupted = Session.boot(booted.dump(), role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens)
+    interrupted = reboot(booted)
     assert interrupted.machine.get(b"G" * 16).state == "INTERRUPTED"
     with pytest.raises(FailClosed, match="INTERRUPTED"):
         interrupted.rehearse(b"G" * 16)
@@ -345,7 +356,7 @@ def test_evidence_pending_crash_is_not_a_rerun():
     forge.consume(b"G" * 16)
     digest = hashlib.sha256(b"synthetic-evidence").digest()
     forge.commit_evidence(b"G" * 16, digest)
-    restored = Session.boot(forge.dump(), role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens)
+    restored = reboot(forge)
     assert restored.machine.get(b"G" * 16).state == "EVIDENCE_PENDING"
     with pytest.raises(FailClosed, match="GRANT_STATE"):
         restored.rehearse(b"G" * 16)
@@ -404,8 +415,8 @@ def test_tampered_consumer_confirmed_with_consumption_is_quarantined():
     blob = bytearray(forge.dump())
     at = blob.find(b"OGJ1")
     blob[at + 5 + 4 + 16 + 2] |= 1
-    restored = Session.boot(bytes(blob), role_key=ed_key("forge"), floors=forge.floors, tokens=forge.tokens)
-    assert restored.machine.get(b"G" * 16).state == "QUARANTINED"
+    with pytest.raises(FailClosed, match="FENCE"):
+        reboot(forge, bytes(blob))
 
 
 def test_empty_log_parses_and_duplicate_ack_conflicts():

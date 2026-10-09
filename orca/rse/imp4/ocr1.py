@@ -276,37 +276,68 @@ class Sender:
 
 
 class RecipientJournal:
-    """Session-owned replay journal. A caller-supplied replacement is not authoritative."""
+    """Session-owned replay journal. A caller-supplied replacement is not authoritative.
+
+    ORJ1 version 2 stores the quarantined sender ids as well as the grant ids.
+    That is the recipient-local reading of the frozen sender quarantine. It is
+    not a class-K recovery and it does not inform any other role.
+    """
 
     def __init__(self) -> None:
         self.last_sequence = 0
         self._seen_sequence: set[tuple[bytes, int]] = set()
         self._enc: dict[bytes, bytes] = {}
         self._quarantined: set[bytes] = set()
+        self._senders: set[bytes] = set()
         self._rows: list[tuple[bytes, int, bytes, bytes]] = []
 
     def grant_quarantined(self, grant_id: bytes) -> bool:
         return bytes(grant_id) in self._quarantined
 
+    def sender_quarantined(self, sender_id: bytes) -> bool:
+        return bytes(sender_id) in self._senders
+
     def quarantine_grant(self, grant_id: bytes) -> None:
         self._quarantined.add(bytes(grant_id))
 
-    def reject_replay(self, *, grant_id: bytes, sequence: int, enc: bytes, bundle_digest: bytes) -> None:
+    def quarantine_sender(self, sender_id: bytes) -> None:
+        sender_id = bytes(sender_id)
+        if len(sender_id) != 32:
+            raise FailClosed("SENDER")
+        if sender_id not in self._senders and len(self._senders) >= 256:
+            raise FailClosed("JOURNAL")
+        self._senders.add(sender_id)
+
+    def reject_replay(self, *, grant_id: bytes, sequence: int, enc: bytes, bundle_digest: bytes,
+                      sender_id: bytes) -> None:
         grant_id = bytes(grant_id)
-        if grant_id in self._quarantined:
+        sender_id = bytes(sender_id)
+        if len(sender_id) != 32:
+            raise FailClosed("SENDER")
+        if sender_id in self._senders or grant_id in self._quarantined:
+            self._note_divergence(grant_id, sender_id)
             raise Quarantine("ENC_DIVERGENCE")
         key = (grant_id, sequence)
         if key in self._seen_sequence or (self._seen_sequence and sequence <= self.last_sequence):
             raise FailClosed("REPLAY")
         prior = self._enc.get(bytes(enc))
         if prior is not None and prior != bundle_digest:
-            self._quarantined.add(grant_id)
+            self._note_divergence(grant_id, sender_id)
             raise Quarantine("ENC_DIVERGENCE")
         if prior is not None:
             raise FailClosed("REPLAY")
 
-    def admit(self, *, grant_id: bytes, sequence: int, enc: bytes, bundle_digest: bytes) -> None:
-        self.reject_replay(grant_id=grant_id, sequence=sequence, enc=enc, bundle_digest=bundle_digest)
+    def _note_divergence(self, grant_id: bytes, sender_id: bytes) -> None:
+        if grant_id not in self._quarantined and len(self._quarantined) >= 256:
+            raise FailClosed("JOURNAL")
+        self._quarantined.add(grant_id)
+        self.quarantine_sender(sender_id)
+
+    def admit(self, *, grant_id: bytes, sequence: int, enc: bytes, bundle_digest: bytes,
+              sender_id: bytes) -> None:
+        self.reject_replay(
+            grant_id=grant_id, sequence=sequence, enc=enc, bundle_digest=bundle_digest, sender_id=sender_id,
+        )
         if len(self._rows) >= _MAX_REPLAY:
             raise FailClosed("JOURNAL")
         self._enc[bytes(enc)] = bytes(bundle_digest)
@@ -323,19 +354,21 @@ class RecipientJournal:
 
     def export(self) -> bytes:
         quarantined = b"".join(sorted(self._quarantined))
+        senders = b"".join(sorted(self._senders))
         rows = bytearray()
         for grant_id, sequence, enc, digest in self._rows:
             rows += grant_id + _u64(sequence) + enc + digest
         return b"".join((
-            b"ORJ1", bytes([1]), _u64(self.last_sequence),
+            b"ORJ1", bytes([2]), _u64(self.last_sequence),
             struct.pack(">I", len(self._quarantined)), quarantined,
+            struct.pack(">I", len(self._senders)), senders,
             struct.pack(">I", len(self._rows)), bytes(rows),
         ))
 
     @classmethod
     def parse(cls, raw: bytes) -> "RecipientJournal":
         data = bytes(raw)
-        if len(data) < 4 + 1 + 8 + 8 or data[:4] != b"ORJ1" or data[4] != 1:
+        if len(data) < 4 + 1 + 8 + 4 or data[:4] != b"ORJ1" or data[4] != 2:
             raise FailClosed("JOURNAL")
         last_sequence = int.from_bytes(data[5:13], "big")
         offset = 13
@@ -352,6 +385,19 @@ class RecipientJournal:
             quarantined.add(grant_id)
         if offset + 4 > len(data):
             raise FailClosed("JOURNAL")
+        scount = struct.unpack_from(">I", data, offset)[0]
+        offset += 4
+        if scount > 256 or offset + scount * 32 > len(data):
+            raise FailClosed("JOURNAL")
+        senders = set()
+        for _ in range(scount):
+            sender_id = data[offset:offset + 32]
+            offset += 32
+            if sender_id in senders:
+                raise FailClosed("JOURNAL")
+            senders.add(sender_id)
+        if offset + 4 > len(data):
+            raise FailClosed("JOURNAL")
         count = struct.unpack_from(">I", data, offset)[0]
         offset += 4
         row_len = 16 + 8 + 32 + 32
@@ -359,6 +405,7 @@ class RecipientJournal:
             raise FailClosed("JOURNAL")
         journal = cls()
         journal._quarantined = quarantined
+        journal._senders = senders
         highest = 0
         for _ in range(count):
             grant_id = data[offset:offset + 16]
@@ -480,7 +527,7 @@ def open_frames(frames: tuple[bytes, ...] | list[bytes], *, sender_public: bytes
     first = parsed[0]
     journal.reject_replay(
         grant_id=first["grant_id"], sequence=first["sequence"], enc=first["enc"],
-        bundle_digest=first["bundle_digest"],
+        bundle_digest=first["bundle_digest"], sender_id=first["sender_id"],
     )
     _reject_zero_shared(recipient_private, first["enc"])
     info = info_bytes(first["header"])
@@ -500,7 +547,7 @@ def open_frames(frames: tuple[bytes, ...] | list[bytes], *, sender_public: bytes
         raise FailClosed("DIGEST")
     journal.admit(
         grant_id=first["grant_id"], sequence=first["sequence"], enc=first["enc"],
-        bundle_digest=first["bundle_digest"],
+        bundle_digest=first["bundle_digest"], sender_id=first["sender_id"],
     )
     return plaintext
 
@@ -551,12 +598,34 @@ def _limits() -> None:
         os._exit(71)
 
 
+def _refuse_recorded_quarantine(session, grant_id: bytes, sender_id: bytes | None = None) -> None:
+    try:
+        state = session.machine.get(grant_id).state
+    except FailClosed:
+        state = ""
+    if state == "QUARANTINED" or session.recipient.grant_quarantined(grant_id):
+        raise Quarantine("ENC_DIVERGENCE")
+    if sender_id is not None and session.recipient.sender_quarantined(sender_id):
+        raise Quarantine("ENC_DIVERGENCE")
+
+
+def _seal_sender_quarantine(session, grant_id: bytes) -> None:
+    """Move the affected grant to QUARANTINED and commit that fact first."""
+    slot = session.machine.get(grant_id)
+    if slot.state != "QUARANTINED":
+        session.machine.move(grant_id, "QUARANTINED")
+    session._live.discard(bytes(grant_id))
+    session.durable_commit()
+
+
 def ingest_phase1(session, grant_id: bytes, frames: list[bytes], **extra) -> dict:
     if extra:
         raise FailClosed("UNEXPECTED_ARGUMENT")
+    _refuse_recorded_quarantine(session, grant_id)
     grant, sender_public = _authorized_view(session, grant_id, allow_active=False)
     parsed = structural_phase(frames, sender_public=sender_public)
     _bind_grant(parsed, grant, session)
+    _refuse_recorded_quarantine(session, grant_id, parsed[0]["sender_id"])
     return {
         "quarantine": hashlib.sha256(b"".join(frames)).digest(),
         "acceptance": ZERO_ACCEPTANCE_AUTHORITY,
@@ -574,8 +643,7 @@ def ingest_phase2(session, grant_id: bytes, frames: list[bytes], *, recipient_pr
     """
     if extra:
         raise FailClosed("UNEXPECTED_ARGUMENT")
-    if session.recipient.grant_quarantined(grant_id):
-        raise Quarantine("ENC_DIVERGENCE")
+    _refuse_recorded_quarantine(session, grant_id)
     if session.machine.get(grant_id).state != "ACTIVE":
         raise FailClosed("GRANT_STATE")
     if hashlib.sha256(b"".join(bytes(frame) for frame in frames)).digest() != bytes(quarantine):
@@ -594,7 +662,7 @@ def ingest_phase2(session, grant_id: bytes, frames: list[bytes], *, recipient_pr
             )
         except Quarantine as exc:
             if str(exc) == "ENC_DIVERGENCE":
-                session.durable_commit()
+                _seal_sender_quarantine(session, grant_id)
             raise
         admitted = True
         verdict = run_keyless_checker(plaintext)

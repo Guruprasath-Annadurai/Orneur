@@ -44,7 +44,7 @@ These are recommendations. Manifest V3 and the normative documents were not edit
 4. N-1 above, if an independent reviewer reads ACR-12 as requiring void-on-presentation rather than void-on-authenticated-successor.
 5. OMJ1, the monitor journal. RSE12_02 defines OCP1 and the packet rules (strictly increasing `packet_seq` per source and witness, idempotent replay, no log rollback). It does not define a monitor journal. The software writes a bounded OMJ1 (version 1; generation `u64`; epoch floor; witness id; registry version taken from the signed checkpoint; previous checkpoint digest; evidence-log root; at most 64 log rows; at most 256 packet rows). This note does not make OMJ1 normative. In-memory `Monitor` fields are not durable evidence.
 6. OFJ1 version 2 stores forfeited sequences as merged inclusive intervals, with a shared cap of 8192 set members. The freeze does not number this journal. A mutation that would exceed the cap fails closed and does not emit a journal the parser would reject.
-7. OBS1 version 2 carries a `u64` generation. `SyntheticFence` rejects a generation below its floor, and the same generation with a different digest. The label is `SYNTHETIC_NOT_REAL_HARDWARE_PROOF`. A virgin fence has not authenticated a journal. This is not TPM NV enforcement, and it does not retire the hardware residual.
+7. OBS1 version 2 carries a `u64` generation. `SyntheticFence` accepts only the generation it has committed, with that digest. A virgin fence has not authenticated a journal and cannot adopt one. The label is `SYNTHETIC_NOT_REAL_HARDWARE_PROOF`. This is not TPM NV enforcement, and it does not retire the hardware residual.
 8. OCJ1 is the hedge-counter journal inside OBS1. RFC 8937 needs a counter that is not reused for the same grant and sequence. `Session.seal_frames` commits that counter before it returns. An unbound `Sender()` still keeps a process-local counter; that object is not the restart boundary. No new signature domain is implied. OCR1 header width stays 210. The OCK1/OCH1 domain in item 3 remains an open recommendation.
 
 ## Residuals
@@ -82,12 +82,12 @@ Software tests and Docker are not a P1 witness and are not hardware proof. Label
 
 The independent review verdict on that SHA was `RSE_MASTER_BLOCK_1_REMEDIATION_REQUIRED`. This section records the software changes. It does not accept them.
 
-- F-1. `activate` calls `JournalSink.commit` on the OBS1 blob and advances `SyntheticFence` only after that call returns. A failed or partial commit raises `JOURNAL_COMMIT`, moves an in-memory ACTIVE grant to INTERRUPTED, and does not return ACTIVE. Boot rejects a journal generation below the fence floor. Tests cover commit failure, a short write, a write that raises after storing bytes, pre-activation rollback, restart, and a second `rehearse`.
+- F-1. `activate` calls `JournalSink.commit` and advances `SyntheticFence` only after that call returns. A failed commit raises `JOURNAL_COMMIT` and does not return ACTIVE. The final remediation section closes the later hole: a missing or virgin fence cannot restore the historical journal.
 - F-2. `ingest_phase2` takes no caller journal. The session `RecipientJournal` is inside OBS1. Admission is committed before success is returned. A substituted journal is `UNEXPECTED_ARGUMENT`. Restart loads the admitted sequence.
 - F-3. `Monitor.export` / `Monitor.boot` use OMJ1 (ACR 5). A new `Monitor()` has no fork history. Restart tests cover a second genesis, packet replay, fork, rollback, and an older journal against the same fence.
 - F-4. Forfeited sequences are one merged interval. A range of 5,000 and 4,100 voided challenges round-trip. Input past the shared cap fails closed at the mutation.
 - F-5. `_reject_zero_shared` catches the library `ValueError` from a low-order public key and raises `ZERO_SHARED_SECRET`. N12 uses real X25519 keys. The all-zero mock remains a separate test and is not the proof.
-- F-6. `ENC_DIVERGENCE` marks that grant id and `durable_commit` runs before the quarantine is reported. A later sequence of that grant fails closed after restart. Another grant id is not marked.
+- F-6. `ENC_DIVERGENCE` is committed before it is reported. The final remediation section is the rule that now applies: the grant becomes `QUARANTINED`, and the sender is quarantined on this recipient.
 - F-7. `verify_grant_inclusion` requires the evidence-record epoch and registry version, and the checkpoint epoch and registry version, to match the grant.
 - F-8. `Egress.note_witnessed` without the session admit token raises `RESULT_EGRESS`. `accept_result` checks inclusion `tree_size` against the checkpoint. An unwitnessed digest cannot be classified as a training input. Locks stay denied.
 - F-9. Checker label `SYNTHETIC_NOT_A_SANDBOX`. The temporary directory is removed. `setrlimit` failure exits the child.
@@ -105,3 +105,45 @@ pyhpke is declared in the `dev` extra and in the `rse` extra. It is not a base d
 ## Checks
 
 Local `tests/rse` (IMP-1 invariants plus IMP-2/3/4, the remediation campaign, and the cross-IMP rehearsal) is the software regression for this block. Exact-SHA CI is recorded on the candidate commit after the six push jobs finish. A green pull-request merge ref is not a substitute for that push SHA. The run id is recorded on the pull request for the SHA that was tested, so this file does not move that SHA.
+
+## Final remediation of candidate `53de28d647038bdeb0509d5640828beb57a1bec1`
+
+The second independent retest verdict on that SHA was `RSE_MASTER_BLOCK_1_REMEDIATION_REQUIRED`. Findings B-1, B-2, and B-3 are the software changes below. This note does not accept them and does not edit Manifest V3.
+
+- B-1. `Session` and `Monitor` take `sink` and `fence` as explicit dependencies. Omitting either one fails closed with `FENCE`. A virgin `SyntheticFence` cannot authenticate or adopt a journal: `authenticate` and `pin_observed` raise `FENCE`. First boot is only `Session(...)` or `Monitor(...)` with a virgin fence, and that constructor commits an empty journal at generation 1 before it returns. `boot` refuses a virgin fence and requires the fence's current generation and digest. `activate`, `issue_challenge`, `revoke`, `advance_registry`, monitor `consider`, and the other security transitions commit before success. A failed commit closes the session. The label remains `SYNTHETIC_NOT_REAL_HARDWARE_PROOF`. This is not TPM NV.
+- B-2. `issue_challenge` checkpoints the role log when records sit past the current head, then binds the new challenge to that head, then appends the challenge record. `_require_ancestor` is unchanged. A second grant on the same role therefore covers the prior consumption or interruption record. An old head, a forked head, a replayed challenge, and a delivery without the M1 acknowledgement still fail closed.
+- B-3. An authenticated `ENC_DIVERGENCE` moves that grant to `QUARANTINED` and commits the sender id in ORJ1 version 2 before the quarantine is reported. Phase 1, phase 2, `consume`, `commit_evidence`, `finish`, and `rehearse` then fail closed. The role slot stays occupied. A later bundle from that sender to this recipient fails closed even under another grant id. A different sender is not marked.
+
+## ARCHITECTURE_CHANGE_REQUEST
+
+Not ratified. Not an edit to the freeze.
+
+Recipient-local sender quarantine is the frozen RSE12_04 sentence: the recipient rejects a repeated `enc` under a different `bundle_digest` and quarantines the sender. ORJ1 version 2 is the unnumbered journal profile that stores those sender ids beside the grant ids. Implementing that profile is not a new authorization rule.
+
+The following are semantic gaps. This milestone does not implement them and does not call the recipient-local behavior a substitute:
+
+1. Role lifecycle `QUARANTINED → RECOVERY` requires a class-K grant (RSE12_02 §9). Class K remains `UNSUPPORTED_CURRENT_MILESTONE`. No code path leaves `QUARANTINED`.
+2. A sender quarantine learned by one recipient is not a witnessed fact for any other role. Publishing it, and letting another role refuse that sender, needs an owner-defined witness record and scope. That record is not in the freeze.
+
+Until the owner ratifies those two items, recovery and cross-role sender refusal stay fail-closed.
+
+## Owner-ratification package
+
+Each row is either an implementation profile for behavior the freeze already requires, or a semantic change that this branch does not treat as accepted.
+
+| Item | Classification | Status |
+| --- | --- | --- |
+| OMJ1 | Implementation profile. RSE12_02 defines OCP1 and the packet rules. It does not number a monitor journal. | Proposed. Not ratified. |
+| OFJ1 v2 | Implementation profile. Forfeited sequences are a frozen set. The interval layout and the 8192 cap are not numbered. | Proposed. Not ratified. |
+| OBS1 v2 | Implementation profile. The crash table requires a journal written before each transition. The version byte and generation field are not numbered. | Proposed. Not ratified. |
+| OCJ1 | Implementation profile. RFC 8937, as applied by RSE12_04, needs a non-repeating counter. The journal layout is not numbered. | Proposed. Not ratified. |
+| ORJ1 v2 | Implementation profile of the recipient-local sender quarantine in RSE12_04. The byte layout is not numbered. | Proposed. Not ratified. |
+| Cross-role sender quarantine and class-K recovery | Semantic architecture change. See the request above. | Not implemented. Not ratified. |
+| OCK1 / OCH1 signature-domain wording | Semantic clarification. The code uses the OCA1 domain pattern. The freeze states that domain for OCA1 only. | Open. Not ratified. |
+| pyhpke 0.6.5 | Library named by RSE12_04. Declared in the `dev` extra and the `rse` extra (`pyhpke>=0.6.5,<0.7`). Not a base dependency. | Not an audit. |
+| `rse` extra | Install set for OCR1: `cryptography>=49,<51` and `pyhpke>=0.6.5,<0.7`. `uv pip install -e .` cannot import OCR1. | Disclosed. Not a new authority. |
+| `uv.lock` | Does not contain pyhpke. CI installs with `uv pip install`, not `uv sync`, so the lockfile is not what the jobs resolve. | Disclosed. |
+| Dependency vulnerability scan | The scan job runs `uv pip install -e .` and `pip-audit \|\| true`. That install is the base package. It does not scan pyhpke. A green log is not a pyhpke audit. | Disclosed. |
+| `cursor/**` push trigger | `.github/workflows/test.yml` push branches include `cursor/**`, so a push of this branch runs the six jobs on the commit SHA. The pull_request checkout remains a merge ref. The workflow adds no permissions. | Disclosed for owner review. Not reverted. |
+
+Installed interpreters on the software-test machine reported pyhpke 0.6.5 and cryptography 50.0.2. Those versions are observations, not a lockfile pin beyond the ranges above.

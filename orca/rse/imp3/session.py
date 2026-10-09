@@ -38,14 +38,16 @@ from orca.rse.imp2.machine import (
 )
 from orca.rse.imp3.egress import Egress
 from orca.rse.imp3.freshness import RoleFreshness
-from orca.rse.imp3.journal import JournalSink, MemorySink, SyntheticFence
+from orca.rse.imp3.journal import JournalSink, SyntheticFence
 from orca.rse.imp3.ledger import EvidenceLog, Monitor, ack_matches, enrolment_key, require_monitor, verify_grant_inclusion
 from orca.rse.imp4.ocr1 import CounterJournal, RecipientJournal, Sender
 from orca.rse.imp3.merkle import leaf_hash, verify_inclusion
 from orca.rse.imp3.records import (
     KIND_ACCEPTANCE,
     KIND_BOOT,
+    KIND_CHALLENGE,
     KIND_CONSUMPTION,
+    KIND_INTERRUPTION,
     KIND_RESULT,
     NON_STATE_CHANGING,
     OCA1_LEN,
@@ -71,6 +73,8 @@ class Session:
                  floors: Floors, tokens: list[OwnerToken], registry_raw: bytes, crown_image_id: bytes,
                  m1_id: bytes, m2_id: bytes, sink: JournalSink | None = None,
                  fence: SyntheticFence | None = None) -> None:
+        if not isinstance(fence, SyntheticFence) or not fence.virgin or not callable(getattr(sink, "commit", None)):
+            raise FailClosed("FENCE")
         registry = parse_registry(bytes(registry_raw))
         entry = registry.by_id(bytes(role_id))
         if entry is None or entry.entry_type != ENROLMENT:
@@ -107,12 +111,14 @@ class Session:
         self._live: set[bytes] = set()
         self._executed: set[bytes] = set()
         self.executions = 0
-        self.sink = sink if sink is not None else MemorySink()
-        self.fence = fence if fence is not None else SyntheticFence()
+        self.sink = sink
+        self.fence = fence
         self.generation = 0
         self.recipient = RecipientJournal()
         self.counters = CounterJournal()
+        self._closed = False
         self._freshness.authenticate(self.registry_raw, self.tokens, self.floors, None)
+        self.durable_commit()
 
     @property
     def freshness(self) -> RoleFreshness:
@@ -147,12 +153,22 @@ class Session:
     @classmethod
     def boot(cls, blob: bytes, *, role_key: Ed25519PrivateKey, floors: Floors, tokens: list[OwnerToken],
              fence: SyntheticFence | None = None, sink: JournalSink | None = None) -> "Session":
+        """Restore a journal this fence has already committed.
+
+        A missing sink, a missing fence, or a virgin fence is not a first boot.
+        First boot is ``Session(...)`` on an empty role. Historical bytes are
+        refused until ``authenticate`` accepts their generation and digest.
+        """
+        if not isinstance(fence, SyntheticFence) or fence.virgin or not callable(getattr(sink, "commit", None)):
+            raise FailClosed("FENCE")
+        raw = bytes(blob)
         try:
-            parsed = _parse_blob(blob)
+            parsed = _parse_blob(raw)
         except (FailClosed, Quarantine):
             raise
         except (KeyError, ValueError, struct.error, IndexError) as exc:
             raise FailClosed("JOURNAL") from exc
+        fence.authenticate(parsed["generation"], hashlib.sha256(raw).digest())
         session = cls.__new__(cls)
         session.role_key = role_key
         session.floors = floors
@@ -178,8 +194,9 @@ class Session:
         session.generation = parsed["generation"]
         session.recipient = parsed["recipient"]
         session.counters = parsed["counters"]
-        session.sink = sink if sink is not None else MemorySink()
-        session.fence = fence if fence is not None else SyntheticFence()
+        session.sink = sink
+        session.fence = fence
+        session._closed = False
         registry = parse_registry(session.registry_raw)
         entry = registry.by_id(session.role_id)
         if entry is None:
@@ -200,7 +217,6 @@ class Session:
         if _monitor_env(registry, session.m1_id) == _monitor_env(registry, session.m2_id):
             raise Quarantine("INDEPENDENT_WITNESS")
         session._validate_journal()
-        session.fence.pin_observed(parsed["generation"], hashlib.sha256(bytes(blob)).digest())
         session._recover()
         return session
 
@@ -209,9 +225,10 @@ class Session:
             if slot.state == ACTIVE and slot.consumption_started:
                 self._forfeit(slot.grant_id)
                 self.machine.move(slot.grant_id, INTERRUPTED)
+                self._append_interruption(slot.grant_id)
             elif slot.state == CONSUMER_CONFIRMED and not slot.consumption_started:
                 self.machine.require_reconfirm(slot.grant_id)
-            elif slot.consumption_started and slot.state not in {CONSUMED, EVIDENCE_PENDING, INTERRUPTED}:
+            elif slot.consumption_started and slot.state not in {CONSUMED, EVIDENCE_PENDING, INTERRUPTED, QUARANTINED, "COMPLETE"}:
                 self.machine.move(slot.grant_id, QUARANTINED)
             elif slot.state == EVIDENCE_PENDING and not slot.evidence_durable:
                 self.machine.move(slot.grant_id, QUARANTINED)
@@ -248,11 +265,15 @@ class Session:
                 raise FailClosed("JOURNAL")
 
     def durable_commit(self) -> None:
-        """Commit the journal before a caller may observe ACTIVE or replay success.
+        """Commit the journal and advance the fence, or fail closed.
 
         The fence moves only after ``sink.commit`` returns. A failed commit
-        leaves an in-memory ACTIVE grant INTERRUPTED and does not return success.
+        closes the session. An in-memory ACTIVE grant becomes INTERRUPTED and
+        success is not returned. A virgin fence accepts only generation 1,
+        which is the empty first boot, never a restored history.
         """
+        if self._closed:
+            raise FailClosed("JOURNAL_COMMIT")
         self.generation += 1
         blob = self.dump()
         digest = hashlib.sha256(blob).digest()
@@ -261,12 +282,44 @@ class Session:
             self.fence.advance(self.generation, digest)
         except FailClosed:
             self.generation -= 1
+            self._closed = True
             self._fail_closed_active()
             raise FailClosed("JOURNAL_COMMIT")
         except Exception as exc:
             self.generation -= 1
+            self._closed = True
             self._fail_closed_active()
             raise FailClosed("JOURNAL_COMMIT") from exc
+
+    def _require_open(self) -> None:
+        if self._closed:
+            raise FailClosed("JOURNAL_COMMIT")
+
+    def _refuse_quarantine(self, grant_id: bytes) -> None:
+        grant_id = bytes(grant_id)
+        if self.machine.get(grant_id).state == QUARANTINED or self.recipient.grant_quarantined(grant_id):
+            raise Quarantine("ENC_DIVERGENCE")
+
+    def _append_interruption(self, grant_id: bytes) -> None:
+        self.log.append(
+            kind=KIND_INTERRUPTION, payload_digest=hashlib.sha256(bytes(grant_id)).digest(),
+            grant_id=bytes(grant_id), epoch=self.epoch, registry_version=self.freshness.highest,
+        )
+
+    def _cover_for_challenge(self) -> None:
+        """Checkpoint every record already in the role log before a new challenge.
+
+        The new head then covers consumption and interruption records.
+        ``_require_ancestor`` stays strict: a grant bound to an older head
+        still sees those records and is refused.
+        """
+        if self.log.size == 0:
+            self.log.append(
+                kind=KIND_BOOT, payload_digest=hashlib.sha256(b"boot").digest(), grant_id=bytes(16),
+                epoch=self.epoch, registry_version=self.freshness.highest,
+            )
+        if self.log.covered_size() != self.log.size:
+            self.log.checkpoint(self.role_key, epoch=self.epoch, registry_version=self.freshness.highest)
 
     def _fail_closed_active(self) -> None:
         for slot in list(self.machine.slots()):
@@ -376,22 +429,20 @@ class Session:
         return raw
 
     def issue_challenge(self, entropy: bytes) -> bytes:
+        self._require_open()
         if self.role_type == ROLE_CROWN:
             raise FailClosed("ROLE_TYPE")
-        if self.log.size == 0:
-            self.log.append(
-                kind=KIND_BOOT, payload_digest=hashlib.sha256(b"boot").digest(), grant_id=bytes(16),
-                epoch=self.epoch, registry_version=self.freshness.highest,
-            )
-            self.log.checkpoint(self.role_key, epoch=self.epoch, registry_version=self.freshness.highest)
+        self._cover_for_challenge()
         challenge = self.freshness.issue(entropy, head=self.log.head)
         self.log.append(
-            kind=2, payload_digest=hashlib.sha256(challenge).digest(), grant_id=bytes(16),
+            kind=KIND_CHALLENGE, payload_digest=hashlib.sha256(challenge).digest(), grant_id=bytes(16),
             epoch=self.epoch, registry_version=self.freshness.highest,
         )
+        self.durable_commit()
         return challenge
 
     def confirm(self, delivery: bytes, intent: IntentSheet, **extra) -> str:
+        self._require_open()
         if extra:
             raise FailClosed("UNEXPECTED_ARGUMENT")
         if not isinstance(intent, IntentSheet):
@@ -432,6 +483,7 @@ class Session:
         elif self.machine.get(grant.grant_id).state != DELIVERED:
             raise FailClosed("GRANT_STATE")
         self.machine.move(grant.grant_id, CONSUMER_CONFIRMED)
+        self.durable_commit()
         return CONSUMER_CONFIRMED
 
     def _require_acks(self, grant, checkpoint: dict, acks: tuple[bytes, ...], registry) -> None:
@@ -475,6 +527,8 @@ class Session:
         return CONSUMER_CONFIRMED
 
     def activate(self, grant_id: bytes) -> str:
+        self._require_open()
+        self._refuse_quarantine(grant_id)
         slot = self.machine.get(grant_id)
         if slot.reconfirm_required or slot.wall_expired:
             raise FailClosed("RECONFIRM" if slot.reconfirm_required else "EXPIRED")
@@ -496,6 +550,8 @@ class Session:
         """Software rehearsal only. The authorization locks do not move."""
         from orca.rse.imp1.locks import corpus_generation_authorized, qualification_authorized, training_authorized
         slot = self.machine.get(grant_id)
+        if slot.state == QUARANTINED or self.recipient.grant_quarantined(grant_id):
+            raise Quarantine("ENC_DIVERGENCE")
         if slot.state != ACTIVE or bytes(grant_id) not in self._live:
             raise FailClosed("INTERRUPTED" if slot.state == INTERRUPTED else "GRANT_STATE")
         if corpus_generation_authorized() or qualification_authorized() or training_authorized():
@@ -507,12 +563,17 @@ class Session:
         return "NOT_AUTHORIZED"
 
     def consume(self, grant_id: bytes) -> str:
+        self._require_open()
+        self._refuse_quarantine(grant_id)
         if self.machine.get(grant_id).state != ACTIVE:
             raise FailClosed("GRANT_STATE")
         self.machine.move(grant_id, CONSUMED)
+        self.durable_commit()
         return CONSUMED
 
     def commit_evidence(self, grant_id: bytes, result_digest: bytes) -> str:
+        self._require_open()
+        self._refuse_quarantine(grant_id)
         slot = self.machine.get(grant_id)
         if slot.state != CONSUMED:
             raise FailClosed("GRANT_STATE")
@@ -523,19 +584,24 @@ class Session:
             epoch=self.epoch, registry_version=self.freshness.highest,
         )
         self.machine.move(grant_id, EVIDENCE_PENDING)
+        self.durable_commit()
         return EVIDENCE_PENDING
 
     def finish(self, grant_id: bytes) -> str:
+        self._require_open()
+        self._refuse_quarantine(grant_id)
         slot = self.machine.get(grant_id)
         if slot.state != EVIDENCE_PENDING or not slot.evidence_durable:
             raise FailClosed("GRANT_STATE")
         self.machine.move(grant_id, "COMPLETE")
+        self.durable_commit()
         return "COMPLETE"
 
     def rerun(self, grant_id: bytes) -> None:
         raise FailClosed("DOUBLE_EXECUTION")
 
     def observe_clock(self, reading: int) -> None:
+        self._require_open()
         if not isinstance(reading, int) or isinstance(reading, bool) or reading < 0:
             raise FailClosed("CLOCK")
         if self._clock is not None and reading < self._clock:
@@ -548,11 +614,14 @@ class Session:
             if grant.not_after and reading > grant.not_after:
                 self.machine.note_wall_expired(slot.grant_id)
                 self.machine.move(slot.grant_id, EXPIRED)
+                self.durable_commit()
 
     def observe_ticks(self, ticks: int) -> None:
+        self._require_open()
         if not isinstance(ticks, int) or isinstance(ticks, bool) or ticks < self._ticks:
             raise FailClosed("MONOTONIC")
         self._ticks = ticks
+        interrupted = False
         for slot in self.machine.slots():
             if slot.state != ACTIVE or slot.activation_tick is None:
                 continue
@@ -561,26 +630,37 @@ class Session:
                 self._forfeit(slot.grant_id)
                 self.machine.move(slot.grant_id, INTERRUPTED)
                 self._live.discard(slot.grant_id)
+                self._append_interruption(slot.grant_id)
+                interrupted = True
+        if interrupted:
+            self.durable_commit()
 
     def revoke(self, grant_id: bytes) -> str:
+        self._require_open()
         slot = self.machine.get(grant_id)
         if slot.state == ACTIVE:
             raise FailClosed("GRANT_STATE")
         self.machine.move(grant_id, REVOKED)
+        self.durable_commit()
         return REVOKED
 
     def incident(self, grant_id: bytes) -> str:
+        self._require_open()
         if self.machine.get(grant_id).state != ACTIVE:
             raise FailClosed("GRANT_STATE")
         self._forfeit(grant_id)
         self.machine.move(grant_id, INTERRUPTED)
         self._live.discard(bytes(grant_id))
+        self._append_interruption(grant_id)
+        self.durable_commit()
         return INTERRUPTED
 
     def advance_registry(self, registry_raw: bytes, prior_raw: bytes) -> None:
+        self._require_open()
         prior = parse_registry(bytes(prior_raw))
         self.freshness.authenticate(bytes(registry_raw), self.tokens, self.floors, prior)
         self.registry_raw = bytes(registry_raw)
+        self.durable_commit()
 
     def stage_output(self, digest: bytes) -> str:
         return self.egress.stage(digest)
@@ -604,6 +684,7 @@ class Session:
 
     def seal_frames(self, sender: Sender, **kwargs) -> tuple[bytes, ...]:
         """Seal with the session hedge counter and commit that counter first."""
+        self._require_open()
         if not isinstance(sender, Sender) or "before_return" in kwargs:
             raise FailClosed("UNEXPECTED_ARGUMENT")
         sender.counters = self.counters

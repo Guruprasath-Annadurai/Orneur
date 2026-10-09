@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from orca.rse.imp1.codec import Registry, parse_enrolment, parse_grant
 from orca.rse.imp1.profiles import APPROVED, ENROLMENT, ROLE_MONITOR_LITE
 from orca.rse.imp1.verdict import FailClosed, Quarantine
+from orca.rse.imp3.journal import JournalSink, SyntheticFence
 from orca.rse.imp3.merkle import (
     consistency_proof,
     inclusion_proof,
@@ -76,6 +77,11 @@ class EvidenceLog:
         if not self._checkpoints:
             return ZERO
         return self._checkpoints[-1]["digest"]
+
+    def covered_size(self) -> int:
+        if not self._checkpoints:
+            return 0
+        return self._checkpoints[-1]["tree_size"]
 
     def append(self, *, kind: int, payload_digest: bytes, grant_id: bytes, epoch: int, registry_version: int) -> bytes:
         if self.quarantined:
@@ -278,9 +284,18 @@ class Monitor:
     history.
     """
 
-    def __init__(self, witness_id: bytes, witness_key: Ed25519PrivateKey, *, epoch_floor: int) -> None:
+    def __init__(self, witness_id: bytes, witness_key: Ed25519PrivateKey, *, epoch_floor: int,
+                 sink: JournalSink | None = None, fence: SyntheticFence | None = None) -> None:
+        """First boot of an empty witness journal.
+
+        ``sink`` and ``fence`` are required. A fence that has already
+        authenticated a journal cannot be reused as a new witness. The empty
+        journal is committed before this constructor returns.
+        """
         if len(witness_id) != 32:
             raise FailClosed("WITNESS")
+        if not isinstance(fence, SyntheticFence) or not fence.virgin or not callable(getattr(sink, "commit", None)):
+            raise FailClosed("FENCE")
         self.witness_id = bytes(witness_id)
         self._key = witness_key
         self.epoch_floor = epoch_floor
@@ -290,9 +305,32 @@ class Monitor:
         self.log_root = bytes(32)
         self._last: dict[bytes, dict] = {}
         self._packets: dict[tuple[bytes, bytes], tuple[int, bytes, bytes]] = {}
+        self.sink = sink
+        self.fence = fence
+        self._durable_commit()
+
+    def _durable_commit(self) -> None:
+        previous = self.generation
+        self.generation = previous + 1
+        blob = self.export()
+        try:
+            self.sink.commit(blob)
+            self.fence.advance(self.generation, hashlib.sha256(blob).digest())
+        except FailClosed:
+            self.generation = previous
+            raise FailClosed("JOURNAL_COMMIT")
+        except Exception as exc:
+            self.generation = previous
+            raise FailClosed("JOURNAL_COMMIT") from exc
+
+    def _require_bound(self, sink, fence) -> None:
+        if sink is not self.sink or fence is not self.fence or not isinstance(fence, SyntheticFence) or fence.virgin:
+            raise FailClosed("FENCE")
+        self.fence.authenticate(self.generation, hashlib.sha256(self.export()).digest())
 
     def consider(self, request: bytes, *, source_public: bytes, witness_public: bytes,
                  sink=None, fence=None) -> bytes:
+        self._require_bound(sink, fence)
         if witness_public != self._key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw):
             raise FailClosed("WITNESS_KEY")
         if source_public == witness_public:
@@ -355,29 +393,16 @@ class Monitor:
         self.registry_version = checkpoint["registry_version"]
         self.prev_checkpoint = checkpoint["prev_checkpoint_digest"]
         self.log_root = checkpoint["root"]
-        self.generation = previous_generation + 1
-        if sink is not None:
-            blob = self.export()
-            try:
-                sink.commit(blob)
-                if fence is not None:
-                    fence.advance(self.generation, hashlib.sha256(blob).digest())
-            except FailClosed:
-                self._last = previous_last
-                self._packets = previous_packets
-                self.generation = previous_generation
-                self.registry_version = previous_registry
-                self.prev_checkpoint = previous_prev
-                self.log_root = previous_root
-                raise
-            except Exception as exc:
-                self._last = previous_last
-                self._packets = previous_packets
-                self.generation = previous_generation
-                self.registry_version = previous_registry
-                self.prev_checkpoint = previous_prev
-                self.log_root = previous_root
-                raise FailClosed("JOURNAL_COMMIT") from exc
+        try:
+            self._durable_commit()
+        except FailClosed:
+            self._last = previous_last
+            self._packets = previous_packets
+            self.generation = previous_generation
+            self.registry_version = previous_registry
+            self.prev_checkpoint = previous_prev
+            self.log_root = previous_root
+            raise
         return ack
 
     def export(self) -> bytes:
@@ -401,20 +426,28 @@ class Monitor:
         ))
 
     @classmethod
-    def boot(cls, blob: bytes, witness_key: Ed25519PrivateKey, *, fence=None) -> "Monitor":
-        """Restore fork history from OMJ1. Memory that was never exported is absent."""
+    def boot(cls, blob: bytes, witness_key: Ed25519PrivateKey, *, sink=None, fence=None) -> "Monitor":
+        """Restore OMJ1 only when this fence already committed that exact blob.
+
+        A virgin fence is not a first boot. First boot is ``Monitor(...)``.
+        """
+        if not isinstance(fence, SyntheticFence) or fence.virgin or not callable(getattr(sink, "commit", None)):
+            raise FailClosed("FENCE")
         data = bytes(blob)
-        digest = hashlib.sha256(data).digest()
         parsed = _parse_omj1(data)
-        if fence is not None:
-            fence.pin_observed(parsed["generation"], digest)
-        monitor = cls(parsed["witness_id"], witness_key, epoch_floor=parsed["epoch_floor"])
+        fence.authenticate(parsed["generation"], hashlib.sha256(data).digest())
+        monitor = cls.__new__(cls)
+        monitor.witness_id = parsed["witness_id"]
+        monitor._key = witness_key
+        monitor.epoch_floor = parsed["epoch_floor"]
         monitor.generation = parsed["generation"]
         monitor.registry_version = parsed["registry_version"]
         monitor.prev_checkpoint = parsed["prev_checkpoint"]
         monitor.log_root = parsed["log_root"]
         monitor._last = parsed["last"]
         monitor._packets = parsed["packets"]
+        monitor.sink = sink
+        monitor.fence = fence
         return monitor
 
 

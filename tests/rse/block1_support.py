@@ -11,6 +11,8 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from orca.rse.imp1.authority import IntentSheet, ceilings_of, grant_sas
 from orca.rse.imp1.codec import build_grant_prefix, parse_grant, public_of, sign_grant
 from orca.rse.imp1.profiles import ROLE_CROWN, ROLE_FORGE, ROLE_MONITOR_LITE, ROLE_WITNESS
+from orca.rse.imp3.journal import MemorySink, SyntheticFence
+from orca.rse.imp3.ledger import Monitor
 from orca.rse.imp3.session import Session
 from tests.rse.support import (
     FLOORS,
@@ -88,6 +90,22 @@ def open_role(registry, parts, name: str) -> Session:
         role_id=parts[name].entry_id, role_key=ed_key(name if name != "crown" else "crown"),
         epoch=1, authority_version=1, floors=FLOORS, tokens=TOKENS, registry_raw=registry.raw,
         crown_image_id=parts["image"].entry_id, m1_id=parts["m1"].entry_id, m2_id=parts["m2"].entry_id,
+        sink=MemorySink(), fence=SyntheticFence(),
+    )
+
+
+def open_monitor(parts, label: str = "m1") -> Monitor:
+    return Monitor(
+        parts[label].entry_id, ed_key(label), epoch_floor=1, sink=MemorySink(), fence=SyntheticFence(),
+    )
+
+
+def reboot(session: Session, blob: bytes | None = None) -> Session:
+    """Boot the committed journal with the same synthetic fence."""
+    return Session.boot(
+        session.sink.blob if blob is None else blob,
+        role_key=session.role_key, floors=session.floors, tokens=session.tokens,
+        sink=MemorySink(), fence=session.fence,
     )
 
 
@@ -142,12 +160,14 @@ def v_intent(registry, grant_raw, parts):
 
 
 def authorize(registry, parts, *, klass: str, target: str, tail: dict, intent_for, grant_id: bytes,
-              entropy: bytes, runtime: int = 30, not_after: int = 0):
-    """Crown append, M1 acknowledgement, and consumer confirmation. Synthetic keys only."""
-    from orca.rse.imp3.ledger import Monitor
+              entropy: bytes, runtime: int = 30, not_after: int = 0, consumer: Session | None = None):
+    """Crown append, M1 acknowledgement, and consumer confirmation. Synthetic keys only.
 
+    Pass ``consumer`` to authorize another grant on a role that already has a journal.
+    """
     crown = open_role(registry, parts, "crown")
-    consumer = open_role(registry, parts, target)
+    if consumer is None:
+        consumer = open_role(registry, parts, target)
     challenge = consumer.issue_challenge(entropy)
     raw = grant_for(
         registry, parts, klass=klass, target=target, challenge=challenge, prev=consumer.freshness.head,
@@ -161,8 +181,10 @@ def authorize(registry, parts, *, klass: str, target: str, tail: dict, intent_fo
     packet = crown.log.witness_request(
         checkpoint, source_role_id=crown.role_id, witness_id=parts["m1"].entry_id, packet_seq=1, old_tree_size=0,
     )
-    ack = Monitor(parts["m1"].entry_id, ed_key("m1"), epoch_floor=1).consider(
+    monitor = open_monitor(parts, "m1")
+    ack = monitor.consider(
         packet, source_public=public_of(ed_key("crown")), witness_public=public_of(ed_key("m1")),
+        sink=monitor.sink, fence=monitor.fence,
     )
     assert crown.accept_ack(grant_id, ack) == "CHECKPOINTED"
     delivery = crown.deliver(grant_id)

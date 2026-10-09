@@ -34,19 +34,18 @@ class MemorySink(JournalSink):
         self.commits = 0
 
     def commit(self, blob: bytes) -> None:
-        if not isinstance(blob, (bytes, bytearray)) or not bytes(blob).startswith(b"OBS1"):
+        if not isinstance(blob, (bytes, bytearray)) or not bytes(blob).startswith((b"OBS1", b"OMJ1")):
             raise FailClosed("JOURNAL")
         self.blob = bytes(blob)
         self.commits += 1
 
 
 class SyntheticFence:
-    """Monotonic generation floor.
+    """Monotonic generation floor for tests.
 
-    ``authenticate`` / ``pin_observed`` reject a journal whose generation is
-    below the floor, or the same generation with a different digest.
-    A virgin fence (floor 0 and an empty digest) has no authenticated
-    journal yet. Adopting one on boot is a software pin, not TPM NV.
+    A virgin fence has authenticated nothing. It cannot adopt a historical
+    journal. ``advance`` moves it only when a commit of a new generation
+    succeeds, starting at generation 1. This object is not a TPM NV index.
     """
 
     label = SYNTHETIC_NOT_REAL_HARDWARE_PROOF
@@ -64,35 +63,36 @@ class SyntheticFence:
         return self.floor == 0 and self.digest == b""
 
     def authenticate(self, generation: int, digest: bytes) -> None:
-        digest = bytes(digest)
-        if not isinstance(generation, int) or isinstance(generation, bool) or generation < 0:
-            raise FailClosed("FENCE")
-        if self.virgin:
-            return
-        if generation != self.floor or digest != self.digest:
-            raise FailClosed("FENCE")
-
-    def pin_observed(self, generation: int, digest: bytes) -> None:
-        """Record a journal this fence has parsed.
-
-        A virgin fence adopts that generation. A fence that already has a
-        floor accepts only the pinned generation and digest.
-        """
-        if not isinstance(generation, int) or isinstance(generation, bool) or generation < 0:
-            raise FailClosed("FENCE")
-        if self.virgin:
-            self.floor = generation
-            self.digest = bytes(digest)
-            return
-        self.authenticate(generation, digest)
-
-    def advance(self, generation: int, digest: bytes) -> None:
-        """Move the floor forward by one committed generation."""
+        """Accept only the one generation this fence has already committed."""
         digest = bytes(digest)
         if not isinstance(generation, int) or isinstance(generation, bool) or generation < 1:
             raise FailClosed("FENCE")
+        if len(digest) != 32 or self.virgin or generation != self.floor or digest != self.digest:
+            raise FailClosed("FENCE")
+
+    def pin_observed(self, generation: int, digest: bytes) -> None:
+        """Historical adoption is not a boot path.
+
+        A previous build let a virgin fence take whatever generation it was
+        shown. That bypass is closed. Callers restore through ``boot`` after
+        ``advance`` has committed a generation.
+        """
+        del generation, digest
+        raise FailClosed("FENCE")
+
+    def advance(self, generation: int, digest: bytes) -> None:
+        """Move the floor forward by one committed generation.
+
+        The first successful commit is generation 1. A later commit is only
+        ``floor + 1``. An arbitrary historical generation is refused.
+        """
+        digest = bytes(digest)
+        if not isinstance(generation, int) or isinstance(generation, bool) or len(digest) != 32:
+            raise FailClosed("FENCE")
         if self.virgin:
-            self.floor = generation
+            if generation != 1:
+                raise FailClosed("FENCE")
+            self.floor = 1
             self.digest = digest
             return
         if generation != self.floor + 1:
