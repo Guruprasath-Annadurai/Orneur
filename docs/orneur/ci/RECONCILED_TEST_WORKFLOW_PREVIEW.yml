@@ -1,3 +1,15 @@
+# NON-LIVE REFERENCE PREVIEW. This file lives under docs/orneur/ci/, not
+# .github/workflows/, specifically so GitHub Actions never executes it: two
+# of its jobs (sse-diagnostics, rse-docker-lab) reference files that exist
+# only on other still-open branches (PR #12, PR #13) and would fail on any
+# tree that doesn't also carry those files. It exists to show, and let a
+# real YAML parser check, the exact shape .github/workflows/test.yml should
+# end up in once PR #12, #13, and the cursor/claude chain ending in PR #16
+# are all integrated -- see CI_WORKFLOW_INTEGRATION_RECONCILIATION.md in
+# this same directory for the full report and the real `git merge-tree`
+# conflict evidence this was built from. Validated by
+# scripts/ci/validate_reconciled_workflow_preview.py and
+# tests/test_ci_workflow_reconciliation.py.
 name: Test Suite
 
 on:
@@ -11,17 +23,21 @@ on:
       # pull_request run checks out a merge ref, which is not exact-SHA
       # evidence for the commit under review.
       #
-      # INTEGRATION REHEARSAL (claude/integration-rehearsal-2026-10-10):
-      # three branches independently added at this anchor point --
-      # claude/phase0-trust-boundary-hardening (cursor/** inherited +
-      # claude/** + rse-dependency-audit job), claude/phase-a-checkpoint-2
-      # (claude/** + sse-diagnostics job), and docker/rse-synthetic-
-      # integration-lab (docker/** + rse-docker-lab job). This merge
-      # reconciles all three by hand, matching the non-live preview
-      # already published at docs/orneur/ci/RECONCILED_TEST_WORKFLOW_PREVIEW.yml
-      # (PR #17) -- except this time every job's source files actually
-      # exist on the combined tree, so all nine jobs are genuinely
-      # runnable, not merely previewed.
+      # REFERENCE RECONCILIATION (this file is a non-live preview, see
+      # docs/orneur/ci/CI_WORKFLOW_INTEGRATION_RECONCILIATION.md): three
+      # branches independently inserted at this same anchor point --
+      #   - claude/phase-a-checkpoint-2 (PR #12) added 'claude/**' for the
+      #     stacked Phase A checkpoint branches, plus the sse-diagnostics job.
+      #   - docker/rse-synthetic-integration-lab (PR #13) added 'docker/**',
+      #     plus the rse-docker-lab job.
+      #   - claude/phase0-acceptance-remediation (PR #16) added 'claude/**'
+      #     again (independently, for the acceptance-engine remediation
+      #     branch) and 'cursor/**' inherited from its own base chain, plus
+      #     the rse-dependency-audit job.
+      # 'claude/**' is listed once below even though two branches wanted it,
+      # since a glob is either present or not -- there is nothing to merge
+      # about the string itself, only about where in the list it is inserted
+      # and which jobs come after it.
       - 'claude/**'
       - 'docker/**'
   pull_request:
@@ -174,7 +190,6 @@ jobs:
           assert payload.get('status') == 'alive', payload
           print('container_livez=PASS')
           PY
-
   sse-diagnostics:
     # Phase A CP2 post-audit hardening item 1: these Node tests existed
     # (tests/frontend/test_sse_diagnostics.mjs) but were explicitly disclosed
@@ -244,7 +259,6 @@ jobs:
               proc.terminate()
               proc.wait(timeout=10)
           "
-
   genesis-v2-security:
     # Genesis Capability Eval V2 private-holdout security suite. Unlike the lightweight jobs, the encrypted-store tests MUST EXECUTE here:
     # `cryptography` comes from the `qualification` extra, ORNEUR_REQUIRE_CRYPTOGRAPHY=1 turns a missing package into a failure, and the
@@ -338,27 +352,6 @@ jobs:
       # a hard gate.
       - name: Run pip-audit (informational)
         run: pip-audit || true
-
-  rse-dependency-audit:
-    # Audits the optional RSE extra closure in requirements/rse.txt.
-    # It does not replace the base-install scan above and does not use `|| true`.
-    # Trigger policy is unchanged: push includes cursor/**; pull_request does not.
-    name: RSE dependency lock and vulnerability scan
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install locked RSE dependencies and audit them
-        run: bash scripts/ci/run_rse_dependency_audit.sh
-
   rse-docker-lab:
     # Phase 1 targeted remediation items 2-8. Dedicated, bounded CI coverage
     # for PR #13's docker-rse-integration-lab.yml: builds orneur-rse:latest
@@ -385,3 +378,22 @@ jobs:
 
       - name: Run the full verification script (build, reproducibility, both exit-code scenarios, resource/network-mode checks, cleanup)
         run: bash scripts/rse_docker_lab_verify.sh
+  rse-dependency-audit:
+    # Audits the optional RSE extra closure in requirements/rse.txt.
+    # It does not replace the base-install scan above and does not use `|| true`.
+    # Trigger policy is unchanged: push includes cursor/**; pull_request does not.
+    name: RSE dependency lock and vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install locked RSE dependencies and audit them
+        run: bash scripts/ci/run_rse_dependency_audit.sh

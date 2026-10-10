@@ -53,7 +53,7 @@ code   = []   # sandboxed exec uses stdlib only
 voice  = []   # Web Speech API — browser-native, no Python deps
 mcp    = ["mcp>=1.0.0,<2.0.0"]
 stripe = ["stripe>=7.0.0"]
-dev    = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "mypy>=1.10.0", "build>=1.0.0", "pyyaml>=6.0", "cryptography>=49.0.0,<51.0.0"]   # pyyaml: workflow-boundary tests parse .github/workflows; cryptography: vetted Ed25519 for RSE-IMP-1 synthetic signatures
+dev    = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "mypy>=1.10.0", "build>=1.0.0", "pyyaml>=6.0", "cryptography>=49.0.0,<51.0.0", "pyhpke==0.6.5"]   # pyyaml: workflow-boundary tests parse .github/workflows; cryptography: vetted Ed25519; pyhpke: RFC 9180 Base for OCR1 v2, pinned to the reviewed 0.6.5 wheel (cryptography's one-shot HPKE API has no AAD or sequence)
 all    = [
     "chromadb>=0.5.0",
     "pypdf>=4.0.0", "python-docx>=1.1.0", "pdfminer.six>=20221105",
@@ -86,6 +86,12 @@ nvidia = [
 qualification = [
     "cryptography>=49.0.0,<51.0.0",
 ]
+# OCR1 v2 import path. Not a base dependency: `pip install .` cannot import OCR1.
+# pyhpke is the RFC 9180 library named by RSE12_04. Presence in this extra is not an audit.
+rse = [
+    "cryptography>=49.0.0,<51.0.0",
+    "pyhpke==0.6.5",
+]
 frontier = [
     "openai>=1.0.0",
     "anthropic>=0.40.0",
@@ -101,6 +107,24 @@ lens = [
 [project.scripts]
 orneur = "orca.cli:app"
 orca = "orca.cli:app"
+
+[tool.uv]
+# PYSEC-2026-3447 / CVE-2026-59890: setuptools < 83.0.0 can pack a file into
+# an sdist that an exclude/prune MANIFEST.in rule should have kept out, on
+# case-insensitive or Unicode-normalizing filesystems (macOS APFS/HFS+).
+# setuptools isn't a direct dependency of this project -- it is pulled in
+# transitively by torch (python_full_version >= '3.12' only, see uv.lock),
+# which has no reason to need anything older than the patched release.
+# Constraining it here forces uv's resolver to pick a patched version for
+# that edge without touching torch's own declared requirement. Exact pin
+# (not a >= range): `uv pip install --require-hashes`, used by
+# scripts/ci/run_rse_dependency_audit.sh against requirements/rse.txt, picks
+# up this project's [tool.uv] settings even for a plain `-r` install and
+# rejects any constraint that isn't pinned with `==` in that mode --
+# confirmed by that CI job's own failure on the `>=83.0.0` range form.
+constraint-dependencies = [
+    "setuptools==84.0.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["orca", "orneur"]

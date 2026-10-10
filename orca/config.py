@@ -38,6 +38,26 @@ def orneur_env(suffix: str, default: str = "") -> str:
     return default
 
 
+def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
+    """
+    Creates `path` restricted to the owning user (mode 0700) and enforces
+    that mode even if the directory already existed with looser permissions
+    from a prior release. PYSEC-2026-2447: diskcache.Cache (used under
+    CACHE_DIR by orca/brain/memory.py and under QUEUE_DIR by
+    orca/lens/queue.py) falls back to pickle for non-JSON-encodable values,
+    and pickle deserialization of attacker-controlled bytes is arbitrary
+    code execution. diskcache has no upstream fix as of this writing (5.6.3
+    remains the latest PyPI release), so the only real mitigation available
+    here is denying write access to anyone but the owning user — the same
+    trust boundary the rest of ORCA_HOME already relies on. mkdir's own
+    `mode` argument is masked by umask and never reapplied to a directory
+    that already exists, so this chmods unconditionally on every call.
+    """
+    path.mkdir(parents=parents, exist_ok=True)
+    path.chmod(0o700)
+    return path
+
+
 # .expanduser() is required here — python-dotenv (and any shell config a
 # user copies verbatim from .env.example) can set ORCA_HOME to a literal
 # unexpanded "~/.orca" string. Path() does NOT expand "~" on its own; only
@@ -47,16 +67,16 @@ def orneur_env(suffix: str, default: str = "") -> str:
 # not a hypothetical: it silently redirected the auth DB, audit log, memory,
 # and every other ORCA_HOME-relative store to the wrong location.
 ORCA_HOME = Path(orneur_env("HOME", str(Path.home() / ".orca"))).expanduser()
-ORCA_HOME.mkdir(parents=True, exist_ok=True)
+_mkdir_owner_only(ORCA_HOME, parents=True)
 
 MEMORY_DIR = ORCA_HOME / "memory"
-MEMORY_DIR.mkdir(exist_ok=True)
+_mkdir_owner_only(MEMORY_DIR)
 
 CACHE_DIR = ORCA_HOME / "cache"
-CACHE_DIR.mkdir(exist_ok=True)
+_mkdir_owner_only(CACHE_DIR)
 
 VAULT_DIR = ORCA_HOME / "vault"
-VAULT_DIR.mkdir(exist_ok=True)
+_mkdir_owner_only(VAULT_DIR)
 
 
 class OllamaConfig(BaseModel):

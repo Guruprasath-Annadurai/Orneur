@@ -4,6 +4,22 @@ honest exploitability assessment against Orneur's ACTUAL usage of each
 flagged package — not just a raw scanner dump. A CVE that doesn't apply to
 how a package is actually used is a different risk than one that does;
 conflating them either causes false alarm or false confidence.
+
+2026-10-10 correction (claude/security-remediation-2026-10-10, pre-merge
+dependency security remediation): the `setuptools` finding below was
+recorded as closed on 2026-07-24, but the fix did not hold — by the time
+of this remediation pass, `uv.lock` had drifted back to setuptools
+82.0.1, which is still inside PYSEC-2026-3447's affected range (fixed in
+83.0.0, not whatever earlier version this doc assumed). The informational
+`security-audit` CI job never would have caught this regression either
+way: it only scans the BASE `-e .` install, and setuptools only enters
+the dependency graph transitively through `torch`, which is pulled in
+only by the `lens` and `train` extras (and only matters at all on
+`python_full_version >= '3.12'`, per torch's own marker in `uv.lock`) —
+an install path that job does not exercise. Re-fixed in this pass via a
+`[tool.uv] constraint-dependencies` floor (`setuptools>=83.0.0`), locked
+to 84.0.0; see `tests/test_security_remediation_pysec_2026.py` for the
+regression tests that now guard against this drifting unnoticed again.
 -->
 
 # Dependency Security Audit
@@ -22,7 +38,11 @@ item).
 tooling, not Orneur's runtime dependencies) — all had patched versions
 available and have been upgraded:
 - `pip` 24.0 → 26.1.2 (closes PYSEC-2026-196, -1795, -1796, -2875, -2876)
-- `setuptools` 79.0.1 → patched (closes PYSEC-2026-3447)
+- `setuptools` 79.0.1 → patched at the time (closes PYSEC-2026-3447) —
+  **this regressed; see the 2026-10-10 correction note above.** The fix
+  now in force is a `uv` constraint-dependency floor of `>=83.0.0`
+  (locked to 84.0.0), scoped to the transitive `torch` edge on
+  `python_full_version >= '3.12'`, not a direct project dependency bump.
 
 ## Findings, real but assessed as not currently exploitable in Orneur's deployment
 
@@ -64,6 +84,20 @@ machine has a more fundamental compromise than this CVE represents.
 write directly into a diskcache-backed directory, and never expose a
 diskcache directory to another user/process boundary without re-assessing
 this CVE.
+
+**2026-10-10 addendum**: this assessment still holds — diskcache has no
+upstream fix as of this writing (5.6.3 remains the latest PyPI release),
+and the realistic attack surface is unchanged. As defense in depth beyond
+the "low practical severity" judgment above, `orca/config.py` now creates
+(and retroactively corrects) `ORCA_HOME` and every diskcache-backed
+directory under it (`cache/`, `cache/semantic/` via its 0700 parent,
+`lens/queue/`) at mode `0700`, closing the one realistic residual gap this
+doc's own framing left open: a different local, lower-privileged account
+on a shared machine that could previously read or write into another
+user's `~/.orca` tree without yet having a "more fundamental compromise."
+This does not change the underlying pickle-deserialization risk model —
+it narrows who can reach it to the same single-user trust boundary the
+rest of `ORCA_HOME` already relies on.
 
 ## Still pending (not done in this audit)
 
