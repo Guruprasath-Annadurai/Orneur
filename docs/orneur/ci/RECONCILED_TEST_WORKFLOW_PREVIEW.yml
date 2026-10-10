@@ -1,0 +1,399 @@
+# NON-LIVE REFERENCE PREVIEW. This file lives under docs/orneur/ci/, not
+# .github/workflows/, specifically so GitHub Actions never executes it: two
+# of its jobs (sse-diagnostics, rse-docker-lab) reference files that exist
+# only on other still-open branches (PR #12, PR #13) and would fail on any
+# tree that doesn't also carry those files. It exists to show, and let a
+# real YAML parser check, the exact shape .github/workflows/test.yml should
+# end up in once PR #12, #13, and the cursor/claude chain ending in PR #16
+# are all integrated -- see CI_WORKFLOW_INTEGRATION_RECONCILIATION.md in
+# this same directory for the full report and the real `git merge-tree`
+# conflict evidence this was built from. Validated by
+# scripts/ci/validate_reconciled_workflow_preview.py and
+# tests/test_ci_workflow_reconciliation.py.
+name: Test Suite
+
+on:
+  push:
+    branches:
+      - main
+      - session-update-2026-08-25
+      - 'phase14b-*'
+      - 'cursor/**'
+      # Push-only, same pattern as every other feature-branch entry here: a
+      # pull_request run checks out a merge ref, which is not exact-SHA
+      # evidence for the commit under review.
+      #
+      # REFERENCE RECONCILIATION (this file is a non-live preview, see
+      # docs/orneur/ci/CI_WORKFLOW_INTEGRATION_RECONCILIATION.md): three
+      # branches independently inserted at this same anchor point --
+      #   - claude/phase-a-checkpoint-2 (PR #12) added 'claude/**' for the
+      #     stacked Phase A checkpoint branches, plus the sse-diagnostics job.
+      #   - docker/rse-synthetic-integration-lab (PR #13) added 'docker/**',
+      #     plus the rse-docker-lab job.
+      #   - claude/phase0-acceptance-remediation (PR #16) added 'claude/**'
+      #     again (independently, for the acceptance-engine remediation
+      #     branch) and 'cursor/**' inherited from its own base chain, plus
+      #     the rse-dependency-audit job.
+      # 'claude/**' is listed once below even though two branches wanted it,
+      # since a glob is either present or not -- there is nothing to merge
+      # about the string itself, only about where in the list it is inserted
+      # and which jobs come after it.
+      - 'claude/**'
+      - 'docker/**'
+  pull_request:
+    branches:
+      - main
+      - session-update-2026-08-25
+
+jobs:
+  pytest:
+    name: Deterministic Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev + mcp + nvidia extras -- no GPU/Ollama needed)
+        # Phase 15.15 CI truthfulness closure: the deterministic suite
+        # includes tests/test_distill.py (needs `openai`, from the
+        # `nvidia` extra), tests/test_mcp_fs_server_sandbox.py (a
+        # SECURITY-relevant path-traversal regression, needs `mcp`,
+        # from the `mcp` extra), and a real number of tests exercising
+        # orca.mission/orca.godmode/orca.auth Postgres-backed code
+        # paths (needs `psycopg`, from the `postgres` extra) -- all
+        # lightweight, pure-Python (or pure-C-extension) at install
+        # time, no GPU/network/live-service dependency, and must
+        # genuinely execute in this job rather than being silently
+        # uncollectable/erroring on import. Discovered ONLY once the CI
+        # pipefail fix (below) stopped masking these as false-green.
+        # tests/test_train_losses.py (needs `torch`) is deliberately
+        # NOT installed here -- it runs in the separate, dedicated
+        # `torch-loss-tests` job below instead of pulling torch into
+        # every regular test run.
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev,mcp,nvidia,postgres]"
+
+      - name: Run deterministic test suite
+        run: bash scripts/ci/run_deterministic_tests.sh
+
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-log-${{ github.run_number }}
+          path: /tmp/pytest-log.txt
+          retention-days: 14
+
+  torch-loss-tests:
+    name: Training Math Unit Tests (Torch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev) + CPU-only torch + transformers
+        # Phase 15.15 CI truthfulness closure: tests/test_train_losses.py
+        # is real, deterministic torch tensor math (no GPU, no network,
+        # no model weights) -- it was previously uncollectable in CI
+        # because torch was never installed anywhere. A dedicated,
+        # bounded job (rather than folding the whole heavyweight `train`
+        # extra -- unsloth/trl/transformers/accelerate/etc. -- into the
+        # main deterministic job) keeps the common case fast while still
+        # making this required and genuinely green. The CPU wheel index
+        # keeps the install small (no CUDA payload) on this GPU-less
+        # runner.
+        # Phase 21B.4.1: `transformers` is added here for the same
+        # reason -- tests/test_transformers_adapter.py mocks
+        # transformers.AutoTokenizer/AutoModelForCausalLM.from_pretrained
+        # (never downloads real weights) but still needs the real
+        # `transformers` module importable for those patch targets to
+        # resolve. This job already carries CPU torch, so adding the
+        # lightweight `transformers` package here -- rather than into
+        # the main deterministic job -- keeps that job's install fast
+        # while still making the adapter's own logic genuinely,
+        # required-ly tested in CI instead of only locally.
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install "transformers>=4.45.0"
+
+      - name: Run training-math regression
+        run: |
+          set -euo pipefail
+          pytest tests/test_train_losses.py tests/test_transformers_adapter.py -v
+
+  container-build:
+    name: Production Container Build + Boot Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build production Docker image
+        run: docker build --pull --tag orneur-ci:${{ github.sha }} .
+
+      - name: Inspect image metadata
+        run: |
+          docker image inspect orneur-ci:${{ github.sha }} \
+            --format 'id={{.Id}} size={{.Size}} health={{json .Config.Healthcheck}} cmd={{json .Config.Cmd}}'
+
+      - name: Boot image and verify /livez
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name orneur-ci-runtime -p 127.0.0.1:7337:7337 orneur-ci:${{ github.sha }}
+          trap 'docker logs orneur-ci-runtime || true; docker rm -f orneur-ci-runtime >/dev/null 2>&1 || true' EXIT
+
+          ok=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:7337/livez > /tmp/livez.json; then
+              ok=1
+              break
+            fi
+            if ! docker inspect -f '{{.State.Running}}' orneur-ci-runtime | grep -q true; then
+              echo 'Container exited before liveness became available.' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$ok" -ne 1 ]; then
+            echo 'Timed out waiting for /livez.' >&2
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/livez.json').read_text())
+          assert payload.get('status') == 'alive', payload
+          print('container_livez=PASS')
+          PY
+  sse-diagnostics:
+    # Phase A CP2 post-audit hardening item 1: these Node tests existed
+    # (tests/frontend/test_sse_diagnostics.mjs) but were explicitly disclosed
+    # as NOT wired into CI. Required now, not optional/best-effort.
+    name: SSE Diagnostics (browser-loaded module, zero payload leakage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run SSE diagnostics regression suite
+        run: node --test tests/frontend/test_sse_diagnostics.mjs
+
+      - name: Set up Python (to actually serve the static file, not just read it off disk)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev)
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+
+      - name: Prove the Node test imported the SAME bytes the browser is served
+        # tests/frontend/test_sse_diagnostics.mjs imports
+        # orca/serve/web/sse_diagnostics.js directly off disk -- that alone
+        # doesn't prove it's the file a real browser actually receives (a
+        # future change to the static mount, a build step, or a reverse
+        # proxy rewrite could silently diverge the two). This starts the
+        # real FastAPI app, fetches /static/sse_diagnostics.js over real
+        # HTTP, and byte-diffs it against the file on disk.
+        run: |
+          python3 -c "
+          import subprocess, sys, time, urllib.request
+          proc = subprocess.Popen(
+              ['uvicorn', 'orca.serve.api:app', '--host', '127.0.0.1', '--port', '8099'],
+              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+          )
+          try:
+              deadline = time.time() + 20
+              served = None
+              last_err = b''
+              while time.time() < deadline:
+                  try:
+                      served = urllib.request.urlopen('http://127.0.0.1:8099/static/sse_diagnostics.js', timeout=2).read()
+                      break
+                  except Exception as exc:
+                      last_err = str(exc).encode()
+                      time.sleep(0.5)
+              if served is None:
+                  print('server never became ready:', last_err, file=sys.stderr)
+                  sys.exit(1)
+              on_disk = open('orca/serve/web/sse_diagnostics.js', 'rb').read()
+              if served != on_disk:
+                  print('MISMATCH: the served file differs from the file the Node test imported', file=sys.stderr)
+                  sys.exit(1)
+              print(f'OK served bytes ({len(served)}) match the file on disk byte-for-byte')
+          finally:
+              proc.terminate()
+              proc.wait(timeout=10)
+          "
+  genesis-v2-security:
+    # Genesis Capability Eval V2 private-holdout security suite. Unlike the lightweight jobs, the encrypted-store tests MUST EXECUTE here:
+    # `cryptography` comes from the `qualification` extra, ORNEUR_REQUIRE_CRYPTOGRAPHY=1 turns a missing package into a failure, and the
+    # runner script fails if any test in the suite was skipped.
+    name: Genesis V2 Security (encryption tests must execute)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev + qualification extras)
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev,qualification]"
+
+      - name: Run V2 security/privacy suite (zero skips allowed)
+        env:
+          ORNEUR_REQUIRE_CRYPTOGRAPHY: "1"
+        run: bash scripts/ci/run_genesis_v2_security_tests.sh
+
+  genesis-v2-sandbox:
+    # Hermetic coding-sandbox containment suite (real Docker). ORNEUR_REQUIRE_DOCKER=1 turns "Docker unavailable" into a failure; zero skips allowed.
+    # Runs only hostile fixture programs written by the test suite -- no model-generated code, no model, no GPU.
+    name: Genesis V2 Sandbox (containment tests must execute)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca (dev)
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+
+      - name: Run sandbox containment suite (zero skips allowed)
+        run: bash scripts/ci/run_genesis_v2_sandbox_tests.sh
+
+  security-audit:
+    # Phase 15.15 item 10: this job's name is explicit about scope --
+    # it audits only the BASE `-e .` install (no dev/mcp/nvidia/train
+    # extras), which is a NARROWER dependency set than a full local
+    # development `.venv` (which typically accumulates extras and
+    # tooling over time). Its finding count is therefore not directly
+    # comparable to a broader environment's pip-audit run -- see
+    # docs/orneur/phase-15/PHASE15_EVIDENCE.md's Phase 15.15 evidence
+    # for that explicit reconciliation. This job remains INFORMATIONAL
+    # (`pip-audit || true`), never silently treated as a security PASS.
+    name: Dependency Vulnerability Scan (informational, base install only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Orca + pip-audit
+        run: |
+          pip install uv
+          uv pip install --system -e .
+          pip install pip-audit
+
+      # Informational, not blocking: as of docs/SECURITY_AUDIT.md, chromadb
+      # (PYSEC-2026-311) and diskcache (PYSEC-2026-2447) have known,
+      # unpatched CVEs that were assessed and found NOT currently
+      # exploitable given Orca's actual usage (embedded/local-only, no
+      # network exposure) — see that doc for the full reasoning. This job
+      # exists to catch any NEW vulnerability, not to re-litigate those two
+      # every run; a human should review new findings before this becomes
+      # a hard gate.
+      - name: Run pip-audit (informational)
+        run: pip-audit || true
+  rse-docker-lab:
+    # Phase 1 targeted remediation items 2-8. Dedicated, bounded CI coverage
+    # for PR #13's docker-rse-integration-lab.yml: builds orneur-rse:latest
+    # from THIS checked-out commit (not a possibly-stale pre-built image),
+    # proves the image's /app/orca content is byte-for-byte identical to
+    # this commit's orca/ tree, runs both the normal and the
+    # deliberate-control-failure scenarios via `docker compose up
+    # --exit-code-from`, and verifies the effective Docker network mode and
+    # every resource limit from OUTSIDE the container via `docker inspect` --
+    # see scripts/rse_docker_lab_verify.sh for the single source of truth
+    # this step invokes (also runnable locally, unchanged).
+    name: RSE Docker Synthetic Integration Lab (bounded, exit-code enforced)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Record exact source SHA under test
+        run: |
+          echo "source_sha=$(git rev-parse HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
+          git rev-parse HEAD
+
+      - name: Run the full verification script (build, reproducibility, both exit-code scenarios, resource/network-mode checks, cleanup)
+        run: bash scripts/rse_docker_lab_verify.sh
+  rse-dependency-audit:
+    # Audits the optional RSE extra closure in requirements/rse.txt.
+    # It does not replace the base-install scan above and does not use `|| true`.
+    # Trigger policy is unchanged: push includes cursor/**; pull_request does not.
+    name: RSE dependency lock and vulnerability scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install locked RSE dependencies and audit them
+        run: bash scripts/ci/run_rse_dependency_audit.sh
