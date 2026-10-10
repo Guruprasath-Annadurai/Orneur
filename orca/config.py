@@ -38,6 +38,11 @@ def orneur_env(suffix: str, default: str = "") -> str:
     return default
 
 
+class UntrustedStoreDirectory(RuntimeError):
+    """A diskcache-backed (or otherwise owner-restricted) directory failed
+    the symlink/ownership check in `_mkdir_owner_only` and was refused."""
+
+
 def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
     """
     Creates `path` restricted to the owning user (mode 0700) and enforces
@@ -52,8 +57,63 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
     trust boundary the rest of ORCA_HOME already relies on. mkdir's own
     `mode` argument is masked by umask and never reapplied to a directory
     that already exists, so this chmods unconditionally on every call.
+
+    Two checks guard the trust boundary this is meant to enforce, both
+    found missing in CodeAnt's PR #20 review and confirmed reproducible:
+
+    1. Symlink refusal. `path.chmod()` (like `os.chmod`) follows symlinks.
+       If an attacker who can write somewhere under this path's parent
+       directory (e.g. a lower-privileged local account on a shared
+       machine, present *before* this process's first run) pre-plants
+       `path` as a symlink to a directory they control, `mkdir(exist_ok=
+       True)` silently no-ops (the target already "exists" as a
+       directory) and the chmod below would silently restrict *their*
+       directory, not ours — while every subsequent diskcache read/write
+       this process makes against `path` transparently follows the
+       symlink into attacker-controlled storage. Refused outright rather
+       than silently followed.
+    2. Ownership check. `chmod(0o700)` only ever restricts to *whichever
+       user owns the directory* — if a pre-existing (non-symlink)
+       directory at this path is owned by a different uid than this
+       process (e.g. the same local-attacker-pre-creates-it scenario,
+       without even needing a symlink), chmod 0700 changes the mode bits
+       but not the owner: the attacker, as owner, keeps full rwx access
+       regardless, while this process may not even be able to read its
+       own cache. A directory this process does not own is never safe to
+       treat as private, no matter what mode it reports.
+
+    Neither check covers every ancestor directory in `path` when
+    `parents=True` creates intermediate levels — only the leaf `path`
+    itself. A malicious intermediate directory is a real, not-yet-closed
+    residual gap, consistent with this function's existing stance that it
+    narrows exposure to the single-user trust boundary rather than
+    eliminating every local-attacker-pre-positioning scenario.
     """
+    if path.is_symlink():
+        raise UntrustedStoreDirectory(
+            f"refusing to use {path}: it is a symlink, not a real directory. "
+            "A pre-planted symlink here would silently redirect every read/"
+            "write this process makes to an attacker-chosen location."
+        )
     path.mkdir(parents=parents, exist_ok=True)
+    if path.is_symlink():
+        # TOCTOU: something replaced `path` with a symlink between the
+        # mkdir call above and this check. Treat it the same as the
+        # pre-existing case rather than trusting it now.
+        raise UntrustedStoreDirectory(
+            f"refusing to use {path}: it was replaced with a symlink during "
+            "creation."
+        )
+    owner_uid = path.stat().st_uid
+    if owner_uid != os.geteuid():
+        raise UntrustedStoreDirectory(
+            f"refusing to use {path}: it is owned by uid {owner_uid}, not "
+            f"this process's uid {os.geteuid()}. chmod only restricts mode "
+            "bits, not ownership -- whoever already owns this directory "
+            "would keep full access regardless of the mode this function "
+            "sets, so a directory this process does not own is never safe "
+            "to treat as private."
+        )
     path.chmod(0o700)
     return path
 
