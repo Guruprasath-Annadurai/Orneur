@@ -5,40 +5,61 @@ when this module verifies a detached signature over that row's own
 artifact. This module does not write the register, the ledger, or any
 authorization file, and it does not authorize training.
 
-Phase 0 remediation (temporary Cursor-to-Claude handoff) adds three
-independent controls on top of the original reviewer-attestation gate,
-then a second pass (trust-boundary hardening, after an independent audit)
-closes three gaps those controls still had:
+History: Phase 0 remediation (temporary Cursor-to-Claude handoff) added
+founder authority, corpus-identity binding, and founder-enrolled reviewer
+trust on top of the original reviewer-attestation gate. A trust-boundary
+hardening pass then closed a real, reproduced revocation-replay bug with
+per-entry epochs. This third pass replaces the epoch scheme entirely with
+something structurally stronger, after further review found the epoch
+scheme still let a caller omit a newer record and succeed with a stale one
+("REVOCATION OMISSION"), and raised three further gaps (founder-root
+authority, evidence integrity, policy/corpus identity). What follows is the
+final design, not an incremental patch on the epoch scheme:
 
-  * Founder authority (task A): a row marked ``founder_approval ==
-    "REQUIRED"`` (FINAL-2, EXEC-1, and the other founder-gated rows in the
-    register) needs a SECOND detached signature, from a key enrolled with
-    role ``FOUNDER``, over the same canonical payload as the reviewer's
-    signature. A reviewer attestation alone can never satisfy these rows,
-    and the founder key must be cryptographically distinct from the
-    reviewer key used on the same record.
-  * Artifact integrity (task B): every record must declare the policy
-    version it was produced against (``policy_version``, bound to the
-    sha256 of ``docs/orneur/acceptance/ACCEPTANCE_POLICY.md`` -- see
-    ``POLICY_VERSION`` below, not a free-floating label), and the three
-    dependent protected-corpus evidence rows (DATA-1, DATA-2, DATA-5) must
-    reference DATA-3's own accepted digest via ``bound_corpus_sha256``, not
-    merely some hex string of the right shape. DATA-5 (corpus custody)
-    must also be signed by a reviewer key distinct from the key that got
-    DATA-3 (corpus creation) accepted -- an independent custodian, checked
-    by key identity, not merely by role name.
-  * Reviewer trust (task C): a key is usable as a reviewer or a founder
-    approver only if it carries a detached enrollment signature, at a
-    specific monotonic epoch, from a currently non-revoked founder root
-    key supplied by the caller (``founder_root_keys``) -- the engine never
-    trusts a bare ``{key_id, role, public_key_hex}`` tuple handed to it by
-    the caller. Each founder root is itself independently identified and
-    independently revocable (``{root_id, public_key_hex, revoked}``), so
-    compromising one root does not taint enrollments anchored to another.
-    Among several enrollment records presented for the same key_id, only
-    the highest-epoch one that verifies is authoritative -- a stale,
-    still-valid "active" record cannot be replayed alongside, or instead
-    of, a later revocation to resurrect a revoked key.
+  * Trust is no longer "a caller-supplied list of individually-signed
+    entries, pick the newest". It is now two whole, atomically-signed
+    documents -- a ``root_state`` (which founder roots are currently
+    valid) and a ``trust_snapshot`` (which reviewer/founder keys are
+    currently valid) -- each bound to the EXACT commit SHA under
+    evaluation via the same staleness check already used for evidence
+    rows (``WRONG_ROOT_STATE_SHA``/``STALE_ROOT_STATE``,
+    ``WRONG_TRUST_SNAPSHOT_SHA``/``STALE_TRUST_SNAPSHOT``). A caller
+    cannot "choose" to present an old, still-validly-signed snapshot
+    instead of a newer one, because the old one's signature covers an
+    ancestor SHA, not the current one -- the real trust state at commit
+    X is the one document the founder actually signed for commit X, the
+    same way an evidence record's `git_sha` already pins it to one
+    commit. Within one snapshot/root-state, a duplicate `key_id` /
+    `root_id` is rejected outright (`DUPLICATE_ENROLLMENT`,
+    `DUPLICATE_ROOT`) -- there is no notion of "two entries, which one
+    wins" any more.
+  * `root_state` is itself anchored to a single, permanent
+    `bootstrap_root_key_hex` supplied by the caller from a committed,
+    normally-empty file (`BOOTSTRAP_ROOT_KEY.json`) -- a caller cannot
+    make its own generated root authoritative merely by passing it in;
+    only a root_state signed by the bootstrap key is ever trusted, and a
+    root_state's own `roots` list is what `trust_snapshot` must be signed
+    against (by any one non-revoked root in it).
+  * Evidence integrity now requires either (a) the caller to present
+    actual artifact bytes (`artifact_bytes`) that hash to the record's
+    declared digest, for ordinary rows, or (b) for the four protected
+    corpus-evidence classes (where real content must never be
+    generated or accessed), a non-disclosing custody-possession
+    signature over a challenge derived from the digest and commit, from
+    the row's own reviewer key -- a correctly SHAPED digest with a valid
+    reviewer signature is no longer enough on its own.
+  * The corpus-identity record DATA-3 declares (`corpus_identity_sha256`)
+    is now a distinct, separately-signed field from DATA-3's own
+    `artifact_sha256` (the digest of DATA-3's creation *record*, not of
+    "the corpus"). DATA-1/DATA-2/DATA-5 bind to that distinct identity
+    field (`bound_corpus_identity_sha256`), not to DATA-3's record
+    digest. DATA-5's custody independence is now checked against the
+    actual resolved `public_key_hex`, not the caller-chosen `key_id`
+    label two different identities could otherwise share.
+  * `POLICY_VERSION` is now the sha256 of the policy document, this
+    engine's own source, and the published register graph JSON
+    concatenated -- "policy identity" now commits to the actual
+    enforcement code and graph, not only a prose document.
 """
 
 from __future__ import annotations
@@ -50,7 +71,10 @@ from pathlib import Path
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-_POLICY_DOC = Path(__file__).resolve().parents[2] / "docs" / "orneur" / "acceptance" / "ACCEPTANCE_POLICY.md"
+_ACCEPTANCE_DIR = Path(__file__).resolve().parents[2] / "docs" / "orneur" / "acceptance"
+_POLICY_DOC = _ACCEPTANCE_DIR / "ACCEPTANCE_POLICY.md"
+_ENGINE_SOURCE = Path(__file__).resolve()
+_GRAPH_DOC = _ACCEPTANCE_DIR / "register_graph.json"
 
 SIGNED_FIELDS = (
     "requirement_id",
@@ -64,55 +88,57 @@ SIGNED_FIELDS = (
 
 # Appended to the signed payload after the original seven fields. Optional
 # for rows that do not need them (default ""), but once set they cannot be
-# changed without invalidating every signature already collected on the
-# record -- a policy_version downgrade or a corpus-digest swap after the
-# fact is therefore a forgery, not a silent edit.
-EXTENDED_SIGNED_FIELDS = ("policy_version", "bound_corpus_sha256")
+# changed without invalidating the signature -- a policy_version downgrade
+# or a corpus-identity swap after the fact is a forgery, not a silent edit.
+EXTENDED_SIGNED_FIELDS = (
+    "policy_version",
+    "corpus_identity_sha256",
+    "bound_corpus_identity_sha256",
+)
 
-# The policy a record must declare it was produced against, bound to the
-# content hash of ACCEPTANCE_POLICY.md rather than a free-floating label --
-# "policy identity" means the identity of real governing text, not a
-# string anyone could happen to type correctly. Editing that document
+
+def _policy_version():
+    data = _POLICY_DOC.read_bytes() + _ENGINE_SOURCE.read_bytes()
+    if _GRAPH_DOC.exists():
+        data += _GRAPH_DOC.read_bytes()
+    return "orneur-acceptance-policy/" + hashlib.sha256(data).hexdigest()
+
+
+# "Policy identity" bound to real content: the policy document's prose,
+# this engine's own source code, and the published register graph JSON,
+# concatenated and hashed together. Changing any of the three -- the
+# written policy, the enforcement code itself, or the graph it enforces --
 # changes this value and invalidates every previously-signed record for a
-# new ledger, forcing a conscious re-attestation rather than letting an old
-# record silently keep validating under a changed acceptance policy.
-POLICY_VERSION = "orneur-acceptance-policy/" + hashlib.sha256(_POLICY_DOC.read_bytes()).hexdigest()
+# new ledger. A free-floating version label could be typed correctly by
+# anyone; this cannot be satisfied without the underlying content matching.
+POLICY_VERSION = _policy_version()
 
-# The protected-corpus evidence rows that must all point at one identity.
-# DATA-3 establishes the identity (its own accepted artifact digest); the
-# other three must bind to exactly that digest. G8 (the founder's grant)
-# deliberately carries no corpus digest at all -- see its evidence text --
-# so it is not part of this binding set.
+# The protected-corpus evidence rows. DATA-3 declares the corpus identity;
+# the other three must bind to exactly that identity (not to DATA-3's own
+# record digest -- see corpus_identity_sha256 below). G8 (the founder's
+# grant) deliberately carries no corpus digest or identity at all -- see
+# its evidence text -- so it is not part of this binding set.
 CORPUS_ORIGIN_ID = "DATA-3"
 CORPUS_BOUND_IDS = ("DATA-1", "DATA-2", "DATA-5")
 
+# Real content must never be generated or accessed for these artifact
+# classes (see CORPUS_ARTIFACTS in validate_register_graph.py) -- evidence
+# integrity for them is a non-disclosing custody-possession signature,
+# never a byte-for-byte hash check.
+PROTECTED_EVIDENCE_CLASSES = {
+    "protected-corpus-creation",
+    "corpus-provenance-manifest",
+    "corpus-custody-integrity",
+    "contamination-holdout-separation",
+}
+
 # DATA-5 (corpus custody and integrity) must be an INDEPENDENT custodian,
 # not merely a same-named-role rubber stamp: its own register evidence text
-# says "a custodian who is not the creator". Role equality alone does not
-# prove that (two records can share a role, e.g. both PRODUCT_MANAGEMENT,
-# while naming different people in the real world); checking the two
-# records were signed by cryptographically distinct reviewer keys does.
+# says "a custodian who is not the creator". Checked against the resolved
+# entry's actual public_key_hex, not the caller-chosen key_id label --
+# two different key_ids could otherwise be enrolled with the same
+# underlying keypair and look independent when they are not.
 CUSTODY_INDEPENDENT_FROM = {"DATA-5": "DATA-3"}
-
-# Fields covered by a trust-key enrollment signature, in this fixed order.
-# `revoked` is part of the signed payload, not a free-standing flag: a
-# caller that flips a legitimately-enrolled key's `revoked` value after the
-# fact (true -> false, to un-revoke; or false -> true, to frame a key as
-# revoked) invalidates the enrollment signature rather than silently
-# changing the key's live status. A real revocation is therefore itself a
-# founder-signed act -- a fresh enrollment record with revoked=true -- not
-# an unsigned edit to a stored flag.
-#
-# `epoch` closes a replay gap the first version of this module had: with no
-# ordering signal, a caller presenting BOTH a key's original "active"
-# enrollment and its later "revoked" enrollment could put the stale active
-# one first in `trust_keys`, and a first-match lookup would use it and
-# never even look at the revocation. `epoch` must strictly increase each
-# time the founder re-enrolls the same key_id (whether to change its role,
-# scope, or revocation state), and among every entry presented for a given
-# key_id, only the highest-epoch one whose signature verifies is ever
-# authoritative -- the caller's ordering has no effect on the outcome.
-ENROLLMENT_FIELDS = ("key_id", "role", "public_key_hex", "scope", "revoked", "epoch")
 
 
 class AcceptanceRejected(Exception):
@@ -133,25 +159,55 @@ def payload_bytes(record):
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
-def enrollment_payload_bytes(entry):
-    scope = ",".join(sorted(entry.get("scope", []) or []))
-    revoked = "true" if entry.get("revoked") else "false"
-    epoch = str(entry.get("epoch", 0))
-    parts = [str(entry.get(field, "")) for field in ("key_id", "role", "public_key_hex")]
-    parts += [scope, revoked, epoch]
+def custody_challenge_bytes(record):
+    """A non-disclosing possession challenge: binds a custody signature to
+    this exact requirement, digest, and commit, without needing (and
+    without this module ever touching) the underlying protected content."""
+    parts = [
+        record.get("requirement_id", ""),
+        record.get("artifact_sha256", ""),
+        record.get("git_sha", ""),
+        "POSSESSION_ATTESTATION_V1",
+    ]
     return ("\n".join(parts) + "\n").encode("utf-8")
 
 
-def assert_published_baseline(nodes, markdown, ledger, trust, founder_root_keys=None):
+def root_state_payload_bytes(root_state):
+    roots = root_state.get("roots", []) or []
+    canon = ",".join(sorted(
+        f"{r.get('root_id', '')}:{r.get('public_key_hex', '')}:{'1' if r.get('revoked') else '0'}"
+        for r in roots
+    ))
+    parts = [str(root_state.get("git_sha", "")), str(root_state.get("generation", "")), canon]
+    return ("\n".join(parts) + "\n").encode("utf-8")
+
+
+def trust_snapshot_payload_bytes(snapshot):
+    entries = snapshot.get("entries", []) or []
+    canon = ",".join(sorted(
+        f"{e.get('key_id', '')}:{e.get('role', '')}:{e.get('public_key_hex', '')}:"
+        f"{','.join(sorted(e.get('scope', []) or []))}:{'1' if e.get('revoked') else '0'}"
+        for e in entries
+    ))
+    parts = [str(snapshot.get("git_sha", "")), str(snapshot.get("generation", "")), canon]
+    return ("\n".join(parts) + "\n").encode("utf-8")
+
+
+def assert_published_baseline(nodes, markdown, ledger, trust_snapshot, root_state=None, bootstrap=None):
     errors = []
+    empty_snapshot = {"git_sha": "", "generation": 0, "entries": [], "signature_hex": ""}
+    empty_root_state = {"git_sha": "", "generation": 0, "roots": [], "signature_hex": ""}
+    empty_bootstrap = {"public_key_hex": ""}
     if any(node.get("status") == "ACCEPTED" for node in nodes):
         errors.append("published status ACCEPTED")
     if ledger != []:
         errors.append("committed ledger is not empty")
-    if trust != {"keys": []}:
-        errors.append("committed trust store is not empty")
-    if founder_root_keys is not None and founder_root_keys != {"keys": []}:
-        errors.append("committed founder root key store is not empty")
+    if trust_snapshot != empty_snapshot:
+        errors.append("committed trust snapshot is not empty")
+    if root_state is not None and root_state != empty_root_state:
+        errors.append("committed root state is not empty")
+    if bootstrap is not None and bootstrap != empty_bootstrap:
+        errors.append("committed bootstrap root key is not empty")
     for line in markdown.splitlines():
         if not line.startswith("| "):
             continue
@@ -163,19 +219,37 @@ def assert_published_baseline(nodes, markdown, ledger, trust, founder_root_keys=
     return errors
 
 
-def evaluate(nodes, records, *, trust_keys, subject_sha, ancestor_shas=(), founder_root_keys=()):
+def evaluate(
+    nodes,
+    records,
+    *,
+    trust_snapshot,
+    root_state,
+    bootstrap_root_key_hex,
+    subject_sha,
+    ancestor_shas=(),
+    artifact_bytes=None,
+):
     """Return the ids this ledger accepts. Raise on any bad record.
 
-    `nodes` is not modified. An empty ledger accepts nothing. An empty
-    `founder_root_keys` means no reviewer or founder key can ever be
-    trusted, no matter what `trust_keys` contains -- trust is never taken
-    on the caller's word alone.
+    `nodes` is not modified. An empty ledger accepts nothing and is
+    checked before `trust_snapshot`/`root_state` are even inspected, so an
+    empty ledger needs no real trust material at all. Once there is at
+    least one record, both `root_state` (anchored to `bootstrap_root_key_hex`)
+    and `trust_snapshot` (anchored to a non-revoked root in `root_state`)
+    must verify, each bound to the exact `subject_sha` -- a caller cannot
+    substitute an older, still-validly-signed version of either.
     """
     by_id = {node["id"]: node for node in nodes}
     if not isinstance(records, list):
         raise AcceptanceRejected("MISSING_FIELD", "ledger")
     if not records:
         return {}
+
+    ancestor_shas = set(ancestor_shas)
+    roots = _verify_root_state(root_state, bootstrap_root_key_hex, subject_sha, ancestor_shas)
+    by_key_id = _verify_trust_snapshot(trust_snapshot, roots, subject_sha, ancestor_shas)
+    artifact_bytes = artifact_bytes or {}
 
     seen_ids = []
     seen_artifacts = {}
@@ -201,31 +275,47 @@ def evaluate(nodes, records, *, trust_keys, subject_sha, ancestor_shas=(), found
     order = _order(by_id)
     pending = {record["requirement_id"]: record for record in records}
     accepted = {}
-    accepted_key_ids = {}
+    accepted_public_keys = {}
+    accepted_corpus_identities = {}
     for requirement_id in order:
         if requirement_id not in pending:
             continue
-        _accept_one(
+        key = _accept_one(
             by_id[requirement_id],
             pending[requirement_id],
             nodes=nodes,
             by_id=by_id,
             accepted=accepted,
-            accepted_key_ids=accepted_key_ids,
-            trust_keys=trust_keys,
+            accepted_public_keys=accepted_public_keys,
+            accepted_corpus_identities=accepted_corpus_identities,
+            by_key_id=by_key_id,
             subject_sha=subject_sha,
-            ancestor_shas=set(ancestor_shas),
-            founder_root_keys=tuple(founder_root_keys),
+            ancestor_shas=ancestor_shas,
+            artifact_bytes=artifact_bytes,
         )
         accepted[requirement_id] = pending[requirement_id]["artifact_sha256"]
-        accepted_key_ids[requirement_id] = pending[requirement_id]["reviewer_key_id"]
+        accepted_public_keys[requirement_id] = key.get("public_key_hex")
+        accepted_corpus_identities[requirement_id] = pending[requirement_id].get("corpus_identity_sha256", "")
     unknown = set(pending) - set(order)
     if unknown:
         raise AcceptanceRejected("UNKNOWN_REQUIREMENT", sorted(unknown)[0])
     return dict(accepted)
 
 
-def _accept_one(node, record, *, nodes, by_id, accepted, accepted_key_ids, trust_keys, subject_sha, ancestor_shas, founder_root_keys):
+def _accept_one(
+    node,
+    record,
+    *,
+    nodes,
+    by_id,
+    accepted,
+    accepted_public_keys,
+    accepted_corpus_identities,
+    by_key_id,
+    subject_sha,
+    ancestor_shas,
+    artifact_bytes,
+):
     if node["id"] == "R65" or node["id"].startswith("R65-"):
         raise AcceptanceRejected("NOT_VERIFIABLE", node["id"])
     if not node["counts"]:
@@ -253,12 +343,25 @@ def _accept_one(node, record, *, nodes, by_id, accepted, accepted_key_ids, trust
     key_id = record.get("reviewer_key_id")
     if not key_id:
         raise AcceptanceRejected("MISSING_REVIEWER", "reviewer_key_id")
-    key = _trusted_key(trust_keys, key_id, founder_root_keys)
+    key = _resolve_key(by_key_id, key_id)
     if key.get("role") != reviewer:
         raise AcceptanceRejected("REVIEWER_MISMATCH", key_id)
     if node["denominator"] not in (key.get("scope") or ()):
         raise AcceptanceRejected("OUT_OF_SCOPE", key_id)
     _verify_signature(record, key, "signature_hex")
+
+    artifact_class = node["artifact_class"]
+    digest = record["artifact_sha256"]
+    if artifact_class in PROTECTED_EVIDENCE_CLASSES:
+        custody_signature = record.get("custody_signature_hex", "")
+        if not _verify_whole_signature(
+            custody_challenge_bytes(record), custody_signature, key.get("public_key_hex", "")
+        ):
+            raise AcceptanceRejected("CUSTODY_NOT_AUTHENTICATED", node["id"])
+    else:
+        content = artifact_bytes.get(digest)
+        if content is None or hashlib.sha256(content).hexdigest() != digest:
+            raise AcceptanceRejected("EVIDENCE_NOT_RESOLVED", node["id"])
 
     if node["founder_approval"] == "REQUIRED":
         founder_key_id = record.get("founder_key_id")
@@ -266,7 +369,7 @@ def _accept_one(node, record, *, nodes, by_id, accepted, accepted_key_ids, trust
             raise AcceptanceRejected("MISSING_FOUNDER_APPROVAL", node["id"])
         if founder_key_id == key_id:
             raise AcceptanceRejected("SAME_KEY_DUAL_ROLE", node["id"])
-        founder_key = _trusted_key(trust_keys, founder_key_id, founder_root_keys)
+        founder_key = _resolve_key(by_key_id, founder_key_id)
         if founder_key.get("role") != "FOUNDER":
             raise AcceptanceRejected("FOUNDER_ROLE_REQUIRED", founder_key_id)
         if node["denominator"] not in (founder_key.get("scope") or ()):
@@ -280,16 +383,20 @@ def _accept_one(node, record, *, nodes, by_id, accepted, accepted_key_ids, trust
         if predecessor["counts"] and dep not in accepted:
             raise AcceptanceRejected("DEPENDENCY_UNACCEPTED", f"{node['id']} missing {dep}")
 
+    if node["id"] == CORPUS_ORIGIN_ID:
+        identity = record.get("corpus_identity_sha256", "")
+        if not _hex_length(identity, 64):
+            raise AcceptanceRejected("MISSING_CORPUS_IDENTITY", node["id"])
     if node["id"] in CORPUS_BOUND_IDS:
-        bound = record.get("bound_corpus_sha256", "")
-        origin_digest = accepted.get(CORPUS_ORIGIN_ID)
-        if origin_digest is None or not _hex_length(bound, 64) or bound != origin_digest:
+        bound = record.get("bound_corpus_identity_sha256", "")
+        origin_identity = accepted_corpus_identities.get(CORPUS_ORIGIN_ID)
+        if not origin_identity or not _hex_length(bound, 64) or bound != origin_identity:
             raise AcceptanceRejected("CORPUS_IDENTITY_MISMATCH", node["id"])
 
     creator_id = CUSTODY_INDEPENDENT_FROM.get(node["id"])
     if creator_id is not None:
-        creator_key_id = accepted_key_ids.get(creator_id)
-        if creator_key_id is None or key_id == creator_key_id:
+        creator_pubkey = accepted_public_keys.get(creator_id)
+        if creator_pubkey is None or key.get("public_key_hex") == creator_pubkey:
             raise AcceptanceRejected("CUSTODY_NOT_INDEPENDENT", node["id"])
 
     if node["id"] == "FINAL-1":
@@ -308,6 +415,8 @@ def _accept_one(node, record, *, nodes, by_id, accepted, accepted_key_ids, trust
     if node["id"] == "EXEC-1" and "FINAL-2" not in accepted:
         raise AcceptanceRejected("DEPENDENCY_UNACCEPTED", "EXEC-1 missing FINAL-2")
 
+    return key
+
 
 def _require_match(record, field, expected, code):
     actual = record.get(field)
@@ -317,75 +426,105 @@ def _require_match(record, field, expected, code):
         raise AcceptanceRejected(code, field)
 
 
-def _verify_signature(record, key, field, code="FORGED"):
-    signature = record.get(field, "")
-    public_hex = key.get("public_key_hex", "")
-    if not _hex_length(signature, 128) or not _hex_length(public_hex, 64):
-        raise AcceptanceRejected(code, record.get("requirement_id", ""))
-    try:
-        public = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_hex))
-        public.verify(bytes.fromhex(signature), payload_bytes(record))
-    except (InvalidSignature, ValueError) as exc:
-        raise AcceptanceRejected(code, record.get("requirement_id", "")) from exc
-
-
-def _trusted_key(trust_keys, key_id, founder_root_keys):
-    """Return the enrolled, non-revoked, highest-epoch key for `key_id`.
-
-    A `{key_id, role, public_key_hex, scope, revoked, epoch}` tuple
-    appearing in `trust_keys` is not, by itself, trusted: it must also
-    carry an `enrollment_signature_hex` that verifies against a currently
-    non-revoked entry in the caller's `founder_root_keys`. This is what
-    stops a compromised or careless caller from smuggling an arbitrary
-    trust root into the ledger evaluation by constructing the `trust_keys`
-    argument itself -- the engine checks the founder's own signature, not
-    the caller's say-so.
-
-    Every entry in `trust_keys` whose key_id matches and whose enrollment
-    signature verifies is a candidate; the one with the strictly highest
-    `epoch` wins, regardless of list order. This is what stops a caller
-    from replaying a stale, still-validly-signed "active" enrollment
-    alongside (or instead of) a later, higher-epoch revocation to
-    resurrect a revoked key -- a first-match lookup over an unordered list
-    would not catch that, since both records are genuinely, independently
-    founder-signed; only the epoch tells the engine which one is current.
-    """
-    candidates = []
-    for key in trust_keys:
-        if key.get("key_id") != key_id:
-            continue
-        if _verify_enrollment(key, founder_root_keys):
-            candidates.append(key)
-    if not candidates:
-        for key in trust_keys:
-            if key.get("key_id") == key_id:
-                raise AcceptanceRejected("UNTRUSTED_KEY", key_id)
-        raise AcceptanceRejected("FORGED", key_id)
-    current = max(candidates, key=lambda key: key.get("epoch", 0))
-    if current.get("revoked"):
-        raise AcceptanceRejected("REVOKED_REVIEWER", key_id)
-    return current
-
-
-def _verify_enrollment(entry, founder_root_keys):
-    signature = entry.get("enrollment_signature_hex", "")
-    if not _hex_length(signature, 128):
+def _verify_whole_signature(payload, signature_hex, public_key_hex):
+    if not _hex_length(signature_hex, 128) or not _hex_length(public_key_hex, 64):
         return False
-    payload = enrollment_payload_bytes(entry)
-    for root in founder_root_keys:
-        if not isinstance(root, dict) or root.get("revoked"):
-            continue
-        root_hex = root.get("public_key_hex", "")
-        if not _hex_length(root_hex, 64):
-            continue
-        try:
-            Ed25519PublicKey.from_public_bytes(bytes.fromhex(root_hex)).verify(
-                bytes.fromhex(signature), payload
-            )
-            return True
-        except (InvalidSignature, ValueError):
-            continue
-    return False
+    try:
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex)).verify(
+            bytes.fromhex(signature_hex), payload
+        )
+        return True
+    except (InvalidSignature, ValueError):
+        return False
+
+
+def _verify_signature(record, key, field, code="FORGED"):
+    if not _verify_whole_signature(payload_bytes(record), record.get(field, ""), key.get("public_key_hex", "")):
+        raise AcceptanceRejected(code, record.get("requirement_id", ""))
+
+
+def _non_negative_int(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _verify_root_state(root_state, bootstrap_root_key_hex, subject_sha, ancestor_shas):
+    """Verify the whole root_state document and return its `roots` list.
+
+    `root_state` names which founder roots are currently valid. It is
+    trusted only if it verifies against `bootstrap_root_key_hex` -- a
+    caller cannot make its own generated root authoritative merely by
+    passing it into this function. It must also be for the exact commit
+    under evaluation: an older, still-validly-bootstrap-signed root_state
+    (e.g. one that had not yet revoked a since-compromised root) is
+    rejected the same way a stale evidence record is, not treated as an
+    acceptable substitute for the current one.
+    """
+    if not isinstance(root_state, dict):
+        raise AcceptanceRejected("MALFORMED_ROOT_STATE", "root_state")
+    if not _non_negative_int(root_state.get("generation")):
+        raise AcceptanceRejected("MALFORMED_GENERATION", "root_state")
+    git_sha = root_state.get("git_sha", "")
+    if not _hex_length(git_sha, 40):
+        raise AcceptanceRejected("WRONG_ROOT_STATE_SHA", git_sha or "missing")
+    if git_sha != subject_sha:
+        code = "STALE_ROOT_STATE" if git_sha in ancestor_shas else "WRONG_ROOT_STATE_SHA"
+        raise AcceptanceRejected(code, git_sha)
+    if not _hex_length(bootstrap_root_key_hex, 64):
+        raise AcceptanceRejected("NO_BOOTSTRAP_ANCHOR", "bootstrap_root_key_hex")
+    if not _verify_whole_signature(
+        root_state_payload_bytes(root_state), root_state.get("signature_hex", ""), bootstrap_root_key_hex
+    ):
+        raise AcceptanceRejected("UNTRUSTED_ROOT_STATE", "root_state")
+    roots = root_state.get("roots", [])
+    if not isinstance(roots, list):
+        raise AcceptanceRejected("MALFORMED_ROOT_STATE", "roots")
+    seen = set()
+    for root in roots:
+        root_id = root.get("root_id") if isinstance(root, dict) else None
+        if root_id is None or root_id in seen:
+            raise AcceptanceRejected("DUPLICATE_ROOT", root_id)
+        seen.add(root_id)
+    return roots
+
+
+def _verify_trust_snapshot(trust_snapshot, roots, subject_sha, ancestor_shas):
+    """Verify the whole trust_snapshot document and return its entries,
+    keyed by key_id. Signed by any one currently non-revoked root from
+    `roots`; bound to the exact commit the same way root_state is."""
+    if not isinstance(trust_snapshot, dict):
+        raise AcceptanceRejected("MALFORMED_TRUST_SNAPSHOT", "trust_snapshot")
+    if not _non_negative_int(trust_snapshot.get("generation")):
+        raise AcceptanceRejected("MALFORMED_GENERATION", "trust_snapshot")
+    git_sha = trust_snapshot.get("git_sha", "")
+    if not _hex_length(git_sha, 40):
+        raise AcceptanceRejected("WRONG_TRUST_SNAPSHOT_SHA", git_sha or "missing")
+    if git_sha != subject_sha:
+        code = "STALE_TRUST_SNAPSHOT" if git_sha in ancestor_shas else "WRONG_TRUST_SNAPSHOT_SHA"
+        raise AcceptanceRejected(code, git_sha)
+    payload = trust_snapshot_payload_bytes(trust_snapshot)
+    signature = trust_snapshot.get("signature_hex", "")
+    active_roots = [r for r in roots if isinstance(r, dict) and not r.get("revoked")]
+    if not any(_verify_whole_signature(payload, signature, r.get("public_key_hex", "")) for r in active_roots):
+        raise AcceptanceRejected("UNTRUSTED_TRUST_SNAPSHOT", "trust_snapshot")
+    entries = trust_snapshot.get("entries", [])
+    if not isinstance(entries, list):
+        raise AcceptanceRejected("MALFORMED_TRUST_SNAPSHOT", "entries")
+    by_key_id = {}
+    for entry in entries:
+        key_id = entry.get("key_id") if isinstance(entry, dict) else None
+        if key_id is None or key_id in by_key_id:
+            raise AcceptanceRejected("DUPLICATE_ENROLLMENT", key_id)
+        by_key_id[key_id] = entry
+    return by_key_id
+
+
+def _resolve_key(by_key_id, key_id):
+    entry = by_key_id.get(key_id)
+    if entry is None:
+        raise AcceptanceRejected("FORGED", key_id)
+    if entry.get("revoked"):
+        raise AcceptanceRejected("REVOKED_REVIEWER", key_id)
+    return entry
 
 
 def _hex_length(value, size):

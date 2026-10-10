@@ -1,15 +1,20 @@
 """Fail-closed acceptance. The published register stays unaccepted.
 
-Phase 0 remediation (temporary Cursor-to-Claude handoff), then a
-trust-boundary hardening pass after an independent audit: every trust key
-used below is enrolled against a single synthetic, in-memory founder root
-keypair (`FOUNDER_ROOT_PRIVATE`/`ROOT_KEYS`), generated fresh for this test
-run only. It is not read from or written to any file and never touches
-the real (empty) `docs/orneur/acceptance/founder_root_keys.json` baseline.
+History: Phase 0 remediation (Cursor-to-Claude handoff), a trust-boundary
+hardening pass (closed a real, reproduced revocation-replay bug with
+per-entry epochs), then this final pass, which replaces the epoch scheme
+entirely after further review found it still let a caller omit a newer
+record and succeed with a stale one. Trust is now two whole,
+atomically-signed documents (`root_state`, `trust_snapshot`), each bound to
+the exact commit SHA under evaluation, with `root_state` itself anchored to
+a single permanent `bootstrap_root_key_hex`. All keys below (the bootstrap
+anchor included) are freshly generated, in-memory-only synthetic Ed25519
+keys for this test run; none is read from or written to any file, and none
+touches the real (empty) `docs/orneur/acceptance/*` baselines.
 """
 
 import copy
-import itertools
+import hashlib
 import sys
 from pathlib import Path
 
@@ -23,10 +28,13 @@ sys.path.insert(0, str(ROOT / "scripts" / "acceptance"))
 from acceptance_engine import (  # noqa: E402
     AcceptanceRejected,
     POLICY_VERSION,
+    PROTECTED_EVIDENCE_CLASSES,
     assert_published_baseline,
-    enrollment_payload_bytes,
+    custody_challenge_bytes,
     evaluate,
     payload_bytes,
+    root_state_payload_bytes,
+    trust_snapshot_payload_bytes,
 )
 from validate_register_graph import build_nodes  # noqa: E402
 
@@ -35,7 +43,8 @@ ANCESTOR = "b" * 40
 
 ALL_SCOPES = ["PRE_TRAINING", "APPLICATION", "POST_TRAINING_LAUNCH", "EXECUTION"]
 
-FOUNDER_ROOT_PRIVATE = Ed25519PrivateKey.generate()
+ROOT_PRIVATE = Ed25519PrivateKey.generate()
+BOOTSTRAP_PRIVATE = Ed25519PrivateKey.generate()
 
 
 def _public_hex(private):
@@ -45,21 +54,15 @@ def _public_hex(private):
     ).hex()
 
 
-FOUNDER_ROOT_PUBLIC_HEX = _public_hex(FOUNDER_ROOT_PRIVATE)
-ROOT_KEYS = [{"root_id": "root-1", "public_key_hex": FOUNDER_ROOT_PUBLIC_HEX, "revoked": False}]
+ROOT_PUBLIC_HEX = _public_hex(ROOT_PRIVATE)
+BOOTSTRAP_PUBLIC_HEX = _public_hex(BOOTSTRAP_PRIVATE)
+DEFAULT_ROOTS = [{"root_id": "root-1", "public_key_hex": ROOT_PUBLIC_HEX, "revoked": False}]
 
-_epoch_counter = itertools.count(1)
 
-
-def _role_key(role, key_id, *, scope=None, revoked=False, epoch=None, root_private=FOUNDER_ROOT_PRIVATE):
-    """Generate a reviewer/founder key enrolled by `root_private`.
-
-    This is the one path every test uses to mint a usable trust entry --
-    it always carries a real enrollment signature at a fresh, strictly
-    increasing epoch, so a test that wants an UNTRUSTED key, or wants to
-    construct a replay attempt by hand, builds its entry directly instead
-    of through here.
-    """
+def _entry(role, key_id, *, scope=None, revoked=False):
+    """A bare, unsigned-by-anything trust entry and its private key. Only
+    becomes trusted once it appears inside a properly root-signed
+    trust_snapshot (see `_chain`)."""
     private = Ed25519PrivateKey.generate()
     entry = {
         "key_id": key_id,
@@ -67,94 +70,56 @@ def _role_key(role, key_id, *, scope=None, revoked=False, epoch=None, root_priva
         "public_key_hex": _public_hex(private),
         "scope": list(scope) if scope is not None else list(ALL_SCOPES),
         "revoked": revoked,
-        "epoch": epoch if epoch is not None else next(_epoch_counter),
     }
-    entry["enrollment_signature_hex"] = root_private.sign(enrollment_payload_bytes(entry)).hex()
     return private, entry
 
 
-def _signed(node, private, trust, *, subject=SUBJECT, artifact=None, founder=None, **overrides):
-    record = {
-        "requirement_id": node["id"],
-        "evidence_key": node["evidence_key"],
-        "artifact_class": node["artifact_class"],
-        "artifact_sha256": artifact or ("ab" * 32),
-        "git_sha": subject,
-        "scope": node["denominator"],
-        "reviewer_role": node["independent_reviewer"],
-        "policy_version": POLICY_VERSION,
-        "bound_corpus_sha256": "",
-    }
-    record.update(overrides)
-    record["signature_hex"] = private.sign(payload_bytes(record)).hex()
-    record["reviewer_key_id"] = trust["key_id"]
-    if founder is not None:
-        founder_private, founder_trust = founder
-        record["founder_key_id"] = founder_trust["key_id"]
-        record["founder_signature_hex"] = founder_private.sign(payload_bytes(record)).hex()
-    return record
+def _root_state(roots, *, generation=1, git_sha=SUBJECT, signer=BOOTSTRAP_PRIVATE):
+    state = {"git_sha": git_sha, "generation": generation, "roots": roots}
+    state["signature_hex"] = signer.sign(root_state_payload_bytes(state)).hex()
+    return state
+
+
+def _trust_snapshot(entries, *, generation=1, git_sha=SUBJECT, signer=ROOT_PRIVATE):
+    snapshot = {"git_sha": git_sha, "generation": generation, "entries": entries}
+    snapshot["signature_hex"] = signer.sign(trust_snapshot_payload_bytes(snapshot)).hex()
+    return snapshot
+
+
+def _chain(entries, *, roots=None, generation=1, git_sha=SUBJECT, root_signer=ROOT_PRIVATE, bootstrap_signer=BOOTSTRAP_PRIVATE):
+    """The default, valid two-level trust chain: bootstrap signs root_state
+    (naming `roots`, default just ROOT_PUBLIC_HEX), one of those roots
+    signs trust_snapshot (naming `entries`). Returns (trust_snapshot, root_state)."""
+    roots = roots if roots is not None else DEFAULT_ROOTS
+    return (
+        _trust_snapshot(entries, generation=generation, git_sha=git_sha, signer=root_signer),
+        _root_state(roots, generation=generation, git_sha=git_sha, signer=bootstrap_signer),
+    )
+
+
+def _call(nodes, records, entries=(), *, artifact_bytes=None, subject_sha=SUBJECT, ancestor_shas=(),
+          trust_snapshot=None, root_state=None, bootstrap_root_key_hex=BOOTSTRAP_PUBLIC_HEX, **chain_kwargs):
+    if trust_snapshot is None or root_state is None:
+        built_snapshot, built_root_state = _chain(list(entries), **chain_kwargs)
+        trust_snapshot = trust_snapshot if trust_snapshot is not None else built_snapshot
+        root_state = root_state if root_state is not None else built_root_state
+    return evaluate(
+        nodes, records,
+        trust_snapshot=trust_snapshot, root_state=root_state,
+        bootstrap_root_key_hex=bootstrap_root_key_hex,
+        subject_sha=subject_sha, ancestor_shas=ancestor_shas,
+        artifact_bytes=artifact_bytes,
+    )
+
+
+def _reject(nodes, records, entries, code, **kwargs):
+    with pytest.raises(AcceptanceRejected) as caught:
+        _call(nodes, records, entries, **kwargs)
+    assert caught.value.code == code
 
 
 def _node(nodes, requirement_id):
     return next(node for node in nodes if node["id"] == requirement_id)
-
-
-def _reject(nodes, records, trust, code, *, founder_root_keys=ROOT_KEYS, **kwargs):
-    with pytest.raises(AcceptanceRejected) as caught:
-        evaluate(
-            nodes,
-            records,
-            trust_keys=trust,
-            subject_sha=SUBJECT,
-            founder_root_keys=founder_root_keys,
-            **kwargs,
-        )
-    assert caught.value.code == code
-
-
-def test_empty_ledger_accepts_nothing_and_ignores_status_edits():
-    nodes = build_nodes()
-    for node in nodes:
-        node["status"] = "ACCEPTED"
-    assert evaluate(nodes, [], trust_keys=[], subject_sha=SUBJECT) == {}
-    assert all(node["status"] == "ACCEPTED" for node in nodes)
-
-
-def test_published_baseline_rejects_self_accepted_status_and_a_local_ledger():
-    nodes = build_nodes()
-    assert assert_published_baseline(nodes, "| G8 | M | M | PRE_TRAINING | yes | NOT_AUTHORIZED |", [], {"keys": []}) == []
-    nodes[0]["status"] = "ACCEPTED"
-    errors = assert_published_baseline(
-        nodes,
-        "| G8 | M | M | PRE_TRAINING | yes | ACCEPTED |",
-        [{"requirement_id": "G8"}],
-        {"keys": [{"key_id": "x"}]},
-        {"keys": [{"key_id": "root"}]},
-    )
-    assert "published status ACCEPTED" in errors
-    assert any(error.startswith("markdown status ACCEPTED") for error in errors)
-    assert "committed ledger is not empty" in errors
-    assert "committed trust store is not empty" in errors
-    assert "committed founder root key store is not empty" in errors
-
-
-def test_valid_record_accepts_only_its_own_row():
-    # DEC-K requires founder approval; a reviewer signature alone is not enough.
-    nodes = build_nodes()
-    private, trust = _role_key("PRODUCT_MANAGEMENT", "pm")
-    founder_key, founder_trust = _role_key("FOUNDER", "founder-1")
-    deck = _signed(
-        _node(nodes, "DEC-K"), private, trust, artifact="11" * 32,
-        founder=(founder_key, founder_trust),
-    )
-    before = copy.deepcopy(nodes)
-    accepted = evaluate(
-        nodes, [deck], trust_keys=[trust, founder_trust], subject_sha=SUBJECT,
-        founder_root_keys=ROOT_KEYS,
-    )
-    assert accepted == {"DEC-K": "11" * 32}
-    assert nodes == before
-    assert "C27" not in accepted
 
 
 def _pair(nodes, requirement_id, depends):
@@ -163,25 +128,136 @@ def _pair(nodes, requirement_id, depends):
     return node
 
 
+def _signed(node, private, trust, *, subject=SUBJECT, label=None, founder=None, custody_private=None, **overrides):
+    """Returns (record, content_bytes). `content_bytes` is the synthetic
+    evidence whose sha256 is the record's artifact_sha256 -- None if an
+    override replaced artifact_sha256 directly (no known matching bytes),
+    or if this row is a protected corpus-evidence class (no bytes ever
+    exist for those; a custody_signature_hex is produced instead)."""
+    label = label if label is not None else f"{node['id']}-synthetic-evidence"
+    content = label.encode("utf-8")
+    digest = hashlib.sha256(content).hexdigest()
+    record = {
+        "requirement_id": node["id"],
+        "evidence_key": node["evidence_key"],
+        "artifact_class": node["artifact_class"],
+        "artifact_sha256": digest,
+        "git_sha": subject,
+        "scope": node["denominator"],
+        "reviewer_role": node["independent_reviewer"],
+        "policy_version": POLICY_VERSION,
+        "corpus_identity_sha256": "",
+        "bound_corpus_identity_sha256": "",
+    }
+    record.update(overrides)
+    if record["artifact_sha256"] != digest:
+        content = None
+    record["signature_hex"] = private.sign(payload_bytes(record)).hex()
+    record["reviewer_key_id"] = trust["key_id"]
+    if node["artifact_class"] in PROTECTED_EVIDENCE_CLASSES:
+        signer = custody_private if custody_private is not None else private
+        record["custody_signature_hex"] = signer.sign(custody_challenge_bytes(record)).hex()
+        content = None
+    if founder is not None:
+        founder_private, founder_trust = founder
+        record["founder_key_id"] = founder_trust["key_id"]
+        record["founder_signature_hex"] = founder_private.sign(payload_bytes(record)).hex()
+    return record, content
+
+
+def _ledger(*signed):
+    records = [r for r, _ in signed]
+    artifact_bytes = {}
+    for record, content in signed:
+        if content is not None:
+            artifact_bytes[record["artifact_sha256"]] = content
+    return records, artifact_bytes
+
+
+# ---------------------------------------------------------------------
+# Baseline / empty-ledger behavior
+# ---------------------------------------------------------------------
+
+def test_empty_ledger_accepts_nothing_and_ignores_status_edits():
+    nodes = build_nodes()
+    for node in nodes:
+        node["status"] = "ACCEPTED"
+    empty_snapshot = {"git_sha": "", "generation": 0, "entries": [], "signature_hex": ""}
+    empty_root_state = {"git_sha": "", "generation": 0, "roots": [], "signature_hex": ""}
+    assert evaluate(
+        nodes, [], trust_snapshot=empty_snapshot, root_state=empty_root_state,
+        bootstrap_root_key_hex="", subject_sha=SUBJECT,
+    ) == {}
+    assert all(node["status"] == "ACCEPTED" for node in nodes)
+
+
+def test_published_baseline_rejects_self_accepted_status_and_a_local_ledger():
+    nodes = build_nodes()
+    empty_snapshot = {"git_sha": "", "generation": 0, "entries": [], "signature_hex": ""}
+    assert assert_published_baseline(nodes, "| G8 | M | M | PRE_TRAINING | yes | NOT_AUTHORIZED |", [], empty_snapshot) == []
+    nodes[0]["status"] = "ACCEPTED"
+    errors = assert_published_baseline(
+        nodes,
+        "| G8 | M | M | PRE_TRAINING | yes | ACCEPTED |",
+        [{"requirement_id": "G8"}],
+        {"git_sha": "x", "generation": 1, "entries": [{"key_id": "x"}], "signature_hex": "y"},
+        {"git_sha": "x", "generation": 1, "roots": [{"root_id": "r"}], "signature_hex": "y"},
+        {"public_key_hex": "z"},
+    )
+    assert "published status ACCEPTED" in errors
+    assert any(error.startswith("markdown status ACCEPTED") for error in errors)
+    assert "committed ledger is not empty" in errors
+    assert "committed trust snapshot is not empty" in errors
+    assert "committed root state is not empty" in errors
+    assert "committed bootstrap root key is not empty" in errors
+
+
+# ---------------------------------------------------------------------
+# Core acceptance behavior (dependency ordering, duplicates, founder gate)
+# ---------------------------------------------------------------------
+
+def test_valid_record_accepts_only_its_own_row():
+    nodes = build_nodes()
+    private, trust = _entry("PRODUCT_MANAGEMENT", "pm")
+    founder_private, founder_trust = _entry("FOUNDER", "founder-1")
+    deck = _signed(_node(nodes, "DEC-K"), private, trust, label="deck", founder=(founder_private, founder_trust))
+    before = copy.deepcopy(nodes)
+    records, artifact_bytes = _ledger(deck)
+    accepted = _call(nodes, records, [trust, founder_trust], artifact_bytes=artifact_bytes)
+    assert accepted == {"DEC-K": deck[0]["artifact_sha256"]}
+    assert nodes == before
+    assert "C27" not in accepted
+
+
 def test_predecessor_does_not_accept_dependents_or_share_an_artifact():
     source = build_nodes()
     nodes = [_pair(source, "G3", []), _pair(source, "C01", ["G3"])]
-    claude_key, claude = _role_key("CLAUDE", "claude")
-    g3 = _signed(nodes[0], claude_key, claude, artifact="22" * 32)
-    accepted = evaluate(nodes, [g3], trust_keys=[claude], subject_sha=SUBJECT, founder_root_keys=ROOT_KEYS)
-    assert accepted == {"G3": "22" * 32}
-    c01 = _signed(nodes[1], claude_key, claude, artifact="33" * 32)
-    both = evaluate(nodes, [g3, c01], trust_keys=[claude], subject_sha=SUBJECT, founder_root_keys=ROOT_KEYS)
-    assert both == {"G3": "22" * 32, "C01": "33" * 32}
-    _reject(nodes, [c01], [claude], "DEPENDENCY_UNACCEPTED")
-    shared = _signed(nodes[1], claude_key, claude, artifact="22" * 32)
-    _reject(nodes, [g3, shared], [claude], "DUPLICATE_ARTIFACT")
+    claude_private, claude = _entry("CLAUDE", "claude")
+    g3 = _signed(nodes[0], claude_private, claude, label="g3")
+    c01 = _signed(nodes[1], claude_private, claude, label="c01")
+
+    records, artifact_bytes = _ledger(g3)
+    accepted = _call(nodes, records, [claude], artifact_bytes=artifact_bytes)
+    assert accepted == {"G3": g3[0]["artifact_sha256"]}
+
+    records, artifact_bytes = _ledger(g3, c01)
+    both = _call(nodes, records, [claude], artifact_bytes=artifact_bytes)
+    assert both == {"G3": g3[0]["artifact_sha256"], "C01": c01[0]["artifact_sha256"]}
+
+    records, artifact_bytes = _ledger(c01)
+    _reject(nodes, records, [claude], "DEPENDENCY_UNACCEPTED", artifact_bytes=artifact_bytes)
+
+    shared = _signed(nodes[1], claude_private, claude, label="g3")  # same label -> same digest as g3
+    records, artifact_bytes = _ledger(g3, shared)
+    _reject(nodes, records, [claude], "DUPLICATE_ARTIFACT", artifact_bytes=artifact_bytes)
+
     real = build_nodes()
-    _reject(real, [_signed(_node(real, "C01"), claude_key, claude, artifact="34" * 32)], [claude], "DEPENDENCY_UNACCEPTED")
+    only_c01 = _signed(_node(real, "C01"), claude_private, claude, label="c01-real")
+    records, artifact_bytes = _ledger(only_c01)
+    _reject(real, records, [claude], "DEPENDENCY_UNACCEPTED", artifact_bytes=artifact_bytes)
 
 
 def test_grant_does_not_create_the_corpus_or_pass_later_corpus_rows():
-    # G8 (the founder grant) requires founder approval.
     source = build_nodes()
     nodes = [
         _pair(source, "G8", []),
@@ -190,399 +266,543 @@ def test_grant_does_not_create_the_corpus_or_pass_later_corpus_rows():
         _pair(source, "DATA-5", ["DATA-3"]),
         _pair(source, "DATA-2", ["DATA-1", "DATA-3", "DATA-5"]),
     ]
-    pm_key, pm = _role_key("PRODUCT_MANAGEMENT", "pm")
-    founder_key, founder = _role_key("FOUNDER", "founder-grant")
-    grant = _signed(nodes[0], pm_key, pm, artifact="44" * 32, founder=(founder_key, founder))
-    accepted = evaluate(
-        nodes, [grant], trust_keys=[pm, founder], subject_sha=SUBJECT, founder_root_keys=ROOT_KEYS,
-    )
+    pm_private, pm = _entry("PRODUCT_MANAGEMENT", "pm")
+    founder_private, founder = _entry("FOUNDER", "founder-grant")
+    grant = _signed(nodes[0], pm_private, pm, label="grant", founder=(founder_private, founder))
+    records, artifact_bytes = _ledger(grant)
+    accepted = _call(nodes, records, [pm, founder], artifact_bytes=artifact_bytes)
     assert list(accepted) == ["G8"]
     for row_id in ("DATA-1", "DATA-2", "DATA-3", "DATA-5"):
         assert row_id not in accepted
 
 
-def _role_pair(role, key_id):
-    return _role_key(role, key_id)
-
-
 def test_same_grant_digest_cannot_be_reused_as_creation():
     nodes = build_nodes()
-    pm_key, pm = _role_key("PRODUCT_MANAGEMENT", "pm")
-    claude_key, claude = _role_key("CLAUDE", "claude")
-    founder_key, founder = _role_key("FOUNDER", "founder-grant")
-    digest = "55" * 32
-    grant = _signed(_node(nodes, "G8"), pm_key, pm, artifact=digest, founder=(founder_key, founder))
-    created = _signed(_node(nodes, "DATA-3"), claude_key, claude, artifact=digest)
-    _reject(nodes, [grant, created], [pm, claude, founder], "DUPLICATE_ARTIFACT")
-    created = _signed(_node(nodes, "DATA-3"), claude_key, claude, artifact="66" * 32)
-    _reject(nodes, [created], [claude], "DEPENDENCY_UNACCEPTED")
+    pm_private, pm = _entry("PRODUCT_MANAGEMENT", "pm")
+    claude_private, claude = _entry("CLAUDE", "claude")
+    founder_private, founder = _entry("FOUNDER", "founder-grant")
+    grant = _signed(_node(nodes, "G8"), pm_private, pm, label="shared", founder=(founder_private, founder))
+    created = _signed(_node(nodes, "DATA-3"), claude_private, claude, label="shared")
+    records, artifact_bytes = _ledger(grant, created)
+    _reject(nodes, records, [pm, claude, founder], "DUPLICATE_ARTIFACT", artifact_bytes=artifact_bytes)
+
+    created = _signed(_node(nodes, "DATA-3"), claude_private, claude, label="distinct")
+    records, artifact_bytes = _ledger(created)
+    _reject(nodes, records, [claude], "DEPENDENCY_UNACCEPTED", artifact_bytes=artifact_bytes)
 
 
 def test_wrong_stale_forged_duplicate_and_mismatched_evidence_fail():
     nodes = build_nodes()
-    private, trust = _role_key("PRODUCT_MANAGEMENT", "pm")
+    private, trust = _entry("PRODUCT_MANAGEMENT", "pm")
+    founder_private, founder = _entry("FOUNDER", "founder-dec")
     node = _node(nodes, "DEC-K")
-    _reject(
-        nodes,
-        [_signed(node, private, trust, subject="c" * 40)],
-        [trust],
-        "WRONG_SHA",
-    )
-    _reject(
-        nodes,
-        [_signed(node, private, trust, subject=ANCESTOR)],
-        [trust],
-        "STALE",
-        ancestor_shas={ANCESTOR},
-    )
-    forged = _signed(node, private, trust, artifact="77" * 32)
+
+    wrong_sha, _ = _signed(node, private, trust, subject="c" * 40, founder=(founder_private, founder))
+    _reject(nodes, [wrong_sha], [trust, founder], "WRONG_SHA")
+
+    stale, _ = _signed(node, private, trust, subject=ANCESTOR, founder=(founder_private, founder))
+    _reject(nodes, [stale], [trust, founder], "STALE", ancestor_shas={ANCESTOR})
+
+    forged, _ = _signed(node, private, trust, label="forge-me", founder=(founder_private, founder))
     forged["signature_hex"] = ("0" if forged["signature_hex"][-1] != "0" else "1") + forged["signature_hex"][1:]
-    _reject(nodes, [forged], [trust], "FORGED")
-    first = _signed(node, private, trust, artifact="77" * 32)
-    second = _signed(node, private, trust, artifact="88" * 32)
-    _reject(nodes, [first, second], [trust], "DUPLICATE")
-    mismatched = _signed(node, private, trust, evidence_key="G8")
-    _reject(nodes, [mismatched], [trust], "MISMATCH")
-    _reject(nodes, [_signed(node, private, trust, scope="EXECUTION")], [trust], "SCOPE_MISMATCH")
+    _reject(nodes, [forged], [trust, founder], "FORGED")
+
+    first, _ = _signed(node, private, trust, label="a", founder=(founder_private, founder))
+    second, _ = _signed(node, private, trust, label="b", founder=(founder_private, founder))
+    _reject(nodes, [first, second], [trust, founder], "DUPLICATE")
+
+    mismatched, _ = _signed(node, private, trust, evidence_key="G8", founder=(founder_private, founder))
+    _reject(nodes, [mismatched], [trust, founder], "MISMATCH")
+
+    wrong_scope, _ = _signed(node, private, trust, scope="EXECUTION", founder=(founder_private, founder))
+    _reject(nodes, [wrong_scope], [trust, founder], "SCOPE_MISMATCH")
+
     _reject(nodes, [{"requirement_id": "NO-SUCH", "artifact_sha256": "99" * 32}], [trust], "UNKNOWN_REQUIREMENT")
 
 
 def test_missing_or_corrupted_evidence_digest_is_rejected():
     nodes = build_nodes()
-    private, trust = _role_key("CLAUDE", "claude")
-    corrupted = _signed(_node(nodes, "G3"), private, trust, artifact="zz" * 32)
+    private, trust = _entry("CLAUDE", "claude")
+    corrupted, _ = _signed(_node(nodes, "G3"), private, trust, artifact_sha256="zz" * 32)
     _reject(nodes, [corrupted], [trust], "MISSING_FIELD")
 
 
 def test_missing_reviewer_and_self_review_fail():
     nodes = build_nodes()
-    private, trust = _role_key("CURSOR", "cursor")
-    self_signed = _signed(
-        _node(nodes, "C01"),
-        private,
-        trust,
-        reviewer_role="CURSOR",
-        artifact="ab" * 32,
-    )
-    _reject(nodes, [self_signed], [trust], "SELF_REVIEW")
-    missing = _signed(_node(nodes, "DEC-K"), *_role_pair("PRODUCT_MANAGEMENT", "pm"))
+    private, trust = _entry("CURSOR", "cursor")
+    self_signed, self_bytes = _signed(_node(nodes, "C01"), private, trust, reviewer_role="CURSOR", label="self")
+    _reject(nodes, [self_signed], [trust], "SELF_REVIEW", artifact_bytes={self_signed["artifact_sha256"]: self_bytes})
+
+    pm_private, pm = _entry("PRODUCT_MANAGEMENT", "pm")
+    missing, _ = _signed(_node(nodes, "DEC-K"), pm_private, pm)
     missing["reviewer_role"] = ""
     missing["signature_hex"] = "ab" * 64
     _reject(nodes, [missing], [], "MISSING_REVIEWER")
-    claude_key, claude = _role_key("CLAUDE", "claude")
-    unnamed = _signed(_node(nodes, "G1"), claude_key, claude, reviewer_role="CLAUDE")
+
+    claude_private, claude = _entry("CLAUDE", "claude")
+    unnamed, _ = _signed(_node(nodes, "G1"), claude_private, claude, reviewer_role="CLAUDE")
     _reject(nodes, [unnamed], [claude], "MISSING_REVIEWER")
 
 
 def test_r65_and_final_readiness_stay_blocked():
     nodes = build_nodes()
-    private, trust = _role_key("PRODUCT_MANAGEMENT", "pm")
-    r65 = _signed(_node(nodes, "R65"), private, trust, artifact="12" * 32)
+    private, trust = _entry("PRODUCT_MANAGEMENT", "pm")
+    r65, _ = _signed(_node(nodes, "R65"), private, trust, label="r65")
     _reject(nodes, [r65], [trust], "NOT_VERIFIABLE")
-    final_key, final_trust = _role_pair("PRODUCT_MANAGEMENT", "pm-2")
-    final = _signed(_node(nodes, "FINAL-1"), final_key, final_trust, artifact="13" * 32)
-    _reject(nodes, [final], [final_trust], "DEPENDENCY_UNACCEPTED")
+
+    final, final_bytes = _signed(_node(nodes, "FINAL-1"), private, trust, label="final")
+    _reject(nodes, [final], [trust], "DEPENDENCY_UNACCEPTED", artifact_bytes={final["artifact_sha256"]: final_bytes})
+
     tiny = [
         {
-            "id": "A",
-            "counts": True,
-            "denominator": "PRE_TRAINING",
-            "depends_on": [],
-            "evidence_key": "A",
-            "artifact_class": "A",
-            "implementation_owner": "CURSOR",
-            "independent_reviewer": "CLAUDE",
+            "id": "A", "counts": True, "denominator": "PRE_TRAINING", "depends_on": [],
+            "evidence_key": "A", "artifact_class": "A",
+            "implementation_owner": "CURSOR", "independent_reviewer": "CLAUDE",
             "founder_approval": "NOT_REQUIRED",
         },
         {
-            "id": "FINAL-1",
-            "counts": True,
-            "denominator": "PRE_TRAINING",
-            "depends_on": [],
-            "evidence_key": "FINAL-1",
-            "artifact_class": "FINAL-1",
-            "implementation_owner": "CURSOR",
-            "independent_reviewer": "CLAUDE",
+            "id": "FINAL-1", "counts": True, "denominator": "PRE_TRAINING", "depends_on": [],
+            "evidence_key": "FINAL-1", "artifact_class": "FINAL-1",
+            "implementation_owner": "CURSOR", "independent_reviewer": "CLAUDE",
             "founder_approval": "NOT_REQUIRED",
         },
     ]
-    key, trust = _role_key("CLAUDE", "claude")
-    only_final = _signed(tiny[1], key, trust, artifact="14" * 32)
-    _reject(tiny, [only_final], [trust], "FINAL_READINESS_BLOCKED")
+    claude_private, claude = _entry("CLAUDE", "claude")
+    only_final, only_final_bytes = _signed(tiny[1], claude_private, claude, label="only-final")
+    _reject(tiny, [only_final], [claude], "FINAL_READINESS_BLOCKED", artifact_bytes={only_final["artifact_sha256"]: only_final_bytes})
 
 
 def test_training_authorization_and_execution_stay_separate():
-    key, trust = _role_key("CLAUDE", "claude")
-    pm_key, pm_trust = _role_key("PRODUCT_MANAGEMENT", "pm")
-    founder_key, founder_trust = _role_key("FOUNDER", "founder-1")
-    all_trust = [trust, pm_trust, founder_trust]
+    claude_private, claude = _entry("CLAUDE", "claude")
+    pm_private, pm = _entry("PRODUCT_MANAGEMENT", "pm")
+    founder_private, founder = _entry("FOUNDER", "founder-1")
+    all_entries = [claude, pm, founder]
     nodes = [
         {
-            "id": "A",
-            "counts": True,
-            "denominator": "PRE_TRAINING",
-            "depends_on": [],
-            "evidence_key": "A",
-            "artifact_class": "A",
-            "implementation_owner": "CURSOR",
-            "independent_reviewer": "CLAUDE",
+            "id": "A", "counts": True, "denominator": "PRE_TRAINING", "depends_on": [],
+            "evidence_key": "A", "artifact_class": "A",
+            "implementation_owner": "CURSOR", "independent_reviewer": "CLAUDE",
             "founder_approval": "NOT_REQUIRED",
         },
         {
-            "id": "FINAL-1",
-            "counts": True,
-            "denominator": "PRE_TRAINING",
-            "depends_on": ["A"],
-            "evidence_key": "FINAL-1",
-            "artifact_class": "FINAL-1",
-            "implementation_owner": "CURSOR",
-            "independent_reviewer": "CLAUDE",
+            "id": "FINAL-1", "counts": True, "denominator": "PRE_TRAINING", "depends_on": ["A"],
+            "evidence_key": "FINAL-1", "artifact_class": "FINAL-1",
+            "implementation_owner": "CURSOR", "independent_reviewer": "CLAUDE",
             "founder_approval": "NOT_REQUIRED",
         },
         {
-            "id": "FINAL-2",
-            "counts": True,
-            "denominator": "EXECUTION",
-            "depends_on": ["FINAL-1"],
-            "evidence_key": "FINAL-2",
-            "artifact_class": "FINAL-2",
-            "implementation_owner": "FOUNDER",
-            "independent_reviewer": "PRODUCT_MANAGEMENT",
+            "id": "FINAL-2", "counts": True, "denominator": "EXECUTION", "depends_on": ["FINAL-1"],
+            "evidence_key": "FINAL-2", "artifact_class": "FINAL-2",
+            "implementation_owner": "FOUNDER", "independent_reviewer": "PRODUCT_MANAGEMENT",
             "founder_approval": "REQUIRED",
         },
         {
-            "id": "EXEC-1",
-            "counts": True,
-            "denominator": "EXECUTION",
-            "depends_on": ["FINAL-2"],
-            "evidence_key": "EXEC-1",
-            "artifact_class": "EXEC-1",
-            "implementation_owner": "FOUNDER",
-            "independent_reviewer": "CLAUDE",
+            "id": "EXEC-1", "counts": True, "denominator": "EXECUTION", "depends_on": ["FINAL-2"],
+            "evidence_key": "EXEC-1", "artifact_class": "EXEC-1",
+            "implementation_owner": "FOUNDER", "independent_reviewer": "CLAUDE",
             "founder_approval": "REQUIRED",
         },
     ]
-    ready = [
-        _signed(nodes[0], key, trust, artifact="21" * 32),
-        _signed(nodes[1], key, trust, artifact="22" * 32),
-    ]
-    accepted = evaluate(nodes, ready, trust_keys=all_trust, subject_sha=SUBJECT, founder_root_keys=ROOT_KEYS)
+    a_rec = _signed(nodes[0], claude_private, claude, label="a")
+    final1_rec = _signed(nodes[1], claude_private, claude, label="final1")
+    ready_records, ready_bytes = _ledger(a_rec, final1_rec)
+    accepted = _call(nodes, ready_records, all_entries, artifact_bytes=ready_bytes)
     assert "FINAL-2" not in accepted and "EXEC-1" not in accepted
 
-    # A reviewer attestation alone must never authorize FINAL-2.
-    reviewer_only = _signed(nodes[2], pm_key, pm_trust, artifact="23" * 32)
-    _reject(nodes, ready + [reviewer_only], all_trust, "MISSING_FOUNDER_APPROVAL")
+    reviewer_only, _ = _signed(nodes[2], pm_private, pm, label="final2-a")
+    _reject(nodes, ready_records + [reviewer_only], all_entries, "MISSING_FOUNDER_APPROVAL",
+            artifact_bytes={**ready_bytes, reviewer_only["artifact_sha256"]: b"final2-a"})
 
-    # The founder's own key cannot double as the reviewer's key on one record.
-    dual_role = _signed(nodes[2], pm_key, pm_trust, artifact="23" * 32, founder=(pm_key, pm_trust))
-    _reject(nodes, ready + [dual_role], all_trust, "SAME_KEY_DUAL_ROLE")
+    dual_role, _ = _signed(nodes[2], pm_private, pm, label="final2-a", founder=(pm_private, pm))
+    _reject(nodes, ready_records + [dual_role], all_entries, "SAME_KEY_DUAL_ROLE",
+            artifact_bytes={**ready_bytes, dual_role["artifact_sha256"]: b"final2-a"})
 
-    grant = _signed(nodes[2], pm_key, pm_trust, artifact="23" * 32, founder=(founder_key, founder_trust))
-    with_grant = evaluate(nodes, ready + [grant], trust_keys=all_trust, subject_sha=SUBJECT, founder_root_keys=ROOT_KEYS)
+    grant, grant_bytes = _signed(nodes[2], pm_private, pm, label="final2-grant", founder=(founder_private, founder))
+    with_grant = _call(nodes, ready_records + [grant], all_entries, artifact_bytes={**ready_bytes, grant["artifact_sha256"]: grant_bytes})
     assert "FINAL-2" in with_grant and "EXEC-1" not in with_grant
 
-    early = _signed(nodes[3], key, trust, artifact="24" * 32, founder=(founder_key, founder_trust))
-    _reject(nodes, ready + [early], all_trust, "DEPENDENCY_UNACCEPTED")
+    early, early_bytes = _signed(nodes[3], claude_private, claude, label="exec-early", founder=(founder_private, founder))
+    _reject(nodes, ready_records + [early], all_entries, "DEPENDENCY_UNACCEPTED",
+            artifact_bytes={**ready_bytes, early["artifact_sha256"]: early_bytes})
 
-    wrong_scope = _signed(
-        nodes[2], pm_key, pm_trust, artifact="25" * 32, scope="PRE_TRAINING",
-        founder=(founder_key, founder_trust),
+    wrong_scope, _ = _signed(
+        nodes[2], pm_private, pm, label="final2-grant", scope="PRE_TRAINING", founder=(founder_private, founder),
     )
-    _reject(nodes, ready + [wrong_scope], all_trust, "SCOPE_MISMATCH")
+    _reject(nodes, ready_records + [wrong_scope], all_entries, "SCOPE_MISMATCH",
+            artifact_bytes={**ready_bytes, wrong_scope["artifact_sha256"]: grant_bytes})
 
-    start = _signed(nodes[3], key, trust, artifact="26" * 32, founder=(founder_key, founder_trust))
-    done = evaluate(
-        nodes,
-        ready + [grant, start],
-        trust_keys=all_trust,
-        subject_sha=SUBJECT,
-        founder_root_keys=ROOT_KEYS,
+    start, start_bytes = _signed(nodes[3], claude_private, claude, label="exec-start", founder=(founder_private, founder))
+    done = _call(
+        nodes, ready_records + [grant, start], all_entries,
+        artifact_bytes={**ready_bytes, grant["artifact_sha256"]: grant_bytes, start["artifact_sha256"]: start_bytes},
     )
     assert list(done) == ["A", "FINAL-1", "FINAL-2", "EXEC-1"]
 
 
-def test_injected_reviewer_key_without_founder_enrollment_is_untrusted():
-    """An attacker who can shape the `trust_keys` argument itself still
-    cannot get a key accepted without a real founder enrollment signature."""
+# ---------------------------------------------------------------------
+# Trust-snapshot / root-state chain: injection, revocation, scope
+# ---------------------------------------------------------------------
+
+def test_injected_reviewer_key_without_enrollment_is_untrusted():
+    """A key that never appears in a properly root-signed trust_snapshot
+    at all -- not even as an unsigned entry -- is simply unknown."""
     nodes = build_nodes()
     attacker_private = Ed25519PrivateKey.generate()
-    injected = {
-        "key_id": "attacker",
-        "role": "PRODUCT_MANAGEMENT",
-        "public_key_hex": _public_hex(attacker_private),
-        "scope": ALL_SCOPES,
-        # No enrollment_signature_hex -- never enrolled by the founder root.
+    attacker_entry = {
+        "key_id": "attacker", "role": "PRODUCT_MANAGEMENT",
+        "public_key_hex": _public_hex(attacker_private), "scope": ALL_SCOPES, "revoked": False,
     }
-    founder_key, founder_trust = _role_key("FOUNDER", "founder-x")
-    record = _signed(
-        _node(nodes, "DEC-K"), attacker_private, injected, artifact="31" * 32,
-        founder=(founder_key, founder_trust),
+    founder_private, founder = _entry("FOUNDER", "founder-x")
+    record, content = _signed(_node(nodes, "DEC-K"), attacker_private, attacker_entry, label="attacker", founder=(founder_private, founder))
+    # attacker_entry is never passed to _chain -- only `founder` is enrolled.
+    _reject(nodes, [record], [founder], "FORGED", artifact_bytes={record["artifact_sha256"]: content})
+
+
+def test_a_snapshot_signed_by_a_key_not_in_root_state_is_untrusted():
+    """Even a well-formed, internally self-consistent trust_snapshot is
+    worthless unless its own signature verifies against a root named in
+    root_state -- an attacker cannot just also forge the snapshot wrapper."""
+    nodes = [_pair(build_nodes(), "G3", [])]
+    claude_private, claude = _entry("CLAUDE", "claude")
+    record, content = _signed(_node(nodes, "G3"), claude_private, claude, label="g3")
+    attacker_root_signer = Ed25519PrivateKey.generate()
+    snapshot = _trust_snapshot([claude], signer=attacker_root_signer)  # not root-1
+    root_state = _root_state(DEFAULT_ROOTS)
+    _reject(
+        nodes, [record], [], "UNTRUSTED_TRUST_SNAPSHOT",
+        trust_snapshot=snapshot, root_state=root_state, artifact_bytes={record["artifact_sha256"]: content},
     )
-    _reject(nodes, [record], [injected, founder_trust], "UNTRUSTED_KEY")
-
-
-def test_tampering_with_a_caller_supplied_revoked_flag_also_fails_untrusted():
-    """Flipping a legitimately-enrolled key's `revoked` flag after the fact
-    invalidates its enrollment signature -- it does not un-revoke the key."""
-    nodes = build_nodes()
-    private, trust = _role_key("CLAUDE", "claude-tamper", revoked=True)
-    tampered = dict(trust)
-    tampered["revoked"] = False
-    record = _signed(_node(nodes, "G3"), private, tampered, artifact="35" * 32)
-    _reject(nodes, [record], [tampered], "UNTRUSTED_KEY")
 
 
 def test_revoked_reviewer_key_is_rejected():
     nodes = build_nodes()
-    private, trust = _role_key("CLAUDE", "claude-revoked", revoked=True)
-    record = _signed(_node(nodes, "G3"), private, trust, artifact="32" * 32)
-    _reject(nodes, [record], [trust], "REVOKED_REVIEWER")
+    private, trust = _entry("CLAUDE", "claude-revoked", revoked=True)
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="revoked")
+    _reject(nodes, [record], [trust], "REVOKED_REVIEWER", artifact_bytes={record["artifact_sha256"]: content})
 
 
 def test_reviewer_out_of_scope_is_rejected():
     nodes = build_nodes()
-    private, trust = _role_key("CLAUDE", "claude-narrow", scope=["EXECUTION"])
-    record = _signed(_node(nodes, "G3"), private, trust, artifact="36" * 32)
-    _reject(nodes, [record], [trust], "OUT_OF_SCOPE")
+    private, trust = _entry("CLAUDE", "claude-narrow", scope=["EXECUTION"])
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="scope")
+    _reject(nodes, [record], [trust], "OUT_OF_SCOPE", artifact_bytes={record["artifact_sha256"]: content})
 
 
 def test_wrong_policy_version_is_rejected():
     nodes = build_nodes()
-    private, trust = _role_key("CLAUDE", "claude")
-    record = _signed(_node(nodes, "G3"), private, trust, artifact="33" * 32, policy_version="stale-policy/0")
-    _reject(nodes, [record], [trust], "WRONG_POLICY_VERSION")
+    private, trust = _entry("CLAUDE", "claude")
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="policy", policy_version="stale-policy/0")
+    _reject(nodes, [record], [trust], "WRONG_POLICY_VERSION", artifact_bytes={record["artifact_sha256"]: content})
 
 
-def test_corpus_evidence_must_share_one_digest():
+def test_policy_version_is_bound_to_policy_engine_and_graph_content():
+    assert POLICY_VERSION.startswith("orneur-acceptance-policy/")
+    digest = POLICY_VERSION.split("/", 1)[1]
+    assert len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
+    import acceptance_engine as engine_module
+    policy_only = hashlib.sha256(engine_module._POLICY_DOC.read_bytes()).hexdigest()
+    assert digest != policy_only, "POLICY_VERSION must bind more than just the prose document"
+
+
+# ---------------------------------------------------------------------
+# Mandatory scenario: equal/conflicting enrollments and malformed generation
+# ---------------------------------------------------------------------
+
+def test_duplicate_key_id_within_one_snapshot_is_rejected_either_order():
+    nodes = [_pair(build_nodes(), "G3", [])]
+    private, active = _entry("CLAUDE", "claude-dup", revoked=False)
+    revoked = dict(active, revoked=True)
+    record, content = _signed(_node(nodes, "G3"), private, active, label="dup")
+
+    _reject(nodes, [record], [active, revoked], "DUPLICATE_ENROLLMENT", artifact_bytes={record["artifact_sha256"]: content})
+    _reject(nodes, [record], [revoked, active], "DUPLICATE_ENROLLMENT", artifact_bytes={record["artifact_sha256"]: content})
+
+
+def test_malformed_generation_fails_closed_for_both_documents():
+    nodes = [_pair(build_nodes(), "G3", [])]
+    private, trust = _entry("CLAUDE", "claude")
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="malformed")
+    artifact_bytes = {record["artifact_sha256"]: content}
+
+    for bad_generation in (None, "1", -1, True, 1.5):
+        snapshot, root_state = _chain([trust])
+        snapshot["generation"] = bad_generation
+        _reject(
+            nodes, [record], [], "MALFORMED_GENERATION",
+            trust_snapshot=snapshot, root_state=root_state, artifact_bytes=artifact_bytes,
+        )
+
+    for bad_generation in (None, "1", -1, True):
+        snapshot, root_state = _chain([trust])
+        root_state["generation"] = bad_generation
+        _reject(
+            nodes, [record], [], "MALFORMED_GENERATION",
+            trust_snapshot=snapshot, root_state=root_state, artifact_bytes=artifact_bytes,
+        )
+
+
+# ---------------------------------------------------------------------
+# Mandatory scenario: omission/rollback -- a stale document cannot stand in
+# ---------------------------------------------------------------------
+
+def test_old_active_enrollment_alone_after_authenticated_revocation_is_rejected():
+    """The founder genuinely revokes a key at the current commit. A caller
+    that presents only the OLD snapshot (where the key was still active,
+    signed for an earlier commit) cannot succeed -- the old snapshot's own
+    git_sha pins it to that earlier commit, not to the one under
+    evaluation, exactly like a stale evidence record."""
+    nodes = [_pair(build_nodes(), "G3", [])]
+    private, active = _entry("CLAUDE", "claude-omit")
+    record, content = _signed(_node(nodes, "G3"), private, active, label="omit", subject=SUBJECT)
+    artifact_bytes = {record["artifact_sha256"]: content}
+
+    stale_snapshot, stale_root_state = _chain([active], generation=1, git_sha=ANCESTOR)
+    _reject(
+        nodes, [record], [], "STALE_TRUST_SNAPSHOT",
+        trust_snapshot=stale_snapshot, root_state=_root_state(DEFAULT_ROOTS, generation=1, git_sha=SUBJECT),
+        ancestor_shas={ANCESTOR}, artifact_bytes=artifact_bytes,
+    )
+
+    # The real, current trust state (key revoked) is what the engine must
+    # actually be evaluated against -- confirming the revocation is live.
+    revoked = dict(active, revoked=True)
+    current_snapshot, current_root_state = _chain([revoked], generation=2, git_sha=SUBJECT)
+    _reject(
+        nodes, [record], [], "REVOKED_REVIEWER",
+        trust_snapshot=current_snapshot, root_state=current_root_state, artifact_bytes=artifact_bytes,
+    )
+
+
+def test_rollback_to_earlier_trust_snapshot_is_rejected():
+    nodes = [_pair(build_nodes(), "G3", [])]
+    private, v2_entry = _entry("CLAUDE", "claude-rollback")
+    record, content = _signed(_node(nodes, "G3"), private, v2_entry, label="rollback")
+    artifact_bytes = {record["artifact_sha256"]: content}
+
+    v1_snapshot, _ = _chain([], generation=1, git_sha=ANCESTOR)
+    root_state = _root_state(DEFAULT_ROOTS, generation=2, git_sha=SUBJECT)
+    _reject(
+        nodes, [record], [], "STALE_TRUST_SNAPSHOT",
+        trust_snapshot=v1_snapshot, root_state=root_state,
+        ancestor_shas={ANCESTOR}, artifact_bytes=artifact_bytes,
+    )
+
+
+def test_root_state_rollback_after_root_revocation_is_rejected():
+    """A root that gets compromised and revoked cannot be resurrected by
+    replaying the earlier root_state in which it was still active."""
+    nodes = [_pair(build_nodes(), "G3", [])]
+    private, trust = _entry("CLAUDE", "claude-root-rollback")
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="root-rollback")
+    artifact_bytes = {record["artifact_sha256"]: content}
+
+    old_root_state = _root_state(DEFAULT_ROOTS, generation=1, git_sha=ANCESTOR)
+    snapshot = _trust_snapshot([trust], generation=1, git_sha=SUBJECT)
+    _reject(
+        nodes, [record], [], "STALE_ROOT_STATE",
+        trust_snapshot=snapshot, root_state=old_root_state,
+        ancestor_shas={ANCESTOR}, artifact_bytes=artifact_bytes,
+    )
+
+
+def test_malicious_root_substitution_is_rejected():
+    """An attacker signs their own root_state, naming their own root, with
+    their own key instead of the bootstrap anchor."""
+    nodes = [_pair(build_nodes(), "G3", [])]
+    attacker_root_signer = Ed25519PrivateKey.generate()
+    attacker_root_public = _public_hex(Ed25519PrivateKey.generate())
+    forged_root_state = _root_state(
+        [{"root_id": "attacker-root", "public_key_hex": attacker_root_public, "revoked": False}],
+        signer=attacker_root_signer,
+    )
+    private, trust = _entry("CLAUDE", "claude")
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="substitution")
+    snapshot = _trust_snapshot([trust], signer=attacker_root_signer)
+    _reject(
+        nodes, [record], [], "UNTRUSTED_ROOT_STATE",
+        trust_snapshot=snapshot, root_state=forged_root_state,
+        artifact_bytes={record["artifact_sha256"]: content},
+    )
+
+
+def test_forged_root_state_update_after_signing_is_rejected():
+    """Tampering with root_state's `roots` list after the bootstrap signed
+    it (e.g. quietly un-revoking a root) invalidates the signature."""
+    nodes = [_pair(build_nodes(), "G3", [])]
+    root_state = _root_state(DEFAULT_ROOTS)
+    tampered = dict(root_state, roots=[dict(DEFAULT_ROOTS[0], revoked=False)])  # no-op edit still breaks the signature path below
+    tampered["roots"] = [{"root_id": "root-1", "public_key_hex": ROOT_PUBLIC_HEX, "revoked": False}, {"root_id": "root-2", "public_key_hex": _public_hex(Ed25519PrivateKey.generate()), "revoked": False}]
+    private, trust = _entry("CLAUDE", "claude")
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="forged-root")
+    snapshot = _trust_snapshot([trust])
+    _reject(
+        nodes, [record], [], "UNTRUSTED_ROOT_STATE",
+        trust_snapshot=snapshot, root_state=tampered,
+        artifact_bytes={record["artifact_sha256"]: content},
+    )
+
+
+def test_valid_root_rotation_revokes_old_root_and_adds_a_new_one():
+    nodes = [_pair(build_nodes(), "G3", [])]
+    new_root_private = Ed25519PrivateKey.generate()
+    new_root_public = _public_hex(new_root_private)
+    rotated_roots = [
+        {"root_id": "root-1", "public_key_hex": ROOT_PUBLIC_HEX, "revoked": True},
+        {"root_id": "root-2", "public_key_hex": new_root_public, "revoked": False},
+    ]
+    rotated_root_state = _root_state(rotated_roots, generation=2, git_sha=SUBJECT)
+
+    private, trust = _entry("CLAUDE", "claude-rotated")
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="rotated")
+
+    # Signed by the OLD (now revoked) root -- must fail.
+    old_signed_snapshot = _trust_snapshot([trust], generation=2, git_sha=SUBJECT, signer=ROOT_PRIVATE)
+    _reject(
+        nodes, [record], [], "UNTRUSTED_TRUST_SNAPSHOT",
+        trust_snapshot=old_signed_snapshot, root_state=rotated_root_state,
+        artifact_bytes={record["artifact_sha256"]: content},
+    )
+
+    # Signed by the NEW root named in the rotated root_state -- must succeed.
+    new_signed_snapshot = _trust_snapshot([trust], generation=2, git_sha=SUBJECT, signer=new_root_private)
+    accepted = evaluate(
+        nodes, [record],
+        trust_snapshot=new_signed_snapshot, root_state=rotated_root_state,
+        bootstrap_root_key_hex=BOOTSTRAP_PUBLIC_HEX, subject_sha=SUBJECT,
+        artifact_bytes={record["artifact_sha256"]: content},
+    )
+    assert accepted == {"G3": record["artifact_sha256"]}
+
+
+# ---------------------------------------------------------------------
+# Evidence integrity: real bytes for ordinary rows, custody receipts for
+# the four protected corpus-evidence classes
+# ---------------------------------------------------------------------
+
+def test_nonexistent_artifact_with_a_valid_signature_still_fails():
+    nodes = build_nodes()
+    private, trust = _entry("CLAUDE", "claude")
+    record, _real_content = _signed(_node(nodes, "G3"), private, trust, label="exists-nowhere")
+    # artifact_bytes deliberately omitted/empty: no bytes resolve this digest.
+    _reject(nodes, [record], [trust], "EVIDENCE_NOT_RESOLVED", artifact_bytes={})
+
+
+def test_mismatched_artifact_bytes_also_fail():
+    nodes = build_nodes()
+    private, trust = _entry("CLAUDE", "claude")
+    record, _real_content = _signed(_node(nodes, "G3"), private, trust, label="real")
+    wrong_bytes = {record["artifact_sha256"]: b"this does not hash to the declared digest"}
+    _reject(nodes, [record], [trust], "EVIDENCE_NOT_RESOLVED", artifact_bytes=wrong_bytes)
+
+
+def test_resolved_artifact_bytes_are_accepted():
+    nodes = [_pair(build_nodes(), "G3", [])]
+    private, trust = _entry("CLAUDE", "claude")
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="present")
+    accepted = _call(nodes, [record], [trust], artifact_bytes={record["artifact_sha256"]: content})
+    assert accepted == {"G3": record["artifact_sha256"]}
+
+
+def test_protected_corpus_row_without_custody_signature_fails():
+    """A correctly shaped, correctly reviewer-signed digest is not enough
+    for a protected corpus-evidence row: no real bytes are ever available
+    or appropriate, but a non-disclosing custody-possession signature is
+    required and was not produced here."""
+    source = build_nodes()
+    nodes = [_pair(source, "DATA-3", [])]
+    private, trust = _entry("CLAUDE", "claude")
+    record, _content = _signed(_node(nodes, "DATA-3"), private, trust, label="no-custody", corpus_identity_sha256="aa" * 32)
+    del record["custody_signature_hex"]
+    record["signature_hex"] = private.sign(payload_bytes(record)).hex()
+    _reject(nodes, [record], [trust], "CUSTODY_NOT_AUTHENTICATED")
+
+
+def test_protected_corpus_row_with_custody_signature_passes():
+    source = build_nodes()
+    nodes = [_pair(source, "DATA-3", [])]
+    private, trust = _entry("CLAUDE", "claude")
+    record, _content = _signed(_node(nodes, "DATA-3"), private, trust, label="with-custody", corpus_identity_sha256="bb" * 32)
+    accepted = _call(nodes, [record], [trust])
+    assert accepted == {"DATA-3": record["artifact_sha256"]}
+
+
+# ---------------------------------------------------------------------
+# Distinct corpus identity vs. DATA-3's own record digest; custody by key
+# ---------------------------------------------------------------------
+
+def test_corpus_identity_is_distinct_from_datas3_record_digest():
     source = build_nodes()
     nodes = [
         _pair(source, "G8", []),
         _pair(source, "DATA-3", ["G8"]),
         _pair(source, "DATA-1", ["DATA-3"]),
-        _pair(source, "DATA-5", ["DATA-3"]),
-        _pair(source, "DATA-2", ["DATA-1", "DATA-3", "DATA-5"]),
     ]
-    pm_key, pm_trust = _role_key("PRODUCT_MANAGEMENT", "pm")
-    claude_key, claude_trust = _role_key("CLAUDE", "claude")
-    founder_key, founder_trust = _role_key("FOUNDER", "founder-corpus")
-    all_trust = [pm_trust, claude_trust, founder_trust]
+    pm_private, pm = _entry("PRODUCT_MANAGEMENT", "pm")
+    claude_private, claude = _entry("CLAUDE", "claude")
+    founder_private, founder = _entry("FOUNDER", "founder-corpus")
+    all_entries = [pm, claude, founder]
 
-    grant = _signed(nodes[0], pm_key, pm_trust, artifact="41" * 32, founder=(founder_key, founder_trust))
-    creation = _signed(nodes[1], claude_key, claude_trust, artifact="42" * 32)
-    inconsistent = _signed(nodes[2], pm_key, pm_trust, artifact="43" * 32, bound_corpus_sha256="ff" * 32)
-    _reject(nodes, [grant, creation, inconsistent], all_trust, "CORPUS_IDENTITY_MISMATCH")
-
-    consistent = _signed(nodes[2], pm_key, pm_trust, artifact="43" * 32, bound_corpus_sha256="42" * 32)
-    accepted = evaluate(
-        nodes, [grant, creation, consistent], trust_keys=all_trust,
-        subject_sha=SUBJECT, founder_root_keys=ROOT_KEYS,
+    grant, grant_bytes = _signed(nodes[0], pm_private, pm, label="grant", founder=(founder_private, founder))
+    creation, _creation_content = _signed(
+        nodes[1], claude_private, claude, label="creation-record", corpus_identity_sha256="cc" * 32,
     )
-    assert accepted["DATA-1"] == "43" * 32
-    assert accepted["DATA-3"] == "42" * 32
-
-
-def test_policy_version_is_bound_to_the_policy_document_hash():
-    assert POLICY_VERSION.startswith("orneur-acceptance-policy/")
-    digest = POLICY_VERSION.split("/", 1)[1]
-    assert len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
-
-
-def test_revocation_cannot_be_replayed_by_presenting_the_stale_active_record():
-    """A key that is genuinely re-enrolled (active -> revoked) at a higher
-    epoch must stay revoked no matter what order the two legitimately
-    founder-signed records are presented in -- the old active record is not
-    expected to vanish from a real trust store; the engine must simply stop
-    trusting it once something newer for the same key_id exists."""
-    nodes = [_pair(build_nodes(), "G3", [])]
-    key_private = Ed25519PrivateKey.generate()
-    public_hex = _public_hex(key_private)
-    active = {
-        "key_id": "claude-replay", "role": "CLAUDE", "public_key_hex": public_hex,
-        "scope": ALL_SCOPES, "revoked": False, "epoch": 1,
-    }
-    active["enrollment_signature_hex"] = FOUNDER_ROOT_PRIVATE.sign(enrollment_payload_bytes(active)).hex()
-    revoked = dict(active, revoked=True, epoch=2)
-    revoked["enrollment_signature_hex"] = FOUNDER_ROOT_PRIVATE.sign(enrollment_payload_bytes(revoked)).hex()
-
-    record = _signed(_node(nodes, "G3"), key_private, active, artifact="51" * 32)
-
-    # Stale-active-first: the exact order a naive first-match lookup would
-    # get wrong.
-    _reject(nodes, [record], [active, revoked], "REVOKED_REVIEWER")
-    # Revoked-first: must be equally rejected (order must not matter either way).
-    _reject(nodes, [record], [revoked, active], "REVOKED_REVIEWER")
-    # Only the stale active record is presented (the caller simply never
-    # learned about the revocation) -- still accepted, since nothing wrong
-    # was presented; this is the caller's own staleness, not something this
-    # pure function can detect without a second source of truth.
-    accepted = evaluate(
-        nodes, [record], trust_keys=[active], subject_sha=SUBJECT, founder_root_keys=ROOT_KEYS,
+    # Binding to DATA-3's own RECORD digest (the old, now-wrong behavior)
+    # must fail: the record digest and the corpus identity are different things.
+    wrong_binding, _wb_content = _signed(
+        nodes[2], pm_private, pm, label="provenance",
+        bound_corpus_identity_sha256=creation["artifact_sha256"],
     )
-    assert accepted == {"G3": "51" * 32}
+    records, artifact_bytes = _ledger((grant, grant_bytes), (creation, None), (wrong_binding, None))
+    _reject(nodes, records, all_entries, "CORPUS_IDENTITY_MISMATCH", artifact_bytes=artifact_bytes)
 
-
-def test_a_revoked_founder_root_cannot_anchor_new_enrollments_but_others_still_can():
-    """Founder roots are independently identified and independently
-    revocable: compromising or retiring one must not silently invalidate
-    enrollments anchored to a different, still-good root."""
-    nodes = [_pair(build_nodes(), "G3", [])]
-    other_root_private = Ed25519PrivateKey.generate()
-    roots = [
-        {"root_id": "root-1", "public_key_hex": FOUNDER_ROOT_PUBLIC_HEX, "revoked": True},
-        {"root_id": "root-2", "public_key_hex": _public_hex(other_root_private), "revoked": False},
-    ]
-    # Enrolled against the now-revoked root -- must not verify any more.
-    stale_private, stale_trust = _role_key("CLAUDE", "claude-stale-root")
-    stale_record = _signed(_node(nodes, "G3"), stale_private, stale_trust, artifact="52" * 32)
-    _reject(nodes, [stale_record], [stale_trust], "UNTRUSTED_KEY", founder_root_keys=roots)
-
-    # Enrolled against the still-good second root -- must verify fine.
-    fresh_private, fresh_trust = _role_key("CLAUDE", "claude-fresh-root", root_private=other_root_private)
-    fresh_record = _signed(_node(nodes, "G3"), fresh_private, fresh_trust, artifact="53" * 32)
-    accepted = evaluate(
-        nodes, [fresh_record], trust_keys=[fresh_trust], subject_sha=SUBJECT, founder_root_keys=roots,
+    # Binding to the distinct declared corpus_identity_sha256 succeeds.
+    right_binding, _rb_content = _signed(
+        nodes[2], pm_private, pm, label="provenance", bound_corpus_identity_sha256="cc" * 32,
     )
-    assert accepted == {"G3": "53" * 32}
+    records, artifact_bytes = _ledger((grant, grant_bytes), (creation, None), (right_binding, None))
+    accepted = _call(nodes, records, all_entries, artifact_bytes=artifact_bytes)
+    assert accepted["DATA-1"] == right_binding["artifact_sha256"]
+    assert accepted["DATA-3"] != "cc" * 32  # DATA-3's own record digest is unrelated to the identity it declares
+
+
+def test_missing_corpus_identity_on_data3_itself_is_rejected():
+    source = build_nodes()
+    nodes = [_pair(source, "DATA-3", [])]
+    claude_private, claude = _entry("CLAUDE", "claude")
+    record, _content = _signed(_node(nodes, "DATA-3"), claude_private, claude, label="no-identity")
+    # corpus_identity_sha256 left as the default "" from _signed().
+    _reject(nodes, [record], [claude], "MISSING_CORPUS_IDENTITY")
 
 
 def test_corpus_custody_must_be_an_independent_key_not_just_an_independent_role():
     """DATA-5's own evidence text requires "a custodian who is not the
-    creator". Checked at the role level alone, two records sharing a role
-    name (here both PRODUCT_MANAGEMENT, to isolate the mechanism from the
-    real register's CLAUDE/PRODUCT_MANAGEMENT role split) would look
-    independent even if the exact same physical key signed both -- this
-    proves the engine instead checks key identity."""
+    creator". Role equality alone would not catch two records sharing a
+    role but signed by the exact same physical key; this proves the
+    engine checks resolved key identity."""
     source = build_nodes()
     nodes = [
         _pair(source, "G8", []),
         dict(_pair(source, "DATA-3", ["G8"]), independent_reviewer="PRODUCT_MANAGEMENT"),
         dict(_pair(source, "DATA-5", ["DATA-3"]), independent_reviewer="PRODUCT_MANAGEMENT"),
     ]
-    founder_key, founder_trust = _role_key("FOUNDER", "founder-custody")
-    grant_signer, grant_trust = _role_key("PRODUCT_MANAGEMENT", "pm-grant")
-    grant = _signed(nodes[0], grant_signer, grant_trust, artifact="54" * 32, founder=(founder_key, founder_trust))
+    founder_private, founder = _entry("FOUNDER", "founder-custody")
+    grant_private, grant_trust = _entry("PRODUCT_MANAGEMENT", "pm-grant")
+    grant, grant_bytes = _signed(nodes[0], grant_private, grant_trust, label="grant", founder=(founder_private, founder))
 
-    creator_key, creator_trust = _role_key("PRODUCT_MANAGEMENT", "pm-creator")
-    creation = _signed(nodes[1], creator_key, creator_trust, artifact="55" * 32)
+    creator_private, creator_trust = _entry("PRODUCT_MANAGEMENT", "pm-creator")
+    creation, _creation_content = _signed(nodes[1], creator_private, creator_trust, label="creation", corpus_identity_sha256="dd" * 32)
 
-    # Same physical key (same key_id) signs DATA-5 as signed DATA-3 -- same
-    # role on both, so REVIEWER_MISMATCH would not catch this; only the
-    # custody-independence check does.
-    same_key_custody = _signed(
-        nodes[2], creator_key, creator_trust, artifact="56" * 32, bound_corpus_sha256="55" * 32,
+    same_key_custody, _ = _signed(
+        nodes[2], creator_private, creator_trust, label="custody-same-key", bound_corpus_identity_sha256="dd" * 32,
     )
-    _reject(
-        nodes, [grant, creation, same_key_custody],
-        [grant_trust, founder_trust, creator_trust], "CUSTODY_NOT_INDEPENDENT",
-    )
+    all_entries = [grant_trust, founder, creator_trust]
+    records, artifact_bytes = _ledger((grant, grant_bytes), (creation, None), (same_key_custody, None))
+    _reject(nodes, records, all_entries, "CUSTODY_NOT_INDEPENDENT", artifact_bytes=artifact_bytes)
 
-    custodian_key, custodian_trust = _role_key("PRODUCT_MANAGEMENT", "pm-custodian")
-    independent_custody = _signed(
-        nodes[2], custodian_key, custodian_trust, artifact="56" * 32, bound_corpus_sha256="55" * 32,
+    custodian_private, custodian_trust = _entry("PRODUCT_MANAGEMENT", "pm-custodian")
+    independent_custody, _ = _signed(
+        nodes[2], custodian_private, custodian_trust, label="custody-independent", bound_corpus_identity_sha256="dd" * 32,
     )
-    accepted = evaluate(
-        nodes, [grant, creation, independent_custody],
-        trust_keys=[grant_trust, founder_trust, creator_trust, custodian_trust],
-        subject_sha=SUBJECT, founder_root_keys=ROOT_KEYS,
-    )
-    assert accepted["DATA-5"] == "56" * 32
+    records, artifact_bytes = _ledger((grant, grant_bytes), (creation, None), (independent_custody, None))
+    accepted = _call(nodes, records, [grant_trust, founder, creator_trust, custodian_trust], artifact_bytes=artifact_bytes)
+    assert accepted["DATA-5"] == independent_custody["artifact_sha256"]
