@@ -1,0 +1,7 @@
+# Optional `rse` extra only. This is not a lock of the base install.
+# Pins must match pyproject.toml extras `dev` and `rse`:
+# cryptography>=49.0.0,<51.0.0 and pyhpke==0.6.5.
+# Resolution target: CPython 3.11 on x86_64 manylinux (ubuntu-latest).
+# This file does not claim Python 3.12 or 3.13.
+cryptography>=49.0.0,<51.0.0
+pyhpke==0.6.5

@@ -18,6 +18,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -79,6 +80,9 @@ from orca.brain.explainability import ExplainStore, build_from_rag_result
 from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.brain.vision import is_vision_capable, encode_image, build_vision_message
 from orca.serve import session_store, ratelimit, metrics, dlp
+from orca.serve.errors import public_error
+from orca.serve import streaming
+from orca.serve.streaming import aiter_blocking
 from orca.serve.moderation import check_input, CRISIS_RESOURCES
 from orca.code import run_code
 
@@ -86,7 +90,20 @@ _START_TIME = time.time()
 WEB_DIR = Path(__file__).parent / "web"
 _logger = logging.getLogger("orca.serve")
 
-app = FastAPI(title="ORNEUR API", version="1.0.0", docs_url=None, redoc_url=None)
+@contextlib.asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    yield
+    # Clean shutdown for the bounded streaming worker pool (DEF-CP1-01).
+    # wait=False: blocking the event loop here to join every worker would
+    # itself hang shutdown behind a slow backend call -- the same class of
+    # problem this pool exists to avoid. Workers finish their current
+    # next()/close naturally; new submissions after this point raise, which
+    # aiter_blocking surfaces as an ordinary stream error to any request
+    # still in flight.
+    streaming.shutdown_streaming_pool(wait=False)
+
+
+app = FastAPI(title="ORNEUR API", version="1.0.0", docs_url=None, redoc_url=None, lifespan=_lifespan)
 
 
 def _is_public_edge() -> bool:
@@ -1103,7 +1120,7 @@ async def chat(
                 _generate_via_frontier_backend, backend_resolution, persona_system, req.message
             )
         except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=500)
+            return JSONResponse(public_error(e, route="/api/chat", user_id=user.id if user else None).as_json(), status_code=500)
 
         if user:
             increment_usage(user.id, "message")
@@ -1168,7 +1185,7 @@ async def chat(
         try:
             final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
         except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=500)
+            return JSONResponse(public_error(e, route="/api/chat", user_id=user.id if user else None).as_json(), status_code=500)
         used_tools = [tc.tool for tc in trace.tool_calls]
         plan_action = trace.plan_action
 
@@ -1315,7 +1332,7 @@ async def stream_chat(
                     _generate_via_frontier_backend, backend_resolution, persona_system, req.message
                 )
             except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+                yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
                 return
 
             dlp_result = dlp.scan_output(result.text)
@@ -1440,16 +1457,32 @@ async def stream_chat(
                 if trace.plan_action == "tools":
                     yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
 
-                for chunk in gen:
-                    full += chunk
-                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-                    await asyncio.sleep(0)
+                # contextlib.aclosing, not a bare `async for`: breaking the
+                # loop below on client disconnect does not by itself call
+                # aclose() on an async generator (same rule as a sync
+                # generator abandoned mid-`for`) -- without this, a
+                # disconnected client's backend generator is only closed
+                # whenever Python eventually garbage-collects it, leaking
+                # the worker thread and the backend connection until then.
+                async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
+                    async for chunk in achunks:
+                        full += chunk
+                        yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                        if await request.is_disconnected():
+                            audit.log("stream_client_disconnected", user_id=user.id if user else None,
+                                      detail={"chars_sent": len(full)})
+                            return
 
                 tool_names = [tc.tool for tc in trace.tool_calls]
                 plan_action = trace.plan_action
 
+            except streaming.StreamingUnavailable as e:
+                err = public_error(e, route="/api/stream", user_id=user.id if user else None,
+                                   code="server_busy", message="The server is at capacity. Please retry shortly.")
+                yield f"data: {json.dumps(err.as_sse())}\n\n"
+                return
             except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+                yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
                 return
 
         # Persist
@@ -1858,7 +1891,11 @@ async def create_checkout(
     try:
         session = stripe.checkout.Session.create(**session_kwargs)
     except Exception as e:
-        return JSONResponse({"error": f"Could not create checkout session: {e}"}, status_code=502)
+        return JSONResponse(
+            public_error(e, route="/api/billing/checkout", user_id=user.id, code="checkout_unavailable",
+                         message="Could not create a checkout session. Please try again later.").as_json(),
+            status_code=502,
+        )
 
     return {"url": session.url}
 
@@ -1956,7 +1993,7 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         try:
             pipeline = pipeline_task.result()
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+            yield f"data: {json.dumps(public_error(e, route='/api/ultra').as_sse())}\n\n"
             return
 
         # Stream final output in small chunks for smooth rendering
@@ -2015,8 +2052,22 @@ async def upload_doc(
     filename = file.filename or "upload.txt"
     try:
         text = extract(filename, data)
+    except ValueError as e:
+        # The extractor raises ValueError only for caller-fixable input
+        # problems ("Unsupported file type: .xyz"); that text is safe and useful.
+        return JSONResponse({"error": f"Extraction failed: {e}", "code": "unsupported_file"}, status_code=422)
+    except ImportError as e:
+        return JSONResponse(
+            public_error(e, route="/api/docs/upload", user_id=user.id if user else None, code="extractor_unavailable",
+                         message="This file type isn't supported on this deployment.").as_json(),
+            status_code=422,
+        )
     except Exception as e:
-        return JSONResponse({"error": f"Extraction failed: {e}"}, status_code=422)
+        return JSONResponse(
+            public_error(e, route="/api/docs/upload", user_id=user.id if user else None, code="extraction_failed",
+                         message="This file could not be read.").as_json(),
+            status_code=422,
+        )
 
     if not text.strip():
         return JSONResponse({"error": "No text could be extracted from this file."}, status_code=422)
@@ -2165,7 +2216,7 @@ async def vision_query(
     try:
         response = await asyncio.to_thread(sess.brain.complete, [vision_message])
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse(public_error(e, route="/api/vision", user_id=user.id if user else None).as_json(), status_code=500)
 
     audit.log("vision_query", user_id=user.id if user else None,
               detail={"model": model_name, "image_bytes": len(data)})

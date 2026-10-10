@@ -50,6 +50,19 @@ def _redact_secrets(text: str) -> tuple[str, dict]:
     return text, report
 
 
+def redact_secrets(text: str) -> str:
+    """Public, text-only wrapper around ``_redact_secrets`` (no count report).
+
+    Added for orca/serve/errors.py: server-side exception logging needs the
+    same known-secret-shape redaction this module already applies to model
+    OUTPUT, applied instead to exception text/tracebacks before they reach
+    a log line (DEF-CP1-02). Same patterns, same floor-not-ceiling scope
+    documented in this module's docstring above.
+    """
+    redacted, _report = _redact_secrets(text)
+    return redacted
+
+
 def scan_output(text: str) -> dict:
     """
     Scans an outgoing model response for PII and secret-shaped patterns.
