@@ -358,3 +358,30 @@ jobs:
 
       - name: Install locked RSE dependencies and audit them
         run: bash scripts/ci/run_rse_dependency_audit.sh
+
+  rse-docker-lab:
+    # Phase 1 targeted remediation items 2-8. Dedicated, bounded CI coverage
+    # for PR #13's docker-rse-integration-lab.yml: builds orneur-rse:latest
+    # from THIS checked-out commit (not a possibly-stale pre-built image),
+    # proves the image's /app/orca content is byte-for-byte identical to
+    # this commit's orca/ tree, runs both the normal and the
+    # deliberate-control-failure scenarios via `docker compose up
+    # --exit-code-from`, and verifies the effective Docker network mode and
+    # every resource limit from OUTSIDE the container via `docker inspect` --
+    # see scripts/rse_docker_lab_verify.sh for the single source of truth
+    # this step invokes (also runnable locally, unchanged).
+    name: RSE Docker Synthetic Integration Lab (bounded, exit-code enforced)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Record exact source SHA under test
+        run: |
+          echo "source_sha=$(git rev-parse HEAD)" | tee -a "$GITHUB_STEP_SUMMARY"
+          git rev-parse HEAD
+
+      - name: Run the full verification script (build, reproducibility, both exit-code scenarios, resource/network-mode checks, cleanup)
+        run: bash scripts/rse_docker_lab_verify.sh
