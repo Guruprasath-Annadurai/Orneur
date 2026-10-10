@@ -7,6 +7,15 @@ on:
       - session-update-2026-08-25
       - 'phase14b-*'
       - 'cursor/**'
+      # Push-only, same pattern as every other feature-branch entry here: a
+      # pull_request run checks out a merge ref, which is not exact-SHA
+      # evidence for the commit under review. Added for the acceptance-engine
+      # remediation branch (PR #16, temporary Cursor-to-Claude handoff) so it
+      # gets real CI evidence instead of relying on a pull_request run against
+      # cursor/orneur-master-acceptance-register-c04e, which this workflow's
+      # pull_request trigger does not even cover (its own base-branch filter
+      # only lists main and session-update-2026-08-25).
+      - 'claude/**'
   pull_request:
     branches:
       - main

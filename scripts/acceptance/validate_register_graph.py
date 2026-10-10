@@ -20,8 +20,10 @@ JSON_PATH = ROOT / "docs" / "orneur" / "acceptance" / "register_graph.json"
 MD_PATH = ROOT / "docs" / "orneur" / "ORNEUR_MASTER_EXECUTION_AND_ACCEPTANCE_REGISTER.md"
 LEDGER_PATH = ROOT / "docs" / "orneur" / "acceptance" / "acceptance_ledger.json"
 TRUST_PATH = ROOT / "docs" / "orneur" / "acceptance" / "reviewer_trust.json"
+FOUNDER_ROOT_PATH = ROOT / "docs" / "orneur" / "acceptance" / "founder_root_keys.json"
 EMPTY_LEDGER = "[]\n"
 EMPTY_TRUST = '{\n  "keys": []\n}\n'
+EMPTY_FOUNDER_ROOT = '{\n  "keys": []\n}\n'
 
 BANNED = (
     "RSE_MASTER_BLOCK_1_ACCEPTED",
@@ -2276,7 +2278,7 @@ def render_markdown(doc):
     a("")
     a("## Future acceptance")
     a("")
-    a("A later row can advance only through `scripts/acceptance/acceptance_engine.py`. The engine reads a ledger that is separate from this register. Each record must carry a detached signature over the requirement id, evidence key, artifact class, artifact digest, git SHA, denominator, and reviewer role. The committed ledger `docs/orneur/acceptance/acceptance_ledger.json` is empty. The committed trust store `docs/orneur/acceptance/reviewer_trust.json` has no keys. This publication therefore accepts nothing and authorizes nothing.")
+    a("A later row can advance only through `scripts/acceptance/acceptance_engine.py`. The engine reads a ledger that is separate from this register. Each record must carry a detached signature over the requirement id, evidence key, artifact class, artifact digest, git SHA, denominator, reviewer role, policy version, and (for the protected-corpus rows) the bound corpus digest. A row marked founder_approval REQUIRED needs a second, independent detached signature from a key enrolled with role FOUNDER over that same payload; a reviewer signature alone never satisfies it. Every reviewer and founder key must itself carry a detached enrollment signature from a founder root key, with an explicit scope and revocation state -- a bare key handed to the engine by its caller is never trusted on its own. The committed ledger `docs/orneur/acceptance/acceptance_ledger.json` is empty. The committed trust store `docs/orneur/acceptance/reviewer_trust.json` has no keys. The committed founder root key store `docs/orneur/acceptance/founder_root_keys.json` has no keys. This publication therefore accepts nothing and authorizes nothing.")
     a("")
     a("Editing a status cell, the Markdown, or the graph JSON does not accept a row. `--check` rejects a status of ACCEPTED and rejects a non-empty committed ledger or trust store. The engine ignores the published status field. A signature fails closed when it is missing, forged, duplicated, stale, aimed at the wrong requirement, reused for another control, signed by the implementer, signed by an unnamed reviewer, outside that row's denominator, or presented before a counted predecessor has its own accepted record. FINAL-2 stays after FINAL-1. EXEC-1 stays after FINAL-2. R65 cannot be signed into acceptance while it is the unmapped placeholder. FINAL-1 fails while any counted pre-training row, including R65, lacks its own acceptance.")
     a("")
@@ -2437,8 +2439,16 @@ def main(argv):
             return 1
         ledger_text = LEDGER_PATH.read_text(encoding="utf-8")
         trust_text = TRUST_PATH.read_text(encoding="utf-8")
-        if ledger_text != EMPTY_LEDGER or trust_text != EMPTY_TRUST:
-            print("acceptance ledger or trust store is not the empty baseline", file=sys.stderr)
+        founder_root_text = FOUNDER_ROOT_PATH.read_text(encoding="utf-8")
+        if (
+            ledger_text != EMPTY_LEDGER
+            or trust_text != EMPTY_TRUST
+            or founder_root_text != EMPTY_FOUNDER_ROOT
+        ):
+            print(
+                "acceptance ledger, trust store, or founder root key store is not the empty baseline",
+                file=sys.stderr,
+            )
             return 1
         engine_dir = str(Path(__file__).resolve().parent)
         if engine_dir not in sys.path:
@@ -2447,11 +2457,18 @@ def main(argv):
 
         ledger = json.loads(ledger_text)
         trust = json.loads(trust_text)
-        baseline_errors = assert_published_baseline(nodes, rendered_md, ledger, trust)
+        founder_root = json.loads(founder_root_text)
+        baseline_errors = assert_published_baseline(nodes, rendered_md, ledger, trust, founder_root)
         if baseline_errors:
             print("\n".join(baseline_errors), file=sys.stderr)
             return 1
-        accepted = evaluate(nodes, ledger, trust_keys=trust["keys"], subject_sha="0" * 40)
+        accepted = evaluate(
+            nodes,
+            ledger,
+            trust_keys=trust["keys"],
+            subject_sha="0" * 40,
+            founder_root_keys=[k.get("public_key_hex") for k in founder_root["keys"]],
+        )
         if accepted:
             print("empty ledger accepted a row", file=sys.stderr)
             return 1

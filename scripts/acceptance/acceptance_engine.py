@@ -4,6 +4,30 @@ The published graph status is not an acceptance bit. A row advances only
 when this module verifies a detached signature over that row's own
 artifact. This module does not write the register, the ledger, or any
 authorization file, and it does not authorize training.
+
+Phase 0 remediation (temporary Cursor-to-Claude handoff) adds three
+independent controls on top of the original reviewer-attestation gate:
+
+  * Founder authority (task A): a row marked ``founder_approval ==
+    "REQUIRED"`` (FINAL-2, EXEC-1, and the other founder-gated rows in the
+    register) needs a SECOND detached signature, from a key enrolled with
+    role ``FOUNDER``, over the same canonical payload as the reviewer's
+    signature. A reviewer attestation alone can never satisfy these rows,
+    and the founder key must be cryptographically distinct from the
+    reviewer key used on the same record.
+  * Artifact integrity (task B): every record must declare the policy
+    version it was produced against (``policy_version``), and the four
+    dependent protected-corpus evidence rows (DATA-1, DATA-2, DATA-5, and
+    DATA-3 itself) must reference one common corpus identity --
+    ``bound_corpus_sha256`` on the dependent rows must equal DATA-3's own
+    accepted digest, not merely some hex string of the right shape.
+  * Reviewer trust (task C): a key is usable as a reviewer or a founder
+    approver only if it carries a detached enrollment signature from a
+    founder root key supplied by the caller (``founder_root_keys``) --
+    the engine never trusts a bare ``{key_id, role, public_key_hex}``
+    tuple handed to it by the caller. Enrollment also carries a scope
+    (which denominators the key may act on) and a revocation flag, both
+    covered by that same enrollment signature.
 """
 
 from __future__ import annotations
@@ -23,6 +47,37 @@ SIGNED_FIELDS = (
     "reviewer_role",
 )
 
+# Appended to the signed payload after the original seven fields. Optional
+# for rows that do not need them (default ""), but once set they cannot be
+# changed without invalidating every signature already collected on the
+# record -- a policy_version downgrade or a corpus-digest swap after the
+# fact is therefore a forgery, not a silent edit.
+EXTENDED_SIGNED_FIELDS = ("policy_version", "bound_corpus_sha256")
+
+# The policy a record must declare it was produced against. Bumping this
+# invalidates every previously-signed record for a new ledger -- that is
+# the point: it forces a conscious re-attestation rather than letting an
+# old record silently keep validating under a changed acceptance policy.
+POLICY_VERSION = "orneur-acceptance-policy/1"
+
+# The protected-corpus evidence rows that must all point at one identity.
+# DATA-3 establishes the identity (its own accepted artifact digest); the
+# other three must bind to exactly that digest. G8 (the founder's grant)
+# deliberately carries no corpus digest at all -- see its evidence text --
+# so it is not part of this binding set.
+CORPUS_ORIGIN_ID = "DATA-3"
+CORPUS_BOUND_IDS = ("DATA-1", "DATA-2", "DATA-5")
+
+# Fields covered by a trust-key enrollment signature, in this fixed order.
+# `revoked` is part of the signed payload, not a free-standing flag: a
+# caller that flips a legitimately-enrolled key's `revoked` value after the
+# fact (true -> false, to un-revoke; or false -> true, to frame a key as
+# revoked) invalidates the enrollment signature rather than silently
+# changing the key's live status. A real revocation is therefore itself a
+# founder-signed act -- a fresh enrollment record with revoked=true -- not
+# an unsigned edit to a stored flag.
+ENROLLMENT_FIELDS = ("key_id", "role", "public_key_hex", "scope", "revoked")
+
 
 class AcceptanceRejected(Exception):
     def __init__(self, code, detail):
@@ -38,10 +93,20 @@ def payload_bytes(record):
         missing = exc.args[0]
         code = "MISSING_REVIEWER" if missing == "reviewer_role" else "MISSING_FIELD"
         raise AcceptanceRejected(code, missing) from exc
+    lines += [record.get(field, "") for field in EXTENDED_SIGNED_FIELDS]
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
-def assert_published_baseline(nodes, markdown, ledger, trust):
+def enrollment_payload_bytes(entry):
+    scope = ",".join(sorted(entry.get("scope", []) or []))
+    revoked = "true" if entry.get("revoked") else "false"
+    parts = [str(entry.get(field, "")) for field in ("key_id", "role", "public_key_hex")]
+    parts.append(scope)
+    parts.append(revoked)
+    return ("\n".join(parts) + "\n").encode("utf-8")
+
+
+def assert_published_baseline(nodes, markdown, ledger, trust, founder_root_keys=None):
     errors = []
     if any(node.get("status") == "ACCEPTED" for node in nodes):
         errors.append("published status ACCEPTED")
@@ -49,6 +114,8 @@ def assert_published_baseline(nodes, markdown, ledger, trust):
         errors.append("committed ledger is not empty")
     if trust != {"keys": []}:
         errors.append("committed trust store is not empty")
+    if founder_root_keys is not None and founder_root_keys != {"keys": []}:
+        errors.append("committed founder root key store is not empty")
     for line in markdown.splitlines():
         if not line.startswith("| "):
             continue
@@ -60,10 +127,13 @@ def assert_published_baseline(nodes, markdown, ledger, trust):
     return errors
 
 
-def evaluate(nodes, records, *, trust_keys, subject_sha, ancestor_shas=()):
+def evaluate(nodes, records, *, trust_keys, subject_sha, ancestor_shas=(), founder_root_keys=()):
     """Return the ids this ledger accepts. Raise on any bad record.
 
-    `nodes` is not modified. An empty ledger accepts nothing.
+    `nodes` is not modified. An empty ledger accepts nothing. An empty
+    `founder_root_keys` means no reviewer or founder key can ever be
+    trusted, no matter what `trust_keys` contains -- trust is never taken
+    on the caller's word alone.
     """
     by_id = {node["id"]: node for node in nodes}
     if not isinstance(records, list):
@@ -107,6 +177,7 @@ def evaluate(nodes, records, *, trust_keys, subject_sha, ancestor_shas=()):
             trust_keys=trust_keys,
             subject_sha=subject_sha,
             ancestor_shas=set(ancestor_shas),
+            founder_root_keys=tuple(founder_root_keys),
         )
         accepted[requirement_id] = pending[requirement_id]["artifact_sha256"]
     unknown = set(pending) - set(order)
@@ -115,11 +186,13 @@ def evaluate(nodes, records, *, trust_keys, subject_sha, ancestor_shas=()):
     return dict(accepted)
 
 
-def _accept_one(node, record, *, nodes, by_id, accepted, trust_keys, subject_sha, ancestor_shas):
+def _accept_one(node, record, *, nodes, by_id, accepted, trust_keys, subject_sha, ancestor_shas, founder_root_keys):
     if node["id"] == "R65" or node["id"].startswith("R65-"):
         raise AcceptanceRejected("NOT_VERIFIABLE", node["id"])
     if not node["counts"]:
         raise AcceptanceRejected("NOT_COUNTABLE", node["id"])
+    if record.get("policy_version") != POLICY_VERSION:
+        raise AcceptanceRejected("WRONG_POLICY_VERSION", record.get("policy_version") or "missing")
     _require_match(record, "evidence_key", node["evidence_key"], "MISMATCH")
     _require_match(record, "artifact_class", node["artifact_class"], "MISMATCH")
     _require_match(record, "scope", node["denominator"], "SCOPE_MISMATCH")
@@ -141,18 +214,39 @@ def _accept_one(node, record, *, nodes, by_id, accepted, trust_keys, subject_sha
     key_id = record.get("reviewer_key_id")
     if not key_id:
         raise AcceptanceRejected("MISSING_REVIEWER", "reviewer_key_id")
-    key = _key_by_id(trust_keys, key_id)
-    if key is None:
-        raise AcceptanceRejected("FORGED", key_id)
+    key = _trusted_key(trust_keys, key_id, founder_root_keys)
     if key.get("role") != reviewer:
         raise AcceptanceRejected("REVIEWER_MISMATCH", key_id)
-    _verify_signature(record, key)
+    if node["denominator"] not in (key.get("scope") or ()):
+        raise AcceptanceRejected("OUT_OF_SCOPE", key_id)
+    _verify_signature(record, key, "signature_hex")
+
+    if node["founder_approval"] == "REQUIRED":
+        founder_key_id = record.get("founder_key_id")
+        if not founder_key_id:
+            raise AcceptanceRejected("MISSING_FOUNDER_APPROVAL", node["id"])
+        if founder_key_id == key_id:
+            raise AcceptanceRejected("SAME_KEY_DUAL_ROLE", node["id"])
+        founder_key = _trusted_key(trust_keys, founder_key_id, founder_root_keys)
+        if founder_key.get("role") != "FOUNDER":
+            raise AcceptanceRejected("FOUNDER_ROLE_REQUIRED", founder_key_id)
+        if node["denominator"] not in (founder_key.get("scope") or ()):
+            raise AcceptanceRejected("OUT_OF_SCOPE", founder_key_id)
+        _verify_signature(record, founder_key, "founder_signature_hex", code="FOUNDER_FORGED")
+
     for dep in node["depends_on"]:
         predecessor = by_id.get(dep)
         if predecessor is None:
             raise AcceptanceRejected("DEPENDENCY_UNACCEPTED", dep)
         if predecessor["counts"] and dep not in accepted:
             raise AcceptanceRejected("DEPENDENCY_UNACCEPTED", f"{node['id']} missing {dep}")
+
+    if node["id"] in CORPUS_BOUND_IDS:
+        bound = record.get("bound_corpus_sha256", "")
+        origin_digest = accepted.get(CORPUS_ORIGIN_ID)
+        if origin_digest is None or not _hex_length(bound, 64) or bound != origin_digest:
+            raise AcceptanceRejected("CORPUS_IDENTITY_MISMATCH", node["id"])
+
     if node["id"] == "FINAL-1":
         open_rows = [
             other["id"]
@@ -178,23 +272,60 @@ def _require_match(record, field, expected, code):
         raise AcceptanceRejected(code, field)
 
 
-def _verify_signature(record, key):
-    signature = record.get("signature_hex", "")
+def _verify_signature(record, key, field, code="FORGED"):
+    signature = record.get(field, "")
     public_hex = key.get("public_key_hex", "")
     if not _hex_length(signature, 128) or not _hex_length(public_hex, 64):
-        raise AcceptanceRejected("FORGED", record.get("requirement_id", ""))
+        raise AcceptanceRejected(code, record.get("requirement_id", ""))
     try:
         public = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_hex))
         public.verify(bytes.fromhex(signature), payload_bytes(record))
     except (InvalidSignature, ValueError) as exc:
-        raise AcceptanceRejected("FORGED", record.get("requirement_id", "")) from exc
+        raise AcceptanceRejected(code, record.get("requirement_id", "")) from exc
 
 
-def _key_by_id(trust_keys, key_id):
+def _trusted_key(trust_keys, key_id, founder_root_keys):
+    """Return the enrolled, non-revoked key for `key_id`, or raise.
+
+    A `{key_id, role, public_key_hex, scope}` tuple appearing in
+    `trust_keys` is not, by itself, trusted: it must also carry an
+    `enrollment_signature_hex` that verifies against one of the caller's
+    `founder_root_keys` over exactly `(key_id, role, public_key_hex,
+    scope)`. This is what stops a compromised or careless caller from
+    smuggling an arbitrary trust root into the ledger evaluation by
+    constructing the `trust_keys` argument itself -- the engine checks the
+    founder's own signature, not the caller's say-so.
+    """
+    match = None
     for key in trust_keys:
         if key.get("key_id") == key_id:
-            return key
-    return None
+            match = key
+            break
+    if match is None:
+        raise AcceptanceRejected("FORGED", key_id)
+    if not founder_root_keys or not _verify_enrollment(match, founder_root_keys):
+        raise AcceptanceRejected("UNTRUSTED_KEY", key_id)
+    if match.get("revoked"):
+        raise AcceptanceRejected("REVOKED_REVIEWER", key_id)
+    return match
+
+
+def _verify_enrollment(entry, founder_root_keys):
+    signature = entry.get("enrollment_signature_hex", "")
+    if not _hex_length(signature, 128):
+        return False
+    payload = enrollment_payload_bytes(entry)
+    for root_hex in founder_root_keys:
+        if not _hex_length(root_hex, 64):
+            continue
+        try:
+            Ed25519PublicKey.from_public_bytes(bytes.fromhex(root_hex)).verify(
+                bytes.fromhex(signature), payload
+            )
+            return True
+        except (InvalidSignature, ValueError):
+            continue
+    return False
 
 
 def _hex_length(value, size):
