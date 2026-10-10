@@ -6,7 +6,9 @@ artifact. This module does not write the register, the ledger, or any
 authorization file, and it does not authorize training.
 
 Phase 0 remediation (temporary Cursor-to-Claude handoff) adds three
-independent controls on top of the original reviewer-attestation gate:
+independent controls on top of the original reviewer-attestation gate,
+then a second pass (trust-boundary hardening, after an independent audit)
+closes three gaps those controls still had:
 
   * Founder authority (task A): a row marked ``founder_approval ==
     "REQUIRED"`` (FINAL-2, EXEC-1, and the other founder-gated rows in the
@@ -16,26 +18,39 @@ independent controls on top of the original reviewer-attestation gate:
     and the founder key must be cryptographically distinct from the
     reviewer key used on the same record.
   * Artifact integrity (task B): every record must declare the policy
-    version it was produced against (``policy_version``), and the four
-    dependent protected-corpus evidence rows (DATA-1, DATA-2, DATA-5, and
-    DATA-3 itself) must reference one common corpus identity --
-    ``bound_corpus_sha256`` on the dependent rows must equal DATA-3's own
-    accepted digest, not merely some hex string of the right shape.
+    version it was produced against (``policy_version``, bound to the
+    sha256 of ``docs/orneur/acceptance/ACCEPTANCE_POLICY.md`` -- see
+    ``POLICY_VERSION`` below, not a free-floating label), and the three
+    dependent protected-corpus evidence rows (DATA-1, DATA-2, DATA-5) must
+    reference DATA-3's own accepted digest via ``bound_corpus_sha256``, not
+    merely some hex string of the right shape. DATA-5 (corpus custody)
+    must also be signed by a reviewer key distinct from the key that got
+    DATA-3 (corpus creation) accepted -- an independent custodian, checked
+    by key identity, not merely by role name.
   * Reviewer trust (task C): a key is usable as a reviewer or a founder
-    approver only if it carries a detached enrollment signature from a
-    founder root key supplied by the caller (``founder_root_keys``) --
-    the engine never trusts a bare ``{key_id, role, public_key_hex}``
-    tuple handed to it by the caller. Enrollment also carries a scope
-    (which denominators the key may act on) and a revocation flag, both
-    covered by that same enrollment signature.
+    approver only if it carries a detached enrollment signature, at a
+    specific monotonic epoch, from a currently non-revoked founder root
+    key supplied by the caller (``founder_root_keys``) -- the engine never
+    trusts a bare ``{key_id, role, public_key_hex}`` tuple handed to it by
+    the caller. Each founder root is itself independently identified and
+    independently revocable (``{root_id, public_key_hex, revoked}``), so
+    compromising one root does not taint enrollments anchored to another.
+    Among several enrollment records presented for the same key_id, only
+    the highest-epoch one that verifies is authoritative -- a stale,
+    still-valid "active" record cannot be replayed alongside, or instead
+    of, a later revocation to resurrect a revoked key.
 """
 
 from __future__ import annotations
 
+import hashlib
 from graphlib import CycleError, TopologicalSorter
+from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+_POLICY_DOC = Path(__file__).resolve().parents[2] / "docs" / "orneur" / "acceptance" / "ACCEPTANCE_POLICY.md"
 
 SIGNED_FIELDS = (
     "requirement_id",
@@ -54,11 +69,14 @@ SIGNED_FIELDS = (
 # fact is therefore a forgery, not a silent edit.
 EXTENDED_SIGNED_FIELDS = ("policy_version", "bound_corpus_sha256")
 
-# The policy a record must declare it was produced against. Bumping this
-# invalidates every previously-signed record for a new ledger -- that is
-# the point: it forces a conscious re-attestation rather than letting an
-# old record silently keep validating under a changed acceptance policy.
-POLICY_VERSION = "orneur-acceptance-policy/1"
+# The policy a record must declare it was produced against, bound to the
+# content hash of ACCEPTANCE_POLICY.md rather than a free-floating label --
+# "policy identity" means the identity of real governing text, not a
+# string anyone could happen to type correctly. Editing that document
+# changes this value and invalidates every previously-signed record for a
+# new ledger, forcing a conscious re-attestation rather than letting an old
+# record silently keep validating under a changed acceptance policy.
+POLICY_VERSION = "orneur-acceptance-policy/" + hashlib.sha256(_POLICY_DOC.read_bytes()).hexdigest()
 
 # The protected-corpus evidence rows that must all point at one identity.
 # DATA-3 establishes the identity (its own accepted artifact digest); the
@@ -68,6 +86,14 @@ POLICY_VERSION = "orneur-acceptance-policy/1"
 CORPUS_ORIGIN_ID = "DATA-3"
 CORPUS_BOUND_IDS = ("DATA-1", "DATA-2", "DATA-5")
 
+# DATA-5 (corpus custody and integrity) must be an INDEPENDENT custodian,
+# not merely a same-named-role rubber stamp: its own register evidence text
+# says "a custodian who is not the creator". Role equality alone does not
+# prove that (two records can share a role, e.g. both PRODUCT_MANAGEMENT,
+# while naming different people in the real world); checking the two
+# records were signed by cryptographically distinct reviewer keys does.
+CUSTODY_INDEPENDENT_FROM = {"DATA-5": "DATA-3"}
+
 # Fields covered by a trust-key enrollment signature, in this fixed order.
 # `revoked` is part of the signed payload, not a free-standing flag: a
 # caller that flips a legitimately-enrolled key's `revoked` value after the
@@ -76,7 +102,17 @@ CORPUS_BOUND_IDS = ("DATA-1", "DATA-2", "DATA-5")
 # changing the key's live status. A real revocation is therefore itself a
 # founder-signed act -- a fresh enrollment record with revoked=true -- not
 # an unsigned edit to a stored flag.
-ENROLLMENT_FIELDS = ("key_id", "role", "public_key_hex", "scope", "revoked")
+#
+# `epoch` closes a replay gap the first version of this module had: with no
+# ordering signal, a caller presenting BOTH a key's original "active"
+# enrollment and its later "revoked" enrollment could put the stale active
+# one first in `trust_keys`, and a first-match lookup would use it and
+# never even look at the revocation. `epoch` must strictly increase each
+# time the founder re-enrolls the same key_id (whether to change its role,
+# scope, or revocation state), and among every entry presented for a given
+# key_id, only the highest-epoch one whose signature verifies is ever
+# authoritative -- the caller's ordering has no effect on the outcome.
+ENROLLMENT_FIELDS = ("key_id", "role", "public_key_hex", "scope", "revoked", "epoch")
 
 
 class AcceptanceRejected(Exception):
@@ -100,9 +136,9 @@ def payload_bytes(record):
 def enrollment_payload_bytes(entry):
     scope = ",".join(sorted(entry.get("scope", []) or []))
     revoked = "true" if entry.get("revoked") else "false"
+    epoch = str(entry.get("epoch", 0))
     parts = [str(entry.get(field, "")) for field in ("key_id", "role", "public_key_hex")]
-    parts.append(scope)
-    parts.append(revoked)
+    parts += [scope, revoked, epoch]
     return ("\n".join(parts) + "\n").encode("utf-8")
 
 
@@ -165,6 +201,7 @@ def evaluate(nodes, records, *, trust_keys, subject_sha, ancestor_shas=(), found
     order = _order(by_id)
     pending = {record["requirement_id"]: record for record in records}
     accepted = {}
+    accepted_key_ids = {}
     for requirement_id in order:
         if requirement_id not in pending:
             continue
@@ -174,19 +211,21 @@ def evaluate(nodes, records, *, trust_keys, subject_sha, ancestor_shas=(), found
             nodes=nodes,
             by_id=by_id,
             accepted=accepted,
+            accepted_key_ids=accepted_key_ids,
             trust_keys=trust_keys,
             subject_sha=subject_sha,
             ancestor_shas=set(ancestor_shas),
             founder_root_keys=tuple(founder_root_keys),
         )
         accepted[requirement_id] = pending[requirement_id]["artifact_sha256"]
+        accepted_key_ids[requirement_id] = pending[requirement_id]["reviewer_key_id"]
     unknown = set(pending) - set(order)
     if unknown:
         raise AcceptanceRejected("UNKNOWN_REQUIREMENT", sorted(unknown)[0])
     return dict(accepted)
 
 
-def _accept_one(node, record, *, nodes, by_id, accepted, trust_keys, subject_sha, ancestor_shas, founder_root_keys):
+def _accept_one(node, record, *, nodes, by_id, accepted, accepted_key_ids, trust_keys, subject_sha, ancestor_shas, founder_root_keys):
     if node["id"] == "R65" or node["id"].startswith("R65-"):
         raise AcceptanceRejected("NOT_VERIFIABLE", node["id"])
     if not node["counts"]:
@@ -247,6 +286,12 @@ def _accept_one(node, record, *, nodes, by_id, accepted, trust_keys, subject_sha
         if origin_digest is None or not _hex_length(bound, 64) or bound != origin_digest:
             raise AcceptanceRejected("CORPUS_IDENTITY_MISMATCH", node["id"])
 
+    creator_id = CUSTODY_INDEPENDENT_FROM.get(node["id"])
+    if creator_id is not None:
+        creator_key_id = accepted_key_ids.get(creator_id)
+        if creator_key_id is None or key_id == creator_key_id:
+            raise AcceptanceRejected("CUSTODY_NOT_INDEPENDENT", node["id"])
+
     if node["id"] == "FINAL-1":
         open_rows = [
             other["id"]
@@ -285,29 +330,41 @@ def _verify_signature(record, key, field, code="FORGED"):
 
 
 def _trusted_key(trust_keys, key_id, founder_root_keys):
-    """Return the enrolled, non-revoked key for `key_id`, or raise.
+    """Return the enrolled, non-revoked, highest-epoch key for `key_id`.
 
-    A `{key_id, role, public_key_hex, scope}` tuple appearing in
-    `trust_keys` is not, by itself, trusted: it must also carry an
-    `enrollment_signature_hex` that verifies against one of the caller's
-    `founder_root_keys` over exactly `(key_id, role, public_key_hex,
-    scope)`. This is what stops a compromised or careless caller from
-    smuggling an arbitrary trust root into the ledger evaluation by
-    constructing the `trust_keys` argument itself -- the engine checks the
-    founder's own signature, not the caller's say-so.
+    A `{key_id, role, public_key_hex, scope, revoked, epoch}` tuple
+    appearing in `trust_keys` is not, by itself, trusted: it must also
+    carry an `enrollment_signature_hex` that verifies against a currently
+    non-revoked entry in the caller's `founder_root_keys`. This is what
+    stops a compromised or careless caller from smuggling an arbitrary
+    trust root into the ledger evaluation by constructing the `trust_keys`
+    argument itself -- the engine checks the founder's own signature, not
+    the caller's say-so.
+
+    Every entry in `trust_keys` whose key_id matches and whose enrollment
+    signature verifies is a candidate; the one with the strictly highest
+    `epoch` wins, regardless of list order. This is what stops a caller
+    from replaying a stale, still-validly-signed "active" enrollment
+    alongside (or instead of) a later, higher-epoch revocation to
+    resurrect a revoked key -- a first-match lookup over an unordered list
+    would not catch that, since both records are genuinely, independently
+    founder-signed; only the epoch tells the engine which one is current.
     """
-    match = None
+    candidates = []
     for key in trust_keys:
-        if key.get("key_id") == key_id:
-            match = key
-            break
-    if match is None:
+        if key.get("key_id") != key_id:
+            continue
+        if _verify_enrollment(key, founder_root_keys):
+            candidates.append(key)
+    if not candidates:
+        for key in trust_keys:
+            if key.get("key_id") == key_id:
+                raise AcceptanceRejected("UNTRUSTED_KEY", key_id)
         raise AcceptanceRejected("FORGED", key_id)
-    if not founder_root_keys or not _verify_enrollment(match, founder_root_keys):
-        raise AcceptanceRejected("UNTRUSTED_KEY", key_id)
-    if match.get("revoked"):
+    current = max(candidates, key=lambda key: key.get("epoch", 0))
+    if current.get("revoked"):
         raise AcceptanceRejected("REVOKED_REVIEWER", key_id)
-    return match
+    return current
 
 
 def _verify_enrollment(entry, founder_root_keys):
@@ -315,7 +372,10 @@ def _verify_enrollment(entry, founder_root_keys):
     if not _hex_length(signature, 128):
         return False
     payload = enrollment_payload_bytes(entry)
-    for root_hex in founder_root_keys:
+    for root in founder_root_keys:
+        if not isinstance(root, dict) or root.get("revoked"):
+            continue
+        root_hex = root.get("public_key_hex", "")
         if not _hex_length(root_hex, 64):
             continue
         try:

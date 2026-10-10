@@ -1,6 +1,7 @@
 """Fail-closed acceptance. The published register stays unaccepted.
 
-Phase 0 remediation (temporary Cursor-to-Claude handoff): every trust key
+Phase 0 remediation (temporary Cursor-to-Claude handoff), then a
+trust-boundary hardening pass after an independent audit: every trust key
 used below is enrolled against a single synthetic, in-memory founder root
 keypair (`FOUNDER_ROOT_PRIVATE`/`ROOT_KEYS`), generated fresh for this test
 run only. It is not read from or written to any file and never touches
@@ -8,6 +9,7 @@ the real (empty) `docs/orneur/acceptance/founder_root_keys.json` baseline.
 """
 
 import copy
+import itertools
 import sys
 from pathlib import Path
 
@@ -34,11 +36,6 @@ ANCESTOR = "b" * 40
 ALL_SCOPES = ["PRE_TRAINING", "APPLICATION", "POST_TRAINING_LAUNCH", "EXECUTION"]
 
 FOUNDER_ROOT_PRIVATE = Ed25519PrivateKey.generate()
-FOUNDER_ROOT_PUBLIC_HEX = FOUNDER_ROOT_PRIVATE.public_key().public_bytes(
-    serialization.Encoding.Raw,
-    serialization.PublicFormat.Raw,
-).hex()
-ROOT_KEYS = [FOUNDER_ROOT_PUBLIC_HEX]
 
 
 def _public_hex(private):
@@ -48,12 +45,20 @@ def _public_hex(private):
     ).hex()
 
 
-def _role_key(role, key_id, *, scope=None, revoked=False, root_private=FOUNDER_ROOT_PRIVATE):
+FOUNDER_ROOT_PUBLIC_HEX = _public_hex(FOUNDER_ROOT_PRIVATE)
+ROOT_KEYS = [{"root_id": "root-1", "public_key_hex": FOUNDER_ROOT_PUBLIC_HEX, "revoked": False}]
+
+_epoch_counter = itertools.count(1)
+
+
+def _role_key(role, key_id, *, scope=None, revoked=False, epoch=None, root_private=FOUNDER_ROOT_PRIVATE):
     """Generate a reviewer/founder key enrolled by `root_private`.
 
     This is the one path every test uses to mint a usable trust entry --
-    it always carries a real enrollment signature, so a test that wants an
-    UNTRUSTED key builds its entry by hand instead of through here.
+    it always carries a real enrollment signature at a fresh, strictly
+    increasing epoch, so a test that wants an UNTRUSTED key, or wants to
+    construct a replay attempt by hand, builds its entry directly instead
+    of through here.
     """
     private = Ed25519PrivateKey.generate()
     entry = {
@@ -62,6 +67,7 @@ def _role_key(role, key_id, *, scope=None, revoked=False, root_private=FOUNDER_R
         "public_key_hex": _public_hex(private),
         "scope": list(scope) if scope is not None else list(ALL_SCOPES),
         "revoked": revoked,
+        "epoch": epoch if epoch is not None else next(_epoch_counter),
     }
     entry["enrollment_signature_hex"] = root_private.sign(enrollment_payload_bytes(entry)).hex()
     return private, entry
@@ -473,3 +479,110 @@ def test_corpus_evidence_must_share_one_digest():
     )
     assert accepted["DATA-1"] == "43" * 32
     assert accepted["DATA-3"] == "42" * 32
+
+
+def test_policy_version_is_bound_to_the_policy_document_hash():
+    assert POLICY_VERSION.startswith("orneur-acceptance-policy/")
+    digest = POLICY_VERSION.split("/", 1)[1]
+    assert len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
+
+
+def test_revocation_cannot_be_replayed_by_presenting_the_stale_active_record():
+    """A key that is genuinely re-enrolled (active -> revoked) at a higher
+    epoch must stay revoked no matter what order the two legitimately
+    founder-signed records are presented in -- the old active record is not
+    expected to vanish from a real trust store; the engine must simply stop
+    trusting it once something newer for the same key_id exists."""
+    nodes = [_pair(build_nodes(), "G3", [])]
+    key_private = Ed25519PrivateKey.generate()
+    public_hex = _public_hex(key_private)
+    active = {
+        "key_id": "claude-replay", "role": "CLAUDE", "public_key_hex": public_hex,
+        "scope": ALL_SCOPES, "revoked": False, "epoch": 1,
+    }
+    active["enrollment_signature_hex"] = FOUNDER_ROOT_PRIVATE.sign(enrollment_payload_bytes(active)).hex()
+    revoked = dict(active, revoked=True, epoch=2)
+    revoked["enrollment_signature_hex"] = FOUNDER_ROOT_PRIVATE.sign(enrollment_payload_bytes(revoked)).hex()
+
+    record = _signed(_node(nodes, "G3"), key_private, active, artifact="51" * 32)
+
+    # Stale-active-first: the exact order a naive first-match lookup would
+    # get wrong.
+    _reject(nodes, [record], [active, revoked], "REVOKED_REVIEWER")
+    # Revoked-first: must be equally rejected (order must not matter either way).
+    _reject(nodes, [record], [revoked, active], "REVOKED_REVIEWER")
+    # Only the stale active record is presented (the caller simply never
+    # learned about the revocation) -- still accepted, since nothing wrong
+    # was presented; this is the caller's own staleness, not something this
+    # pure function can detect without a second source of truth.
+    accepted = evaluate(
+        nodes, [record], trust_keys=[active], subject_sha=SUBJECT, founder_root_keys=ROOT_KEYS,
+    )
+    assert accepted == {"G3": "51" * 32}
+
+
+def test_a_revoked_founder_root_cannot_anchor_new_enrollments_but_others_still_can():
+    """Founder roots are independently identified and independently
+    revocable: compromising or retiring one must not silently invalidate
+    enrollments anchored to a different, still-good root."""
+    nodes = [_pair(build_nodes(), "G3", [])]
+    other_root_private = Ed25519PrivateKey.generate()
+    roots = [
+        {"root_id": "root-1", "public_key_hex": FOUNDER_ROOT_PUBLIC_HEX, "revoked": True},
+        {"root_id": "root-2", "public_key_hex": _public_hex(other_root_private), "revoked": False},
+    ]
+    # Enrolled against the now-revoked root -- must not verify any more.
+    stale_private, stale_trust = _role_key("CLAUDE", "claude-stale-root")
+    stale_record = _signed(_node(nodes, "G3"), stale_private, stale_trust, artifact="52" * 32)
+    _reject(nodes, [stale_record], [stale_trust], "UNTRUSTED_KEY", founder_root_keys=roots)
+
+    # Enrolled against the still-good second root -- must verify fine.
+    fresh_private, fresh_trust = _role_key("CLAUDE", "claude-fresh-root", root_private=other_root_private)
+    fresh_record = _signed(_node(nodes, "G3"), fresh_private, fresh_trust, artifact="53" * 32)
+    accepted = evaluate(
+        nodes, [fresh_record], trust_keys=[fresh_trust], subject_sha=SUBJECT, founder_root_keys=roots,
+    )
+    assert accepted == {"G3": "53" * 32}
+
+
+def test_corpus_custody_must_be_an_independent_key_not_just_an_independent_role():
+    """DATA-5's own evidence text requires "a custodian who is not the
+    creator". Checked at the role level alone, two records sharing a role
+    name (here both PRODUCT_MANAGEMENT, to isolate the mechanism from the
+    real register's CLAUDE/PRODUCT_MANAGEMENT role split) would look
+    independent even if the exact same physical key signed both -- this
+    proves the engine instead checks key identity."""
+    source = build_nodes()
+    nodes = [
+        _pair(source, "G8", []),
+        dict(_pair(source, "DATA-3", ["G8"]), independent_reviewer="PRODUCT_MANAGEMENT"),
+        dict(_pair(source, "DATA-5", ["DATA-3"]), independent_reviewer="PRODUCT_MANAGEMENT"),
+    ]
+    founder_key, founder_trust = _role_key("FOUNDER", "founder-custody")
+    grant_signer, grant_trust = _role_key("PRODUCT_MANAGEMENT", "pm-grant")
+    grant = _signed(nodes[0], grant_signer, grant_trust, artifact="54" * 32, founder=(founder_key, founder_trust))
+
+    creator_key, creator_trust = _role_key("PRODUCT_MANAGEMENT", "pm-creator")
+    creation = _signed(nodes[1], creator_key, creator_trust, artifact="55" * 32)
+
+    # Same physical key (same key_id) signs DATA-5 as signed DATA-3 -- same
+    # role on both, so REVIEWER_MISMATCH would not catch this; only the
+    # custody-independence check does.
+    same_key_custody = _signed(
+        nodes[2], creator_key, creator_trust, artifact="56" * 32, bound_corpus_sha256="55" * 32,
+    )
+    _reject(
+        nodes, [grant, creation, same_key_custody],
+        [grant_trust, founder_trust, creator_trust], "CUSTODY_NOT_INDEPENDENT",
+    )
+
+    custodian_key, custodian_trust = _role_key("PRODUCT_MANAGEMENT", "pm-custodian")
+    independent_custody = _signed(
+        nodes[2], custodian_key, custodian_trust, artifact="56" * 32, bound_corpus_sha256="55" * 32,
+    )
+    accepted = evaluate(
+        nodes, [grant, creation, independent_custody],
+        trust_keys=[grant_trust, founder_trust, creator_trust, custodian_trust],
+        subject_sha=SUBJECT, founder_root_keys=ROOT_KEYS,
+    )
+    assert accepted["DATA-5"] == "56" * 32
