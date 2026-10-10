@@ -348,7 +348,15 @@ def test_wrong_stale_forged_duplicate_and_mismatched_evidence_fail():
     _reject(nodes, [stale], [trust, founder], "STALE", ancestor_shas={ANCESTOR})
 
     forged, _ = _signed(node, private, trust, label="forge-me", founder=(founder_private, founder))
-    forged["signature_hex"] = ("0" if forged["signature_hex"][-1] != "0" else "1") + forged["signature_hex"][1:]
+    # Must check the SAME character being replaced (index 0), not a
+    # different one (the original compared index -1 while replacing index
+    # 0) -- that mismatch gave a 1-in-16 chance the "corruption" picked the
+    # character already there, a silent no-op that left the signature
+    # genuinely valid and made this test flake onto EVIDENCE_NOT_RESOLVED
+    # instead of FORGED (caught by real CI: reproduced ~1/30 locally and
+    # once on an actual GitHub Actions run). Checking index 0 guarantees an
+    # actual change every time.
+    forged["signature_hex"] = ("0" if forged["signature_hex"][0] != "0" else "1") + forged["signature_hex"][1:]
     _reject(nodes, [forged], [trust, founder], "FORGED")
 
     first, _ = _signed(node, private, trust, label="a", founder=(founder_private, founder))
