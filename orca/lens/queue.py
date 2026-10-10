@@ -37,10 +37,10 @@ from typing import Optional
 
 import diskcache
 
-from orca.config import ORCA_HOME
+from orca.config import ORCA_HOME, _mkdir_owner_only
 
 QUEUE_DIR = ORCA_HOME / "lens" / "queue"
-QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+_mkdir_owner_only(QUEUE_DIR, parents=True)
 
 # Valid job lifecycle: pending -> running -> (done | failed | blocked)
 _VALID_STATUSES = {"pending", "running", "done", "failed", "blocked"}

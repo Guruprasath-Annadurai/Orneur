@@ -108,6 +108,19 @@ lens = [
 orneur = "orca.cli:app"
 orca = "orca.cli:app"
 
+[tool.uv]
+# PYSEC-2026-3447 / CVE-2026-59890: setuptools < 83.0.0 can pack a file into
+# an sdist that an exclude/prune MANIFEST.in rule should have kept out, on
+# case-insensitive or Unicode-normalizing filesystems (macOS APFS/HFS+).
+# setuptools isn't a direct dependency of this project -- it is pulled in
+# transitively by torch (python_full_version >= '3.12' only, see uv.lock),
+# which has no reason to need anything older than the patched release.
+# Constraining it here forces uv's resolver to pick >=83.0.0 for that edge
+# without touching torch's own declared requirement.
+constraint-dependencies = [
+    "setuptools>=83.0.0",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["orca", "orneur"]
 
