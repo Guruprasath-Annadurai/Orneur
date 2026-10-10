@@ -16,7 +16,7 @@ resolution-markers = [
 ]
 
 [manifest]
-constraints = [{ name = "setuptools", specifier = ">=83.0.0" }]
+constraints = [{ name = "setuptools", specifier = "==84.0.0" }]
 
 [[package]]
 name = "accelerate"

@@ -115,10 +115,15 @@ orca = "orca.cli:app"
 # setuptools isn't a direct dependency of this project -- it is pulled in
 # transitively by torch (python_full_version >= '3.12' only, see uv.lock),
 # which has no reason to need anything older than the patched release.
-# Constraining it here forces uv's resolver to pick >=83.0.0 for that edge
-# without touching torch's own declared requirement.
+# Constraining it here forces uv's resolver to pick a patched version for
+# that edge without touching torch's own declared requirement. Exact pin
+# (not a >= range): `uv pip install --require-hashes`, used by
+# scripts/ci/run_rse_dependency_audit.sh against requirements/rse.txt, picks
+# up this project's [tool.uv] settings even for a plain `-r` install and
+# rejects any constraint that isn't pinned with `==` in that mode --
+# confirmed by that CI job's own failure on the `>=83.0.0` range form.
 constraint-dependencies = [
-    "setuptools>=83.0.0",
+    "setuptools==84.0.0",
 ]
 
 [tool.hatch.build.targets.wheel]

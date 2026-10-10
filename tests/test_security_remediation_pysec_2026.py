@@ -131,13 +131,28 @@ def test_lens_queue_dir_is_owner_only(tmp_path):
 # --- PYSEC-2026-3447: setuptools >= 83.0.0 via transitive uv constraint ---
 
 def test_pyproject_pins_setuptools_above_the_unicode_normalization_advisory():
+    """
+    Must be an exact `==` pin, not a `>=` range: `uv pip install
+    --require-hashes` (scripts/ci/run_rse_dependency_audit.sh, against
+    requirements/rse.txt) picks up this project's [tool.uv] settings even
+    for a plain `-r` install, and --require-hashes mode rejects any
+    constraint that isn't pinned with `==` -- a `>=83.0.0` range form was
+    tried first and broke that CI job; this guards against that recurring.
+    """
     with open(REPO_ROOT / "pyproject.toml", "rb") as f:
         data = tomllib.load(f)
 
     constraints = data.get("tool", {}).get("uv", {}).get("constraint-dependencies", [])
-    assert any(
-        c.replace(" ", "").startswith("setuptools>=83.0.0") for c in constraints
-    ), "expected a uv constraint-dependency pinning setuptools >= 83.0.0 (PYSEC-2026-3447 fix, released in 83.0.0)"
+    setuptools_constraints = [c for c in constraints if c.replace(" ", "").startswith("setuptools")]
+    assert len(setuptools_constraints) == 1
+    pin = setuptools_constraints[0].replace(" ", "")
+    assert pin.startswith("setuptools=="), f"expected an exact '==' pin, got {pin!r}"
+
+    version = tuple(int(x) for x in pin.split("==")[1].split(".")[:3])
+    assert version >= (83, 0, 0), (
+        f"pinned setuptools version {pin} is < 83.0.0, "
+        "still vulnerable to PYSEC-2026-3447 / CVE-2026-59890"
+    )
 
 
 def test_lockfile_setuptools_entry_is_not_vulnerable_to_pysec_2026_3447():
