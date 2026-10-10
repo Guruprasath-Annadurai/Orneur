@@ -2080,9 +2080,22 @@ def validate(nodes):
             if dep not in by_id:
                 errors.append(f"{node['id']} missing dep {dep}")
         for ref in node["cross_refs"]:
+            # CodeAnt PR #20 review: this loop previously never appended to
+            # `errors` on any path -- a misspelled or dangling cross_ref ID
+            # (recognized prefix but not found) and an ID with an
+            # unrecognized prefix both fell through silently. Reproduced:
+            # injecting a nonexistent "C-DOES-NOT-EXIST-999" into a real
+            # node from the live register_graph.json still returned zero
+            # errors. Fixed to actually record both failure shapes; current
+            # register_graph.json content was independently confirmed to
+            # already be internally consistent, so this adds coverage
+            # without flagging any existing data.
             if ref.startswith("C") or ref.startswith("HW") or ref.startswith("G"):
                 if ref in by_id or ref == node["id"]:
                     continue
+                errors.append(f"{node['id']} unresolved cross_ref {ref}")
+            else:
+                errors.append(f"{node['id']} malformed cross_ref {ref}")
         for covered in node["covered_by"]:
             if covered not in by_id or not by_id[covered]["counts"]:
                 errors.append(f"{node['id']} covered_by {covered}")

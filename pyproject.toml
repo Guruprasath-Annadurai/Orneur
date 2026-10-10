@@ -70,6 +70,10 @@ train  = [
     "accelerate>=1.0.0",
     "wandb>=0.18.0",
     "scipy>=1.14.0",
+    # See the matching comment on the `lens` extra below (PYSEC-2026-3447):
+    # torch is pulled in transitively here too (via unsloth/trl/transformers'
+    # own requirements), so this extra needs the same portable floor.
+    "setuptools>=83.0.0 ; python_full_version >= '3.12'",
 ]
 postgres = [
     "psycopg[binary]>=3.1",
@@ -102,6 +106,17 @@ lens = [
     "transformers>=4.45.0",
     "accelerate>=1.0.0",
     "safetensors>=0.4.0",
+    # CodeAnt PR #20 review: the [tool.uv] constraint-dependencies floor
+    # below only applies to uv-driven installs (`uv sync`/`uv pip install`
+    # reading this project's own pyproject.toml). A plain
+    # `pip install orneur[lens]` never reads [tool.uv] at all, so on
+    # Python >=3.12 it can still resolve a setuptools pulled in by torch's
+    # own unpinned-upper-bound floor (>=77.0.3) down to a version still
+    # inside PYSEC-2026-3447's affected range -- e.g. against a package
+    # mirror/cache that lags upstream. This is a standard PEP 508 entry,
+    # honored by pip, uv, poetry, and every other PEP 621-compliant
+    # installer, closing that gap for this extra specifically.
+    "setuptools>=83.0.0 ; python_full_version >= '3.12'",
 ]
 
 [project.scripts]
@@ -122,6 +137,12 @@ orca = "orca.cli:app"
 # up this project's [tool.uv] settings even for a plain `-r` install and
 # rejects any constraint that isn't pinned with `==` in that mode --
 # confirmed by that CI job's own failure on the `>=83.0.0` range form.
+# CodeAnt PR #20 review: this [tool.uv] section only covers uv-driven
+# installs -- a plain `pip install` never reads it. The `lens` and `train`
+# extras above each carry their own portable, PEP 508 `setuptools>=83.0.0
+# ; python_full_version >= '3.12'` entry for that reason; this section
+# stays uv-specific (exact pin, required by --require-hashes mode above)
+# rather than trying to also be the pip-facing fix.
 constraint-dependencies = [
     "setuptools==84.0.0",
 ]
