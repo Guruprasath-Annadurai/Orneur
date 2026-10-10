@@ -60,6 +60,53 @@ final design, not an incremental patch on the epoch scheme:
     engine's own source, and the published register graph JSON
     concatenated -- "policy identity" now commits to the actual
     enforcement code and graph, not only a prose document.
+
+Audit #003 then found that binding `trust_snapshot`/`root_state` to the
+exact commit SHA closes rollback ACROSS commits, but not a same-commit
+rollback: nothing stopped the founder's own root from validly signing TWO
+different trust_snapshot generations for the SAME `subject_sha` (e.g. one
+before and one after a revocation decided without a code change), and a
+caller presenting the earlier one would verify just as cleanly as the
+later one -- git_sha equality alone cannot order two documents for the one
+commit it names. The audit note is explicit: do not "fix" this by
+embedding a commit's own SHA inside a file committed as part of that same
+commit -- that is a self-referential hash dependency (the tree you are
+hashing to get the commit's SHA would need to already contain a file that
+names that same SHA). This module does not do that. Three separate things
+now exist, matching what the audit asked for:
+
+  1. The immutable code/policy commit being evaluated (`subject_sha`) --
+     unchanged, external to this module.
+  2. The signed trust-state snapshot (`trust_snapshot`/`root_state`) --
+     bound to `subject_sha`, as before, but that alone is not "current".
+  3. A separate, also-signed `trust_checkpoint` that commits to the exact
+     hash of #2 (both `trust_snapshot` and `root_state` together) for
+     `subject_sha`, whose own hash must equal a `pinned_checkpoint_hash`
+     supplied by the caller from a channel independent of both #1 and #2.
+
+A same-SHA rollback (two validly-signed snapshots at different
+generations, same commit) is closed by exact pinning, not generation
+comparison: a hash pin matches at most one document, full stop, regardless
+of how many other validly-signed-but-different documents also exist for
+that commit. This module cannot determine *which* checkpoint is "current"
+by itself -- that is an operational, out-of-band fact (independently
+published, witnessed, or mirrored, the way a certificate-transparency
+checkpoint is), and `pinned_checkpoint_hash` is exactly the seam where that
+external fact enters. This module only verifies that what it was given is
+consistent and matches that external pin; it does not invent one, and the
+committed baseline has none, so no trust_checkpoint can ever verify until
+a real one is actually pinned by that external process.
+
+Audit #003 also asked that the bootstrap root itself not become
+authoritative merely because a caller passed it in. `bootstrap_root_key_hex`
+is now checked against `PINNED_BOOTSTRAP_ROOT_KEYS`, a frozenset literal in
+this module's own source (not read from any file a caller or this repo's
+own commit history could alone control) -- committed empty, exactly like
+every other trust material in this program, so no bootstrap identity is
+authoritative yet. Pinning it here, in the engine's source, is the
+"pinned release identity" the audit asked for: changing it changes
+`POLICY_VERSION` too (the engine's own source is part of that hash),
+so a silently swapped pin is not silent.
 """
 
 from __future__ import annotations
@@ -140,6 +187,16 @@ PROTECTED_EVIDENCE_CLASSES = {
 # underlying keypair and look independent when they are not.
 CUSTODY_INDEPENDENT_FROM = {"DATA-5": "DATA-3"}
 
+# Pinned release identity for the bootstrap root (audit #003, task 3): a
+# caller-supplied bootstrap key is never authoritative merely by being
+# passed in, even if it matches a root_state signature -- it must ALSO
+# appear here, in this module's own source, not in any file this repo's
+# own commit history alone could edit. Committed empty: no real bootstrap
+# identity exists yet, so no root_state can ever verify for real use.
+# Tests populate this via monkeypatch to exercise the positive path with a
+# synthetic key; they never add a real one.
+PINNED_BOOTSTRAP_ROOT_KEYS = frozenset()
+
 
 class AcceptanceRejected(Exception):
     def __init__(self, code, detail):
@@ -193,11 +250,28 @@ def trust_snapshot_payload_bytes(snapshot):
     return ("\n".join(parts) + "\n").encode("utf-8")
 
 
-def assert_published_baseline(nodes, markdown, ledger, trust_snapshot, root_state=None, bootstrap=None):
+def checkpoint_payload_bytes(checkpoint):
+    parts = [
+        str(checkpoint.get("subject_sha", "")),
+        str(checkpoint.get("generation", "")),
+        str(checkpoint.get("trust_snapshot_hash", "")),
+        str(checkpoint.get("root_state_hash", "")),
+        str(checkpoint.get("previous_checkpoint_hash", "")),
+    ]
+    return ("\n".join(parts) + "\n").encode("utf-8")
+
+
+def assert_published_baseline(
+    nodes, markdown, ledger, trust_snapshot, root_state=None, bootstrap=None, trust_checkpoint=None,
+):
     errors = []
     empty_snapshot = {"git_sha": "", "generation": 0, "entries": [], "signature_hex": ""}
     empty_root_state = {"git_sha": "", "generation": 0, "roots": [], "signature_hex": ""}
     empty_bootstrap = {"public_key_hex": ""}
+    empty_checkpoint = {
+        "subject_sha": "", "generation": 0, "trust_snapshot_hash": "",
+        "root_state_hash": "", "previous_checkpoint_hash": "", "signature_hex": "",
+    }
     if any(node.get("status") == "ACCEPTED" for node in nodes):
         errors.append("published status ACCEPTED")
     if ledger != []:
@@ -208,6 +282,8 @@ def assert_published_baseline(nodes, markdown, ledger, trust_snapshot, root_stat
         errors.append("committed root state is not empty")
     if bootstrap is not None and bootstrap != empty_bootstrap:
         errors.append("committed bootstrap root key is not empty")
+    if trust_checkpoint is not None and trust_checkpoint != empty_checkpoint:
+        errors.append("committed trust checkpoint is not empty")
     for line in markdown.splitlines():
         if not line.startswith("| "):
             continue
@@ -229,16 +305,34 @@ def evaluate(
     subject_sha,
     ancestor_shas=(),
     artifact_bytes=None,
+    trust_checkpoint=None,
+    pinned_checkpoint_hash=None,
 ):
     """Return the ids this ledger accepts. Raise on any bad record.
 
     `nodes` is not modified. An empty ledger accepts nothing and is
-    checked before `trust_snapshot`/`root_state` are even inspected, so an
-    empty ledger needs no real trust material at all. Once there is at
-    least one record, both `root_state` (anchored to `bootstrap_root_key_hex`)
-    and `trust_snapshot` (anchored to a non-revoked root in `root_state`)
-    must verify, each bound to the exact `subject_sha` -- a caller cannot
-    substitute an older, still-validly-signed version of either.
+    checked before `trust_snapshot`/`root_state`/`trust_checkpoint` are
+    even inspected, so an empty ledger needs no real trust material at
+    all. Once there is at least one record:
+
+      - `root_state` must verify against a bootstrap key that is BOTH
+        `bootstrap_root_key_hex` AND a member of the hardcoded
+        `PINNED_BOOTSTRAP_ROOT_KEYS` -- a caller cannot make its own
+        generated bootstrap authoritative merely by passing it in.
+      - `trust_snapshot` must verify against a non-revoked root in
+        `root_state`.
+      - Both must be bound to the exact `subject_sha` (stale/wrong-SHA
+        rejected the same way a stale evidence record is).
+      - `trust_checkpoint` must verify against a non-revoked root too,
+        must commit to the exact hash of both `trust_snapshot` and
+        `root_state` for this `subject_sha`, and its own hash must equal
+        the caller-supplied `pinned_checkpoint_hash` -- a value this
+        module never derives on its own, only compares against. This is
+        what stops a same-commit rollback: two different, both validly
+        signed, trust_snapshot generations can exist for one `subject_sha`
+        (nothing about commit identity alone orders them), but only the
+        one named by the externally pinned checkpoint hash will ever
+        match -- exact equality, not "latest generation wins".
     """
     by_id = {node["id"]: node for node in nodes}
     if not isinstance(records, list):
@@ -249,6 +343,7 @@ def evaluate(
     ancestor_shas = set(ancestor_shas)
     roots = _verify_root_state(root_state, bootstrap_root_key_hex, subject_sha, ancestor_shas)
     by_key_id = _verify_trust_snapshot(trust_snapshot, roots, subject_sha, ancestor_shas)
+    _verify_checkpoint(trust_checkpoint, trust_snapshot, root_state, roots, subject_sha, pinned_checkpoint_hash)
     artifact_bytes = artifact_bytes or {}
 
     seen_ids = []
@@ -471,6 +566,8 @@ def _verify_root_state(root_state, bootstrap_root_key_hex, subject_sha, ancestor
         raise AcceptanceRejected(code, git_sha)
     if not _hex_length(bootstrap_root_key_hex, 64):
         raise AcceptanceRejected("NO_BOOTSTRAP_ANCHOR", "bootstrap_root_key_hex")
+    if bootstrap_root_key_hex not in PINNED_BOOTSTRAP_ROOT_KEYS:
+        raise AcceptanceRejected("UNPINNED_BOOTSTRAP", bootstrap_root_key_hex)
     if not _verify_whole_signature(
         root_state_payload_bytes(root_state), root_state.get("signature_hex", ""), bootstrap_root_key_hex
     ):
@@ -516,6 +613,44 @@ def _verify_trust_snapshot(trust_snapshot, roots, subject_sha, ancestor_shas):
             raise AcceptanceRejected("DUPLICATE_ENROLLMENT", key_id)
         by_key_id[key_id] = entry
     return by_key_id
+
+
+def _verify_checkpoint(trust_checkpoint, trust_snapshot, root_state, roots, subject_sha, pinned_checkpoint_hash):
+    """Verify the independently-pinned checkpoint that names which exact
+    trust_snapshot/root_state pair is current for `subject_sha`.
+
+    This is the third, separate document audit #003 asked for: distinct
+    from the code commit (`subject_sha`) and from the trust-state
+    documents themselves. It closes a same-commit rollback that binding to
+    `subject_sha` alone cannot: two different trust_snapshot generations
+    can both validly carry the same `subject_sha` (nothing about the
+    commit orders them), so freshness here comes from an exact match
+    against `pinned_checkpoint_hash` -- a value from a channel independent
+    of this call, never computed by this module. No committed checkpoint
+    exists yet (this document is entirely unused while the ledger is
+    empty), so this only ever runs once a real ledger, trust_snapshot,
+    root_state, trust_checkpoint, and pin all exist together.
+    """
+    if not isinstance(trust_checkpoint, dict):
+        raise AcceptanceRejected("MALFORMED_CHECKPOINT", "trust_checkpoint")
+    if not _non_negative_int(trust_checkpoint.get("generation")):
+        raise AcceptanceRejected("MALFORMED_GENERATION", "trust_checkpoint")
+    if trust_checkpoint.get("subject_sha") != subject_sha:
+        raise AcceptanceRejected("WRONG_CHECKPOINT_SHA", trust_checkpoint.get("subject_sha") or "missing")
+    expected_snapshot_hash = hashlib.sha256(trust_snapshot_payload_bytes(trust_snapshot)).hexdigest()
+    expected_root_hash = hashlib.sha256(root_state_payload_bytes(root_state)).hexdigest()
+    if trust_checkpoint.get("trust_snapshot_hash") != expected_snapshot_hash:
+        raise AcceptanceRejected("CHECKPOINT_SNAPSHOT_MISMATCH", "trust_snapshot_hash")
+    if trust_checkpoint.get("root_state_hash") != expected_root_hash:
+        raise AcceptanceRejected("CHECKPOINT_SNAPSHOT_MISMATCH", "root_state_hash")
+    payload = checkpoint_payload_bytes(trust_checkpoint)
+    signature = trust_checkpoint.get("signature_hex", "")
+    active_roots = [r for r in roots if isinstance(r, dict) and not r.get("revoked")]
+    if not any(_verify_whole_signature(payload, signature, r.get("public_key_hex", "")) for r in active_roots):
+        raise AcceptanceRejected("UNTRUSTED_CHECKPOINT", "trust_checkpoint")
+    actual_hash = hashlib.sha256(payload).hexdigest()
+    if not pinned_checkpoint_hash or actual_hash != pinned_checkpoint_hash:
+        raise AcceptanceRejected("UNPINNED_CHECKPOINT", actual_hash)
 
 
 def _resolve_key(by_key_id, key_id):

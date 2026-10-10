@@ -22,10 +22,17 @@ LEDGER_PATH = ROOT / "docs" / "orneur" / "acceptance" / "acceptance_ledger.json"
 TRUST_PATH = ROOT / "docs" / "orneur" / "acceptance" / "reviewer_trust.json"
 FOUNDER_ROOT_PATH = ROOT / "docs" / "orneur" / "acceptance" / "founder_root_keys.json"
 BOOTSTRAP_PATH = ROOT / "docs" / "orneur" / "acceptance" / "BOOTSTRAP_ROOT_KEY.json"
+CHECKPOINT_PATH = ROOT / "docs" / "orneur" / "acceptance" / "TRUST_CHECKPOINT.json"
+CHECKPOINT_PIN_PATH = ROOT / "docs" / "orneur" / "acceptance" / "TRUST_CHECKPOINT_PIN.json"
 EMPTY_LEDGER = "[]\n"
 EMPTY_TRUST = '{\n  "git_sha": "",\n  "generation": 0,\n  "entries": [],\n  "signature_hex": ""\n}\n'
 EMPTY_FOUNDER_ROOT = '{\n  "git_sha": "",\n  "generation": 0,\n  "roots": [],\n  "signature_hex": ""\n}\n'
 EMPTY_BOOTSTRAP = '{\n  "public_key_hex": ""\n}\n'
+EMPTY_CHECKPOINT = (
+    '{\n  "subject_sha": "",\n  "generation": 0,\n  "trust_snapshot_hash": "",\n'
+    '  "root_state_hash": "",\n  "previous_checkpoint_hash": "",\n  "signature_hex": ""\n}\n'
+)
+EMPTY_CHECKPOINT_PIN = '{\n  "pinned_checkpoint_hash": ""\n}\n'
 
 BANNED = (
     "RSE_MASTER_BLOCK_1_ACCEPTED",
@@ -2280,7 +2287,7 @@ def render_markdown(doc):
     a("")
     a("## Future acceptance")
     a("")
-    a("A later row can advance only through `scripts/acceptance/acceptance_engine.py`. The engine reads a ledger that is separate from this register. Each record must carry a detached signature over the requirement id, evidence key, artifact class, artifact digest, git SHA, denominator, reviewer role, and policy version (bound to the hash of the policy document, this engine's own source, and the published register graph together, not a free-floating label). DATA-3 separately declares a corpus_identity_sha256 distinct from its own record digest; DATA-1/DATA-2/DATA-5 bind to that identity via bound_corpus_identity_sha256, not to DATA-3's record digest. A row marked founder_approval REQUIRED needs a second, independent detached signature from a key enrolled with role FOUNDER over that same payload; a reviewer signature alone never satisfies it. DATA-5 (corpus custody) must also be signed by a reviewer key whose actual public key is distinct from the key that got DATA-3 (corpus creation) accepted -- checked by resolved key identity, not by the caller-chosen key_id label. For the four protected corpus-evidence classes, a correctly shaped, correctly signed digest is not enough: the reviewer's own key must also produce a non-disclosing custody-possession signature over a challenge derived from the digest and commit; every other evidence row requires the caller to present actual bytes that hash to the declared digest. Trust is no longer a caller-assembled list of individually-signed keys: a whole, atomically-signed trust_snapshot (which reviewer/founder keys are currently valid) and a whole root_state (which founder roots are currently valid) must each verify for the exact commit SHA under evaluation -- an older, still-validly-signed version of either is rejected as stale, the same way a stale evidence record already is -- and root_state itself must verify against a single permanent bootstrap_root_key_hex, so a caller cannot make its own generated root authoritative merely by passing it in. The committed ledger `docs/orneur/acceptance/acceptance_ledger.json` is empty. The committed trust snapshot `docs/orneur/acceptance/reviewer_trust.json` has no entries. The committed root state `docs/orneur/acceptance/founder_root_keys.json` has no roots. The committed bootstrap anchor `docs/orneur/acceptance/BOOTSTRAP_ROOT_KEY.json` has no key. This publication therefore accepts nothing and authorizes nothing.")
+    a("A later row can advance only through `scripts/acceptance/acceptance_engine.py`. The engine reads a ledger that is separate from this register. Each record must carry a detached signature over the requirement id, evidence key, artifact class, artifact digest, git SHA, denominator, reviewer role, and policy version (bound to the hash of the policy document, this engine's own source, and the published register graph together, not a free-floating label). DATA-3 separately declares a corpus_identity_sha256 distinct from its own record digest; DATA-1/DATA-2/DATA-5 bind to that identity via bound_corpus_identity_sha256, not to DATA-3's record digest. A row marked founder_approval REQUIRED needs a second, independent detached signature from a key enrolled with role FOUNDER over that same payload; a reviewer signature alone never satisfies it. DATA-5 (corpus custody) must also be signed by a reviewer key whose actual public key is distinct from the key that got DATA-3 (corpus creation) accepted -- checked by resolved key identity, not by the caller-chosen key_id label. For the four protected corpus-evidence classes, a correctly shaped, correctly signed digest is not enough: the reviewer's own key must also produce a non-disclosing custody-possession signature over a challenge derived from the digest and commit; every other evidence row requires the caller to present actual bytes that hash to the declared digest. Trust is no longer a caller-assembled list of individually-signed keys: a whole, atomically-signed trust_snapshot (which reviewer/founder keys are currently valid) and a whole root_state (which founder roots are currently valid) must each verify for the exact commit SHA under evaluation -- an older, still-validly-signed version of either is rejected as stale, the same way a stale evidence record already is -- and root_state itself must verify against a single permanent bootstrap_root_key_hex that is ALSO pinned in the engine's own source (PINNED_BOOTSTRAP_ROOT_KEYS), so a caller cannot make its own generated bootstrap authoritative merely by passing it in. Binding to the exact commit SHA alone cannot order two signed trust_snapshot generations that both name the same commit, so a separate trust_checkpoint commits to the exact hash of both trust_snapshot and root_state for that commit, and its own hash must equal a pinned_checkpoint_hash the caller supplies from a channel independent of this evaluation -- a same-commit rollback is closed by exact pinning, not by generation comparison. The committed ledger `docs/orneur/acceptance/acceptance_ledger.json` is empty. The committed trust snapshot `docs/orneur/acceptance/reviewer_trust.json` has no entries. The committed root state `docs/orneur/acceptance/founder_root_keys.json` has no roots. The committed bootstrap anchor `docs/orneur/acceptance/BOOTSTRAP_ROOT_KEY.json` has no key, and no bootstrap key is pinned in the engine's own source either. The committed trust checkpoint `docs/orneur/acceptance/TRUST_CHECKPOINT.json` and its pin `docs/orneur/acceptance/TRUST_CHECKPOINT_PIN.json` are both empty. This publication therefore accepts nothing and authorizes nothing.")
     a("")
     a("Editing a status cell, the Markdown, or the graph JSON does not accept a row. `--check` rejects a status of ACCEPTED and rejects a non-empty committed ledger or trust store. The engine ignores the published status field. A signature fails closed when it is missing, forged, duplicated, stale, aimed at the wrong requirement, reused for another control, signed by the implementer, signed by an unnamed reviewer, outside that row's denominator, or presented before a counted predecessor has its own accepted record. FINAL-2 stays after FINAL-1. EXEC-1 stays after FINAL-2. R65 cannot be signed into acceptance while it is the unmapped placeholder. FINAL-1 fails while any counted pre-training row, including R65, lacks its own acceptance.")
     a("")
@@ -2443,14 +2450,19 @@ def main(argv):
         trust_text = TRUST_PATH.read_text(encoding="utf-8")
         founder_root_text = FOUNDER_ROOT_PATH.read_text(encoding="utf-8")
         bootstrap_text = BOOTSTRAP_PATH.read_text(encoding="utf-8")
+        checkpoint_text = CHECKPOINT_PATH.read_text(encoding="utf-8")
+        checkpoint_pin_text = CHECKPOINT_PIN_PATH.read_text(encoding="utf-8")
         if (
             ledger_text != EMPTY_LEDGER
             or trust_text != EMPTY_TRUST
             or founder_root_text != EMPTY_FOUNDER_ROOT
             or bootstrap_text != EMPTY_BOOTSTRAP
+            or checkpoint_text != EMPTY_CHECKPOINT
+            or checkpoint_pin_text != EMPTY_CHECKPOINT_PIN
         ):
             print(
-                "acceptance ledger, trust snapshot, root state, or bootstrap root key is not the empty baseline",
+                "acceptance ledger, trust snapshot, root state, bootstrap root key, trust checkpoint, "
+                "or checkpoint pin is not the empty baseline",
                 file=sys.stderr,
             )
             return 1
@@ -2463,7 +2475,11 @@ def main(argv):
         trust_snapshot = json.loads(trust_text)
         root_state = json.loads(founder_root_text)
         bootstrap = json.loads(bootstrap_text)
-        baseline_errors = assert_published_baseline(nodes, rendered_md, ledger, trust_snapshot, root_state, bootstrap)
+        trust_checkpoint = json.loads(checkpoint_text)
+        checkpoint_pin = json.loads(checkpoint_pin_text)
+        baseline_errors = assert_published_baseline(
+            nodes, rendered_md, ledger, trust_snapshot, root_state, bootstrap, trust_checkpoint,
+        )
         if baseline_errors:
             print("\n".join(baseline_errors), file=sys.stderr)
             return 1
@@ -2473,6 +2489,8 @@ def main(argv):
             trust_snapshot=trust_snapshot,
             root_state=root_state,
             bootstrap_root_key_hex=bootstrap.get("public_key_hex", ""),
+            trust_checkpoint=trust_checkpoint,
+            pinned_checkpoint_hash=checkpoint_pin.get("pinned_checkpoint_hash", ""),
             subject_sha="0" * 40,
         )
         if accepted:

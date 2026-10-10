@@ -25,11 +25,13 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts" / "acceptance"))
 
+import acceptance_engine as engine  # noqa: E402
 from acceptance_engine import (  # noqa: E402
     AcceptanceRejected,
     POLICY_VERSION,
     PROTECTED_EVIDENCE_CLASSES,
     assert_published_baseline,
+    checkpoint_payload_bytes,
     custody_challenge_bytes,
     evaluate,
     payload_bytes,
@@ -59,6 +61,15 @@ BOOTSTRAP_PUBLIC_HEX = _public_hex(BOOTSTRAP_PRIVATE)
 DEFAULT_ROOTS = [{"root_id": "root-1", "public_key_hex": ROOT_PUBLIC_HEX, "revoked": False}]
 
 
+@pytest.fixture(autouse=True)
+def _pin_synthetic_bootstrap(monkeypatch):
+    """The real PINNED_BOOTSTRAP_ROOT_KEYS is empty (no real bootstrap
+    identity is provisioned). Tests exercise the positive path with a
+    synthetic bootstrap key by pinning it here, for this test run only --
+    this never touches the module's committed source or the real baseline."""
+    monkeypatch.setattr(engine, "PINNED_BOOTSTRAP_ROOT_KEYS", frozenset({BOOTSTRAP_PUBLIC_HEX}))
+
+
 def _entry(role, key_id, *, scope=None, revoked=False):
     """A bare, unsigned-by-anything trust entry and its private key. Only
     becomes trusted once it appears inside a properly root-signed
@@ -86,27 +97,60 @@ def _trust_snapshot(entries, *, generation=1, git_sha=SUBJECT, signer=ROOT_PRIVA
     return snapshot
 
 
-def _chain(entries, *, roots=None, generation=1, git_sha=SUBJECT, root_signer=ROOT_PRIVATE, bootstrap_signer=BOOTSTRAP_PRIVATE):
-    """The default, valid two-level trust chain: bootstrap signs root_state
+def _checkpoint(trust_snapshot, root_state, *, generation=1, subject_sha=SUBJECT,
+                previous_checkpoint_hash="", signer=ROOT_PRIVATE):
+    checkpoint = {
+        "subject_sha": subject_sha,
+        "generation": generation,
+        "trust_snapshot_hash": hashlib.sha256(trust_snapshot_payload_bytes(trust_snapshot)).hexdigest(),
+        "root_state_hash": hashlib.sha256(root_state_payload_bytes(root_state)).hexdigest(),
+        "previous_checkpoint_hash": previous_checkpoint_hash,
+    }
+    checkpoint["signature_hex"] = signer.sign(checkpoint_payload_bytes(checkpoint)).hex()
+    return checkpoint
+
+
+def _pin(checkpoint):
+    return hashlib.sha256(checkpoint_payload_bytes(checkpoint)).hexdigest()
+
+
+def _chain(entries, *, roots=None, generation=1, git_sha=SUBJECT, root_signer=ROOT_PRIVATE,
+           bootstrap_signer=BOOTSTRAP_PRIVATE, checkpoint_signer=None):
+    """The default, valid three-level trust chain: bootstrap signs root_state
     (naming `roots`, default just ROOT_PUBLIC_HEX), one of those roots
-    signs trust_snapshot (naming `entries`). Returns (trust_snapshot, root_state)."""
+    signs trust_snapshot (naming `entries`), and that same root signs a
+    trust_checkpoint committing to both, independently pinned by its own
+    hash. Returns (trust_snapshot, root_state, trust_checkpoint, pinned_hash)."""
     roots = roots if roots is not None else DEFAULT_ROOTS
-    return (
-        _trust_snapshot(entries, generation=generation, git_sha=git_sha, signer=root_signer),
-        _root_state(roots, generation=generation, git_sha=git_sha, signer=bootstrap_signer),
+    snapshot = _trust_snapshot(entries, generation=generation, git_sha=git_sha, signer=root_signer)
+    state = _root_state(roots, generation=generation, git_sha=git_sha, signer=bootstrap_signer)
+    checkpoint = _checkpoint(
+        snapshot, state, generation=generation, subject_sha=git_sha,
+        signer=checkpoint_signer if checkpoint_signer is not None else root_signer,
     )
+    return snapshot, state, checkpoint, _pin(checkpoint)
 
 
 def _call(nodes, records, entries=(), *, artifact_bytes=None, subject_sha=SUBJECT, ancestor_shas=(),
-          trust_snapshot=None, root_state=None, bootstrap_root_key_hex=BOOTSTRAP_PUBLIC_HEX, **chain_kwargs):
-    if trust_snapshot is None or root_state is None:
-        built_snapshot, built_root_state = _chain(list(entries), **chain_kwargs)
+          trust_snapshot=None, root_state=None, trust_checkpoint=None, pinned_checkpoint_hash=None,
+          bootstrap_root_key_hex=BOOTSTRAP_PUBLIC_HEX, **chain_kwargs):
+    if trust_snapshot is None or root_state is None or trust_checkpoint is None or pinned_checkpoint_hash is None:
+        built_snapshot, built_state, built_checkpoint, built_pin = _chain(list(entries), **chain_kwargs)
         trust_snapshot = trust_snapshot if trust_snapshot is not None else built_snapshot
-        root_state = root_state if root_state is not None else built_root_state
+        root_state = root_state if root_state is not None else built_state
+        if trust_checkpoint is None and pinned_checkpoint_hash is None:
+            # Auto-build a checkpoint matching whatever trust_snapshot/root_state
+            # end up being used, even if one of them was passed explicitly by
+            # the caller -- any REAL rejection those adversarial documents
+            # should trigger happens before checkpoint verification is ever
+            # reached, so this default never masks the intended failure.
+            trust_checkpoint = _checkpoint(trust_snapshot, root_state, subject_sha=subject_sha)
+            pinned_checkpoint_hash = _pin(trust_checkpoint)
     return evaluate(
         nodes, records,
         trust_snapshot=trust_snapshot, root_state=root_state,
         bootstrap_root_key_hex=bootstrap_root_key_hex,
+        trust_checkpoint=trust_checkpoint, pinned_checkpoint_hash=pinned_checkpoint_hash,
         subject_sha=subject_sha, ancestor_shas=ancestor_shas,
         artifact_bytes=artifact_bytes,
     )
@@ -525,7 +569,7 @@ def test_malformed_generation_fails_closed_for_both_documents():
     artifact_bytes = {record["artifact_sha256"]: content}
 
     for bad_generation in (None, "1", -1, True, 1.5):
-        snapshot, root_state = _chain([trust])
+        snapshot, root_state, _cp, _pn = _chain([trust])
         snapshot["generation"] = bad_generation
         _reject(
             nodes, [record], [], "MALFORMED_GENERATION",
@@ -533,7 +577,7 @@ def test_malformed_generation_fails_closed_for_both_documents():
         )
 
     for bad_generation in (None, "1", -1, True):
-        snapshot, root_state = _chain([trust])
+        snapshot, root_state, _cp, _pn = _chain([trust])
         root_state["generation"] = bad_generation
         _reject(
             nodes, [record], [], "MALFORMED_GENERATION",
@@ -556,7 +600,7 @@ def test_old_active_enrollment_alone_after_authenticated_revocation_is_rejected(
     record, content = _signed(_node(nodes, "G3"), private, active, label="omit", subject=SUBJECT)
     artifact_bytes = {record["artifact_sha256"]: content}
 
-    stale_snapshot, stale_root_state = _chain([active], generation=1, git_sha=ANCESTOR)
+    stale_snapshot, stale_root_state, _cp, _pn = _chain([active], generation=1, git_sha=ANCESTOR)
     _reject(
         nodes, [record], [], "STALE_TRUST_SNAPSHOT",
         trust_snapshot=stale_snapshot, root_state=_root_state(DEFAULT_ROOTS, generation=1, git_sha=SUBJECT),
@@ -566,7 +610,7 @@ def test_old_active_enrollment_alone_after_authenticated_revocation_is_rejected(
     # The real, current trust state (key revoked) is what the engine must
     # actually be evaluated against -- confirming the revocation is live.
     revoked = dict(active, revoked=True)
-    current_snapshot, current_root_state = _chain([revoked], generation=2, git_sha=SUBJECT)
+    current_snapshot, current_root_state, _cp, _pn = _chain([revoked], generation=2, git_sha=SUBJECT)
     _reject(
         nodes, [record], [], "REVOKED_REVIEWER",
         trust_snapshot=current_snapshot, root_state=current_root_state, artifact_bytes=artifact_bytes,
@@ -579,7 +623,7 @@ def test_rollback_to_earlier_trust_snapshot_is_rejected():
     record, content = _signed(_node(nodes, "G3"), private, v2_entry, label="rollback")
     artifact_bytes = {record["artifact_sha256"]: content}
 
-    v1_snapshot, _ = _chain([], generation=1, git_sha=ANCESTOR)
+    v1_snapshot, _rs, _cp, _pn = _chain([], generation=1, git_sha=ANCESTOR)
     root_state = _root_state(DEFAULT_ROOTS, generation=2, git_sha=SUBJECT)
     _reject(
         nodes, [record], [], "STALE_TRUST_SNAPSHOT",
@@ -665,10 +709,12 @@ def test_valid_root_rotation_revokes_old_root_and_adds_a_new_one():
 
     # Signed by the NEW root named in the rotated root_state -- must succeed.
     new_signed_snapshot = _trust_snapshot([trust], generation=2, git_sha=SUBJECT, signer=new_root_private)
+    checkpoint = _checkpoint(new_signed_snapshot, rotated_root_state, generation=2, signer=new_root_private)
     accepted = evaluate(
         nodes, [record],
         trust_snapshot=new_signed_snapshot, root_state=rotated_root_state,
         bootstrap_root_key_hex=BOOTSTRAP_PUBLIC_HEX, subject_sha=SUBJECT,
+        trust_checkpoint=checkpoint, pinned_checkpoint_hash=_pin(checkpoint),
         artifact_bytes={record["artifact_sha256"]: content},
     )
     assert accepted == {"G3": record["artifact_sha256"]}
@@ -806,3 +852,127 @@ def test_corpus_custody_must_be_an_independent_key_not_just_an_independent_role(
     records, artifact_bytes = _ledger((grant, grant_bytes), (creation, None), (independent_custody, None))
     accepted = _call(nodes, records, [grant_trust, founder, creator_trust, custodian_trust], artifact_bytes=artifact_bytes)
     assert accepted["DATA-5"] == independent_custody["artifact_sha256"]
+
+
+# ---------------------------------------------------------------------
+# Audit #003: same-SHA rollback, bootstrap substitution, self-reference
+# ---------------------------------------------------------------------
+
+def test_same_sha_rollback_is_rejected_by_checkpoint_pinning():
+    """Antigravity reproduced this exact scenario: two trust_snapshot
+    generations both validly carry the SAME subject_sha (nothing about
+    commit identity orders them). Presenting the earlier one together
+    with a checkpoint that is itself perfectly self-consistent for THAT
+    snapshot still fails, because its hash is not the externally pinned
+    one -- freshness here comes from exact pinning, not generation
+    comparison or git_sha matching."""
+    nodes = [_pair(build_nodes(), "G3", [])]
+    private, active = _entry("CLAUDE", "claude-same-sha")
+    record, content = _signed(_node(nodes, "G3"), private, active, label="same-sha")
+    artifact_bytes = {record["artifact_sha256"]: content}
+
+    gen1_snapshot = _trust_snapshot([active], generation=1, git_sha=SUBJECT)
+    root_state = _root_state(DEFAULT_ROOTS, generation=1, git_sha=SUBJECT)
+    revoked = dict(active, revoked=True)
+    gen2_snapshot = _trust_snapshot([revoked], generation=2, git_sha=SUBJECT)
+    assert gen1_snapshot["git_sha"] == gen2_snapshot["git_sha"] == SUBJECT
+    assert gen1_snapshot["generation"] != gen2_snapshot["generation"]
+
+    # The externally-pinned "current" checkpoint actually commits to gen2
+    # (the founder's real, later revocation decision).
+    current_checkpoint = _checkpoint(gen2_snapshot, root_state, generation=2, subject_sha=SUBJECT)
+    real_pin = _pin(current_checkpoint)
+
+    # A caller presents gen1 (the key still looks active) together with a
+    # checkpoint that is internally self-consistent for gen1 -- but its
+    # hash does not match the externally pinned one.
+    rollback_checkpoint = _checkpoint(gen1_snapshot, root_state, generation=1, subject_sha=SUBJECT)
+    with pytest.raises(AcceptanceRejected) as caught:
+        evaluate(
+            nodes, [record],
+            trust_snapshot=gen1_snapshot, root_state=root_state,
+            bootstrap_root_key_hex=BOOTSTRAP_PUBLIC_HEX,
+            trust_checkpoint=rollback_checkpoint, pinned_checkpoint_hash=real_pin,
+            subject_sha=SUBJECT, artifact_bytes=artifact_bytes,
+        )
+    assert caught.value.code == "UNPINNED_CHECKPOINT"
+
+    # The real, pinned current state (gen2, key revoked) correctly rejects
+    # the same record too, but for the right reason -- proving the pin
+    # defense is not just blocking everything regardless of content.
+    with pytest.raises(AcceptanceRejected) as caught:
+        evaluate(
+            nodes, [record],
+            trust_snapshot=gen2_snapshot, root_state=root_state,
+            bootstrap_root_key_hex=BOOTSTRAP_PUBLIC_HEX,
+            trust_checkpoint=current_checkpoint, pinned_checkpoint_hash=real_pin,
+            subject_sha=SUBJECT, artifact_bytes=artifact_bytes,
+        )
+    assert caught.value.code == "REVOKED_REVIEWER"
+
+
+def test_caller_supplied_bootstrap_key_never_becomes_authoritative():
+    """A self-consistent root_state -- validly signed by SOME key, with
+    that same key supplied as bootstrap_root_key_hex -- still fails unless
+    that exact key also appears in this module's own hardcoded
+    PINNED_BOOTSTRAP_ROOT_KEYS. Passing a key in is never, by itself,
+    enough to make it authoritative."""
+    nodes = [_pair(build_nodes(), "G3", [])]
+    attacker_bootstrap = Ed25519PrivateKey.generate()
+    attacker_bootstrap_hex = _public_hex(attacker_bootstrap)
+    attacker_roots = [{"root_id": "attacker-root", "public_key_hex": ROOT_PUBLIC_HEX, "revoked": False}]
+    attacker_root_state = _root_state(attacker_roots, signer=attacker_bootstrap)
+    private, trust = _entry("CLAUDE", "claude")
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="bootstrap-attack")
+    snapshot = _trust_snapshot([trust])
+    with pytest.raises(AcceptanceRejected) as caught:
+        evaluate(
+            nodes, [record],
+            trust_snapshot=snapshot, root_state=attacker_root_state,
+            bootstrap_root_key_hex=attacker_bootstrap_hex,
+            subject_sha=SUBJECT, artifact_bytes={record["artifact_sha256"]: content},
+        )
+    assert caught.value.code == "UNPINNED_BOOTSTRAP"
+
+
+def test_committed_baseline_pins_no_real_bootstrap_key():
+    """The real, committed PINNED_BOOTSTRAP_ROOT_KEYS is empty -- no real
+    bootstrap identity is provisioned yet. Checked from this module's own
+    source text rather than by reloading the module mid-suite (which would
+    mutate shared global state -- POLICY_VERSION, the class identity of
+    AcceptanceRejected, etc. -- for every other test in this process)."""
+    source = Path(engine.__file__).read_text(encoding="utf-8")
+    assert "PINNED_BOOTSTRAP_ROOT_KEYS = frozenset()" in source
+
+
+def test_checkpoint_pin_is_independent_of_the_subject_sha_itself():
+    """Guards against the self-referential anti-pattern the audit
+    explicitly warned against: the pin is a hash of the checkpoint's own
+    content (which includes subject_sha as one input among several, not
+    the whole of it), never the raw commit SHA. Publishing a checkpoint
+    as part of commit X's own tree therefore never requires computing X's
+    hash in advance to construct the file that must later match it."""
+    nodes = [_pair(build_nodes(), "G3", [])]
+    private, trust = _entry("CLAUDE", "claude")
+    record, content = _signed(_node(nodes, "G3"), private, trust, label="self-ref")
+    snapshot, root_state, checkpoint, pin = _chain([trust])
+    assert pin != SUBJECT
+    assert checkpoint["subject_sha"] == SUBJECT
+
+    # Two checkpoints sharing the same subject_sha but different
+    # snapshot/root content must produce different pins -- the pin
+    # distinguishes documents at the same commit, not just commits from
+    # each other.
+    _other_private, other_trust = _entry("CLAUDE", "claude-2")
+    other_snapshot = _trust_snapshot([other_trust], generation=1, git_sha=SUBJECT)
+    other_checkpoint = _checkpoint(other_snapshot, root_state, generation=1, subject_sha=SUBJECT)
+    assert other_checkpoint["subject_sha"] == checkpoint["subject_sha"]
+    assert _pin(other_checkpoint) != pin
+
+    accepted = evaluate(
+        nodes, [record], trust_snapshot=snapshot, root_state=root_state,
+        bootstrap_root_key_hex=BOOTSTRAP_PUBLIC_HEX,
+        trust_checkpoint=checkpoint, pinned_checkpoint_hash=pin,
+        subject_sha=SUBJECT, artifact_bytes={record["artifact_sha256"]: content},
+    )
+    assert accepted == {"G3": record["artifact_sha256"]}
