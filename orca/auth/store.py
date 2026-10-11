@@ -322,7 +322,7 @@ def increment_usage(user_id: str, kind: str = "message") -> None:
     with get_conn() as conn:
         conn.execute(
             f"INSERT INTO usage_daily (user_id, date, {col}) VALUES (?,?,1) "
-            f"ON CONFLICT(user_id, date) DO UPDATE SET {col}={col}+1",
+            f"ON CONFLICT(user_id, date) DO UPDATE SET {col}=usage_daily.{col}+1",   # qualified: PostgreSQL rejects the bare column as ambiguous
             (user_id, today),
         )
 

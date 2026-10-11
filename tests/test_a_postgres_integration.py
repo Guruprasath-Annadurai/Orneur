@@ -50,7 +50,7 @@ def _run(pg, scenario: str, tmp_path, fresh_db=True, role: str | None = None):
 def test_fresh_schema_has_everything_and_init_is_idempotent(pg, tmp_path):
     r = _run(pg, "fresh_init", tmp_path)
     assert r["backend"] == "postgres" and r["has_tokens_valid_after"] and r["unique_session_index"]
-    assert r["tables"] == ["owner_bootstrap", "owner_bootstrap_tokens", "session_storage_keys", "signup_counter", "usage_daily", "user_sessions", "users"]
+    assert r["tables"] == ["idempotency_keys", "owner_bootstrap", "owner_bootstrap_tokens", "revoked_tokens", "session_storage_keys", "signup_counter", "usage_daily", "user_sessions", "user_settings", "users"]
 
 
 def test_upgrade_from_the_pre_g006_schema_keeps_data_and_collapses_duplicate_owners(pg, tmp_path):
@@ -112,3 +112,25 @@ def test_squatter_replacement_has_one_winner_and_leaves_no_duplicate_account(pg,
 def test_a_deployment_on_the_first_g021_schema_upgrades_in_place(pg, tmp_path):
     r = _run(pg, "upgrade_from_g021_v1_schema", tmp_path)
     assert r["flag"] == 1 and r["token_prefix"] == "orneur-owner-"
+
+
+def test_workstream_b_stores_work_on_postgres_including_idempotency_races(pg, tmp_path):
+    r = _run(pg, "workstream_b_stores", tmp_path)
+    assert r["begin_states"].count("new") == 1 and r["begin_states"].count("in_progress") == 9          # exactly one winner of the key
+    assert r["replay"] == ["done", {"ok": True}] and r["mismatch"] == "mismatch"
+    assert r["revoked"] and r["old_gone"] and r["purged"] == 1
+    assert r["retention"] == 45 and r["in_retention_list"] == [45]
+    assert r["history"][0]["messages"] == 2 and r["history"][0]["ultra_runs"] == 1
+    assert r["claimed"] and r["released"] and r["reclaimed_by_other"]                                     # a released id is free again
+    assert r["epoch_advanced"]
+
+
+def test_the_real_application_flow_runs_on_postgres_end_to_end(pg, tmp_path):
+    """Signup, chat, usage metering, streaming, durable history, search, logout/revocation and owner bootstrap through the real FastAPI app on PostgreSQL 16
+    (the model is the FakeOllama test double)."""
+    r = _run(pg, "api_flow_on_postgres", tmp_path)
+    assert r["backend"] == "postgres" and r["signup"] == 200 and r["role"] == "member"
+    assert r["chat"] == 200, r["chat_body"]
+    assert r["usage"]["messages"] == 1 and r["stream_done"] and r["messages_total"] == 4 and r["search_hits"] == 1
+    assert r["me_before"] == 200 and r["logout"] == 200 and r["me_after"] == 401
+    assert r["bootstrap"] == 200 and r["bootstrap_role"] == "owner"

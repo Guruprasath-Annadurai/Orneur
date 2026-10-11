@@ -29,7 +29,7 @@ def s_fresh_init():
         tables = {r["table_name"] for r in c.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public'").fetchall()}
         cols = {r["column_name"] for r in c.execute("SELECT column_name FROM information_schema.columns WHERE table_name='users'").fetchall()}
         idx = {r["indexname"] for r in c.execute("SELECT indexname FROM pg_indexes WHERE tablename='user_sessions'").fetchall()}
-    return {"backend": db.BACKEND, "tables": sorted(tables & {"users", "user_sessions", "session_storage_keys", "owner_bootstrap", "owner_bootstrap_tokens", "signup_counter", "usage_daily"}),
+    return {"backend": db.BACKEND, "tables": sorted(tables & {"users", "user_sessions", "session_storage_keys", "owner_bootstrap", "owner_bootstrap_tokens", "signup_counter", "usage_daily", "revoked_tokens", "user_settings", "idempotency_keys"}),
             "has_tokens_valid_after": "tokens_valid_after" in cols, "unique_session_index": "ux_user_sessions_session" in idx}
 
 
@@ -259,6 +259,99 @@ def s_upgrade_from_g021_v1_schema():
     with db.get_conn() as c:
         flag = c.execute("SELECT replace_existing FROM owner_bootstrap_tokens").fetchone()["replace_existing"]
     return {"flag": flag, "token_prefix": tok[:13]}
+
+
+def s_workstream_b_stores():
+    """Idempotency (composite-key ON CONFLICT ... RETURNING), token revocation, retention settings and usage history on a real PostgreSQL, with races."""
+    from orca.auth import db
+    from orca.auth.store import (create_user, get_retention_days, get_usage_history, increment_usage, is_token_revoked, purge_expired_revocations,
+                                 release_session, revoke_token, set_retention_days, users_with_retention, claim_session, invalidate_all_sessions, get_user_by_id)
+    from orca.serve import idempotency
+    db.init_db()
+    u = create_user(_email(), "correct-horse-battery")
+    states = []
+
+    def go():
+        states.append(idempotency.begin(u.id, "pg-key-00001", "hash-a")[0])
+
+    ts = [threading.Thread(target=go) for _ in range(10)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    idempotency.complete(u.id, "pg-key-00001", {"ok": True})
+    replay = idempotency.begin(u.id, "pg-key-00001", "hash-a")
+    mismatch = idempotency.begin(u.id, "pg-key-00001", "hash-b")[0]
+    revoke_token("jti-pg-1", u.id, time.time() + 1000)
+    revoke_token("jti-pg-1", u.id, time.time() + 1000)                 # idempotent
+    revoke_token("jti-pg-old", u.id, time.time() - 5)
+    purged = purge_expired_revocations()
+    set_retention_days(u.id, 30)
+    set_retention_days(u.id, 45)                                         # upsert
+    increment_usage(u.id, "message"); increment_usage(u.id, "message"); increment_usage(u.id, "ultra")
+    hist = get_usage_history(u.id, 7)
+    sid = "ws-b-session-" + uuid.uuid4().hex[:6]
+    claimed = claim_session(sid, u.id)
+    released = release_session(sid, u.id)
+    reclaimed_by_other = claim_session(sid, create_user(_email(), "correct-horse-battery").id)
+    before = get_user_by_id(u.id).tokens_valid_after
+    invalidate_all_sessions(u.id)
+    after = get_user_by_id(u.id).tokens_valid_after
+    return {"begin_states": sorted(states), "replay": [replay[0], replay[1]], "mismatch": mismatch, "revoked": is_token_revoked("jti-pg-1"), "old_gone": not is_token_revoked("jti-pg-old"),
+            "purged": purged, "retention": get_retention_days(u.id), "in_retention_list": [d for uid, d in users_with_retention() if uid == u.id], "history": hist,
+            "claimed": claimed, "released": released, "reclaimed_by_other": reclaimed_by_other, "epoch_advanced": after > before}
+
+
+def s_api_flow_on_postgres():
+    """The real FastAPI app on a real PostgreSQL: signup -> chat -> usage -> stream -> search -> logout -> bootstrap. Every SQL path the product uses per request."""
+    import os
+    from tests.fake_ollama import FakeOllama
+    fake = FakeOllama(reply="PG-REPLY", chunks=("PG-", "REPLY"))
+    fake.__enter__()
+    os.environ["ORNEUR_OLLAMA_HOST"] = fake.host
+    os.environ["OLLAMA_HOST"] = fake.host
+    from fastapi.testclient import TestClient
+    import orca.serve.api as api
+    from orca.auth import bootstrap, db
+    from orca.serve import ratelimit
+    out = {"backend": db.BACKEND}
+    c = TestClient(api.app)
+    ratelimit._local_counters.clear()
+    # the host the config module resolved at import must be the fake; make every module agree
+    import sys
+    for name, mod in list(sys.modules.items()):
+        cfg = getattr(mod, "CONFIG", None) if name.startswith("orca") else None
+        o = getattr(cfg, "ollama", None)
+        if o is not None and hasattr(o, "host"):
+            o.host = fake.host
+    import orca.serve.registry as reg
+    reg._tags_cache = None
+    from orca.gateway import wiring as gw
+    gw.reset_for_tests()
+    from orca.cognitive import wiring as cw
+    cw.reset_for_tests()
+    s = c.post("/api/auth/signup", json={"email": _email(), "password": "correct-horse-battery", "name": "pg"})
+    out["signup"] = s.status_code
+    tok = s.json()["token"]
+    h = {"Authorization": f"Bearer {tok}"}
+    out["role"] = s.json()["user"]["role"]
+    r = c.post("/api/chat", json={"message": "hello from postgres", "model_variant": "nano"}, headers=h)
+    out["chat"] = r.status_code
+    sid = r.json().get("session_id") if r.status_code == 200 else None
+    out["chat_body"] = (r.text[:200] if r.status_code != 200 else "")
+    out["usage"] = c.get("/api/usage", headers=h).json().get("today") if sid else None
+    with c.stream("POST", "/api/stream", json={"message": "stream it", "model_variant": "nano", "session_id": sid}, headers=h) as st:
+        text = "".join(st.iter_text())
+    out["stream_done"] = '"type": "done"' in text
+    out["messages_total"] = c.get(f"/api/session/{sid}/messages", headers=h).json().get("total") if sid else None
+    out["search_hits"] = len(c.get("/api/sessions/search", params={"q": "postgres"}, headers=h).json().get("results", []))
+    out["me_before"] = c.get("/api/auth/me", headers=h).status_code
+    out["logout"] = c.post("/api/auth/logout", headers=h).status_code
+    out["me_after"] = c.get("/api/auth/me", headers=h).status_code
+    owner_email = _email()
+    tk = bootstrap.issue_token(owner_email)
+    b = c.post("/api/auth/bootstrap-owner", json={"token": tk, "email": owner_email, "password": "correct-horse-battery"})
+    out["bootstrap"] = b.status_code
+    out["bootstrap_role"] = b.json().get("user", {}).get("role") if b.status_code == 200 else b.text[:200]
+    fake.__exit__(None, None, None)
+    return out
 
 
 SCENARIOS = {k[2:]: v for k, v in globals().items() if k.startswith("s_")}
