@@ -20,6 +20,8 @@ available), `UNKNOWN`, `NOT_APPLICABLE`. Audit depth: `READ` (code read), `SURFA
 | #23 | `bd3072c` | Audit #007 remediation | **9/9** | **Audit #008 not received** (no comment on #22/#23 as of this register) |
 | #24 | `ce3d58c` | P0 training authorization gate | **9/9** | none yet |
 | #25 | `0db1a59` | P0 experimental-serving policy | **9/9** | none yet |
+| #26 | `52ad8fa` | P1 development register + flaky-test fix | **9/9** | none yet |
+| #27 | this PR | G-003 non-root containers | see PR | none yet |
 
 Ancestry (VERIFIED): `main(464b602) ⊂ #20 ⊂ #21 ⊂ #22 ⊂ #23 ⊂ #24 ⊂ #25`. Nothing is merged. `main` is unchanged at `464b602f3f25`.
 Local full deterministic suite on #25: **7273 passed, 6 failed, 413 skipped** (§6, G-013 for the six).
@@ -112,7 +114,7 @@ working product). I did not run the application in a browser or against a model 
 |---|---|---|---|---|---|---|
 | G-001 | P0 | Training entry points unguarded | `orca/train/*`, `cli.py` | unauthorized spend/egress/lineage | — | **Fixed in #24** → Antigravity review |
 | G-002 | P0 | Experimental models serve public traffic | `orca/gateway/wiring.py` | unqualified model shown to users | — | **Fixed in #25** → review; D-1 decided |
-| G-003 | P0/P1 | Production containers run as root | `Dockerfile`, `Dockerfile.fly`, `k8s/deployment.yaml` | container escape blast radius | image build | non-root `USER`, `runAsNonRoot`, read-only rootfs where possible; CI boot smoke still passes |
+| G-003 | P0/P1 | **Fixed in #27 (unverified build/cluster):** production containers ran as root | `Dockerfile`, `Dockerfile.fly`, `k8s/deployment.yaml` | container escape blast radius | image build | non-root `USER`, `runAsNonRoot`, read-only rootfs where possible; CI boot smoke still passes |
 | G-004 | P1 | Code execution is AST+subprocess only | `orca/code/sandbox.py` | arbitrary-code risk if exposed | G-003 | execution only in the qualified container/sandbox backend; escape tests pass; or endpoint disabled on public edge |
 | G-005 | P1 | 76 `innerHTML` sinks in the UI | `orca/serve/web/index.html` | stored/reflected XSS | redesign (D) | model/user content rendered via a sanitizer or `textContent`; CSP; XSS regression tests |
 | G-006 | P1 | Tenant/user isolation not audited end-to-end | `orca/serve`, `orca/auth` | cross-user data exposure | — | adversarial 2-user/2-tenant tests over sessions, docs, memory, export, explain |
@@ -127,6 +129,7 @@ working product). I did not run the application in a browser or against a model 
 | G-015 | P1 | No per-response model-lifecycle disclosure | `serve/api.py` | users cannot tell which model answered | UI (P2) | header + visible label on every response |
 | G-016 | P2 | Accessibility & responsive layout absent | UI | unusable on mobile/AT | redesign | WCAG 2.2 AA audit pass, mobile viewport tests |
 | G-017 | P2 | No end-to-end browser tests | `tests/frontend` (1 file) | UI regressions invisible | redesign | Playwright suite for chat, auth, upload, stream, cancel |
+| G-019 | P1 | Directory validation opens every ancestor with `O_RDONLY`; an execute-only (`0711`) ancestor owned by another user makes startup fail with `PermissionError` | `orca/config.py::_mkdir_owner_only` (PR #22/#23) | spurious startup failure on some hosts | — | ancestors opened with `O_PATH` where available; test with a 0711 root-owned ancestor |
 | G-018 | P3 | No load/soak, alerting, restore drills | ops | reliability unknown | deployment | k6-style load report; alert rules; restore drill log |
 
 ## 6. Baseline test failures — root causes (G-013)
