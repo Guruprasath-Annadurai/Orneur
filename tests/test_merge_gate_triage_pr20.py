@@ -300,28 +300,134 @@ def test_race_leaf_swapped_for_symlink_after_mkdir_is_never_followed(tmp_path, m
 
 
 @needs_root
-def test_race_ancestor_swapped_for_symlink_after_resolution_fails_closed(tmp_path, monkeypatch):
-    """Attacker swaps a resolved ancestor for a symlink between realpath()
-    and the descriptor walk. O_NOFOLLOW on that component must reject it."""
+def test_race_ancestor_swapped_for_symlink_before_open_fails_closed(tmp_path, monkeypatch):
+    """Attacker swaps an ancestor for a symlink to their directory right
+    before our openat. O_NOFOLLOW rejects the entry as a directory; the
+    resulting target chain is attacker-owned and refused. Nothing is written
+    into, and the mode is untouched on, the attacker's directory."""
     import orca.config as cfg
 
     home = tmp_path / "home"
     (home / "lens").mkdir(parents=True, mode=0o700)
     target = _attacker_dir(tmp_path / "attacker_target", 0o777)
-    real_realpath = os.path.realpath
+    real_open = os.open
+    swapped = []
 
-    def swapping_realpath(p, *a, **k):
-        out = real_realpath(p, *a, **k)
-        if out.endswith("/lens"):
+    def swapping_open(name, flags, mode=0o777, *, dir_fd=None):
+        if name == "lens" and dir_fd is not None and not swapped:
+            swapped.append(1)
             (home / "lens").rmdir()
             (home / "lens").symlink_to(target)
-        return out
+        return real_open(name, flags, mode, dir_fd=dir_fd)
 
-    monkeypatch.setattr(os.path, "realpath", swapping_realpath)
+    monkeypatch.setattr(os, "open", swapping_open)
     with pytest.raises(cfg.UntrustedStoreDirectory):
         cfg._mkdir_owner_only(home / "lens" / "queue")
+    assert swapped
     assert list(target.iterdir()) == []
     assert stat.S_IMODE(target.stat().st_mode) == 0o777
+
+
+@needs_root
+def test_attacker_owned_symlink_in_sticky_dir_is_refused_even_if_target_is_safe(tmp_path):
+    """Reviewer-reported TOCTOU: in a root-owned sticky dir (/tmp) an attacker
+    plants THEIR OWN symlink pointing at a trusted-looking directory. Validating
+    only the resolved target would pass, after which they repoint the entry at
+    attacker storage and diskcache reopens the original pathname. The symlink's
+    own owner must be root/us; this one is nobody's and must be refused."""
+    from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
+
+    stick = tmp_path / "tmp"
+    stick.mkdir()
+    os.chmod(stick, 0o1777)
+    safe = tmp_path / "safe"
+    safe.mkdir(mode=0o700)
+    evil = _attacker_dir(tmp_path / "attacker_store", 0o777)
+    link = stick / "x"
+    os.symlink(safe, link)
+    os.lchown(link, _NOBODY, _NOBODY)
+
+    with pytest.raises(UntrustedStoreDirectory, match="symlink"):
+        _mkdir_owner_only(link / "cache")
+    assert list(safe.iterdir()) == [] and list(evil.iterdir()) == []
+
+    # the attacker's follow-up (repoint) is only possible because they own the
+    # entry; having been refused above, nothing was created through it.
+    link.unlink()
+    os.symlink(evil, link)
+    os.lchown(link, _NOBODY, _NOBODY)
+    with pytest.raises(UntrustedStoreDirectory):
+        _mkdir_owner_only(link / "cache")
+    assert list(evil.iterdir()) == []
+
+
+@needs_root
+def test_attacker_cannot_replace_a_root_owned_symlink_in_sticky_dir(tmp_path):
+    """Why following a root/us-owned symlink is safe: sticky forbids another
+    uid from unlinking/renaming it, and our walk accepts it."""
+    from orca.config import _mkdir_owner_only
+
+    stick = tmp_path / "tmp"
+    stick.mkdir()
+    os.chmod(stick, 0o1777)
+    safe = tmp_path / "safe"
+    safe.mkdir(mode=0o700)
+    link = stick / "ours"
+    os.symlink(safe, link)  # created by root
+
+    pid = os.fork()
+    if pid == 0:  # child: drop to the attacker uid and try to repoint the link
+        try:
+            os.setgid(_NOBODY)
+            os.setuid(_NOBODY)
+            os.unlink(link)
+            os._exit(1)  # unlink succeeded -> invariant broken
+        except PermissionError:
+            os._exit(0)
+        except BaseException:
+            os._exit(2)
+    _, status = os.waitpid(pid, 0)
+    assert os.waitstatus_to_exitcode(status) == 0, "attacker was able to remove our symlink"
+    _mkdir_owner_only(link / "cache")
+    assert stat.S_IMODE((safe / "cache").stat().st_mode) == 0o700
+
+
+def test_symlink_loop_is_refused(tmp_path):
+    from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
+
+    (tmp_path / "a").symlink_to(tmp_path / "b")
+    (tmp_path / "b").symlink_to(tmp_path / "a")
+    with pytest.raises(UntrustedStoreDirectory):
+        _mkdir_owner_only(tmp_path / "a" / "leaf")
+
+
+def test_absolute_and_relative_own_symlinks_are_followed(tmp_path):
+    from orca.config import _mkdir_owner_only
+
+    real = tmp_path / "real"
+    real.mkdir(mode=0o700)
+    (tmp_path / "abs").symlink_to(real)
+    (tmp_path / "rel").symlink_to("real")
+    _mkdir_owner_only(tmp_path / "abs" / "q1")
+    _mkdir_owner_only(tmp_path / "rel" / "q2")
+    assert (real / "q1").is_dir() and (real / "q2").is_dir()
+
+
+@needs_root
+def test_lens_queue_with_caller_supplied_dir_goes_through_hardening(tmp_path):
+    from orca.config import UntrustedStoreDirectory
+    from orca.lens.queue import LensJobQueue
+
+    loose = tmp_path / "loose"
+    loose.mkdir(mode=0o777)
+    os.chmod(loose, 0o777 & ~0o022 | 0o700)
+    q = LensJobQueue(cache_dir=tmp_path / "q" / "inner")
+    assert stat.S_IMODE((tmp_path / "q" / "inner").stat().st_mode) == 0o700
+    q._cache.close()
+
+    evil = _attacker_dir(tmp_path / "evil")
+    with pytest.raises(UntrustedStoreDirectory):
+        LensJobQueue(cache_dir=evil / "q")
 
 
 @needs_root
@@ -366,10 +472,11 @@ def test_race_stress_never_touches_attacker_target(tmp_path):
 def test_every_diskcache_store_lives_under_a_hardened_directory():
     """Enforceable invariant for the code after _mkdir_owner_only returns:
     diskcache.Cache(...) is only ever opened on CACHE_DIR/QUEUE_DIR (or the
-    queue's cache_dir parameter, defaulting to QUEUE_DIR) -- i.e. a directory
+    queue's cache_dir parameter, which is itself passed through
+    _mkdir_owner_only before use) -- i.e. a directory
     that passed the walk above and is 0700, owned by us, in a chain no other
     non-root account can write to."""
-    allowed = ("CACHE_DIR", "QUEUE_DIR", "cache_dir")
+    allowed = ("CACHE_DIR", "QUEUE_DIR", "directory")
     seen = 0
     for py in (REPO_ROOT / "orca").rglob("*.py"):
         tree = ast.parse(py.read_text(encoding="utf-8"))
@@ -380,6 +487,10 @@ def test_every_diskcache_store_lives_under_a_hardened_directory():
                     f"{py}:{n.lineno} opens diskcache outside a hardened dir: {ast.unparse(n)}"
                 )
     assert seen >= 2
+    # `directory` in the queue is the return value of the hardening call.
+    assert "directory = _mkdir_owner_only(Path(cache_dir), parents=True)" in (
+        REPO_ROOT / "orca/lens/queue.py"
+    ).read_text(encoding="utf-8")
 
 
 # --- Item 2: setuptools pin portability (pip vs uv) -----------------------

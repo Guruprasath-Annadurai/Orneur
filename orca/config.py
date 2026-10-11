@@ -93,23 +93,28 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
     the owning user.
 
     Race-safe by construction (symlink-swap / TOCTOU): nothing here
-    re-resolves a path string between a check and its use. The path is
-    walked once from "/" with openat(O_NOFOLLOW|O_DIRECTORY), and every
-    check (owner, mode) and the final chmod operate on the already-open
-    descriptor, never on a name.
+    re-resolves a path string between a check and its use, and the
+    ORIGINAL pathname (which diskcache later reopens by name) is the thing
+    being validated -- not a resolved copy of it. The path is walked once
+    from "/" with openat(O_NOFOLLOW|O_DIRECTORY); every check (owner, mode)
+    and the final chmod operate on the already-open descriptor.
 
-    * Every ancestor must be owned by root or this user and not
-      group/other-writable (root-owned sticky dirs excepted). A directory
-      an attacker cannot write to cannot have a component swapped for a
-      symlink, so after this walk succeeds no other non-root account can
-      redirect `path`. Symlinks that already exist in the *ancestor* part
-      are resolved up front (realpath) and the resolved chain is what gets
-      verified, so a symlink planted by an attacker can only point at a
-      directory that itself passed the same ownership/mode test. If a
-      component is swapped between resolution and the walk, O_NOFOLLOW
-      fails and the call fails closed.
-    * The leaf is opened with O_NOFOLLOW: a symlink at `path` is refused
-      (chmod would otherwise follow it and "harden" the attacker's target).
+    * Every directory on the walk must be owned by root or this user and
+      not group/other-writable (root-owned sticky dirs like /tmp excepted).
+      A directory no other non-root account can write to cannot have a
+      component swapped, so once the walk succeeds nobody else can
+      redirect `path`.
+    * A symlink in an ancestor position is followed ONLY if the symlink
+      itself is owned by root or this user (e.g. /tmp -> /private/tmp, or
+      the user's own link). Such an entry cannot be created, replaced or
+      repointed by another account: its directory is non-writable to them,
+      or is sticky, which forbids removing/renaming entries they do not
+      own. A symlink owned by anyone else -- the case of an attacker
+      planting a link in /tmp that points at a safe-looking target and
+      repointing it after validation -- is refused outright, as is a link
+      chain deeper than 40. Link targets are walked with the same rules.
+    * The leaf is opened with O_NOFOLLOW: a symlink at `path` is always
+      refused (chmod would otherwise follow it).
     * The leaf must be owned by this process's uid: chmod changes mode
       bits, not ownership.
     * Missing directories (including intermediates when parents=True) are
@@ -123,16 +128,20 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
     leaf = os.path.basename(absolute)
     if not leaf:
         raise UntrustedStoreDirectory(f"refusing to use {path}: no leaf name.")
-    parent_parts = [p for p in os.path.realpath(os.path.dirname(absolute)).split(os.sep) if p]
+    pending = [p for p in os.path.dirname(absolute).split(os.sep) if p]
+    pending.reverse()  # used as a stack: next component is pending[-1]
 
     fd = os.open(os.sep, _DIR_OPEN_FLAGS)
     try:
         _require_trusted_ancestor(fd, os.sep)
         shown = os.sep
-        for name in parent_parts:
-            shown = os.path.join(shown, name)
+        links = 0
+        while pending:
+            name = pending.pop()
+            if name == ".":
+                continue
             try:
-                nfd = _open_dir_nofollow(name, fd, shown)
+                nfd = os.open(name, _DIR_OPEN_FLAGS, dir_fd=fd)
             except FileNotFoundError:
                 if not parents:
                     raise
@@ -141,8 +150,33 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
                 except FileExistsError:
                     pass
                 nfd = _open_dir_nofollow(name, fd, shown)
+            except OSError as exc:
+                if exc.errno not in (errno.ELOOP, errno.ENOTDIR):
+                    raise
+                st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if not stat.S_ISLNK(st.st_mode):
+                    raise UntrustedStoreDirectory(
+                        f"refusing to use a path under {shown}: {name!r} is not a directory."
+                    ) from exc
+                if st.st_uid not in (0, os.geteuid()):
+                    raise UntrustedStoreDirectory(
+                        f"refusing to use a path under {shown}: {name!r} is a symlink "
+                        f"owned by uid {st.st_uid}, so its owner could repoint it "
+                        "after validation."
+                    ) from exc
+                links += 1
+                if links > 40:
+                    raise UntrustedStoreDirectory(f"refusing to use {path}: too many symlinks.")
+                target = os.readlink(name, dir_fd=fd)
+                if target.startswith(os.sep):
+                    os.close(fd)
+                    fd = os.open(os.sep, _DIR_OPEN_FLAGS)
+                    shown = os.sep
+                pending.extend(reversed([p for p in target.split(os.sep) if p]))
+                continue
             os.close(fd)
             fd = nfd
+            shown = os.path.join(shown, name)
             _require_trusted_ancestor(fd, shown)
 
         try:
