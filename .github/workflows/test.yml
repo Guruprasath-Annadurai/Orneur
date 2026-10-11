@@ -64,7 +64,7 @@ jobs:
         # every regular test run.
         run: |
           pip install uv
-          uv pip install --system -e ".[dev,mcp,nvidia,postgres]"
+          uv pip install --system -e ".[dev,mcp,nvidia,postgres,pgtest]"
 
       - name: Run deterministic test suite
         run: bash scripts/ci/run_deterministic_tests.sh

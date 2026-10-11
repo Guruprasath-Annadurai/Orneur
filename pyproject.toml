@@ -75,6 +75,7 @@ train  = [
     # own requirements), so this extra needs the same portable floor.
     "setuptools>=83.0.0 ; python_full_version >= '3.12'",
 ]
+pgtest = ["pgserver>=0.1.4"]   # starts a real local PostgreSQL for tests/test_a_postgres_integration.py (test-only)
 postgres = [
     "psycopg[binary]>=3.1",
 ]

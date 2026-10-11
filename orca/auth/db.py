@@ -418,6 +418,11 @@ CREATE OR REPLACE RULE breach_log_no_delete AS ON DELETE TO security_breach_log 
 #  layer — this is a DB-level backstop so a query that forgets that filter
 #  fails closed (returns nothing) instead of leaking another user's rows.
 #
+#  Workstream A: `FORCE ROW LEVEL SECURITY` was REMOVED (now NO FORCE). With FORCE, RLS applies to the table OWNER, and managed PostgreSQL gives the application
+#  a non-superuser OWNER role: every INSERT/SELECT was refused ("new row violates row-level security policy"), i.e. no signup or login could work.
+#  Reproduced on a real PostgreSQL 16 (tests/test_a_postgres_integration.py). Policies still bind every NON-owner role; owner-role defense in depth needs
+#  set_user_context()/set_service_context() wired into the connection layer first (tracked as a residual risk).
+#
 #  Deliberately NOT wired into every call site yet — see
 #  set_user_context()/set_service_context() below. Existing store.py code
 #  runs as the Postgres role's default privileges, which this migration
@@ -461,28 +466,28 @@ END;
 $$;
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users FORCE ROW LEVEL SECURITY;
+ALTER TABLE users NO FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS users_service_all ON users;
 CREATE POLICY users_service_all ON users USING (orca_security.is_service());
 DROP POLICY IF EXISTS users_self ON users;
 CREATE POLICY users_self ON users USING (id = orca_security.current_uid());
 
 ALTER TABLE usage_daily ENABLE ROW LEVEL SECURITY;
-ALTER TABLE usage_daily FORCE ROW LEVEL SECURITY;
+ALTER TABLE usage_daily NO FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS usage_daily_service_all ON usage_daily;
 CREATE POLICY usage_daily_service_all ON usage_daily USING (orca_security.is_service());
 DROP POLICY IF EXISTS usage_daily_owner ON usage_daily;
 CREATE POLICY usage_daily_owner ON usage_daily USING (user_id = orca_security.current_uid());
 
 ALTER TABLE privacy_consents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE privacy_consents FORCE ROW LEVEL SECURITY;
+ALTER TABLE privacy_consents NO FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS privacy_consents_service_all ON privacy_consents;
 CREATE POLICY privacy_consents_service_all ON privacy_consents USING (orca_security.is_service());
 DROP POLICY IF EXISTS privacy_consents_owner ON privacy_consents;
 CREATE POLICY privacy_consents_owner ON privacy_consents USING (user_id = orca_security.current_uid());
 
 ALTER TABLE data_export_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE data_export_requests FORCE ROW LEVEL SECURITY;
+ALTER TABLE data_export_requests NO FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS data_export_service_all ON data_export_requests;
 CREATE POLICY data_export_service_all ON data_export_requests USING (orca_security.is_service());
 DROP POLICY IF EXISTS data_export_owner ON data_export_requests;
