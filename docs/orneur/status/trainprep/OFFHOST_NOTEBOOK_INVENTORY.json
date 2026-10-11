@@ -1,0 +1,599 @@
+{
+  "entries": [
+    {
+      "base_models": [],
+      "data_inputs": [
+        "guruprasathannadurai/orca-core-calibration-sft-v1",
+        "guruprasathannadurai/orca-core-dpo-adapter-v1"
+      ],
+      "how_it_bypasses_the_gate": "`kaggle kernels push` with this file starts a GPU, internet-enabled kernel entirely outside ORNEUR; nothing in the repository gates it.",
+      "id": "OH-01",
+      "kind": "KAGGLE_KERNEL_METADATA",
+      "launch_config": {
+        "code_file": "orca_core_calibration_sft_kaggle_v1.ipynb",
+        "enable_gpu": true,
+        "enable_internet": true,
+        "is_private": true,
+        "machine_shape": "NvidiaTeslaT4"
+      },
+      "lineage": "core-calibration",
+      "moves_model_weights": false,
+      "outputs": [],
+      "path": "notebooks/orca_core_calibration_sft_kaggle_v1-kernel-metadata.json",
+      "platform": "KAGGLE",
+      "proposed_action": "freeze",
+      "rationale": "Same as above.",
+      "sha256": "c0cef499a5e3be45c38202f8943b93ab52513cf0f3ad4e5dae5c3f0bc6ac5c9f",
+      "trainer_constructs": [],
+      "what_it_trains": "Kaggle kernel-push configuration for the calibration SFT notebook."
+    },
+    {
+      "base_models": [
+        "unsloth/Meta-Llama-3.1-8B-Instruct"
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/adapter_config.json",
+        "/kaggle/input/**/orca_core_calibration_eval_v1.jsonl",
+        "/kaggle/input/**/orca_core_calibration_train_v1.jsonl"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-02",
+      "kind": "NOTEBOOK",
+      "lineage": "core-calibration",
+      "moves_model_weights": false,
+      "outputs": [
+        "/kaggle/working/adapter_calibration",
+        "/kaggle/working/orca-core-calibration.Q4_K_M.gguf",
+        "/kaggle/working/output"
+      ],
+      "path": "notebooks/orca_core_calibration_sft_kaggle_v1.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "gate",
+      "rationale": "Only notebook for this stage; re-implement through the gated finetune path before any rerun.",
+      "sha256": "7d14a698f752516e52f644a96f03344a887289e4517e9994f5eaa08a7f96ee32",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train(",
+        "transformers.Trainer"
+      ],
+      "what_it_trains": "SFT calibration-fix adapter on top of the DPO adapter (Llama-3.1-8B-Instruct, plain PEFT)."
+    },
+    {
+      "base_models": [],
+      "data_inputs": [
+        "guruprasathannadurai/orca-core-combined-safety-calibration-v1",
+        "guruprasathannadurai/orca-core-sft-adapter-v2"
+      ],
+      "how_it_bypasses_the_gate": "`kaggle kernels push` with this file starts a GPU, internet-enabled kernel entirely outside ORNEUR; nothing in the repository gates it.",
+      "id": "OH-03",
+      "kind": "KAGGLE_KERNEL_METADATA",
+      "launch_config": {
+        "code_file": "orca_core_combined_sft_kaggle_v1.ipynb",
+        "enable_gpu": true,
+        "enable_internet": true,
+        "is_private": true,
+        "machine_shape": "NvidiaTeslaT4"
+      },
+      "lineage": "core-combined",
+      "moves_model_weights": false,
+      "outputs": [],
+      "path": "notebooks/orca_core_combined_sft_kaggle_v1-kernel-metadata.json",
+      "platform": "KAGGLE",
+      "proposed_action": "freeze",
+      "rationale": "This file is what `kaggle kernels push` consumes; it launches the notebook with GPU and internet. Keep frozen; the owner should confirm the remote kernel and datasets are private.",
+      "sha256": "798fe62907de8475f04ddcaee36be7b4802de9eee294ab4fcd55c4218d70aab0",
+      "trainer_constructs": [],
+      "what_it_trains": "Kaggle kernel-push configuration for the combined SFT notebook (private kernel, GPU T4, internet ON, two input datasets)."
+    },
+    {
+      "base_models": [
+        "unsloth/Meta-Llama-3.1-8B-Instruct"
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/adapter_config.json",
+        "/kaggle/input/**/orca_core_combined_eval_v2.jsonl",
+        "/kaggle/input/**/orca_core_combined_train_v2.jsonl"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-04",
+      "kind": "NOTEBOOK",
+      "lineage": "core-combined",
+      "moves_model_weights": false,
+      "outputs": [
+        "/kaggle/working/adapter_combined",
+        "/kaggle/working/orca-core-combined.Q4_K_M.gguf",
+        "/kaggle/working/output"
+      ],
+      "path": "notebooks/orca_core_combined_sft_kaggle_v1.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "gate",
+      "rationale": "Only notebook for this stage; re-implement through the gated finetune path before any rerun.",
+      "sha256": "d1f5b3aa7c7474d43106c5a693a956a1893442740149bd8e06257a524d6195eb",
+      "trainer_constructs": [
+        "trainer.train("
+      ],
+      "what_it_trains": "Joint safety+calibration SFT pass on top of v2 (Llama-3.1-8B-Instruct, plain PEFT)."
+    },
+    {
+      "base_models": [
+        "unsloth/Meta-Llama-3.1-8B-Instruct"
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/adapter_config.json",
+        "/kaggle/input/**/core_probe_grounded_safety_dpo*.jsonl"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-05",
+      "kind": "NOTEBOOK",
+      "lineage": "core-dpo",
+      "moves_model_weights": true,
+      "outputs": [
+        "/kaggle/working/adapter_dpo",
+        "/kaggle/working/output",
+        "/kaggle/working/{filename}"
+      ],
+      "path": "notebooks/orca_core_dpo_kaggle_v1.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "gate",
+      "rationale": "DPO has no gated in-repo path yet; a gated DPO entry point must exist before this is reused.",
+      "sha256": "5f0018b376d5400de3863fbda5233330b5c444bd05d6f28b95933dad64b3bb02",
+      "trainer_constructs": [
+        "DPOTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "Probe-grounded safety DPO on top of v2 (Llama-3.1-8B-Instruct), with merged + GGUF export."
+    },
+    {
+      "base_models": [
+        "unsloth/Meta-Llama-3.1-8B-Instruct"
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/adapter_config.json"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it. (This notebook has no trainer but loads/merges/exports model weights, an unrecorded provenance path.)",
+      "id": "OH-06",
+      "kind": "NOTEBOOK",
+      "lineage": "core-dpo",
+      "moves_model_weights": false,
+      "outputs": [
+        "/kaggle/working/orca-core-dpo.Q4_K_M.gguf"
+      ],
+      "path": "notebooks/orca_core_dpo_merge_export_v1.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "freeze",
+      "rationale": "Loads and rewrites model weights off-host without any provenance record; keep frozen, require manual provenance if ever used.",
+      "sha256": "9e608264724b6e5230e84dd38299d9788e566a486dcc05a454574f6422cfa9b7",
+      "trainer_constructs": [],
+      "what_it_trains": "No trainer: merges the DPO adapter into the base model and exports Q4_K_M GGUF off-host."
+    },
+    {
+      "base_models": [
+        "unsloth/Meta-Llama-3.1-8B-Instruct"
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/orca_core_llama3_eval.jsonl",
+        "/kaggle/input/**/orca_core_llama3_train.jsonl"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-07",
+      "kind": "NOTEBOOK",
+      "lineage": "core-finetune",
+      "moves_model_weights": true,
+      "outputs": [
+        "/kaggle/working/adapter",
+        "/kaggle/working/output",
+        "/kaggle/working/{filename}"
+      ],
+      "path": "notebooks/orca_core_finetune_kaggle_v1.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "retire",
+      "rationale": "Superseded by v2 of the same notebook (different data revision); keep only if the owner needs the history.",
+      "sha256": "ae81749630a7629f875e3f4c7198a208e98069cc125a8b3601e6a493aecf5023",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "QLoRA SFT, Llama-3.1-8B-Instruct, orca_core_llama3 train/eval v1 data."
+    },
+    {
+      "base_models": [
+        "unsloth/Meta-Llama-3.1-8B-Instruct"
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/orca_core_llama3_eval_v2.jsonl",
+        "/kaggle/input/**/orca_core_llama3_train_v2.jsonl"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-08",
+      "kind": "NOTEBOOK",
+      "lineage": "core-finetune",
+      "moves_model_weights": true,
+      "outputs": [
+        "/kaggle/working/adapter",
+        "/kaggle/working/output",
+        "/kaggle/working/{filename}"
+      ],
+      "path": "notebooks/orca_core_finetune_kaggle_v2.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "gate",
+      "rationale": "Lineage head for core SFT; the gated path (orca.train.finetune) is its in-repo replacement.",
+      "sha256": "a8c2a348891077a10e600ff417ef1f2371945e4a348ee9e759d0060114907bff",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "QLoRA SFT, Llama-3.1-8B-Instruct, orca_core_llama3 train/eval v2 data, merged + GGUF export."
+    },
+    {
+      "base_models": [
+        "unsloth/Qwen2.5-7B-Instruct"
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/adapter_config.json",
+        "/kaggle/input/**/nano_honesty_dpo*.jsonl",
+        "/kaggle/input/**/nano_safety_dpo*.jsonl"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-09",
+      "kind": "NOTEBOOK",
+      "lineage": "nano-dpo",
+      "moves_model_weights": true,
+      "outputs": [
+        "/kaggle/working/adapter_dpo",
+        "/kaggle/working/output",
+        "/kaggle/working/{filename}"
+      ],
+      "path": "notebooks/orca_nano_dpo_kaggle_v1.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "gate",
+      "rationale": "DPO has no gated in-repo path yet; a gated DPO entry point must exist before this is reused.",
+      "sha256": "4b65764cd12d3b4ee730ecaf5334a2ccacd509fad0d2b57e126b4d44f9099162",
+      "trainer_constructs": [
+        "DPOTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "DPO safety + honesty fix on top of Nano v4 (Qwen2.5-7B-Instruct), merged + GGUF export."
+    },
+    {
+      "base_models": [],
+      "data_inputs": [
+        "/kaggle/input/**/adapter_config.json"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it. (This notebook has no trainer but loads/merges/exports model weights, an unrecorded provenance path.)",
+      "id": "OH-10",
+      "kind": "NOTEBOOK",
+      "lineage": "nano-dpo",
+      "moves_model_weights": true,
+      "outputs": [
+        "/kaggle/working/{filename}"
+      ],
+      "path": "notebooks/orca_nano_dpo_merge_fix_v2.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "freeze",
+      "rationale": "Rewrites model weights off-host without any provenance record; keep frozen.",
+      "sha256": "49f1e2e3d347109b7cbfc25e09d7cbf2123856fa7974b49914f63006c521c092",
+      "trainer_constructs": [],
+      "what_it_trains": "No trainer: merge/export repair for the Nano DPO adapter (GGUF + merged weights) off-host."
+    },
+    {
+      "base_models": [
+        "unsloth/Qwen2.5-7B-Instruct"
+      ],
+      "data_inputs": [],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Google Colab) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Google Colab account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-11",
+      "kind": "NOTEBOOK",
+      "lineage": "nano-finetune-colab",
+      "moves_model_weights": true,
+      "outputs": [],
+      "path": "notebooks/orca_nano_finetune_colab.ipynb",
+      "platform": "COLAB",
+      "proposed_action": "retire",
+      "rationale": "Oldest Colab revision; superseded by v2-v4 and by the Kaggle lineage.",
+      "sha256": "a044697de6cc230a9157ff8697db3b07f47e9cead3022207d6f40774af06f30c",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "QLoRA SFT, Qwen2.5-7B-Instruct, Colab free T4, merged + GGUF export."
+    },
+    {
+      "base_models": [
+        "unsloth/Qwen2.5-7B-Instruct"
+      ],
+      "data_inputs": [
+        "/content/drive",
+        "/content/drive/MyDrive/{filename}"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Google Colab) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Google Colab account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-12",
+      "kind": "NOTEBOOK",
+      "lineage": "nano-finetune-colab",
+      "moves_model_weights": true,
+      "outputs": [],
+      "path": "notebooks/orca_nano_finetune_colab_v2.ipynb",
+      "platform": "COLAB",
+      "proposed_action": "retire",
+      "rationale": "Superseded by v3/v4.",
+      "sha256": "a65a0f35edb8294c35d4ad24ad8793ec4690b736616326f3334711fd1c11f7ff",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "QLoRA SFT, Qwen2.5-7B-Instruct, Colab free T4 (Drive-backed outputs)."
+    },
+    {
+      "base_models": [
+        "unsloth/Qwen2.5-7B-Instruct",
+        "unsloth/qwen2.5-7b..."
+      ],
+      "data_inputs": [
+        "/content/drive",
+        "/content/drive/MyDrive/{filename}"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Google Colab) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Google Colab account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-13",
+      "kind": "NOTEBOOK",
+      "lineage": "nano-finetune-colab",
+      "moves_model_weights": true,
+      "outputs": [],
+      "path": "notebooks/orca_nano_finetune_colab_v3.ipynb",
+      "platform": "COLAB",
+      "proposed_action": "retire",
+      "rationale": "Superseded by v4.",
+      "sha256": "3839aed4b47f84dddaf97764be7028adbe3e590a029790b1b7a5813c23252dfe",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "QLoRA SFT, Qwen2.5-7B-Instruct, Colab free T4 (Drive-backed outputs)."
+    },
+    {
+      "base_models": [
+        "unsloth/Qwen2.5-7B-Instruct"
+      ],
+      "data_inputs": [
+        "/content/drive",
+        "/content/drive/MyDrive/{filename}"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Google Colab) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Google Colab account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-14",
+      "kind": "NOTEBOOK",
+      "lineage": "nano-finetune-colab",
+      "moves_model_weights": true,
+      "outputs": [],
+      "path": "notebooks/orca_nano_finetune_colab_v4.ipynb",
+      "platform": "COLAB",
+      "proposed_action": "freeze",
+      "rationale": "Latest on Colab; the owner decides whether the Kaggle lineage head makes it retirable. Frozen meanwhile.",
+      "sha256": "7e6e4412d8fdc98de5d1f47c8d1b690e2a21e594692ebfae64fdb283447f8f6f",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "QLoRA SFT, Qwen2.5-7B-Instruct, Colab free T4 (Drive-backed outputs). Latest Colab revision."
+    },
+    {
+      "base_models": [
+        "unsloth/Qwen2.5-7B-Instruct",
+        "unsloth/qwen2.5-7b..."
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/orca_llama3_eval.jsonl",
+        "/kaggle/input/**/orca_llama3_train.jsonl"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-15",
+      "kind": "NOTEBOOK",
+      "lineage": "nano-finetune-kaggle",
+      "moves_model_weights": true,
+      "outputs": [
+        "/kaggle/working/**/*.gguf",
+        "/kaggle/working/gguf",
+        "/kaggle/working/merged",
+        "/kaggle/working/output"
+      ],
+      "path": "notebooks/orca_nano_finetune_kaggle.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "retire",
+      "rationale": "Oldest Kaggle revision; superseded by v2-v4_safety.",
+      "sha256": "806c494aa7ab7181cbe95aae67afd459452b5143447623adb7807958bc84a5ef",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "QLoRA SFT, Qwen2.5-7B-Instruct, Kaggle free T4/P100."
+    },
+    {
+      "base_models": [
+        "unsloth/Qwen2.5-7B-Instruct"
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/orca_llama3_eval.jsonl",
+        "/kaggle/input/**/orca_llama3_train.jsonl"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-16",
+      "kind": "NOTEBOOK",
+      "lineage": "nano-finetune-kaggle",
+      "moves_model_weights": true,
+      "outputs": [
+        "/kaggle/working/**/*.gguf",
+        "/kaggle/working/gguf",
+        "/kaggle/working/merged",
+        "/kaggle/working/output"
+      ],
+      "path": "notebooks/orca_nano_finetune_kaggle_v2.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "retire",
+      "rationale": "Superseded by v3/v4_safety.",
+      "sha256": "7e69515a186ff5988cf41f625ffe996197dac5037aed07de97e6f6627952c6a9",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "QLoRA SFT, Qwen2.5-7B-Instruct, Kaggle T4x2/P100."
+    },
+    {
+      "base_models": [
+        "unsloth/Qwen2.5-7B-Instruct"
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/orca_llama3_eval.jsonl",
+        "/kaggle/input/**/orca_llama3_train_oversampled.jsonl"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-17",
+      "kind": "NOTEBOOK",
+      "lineage": "nano-finetune-kaggle",
+      "moves_model_weights": true,
+      "outputs": [
+        "/kaggle/working/adapter",
+        "/kaggle/working/output",
+        "/kaggle/working/{filename}"
+      ],
+      "path": "notebooks/orca_nano_finetune_kaggle_v3.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "retire",
+      "rationale": "Superseded by v4_safety.",
+      "sha256": "ec7f3b2a29b72fc002ad6fc449813af9675fd72bf41a62204a5b42916ca9df04",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "QLoRA SFT, Qwen2.5-7B-Instruct, oversampled train file, Kaggle."
+    },
+    {
+      "base_models": [
+        "unsloth/Qwen2.5-7B-Instruct"
+      ],
+      "data_inputs": [
+        "/kaggle/input/**/orca_llama3_eval.jsonl",
+        "/kaggle/input/**/orca_nano_llama3_train_v3_safety.jsonl"
+      ],
+      "how_it_bypasses_the_gate": "Runs on a third-party host (Kaggle) with its own GPU quota and internet access. It imports the trainer stack directly and never imports orca.train.authorization, so no TrainingGrant, signed authorization record, code-tree/dataset hash binding, run budget or audit event applies. Anyone holding the notebook and a Kaggle account can start it; ORNEUR code does not execute or observe it.",
+      "id": "OH-18",
+      "kind": "NOTEBOOK",
+      "lineage": "nano-finetune-kaggle",
+      "moves_model_weights": true,
+      "outputs": [
+        "/kaggle/working/adapter",
+        "/kaggle/working/output",
+        "/kaggle/working/{filename}"
+      ],
+      "path": "notebooks/orca_nano_finetune_kaggle_v4_safety.ipynb",
+      "platform": "KAGGLE",
+      "proposed_action": "gate",
+      "rationale": "Lineage head for Nano SFT; re-express through the gated finetune path before any rerun.",
+      "sha256": "b4f0511387a9e11ab2136142aac2bf5b14da7484f0d1d8447a9da37742864fca",
+      "trainer_constructs": [
+        "SFTTrainer",
+        "trainer.train("
+      ],
+      "what_it_trains": "QLoRA SFT, Qwen2.5-7B-Instruct, v3_safety train file, Kaggle. Latest Nano SFT revision."
+    },
+    {
+      "base_models": [],
+      "data_inputs": [],
+      "how_it_bypasses_the_gate": "None known: this module calls authorize_training()/require_grant() before any trainer or SSH use (covered by tests/test_training_authorization_gate.py).",
+      "id": "OH-19",
+      "kind": "GATED_IN_REPO",
+      "lineage": "in-repo",
+      "moves_model_weights": true,
+      "outputs": [],
+      "path": "orca/train/cloud.py",
+      "platform": "ON_HOST_OR_SSH",
+      "proposed_action": "gate",
+      "rationale": "Already gated; listed for completeness.",
+      "sha256": "a11947a273b1c4b2a917548e0409dbf026bc3d7fbf56909bbc337f0d0fdcfd17",
+      "trainer_constructs": [
+        "EMBEDDED_SCRIPT:SFTTrainer(",
+        "EMBEDDED_SCRIPT:trainer.train()"
+      ],
+      "what_it_trains": "The repository's own gated trainers (orca.train.finetune local/GPU; orca.train.cloud SSH rented GPU)."
+    },
+    {
+      "base_models": [],
+      "data_inputs": [],
+      "how_it_bypasses_the_gate": "None known: this module calls authorize_training()/require_grant() before any trainer or SSH use (covered by tests/test_training_authorization_gate.py).",
+      "id": "OH-20",
+      "kind": "GATED_IN_REPO",
+      "lineage": "in-repo",
+      "moves_model_weights": true,
+      "outputs": [],
+      "path": "orca/train/finetune.py",
+      "platform": "ON_HOST_OR_SSH",
+      "proposed_action": "gate",
+      "rationale": "Already gated; listed for completeness.",
+      "sha256": "5f832355e5dc49fa508cd8be510e313da0df2725026d779c1ff8e4b3ea3cc979",
+      "trainer_constructs": [
+        "SFTTrainer"
+      ],
+      "what_it_trains": "The repository's own gated trainers (orca.train.finetune local/GPU; orca.train.cloud SSH rented GPU)."
+    }
+  ],
+  "generated_by": "scripts/trainprep/offhost_inventory.py --write",
+  "note": "Nothing was retired, frozen, edited or executed. proposed_action is a proposal for the owner; see RETIREMENT_PLAN.md.",
+  "offhost_gpu_runners_not_training": [
+    {
+      "kind": "OFFHOST_GPU_RUNNER",
+      "note": "Modal sandbox for evaluation code execution. Not a trainer.",
+      "path": "orca/eval/sandbox_modal.py",
+      "sha256": "c8e5ae309583e08bea66515accc7224eeeea9e6a072c17302ae540450fce005a",
+      "trains": false
+    },
+    {
+      "kind": "OFFHOST_GPU_RUNNER",
+      "note": "Modal CPU-ONLY image/config preflight (no gpu= parameter, no weight download, no inference). Not a trainer.",
+      "path": "scripts/phase21b_4_13_glm_cpu_preflight.py",
+      "sha256": "6e15185b4296ee22ed4628a6b6ce83e864ef428a416de8bcc735439efd29d055",
+      "trains": false
+    },
+    {
+      "kind": "OFFHOST_GPU_RUNNER",
+      "note": "Modal CPU-ONLY metadata/CLI-parse preflight against a vLLM image (no weights, no CUDA init). Not a trainer.",
+      "path": "scripts/phase21b_4_15_1_qwen38_27b_cpu_preflight.py",
+      "sha256": "0bac090dc07e9729ef210c363dc546b777138d042f954677c1fe600959282ee4",
+      "trains": false
+    },
+    {
+      "kind": "OFFHOST_GPU_RUNNER",
+      "note": "Modal GPU serving-path qualification of three control models as trusted INFERENCE only (smoke prompts). Not a trainer.",
+      "path": "scripts/phase21b_4_20_control_runtime_qualification.py",
+      "sha256": "25f6a1989c55c2c1eacd4faa80a55b5420392ed1cdf1dd6d1ec2cce93e929dd9",
+      "trains": false
+    },
+    {
+      "kind": "OFFHOST_GPU_RUNNER",
+      "note": "Off-host control INFERENCE orchestration on Lightning. Not a trainer.",
+      "path": "scripts/phase21b_4_20_lightning_control.py",
+      "sha256": "17ea9d201e8ff66499a4ab91183c1a1d2a5646bc31752db0baff09ce872a2a46",
+      "trains": false
+    },
+    {
+      "kind": "OFFHOST_GPU_RUNNER",
+      "note": "Runs on the Lightning host: control INFERENCE only. Not a trainer.",
+      "path": "scripts/phase21b_4_20_lightning_runner.py",
+      "sha256": "31eb37136c3825be9cf869be627f939c488f2505e37e1f2d47a102b68552a851",
+      "trains": false
+    },
+    {
+      "kind": "OFFHOST_GPU_RUNNER",
+      "note": "Off-host H100 control INFERENCE on Modal (trusted inference, hard function timeout). Not a trainer.",
+      "path": "scripts/phase21b_4_20_modal_h100_control.py",
+      "sha256": "9ea7449eb5e837fea08c3e37814f2abbc8ddf5a2fddce948fd74ca5642d3cb27",
+      "trains": false
+    }
+  ],
+  "schema": "orneur-offhost-training-inventory/1",
+  "status": "INVENTORY_ONLY__NO_ACTION_TAKEN",
+  "summary": {
+    "by_action": {
+      "freeze": 5,
+      "gate": 8,
+      "retire": 7
+    },
+    "entries": 20,
+    "training_notebooks": 14
+  }
+}
