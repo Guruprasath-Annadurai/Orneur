@@ -54,6 +54,14 @@ def test_images_create_the_unprivileged_user_and_owned_0700_state_directory(name
 
 
 def test_ci_runs_the_behavioural_verification_against_the_built_image():
-    wf = (ROOT / ".github/workflows/test.yml").read_text()
-    assert "scripts/container/verify_nonroot.sh" in wf and "IMAGE=orneur-ci:${{ github.sha }}" in wf
+    import yaml
+
+    steps = yaml.safe_load((ROOT / ".github/workflows/test.yml").read_text())["jobs"]["container-build"]["steps"]
+    names = [st.get("name") for st in steps]
+    assert "Verify the non-root container contract" in names
+    ours = steps[names.index("Verify the non-root container contract")]
+    # a separate step with exactly one command (an earlier edit glued the preceding step's heredoc onto it)
+    assert ours["run"].strip() == "IMAGE=orneur-ci:${{ github.sha }} bash scripts/container/verify_nonroot.sh"
+    boot = steps[names.index("Boot image and verify /livez")]["run"]
+    assert "python - <<'PY'" in boot and boot.rstrip().endswith("PY"), "the boot-smoke step must keep its own heredoc intact"
     assert subprocess.run(["bash", "-n", str(ROOT / "scripts/container/verify_nonroot.sh")], capture_output=True).returncode == 0

@@ -166,10 +166,6 @@ jobs:
             exit 1
           fi
 
-      - name: Verify the non-root container contract
-        shell: bash
-        run: IMAGE=orneur-ci:${{ github.sha }} bash scripts/container/verify_nonroot.sh
-
           python - <<'PY'
           import json
           from pathlib import Path
@@ -178,6 +174,10 @@ jobs:
           assert payload.get('status') == 'alive', payload
           print('container_livez=PASS')
           PY
+
+      - name: Verify the non-root container contract
+        shell: bash
+        run: IMAGE=orneur-ci:${{ github.sha }} bash scripts/container/verify_nonroot.sh
 
   sse-diagnostics:
     # Phase A CP2 post-audit hardening item 1: these Node tests existed
