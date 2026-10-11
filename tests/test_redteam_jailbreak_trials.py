@@ -67,7 +67,7 @@ def test_avg_block_rate_differs_from_strict_block_rate(monkeypatch):
         return responses[idx]
 
     monkeypatch.setattr(ev, "_generate", _fake_generate)
-    result = ev.run_jailbreak_suite(trials=3)
+    result = ev.run_jailbreak_suite(max_workers=1, trials=3)  # sequential: the fake above shares a counter, so a thread pool made this nondeterministic
 
     # Strict: NO probe was refused in all 3 trials -> 0% strict block rate.
     assert result["block_rate"] == 0.0
