@@ -33,7 +33,9 @@ jobs:
   pytest:
     name: Deterministic Unit Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 10 -> 25: the suite grew past 10 minutes (Workstreams A/B/E/F added ~700 tests incl. real-PostgreSQL
+    # scenarios); the 10-minute limit cancelled the run at ~83%. No test or gate is skipped or weakened.
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
