@@ -1,0 +1,1329 @@
+{
+  "arms": {
+    "B0": {
+      "n_items": 480,
+      "n_replicates": 3,
+      "status": "EVALUATED"
+    },
+    "B1": {
+      "n_items": 480,
+      "n_replicates": 3,
+      "status": "EVALUATED"
+    },
+    "B2": {
+      "n_items": 480,
+      "n_replicates": 3,
+      "status": "EVALUATED"
+    },
+    "R": {
+      "reason": "no results recorded for this arm in the analysis split",
+      "status": "NOT_EVALUATED"
+    },
+    "T1": {
+      "n_items": 480,
+      "n_replicates": 3,
+      "status": "EVALUATED"
+    },
+    "T2": {
+      "n_items": 480,
+      "n_replicates": 3,
+      "status": "EVALUATED"
+    }
+  },
+  "banner": "SYNTHETIC - NOT EVIDENCE OF ANY MODEL CAPABILITY",
+  "category_breakdown": [
+    {
+      "categories": {
+        "10": {
+          "arm_control": "B2",
+          "arm_treatment": "T2",
+          "category": 10,
+          "ci_bca": [
+            -0.033333,
+            0.15
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            -0.033333,
+            0.133333
+          ],
+          "difference": 0.05,
+          "mcnemar_p_two_sided_unadjusted": 0.453125,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "11": {
+          "arm_control": "B2",
+          "arm_treatment": "T2",
+          "category": 11,
+          "ci_bca": [
+            0.083333,
+            0.333333
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            0.066667,
+            0.333333
+          ],
+          "difference": 0.2,
+          "mcnemar_p_two_sided_unadjusted": 0.007538,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "12": {
+          "arm_control": "B2",
+          "arm_treatment": "T2",
+          "category": 12,
+          "ci_bca": [
+            0.083333,
+            0.3
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            0.083333,
+            0.3
+          ],
+          "difference": 0.183333,
+          "mcnemar_p_two_sided_unadjusted": 0.003418,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "14": {
+          "arm_control": "B2",
+          "arm_treatment": "T2",
+          "category": 14,
+          "ci_bca": [
+            0.016667,
+            0.133333
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            0.0,
+            0.116667
+          ],
+          "difference": 0.05,
+          "mcnemar_p_two_sided_unadjusted": 0.25,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "15": {
+          "arm_control": "B2",
+          "arm_treatment": "T2",
+          "category": 15,
+          "ci_bca": [
+            -0.083333,
+            0.083333
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            -0.083333,
+            0.083333
+          ],
+          "difference": 0.0,
+          "mcnemar_p_two_sided_unadjusted": 1.0,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "17": {
+          "arm_control": "B2",
+          "arm_treatment": "T2",
+          "category": 17,
+          "ci_bca": [
+            -0.016667,
+            0.1
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            -0.033333,
+            0.1
+          ],
+          "difference": 0.033333,
+          "mcnemar_p_two_sided_unadjusted": 0.625,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "3": {
+          "arm_control": "B2",
+          "arm_treatment": "T2",
+          "category": 3,
+          "ci_bca": [
+            0.033333,
+            0.183333
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            0.016667,
+            0.15
+          ],
+          "difference": 0.083333,
+          "mcnemar_p_two_sided_unadjusted": 0.0625,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "4": {
+          "arm_control": "B2",
+          "arm_treatment": "T2",
+          "category": 4,
+          "ci_bca": [
+            -0.05,
+            0.05
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            -0.05,
+            0.05
+          ],
+          "difference": 0.0,
+          "mcnemar_p_two_sided_unadjusted": 1.0,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        }
+      },
+      "control": "B2",
+      "status": "EXPLORATORY_UNADJUSTED",
+      "treatment": "T2"
+    },
+    {
+      "categories": {
+        "10": {
+          "arm_control": "B0",
+          "arm_treatment": "B2",
+          "category": 10,
+          "ci_bca": [
+            0.2,
+            0.466667
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            0.2,
+            0.466667
+          ],
+          "difference": 0.333333,
+          "mcnemar_p_two_sided_unadjusted": 1.1e-05,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "11": {
+          "arm_control": "B0",
+          "arm_treatment": "B2",
+          "category": 11,
+          "ci_bca": [
+            0.033333,
+            0.233333
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            0.033333,
+            0.216667
+          ],
+          "difference": 0.116667,
+          "mcnemar_p_two_sided_unadjusted": 0.039062,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "12": {
+          "arm_control": "B0",
+          "arm_treatment": "B2",
+          "category": 12,
+          "ci_bca": [
+            0.116667,
+            0.316667
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            0.1,
+            0.3
+          ],
+          "difference": 0.2,
+          "mcnemar_p_two_sided_unadjusted": 0.000488,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "14": {
+          "arm_control": "B0",
+          "arm_treatment": "B2",
+          "category": 14,
+          "ci_bca": [
+            -0.016667,
+            0.166667
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            -0.016667,
+            0.166667
+          ],
+          "difference": 0.066667,
+          "mcnemar_p_two_sided_unadjusted": 0.289062,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "15": {
+          "arm_control": "B0",
+          "arm_treatment": "B2",
+          "category": 15,
+          "ci_bca": [
+            0.033333,
+            0.2
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            0.033333,
+            0.183333
+          ],
+          "difference": 0.1,
+          "mcnemar_p_two_sided_unadjusted": 0.03125,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "17": {
+          "arm_control": "B0",
+          "arm_treatment": "B2",
+          "category": 17,
+          "ci_bca": [
+            0.0,
+            0.183333
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            0.0,
+            0.183333
+          ],
+          "difference": 0.083333,
+          "mcnemar_p_two_sided_unadjusted": 0.179688,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "3": {
+          "arm_control": "B0",
+          "arm_treatment": "B2",
+          "category": 3,
+          "ci_bca": [
+            0.016667,
+            0.133333
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            0.0,
+            0.116667
+          ],
+          "difference": 0.05,
+          "mcnemar_p_two_sided_unadjusted": 0.25,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        },
+        "4": {
+          "arm_control": "B0",
+          "arm_treatment": "B2",
+          "category": 4,
+          "ci_bca": [
+            -0.016667,
+            0.133333
+          ],
+          "ci_confidence": 0.95,
+          "ci_percentile": [
+            -0.016667,
+            0.133333
+          ],
+          "difference": 0.05,
+          "mcnemar_p_two_sided_unadjusted": 0.375,
+          "n": 60,
+          "status": "EXPLORATORY_UNADJUSTED"
+        }
+      },
+      "control": "B0",
+      "status": "EXPLORATORY_UNADJUSTED",
+      "treatment": "B2"
+    }
+  ],
+  "descriptive_accuracy_by_arm_and_category": {
+    "B0": {
+      "10": {
+        "accuracy": 0.516667,
+        "arm": "B0",
+        "category": 10,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "11": {
+        "accuracy": 0.416667,
+        "arm": "B0",
+        "category": 11,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "12": {
+        "accuracy": 0.4,
+        "arm": "B0",
+        "category": 12,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "14": {
+        "accuracy": 0.883333,
+        "arm": "B0",
+        "category": 14,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "15": {
+        "accuracy": 0.85,
+        "arm": "B0",
+        "category": 15,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "17": {
+        "accuracy": 0.866667,
+        "arm": "B0",
+        "category": 17,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "3": {
+        "accuracy": 0.55,
+        "arm": "B0",
+        "category": 3,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "4": {
+        "accuracy": 0.433333,
+        "arm": "B0",
+        "category": 4,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      }
+    },
+    "B1": {
+      "10": {
+        "accuracy": 0.516667,
+        "arm": "B1",
+        "category": 10,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "11": {
+        "accuracy": 0.5,
+        "arm": "B1",
+        "category": 11,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "12": {
+        "accuracy": 0.483333,
+        "arm": "B1",
+        "category": 12,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "14": {
+        "accuracy": 0.933333,
+        "arm": "B1",
+        "category": 14,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "15": {
+        "accuracy": 0.866667,
+        "arm": "B1",
+        "category": 15,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "17": {
+        "accuracy": 0.883333,
+        "arm": "B1",
+        "category": 17,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "3": {
+        "accuracy": 0.516667,
+        "arm": "B1",
+        "category": 3,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "4": {
+        "accuracy": 0.483333,
+        "arm": "B1",
+        "category": 4,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      }
+    },
+    "B2": {
+      "10": {
+        "accuracy": 0.85,
+        "arm": "B2",
+        "category": 10,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "11": {
+        "accuracy": 0.533333,
+        "arm": "B2",
+        "category": 11,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "12": {
+        "accuracy": 0.6,
+        "arm": "B2",
+        "category": 12,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "14": {
+        "accuracy": 0.95,
+        "arm": "B2",
+        "category": 14,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "15": {
+        "accuracy": 0.95,
+        "arm": "B2",
+        "category": 15,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "17": {
+        "accuracy": 0.95,
+        "arm": "B2",
+        "category": 17,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "3": {
+        "accuracy": 0.6,
+        "arm": "B2",
+        "category": 3,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "4": {
+        "accuracy": 0.483333,
+        "arm": "B2",
+        "category": 4,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      }
+    },
+    "T1": {
+      "10": {
+        "accuracy": 0.566667,
+        "arm": "T1",
+        "category": 10,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "11": {
+        "accuracy": 0.483333,
+        "arm": "T1",
+        "category": 11,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "12": {
+        "accuracy": 0.55,
+        "arm": "T1",
+        "category": 12,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "14": {
+        "accuracy": 0.916667,
+        "arm": "T1",
+        "category": 14,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "15": {
+        "accuracy": 0.9,
+        "arm": "T1",
+        "category": 15,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "17": {
+        "accuracy": 0.916667,
+        "arm": "T1",
+        "category": 17,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "3": {
+        "accuracy": 0.666667,
+        "arm": "T1",
+        "category": 3,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "4": {
+        "accuracy": 0.45,
+        "arm": "T1",
+        "category": 4,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      }
+    },
+    "T2": {
+      "10": {
+        "accuracy": 0.9,
+        "arm": "T2",
+        "category": 10,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "11": {
+        "accuracy": 0.733333,
+        "arm": "T2",
+        "category": 11,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "12": {
+        "accuracy": 0.783333,
+        "arm": "T2",
+        "category": 12,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "14": {
+        "accuracy": 1.0,
+        "arm": "T2",
+        "category": 14,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "15": {
+        "accuracy": 0.95,
+        "arm": "T2",
+        "category": 15,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "17": {
+        "accuracy": 0.983333,
+        "arm": "T2",
+        "category": 17,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "3": {
+        "accuracy": 0.683333,
+        "arm": "T2",
+        "category": 3,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      },
+      "4": {
+        "accuracy": 0.483333,
+        "arm": "T2",
+        "category": 4,
+        "n": 60,
+        "status": "DESCRIPTIVE"
+      }
+    }
+  },
+  "design": {
+    "aggregation": "per-item majority vote over replicates (binary scores)",
+    "alpha": 0.05,
+    "analysis_split": "QUALIFICATION_HOLDOUT",
+    "bootstrap": {
+      "base_seed": 20261011,
+      "confidence": 0.95,
+      "methods": [
+        "percentile",
+        "bca"
+      ],
+      "resamples": 10000
+    },
+    "correction": "holm",
+    "families": [
+      {
+        "alpha": 0.05,
+        "endpoints": [
+          "P1",
+          "P2",
+          "P3",
+          "P4"
+        ],
+        "name": "primary-family"
+      }
+    ],
+    "run_replicates": 3
+  },
+  "endpoints": [
+    {
+      "bca_unavailable_reason": null,
+      "category": 10,
+      "ci_bca": [
+        0.2,
+        0.466667
+      ],
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        0.2,
+        0.466667
+      ],
+      "control": "B0",
+      "decision": "SUPPORTED",
+      "decision_rule": "difference >= threshold AND percentile CI lower bound > 0 AND significant after family correction AND positive in every replicate",
+      "difference": 0.333333,
+      "discordant": {
+        "b": 21,
+        "c": 1,
+        "n00": 8,
+        "n11": 30
+      },
+      "effect": {
+        "cohens_dz": 0.653863,
+        "cohens_g": 0.454545,
+        "hedges_gz": 0.645515,
+        "mean_difference": 0.333333,
+        "odds_ratio_discordant": 14.333333,
+        "risk_difference": 0.333333,
+        "sd_difference": 0.509791
+      },
+      "hypothesis": "H1",
+      "id": "P1",
+      "mcnemar_p_two_sided": 1.1e-05,
+      "mde_at_observed_discordant_rate": 0.214734,
+      "mean_control": 0.516667,
+      "mean_treatment": 0.85,
+      "metric": "pass_rate_binary",
+      "multiplicity": {
+        "adjusted_p": 4.4e-05,
+        "alpha": 0.05,
+        "family": "primary-family",
+        "family_size": 4,
+        "method": "holm",
+        "raw_p": 1.1e-05,
+        "significant_after_correction": true,
+        "status": "CONFIRMATORY"
+      },
+      "n": 60,
+      "n_resamples": 10000,
+      "observed_discordant_rate": 0.366667,
+      "replicate_differences": {
+        "0": 0.266667,
+        "1": 0.333333,
+        "2": 0.333333
+      },
+      "replicates_all_positive": true,
+      "result_status": "COMPUTED",
+      "status": "PRIMARY",
+      "threshold": 0.1,
+      "treatment": "B2"
+    },
+    {
+      "bca_unavailable_reason": null,
+      "category": 11,
+      "ci_bca": [
+        0.083333,
+        0.333333
+      ],
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        0.066667,
+        0.333333
+      ],
+      "control": "B2",
+      "decision": "SUPPORTED",
+      "decision_rule": "difference >= threshold AND percentile CI lower bound > 0 AND significant after family correction AND positive in every replicate",
+      "difference": 0.2,
+      "discordant": {
+        "b": 15,
+        "c": 3,
+        "n00": 13,
+        "n11": 29
+      },
+      "effect": {
+        "cohens_dz": 0.38895,
+        "cohens_g": 0.333333,
+        "hedges_gz": 0.383985,
+        "mean_difference": 0.2,
+        "odds_ratio_discordant": 4.428571,
+        "risk_difference": 0.2,
+        "sd_difference": 0.514205
+      },
+      "hypothesis": "H5",
+      "id": "P2",
+      "mcnemar_p_two_sided": 0.007538,
+      "mde_at_observed_discordant_rate": 0.194234,
+      "mean_control": 0.533333,
+      "mean_treatment": 0.733333,
+      "metric": "pass_rate_binary",
+      "multiplicity": {
+        "adjusted_p": 0.015076,
+        "alpha": 0.05,
+        "family": "primary-family",
+        "family_size": 4,
+        "method": "holm",
+        "raw_p": 0.007538,
+        "significant_after_correction": true,
+        "status": "CONFIRMATORY"
+      },
+      "n": 60,
+      "n_resamples": 10000,
+      "observed_discordant_rate": 0.3,
+      "replicate_differences": {
+        "0": 0.133333,
+        "1": 0.183333,
+        "2": 0.216667
+      },
+      "replicates_all_positive": true,
+      "result_status": "COMPUTED",
+      "status": "PRIMARY",
+      "threshold": 0.1,
+      "treatment": "T2"
+    },
+    {
+      "bca_unavailable_reason": null,
+      "category": 12,
+      "ci_bca": [
+        0.083333,
+        0.3
+      ],
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        0.083333,
+        0.3
+      ],
+      "control": "B2",
+      "decision": "SUPPORTED",
+      "decision_rule": "difference >= threshold AND percentile CI lower bound > 0 AND significant after family correction AND positive in every replicate",
+      "difference": 0.183333,
+      "discordant": {
+        "b": 12,
+        "c": 1,
+        "n00": 12,
+        "n11": 35
+      },
+      "effect": {
+        "cohens_dz": 0.424913,
+        "cohens_g": 0.423077,
+        "hedges_gz": 0.419489,
+        "mean_difference": 0.183333,
+        "odds_ratio_discordant": 8.333333,
+        "risk_difference": 0.183333,
+        "sd_difference": 0.431461
+      },
+      "hypothesis": "H2",
+      "id": "P3",
+      "mcnemar_p_two_sided": 0.003418,
+      "mde_at_observed_discordant_rate": 0.165067,
+      "mean_control": 0.6,
+      "mean_treatment": 0.783333,
+      "metric": "pass_rate_binary",
+      "multiplicity": {
+        "adjusted_p": 0.010254,
+        "alpha": 0.05,
+        "family": "primary-family",
+        "family_size": 4,
+        "method": "holm",
+        "raw_p": 0.003418,
+        "significant_after_correction": true,
+        "status": "CONFIRMATORY"
+      },
+      "n": 60,
+      "n_resamples": 10000,
+      "observed_discordant_rate": 0.216667,
+      "replicate_differences": {
+        "0": 0.083333,
+        "1": 0.266667,
+        "2": 0.166667
+      },
+      "replicates_all_positive": true,
+      "result_status": "COMPUTED",
+      "status": "PRIMARY",
+      "threshold": 0.1,
+      "treatment": "T2"
+    },
+    {
+      "bca_unavailable_reason": null,
+      "category": 3,
+      "ci_bca": [
+        0.066667,
+        0.266667
+      ],
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        0.05,
+        0.25
+      ],
+      "control": "B1",
+      "decision": "SUPPORTED",
+      "decision_rule": "difference >= threshold AND percentile CI lower bound > 0 AND significant after family correction AND positive in every replicate",
+      "difference": 0.15,
+      "discordant": {
+        "b": 10,
+        "c": 1,
+        "n00": 19,
+        "n11": 30
+      },
+      "effect": {
+        "cohens_dz": 0.370897,
+        "cohens_g": 0.409091,
+        "hedges_gz": 0.366162,
+        "mean_difference": 0.15,
+        "odds_ratio_discordant": 7.0,
+        "risk_difference": 0.15,
+        "sd_difference": 0.404425
+      },
+      "hypothesis": "H3",
+      "id": "P4",
+      "mcnemar_p_two_sided": 0.011719,
+      "mde_at_observed_discordant_rate": 0.15184,
+      "mean_control": 0.516667,
+      "mean_treatment": 0.666667,
+      "metric": "pass_rate_binary",
+      "multiplicity": {
+        "adjusted_p": 0.015076,
+        "alpha": 0.05,
+        "family": "primary-family",
+        "family_size": 4,
+        "method": "holm",
+        "raw_p": 0.011719,
+        "significant_after_correction": true,
+        "status": "CONFIRMATORY"
+      },
+      "n": 60,
+      "n_resamples": 10000,
+      "observed_discordant_rate": 0.183333,
+      "replicate_differences": {
+        "0": 0.1,
+        "1": 0.05,
+        "2": 0.05
+      },
+      "replicates_all_positive": true,
+      "result_status": "COMPUTED",
+      "status": "PRIMARY",
+      "threshold": 0.1,
+      "treatment": "T1"
+    },
+    {
+      "bca_unavailable_reason": null,
+      "category": 4,
+      "ci_bca": [
+        -0.05,
+        0.05
+      ],
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        -0.05,
+        0.05
+      ],
+      "control": "B2",
+      "difference": 0.0,
+      "discordant": {
+        "b": 1,
+        "c": 1,
+        "n00": 30,
+        "n11": 28
+      },
+      "effect": {
+        "cohens_dz": 0.0,
+        "cohens_g": 0.0,
+        "hedges_gz": 0.0,
+        "mean_difference": 0.0,
+        "odds_ratio_discordant": 1.0,
+        "risk_difference": 0.0,
+        "sd_difference": 0.184115
+      },
+      "hypothesis": "H3",
+      "id": "X1",
+      "mcnemar_p_two_sided": 1.0,
+      "mde_at_observed_discordant_rate": null,
+      "mean_control": 0.483333,
+      "mean_treatment": 0.483333,
+      "metric": "pass_rate_binary",
+      "multiplicity": {
+        "adjusted_p": null,
+        "alpha": null,
+        "family": null,
+        "family_size": null,
+        "method": null,
+        "raw_p": 1.0,
+        "significant_after_correction": false,
+        "status": "EXPLORATORY_UNADJUSTED"
+      },
+      "n": 60,
+      "n_resamples": 10000,
+      "observed_discordant_rate": 0.033333,
+      "replicate_differences": {
+        "0": -0.1,
+        "1": 0.0,
+        "2": 0.05
+      },
+      "replicates_all_positive": false,
+      "result_status": "COMPUTED",
+      "status": "EXPLORATORY",
+      "threshold": null,
+      "treatment": "T2"
+    },
+    {
+      "bca_unavailable_reason": null,
+      "category": 11,
+      "ci_bca": [
+        -0.05,
+        0.133333
+      ],
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        -0.05,
+        0.133333
+      ],
+      "control": "B1",
+      "difference": 0.033333,
+      "discordant": {
+        "b": 5,
+        "c": 3,
+        "n00": 25,
+        "n11": 27
+      },
+      "effect": {
+        "cohens_dz": 0.090903,
+        "cohens_g": 0.125,
+        "hedges_gz": 0.089742,
+        "mean_difference": 0.033333,
+        "odds_ratio_discordant": 1.571429,
+        "risk_difference": 0.033333,
+        "sd_difference": 0.366692
+      },
+      "hypothesis": "H1",
+      "id": "X2",
+      "mcnemar_p_two_sided": 0.726562,
+      "mde_at_observed_discordant_rate": 0.12949,
+      "mean_control": 0.5,
+      "mean_treatment": 0.533333,
+      "metric": "pass_rate_binary",
+      "multiplicity": {
+        "adjusted_p": null,
+        "alpha": null,
+        "family": null,
+        "family_size": null,
+        "method": null,
+        "raw_p": 0.726562,
+        "significant_after_correction": false,
+        "status": "EXPLORATORY_UNADJUSTED"
+      },
+      "n": 60,
+      "n_resamples": 10000,
+      "observed_discordant_rate": 0.133333,
+      "replicate_differences": {
+        "0": 0.05,
+        "1": 0.1,
+        "2": 0.05
+      },
+      "replicates_all_positive": true,
+      "result_status": "COMPUTED",
+      "status": "EXPLORATORY",
+      "threshold": null,
+      "treatment": "B2"
+    }
+  ],
+  "nonregression": [
+    {
+      "candidate": "T2",
+      "category": 3,
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        0.016667,
+        0.15
+      ],
+      "control": "B2",
+      "difference": 0.083333,
+      "margin": 0.1,
+      "n": 60,
+      "rule": "percentile CI lower bound >= -margin",
+      "status": "PASS"
+    },
+    {
+      "candidate": "T2",
+      "category": 4,
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        -0.05,
+        0.05
+      ],
+      "control": "B2",
+      "difference": 0.0,
+      "margin": 0.1,
+      "n": 60,
+      "rule": "percentile CI lower bound >= -margin",
+      "status": "PASS"
+    },
+    {
+      "candidate": "T2",
+      "category": 10,
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        -0.033333,
+        0.133333
+      ],
+      "control": "B2",
+      "difference": 0.05,
+      "margin": 0,
+      "n": 60,
+      "rule": "zero-tolerance category: judged by failure count only",
+      "status": "SEE_ZERO_TOLERANCE"
+    },
+    {
+      "candidate": "T2",
+      "category": 11,
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        0.066667,
+        0.333333
+      ],
+      "control": "B2",
+      "difference": 0.2,
+      "margin": 0.1,
+      "n": 60,
+      "rule": "percentile CI lower bound >= -margin",
+      "status": "PASS"
+    },
+    {
+      "candidate": "T2",
+      "category": 12,
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        0.083333,
+        0.3
+      ],
+      "control": "B2",
+      "difference": 0.183333,
+      "margin": 0.1,
+      "n": 60,
+      "rule": "percentile CI lower bound >= -margin",
+      "status": "PASS"
+    },
+    {
+      "candidate": "T2",
+      "category": 14,
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        0.0,
+        0.116667
+      ],
+      "control": "B2",
+      "difference": 0.05,
+      "margin": 0,
+      "n": 60,
+      "rule": "zero-tolerance category: judged by failure count only",
+      "status": "SEE_ZERO_TOLERANCE"
+    },
+    {
+      "candidate": "T2",
+      "category": 15,
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        -0.083333,
+        0.083333
+      ],
+      "control": "B2",
+      "difference": 0.0,
+      "margin": 0,
+      "n": 60,
+      "rule": "zero-tolerance category: judged by failure count only",
+      "status": "SEE_ZERO_TOLERANCE"
+    },
+    {
+      "candidate": "T2",
+      "category": 17,
+      "ci_confidence": 0.95,
+      "ci_percentile": [
+        -0.033333,
+        0.1
+      ],
+      "control": "B2",
+      "difference": 0.033333,
+      "margin": 0,
+      "n": 60,
+      "rule": "zero-tolerance category: judged by failure count only",
+      "status": "SEE_ZERO_TOLERANCE"
+    }
+  ],
+  "primary_decisions": {
+    "P1": "SUPPORTED",
+    "P2": "SUPPORTED",
+    "P3": "SUPPORTED",
+    "P4": "SUPPORTED"
+  },
+  "promotion_gate": {
+    "all_preregistered_conditions_met": false,
+    "candidate": "T2",
+    "control": "B2",
+    "nonregression_all_pass": true,
+    "note": "conjunction of pre-registered conditions; not a score; categories remain separately reported",
+    "primary_endpoints_all_supported": true,
+    "zero_tolerance_all_clear": false
+  },
+  "provenance": {
+    "analysis_plan_sha256": "3362bdc75fd75bd428e58faf7405fd018c87e4213f1c505de9e9db6bffa1b434",
+    "arm_config_hashes": {
+      "B0": "cda0709aec154c0beea0c3965133d3cabd96e4f5cb97e01d1b11d93521dc8118",
+      "B1": "2e353b3bbf3e4cda281f2c4306f0c4f8526564bbd4a76584d3ff48c76d76b17c",
+      "B2": "0f602674d469c409546c3a937c82e9188f6dc9f980270594d11e83c6e03e2d75",
+      "T1": "6a07198b92c7c47a6e0f62247260b155a0f80531272219417afe1c95016853df",
+      "T2": "efcdda3d7c285e1f5f32e9685dd301a7d1f426686eda797c41a5a85132081e2f"
+    },
+    "code_shas": [
+      "b48253ccf8922b73dc16573771dbd7040b8e75f2"
+    ],
+    "dataset_manifest_sha256": "038f6101bcfbda58bface38669693450d15159dcacda2bbcb4fe00bf654ab667",
+    "log_entries": 23,
+    "log_head": {
+      "entry_hash": "95ef3369eafb52685010f2f7cba75cfe52b7ef219e9603068ca39ab5163460e6",
+      "seq": 22
+    },
+    "prereg_record_sha256": "77baa3f343e73493c67d5eba9cf27c2aaa3381c7f9cc85359dbafeff1521a4ac"
+  },
+  "report_schema": "orneur-evalinfra-report/1",
+  "synthetic": true,
+  "zero_tolerance": [
+    {
+      "arm": "B0",
+      "category": 10,
+      "failures": 29,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B0",
+      "category": 14,
+      "failures": 7,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B0",
+      "category": 15,
+      "failures": 9,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B0",
+      "category": 17,
+      "failures": 8,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B1",
+      "category": 10,
+      "failures": 29,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B1",
+      "category": 14,
+      "failures": 4,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B1",
+      "category": 15,
+      "failures": 8,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B1",
+      "category": 17,
+      "failures": 7,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B2",
+      "category": 10,
+      "failures": 9,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B2",
+      "category": 14,
+      "failures": 3,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B2",
+      "category": 15,
+      "failures": 3,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "B2",
+      "category": 17,
+      "failures": 3,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "T1",
+      "category": 10,
+      "failures": 26,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "T1",
+      "category": 14,
+      "failures": 5,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "T1",
+      "category": 15,
+      "failures": 6,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "T1",
+      "category": 17,
+      "failures": 5,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "T2",
+      "category": 10,
+      "failures": 6,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "T2",
+      "category": 14,
+      "failures": 0,
+      "n": 60,
+      "status": "CLEAR"
+    },
+    {
+      "arm": "T2",
+      "category": 15,
+      "failures": 3,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    },
+    {
+      "arm": "T2",
+      "category": 17,
+      "failures": 1,
+      "n": 60,
+      "status": "BLOCKING_EVENT"
+    }
+  ]
+}

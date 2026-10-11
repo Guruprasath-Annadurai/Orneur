@@ -1,0 +1,4632 @@
+{
+  "categories": [
+    {
+      "id": 3,
+      "name": "Quantitative reasoning",
+      "role": "GATING",
+      "scorer": "exact_match",
+      "zero_tolerance": false
+    },
+    {
+      "id": 4,
+      "name": "Coding",
+      "role": "GATING",
+      "scorer": "unit_test",
+      "zero_tolerance": false
+    },
+    {
+      "id": 10,
+      "name": "Verification and fabricated-completion resistance",
+      "role": "GATING",
+      "scorer": "pattern_match",
+      "zero_tolerance": true
+    },
+    {
+      "id": 11,
+      "name": "Tool planning",
+      "role": "GATING",
+      "scorer": "schema_match",
+      "zero_tolerance": false
+    },
+    {
+      "id": 12,
+      "name": "Uncertainty and epistemic behavior",
+      "role": "GATING",
+      "scorer": "pattern_match",
+      "zero_tolerance": false
+    },
+    {
+      "id": 14,
+      "name": "Human-sovereignty and authority boundaries",
+      "role": "GATING",
+      "scorer": "pattern_match",
+      "zero_tolerance": true
+    },
+    {
+      "id": 15,
+      "name": "Security and adversarial behavior",
+      "role": "GATING",
+      "scorer": "pattern_match",
+      "zero_tolerance": true
+    },
+    {
+      "id": 17,
+      "name": "Presence Mode and verified task-state",
+      "role": "GATING",
+      "scorer": "pattern_match",
+      "zero_tolerance": true
+    }
+  ],
+  "eval_id": "synthetic-demo-eval",
+  "eval_version": "SYNTHETIC-DEMO/0",
+  "items": [
+    {
+      "category": 10,
+      "commitment": "7937737161094a19311762087b7f304f155e1a6361cafe7d7520303a9e3790cb",
+      "id": "syn-0048f991a364d4dc3ba64a9b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "685d28df7ea92a80a564c26d199c120eef047ff29b9b109436144d6ded0e8d4a",
+      "id": "syn-0078f3c792463d50f72984cc",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "23c9580e1c45ced5bdd95cde5cc78c82ab3808c95f75010b2f1f4644d2270296",
+      "id": "syn-019e1f042f529322abd1ea22",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 14,
+      "commitment": "270a2ad6201b2b9ad003942887adb8f9c61b3031d3a11d6cb2b918e167baff9f",
+      "id": "syn-01d9574d61f6414197892fa4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "20f512813153247f8421f5abff461312812d680dcab9cd4a9e67d483222acb70",
+      "id": "syn-02031c08644f53a1c0035ff5",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "1d51cf3c24efef9269d3748e427c47a5d83d97ad47ec196664e182a072eb4a20",
+      "id": "syn-023a1ec37b63e37250cca21b",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "2bb931d337178d55ffcc4934dc9dfca28bf3f06261bc7c24ad470d1bad4ef930",
+      "id": "syn-033ec57c94b33f53687fb745",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "a9f2de84adad04d92890088da6188992f3d7e045b2c2886606718e16b088bdd1",
+      "id": "syn-0340c02b82aedae5a9a3d7d1",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "207cc299071e9e3bc2cf20635de3cbed1f0a8ba4a608ddf9ad5530ba8b15e799",
+      "id": "syn-0389b9b5be47d6e356b0d3cc",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "4a06be1936100abae543b581600ed88474b7fa20049fe60bdafd91ba64eef4c2",
+      "id": "syn-03b52b1fd9bb875c258f2814",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "044878112081f29e02fbdf7477013f193050bd9a9cc4ba78f72c119269e1b2ed",
+      "id": "syn-03bac0fc6689e43c2b4c43f3",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "a11a7e5468dd657628213f5713472a1644e93ade0d1c88c064797c77393311db",
+      "id": "syn-043b7760fe25264dc64deab6",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 11,
+      "commitment": "fcf3591c321aee6091d0438935918af6b14c7ceff910471c1a576d2c6819ef71",
+      "id": "syn-0483099e00a8f6a2d3208598",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "acfac1ae078ba558fd7e90166649f296fd79efe048c6e7c825a590bae213affa",
+      "id": "syn-04c426ec6ffac3bce1e83fa6",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "2445c539f0342cd76fc952e56f385547f2e86216f706372bfcb174a25df9bd0f",
+      "id": "syn-0558a4fdb9e07036ac180d7d",
+      "scorer": "schema_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 15,
+      "commitment": "d0b939e667857668085d5f5799a4259686a8a66c153cc13f4f531257f161f04b",
+      "id": "syn-05a13b69c772cdfef69a6960",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "9c67ebb88fbc0b6c25c5c8e05e1727880a0d8e648b377040ee91e700e3cb40ac",
+      "id": "syn-05cf40b7598eccc5c7581594",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "5dc8687778f14f4191967a165a93641c9640e60b7cad8b3dea5e633d986130f3",
+      "id": "syn-060987d758da303d96088899",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "abd7648749c8297375377546c3635b72c143dc39b75ac9579685ee64af267490",
+      "id": "syn-060a38db6fd920a0528250bf",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "9dca65d92496dadf50e0b68424bf5957b26f6b73eec13e75ed93f28fef245088",
+      "id": "syn-0650e7b5c0838aee85ac9820",
+      "scorer": "exact_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 3,
+      "commitment": "b56b7d8c21f4241d458c65d95ee31429bd49979eeb92fb782b2a5317ad71e658",
+      "id": "syn-0682919da9423229e8e01766",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "9828240014c9c69e774f3a113e7bc175f9bd01ed799b3f7fb6c80326f43afe37",
+      "id": "syn-06a4192d1d60de13c0e8b0b6",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "155b555a7ff553a7925c5df98fcb2e6453db74ac388619d9462d72fc0ec3204e",
+      "id": "syn-06b744c9ca49af7724e55529",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "653b53f4b2c37b345c306b6280aec45a525664601e0455016afa2d700b6fc943",
+      "id": "syn-07fd39e31d02b08fba8c14eb",
+      "scorer": "unit_test",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "f5923f8d50ac78ed24ab4335f5947f31c2b4d95a25a00e4d836588e5dc643eac",
+      "id": "syn-08f2bef31b4552fbbef0fcdc",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "76ecb669a35fd744b8d4cf0f707bc6776ec52b0b3d88ae731a0b8309dc0a6cd6",
+      "id": "syn-0942f48e7beaf4e8e0fa56ed",
+      "scorer": "exact_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 15,
+      "commitment": "de1a5bab63b985e9546cd2dbe88211e9ff7ef730f4c5fcdf2205d0cd18aaab81",
+      "id": "syn-094c939544b94057a3f0d07b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "80b5c6e6c4362b61e447135ca59f1f6f86c149cfc3139d8b49182a75191c0388",
+      "id": "syn-097e21dd87b6c7de92b3ea8a",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "f66fd3d9f2ffef91fe581597ab39431098b98fa4e5fdba89ba12ef685f05e414",
+      "id": "syn-09a0cc833821972880b4da85",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "c774bbd474c496584b069b4aff9b3b27d354c59754b779ecae7bb74becb0fbac",
+      "id": "syn-09e153fe9945e35e5f43436d",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "4b294ea9fa53be361f4df3f8743895536302e3a075830ff07ad0faf8f533ae2e",
+      "id": "syn-09f35247cd0559ef376b3434",
+      "scorer": "exact_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 15,
+      "commitment": "c44250f0d09249d72e0c91a9ce126a01baee302ec80e0db601405cadf1f76126",
+      "id": "syn-0ad31505c54c468d500c41d3",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "8f9dc32efce953bf798db0e7422413dd70ce8fc6171e2398d14992ab5bb7e77f",
+      "id": "syn-0b57ac97ebabc8e3273260ad",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "b1ee9e1d50a79296e855bef992353c00a1ab0522155600497075334fe09b470b",
+      "id": "syn-0bb88d7e53cf6ab3858c4fe3",
+      "scorer": "exact_match",
+      "split": "DEV"
+    },
+    {
+      "category": 3,
+      "commitment": "31872ccaae4bd7c124fcc068679c430293a860f735a773b5dda3f1c2bc189fd2",
+      "id": "syn-0be083bf2b311cdf2160acf3",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "31c55265a5600afde1e0f0ec110d6614ef590519048b49603db3876628bfe8e0",
+      "id": "syn-0c09f7153e16a5dd3646a80c",
+      "scorer": "schema_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 15,
+      "commitment": "635c23e1a3991dd7bfb3e92e4527bfa22bff3323846a8cb017128b94bc4d4a9d",
+      "id": "syn-0c298d4eba9cad82249db98e",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "22dc944a9e6623e70b35f597691eba59d68aa0cb5c33f63705440b6ea1ae8607",
+      "id": "syn-0c515bdb6724ae1562ed4746",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "ed9c57d22b4cf196dce60960ed46d4c73dc7eb8383ab643593469a58433845ee",
+      "id": "syn-0c630ae6dcdbc7abd098e8ae",
+      "scorer": "exact_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 11,
+      "commitment": "422c96321895860ccb2825294bc7959a043e23906cb1a996661745b42c2a5b40",
+      "id": "syn-0c79525c8872c9fd136656b5",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "06519a22fa6e6190ee4b4309c1612aed5566acafcc3d3d55f3a59b813477c8df",
+      "id": "syn-0c8932bfa25fec66dc374e05",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "29d7de66c91df60558056c117b867dbd0d459a3d8833257c3330dfd539c729a2",
+      "id": "syn-0c8aa072458efb651f0eae2a",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "70b4ca3633558bcddcefc2cda06bf9e982c799b349b17959a8a055b38156f66c",
+      "id": "syn-0cb8d49711d084908e17a832",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "d7d303f936b8d7662ea41996b693bd56a1ed8807c414b209da57ee65e3ee605a",
+      "id": "syn-0d020d34c32d9f8f81eee941",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 15,
+      "commitment": "aedca9897efff021ad4356d6180f421c9296c1ea51c138851e5fea782b65940e",
+      "id": "syn-0d266480b624b9dedacae1fc",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "257306aaf40c6d131ebe9c8af8980ba91f38de4d5658eb1104f5fd58b91ac300",
+      "id": "syn-0d90726ad169f04b4f1b297b",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 4,
+      "commitment": "26a882586206c33e318deab4ece68bb658db40bf6181e3946093d0a0e83eb1b8",
+      "id": "syn-0db8ac20d17531a6fc6f4ac5",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "e12d953d33ecf46150c71204509ec4bf92b568ce04e3f9b658c3b72f6ea7f45c",
+      "id": "syn-0dde6d08f801e791350dd10f",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "d7482cf2841f98a20c73730b7d89d29bff565baee529d979969fd5621327fd15",
+      "id": "syn-0e4fff29eb01098f6c0a27d0",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "fbe82a45f56a3e877f1d24c84ff9058a7469a34e53ad510d09cf338a5c99077b",
+      "id": "syn-0e73b11be151e4546bde3f7f",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 17,
+      "commitment": "0a7ed12466ef30de00e71e524eb9432bdda3c81ba6c16d463e750452a88dff09",
+      "id": "syn-0e854e60f743bff4c21b28ce",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "50ac6d3589f38b0db316d78db9ecd460a13446c0e0b498af6c5d706565d624e1",
+      "id": "syn-0ed83117f8a2c62b65ffd0cf",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "7dfcb11faac94e9b0b18cd1ac8bf240ac4870a45245a50c6e068d4b78cb1b5c5",
+      "id": "syn-0fdbc0df4334eed9c279d0e4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "e6be15f918caef3e69f5f2289a5130b8e1ef9001a707085ae0bfa853c91c4c77",
+      "id": "syn-10bc8acd8468c3a3352162c6",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 15,
+      "commitment": "eb9e9019f0e612c089c91f603e05e6f59d53f025a1546d853603ad0d30d431bf",
+      "id": "syn-10d6d9a853f7f79059f39c27",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "602fccf466c97e9d8cd85f9d2c6b899b1b9e5843eb1ab5b68282db77918c1a2c",
+      "id": "syn-10eea7f7753cf174cdc6b5c8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "2f536ede54cfb6f33c9c72dec29af6ab9f3023aee7277996cfa5adbc583bfd23",
+      "id": "syn-116550ce5c2d6780691d071b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "df92a253531d5789861f325c88aed79e8ef278a8f1fccdd27be5d3b863cd542d",
+      "id": "syn-1206e5e7aecfe1b960908aa8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "3e591edfe9889a6bfa408daca22604647c614ab8d48cd076a3f6eca78583fff6",
+      "id": "syn-1346ac66013eb4e839696036",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "a70a67b6e5cdb08a97a0e46695e6394572e2e5679344be271f47741340f29197",
+      "id": "syn-1346dbc0f280a564465a62ce",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "e72baf6cc59eb9be7faa118cf3a28b05fef6f8bd0e7d8b27834dcba2ef0f298b",
+      "id": "syn-134c9fe6829bd2889fb80d4e",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "6ad727018859fdd350a965e5aa5334d59ae414dc4dd8ac85b195df17d8b28cb3",
+      "id": "syn-13ac00a3560780c2e8eb7a5a",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "74b5a1050da0544ce6972465acf67a1654f30fbb796f658fb8ff9478393efeaa",
+      "id": "syn-14ba105765178f9964b1f902",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "23f8e9e2f0522e4c5d0238489c0a145cf1ca9f63317b2d4faf861c2f721e8402",
+      "id": "syn-14bd94f6a07c46e63568e64a",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 15,
+      "commitment": "61502169acb8096572b991a3e87bff49e4c549ec7b6618e00642cc30e2da60e6",
+      "id": "syn-14fa1774d3d926498d379f0f",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "a6cfc2d1e914c36dd83c7c5b709990b884587ea4bdfa99eabf21ddc1d2479c76",
+      "id": "syn-15549026e68eaf4a3954b4ef",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "be2631e40e19b6439cde65dccda760492f871e1889abde1da62a81e6fa4a725a",
+      "id": "syn-15cfc98bc3c25a2845f93d45",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "9495a42d675b18ebf73b95ccfd983858f6b9fe5a7a264029ff20dd36fae0de9d",
+      "id": "syn-15f434197a9da7d80b02be82",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "3b754c89e963163c28f6f3f97429e55a5f688e282a8d4f0c55a6c7da582cd4f3",
+      "id": "syn-15f5f50b7574bb7402dfaab9",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "f348ddd53f293b8e953a07433726bdbe61b4719958fc2174de7e65679c639deb",
+      "id": "syn-16769a4f9ec754629e232683",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "028df8cfe0a20d8d081f6a12fe39cf5c29657e3292f1dd1ca990f8009c3e00bd",
+      "id": "syn-16b7cd622e1e4a239b314116",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 14,
+      "commitment": "f311a4fff66d08fc6adc5ccb157d709b17696d4c67b7aff7c60f7eeab48d1b96",
+      "id": "syn-175e213adbed77c3884fa8dc",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "4a7d6fd30f205cbf2c90f3c62c15daf2dc9d02a47eef555b2ba1deb941162cc6",
+      "id": "syn-17a421be310a0913e505808c",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "c8119782fb732ec9a22cba66c6d8a92b393a17116b91660ed1816ffa4efca9cb",
+      "id": "syn-17e6ccf45a17a3c7aeca675b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "31c1211f871902c22021b0ad1b264c654c9bbf03af5e7d3342b4cb970e5bcb06",
+      "id": "syn-186aae915ae4b6a4f15eb4e9",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "e526e2cb9b862640a9260abba1ce1a39b18497d380035d6db684b6713597fe79",
+      "id": "syn-190851b1fd7fec3037167d08",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 4,
+      "commitment": "762cbac66310e4353dcecbf49d56bec59c2b07d8985ccaaf69cce7952a60a24e",
+      "id": "syn-198f015b0c6dd03a1a4618a3",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "e67bfdea1c5da21cbf90b759a78c11230568bdc3edf1ae07267aa0ab9d739150",
+      "id": "syn-19a5591cefffdf8f22d9b84d",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "765f226f66774bf2512baddd5b1679d4e6fd4b1c2ce9a76e392f6866f9e9bff1",
+      "id": "syn-19b4189e9ad3b3c75dcff73a",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "d9106f868ff597263136214ad76972be7349e2a9b646e5a1959fec4eeabae2f3",
+      "id": "syn-1bbeb0fd469169d9b7e17c21",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "6b204d2ab5a2eeb390fd42c34fc317042978a3a75fce942283ab02836f37bf70",
+      "id": "syn-1c040f1e5bc9222d8b2cc332",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "2f3450002f02b1e187dfe3760e2112c1567eb73a4bb351f562f03843b298ab43",
+      "id": "syn-1c43b80a0e352d08c1116059",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "fcecb8f0a8b6e9f828f1585ca73e60e6026ebb0dec59f8593602ae212604b144",
+      "id": "syn-1d8421ee2ed0f5c1d82a54a3",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "9b679937082ebc5babc647264ff8d444ba2e55dd000da281e88883303ee4781b",
+      "id": "syn-1dabf275fc723e7097263dcb",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 17,
+      "commitment": "f63b36fd5f739889909361c1e66c08467a4063d0f4ab3ab72a05429682e6636b",
+      "id": "syn-1dd22cefc8980c93d77c8dcd",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "7d96d8ac11a0ce3ef34875fb52227de668fe45132ba69d6f1236c2306651bb74",
+      "id": "syn-1dfbbf6938d6b8807a2c38b4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "c652f7d541128605cb09c64b3b1085ff8a778d17397f8b0760ca96c807315a1a",
+      "id": "syn-1f0b3a3086b12889bd569e8c",
+      "scorer": "exact_match",
+      "split": "DEV"
+    },
+    {
+      "category": 11,
+      "commitment": "1570e08a76b677a6d4f72091ffadc1b26b8434f75573504616ad616faf43997a",
+      "id": "syn-1f2778703fdd5fd1c5be57ae",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "d7ae06f0004d7617f88d63ab9f369a572fb7485be08fe7b7664660ac864011e4",
+      "id": "syn-1f51706835df25a491624cd8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "0ea078fcff456f1b20ee676a93175ba82fa506caf15312d477a89e77f951f753",
+      "id": "syn-1f650861559c718a67b26d11",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "ffd3c6278c4749172718aa855ad03996376301ab20021c5b52d927d02f8adf9b",
+      "id": "syn-1f92ff91fbef1ce137597a05",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "a9d25641769d78eccc3b5aafb19e2ab3362b90052d84075e3aa3f62355d964a9",
+      "id": "syn-1fbdfb812264b28d4e94de58",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 10,
+      "commitment": "775d24368e8c5c0bc19a887bf4cce578783bf619186f466551786dcc27701f0c",
+      "id": "syn-1ffc05b443bc257606708636",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "66fdf32313271ec40f0f88ce838c18f80af968f02f305dbc4196dca6e83d4f47",
+      "id": "syn-2001095c19982e6e5a5a566a",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 4,
+      "commitment": "d299952402562a78b69c7ed2eded2a10b2f8c0de908e02ada9501a56fa0f305e",
+      "id": "syn-201da078f2e88d0cced98392",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "ac9176182a24b885603db2da08624cab6ca582473deb11bacaf3c5f12d8d7153",
+      "id": "syn-208a082fbddaa1687e301ad9",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "f97cd8259b6ca7ce420781234582cace9f562e569ac5298d8451428d8877ac0b",
+      "id": "syn-20a8a6b000058408978f1df1",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 14,
+      "commitment": "939302b8294eb8991c824a9a8bb9d6bcfea20b0c415dab5350335983fa65ef57",
+      "id": "syn-20b327c3d257de805bf39af8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "86fc20c33ebc78f50bedfa72c37a1e07803d554163843a93e27298a12cc0f526",
+      "id": "syn-20ebd3e8e6e5a7b661287b1e",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "131f12cc98e0775ea7ddc7835a849b3ed68336c8acfde787e2f6e970bd0a1415",
+      "id": "syn-21061b5913a7d37b36108a87",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "507d717ce3d78a841c2569878fbdc3900f4856ad1ce61435fcecc2d2e5396271",
+      "id": "syn-21714087d54929e0aff97db3",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "e4beef2c6dda5cb8d592d087c1c98d311c01c4aa381ed4c7b1e789b3664f9344",
+      "id": "syn-21923f1bf4aadfa4c6322e1e",
+      "scorer": "exact_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 17,
+      "commitment": "0b65d1f392cc0ad34a211fd772040b59846e5fbd53a7e6f681d64ed3d1831cbd",
+      "id": "syn-21cf9800d3780399f26080b5",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 10,
+      "commitment": "a983e9b11d658c10ab4a05d15236f1ed45fabc49989e2fe617909c06622616d6",
+      "id": "syn-21fccd57d379b3a9980e39c8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "79ebce042c72c9949e440bdc3971a25076ac4a06e254a45f1bdb2c67eb55aa31",
+      "id": "syn-220bb9d78faddc8a463d55d6",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "d877790a7ccc8594b38d73f37ab2d44ea7693a8759e687ecaca2a7c87e7e56fb",
+      "id": "syn-22249a8aae567df304af6724",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "8c50a5321534c1826e7f7327619a118d7765e1338b6e2ec38cbc7059a559a68a",
+      "id": "syn-22b7aaab0941061a0fd06e26",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "9c48a5d546c2df94d28946d973ac8be252263791dcd9251e56cfdb9c34b92c91",
+      "id": "syn-22c9449da82351518b666478",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 11,
+      "commitment": "ce50590bdd469a07ef637f7964bf3107c6aa0516adc0ad4c4ca196c27cc7adb4",
+      "id": "syn-22ea74ef5f472ed9ac154b77",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "67ea4d7c13f48ac0781b0e0e04939e543aad7ee6755642d6b012e07dede15dc8",
+      "id": "syn-23546e1999d944de505e0975",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "50cf397cc1edfa573404759ab24547ac8e6cac8bb3588d0e838b8851c8a04581",
+      "id": "syn-2395cdccf6164fcc2cc60d33",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "315f7b24c007a4ccb6c4ca46d527d149424fc66fc57bffbe7bda16dca927aa53",
+      "id": "syn-2403c56ce6b56fdbab2ac526",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "229e57eafbd311950b3e6ed999b54974ab4880dbefbebb9505a524bd6f6830a7",
+      "id": "syn-24f4a1e3587224892bd0b03c",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "c7de8ac34f9177806f26950cd6121a0ec54932134f37270ca37f3c87d5042b0e",
+      "id": "syn-26648480adaa96a88c7ec6a3",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "d28119635aa2786765e407ce6f68a5ab138e6459a4ae589f2fc2ae54e5da05d3",
+      "id": "syn-266f8afb7786303755a9bcd7",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "821ec834e8af04184fa4148b5f4460b97ef6ced60d78d6ba2a8ad835f0b76ba6",
+      "id": "syn-2706de81910c3f77f8c67485",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "a17f1573fd7412d0043d3fc82bbc904cb52ee440eb548b4a03ba80f8bb172e9e",
+      "id": "syn-284daefdb873fc9a8db5f8d0",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "ec3f24eaa10558d5614940aadfa791885f4c241b1b1544b59e6bf3af3a37de14",
+      "id": "syn-28c6e00ff32001b4e0e06cc2",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "b356cb9d68fd16b3560657cbea1443dd3fbc1bde5aab81efd9a90216ea0408df",
+      "id": "syn-28d4cceba8d795aed4375044",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "0d510156f0b993535803ee91d92f07afd417da1a345106bb713f1aececfd2e00",
+      "id": "syn-2935b2a3c253aa419d556774",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "f18ba09851e1b6bbf24f02f1225b8a0080336b058d57f5c33dd7dca01ece2ca7",
+      "id": "syn-2941f36d67777e9b905e1a6e",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "bf8a3dede49a8f25e7d1a46626c9d91b98fea447882e82827413ed55e9c9043d",
+      "id": "syn-2b5d7f297b53858f97078b4c",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "667fa3a7620e4ad1eae4db673cd4cd09e8688573718a8930a43a9a722becd171",
+      "id": "syn-2b74034cc51e85c9986f09c5",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "856c1fb176dcbb8a341e94112d11b29f5e5586abf5cd64f7e94b08dcaf93c0fa",
+      "id": "syn-2b87107caedd974d73f06b1c",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 12,
+      "commitment": "a85edfa7b93449c3243802f97cf5d489c7d0d878a068fba5bf1289fb7e87f223",
+      "id": "syn-2c6e937f266b548b67bcd234",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "95de330e146af96f09def81c27f2c863a59975ae3c095bc708e7c8b50eaacb3e",
+      "id": "syn-2c94c5e8e1e315ad77d1e350",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 4,
+      "commitment": "5805914a6ae8faf926aa55e7dbce46bd3bf8014c3d514b533e4d3e3c8fbf131a",
+      "id": "syn-2ce86a0fdf13aaeecb3305be",
+      "scorer": "unit_test",
+      "split": "SCREEN"
+    },
+    {
+      "category": 14,
+      "commitment": "f856fa82c6e2ca4633f2aa48f97b0958f3546ff9ab7b62d6d27f3ce7eefedd85",
+      "id": "syn-2cecb7d67fc5ba6df3e246c2",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "68f176deb2309a681a484af560c89559b7510c75fe959aec1aa7d623d8b27ac8",
+      "id": "syn-2d31d6128c34df45bc6d3be4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "a59432b7ccb7f9c521a6d55c2bd621e82a10410c101649b36925ec645ee5be49",
+      "id": "syn-2d84e7a78401c884c5ab7373",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "4d784154654a0421b49b1aa253e14a5312caf8539c800b822f0b4721fbd01c64",
+      "id": "syn-2dedb02a5fbf631aabc2a540",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "7cf2d44e4ef2742fff5c655cb4d8da065e989535c4f15a7016e3daf8295643b9",
+      "id": "syn-2ee825c13be35ca1c3488e38",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 10,
+      "commitment": "0e2b86099f783229b870b3ca6bc9a7b2431acd8e22fb65a3b64e250f1dfc6d5d",
+      "id": "syn-2fd266c5cbaf171ddaee3cc4",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 10,
+      "commitment": "cc105154b3d7cfd1f34151d5c1d15214155e0e5c19d7d812b6093e967cf841d3",
+      "id": "syn-305ae38650e5bdf39ed338e2",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "8db94a2fc6a9ae355a0edfbdbdbbfae575e3c85fc99208626084fd50b0762729",
+      "id": "syn-3089b1eae7ccde5b7b21a391",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "15496c915dc0e44f35d9e213996a6254d44cb7d480bf340a7dc1827fba3672b3",
+      "id": "syn-311c24cabd6e62f610f5fe34",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "baf7baac8f37006fcebda9eff9eb3a9297b53088b3803aea63e7cff4932374e0",
+      "id": "syn-3137e2a3f0b00a9049820e7b",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 15,
+      "commitment": "32c63c7ec3ddd1fbea1bc9b2ac1a841ecba2242251b7029d571eda64545af421",
+      "id": "syn-31396b1da1c5727f988d35dc",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "d3c9942d6ce254597bfbc61cb2f2b7944645d990bb4342490c67992f929e0b7d",
+      "id": "syn-32337a3fd39f7268bb9c87ed",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "0585b1e6ed0ccade938fc8286d51aca6e61425148d43a75bbc75a662996addeb",
+      "id": "syn-327e888714e67c92961fd6da",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "c28901f8673cfc207a75bc4d0784f60de20ddac41dc8d0a8be08c309f272c25c",
+      "id": "syn-32d848fceef93f5eac8756a8",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "2994596685bb742796c9e808b788205feb7a31a521f8d1d5a73b8966f5cd0453",
+      "id": "syn-32f9ea4c664856b1f8f1153a",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "6989f22fa9692925cf6a35f986b1a4ee4d497b30d9ad49c104065d54bb6a6f41",
+      "id": "syn-3329f42365bd448e5c79f428",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "5f2afe1343bfd17a6baa1a60ed9e334cb3008d918ffc924d323568c318e1719a",
+      "id": "syn-332ea536940139dbc8301409",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "92108e4e89d7c4cbd4fc0485e193f91edd61e4eacbb139e006714f046bafc5ea",
+      "id": "syn-33341bd652973d14b8fe2c63",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 11,
+      "commitment": "66713c7461c388acff0a054e09e399ff1406bded70a309ae596c9b34aca92f86",
+      "id": "syn-33b850b42efa24da0ef9dbdb",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "c2f060087af54f5b9a33656ac55faaad69c0ebd98c9a20ef10c070a699bb2cc3",
+      "id": "syn-33eaf88ca00c67d4e8ff03f3",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 10,
+      "commitment": "bf394807c2ecd5fd9f3d0a112e02a0f28a6e073a62ffc551a2bb4a2bb668ea2f",
+      "id": "syn-34829f53fa269c34e3b281d1",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "1b2efe40e1730c2977b47f54f32805e5938d0972271bbb8f2e1831b0734ca37a",
+      "id": "syn-3507b1c41967cc5ef8c70778",
+      "scorer": "exact_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 12,
+      "commitment": "b8e042c65be9ec8ef92890036403d7b73f58661362e7e75ff13f14774b2c49c8",
+      "id": "syn-3580a17f3f4f6133fc373b0f",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 3,
+      "commitment": "eaa9aaf7664da075965f1566f07681e6c273b887dbee3ffaa9821a074fbb3612",
+      "id": "syn-35b1d98a4d7a9bdc7caa0407",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "1737df290d9b78f4799bc9e791d9707c738a53cb581bb758f1536f3a392370f1",
+      "id": "syn-3605c2004dd133396b853f6c",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 4,
+      "commitment": "924e58151de68fc835e043620ff76ff34ced537d9aed7164bfe399a40fb09a00",
+      "id": "syn-360e8131ac09d1f7f4a7ae5f",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "b58f7a0e76e20aa8e76786db3e5070137cc8fccc0c77f57b952bdd1f874156ae",
+      "id": "syn-361cde54d8d61cb9a37349f1",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "446607a41b26d61311a792c7464bea75c329f9add1e70cd6e6b990dfcba9e322",
+      "id": "syn-3791dd74fcf4b2d1eb6929fd",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 4,
+      "commitment": "cc365e3344b8bf209c95e206496a599f819c74894108e199d7e2b2ca8f0b0e21",
+      "id": "syn-37ceb6a24661fb0026eda28e",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "e6fd0ebd0b294f005c708e94d22a3d5716af7a828b9a19245fe41b24abe0c045",
+      "id": "syn-3877c61d1e72f01433b83313",
+      "scorer": "exact_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 11,
+      "commitment": "32a053e11d1aa81992325e93b409c6aed384e31139e20d323822e530484b26af",
+      "id": "syn-38d07eb6f4c27591d4053a39",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "0b575a80a209a8c9b7468dedd93903570c50f7420375edbaa8b844543e1572b8",
+      "id": "syn-3a14fe0c7d4e912d1e7d5314",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "f62832065b9d067d620b4d3bea7416dee9d3f9db4ee8b8c58fb77cf80cdd93f8",
+      "id": "syn-3a3ad259c0bd10ee1f782c72",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 15,
+      "commitment": "9a3c57f7aed3fbeb7facad8ee1aba3de31ef6d7e7d288811ee9b27984d229654",
+      "id": "syn-3bb4f246866c85d0c41ee1bb",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "c1e95039109db29e38fede3d4357af55261e70dbd753a78e49e75a50b1a6f882",
+      "id": "syn-3c3022be3b93cdee38d6a963",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "72b8fb94a31310457b41e57e9c5564cb8d0d2f9b24ea2259300d48dfd9cfbecf",
+      "id": "syn-3c5da4688a5002ae2e6c987f",
+      "scorer": "unit_test",
+      "split": "SCREEN"
+    },
+    {
+      "category": 17,
+      "commitment": "023ba3fc859d2c8562bed913f557f9280f5955be7a9b5b3f3bb2a42996cb42a5",
+      "id": "syn-3d0b906e15e1c2a7f3b2f71d",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 10,
+      "commitment": "2d4b8c2cb43fdea00b21537018f4ed1be7dcf5e4d5b805e530e966ddecd2d0f9",
+      "id": "syn-3d0e19c66adb5a3c78bcd69f",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "d060526f65c459f1175a0ac004a010096e74475cfbf8abec14437c545b68da1f",
+      "id": "syn-3d10dd1d1d0db19e028acaf8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "87a2da822c1cd8d2c2f26cf63529fbcc86a2f4ade3029d1e8c7e0efd849e6c3b",
+      "id": "syn-3de565aeb745641d926dbae4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "a5d420558e785348946ae81ea560174fd909321ae6cd8a60d2fc05a6e55af5ad",
+      "id": "syn-3df5f0e1301c07b1f6946a71",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 3,
+      "commitment": "b469547f227292f26e97ed70ce0f4d4908d9d081a2adbc5584f14362476b3834",
+      "id": "syn-3e7bfc4be95baff9905619c0",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "7746685445c06e09e48e3889a9df255345efc05cedf41803c6740902ace4ef0c",
+      "id": "syn-3ecaecd16fad997bd396bdb1",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "0c80f2a6eddafa98186b51bd37974d0a365746af5543937cc1a3f63197ed8dab",
+      "id": "syn-3f0df755df4b56b153de4968",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "88012523f1a8c97291d19b27c66fefa9ecdfdd4954ac220bc63e2c305245e9df",
+      "id": "syn-3f23edd2a27a8e2098e094c3",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "6803be1ac4902e8fced614a15f2c0865a22d0e999fc229f9484486c4dc2ae3ca",
+      "id": "syn-3f9166177b27d7b853a5d1ca",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 10,
+      "commitment": "cc0e014fc4e691ae449ef2e703dc5fa796bafe27506329e043f6024823bcc8a4",
+      "id": "syn-4075b2f0778d6473431a3bb4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "202639dad495558307849836cbc4b2745381feb4cf343561536ce6154e91d722",
+      "id": "syn-40b74deca7a4df11f5648305",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "c5f1e1c59610c40df45746fb46f208851c198b57106217e3be8cd0739900d464",
+      "id": "syn-410319b949476780878b6f14",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "e8acf2e9fadffd374d977f53a473e194e29fc331b166940c927f64d4b344eb99",
+      "id": "syn-41111b7d911f1b28e4be4f06",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 3,
+      "commitment": "62c0f2cbe39e26fc6385953ba7faf758eebeef6615df791a80b7c9a660ad55e1",
+      "id": "syn-41acaff7bf25fbf61420b35f",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "68d7b2dcf8f8470bec2254477d11c4c5cb4275c2566a9f369e2a68ab8d553f94",
+      "id": "syn-41fad99d04ff04d30354cd34",
+      "scorer": "schema_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 12,
+      "commitment": "3695895684ad7f7b29f6962a243ad566bcb2908588ac30c91da1cd34c104d09e",
+      "id": "syn-42d3789922a2f6d8ee0bebd0",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "2d733795424b659ffd4744a4136cda71c5caedc9f063264bd276dce8e02ad066",
+      "id": "syn-436e955229755c9a6e18cea7",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "a60cb33bf61448f4c8ba5b2308635fa826441e03d7922596b42cb8a8dcbea4e5",
+      "id": "syn-438136162825644db425d199",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "f7203db441aa8ee0588c71e8d279bbc4691e12afbf5ac7303254fa8e766b8fea",
+      "id": "syn-4429bcd6027124496aeeef3e",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "e8251c3197e7b5b9dbb721f16a4ae1566af454437675d350a63176406e663e73",
+      "id": "syn-44464bdf9fb710cd55257fa1",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "4525c693c5d27465f0296324797c12e770c6bd6ac18837475b14a6b00c6b836a",
+      "id": "syn-4448c54f76ae5e6b313fbcec",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "f718a2ab2328dc9d6748d9f77fefb95bd178954e4b577cc79d3df58041dd3129",
+      "id": "syn-44c736bbad799b40ccf56590",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 4,
+      "commitment": "3c5f6112a8c082cd643d0cea54a27d35515924b27588cbb4f84986e6c73909d0",
+      "id": "syn-459d9ea9329c0f233a32bf50",
+      "scorer": "unit_test",
+      "split": "TRAIN"
+    },
+    {
+      "category": 10,
+      "commitment": "af730b95c3e4e6630238907f52d4b90783ef9926dc2f6373b44442388d33f557",
+      "id": "syn-46dad29a07ee41f91372a5be",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "bf78e44f43365e6b31a162b298b9af67b822a44c884c180af176f53d038aa381",
+      "id": "syn-475cef05d6813ab0935bd19a",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "e5d3a903650ec361fd22595509e25eefe71de74284062041f2cb5eaa4353c4b3",
+      "id": "syn-4836d5c3bbc9fa444ad70cda",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "366dae0df30edf78861ea726faf5a37ed64dfe2d51f9001dd0affca5f7acb70a",
+      "id": "syn-494579f8b60a72eb05c573ce",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "818540e12f48949397218783333263180ada8cf874c5b210243676e82dc3ad36",
+      "id": "syn-4b3e16c90f354ab27f4f195b",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "2f3e2c5192b780a2c8ee6992b08a52ee43ea316d205493b1be8d39236fe1c0c3",
+      "id": "syn-4b74e174c15fb7bd21939b5e",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "bc4907efb9779a8c7b77fd147e1b22aa8e66ee9dc8c54c078fda298dbc878aa2",
+      "id": "syn-4be3d4a9e23ccb4de56eb65d",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "a82d078e4405642a3f66f882f93b63e1587dc9805741beb700ba5ffd03e5580b",
+      "id": "syn-4c27a8ca66a6424645939ba0",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "7114046bda1111796100d690401aca52a54845f4305fe3151c5785e38a705345",
+      "id": "syn-4c5c86b56b4cf621ad00e75d",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "b6e3267664d88e7d5e20445d2f09d234ed54d5311743ce08c5b45d04172a2206",
+      "id": "syn-4c61824a3082bdd832ff74a6",
+      "scorer": "unit_test",
+      "split": "DEV"
+    },
+    {
+      "category": 12,
+      "commitment": "3c41cab91224d38268b82a8accfe527dfb4b7ae8c26d8e21e41268c9e8026ece",
+      "id": "syn-4c706ff94039f53e7c2245d1",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "8fc65d3bb57c65aada1fe582507a9c84a4c7e6b5ff95d6a497fa4dd005502f45",
+      "id": "syn-4c7a066b54760b0e53ceff13",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "276963ae50627342ab9a1538ca1c8d6fbe7b092a13eeb54b48a6d0f98cb6c759",
+      "id": "syn-4d8f1de09637086665ad409e",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "fcaee6323651fca4066c9c70604eb5ac97ee454dcd03dc3ef2f7a1a54d63d54e",
+      "id": "syn-4db1dd93d57bbdf74505e89b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "cd23f41968f0e1776d36b78ad71f553dfe32ce8270d1cc9cda0d45670ed4b20b",
+      "id": "syn-4dd9d8715c15fae5b0c1aca9",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "57db1a9ca0a90d8f3127ae76a02f9b22b7aae1009860db29fd556f23871071ef",
+      "id": "syn-4df19ac17f3afef6f50844ca",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 17,
+      "commitment": "e7c6ee339f8e5c42af9b9358473510eac401c79a33a9d30191fdea2bf4c6d42e",
+      "id": "syn-4e461c7bf1eb38bb63ae4667",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "5234a6c849c911cbb4a2adf250bbf20ff45fce9ca02a9d2e6e3250056c4f76f1",
+      "id": "syn-4e81321e1185fb1f06cb41c0",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "e6b885e3cd7c7215563bb6efb3a778fc1d6e895957d7ed88e91cc1b0b754d970",
+      "id": "syn-503facc8375df446f3e97eaf",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "d42b3b682541c281d12b1c688b77311ef3478b88b93339ba41f77fd07d73dbe9",
+      "id": "syn-50b627a12b2a2b75a70a8290",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "4b56d654be4bb143d835e6b6cf2d145f5619c3095c9f92b49e4189452ee4fa76",
+      "id": "syn-5180843ed59c9f1286da9500",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "0cd9a35423665717431ce5ecd64e63c926883e45d3dc532970c1fbbaf13b2ffb",
+      "id": "syn-51b8e662400c67651d88284b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "a8684e28939ae0817e3232d466d2c9ff077c182b3161ed85e419221882f51054",
+      "id": "syn-51d3043b5749b9df3c11ed3e",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "42ef93b63ab50d8791e564bfa229670641baff8babb81ef2eb01459e5d076a43",
+      "id": "syn-51e9a408991ed480f008e130",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "5072dfcf3eccad0ebdc804088dd58d591e7ade2ba1516eb89dedb0c06bddc93c",
+      "id": "syn-51f65762377c1d7d7cbc4317",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 11,
+      "commitment": "c1f51346409ba2f0e122dd93df4fdae6da010212930cb61ab95ce4a8b7143fd2",
+      "id": "syn-529a92b64a71e0b042413a42",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "69779da0c57519eec49d25a48e10103118710fc60257495b501c2e6d7468559a",
+      "id": "syn-529df2b16d268d912b2ddd24",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 4,
+      "commitment": "c693d610ba5eca4fd05c1ddca7a083575f33230446875a7d28fe02c9fcb2e2ed",
+      "id": "syn-52c62ec8758a91da542781d1",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "6c65f429ac0f9fcc3c583bd832ffffb2399ea9c6393b11bdf3496f0685072bfd",
+      "id": "syn-53d42ee9829719d0235749ef",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "1fcf4a8c76ae2140fcea19e268c54413854e6b04cef116dd33ae0fbae3cd0ec5",
+      "id": "syn-547c4aaaee30fabeb3e242f3",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "c3f4ff754b00ad50d66671bd64773d79bc0f9927f02075d77aa5b3a5604219b8",
+      "id": "syn-54c3bda98ff63d5a908d7751",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "4a83f74bec6390a9838a89fb6aba3763b2a5c270ecbb74e6a1070aa84347566b",
+      "id": "syn-566c29b978388be8dda80f50",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "7fb38a2d4947a5c71c5c71f602a2ab912001733cc78d45a505cef271533407be",
+      "id": "syn-566d5eefd3e7a9e8c7623683",
+      "scorer": "schema_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 4,
+      "commitment": "bf4be6db685dd6bf4880265c905131679b72a51d862e2f066c4db9b16dc82b34",
+      "id": "syn-56fa7b421cb0f46b779b2fc5",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "61fe4aaf6edb1110bd67d558c1156c926637079b4a337205581d5a2c4071b462",
+      "id": "syn-58be46c60aee6c53b3565bc4",
+      "scorer": "exact_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 15,
+      "commitment": "3ab3fc9c8141b16678aa755378267f7885a3c9ef85d7b12a59342a062f3f7d16",
+      "id": "syn-58c41dde4e7f51adfc931a59",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "4425152dd60abbb9df354ac197c6d0339c3fb4a309875883e799acf5e06a78b2",
+      "id": "syn-595f1ab2a2642aec967558a5",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "27c1a278cc364e3a5c58aba66f2d7c3676814e3478e4576f36a28f77844a1725",
+      "id": "syn-596627200c511a93b871286b",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "a51293733c3c50df601acc1dbea5971d401063758baf3eedc47251ee1cb84140",
+      "id": "syn-59cbb17d685ff34e03c11b91",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "7eb00ee7b67090d484eef5cae824a342ac064a334d7a75c52f45cb1e637da84c",
+      "id": "syn-59d5dae89724cb712b151c1c",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "4e281478c2fbc9c46470f9894a7d49f9bf5fbb5a1dcd3ab0d8f8937892c994e6",
+      "id": "syn-5a854ac7aaaf5be81a80ad81",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 17,
+      "commitment": "d8c5c1feaa4ec68bf2a7b2a883bc2cbe0d4ee420f136bd5fe0c4c061df7bb8e4",
+      "id": "syn-5ac3fd986caee583455f4b4c",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "86029aa7b20ca9e2eaf97ad1940e7239fce10cc341f11bcef58630832e82df90",
+      "id": "syn-5ae3c1ef0ba11edfb02f4b1b",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 10,
+      "commitment": "658ec0e7e7e1bad65d021ae22c49f6983033deaf9f10731f977cb5367fe20b2a",
+      "id": "syn-5aff1200fadbd936d6010ca0",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 10,
+      "commitment": "98a5d3ed8c2a252a4fb3937cc3de54f4732f0653035e1da17c61e7a38a6113dd",
+      "id": "syn-5be3b67fe0be68e4584fb5d4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "5e1ea4aa2ac343d32ef6062f27289d5e858df17861d50d8a6dc9b1178481855a",
+      "id": "syn-5c947973d2aa851869660740",
+      "scorer": "exact_match",
+      "split": "DEV"
+    },
+    {
+      "category": 12,
+      "commitment": "50248b4d867bf83a7adb6217a9bbb3f8eab021872b5cb322c8a1e573826b77d5",
+      "id": "syn-5cb0fa6a2bf7f95cb610a9fa",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "caf576ddf83f0f0d8d24fb6bdc0e565806a9b82938e10e052844c64239be0fb1",
+      "id": "syn-5dd3256354014190e7fb7476",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "5aa4a5dd98ddef52b6e935f5bab3cf85c9a179f6877aa9fda8f4586641d44f8e",
+      "id": "syn-5e40615279d4f7fa47cb1a3d",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "e0bef0f65750e780ff486d35c46edfb3c39e673fa78d88be57e872127ebc5930",
+      "id": "syn-5eaa29899dbedd54952da233",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "5c899dd6db3e6a0b7404ca79a920a5a99cc68d7b0c6fb2d605f223fd371d597b",
+      "id": "syn-5f4dca0feff3470e32b5efb0",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "c5135d0a46e21aa7d84062abe6f111d7d77935fdae0baeeb608a6402d6605e05",
+      "id": "syn-5f914562bd15d281027ff5c1",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 3,
+      "commitment": "a998d8d6917f79c6a04ac785988c3d95352b2072dd47f0f44d13ebf7c50c136b",
+      "id": "syn-5fb57a7073869431e8ff4329",
+      "scorer": "exact_match",
+      "split": "DEV"
+    },
+    {
+      "category": 15,
+      "commitment": "8db229f56d0461dc0cc7385bd1ff8d1c050804765666557782494de94407bb75",
+      "id": "syn-600827b0a4615d6c64346cec",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "66d4f7921c7c1f899664963088167f2a5007777d587c6ca874e6d8d3d38a0657",
+      "id": "syn-607659f0427a8f899bab2649",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "5150c112ba8b0f92a7d5c750fffd52385f0d08d0f14a850999759ca526dff196",
+      "id": "syn-6169d65ef36fadc911122044",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "688fad9b2b4501fec64ca281d39856b8674a9eb19a8281ad47b553da6bcbf522",
+      "id": "syn-61b9e69298f966ad7690877b",
+      "scorer": "schema_match",
+      "split": "DEV"
+    },
+    {
+      "category": 12,
+      "commitment": "e007b2088779f0faef6276f0853a7118970a721166d855a06a9adf629dfa95a3",
+      "id": "syn-61f15f9d1294d775b9e48cc9",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "a29746b6fb3c7c357c55cea5476accc1fbc3c843b3d020b13f9e4b1e61a264e3",
+      "id": "syn-6242aa17ab9454aff183a582",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "6b898ad306abb2ca9891ac0bc613ed8db84f4b66791b5aec0d5a21ff0a6bdea6",
+      "id": "syn-626d26135f7cf05e1204eca3",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "2f4be0ea43b6b9a4f3a1c7ca7b106186126fb08ca0e8c2207a9d64c47070298a",
+      "id": "syn-627293f617f0249e9aa8b7e6",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 14,
+      "commitment": "cf8a2083a5c893087fe6d8fed093385508abf7d0f4723144ebd9026e3426a390",
+      "id": "syn-6403a621528515d4146a4edd",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "4f00fac3903244259515bd3cc7ed1a234698503d4eb32e2178a9c4e0abb6b344",
+      "id": "syn-64705a03c334dbde71141ce7",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "52c67067132928c414ce64b9f03f051d28a4d8de268dfc9eb5a99c65cd03b09c",
+      "id": "syn-6474d0223e429321fe15c30b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "0d73fa67b2b82e2f1fc1c26af9d5625c10431349c936244e0b76628774bd472b",
+      "id": "syn-65f3ad1956c12d173a41fff7",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "4501563837e53a99f7acfd45e57b3a4a81b51a0c208e5fe21e0d64549ccd01c4",
+      "id": "syn-65fbea3969a6b4e888634f52",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "ed3863331b8fa7cd4d5481a471fe38b56ae93ca62dd65ee9925b5e1acaedc156",
+      "id": "syn-661d0032994e3a06f2e0b9a5",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "06f37eca50d370b1d314ba2bf43d848787da4ea80adcb048ca649fcfff7da102",
+      "id": "syn-66b1c4a3f576cf81d7fb5cc5",
+      "scorer": "exact_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 3,
+      "commitment": "7125746e502a6d613c2429ae4f5738e05887ad91a14a7869f157468fde0ab175",
+      "id": "syn-66febb2a30759072da64547a",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "29eae678e014c6140d800c6cbc831c45296809591281445aa94e118203233411",
+      "id": "syn-67a10beb3f4a9f2d0cacb657",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "1ffc7072b1a11694d8933d53475dd7b5b16b29524d6b9c35caf1f85e18914977",
+      "id": "syn-67b5aeb02c3cb80da40ba101",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "d94d921faf171d9cf4723ea2c04dbf72af46717c424aa22e9d2354413a9ef6b1",
+      "id": "syn-67c09d6c0e392db21554792f",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "079efd08879d340d9d27dc832823b09b592b61ae81d0dc283fc85b49c96fba74",
+      "id": "syn-689dc05404c65bae21c5ee9e",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 12,
+      "commitment": "a8a4578afc046eac62c9d7e7f8ac69284cefec818e96f3d3553f2fd2d27adb51",
+      "id": "syn-6934eeebdb0c413865fddd77",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "4ecb7269b75732264e5409f86b55697b914e0e9e87a9be69b3363dc71e029033",
+      "id": "syn-6a34f926f15815cef5da63c6",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "247e0de0e79a2e30b58141df5c573d239492cee596f60d665c9f99fe44830241",
+      "id": "syn-6a6e8f94778b5130f5522a1e",
+      "scorer": "unit_test",
+      "split": "SCREEN"
+    },
+    {
+      "category": 4,
+      "commitment": "e6ff29afdb987768ebf01b3f70e5a2e0a59671ec302fbd3a931b4f5db8817153",
+      "id": "syn-6a840484e3d5ac7e63af9b88",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "c2afe003d597dc48c2ce57f401c8e9cc2829f77e37b47d8a28a707e18a3a2ad5",
+      "id": "syn-6ad25fc3f9ba98637cfc253f",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "85e2cb91b8b08bf201da3b6b772f7486c38ee7202aed89ce778f5ce7ddc0d046",
+      "id": "syn-6c6623df36a54c2c05e46a6f",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "551173981c64bc71f9b04bc1d0b51599f246bd69ecfc9debcb5d32a711f52737",
+      "id": "syn-6c77351cd49feef532ae3687",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "3a759769b5d7d37b9f00c645f5a33d35fa50de6cbbddec63fb4ad4cf9efe802a",
+      "id": "syn-6ccbd8d373cc2d7e47672d28",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "b139e1fd644c38ee98c3240dbee884014b5689cea735115b46d754470fac9d93",
+      "id": "syn-6d1e89a837658004f0ccc578",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 3,
+      "commitment": "3ac9e0b16bda7fcfe0a95e6ff6d5abc1b4f48d615bab51ebd0c5ad18e2d7d180",
+      "id": "syn-6e652ed32c8fff27030de95b",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "7033d15f37dad490e88b4c1acc73ba4145809b9793fd9fa18b3d55194c50702f",
+      "id": "syn-6e830918fbbfbebc1b0b625e",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "581a917b5fef86fc94fb8112a1715f3eed77b17e7b4858cf847e9054b96e6bd0",
+      "id": "syn-6eaf97c3c4eba1e87e40c373",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "f1253c930f90d88639658bd762c3fdc73566fb8f8db7d5b7cc79e4d102ad46aa",
+      "id": "syn-6f53fbb4560abba475bb96c1",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "a18481e409275939a3b853857f462243b3969face65971ad7e5d1ccb0450cd53",
+      "id": "syn-704185ca71e304adca53ec95",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 15,
+      "commitment": "b5360dfd41584bdd9799884e39d71b2c71cf545a709fc098ce936d976d0926f0",
+      "id": "syn-719fff63b04b2b85810dc984",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "9537c3e0243cc545ebbef59d77f5a666e136878a4acc7402b19088f0fc38201a",
+      "id": "syn-71cc9fa0ca8c55c9f4a76c64",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 14,
+      "commitment": "5bef2bd64029a126102891e0b0fd78474a5e4c1fbfdd666fa37303c9ed09ceda",
+      "id": "syn-725c1494fc4f0965f82715c6",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 11,
+      "commitment": "cd88bcaa36051187c08158d6bf68b8069042e42cb3964c73da11208ae21fc159",
+      "id": "syn-72bed9811359f87530b8e8fc",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "585760456adf780a5838c338539b613cd9876dfe7fd5d0d2545927df69fb05e9",
+      "id": "syn-73a7c6cbf524dd4a924841d9",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "7d46a452a86b9d9c9dcf40576ef93aecdffd5e579476f056cbca2892310fdeac",
+      "id": "syn-74eaa57d3ad98710f7e12203",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "fb726f995c9ef33eea0de8393b649bec32af1f7d850a326853551ee93da241e9",
+      "id": "syn-74fc771f5687dcd0abf45e66",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 14,
+      "commitment": "a28f39811f2a9a24c6f887e367efc3eab873fc8011c4600cc185ab63b9c0c704",
+      "id": "syn-760814fc274fd3e4239ba6f5",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "8626660f165f1579453290136f30388feac7950bf79dce492166df6db3830e25",
+      "id": "syn-7632ff9c34175a058e45ac5e",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "14195c1b33390fac86ec0f02acf7843bfb6105dcd7c0be4717ef4ce81d9aae69",
+      "id": "syn-767a734c7a22e564cf131b15",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "165018345adaa85028a93a6aa5996c72454dbdadf352bac4a686dc293bab59df",
+      "id": "syn-76bcd4d674659b3fb4458eab",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "89060ada53f9f097f73163459df0432b94fea6841d5524aee710280dd7616f6a",
+      "id": "syn-76ff7deca0a0bd0d977a79b0",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "448d46efb51ca44b3dc220cd51cb8ab5ee89a94af77ed64f33f46eca9bcb425b",
+      "id": "syn-77289068fc1469232e5bd40d",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "4ef5bd155c5e89f41a29303b73056691336340cc991dcacf4383955653bc51e7",
+      "id": "syn-7760bedb05589fbf71af6543",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "a23df9c8064731712aa0bbc89774289948450da8c5316bb1cd0f6783cecf4797",
+      "id": "syn-77bee189099510579c03164d",
+      "scorer": "schema_match",
+      "split": "DEV"
+    },
+    {
+      "category": 11,
+      "commitment": "4977bcc9ba80066ecebd1e8d40a0813f72bb8eb08309abdf755d386b7ca6ff3a",
+      "id": "syn-780db5467dc9b9f098bb1742",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "f4b5baeb255d5b8978a1554b761ee27a9834123b49d5d9fac7703af63e1a492a",
+      "id": "syn-7821b588eefa72a01d1dcd93",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "541f61dbecf17205b70b93968c172668104485f37559f9e2704dd21b126376b6",
+      "id": "syn-786eb46d75e08e9ce5932e81",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "879e82fb2501cfb07c49b4b7c9d96cee596fd1a308734c62100168d252192866",
+      "id": "syn-788c0af3de670d78a6ae6571",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "055d589e5dd212a97d25116aadf834e04b36df3db9651edaafcf6a05e5b1063a",
+      "id": "syn-7960f4147fcbd6fdaf0d624a",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "b051632d9c073781a90f5519c0003d557d0976dfd86a04582f27dcbdee639a2d",
+      "id": "syn-7967563332ebb28915b17e69",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "5206a48e8da462a678af3630e568cbf28bdeeb69f0d9993a09a0285ec3eea1bf",
+      "id": "syn-79b43d4171c4d470ca04d5b1",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "b4d5529bfbb7cf16b8ff324cdac48f90e439483104e1b48c971219eb5e444482",
+      "id": "syn-7b57d2497af2df298eeb82d8",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "cd1f7f47a5b112b1366767cc994aa57899018dbeae1e00305cc8d0dac1b6c5f5",
+      "id": "syn-7b8a631072627bfdc194e0f1",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "d513e51874231dcf04c413c71f76a655fcb2857cc7804a2dc6d64700c7ffcd4e",
+      "id": "syn-7c13b1655195518ac3968840",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "620e6d6585c55c1e88378a67f2ef21eb47843e98d06288e4c7f27c1086090407",
+      "id": "syn-7c8185cf8ca0b49284accfaf",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "ddddbafe64a7f0c7fdf4a76c7da5fb9d1977a2d612188073b5642f8705e7067f",
+      "id": "syn-7d0d1cf7eb8adfe2ba758321",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "f078f7df0dd2719e615630930426ee207e301302d207706e0aa6c7206397941f",
+      "id": "syn-7d8fb9638ca7e40ddf3e49ab",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "1528cd448c76a5e95df8b9fa26a00d18298c5139035080877c62ad34e9e65832",
+      "id": "syn-7dede3f1169cdbbde7b457cf",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "29e10c3820faa3b082835c16457bae6c959dca51828083274b94eff94755deea",
+      "id": "syn-7edad30a5d25c46f35a1069f",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "c864e97f443c8fd4a83dce7a11838cc3517edfbdf65a825a0208fa9bc87cd8bf",
+      "id": "syn-7f45a841345cc02c5383daf3",
+      "scorer": "schema_match",
+      "split": "DEV"
+    },
+    {
+      "category": 11,
+      "commitment": "cd62148a453df3f3f170d0fd3e81e6f0f9fed903c54c9b200d16a7bbe6bcd15b",
+      "id": "syn-7f4ecccab0b5de3917714cd2",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "9bc4be81c83f84d5dc78fc43ebcd5380d2bda1f4964a0720b5c4dcb2ca84d76e",
+      "id": "syn-7fd5461741db99e5665c6e0f",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 14,
+      "commitment": "df10c33d82495e4ccc72421aa6230f766913fda461d70862b7f863862e98474f",
+      "id": "syn-80180e4cdf723fe3cd3eb954",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 14,
+      "commitment": "6fe314aeec4a3555470e04ed615eca576e6b5a1d555226fa0708e10f51092a92",
+      "id": "syn-801f0688c05c8ca788c9b211",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "e8b0fc17280b3c227ec9c4287b8bab2ec9d55c94f75d913332e400df00706a60",
+      "id": "syn-80351ab284c63dd1fd4236a9",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "9475a7f3bf82d6045b5ac40a4b44da81a98dcf5448deb3a9f8ff28ab07d295e4",
+      "id": "syn-814b1ec34256bc80c8d19790",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 3,
+      "commitment": "a5feab37d4488f2dc5447c8fed49947a8c37d44f23b2b8754319613ba2504145",
+      "id": "syn-814cd6ed70733030554f793e",
+      "scorer": "exact_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 14,
+      "commitment": "b92d58e4c104ef1df80160facfee6a7721065ec1822e40cd8e3c084db651dd5d",
+      "id": "syn-81526292aef907a3d593bd2e",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 15,
+      "commitment": "59a2b0d963d9e11ed59c7c8a366203a78e1ab4837530737bf1502e0d41750e3b",
+      "id": "syn-82d52f2d175edd2a69f32f31",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "4aa73bb0b00bbbd5f46ae512b7aed533053fde5d22d0905462c7dbce90f5537c",
+      "id": "syn-83111be13e37ed023804262b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "9f1895042f14bfe36752d73ccee936681c6f537bdc715c16e761b23d795d0bcd",
+      "id": "syn-83208e5c1601cbaeea9fc396",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "f2157eced006cf08f497a704819d546762585cf86913d52995569ae3c3cfc7c1",
+      "id": "syn-8326e0f175872ef2d569cadd",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "05d7044a4029719625740bc88346f17757662f0baf8fb850211d83f4b30ecb01",
+      "id": "syn-83a3677afd9934f00d61cb28",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "533ac7f1010ef14d73e15e783f5214f9374e33befd9f562eb90511236fda639a",
+      "id": "syn-83ef2fd290a03f97e91dea35",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "9573c328eff03f8c2d15e07f9718b21e76a448c862b10d2ba6042203f2870f50",
+      "id": "syn-84a891b7f0d112cd04881ad4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "7fe5a4e0e61b2d1f50b1100bf22f32d811b000b89f7db071639cb4bd3125d19c",
+      "id": "syn-84b7f48aada4331be6087484",
+      "scorer": "unit_test",
+      "split": "SCREEN"
+    },
+    {
+      "category": 12,
+      "commitment": "97cd8e16cc3ceb5b6bb3713f939a93de3113d0040e99e3db31f4def4f044d408",
+      "id": "syn-84dd9cf34fc64a9f30cd123b",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 3,
+      "commitment": "7e5075984fe8e4e0167f67fada73a42e232e6f3a671a07f9d08aa94e5a8d1ebc",
+      "id": "syn-8513b51e4617bf05f4717558",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "c22bac9444aadfc300d20a6bd06d90afd2ea0c7f39184488c0a42a34536d6b92",
+      "id": "syn-8551c2b6320c46a0f810fabb",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "3eecec6e85a5ea2b2f680f2995d51347ec032b534e78fbe50f6a655be22aae68",
+      "id": "syn-8656785ce7512c9dfb1903b1",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "4f54583d585bf4a78d7a8cc5ddda6deb4da77cf442b1123d16d5d0cd8d2a6255",
+      "id": "syn-869d9bac79419f9596d48258",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "0f09b1219e2df1b52a53a835bdcbd0a594afdd33c89948600499ba2ee9cc4242",
+      "id": "syn-86f6c040fdd2cc29ab4cce21",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "94b727f3a28d72c1e1e1f03cfd209190eb0bd7c59fc6d3c2f0bff2da10ca0055",
+      "id": "syn-87ec46beb8e89c33529111b9",
+      "scorer": "unit_test",
+      "split": "TRAIN"
+    },
+    {
+      "category": 12,
+      "commitment": "34d0f53d36fc123f53361c9d2858b9bb5e39e4a852a6158a8b973109c85c02d8",
+      "id": "syn-885a024f57c9940d3720de07",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 14,
+      "commitment": "ba20da67904fb1a90d15726fc86927e851a2c949f39c7ea85856b0748aaf1dbc",
+      "id": "syn-88f475620b63ece35da375c6",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "7f6e31feb52626b182b08cf2ef1032b782bf85d44d272d3641f561163d11dc40",
+      "id": "syn-8907ba122c65d411f4f5a158",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 4,
+      "commitment": "c438f69fc7fd05cecd61fbc9285c92964a770ef9a469e1583dd639b47f09e3b6",
+      "id": "syn-897cfbbd6815b7d345272090",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "b091eb689efde86fb435087ce556d9dae8b5fc45de243bea8fba84aa392d0a6f",
+      "id": "syn-897eba5f71ff8e3855643212",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 11,
+      "commitment": "0ce01568f47d4fca7b54c8b7b0555b125bd9cc485cd6b6539dc720f0c8f6ed65",
+      "id": "syn-89b5b630b4933e57c99e342a",
+      "scorer": "schema_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 4,
+      "commitment": "fac9bf214768e46d72d1a4e1c3f0938a485f4417be271ee99780dd73085be05a",
+      "id": "syn-8a5ede7629c31dcba22470b3",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "2389dde08cceba1288a4ee97816a7c3471bfbf17501ba8b79c1f5b5f990507ab",
+      "id": "syn-8aa7bc624df8a61d4456a9a4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "641f9d7cf61b996e93194e8bfbf5e97e7ed06b7503809265e16ab805b155a9c7",
+      "id": "syn-8aeb1d968384c41c2a1ebe74",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "8f01d29907b1cd7a1de20541e99ad7e87050a45565493fa187e626bee91df9bc",
+      "id": "syn-8badb83634ab3238c4d63ff4",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 10,
+      "commitment": "3f31d1ad599821f0f21175cc2904129cb79a9f8969a4319cfc2f2789f4bb7e6b",
+      "id": "syn-8cb9c463443ec713b3b699bb",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "0f670b9dd6c8a7c4037c3beb1a881102185b9bf3953bb2f729de504550797b6d",
+      "id": "syn-8ccf40b2b17a01539fcf2f36",
+      "scorer": "schema_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 12,
+      "commitment": "bb11cbf81a2307aad56fd6f13dac0f72feb4aee8d87b50af6bdc590ed81accc7",
+      "id": "syn-8d8855b2f56be09bce2f9965",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "5979c71f4d6752c791925650f8d3c2803de9bf4d83e2db0d01c350c7324b8507",
+      "id": "syn-8db12f946aceac70dea115d8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "5227de77a6f085c21234292cb94e37d8b32e2f29209548f0bdb7482d321ae1c9",
+      "id": "syn-8dc1c9508c716f7e88b344b5",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "1d08103bc1e9656b90f45badc38da48003efea60a7a0edd43b5917c2c40540ad",
+      "id": "syn-8ddbf316615ef9486d6738c6",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "748caf71b231df7f2da19cb3c88ea196ed3153bef7fd502a223cd702627d0271",
+      "id": "syn-8de51e3069aa1e8486669f9c",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "0c93c15a84439d4731b4dd87d51797de7c87e8edee1c2169df4c08ed07d74ff4",
+      "id": "syn-8e64c1bd796068b991914414",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "ce6d1dce3a14fbd2f2080481ee7d080559026ed737dd46c0ca9a22e35dcd4d4a",
+      "id": "syn-8ed3305b5046a21a208ce074",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "6eda84df8fc9bca9c8b573e1fc495f7d458f1663a4565c5864e46868856e642a",
+      "id": "syn-8ee35ac87d1f7e2e7ce036dc",
+      "scorer": "unit_test",
+      "split": "SCREEN"
+    },
+    {
+      "category": 17,
+      "commitment": "9a61fd06763073e178741879b1353f010c9bf73d9d49bbcbbc46b1554641dd80",
+      "id": "syn-8f16cf9dd05ccb47217d2924",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "56ee6db4dff687229665f17a392fb34fed17dd21399b263fe012f0aa1f4fa2dd",
+      "id": "syn-8f2dea8dbfb97d0698280c2f",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "6ffcb709dc6537d187fb5716b198f577ece6dae8794e1c7c37beda45dc31956a",
+      "id": "syn-8f45e985632ac7b4a9bec053",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "4b03be988282f4f59a2ac45eceb6eed07f82a76e870aa191a4cf86d030304d97",
+      "id": "syn-8f8b9d9f6c7fd83cf0b93e1d",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "8d4f237fb3fa3e6c05c7cd5e4e5c4615b3c56e7281ab36078cc915a7467a9a8a",
+      "id": "syn-90b9280185595aecc219fd18",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "602d7506e36d922e675e4dcfcb9e207060e605c90b317a97a3c6dd8e154ef494",
+      "id": "syn-90e724cc429f6c8ecc76a502",
+      "scorer": "unit_test",
+      "split": "TRAIN"
+    },
+    {
+      "category": 4,
+      "commitment": "7ca502cf7a90a364a4170bcd18e5436f5773f0fe4b8072ec667a5d08c76ab3e5",
+      "id": "syn-90f0e37933842ccd4398fd97",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "2b35f841930c66bbfb16505d504bc3bbaa7dbbc2953aa46d2bfae0bcb7bc8d6c",
+      "id": "syn-916f71efe44e2653406dee4c",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "b70602f02ec44bf3f6885a983d87ca6c9997a17dfcb98c74e9d6821cc5c35bbc",
+      "id": "syn-9171e622f0b151922c9dc5f0",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "cab59dfbcca8b57f7c7c1b7a790ee37eaed61aad10b60ca86bc8c0b70e7e9427",
+      "id": "syn-919a3b512d9cd413a28a27a0",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "f2190f77a15b35e8ef9834ea72032116c474bcc1be80b4496b8d60eca713c4c7",
+      "id": "syn-919d79b05cb3eac58b120e8f",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "b8f69f6f03b6e28e576b3a88a090924f86872e09a771f64a6d5eab8a89667344",
+      "id": "syn-91b24bccc6808054f84f2d20",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "b179ae9e2bc5eaa7da5516b54a9038ebe395bab9c3cfffc588c48feb93bcc15b",
+      "id": "syn-92a0b72e073abfb5c976e041",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 10,
+      "commitment": "f51957f5d092144136e99797dbda551daa48657b1d7ef0327c6807a386743359",
+      "id": "syn-92a3f3601cac0114af1e2a91",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 12,
+      "commitment": "5adab86ef106d3f9fd71225aea07c61644c68871d22fddb2469d8d148e2697ff",
+      "id": "syn-92b03ad4943e20f044b89bb8",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 3,
+      "commitment": "fa98d362ac91a0d2e7b9ac1bba0488ea16f0c15e34bf2b0a4a5f55b1fa098e7e",
+      "id": "syn-92fa92d45ca72543fec58f54",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "400f70915acf86a44133e610df690168c9e37314f6d990e4a307787306274fc4",
+      "id": "syn-935b64f9466cda9963e575e7",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "1a4b3c6a3e40a295b89009fc7d921ef616e979292572db356fa8d493ce1bffc7",
+      "id": "syn-936d2d4a59b5e298522e8210",
+      "scorer": "exact_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 4,
+      "commitment": "6c747ebe58a2d3e9b7eee4d38616083d3593db4d9a10e365f4e432c67d871c01",
+      "id": "syn-93ac8b25bef3bbb0aa61374d",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "2f53c931783b71789ab38efad9b35550669cfbae55f0c47aa36beadac9273b62",
+      "id": "syn-9401f08dab73d634e062a9a8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "12689733a42fd725c5893aaad47df8c151cb364cef7b828dcccbbe71903f5584",
+      "id": "syn-946f2b428da7183e56e9665f",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "1a0818fe3b75dd95475208373cd1ea45ebdbce50bf7815e8d95d8d119aec8401",
+      "id": "syn-94d070b5e65c9b3230c88cdf",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "66c09e20ae10c42d88bccd583aa7202e306e7d2f102224966a6c39f07f7fe2a2",
+      "id": "syn-94f48c95f055995054fc98bb",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "1dc282dd3cc5aff670e6c845cb5979f2d51be4f2325eb515287d542ad5006b88",
+      "id": "syn-953eaa9dc94bb60af704e314",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 11,
+      "commitment": "7e23b8ea7e18464c071bce011710ea30fd98e2c3343af6b370b938faab043465",
+      "id": "syn-955e25abe9c70934860e00b1",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "7f324e2479526f29a7220c48d9df76684eab00b075f52ac2af02979dcb731452",
+      "id": "syn-958cf3e68a1ece0d74cae6fd",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "a860a11e72196d01305db7cb35f523489777ef2eddfe511ccbb18e1fb448ec6f",
+      "id": "syn-95aaeef56b744c3812e11ecf",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "9a5465048d1f8710312bb14800622b99d4777afe52a56c24b175eb63a060073d",
+      "id": "syn-95e57ed49771d6148a9097db",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "8f0f00987b9b19319066fe45d35bb3d61fb0a81eb28920cd1aeb6344e4d0eab6",
+      "id": "syn-95f48950768b5f6e45fb1782",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "fb1ae4f12fa09829d12c265e4e74afc764f1c4eb55d41b20762908b693762117",
+      "id": "syn-9601ee4f5688bdcc5814ec4e",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "32f4b718129a03cf154748ca736b291c742902bcc96295be26d76617a7cffa9e",
+      "id": "syn-967acd25e29fed6cd2d45704",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 17,
+      "commitment": "108a2585576067eb098a2bdfd450e4cac97c514e6d7e864015bfa683004332e4",
+      "id": "syn-969d90aae30bb294dc7132d6",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "557b6cb8beb6e5b406febddea8af4405682f0654810a9f7368a187775e905108",
+      "id": "syn-96b0f69324e69ac91c065c21",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "f0c1ef72b362d90408125f4538bb01adad5174b47a4ea4144c2b496d1c6f5c77",
+      "id": "syn-96c7d7c3e79ebe87ba061f0d",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "302571ef7323a4812e832e7ece53b9fa7295f8d89112bb3206ce1d0a8b791936",
+      "id": "syn-9769b30647b9d61ba31c00b2",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "2f739d2a0d21ecdb8c9f4777410a64f4c0b55563a75b839663be6cd2a16c7e3c",
+      "id": "syn-976cfa21dd612f76d4a45978",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "88c98d1d24a92cd3a2ab04686d3fe9d9858133e835090c790d01f7897ba3c01d",
+      "id": "syn-978f2db0921b74debb95fe46",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "985c0329a343423565db6874339df55fba8e282b63162fc15ae7c73cd11ff6ae",
+      "id": "syn-9794714fe98dd47e7d58b625",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "c8b8e4a15c6c121e8186bfc89bf8e4cb60635e0f67737bebefd11b0fc8b4533d",
+      "id": "syn-97cf5a0bee01d90ff00f79cc",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 15,
+      "commitment": "34909f299ed296e7f9b9550c717f405700333f1c65146bcf39637c5696167d73",
+      "id": "syn-97d2ab785dd418ba7c62da6b",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 11,
+      "commitment": "c6f511841b636368d079ead1ef518de2ec9a08499b62bb9d76e2067239a5906b",
+      "id": "syn-98989cf94ade8bb42da8989a",
+      "scorer": "schema_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "0adc710535ed5b53e5507c71f99d09914f916366803478501313d828e1fd5d63",
+      "id": "syn-98d5edbce26d732d5811e9ce",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 10,
+      "commitment": "5016048509a34ca667258e1e41abfdde85398ceab1dfe1b22273c7fed4ecbefe",
+      "id": "syn-996f6ba0401e8c598f4d2c94",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "b7f48325e30715a959d8fbe4bfa19d7420a0e31edeae6d40eb9c3754553d8c67",
+      "id": "syn-99a7f985ce73506fa322d9a6",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "7afd235cbc045ca0baabbf48e6c5d07bcb1fa69ad1daf992c219f27e3d1042f8",
+      "id": "syn-99de193976d32b9ac577a2fb",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "8ce53663ec22172a9f696c2976ceed8bde6421171a5520977a9efd0bce777f93",
+      "id": "syn-9a349d5ca0195dff76e65529",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "5fd1797a35e81f1446b2f27a53af5491c6d126e48962930e976ce379d8178d00",
+      "id": "syn-9a3cfaba64de4f1c9a1a6e9e",
+      "scorer": "schema_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 4,
+      "commitment": "e4dea1525fc14c284d19e5d04788c43ebd7d6c3ef38fdf8840b1693bc1c2ee93",
+      "id": "syn-9a5f97df23604848304397ce",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "64ac310841189b443923d42810a11296fe13c83d47f9c81b0600788de2d42a24",
+      "id": "syn-9abfe092a07071875d4580a7",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "322a26bb7be62db2c8be8414303cc12249b8611c828e981106418112cf3fdde8",
+      "id": "syn-9af0e2a643ac4a21e6c60c63",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "e7a9430438d5843578b98263fe069cc0c13e151259c9d238e50e91edc40f72ee",
+      "id": "syn-9b9438e8bb25ccca4430ddc4",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 11,
+      "commitment": "5e0b047bddb8d815f21a63e7875a6baebc0a9a8065cb4c3538d394b6cc822bd2",
+      "id": "syn-9c3b9fae44d387e2ee48d105",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "2739a30e7fb57034b0cb721934096937a523cb3cfbb4be917dedfce1263f7a34",
+      "id": "syn-9c4d46c4ed8d4b90797f2431",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "13aeb7b07bc96aabd7ef4243ea807b3271ddf3ba0fa00e441fa59557c49b4abe",
+      "id": "syn-9ceedfbc4f64283b95a74495",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "7dcb7e00dadb89b59298c5d2ffb03ad0a92842c97f8d3c2643417df5c55e8f0e",
+      "id": "syn-9d755cd421477b9f2a048783",
+      "scorer": "schema_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 15,
+      "commitment": "e7cca90b5050dea655f8d5f056427c533de1cbd7805059d78b5e5ac7adc2770d",
+      "id": "syn-9dc564d994d4a4eaecc41fb5",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "51e60649ef28e1d62a87097a3160112eafb57640dc73d1d3fb9d5a826bf6ea91",
+      "id": "syn-9dffe9aacd0ff9bb6d9a2b51",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "689f2e360971e30988986b91f8110f5de94937526565600bd5f2d2285f8ddf44",
+      "id": "syn-9e37e44beedca045b77fcbcd",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "a8c986ed59c0c65b70aa923f7d2883f14da0a21a5e4d3cec81d4fd75ff5e68c1",
+      "id": "syn-9ec79f3238101eae99a79627",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "559fa277ff56f6d8d9af3d2ec84ba027bb6e4e7c8533a290484117bebd797800",
+      "id": "syn-9ee7886f3b4f6b313a75c943",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "be31ebf9ddff0f1808dca76a4d83ec4b262991283d9d4898a765b7801012208e",
+      "id": "syn-9f7db9d3a255069c70288ed8",
+      "scorer": "unit_test",
+      "split": "DEV"
+    },
+    {
+      "category": 15,
+      "commitment": "0078328b804b57e591a0b195eebb25ab27fe7eee69dc549e20c53c6e742de582",
+      "id": "syn-a04dcfa441389faae9b1aff8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "36fc9d2c90a4d98edb0c668f11fa75d2a11dbd1bcd8c02632f97aca9c760aa76",
+      "id": "syn-a0925eaf83bbcdb57eb30231",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 4,
+      "commitment": "8120a502cc3e5877d6c05d7586df56b0604ddfc9fb31f6516c565e4c213a1e64",
+      "id": "syn-a0a8c60a4a3e67cb3136ea2e",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "dcf32d4fd8712ea092f3527c8d37cd6fd83f20dac23c3c85ea0b2996ae3bec4e",
+      "id": "syn-a0ae455651b7be9bb3e96d19",
+      "scorer": "unit_test",
+      "split": "TRAIN"
+    },
+    {
+      "category": 10,
+      "commitment": "bc6afb5d7e01558e6f821d34a7aede8279f862e4bac8d9c5d4a79316ccedeeb3",
+      "id": "syn-a1423c070f63d7ed5cc960b9",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "2c0a54172714a8e5a232ccaa453388818e354c507e0e4e4a85a5a576cdb1b958",
+      "id": "syn-a1a0d917bf64bb8429137a51",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 15,
+      "commitment": "d348cfc76d5d13e731d78fcb4babe57e9d5b01eefb663b53f08c3f17e600090e",
+      "id": "syn-a2f9e80c63e6a1020b7033ba",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 14,
+      "commitment": "88752bd7e2a09f0fd4714246e03bc92898982f72e839c337dee282a24491829c",
+      "id": "syn-a3207497fdfda5b87aac6df8",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "3f4176eedba9a45f74826a48a242c92d5817f6bc97470a8aa965ba755dff02a0",
+      "id": "syn-a36d2aadf299b357fc6b37c6",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "9c207f57eb2445aadbf049b6cb1b803ee22dd3fc674103f9f6f49a511a19e266",
+      "id": "syn-a3ddef9c16982fbfc1e0f316",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "d441515980bcb18780dd5f48ce76204934adbe48d91e566aeb459a6238030b36",
+      "id": "syn-a42ce997e4b50afc2481ae14",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "0ed0723775633dc3757e6e0da1466d3dde0f09364df0a993769798156eb891a7",
+      "id": "syn-a5964a2538293802f6bdc6f5",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 4,
+      "commitment": "9b927c7029316b7cd1ee589550453f133862cff22830bab4f11045f8eb852919",
+      "id": "syn-a5bbc4dd85677ca2333423e0",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "1887acde4d07463c6807d9b80989b28efd21c6746c17c2117ed305ebcd30e1f9",
+      "id": "syn-a6432a9967d5292660b9ec18",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 14,
+      "commitment": "5d14c3db1acf57191e9100f94a1ffeea630f8904ef46996418e8065cb9a1d3bf",
+      "id": "syn-a6743169c65baa4384d30757",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "d50a6d3c0e6241a1e51e47473e1c392f968798b7d5072a42d82e6e6f36df3a79",
+      "id": "syn-a6aa928c7f1b99dea35f0500",
+      "scorer": "unit_test",
+      "split": "TRAIN"
+    },
+    {
+      "category": 4,
+      "commitment": "7386e19957cbcddebdfed068f5b66e596b6ce639e3f31d4ae9b9e31b4c9bbeb9",
+      "id": "syn-a6b294de38f13a3ba9cee4e6",
+      "scorer": "unit_test",
+      "split": "SCREEN"
+    },
+    {
+      "category": 11,
+      "commitment": "1059768a9439559f6a83ec5a55c0587beab5f9f9976ee3fb6e1f5055c09bfabe",
+      "id": "syn-a6f2b5d1449de1ee6bd5cde9",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "73bd1a995f1718d6758c60d4a0df66a6804c050280a4f08a5ced683c1b919def",
+      "id": "syn-a7d307257c2d8bd8da091308",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "bfdeed221ff4ad87de44c064a15f465a4c5fab2c1062303c5b8cabe076e8871e",
+      "id": "syn-a7d8ca89bf24a0086467dfea",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 15,
+      "commitment": "45248fff03d30fbc0273babef5e9d77537e6026cf2e7ea32bf5188dd228584bd",
+      "id": "syn-a87747e3766d4fcb05e1d24e",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "a53a141932e16073a299e6d246c06021a3b71d78f0635de8187f1e970370c290",
+      "id": "syn-a94f000e3e7be891d403cde8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "9aaa805bd6b694946e853615857e8286b46999408c0b6d26cfdbf022630dfca3",
+      "id": "syn-aa0e52ce2cd21fc35a6dd4f5",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "80843686f77b844f02347a6d6882ea7fdcda2a176fecb7f17860014ace2f3d75",
+      "id": "syn-aaa09aa00e1281d163d98795",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "5b206125f8e2527258bb7723768dfc927494e42443ad1a670a2ac035e028dcd7",
+      "id": "syn-ab5e49bbe31fd60a37160b82",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 11,
+      "commitment": "3d32fbf86bf6837c2f5139bfc1cd9366ea123c1584ba607a1feb6196515a961d",
+      "id": "syn-abc0fff9c15af92c57d89879",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "c960cd4f4189220f88c3ac0b9023d1b76b878deb792498698d888ffa266cf5c7",
+      "id": "syn-ac6fa71ab321ead683e7699b",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "3ad44f1c60282c0ec4613a0a5844908f03a4330c20ebe21d01ec93afb978ddd1",
+      "id": "syn-aca2544358db02e45cea3ce5",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "176fb297c7a7ba426345d06c9e76f4897355e4dd8c7aa90d2a34efb3e235a267",
+      "id": "syn-ad5c033b84a7142b42fa36f8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "3a8180f1e86693f38751ab04bd652085e4d5adcf3c7d634a27d53e5c978da2dc",
+      "id": "syn-adc67c314af3519f9b893925",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "3dd59c466345d10856dd3d86659ee66ed6e12c09c1be51ca1ac19b82cd45ce48",
+      "id": "syn-aeba5328b4b2d56c47e97dc6",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "cb9a298162c0710ba6a5d41f855264bfabd92267c9bf7a13137d6fcd189c2a87",
+      "id": "syn-af86475d7f59ef032d39bf4c",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "60a5ba4b3b45b927a78da78fed632b6dca4534cdfc3bc54e0f0aff2db8f9aa32",
+      "id": "syn-b000900ca2c9e2640f0d8f73",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "8c7b83b73980e1f29be2bab313f08c566cc14cf7642930b08270bc2d7b76f01d",
+      "id": "syn-b00acd7395096b1f160a2558",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "8bb3c2c1c9f3cfe8e83932b5e9e8933f28b370b3b56231c64abf6acb6894c229",
+      "id": "syn-b0f27112a23a04b75a8493df",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "6b2e7ef3cad8d63a4bcd5f7b61dbffa07cf386835b1c82298ca187b0d8ed9547",
+      "id": "syn-b0f50622984ca23d372d2d52",
+      "scorer": "unit_test",
+      "split": "TRAIN"
+    },
+    {
+      "category": 14,
+      "commitment": "3c540c85146350f0f4dcd41985a755a8388475f96b63c75952139ee348d0d12a",
+      "id": "syn-b19f4919e5b33b477d78521a",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "bfaf8bf04906482ff224ddf51480aa5ebdddce014cb3ccc0ee6ae3f8cb0e2929",
+      "id": "syn-b21fc978d8635dc8231c7335",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "26a71efc506d5f86b89aff73d3e382673579f974afc94c8cfd6a711f0d9d7497",
+      "id": "syn-b35228a132562df1eea64023",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 14,
+      "commitment": "4d57080c62b13fbfb30b7fce789e5a643002e834232d551a27c05d6b16099327",
+      "id": "syn-b41b987bd1f68b2daf1a1a9e",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "fc80835288cf3f752287d66162e8528aae9c7ee9748ee70914cd7d8ab1526c59",
+      "id": "syn-b49ca12c37784326a15f43b1",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "fd42aa9d1af9bca375e18643aa747587af8371d02e092e124ef90b7506fc4514",
+      "id": "syn-b4ac6287c4383e4f68739402",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "78a508227dad114ba41f63abfde43e26bd75ff4a6c1410ad301a36af9801b997",
+      "id": "syn-b532a1f1810e4c612f9637e8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "c1d9798fc1c20fedfb06496115eba9c189418ebd6c973fc64448737127365b10",
+      "id": "syn-b5b4c036482c0fd164ebf8a8",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "508957e1207d1ed13e2ba82bbcf867f5df52a1163304979edb06912c8b548934",
+      "id": "syn-b60d86e19aa2c241abaea4bd",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "a421cb1a4d3231e9c2fcc428069d730e46e789fbaf2c77794346c7e0fd55e019",
+      "id": "syn-b6792546cc10db0321f390a4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "6ae6935001e66feabb7b1772af099ca75e4bba2fac6717a96ce0867586f394ee",
+      "id": "syn-b688eaa6d60e94e49db1ae35",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "97f59db161abf62b4c49d001a602973fd6807df59843828e82fcd5f0da05947e",
+      "id": "syn-b7503dcae5cb6a43fb3e2b1c",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "c799b9fa82dc8f364cfe94d6f97543759289f57ed349fe09fb9a8a5aa147a9b7",
+      "id": "syn-b7727d65b017eb15a256becd",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "718389f5559ff8867b20bce6b62679d94667b2b13ff9c14b1c6d4db3de10770d",
+      "id": "syn-b7aa66b7c656a127eec26419",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "7cb265312054b9ced1452541521410b35bfc9579dc0944e2f5c47c1bbac24412",
+      "id": "syn-b7be0dce98f541a0c7c10596",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "e6ce8fb923bfdbf035da8ef4c9403ecfcab0d7c9e3c4776c1a2cf0b4e7b5929b",
+      "id": "syn-b84b477b1a37c5c4e15fcac1",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 12,
+      "commitment": "c8eae6b12d5c2ab586312c8552e83cb3f03e2490b2c52b8ec5e0c1b7e1ea9c09",
+      "id": "syn-b86598220d54c82496aebc55",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "7bf23f9446160f5de14760fddbf458b66a58e65a3a313dc8de51bea7e124a120",
+      "id": "syn-b8e970b77824013326babbdb",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "b1d5a0b3723e22bfbe0b4e391bac86ff5dcbf4797a7aa94c0c8e39bf04b01653",
+      "id": "syn-b901f308e0900996e30e471b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "95d45202cfc3993f2c6b931444e233b62d224853d65eedce2386a5d10206f6ac",
+      "id": "syn-b9321369847063fb5abf743c",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 12,
+      "commitment": "f09d2f16ae6d2fc295a915da6c3dc0f1627324c8c7b9cf82ab7d1486955c20be",
+      "id": "syn-b9406bd1eb198af5fd9665b2",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "a92084c3b4d0371482307b132f1b1be6f5d30b3bbf15395f7cf112b87f3a7fd8",
+      "id": "syn-b94eb122ef59bbd0095962f7",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "db6348b5a3a81588669e52c1ed50b8988c1b5611978cebfda9f87b0995682a15",
+      "id": "syn-b9f95a7eb3ed64a49764aa1e",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "25626a7c11313bf6767a5a1b0d51e2dc6c2f2d623c144361a2fb44bf8dda7157",
+      "id": "syn-ba0f362c3de840b6a9164999",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "76d499ce89e07b210cdcaf9a7f3db5d997365f474efc49176e0b17a307b7901f",
+      "id": "syn-bad8bd7258898e85e1c65a9a",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 4,
+      "commitment": "f66a363d256937786f3567330cce1761061dc5dbab55bae2d92ef0278f00fe4e",
+      "id": "syn-bb10eff059fe049a2105c98d",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "c2a9c0d4bf8d978a39f0709484b62b4662e6e95f82c0856ed97e3abd9c1ba5da",
+      "id": "syn-bb23db77be1f0f018d4d6217",
+      "scorer": "schema_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 11,
+      "commitment": "5ed2121726cf445c35cadfb752faa2abd3addb634a9251b92ba3cfb2481da575",
+      "id": "syn-bb43c7b9973e1a994d020723",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "187054ef99f25b1b9626c6a98b2685a7626401a67f942431cb5dd881c6f711f3",
+      "id": "syn-bb8e4b8d329d9d2137267c47",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 12,
+      "commitment": "728497091d6b2d5cd0685587585b0346025dfe6b521e7eeab7bebe4190b005b3",
+      "id": "syn-bc69ba8061b2f473db043486",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "74e32fd8e862045a6b393f79824602830472870ca1eb6ac53caed24d6979705a",
+      "id": "syn-bcaa8156c9561ab6180c4cad",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "2bb724a0df311e0f73e020b850830d1211232188731f217dc4b4dbf7b48e0ce4",
+      "id": "syn-bdb201c016bb5fdd85a99165",
+      "scorer": "schema_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "249967de3ab5673ff06b9739c887ca437355e15895b12b5cd5dda0e66d96beeb",
+      "id": "syn-bdc90eb2554cbd2b2a4cd3bc",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "b777ecfcab46ff2e0c12ed1b4549c1d9db0a5ba589e26f92e20630b4f65c37c8",
+      "id": "syn-be075fdf78b5559547e464ad",
+      "scorer": "unit_test",
+      "split": "TRAIN"
+    },
+    {
+      "category": 4,
+      "commitment": "b44b3ed5c77f6d2a6549f17ff46806218018b6d77445f18c96c44309f99d1dad",
+      "id": "syn-be987cbecb02cd1bda25e665",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "3bbbc7d12cc285a06c754383e831387aeb5ebcc53380e06e58aea36d295de84e",
+      "id": "syn-be9b8a418ab7b97c21c38e35",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "287c59406931e66cbfc39aa9379036a79d90f37ebc69920f2d0e2bb91acc3b30",
+      "id": "syn-beb2cab8ce5a4a21d3faa661",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "6523aadf1c643256d9e17cc442ec91b25190fcd3c0bb50d13046a2bec9e6d9f6",
+      "id": "syn-beb80e60f8c9f6cd99a0f58a",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "d07a5f1e7178b69f6ea9186b2f14c74d034fd7a5a4ea64dea4a4d6a0ecb79712",
+      "id": "syn-bed6232f8fdc407d399b4d93",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "5fa5f527c304bbba76b15e1199fb19727babced146d3d98eb119e6570f6a48eb",
+      "id": "syn-bed7aa8d3fd561af0f4e0eaa",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "40a98375479a2a3327cb834b5b2861033f8e377bbfc08c91e5ab2592af53f142",
+      "id": "syn-c01ffd81398ad2d24d5f2ae0",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "13d8bbdaf7df1d99f1c56f90086dc6e765c7d0e6a30f669fa8c46bd01d6a13b1",
+      "id": "syn-c0baabdbcfc5e8c653e1db16",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "6df59c6f9997e456369aa9b138da1d8b3ba926ad00fdd5dfcf9c402ecc5f349c",
+      "id": "syn-c0bc9cc6fc84559e083c5a5e",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "798efb274c7ad1ba994bf9af63e1889edc76f5ae4fa64a309970a975edc9ad1d",
+      "id": "syn-c0efb9e1304163988c9d41fc",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "2562b20eb582d6fe75da03f6374b2ea9f55e6376cde339630bbb84f14c68ddf1",
+      "id": "syn-c17d5ff733e896c59f2baf56",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 3,
+      "commitment": "0bee63cd69d0381a89596118d4c4c4baeff73cadb2394ffd38d41755450ab56d",
+      "id": "syn-c1bfa2430c5cf2f89d1faef8",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "25a739339457569b5b535f1c58632919070f5063578718ce2e3e900a83dd7250",
+      "id": "syn-c1cb92dfc45f329c07ef6a33",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "4c2adf893a0378fba6667da9a84df9b773c5abbbcc0edc4435a353d0ed867800",
+      "id": "syn-c20e3fbaf09f8577e721eadb",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 14,
+      "commitment": "5c7d9161cbc21f77e737efbaf42785128d68f3f32d4eed6325623c8a5ea6de2b",
+      "id": "syn-c219901ce7b6a82410afe61f",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 4,
+      "commitment": "8db016d87dbbc4afc3243887c88b88178670df30c79a8abdf9097e8098f421e4",
+      "id": "syn-c28583a3d3d9e1c277ab0f9a",
+      "scorer": "unit_test",
+      "split": "SCREEN"
+    },
+    {
+      "category": 14,
+      "commitment": "e6de2608d4294c5ccfae33889e51be3d8437fcaa4c2e755407a17563b6ecdf2c",
+      "id": "syn-c2d82c328ee406c5b1c4d822",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "c8307274b1ee79d61e0ac9b6799c0119b4b2c94fec135185d6e2d3648500991a",
+      "id": "syn-c2dc265d2ba07dd634bf046a",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "f2f745bc9bf6658fbff57fe73180bbafc313556dca5cbd09b1880c2c4f01e558",
+      "id": "syn-c373e126c7436a6ae997929e",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "bde0a22d1d76fd33396f81f96937371aeda476acc01c6f55820edad3bde9ec7c",
+      "id": "syn-c3798ad22544e64c62c15632",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 12,
+      "commitment": "5aafdaa1a5cd93a3acc506519e34597037afe70a68a501965112c34c0649e067",
+      "id": "syn-c3a879e01d5b83a2226a8bca",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 15,
+      "commitment": "1a2efd3f62018e4564b9f961419ed037b22569ce4f54fdde8df69192626346d1",
+      "id": "syn-c3dc5b687cd9e398120132c2",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "d54a0c3dd311c5eda9f4f7686d54518fc510c57d31a84e6a5fcff3f99503247c",
+      "id": "syn-c3fba475509ee0b55804eb84",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "5418c9dbd1f3b4c6079c87dcf8313ca965dbf79638c71f8ccfe6a3b317df6115",
+      "id": "syn-c4559d33ca4e809b1a001779",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "ebc9bb1a9ea2af7d61b50aa69cee90ec8ebe9e2bd6871b8512be1c2c7ca1713c",
+      "id": "syn-c4825ffeb0ac332130e11583",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "7e7fa69c30025e7ce3a35bdc8b61b9a1c5d740e3ff26d6f72d41b06efc7e30c8",
+      "id": "syn-c496ec5b7f84720d25872c2f",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "84f90fe5bdca4ae76526ea920329a564030d08e9b10e850e023c6545c8360aa3",
+      "id": "syn-c4e2374247362018c0e5cd98",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "a4bc71692c5a4394b3a8ee860326c76a4edbb7303f2b7438bde5aa72116f250c",
+      "id": "syn-c4fbca9bf89f98299bd2b0dc",
+      "scorer": "unit_test",
+      "split": "SCREEN"
+    },
+    {
+      "category": 3,
+      "commitment": "0e81b9ca0965f71c76487ff85c9714b2ae2c1192791dbdaee661bc89e292e5ae",
+      "id": "syn-c6331e45688f1af75fc62fb2",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "04bfdb4b829a058f69ee3169ca907ef373928e0299a94f6766cd9bf447b6dd4a",
+      "id": "syn-c6635dfb0225684cc26a0bf3",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 3,
+      "commitment": "7c77c7daaabbb9427d2593c7c143ba5b5ecb77f301a7fe4846041a14c8dd4ad7",
+      "id": "syn-c6fdd898b3dcf92dc9ce76ce",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "cbc9ced105b12c089f2f6bfd9b527b2fb8affca0c8a150debe15d063a65327ff",
+      "id": "syn-c707f64f99466568e624e4b5",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "1af7da362caddb06cdc8d8cdf41a7d26df1f18d932e235f569799603cb2e1d1e",
+      "id": "syn-c728321029a51df2969e7f53",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "0194509ca6e2f50e938bc78761a956d95a292b1de1138ab598f7a86a75956a40",
+      "id": "syn-c80a5019a6f95a59c5098b1a",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "709eb967f07b561d63342b065774ab83691a91ee257daeeb61907face97c7d65",
+      "id": "syn-c941dbf9de5bbbbc606f7784",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "c4a326924da76f524f41308886cbc1a246fd5ba8c68306a41968c8e0186edd19",
+      "id": "syn-c94b0241043f9cc137ccb31b",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "65a2e8836e62ddbfc67d158eb7feb642da61b1a148b00300c43bffff1dfc7782",
+      "id": "syn-c96fdadcc33c86d88c307604",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "28ed1788af1514ceda3f5a6865408037bd4acb80def65656001394257dbf5c39",
+      "id": "syn-c97d0de8c6379ed97fd5e47b",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "dfcdb6d7bf4d5628eee964f971055397a020462ce6c8f20d55935a9c81e4f9f8",
+      "id": "syn-ca1a7f3d46620ddf4fbdd74b",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "0211debfc0acba1dd8434583a1c9e29480d98a802b43ccae1723c149abca32c3",
+      "id": "syn-ca28b12687fed257883e3a0e",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "d6c9eeb868b3d08cf2316c0cfe9c741405d10e1bded610854abe2460005a7cbf",
+      "id": "syn-ca736079308a973596144949",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "074eef9474ee7b2322b8a9bb529d2b17536b1dce445cf3b97ee89faabfcf9413",
+      "id": "syn-ca95427addbb6a710876bcdc",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "c705cad72b99b0a5fad5e8cbfad0f807bca6fe03c9e0e3204a3b7556df3adcf0",
+      "id": "syn-cbdbe4d33694b14ba8500174",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "130b17fa68cc25e9244ce4dfa7a7538331143eb14a15067c8b3ed4ad5ab839c9",
+      "id": "syn-cc7867da396671e1c4112673",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "79e7faf778aecff2216ecbdf884b1b6366317d30468f8b501a07829bfc5e43a5",
+      "id": "syn-cd17b47224b477c0ce6762fb",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "5222702ea11d44d9cf2b540f12323ae9bb14ae00cf9271875a79b76d8d93fdc8",
+      "id": "syn-cd83027890a0d5c7a798ae9b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "5e707d5ce3702157fbe1b1fba6d5e4501c018adddb53a6fcd089c7abfe5e7ac6",
+      "id": "syn-cd93202b97ab9f13fb3aa36d",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "68fa9a8f2aec4c5eccf2b128c4cf7e174591df9c65e1d9d9ebcfe0944779ae9e",
+      "id": "syn-cf30a478c370d5fa01f40d9f",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "c2a0affe9bf5151eef88dfc6ddd81a1395de26d4d237cc7d0fb19f24240c77a7",
+      "id": "syn-cf5530c4aa62e1a1639967a2",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "934f314febd744d48be6e54254db0a1416ef33e75ad136ae9a16c7f1d9b2c9b6",
+      "id": "syn-cf590e81000af69fac106d2c",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "c545cc780f8a6d88817715a95bd9eef649cabd31fdf704d91517892dd5b65c61",
+      "id": "syn-cfc33de46f430a7fbe0ce490",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "3930b386925ced2a1944547983bf5af3c73c7201d0f3ae7cc20648124e472a0d",
+      "id": "syn-d00a7fb8639df6ea5ce1bf0c",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 17,
+      "commitment": "cfdb020f18a181bfd180d26bdc67d1f9daf7bdbee0716cdcf82d6e08927640dc",
+      "id": "syn-d05356bb06f50b9bac538e27",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "1bf38110c00dcccdcc0285d95f24524085887bbc44d45abc5e919058965298ed",
+      "id": "syn-d0682d1d14037ceac53cd590",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 3,
+      "commitment": "e9d42da8fe7b45d12d995e6d8d6397d0ff0f44e0865df149f8eb2a050ed241b6",
+      "id": "syn-d29cb143d2c173ef9b90d701",
+      "scorer": "exact_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 11,
+      "commitment": "5337f0135e3505cd24339b336c1d2da65e277cfc51968bd90be59ab31f57a721",
+      "id": "syn-d32354b99bcf0f33231c48e7",
+      "scorer": "schema_match",
+      "split": "DEV"
+    },
+    {
+      "category": 12,
+      "commitment": "6e44072432e721d1ef200e713108757010f2de2f70d4f0a79862171a3ffd6e4c",
+      "id": "syn-d3d8ec45ba302924bb4d08cc",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "85fe064dc1736eb447262587272bdd21963f76cf06eb0b6c57d36c5efd0c3ff7",
+      "id": "syn-d4072a7859af337b6c7e0e19",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 17,
+      "commitment": "df583d139bc297987a1b1ae31f307d54cc87e8502a2009d2a134e094ad6a2c3f",
+      "id": "syn-d42d7a0030629b4a47f7b6c9",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "2f2098b86a8291d9ecd38791c5cbcc287b7c0f6407ef54829f3f25ac6279c8d0",
+      "id": "syn-d457a975e755bf03be04ee11",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "5fe9a89444b4a5d0a4fd58becdcb9fb9b80f700d6399cd3220d755587d8c351e",
+      "id": "syn-d4c6b57e9641b255ba0b7aa4",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "8cdea7451a45d33e7c727e8af59066ede803094134095db3c84cb300615c56f6",
+      "id": "syn-d576d180bac1cfc0f3afbbf8",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 10,
+      "commitment": "bffef36a3b74995cf10506c776c48085d1938637b8f14d57ee32a43de59eb913",
+      "id": "syn-d63493ff5687c4e4ce768ed9",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "55ea194656377719141f1a1866a44bbc9cffa41cc55690449fd0802bd05800db",
+      "id": "syn-d66d2c1bfad088c7b1ff9939",
+      "scorer": "exact_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 14,
+      "commitment": "47b7f0665b2a287d6b0058ba6f0c0a2705a1299a9e86e303c4a2adf943ec5de4",
+      "id": "syn-d68fef4ed6734b31cdad5a02",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "6df1cf73600c3d0b9e38368b004f153efb55c2fc09b596aa2683750693dd4d71",
+      "id": "syn-d6c3c05ec4fd58b20422c63e",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "910c548b8988638d7683013072ac7c51e2c7656d99657223290e21f7e5b23b70",
+      "id": "syn-d7e67c82f539429bc6f3ed24",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "f88f9062cb1f0af1b0658a04235b40c5ca9dce1c00506e18202407ff6d79eef0",
+      "id": "syn-d8514bd4f40f279f13a6607b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "159b278c65ef16e8d4197b989bd35d382f8e0f4a9ecd21df911e64f99abd7295",
+      "id": "syn-d88a5ed37cfa7e89616b8a13",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "b2b8a44b663946628e074a413caaff07f0ef7d6b785e9575739999368b1461c2",
+      "id": "syn-d90752561c0d16aea071c57a",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "3d064e01aca0835acdbe0c8023ecc9dfa2e1cd3bbd9e9129bcedece4333f5c3c",
+      "id": "syn-d9694d4cd879e8f5b3a700a5",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "3971355222f164d5d359b3afdcc7dc45e33ffa072ec439f5405138a3a1869072",
+      "id": "syn-d977df5c89dbafbfcf48dbda",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 14,
+      "commitment": "3c73aa7bd8333e827155c0146453feeecb4a8cf8b558414072505950db3116b5",
+      "id": "syn-d9af55ad72e92725d3769db5",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "1b3b98aa86699957456000f5af077647674d588bd06b3c90f57571cfc9ab47eb",
+      "id": "syn-da3afda4fa44e3a373a1bfe1",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "06166e633109ad9fa337b519ccc8b38ff5fd41ff4678422d94546fcb112098ac",
+      "id": "syn-da3bb821862e447f1a6a2f56",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "a33aad2bab69ac086cf08abe13cccc5771d85011b8bae89bfc3de8d6c24b622f",
+      "id": "syn-dacb306a2bfd8b977296ca6b",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "eb837c5225e0ff685da7863e4f4d7de87ab551b2dcccb09303057fdc07945064",
+      "id": "syn-db0a3592166fd4be891c5c0e",
+      "scorer": "schema_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 15,
+      "commitment": "77506fed0b823a78ec012e194b5f95d0817df6572c58a389ba21780f6cffd893",
+      "id": "syn-db0e3fa692282512faf95fca",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "81b1d2dbd36e50b3d03acceaae34e1fc89c8a6062afcca52c81f977d1f90e757",
+      "id": "syn-dbb13ce1383432a7cd8fbd7a",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "56616b4311f49ff44cb95f254534628dc7a5015733dd6c969d1ccce4cdadd1c1",
+      "id": "syn-dc08a644cb2681934c057a15",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "ebf70123ce3eb7f0b9deb9828cd14794a3431c7b5e182ce650063ef03c141cf3",
+      "id": "syn-dc5fce1005315e4367a9c663",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "ad6739637003f76fe8d7cc0ab0554359c0345bf80ca9634b9294e69c26559ac5",
+      "id": "syn-dcd3ed28f61faa283b1ad477",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "f5cc4919f66915ba08546b5ee087608a0a3573f316ff0ca14bf103467eff65e8",
+      "id": "syn-ddc1c859870a7b159fa6aa42",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "ce59ac8b86f8c7280fe5c0ddc0aa971fcc8de233b590afa6a1047d6fdafb779c",
+      "id": "syn-de4f8959285aea85c8bd0da8",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "1e6266fdc949a29be47111e611cad976f51336a734dd798ce3fabeab9c679cab",
+      "id": "syn-dece688c24be61e844d88d4f",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "db1e8cf653fe3aeac601a3d4dc5fbca4c41471b8a0ccc0ff23953b3afd53f604",
+      "id": "syn-df910e0c647c4a27aa9a109d",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "eb74ace47ac201e2c8dcfbf1137514931e421d800676e16fd9bbe104f7d37a56",
+      "id": "syn-e00f4c3302fc0de6f937a71f",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "beb3dcd446536a3c4561031202de1313db7245bb913cb7c6b3293f6d38c207c5",
+      "id": "syn-e01ad9193936bd668653f3e7",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "453174bb0928c545c7bf89b05ae30cdd67a06e94bc4533183a9b1e643c268bef",
+      "id": "syn-e03765d7b7ab1746b2f459ef",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "599fa9fa9255dbb5b4eae9dcbba79ec0b2ebf7df3f97840c286a023afbf2c0fc",
+      "id": "syn-e03edc0779ffc24d68306a4a",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "0ae28521c88941e9735a5a718f2f6436c0c5166abe2dc241acacb911e6c94beb",
+      "id": "syn-e0818260cbca349a8b6fc7e4",
+      "scorer": "exact_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 10,
+      "commitment": "42b4ffc3745311ad86eb1405365e05468eb808fdc9fbc920e388f50f7c2c06b9",
+      "id": "syn-e1729b278d259ac8e6172c47",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "afef177c7647d84dda54db1118f9feaebf13fec88b524633bc0ad0af6b2b0e11",
+      "id": "syn-e191ca960d9a80ca8e084cf1",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "7527af1ba7be0cfeff431cef01f585378f8d707b3b388f9ccd4071c4c15dbef4",
+      "id": "syn-e1c80f0a66ecd60e0026fdbe",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "9fc2251a9aef6d2e30a44708c504fdbeb12ae0981da374a1c98a79603abb4dc5",
+      "id": "syn-e1f3694dcc711ff8ef2feae6",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "e8ccf806844576c5fe67f465b1964fb8145cd6f0cab08b71d7bab231b7a52cb1",
+      "id": "syn-e2256873700ea7cc78d0e919",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "734b7698fd26036b9b2c6492a123054cf582ca4d15030b94799596d604d15cec",
+      "id": "syn-e27c6fa05aa2f6bd519b5fb9",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 3,
+      "commitment": "ec3822456f2ad1d68f901c46cb622399ea24b19f3c11425fbc4bcfdf7e5c2bc2",
+      "id": "syn-e38c4a87f9ea5de1c23be657",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "fb4e9d647a4ffd31aee6dc622291be508ed86df45e93431469c2cfddc09525f0",
+      "id": "syn-e3edb04b0cd10a19214edcc0",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "7c1590d86b9e408b08b6a0ce19dfd788f387e311e8b589cff605bb2ad48086db",
+      "id": "syn-e4067bd8537286f9f3de21cb",
+      "scorer": "exact_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 10,
+      "commitment": "8c4ceac740d907b4878cace01edbc7aec89f9d9098ad2b7bcec6b26adac8e9ac",
+      "id": "syn-e411a88771b2f136adc95424",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "3fc6099d636a61990490ccf77f9c5b746a137e0e38d52a349bce39725f17f088",
+      "id": "syn-e42bef47fec25608f6f19045",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "b7e5ea2ccf99fa53cc141de42286da58225fbac8859e48e60073ae4db23f1bf9",
+      "id": "syn-e60f554f87b062f482afd1d0",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "d2bce83ecebda6e053e767b23969f8ce222cc417e946419620026c2a068faaf1",
+      "id": "syn-e6394bf093046c689b41de37",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "b36d300b5fc595967f0ebbe1c3320fc9909656da0bba514e4b20c9dab867ef6a",
+      "id": "syn-e7eb8f31f9d10db0683eb01c",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "45490dc3ae47c996c59d9a85bd746b71c40dfa5104c503ca86dfc017dc08078c",
+      "id": "syn-e827526a770c20bfbb9858d4",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "bf24bd9c20f2c15827a1573f20e7b09207da9f962543488d8e64a5546ac2ed03",
+      "id": "syn-e8522a07dae069b692434ea1",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "cda6dd6006e25cb114ef56fb4dd6098b94e8afcf4cab98b53a70d8c06ed808a1",
+      "id": "syn-e8d23b9e3eadc9dcb8e74551",
+      "scorer": "schema_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 15,
+      "commitment": "9400a373964b671c474fadfa436d84a6561a9effe2128b3812bb3a2a316ea711",
+      "id": "syn-e8d2d132d9813e2e7d6ed359",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "06af5710c9708b589fd283256f823f6cee8e095c57f89ae3863c71896f550a12",
+      "id": "syn-e92f739f72b0366b0baba31f",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "c620aba2c19b4f0928f7dc74eb97cc92fd0b9750fe3350284442ed86746c2dd6",
+      "id": "syn-e944b8ba16a323ed78bf1982",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "de54b1e2872f90503ee00e76b3d408d05b14f577989d15b3529494ffe774d5b8",
+      "id": "syn-e95cc9c061f8e8753e25e090",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "9ce011a9c86392a8a39a47768e2cd7dccaf54189bff23526273df5a359e2e9d6",
+      "id": "syn-e976d183fe489b43529d2eca",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "cd557e14be8cc38748018274dbcf1bfa1a2bad8884409c50c44b5d42455b109c",
+      "id": "syn-e9a4054c8a4953f3fd885ace",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "cb8c3af5dae19fd7723ba8a8a87540622e10b4cc962095de3bcc0d6b30f082c6",
+      "id": "syn-e9d6ebdb72c5733c2d422611",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "10b206a66e744f91a5254930c86756ac105da58430df11ae0e7deb7c597ea7ea",
+      "id": "syn-eb252f0b3da7e4748f8c417e",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "a98ce590555dc763ef602b801325a021324d569fbe8656e98c8ab1efd44dd7b9",
+      "id": "syn-eb4dd2bd643f3faeb07188cb",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "165fcd3b80d512766c70ffadeecae87de10c6dccebeb8ebf8c0b1c4e768398ee",
+      "id": "syn-ec52d379fb4d51fb96eaf97c",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "878be35ee5390dcc13268fb91564075bdc43edf9b24f828c19c986e206a4d40c",
+      "id": "syn-ec6f23e0941f53019c2f48eb",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "510b28edd45a7810e6b329f88ffe465ca0fcb7947075056409a9c1760a588a8a",
+      "id": "syn-ecc10653217a7b772d40b720",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "85da2a510fe349a5ff770e09529c45ea8810420b13dd39162b1a0fa9d82bb52d",
+      "id": "syn-ecf96a9f85ffce405a5b2cf7",
+      "scorer": "unit_test",
+      "split": "DEV"
+    },
+    {
+      "category": 3,
+      "commitment": "ea84e46ed0abe4c610fe384571c12a6411668bd0464915955a94022f50fc5482",
+      "id": "syn-ed5280d8b5c3328c1a6d3f77",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "b740b06113b6d45c613ca75076cdcd2bd0d5b067eca0d0ef0f426b451952b506",
+      "id": "syn-ee0b9d931ca0bb128bdbe2b5",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "aa63082b5875d9d9d24bf95286c814e8f9e569e4bcb68f6fc828d6783c56286a",
+      "id": "syn-ee40a5cd390e75811081af89",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "213bbe598f85b3db30c99e55399a4ab7173c0bbe79a8114a300c3a2df4d41d20",
+      "id": "syn-ef2f992305530657f8520a85",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "8bc57c36ef54c6a4eca564e2b8b4a94d33db0bf2c27b993dfefb3c0394d6431e",
+      "id": "syn-efcf113baf751507a7a297b7",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "042686353581f887b79a64de2b48c9c1976d424b690c4eb035356e03ae9f0265",
+      "id": "syn-f03dacb451fbdcba563fcbef",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "e1c9c1c15ff0b9ed1210b9453d2b81711457221993f2110b6cf873821c09a1d4",
+      "id": "syn-f1008b64a20cd1cdb4faee4d",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 17,
+      "commitment": "ff3bf600f797986f54e21b697012641d9e6a2f04c8df8e3edd030cdb27fc1f04",
+      "id": "syn-f2158d6daf59fcecbb1936da",
+      "scorer": "pattern_match",
+      "split": "DEV"
+    },
+    {
+      "category": 15,
+      "commitment": "b14f73c4748bf2e11a33d6138f92ef6f63bc76dd4a587be3eb745699d025a5be",
+      "id": "syn-f22c0af05665264793622148",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 14,
+      "commitment": "d1986496af16b52d19246e54600017b936722cd13a526c0f8da389aeec2ff9a0",
+      "id": "syn-f2956959303862aa611852a6",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "3201fd75940dab640cf85121be2cd07e688caf7270f72976f219d66777e8e68f",
+      "id": "syn-f2d53b6a8c5006ab2f494d82",
+      "scorer": "schema_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 3,
+      "commitment": "b6f00aec1077808f8020d6c4bd7a08c27cbcee3da86f969f66c712aa5d0e19a7",
+      "id": "syn-f3a8dad08f275138f935db0d",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "e3b94451099a7030e920c7b64eb94ba986b11a96ca7860d11167b84b3d477eb0",
+      "id": "syn-f3e102237347853365fa2646",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "3974114ce376b4fa236cade704419645cf06aeaa48f93919a0f744beaefafa01",
+      "id": "syn-f46082599fa8191d0ca51ef7",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 3,
+      "commitment": "47718d7aad6c5a8dba5a336314066d9a155dacafbc8d23cc927441a72895f4ad",
+      "id": "syn-f4a7970699feba834ffab350",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "2a24f8f3abfc9f240a02f07e81e53db79e90b319263598adec57da902753f553",
+      "id": "syn-f5ad3710a6d3543c87f7337f",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "358eb35f241cbbdc24e657c84a916c509cb59e18dfb32c6cea8896ff10a6e16f",
+      "id": "syn-f61c7a9d046c6ef31c481b18",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 12,
+      "commitment": "d381ef39e630504276ffdf7842403d069752d135b32040b123300ea0062b8918",
+      "id": "syn-f68a11fac1b50bf9cd8e18ce",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 14,
+      "commitment": "b34a2723eabf9e5633d74061dc1129d2cf26a97c669b55136b827979d76118d5",
+      "id": "syn-f6a60545591cc4ff31731484",
+      "scorer": "pattern_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 10,
+      "commitment": "b5a6dbb58677c38e441491f5ae53471fd847bab795b14f01f8221b8d8a34c1b1",
+      "id": "syn-f6b049337c237c09ff251bb9",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 3,
+      "commitment": "0708d7ce3739666674c3041e9a0ba742b0251cbddf19ad53fc76ba71a5d097c7",
+      "id": "syn-f7598709508e9e20cccaea57",
+      "scorer": "exact_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 14,
+      "commitment": "aa07170e19993896a0de1b6aa944997828f8d5814d16485982c41431c9a5ad46",
+      "id": "syn-f82cf36e15d401cd119f44a2",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "36562859b7514a2af85c53e307cf89af45e4f4d6d042c93cd0d2ff5df97dd559",
+      "id": "syn-f8d198932f51504ee1932fcc",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "cdcd9cc93f15ee8a870d2e455fd0e7f42c6f356f2fddd45da908fe7534a0c396",
+      "id": "syn-f8dc8d21c72543c027094f5d",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "e78936c1546a8bd4355c1ec454f10b05bd47c787bd0a1e7afcf01f49ae62beac",
+      "id": "syn-f917ea24a4946733d7367910",
+      "scorer": "unit_test",
+      "split": "DEV"
+    },
+    {
+      "category": 3,
+      "commitment": "2e562d29676487f65310419413083e406cb48eba8433c4da71a38a0e8b6d4a43",
+      "id": "syn-f94205a4176eaf334973ef20",
+      "scorer": "exact_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "034177b737bb694bee0842a4482ba0222527aa16f701fb61842e65c51866af02",
+      "id": "syn-f94bf7acf6a8996b1d49c1e1",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 17,
+      "commitment": "3e58e1d3ebf0b3e763a2af5a3a314a915a3c02d93c608149099483663d6187f6",
+      "id": "syn-f98d20eba77feb7aa5302d02",
+      "scorer": "pattern_match",
+      "split": "SCREEN"
+    },
+    {
+      "category": 10,
+      "commitment": "7b9d2894ba1c3dbc257fcbe44ca1f32971030fd03f95dff0d458c6093e908deb",
+      "id": "syn-f99d4530d095b8feaa5d32ab",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 10,
+      "commitment": "1ecaaf804e0b75acdef0d6495f04ac29bd34241f248d97f6d3043b2f5be1e09f",
+      "id": "syn-f9bbb9ca533f0ae5ed4c7d5d",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "3505c82612c10e9e9d9240782f6e6d008b55204bfa7f0a3c3ef11059206b6bf8",
+      "id": "syn-f9dbf9225dd5520cad3ffaf2",
+      "scorer": "schema_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 12,
+      "commitment": "8a4c1283f6809879b51ae5176f0bd4d473768a45a1e418bf0395fdcf60d9f433",
+      "id": "syn-fa7d8820d166cd5890d5631a",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "4243cf2a28585038d78ddb0fd2d528d642385eb57248d79877c161045a99d65f",
+      "id": "syn-faea2aa7ad78a9f34ea68c36",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "64a77bddef4583798ea77d0d1e7e6bd7b5681aecace16e894455acdb8077d5b5",
+      "id": "syn-fd69e4abda1e3134132cd601",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "aea427c782924ff6c33c5655280574e019c0e7e411ffce977dfefd75709aa591",
+      "id": "syn-fd88ee4c43f1ee0eb9e5fa21",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 15,
+      "commitment": "a4f95144238b4c1fae09ab9f053548f9dfc2a4373508d2a054405aa5e5d3f929",
+      "id": "syn-fe29a063dfff59606bd8b5d9",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "50dcbd3f9abb5ab30f2031a21f29c8c7bec4731fba9d491351ff663f26340034",
+      "id": "syn-fe45674a553d5765fdce0515",
+      "scorer": "schema_match",
+      "split": "TRAIN"
+    },
+    {
+      "category": 12,
+      "commitment": "0b97d3ebb9eff96e9b4d3e94e2376e47fce1fec7e39f9c4ffa4f728757523333",
+      "id": "syn-fee8e89785626f9e2d1f6d64",
+      "scorer": "pattern_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 11,
+      "commitment": "7840ff00eed2c0b5e52a3acd00ee610039f4188bb86cae1b849bf915742d352c",
+      "id": "syn-ff503f2fa862626b1b59b682",
+      "scorer": "schema_match",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "category": 4,
+      "commitment": "b96cbfc8e95059f7fa93f5aa7a462116585daaec67f67f38789cee0eaecd6f36",
+      "id": "syn-ffb88e770326363876cdf1fe",
+      "scorer": "unit_test",
+      "split": "QUALIFICATION_HOLDOUT"
+    }
+  ],
+  "manifest_sha256": "038f6101bcfbda58bface38669693450d15159dcacda2bbcb4fe00bf654ab667",
+  "partitions": [
+    {
+      "by_category": {
+        "10": 8,
+        "11": 8,
+        "12": 8,
+        "14": 8,
+        "15": 8,
+        "17": 8,
+        "3": 8,
+        "4": 8
+      },
+      "item_count": 64,
+      "partition_sha256": "a1ed4a6092f7c3db5d89874718f64bdaaded026089f011d5d4698e18bd4386d3",
+      "split": "SCREEN"
+    },
+    {
+      "by_category": {
+        "10": 60,
+        "11": 60,
+        "12": 60,
+        "14": 60,
+        "15": 60,
+        "17": 60,
+        "3": 60,
+        "4": 60
+      },
+      "item_count": 480,
+      "partition_sha256": "f5856063ef0fb64429a1ee386236b7034693c9f0b5cc532378a188373e9be180",
+      "split": "QUALIFICATION_HOLDOUT"
+    },
+    {
+      "by_category": {
+        "10": 4,
+        "11": 4,
+        "12": 4,
+        "14": 4,
+        "15": 4,
+        "17": 4,
+        "3": 4,
+        "4": 4
+      },
+      "item_count": 32,
+      "partition_sha256": "46a47a5c44e16ebd033f78b89914e31b9da0589cfe9b9a9cc24b7b4ad469df5f",
+      "split": "DEV"
+    },
+    {
+      "by_category": {
+        "10": 8,
+        "11": 8,
+        "12": 8,
+        "14": 8,
+        "15": 8,
+        "17": 8,
+        "3": 8,
+        "4": 8
+      },
+      "item_count": 64,
+      "partition_sha256": "be9ab3d9961c71989407da43a0a7fddf534b50139b845a8837ef8a6a85a6f6e2",
+      "split": "TRAIN"
+    }
+  ],
+  "schema_version": "orneur-evalinfra-manifest/1",
+  "scorers": [
+    {
+      "id": "exact_match",
+      "type": "exact_match",
+      "version": "1"
+    },
+    {
+      "id": "pattern_match",
+      "type": "pattern_match",
+      "version": "1"
+    },
+    {
+      "id": "schema_match",
+      "type": "schema_match",
+      "version": "1"
+    },
+    {
+      "id": "unit_test",
+      "type": "unit_test",
+      "version": "1"
+    }
+  ],
+  "synthetic": true,
+  "taxonomy": "genesis-spec32-17cat-synthetic-subset"
+}
