@@ -85,28 +85,86 @@ def _redact(text: str) -> str:
     return text
 
 
+# G-023 -- the stable, machine-readable error vocabulary of the serve layer. A client may switch on `code`; the message is for people and may be
+# reworded. Codes are never removed or repurposed (add new ones). The HTTP status is the default for the code; a route may still choose another.
+ERROR_CATALOG: dict[str, tuple[int, str]] = {
+    "auth_required": (401, "Please sign in to continue."),
+    "forbidden": (403, "You do not have access to this."),
+    "model_access_denied": (402, "Your plan does not include this model."),
+    "quota_exceeded": (429, "You have reached your usage limit for today."),
+    "rate_limited": (429, "Too many requests. Please slow down and retry."),
+    "content_refused": (400, "This request can't be processed -- it matches a category we don't generate content for."),
+    "request_abstained": (422, "This request can't be completed."),
+    "invalid_request": (422, "The request was not valid."),
+    "not_found": (404, "Not found."),
+    "conflict": (409, "The request conflicts with the current state."),
+    "capability_disabled": (403, "This capability is not available in this environment."),
+    "model_unavailable": (503, "This model is not available right now. Please choose another model or try again later."),
+    "upstream_timeout": (504, "The model backend timed out. Please try again."),
+    "backend_unreachable": (503, "The model backend could not be reached. Please try again shortly."),
+    "backend_error": (502, "The model backend could not complete this request. Please try again."),
+    "server_busy": (503, "The server is at capacity. Please retry shortly."),
+    "cancelled": (499, "The request was cancelled."),
+    "internal_error": (500, "Something went wrong on our side. Please try again."),
+}
+
+_STATUS_DEFAULT_CODE = {401: "auth_required", 402: "model_access_denied", 403: "forbidden", 404: "not_found", 409: "conflict", 422: "invalid_request",
+                        429: "rate_limited", 503: "server_busy", 504: "upstream_timeout"}
+
+
+def default_code_for_status(status: int) -> str:
+    if status in _STATUS_DEFAULT_CODE:
+        return _STATUS_DEFAULT_CODE[status]
+    return "internal_error" if status >= 500 else "invalid_request"
+
+
 @dataclass(frozen=True)
 class PublicError:
     code: str
     message: str
     error_id: str
+    status: int = 500
+    extra: tuple = ()          # ((key, value), ...) -- safe, structured, caller-visible additions (e.g. used/limit)
 
     def as_json(self) -> dict:
-        return {"error": self.message, "code": self.code, "error_id": self.error_id}
+        return {"error": self.message, "code": self.code, "error_id": self.error_id, **dict(self.extra)}
 
     def as_sse(self) -> dict:
-        return {"type": "error", "text": self.message, "code": self.code, "error_id": self.error_id}
+        return {"type": "error", "text": self.message, "code": self.code, "error_id": self.error_id, **dict(self.extra)}
+
+
+def coded_error(code: str, *, message: str | None = None, status: int | None = None, **extra) -> PublicError:
+    """An error with a stable `code` that is not caused by an exception (quota, plan gate, refusal, ...)."""
+    if code not in ERROR_CATALOG:
+        raise KeyError(f"unknown error code: {code}")
+    default_status, default_message = ERROR_CATALOG[code]
+    return PublicError(code=code, message=message or default_message, error_id=uuid.uuid4().hex[:12],
+                       status=status or default_status, extra=tuple(extra.items()))
+
+
+def _classify_one(exc: BaseException) -> tuple[str, str] | None:
+    names = {cls.__name__ for cls in type(exc).__mro__}
+    if isinstance(exc, asyncio.CancelledError):
+        return "cancelled", ERROR_CATALOG["cancelled"][1]
+    if "ModelNotRoutableError" in names:
+        return "model_unavailable", ERROR_CATALOG["model_unavailable"][1]
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)) or names & _TIMEOUT_NAMES:
+        return "upstream_timeout", ERROR_CATALOG["upstream_timeout"][1]
+    if isinstance(exc, (ConnectionError, OSError)) or "ConnectError" in names:
+        return "backend_unreachable", ERROR_CATALOG["backend_unreachable"][1]
+    return None
 
 
 def _classify(exc: BaseException) -> tuple[str, str]:
-    names = {cls.__name__ for cls in type(exc).__mro__}
-    if "ModelNotRoutableError" in names:
-        return "model_unavailable", "This model is not available for public use right now. Please choose another model or try again later."
-    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)) or names & _TIMEOUT_NAMES:
-        return "upstream_timeout", "The model backend timed out. Please try again."
-    if isinstance(exc, (ConnectionError, OSError)) or "ConnectError" in names:
-        return "backend_unreachable", "The model backend could not be reached. Please try again shortly."
-    return "backend_error", "The model backend could not complete this request. Please try again."
+    """Walk the cause chain (the Kernel wraps backend failures), most specific first; unrecognised -> generic backend_error."""
+    seen, cur = 0, exc
+    while cur is not None and seen < 6:
+        hit = _classify_one(cur)
+        if hit:
+            return hit
+        cur = cur.__cause__ or cur.__context__
+        seen += 1
+    return "backend_error", ERROR_CATALOG["backend_error"][1]
 
 
 def public_error(exc: BaseException, *, route: str, user_id: str | None = None,
@@ -135,4 +193,6 @@ def public_error(exc: BaseException, *, route: str, user_id: str | None = None,
     if _detail_logging_enabled():
         formatted = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         _logger.debug("error_id=%s detail (redacted, debug-only):\n%s", error_id, _redact(formatted))
-    return PublicError(code=code or auto_code, message=message or auto_message, error_id=error_id)
+    final_code = code or auto_code
+    return PublicError(code=final_code, message=message or auto_message, error_id=error_id,
+                       status=ERROR_CATALOG.get(final_code, (500, ""))[0])

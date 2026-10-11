@@ -49,12 +49,11 @@ def test_chat_reaches_the_model_and_returns_the_reply_with_a_session(client, fak
 def test_stream_emits_session_chunk_done_with_a_message_id(client, fake):
     t, _ = _signup(client)
     evs = _events(client, _hdr(t), {"message": "hello again", "model_variant": "core"})
-    assert [e["type"] for e in evs] == ["session", "chunk", "done"]
-    assert evs[1]["text"] == "FAKE-REPLY" and evs[2]["message_id"] and "citation_compliance" in evs[2]
+    assert [e["type"] for e in evs] == ["session", "model", "stream", "chunk", "done"]
+    chunk, done = evs[3], evs[4]
+    assert chunk["text"] == "FAKE-REPLY" and chunk["replayed"] is True and done["message_id"] and "citation_compliance" in done
 
 
-@pytest.mark.xfail(strict=True, reason="G-015: the response does not say which model answered. A request for tier 'core' was served by the planning tier "
-                                       "('orca-nano') and nothing in the payload discloses it, so a model chip cannot be truthful.")
 def test_response_discloses_which_model_served(client, fake):
     t, _ = _signup(client)
     r = client.post("/api/chat", json={"message": "hello there", "model_variant": "core"}, headers=_hdr(t)).json()
@@ -130,8 +129,6 @@ def test_a_backend_failure_is_a_safe_error_and_the_next_request_recovers(client,
     assert client.post("/api/chat", json={"message": "recovered?", "session_id": sid}, headers=h).json()["response"] == "FAKE-REPLY"
 
 
-@pytest.mark.xfail(strict=True, reason="G-023: on the cognitive-kernel path a backend failure returns one generic message with no machine-readable code or "
-                                       "error_id (the other routes use public_error), so the UI cannot offer 'model unavailable' vs 'timed out' recovery.")
 def test_chat_errors_carry_a_machine_readable_code(client, fake):
     t, _ = _signup(client)
     fake.fail_status = 500
