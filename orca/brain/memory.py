@@ -17,7 +17,7 @@ from typing import Any
 
 import diskcache
 
-from orca.config import MEMORY_DIR, CACHE_DIR
+from orca.config import MEMORY_DIR, CACHE_DIR, _mkdir_owner_only
 
 
 @dataclass
@@ -196,7 +196,10 @@ class SemanticMemory:
     """Distilled facts/concepts persisted across all sessions via disk cache."""
 
     def __init__(self):
-        self._cache = diskcache.Cache(str(CACHE_DIR / "semantic"))
+        # "semantic" is created by diskcache itself if missing; validate it
+        # (and refuse a symlink/foreign-owned pre-existing entry) first.
+        semantic_dir = _mkdir_owner_only(CACHE_DIR / "semantic")
+        self._cache = diskcache.Cache(str(semantic_dir))
 
     def store_fact(self, key: str, value: Any) -> None:
         self._cache[f"fact:{key}"] = value

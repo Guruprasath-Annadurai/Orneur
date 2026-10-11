@@ -167,7 +167,27 @@ def _attacker_dir(path: Path, mode: int = 0o755) -> Path:
     return path
 
 
-def test_ancestor_other_writable_is_refused(tmp_path):
+@pytest.fixture
+def unsealed_base():
+    """A base directory under /tmp whose own ancestors are NOT sealed (0755,
+    like a normal home directory). pytest's tmp_path chain is 0700 and so
+    seals everything under it, which would (correctly) make a group/other-
+    writable child harmless -- tested separately."""
+    import shutil
+    import tempfile
+
+    if not os.path.isdir("/tmp") or not (os.stat("/tmp").st_mode & stat.S_ISVTX):
+        pytest.skip("needs a sticky /tmp")
+    base = Path(tempfile.mkdtemp(dir="/tmp"))
+    os.chmod(base, 0o755)
+    try:
+        yield base
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_ancestor_other_writable_is_refused(unsealed_base):
+    tmp_path = unsealed_base
     from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
 
     parent = tmp_path / "shared"
@@ -178,7 +198,8 @@ def test_ancestor_other_writable_is_refused(tmp_path):
     assert not (parent / "cache").exists()
 
 
-def test_ancestor_group_writable_is_refused(tmp_path):
+def test_ancestor_group_writable_is_refused(unsealed_base):
+    tmp_path = unsealed_base
     from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
 
     parent = tmp_path / "grp"
@@ -471,26 +492,48 @@ def test_race_stress_never_touches_attacker_target(tmp_path):
 
 def test_every_diskcache_store_lives_under_a_hardened_directory():
     """Enforceable invariant for the code after _mkdir_owner_only returns:
-    diskcache.Cache(...) is only ever opened on CACHE_DIR/QUEUE_DIR (or the
-    queue's cache_dir parameter, which is itself passed through
-    _mkdir_owner_only before use) -- i.e. a directory
-    that passed the walk above and is 0700, owned by us, in a chain no other
-    non-root account can write to."""
-    allowed = ("CACHE_DIR", "QUEUE_DIR", "directory")
+    the argument of every diskcache.Cache(...) in orca/ must be a name whose
+    every assignment in that file comes from a _mkdir_owner_only(...) call
+    (or from QUEUE_DIR/CACHE_DIR, themselves assigned from one in their own
+    module -- checked below). Literal paths, f-strings, `X / "sub"` and
+    caller parameters used directly are all rejected."""
+    constants = {"QUEUE_DIR": "orca/lens/queue.py", "CACHE_DIR": "orca/config.py"}
+    for name, rel in constants.items():
+        tree = ast.parse((REPO_ROOT / rel).read_text(encoding="utf-8"))
+        values = [n.value for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                  and any(isinstance(t, ast.Name) and t.id == name for t in n.targets)]
+        assert values and all("_mkdir_owner_only(" in ast.unparse(v) for v in values), name
+
+    def hardened(value, assigns):
+        text = ast.unparse(value)
+        if "_mkdir_owner_only(" in text:
+            return True
+        names = [n.id for n in ast.walk(value) if isinstance(n, ast.Name)]
+        return bool(names) and all(
+            n in constants or (n in assigns and all(hardened(v, assigns) for v in assigns[n]))
+            for n in names if n not in {"str", "Path"}
+        )
+
     seen = 0
     for py in (REPO_ROOT / "orca").rglob("*.py"):
         tree = ast.parse(py.read_text(encoding="utf-8"))
+        assigns: dict[str, list] = {}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Assign):
+                for t in n.targets:
+                    if isinstance(t, ast.Name):
+                        assigns.setdefault(t.id, []).append(n.value)
+                    elif isinstance(t, ast.Attribute):
+                        assigns.setdefault(t.attr, []).append(n.value)
         for n in ast.walk(tree):
             if isinstance(n, ast.Call) and ast.unparse(n.func).endswith("diskcache.Cache"):
                 seen += 1
-                assert any(a in ast.unparse(n.args[0]) for a in allowed), (
+                arg = n.args[0]
+                inner = arg.args[0] if isinstance(arg, ast.Call) and ast.unparse(arg.func) == "str" else arg
+                assert isinstance(inner, ast.Name) and hardened(inner, assigns), (
                     f"{py}:{n.lineno} opens diskcache outside a hardened dir: {ast.unparse(n)}"
                 )
-    assert seen >= 2
-    # `directory` in the queue is the return value of the hardening call.
-    assert "directory = _mkdir_owner_only(Path(cache_dir), parents=True)" in (
-        REPO_ROOT / "orca/lens/queue.py"
-    ).read_text(encoding="utf-8")
+    assert seen == 2, f"expected exactly the queue and semantic-memory sites, found {seen}"
 
 
 # --- Item 2: setuptools pin portability (pip vs uv) -----------------------

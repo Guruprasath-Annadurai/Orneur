@@ -45,6 +45,10 @@ class UntrustedStoreDirectory(RuntimeError):
     the symlink/ownership check in `_mkdir_owner_only` and was refused."""
 
 
+_DIRFD_SUPPORTED = (
+    hasattr(os, "geteuid") and hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY")
+    and {os.open, os.mkdir, os.stat, os.readlink} <= os.supports_dir_fd
+)
 _DIR_OPEN_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
 
 
@@ -60,24 +64,32 @@ def _open_dir_nofollow(name: str, dir_fd: int, shown: str) -> int:
         raise
 
 
-def _require_trusted_ancestor(fd: int, shown: str) -> None:
-    """An ancestor is trusted only if nobody but root or this user can
-    rename, replace or plant entries in it: owned by root/euid and not
-    group/other-writable (a root-owned sticky directory such as /tmp is the
-    one exception, because sticky stops other users renaming our entries)."""
+def _require_trusted_ancestor(fd: int, shown: str, sealed: bool) -> bool:
+    """Verify one directory on the walk; return True if the subtree below it
+    is sealed off from other accounts.
+
+    Owner must be root or this user. Unless an ancestor already sealed the
+    subtree, the directory must also not be group/other-writable (a
+    root-owned sticky directory such as /tmp is the one exception, because
+    sticky stops other users renaming entries they do not own). A directory
+    with no group/other permission bits at all (mode & 077 == 0, owned by
+    root/us) cannot be traversed by another account, so nothing below it can
+    be swapped by one: deeper group/other-writable bits (e.g. a leftover
+    0775 from `umask 002`) are then harmless and are not rejected."""
     st = os.fstat(fd)
     if st.st_uid not in (0, os.geteuid()):
         raise UntrustedStoreDirectory(
             f"refusing to use a path under {shown}: owned by uid {st.st_uid}, "
             f"which is neither root nor this process's uid {os.geteuid()}."
         )
-    if st.st_mode & 0o022 and not (st.st_mode & stat.S_ISVTX and st.st_uid == 0):
+    if not sealed and st.st_mode & 0o022 and not (st.st_mode & stat.S_ISVTX and st.st_uid == 0):
         raise UntrustedStoreDirectory(
             f"refusing to use a path under {shown}: it is group/other-"
             "writable, so another local account could swap a path component "
             "for a symlink between validation and use. Remove the extra "
             "write bits (chmod go-w) or choose a different location."
         )
+    return sealed or (st.st_mode & 0o077) == 0
 
 
 def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
@@ -92,12 +104,32 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
     PyPI release), so the mitigation is denying write access to anyone but
     the owning user.
 
+    Returns the CANONICAL path -- the exact chain of directories this call
+    verified, containing no symlink -- and callers must open stores through
+    the returned value, not the argument. (An ancestor symlink owned by
+    root/us is followed during the walk; it is not part of what is returned.)
+
+    Contract / invariant: for the returned path P, every component of P was
+    opened with openat(O_NOFOLLOW|O_DIRECTORY) from "/" and is owned by root
+    or this user; and either no other non-root account can write to (or
+    rename within) any of those directories, or the subtree is sealed
+    (a 0700 directory owned by root/us, which other accounts cannot
+    traverse). Therefore no other non-root account can make P resolve
+    anywhere else after this function returns.
+
+    Platform/filesystem assumptions (anything else fails closed or is
+    unsupported): POSIX with openat/mkdirat/fstatat/O_NOFOLLOW/O_DIRECTORY
+    (Linux, macOS) on a local filesystem with ordinary Unix owner/mode
+    semantics. Not covered: Windows; network/FUSE filesystems that fake
+    ownership or mode (NFS with root squash, some bind mounts); POSIX
+    ACLs or capabilities that grant other accounts access the mode bits do
+    not show; and an adversary that is root or the same uid.
+
     Race-safe by construction (symlink-swap / TOCTOU): nothing here
-    re-resolves a path string between a check and its use, and the
-    ORIGINAL pathname (which diskcache later reopens by name) is the thing
-    being validated -- not a resolved copy of it. The path is walked once
-    from "/" with openat(O_NOFOLLOW|O_DIRECTORY); every check (owner, mode)
-    and the final chmod operate on the already-open descriptor.
+    re-resolves a path string between a check and its use. The path is
+    walked once from "/" with openat(O_NOFOLLOW|O_DIRECTORY); every check
+    (owner, mode) and the final chmod operate on the already-open
+    descriptor.
 
     * Every directory on the walk must be owned by root or this user and
       not group/other-writable (root-owned sticky dirs like /tmp excepted).
@@ -124,6 +156,11 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
     maliciously; and pre-existing *contents* of a loosely-permissioned
     leaf that another account planted before this release hardened it.
     """
+    if not _DIRFD_SUPPORTED:
+        raise UntrustedStoreDirectory(
+            "unsupported platform: descriptor-relative no-follow directory "
+            "operations (openat/mkdirat/fstatat, O_NOFOLLOW) are required."
+        )
     absolute = os.path.abspath(path)
     leaf = os.path.basename(absolute)
     if not leaf:
@@ -133,8 +170,9 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
 
     fd = os.open(os.sep, _DIR_OPEN_FLAGS)
     try:
-        _require_trusted_ancestor(fd, os.sep)
+        sealed = _require_trusted_ancestor(fd, os.sep, False)
         shown = os.sep
+        canon: list[str] = []
         links = 0
         while pending:
             name = pending.pop()
@@ -172,12 +210,20 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
                     os.close(fd)
                     fd = os.open(os.sep, _DIR_OPEN_FLAGS)
                     shown = os.sep
+                    canon.clear()
+                    sealed = _require_trusted_ancestor(fd, os.sep, False)
                 pending.extend(reversed([p for p in target.split(os.sep) if p]))
                 continue
             os.close(fd)
             fd = nfd
             shown = os.path.join(shown, name)
-            _require_trusted_ancestor(fd, shown)
+            if name == "..":
+                if canon:
+                    canon.pop()
+                sealed = _require_trusted_ancestor(fd, shown, False)
+            else:
+                canon.append(name)
+                sealed = _require_trusted_ancestor(fd, shown, sealed)
 
         try:
             os.mkdir(leaf, 0o700, dir_fd=fd)
@@ -198,7 +244,7 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
         os.fchmod(lfd, 0o700)
     finally:
         os.close(lfd)
-    return path
+    return Path(os.sep + os.sep.join([*canon, leaf]))
 
 
 # .expanduser() is required here — python-dotenv (and any shell config a
@@ -210,16 +256,13 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
 # not a hypothetical: it silently redirected the auth DB, audit log, memory,
 # and every other ORCA_HOME-relative store to the wrong location.
 ORCA_HOME = Path(orneur_env("HOME", str(Path.home() / ".orca"))).expanduser()
-_mkdir_owner_only(ORCA_HOME, parents=True)
+ORCA_HOME = _mkdir_owner_only(ORCA_HOME, parents=True)
 
-MEMORY_DIR = ORCA_HOME / "memory"
-_mkdir_owner_only(MEMORY_DIR)
+MEMORY_DIR = _mkdir_owner_only(ORCA_HOME / "memory")
 
-CACHE_DIR = ORCA_HOME / "cache"
-_mkdir_owner_only(CACHE_DIR)
+CACHE_DIR = _mkdir_owner_only(ORCA_HOME / "cache")
 
-VAULT_DIR = ORCA_HOME / "vault"
-_mkdir_owner_only(VAULT_DIR)
+VAULT_DIR = _mkdir_owner_only(ORCA_HOME / "vault")
 
 
 class OllamaConfig(BaseModel):

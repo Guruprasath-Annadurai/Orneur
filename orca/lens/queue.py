@@ -39,8 +39,7 @@ import diskcache
 
 from orca.config import ORCA_HOME, _mkdir_owner_only
 
-QUEUE_DIR = ORCA_HOME / "lens" / "queue"
-_mkdir_owner_only(QUEUE_DIR, parents=True)
+QUEUE_DIR = _mkdir_owner_only(ORCA_HOME / "lens" / "queue", parents=True)
 
 # Valid job lifecycle: pending -> running -> (done | failed | blocked)
 _VALID_STATUSES = {"pending", "running", "done", "failed", "blocked"}
