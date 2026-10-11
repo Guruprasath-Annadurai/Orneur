@@ -26,8 +26,11 @@ reasoning.
 """
 from __future__ import annotations
 
+import ast
 import copy
+import errno
 import json
+import threading
 import os
 import stat
 import subprocess
@@ -151,6 +154,345 @@ def test_mkdir_owner_only_accepts_a_preexisting_directory_owned_by_this_process(
     assert stat.S_IMODE(target.stat().st_mode) == 0o700
 
 
+# --- Item 4 follow-up: symlink-swap races, attacker-writable ancestors ----
+
+_NOBODY = 65534
+needs_root = pytest.mark.skipif(os.geteuid() != 0, reason="needs root to create other-uid directories")
+
+
+def _attacker_dir(path: Path, mode: int = 0o755) -> Path:
+    path.mkdir(mode=mode, exist_ok=True)
+    os.chown(path, _NOBODY, _NOBODY)
+    os.chmod(path, mode)
+    return path
+
+
+def test_ancestor_other_writable_is_refused(tmp_path):
+    from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
+
+    parent = tmp_path / "shared"
+    parent.mkdir()
+    os.chmod(parent, 0o777)
+    with pytest.raises(UntrustedStoreDirectory, match="writable"):
+        _mkdir_owner_only(parent / "cache")
+    assert not (parent / "cache").exists()
+
+
+def test_ancestor_group_writable_is_refused(tmp_path):
+    from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
+
+    parent = tmp_path / "grp"
+    parent.mkdir()
+    os.chmod(parent, 0o775)
+    with pytest.raises(UntrustedStoreDirectory, match="writable"):
+        _mkdir_owner_only(parent / "cache")
+
+
+@needs_root
+def test_ancestor_owned_by_other_uid_is_refused(tmp_path):
+    from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
+
+    evil = _attacker_dir(tmp_path / "evil")
+    with pytest.raises(UntrustedStoreDirectory, match="uid"):
+        _mkdir_owner_only(evil / "cache")
+
+
+@needs_root
+def test_intermediate_dir_owned_by_attacker_is_refused_with_parents(tmp_path):
+    """parents=True used to create/accept intermediates with no checks at all:
+    <home>/<attacker-owned>/<leaf>."""
+    from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
+
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    _attacker_dir(home / "lens")
+    with pytest.raises(UntrustedStoreDirectory):
+        _mkdir_owner_only(home / "lens" / "queue", parents=True)
+    assert not (home / "lens" / "queue").exists()
+
+
+@needs_root
+def test_planted_intermediate_symlink_to_attacker_dir_is_refused(tmp_path):
+    from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
+
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    target = _attacker_dir(tmp_path / "attacker_target", 0o777)
+    (home / "lens").symlink_to(target)
+    with pytest.raises(UntrustedStoreDirectory):
+        _mkdir_owner_only(home / "lens" / "queue", parents=True)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o777, "attacker target must not be touched"
+    assert list(target.iterdir()) == []
+
+
+def test_intermediate_symlink_to_our_own_safe_dir_is_allowed(tmp_path):
+    """Documented benign case: a symlink that resolves into a directory chain
+    that itself passes the ownership/mode test cannot hand control to anyone."""
+    from orca.config import _mkdir_owner_only
+
+    safe = tmp_path / "safe"
+    safe.mkdir(mode=0o700)
+    (tmp_path / "link").symlink_to(safe)
+    _mkdir_owner_only(tmp_path / "link" / "queue")
+    assert stat.S_IMODE((safe / "queue").stat().st_mode) == 0o700
+
+
+@needs_root
+def test_sticky_root_owned_world_writable_parent_is_accepted(tmp_path):
+    """/tmp-style: sticky stops other users renaming entries we own."""
+    from orca.config import _mkdir_owner_only
+
+    stick = tmp_path / "sticky"
+    stick.mkdir()
+    os.chmod(stick, 0o1777)
+    _mkdir_owner_only(stick / "mine")
+    assert stat.S_IMODE((stick / "mine").stat().st_mode) == 0o700
+
+
+def test_missing_parent_without_parents_flag_still_fails(tmp_path):
+    from orca.config import _mkdir_owner_only
+
+    with pytest.raises(FileNotFoundError):
+        _mkdir_owner_only(tmp_path / "missing" / "leaf")
+
+
+def test_parents_true_creates_intermediates_at_0700(tmp_path):
+    from orca.config import _mkdir_owner_only
+
+    _mkdir_owner_only(tmp_path / "a" / "b" / "c", parents=True)
+    for d in ("a", "a/b", "a/b/c"):
+        assert stat.S_IMODE((tmp_path / d).stat().st_mode) == 0o700
+
+
+def test_regular_file_at_leaf_is_refused_not_chmodded(tmp_path):
+    from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
+
+    f = tmp_path / "file"
+    f.write_text("x")
+    os.chmod(f, 0o644)
+    with pytest.raises(UntrustedStoreDirectory):
+        _mkdir_owner_only(f)
+    assert stat.S_IMODE(f.stat().st_mode) == 0o644
+
+
+@needs_root
+def test_race_leaf_swapped_for_symlink_after_mkdir_is_never_followed(tmp_path, monkeypatch):
+    """Deterministic TOCTOU: the instant our mkdirat returns, the attacker
+    replaces the new leaf with a symlink to their directory. The old code's
+    post-mkdir is_symlink() window and path.chmod() both re-resolved the name;
+    the fd-based walk opens with O_NOFOLLOW and must fail closed."""
+    import orca.config as cfg
+
+    target = _attacker_dir(tmp_path / "attacker_target", 0o777)
+    victim = tmp_path / "victim"
+    real_mkdir = os.mkdir
+
+    def swapping_mkdir(name, mode=0o777, *, dir_fd=None):
+        real_mkdir(name, mode, dir_fd=dir_fd)
+        if name == "victim":
+            os.rmdir(name, dir_fd=dir_fd)
+            os.symlink(str(target), name, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "mkdir", swapping_mkdir)
+    with pytest.raises(cfg.UntrustedStoreDirectory):
+        cfg._mkdir_owner_only(victim)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o777
+
+
+@needs_root
+def test_race_ancestor_swapped_for_symlink_before_open_fails_closed(tmp_path, monkeypatch):
+    """Attacker swaps an ancestor for a symlink to their directory right
+    before our openat. O_NOFOLLOW rejects the entry as a directory; the
+    resulting target chain is attacker-owned and refused. Nothing is written
+    into, and the mode is untouched on, the attacker's directory."""
+    import orca.config as cfg
+
+    home = tmp_path / "home"
+    (home / "lens").mkdir(parents=True, mode=0o700)
+    target = _attacker_dir(tmp_path / "attacker_target", 0o777)
+    real_open = os.open
+    swapped = []
+
+    def swapping_open(name, flags, mode=0o777, *, dir_fd=None):
+        if name == "lens" and dir_fd is not None and not swapped:
+            swapped.append(1)
+            (home / "lens").rmdir()
+            (home / "lens").symlink_to(target)
+        return real_open(name, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", swapping_open)
+    with pytest.raises(cfg.UntrustedStoreDirectory):
+        cfg._mkdir_owner_only(home / "lens" / "queue")
+    assert swapped
+    assert list(target.iterdir()) == []
+    assert stat.S_IMODE(target.stat().st_mode) == 0o777
+
+
+@needs_root
+def test_attacker_owned_symlink_in_sticky_dir_is_refused_even_if_target_is_safe(tmp_path):
+    """Reviewer-reported TOCTOU: in a root-owned sticky dir (/tmp) an attacker
+    plants THEIR OWN symlink pointing at a trusted-looking directory. Validating
+    only the resolved target would pass, after which they repoint the entry at
+    attacker storage and diskcache reopens the original pathname. The symlink's
+    own owner must be root/us; this one is nobody's and must be refused."""
+    from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
+
+    stick = tmp_path / "tmp"
+    stick.mkdir()
+    os.chmod(stick, 0o1777)
+    safe = tmp_path / "safe"
+    safe.mkdir(mode=0o700)
+    evil = _attacker_dir(tmp_path / "attacker_store", 0o777)
+    link = stick / "x"
+    os.symlink(safe, link)
+    os.lchown(link, _NOBODY, _NOBODY)
+
+    with pytest.raises(UntrustedStoreDirectory, match="symlink"):
+        _mkdir_owner_only(link / "cache")
+    assert list(safe.iterdir()) == [] and list(evil.iterdir()) == []
+
+    # the attacker's follow-up (repoint) is only possible because they own the
+    # entry; having been refused above, nothing was created through it.
+    link.unlink()
+    os.symlink(evil, link)
+    os.lchown(link, _NOBODY, _NOBODY)
+    with pytest.raises(UntrustedStoreDirectory):
+        _mkdir_owner_only(link / "cache")
+    assert list(evil.iterdir()) == []
+
+
+@needs_root
+def test_attacker_cannot_replace_a_root_owned_symlink_in_sticky_dir(tmp_path):
+    """Why following a root/us-owned symlink is safe: sticky forbids another
+    uid from unlinking/renaming it, and our walk accepts it."""
+    from orca.config import _mkdir_owner_only
+
+    stick = tmp_path / "tmp"
+    stick.mkdir()
+    os.chmod(stick, 0o1777)
+    safe = tmp_path / "safe"
+    safe.mkdir(mode=0o700)
+    link = stick / "ours"
+    os.symlink(safe, link)  # created by root
+
+    pid = os.fork()
+    if pid == 0:  # child: drop to the attacker uid and try to repoint the link
+        try:
+            os.setgid(_NOBODY)
+            os.setuid(_NOBODY)
+            os.unlink(link)
+            os._exit(1)  # unlink succeeded -> invariant broken
+        except PermissionError:
+            os._exit(0)
+        except BaseException:
+            os._exit(2)
+    _, status = os.waitpid(pid, 0)
+    assert os.waitstatus_to_exitcode(status) == 0, "attacker was able to remove our symlink"
+    _mkdir_owner_only(link / "cache")
+    assert stat.S_IMODE((safe / "cache").stat().st_mode) == 0o700
+
+
+def test_symlink_loop_is_refused(tmp_path):
+    from orca.config import _mkdir_owner_only, UntrustedStoreDirectory
+
+    (tmp_path / "a").symlink_to(tmp_path / "b")
+    (tmp_path / "b").symlink_to(tmp_path / "a")
+    with pytest.raises(UntrustedStoreDirectory):
+        _mkdir_owner_only(tmp_path / "a" / "leaf")
+
+
+def test_absolute_and_relative_own_symlinks_are_followed(tmp_path):
+    from orca.config import _mkdir_owner_only
+
+    real = tmp_path / "real"
+    real.mkdir(mode=0o700)
+    (tmp_path / "abs").symlink_to(real)
+    (tmp_path / "rel").symlink_to("real")
+    _mkdir_owner_only(tmp_path / "abs" / "q1")
+    _mkdir_owner_only(tmp_path / "rel" / "q2")
+    assert (real / "q1").is_dir() and (real / "q2").is_dir()
+
+
+@needs_root
+def test_lens_queue_with_caller_supplied_dir_goes_through_hardening(tmp_path):
+    from orca.config import UntrustedStoreDirectory
+    from orca.lens.queue import LensJobQueue
+
+    loose = tmp_path / "loose"
+    loose.mkdir(mode=0o777)
+    os.chmod(loose, 0o777 & ~0o022 | 0o700)
+    q = LensJobQueue(cache_dir=tmp_path / "q" / "inner")
+    assert stat.S_IMODE((tmp_path / "q" / "inner").stat().st_mode) == 0o700
+    q._cache.close()
+
+    evil = _attacker_dir(tmp_path / "evil")
+    with pytest.raises(UntrustedStoreDirectory):
+        LensJobQueue(cache_dir=evil / "q")
+
+
+@needs_root
+def test_race_stress_never_touches_attacker_target(tmp_path):
+    """Concurrent attacker flips the leaf between a real directory and a
+    symlink to their 0777 directory while we call repeatedly. Whatever the
+    interleaving, the attacker's target must never be chmod'ed or written."""
+    import orca.config as cfg
+
+    target = _attacker_dir(tmp_path / "attacker_target", 0o777)
+    victim = tmp_path / "victim"
+    stop = threading.Event()
+
+    def attacker():
+        while not stop.is_set():
+            try:
+                if victim.is_symlink():
+                    victim.unlink()
+                elif victim.exists():
+                    victim.rmdir()
+                victim.symlink_to(target)
+                victim.unlink()
+                victim.mkdir()
+            except OSError:
+                pass
+
+    t = threading.Thread(target=attacker)
+    t.start()
+    try:
+        for _ in range(3000):
+            try:
+                cfg._mkdir_owner_only(victim)
+            except (cfg.UntrustedStoreDirectory, OSError):
+                pass
+            assert stat.S_IMODE(target.stat().st_mode) == 0o777
+            assert list(target.iterdir()) == []
+    finally:
+        stop.set()
+        t.join()
+
+
+def test_every_diskcache_store_lives_under_a_hardened_directory():
+    """Enforceable invariant for the code after _mkdir_owner_only returns:
+    diskcache.Cache(...) is only ever opened on CACHE_DIR/QUEUE_DIR (or the
+    queue's cache_dir parameter, which is itself passed through
+    _mkdir_owner_only before use) -- i.e. a directory
+    that passed the walk above and is 0700, owned by us, in a chain no other
+    non-root account can write to."""
+    allowed = ("CACHE_DIR", "QUEUE_DIR", "directory")
+    seen = 0
+    for py in (REPO_ROOT / "orca").rglob("*.py"):
+        tree = ast.parse(py.read_text(encoding="utf-8"))
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Call) and ast.unparse(n.func).endswith("diskcache.Cache"):
+                seen += 1
+                assert any(a in ast.unparse(n.args[0]) for a in allowed), (
+                    f"{py}:{n.lineno} opens diskcache outside a hardened dir: {ast.unparse(n)}"
+                )
+    assert seen >= 2
+    # `directory` in the queue is the return value of the hardening call.
+    assert "directory = _mkdir_owner_only(Path(cache_dir), parents=True)" in (
+        REPO_ROOT / "orca/lens/queue.py"
+    ).read_text(encoding="utf-8")
+
+
 # --- Item 2: setuptools pin portability (pip vs uv) -----------------------
 
 def test_lens_and_train_extras_carry_a_portable_setuptools_floor():
@@ -232,23 +574,112 @@ def test_KNOWN_LIMITATION_synthetic_fence_constructor_bypasses_no_adoption_rule(
     )
 
 
+_FENCE = "SyntheticFence"
+
+
+def _synthetic_fence_use_sites(root: Path) -> list[str]:
+    """AST scan of every non-test .py file under `root` (journal.py, where
+    the class is defined, is NOT exempt) for anything that could construct a
+    SyntheticFence: a direct call, a call through an alias (`import ... as`
+    or `X = SyntheticFence`), a subclass, or a getattr/__import__ lookup by
+    the string name. The class definition itself and plain isinstance /
+    annotation references are the only uses allowed to pass.
+
+    Known limitation (static analysis): construction through `type(obj)(...)`,
+    copy/pickle of an existing instance, or fully dynamic names built at
+    runtime is not detected. The fence stays a test-only synthetic object
+    regardless -- see SYNTHETIC_NOT_REAL_HARDWARE_PROOF."""
+    hits: list[str] = []
+    for py in sorted(root.rglob("*.py")):
+        rel = py.relative_to(root)
+        if rel.parts[0] in {"tests", "node_modules", "notebooks"} or any(
+            p.startswith(".") or p in {"venv", "site-packages"} for p in rel.parts
+        ):
+            continue
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            hits.append(f"{rel}: unparseable (cannot prove it is clean)")
+            continue
+        aliases = {_FENCE}
+
+        def refs(node) -> bool:
+            return (isinstance(node, ast.Name) and node.id in aliases) or (
+                isinstance(node, ast.Attribute) and node.attr in aliases
+            )
+
+        changed = True
+        while changed:  # fixpoint over `A = SyntheticFence; B = A`
+            changed = False
+            for n in ast.walk(tree):
+                if isinstance(n, (ast.Import, ast.ImportFrom)):
+                    for a in n.names:
+                        if a.asname and a.name.split(".")[-1] in aliases and a.asname not in aliases:
+                            aliases.add(a.asname)
+                            hits.append(f"{rel}:{n.lineno}: aliased import of {_FENCE}")
+                            changed = True
+                elif isinstance(n, ast.Assign) and refs(n.value):
+                    for t in n.targets:
+                        if isinstance(t, ast.Name) and t.id not in aliases:
+                            aliases.add(t.id)
+                            hits.append(f"{rel}:{n.lineno}: alias assignment of {_FENCE}")
+                            changed = True
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Call):
+                if refs(n.func):
+                    hits.append(f"{rel}:{n.lineno}: call to {_FENCE}")
+                if any(isinstance(a, ast.Constant) and a.value == _FENCE for a in n.args):
+                    hits.append(f"{rel}:{n.lineno}: dynamic lookup of {_FENCE} by name")
+            elif isinstance(n, ast.ClassDef) and any(refs(b) for b in n.bases):
+                hits.append(f"{rel}:{n.lineno}: subclass of {_FENCE}")
+    return hits
+
+
 def test_synthetic_fence_is_not_constructed_anywhere_outside_tests():
     """Confirms the "currently unreachable" half of the SyntheticFence
-    disposition above stays true -- fails loudly if a future change wires
-    SyntheticFence construction into a production code path without this
-    triage's constructor-bypass finding being revisited first."""
-    result = subprocess.run(
-        ["grep", "-rn", "SyntheticFence(", "orca/"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
+    disposition stays true. Unlike the earlier grep-based version, this
+    does not exempt journal.py, so a new call inside the defining module
+    is caught too."""
+    assert _synthetic_fence_use_sites(REPO_ROOT) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "class SyntheticFence:\n    pass\n\ndef forge():\n    return SyntheticFence(floor=7, digest=b'X' * 32)\n",
+        "class SyntheticFence:\n    pass\n\n_f = SyntheticFence()\n",
+        "class SyntheticFence:\n    pass\n\nF = SyntheticFence\nx = F(1, b'')\n",
+        "from orca.rse.imp3.journal import SyntheticFence as SF\nx = SF()\n",
+        "import orca.rse.imp3.journal as j\nx = j.SyntheticFence()\n",
+        "class SyntheticFence:\n    pass\n\nclass Sub(SyntheticFence):\n    pass\n",
+        "import importlib\nm = importlib.import_module('x')\nc = getattr(m, 'SyntheticFence')\n",
+    ],
+)
+def test_synthetic_fence_scanner_catches_evasions_including_inside_journal_py(tmp_path, source):
+    """Scanner self-test: each of these -- notably a call placed inside
+    journal.py itself, the file the old grep exempted -- must be reported."""
+    journal = tmp_path / "orca" / "rse" / "imp3" / "journal.py"
+    journal.parent.mkdir(parents=True)
+    journal.write_text(source)
+    assert _synthetic_fence_use_sites(tmp_path) != []
+
+
+def test_synthetic_fence_scanner_allows_definition_isinstance_and_docs(tmp_path):
+    mod = tmp_path / "orca" / "ok.py"
+    mod.parent.mkdir(parents=True)
+    mod.write_text(
+        '"""SyntheticFence( in a docstring is not a call."""\n'
+        "from orca.rse.imp3.journal import SyntheticFence\n"
+        "# SyntheticFence() in a comment\n"
+        "def gate(f: SyntheticFence) -> bool:\n    return isinstance(f, SyntheticFence) and not f.virgin\n"
     )
-    offending = [
-        line for line in result.stdout.splitlines()
-        if "/tests/" not in line and not line.split(":", 1)[0].endswith("orca/rse/imp3/journal.py")
-    ]
-    assert offending == [], (
-        "SyntheticFence is now constructed outside tests/ and its own "
-        f"definition file -- re-triage the constructor-bypass finding before "
-        f"shipping this: {offending}"
-    )
+    assert _synthetic_fence_use_sites(tmp_path) == []
+
+
+def test_synthetic_fence_is_labelled_synthetic_not_hardware_trust():
+    """The fence is a deterministic software counter, not a TPM NV index or
+    any hardware-backed monotonic counter; its own label must keep saying so."""
+    from orca.rse.imp3.journal import SYNTHETIC_NOT_REAL_HARDWARE_PROOF, SyntheticFence
+
+    assert SYNTHETIC_NOT_REAL_HARDWARE_PROOF == "SYNTHETIC_NOT_REAL_HARDWARE_PROOF"
+    assert SyntheticFence.label == SYNTHETIC_NOT_REAL_HARDWARE_PROOF

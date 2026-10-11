@@ -74,7 +74,10 @@ class LensJobQueue:
     """
 
     def __init__(self, cache_dir: Path | None = None):
-        self._cache = diskcache.Cache(str(cache_dir or QUEUE_DIR))
+        # A caller-supplied cache_dir used to skip the owner-only/symlink
+        # hardening that QUEUE_DIR gets at import time (PYSEC-2026-2447).
+        directory = _mkdir_owner_only(Path(cache_dir), parents=True) if cache_dir else QUEUE_DIR
+        self._cache = diskcache.Cache(str(directory))
 
     def submit(
         self,
