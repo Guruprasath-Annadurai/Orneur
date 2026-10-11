@@ -9,7 +9,7 @@ and code execution for web users (disabled by G-020) has a reviewed target, inst
 * The "workspace" is one shared directory. A shared directory with a path check is a *namespace convention*, not a tenant boundary:
   symlink races, `git`/`find` flags, and content written by user A and read by user B all cross it.
 * The Python "sandbox" (`orca/code/sandbox.py`) is an AST deny-list in the server's environment; allowing `pathlib` was enough to read
-  `/proc/self/environ` (reproduced: `docs/orneur/status/g020/BEFORE_original.txt`).
+  `/proc/self/environ` (reproduced: `docs/orneur/status/sprint2/BEFORE_original.txt`).
 
 ## Required properties before any web tool is re-enabled
 1. **Identity**: every execution request carries `(tenant_id, user_id, session_id, request_id)` derived from the verified token, never from model output.

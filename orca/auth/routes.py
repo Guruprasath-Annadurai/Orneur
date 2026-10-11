@@ -67,6 +67,10 @@ def _make_response(user: User) -> dict:
 @router.post("/signup")
 async def signup(req: SignupRequest, request: Request):
     ratelimit.enforce(request, ratelimit.AUTH_SIGNUP)
+    from orca.auth.bootstrap import signup_blocked_until_bootstrap
+    if signup_blocked_until_bootstrap():
+        # G-021: a public deployment with no owner is not open for ordinary signups.
+        raise HTTPException(503, detail={"error": "This deployment has not been initialized.", "code": "owner_not_initialized"})
     if len(req.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     if "@" not in req.email or "." not in req.email.split("@")[-1]:
@@ -89,6 +93,36 @@ async def signup(req: SignupRequest, request: Request):
     if email_configured():
         token = make_verification_token(user.id, user.email)
         send_verification(user.email, token)
+    return _make_response(user)
+
+
+class BootstrapOwnerRequest(BaseModel):
+    token: str
+    email: str
+    password: str
+    name: str = ""
+
+
+@router.get("/bootstrap-status")
+async def bootstrap_status():
+    """Public and deliberately minimal: whether an owner exists. Never names the owner."""
+    from orca.auth.bootstrap import owner_exists
+    return {"initialized": owner_exists()}
+
+
+@router.post("/bootstrap-owner")
+async def bootstrap_owner(req: BootstrapOwnerRequest, request: Request):
+    """Redeem an operator-issued, single-use, email-bound token (`python -m orca.auth.bootstrap issue`). One-time; see orca/auth/bootstrap.py."""
+    ratelimit.enforce(request, ratelimit.AUTH_LOGIN, extra_key="bootstrap_owner")
+    from orca import audit
+    from orca.auth.bootstrap import BootstrapError, redeem
+    try:
+        user = redeem(req.token, req.email, req.password, req.name)
+    except BootstrapError as e:
+        audit.log("owner_bootstrap_refused", detail={"code": e.code})
+        status = 409 if e.code == "already_initialized" else 403
+        raise HTTPException(status, detail={"error": "Owner bootstrap was refused.", "code": e.code})
+    audit.log("owner_bootstrap_completed", user_id=user.id, detail={"method": "token"})
     return _make_response(user)
 
 

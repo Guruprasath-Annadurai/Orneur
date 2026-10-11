@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""G-020 before/after: run the agent-tool-authority tests and print one line per test.
+"""Sprint-2 before/after: run a test file and print one line per test.
 
-    python scripts/security/g020_repro.py                                  # fixed tree
-    git stash push -- orca && python scripts/security/g020_repro.py; git stash pop   # original source, same tests
+    python scripts/security/sprint2_repro.py [tests/test_file.py]                                  # fixed tree
+    git stash push -- orca && python scripts/security/sprint2_repro.py [tests/test_file.py]; git stash pop   # original source, same tests
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-TESTS = "tests/test_g020_agent_tool_authority.py"
+TESTS = sys.argv[1] if len(sys.argv) > 1 else "tests/test_g020_agent_tool_authority.py"
 
 
 def main() -> int:

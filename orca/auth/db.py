@@ -111,6 +111,27 @@ CREATE TABLE IF NOT EXISTS session_storage_keys (
     created_at  TEXT NOT NULL
 );
 
+-- G-021: owner bootstrap. `owner_bootstrap` is a singleton (id is always 1):
+-- the PRIMARY KEY makes "who completed bootstrap" a database-decided fact, so
+-- two racing redemptions cannot both win. `owner_bootstrap_tokens` holds
+-- operator-issued, single-use, email-bound, expiring tokens -- only a SHA-256
+-- of the token is stored.
+CREATE TABLE IF NOT EXISTS owner_bootstrap (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    owner_user_id TEXT NOT NULL,
+    completed_at  TEXT NOT NULL,
+    method        TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS owner_bootstrap_tokens (
+    token_hash  TEXT PRIMARY KEY,
+    bound_email TEXT NOT NULL,
+    issued_at   TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    redeemed_at TEXT,
+    redeemed_by TEXT
+);
+
+
 -- Enterprise/Team management — one organization per owning account. Seat
 -- limits are tied to the owner's tier (free/pro/enterprise), NOT a separate
 -- Stripe seat-billing product — a real scoping limit, not an oversight.
@@ -268,6 +289,27 @@ CREATE TABLE IF NOT EXISTS session_storage_keys (
     session_id  TEXT NOT NULL,
     created_at  TEXT NOT NULL
 );
+
+-- G-021: owner bootstrap. `owner_bootstrap` is a singleton (id is always 1):
+-- the PRIMARY KEY makes "who completed bootstrap" a database-decided fact, so
+-- two racing redemptions cannot both win. `owner_bootstrap_tokens` holds
+-- operator-issued, single-use, email-bound, expiring tokens -- only a SHA-256
+-- of the token is stored.
+CREATE TABLE IF NOT EXISTS owner_bootstrap (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    owner_user_id TEXT NOT NULL,
+    completed_at  TEXT NOT NULL,
+    method        TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS owner_bootstrap_tokens (
+    token_hash  TEXT PRIMARY KEY,
+    bound_email TEXT NOT NULL,
+    issued_at   TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    redeemed_at TEXT,
+    redeemed_by TEXT
+);
+
 
 -- See _SCHEMA_SQLITE for the rationale.
 CREATE TABLE IF NOT EXISTS organizations (
@@ -585,6 +627,7 @@ def init_db() -> None:
             # must go through execute_sql_block(), not executescript(), which
             # would break on the naive ';' split (see its docstring).
             conn.execute_sql_block(_RLS_POSTGRES)
+            _mark_legacy_owner(conn)
         return
 
     with get_conn() as conn:
@@ -612,6 +655,21 @@ def init_db() -> None:
             "(SELECT MIN(rowid) FROM user_sessions GROUP BY session_id)"
         )
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_sessions_session ON user_sessions(session_id)")
+        _mark_legacy_owner(conn)
+
+
+def _mark_legacy_owner(conn) -> None:
+    """G-021 upgrade path: an install that already has an owner keeps it -- no
+    role is changed -- and is recorded as bootstrapped (`legacy_existing_owner`),
+    so no new bootstrap token can be redeemed over it."""
+    from datetime import datetime, timezone
+
+    conn.execute(
+        "INSERT INTO owner_bootstrap (id, owner_user_id, completed_at, method) "
+        "SELECT 1, id, ?, 'legacy_existing_owner' FROM users WHERE role='owner' ORDER BY created_at LIMIT 1 "
+        "ON CONFLICT (id) DO NOTHING",
+        (datetime.now(timezone.utc).isoformat(),),
+    )
 
 
 init_db()
