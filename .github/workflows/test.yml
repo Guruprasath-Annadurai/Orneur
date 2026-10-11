@@ -175,6 +175,10 @@ jobs:
           print('container_livez=PASS')
           PY
 
+      - name: Verify the non-root container contract
+        shell: bash
+        run: IMAGE=orneur-ci:${{ github.sha }} bash scripts/container/verify_nonroot.sh
+
   sse-diagnostics:
     # Phase A CP2 post-audit hardening item 1: these Node tests existed
     # (tests/frontend/test_sse_diagnostics.mjs) but were explicitly disclosed

@@ -32,7 +32,7 @@ spec:
         - sh
         - -c
         - |
-          if [ "$(stat -c %u /data)" != "10001" ]; then chown -R 10001:10001 /data; fi
+          if [ -n "$(find /data -xdev ! -uid 10001 -print -quit)" ]; then chown -R 10001:10001 /data; fi
           chmod 0700 /data
         securityContext:
           runAsNonRoot: false
