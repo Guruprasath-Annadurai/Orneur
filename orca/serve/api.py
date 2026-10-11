@@ -61,7 +61,7 @@ from orca.serve.registry import resolve_tier_model, resolve_tier_backend, TierRe
 from orca.serve import routing
 from orca.governance.model_cards import check_persona_claim_allowed
 from orca.brain.backends import BackendResponse
-from orca.gateway.wiring import brain_for_tier_resolution
+from orca.gateway.wiring import brain_for_tier_resolution, public_serving_decision
 from orca.brain.memory import MemoryEngine, EpisodicMemory
 from orca.brain.agent import AgentLoop
 from orca.brain.context import ContextManager
@@ -534,8 +534,10 @@ def _generate_via_frontier_backend(resolution, persona_system: str, message: str
 
 
 class _Session:
-    def __init__(self, session_id: str, model_variant: str | None = None):
+    def __init__(self, session_id: str, model_variant: str | None = None, user_id: str | None = None):
         self.id = session_id
+        # Who this session serves: public-experiment eligibility is per user (orca/gateway/serving_authority.py).
+        self.user_id = user_id
 
         # Cross-instance continuity: if Redis has this session's state (from
         # this or another API instance), restore the exact conversation
@@ -583,7 +585,7 @@ class _Session:
             model=_model_name_for_variant(self.model_variant),
             data_left_infrastructure=False,
         )
-        brain = brain_for_tier_resolution(tier_resolution)
+        brain = brain_for_tier_resolution(tier_resolution, viewer_user_id=self.user_id)
         self._ctx = ContextManager(brain)
         tools = build_registry(memory_engine=self.memory)
         self._agent = AgentLoop(brain=brain, tools=tools, session_id=self.id)
@@ -695,7 +697,7 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
             raise HTTPException(status_code=503, detail="could not allocate a session")
 
     if sid not in _sessions:
-        _sessions[sid] = _Session(sid, model_variant)
+        _sessions[sid] = _Session(sid, model_variant, user_id=user_id)
     _sessions[sid].touch()
     session_store.touch_session(sid)  # refresh Redis TTL — no-op if Redis disabled
 
@@ -1143,7 +1145,8 @@ async def chat(
                 _generate_via_frontier_backend, backend_resolution, persona_system, req.message
             )
         except Exception as e:
-            return JSONResponse(public_error(e, route="/api/chat", user_id=user.id if user else None).as_json(), status_code=500)
+            _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
 
         if user:
             increment_usage(user.id, "message")
@@ -1208,7 +1211,8 @@ async def chat(
         try:
             final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
         except Exception as e:
-            return JSONResponse(public_error(e, route="/api/chat", user_id=user.id if user else None).as_json(), status_code=500)
+            _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
         used_tools = [tc.tool for tc in trace.tool_calls]
         plan_action = trace.plan_action
 
@@ -1749,12 +1753,19 @@ async def list_models():
         except RuntimeError:
             resolved_model = None
 
+        # What a client may truthfully say about this tier for the (anonymous) public: lifecycle, disclosure label and whether it would be
+        # served here at all. Eligibility for a user-scoped public experiment is decided per request, so an anonymous view never over-promises.
+        served = resolved_model or configured_model
+        decision = public_serving_decision(tier, served)
         return {
             "model": configured_model,
             "available": _available(configured_model),
             "vision_capable": is_vision_capable(configured_model),
             "resolved_model": resolved_model,
             "fallback_active": resolved_model is not None and resolved_model != configured_model,
+            "lifecycle": decision.lifecycle,
+            "publicly_served": decision.allowed,
+            "disclosure": decision.label or ("Experimental model -- not qualified." if decision.lifecycle == "EXPERIMENTAL" else ""),
         }
 
     def _persona_claim_status(tier: str) -> dict:
@@ -2014,7 +2025,7 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         model=_model_name_for_variant("ultra"),
         data_left_infrastructure=False,
     )
-    ultra_brain = brain_for_tier_resolution(ultra_resolution)
+    ultra_brain = brain_for_tier_resolution(ultra_resolution, viewer_user_id=user.id if user else None)
 
     def on_progress(msg: str):
         # Called from within async coroutine context (main event loop thread)
