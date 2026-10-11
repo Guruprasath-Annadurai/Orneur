@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ORNEUR design mock — Light and Dark</title>
+<meta name="description" content="Static design mock for founder review. Sample content only; not a working interface.">
+<style>:root{}
+.theme-light{
+  --page: #F6F4F0;
+  --surface: #FFFFFF;
+  --sidebar: #E8E4DE;
+  --raised: #FFFFFF;
+  --text: #141821;
+  --text-secondary: #4F5766;
+  --accent-fill: #FF6B57;
+  --on-accent: #141821;
+  --accent-text: #B03626;
+  --indigo: #3A4B6B;
+  --on-indigo: #FFFFFF;
+  --border: #D5CFC6;
+  --border-strong: #7C8392;
+  --focus: #3A4B6B;
+  --code-bg: #EFEBE4;
+  --code-text: #141821;
+  --success: #2F6F52;
+  --danger: #B03626;
+  --warning: #8A5A00;
+  --experimental: #8A5A00;
+  --emblem-core: var(--indigo);
+  --emblem-line: var(--border-strong);
+  --emblem-node: var(--indigo);
+}
+.theme-dark{
+  --page: #0E1116;
+  --surface: #161A21;
+  --sidebar: #12151B;
+  --raised: #1D222B;
+  --text: #E8E4DE;
+  --text-secondary: #9AA3B2;
+  --accent-fill: #FF6B57;
+  --on-accent: #0E1116;
+  --accent-text: #FF8A78;
+  --indigo: #3A4B6B;
+  --on-indigo: #E8E4DE;
+  --border: #262C37;
+  --border-strong: #6B7587;
+  --focus: #E8E4DE;
+  --code-bg: #0A0D12;
+  --code-text: #E8E4DE;
+  --success: #6FC39A;
+  --danger: #FF8A78;
+  --warning: #E3B25A;
+  --experimental: #E3B25A;
+  --emblem-core: #9FB0D1;
+  --emblem-line: var(--border-strong);
+  --emblem-node: #9FB0D1;
+}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#F6F4F0;color:#141821}
+@media (prefers-color-scheme:dark){body.review{background:#0E1116;color:#E8E4DE}}
+.review{padding:0 16px 64px}.wrap{max-width:1280px;margin:0 auto}
+.banner{background:#141821;color:#E8E4DE;padding:12px 16px;font-size:14px}.banner strong{color:#FF8A78}
+h1{font-size:28px;line-height:1.2;margin:32px 0 8px}h2{font-size:20px;margin:40px 0 12px}h3{font-size:16px;margin:24px 0 8px}
+.lede{max-width:70ch;color:inherit;opacity:.85}
+.grid{display:grid;gap:24px}.grid.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr))}.grid.mob{grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));justify-items:center}
+figure.device{margin:0}figcaption{font-size:13px;font-weight:600;margin:0 0 8px;opacity:.8}
+.screen{border:1px solid var(--border-strong);border-radius:16px;overflow:hidden;background:var(--page);color:var(--text);display:flex;min-height:640px}
+.mobile .screen{flex-direction:column;width:min(100%,340px);min-height:620px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* ---- product chrome (scoped to the two official themes) ---- */
+.sidebar{width:248px;flex:none;background:var(--sidebar);padding:16px;display:flex;flex-direction:column;gap:12px;border-right:1px solid var(--border)}
+.sidebar ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:2px}.group{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-secondary);margin:8px 0 0}
+.brand{display:flex;align-items:center;gap:10px;color:var(--text)}.brand .emblem{width:30px;height:30px}.brand .wordmark{height:16px;width:auto;color:var(--text)}
+.conv{display:block;padding:9px 10px;border-radius:8px;color:var(--text);text-decoration:none;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv:hover{background:color-mix(in srgb,var(--text) 7%,transparent)}.conv.is-active{background:var(--surface);box-shadow:inset 3px 0 0 var(--accent-fill)}
+.search input{width:100%;padding:9px 10px;border-radius:8px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font:inherit;font-size:14px}
+.sidebar-foot{margin-top:auto;display:flex;align-items:center;gap:10px;font-size:14px}.sidebar-foot .icon-btn{margin-left:auto}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--indigo);color:var(--on-indigo);display:grid;place-items:center;font-size:13px;font-weight:600}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;padding:16px 20px;gap:12px}
+.mobile .main{padding:12px 14px}.m-head{display:flex;align-items:center;justify-content:space-between;padding:8px 8px;border-bottom:1px solid var(--border);background:var(--page)}
+.m-title .emblem{width:28px;height:28px;display:block}
+.thread-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between}.thread-title{font-size:16px;margin:0}
+.model-chip{display:inline-flex;align-items:center;gap:8px;font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--border-strong);background:var(--surface);color:var(--experimental)}
+.model-chip .dot{width:8px;height:8px;border-radius:50%;background:var(--experimental)}
+.messages{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:18px;flex:1;align-content:start;overflow:auto;max-width:760px;width:100%;margin-inline:auto}
+.msg{min-width:0}.msg.user{display:flex;justify-content:flex-end}.bubble{background:var(--indigo);color:var(--on-indigo);padding:11px 14px;border-radius:16px 16px 4px 16px;max-width:88%;font-size:15px}
+.attach{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}.file-chip{font-size:12px;padding:3px 8px;border-radius:6px;background:color-mix(in srgb,var(--on-indigo) 16%,transparent)}
+.content{font-size:15px}.content p{margin:0 0 10px}.content ul{margin:0 0 12px;padding-left:20px}.content li{margin:4px 0}
+a.cite{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border-radius:6px;background:var(--raised);border:1px solid var(--border-strong);color:var(--accent-text);font-size:12px;font-weight:700;text-decoration:none;vertical-align:1px}
+pre.code{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;margin:0 0 12px;padding:12px 14px;background:var(--code-bg);color:var(--code-text);border-radius:10px;border:1px solid var(--border);overflow:auto;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.sources{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.source{display:inline-flex;gap:8px;align-items:center;font-size:13px;padding:6px 10px;border-radius:8px;background:var(--surface);border:1px solid var(--border);color:var(--text);text-decoration:none}
+.source .n{display:grid;place-items:center;width:18px;height:18px;border-radius:5px;background:var(--indigo);color:var(--on-indigo);font-size:11px;font-weight:700}
+.actions{display:flex;align-items:center;gap:4px;color:var(--text-secondary)}.hint{font-size:12px;margin-left:8px}
+.icon-btn{width:44px;height:44px;display:inline-grid;place-items:center;border:0;background:transparent;color:inherit;border-radius:10px;cursor:pointer}.icon-btn svg{width:20px;height:20px}
+.icon-btn:hover{background:color-mix(in srgb,var(--text) 8%,transparent)}
+.composer{display:flex;align-items:flex-end;gap:4px;max-width:760px;width:100%;margin-inline:auto;padding:6px 8px;border-radius:16px;background:var(--surface);border:1px solid var(--border-strong);color:var(--text-secondary)}
+.composer textarea{flex:1;border:0;outline:0;background:transparent;color:var(--text);font:inherit;font-size:15px;resize:none;padding:11px 6px;min-height:44px}
+.composer textarea::placeholder{color:var(--text-secondary)}
+.send{width:44px;height:44px;border-radius:12px;border:0;background:var(--accent-fill);color:var(--on-accent);display:grid;place-items:center;cursor:pointer}.send svg{width:22px;height:22px}
+.send.is-stop{background:var(--text);color:var(--page)}
+.fineprint{margin:0;text-align:center;font-size:12px;color:var(--text-secondary)}
+.btn{font:inherit;font-size:14px;font-weight:600;padding:10px 14px;min-height:44px;border-radius:10px;border:1px solid transparent;cursor:pointer}
+.btn-primary{background:var(--accent-fill);color:var(--on-accent)}.btn-secondary{background:transparent;color:var(--text);border-color:var(--border-strong)}.btn-block{width:100%}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.empty{flex:1;display:grid;place-content:center;justify-items:center;gap:18px;text-align:center;padding:24px 8px}.empty-mark .emblem{width:64px;height:64px}
+.greeting{font-size:28px;line-height:1.2;margin:0;font-weight:650;letter-spacing:-.01em}.mobile .greeting{font-size:23px}
+.starters{list-style:none;padding:0;margin:0;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.chip{font:inherit;font-size:14px;padding:9px 14px;min-height:44px;border-radius:999px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);cursor:pointer}
+.caret{display:inline-block;width:8px;height:1.1em;margin-left:3px;background:var(--accent-fill);vertical-align:text-bottom;animation:blink 1.1s steps(2,start) infinite}
+@keyframes blink{to{visibility:hidden}}@media (prefers-reduced-motion:reduce){.caret{animation:none}}
+.status{font-size:13px;color:var(--text-secondary)}
+.alert{border:1px solid var(--danger);border-radius:12px;padding:14px;display:grid;gap:8px;background:var(--surface)}.alert strong{color:var(--danger)}.alert-actions{display:flex;gap:8px;flex-wrap:wrap}
+@media (max-width:760px){.desktop .sidebar{display:none}}
+/* ---- component-state sheets ---- */
+.panel-fig{margin:0}.panel{border:1px solid var(--border-strong);border-radius:16px;padding:20px;background:var(--page);color:var(--text);display:grid;gap:12px;align-content:start}
+.state-label{font-size:12px;letter-spacing:.02em;color:var(--text-secondary);margin:6px 0 0}.sheet-h{margin:6px 0 0;font-size:14px}
+.state-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+.sidebar.static{width:auto;border:1px solid var(--border);border-radius:12px;min-height:0}
+.conv.is-hover{background:color-mix(in srgb,var(--text) 7%,transparent)}.conv.is-focus{outline:3px solid var(--focus);outline-offset:-1px}
+mark{background:color-mix(in srgb,var(--accent-fill) 35%,transparent);color:inherit;border-radius:3px;padding:0 1px}
+.rename{width:100%;padding:9px 10px;border-radius:8px;border:2px solid var(--focus);background:var(--surface);color:var(--text);font:inherit;font-size:14px}
+.menu{list-style:none;margin:2px 0 6px 10px;padding:6px;border:1px solid var(--border-strong);border-radius:10px;background:var(--raised);display:grid;gap:2px}
+.menu button{width:100%;text-align:left;font:inherit;font-size:14px;padding:9px 10px;min-height:40px;border:0;border-radius:6px;background:transparent;color:var(--text);cursor:pointer}
+.menu button:hover{background:color-mix(in srgb,var(--text) 8%,transparent)}.danger-text{color:var(--danger)!important}
+.confirm{display:grid;gap:8px;padding:10px;border:1px solid var(--danger);border-radius:10px;font-size:14px;background:var(--surface)}
+.btn-sm{min-height:36px;padding:6px 12px;font-size:13px}.btn.danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
+.empty-hist{color:var(--text-secondary);font-size:14px;margin:8px 4px;line-height:1.5}
+.composer.is-focus{outline:3px solid var(--focus);outline-offset:2px}.composer .send:disabled{opacity:.45;cursor:not-allowed}.composer textarea:disabled{cursor:not-allowed;opacity:.7}
+.composer{flex-wrap:wrap}.composer-files{flex:0 0 100%;display:grid;gap:8px;padding:6px 4px 2px}
+.filestack{display:grid;gap:10px}.filecard{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);font-size:13px}
+.filecard.is-bad{border-color:var(--danger)}.ftype{flex:none;width:36px;height:36px;border-radius:8px;display:grid;place-items:center;background:var(--indigo);color:var(--on-indigo);font-size:10px;font-weight:700}
+.fbody{flex:1;min-width:0}.fname{font-weight:600;overflow-wrap:anywhere}.fmeta{color:var(--text-secondary);font-size:12px;overflow-wrap:anywhere}.is-bad .fmeta{color:var(--danger)}
+.progress{height:4px;border-radius:2px;background:color-mix(in srgb,var(--text) 14%,transparent);margin-top:6px;overflow:hidden}.progress span{display:block;height:100%;background:var(--accent-fill)}
+.codeblock{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--code-bg)}.codehead{display:flex;align-items:center;gap:6px;padding:2px 8px 2px 12px;border-bottom:1px solid var(--border);color:var(--text-secondary);font-size:12px}
+.codeblock .code{margin:0;border:0;border-radius:0}.lang{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.spacer{flex:1}
+.skeleton{display:grid;gap:10px;margin:4px 0 10px}.sk{display:block;height:12px;border-radius:6px;background:color-mix(in srgb,var(--text) 12%,transparent);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}@media (prefers-reduced-motion:reduce){.sk{animation:none}}
+.linklike{font:inherit;background:none;border:0;padding:0;color:var(--accent-text);text-decoration:underline;cursor:pointer;min-height:24px}
+.notice{border:1px solid var(--border-strong);border-radius:12px;padding:12px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;background:var(--surface);flex-wrap:wrap}
+.notice.warn{border-color:var(--experimental)}.notice h4{margin:0 0 2px;font-size:14px}.notice p{margin:0;font-size:13px;color:var(--text-secondary)}
+.empty.small{padding:16px 8px}.empty.small .emblem{width:44px;height:44px}.empty.small .greeting{font-size:20px}
+.brand-big{display:grid;gap:28px;justify-items:start;padding:8px 0}.bigmark .emblem{width:240px;height:240px}.bigword .wordmark{width:min(100%,560px);height:auto;color:var(--text)}
+.ladder{display:flex;align-items:flex-end;gap:24px;flex-wrap:wrap}.lad{display:grid;gap:4px;justify-items:center;color:var(--text-secondary)}.lad .emblem{width:var(--s);height:var(--s)}.lad small{font-size:11px}
+.pkg{display:grid;gap:8px;padding:0;margin:0;list-style:none;counter-reset:p}.pkg li{counter-increment:p;display:flex;gap:10px;align-items:baseline}
+.pkg li::before{content:counter(p);flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;background:#3A4B6B;color:#fff}
+.decision{border:1px solid rgba(127,127,127,.45);border-radius:12px;padding:16px;margin:16px 0;display:grid;gap:6px}.decision h3{margin:0}.decision ul{margin:0;padding-left:20px}
+/* ---- review page tables ---- */
+.table-wrap{overflow:auto}table{border-collapse:collapse;font-size:13px;width:100%;min-width:640px}th,td{text-align:left;padding:6px 10px;border-bottom:1px solid rgba(127,127,127,.3)}
+.num{font-variant-numeric:tabular-nums}.sw{display:inline-block;width:14px;height:14px;border-radius:3px;border:1px solid rgba(127,127,127,.6);vertical-align:-2px}
+.ok{color:#2F6F52;font-weight:700}.bad{color:#B03626;font-weight:700}code{font-size:12px}
+@media (prefers-color-scheme:dark){.ok{color:#6FC39A}.bad{color:#FF8A78}}
+</style></head>
+<body class="review"><div class="banner" role="note"><strong>Design mock for founder review.</strong> Sample content only. Nothing here is connected to a model or backend, and no model shown
+is qualified for production. Generated from <code>docs/orneur/design/tokens.json</code>.</div>
+<div class="wrap"><h1>ORNEUR — visual review package, Light and Dark</h1>
+<p class="lede">Two official themes, the locked palette, and an interface that stays out of the way. The honest model label, citations you can open, and a visible stop control
+are part of the design, not afterthoughts. Specification: <code>docs/orneur/design/ORNEUR_UI_DESIGN_SPEC.md</code>.</p>
+<h2>What is in this package</h2>
+<ol class="pkg"><li><a href="#desktop-conversation-dark">Dark desktop conversation</a></li><li><a href="#desktop-conversation-light">Light desktop conversation</a></li>
+<li><a href="#mobile-conversation-dark">Dark mobile conversation</a></li><li><a href="#mobile-conversation-light">Light mobile conversation</a></li>
+<li><a href="#brand-emblem-and-wordmark-dark">Full-size falcon emblem</a></li><li><a href="#brand-emblem-and-wordmark-light">Segmented-E ORNEUR wordmark</a></li>
+<li><a href="#composer-states-dark">Chat composer and streaming states</a></li><li><a href="#sidebar-and-history-dark">Sidebar and conversation history</a></li>
+<li><a href="#code-and-attachments-dark">Code block and file attachment states</a></li><li><a href="#system-states-dark">Empty, loading, error and model-unavailable states</a></li></ol>
+<div class="decision"><h3>Changes to earlier brand decisions</h3><ul>
+<li><strong>None</strong> to the locked palette (Slate Indigo #3A4B6B, Solar Coral #FF6B57, Pale Stone #E8E4DE, near-black dark surfaces), the greeting, or the two-theme rule.</li>
+<li>Derived text colours exist only where the raw brand colour fails WCAG AA as text: Light accent text #B03626, Dark accent text #FF8A78 (measured below).</li>
+<li>The falcon emblem and the segmented-E wordmark are <strong>concepts awaiting your decision</strong> (Q1), not approved marks.</li></ul></div>
+<div class="decision"><h3>Proposed UX defaults (not approved)</h3><ul>
+<li>First visit follows the system Dark/Light preference; a later choice persists.</li><li>ORNEUR is the primary product brand; model identity and lifecycle are one tap away and always truthful.</li>
+<li>Experimental models are never shown as production-qualified. Build order after approval: tokens, app shell, secure chat, streaming/cancel/retry, history, files, research.</li></ul></div>
+<h2 id="s-desktop">Desktop: a finished answer with citations</h2><div class="grid two"><figure id="desktop-conversation-light" class="device desktop theme-light"><figcaption>Desktop · conversation · Light</figcaption><div class="screen"><nav class="sidebar" aria-label="Conversations">
+      <div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div>
+      <button type="button" class="btn btn-primary btn-block">New conversation</button>
+      <label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations"></label>
+      <p class="group">Today</p><ul><li><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li><a href="#" class="conv">Q4 launch checklist</a></li><li><a href="#" class="conv">Explain the Raft leader election</a></li><li><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul>
+      <div class="sidebar-foot"><span class="avatar" aria-hidden="true">C</span><span>Chief</span><button type="button" class="icon-btn" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></button></div>
+    </nav><main class="main">
+<header class="thread-head"><h2 class="thread-title">Retention terms: Acme MSA vs. v3</h2>
+  <span class="model-chip" title="No ORNEUR model has been qualified for production yet."><span class="dot" aria-hidden="true"></span>Orneur Novus · experimental · not yet qualified</span></header>
+<ol class="messages" aria-label="Conversation">
+  <li class="msg user"><div class="bubble"><div class="attach"><span class="file-chip">PDF · msa_acme_v3.pdf</span><span class="file-chip">PDF · msa_acme_v2.pdf</span></div>
+    Compare the data-retention terms in these two contracts and flag anything unusual.</div></li>
+  <li class="msg assistant"><div class="content">
+    <p>Both agreements keep customer data for the life of the contract, but they differ in three places:</p>
+    <ul>
+      <li><strong>Post-termination retention.</strong> v2 deletes within 30 days; v3 extends this to 90 days <a class="cite" href="#s1" aria-label="Source 1">1</a>.</li>
+      <li><strong>Backups.</strong> v3 adds an exception for encrypted backups, with no stated purge date <a class="cite" href="#s2" aria-label="Source 2">2</a>.</li>
+      <li><strong>Unusual:</strong> v3 allows use of de-identified data for “service improvement”, which v2 did not <a class="cite" href="#s2" aria-label="Source 2">2</a>.</li>
+    </ul>
+    <pre class="code" aria-label="Suggested redline"><code>§9.4  Upon termination, Provider shall delete Customer Data within thirty (30) days,
+      including backups within ninety (90) days.</code></pre>
+    <div class="sources"><a id="s1" class="source" href="#"><span class="n">1</span> msa_acme_v3.pdf · §9.2, p. 14</a><a id="s2" class="source" href="#"><span class="n">2</span> msa_acme_v3.pdf · §9.5–9.6, p. 15</a></div>
+    <div class="actions"><button type="button" class="icon-btn" aria-label="Copy response"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button><button type="button" class="icon-btn" aria-label="Regenerate response"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></svg></button><span class="hint">Sample content. Citations point to your uploaded files.</span></div>
+  </div></li>
+</ol>
+<form class="composer" aria-label="Message composer" onsubmit="return false">
+  <button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button>
+  <label class="sr-only" for="msg-d1">Message</label>
+  <textarea id="msg-d1" rows="1" placeholder="Ask anything"></textarea>
+  <button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button>
+</form>
+<p class="fineprint">ORNEUR can be wrong. Check important information against the cited sources.</p>
+</main></div></figure><figure id="desktop-conversation-dark" class="device desktop theme-dark"><figcaption>Desktop · conversation · Dark</figcaption><div class="screen"><nav class="sidebar" aria-label="Conversations">
+      <div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div>
+      <button type="button" class="btn btn-primary btn-block">New conversation</button>
+      <label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations"></label>
+      <p class="group">Today</p><ul><li><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li><a href="#" class="conv">Q4 launch checklist</a></li><li><a href="#" class="conv">Explain the Raft leader election</a></li><li><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul>
+      <div class="sidebar-foot"><span class="avatar" aria-hidden="true">C</span><span>Chief</span><button type="button" class="icon-btn" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></button></div>
+    </nav><main class="main">
+<header class="thread-head"><h2 class="thread-title">Retention terms: Acme MSA vs. v3</h2>
+  <span class="model-chip" title="No ORNEUR model has been qualified for production yet."><span class="dot" aria-hidden="true"></span>Orneur Novus · experimental · not yet qualified</span></header>
+<ol class="messages" aria-label="Conversation">
+  <li class="msg user"><div class="bubble"><div class="attach"><span class="file-chip">PDF · msa_acme_v3.pdf</span><span class="file-chip">PDF · msa_acme_v2.pdf</span></div>
+    Compare the data-retention terms in these two contracts and flag anything unusual.</div></li>
+  <li class="msg assistant"><div class="content">
+    <p>Both agreements keep customer data for the life of the contract, but they differ in three places:</p>
+    <ul>
+      <li><strong>Post-termination retention.</strong> v2 deletes within 30 days; v3 extends this to 90 days <a class="cite" href="#s1" aria-label="Source 1">1</a>.</li>
+      <li><strong>Backups.</strong> v3 adds an exception for encrypted backups, with no stated purge date <a class="cite" href="#s2" aria-label="Source 2">2</a>.</li>
+      <li><strong>Unusual:</strong> v3 allows use of de-identified data for “service improvement”, which v2 did not <a class="cite" href="#s2" aria-label="Source 2">2</a>.</li>
+    </ul>
+    <pre class="code" aria-label="Suggested redline"><code>§9.4  Upon termination, Provider shall delete Customer Data within thirty (30) days,
+      including backups within ninety (90) days.</code></pre>
+    <div class="sources"><a id="s1" class="source" href="#"><span class="n">1</span> msa_acme_v3.pdf · §9.2, p. 14</a><a id="s2" class="source" href="#"><span class="n">2</span> msa_acme_v3.pdf · §9.5–9.6, p. 15</a></div>
+    <div class="actions"><button type="button" class="icon-btn" aria-label="Copy response"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button><button type="button" class="icon-btn" aria-label="Regenerate response"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></svg></button><span class="hint">Sample content. Citations point to your uploaded files.</span></div>
+  </div></li>
+</ol>
+<form class="composer" aria-label="Message composer" onsubmit="return false">
+  <button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button>
+  <label class="sr-only" for="msg-d3">Message</label>
+  <textarea id="msg-d3" rows="1" placeholder="Ask anything"></textarea>
+  <button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button>
+</form>
+<p class="fineprint">ORNEUR can be wrong. Check important information against the cited sources.</p>
+</main></div></figure></div>
+<h2>Desktop: a response in progress (stop is always one click)</h2><div class="grid two"><figure id="desktop-streaming-with-stop-light" class="device desktop theme-light"><figcaption>Desktop · streaming with stop · Light</figcaption><div class="screen"><nav class="sidebar" aria-label="Conversations">
+      <div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div>
+      <button type="button" class="btn btn-primary btn-block">New conversation</button>
+      <label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations"></label>
+      <p class="group">Today</p><ul><li><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li><a href="#" class="conv">Q4 launch checklist</a></li><li><a href="#" class="conv">Explain the Raft leader election</a></li><li><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul>
+      <div class="sidebar-foot"><span class="avatar" aria-hidden="true">C</span><span>Chief</span><button type="button" class="icon-btn" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></button></div>
+    </nav><main class="main">
+<ol class="messages" aria-label="Conversation"><li class="msg user"><div class="bubble">Find three primary sources on RAFT leader election timing.</div></li>
+<li class="msg assistant"><div class="content"><p>Searching and reading sources<span class="caret" aria-hidden="true"></span></p>
+<p class="status" role="status">Reading 2 of 5 sources · you can stop at any time</p></div></li></ol>
+<form class="composer" aria-label="Message composer" onsubmit="return false">
+  <label class="sr-only" for="msg-s5">Message</label><textarea id="msg-s5" rows="1" placeholder="Reply, or stop the response"></textarea>
+  <button type="button" class="send is-stop" aria-label="Stop generating"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/></svg></button>
+</form></main></div></figure><figure id="desktop-streaming-with-stop-dark" class="device desktop theme-dark"><figcaption>Desktop · streaming with stop · Dark</figcaption><div class="screen"><nav class="sidebar" aria-label="Conversations">
+      <div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div>
+      <button type="button" class="btn btn-primary btn-block">New conversation</button>
+      <label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations"></label>
+      <p class="group">Today</p><ul><li><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li><a href="#" class="conv">Q4 launch checklist</a></li><li><a href="#" class="conv">Explain the Raft leader election</a></li><li><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul>
+      <div class="sidebar-foot"><span class="avatar" aria-hidden="true">C</span><span>Chief</span><button type="button" class="icon-btn" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></button></div>
+    </nav><main class="main">
+<ol class="messages" aria-label="Conversation"><li class="msg user"><div class="bubble">Find three primary sources on RAFT leader election timing.</div></li>
+<li class="msg assistant"><div class="content"><p>Searching and reading sources<span class="caret" aria-hidden="true"></span></p>
+<p class="status" role="status">Reading 2 of 5 sources · you can stop at any time</p></div></li></ol>
+<form class="composer" aria-label="Message composer" onsubmit="return false">
+  <label class="sr-only" for="msg-s6">Message</label><textarea id="msg-s6" rows="1" placeholder="Reply, or stop the response"></textarea>
+  <button type="button" class="send is-stop" aria-label="Stop generating"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/></svg></button>
+</form></main></div></figure></div>
+<h2>Mobile: a finished answer with citations</h2><div class="grid mob"><figure id="mobile-conversation-light" class="device mobile theme-light"><figcaption>Mobile · conversation · Light</figcaption><div class="screen"><header class="m-head"><button type="button" class="icon-btn" aria-label="Open conversations"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><span class="m-title"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></span><button type="button" class="icon-btn" aria-label="New conversation"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button></header><main class="main">
+<ol class="messages" aria-label="Conversation">
+  <li class="msg user"><div class="bubble"><div class="attach"><span class="file-chip">PDF · msa_acme_v3.pdf</span></div>What changed in the data-retention terms?</div></li>
+  <li class="msg assistant"><div class="content">
+    <p>Post-termination retention grew from 30 to 90 days <a class="cite" href="#m1" aria-label="Source 1">1</a>, and v3 adds a de-identified-data clause <a class="cite" href="#m2" aria-label="Source 2">2</a>.</p>
+    <div class="sources"><a id="m1" class="source" href="#"><span class="n">1</span> msa_acme_v3.pdf · p. 14</a><a id="m2" class="source" href="#"><span class="n">2</span> msa_acme_v3.pdf · p. 15</a></div>
+    <div class="actions"><button type="button" class="icon-btn" aria-label="Copy response"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button><button type="button" class="icon-btn" aria-label="Regenerate response"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></svg></button></div>
+  </div></li>
+</ol>
+<form class="composer" aria-label="Message composer" onsubmit="return false">
+  <button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button>
+  <label class="sr-only" for="msg-mc7">Message</label><textarea id="msg-mc7" rows="1" placeholder="Ask anything"></textarea>
+  <button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button>
+</form></main></div></figure><figure id="mobile-conversation-dark" class="device mobile theme-dark"><figcaption>Mobile · conversation · Dark</figcaption><div class="screen"><header class="m-head"><button type="button" class="icon-btn" aria-label="Open conversations"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><span class="m-title"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></span><button type="button" class="icon-btn" aria-label="New conversation"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button></header><main class="main">
+<ol class="messages" aria-label="Conversation">
+  <li class="msg user"><div class="bubble"><div class="attach"><span class="file-chip">PDF · msa_acme_v3.pdf</span></div>What changed in the data-retention terms?</div></li>
+  <li class="msg assistant"><div class="content">
+    <p>Post-termination retention grew from 30 to 90 days <a class="cite" href="#m1" aria-label="Source 1">1</a>, and v3 adds a de-identified-data clause <a class="cite" href="#m2" aria-label="Source 2">2</a>.</p>
+    <div class="sources"><a id="m1" class="source" href="#"><span class="n">1</span> msa_acme_v3.pdf · p. 14</a><a id="m2" class="source" href="#"><span class="n">2</span> msa_acme_v3.pdf · p. 15</a></div>
+    <div class="actions"><button type="button" class="icon-btn" aria-label="Copy response"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button><button type="button" class="icon-btn" aria-label="Regenerate response"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></svg></button></div>
+  </div></li>
+</ol>
+<form class="composer" aria-label="Message composer" onsubmit="return false">
+  <button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button>
+  <label class="sr-only" for="msg-mc8">Message</label><textarea id="msg-mc8" rows="1" placeholder="Ask anything"></textarea>
+  <button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button>
+</form></main></div></figure></div>
+<h2>Mobile: first run and error recovery</h2><div class="grid mob"><figure id="mobile-first-run-greeting-light" class="device mobile theme-light"><figcaption>Mobile · first run (greeting) · Light</figcaption><div class="screen"><header class="m-head"><button type="button" class="icon-btn" aria-label="Open conversations"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><span class="m-title"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></span><button type="button" class="icon-btn" aria-label="New conversation"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button></header><main class="main">
+<div class="empty"><div class="empty-mark"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></div>
+  <h2 class="greeting">Hello chief, what's the plan today.</h2>
+  <ul class="starters" aria-label="Suggestions">
+    <li><button type="button" class="chip">Summarise a document</button></li><li><button type="button" class="chip">Research a question with sources</button></li>
+    <li><button type="button" class="chip">Review my code</button></li></ul></div>
+<form class="composer" aria-label="Message composer" onsubmit="return false">
+  <button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button>
+  <label class="sr-only" for="msg-m9">Message</label><textarea id="msg-m9" rows="1" placeholder="Ask anything"></textarea>
+  <button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button>
+</form></main></div></figure><figure id="mobile-first-run-greeting-dark" class="device mobile theme-dark"><figcaption>Mobile · first run (greeting) · Dark</figcaption><div class="screen"><header class="m-head"><button type="button" class="icon-btn" aria-label="Open conversations"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><span class="m-title"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></span><button type="button" class="icon-btn" aria-label="New conversation"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button></header><main class="main">
+<div class="empty"><div class="empty-mark"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></div>
+  <h2 class="greeting">Hello chief, what's the plan today.</h2>
+  <ul class="starters" aria-label="Suggestions">
+    <li><button type="button" class="chip">Summarise a document</button></li><li><button type="button" class="chip">Research a question with sources</button></li>
+    <li><button type="button" class="chip">Review my code</button></li></ul></div>
+<form class="composer" aria-label="Message composer" onsubmit="return false">
+  <button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button>
+  <label class="sr-only" for="msg-m10">Message</label><textarea id="msg-m10" rows="1" placeholder="Ask anything"></textarea>
+  <button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button>
+</form></main></div></figure><figure id="mobile-recoverable-error-light" class="device mobile theme-light"><figcaption>Mobile · recoverable error · Light</figcaption><div class="screen"><header class="m-head"><button type="button" class="icon-btn" aria-label="Open conversations"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><span class="m-title"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></span><button type="button" class="icon-btn" aria-label="New conversation"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button></header><main class="main">
+<ol class="messages" aria-label="Conversation"><li class="msg user"><div class="bubble">Summarise the attached report.</div></li>
+<li class="msg assistant"><div class="content"><div class="alert" role="alert"><strong>That response didn't finish.</strong>
+<span>The model took too long to answer. Your message and file are saved.</span><div class="alert-actions"><button type="button" class="btn btn-primary">Try again</button><button type="button" class="btn btn-secondary">Dismiss</button></div></div></div></li></ol></main></div></figure><figure id="mobile-recoverable-error-dark" class="device mobile theme-dark"><figcaption>Mobile · recoverable error · Dark</figcaption><div class="screen"><header class="m-head"><button type="button" class="icon-btn" aria-label="Open conversations"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><span class="m-title"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></span><button type="button" class="icon-btn" aria-label="New conversation"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></button></header><main class="main">
+<ol class="messages" aria-label="Conversation"><li class="msg user"><div class="bubble">Summarise the attached report.</div></li>
+<li class="msg assistant"><div class="content"><div class="alert" role="alert"><strong>That response didn't finish.</strong>
+<span>The model took too long to answer. Your message and file are saved.</span><div class="alert-actions"><button type="button" class="btn btn-primary">Try again</button><button type="button" class="btn btn-secondary">Dismiss</button></div></div></div></li></ol></main></div></figure></div>
+<h2>Brand: falcon emblem and segmented-E wordmark</h2><div class="grid two"><figure id="brand-emblem-and-wordmark-light" class="panel-fig theme-light"><figcaption>Brand · emblem and wordmark · Light</figcaption><div class="panel"><div class="brand-big"><div class="bigmark"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></div><div class="bigword"><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div></div><p class="state-label">Emblem at small sizes (legibility check)</p><div class="ladder"><span class="lad" style="--s:16px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>16px</small></span><span class="lad" style="--s:24px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>24px</small></span><span class="lad" style="--s:32px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>32px</small></span><span class="lad" style="--s:48px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>48px</small></span><span class="lad" style="--s:64px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>64px</small></span><span class="lad" style="--s:96px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>96px</small></span></div></div></figure><figure id="brand-emblem-and-wordmark-dark" class="panel-fig theme-dark"><figcaption>Brand · emblem and wordmark · Dark</figcaption><div class="panel"><div class="brand-big"><div class="bigmark"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></div><div class="bigword"><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div></div><p class="state-label">Emblem at small sizes (legibility check)</p><div class="ladder"><span class="lad" style="--s:16px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>16px</small></span><span class="lad" style="--s:24px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>24px</small></span><span class="lad" style="--s:32px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>32px</small></span><span class="lad" style="--s:48px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>48px</small></span><span class="lad" style="--s:64px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>64px</small></span><span class="lad" style="--s:96px"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><small>96px</small></span></div></div></figure></div>
+<h2>Composer and streaming states</h2><div class="grid two"><figure id="composer-states-light" class="panel-fig theme-light"><figcaption>Composer states · Light</figcaption><div class="panel"><p class="state-label">Default (empty: send is disabled)</p><form class="composer " aria-label="Message composer" onsubmit="return false"><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c13">Message</label><textarea id="msg-c13" rows="1" placeholder="Ask anything"></textarea><button type="button" class="send" aria-label="Send message" disabled><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button></form><p class="state-label">Focused (3 px ring)</p><form class="composer is-focus" aria-label="Message composer" onsubmit="return false"><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c14">Message</label><textarea id="msg-c14" rows="1" placeholder="Ask anything">Draft a polite reply to the vendor</textarea><button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button></form><p class="state-label">With text (send is the single coral action)</p><form class="composer " aria-label="Message composer" onsubmit="return false"><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c15">Message</label><textarea id="msg-c15" rows="1" placeholder="Ask anything">Summarise the attached report in five bullets</textarea><button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button></form><p class="state-label">With attachments (uploading, ready)</p><form class="composer " aria-label="Message composer" onsubmit="return false"><div class="composer-files"><div class="filecard"><span class="ftype" aria-hidden="true">PDF</span><div class="fbody"><div class="fname">msa_v3.pdf</div><div class="fmeta">2.1 MB · Uploading… 62%</div><div class="progress" role="progressbar" aria-label="Uploading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="62"><span style="width:62%"></span></div></div><button type="button" class="btn btn-secondary btn-sm">Cancel</button></div><div class="filecard"><span class="ftype" aria-hidden="true">PDF</span><div class="fbody"><div class="fname">msa_v2.pdf</div><div class="fmeta">1.8 MB · Ready · searchable</div></div><button type="button" class="btn btn-secondary btn-sm">Remove</button></div></div><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c16">Message</label><textarea id="msg-c16" rows="1" placeholder="Ask anything">Compare these</textarea><button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button></form><p class="state-label">Streaming (stop replaces send)</p><form class="composer " aria-label="Message composer" onsubmit="return false"><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c17">Message</label><textarea id="msg-c17" rows="1" placeholder="Reply, or stop the response"></textarea><button type="button" class="send is-stop" aria-label="Stop generating"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/></svg></button></form><p class="state-label">Unavailable (read-only until reconnected)</p><form class="composer " aria-label="Message composer" onsubmit="return false"><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c18">Message</label><textarea id="msg-c18" rows="1" placeholder="You're offline. Your draft is kept." disabled></textarea><button type="button" class="send" aria-label="Send message" disabled><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button></form></div></figure><figure id="composer-states-dark" class="panel-fig theme-dark"><figcaption>Composer states · Dark</figcaption><div class="panel"><p class="state-label">Default (empty: send is disabled)</p><form class="composer " aria-label="Message composer" onsubmit="return false"><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c19">Message</label><textarea id="msg-c19" rows="1" placeholder="Ask anything"></textarea><button type="button" class="send" aria-label="Send message" disabled><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button></form><p class="state-label">Focused (3 px ring)</p><form class="composer is-focus" aria-label="Message composer" onsubmit="return false"><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c20">Message</label><textarea id="msg-c20" rows="1" placeholder="Ask anything">Draft a polite reply to the vendor</textarea><button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button></form><p class="state-label">With text (send is the single coral action)</p><form class="composer " aria-label="Message composer" onsubmit="return false"><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c21">Message</label><textarea id="msg-c21" rows="1" placeholder="Ask anything">Summarise the attached report in five bullets</textarea><button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button></form><p class="state-label">With attachments (uploading, ready)</p><form class="composer " aria-label="Message composer" onsubmit="return false"><div class="composer-files"><div class="filecard"><span class="ftype" aria-hidden="true">PDF</span><div class="fbody"><div class="fname">msa_v3.pdf</div><div class="fmeta">2.1 MB · Uploading… 62%</div><div class="progress" role="progressbar" aria-label="Uploading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="62"><span style="width:62%"></span></div></div><button type="button" class="btn btn-secondary btn-sm">Cancel</button></div><div class="filecard"><span class="ftype" aria-hidden="true">PDF</span><div class="fbody"><div class="fname">msa_v2.pdf</div><div class="fmeta">1.8 MB · Ready · searchable</div></div><button type="button" class="btn btn-secondary btn-sm">Remove</button></div></div><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c22">Message</label><textarea id="msg-c22" rows="1" placeholder="Ask anything">Compare these</textarea><button type="button" class="send" aria-label="Send message"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button></form><p class="state-label">Streaming (stop replaces send)</p><form class="composer " aria-label="Message composer" onsubmit="return false"><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c23">Message</label><textarea id="msg-c23" rows="1" placeholder="Reply, or stop the response"></textarea><button type="button" class="send is-stop" aria-label="Stop generating"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/></svg></button></form><p class="state-label">Unavailable (read-only until reconnected)</p><form class="composer " aria-label="Message composer" onsubmit="return false"><button type="button" class="icon-btn" aria-label="Attach a file"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.6a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7-7"/></svg></button><label class="sr-only" for="msg-c24">Message</label><textarea id="msg-c24" rows="1" placeholder="You're offline. Your draft is kept." disabled></textarea><button type="button" class="send" aria-label="Send message" disabled><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button></form></div></figure></div>
+<h2>Sidebar and conversation history</h2><div class="grid two"><figure id="sidebar-and-history-light" class="panel-fig theme-light"><figcaption>Sidebar and history · Light</figcaption><div class="panel"><div class="state-grid sidebars"><nav class="sidebar static" aria-label="Default · hover · focus"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value=""></label><p class="group">Default · hover · focus</p><ul><li class="row"><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li class="row"><a href="#" class="conv is-hover">Q4 launch checklist</a></li><li class="row"><a href="#" class="conv is-focus">Explain the Raft leader election</a></li><li class="row"><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul></nav><nav class="sidebar static" aria-label="Search results"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value="raft"></label><p class="group">Search results</p><ul><li class="row"><a href="#" class="conv">Explain the <mark>Raft</mark> leader election</a></li><li class="row"><a href="#" class="conv">D<mark>raft</mark>: vendor security questionnaire</a></li></ul></nav><nav class="sidebar static" aria-label="Row menu open"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value=""></label><p class="group">Row menu open</p><ul><li class="row"><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li class="row"><a href="#" class="conv">Q4 launch checklist</a></li><li><ul class="menu" role="menu" aria-label="Conversation actions"><li role="none"><button role="menuitem" type="button">Rename</button></li><li role="none"><button role="menuitem" type="button">Export as Markdown</button></li><li role="none"><button role="menuitem" type="button" class="danger-text">Delete…</button></li></ul></li><li class="row"><a href="#" class="conv">Explain the Raft leader election</a></li><li class="row"><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul></nav><nav class="sidebar static" aria-label="Renaming"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value=""></label><p class="group">Renaming</p><ul><li class="row"><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li><label class="sr-only" for="rn-renaming">Rename conversation</label><input id="rn-renaming" class="rename" value="Q4 launch checklist"></li><li class="row"><a href="#" class="conv">Explain the Raft leader election</a></li><li class="row"><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul></nav><nav class="sidebar static" aria-label="Confirm delete"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value=""></label><p class="group">Confirm delete</p><ul><li class="row"><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li class="confirm" role="alert"><span>Delete “Q4 launch checklist”?</span><span class="alert-actions"><button type="button" class="btn btn-sm danger">Delete</button><button type="button" class="btn btn-secondary btn-sm">Keep</button></span></li><li class="row"><a href="#" class="conv">Explain the Raft leader election</a></li><li class="row"><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul></nav><nav class="sidebar static" aria-label="Empty history"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value=""></label><p class="group">Empty history</p><p class="empty-hist">No conversations yet.<br>Your chats will appear here.</p></nav></div></div></figure><figure id="sidebar-and-history-dark" class="panel-fig theme-dark"><figcaption>Sidebar and history · Dark</figcaption><div class="panel"><div class="state-grid sidebars"><nav class="sidebar static" aria-label="Default · hover · focus"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value=""></label><p class="group">Default · hover · focus</p><ul><li class="row"><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li class="row"><a href="#" class="conv is-hover">Q4 launch checklist</a></li><li class="row"><a href="#" class="conv is-focus">Explain the Raft leader election</a></li><li class="row"><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul></nav><nav class="sidebar static" aria-label="Search results"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value="raft"></label><p class="group">Search results</p><ul><li class="row"><a href="#" class="conv">Explain the <mark>Raft</mark> leader election</a></li><li class="row"><a href="#" class="conv">D<mark>raft</mark>: vendor security questionnaire</a></li></ul></nav><nav class="sidebar static" aria-label="Row menu open"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value=""></label><p class="group">Row menu open</p><ul><li class="row"><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li class="row"><a href="#" class="conv">Q4 launch checklist</a></li><li><ul class="menu" role="menu" aria-label="Conversation actions"><li role="none"><button role="menuitem" type="button">Rename</button></li><li role="none"><button role="menuitem" type="button">Export as Markdown</button></li><li role="none"><button role="menuitem" type="button" class="danger-text">Delete…</button></li></ul></li><li class="row"><a href="#" class="conv">Explain the Raft leader election</a></li><li class="row"><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul></nav><nav class="sidebar static" aria-label="Renaming"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value=""></label><p class="group">Renaming</p><ul><li class="row"><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li><label class="sr-only" for="rn-renaming">Rename conversation</label><input id="rn-renaming" class="rename" value="Q4 launch checklist"></li><li class="row"><a href="#" class="conv">Explain the Raft leader election</a></li><li class="row"><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul></nav><nav class="sidebar static" aria-label="Confirm delete"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value=""></label><p class="group">Confirm delete</p><ul><li class="row"><a href="#" class="conv is-active" aria-current='page'>Retention terms: Acme MSA vs. v3</a></li><li class="confirm" role="alert"><span>Delete “Q4 launch checklist”?</span><span class="alert-actions"><button type="button" class="btn btn-sm danger">Delete</button><button type="button" class="btn btn-secondary btn-sm">Keep</button></span></li><li class="row"><a href="#" class="conv">Explain the Raft leader election</a></li><li class="row"><a href="#" class="conv">Draft: vendor security questionnaire</a></li></ul></nav><nav class="sidebar static" aria-label="Empty history"><div class="brand"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg><svg class="wordmark" viewBox="0 0 206 32" role="img" aria-label="ORNEUR">
+  <g fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt">
+    <rect x="2.5" y="2.5" width="21" height="27" rx="10.5"/>
+    <path transform="translate(36 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+    <path transform="translate(72 0)" d="M3 29.5V2.5l20 27V2.5"/>
+    <path transform="translate(144 0)" d="M3 2.5v17a10 10 0 0 0 20 0v-17"/>
+    <path transform="translate(180 0)" d="M3 29.5V2.5h12a7.5 7.5 0 0 1 0 15H3M13 17.5l9 12"/>
+  </g>
+  <g transform="translate(108 0)">
+    <rect x="3" y="0" width="5" height="32" fill="currentColor"/>
+    <rect x="10" y="0" width="14" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="13.25" width="11" height="5.5" fill="var(--accent-fill)"/>
+    <rect x="10" y="26.5" width="14" height="5.5" fill="var(--accent-fill)"/>
+  </g>
+</svg></div><label class="search"><span class="sr-only">Search conversations</span><input type="search" placeholder="Search conversations" value=""></label><p class="group">Empty history</p><p class="empty-hist">No conversations yet.<br>Your chats will appear here.</p></nav></div></div></figure></div>
+<h2>Code block and file attachments</h2><div class="grid two"><figure id="code-and-attachments-light" class="panel-fig theme-light"><figcaption>Code and attachments · Light</figcaption><div class="panel"><h3 class="sheet-h">Code block</h3><div class="codeblock"><div class="codehead"><span class="lang">python</span><span class="spacer"></span><button type="button" class="icon-btn" aria-label="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button><button type="button" class="btn btn-secondary btn-sm" aria-pressed="true">Wrap lines</button></div><pre class="code" aria-label="Code example"><code>def retention_days(contract: dict, *, include_backups: bool = False) -> int:
+    """Days customer data may be kept after termination; backups only when asked."""
+    base = contract["termination"]["delete_within_days"]
+    return base + (contract["backups"]["purge_days"] if include_backups else 0)</code></pre></div><p class="state-label">A long unbroken line wraps instead of scrolling the page:</p><pre class="code" aria-label="Long line example"><code>curl --fail --silent --show-error https://api.example.com/v1/documents/00000000-0000-0000-0000-000000000000/export?format=markdown&amp;include=citations</code></pre><h3 class="sheet-h">File attachment states</h3><div class="filestack"><div class="filecard"><span class="ftype" aria-hidden="true">PDF</span><div class="fbody"><div class="fname">msa_acme_v3.pdf</div><div class="fmeta">2.1 MB · Uploading… 62%</div><div class="progress" role="progressbar" aria-label="Uploading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="62"><span style="width:62%"></span></div></div><button type="button" class="btn btn-secondary btn-sm">Cancel</button></div><div class="filecard"><span class="ftype" aria-hidden="true">PPTX</span><div class="fbody"><div class="fname">board_deck.pptx</div><div class="fmeta">8.4 MB · Reading pages… 14 of 40</div><div class="progress" role="progressbar" aria-label="Reading document" aria-valuemin="0" aria-valuemax="100" aria-valuenow="35"><span style="width:35%"></span></div></div><button type="button" class="btn btn-secondary btn-sm">Cancel</button></div><div class="filecard"><span class="ftype" aria-hidden="true">MD</span><div class="fbody"><div class="fname">notes.md</div><div class="fmeta">12 KB · Ready · searchable</div></div><button type="button" class="btn btn-secondary btn-sm">Remove</button></div><div class="filecard is-bad"><span class="ftype" aria-hidden="true">PDF</span><div class="fbody"><div class="fname">scan_final.pdf</div><div class="fmeta" role="alert">31 MB · Too large: the limit is 20 MB.</div></div><button type="button" class="btn btn-secondary btn-sm">Choose another</button></div><div class="filecard is-bad"><span class="ftype" aria-hidden="true">ZIP</span><div class="fbody"><div class="fname">archive.zip</div><div class="fmeta" role="alert">4.2 MB · This file type isn't supported.</div></div><button type="button" class="btn btn-secondary btn-sm">Remove</button></div><div class="filecard is-bad"><span class="ftype" aria-hidden="true">PDF</span><div class="fbody"><div class="fname">contract_v2.pdf</div><div class="fmeta" role="alert">1.8 MB · Upload failed. Your message is saved.</div></div><button type="button" class="btn btn-secondary btn-sm">Try again</button></div></div></div></figure><figure id="code-and-attachments-dark" class="panel-fig theme-dark"><figcaption>Code and attachments · Dark</figcaption><div class="panel"><h3 class="sheet-h">Code block</h3><div class="codeblock"><div class="codehead"><span class="lang">python</span><span class="spacer"></span><button type="button" class="icon-btn" aria-label="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button><button type="button" class="btn btn-secondary btn-sm" aria-pressed="true">Wrap lines</button></div><pre class="code" aria-label="Code example"><code>def retention_days(contract: dict, *, include_backups: bool = False) -> int:
+    """Days customer data may be kept after termination; backups only when asked."""
+    base = contract["termination"]["delete_within_days"]
+    return base + (contract["backups"]["purge_days"] if include_backups else 0)</code></pre></div><p class="state-label">A long unbroken line wraps instead of scrolling the page:</p><pre class="code" aria-label="Long line example"><code>curl --fail --silent --show-error https://api.example.com/v1/documents/00000000-0000-0000-0000-000000000000/export?format=markdown&amp;include=citations</code></pre><h3 class="sheet-h">File attachment states</h3><div class="filestack"><div class="filecard"><span class="ftype" aria-hidden="true">PDF</span><div class="fbody"><div class="fname">msa_acme_v3.pdf</div><div class="fmeta">2.1 MB · Uploading… 62%</div><div class="progress" role="progressbar" aria-label="Uploading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="62"><span style="width:62%"></span></div></div><button type="button" class="btn btn-secondary btn-sm">Cancel</button></div><div class="filecard"><span class="ftype" aria-hidden="true">PPTX</span><div class="fbody"><div class="fname">board_deck.pptx</div><div class="fmeta">8.4 MB · Reading pages… 14 of 40</div><div class="progress" role="progressbar" aria-label="Reading document" aria-valuemin="0" aria-valuemax="100" aria-valuenow="35"><span style="width:35%"></span></div></div><button type="button" class="btn btn-secondary btn-sm">Cancel</button></div><div class="filecard"><span class="ftype" aria-hidden="true">MD</span><div class="fbody"><div class="fname">notes.md</div><div class="fmeta">12 KB · Ready · searchable</div></div><button type="button" class="btn btn-secondary btn-sm">Remove</button></div><div class="filecard is-bad"><span class="ftype" aria-hidden="true">PDF</span><div class="fbody"><div class="fname">scan_final.pdf</div><div class="fmeta" role="alert">31 MB · Too large: the limit is 20 MB.</div></div><button type="button" class="btn btn-secondary btn-sm">Choose another</button></div><div class="filecard is-bad"><span class="ftype" aria-hidden="true">ZIP</span><div class="fbody"><div class="fname">archive.zip</div><div class="fmeta" role="alert">4.2 MB · This file type isn't supported.</div></div><button type="button" class="btn btn-secondary btn-sm">Remove</button></div><div class="filecard is-bad"><span class="ftype" aria-hidden="true">PDF</span><div class="fbody"><div class="fname">contract_v2.pdf</div><div class="fmeta" role="alert">1.8 MB · Upload failed. Your message is saved.</div></div><button type="button" class="btn btn-secondary btn-sm">Try again</button></div></div></div></figure></div>
+<h2>Empty, loading, error and model-unavailable states</h2><div class="grid two"><figure id="system-states-light" class="panel-fig theme-light"><figcaption>System states · Light</figcaption><div class="panel"><div class="state-grid"><div><p class="state-label">Loading a response (skeleton; stop stays available)</p><ol class="messages" aria-label="Conversation"><li class="msg user"><div class="bubble">Summarise the attached report.</div></li><li class="msg assistant"><div class="content"><div class="skeleton" aria-hidden="true"><span class="sk" style="width:92%"></span><span class="sk" style="width:78%"></span><span class="sk" style="width:55%"></span></div><p class="status" role="status">Thinking… <button type="button" class="linklike">Stop</button></p></div></li></ol></div><div><p class="state-label">Model unavailable (API code model_unavailable)</p><div class="notice warn" role="alert"><div><h4>This model isn't available right now.</h4><p>It isn't open for public use at the moment. Choose another model or try again later. Your message is saved.</p></div><button type="button" class="btn btn-secondary btn-sm">Choose a model</button></div></div><div><p class="state-label">Session ended (password changed or token expired)</p><div class="notice" role="alert"><div><h4>You were signed out.</h4><p>Sign in to continue. Your draft is kept on this device.</p></div><button type="button" class="btn btn-primary btn-sm">Sign in</button></div></div><div><p class="state-label">Usage limit reached</p><div class="notice" role="status"><div><h4>You've reached today's message limit.</h4><p>It resets at 00:00 UTC. You can still read and export your conversations.</p></div><button type="button" class="btn btn-secondary btn-sm">See plans</button></div></div><div><p class="state-label">Offline</p><div class="notice" role="status"><div><h4>You're offline.</h4><p>Your draft is kept. You can send again when the connection returns.</p></div></div></div><div><p class="state-label">Recoverable error</p><div class="alert" role="alert"><strong>That response didn't finish.</strong><span>The model took too long to answer. Your message and file are saved.</span><div class="alert-actions"><button type="button" class="btn btn-primary btn-sm">Try again</button><button type="button" class="btn btn-secondary btn-sm">Dismiss</button></div></div></div><div><p class="state-label">Empty / first run</p><div class="empty small"><div class="empty-mark"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></div><h2 class="greeting">Hello chief, what's the plan today.</h2></div></div></div></div></figure><figure id="system-states-dark" class="panel-fig theme-dark"><figcaption>System states · Dark</figcaption><div class="panel"><div class="state-grid"><div><p class="state-label">Loading a response (skeleton; stop stays available)</p><ol class="messages" aria-label="Conversation"><li class="msg user"><div class="bubble">Summarise the attached report.</div></li><li class="msg assistant"><div class="content"><div class="skeleton" aria-hidden="true"><span class="sk" style="width:92%"></span><span class="sk" style="width:78%"></span><span class="sk" style="width:55%"></span></div><p class="status" role="status">Thinking… <button type="button" class="linklike">Stop</button></p></div></li></ol></div><div><p class="state-label">Model unavailable (API code model_unavailable)</p><div class="notice warn" role="alert"><div><h4>This model isn't available right now.</h4><p>It isn't open for public use at the moment. Choose another model or try again later. Your message is saved.</p></div><button type="button" class="btn btn-secondary btn-sm">Choose a model</button></div></div><div><p class="state-label">Session ended (password changed or token expired)</p><div class="notice" role="alert"><div><h4>You were signed out.</h4><p>Sign in to continue. Your draft is kept on this device.</p></div><button type="button" class="btn btn-primary btn-sm">Sign in</button></div></div><div><p class="state-label">Usage limit reached</p><div class="notice" role="status"><div><h4>You've reached today's message limit.</h4><p>It resets at 00:00 UTC. You can still read and export your conversations.</p></div><button type="button" class="btn btn-secondary btn-sm">See plans</button></div></div><div><p class="state-label">Offline</p><div class="notice" role="status"><div><h4>You're offline.</h4><p>Your draft is kept. You can send again when the connection returns.</p></div></div></div><div><p class="state-label">Recoverable error</p><div class="alert" role="alert"><strong>That response didn't finish.</strong><span>The model took too long to answer. Your message and file are saved.</span><div class="alert-actions"><button type="button" class="btn btn-primary btn-sm">Try again</button><button type="button" class="btn btn-secondary btn-sm">Dismiss</button></div></div></div><div><p class="state-label">Empty / first run</p><div class="empty small"><div class="empty-mark"><svg class="emblem" viewBox="0 0 48 48" role="img" aria-label="ORNEUR emblem: an abstract falcon in a stoop, built from three facets and four nodes">
+  <path d="M6 12 L22 34 L20 18 Z" fill="var(--indigo)"/>
+  <path d="M42 12 L26 34 L28 18 Z" fill="var(--indigo)"/>
+  <path d="M24 6 L28 18 L24 41 L20 18 Z" fill="var(--emblem-core)"/>
+  <g stroke="var(--emblem-line)" stroke-width="1" fill="none"><path d="M6 12 L24 6 L42 12"/><path d="M20 18 L28 18"/></g>
+  <g fill="var(--accent-fill)"><circle cx="24" cy="6" r="2.6"/></g>
+  <g fill="var(--emblem-node)"><circle cx="6" cy="12" r="2"/><circle cx="42" cy="12" r="2"/><circle cx="24" cy="41" r="2"/></g>
+</svg></div><h2 class="greeting">Hello chief, what's the plan today.</h2></div></div></div></div></figure></div>
+<h2>Measured contrast (WCAG 2.2 AA)</h2><p class="lede">Every pair below is recomputed by <code>tests/test_design_tokens_contrast.py</code>. The raw brand colours are used for fills and accents;
+text uses derived variants where the raw colour fails.</p><h3>Light theme: measured contrast</h3><div class="table-wrap"><table><thead><tr><th scope="col">Foreground</th><th scope="col">Background</th><th scope="col">Role</th><th scope="col">Ratio</th><th scope="col">Needs</th><th scope="col">Result</th></tr></thead><tbody><tr><td><span class="sw" style="background:#141821"></span> text <code>#141821</code></td><td><span class="sw" style="background:#F6F4F0"></span> page <code>#F6F4F0</code></td><td>body text</td><td class="num">16.17:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#141821"></span> text <code>#141821</code></td><td><span class="sw" style="background:#FFFFFF"></span> surface <code>#FFFFFF</code></td><td>text on cards/composer</td><td class="num">17.76:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#141821"></span> text <code>#141821</code></td><td><span class="sw" style="background:#E8E4DE"></span> sidebar <code>#E8E4DE</code></td><td>sidebar text</td><td class="num">14.03:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#141821"></span> text <code>#141821</code></td><td><span class="sw" style="background:#FFFFFF"></span> raised <code>#FFFFFF</code></td><td>text on raised</td><td class="num">17.76:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#4F5766"></span> text_secondary <code>#4F5766</code></td><td><span class="sw" style="background:#F6F4F0"></span> page <code>#F6F4F0</code></td><td>secondary text</td><td class="num">6.62:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#4F5766"></span> text_secondary <code>#4F5766</code></td><td><span class="sw" style="background:#FFFFFF"></span> surface <code>#FFFFFF</code></td><td>secondary text on surface</td><td class="num">7.27:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#4F5766"></span> text_secondary <code>#4F5766</code></td><td><span class="sw" style="background:#E8E4DE"></span> sidebar <code>#E8E4DE</code></td><td>secondary text on sidebar</td><td class="num">5.74:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#141821"></span> on_accent <code>#141821</code></td><td><span class="sw" style="background:#FF6B57"></span> accent_fill <code>#FF6B57</code></td><td>label on primary (coral) button</td><td class="num">6.34:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#B03626"></span> accent_text <code>#B03626</code></td><td><span class="sw" style="background:#F6F4F0"></span> page <code>#F6F4F0</code></td><td>links/accent text</td><td class="num">5.62:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#B03626"></span> accent_text <code>#B03626</code></td><td><span class="sw" style="background:#FFFFFF"></span> surface <code>#FFFFFF</code></td><td>links on surface</td><td class="num">6.17:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#B03626"></span> accent_text <code>#B03626</code></td><td><span class="sw" style="background:#E8E4DE"></span> sidebar <code>#E8E4DE</code></td><td>links on sidebar</td><td class="num">4.88:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#FFFFFF"></span> on_indigo <code>#FFFFFF</code></td><td><span class="sw" style="background:#3A4B6B"></span> indigo <code>#3A4B6B</code></td><td>user message text</td><td class="num">8.75:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#7C8392"></span> border_strong <code>#7C8392</code></td><td><span class="sw" style="background:#F6F4F0"></span> page <code>#F6F4F0</code></td><td>input/button boundary vs page</td><td class="num">3.46:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#7C8392"></span> border_strong <code>#7C8392</code></td><td><span class="sw" style="background:#FFFFFF"></span> surface <code>#FFFFFF</code></td><td>input boundary vs surface</td><td class="num">3.81:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#3A4B6B"></span> focus <code>#3A4B6B</code></td><td><span class="sw" style="background:#F6F4F0"></span> page <code>#F6F4F0</code></td><td>focus ring vs page</td><td class="num">7.97:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#3A4B6B"></span> focus <code>#3A4B6B</code></td><td><span class="sw" style="background:#FFFFFF"></span> surface <code>#FFFFFF</code></td><td>focus ring vs surface</td><td class="num">8.75:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#3A4B6B"></span> focus <code>#3A4B6B</code></td><td><span class="sw" style="background:#E8E4DE"></span> sidebar <code>#E8E4DE</code></td><td>focus ring vs sidebar</td><td class="num">6.91:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#141821"></span> code_text <code>#141821</code></td><td><span class="sw" style="background:#EFEBE4"></span> code_bg <code>#EFEBE4</code></td><td>code text</td><td class="num">14.95:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#2F6F52"></span> success <code>#2F6F52</code></td><td><span class="sw" style="background:#FFFFFF"></span> surface <code>#FFFFFF</code></td><td>success text</td><td class="num">5.97:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#B03626"></span> danger <code>#B03626</code></td><td><span class="sw" style="background:#FFFFFF"></span> surface <code>#FFFFFF</code></td><td>error text</td><td class="num">6.17:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#8A5A00"></span> warning <code>#8A5A00</code></td><td><span class="sw" style="background:#FFFFFF"></span> surface <code>#FFFFFF</code></td><td>warning text</td><td class="num">5.93:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#8A5A00"></span> experimental <code>#8A5A00</code></td><td><span class="sw" style="background:#FFFFFF"></span> surface <code>#FFFFFF</code></td><td>experimental-model label text</td><td class="num">5.93:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr></tbody></table></div><h3>Dark theme: measured contrast</h3><div class="table-wrap"><table><thead><tr><th scope="col">Foreground</th><th scope="col">Background</th><th scope="col">Role</th><th scope="col">Ratio</th><th scope="col">Needs</th><th scope="col">Result</th></tr></thead><tbody><tr><td><span class="sw" style="background:#E8E4DE"></span> text <code>#E8E4DE</code></td><td><span class="sw" style="background:#0E1116"></span> page <code>#0E1116</code></td><td>body text</td><td class="num">14.93:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#E8E4DE"></span> text <code>#E8E4DE</code></td><td><span class="sw" style="background:#161A21"></span> surface <code>#161A21</code></td><td>text on cards/composer</td><td class="num">13.78:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#E8E4DE"></span> text <code>#E8E4DE</code></td><td><span class="sw" style="background:#12151B"></span> sidebar <code>#12151B</code></td><td>sidebar text</td><td class="num">14.44:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#E8E4DE"></span> text <code>#E8E4DE</code></td><td><span class="sw" style="background:#1D222B"></span> raised <code>#1D222B</code></td><td>text on raised</td><td class="num">12.60:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#9AA3B2"></span> text_secondary <code>#9AA3B2</code></td><td><span class="sw" style="background:#0E1116"></span> page <code>#0E1116</code></td><td>secondary text</td><td class="num">7.43:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#9AA3B2"></span> text_secondary <code>#9AA3B2</code></td><td><span class="sw" style="background:#161A21"></span> surface <code>#161A21</code></td><td>secondary text on surface</td><td class="num">6.86:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#9AA3B2"></span> text_secondary <code>#9AA3B2</code></td><td><span class="sw" style="background:#12151B"></span> sidebar <code>#12151B</code></td><td>secondary text on sidebar</td><td class="num">7.19:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#0E1116"></span> on_accent <code>#0E1116</code></td><td><span class="sw" style="background:#FF6B57"></span> accent_fill <code>#FF6B57</code></td><td>label on primary (coral) button</td><td class="num">6.75:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#FF8A78"></span> accent_text <code>#FF8A78</code></td><td><span class="sw" style="background:#0E1116"></span> page <code>#0E1116</code></td><td>links/accent text</td><td class="num">8.25:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#FF8A78"></span> accent_text <code>#FF8A78</code></td><td><span class="sw" style="background:#161A21"></span> surface <code>#161A21</code></td><td>links on surface</td><td class="num">7.61:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#FF8A78"></span> accent_text <code>#FF8A78</code></td><td><span class="sw" style="background:#12151B"></span> sidebar <code>#12151B</code></td><td>links on sidebar</td><td class="num">7.97:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#E8E4DE"></span> on_indigo <code>#E8E4DE</code></td><td><span class="sw" style="background:#3A4B6B"></span> indigo <code>#3A4B6B</code></td><td>user message text</td><td class="num">6.91:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#6B7587"></span> border_strong <code>#6B7587</code></td><td><span class="sw" style="background:#0E1116"></span> page <code>#0E1116</code></td><td>input/button boundary vs page</td><td class="num">4.07:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#6B7587"></span> border_strong <code>#6B7587</code></td><td><span class="sw" style="background:#161A21"></span> surface <code>#161A21</code></td><td>input boundary vs surface</td><td class="num">3.75:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#E8E4DE"></span> focus <code>#E8E4DE</code></td><td><span class="sw" style="background:#0E1116"></span> page <code>#0E1116</code></td><td>focus ring vs page</td><td class="num">14.93:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#E8E4DE"></span> focus <code>#E8E4DE</code></td><td><span class="sw" style="background:#161A21"></span> surface <code>#161A21</code></td><td>focus ring vs surface</td><td class="num">13.78:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#E8E4DE"></span> focus <code>#E8E4DE</code></td><td><span class="sw" style="background:#12151B"></span> sidebar <code>#12151B</code></td><td>focus ring vs sidebar</td><td class="num">14.44:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#E8E4DE"></span> code_text <code>#E8E4DE</code></td><td><span class="sw" style="background:#0A0D12"></span> code_bg <code>#0A0D12</code></td><td>code text</td><td class="num">15.37:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#6FC39A"></span> success <code>#6FC39A</code></td><td><span class="sw" style="background:#161A21"></span> surface <code>#161A21</code></td><td>success text</td><td class="num">8.26:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#FF8A78"></span> danger <code>#FF8A78</code></td><td><span class="sw" style="background:#161A21"></span> surface <code>#161A21</code></td><td>error text</td><td class="num">7.61:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#E3B25A"></span> warning <code>#E3B25A</code></td><td><span class="sw" style="background:#161A21"></span> surface <code>#161A21</code></td><td>warning text</td><td class="num">8.96:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#E3B25A"></span> experimental <code>#E3B25A</code></td><td><span class="sw" style="background:#161A21"></span> surface <code>#161A21</code></td><td>experimental-model label text</td><td class="num">8.96:1</td><td class="num">≥ 4.5</td><td class="ok">pass</td></tr><tr><td><span class="sw" style="background:#FF6B57"></span> accent_fill <code>#FF6B57</code></td><td><span class="sw" style="background:#0E1116"></span> page <code>#0E1116</code></td><td>coral as a non-text indicator</td><td class="num">6.75:1</td><td class="num">≥ 3.0</td><td class="ok">pass</td></tr></tbody></table></div>
+</div></body></html>

@@ -22,7 +22,8 @@ available), `UNKNOWN`, `NOT_APPLICABLE`. Audit depth: `READ` (code read), `SURFA
 | #25 | `0db1a59` | P0 experimental-serving policy | **9/9** | none yet |
 | #26 | `52ad8fa` | P1 development register + flaky-test fix | **9/9** | none yet |
 | #27 | `f29a133` | G-003 non-root containers | see PR | none yet |
-| #28 | this PR | G-019 `O_PATH` for ancestors | see PR | none yet |
+| #28 | `0065256` | G-019 `O_PATH` for ancestors | see PR | none yet |
+| #29 | this PR | P2 UI design spec + Light/Dark mock (design only) | see PR | none (founder review D-2) |
 
 Ancestry (VERIFIED): `main(464b602) ⊂ #20 ⊂ #21 ⊂ #22 ⊂ #23 ⊂ #24 ⊂ #25`. Nothing is merged. `main` is unchanged at `464b602f3f25`.
 Local full deterministic suite on #25: **7273 passed, 6 failed, 413 skipped** (§6, G-013 for the six).
@@ -175,7 +176,7 @@ Established by running each as root and as uid 65534 and by direct probes (VERIF
 | P1 | This register + baseline-failure causes + flake fix | In this PR |
 | P1 | G-003 container non-root | Next |
 | P1 | G-006 tenant-isolation adversarial tests | Next |
-| P2 | Design specification for founder review | Next (no implementation before D-2) |
+| P2 | Design specification + Light/Dark screens for founder review | Delivered in #29; **awaiting D-2** (no implementation before approval) |
 | P4 | GENESIS/NOVUS future-training preparation docs | Not started |
 
 ## 10. Restrictions in force (unchanged)
