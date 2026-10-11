@@ -34,7 +34,7 @@ def _reset_state():
     metrics.reset()
 
 
-def test_real_ultra_request_emits_real_gateway_metrics(monkeypatch):
+def test_real_ultra_request_emits_real_gateway_metrics(isolated_home, monkeypatch):
     if not _ollama_reachable():
         pytest.skip("No local Ollama instance reachable")
 
@@ -42,9 +42,15 @@ def test_real_ultra_request_emits_real_gateway_metrics(monkeypatch):
     monkeypatch.setattr(api_module, "has_feature", lambda feature: True)
 
     client = TestClient(api_module.app)
+    # Workstream A: /api/ultra now enforces the caller's own plan, so the request must come from a paid account.
+    from orca.auth.routes import _make_response
+    from orca.auth.store import create_user, set_user_tier
+    user = create_user("ultra-cutover@example.com", "correct-horse-battery", "u")
+    set_user_tier(user.id, "pro")
+    token = _make_response(user)["token"]
 
     with client.stream(
-        "POST", "/api/ultra", json={"task": "Say hi in one word."}
+        "POST", "/api/ultra", json={"task": "Say hi in one word."}, headers={"Authorization": f"Bearer {token}"}
     ) as response:
         events = list(response.iter_lines())
 

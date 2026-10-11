@@ -18,6 +18,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import hmac
 import contextlib
 import json
 import re
@@ -388,6 +389,30 @@ def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, ker
                                reason="entitlement_limit" if cognitive_result.degraded else None, viewer_user_id=uid)
     return _model_identity(requested_variant=requested_variant, served_tier=getattr(sess, "model_variant", None), served_model=getattr(sess, "served_model", None), fallback_from=getattr(sess, "fallback_from", None),
                            viewer_user_id=uid)
+
+
+def _authorize_inference(user, model_variant, message, *, route: str, quota_kind: str = "message"):
+    """The single authorization every inference-spending route applies BEFORE any model, session cost or tool is touched: per-user quota, per-user plan gate
+    for the requested tier, and input moderation. Returns a `PublicError` to refuse, or None to proceed.
+
+    Workstream A: /api/ultra relied only on the SERVER's licence tier and /api/vision had no gate at all, so an anonymous caller could spend the most
+    expensive tier (or unmetered vision) on any licensed instance. A structural test (`tests/test_a_serving_authorization.py`) fails if a new inference route
+    skips this helper."""
+    if user:
+        allowed, used, limit = check_quota(user.id, user.tier, quota_kind)
+        if not allowed:
+            return coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited use.", used=used, limit=limit)
+    model_allowed, model_reason = model_access_allowed(user, model_variant)
+    if not model_allowed:
+        return coded_error("model_access_denied", message=model_reason)
+    mod_result = check_input(message)
+    metrics.record_moderation_action(mod_result.action)
+    if mod_result.action == "block":
+        audit.log("input_moderation_blocked", user_id=user.id if user else None, detail={"categories": mod_result.flagged_categories, "endpoint": route})
+        return coded_error("content_refused")
+    if mod_result.action in ("support", "flag"):
+        audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None, detail={"categories": mod_result.flagged_categories, "endpoint": route})
+    return None
 
 
 def _resolve_backend_for_chat(variant: str | None):
@@ -2090,6 +2115,12 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
             yield f"data: {json.dumps({'type': 'error', 'text': 'Ultra requires a Pro license. Run: orca activate <key>'})}\n\n"
         return StreamingResponse(_gate_stream(), media_type="text/event-stream")
 
+    _refusal = _authorize_inference(user, "ultra", req.task, route="/api/ultra", quota_kind="ultra")
+    if _refusal is not None:
+        async def _ultra_refused():
+            yield f"data: {json.dumps(_refusal.as_sse())}\n\n"
+        return StreamingResponse(_ultra_refused(), media_type="text/event-stream")
+
     sess = _get_session(req.session_id, user_id=user.id if user else None)
     progress_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
@@ -2115,13 +2146,19 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
     # and /api/stream, this HTTP-reachable path was missed by the original
     # cutover. Resolve the same way _Session.__init__ does and inject the
     # Gateway-routed brain so live Ultra traffic is routed identically.
-    ultra_resolution = TierResolution(
-        tier="ultra",
-        backend="ollama",
-        model=_model_name_for_variant("ultra"),
-        data_left_infrastructure=False,
-    )
-    ultra_brain = brain_for_tier_resolution(ultra_resolution, viewer_user_id=user.id if user else None)
+    try:
+        ultra_resolution = TierResolution(
+            tier="ultra",
+            backend="ollama",
+            model=_model_name_for_variant("ultra"),
+            data_left_infrastructure=False,
+        )
+        ultra_brain = brain_for_tier_resolution(ultra_resolution, viewer_user_id=user.id if user else None)
+    except Exception as _e:        # no installed model for the tier, or the tier is not routable: a clean coded error, never an unhandled 500
+        _unavail = public_error(_e, route="/api/ultra", user_id=user.id if user else None, code="model_unavailable")
+        async def _ultra_unavailable():
+            yield f"data: {json.dumps(_unavail.as_sse())}\n\n"
+        return StreamingResponse(_ultra_unavailable(), media_type="text/event-stream")
 
     def on_progress(msg: str):
         # Called from within async coroutine context (main event loop thread)
@@ -2160,7 +2197,14 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
             return
 
         # Stream final output in small chunks for smooth rendering
-        text = pipeline.final_output
+        _dlp = dlp.scan_output(pipeline.final_output)
+        if _dlp["has_findings"]:
+            audit.log("output_dlp_finding", user_id=user.id if user else None, detail={
+                "pii_flagged": _dlp["pii_flagged"], "secrets_redacted": _dlp["secrets_redacted"], "endpoint": "ultra",
+            })
+        text = _dlp["safe_text"]
+        if user:
+            increment_usage(user.id, "ultra")
         chunk_size = 25
         for i in range(0, len(text), chunk_size):
             yield f"data: {json.dumps({'type': 'chunk', 'text': text[i:i+chunk_size]})}\n\n"
@@ -2323,6 +2367,12 @@ async def code_run(
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB
 
 
+def _looks_like_image(data: bytes) -> bool:
+    """Magic-byte check (PNG, JPEG, GIF, WebP). The declared content type is attacker-controlled and is not trusted."""
+    return (data.startswith(b"\x89PNG\r\n\x1a\n") or data.startswith(b"\xff\xd8\xff") or data[:6] in (b"GIF87a", b"GIF89a")
+            or (data[:4] == b"RIFF" and data[8:12] == b"WEBP"))
+
+
 @app.post("/api/vision")
 async def vision_query(
     request: Request,
@@ -2341,12 +2391,19 @@ async def vision_query(
     """
     ratelimit.enforce(request, ratelimit.VISION, extra_key="vision")
 
-    data = await image.read()
+    data = await image.read(MAX_IMAGE_SIZE + 1)         # bounded read: never buffer an arbitrarily large upload
     if len(data) > MAX_IMAGE_SIZE:
         return JSONResponse(
-            {"error": f"Image too large ({len(data)//1024//1024}MB). Max: {MAX_IMAGE_SIZE//1024//1024}MB"},
+            {"error": f"Image too large. Max: {MAX_IMAGE_SIZE//1024//1024}MB", "code": "invalid_request"},
             status_code=413,
         )
+    if not _looks_like_image(data):
+        e = coded_error("invalid_request", message="The uploaded file is not a supported image (PNG, JPEG, GIF or WebP).", status=415)
+        return JSONResponse(e.as_json(), status_code=e.status)
+
+    _refusal = _authorize_inference(user, model_variant, message, route="/api/vision")
+    if _refusal is not None:
+        return JSONResponse(_refusal.as_json(), status_code=_refusal.status)
 
     model_name = _model_name_for_variant(model_variant)
     if not is_vision_capable(model_name):
@@ -2357,14 +2414,6 @@ async def vision_query(
             status_code=400,
         )
 
-    mod_result = check_input(message)
-    metrics.record_moderation_action(mod_result.action)
-    if mod_result.action == "block":
-        audit.log("input_moderation_blocked", user_id=user.id if user else None,
-                  detail={"categories": mod_result.flagged_categories, "endpoint": "vision"})
-        e = coded_error("content_refused")
-        return JSONResponse(e.as_json(), status_code=e.status)
-
     sess = _get_session(session_id, model_variant, user_id=user.id if user else None)
     image_b64 = encode_image(data)
     vision_message = build_vision_message(message, image_b64)
@@ -2372,7 +2421,17 @@ async def vision_query(
     try:
         response = await asyncio.to_thread(sess.brain.complete, [vision_message])
     except Exception as e:
-        return JSONResponse(public_error(e, route="/api/vision", user_id=user.id if user else None).as_json(), status_code=500)
+        _err = public_error(e, route="/api/vision", user_id=user.id if user else None)
+        return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
+
+    _dlp = dlp.scan_output(response)
+    if _dlp["has_findings"]:
+        audit.log("output_dlp_finding", user_id=user.id if user else None, detail={
+            "pii_flagged": _dlp["pii_flagged"], "secrets_redacted": _dlp["secrets_redacted"], "endpoint": "vision",
+        })
+    response = _dlp["safe_text"]
+    if user:
+        increment_usage(user.id, "message")
 
     audit.log("vision_query", user_id=user.id if user else None,
               detail={"model": model_name, "image_bytes": len(data)})
@@ -2391,13 +2450,20 @@ async def admin_metrics(admin: User = Depends(require_permission("audit_read")))
 
 
 @app.get("/metrics", response_class=PlainTextResponse)
-async def prometheus_metrics():
+async def prometheus_metrics(request: Request):
     """
     Prometheus exposition format — no auth, standard scrape convention.
     If exposing this port publicly, put a firewall/reverse-proxy rule in
     front of it; this endpoint reveals operational detail (request volumes,
     error rates, endpoint names) that shouldn't be internet-visible.
     """
+    if _is_public_edge():
+        # Workstream A: on a public edge the scrape endpoint is closed unless a scrape token is configured AND presented (constant-time compare).
+        token = orneur_env("METRICS_TOKEN", "")
+        presented = request.headers.get("authorization", "")
+        if not token or len(token) < 32 or not hmac.compare_digest(presented, f"Bearer {token}"):
+            e = coded_error("forbidden")
+            return JSONResponse(e.as_json(), status_code=403)
     return PlainTextResponse(metrics.get_prometheus_text(), media_type="text/plain; version=0.0.4")
 
 
