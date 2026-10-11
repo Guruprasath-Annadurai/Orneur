@@ -41,7 +41,7 @@ from this change on, against the CI-built image in `Production Container Build +
 Local verification used an image with the same base, user/ownership layout and entrypoint as `Dockerfile`/`Dockerfile.fly` **minus the apt-installed
 `curl`/`build-essential`** (the verification sandbox has no DNS for apt). CI runs the same script against the real image.
 
-**Not verified:** the Fly image itself (CI does not build `Dockerfile.fly`; its entrypoint is exercised through the verification image); the k8s manifest
+**Not verified:** the Fly image itself (CI does not build `Dockerfile.fly`; its entrypoint script is mounted from the checkout into the image under test, so the real script is what runs); the k8s manifest
 against a real cluster (Pod Security "restricted" admission would reject the root init container — pre-chown the PVC there); `readOnlyRootFilesystem`
 is **start-up verified only** and is still not enabled in the manifest — chat, document upload and model/embedding caches have not been exercised
 under it, so enabling it needs an end-to-end run with the writable-mount list; behaviour under a real volume driver (NFS root-squash, EBS fsGroup
