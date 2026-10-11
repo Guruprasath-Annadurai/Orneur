@@ -1,0 +1,2 @@
+rendered 20 figures
+RESULT: PASS

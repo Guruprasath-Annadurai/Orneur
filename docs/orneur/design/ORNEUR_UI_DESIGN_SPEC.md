@@ -2,7 +2,8 @@
 
 Status: **DESIGN PROPOSAL — NOT IMPLEMENTED.** Nothing here changes the running product. No implementation starts until the founder approves this
 document (decision **D-2** in `docs/orneur/status/ORNEUR_DEVELOPMENT_REGISTER.md`). Screens: `docs/orneur/design/preview/index.html` (self-contained,
-no scripts, sample content) and the PNGs beside it. Tokens: `docs/orneur/design/tokens.json`, contrast-tested in CI.
+no scripts, sample content) and the PNGs beside it (10-item visual review package: Light/Dark desktop and mobile conversations, brand, composer, sidebar, code/attachments, system states).
+Regenerate with `scripts/design/build_design_preview.py`; `scripts/design/render_preview.py` renders every figure and audits computed contrast, clipping and 375 px overflow (`RENDER_AUDIT.txt`). Tokens: `docs/orneur/design/tokens.json`, contrast-tested in CI.
 
 This supersedes the visual direction of `docs/DESIGN_BRIEF.md` (black/white orca mark). It keeps that brief's best rule: **show real model status
 honestly, don't hide it behind a "beta" badge.**
