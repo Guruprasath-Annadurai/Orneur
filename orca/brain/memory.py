@@ -15,7 +15,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
-import diskcache
+from orca.safe_cache import open_cache
 
 from orca.config import MEMORY_DIR, CACHE_DIR, _mkdir_owner_only
 
@@ -199,7 +199,7 @@ class SemanticMemory:
         # "semantic" is created by diskcache itself if missing; validate it
         # (and refuse a symlink/foreign-owned pre-existing entry) first.
         semantic_dir = _mkdir_owner_only(CACHE_DIR / "semantic")
-        self._cache = diskcache.Cache(str(semantic_dir))
+        self._cache = open_cache(semantic_dir)  # SafeDisk: never unpickles (orca/safe_cache.py)
 
     def store_fact(self, key: str, value: Any) -> None:
         self._cache[f"fact:{key}"] = value

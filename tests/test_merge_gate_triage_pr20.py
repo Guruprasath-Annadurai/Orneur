@@ -516,6 +516,8 @@ def test_every_diskcache_store_lives_under_a_hardened_directory():
 
     seen = 0
     for py in (REPO_ROOT / "orca").rglob("*.py"):
+        if py.name == "safe_cache.py":
+            continue                                   # the one wrapper that implements open_cache(); callers are checked below
         tree = ast.parse(py.read_text(encoding="utf-8"))
         assigns: dict[str, list] = {}
         for n in ast.walk(tree):
@@ -526,7 +528,8 @@ def test_every_diskcache_store_lives_under_a_hardened_directory():
                     elif isinstance(t, ast.Attribute):
                         assigns.setdefault(t.attr, []).append(n.value)
         for n in ast.walk(tree):
-            if isinstance(n, ast.Call) and ast.unparse(n.func).endswith("diskcache.Cache"):
+            # Workstream A: the opener is now orca.safe_cache.open_cache (diskcache.Cache with a never-unpickling Disk); the hardened-directory invariant is unchanged.
+            if isinstance(n, ast.Call) and (ast.unparse(n.func).endswith("diskcache.Cache") or ast.unparse(n.func) == "open_cache"):
                 seen += 1
                 arg = n.args[0]
                 inner = arg.args[0] if isinstance(arg, ast.Call) and ast.unparse(arg.func) == "str" else arg

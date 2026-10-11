@@ -35,7 +35,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
-import diskcache
+from orca.safe_cache import open_cache
 
 from orca.config import ORCA_HOME, _mkdir_owner_only
 
@@ -76,7 +76,7 @@ class LensJobQueue:
         # A caller-supplied cache_dir used to skip the owner-only/symlink
         # hardening that QUEUE_DIR gets at import time (PYSEC-2026-2447).
         directory = _mkdir_owner_only(Path(cache_dir), parents=True) if cache_dir else QUEUE_DIR
-        self._cache = diskcache.Cache(str(directory))
+        self._cache = open_cache(directory)  # SafeDisk: never unpickles (orca/safe_cache.py)
 
     def submit(
         self,

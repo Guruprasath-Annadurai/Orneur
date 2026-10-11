@@ -346,8 +346,9 @@ def test_07e_non_session_tokens_are_not_accepted_as_a_session(client, monkeypatc
     import orca.auth.tokens as tokens
 
     secret = "production-like-secret-0123456789"
-    monkeypatch.setenv("ORNEUR_AUTH_SECRET", secret)
-    monkeypatch.setattr(tokens, "_SECRET", secret)
+    monkeypatch.setenv("ORNEUR_AUTH_SECRET", secret)          # the secret now follows the environment (orca/auth/secret.py), no module-level freeze
+    from orca.auth import secret as _secret_mod
+    _secret_mod._reset_cache_for_tests()
     ta, uid = _signup(client)
     email = client.get("/api/auth/me", headers=_hdr(ta)).json()["user"]["email"]
     maker = {"2fa_pending": tokens.make_2fa_pending_token, "reset": tokens.make_reset_token, "verify": tokens.make_verification_token}[kind]
@@ -498,7 +499,7 @@ def test_10_disk_caches_are_an_audited_closed_set():
     ``fact:session_<prefix>``, protected by the storage-prefix claim above)."""
     sites = sorted(
         p.relative_to(REPO).as_posix() for p in (REPO / "orca").rglob("*.py")
-        if "diskcache.Cache(" in p.read_text()
+        if p.name != "safe_cache.py" and ("diskcache.Cache(" in p.read_text() or "open_cache(" in p.read_text())
     )
     assert sites == ["orca/brain/memory.py", "orca/lens/queue.py"], f"new shared cache site(s) need a tenant-key review: {sites}"
 
