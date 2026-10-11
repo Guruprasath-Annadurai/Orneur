@@ -46,11 +46,59 @@ class Tool:
     params: dict  # JSON schema of parameters
 
 
+# G-020 -- tools that act with the SERVER's authority on the SERVER's host
+# (processes and the filesystem). Nothing here is tenant-aware: the workspace
+# is one shared directory, and `shell`/`run_code` see whatever the server OS
+# user sees. A path check is not a tenant boundary, so these are never offered
+# to a web (multi-user) surface. Re-enabling them there needs per-user
+# isolated execution (docs/orneur/authorization/PER_USER_EXECUTION_ARCHITECTURE.md),
+# an independent audit, and a code change -- there is deliberately NO
+# environment flag, because a flag is how EXPERIMENTAL serving got authorized.
+SERVER_AUTHORITY_TOOLS: frozenset[str] = frozenset(
+    {"shell", "run_code", "read_file", "write_file", "security_scan"}
+)
+
+# What a web session may use. Anything not listed here is not registered on a
+# web registry (allow-list, fail closed): a tool added to build_registry later
+# stays unreachable from the web until someone consciously lists it.
+WEB_SURFACE_TOOLS: frozenset[str] = frozenset(
+    {"web_search", "investor_research", "memory_recall"}
+)
+
+SURFACE_INTERNAL = "internal"
+SURFACE_WEB = "web"
+
+
+class ToolNotPermitted(Exception):
+    """Raised (and rendered as a stable refusal) when a surface may not use a tool."""
+
+
+def _canonical_tool_name(name: object) -> str:
+    """Fold a model-supplied tool name so aliases cannot dodge the deny check
+    ("Shell", " shell\u200b", "functions.shell", "SHELL")."""
+    import unicodedata
+
+    text = unicodedata.normalize("NFKC", str(name))
+    text = "".join(ch for ch in text if unicodedata.category(ch) not in ("Cf", "Cc"))
+    text = text.strip().lower()
+    for sep in (".", "/", ":"):
+        text = text.rsplit(sep, 1)[-1]
+    return text.strip()
+
+
 class ToolRegistry:
-    def __init__(self):
+    def __init__(self, surface: str = SURFACE_INTERNAL):
         self._tools: dict[str, Tool] = {}
+        self.surface = surface
+
+    def _permitted(self, name: str) -> bool:
+        if self.surface != SURFACE_WEB:
+            return True
+        return name in WEB_SURFACE_TOOLS and name not in SERVER_AUTHORITY_TOOLS
 
     def register(self, tool: Tool) -> None:
+        if not self._permitted(tool.name):
+            raise ToolNotPermitted(f"tool '{tool.name}' may not be registered on the {self.surface} surface")
         self._tools[tool.name] = tool
 
     def get(self, name: str) -> Tool | None:
@@ -66,6 +114,15 @@ class ToolRegistry:
         ]
 
     def call(self, name: str, args: dict) -> str:
+        if self.surface == SURFACE_WEB:
+            canonical = _canonical_tool_name(name)
+            if canonical in SERVER_AUTHORITY_TOOLS or canonical not in self._tools:
+                # One refusal for "denied" and "unknown": never confirm which
+                # server-side tools exist, never list them.
+                return "Tool not available in this environment."
+            name = canonical
+            if not isinstance(args, dict):
+                return "Tool not available in this environment."
         tool = self._tools.get(name)
         if not tool:
             return f"Unknown tool: {name}. Available: {', '.join(self.all_names())}"
@@ -76,7 +133,15 @@ class ToolRegistry:
             return f"Tool '{name}' error: {e}"
 
 
-def build_registry(memory_engine=None) -> ToolRegistry:
+def build_registry(memory_engine=None, *, surface: str = SURFACE_INTERNAL) -> ToolRegistry:
+    """`surface="internal"` (CLI/TUI on the operator's own machine) keeps the full
+    toolset. `surface="web"` -- every tool reachable from the HTTP API -- gets
+    only WEB_SURFACE_TOOLS (G-020)."""
+    if surface not in (SURFACE_INTERNAL, SURFACE_WEB):
+        raise ValueError(f"unknown tool surface: {surface!r}")
+    if surface == SURFACE_WEB:
+        return _build_web_registry(memory_engine)
+
     from orca.tools.search_grounding import search_and_ground
     from orca.tools.code import run_code
     from orca.tools.security import run_security_scan
@@ -199,6 +264,39 @@ def build_registry(memory_engine=None) -> ToolRegistry:
         },
     ))
 
+    return registry
+
+
+def _build_web_registry(memory_engine=None) -> ToolRegistry:
+    """The only toolset a web session gets. Built from scratch (not by filtering
+    the internal registry) so nothing server-authoritative is ever constructed."""
+    from orca.tools.search_grounding import search_and_ground
+
+    registry = ToolRegistry(surface=SURFACE_WEB)
+    registry.register(Tool(
+        name="web_search",
+        description="Search the web for current information, documentation, or facts",
+        fn=lambda query, n=5: search_and_ground(query, n=n)[0],
+        params={"type": "object", "properties": {"query": {"type": "string", "description": "Search query"},
+                                                  "n": {"type": "integer", "description": "Number of results", "default": 5}},
+                "required": ["query"]},
+    ))
+    registry.register(Tool(
+        name="investor_research",
+        description="Research investors, VCs, funding rounds, and market data for business development",
+        fn=_investor_research,
+        params={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+    ))
+    # memory_recall is offered ONLY when bound to the caller's own memory
+    # engine. The unbound form takes a model-chosen `session_id` and would read
+    # another tenant's (or the shared "default") memory.
+    if memory_engine is not None:
+        registry.register(Tool(
+            name="memory_recall",
+            description="Search your long-term memory for relevant past context",
+            fn=lambda query="", q="", **_ignored: _recall_memory_engine(query or q, memory_engine),
+            params={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        ))
     return registry
 
 

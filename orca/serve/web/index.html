@@ -4069,6 +4069,11 @@ async function runCodeBlock(idx) {
       body: JSON.stringify({ code: raw, session_id: sessionId }),
     });
     const data = await resp.json();
+    if (data.code === 'capability_disabled') {
+      outEl.innerHTML = '<span class="cout-meta">Code execution is not available in this environment.</span>';
+      if (btnEl) btnEl.disabled = false;
+      return;
+    }
 
     let html = '';
     if (data.error) {

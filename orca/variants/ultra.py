@@ -83,6 +83,7 @@ class OrcaUltra:
         model: str | None = None,
         use_tools: bool = True,
         brain=None,
+        surface: str = "internal",
     ):
         # `brain` lets callers that already have a Gateway-routed brain
         # (e.g. the live /api/ultra HTTP endpoint, see orca/serve/api.py's
@@ -91,7 +92,7 @@ class OrcaUltra:
         # unaffected -- it never passes `brain`, so it keeps building an
         # OrcaBrain straight from the requested model name.
         self.brain = brain if brain is not None else get_brain(model or CONFIG.ollama.model_ultra)
-        self.tools = build_registry() if use_tools else None
+        self.tools = build_registry(surface=surface) if use_tools else None
         self.on_progress = on_progress or print
 
     def run(self, goal: str, max_retries: int = 2) -> Pipeline:
