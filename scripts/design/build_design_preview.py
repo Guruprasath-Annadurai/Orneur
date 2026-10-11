@@ -77,7 +77,12 @@ def icon(name: str, label: str) -> str:
 def sidebar(active: bool = True) -> str:
     items = [("Retention terms: Acme MSA vs. v3", True), ("Q4 launch checklist", False), ("Explain the Raft leader election", False),
              ("Draft: vendor security questionnaire", False)]
-    lis = "".join(f'<li><a href="#" class="conv{" is-active" if a else ""}"{" aria-current=\'page\'" if a else ""}>{t}</a></li>' for t, a in items)
+    def _item(t: str, a: bool) -> str:
+        cls = "conv is-active" if a else "conv"
+        cur = " aria-current='page'" if a else ""
+        return f'<li><a href="#" class="{cls}"{cur}>{t}</a></li>'
+
+    lis = "".join(_item(t, a) for t, a in items)
     return f"""<nav class="sidebar" aria-label="Conversations">
       <div class="brand">{EMBLEM}{WORDMARK}</div>
       <button type="button" class="btn btn-primary btn-block">{ICON['plus'] and ''}New conversation</button>
