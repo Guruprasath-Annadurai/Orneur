@@ -18,8 +18,8 @@ available), `UNKNOWN`, `NOT_APPLICABLE`. Audit depth: `READ` (code read), `SURFA
 | #21 | `26fe4b7` | merge-gate hardening | 9/9 | superseded by #22/#23 findings |
 | #22 | `dfa9188` | descriptor-based directory validation | 9/9 | Audit #007 `REMEDIATION_REQUIRED` against `045a826` |
 | #23 | `bd3072c` | Audit #007 remediation | **9/9** | **Audit #008 not received** (no comment on #22/#23 as of this register) |
-| #24 | `ce3d58c` | P0 training authorization gate | 8/9 at last check; deterministic job pending | none yet |
-| #25 | `0db1a59` | P0 experimental-serving policy | pending | none yet |
+| #24 | `ce3d58c` | P0 training authorization gate | **9/9** | none yet |
+| #25 | `0db1a59` | P0 experimental-serving policy | **9/9** | none yet |
 
 Ancestry (VERIFIED): `main(464b602) ⊂ #20 ⊂ #21 ⊂ #22 ⊂ #23 ⊂ #24 ⊂ #25`. Nothing is merged. `main` is unchanged at `464b602f3f25`.
 Local full deterministic suite on #25: **7273 passed, 6 failed, 413 skipped** (§6, G-013 for the six).
@@ -165,8 +165,8 @@ Established by running each as root and as uid 65534 and by direct probes (VERIF
 
 | Pri | Work package | Status |
 |---|---|---|
-| P0 | Training authorization gate (#24) | Implemented; CI + audit pending |
-| P0 | Experimental serving policy (#25) | Implemented; CI + audit pending |
+| P0 | Training authorization gate (#24) | Implemented; CI 9/9; audit pending |
+| P0 | Experimental serving policy (#25) | Implemented; CI 9/9; audit pending |
 | P0 | PR #23 independent retest | Awaiting Antigravity Audit #008 |
 | P1 | This register + baseline-failure causes + flake fix | In this PR |
 | P1 | G-003 container non-root | Next |
