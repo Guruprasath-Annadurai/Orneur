@@ -136,6 +136,8 @@ def test_reserved_native_model_names_cover_the_three_registered_families():
 
 
 def test_canonical_family_config_with_correct_base_model_still_trains(tmp_path, monkeypatch):
+    from tests.training_auth_support import stub_authorize
+    stub_authorize(monkeypatch)   # authorization is covered in test_training_authorization_gate.py
     """Non-regression: a canonical family config that has NOT been tampered
     with must still reach real training work (not be rejected by the new
     validator) -- proven by letting it proceed past validation into the
@@ -172,7 +174,9 @@ def test_canonical_family_config_with_correct_base_model_still_trains(tmp_path, 
         train(cfg, dataset_manifest_ids=["orneur-genesis-v2-v1"])
 
 
-def test_generic_experiment_config_with_explicit_base_model_still_trains():
+def test_generic_experiment_config_with_explicit_base_model_still_trains(monkeypatch):
+    from tests.training_auth_support import stub_authorize
+    stub_authorize(monkeypatch)   # authorization is covered in test_training_authorization_gate.py
     """Non-regression: a generic (family=None) config with an explicit,
     non-reserved base model and name is a legitimate experimental request
     and must not be rejected by the new validator."""

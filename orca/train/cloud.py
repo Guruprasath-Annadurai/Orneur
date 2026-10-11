@@ -271,6 +271,9 @@ def _rsync_down(args: list[str], remote: str, local: str) -> int:
 #  CloudTrainer
 # ─────────────────────────────────────────────────────────────────────────────
 
+CLOUD_ENVIRONMENT_CLASS = "SSH_RENTED_GPU"   # declared by this entry path, never by the operator or the environment
+
+
 class CloudTrainer:
     """
     Orchestrates end-to-end QLoRA training on a rented GPU instance.
@@ -313,6 +316,31 @@ class CloudTrainer:
         # separate Ollama-registration name, not just cfg.model_name.
         validate_training_identity(cfg, artifact_name=model_name)
 
+    def _estimated_spend_usd(self, train_file: Path) -> float:
+        """Conservative: the most expensive known GPU tier for this preset. Unknown => infinity => never authorized."""
+        from orca.train.prepare import GPU_TIERS, estimate_cost
+        try:
+            n = sum(1 for line in train_file.read_text().splitlines() if line.strip())
+            tiers = [g for g in GPU_TIERS if g["preset"] == self.preset]
+            return max(estimate_cost(n, g, self.epochs)["cost_usd"] for g in tiers) if tiers else float("inf")
+        except Exception:
+            return float("inf")
+
+    def _authorize(self, train_file: Path, eval_file: Path):
+        from orca.train.authorization import authorize_training
+        from orca.train.config import TrainingConfig
+
+        cfg = TrainingConfig.preset(self.preset)
+        cfg.num_epochs = self.epochs
+        cfg.lora.r = self.rank
+        cfg.lora.lora_alpha = self.rank * 2
+        cfg.train_file = str(train_file)
+        cfg.eval_file = str(eval_file)
+        grant = authorize_training(
+            cfg, environment_class=CLOUD_ENVIRONMENT_CLASS, requested_spend_usd=self._estimated_spend_usd(train_file),
+        )
+        return grant, cfg
+
     def run(self) -> dict:
         """Full pipeline: setup → upload → train → download → register."""
         results: dict = {}
@@ -327,6 +355,11 @@ class CloudTrainer:
         eval_file  = FORMATTED_DIR / "orca_llama3_eval.jsonl"
         if not train_file.exists():
             raise FileNotFoundError(f"Train file not found: {train_file}\nRun: orca data format --format llama3 --split")
+
+        # AUTHORIZATION GATE (fail closed) -- before ANY SSH connection, upload, remote install or billed
+        # minute. Same signed, request-exact grant as the local path, declared as a rented-GPU environment
+        # with an explicit spend estimate (an unknown estimate is treated as unbounded, i.e. denied).
+        grant, cfg = self._authorize(train_file, eval_file)
 
         try:
             self._step("Checking connectivity")
@@ -347,6 +380,9 @@ class CloudTrainer:
             _ssh_run(self.ssh_args, f"mkdir -p {REMOTE_WORKDIR}/data {REMOTE_WORKDIR}/output {REMOTE_WORKDIR}/merged {REMOTE_WORKDIR}/gguf")
 
             self._step("Uploading training data")
+            # The bytes leaving this machine must be the exact bytes the authority approved.
+            grant.assert_valid_for(cfg, environment_class=CLOUD_ENVIRONMENT_CLASS)
+            grant.assert_files(train_file, eval_file if eval_file.exists() else None)
             rc = _rsync_up(self.ssh_args, str(train_file), f"{REMOTE_WORKDIR}/data/")
             if eval_file.exists():
                 _rsync_up(self.ssh_args, str(eval_file), f"{REMOTE_WORKDIR}/data/")
@@ -367,10 +403,11 @@ class CloudTrainer:
                 f"ORCA_RANK={self.rank} "
                 f"ORCA_BASE_MODEL={self.base_model}"
             )
+            grant.assert_valid_for(cfg, environment_class=CLOUD_ENVIRONMENT_CLASS)
             rc = _ssh_run(
                 self.ssh_args,
                 f"cd {REMOTE_WORKDIR} && {train_env} python train.py 2>&1",
-                timeout=7200,
+                timeout=min(7200, grant.max_wall_clock_minutes * 60),
                 on_line=self._train_log,
             )
             if rc != 0:

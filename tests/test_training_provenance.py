@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.training_auth_support import grant_for_manifest, stub_authorize
+
 from orca.registry.checkpoint import CheckpointRecord, CheckpointStructureInvalid, CorruptCheckpointError
 from orca.registry.dataset_bundle import DatasetBundleManifest, SourceManifestLineage
 from orca.registry.dataset_manifest import DatasetManifest, sha256_of_file
@@ -410,7 +412,7 @@ def test_complete_training_run_registers_checkpoint_at_experimental_only(tmp_pat
     assert reloaded.checkpoint_outputs == ["genesis-test-checkpoint"]
 
 
-def test_finetune_train_wrapper_marks_manifest_failed_on_missing_dependencies(cfg_with_real_dataset):
+def test_finetune_train_wrapper_marks_manifest_failed_on_missing_dependencies(cfg_with_real_dataset, monkeypatch):
     """CPU-safe, real (not mocked) end-to-end proof of the orchestration
     path: this test environment genuinely has no unsloth/trl/datasets/
     peft/bitsandbytes installed, so orca.train.finetune.train()'s real
@@ -422,6 +424,7 @@ def test_finetune_train_wrapper_marks_manifest_failed_on_missing_dependencies(cf
     from orca.registry.training_run import list_runs
     from orca.train.finetune import train
 
+    stub_authorize(monkeypatch)   # authorization is covered in test_training_authorization_gate.py
     with pytest.raises(ImportError, match="Missing training dependencies"):
         train(cfg_with_real_dataset, on_log=lambda _msg: None, dataset_manifest_ids=["orneur-genesis-v2-v1"])
 
@@ -475,7 +478,7 @@ def _cfg_and_valid_bundle_for_two_sources(tmp_path):
     return cfg, dataset_manifest_ids, "orneur-genesis-bundle-v1"
 
 
-def test_finetune_train_wrapper_forwards_dataset_bundle_id_through_real_entrypoint(tmp_path):
+def test_finetune_train_wrapper_forwards_dataset_bundle_id_through_real_entrypoint(tmp_path, monkeypatch):
     """Defect A closure: start_training_run() has always accepted
     dataset_bundle_id, but orca.train.finetune.train() -- the real
     public training path -- had no parameter to forward one, so
@@ -491,6 +494,7 @@ def test_finetune_train_wrapper_forwards_dataset_bundle_id_through_real_entrypoi
     from orca.train.finetune import train
 
     cfg, dataset_manifest_ids, dataset_bundle_id = _cfg_and_valid_bundle_for_two_sources(tmp_path)
+    stub_authorize(monkeypatch)   # authorization is covered in test_training_authorization_gate.py
 
     with pytest.raises(ImportError, match="Missing training dependencies"):
         train(
@@ -518,7 +522,7 @@ def test_finetune_train_wrapper_forwards_dataset_bundle_id_through_real_entrypoi
     assert "ImportError" in run.failure_state
 
 
-def test_finetune_train_wrapper_without_bundle_id_fails_before_dependency_loading(tmp_path):
+def test_finetune_train_wrapper_without_bundle_id_fails_before_dependency_loading(tmp_path, monkeypatch):
     """Defect A closure, second half: the SAME multi-manifest call
     WITHOUT dataset_bundle_id must fail closed inside
     start_training_run()'s verify_dataset_binding() call -- BEFORE
@@ -530,6 +534,7 @@ def test_finetune_train_wrapper_without_bundle_id_fails_before_dependency_loadin
     from orca.train.finetune import train
 
     cfg, dataset_manifest_ids, _dataset_bundle_id = _cfg_and_valid_bundle_for_two_sources(tmp_path)
+    stub_authorize(monkeypatch)   # authorization is covered in test_training_authorization_gate.py
 
     with pytest.raises(DatasetBindingInvalid, match="dataset_bundle_id"):
         train(cfg, on_log=lambda _msg: None, dataset_manifest_ids=dataset_manifest_ids)
@@ -784,7 +789,7 @@ def test_pre_load_snapshot_digest_is_checked_via_real_train_impl(cfg_with_real_d
     train_snapshot.write_text('{"text": "TAMPERED BEFORE LOAD"}\n')
 
     with pytest.raises(SnapshotIntegrityError, match="modified after verification"):
-        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest)
+        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest, grant_for_manifest(cfg_with_real_dataset, manifest))
 
 
 def test_post_load_snapshot_digest_is_checked_via_real_train_impl(cfg_with_real_dataset, monkeypatch):
@@ -824,7 +829,7 @@ def test_post_load_snapshot_digest_is_checked_via_real_train_impl(cfg_with_real_
     from orca.train.finetune import _train_impl
 
     with pytest.raises(SnapshotIntegrityError, match="modified after verification"):
-        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest)
+        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest, grant_for_manifest(cfg_with_real_dataset, manifest))
 
 
 # ── (§2-8) Phase 21B.2.2: verified-source -> snapshot race closure ──────
@@ -982,7 +987,7 @@ def test_canonical_manifest_with_empty_snapshot_paths_fails_before_model_load(cf
     manifest.dataset_snapshot_paths = {}
 
     with pytest.raises(SnapshotIntegrityError, match="requires a verified run snapshot"):
-        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest)
+        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest, grant_for_manifest(cfg_with_real_dataset, manifest))
 
 
 def test_dataset_resolution_and_snapshot_verification_precede_base_model_load(cfg_with_real_dataset, monkeypatch):
@@ -1018,7 +1023,7 @@ def test_dataset_resolution_and_snapshot_verification_precede_base_model_load(cf
     )
 
     with pytest.raises(RuntimeError, match="stop here"):
-        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest)
+        _train_impl(cfg_with_real_dataset, lambda _msg: None, manifest, grant_for_manifest(cfg_with_real_dataset, manifest))
 
     assert call_order == ["dataset_load", "model_load"]
 

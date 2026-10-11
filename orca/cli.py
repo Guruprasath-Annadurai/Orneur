@@ -68,6 +68,8 @@ app.add_typer(ultra_app, name="ultra")
 app.add_typer(data_app,  name="data")
 app.add_typer(train_app, name="train")
 
+from orca.train.authorization import TrainingNotAuthorized  # noqa: E402
+
 
 def _piped() -> str | None:
     if not sys.stdin.isatty():
@@ -583,6 +585,17 @@ def data_format(
 
 # ── Train pipeline ─────────────────────────────────────────────────────────────
 
+def _report_training_denied(exc) -> None:
+    console.print(Panel(
+        "[bold red]Training is not authorized.[/bold red]\n\n"
+        "A real training job needs a signed, unexpired training authorization that names this exact model, dataset, "
+        "environment and limits. Reasons: " + ", ".join(exc.reasons) + "\n\n"
+        "No flag or environment variable can grant this. See docs/orneur/authorization/TRAINING_AUTHORIZATION_DESIGN.md.",
+        title="[red bold]Authorization required[/red bold]", border_style="red",
+    ))
+    raise typer.Exit(2)
+
+
 @train_app.command("prepare")
 def train_prepare(
     epochs: int = typer.Option(3, "--epochs", "-e", help="Training epochs (for cost estimate)"),
@@ -617,6 +630,8 @@ def train_cloud(
     trainer = CloudTrainer(ssh=ssh, preset=preset, epochs=epochs, model_name=name)
     try:
         trainer.run()
+    except TrainingNotAuthorized as e:
+        _report_training_denied(e)
     except RuntimeError as e:
         console.print(f"\n[red bold]✗[/red bold] {e}")
         raise typer.Exit(1)
@@ -660,6 +675,8 @@ def train_run(
         console.print(f"\n[green]Training complete![/green]")
         console.print(f"Loss: {meta['train_loss']:.4f} | Time: {meta['duration_min']:.1f} min")
         console.print(f"\nNext: [bold]orca train export {meta['merged_path']}[/bold]")
+    except TrainingNotAuthorized as e:
+        _report_training_denied(e)
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
@@ -771,6 +788,8 @@ def _run_variant_train(variant_name: str, epochs: int | None, rank: int | None):
         console.print(f"\n[green]Training complete![/green]")
         console.print(f"Loss: {meta['train_loss']:.4f} | Time: {meta['duration_min']:.1f} min")
         console.print(f"\nNext: [bold]orca train export {meta['merged_path']} --name {v.ollama_name}[/bold]")
+    except TrainingNotAuthorized as e:
+        _report_training_denied(e)
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
