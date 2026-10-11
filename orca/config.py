@@ -1,4 +1,6 @@
+import errno
 import os
+import stat
 import warnings
 from pathlib import Path
 from pydantic import BaseModel
@@ -43,6 +45,41 @@ class UntrustedStoreDirectory(RuntimeError):
     the symlink/ownership check in `_mkdir_owner_only` and was refused."""
 
 
+_DIR_OPEN_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+
+
+def _open_dir_nofollow(name: str, dir_fd: int, shown: str) -> int:
+    try:
+        return os.open(name, _DIR_OPEN_FLAGS, dir_fd=dir_fd)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise UntrustedStoreDirectory(
+                f"refusing to use {shown}: {name!r} is a symlink or not a "
+                "directory at the moment it was opened."
+            ) from exc
+        raise
+
+
+def _require_trusted_ancestor(fd: int, shown: str) -> None:
+    """An ancestor is trusted only if nobody but root or this user can
+    rename, replace or plant entries in it: owned by root/euid and not
+    group/other-writable (a root-owned sticky directory such as /tmp is the
+    one exception, because sticky stops other users renaming our entries)."""
+    st = os.fstat(fd)
+    if st.st_uid not in (0, os.geteuid()):
+        raise UntrustedStoreDirectory(
+            f"refusing to use a path under {shown}: owned by uid {st.st_uid}, "
+            f"which is neither root nor this process's uid {os.geteuid()}."
+        )
+    if st.st_mode & 0o022 and not (st.st_mode & stat.S_ISVTX and st.st_uid == 0):
+        raise UntrustedStoreDirectory(
+            f"refusing to use a path under {shown}: it is group/other-"
+            "writable, so another local account could swap a path component "
+            "for a symlink between validation and use. Remove the extra "
+            "write bits (chmod go-w) or choose a different location."
+        )
+
+
 def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
     """
     Creates `path` restricted to the owning user (mode 0700) and enforces
@@ -51,70 +88,82 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
     CACHE_DIR by orca/brain/memory.py and under QUEUE_DIR by
     orca/lens/queue.py) falls back to pickle for non-JSON-encodable values,
     and pickle deserialization of attacker-controlled bytes is arbitrary
-    code execution. diskcache has no upstream fix as of this writing (5.6.3
-    remains the latest PyPI release), so the only real mitigation available
-    here is denying write access to anyone but the owning user — the same
-    trust boundary the rest of ORCA_HOME already relies on. mkdir's own
-    `mode` argument is masked by umask and never reapplied to a directory
-    that already exists, so this chmods unconditionally on every call.
+    code execution. diskcache has no upstream fix (5.6.3 is the latest
+    PyPI release), so the mitigation is denying write access to anyone but
+    the owning user.
 
-    Two checks guard the trust boundary this is meant to enforce, both
-    found missing in CodeAnt's PR #20 review and confirmed reproducible:
+    Race-safe by construction (symlink-swap / TOCTOU): nothing here
+    re-resolves a path string between a check and its use. The path is
+    walked once from "/" with openat(O_NOFOLLOW|O_DIRECTORY), and every
+    check (owner, mode) and the final chmod operate on the already-open
+    descriptor, never on a name.
 
-    1. Symlink refusal. `path.chmod()` (like `os.chmod`) follows symlinks.
-       If an attacker who can write somewhere under this path's parent
-       directory (e.g. a lower-privileged local account on a shared
-       machine, present *before* this process's first run) pre-plants
-       `path` as a symlink to a directory they control, `mkdir(exist_ok=
-       True)` silently no-ops (the target already "exists" as a
-       directory) and the chmod below would silently restrict *their*
-       directory, not ours — while every subsequent diskcache read/write
-       this process makes against `path` transparently follows the
-       symlink into attacker-controlled storage. Refused outright rather
-       than silently followed.
-    2. Ownership check. `chmod(0o700)` only ever restricts to *whichever
-       user owns the directory* — if a pre-existing (non-symlink)
-       directory at this path is owned by a different uid than this
-       process (e.g. the same local-attacker-pre-creates-it scenario,
-       without even needing a symlink), chmod 0700 changes the mode bits
-       but not the owner: the attacker, as owner, keeps full rwx access
-       regardless, while this process may not even be able to read its
-       own cache. A directory this process does not own is never safe to
-       treat as private, no matter what mode it reports.
+    * Every ancestor must be owned by root or this user and not
+      group/other-writable (root-owned sticky dirs excepted). A directory
+      an attacker cannot write to cannot have a component swapped for a
+      symlink, so after this walk succeeds no other non-root account can
+      redirect `path`. Symlinks that already exist in the *ancestor* part
+      are resolved up front (realpath) and the resolved chain is what gets
+      verified, so a symlink planted by an attacker can only point at a
+      directory that itself passed the same ownership/mode test. If a
+      component is swapped between resolution and the walk, O_NOFOLLOW
+      fails and the call fails closed.
+    * The leaf is opened with O_NOFOLLOW: a symlink at `path` is refused
+      (chmod would otherwise follow it and "harden" the attacker's target).
+    * The leaf must be owned by this process's uid: chmod changes mode
+      bits, not ownership.
+    * Missing directories (including intermediates when parents=True) are
+      created with mkdirat mode 0700, not umask-dependent 0755.
 
-    Neither check covers every ancestor directory in `path` when
-    `parents=True` creates intermediate levels — only the leaf `path`
-    itself. A malicious intermediate directory is a real, not-yet-closed
-    residual gap, consistent with this function's existing stance that it
-    narrows exposure to the single-user trust boundary rather than
-    eliminating every local-attacker-pre-positioning scenario.
+    Not covered (cannot be, from here): root, or the same uid, acting
+    maliciously; and pre-existing *contents* of a loosely-permissioned
+    leaf that another account planted before this release hardened it.
     """
-    if path.is_symlink():
-        raise UntrustedStoreDirectory(
-            f"refusing to use {path}: it is a symlink, not a real directory. "
-            "A pre-planted symlink here would silently redirect every read/"
-            "write this process makes to an attacker-chosen location."
-        )
-    path.mkdir(parents=parents, exist_ok=True)
-    if path.is_symlink():
-        # TOCTOU: something replaced `path` with a symlink between the
-        # mkdir call above and this check. Treat it the same as the
-        # pre-existing case rather than trusting it now.
-        raise UntrustedStoreDirectory(
-            f"refusing to use {path}: it was replaced with a symlink during "
-            "creation."
-        )
-    owner_uid = path.stat().st_uid
-    if owner_uid != os.geteuid():
-        raise UntrustedStoreDirectory(
-            f"refusing to use {path}: it is owned by uid {owner_uid}, not "
-            f"this process's uid {os.geteuid()}. chmod only restricts mode "
-            "bits, not ownership -- whoever already owns this directory "
-            "would keep full access regardless of the mode this function "
-            "sets, so a directory this process does not own is never safe "
-            "to treat as private."
-        )
-    path.chmod(0o700)
+    absolute = os.path.abspath(path)
+    leaf = os.path.basename(absolute)
+    if not leaf:
+        raise UntrustedStoreDirectory(f"refusing to use {path}: no leaf name.")
+    parent_parts = [p for p in os.path.realpath(os.path.dirname(absolute)).split(os.sep) if p]
+
+    fd = os.open(os.sep, _DIR_OPEN_FLAGS)
+    try:
+        _require_trusted_ancestor(fd, os.sep)
+        shown = os.sep
+        for name in parent_parts:
+            shown = os.path.join(shown, name)
+            try:
+                nfd = _open_dir_nofollow(name, fd, shown)
+            except FileNotFoundError:
+                if not parents:
+                    raise
+                try:
+                    os.mkdir(name, 0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                nfd = _open_dir_nofollow(name, fd, shown)
+            os.close(fd)
+            fd = nfd
+            _require_trusted_ancestor(fd, shown)
+
+        try:
+            os.mkdir(leaf, 0o700, dir_fd=fd)
+        except FileExistsError:
+            pass
+        lfd = _open_dir_nofollow(leaf, fd, absolute)
+    finally:
+        os.close(fd)
+    try:
+        owner_uid = os.fstat(lfd).st_uid
+        if owner_uid != os.geteuid():
+            raise UntrustedStoreDirectory(
+                f"refusing to use {path}: it is owned by uid {owner_uid}, not "
+                f"this process's uid {os.geteuid()}. chmod only restricts "
+                "mode bits, not ownership, so a directory this process does "
+                "not own is never safe to treat as private."
+            )
+        os.fchmod(lfd, 0o700)
+    finally:
+        os.close(lfd)
     return path
 
 
