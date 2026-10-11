@@ -1,0 +1,732 @@
+{
+  "aggregate_quality_score": "NONE_BY_DESIGN",
+  "checks": [
+    {
+      "check": "schema",
+      "kind_requested": "auto",
+      "kinds_seen": {
+        "chat": 34
+      },
+      "limits": {
+        "max_chars": 200000,
+        "strict_keys": false
+      },
+      "records_invalid": 0,
+      "records_total": 34,
+      "records_valid": 34,
+      "status": "PASS",
+      "violation_count": 0,
+      "violations": [],
+      "violations_by_code": {},
+      "violations_truncated": false
+    },
+    {
+      "check": "provenance",
+      "default_provenance_applied": false,
+      "digests_computed_by_tool": 0,
+      "records_resolved": 0,
+      "records_total": 34,
+      "records_unresolved": 34,
+      "source_registry_problems": [
+        "no source registry supplied"
+      ],
+      "status": "FAIL",
+      "violation_count": 34,
+      "violations": [
+        {
+          "code": "source_registry_invalid",
+          "line": 1,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 2,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 3,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 4,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 5,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 6,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 7,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 8,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 9,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 10,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 11,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 12,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 13,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 14,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 15,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 16,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 17,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 18,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 19,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 20,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 21,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 22,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 23,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 24,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 25,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 26,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 27,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 28,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 29,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 30,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 31,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 32,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 33,
+          "message": "source registry missing or invalid"
+        },
+        {
+          "code": "source_registry_invalid",
+          "line": 34,
+          "message": "source registry missing or invalid"
+        }
+      ],
+      "violations_by_code": {
+        "source_registry_invalid": 34
+      },
+      "violations_truncated": false
+    },
+    {
+      "accepted_count": 0,
+      "check": "teacher_rights",
+      "records_total": 34,
+      "refusals": [
+        {
+          "line": 1,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 2,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 3,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 4,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 5,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 6,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 7,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 8,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 9,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 10,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 11,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 12,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 13,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 14,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 15,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 16,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 17,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 18,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 19,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 20,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 21,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 22,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 23,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 24,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 25,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 26,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 27,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 28,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 29,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 30,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 31,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 32,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 33,
+          "reason": "no_generator_declared"
+        },
+        {
+          "line": 34,
+          "reason": "no_generator_declared"
+        }
+      ],
+      "refusals_by_reason": {
+        "no_generator_declared": 34
+      },
+      "refusals_truncated": false,
+      "refused_count": 34,
+      "register_content_sha256": "fe07b5af1c724a276ed6df8f00bcdabd893257b0168ec39aac494a1f630e1c5b",
+      "register_problems": [],
+      "register_valid": true,
+      "status": "FAIL"
+    },
+    {
+      "check": "dedup",
+      "config": {
+        "compared_text": "body_text (system block and template control tokens excluded)",
+        "jaccard_threshold": 0.8,
+        "max_exact_normalized_groups": 0,
+        "max_near_record_fraction": 0.1,
+        "near_method": "all_pairs_exact_jaccard",
+        "shingle_n": 3
+      },
+      "exact_normalized": {
+        "duplicate_groups": 0,
+        "groups_by_line": [],
+        "redundant_records": 0
+      },
+      "exact_raw": {
+        "duplicate_groups": 0,
+        "groups_by_line": [],
+        "redundant_records": 0
+      },
+      "failing_conditions": [],
+      "near_duplicates": {
+        "cluster_size_histogram": {},
+        "clusters": 0,
+        "clusters_by_line": [],
+        "largest_cluster_size": 1,
+        "max_pair_score": 0.0,
+        "pair_fraction": 0.0,
+        "pairs_at_or_above_threshold": 0,
+        "pairs_total": 561,
+        "record_fraction_in_clusters": 0.0,
+        "records_in_clusters": 0,
+        "redundant_records_if_one_kept_per_cluster": 0,
+        "unique_records_after_dedup": 34
+      },
+      "numeric_variants": {
+        "groups": 0,
+        "groups_by_line": [],
+        "records": 0
+      },
+      "records": 34,
+      "status": "PASS",
+      "structural_clones": {
+        "lines_involved": [],
+        "min_tokens": 14,
+        "pair_fraction": 0.0,
+        "pairs": 0,
+        "record_fraction": 0.0,
+        "records_involved": 0,
+        "records_too_short_to_assess": 0,
+        "status": "MEASURED",
+        "threshold": 0.75
+      },
+      "template_concentration": {
+        "full_skeleton": {
+          "distinct": 34,
+          "entropy_bits": 5.0875,
+          "normalized_entropy": 1.0,
+          "top": [
+            {
+              "count": 1,
+              "share": 0.0294,
+              "template_sha256_prefix": "a70aa0f4210a"
+            },
+            {
+              "count": 1,
+              "share": 0.0294,
+              "template_sha256_prefix": "d4ed09af89ef"
+            },
+            {
+              "count": 1,
+              "share": 0.0294,
+              "template_sha256_prefix": "0500b065714a"
+            },
+            {
+              "count": 1,
+              "share": 0.0294,
+              "template_sha256_prefix": "6dad120a965b"
+            },
+            {
+              "count": 1,
+              "share": 0.0294,
+              "template_sha256_prefix": "68ad45a9a955"
+            }
+          ],
+          "top1_share": 0.0294
+        },
+        "opening_skeleton": {
+          "distinct": 12,
+          "entropy_bits": 2.3687,
+          "normalized_entropy": 0.6607,
+          "tokens": 8,
+          "top": [
+            {
+              "count": 20,
+              "share": 0.5882,
+              "template_sha256_prefix": "90beba6e27bd"
+            },
+            {
+              "count": 2,
+              "share": 0.0588,
+              "template_sha256_prefix": "b9823a9a0703"
+            },
+            {
+              "count": 2,
+              "share": 0.0588,
+              "template_sha256_prefix": "b6eca0ebfbab"
+            },
+            {
+              "count": 2,
+              "share": 0.0588,
+              "template_sha256_prefix": "4b0d35fe23bc"
+            },
+            {
+              "count": 1,
+              "share": 0.0294,
+              "template_sha256_prefix": "a11c0a68db3b"
+            }
+          ],
+          "top1_share": 0.5882
+        }
+      },
+      "unparseable_lines_excluded": 0
+    },
+    {
+      "check": "diversity",
+      "failing_conditions": [],
+      "length_tokens": {
+        "max": 472,
+        "median": 285,
+        "min": 96
+      },
+      "lexical": {
+        "distinct_1": {
+          "distinct": 1596,
+          "ratio": 0.161,
+          "total": 9911
+        },
+        "distinct_2": {
+          "distinct": 5057,
+          "ratio": 0.512,
+          "total": 9877
+        },
+        "distinct_3": {
+          "distinct": 6866,
+          "ratio": 0.6976,
+          "total": 9843
+        },
+        "type_token_ratio_corpus": 0.161,
+        "type_token_ratio_mean_per_record": 0.5125,
+        "vocabulary_size": 1596
+      },
+      "records": 34,
+      "status": "PASS",
+      "structural": {
+        "distinct_skeletons": 34,
+        "note": "full-body skeletons are near-unique for any prose of different length; the opening-skeleton figures expose shared templates",
+        "opening_skeleton": {
+          "distinct": 12,
+          "entropy_bits": 2.3687,
+          "normalized_entropy": 0.6607,
+          "tokens": 8,
+          "top1_share": 0.5882
+        },
+        "skeleton_entropy_bits": 5.0875,
+        "skeleton_normalized_entropy": 1.0,
+        "top1_skeleton_share": 0.0294
+      },
+      "thresholds": {
+        "min_distinct_2": null,
+        "min_skeleton_normalized_entropy": null,
+        "note": "None = descriptive only; a PASS then means 'computed', not 'diverse enough'"
+      },
+      "tokens_total": 9911
+    },
+    {
+      "check": "semantic_diversity",
+      "reason": "no local semantic embedder configured (no model directory/hash is authorised in this repository; nothing is downloaded)",
+      "status": "NOT_EVALUATED"
+    },
+    {
+      "check": "contamination",
+      "eval_records": 3,
+      "item_level_leakage": "none: only train-side line numbers, counts and canary-id prefixes are emitted",
+      "status": "NOT_EVALUATED",
+      "sub_checks": [
+        {
+          "comparison": "normalised body (NFKC, casefold, homoglyph fold, punctuation/whitespace collapse); digits masked for the number-variant count",
+          "name": "exact",
+          "status": "PASS",
+          "train_lines": [],
+          "train_records_matching_eval_exactly": 0,
+          "train_records_matching_eval_up_to_number_changes": 0
+        },
+        {
+          "eval_items_affected_count": 0,
+          "max_jaccard_observed": 0.1338,
+          "method": "all_pairs_exact_jaccard",
+          "name": "near",
+          "shingle_n": 5,
+          "status": "PASS",
+          "threshold": 0.6,
+          "train_lines": [],
+          "train_records_near_eval": 0
+        },
+        {
+          "name": "canary",
+          "reason": "no canary strings supplied",
+          "status": "NOT_EVALUATED"
+        },
+        {
+          "fingerprint_set_size": 396,
+          "max_overlap_fraction": 0.124,
+          "name": "fingerprint_set",
+          "ngram": 8,
+          "status": "PASS",
+          "threshold": 0.2,
+          "train_lines": [],
+          "train_records_over_overlap_threshold": 0
+        }
+      ],
+      "train_records": 34
+    },
+    {
+      "check": "privacy",
+      "errors": [],
+      "errors_count": 0,
+      "findings": [],
+      "findings_by_category": {},
+      "findings_truncated": false,
+      "protected_corpus_marker_rules": [],
+      "records_scanned": 34,
+      "records_with_findings": 0,
+      "scanners": [
+        "orca.serve.dlp.scan_output",
+        "orca.docs.pii_redact.redact_pii",
+        "orca.eval.genesis_v2.privacy_scan._scan_bytes"
+      ],
+      "scope_note": "pattern scanners (floor, not ceiling): PASS = no known pattern matched",
+      "status": "PASS",
+      "values_in_report": "never"
+    },
+    {
+      "check": "balance",
+      "reason": "no record carries a category label (fields tried: ['category', 'domain', 'cluster', 'meta.subtype']; sidecar labels: False); categories are never inferred from text",
+      "records": 34,
+      "status": "NOT_EVALUATED"
+    },
+    {
+      "check": "manifest_verify",
+      "dataset_id": "public-sft-orca-nano-combined-v1",
+      "detail": {
+        "eval": {
+          "changed_count": 0,
+          "changed_lines": [],
+          "records_actual": 3,
+          "records_expected": 3
+        },
+        "train": {
+          "changed_count": 0,
+          "changed_lines": [],
+          "records_actual": 34,
+          "records_expected": 34
+        }
+      },
+      "manifest_digest": "303c78dd38774df6b1653e6704d4484e1b9d0ee04dfccfbb69d7c4ad86a2acd4",
+      "problems": [],
+      "status": "PASS",
+      "version": "v1"
+    }
+  ],
+  "dataset": {
+    "eval": {
+      "lines": 3,
+      "parseable_records": 3,
+      "path": "notebooks/data/orca_nano_combined_eval_v1.jsonl",
+      "sha256": "0b7dcafaa549275675368cc25567e31fb434abdb9bc705134827b40cb8b621fb"
+    },
+    "train": {
+      "lines": 34,
+      "parseable_records": 34,
+      "path": "notebooks/data/orca_nano_combined_train_v1.jsonl",
+      "sha256": "2e05abdfdc1cf4a254de87f19f27b6ca12dfece317e4d938e35285d1d5273da0"
+    }
+  },
+  "report_format": "orneur-dataquality-report/1",
+  "schema_version": "orneur-dataquality/1",
+  "status_counts": {
+    "FAIL": 2,
+    "NOT_EVALUATED": 4,
+    "PASS": 8
+  },
+  "statuses": [
+    {
+      "check": "schema",
+      "status": "PASS"
+    },
+    {
+      "check": "provenance",
+      "status": "FAIL"
+    },
+    {
+      "check": "teacher_rights",
+      "status": "FAIL"
+    },
+    {
+      "check": "dedup",
+      "status": "PASS"
+    },
+    {
+      "check": "diversity",
+      "status": "PASS"
+    },
+    {
+      "check": "semantic_diversity",
+      "status": "NOT_EVALUATED"
+    },
+    {
+      "check": "contamination",
+      "status": "NOT_EVALUATED"
+    },
+    {
+      "check": "contamination.exact",
+      "status": "PASS"
+    },
+    {
+      "check": "contamination.near",
+      "status": "PASS"
+    },
+    {
+      "check": "contamination.canary",
+      "status": "NOT_EVALUATED"
+    },
+    {
+      "check": "contamination.fingerprint_set",
+      "status": "PASS"
+    },
+    {
+      "check": "privacy",
+      "status": "PASS"
+    },
+    {
+      "check": "balance",
+      "status": "NOT_EVALUATED"
+    },
+    {
+      "check": "manifest_verify",
+      "status": "PASS"
+    }
+  ],
+  "supplementary": {
+    "legacy_quick_ratio": {
+      "caveat": "quick_ratio is a character-multiset upper bound, not edit similarity; ratio() is the order-aware figure.",
+      "pairs_total": 666,
+      "pools": {
+        "orca_nano_combined_eval_v1.jsonl": 3,
+        "orca_nano_combined_train_v1.jsonl": 34
+      },
+      "quick_ratio_fraction": 0.2883,
+      "quick_ratio_pairs_over_threshold": 192,
+      "ratio_fraction": 0.0,
+      "ratio_pairs_over_threshold": 0,
+      "records_pooled": 37,
+      "status": "MEASURED",
+      "text_compared": "everything after the first <|eot_id|> (system-prompt block excluded)",
+      "threshold_strictly_greater_than": 0.85
+    }
+  }
+}

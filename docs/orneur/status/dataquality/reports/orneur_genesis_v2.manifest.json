@@ -1,0 +1,63 @@
+{
+  "format": "orneur-dataquality-manifest/1",
+  "manifest": {
+    "approval_state": "DRAFT",
+    "approved_at": null,
+    "approved_by": null,
+    "candidate_ids": [],
+    "created_at": "NOT_RECORDED",
+    "creation_code_sha": "NOT_RECORDED",
+    "dataset_id": "public-sft-orneur-genesis-v2",
+    "deduplication_result": "see report dedup check",
+    "eval_checksum": "ceb2341ba4f3f73bb76b7bd1f696fecb91123f35f7d4ba836657400e912aceb8",
+    "failure_ids": [],
+    "filters_applied": "",
+    "frozen": false,
+    "frozen_at": null,
+    "holdout_checksum": null,
+    "known_limitations": [
+      "creation_code_sha is NOT_RECORDED: the build-script commit for these public SFT files is not recorded in the repository",
+      "no per-record provenance, license or generator metadata exists in these files",
+      "manifest built by orca.dataquality from the files as they are; it records identity, it does not vouch for provenance"
+    ],
+    "purpose": "public SFT dataset quality measurement",
+    "record_count": 19,
+    "schema": "{\"text\": str}",
+    "source_paths": [
+      "notebooks/data/orneur_genesis_v2_eval.jsonl",
+      "notebooks/data/orneur_genesis_v2_train.jsonl"
+    ],
+    "split_group_keys": {},
+    "target_model_family": "",
+    "target_role": null,
+    "train_checksum": "55ae9707a1bc9e01f244b082ee051bc8cc4d91382977a66a1747c8d84122ef75",
+    "version": "v2"
+  },
+  "manifest_digest": "5d6c925476965b3903c6e0ee01301b23312add5500f8d2e862006a4e907854a2",
+  "record_digest_scheme": "sha256 of each raw JSONL line (without line terminator)",
+  "record_digests": {
+    "eval": [
+      "f150c31a8244e05b9bd32eabee663b9053d275953b53f686b1384bee4218f444",
+      "daeb127fe148a576ee4cfced918254f384535d14fa73116c860c896fbbb68bf6",
+      "0f26f2fc9bcb4c6908dda4b42af223f8d39f834500d961a49c047463978f4234"
+    ],
+    "train": [
+      "44d1298f8db93ba1faf7c22d793c53453c87bda54033449463be77a06f4ddcd2",
+      "f8110c73ed4a8b46d1855e76ffa942c37a01d67101934fb8e0349c106c1e54e2",
+      "c41673680717d82cb66c9f68a30c5a0fd43ae98c97ab902c8d59ee70398f92ef",
+      "2606d076a502a73f03563da4178c7919632381db651a744273b5479b95c605db",
+      "a68f81f88a9ae56efc0af810cb1fe55be114773ff0739a8e615a301493349105",
+      "b22bc2e72219ce529eb688088f1d58677b3b0283f6790251aec98e361465f45b",
+      "a8963e346370766b4515ea9a577e7c3507048a0dc5fd797d9430ac9ba9fa526e",
+      "fa398d9791c51320e7ef9664abf6cf3e62472d195f4ae462d80a8711ead688f9",
+      "3f15d46548dd0c81641377f697905223e28ca0cafc8e4b8cc1eebdd620d7d7a4",
+      "02248ad9d38fcd9564e044b3a92108aabb79dd7a8fa87a1232349a6a0845ceb0",
+      "b7db0bda8dd1b58fa3527f49ea61e5fd86041cb39c7c04f35d2716d25ff67308",
+      "c6e9bfb729ea6c3f65cdd51baabd77ba3a865bca483e4d73032de95a64b27e4f",
+      "648fc47e68adafcf9c742461e18e5d29077e1aeb83266fdc7ac99a2a3ac42c08",
+      "6adf7213111c95b9d76c836fa7b573bbb9b4f58cf0d2b7b24d987199847efa72",
+      "851f2902fa27a2c42dbed573f7a116e5385a7c1484913704b15cdccc89d3b290",
+      "91b19675a275cf1196573bb975527015e98888778bddf1057ad28f6a50fae975"
+    ]
+  }
+}
