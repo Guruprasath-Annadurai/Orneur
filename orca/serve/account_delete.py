@@ -125,6 +125,14 @@ def _remove_session_title(session_id: str) -> None:
     """session_titles.json lives in orca/serve/api.py's module state, not a
     shared store — read/write the file directly rather than importing api.py
     (which would create a circular import: api.py imports this module)."""
+    # The API process also keeps titles in an in-memory dict and rewrites the WHOLE file from it on the next title change, so removing only the
+    # file entry let a deleted user's title reappear the next time anyone renamed a conversation. Purge the live copy too (no import: api.py
+    # imports this module).
+    import sys
+
+    live = getattr(sys.modules.get("orca.serve.api"), "_session_titles", None)
+    if isinstance(live, dict):
+        live.pop(session_id, None)
     titles_path = ORCA_HOME / "session_titles.json"
     try:
         if not titles_path.exists():
