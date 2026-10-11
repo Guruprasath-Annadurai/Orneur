@@ -47,7 +47,7 @@ class LoginRequest(BaseModel):
 
 
 def _make_response(user: User) -> dict:
-    token  = create_token({"sub": user.id, "email": user.email, "tier": user.tier, "role": user.role})
+    token  = create_token({"sub": user.id, "type": "session", "email": user.email, "tier": user.tier, "role": user.role})
     limits = DAILY_LIMITS.get(user.tier, DAILY_LIMITS["free"])
     usage  = get_usage_today(user.id)
     return {
@@ -280,10 +280,16 @@ async def reset_password(req: ResetRequest):
     if not payload:
         raise HTTPException(400, "Reset link is invalid or expired")
     from orca.auth.store import update_password, get_user_by_id
-    update_password(payload["sub"], req.password)
     user = get_user_by_id(payload["sub"])
     if not user:
         raise HTTPException(404, "User not found")
+    # G-006: single use. update_password() stamps tokens_valid_after, so a
+    # reset link issued before ANY later password change (including the reset
+    # it was issued for) no longer verifies.
+    if float(payload.get("iat", 0)) < user.tokens_valid_after:
+        raise HTTPException(400, "Reset link is invalid or expired")
+    update_password(user.id, req.password)
+    user = get_user_by_id(user.id)
     return _make_response(user)
 
 
@@ -365,6 +371,12 @@ async def admin_set_role(
 ):
     if body.role not in ("owner", "admin", "member", "viewer"):
         raise HTTPException(400, "Invalid role")
+    from orca.auth.rbac import can_assign_role
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+    if not can_assign_role(admin.role, target.role, body.role):
+        raise HTTPException(403, "You cannot assign a role at or above your own, or change a user ranked at or above you")
     set_user_role(user_id, body.role)
     return {"updated": True}
 

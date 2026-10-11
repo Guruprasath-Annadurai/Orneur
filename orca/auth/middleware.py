@@ -32,9 +32,19 @@ async def get_current_user(
     payload = verify_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    # G-006: reset, email-verification and 2FA-pending tokens are signed with
+    # the same AUTH_SECRET and carry a "sub" too, so without this check any of
+    # them (a pre-2FA pending token, an emailed link) was accepted as a full
+    # session. Tokens issued before "type" existed have no type and are
+    # session tokens by construction.
+    if payload.get("type", "session") != "session":
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     user = get_user_by_id(payload.get("sub", ""))
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    # G-006: a password change/reset invalidates every token issued before it.
+    if float(payload.get("iat", 0)) < user.tokens_valid_after:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     return user
 
 

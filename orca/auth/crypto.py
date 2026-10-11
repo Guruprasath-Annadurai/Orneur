@@ -31,15 +31,31 @@ def verify_password(password: str, stored: str) -> bool:
 
 # ── Token signing (HMAC-SHA256, no PyJWT dep) ────────────────────────────────
 
+_DEV_SECRETS = frozenset({"orneur-auth-dev-secret-CHANGE-THIS-IN-PRODUCTION", "dev-secret-change-me"})
+
+
+def assert_secret_usable(value: str) -> None:
+    """G-006: the development defaults are public constants in this
+    repository, so a deployment that forgot ``ORNEUR_AUTH_SECRET`` would sign
+    -- and accept -- tokens anybody can forge (including an owner's). On a
+    public edge (``ORNEUR_PUBLIC_EDGE``) refuse to sign or verify at all;
+    local/private development keeps working with the default."""
+    if value in _DEV_SECRETS and orneur_env("PUBLIC_EDGE", "").strip().lower() in ("1", "true", "yes"):
+        raise RuntimeError(
+            "ORNEUR_AUTH_SECRET is unset (or a development default) while ORNEUR_PUBLIC_EDGE is enabled; "
+            "refusing to sign or verify session tokens"
+        )
+
+
 def _secret() -> bytes:
-    return orneur_env(
-        "AUTH_SECRET",
-        "orneur-auth-dev-secret-CHANGE-THIS-IN-PRODUCTION"
-    ).encode()
+    value = orneur_env("AUTH_SECRET", "orneur-auth-dev-secret-CHANGE-THIS-IN-PRODUCTION")
+    assert_secret_usable(value)
+    return value.encode()
 
 
 def create_token(payload: dict, expires_in: int = 86_400 * 30) -> str:
-    p = {**payload, "exp": int(time.time()) + expires_in}
+    now = time.time()
+    p = {**payload, "iat": now, "exp": int(now) + expires_in}
     data = (
         base64.urlsafe_b64encode(json.dumps(p, separators=(",", ":")).encode())
         .rstrip(b"=")
