@@ -14,10 +14,44 @@ spec:
       labels:
         app: orneur-api
     spec:
+      # Non-root (UID/GID 10001). fsGroup makes the PVC group-accessible; the init container re-owns
+      # data written by an older root-running image (see docs/orneur/status/CONTAINER_NON_ROOT_MIGRATION.md)
+      # because the application refuses a state directory it does not own.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+      - name: fix-data-ownership
+        image: orneur-api:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          if [ "$(stat -c %u /data)" != "10001" ]; then chown -R 10001:10001 /data; fi
+          chmod 0700 /data
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+            add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+        volumeMounts:
+        - name: data
+          mountPath: /data
       containers:
       - name: orneur-api
         image: orneur-api:latest
         imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
         ports:
         - containerPort: 7337
         env:
@@ -45,7 +79,7 @@ spec:
               key: ultra-model
         volumeMounts:
         - name: data
-          mountPath: /root/.orca
+          mountPath: /home/orneur/.orca
         resources:
           requests:
             memory: "512Mi"

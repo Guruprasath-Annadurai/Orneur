@@ -24,8 +24,15 @@ RUN uv pip install --system "/tmp/orca_ai-$(ls /tmp/orca_ai-*.whl | head -1 | gr
 # Copy web assets and app code
 COPY orca/ ./orca/
 
-# /data is the Fly volume mount — all persistent state goes here
-RUN mkdir -p /data
+# /data is the Fly volume mount — all persistent state goes here.
+# The app runs as an unprivileged user (UID/GID 10001). Fly mounts the volume at start-up as root,
+# so docker/entrypoint-nonroot.sh (which starts as root) re-owns /data when needed and then drops
+# privileges before exec'ing the server. See docs/orneur/status/CONTAINER_NON_ROOT_MIGRATION.md.
+RUN groupadd --gid 10001 orneur \
+    && useradd --uid 10001 --gid orneur --create-home --home-dir /home/orneur --shell /usr/sbin/nologin orneur \
+    && install -d -o orneur -g orneur -m 0700 /data
+COPY docker/entrypoint-nonroot.sh /usr/local/bin/entrypoint-nonroot.sh
+RUN chmod 0755 /usr/local/bin/entrypoint-nonroot.sh
 ENV ORNEUR_HOME=/data
 
 EXPOSE 7337
@@ -34,4 +41,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD curl -f http://localhost:7337/api/status || exit 1
 
 # --no-open: don't try to launch a browser inside the container
+ENTRYPOINT ["/usr/local/bin/entrypoint-nonroot.sh"]
 CMD ["orca", "serve", "--host", "0.0.0.0", "--port", "7337", "--no-open"]
