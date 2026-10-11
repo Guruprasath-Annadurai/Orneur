@@ -166,6 +166,10 @@ jobs:
             exit 1
           fi
 
+      - name: Verify the non-root container contract
+        shell: bash
+        run: IMAGE=orneur-ci:${{ github.sha }} bash scripts/container/verify_nonroot.sh
+
           python - <<'PY'
           import json
           from pathlib import Path
