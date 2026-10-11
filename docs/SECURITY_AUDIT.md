@@ -99,6 +99,29 @@ This does not change the underlying pickle-deserialization risk model —
 it narrows who can reach it to the same single-user trust boundary the
 rest of `ORCA_HOME` already relies on.
 
+**2026-10-11 addendum (Antigravity Audit #007 remediation)**: the 0700
+hardening above had two demonstrated bypasses, both closed: (1) a
+parent-symlink TOCTOU — validation covered a canonical location while
+diskcache reopened an attacker-redirectable pathname; (2)
+`LensJobQueue(cache_dir=...)` skipped the hardening entirely. Every
+`diskcache.Cache` site (`lens/queue.py`, `brain/memory.py`) now opens only
+the *canonical, verified path returned by* `_mkdir_owner_only`
+(`orca/config.py`); a test fails if a new diskcache site does not.
+
+Supported: POSIX (Linux, macOS), local filesystem with ordinary Unix
+owner/mode semantics, `openat`/`O_NOFOLLOW` available (otherwise it fails
+closed). Not covered: Windows; NFS/FUSE/bind mounts that fake ownership or
+mode; POSIX ACLs or capabilities granting other accounts access the mode
+bits hide; a root or same-uid adversary; and *contents* another account
+planted in a loosely-permissioned directory before this hardening ran.
+**Residual risk, unchanged:** the underlying unsafe-deserialization defect
+in diskcache is still unpatched upstream. This work only narrows who can
+write to a cache directory; anything that can still write there (the same
+user, root, or a pre-hardening planted file) gets code execution on the next
+read of a non-JSON value. Replacing diskcache for these two stores (or
+forcing a JSON-only disk) is the real fix and is deliberately not attempted
+here.
+
 ## Still pending (not done in this audit)
 
 - A code-level security review (OWASP Top 10 style — injection, auth,
