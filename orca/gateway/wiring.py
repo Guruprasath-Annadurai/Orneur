@@ -17,9 +17,10 @@ of duplicating that config here.
 """
 from __future__ import annotations
 
+import logging
 import threading
 
-from orca.config import CONFIG
+from orca.config import CONFIG, orneur_env
 from orca.gateway.compat_brain import GatewayBrain
 from orca.gateway.deployment import DeploymentHealth, ModelDeployment
 from orca.gateway.frontier_runtime import FrontierRuntime
@@ -27,6 +28,43 @@ from orca.gateway.gateway import ModelGateway
 from orca.gateway.ollama_runtime import OllamaRuntime
 from orca.registry.model_spec import LifecycleState
 from orca.society.lifecycle import LEGACY_PRODUCTION_SERVING
+
+log = logging.getLogger(__name__)
+
+_TRUTHY = ("1", "true", "yes")
+
+
+def public_edge_enabled() -> bool:
+    """Same switch the API uses (`ORNEUR_PUBLIC_EDGE`): this deployment is, or will be, reachable by the public."""
+    return orneur_env("PUBLIC_EDGE", "").strip().lower() in _TRUTHY
+
+
+def experimental_serving_acknowledged() -> bool:
+    """`ORNEUR_ALLOW_EXPERIMENTAL_SERVING`: an explicit, deliberate operator acknowledgement that an unqualified (EXPERIMENTAL) self-hosted
+    model may serve PUBLIC traffic. It is a serving-policy switch only; it grants no training or evaluation authority."""
+    return orneur_env("ALLOW_EXPERIMENTAL_SERVING", "").strip().lower() in _TRUTHY
+
+
+def experimental_self_hosted_allowed() -> bool:
+    """Serving policy for self-hosted (Ollama) models whose lifecycle is EXPERIMENTAL.
+
+    * Local / private deployments (no public edge): allowed, exactly as before -- developers run what they have.
+    * Public edge: NOT allowed unless the operator has explicitly acknowledged it. An unpromoted model can therefore never reach the public
+      silently; with no acknowledgement the gateway refuses to route to it (ModelNotRoutableError) instead of serving it.
+    Frontier backends are unaffected: they are not ORNEUR-trained and already carry a per-response transparency notice."""
+    return (not public_edge_enabled()) or experimental_serving_acknowledged()
+
+
+def serving_policy() -> dict:
+    allowed = experimental_self_hosted_allowed()
+    return {
+        "public_edge": public_edge_enabled(),
+        "experimental_self_hosted_models_served": allowed,
+        "operator_acknowledged_experimental_serving": experimental_serving_acknowledged(),
+        "note": ("EXPERIMENTAL self-hosted models are not served on a public edge without ORNEUR_ALLOW_EXPERIMENTAL_SERVING; "
+                 "no ORNEUR model has been promoted to PRODUCTION."),
+    }
+
 
 TIER_TO_MODEL_ID = {"nano": "orneur-genesis", "core": "orneur-novus", "ultra": "orneur-aeternum"}
 
@@ -123,7 +161,15 @@ def brain_for_tier_resolution(resolution, gateway: ModelGateway | None = None) -
         if deployment_id not in _deployments_persisted:
             deployment.save()
             _deployments_persisted.add(deployment_id)
-        return GatewayBrain(gw, model_id, resolution.model, allow_experimental=True)
+        # The policy gates EXPERIMENTAL deployments. Genesis's legacy artifact keeps its previously disclosed
+        # LEGACY_PRODUCTION_SERVING behaviour unchanged (a founder decision, not altered here -- see tests).
+        allow_experimental = experimental_self_hosted_allowed() or deployment_lifecycle == LEGACY_PRODUCTION_SERVING
+        if allow_experimental and public_edge_enabled() and deployment_lifecycle == LifecycleState.EXPERIMENTAL.value:
+            log.warning(
+                "serving EXPERIMENTAL model %r on a PUBLIC edge because ORNEUR_ALLOW_EXPERIMENTAL_SERVING is set; it has not cleared "
+                "its promotion gate (see docs/orneur/phase-1/NOVUS_PROMOTION_DECISION.md)", resolution.model,
+            )
+        return GatewayBrain(gw, model_id, resolution.model, allow_experimental=allow_experimental)
 
     _ensure_frontier_runtime(gw, resolution.backend)
     deployment_id = f"{resolution.backend}-{resolution.model}"
