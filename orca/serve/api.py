@@ -83,6 +83,7 @@ from orca.brain.vision import is_vision_capable, encode_image, build_vision_mess
 from orca.serve import session_store, ratelimit, metrics, dlp
 from orca.serve.errors import public_error, coded_error, default_code_for_status
 from orca.serve.model_identity import model_identity as _model_identity
+from orca.serve.citations import build_sources as _build_sources
 from orca.serve import streaming
 from orca.serve.streaming import aiter_blocking
 from orca.serve.moderation import check_input, CRISIS_RESOURCES
@@ -329,6 +330,13 @@ async def _http_exception_with_code(request: Request, exc: _StarletteHTTPExcepti
         message = detail.get("error", message)
     body = {"detail": detail, "error": message, "code": code, "error_id": uuid.uuid4().hex[:12]}
     return JSONResponse(body, status_code=exc.status_code, headers=getattr(exc, "headers", None))
+
+
+@app.exception_handler(Exception)
+async def _unhandled_with_code(request: Request, exc: Exception):
+    """Last resort: a stable code and a correlation id, never the exception text."""
+    e = public_error(exc, route=request.url.path, code="internal_error", message="Something went wrong on our side. Please try again.")
+    return JSONResponse(e.as_json(), status_code=500)
 
 
 @app.exception_handler(RequestValidationError)
@@ -1252,7 +1260,25 @@ async def chat(
 
     used_tools: list[str] = []
     plan_action = "cognitive_direct"
-    if cognitive_result.output is not None:
+    # G-024: same rule as /api/stream. The Kernel's no-retrieval direct answer is used only if this session has no documents, or the Kernel itself
+    # grounded the answer in them (Truth Fabric). Otherwise the uploaded documents go through the deep-RAG pipeline and into the model's context --
+    # they used to be silently ignored on this route unless the wording happened to trigger retrieval.
+    kernel_answered = cognitive_result.output is not None and (sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None)
+    rag_result = None
+    if not kernel_answered and sess.doc_store.count() > 0:
+        history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
+        history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
+        try:
+            rag_result = await asyncio.to_thread(
+                run_deep_rag, req.message, sess.doc_store, history_strs, CONFIG.ollama.host, _model_name_for_variant(req.model_variant),
+            )
+        except Exception as e:
+            # Never answer as if the uploaded documents had been consulted when retrieval failed.
+            _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
+        if rag_result.context_block:
+            enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
+    if kernel_answered:
         # Kernel's plan needed nothing beyond a direct model call --
         # answered via ModelGateway already, entitlement-reconciled. Skip
         # AgentLoop's extra plan/reflect calls for this turn entirely.
@@ -1299,12 +1325,18 @@ async def chat(
             "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
         })
 
+    _src = _build_sources(answer=final, session_id=sess.id, rag_result=rag_result,
+                          evidence_state=cognitive_result.evidence_state if kernel_answered else None,
+                          citation_coverage=cognitive_result.citation_coverage if kernel_answered else None,
+                          evidence_passages=cognitive_result.evidence_passages if kernel_answered else None)
     return {
         "response": dlp_result["safe_text"],
         "session_id": sess.id,
         "used_tools": used_tools,
         "plan": plan_action,
-        "model_identity": _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=cognitive_result.output is not None),
+        "model_identity": _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=kernel_answered),
+        "source_summary": _src["summary"],
+        "sources": _src["sources"],
         "degraded": cognitive_result.degraded,
         "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
     }
@@ -1613,10 +1645,14 @@ async def stream_chat(
         # Explainability: capture the full retrieval/reasoning trace for this
         # message, keyed by message_id so the frontend "Explain" button can
         # fetch it on demand without bloating every SSE payload.
+        _src = _build_sources(answer=full, session_id=sess.id, rag_result=rag_result,
+                              evidence_state=cognitive_result.evidence_state if use_kernel_direct else None,
+                              citation_coverage=cognitive_result.citation_coverage if use_kernel_direct else None,
+                              evidence_passages=cognitive_result.evidence_passages if use_kernel_direct else None)
         explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
         sess.explain_store.add(explain_record)
 
-        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']})}\n\n"
 
     return StreamingResponse(
         _event_stream(),

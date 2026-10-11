@@ -624,5 +624,20 @@ class CognitiveKernel:
             operations_executed=[op.type for op in plan.operations if op.type in _TRUTH_FABRIC_OPS],
             latency_ms=latency_ms, usage=usage,
             evidence_state=final.evidence_state.value, citation_coverage=final.citation_coverage,
+            evidence_passages=_evidence_passages(final),
             degraded=degraded, degradation_reason=degradation_reason, user_notification_required=notification_required,
         )
+
+
+def _evidence_passages(final) -> list[dict]:
+    """G-027: the passages that were really put in the model's context, tagged [D1], [D2]... in the same order `truth_fabric._format_context` used."""
+    by_id = {src.source_id: src for src in (final.sources or [])}
+    out = []
+    for i, ev in enumerate(final.evidence or [], start=1):
+        src = by_id.get(ev.source_id)
+        out.append({
+            "ref": f"D{i}", "identity": src.identity if src else "", "source_type": src.source_type.value if src else "",
+            "document_id": ev.document_id, "location": ev.passage.location, "text": ev.passage.text,
+            "content_hash": ev.content_hash, "retrieved_at": ev.retrieved_at,
+        })
+    return out

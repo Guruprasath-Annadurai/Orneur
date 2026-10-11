@@ -186,8 +186,6 @@ def test_uploaded_documents_are_listed_and_reach_the_model_on_the_stream_path(cl
     assert any("ninety days" in json.dumps(q) for q in fake.requests)
 
 
-@pytest.mark.xfail(strict=True, reason="G-024: /api/chat sends the model the uploaded document only when the question happens to trigger retrieval; a plain "
-                                       "question ('What is the retention period…?') about an uploaded file is answered WITHOUT it, while /api/stream includes it.")
 def test_chat_uses_an_uploaded_document_for_a_plain_question(client, fake):
     t, _ = _signup(client)
     h = _hdr(t)
@@ -196,8 +194,6 @@ def test_chat_uses_an_uploaded_document_for_a_plain_question(client, fake):
     assert any("ninety days" in json.dumps(q) for q in fake.requests)
 
 
-@pytest.mark.xfail(strict=True, reason="G-027: the stream 'done' event has no structured sources (source, locator, retrieved-at); only a citation_compliance "
-                                       "note, so the UI's source cards have no backend contract to render from.")
 def test_stream_done_event_carries_structured_sources(client, fake):
     t, _ = _signup(client)
     h = _hdr(t)
