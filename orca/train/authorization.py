@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import fcntl
 import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -69,6 +71,9 @@ _SHA64 = re.compile(r"^[0-9a-f]{64}$")
 _ID = re.compile(r"^tauth-[0-9a-f]{16,64}$")
 _TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _SEAL = object()      # only authorize_training() holds this; see TrainingGrant
+_PROCESS_KEY = secrets.token_bytes(32)   # per-process integrity key for grants (never written anywhere); see TrainingGrant._compute_mac
+_GRANT_MAC_FIELDS = ("authorization_id", "key_id", "record_sha256", "run_slot", "expires_at", "max_wall_clock_minutes", "cfg_fingerprint",
+                     "train_sha256", "eval_sha256", "environment_class")
 
 
 class TrainingNotAuthorized(PermissionError):
@@ -401,15 +406,31 @@ def verify_event_chain(state: Path) -> bool:
     p = Path(state) / "events.jsonl"
     if not p.exists():
         return True
-    for ln in p.read_text().splitlines():
-        if not ln.strip():
-            continue
-        e = json.loads(ln)
-        h = e.pop("hash")
-        if e.get("prev") != prev or hashlib.sha256(_canonical(e)).hexdigest() != h:
-            return False
-        prev = h
+    try:
+        for ln in p.read_text().splitlines():
+            if not ln.strip():
+                continue
+            e = json.loads(ln)
+            h = e.pop("hash")
+            if e.get("prev") != prev or hashlib.sha256(_canonical(e)).hexdigest() != h:
+                return False
+            prev = h
+    except (ValueError, KeyError, TypeError, AttributeError, OSError):
+        return False            # malformed or unreadable is tampered, never "fine"
     return True
+
+
+def _authorized_event_count(state: Path, authorization_id: str) -> int:
+    """How many times the audit chain says this authorization issued a grant -- a second ledger, so deleting the slot files cannot reset the budget."""
+    p = Path(state) / "events.jsonl"
+    if not p.exists():
+        return 0
+    n = 0
+    for ln in p.read_text().splitlines():
+        if ln.strip():
+            e = json.loads(ln)
+            n += e.get("event") == "TRAINING_AUTHORIZED" and e.get("authorization_id") == authorization_id
+    return n
 
 
 def _claim_run_slot(state: Path, authorization_id: str, max_runs: int) -> int | None:
@@ -452,12 +473,35 @@ class TrainingGrant:
     eval_sha256: str | None
     environment_class: str
     _seal: object = field(default=None, repr=False, compare=False)
+    _mac: str = field(default="", repr=False, compare=False)
+
+    def _compute_mac(self) -> str:
+        return hmac.new(_PROCESS_KEY, _canonical({f: getattr(self, f) for f in _GRANT_MAC_FIELDS}), hashlib.sha256).hexdigest()
 
     def __post_init__(self):
         if self._seal is not _SEAL:
             raise TrainingNotAuthorized(["GRANT_NOT_ISSUED_BY_GATE"])
+        expected = self._compute_mac()
+        # dataclasses.replace() (and any hand construction) re-passes the ORIGINAL tag with edited fields: it no longer matches.
+        if self._mac and not hmac.compare_digest(self._mac, expected):
+            raise TrainingNotAuthorized(["GRANT_TAMPERED"])
+        object.__setattr__(self, "_mac", expected)
+
+    def verify_integrity(self) -> None:
+        """Every consumer calls this first: a grant that was not issued by the gate in THIS process, or whose fields no longer match the tag
+        computed at issuance, is refused. Objects built with object.__new__ / copy / pickle never pass."""
+        try:
+            ok = self._seal is _SEAL and isinstance(self._mac, str) and hmac.compare_digest(self._mac, self._compute_mac())
+        except (AttributeError, TypeError):
+            ok = False
+        if not ok:
+            raise TrainingNotAuthorized(["GRANT_FORGED_OR_TAMPERED"])
+
+    def __reduce__(self):
+        raise TypeError("a TrainingGrant cannot be copied or serialized")
 
     def assert_valid_for(self, cfg, *, environment_class: str, now: datetime | None = None) -> None:
+        self.verify_integrity()
         now = now or datetime.now(timezone.utc)
         problems = []
         if self.cfg_fingerprint != _cfg_fingerprint(cfg):
@@ -472,6 +516,7 @@ class TrainingGrant:
 
     def assert_files(self, train_file, eval_file) -> None:
         """Re-hash the exact files about to be consumed. Call immediately before AND after loading."""
+        self.verify_integrity()
         problems = []
         if file_sha256(train_file) != self.train_sha256:
             problems.append("TRAIN_DATA_CHANGED_AFTER_AUTHORIZATION")
@@ -484,6 +529,7 @@ class TrainingGrant:
             raise TrainingNotAuthorized(problems)
 
     def wall_clock_callback(self, clock: Callable[[], float] = time.monotonic):
+        self.verify_integrity()
         return WallClockLimit(self.max_wall_clock_minutes * 60, clock)
 
 
@@ -567,6 +613,8 @@ def authorize_training(cfg, *, environment_class: str, dataset_manifest_ids=None
             pass
         raise TrainingNotAuthorized(sorted(set(reasons)))
 
+    if not verify_event_chain(state):
+        deny(["AUDIT_LOG_TAMPERED"])      # an edited / malformed / re-linked audit log never authorizes anything new
     if environment_class not in ENVIRONMENT_CLASSES:
         deny(["UNKNOWN_ENVIRONMENT_CLASS"])
     registry = _load_json(root / REGISTRY_PATH)
@@ -592,6 +640,8 @@ def authorize_training(cfg, *, environment_class: str, dataset_manifest_ids=None
         deny(verdict.reasons, record)
 
     auth_id = record["authorization_id"]
+    if _authorized_event_count(state, auth_id) >= record["limits"]["max_runs"]:
+        deny(["RUN_BUDGET_EXHAUSTED"], record)      # the audit chain disagrees with a (deleted) slot ledger: fail closed
     slot = _claim_run_slot(state, auth_id, record["limits"]["max_runs"])
     if slot is None:
         deny(["RUN_BUDGET_EXHAUSTED"], record)
@@ -623,5 +673,6 @@ def require_grant(grant, cfg, *, environment_class: str) -> TrainingGrant:
     """Used by every lower-level training function: a missing, wrong-typed or stale grant is a denial, never a default."""
     if not isinstance(grant, TrainingGrant):
         raise TrainingNotAuthorized(["NO_TRAINING_GRANT"])
+    grant.verify_integrity()
     grant.assert_valid_for(cfg, environment_class=environment_class)
     return grant
