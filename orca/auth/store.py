@@ -123,18 +123,25 @@ def _claim_signup_seq(conn) -> int:
 
 
 def create_user(email: str, password: str, name: str = "") -> User:
+    """Creates an ORDINARY (role `member`) account. G-021: signing up never
+    confers `owner` -- not as the first account, not under any race. The owner
+    is created only through `orca.auth.bootstrap` (operator-issued, single-use,
+    email-bound token)."""
+    with get_conn() as conn:
+        return insert_user(conn, email, password, name, role="member")
+
+
+def insert_user(conn, email: str, password: str, name: str = "", *, role: str = "member") -> User:
     uid = str(uuid.uuid4())
     ph  = hash_password(password)
     now = datetime.now(timezone.utc).isoformat()
     display = name or email.split("@")[0]
-    role = "owner" if _count_users() == 0 else "member"
-    with get_conn() as conn:
-        seq = _claim_signup_seq(conn)
-        conn.execute(
-            "INSERT INTO users (id, email, name, password_hash, tier, role, created_at, signup_seq) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (uid, email.lower().strip(), display, ph, "free", role, now, seq),
-        )
+    seq = _claim_signup_seq(conn)
+    conn.execute(
+        "INSERT INTO users (id, email, name, password_hash, tier, role, created_at, signup_seq) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (uid, email.lower().strip(), display, ph, "free", role, now, seq),
+    )
     return User(id=uid, email=email, name=display, tier="free", verified=False, role=role, signup_seq=seq)
 
 

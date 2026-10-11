@@ -585,7 +585,7 @@ class _Session:
         )
         brain = brain_for_tier_resolution(tier_resolution)
         self._ctx = ContextManager(brain)
-        tools = build_registry(memory_engine=self.memory)
+        tools = build_registry(memory_engine=self.memory, surface="web")  # G-020: no shell/file/exec tools on the web
         self._agent = AgentLoop(brain=brain, tools=tools, session_id=self.id)
         self._brain = brain
 
@@ -2027,7 +2027,7 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
         yield f"data: {json.dumps({'type': 'pod_launch'})}\n\n"
 
-        ultra = OrcaUltra(on_progress=on_progress, use_tools=True, brain=ultra_brain)
+        ultra = OrcaUltra(on_progress=on_progress, use_tools=True, brain=ultra_brain, surface="web")
         pipeline_task = asyncio.create_task(ultra._run_async(req.task, max_retries=1))
 
         # Stream progress events while pipeline runs
@@ -2197,25 +2197,20 @@ async def code_run(
     request: Request,
     user: User | None = Depends(get_current_user_optional),
 ):
-    """Execute Python code in a sandboxed subprocess. Returns stdout/stderr/error."""
-    ratelimit.enforce(request, ratelimit.CODE_RUN, extra_key="code_run")
-    if req.language != "python":
-        return JSONResponse({"error": f"Language '{req.language}' not supported. Only Python is available."}, status_code=400)
+    """DISABLED on the web (G-020).
 
-    result = await asyncio.to_thread(run_code, req.code)
-
-    audit.log("code_run", user_id=user.id if user else None,
-              detail={"exit_code": result.exit_code, "duration_ms": result.duration_ms,
-                      "ok": result.ok})
-
-    return {
-        "stdout":      result.stdout,
-        "stderr":      result.stderr,
-        "error":       result.error,
-        "exit_code":   result.exit_code,
-        "duration_ms": result.duration_ms,
-        "ok":          result.ok,
-    }
+    This ran model-independent, caller-supplied Python on the server host under
+    the server's identity. The AST allow-list is not a sandbox: `pathlib` was
+    allowed, so `Path('/proc/self/environ').read_text()` returned the server's
+    environment, including `ORNEUR_AUTH_SECRET` (reproduced against the previous
+    code). Re-enabling needs isolated per-user execution and an independent audit,
+    not a flag. The local CLI is unaffected.
+    """
+    audit.log("code_run_refused", user_id=user.id if user else None, detail={"route": "/api/code/run"})
+    return JSONResponse(
+        {"error": "Code execution is not available in this environment.", "code": "capability_disabled"},
+        status_code=403,
+    )
 
 
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB
