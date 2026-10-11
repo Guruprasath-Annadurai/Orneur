@@ -1,0 +1,86 @@
+{
+ "repo": "unsloth/Qwen2.5-3B-Instruct",
+ "revision": "7548fff1f997f57b2e9e8ab1ec7be96949b00ed0",
+ "source_url": "https://huggingface.co/api/models/unsloth/Qwen2.5-3B-Instruct/tree/7548fff1f997f57b2e9e8ab1ec7be96949b00ed0",
+ "retrieved_at": "2026-10-11T19:21:00Z",
+ "files": [
+  {
+   "path": ".gitattributes",
+   "size": 1570,
+   "git_blob_sha1": "52373fe24473b1aa44333d318f578ae6bf04b49b",
+   "lfs_sha256": null
+  },
+  {
+   "path": "README.md",
+   "size": 8455,
+   "git_blob_sha1": "4fad1f468689f9d473a4a5a73f03595643bbd867",
+   "lfs_sha256": null
+  },
+  {
+   "path": "added_tokens.json",
+   "size": 605,
+   "git_blob_sha1": "482ced4679301bf287ebb310bdd1790eb4514232",
+   "lfs_sha256": null
+  },
+  {
+   "path": "config.json",
+   "size": 757,
+   "git_blob_sha1": "4a231c912de26c7bdf5876be646ea96bd283bbe7",
+   "lfs_sha256": null
+  },
+  {
+   "path": "generation_config.json",
+   "size": 266,
+   "git_blob_sha1": "cc2bfdc16540b4a702cd22f0b7bd920e72503608",
+   "lfs_sha256": null
+  },
+  {
+   "path": "merges.txt",
+   "size": 1671853,
+   "git_blob_sha1": "31349551d90c7606f325fe0f11bbb8bd5fa0d7c7",
+   "lfs_sha256": null
+  },
+  {
+   "path": "model-00001-of-00002.safetensors",
+   "size": 3968658944,
+   "git_blob_sha1": "023b91070b9cfb1f9ab22fe215519bd786db6906",
+   "lfs_sha256": "67347b23fb4165b652eb6611f5e1f2a06dfcddba8e909df1b2b0b1857bee06c2"
+  },
+  {
+   "path": "model-00002-of-00002.safetensors",
+   "size": 2203268048,
+   "git_blob_sha1": "02754809bbcaf9c3f1a667c1ca0c3b153d6d72ac",
+   "lfs_sha256": "a40d941d0e7e0b966ad8b62bb6d6b7c88cce1299197b599d9d0a4ce59aabfc1d"
+  },
+  {
+   "path": "model.safetensors.index.json",
+   "size": 35581,
+   "git_blob_sha1": "38047c6284a25427043f0ab040f623a2a20dd093",
+   "lfs_sha256": null
+  },
+  {
+   "path": "special_tokens_map.json",
+   "size": 614,
+   "git_blob_sha1": "9b8043f10c758210957b050c77f14d6282f33a52",
+   "lfs_sha256": null
+  },
+  {
+   "path": "tokenizer.json",
+   "size": 11421896,
+   "git_blob_sha1": "51ebb3ba93988c73bbd83a3c163a14343fbc5b06",
+   "lfs_sha256": "9c5ae00e602b8860cbd784ba82a8aa14e8feecec692e7076590d014d7b7fdafa"
+  },
+  {
+   "path": "tokenizer_config.json",
+   "size": 7362,
+   "git_blob_sha1": "a5de2eb6cac65b89846ac1bcfb837a3d83459f40",
+   "lfs_sha256": null
+  },
+  {
+   "path": "vocab.json",
+   "size": 2776833,
+   "git_blob_sha1": "4783fe10ac3adce15ac8f358ef5462739852c569",
+   "lfs_sha256": null
+  }
+ ]
+}
