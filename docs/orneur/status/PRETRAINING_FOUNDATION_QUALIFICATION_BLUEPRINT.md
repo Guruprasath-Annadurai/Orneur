@@ -94,7 +94,7 @@ Row format: **requirement → status → exact evidence → blocker / next evide
 
 | # | Requirement | Status | Evidence | Blocker / needed |
 |---|---|---|---|---|
-| D1 | Pre-registered criteria A–Q (gates A,B,K; weighted F–Q) | VERIFIED-HERE (defined) | `GENESIS_FOUNDATION_DECISION_PACKAGE_2026-09-26.md` §2 | freeze with the preregistration |
+| D1 | Pre-registered criteria A–R (gates A,B,K; weighted F–R) | VERIFIED-HERE (defined) | `GENESIS_FOUNDATION_DECISION_PACKAGE_2026-09-26.md` §2 | freeze with the preregistration |
 | D2 | Finalists identified with pinned revisions + licenses | PARTIAL | Same package; `GENESIS_FOUNDATION_SHORTLIST_2026.md`; `GENESIS_STAGE0_LICENSE_MATRIX.md` (LICENSE text retrieved at pinned revision where it exists; Mistral Small 4 repo has none, metadata-tag evidence only) | Re-verify at freeze time |
 | D3 | Runtime qualification of controls | **FAILED / unproven** | Package §1: Qwen3-8B attempt 5 `PASS/FAIL/PASS`, Mistral-Nemo attempt 3 `FAIL/FAIL/FAIL`, Phi-4 attempt 1 `PASS/FAIL/FAIL`; **no control RUNTIME_QUALIFIED**; "no further control retry is authorized" | The failures were exact-output format failures of instruct models; the package states they are not capability evidence |
 | D4 | Capability eval on a frozen private set | **BLOCKED** | Package verdict `FOUNDATION_DECISION_REQUIRES_CAPABILITY_EVAL`; 420 items × 2 sampling configs planned, est. USD 6.15–9.28 (≈USD 9.2–13.9 with contingency) | Needs V2 freeze (WS-F), an owner funding decision (promotional headroom is insufficient), and separate sandbox authorization |
@@ -187,7 +187,7 @@ cannot start without a purchase decision, so the *calendar* critical path is not
 ### 5.2 Selection procedure (no selection is made here)
 
 1. Gates first (pre-registered): **A** architecture supportable by mainstream PEFT/vLLM; **B** QLoRA-trainable and servable within the frozen hardware plan; **K** license permits fine-tuning, redistribution of derived weights and the intended use.
-2. Then the weighted criteria F–Q from the decision package, scored **only** on the frozen private V2 set plus a 5M-token QLoRA format-adherence pilot per candidate (to separate "cannot do it" from "was not trained to emit this format", the actual cause of the smoke failures).
+2. Then the weighted criteria F–R from the decision package, scored **only** on the frozen private V2 set plus a 5M-token QLoRA format-adherence pilot per candidate (to separate "cannot do it" from "was not trained to emit this format", the actual cause of the smoke failures).
 3. Report every dimension separately with paired-bootstrap CIs. No single "smartness" number; no selection by counting smoke passes.
 4. A **base-swap-ability requirement**: data, eval and adapters are owned assets independent of the base, so a later base swap re-runs the pipeline (decision package §6). This is the mitigation for choosing the wrong first base.
 

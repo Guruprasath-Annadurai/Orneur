@@ -1,0 +1,1122 @@
+{
+  "acceptance": {
+    "all_nodes": 128,
+    "pretraining_accepted": 0,
+    "pretraining_by_class": {
+      "BLOCKED_EXTERNAL": 3,
+      "BLOCKED_OWNER": 14,
+      "FAILED": 0,
+      "IMPLEMENTED_AWAITING_REVIEW": 20,
+      "MISSING": 50,
+      "PARTIAL": 8,
+      "VERIFIED_ACCEPTED": 0
+    },
+    "pretraining_denominator": 95,
+    "source": "scripts/acceptance/acceptance_engine.py over committed ledger"
+  },
+  "dimensions": [
+    {
+      "claim": "Workstream A/B serving, auth, conversations and supporting tooling implemented on draft branches; research, hardware and trust-root items are design-only.",
+      "evidence": "docs/orneur/status/ANTIGRAVITY_HANDOFF.md#branches",
+      "key": "code_implemented",
+      "state": "PARTIAL"
+    },
+    {
+      "claim": "Author-run suites and exact-SHA CI pass where recorded; five known sandbox-only failures (uid 0 / no DNS) are documented. This is not independent verification.",
+      "evidence": "docs/orneur/status/ANTIGRAVITY_HANDOFF.md#test-matrix",
+      "key": "tests_passing",
+      "state": "PASSING_AUTHOR_RUN"
+    },
+    {
+      "claim": "No independent review is recorded. Claude's own adversarial checks are self-assessment only. Audit #008/#009 text has not arrived.",
+      "evidence": "docs/orneur/status/AUDIT_009_STATUS.md",
+      "key": "independent_security_review",
+      "state": "NOT_PERFORMED"
+    },
+    {
+      "claim": "Acceptance ledger and trust material are the committed empty baseline; the canonical engine accepts zero rows.",
+      "evidence": "docs/orneur/acceptance/acceptance_ledger.json",
+      "key": "formal_cryptographic_acceptance",
+      "state": "NOT_PERFORMED"
+    },
+    {
+      "claim": "Dataset tooling exists and is exercised on synthetic data only; no protected corpus has been generated or activated.",
+      "evidence": "docs/orneur/status/ANTIGRAVITY_HANDOFF.md#dataset-evidence",
+      "key": "dataset_readiness",
+      "state": "TOOLING_ONLY"
+    },
+    {
+      "claim": "Synthetic, fail-closed evaluation infrastructure only; V2 private evaluation is not frozen, no hidden set exists, no provider eval run.",
+      "evidence": "docs/orneur/status/ANTIGRAVITY_HANDOFF.md#evaluation-evidence",
+      "key": "evaluation_readiness",
+      "state": "TOOLING_ONLY"
+    },
+    {
+      "claim": "No foundation model is selected; evidence reassessment is not a selection.",
+      "evidence": "docs/orneur/status/PRETRAINING_FOUNDATION_QUALIFICATION_BLUEPRINT.md",
+      "key": "foundation_selection",
+      "state": "NOT_SELECTED"
+    },
+    {
+      "claim": "Preparation tooling is dry-run only. Hardware, custody and trust-root decisions are founder-owned and undecided.",
+      "evidence": "docs/orneur/status/HARDWARE_AND_CUSTODY_OPTIONS.md",
+      "key": "training_environment_readiness",
+      "state": "BLOCKED"
+    },
+    {
+      "claim": "STRICT NO-GO until formal qualification and explicit founder authorization.",
+      "evidence": "orca/genesis (training authorization gate) and docs/orneur/status/ORNEUR_DEVELOPMENT_REGISTER.md",
+      "key": "training_authorization",
+      "state": "NOT_AUTHORIZED"
+    },
+    {
+      "claim": "No ORNEUR-trained model exists; no capability or superiority claim is made. Research hypotheses are pre-registration drafts.",
+      "evidence": "docs/orneur/research/ORNEUR_DIFFERENTIATION_RESEARCH_PROGRAMME.md",
+      "key": "model_capability",
+      "state": "UNMEASURED"
+    },
+    {
+      "claim": "Backend assistant foundation implemented; UI is a non-approved proposal; some capabilities are test-double only and are listed explicitly.",
+      "evidence": "docs/orneur/status/ASSISTANT_FOUNDATION_READINESS.md",
+      "key": "product_readiness",
+      "state": "PARTIAL"
+    },
+    {
+      "claim": "No public deployment, merge to main or production authorization has been granted.",
+      "evidence": "docs/orneur/status/ORNEUR_DEVELOPMENT_REGISTER.md",
+      "key": "production_authorization",
+      "state": "NOT_AUTHORIZED"
+    }
+  ],
+  "non_normative": true,
+  "note": "No aggregate readiness number exists by design; see dimensions and per-class counts.",
+  "requirements": [
+    {
+      "class": "BLOCKED_EXTERNAL",
+      "denominator": "PRE_TRAINING",
+      "id": "G1",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "UNRESOLVED_EXTERNAL",
+      "register_status": "NOT_VERIFIABLE"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "G2",
+      "implementation_owner": "RECORDED_ON_MAIN",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "PRESENT_ON_MAIN"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "G3",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "G4",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "G5",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "G6",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "G7",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "G8",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "G9",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "G10",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "G11",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "G12",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C01",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C02",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C04",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C05",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C09",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C10",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C11",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C12",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C13",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C14",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C17",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C18",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C19",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C20",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C21",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C45",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "C15",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "PARTIAL",
+      "denominator": "PRE_TRAINING",
+      "id": "C03",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "DESIGNED_ONLY"
+    },
+    {
+      "class": "PARTIAL",
+      "denominator": "PRE_TRAINING",
+      "id": "C06",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "DESIGNED_ONLY"
+    },
+    {
+      "class": "PARTIAL",
+      "denominator": "PRE_TRAINING",
+      "id": "C07",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "DESIGNED_ONLY"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "C08",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "PARTIAL",
+      "denominator": "PRE_TRAINING",
+      "id": "C16",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "UNRESOLVED_EXTERNAL",
+      "register_status": "DESIGNED_ONLY"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "C44",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C22",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C23",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C24",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C25",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C26",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C28",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C29",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C30",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C31",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C32",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C33",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C34",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C35",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C36",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C37",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C38",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "DEC-K",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "C27",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C39",
+      "implementation_owner": "CLAUDE",
+      "independent_reviewer": "ANTIGRAVITY",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "PARTIAL",
+      "denominator": "PRE_TRAINING",
+      "id": "C40",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "DESIGNED_ONLY"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "C41",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "PARTIAL",
+      "denominator": "PRE_TRAINING",
+      "id": "C42",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "DESIGNED_ONLY"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "C43",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C46",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C47",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "PARTIAL",
+      "denominator": "PRE_TRAINING",
+      "id": "C48",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "DESIGNED_ONLY"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "C49",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "C50",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-01",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-02",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-03",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-04",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-05",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-06",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-07",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-08",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-09",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-10",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-11",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-12",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-13",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-14",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-15",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-16",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-17",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-18",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-19",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-20",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-20P",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-21",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-22",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-23",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-24",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "HW-25",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "HW-FORGE",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "SUP-1",
+      "implementation_owner": "CLAUDE",
+      "independent_reviewer": "ANTIGRAVITY",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "PARTIAL",
+      "denominator": "APPLICATION",
+      "id": "SUP-2",
+      "implementation_owner": "CLAUDE",
+      "independent_reviewer": "ANTIGRAVITY",
+      "register_status": "NOT_ACCEPTED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "PRE_TRAINING",
+      "id": "SUP-3",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "UNMERGED_NOT_ACCEPTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "SUP-4",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "OPEN"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "P2-1",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "P2-2",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "P2-3",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "P2-4",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "PARTIAL",
+      "denominator": "PRE_TRAINING",
+      "id": "DATA-1",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_ACCEPTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "DATA-2",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "DATA-3",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "DATA-5",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "DATA-4",
+      "implementation_owner": "PRODUCT_MANAGEMENT",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "MODEL-0",
+      "implementation_owner": "RECORDED_ON_MAIN",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_A_SELECTION"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "MODEL-2R",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "MODEL-1",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "BLOCKED_EXTERNAL",
+      "denominator": "POST_TRAINING_LAUNCH",
+      "id": "MODEL-2C",
+      "implementation_owner": "UNRESOLVED_EXTERNAL",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "BLOCKED_LICENSE"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "MODEL-3",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "MODEL-4",
+      "implementation_owner": "RECORDED_ON_MAIN",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_A_SELECTION"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "PRE_TRAINING",
+      "id": "QUAL-1",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "QUAL-2",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "QUAL-3",
+      "implementation_owner": "PRODUCT_MANAGEMENT",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "QUAL-4",
+      "implementation_owner": "PRODUCT_MANAGEMENT",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "TRAIN-1",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "TRAIN-2",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "TRAIN-3",
+      "implementation_owner": "RECORDED_ON_MAIN",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "HISTORICAL"
+    },
+    {
+      "class": "BLOCKED_EXTERNAL",
+      "denominator": "PRE_TRAINING",
+      "id": "AUTH-1",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_VERIFIABLE"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "APPLICATION",
+      "id": "APP-1",
+      "implementation_owner": "CLAUDE",
+      "independent_reviewer": "ANTIGRAVITY",
+      "register_status": "OPEN_PR_UNREVIEWED"
+    },
+    {
+      "class": "IMPLEMENTED_AWAITING_REVIEW",
+      "denominator": "APPLICATION",
+      "id": "APP-2",
+      "implementation_owner": "CLAUDE",
+      "independent_reviewer": "ANTIGRAVITY",
+      "register_status": "OPEN_PR_UNREVIEWED"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "NONE",
+      "id": "APP-3",
+      "implementation_owner": "PRODUCT_MANAGEMENT",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "BLOCKED_EXTERNAL",
+      "denominator": "NONE",
+      "id": "EV-AG-APP",
+      "implementation_owner": "ANTIGRAVITY",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "EXTERNALLY_REPORTED"
+    },
+    {
+      "class": "BLOCKED_EXTERNAL",
+      "denominator": "NONE",
+      "id": "EV-AG-DOCKER",
+      "implementation_owner": "ANTIGRAVITY",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "EXTERNALLY_REPORTED"
+    },
+    {
+      "class": "BLOCKED_EXTERNAL",
+      "denominator": "PRE_TRAINING",
+      "id": "R65",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_VERIFIABLE"
+    },
+    {
+      "class": "MISSING",
+      "denominator": "PRE_TRAINING",
+      "id": "FINAL-1",
+      "implementation_owner": "CURSOR",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_STARTED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "EXECUTION",
+      "id": "FINAL-2",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "EXECUTION",
+      "id": "EXEC-1",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "NONE",
+      "id": "AUTH-2",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "PRODUCT_MANAGEMENT",
+      "register_status": "NOT_AUTHORIZED"
+    },
+    {
+      "class": "BLOCKED_OWNER",
+      "denominator": "NONE",
+      "id": "AUTH-3",
+      "implementation_owner": "FOUNDER",
+      "independent_reviewer": "CLAUDE",
+      "register_status": "NOT_AUTHORIZED"
+    }
+  ],
+  "schema": "orneur.scorecard/1",
+  "single_readiness_percentage": null,
+  "training_status": "NOT_AUTHORIZED"
+}
