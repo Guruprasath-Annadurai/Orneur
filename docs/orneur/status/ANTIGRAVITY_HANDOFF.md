@@ -12,7 +12,9 @@ Status: engineering package for **independent** review. Claude's own assessment 
 | `claude/ws-e-dataquality` | `669e665` | Dataset quality/provenance tooling (new files only) |
 | `claude/ws-d-foundation-evidence` | `8f4a3ad` | Foundation evidence reassessment (docs/tools) |
 | `claude/ws-g-training-prep` | `e312fe5` | Training preparation tooling, dry-run only |
-| `claude/ws-f-evalinfra` | pending | Synthetic fail-closed evaluation infrastructure |
+| `claude/ws-f-evalinfra` | `8ee88b8` | Synthetic fail-closed evaluation infrastructure |
+
+Workstream F (`orca/evalinfra`, 343 new synthetic-only tests, mutation-checked) is merged into candidate-2. Findings F1–F6 (prereg validator DEFERRED inconsistency, blueprint 6.6 rounding in three cells, category-numbering gap, LLM-judge vs human-rubric, ledger replay gap) are in `docs/orneur/status/evalinfra/INVENTORY.md` and need owner decisions.
 
 The **consolidated candidate SHA** is recorded in the final report, not here, because it is created after this document and a document cannot contain its own commit hash.
 

@@ -47,7 +47,7 @@
     },
     {
       "claim": "Synthetic, fail-closed evaluation infrastructure only; V2 private evaluation is not frozen, no hidden set exists, no provider eval run.",
-      "evidence": "docs/orneur/status/ANTIGRAVITY_HANDOFF.md#evaluation-evidence",
+      "evidence": "docs/orneur/status/evalinfra/INVENTORY.md",
       "key": "evaluation_readiness",
       "state": "TOOLING_ONLY"
     },
