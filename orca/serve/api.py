@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import re
 import logging
 import os
 import time
@@ -628,19 +629,34 @@ class _Session:
 _sessions: dict[str, _Session] = {}
 
 
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _validate_session_id(session_id: str | None) -> None:
+    """G-006: a caller-supplied session id becomes a file name
+    (episodes/<id>.json, knowledge/<id>.json), a database key and a storage
+    prefix. Anything outside ``[A-Za-z0-9_-]{1,64}`` (``../``, separators,
+    NULs, megabyte strings, markup that the web client interpolates into
+    attributes) is refused before it can reach any of them. The server's own
+    ids are UUIDs and always pass."""
+    if session_id and not _SESSION_ID_RE.fullmatch(session_id):
+        raise HTTPException(status_code=422, detail="invalid session id")
+
+
 def _check_session_ownership(session_id: str | None, user_id: str | None) -> None:
-    """The raise-only half of `_get_session()`'s ownership check,
-    exposed separately so a route needing to check a session it is NOT
-    about to construct/touch (e.g. `load_session()`'s SOURCE
-    `req.session_id`, as opposed to its `target_session_id`) can do so
-    without the side effect of eagerly constructing a full `_Session`
-    (and its chromadb-backed memory/knowledge-graph objects) for a
-    request that is about to be denied anyway."""
+    """The raise-only half of `_get_session()`'s access check, exposed
+    separately so a route needing to check a session it is NOT about to
+    construct/touch (e.g. `load_session()`'s SOURCE `req.session_id`) can do
+    so without eagerly constructing a full `_Session` for a request that is
+    about to be denied anyway. Denies (404, never 403 -- an unauthorized
+    caller must not be able to confirm the session exists) when another user
+    owns it, when an anonymous caller names an owned session, or when the id
+    shares a storage prefix with a different claimed session."""
     if not session_id:
         return
-    from orca.auth.store import get_session_owner
-    owner = get_session_owner(session_id)
-    if owner is not None and owner != user_id:
+    _validate_session_id(session_id)
+    from orca.auth.store import check_session_access
+    if not check_session_access(session_id, user_id):
         raise HTTPException(status_code=404, detail="session not found")
 
 
@@ -649,32 +665,39 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
     than per-route: a CALLER-SUPPLIED `session_id` (never a freshly
     generated one -- `session_id is None` always means "give me a new
     session", never an ownership question) that was previously recorded
-    as belonging to a signed-in user (`record_user_session()` below) may
-    only be read back by that SAME user_id. Every route that reaches a
-    session through this function -- chat/stream, docs upload/list/
-    delete, memory recall/remember, explain, knowledge graph, session
-    export/load, ultra -- gets this protection uniformly; a future new
-    route calling `_get_session()` inherits it automatically instead of
-    needing its own copy of the check. A session with NO recorded owner
-    (created anonymously, no bearer token involved) is unaffected -- the
-    session_id itself remains its own shareable credential, preserving
-    existing anonymous-chat behavior exactly. Raises `HTTPException(404)`
-    (never 403) so an unauthorized caller cannot even confirm the
-    session exists."""
-    _check_session_ownership(session_id, user_id)
+    as belonging to a signed-in user may only be read back by that SAME
+    user_id. Every route that reaches a session through this function
+    gets this protection uniformly.
 
-    sid = session_id or str(uuid.uuid4())
+    G-006: the check and the ownership record are ONE atomic
+    ``claim_session()`` (two workers can no longer both "see it unowned" and
+    both become owner), the id is validated before it touches any path, and
+    sessions whose ids collide on the 8-character storage prefix used by
+    long-term memory / semantic facts / the document store are refused
+    instead of silently sharing data. A session with NO recorded owner
+    (created anonymously) stays reachable by anyone who holds its id -- the
+    session_id itself remains its own shareable credential. Raises
+    `HTTPException(404)` (never 403) so an unauthorized caller cannot even
+    confirm the session exists."""
+    from orca.auth.store import claim_session
+
+    _validate_session_id(session_id)
+    if session_id:
+        if not claim_session(session_id, user_id):
+            raise HTTPException(status_code=404, detail="session not found")
+        sid = session_id
+    else:
+        for _ in range(5):  # a fresh uuid4 colliding on 8 chars is ~1e-9 per session at 10k sessions
+            sid = str(uuid.uuid4())
+            if claim_session(sid, user_id):
+                break
+        else:
+            raise HTTPException(status_code=503, detail="could not allocate a session")
+
     if sid not in _sessions:
         _sessions[sid] = _Session(sid, model_variant)
     _sessions[sid].touch()
     session_store.touch_session(sid)  # refresh Redis TTL — no-op if Redis disabled
-
-    # Records which account this session belongs to — without this, "delete
-    # my account" has no way to find and remove the chat history/documents
-    # tied to it, since sessions are otherwise anonymous by session_id alone.
-    if user_id:
-        from orca.auth.store import record_user_session
-        record_user_session(user_id, sid)
 
     # Evict idle sessions (>2h) to save memory
     now = time.time()
@@ -1557,23 +1580,42 @@ async def recall_memory(req: MemoryRequest, user: User | None = Depends(get_curr
 async def remember(req: RememberRequest, user: User | None = Depends(get_current_user_optional)):
     sess = _get_session(req.session_id, user_id=user.id if user else None)
     sess.memory.commit_to_long_term(req.fact, {"type": "user_fact", "manual": True})
-    existing = sess.memory.semantic.recall_fact("all_sessions_summary") or ""
-    sess.memory.semantic.store_fact(
-        "all_sessions_summary",
-        f"{existing}\n[User note] {req.fact}".strip()[-4000:]
-    )
+    # G-006: this route used to ALSO append every user's note to one global,
+    # unscoped `all_sessions_summary` string. Nothing reads it any more (the
+    # read path was retired in Phase 5.1), and it mixed tenants' private text
+    # in a single value that account deletion did not scrub. The note is kept
+    # where it belongs: this session's own long-term memory, above.
     return {"stored": True, "fact": req.fact, "session_id": sess.id}
 
 
+def _anonymous_listing_allowed() -> bool:
+    """Anonymous callers may list saved sessions only on a private install
+    that has no accounts at all (a single-user local deployment has no
+    tenants to isolate). Any public edge, or any instance with an account,
+    answers anonymous callers with an empty list."""
+    from orca.auth.store import _count_users
+    from orca.gateway.wiring import public_edge_enabled
+
+    return not public_edge_enabled() and _count_users() == 0
+
+
 @app.get("/api/sessions")
-async def list_sessions():
-    sessions = EpisodicMemory.list_sessions()
-    return {
-        "sessions": [
-            {"id": s, "title": _session_titles.get(s, "")}
-            for s in sessions[:50]
-        ]
-    }
+async def list_sessions(user: User | None = Depends(get_current_user_optional)):
+    """Lists the CALLER's saved conversations. G-006: this used to return
+    every session id and title on the server to anyone, which both disclosed
+    other users' conversation titles and handed an attacker the exact ids
+    (and 8-character storage prefixes) needed to target them."""
+    saved = EpisodicMemory.list_sessions()
+    if user is not None:
+        from orca.auth.store import get_user_session_ids
+
+        owned = set(get_user_session_ids(user.id))
+        visible = [s for s in saved if s in owned]
+    elif _anonymous_listing_allowed():
+        visible = saved
+    else:
+        visible = []
+    return {"sessions": [{"id": s, "title": _session_titles.get(s, "")} for s in visible[:50]]}
 
 
 @app.post("/api/session/load")
@@ -1592,7 +1634,15 @@ class TitleRequest(BaseModel):
 
 
 @app.patch("/api/session/{session_id}/title")
-async def set_session_title(session_id: str, req: TitleRequest):
+async def set_session_title(session_id: str, req: TitleRequest, user: User | None = Depends(get_current_user_optional)):
+    # G-006: was unauthenticated and unscoped -- anyone could overwrite any
+    # session's title (and mint new keys in the shared titles file for ids
+    # that do not exist). Same access rule as every other session route, and
+    # only for a session this process has actually seen or that has a saved
+    # episode.
+    _check_session_ownership(session_id, user.id if user else None)
+    if session_id not in _sessions and session_id not in EpisodicMemory.list_sessions():
+        raise HTTPException(status_code=404, detail="session not found")
     title = req.title.strip()[:80]
     _save_title(session_id, title)
     return {"ok": True, "title": title}
@@ -1654,8 +1704,11 @@ async def export_session(session_id: str, user: User | None = Depends(get_curren
 
 
 @app.post("/api/session/save")
-async def save_session(req: ChatRequest):
+async def save_session(req: ChatRequest, user: User | None = Depends(get_current_user_optional)):
     sid = req.session_id
+    # G-006: was unauthenticated -- any caller holding another user's id could
+    # force a save of that user's session.
+    _check_session_ownership(sid, user.id if user else None)
     if sid and sid in _sessions:
         sess = _sessions[sid]
         sess.memory.save_session()

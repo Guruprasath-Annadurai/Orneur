@@ -2535,7 +2535,7 @@ async function pollLicense() {
 
 async function loadSessions() {
   try {
-    const d = await fetch('/api/sessions').then(r => r.json());
+    const d = await fetch('/api/sessions', { headers: _authHeaders() }).then(r => r.json());
     const list = document.getElementById('session-list');
     const sessions = d.sessions || [];
     if (!sessions.length) {

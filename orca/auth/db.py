@@ -72,7 +72,11 @@ CREATE TABLE IF NOT EXISTS users (
     stripe_customer_id  TEXT,
     totp_secret         TEXT,
     totp_enabled        INTEGER NOT NULL DEFAULT 0,
-    signup_seq          INTEGER
+    signup_seq          INTEGER,
+    -- G-006: session tokens issued before this instant (epoch seconds) are
+    -- rejected. Bumped on every password change/reset so a stolen token or a
+    -- replayed reset link stops working. 0 = never invalidated.
+    tokens_valid_after  REAL NOT NULL DEFAULT 0
 );
 
 -- Single-row atomic counter for global signup order — used to gate the
@@ -99,6 +103,12 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     session_id TEXT NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, session_id)
+);
+
+CREATE TABLE IF NOT EXISTS session_storage_keys (
+    storage_key TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    created_at  TEXT NOT NULL
 );
 
 -- Enterprise/Team management — one organization per owning account. Seat
@@ -226,7 +236,8 @@ CREATE TABLE IF NOT EXISTS users (
     stripe_customer_id  TEXT,
     totp_secret         TEXT,
     totp_enabled        INTEGER NOT NULL DEFAULT 0,
-    signup_seq          INTEGER
+    signup_seq          INTEGER,
+    tokens_valid_after  DOUBLE PRECISION NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ix_users_stripe_customer ON users(stripe_customer_id);
 
@@ -250,6 +261,12 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     session_id TEXT NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, session_id)
+);
+
+CREATE TABLE IF NOT EXISTS session_storage_keys (
+    storage_key TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    created_at  TEXT NOT NULL
 );
 
 -- See _SCHEMA_SQLITE for the rationale.
@@ -555,6 +572,15 @@ def init_db() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_seq INTEGER")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tokens_valid_after DOUBLE PRECISION NOT NULL DEFAULT 0")
+            # G-006: collapse any pre-existing multi-owner rows to the earliest
+            # claim (the one get_session_owner() already favoured), then enforce.
+            conn.execute(
+                "DELETE FROM user_sessions a USING user_sessions b "
+                "WHERE a.session_id = b.session_id AND "
+                "(a.created_at > b.created_at OR (a.created_at = b.created_at AND a.user_id > b.user_id))"
+            )
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_sessions_session ON user_sessions(session_id)")
             # Contains $$ ... $$ function bodies with semicolons inside them —
             # must go through execute_sql_block(), not executescript(), which
             # would break on the naive ';' split (see its docstring).
@@ -572,11 +598,20 @@ def init_db() -> None:
             "ALTER TABLE users ADD COLUMN totp_secret TEXT",
             "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN signup_seq INTEGER",
+            "ALTER TABLE users ADD COLUMN tokens_valid_after REAL NOT NULL DEFAULT 0",
         ]:
             try:
                 conn.execute(stmt)
             except Exception:
                 pass  # column already exists
+        # G-006: collapse any pre-existing multi-owner rows to the earliest
+        # claim (the one get_session_owner() already favoured), then enforce
+        # single ownership with a unique index.
+        conn.execute(
+            "DELETE FROM user_sessions WHERE rowid NOT IN "
+            "(SELECT MIN(rowid) FROM user_sessions GROUP BY session_id)"
+        )
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_sessions_session ON user_sessions(session_id)")
 
 
 init_db()

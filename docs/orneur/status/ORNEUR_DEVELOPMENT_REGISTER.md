@@ -21,9 +21,10 @@ available), `UNKNOWN`, `NOT_APPLICABLE`. Audit depth: `READ` (code read), `SURFA
 | #24 | `ce3d58c` | P0 training authorization gate | **9/9** | none yet |
 | #25 | `0db1a59` | P0 experimental-serving policy | **9/9** | none yet |
 | #26 | `52ad8fa` | P1 development register + flaky-test fix | **9/9** | none yet |
-| #27 | `f29a133` | G-003 non-root containers | see PR | none yet |
-| #28 | `0065256` | G-019 `O_PATH` for ancestors | see PR | none yet |
-| #29 | this PR | P2 UI design spec + Light/Dark mock (design only) | see PR | none (founder review D-2) |
+| #27 | `f29a133` | G-003 non-root containers | **9/9** (incl. container build + boot smoke) | none yet |
+| #28 | `0065256` | G-019 `O_PATH` for ancestors | **9/9** | none yet |
+| #29 | `2da93b1` | P2 UI design spec + Light/Dark mock (design only) | **9/9** at `2da93b1` (first head `bdd23c1` failed 3 tests: f-string backslash invalid on Python 3.11; fixed) | none (founder review D-2) |
+| #30 | this PR | **G-006** tenant-isolation tests + fixes (F1–F9), report `G006_TENANT_ISOLATION_REPORT.md` | see PR | none yet |
 
 Ancestry (VERIFIED): `main(464b602) ⊂ #20 ⊂ #21 ⊂ #22 ⊂ #23 ⊂ #24 ⊂ #25`. Nothing is merged. `main` is unchanged at `464b602f3f25`.
 Local full deterministic suite on #25: **7273 passed, 6 failed, 413 skipped** (§6, G-013 for the six).
@@ -91,7 +92,7 @@ working product). I did not run the application in a browser or against a model 
 | 1 | Frontend & design system | **PARTIAL** | READ (grep) | One 4,293-line `orca/serve/web/index.html`; no theme system (0 `prefers-color-scheme`, 0 `data-theme`), none of the locked brand colours, **0 `aria-label`**, 1 `@media`, 76 `innerHTML` uses, no `AbortController`. Greeting/wordmark not present. Only an SSE diagnostics test exists. Needs the approved redesign. |
 | 2 | Backend APIs | IMPLEMENTED_NOT_VERIFIED | SURFACE | 44 routes in `orca/serve/api.py`; 352 test files overall. |
 | 3 | Authentication & account lifecycle | IMPLEMENTED_NOT_VERIFIED | SURFACE | signup/login/2FA/reset/verify/API keys/org invites/delete (`orca/auth/routes.py`); 16 auth test files. Email delivery and TOTP not verified live. |
-| 4 | User & tenant isolation | IMPLEMENTED_NOT_VERIFIED | NOT_EXAMINED | org store + RBAC exist; per-session/user data scoping not examined. **Priority audit target (G-006).** |
+| 4 | User & tenant isolation | **PARTIAL** (first adversarial pass done, not independently reviewed) | TESTED (41 tests) | G-006: 9 confirmed defects fixed in #30 (session listing/title/save, prefix-collision memory+docs leak, path traversal, owner-claim race, admin→owner escalation, token-type confusion incl. 2FA bypass, no session invalidation, default signing secret). **Unfixed:** agent tools run with server authority and one shared workspace (G-020); first-user-owner bootstrap (G-021); 8-char storage keys (G-022). Background jobs: NOT_IMPLEMENTED. |
 | 5 | Conversation persistence & history | **PARTIAL** | READ | `_sessions` is process-local; durability across restarts/replicas only with opt-in Redis (`session_store.py`); episodic JSON files on disk. |
 | 6 | Streaming & cancellation | IMPLEMENTED_NOT_VERIFIED | READ | SSE with bounded pool/admission; `streaming.py` itself states cancellation cannot interrupt an in-flight backend call; UI has no `AbortController`. |
 | 7 | Research & citations | **PARTIAL** | SURFACE | `orca/truth/*` (17 test files) is a real claims/citation pipeline; live search is a DuckDuckGo HTML scraper (`tools/web.py`, `truth/search_provider.py`) — fragile, no licensed search API; SSRF check fails closed when DNS is unavailable. |
@@ -119,7 +120,10 @@ working product). I did not run the application in a browser or against a model 
 | G-003 | P0/P1 | **Fixed in #27 (unverified build/cluster):** production containers ran as root | `Dockerfile`, `Dockerfile.fly`, `k8s/deployment.yaml` | container escape blast radius | image build | non-root `USER`, `runAsNonRoot`, read-only rootfs where possible; CI boot smoke still passes |
 | G-004 | P1 | Code execution is AST+subprocess only | `orca/code/sandbox.py` | arbitrary-code risk if exposed | G-003 | execution only in the qualified container/sandbox backend; escape tests pass; or endpoint disabled on public edge |
 | G-005 | P1 | 76 `innerHTML` sinks in the UI | `orca/serve/web/index.html` | stored/reflected XSS | redesign (D) | model/user content rendered via a sanitizer or `textContent`; CSP; XSS regression tests |
-| G-006 | P1 | Tenant/user isolation not audited end-to-end | `orca/serve`, `orca/auth` | cross-user data exposure | — | adversarial 2-user/2-tenant tests over sessions, docs, memory, export, explain |
+| G-006 | P1 | **Addressed in #30 (not independently reviewed):** adversarial two-user tests found and fixed 9 defects; categories 9 and 11 recorded as NOT_IMPLEMENTED / KNOWN_UNFIXED | `orca/serve`, `orca/auth`, `orca/brain`, `orca/docs` | cross-user data exposure | independent review of #30 | see `G006_TENANT_ISOLATION_REPORT.md` |
+| G-020 | **P0/P1** | Agent `shell`/`read_file`/`write_file` run with the server's authority and one server-wide workspace; `cat`/`find`/`grep`/`git` read any path the OS user can read (admitted in `orca/tools/code.py`). Strict-xfail tests reproduce it | `orca/tools`, web session agent | any chat user (prompt-injectable) can reach other tenants' stored data and server files | **founder/product decision**: drop tools for web sessions, or per-session workspace + argv path confinement, or real sandbox (G-004) | G-006 xfail tests flip to passing |
+| G-021 | P1 | First account on a fresh install becomes `owner`; count-then-insert is racy | `orca/auth/store.py::create_user` | first visitor of a new public deployment owns it; two simultaneous first signups can both be owner | provisioning flow decision | owner creation only via explicit bootstrap; test |
+| G-022 | P2 | Per-session storage keyed by `session_id[:8]`; #30 makes collisions fail closed (404) but does not remove the 32-bit space | `orca/brain/memory.py`, `orca/docs/store.py` | rare spurious refusal at scale | data migration to full-id keys | migration + dual-read tests |
 | G-007 | P1 | Conversation durability is opt-in | `serve/session_store.py` | history lost on restart | — | durable store by default for non-dev profiles; restart test |
 | G-008 | P1 | No licensed search provider | `truth/search_provider.py` | unreliable/ToS-risky research | founder (D-5) | pluggable provider, rate limits, tests with a recorded fixture |
 | G-009 | P2 | Real connectors absent | `orca/connectors` | integrations are mock-only | scope decision | ≥1 real read-only connector with contract + audit tests |
@@ -174,8 +178,8 @@ Established by running each as root and as uid 65534 and by direct probes (VERIF
 | P0 | Experimental serving policy (#25) | Implemented; CI 9/9; audit pending |
 | P0 | PR #23 independent retest | Awaiting Antigravity Audit #008 |
 | P1 | This register + baseline-failure causes + flake fix | In this PR |
-| P1 | G-003 container non-root | Next |
-| P1 | G-006 tenant-isolation adversarial tests | Next |
+| P1 | G-003 container non-root (#27) / G-019 (#28) | Implemented; CI 9/9; audit pending |
+| P1 | G-006 tenant-isolation adversarial tests + fixes (#30) | Implemented; CI see PR; **G-020 needs a decision** |
 | P2 | Design specification + Light/Dark screens for founder review | Delivered in #29; **awaiting D-2** (no implementation before approval) |
 | P4 | GENESIS/NOVUS future-training preparation docs | Not started |
 
