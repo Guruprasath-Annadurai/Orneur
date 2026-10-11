@@ -24,11 +24,11 @@ available), `UNKNOWN`, `NOT_APPLICABLE`. Audit depth: `READ` (code read), `SURFA
 | #27 | `f29a133` | G-003 non-root containers | **9/9** (incl. container build + boot smoke) | none yet |
 | #28 | `0065256` | G-019 `O_PATH` for ancestors | **9/9** | none yet |
 | #29 | `bb00f5d` | P2 UI design spec + Light/Dark mock (design only) | **9/9** at `2da93b1` (first head `bdd23c1` failed 3 tests: f-string backslash invalid on Python 3.11; fixed) | none (founder review D-2) |
-| #30 | this PR | **G-006** tenant-isolation tests + fixes (F1–F9), report `G006_TENANT_ISOLATION_REPORT.md` | see PR | none yet |
-| #31 | `d1aa871` | **Task B** public-serving authority: env flag can no longer authorize public serving; signed/scoped/expiring grants (none issued) | see PR | none yet |
-| #32 | `fef50b6` | **Task C** training gate assurance: 16 bypass attacks fixed, entry-point inventory | see PR | none yet |
-| #33 | `08900c2` | **Task D** container verification (22 checks), partial-migration fix, CI step | see PR | none yet |
-| #34 | this PR | **Task F** end-to-end flow evidence (test double), G-025 fix, register update | see PR | none yet |
+| #30 | `f7c5eba` | **G-006** tenant-isolation tests + fixes (F1–F9), report `G006_TENANT_ISOLATION_REPORT.md` | **9/9** | none yet |
+| #31 | `d1aa871` | **Task B** public-serving authority: env flag can no longer authorize public serving; signed/scoped/expiring grants (none issued) | **9/9** | none yet |
+| #32 | `fef50b6` | **Task C** training gate assurance: 16 bypass attacks fixed, entry-point inventory | **9/9** | none yet |
+| #33 | `23e4d16` | **Task D** container verification (22 checks, now in CI against the built image), partial-migration fix; stacked on #28 | **9/9** | none yet |
+| #34 | `f4cc265` | **Task F** end-to-end flow evidence (test double), G-025 fix, register update | **9/9** (register-only commits since are docs) | none yet |
 
 Ancestry (VERIFIED): `main(464b602) ⊂ #20 ⊂ #21 ⊂ #22 ⊂ #23 ⊂ #24 ⊂ #25`. Nothing is merged. `main` is unchanged at `464b602f3f25`.
 Local full deterministic suite on #25: **7273 passed, 6 failed, 413 skipped** (§6, G-013 for the six).
