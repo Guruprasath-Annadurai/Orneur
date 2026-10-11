@@ -132,6 +132,31 @@ CREATE TABLE IF NOT EXISTS owner_bootstrap_tokens (
     replace_existing INTEGER NOT NULL DEFAULT 0
 );
 
+-- Workstream B: server-side token revocation (logout). Rows are only needed until the token would have expired anyway.
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+    jti        TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    expires_at REAL NOT NULL
+);
+
+-- Workstream B: per-user privacy settings (conversation retention) and request idempotency.
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id        TEXT PRIMARY KEY,
+    retention_days INTEGER NOT NULL DEFAULT 0,
+    updated_at     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    user_id      TEXT NOT NULL,
+    idem_key     TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    response     TEXT,
+    created_at   REAL NOT NULL,
+    PRIMARY KEY (user_id, idem_key)
+);
+
+
+
 
 -- Enterprise/Team management — one organization per owning account. Seat
 -- limits are tied to the owner's tier (free/pro/enterprise), NOT a separate
@@ -311,6 +336,31 @@ CREATE TABLE IF NOT EXISTS owner_bootstrap_tokens (
     redeemed_by TEXT,
     replace_existing INTEGER NOT NULL DEFAULT 0
 );
+
+-- Workstream B: server-side token revocation (logout). Rows are only needed until the token would have expired anyway.
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+    jti        TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    expires_at DOUBLE PRECISION NOT NULL
+);
+
+-- Workstream B: per-user privacy settings (conversation retention) and request idempotency.
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id        TEXT PRIMARY KEY,
+    retention_days INTEGER NOT NULL DEFAULT 0,
+    updated_at     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    user_id      TEXT NOT NULL,
+    idem_key     TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    response     TEXT,
+    created_at   DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (user_id, idem_key)
+);
+
+
 
 
 -- See _SCHEMA_SQLITE for the rationale.

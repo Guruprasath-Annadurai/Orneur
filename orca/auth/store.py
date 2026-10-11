@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from orca.auth.db import get_conn
@@ -98,6 +98,34 @@ def update_password(user_id: str, new_password: str) -> None:
             "UPDATE users SET password_hash=?, tokens_valid_after=? WHERE id=?",
             (hash_password(new_password), time.time(), user_id),
         )
+
+
+def revoke_token(jti: str, user_id: str, expires_at: float) -> None:
+    """Server-side revocation of ONE session token (logout). Idempotent."""
+    with get_conn() as conn:
+        conn.execute("INSERT INTO revoked_tokens (jti, user_id, expires_at) VALUES (?,?,?) ON CONFLICT DO NOTHING", (jti, user_id, float(expires_at)))
+
+
+def is_token_revoked(jti: str) -> bool:
+    with get_conn() as conn:
+        return conn.execute("SELECT 1 AS x FROM revoked_tokens WHERE jti=?", (jti,)).fetchone() is not None
+
+
+def purge_expired_revocations(now: float | None = None) -> int:
+    """Deletes revocation rows whose token has expired anyway. Returns how many were removed."""
+    import time as _t
+
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM revoked_tokens WHERE expires_at < ?", (_t.time() if now is None else now,))
+        return cur.rowcount or 0
+
+
+def invalidate_all_sessions(user_id: str) -> None:
+    """Sign the user out everywhere: every token issued before now is rejected (same epoch mechanism as a password change)."""
+    import time as _t
+
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET tokens_valid_after=? WHERE id=?", (_t.time(), user_id))
 
 
 def _count_users() -> int:
@@ -299,6 +327,58 @@ def increment_usage(user_id: str, kind: str = "message") -> None:
         )
 
 
+def get_usage_history(user_id: str, days: int = 7) -> list[dict]:
+    """Per-day counters for the last `days` days (newest first); days without activity are omitted."""
+    days = max(1, min(int(days), 366))
+    since = (date.today() - timedelta(days=days - 1)).isoformat()
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT date, messages, ultra_runs FROM usage_daily WHERE user_id=? AND date>=? ORDER BY date DESC", (user_id, since)
+        ).fetchall()
+    return [{"date": r["date"], "messages": r["messages"], "ultra_runs": r["ultra_runs"]} for r in rows]
+
+
+def get_user_sessions_with_created(user_id: str) -> list[tuple[str, str]]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT session_id, created_at FROM user_sessions WHERE user_id=?", (user_id,)).fetchall()
+    return [(r["session_id"], r["created_at"]) for r in rows]
+
+
+def get_retention_days(user_id: str) -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT retention_days FROM user_settings WHERE user_id=?", (user_id,)).fetchone()
+    return int(row["retention_days"]) if row else 0
+
+
+def set_retention_days(user_id: str, days: int) -> None:
+    if not (days == 0 or 1 <= days <= 3650):
+        raise ValueError("retention_days must be 0 (keep) or 1..3650")
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO user_settings (user_id, retention_days, updated_at) VALUES (?,?,?) "
+            "ON CONFLICT (user_id) DO UPDATE SET retention_days=excluded.retention_days, updated_at=excluded.updated_at",
+            (user_id, int(days), now),
+        )
+
+
+def users_with_retention() -> list[tuple[str, int]]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT user_id, retention_days FROM user_settings WHERE retention_days > 0").fetchall()
+    return [(r["user_id"], int(r["retention_days"])) for r in rows]
+
+
+def release_session(session_id: str, user_id: str) -> bool:
+    """Removes the OWNER's claim on one session (and its storage-name claims) so the id and its names are free again. Only the owner's call succeeds."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT user_id FROM user_sessions WHERE session_id=?", (session_id,)).fetchone()
+        if not row or row["user_id"] != user_id:
+            return False
+        conn.execute("DELETE FROM session_storage_keys WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM user_sessions WHERE session_id=? AND user_id=?", (session_id, user_id))
+    return True
+
+
 def get_usage_today(user_id: str) -> dict:
     today = date.today().isoformat()
     with get_conn() as conn:
@@ -453,6 +533,9 @@ def delete_account_rows(conn, user_id: str) -> None:
     The ``api_keys`` table must already exist (see ``delete_user_account_records``)."""
     conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM usage_daily WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM user_settings WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM idempotency_keys WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM revoked_tokens WHERE user_id=?", (user_id,))
     conn.execute(
         "DELETE FROM session_storage_keys WHERE session_id IN "
         "(SELECT session_id FROM user_sessions WHERE user_id=?)",

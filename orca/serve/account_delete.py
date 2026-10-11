@@ -66,6 +66,12 @@ def _delete_session_data(session_id: str) -> dict:
         result["memory_error"] = str(e)
 
     try:
+        from orca.serve import conversations
+        result["conversation_transcript_deleted"] = conversations.delete(session_id)
+    except Exception as e:
+        result["conversation_transcript_error"] = str(e)
+
+    try:
         # Phase 5.1: a real, confirmed gap this cascade never covered --
         # every raw Q:/A: turn committed via MemoryEngine.commit_to_long_term()
         # (unconditional, every chat/stream/ultra turn) lived in this

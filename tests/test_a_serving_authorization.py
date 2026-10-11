@@ -228,6 +228,9 @@ def test_every_route_that_spends_inference_applies_the_standard_gates():
             continue
         path = deco[0].args[0].value
         names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
+        if "_chat_impl" in names:                       # /api/chat is a thin idempotency wrapper around _chat_impl: the gates live there
+            impl = next(n for n in ast.walk(tree) if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)) and n.name == "_chat_impl")
+            names |= {n.id for n in ast.walk(impl) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(impl) if isinstance(n, ast.Attribute)}
         if not (names & INFERENCE_NAMES) and not ({"brain", "agent"} & names and path not in ("/api/status", "/api/session/load")):
             continue
         need = INLINE_REVIEWED.get(path, {"_authorize_inference"})

@@ -39,6 +39,12 @@ async def get_current_user(
     # session tokens by construction.
     if payload.get("type", "session") != "session":
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    jti = payload.get("jti")
+    if jti:
+        from orca.auth.store import is_token_revoked
+
+        if is_token_revoked(jti):
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
     user = get_user_by_id(payload.get("sub", ""))
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
