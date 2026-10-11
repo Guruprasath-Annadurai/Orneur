@@ -100,6 +100,8 @@ class PublicError:
 
 def _classify(exc: BaseException) -> tuple[str, str]:
     names = {cls.__name__ for cls in type(exc).__mro__}
+    if "ModelNotRoutableError" in names:
+        return "model_unavailable", "This model is not available for public use right now. Please choose another model or try again later."
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError)) or names & _TIMEOUT_NAMES:
         return "upstream_timeout", "The model backend timed out. Please try again."
     if isinstance(exc, (ConnectionError, OSError)) or "ConnectError" in names:
