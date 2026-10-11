@@ -1,0 +1,23 @@
+PASS  C1 default user is 10001
+PASS  C2a new volume: app starts and creates its state
+PASS  C2b new volume: root dir and subdirs are 10001 and 0700
+PASS  C3 root-owned existing volume is refused (UntrustedStoreDirectory)
+PASS  C4a migration: chown as root
+PASS  C4b migration: starts after re-own
+PASS  C4c migration: existing data preserved
+PASS  C5a fly entrypoint: re-owns and runs as 10001
+PASS  C5b fly entrypoint: data preserved
+PASS  C5c fly entrypoint: app can start on the re-owned volume
+PASS  C6 partial migration is repaired on start
+PASS  C7a init command extracted from k8s/deployment.yaml
+PASS  C7b k8s init (drop ALL + CHOWN,FOWNER,DAC_OVERRIDE, no-new-privileges) migrates a root-owned volume
+PASS  C7c k8s init repairs a partially migrated volume
+PASS  C7d without CHOWN the same step cannot migrate (proves the capability is needed)
+PASS  C8a drop ALL + no-new-privileges + read-only rootfs: app imports and starts state
+PASS  C8b process holds no capabilities
+PASS  C8c cannot write the application tree or become root
+PASS  C9 execute-only ancestors: starts
+PASS  C10a a symlinked state subdirectory is refused
+PASS  C11a boot smoke: /livez answers
+PASS  C11b every process in the container runs as uid 10001
+FAILS=0
