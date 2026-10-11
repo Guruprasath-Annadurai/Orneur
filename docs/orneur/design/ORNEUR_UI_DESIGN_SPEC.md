@@ -8,6 +8,11 @@ Regenerate with `scripts/design/build_design_preview.py`; `scripts/design/render
 This supersedes the visual direction of `docs/DESIGN_BRIEF.md` (black/white orca mark). It keeps that brief's best rule: **show real model status
 honestly, don't hide it behind a "beta" badge.**
 
+> **LOGO LOCKED (founder, 2026-10-11): the falcon emblem and segmented-E wordmark constructions in this document and in `preview/` are SUPERSEDED.**
+> The founder-supplied ORNEUR artwork is the sole authoritative visual identity (master SHA-256 `4864b26b78103951fffd2ef5b2a65eaa36182885584a087aa4ea47f77b55dc9c`,
+> installed under `orca/serve/web/brand/`; see `docs/orneur/brand/BRAND_IDENTITY_LOCK.md`). Open question **Q1 is resolved**. The earlier concepts are kept
+> unchanged below only as audit history; nothing here may be used to redraw or replace the official mark. Palette, greeting and the two-theme rule are unaffected.
+
 ## 1. Principles
 
 1. **Calm.** One column of conversation, generous space, almost no chrome. No dashboards, glow, neon, gradients-for-decoration or status clutter.
@@ -107,7 +112,7 @@ checkpoint as production intelligence.
 
 ## 10. Open questions for the founder (decision D-2)
 
-- **Q1** Approve, change or replace the emblem and the segmented-E wordmark concepts?
+- **Q1** ~~Approve, change or replace the emblem and the segmented-E wordmark concepts?~~ **Resolved 2026-10-11: the founder-supplied artwork is the final official logo; the concepts are superseded.**
 - **Q2** Exact greeting punctuation: "Hello chief, what's the plan today." (as specified, no question mark) — confirm.
 - **Q3** Default theme: follow the system setting, or always start Dark?
 - **Q4** Should end users see the Genesis / Novus / Aeternum choice, or one "ORNEUR" with routing explained in the model chip?

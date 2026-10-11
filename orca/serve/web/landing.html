@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ORNEUR — Intelligence, Without End.</title>
+<link rel="icon" href="/static/brand/favicon.82fee6a0.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/brand/favicon-32x32.56369742.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/brand/favicon-16x16.4bb4003b.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/brand/apple-touch-icon.ca25451e.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#03050A">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ORNEUR">
+<meta property="og:image" content="/static/brand/orneur-og-1200x630.af67bb4e.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="ORNEUR official logo">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="/static/brand/orneur-og-1200x630.af67bb4e.png">
 <meta name="description" content="ORNEUR retrieves real sources, verifies its answers against them, and tells you plainly when a capability hasn't been measured yet.">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
@@ -100,7 +114,10 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; color: var(--white); }
   gap: 10px;
   margin-right: auto;
 }
-.brand svg { width: 24px; height: 24px; }
+.brand-emblem { width: 24px; height: 24px; display: block; }
+.brand-wordmark { display: block; height: 13px; width: auto; }
+@media (max-width: 480px) { .brand-emblem { width: 22px; height: 22px; } .brand-wordmark { height: 10px; } .brand { gap: 8px; } }
+@media (max-width: 400px) { .brand-wordmark { display: none; } }
 .brand-text {
   font-family: var(--mono);
   font-size: 14px;
@@ -456,12 +473,8 @@ footer { border-top: 1px solid var(--line); padding: 48px 0; }
 <nav id="nav">
   <div class="nav-inner">
     <a href="#" class="brand">
-      <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M4 20 Q6 14 8.5 13.5 Q10.5 13 11 11.5 Q11.5 10 13 10.5 Q15 11 15.5 9 Q16 7.5 17.5 8.5 Q19 9.5 20 8 Q22 5 24 7 Q20 9 19 13 Q18 17 22 18 Q16 22 12 20 Q8 22 4 20Z" fill="#fff" opacity="0.9"/>
-        <path d="M4 20 Q6 24 10 23 Q8 21 8 19Z" fill="#fff" opacity="0.5"/>
-        <circle cx="20" cy="9" r="1" fill="#fff" opacity="0.6"/>
-      </svg>
-      <span class="brand-text">ORNEUR</span>
+      <img class="brand-emblem" src="/static/brand/orneur-emblem-64.30ad3075.png" srcset="/static/brand/orneur-emblem-64.30ad3075.png 64w, /static/brand/orneur-emblem-192.cf49c361.png 192w, /static/brand/orneur-emblem-256.9175ced1.png 256w" sizes="24px" width="24" height="24" alt="ORNEUR emblem" decoding="async">
+      <img class="brand-wordmark" src="/static/brand/orneur-wordmark-240.fb81e8f4.png" srcset="/static/brand/orneur-wordmark-240.fb81e8f4.png 240w, /static/brand/orneur-wordmark-480.a1c79b07.png 480w" sizes="109px" width="109" height="13" alt="ORNEUR" decoding="async">
     </a>
     <div class="nav-links">
       <a href="#product">Product</a>
@@ -814,12 +827,8 @@ footer { border-top: 1px solid var(--line); padding: 48px 0; }
   <div class="wrap footer-inner">
     <div class="footer-brand">
       <a href="#" class="brand">
-        <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M4 20 Q6 14 8.5 13.5 Q10.5 13 11 11.5 Q11.5 10 13 10.5 Q15 11 15.5 9 Q16 7.5 17.5 8.5 Q19 9.5 20 8 Q22 5 24 7 Q20 9 19 13 Q18 17 22 18 Q16 22 12 20 Q8 22 4 20Z" fill="#fff" opacity="0.9"/>
-          <path d="M4 20 Q6 24 10 23 Q8 21 8 19Z" fill="#fff" opacity="0.5"/>
-          <circle cx="20" cy="9" r="1" fill="#fff" opacity="0.6"/>
-        </svg>
-        <span class="brand-text">ORNEUR</span>
+        <img class="brand-emblem" src="/static/brand/orneur-emblem-64.30ad3075.png" srcset="/static/brand/orneur-emblem-64.30ad3075.png 64w, /static/brand/orneur-emblem-192.cf49c361.png 192w, /static/brand/orneur-emblem-256.9175ced1.png 256w" sizes="24px" width="24" height="24" alt="ORNEUR emblem" decoding="async">
+        <img class="brand-wordmark" src="/static/brand/orneur-wordmark-240.fb81e8f4.png" srcset="/static/brand/orneur-wordmark-240.fb81e8f4.png 240w, /static/brand/orneur-wordmark-480.a1c79b07.png 480w" sizes="109px" width="109" height="13" alt="ORNEUR" decoding="async">
       </a>
       <div class="copy">© 2026 ORNEUR. Built for technical precision.</div>
     </div>

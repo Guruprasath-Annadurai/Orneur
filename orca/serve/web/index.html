@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ORNEUR — Intelligence, Without End.</title>
+<link rel="icon" href="/static/brand/favicon.82fee6a0.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/brand/favicon-32x32.56369742.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/brand/favicon-16x16.4bb4003b.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/brand/apple-touch-icon.ca25451e.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#03050A">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ORNEUR">
+<meta property="og:image" content="/static/brand/orneur-og-1200x630.af67bb4e.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="ORNEUR official logo">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="/static/brand/orneur-og-1200x630.af67bb4e.png">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap');
 
@@ -89,11 +103,13 @@ body {
   border-right: 1px solid var(--line);
 }
 
-.logo-icon {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-}
+/* Official ORNEUR artwork: raster, opaque, native dark background. Never recoloured, filtered,
+   shadowed, bordered or animated; same in Dark and Light. */
+.logo-icon { width: 32px; height: 32px; flex-shrink: 0; display: block; }
+.logo-wordmark { display: block; height: 14px; width: auto; }
+.brand-lockup { display: block; height: auto; max-width: 100%; margin: 0 auto; }
+.auth-lockup { width: 240px; }
+.welcome-lockup { width: 320px; }
 
 .logo-text {
   font-family: var(--mono);
@@ -1671,7 +1687,7 @@ body {
 <div id="auth-overlay">
   <div class="auth-box">
     <div class="auth-brand">
-      <div class="auth-wordmark">ORNEUR</div>
+      <img class="brand-lockup auth-lockup" src="/static/brand/orneur-lockup-640.418dcae1.png" width="240" height="176" alt="ORNEUR — Orchestrated Reasoning Neural Engine for Unified Reliability" decoding="async">
       <div class="auth-tagline">Enterprise AI &nbsp;/&nbsp; Intelligence, Without End.</div>
     </div>
     <div class="auth-tabs">
@@ -1783,14 +1799,10 @@ body {
 <!-- Header -->
 <header id="header">
   <div class="logo-mark">
-    <!-- ORNEUR mark -->
-    <svg class="logo-icon" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4 20 Q6 14 8.5 13.5 Q10.5 13 11 11.5 Q11.5 10 13 10.5 Q15 11 15.5 9 Q16 7.5 17.5 8.5 Q19 9.5 20 8 Q22 5 24 7 Q20 9 19 13 Q18 17 22 18 Q16 22 12 20 Q8 22 4 20Z" fill="#fff" opacity="0.9"/>
-      <path d="M4 20 Q6 24 10 23 Q8 21 8 19Z" fill="#fff" opacity="0.5"/>
-      <circle cx="20" cy="9" r="1" fill="#fff" opacity="0.6"/>
-    </svg>
+    <!-- ORNEUR official emblem (founder-approved asset; do not redraw) -->
+    <img class="logo-icon" src="/static/brand/orneur-emblem-64.30ad3075.png" srcset="/static/brand/orneur-emblem-64.30ad3075.png 64w, /static/brand/orneur-emblem-192.cf49c361.png 192w, /static/brand/orneur-emblem-256.9175ced1.png 256w" sizes="32px" width="32" height="32" alt="ORNEUR emblem" decoding="async">
     <div>
-      <div class="logo-text">ORNEUR</div>
+      <img class="logo-wordmark" src="/static/brand/orneur-wordmark-240.fb81e8f4.png" srcset="/static/brand/orneur-wordmark-240.fb81e8f4.png 240w, /static/brand/orneur-wordmark-480.a1c79b07.png 480w" sizes="118px" width="118" height="14" alt="ORNEUR" decoding="async">
       <div class="logo-ver">VER 1.0.0</div>
     </div>
   </div>
@@ -1910,7 +1922,7 @@ body {
       <div id="welcome">
 
         <div class="welcome-brand">
-          <div class="welcome-wordmark">ORNEUR</div>
+          <img class="brand-lockup welcome-lockup" src="/static/brand/orneur-lockup-640.418dcae1.png" width="320" height="234" alt="ORNEUR — Orchestrated Reasoning Neural Engine for Unified Reliability" decoding="async">
           <div class="welcome-tagline">Enterprise AI &nbsp;/&nbsp; Intelligence, Without End. &nbsp;/&nbsp; Verified, Auditable Answers</div>
         </div>
 

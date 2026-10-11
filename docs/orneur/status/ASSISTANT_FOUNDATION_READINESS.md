@@ -2,7 +2,7 @@
 
 Status: backend contracts and tests only. **No UI is implemented from the PR #29 design** (a proposal, not approved). No real model produced any result recorded here: conversation and streaming tests run against `tests/fake_ollama.py`, an in-process test double. These tests prove product plumbing, not answer quality. Nothing here is a capability, readiness or production claim.
 
-Locked brand (for the eventual, not-yet-approved UI): abstract falcon emblem, segmented-E wordmark, Slate Indigo #3A4B6B, Solar Coral #FF6B57, Pale Stone #E8E4DE, exactly Dark and Light themes, greeting "Hello chief, what's the plan today."
+Locked brand: the founder-supplied official ORNEUR logo (see `docs/orneur/brand/BRAND_IDENTITY_LOCK.md`; the earlier falcon/segmented-E concepts are superseded), palette Slate Indigo #3A4B6B, Solar Coral #FF6B57, Pale Stone #E8E4DE, exactly Dark and Light themes, greeting "Hello chief, what's the plan today."
 
 | # | Capability | State | Evidence / caveat |
 |---|---|---|---|
