@@ -1,0 +1,215 @@
+{
+  "authorization": {
+    "authorization_files_byte_identical": true,
+    "locks_after": {
+      "authorization_json_sha256": {
+        "AUTHORITY_REGISTRY.json": "06177e10cfbfff5e87b4137ca50649261c7b8ca37b218685fced475c7212b811",
+        "CORPUS_GENERATION_AUTHORIZATION.json": "469c6a48c0847ac16932711ebbd179ea65fad6b4aafe93a4186ceb549e1af8bc",
+        "CORPUS_GENERATOR_REGISTRY.json": "836fff01cce473356533d446cfc270afa4ce42d77c13826295c49c5787aeeebc",
+        "MODEL_EVAL_AUTHORIZATION.json": "1cabb1e6cc60af71e22dc23aea5770ec6cfd3f92694e632ef03e216c77f4759a",
+        "PUBLIC_SERVING_AUTHORITY_REGISTRY.json": "049bc413c3a8fb8bac2f90f77732430a0320ab6196054d0997d21cea2392e65e",
+        "PUBLIC_SERVING_GRANTS.json": "f2c8cfb9285e61fe91f0ba50c0f58257cc9bb437904eac9439e65fbf0ac39c87",
+        "PUBLIC_SERVING_REVOCATIONS.json": "0cfdeec8df3d8ab0a85b684fe66f19bf33e7f4371991463b1e47665946fd432f",
+        "QUALIFICATION_RUNNER_REGISTRY.json": "83b2efc6d107e2dbc1ef6c1c65ad99c8ab2b3d838dc723526724b1658d7aa9d0",
+        "REVIEWER_REGISTRY.json": "d68294701d02af6c27d41ef616b80cf0c806ea7890a8333659a1b4375e87e221",
+        "TRAINING_AUTHORITY_REGISTRY.json": "2b6fa35141b856df3166b9222d6ef1f92c0752761bfae5eb4190424ac321820d",
+        "TRAINING_AUTHORIZATION.json": "4a0fd8709c03a02ec04c4b633d67683a2244c752910e7eb0dfbb0b6d33aeed83",
+        "TRAINING_AUTHORIZATION_REVOCATIONS.json": "046b81996818da6aac0895fefc99588788cec260bd38bd71cb32cb44bd0f478e",
+        "TRUSTED_AUTHORITY_KEYS.json": "a8c4bd9ce413ab989349b981d91ce7e47a5e6c4e6334e6a23d3846a5996e4aa6",
+        "TRUSTED_REVIEWER_KEYS.json": "39c0ee7f7effc580e4da3f8beb2d7fdfc81e04bd6b530f162971f69478e5ffb4"
+      },
+      "functions": {
+        "corpus_generation_authorized": false,
+        "gpu_authorized": false,
+        "model_selection_authorized": false,
+        "provider_authorized": false,
+        "qualification_authorized": false,
+        "spending_authorized": false,
+        "training_authorized": false
+      },
+      "prove_authorization_locks": "CHECKS_PASSED",
+      "training_authorization_sha256": "4a0fd8709c03a02ec04c4b633d67683a2244c752910e7eb0dfbb0b6d33aeed83",
+      "training_authorization_status": "NOT_AUTHORIZED"
+    },
+    "locks_before": {
+      "authorization_json_sha256": {
+        "AUTHORITY_REGISTRY.json": "06177e10cfbfff5e87b4137ca50649261c7b8ca37b218685fced475c7212b811",
+        "CORPUS_GENERATION_AUTHORIZATION.json": "469c6a48c0847ac16932711ebbd179ea65fad6b4aafe93a4186ceb549e1af8bc",
+        "CORPUS_GENERATOR_REGISTRY.json": "836fff01cce473356533d446cfc270afa4ce42d77c13826295c49c5787aeeebc",
+        "MODEL_EVAL_AUTHORIZATION.json": "1cabb1e6cc60af71e22dc23aea5770ec6cfd3f92694e632ef03e216c77f4759a",
+        "PUBLIC_SERVING_AUTHORITY_REGISTRY.json": "049bc413c3a8fb8bac2f90f77732430a0320ab6196054d0997d21cea2392e65e",
+        "PUBLIC_SERVING_GRANTS.json": "f2c8cfb9285e61fe91f0ba50c0f58257cc9bb437904eac9439e65fbf0ac39c87",
+        "PUBLIC_SERVING_REVOCATIONS.json": "0cfdeec8df3d8ab0a85b684fe66f19bf33e7f4371991463b1e47665946fd432f",
+        "QUALIFICATION_RUNNER_REGISTRY.json": "83b2efc6d107e2dbc1ef6c1c65ad99c8ab2b3d838dc723526724b1658d7aa9d0",
+        "REVIEWER_REGISTRY.json": "d68294701d02af6c27d41ef616b80cf0c806ea7890a8333659a1b4375e87e221",
+        "TRAINING_AUTHORITY_REGISTRY.json": "2b6fa35141b856df3166b9222d6ef1f92c0752761bfae5eb4190424ac321820d",
+        "TRAINING_AUTHORIZATION.json": "4a0fd8709c03a02ec04c4b633d67683a2244c752910e7eb0dfbb0b6d33aeed83",
+        "TRAINING_AUTHORIZATION_REVOCATIONS.json": "046b81996818da6aac0895fefc99588788cec260bd38bd71cb32cb44bd0f478e",
+        "TRUSTED_AUTHORITY_KEYS.json": "a8c4bd9ce413ab989349b981d91ce7e47a5e6c4e6334e6a23d3846a5996e4aa6",
+        "TRUSTED_REVIEWER_KEYS.json": "39c0ee7f7effc580e4da3f8beb2d7fdfc81e04bd6b530f162971f69478e5ffb4"
+      },
+      "functions": {
+        "corpus_generation_authorized": false,
+        "gpu_authorized": false,
+        "model_selection_authorized": false,
+        "provider_authorized": false,
+        "qualification_authorized": false,
+        "spending_authorized": false,
+        "training_authorized": false
+      },
+      "prove_authorization_locks": "CHECKS_PASSED",
+      "training_authorization_sha256": "4a0fd8709c03a02ec04c4b633d67683a2244c752910e7eb0dfbb0b6d33aeed83",
+      "training_authorization_status": "NOT_AUTHORIZED"
+    },
+    "locks_still_false": true
+  },
+  "env_manifest": {
+    "code_sha": "2296b840f9785f30694b04a4e01aea6c9d42f011",
+    "container": {
+      "image_digest": null,
+      "status": "NOT_BUILT"
+    },
+    "dataset_bundle_sha256": "24af436ce6116ced98a817786efa52d3d754fcf55969ee80d98f1e6c34aefd38",
+    "lock": {
+      "hashes": 2500,
+      "packages": 122,
+      "path": "requirements/train.txt",
+      "sha256": "5330ae5c5bd3ca4bf35a1a3e9e8dc871dbc344a03bd3dce88a854536551f3733",
+      "structure_ok": true
+    },
+    "manifest_sha256": "cba55348f3b194b8386984b5c82aeb491aef5827835fe1efa313174ed3cef8af",
+    "platform": {
+      "machine": "x86_64",
+      "system": "Linux"
+    },
+    "python": {
+      "implementation": "CPython",
+      "version": "3.11.17"
+    },
+    "schema": "orneur-dryrun-env-manifest/1",
+    "seeds": {
+      "data_seed": 99,
+      "seed": 1234
+    },
+    "synthetic": true
+  },
+  "gate_probe": {
+    "authorized": false,
+    "reasons": [
+      "NOT_AUTHORIZED"
+    ]
+  },
+  "git_sha": "2296b840f9785f30694b04a4e01aea6c9d42f011",
+  "lock": {
+    "hashes": 2500,
+    "packages": 122,
+    "path": "requirements/train.txt",
+    "problems": [],
+    "sha256": "5330ae5c5bd3ca4bf35a1a3e9e8dc871dbc344a03bd3dce88a854536551f3733",
+    "structure_ok": true
+  },
+  "note": "SYNTHETIC pure-Python toy run; nothing real was trained, loaded, downloaded or authorized.",
+  "plan_sha256": "1cd399873bf6afcc1213be20583205896d7a4095ef74857869f7b3eae9a35da0",
+  "result_sha256": "9dcb1820cd7bb10423a8b26b4321a50ff43267ba7d89edf3562902ae96dfdb00",
+  "resume_equivalent": true,
+  "runs": {
+    "interrupted_first_segment": {
+      "checkpoints": [
+        "ckpt-000004",
+        "ckpt-000005"
+      ],
+      "final_checkpoint_digest": "c3ed18c52a830152b211896ecfbf11756b6d6ecdee87851340c9cc2cbd4e68df",
+      "ledger_head_hash": "a9568aaaa00a22b2a92d7db39b2e28df0925b826656d6a910b5a571c8771149c",
+      "reason": "STEP_CAP",
+      "state_sha256": "20b0cf6e32e181fd539cd857cd8376daa59d7cc7d159a9632603209422e6c151",
+      "status": "STOPPED",
+      "steps": 5,
+      "usage": {
+        "spend_micro_usd": 50000,
+        "steps": 5,
+        "tokens": 320
+      }
+    },
+    "interrupted_resumed": {
+      "checkpoints": [
+        "ckpt-000004",
+        "ckpt-000005",
+        "ckpt-000008",
+        "ckpt-000012"
+      ],
+      "final_checkpoint_digest": "d8828ab2bdacd888c04b4869edb1110d4fa43a32a08256b52f342692566c1249",
+      "ledger_head_hash": "2fe4b209196b6181347dee74181a6b8f722a67b59f48add96db933464938c156",
+      "reason": null,
+      "state_sha256": "5bb79b0f13b944b0e7ea966f867cbbcba85585ebcf4cc035a6dc3b1f85e424c9",
+      "status": "FINISHED",
+      "steps": 12,
+      "usage": {
+        "spend_micro_usd": 120000,
+        "steps": 12,
+        "tokens": 768
+      }
+    },
+    "uninterrupted": {
+      "checkpoints": [
+        "ckpt-000004",
+        "ckpt-000008",
+        "ckpt-000012"
+      ],
+      "final_checkpoint_digest": "d8828ab2bdacd888c04b4869edb1110d4fa43a32a08256b52f342692566c1249",
+      "ledger_head_hash": "d5fdc790264b10adb73a45bcc766104a59d8a8bcd9b882ea821a1a7cba6c63a8",
+      "reason": null,
+      "state_sha256": "5bb79b0f13b944b0e7ea966f867cbbcba85585ebcf4cc035a6dc3b1f85e424c9",
+      "status": "FINISHED",
+      "steps": 12,
+      "usage": {
+        "spend_micro_usd": 120000,
+        "steps": 12,
+        "tokens": 768
+      }
+    },
+    "zero_budget": {
+      "checkpoints": [],
+      "final_checkpoint_digest": null,
+      "ledger_head_hash": "72a0c081274a35283712a940011f4d7794d33375fe7d1385b2f70487683aac3d",
+      "reason": "ZERO_BUDGET",
+      "state_sha256": null,
+      "status": "REFUSED",
+      "steps": 0,
+      "usage": {
+        "spend_micro_usd": 0,
+        "steps": 0,
+        "tokens": 0
+      }
+    }
+  },
+  "schema": "orneur-dryrun-result/1",
+  "sentinel": {
+    "forbidden_modules_loaded": [],
+    "guard_runs": 4
+  },
+  "status": "OK",
+  "synthetic": true,
+  "verification": {
+    "interrupted": {
+      "head": "2fe4b209196b6181347dee74181a6b8f722a67b59f48add96db933464938c156",
+      "ledger_ok": true,
+      "manifests": 2,
+      "manifests_ok": true,
+      "records": 22
+    },
+    "uninterrupted": {
+      "head": "d5fdc790264b10adb73a45bcc766104a59d8a8bcd9b882ea821a1a7cba6c63a8",
+      "ledger_ok": true,
+      "manifests": 1,
+      "manifests_ok": true,
+      "records": 18
+    },
+    "zero_budget": {
+      "head": "aa1106d94b0959dadc553a896b7bb2195358cc34cbb69670ce2dade03e156f0a",
+      "ledger_ok": true,
+      "manifests": 1,
+      "manifests_ok": true,
+      "records": 2
+    }
+  }
+}
