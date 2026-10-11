@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS owner_bootstrap_tokens (
     issued_at   TEXT NOT NULL,
     expires_at  TEXT NOT NULL,
     redeemed_at TEXT,
-    redeemed_by TEXT
+    redeemed_by TEXT,
+    replace_existing INTEGER NOT NULL DEFAULT 0
 );
 
 
@@ -307,7 +308,8 @@ CREATE TABLE IF NOT EXISTS owner_bootstrap_tokens (
     issued_at   TEXT NOT NULL,
     expires_at  TEXT NOT NULL,
     redeemed_at TEXT,
-    redeemed_by TEXT
+    redeemed_by TEXT,
+    replace_existing INTEGER NOT NULL DEFAULT 0
 );
 
 
@@ -620,6 +622,7 @@ def init_db() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_seq INTEGER")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tokens_valid_after DOUBLE PRECISION NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE owner_bootstrap_tokens ADD COLUMN IF NOT EXISTS replace_existing INTEGER NOT NULL DEFAULT 0")
             # G-006: collapse any pre-existing multi-owner rows to the earliest
             # claim (the one get_session_owner() already favoured), then enforce.
             conn.execute(
@@ -647,6 +650,7 @@ def init_db() -> None:
             "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN signup_seq INTEGER",
             "ALTER TABLE users ADD COLUMN tokens_valid_after REAL NOT NULL DEFAULT 0",
+            "ALTER TABLE owner_bootstrap_tokens ADD COLUMN replace_existing INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
                 conn.execute(stmt)

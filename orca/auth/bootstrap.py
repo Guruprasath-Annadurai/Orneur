@@ -24,7 +24,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 from orca.auth.db import get_conn
-from orca.auth.store import User, _row_to_user, insert_user
+from orca.auth.store import User, _row_to_user, delete_account_rows, insert_user
 from orca.auth.crypto import verify_password
 
 DEFAULT_TTL_S = 3600
@@ -69,8 +69,11 @@ def signup_blocked_until_bootstrap() -> bool:
     return public_edge() and not owner_exists()
 
 
-def issue_token(email: str, ttl_s: int = DEFAULT_TTL_S) -> str:
-    """Operator-only (CLI). Refuses when an owner already exists. Returns the plaintext token ONCE; only its hash is stored."""
+def issue_token(email: str, ttl_s: int = DEFAULT_TTL_S, replace_existing_unverified: bool = False) -> str:
+    """Operator-only (CLI). Refuses when an owner already exists. Returns the plaintext token ONCE; only its hash is stored.
+
+    ``replace_existing_unverified`` is the recovery path for a pre-registered ("squatted") account on the bound e-mail: when redeemed it deletes that account
+    (only if it is NOT verified and NOT an owner) and creates the owner fresh. It is a property of the token row the operator created, never of the request."""
     if "@" not in email:
         raise BootstrapError("invalid_email")
     ttl_s = max(60, min(int(ttl_s), MAX_TTL_S))
@@ -80,8 +83,8 @@ def issue_token(email: str, ttl_s: int = DEFAULT_TTL_S) -> str:
     now = _now()
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO owner_bootstrap_tokens (token_hash, bound_email, issued_at, expires_at) VALUES (?,?,?,?)",
-            (_hash(token), _norm(email), now.isoformat(), (now + timedelta(seconds=ttl_s)).isoformat()),
+            "INSERT INTO owner_bootstrap_tokens (token_hash, bound_email, issued_at, expires_at, replace_existing) VALUES (?,?,?,?,?)",
+            (_hash(token), _norm(email), now.isoformat(), (now + timedelta(seconds=ttl_s)).isoformat(), 1 if replace_existing_unverified else 0),
         )
     return token
 
@@ -114,11 +117,13 @@ def redeem(token: str, email: str, password: str, name: str = "") -> User:
         raise BootstrapError("invalid_token")
     th = _hash(token)
     now = _now().isoformat()
+    from orca.auth.apikeys import _ensure_table as _ensure_api_keys_table
+    _ensure_api_keys_table()                                          # DDL must not run inside the transaction below (SQLite write lock)
     with get_conn() as conn:
         if conn.execute("SELECT COUNT(*) AS n FROM users WHERE role='owner'").fetchone()["n"]:
             raise BootstrapError("already_initialized")
         row = conn.execute(
-            "SELECT bound_email, expires_at, redeemed_at FROM owner_bootstrap_tokens WHERE token_hash=?", (th,)
+            "SELECT bound_email, expires_at, redeemed_at, replace_existing FROM owner_bootstrap_tokens WHERE token_hash=?", (th,)
         ).fetchone()
         if not row or row["redeemed_at"] or row["expires_at"] <= now or not hmac.compare_digest(row["bound_email"], email_n):
             raise BootstrapError("invalid_token")
@@ -130,6 +135,11 @@ def redeem(token: str, email: str, password: str, name: str = "") -> User:
             raise BootstrapError("invalid_token")
 
         existing_row = conn.execute("SELECT * FROM users WHERE email=?", (email_n,)).fetchone()
+        if existing_row and row["replace_existing"] and existing_row["role"] != "owner" and not existing_row["verified"]:
+            # Operator-authorised recovery from a pre-registered account. A VERIFIED account is never replaced: it falls through to the
+            # password-proof promotion below.
+            delete_account_rows(conn, existing_row["id"])           # inside this transaction: rolled back if completion is lost
+            existing_row = None
         if existing_row:
             # An account for the bound email already exists (it signed up as a member): promote it, but only on proof of its password.
             if not verify_password(password, existing_row["password_hash"]):
@@ -161,13 +171,16 @@ def _main(argv: list[str] | None = None) -> int:
     i = sub.add_parser("issue", help="issue a single-use token bound to one email")
     i.add_argument("--email", required=True)
     i.add_argument("--ttl", type=int, default=DEFAULT_TTL_S, help=f"seconds (60..{MAX_TTL_S})")
+    i.add_argument("--replace-unverified", action="store_true",
+                   help="recovery: if an UNVERIFIED non-owner account already holds this e-mail, delete it and create the owner fresh")
     sub.add_parser("status")
     sub.add_parser("revoke", help="delete all unredeemed tokens")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "issue":
-            token = issue_token(a.email, a.ttl)
-            print(f"Bootstrap token for {_norm(a.email)} (shown once; single use; expires in {min(a.ttl, MAX_TTL_S)}s):\n{token}")
+            token = issue_token(a.email, a.ttl, replace_existing_unverified=a.replace_unverified)
+            note = " WARNING: redeeming this token will REPLACE an unverified account holding that e-mail." if a.replace_unverified else ""
+            print(f"Bootstrap token for {_norm(a.email)} (shown once; single use; expires in {min(a.ttl, MAX_TTL_S)}s).{note}\n{token}")
         elif a.cmd == "status":
             print(status())
         else:

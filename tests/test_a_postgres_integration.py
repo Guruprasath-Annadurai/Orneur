@@ -102,3 +102,13 @@ def test_the_schema_works_for_a_non_superuser_table_owner_with_force_row_level_s
     assert r["superuser"] is False and r["bypassrls"] is False
     assert r.get("created") is True, json.dumps(r)
     assert r["lookup"] is True and r["login"] is True, r
+
+
+def test_squatter_replacement_has_one_winner_and_leaves_no_duplicate_account(pg, tmp_path):
+    r = _run(pg, "replace_race", tmp_path)
+    assert r["wins"] == 1 and r["owners"] == 1 and r["squatter_rows"] == 0 and r["rows_for_email"] == 1
+
+
+def test_a_deployment_on_the_first_g021_schema_upgrades_in_place(pg, tmp_path):
+    r = _run(pg, "upgrade_from_g021_v1_schema", tmp_path)
+    assert r["flag"] == 1 and r["token_prefix"] == "orneur-owner-"

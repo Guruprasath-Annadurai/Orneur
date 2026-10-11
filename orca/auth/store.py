@@ -445,12 +445,18 @@ def delete_user_account_records(user_id: str) -> None:
     _ensure_api_keys_table()
 
     with get_conn() as conn:
-        conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM usage_daily WHERE user_id=?", (user_id,))
-        conn.execute(
-            "DELETE FROM session_storage_keys WHERE session_id IN "
-            "(SELECT session_id FROM user_sessions WHERE user_id=?)",
-            (user_id,),
-        )
-        conn.execute("DELETE FROM user_sessions WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        delete_account_rows(conn, user_id)
+
+
+def delete_account_rows(conn, user_id: str) -> None:
+    """The account-level DELETEs on an existing connection, so a caller (owner bootstrap) can make them part of its own transaction.
+    The ``api_keys`` table must already exist (see ``delete_user_account_records``)."""
+    conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM usage_daily WHERE user_id=?", (user_id,))
+    conn.execute(
+        "DELETE FROM session_storage_keys WHERE session_id IN "
+        "(SELECT session_id FROM user_sessions WHERE user_id=?)",
+        (user_id,),
+    )
+    conn.execute("DELETE FROM user_sessions WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM users WHERE id=?", (user_id,))

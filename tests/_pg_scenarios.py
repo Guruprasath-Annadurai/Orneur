@@ -220,6 +220,47 @@ def s_non_superuser_app_role():
     return out
 
 
+def s_replace_race():
+    from orca.auth import bootstrap, db
+    from orca.auth.store import create_user
+    db.init_db()
+    em = _email()
+    squat = create_user(em, "attacker-password-123")
+    tok = bootstrap.issue_token(em, replace_existing_unverified=True)
+    wins = []
+
+    def go():
+        try:
+            wins.append(bootstrap.redeem(tok, em, "correct-horse-battery").id)
+        except Exception:
+            pass
+
+    ts = [threading.Thread(target=go) for _ in range(8)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    with db.get_conn() as c:
+        owners = c.execute("SELECT COUNT(*) AS n FROM users WHERE role='owner'").fetchone()["n"]
+        squat_left = c.execute("SELECT COUNT(*) AS n FROM users WHERE id=?", (squat.id,)).fetchone()["n"]
+        users_for_email = c.execute("SELECT COUNT(*) AS n FROM users WHERE email=?", (em,)).fetchone()["n"]
+    return {"wins": len(wins), "owners": owners, "squatter_rows": squat_left, "rows_for_email": users_for_email}
+
+
+def s_upgrade_from_g021_v1_schema():
+    """A deployment that already ran the first G-021 migration (no replace_existing column) must upgrade in place."""
+    import psycopg
+    from orca.auth import db
+    from orca.config import orneur_env
+    db.init_db()
+    conn = psycopg.connect(orneur_env("DATABASE_URL"), autocommit=True)
+    conn.cursor().execute("ALTER TABLE owner_bootstrap_tokens DROP COLUMN replace_existing")
+    conn.close()
+    db.init_db()
+    from orca.auth import bootstrap
+    tok = bootstrap.issue_token(_email(), replace_existing_unverified=True)
+    with db.get_conn() as c:
+        flag = c.execute("SELECT replace_existing FROM owner_bootstrap_tokens").fetchone()["replace_existing"]
+    return {"flag": flag, "token_prefix": tok[:13]}
+
+
 SCENARIOS = {k[2:]: v for k, v in globals().items() if k.startswith("s_")}
 
 if __name__ == "__main__":
