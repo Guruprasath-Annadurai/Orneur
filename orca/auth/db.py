@@ -596,6 +596,36 @@ def get_conn():
     return _get_sqlite_conn()
 
 
+def _sqlite_backup_before_first_migration() -> None:
+    """Workstream A: an existing SQLite auth database that has never been through the G-006/G-021 migration (no `owner_bootstrap` table) is copied -- with
+    SQLite's online backup API, mode 0600 -- to `auth.db.pre-migration-<UTC>.bak` BEFORE any DDL or the duplicate-owner DELETE runs. Rollback is restoring that file.
+    Taken once: after the migration the marker table exists, so later starts do nothing."""
+    import time as _time
+
+    path = AUTH_DB
+    try:
+        if not path.exists() or path.stat().st_size == 0:
+            return
+    except OSError:
+        return
+    src = sqlite3.connect(str(path))
+    try:
+        has = lambda name: src.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+        if not has("users") or has("owner_bootstrap"):
+            return
+        dest = path.with_name(f"{path.name}.pre-migration-{_time.strftime('%Y%m%dT%H%M%SZ', _time.gmtime())}-{os.getpid()}.bak")
+        fd = os.open(dest, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+        dst = sqlite3.connect(str(dest))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+        os.chmod(dest, 0o600)
+    finally:
+        src.close()
+
+
 def init_db() -> None:
     if BACKEND == "postgres":
         with get_conn() as conn:
@@ -638,6 +668,7 @@ def init_db() -> None:
             _mark_legacy_owner(conn)
         return
 
+    _sqlite_backup_before_first_migration()
     with get_conn() as conn:
         conn.executescript(_SCHEMA_SQLITE)
         # Migrations for existing SQLite installs only — a fresh Postgres
