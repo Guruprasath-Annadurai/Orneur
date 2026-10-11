@@ -80,7 +80,13 @@ check "C8c cannot write the application tree or become root" bash -c "docker run
 # C9 -- execute-only (0711) ancestor owned by another user (PR #28): traversal must not need read permission
 mkdir -p "$WORK/xo"; chmod 777 "$WORK/xo"
 rootsh "$WORK/xo" 'mkdir -p /w/inner/state && chown 10001:10001 /w/inner/state && chmod 700 /w/inner/state && chown 0:0 /w/inner /w && chmod 711 /w/inner /w'
-check "C9 execute-only ancestors: starts" run -e ORNEUR_HOME=/mnt/xo/inner/state -v "$WORK/xo:/mnt/xo" "$IMAGE" python -c "$IMPORT"
+if ! out="$(run -e ORNEUR_HOME=/mnt/xo/inner/state -v "$WORK/xo:/mnt/xo" "$IMAGE" python -c "$IMPORT" 2>&1)"; then
+  fail "C9 execute-only ancestors: starts" "$(echo "$out" | tail -2 | tr '\n' ' ' | cut -c1-200)"
+  # diagnostics: what the container user actually sees for each path component
+  run -v "$WORK/xo:/mnt/xo" "$IMAGE" sh -c 'id; for p in / /mnt /mnt/xo /mnt/xo/inner /mnt/xo/inner/state; do stat -c "DIAG %n owner=%u:%g mode=%a" "$p" 2>&1; done; mount | grep " /mnt/xo " | cut -c1-200' 2>&1 | sed 's/^/DIAG /'
+else
+  pass "C9 execute-only ancestors: starts"
+fi
 
 # C10 -- symlink / TOCTOU regressions inside the volume
 docker volume create "$PFX-sym" >/dev/null
