@@ -50,11 +50,16 @@ _DIRFD_SUPPORTED = (
     and {os.open, os.mkdir, os.stat, os.readlink} <= os.supports_dir_fd
 )
 _DIR_OPEN_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+# Ancestors are only traversed, identified (fstat) and used as an openat base -- never read or chmod'ed -- so where the platform has
+# O_PATH (Linux) they are opened with it. That needs only execute permission on the directory, so an execute-only (0711) ancestor owned
+# by another user no longer makes startup fail with PermissionError. Elsewhere (macOS) the previous O_RDONLY behaviour is kept. The
+# leaf keeps O_RDONLY because it is fchmod'ed.
+_ANCESTOR_OPEN_FLAGS = (getattr(os, "O_PATH", os.O_RDONLY)) | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
 
 
-def _open_dir_nofollow(name: str, dir_fd: int, shown: str) -> int:
+def _open_dir_nofollow(name: str, dir_fd: int, shown: str, flags: int = _DIR_OPEN_FLAGS) -> int:
     try:
-        return os.open(name, _DIR_OPEN_FLAGS, dir_fd=dir_fd)
+        return os.open(name, flags, dir_fd=dir_fd)
     except OSError as exc:
         if exc.errno in (errno.ELOOP, errno.ENOTDIR):
             raise UntrustedStoreDirectory(
@@ -168,7 +173,7 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
     pending = [p for p in os.path.dirname(absolute).split(os.sep) if p]
     pending.reverse()  # used as a stack: next component is pending[-1]
 
-    fd = os.open(os.sep, _DIR_OPEN_FLAGS)
+    fd = os.open(os.sep, _ANCESTOR_OPEN_FLAGS)
     try:
         sealed = _require_trusted_ancestor(fd, os.sep, False)
         shown = os.sep
@@ -179,7 +184,7 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
             if name == ".":
                 continue
             try:
-                nfd = os.open(name, _DIR_OPEN_FLAGS, dir_fd=fd)
+                nfd = os.open(name, _ANCESTOR_OPEN_FLAGS, dir_fd=fd)
             except FileNotFoundError:
                 if not parents:
                     raise
@@ -187,7 +192,7 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
                     os.mkdir(name, 0o700, dir_fd=fd)
                 except FileExistsError:
                     pass
-                nfd = _open_dir_nofollow(name, fd, shown)
+                nfd = _open_dir_nofollow(name, fd, shown, _ANCESTOR_OPEN_FLAGS)
             except OSError as exc:
                 if exc.errno not in (errno.ELOOP, errno.ENOTDIR):
                     raise
@@ -208,7 +213,7 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
                 target = os.readlink(name, dir_fd=fd)
                 if target.startswith(os.sep):
                     os.close(fd)
-                    fd = os.open(os.sep, _DIR_OPEN_FLAGS)
+                    fd = os.open(os.sep, _ANCESTOR_OPEN_FLAGS)
                     shown = os.sep
                     canon.clear()
                     sealed = _require_trusted_ancestor(fd, os.sep, False)

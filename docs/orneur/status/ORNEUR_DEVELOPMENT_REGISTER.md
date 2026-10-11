@@ -21,7 +21,8 @@ available), `UNKNOWN`, `NOT_APPLICABLE`. Audit depth: `READ` (code read), `SURFA
 | #24 | `ce3d58c` | P0 training authorization gate | **9/9** | none yet |
 | #25 | `0db1a59` | P0 experimental-serving policy | **9/9** | none yet |
 | #26 | `52ad8fa` | P1 development register + flaky-test fix | **9/9** | none yet |
-| #27 | this PR | G-003 non-root containers | see PR | none yet |
+| #27 | `f29a133` | G-003 non-root containers | see PR | none yet |
+| #28 | this PR | G-019 `O_PATH` for ancestors | see PR | none yet |
 
 Ancestry (VERIFIED): `main(464b602) ⊂ #20 ⊂ #21 ⊂ #22 ⊂ #23 ⊂ #24 ⊂ #25`. Nothing is merged. `main` is unchanged at `464b602f3f25`.
 Local full deterministic suite on #25: **7273 passed, 6 failed, 413 skipped** (§6, G-013 for the six).
@@ -129,7 +130,7 @@ working product). I did not run the application in a browser or against a model 
 | G-015 | P1 | No per-response model-lifecycle disclosure | `serve/api.py` | users cannot tell which model answered | UI (P2) | header + visible label on every response |
 | G-016 | P2 | Accessibility & responsive layout absent | UI | unusable on mobile/AT | redesign | WCAG 2.2 AA audit pass, mobile viewport tests |
 | G-017 | P2 | No end-to-end browser tests | `tests/frontend` (1 file) | UI regressions invisible | redesign | Playwright suite for chat, auth, upload, stream, cancel |
-| G-019 | P1 | Directory validation opens every ancestor with `O_RDONLY`; an execute-only (`0711`) ancestor owned by another user makes startup fail with `PermissionError` | `orca/config.py::_mkdir_owner_only` (PR #22/#23) | spurious startup failure on some hosts | — | ancestors opened with `O_PATH` where available; test with a 0711 root-owned ancestor |
+| G-019 | P1 | **Fixed in #28:** directory validation opened every ancestor with `O_RDONLY`; an execute-only (`0711`) ancestor owned by another user makes startup fail with `PermissionError` | `orca/config.py::_mkdir_owner_only` (PR #22/#23) | spurious startup failure on some hosts | — | ancestors opened with `O_PATH` where available; test with a 0711 root-owned ancestor |
 | G-018 | P3 | No load/soak, alerting, restore drills | ops | reliability unknown | deployment | k6-style load report; alert rules; restore drill log |
 
 ## 6. Baseline test failures — root causes (G-013)
