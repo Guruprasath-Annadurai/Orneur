@@ -15,14 +15,10 @@ from typing import Optional
 
 from orca.config import orneur_env
 
-_SECRET = orneur_env("AUTH_SECRET", "dev-secret-change-me")
-
-
 def _signing_secret() -> bytes:
-    from orca.auth.crypto import assert_secret_usable
+    from orca.auth.secret import resolve_auth_secret
 
-    assert_secret_usable(_SECRET)
-    return _SECRET.encode()
+    return resolve_auth_secret()
 
 
 def _encode(payload: dict) -> str:

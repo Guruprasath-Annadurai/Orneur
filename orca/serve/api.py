@@ -121,6 +121,17 @@ def _is_public_edge() -> bool:
     return orneur_env("PUBLIC_EDGE", "").strip().lower() in ("1", "true", "yes")
 
 
+def _validate_startup_config() -> None:
+    """Workstream A: refuse to boot a production-like deployment with a forgeable or unsafe configuration (see orca/serve/config_validation.py)."""
+    from orca.serve.config_validation import validate_production_config
+
+    for f in validate_production_config():
+        _logger.warning("config %s: %s %s", f.severity, f.code, f.message) if f.severity == "WARN" else None
+
+
+_validate_startup_config()
+
+
 def _allowed_origins() -> list[str]:
     """`ORNEUR_ALLOWED_ORIGINS`: comma-separated explicit origin
     allowlist. Unset/empty defaults to `["*"]` -- unchanged for every
