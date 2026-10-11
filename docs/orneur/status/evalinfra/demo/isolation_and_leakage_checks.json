@@ -1,0 +1,48 @@
+{
+  "banner": "SYNTHETIC - NOT EVIDENCE OF ANY MODEL CAPABILITY",
+  "leak_guard_negative_control": {
+    "finding_kinds": [
+      "CANARY",
+      "FORBIDDEN_KEY"
+    ]
+  },
+  "leak_guard_on_clean_artifact": {
+    "findings": 0
+  },
+  "negative_control_canary_in_wrong_split": {
+    "finding_kinds": [
+      "canary"
+    ],
+    "status": "FAIL"
+  },
+  "split_separation_on_synthetic_corpus": {
+    "findings": 0,
+    "pairs_checked": [
+      [
+        "SCREEN",
+        "QUALIFICATION_HOLDOUT"
+      ],
+      [
+        "SCREEN",
+        "DEV"
+      ],
+      [
+        "SCREEN",
+        "TRAIN"
+      ],
+      [
+        "QUALIFICATION_HOLDOUT",
+        "DEV"
+      ],
+      [
+        "QUALIFICATION_HOLDOUT",
+        "TRAIN"
+      ],
+      [
+        "DEV",
+        "TRAIN"
+      ]
+    ],
+    "status": "PASS"
+  }
+}

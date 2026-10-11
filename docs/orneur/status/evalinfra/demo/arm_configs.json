@@ -1,0 +1,122 @@
+{
+  "B0": {
+    "arm": "B0",
+    "chat_template_sha256": "5cde0f1298f41f7d1c8b907a36992a7a513225a2615bd6e307bf1a9149b06b40",
+    "code_sha": "b48253ccf8922b73dc16573771dbd7040b8e75f2",
+    "decoding": {
+      "do_sample": false,
+      "max_new_tokens": 512,
+      "temperature": 0,
+      "top_k": 0,
+      "top_p": 1.0
+    },
+    "model": {
+      "id": "synthetic/base-model",
+      "revision": "a4b32bd94f39c43562ef717bffc16c38698dcd53"
+    },
+    "schema_version": "orneur-evalinfra-config/1",
+    "synthetic": true,
+    "system_prompt_sha256": "5fe46166f5e407d827c8efc59fc7700ff3b6ff6057a6fd593212a62af430fbff",
+    "tokenizer": {
+      "id": "synthetic/tokenizer",
+      "revision": "79bead8e6d65862a00cffaa12ccde1189ec34d29"
+    },
+    "tool_rag_kernel_config_sha256": "47158f0aeeffadd21873d54294b8c1a6995245677cc3ad7130579a355478d708"
+  },
+  "B1": {
+    "arm": "B1",
+    "chat_template_sha256": "5cde0f1298f41f7d1c8b907a36992a7a513225a2615bd6e307bf1a9149b06b40",
+    "code_sha": "b48253ccf8922b73dc16573771dbd7040b8e75f2",
+    "decoding": {
+      "do_sample": false,
+      "max_new_tokens": 512,
+      "temperature": 0,
+      "top_k": 0,
+      "top_p": 1.0
+    },
+    "model": {
+      "id": "synthetic/base-model",
+      "revision": "a4b32bd94f39c43562ef717bffc16c38698dcd53"
+    },
+    "schema_version": "orneur-evalinfra-config/1",
+    "synthetic": true,
+    "system_prompt_sha256": "24889e0bfc7df401dfaefc8ce5ad4dfe956d65ddff7bb4051d59ab9692d755e0",
+    "tokenizer": {
+      "id": "synthetic/tokenizer",
+      "revision": "79bead8e6d65862a00cffaa12ccde1189ec34d29"
+    },
+    "tool_rag_kernel_config_sha256": "ac87e9df691b95312515ebb873be06229ffa80c7caa6b1ed89ddee6570d7a2f7"
+  },
+  "B2": {
+    "arm": "B2",
+    "chat_template_sha256": "5cde0f1298f41f7d1c8b907a36992a7a513225a2615bd6e307bf1a9149b06b40",
+    "code_sha": "b48253ccf8922b73dc16573771dbd7040b8e75f2",
+    "decoding": {
+      "do_sample": false,
+      "max_new_tokens": 512,
+      "temperature": 0,
+      "top_k": 0,
+      "top_p": 1.0
+    },
+    "model": {
+      "id": "synthetic/base-model",
+      "revision": "a4b32bd94f39c43562ef717bffc16c38698dcd53"
+    },
+    "schema_version": "orneur-evalinfra-config/1",
+    "synthetic": true,
+    "system_prompt_sha256": "e62fa66ca2bb5ec0dd6720479b194ab292d38a99dc016ee69984df51dc95876e",
+    "tokenizer": {
+      "id": "synthetic/tokenizer",
+      "revision": "79bead8e6d65862a00cffaa12ccde1189ec34d29"
+    },
+    "tool_rag_kernel_config_sha256": "ba863a3d7ac7014778669f63074233640d1d8e4ce7789c1333efc3d911e30246"
+  },
+  "T1": {
+    "arm": "T1",
+    "chat_template_sha256": "5cde0f1298f41f7d1c8b907a36992a7a513225a2615bd6e307bf1a9149b06b40",
+    "code_sha": "b48253ccf8922b73dc16573771dbd7040b8e75f2",
+    "decoding": {
+      "do_sample": false,
+      "max_new_tokens": 512,
+      "temperature": 0,
+      "top_k": 0,
+      "top_p": 1.0
+    },
+    "model": {
+      "id": "synthetic/tuned-model",
+      "revision": "3db8e99670ac403964108907130a89a3196ee2f7"
+    },
+    "schema_version": "orneur-evalinfra-config/1",
+    "synthetic": true,
+    "system_prompt_sha256": "4c0f0f6d1ad83c9d07e71935fb8dbb5fb21971493cb1596f94d0eaf8bdb508b8",
+    "tokenizer": {
+      "id": "synthetic/tokenizer",
+      "revision": "79bead8e6d65862a00cffaa12ccde1189ec34d29"
+    },
+    "tool_rag_kernel_config_sha256": "457aaa63237f0222f5d9dc734bb45803627b2115ee7f1d9c96b560f925acf1ca"
+  },
+  "T2": {
+    "arm": "T2",
+    "chat_template_sha256": "5cde0f1298f41f7d1c8b907a36992a7a513225a2615bd6e307bf1a9149b06b40",
+    "code_sha": "b48253ccf8922b73dc16573771dbd7040b8e75f2",
+    "decoding": {
+      "do_sample": false,
+      "max_new_tokens": 512,
+      "temperature": 0,
+      "top_k": 0,
+      "top_p": 1.0
+    },
+    "model": {
+      "id": "synthetic/tuned-model",
+      "revision": "3db8e99670ac403964108907130a89a3196ee2f7"
+    },
+    "schema_version": "orneur-evalinfra-config/1",
+    "synthetic": true,
+    "system_prompt_sha256": "99466438874cc4cb468e00c0f6465e34eab968fbe316cc00d367e9ad12069e64",
+    "tokenizer": {
+      "id": "synthetic/tokenizer",
+      "revision": "79bead8e6d65862a00cffaa12ccde1189ec34d29"
+    },
+    "tool_rag_kernel_config_sha256": "49e33e3d0b3da4b17e15daf4328b50f9ce3d48dd5f45cee6097f8cf22d24f357"
+  }
+}

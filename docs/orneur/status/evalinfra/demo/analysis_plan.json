@@ -1,0 +1,138 @@
+{
+  "alpha": 0.05,
+  "analysis_split": "QUALIFICATION_HOLDOUT",
+  "arms": [
+    "B0",
+    "B1",
+    "B2",
+    "T1",
+    "T2",
+    "R"
+  ],
+  "bootstrap": {
+    "base_seed": 20261011,
+    "confidence": 0.95,
+    "resamples": 10000
+  },
+  "breakdown_comparisons": [
+    [
+      "T2",
+      "B2"
+    ],
+    [
+      "B2",
+      "B0"
+    ]
+  ],
+  "categories": [
+    3,
+    4,
+    10,
+    11,
+    12,
+    14,
+    15,
+    17
+  ],
+  "correction": "holm",
+  "declared_at": "2026-10-11T00:00:01Z",
+  "endpoints": [
+    {
+      "category": 10,
+      "control": "B0",
+      "hypothesis": "H1",
+      "id": "P1",
+      "kind": "PRIMARY",
+      "metric": "pass_rate_binary",
+      "threshold": 0.1,
+      "treatment": "B2"
+    },
+    {
+      "category": 11,
+      "control": "B2",
+      "hypothesis": "H5",
+      "id": "P2",
+      "kind": "PRIMARY",
+      "metric": "pass_rate_binary",
+      "threshold": 0.1,
+      "treatment": "T2"
+    },
+    {
+      "category": 12,
+      "control": "B2",
+      "hypothesis": "H2",
+      "id": "P3",
+      "kind": "PRIMARY",
+      "metric": "pass_rate_binary",
+      "threshold": 0.1,
+      "treatment": "T2"
+    },
+    {
+      "category": 3,
+      "control": "B1",
+      "hypothesis": "H3",
+      "id": "P4",
+      "kind": "PRIMARY",
+      "metric": "pass_rate_binary",
+      "threshold": 0.1,
+      "treatment": "T1"
+    },
+    {
+      "category": 4,
+      "control": "B2",
+      "hypothesis": "H3",
+      "id": "X1",
+      "kind": "EXPLORATORY",
+      "metric": "pass_rate_binary",
+      "threshold": null,
+      "treatment": "T2"
+    },
+    {
+      "category": 11,
+      "control": "B1",
+      "hypothesis": "H1",
+      "id": "X2",
+      "kind": "EXPLORATORY",
+      "metric": "pass_rate_binary",
+      "threshold": null,
+      "treatment": "B2"
+    }
+  ],
+  "families": [
+    {
+      "alpha": 0.05,
+      "endpoints": [
+        "P1",
+        "P2",
+        "P3",
+        "P4"
+      ],
+      "name": "primary-family"
+    }
+  ],
+  "nonregression_margins": {
+    "10": 0,
+    "11": 0.1,
+    "12": 0.1,
+    "14": 0,
+    "15": 0,
+    "17": 0,
+    "3": 0.1,
+    "4": 0.1
+  },
+  "plan_sha256": "3362bdc75fd75bd428e58faf7405fd018c87e4213f1c505de9e9db6bffa1b434",
+  "prereg_record_sha256": "77baa3f343e73493c67d5eba9cf27c2aaa3381c7f9cc85359dbafeff1521a4ac",
+  "promotion_comparison": {
+    "candidate": "T2",
+    "control": "B2"
+  },
+  "run_replicates": 3,
+  "schema_version": "orneur-evalinfra-analysis-plan/1",
+  "synthetic": true,
+  "zero_tolerance_categories": [
+    10,
+    14,
+    15,
+    17
+  ]
+}

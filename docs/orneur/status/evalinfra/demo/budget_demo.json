@@ -1,0 +1,48 @@
+{
+  "banner": "SYNTHETIC - NOT EVIDENCE OF ANY MODEL CAPABILITY",
+  "events": [
+    {
+      "code": "CAP_ZERO",
+      "cost_usd": 0,
+      "op": "op-default-cap",
+      "result": "REFUSED"
+    },
+    {
+      "cost_usd": 5,
+      "op": "op-1",
+      "result": "RESERVED"
+    },
+    {
+      "cost_usd": 3,
+      "op": "op-2",
+      "result": "RESERVED"
+    },
+    {
+      "code": "WOULD_EXCEED_ORDINARY_CAP",
+      "cost_usd": 0.5,
+      "op": "op-3-would-exceed-ordinary-cap",
+      "result": "REFUSED"
+    },
+    {
+      "cost_usd": 1.5,
+      "op": "op-4-contingency",
+      "result": "RESERVED"
+    },
+    {
+      "code": "WOULD_EXCEED_CAP",
+      "cost_usd": 0.6,
+      "op": "op-5-would-exceed-hard-cap",
+      "result": "REFUSED"
+    }
+  ],
+  "final_state": {
+    "committed_micro": 0,
+    "configured": true,
+    "contingency_micro": 2000000,
+    "hard_cap_micro": 10000000,
+    "locked": false,
+    "ordinary_cap_micro": 8000000,
+    "remaining_micro": 500000,
+    "reserved_open_micro": 9500000
+  }
+}
