@@ -61,7 +61,7 @@ from orca.serve.registry import resolve_tier_model, resolve_tier_backend, TierRe
 from orca.serve import routing
 from orca.governance.model_cards import check_persona_claim_allowed
 from orca.brain.backends import BackendResponse
-from orca.gateway.wiring import brain_for_tier_resolution
+from orca.gateway.wiring import brain_for_tier_resolution, public_serving_decision
 from orca.brain.memory import MemoryEngine, EpisodicMemory
 from orca.brain.agent import AgentLoop
 from orca.brain.context import ContextManager
@@ -81,7 +81,9 @@ from orca.brain.explainability import ExplainStore, build_from_rag_result
 from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.brain.vision import is_vision_capable, encode_image, build_vision_message
 from orca.serve import session_store, ratelimit, metrics, dlp
-from orca.serve.errors import public_error
+from orca.serve.errors import public_error, coded_error, default_code_for_status
+from orca.serve.model_identity import model_identity as _model_identity
+from orca.serve.citations import build_sources as _build_sources
 from orca.serve import streaming
 from orca.serve.streaming import aiter_blocking
 from orca.serve.moderation import check_input, CRISIS_RESOURCES
@@ -312,6 +314,38 @@ app.add_middleware(RequestBodySizeLimitMiddleware, max_bytes=MAX_REQUEST_BODY_BY
 app.include_router(auth_router)
 
 
+# G-023: every HTTPException / validation failure also carries a stable machine-readable `code` and an `error_id`, in the same shape the chat routes use.
+# `detail` is kept exactly as before so existing clients keep working.
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+from starlette.exceptions import HTTPException as _StarletteHTTPException  # noqa: E402
+
+
+@app.exception_handler(_StarletteHTTPException)
+async def _http_exception_with_code(request: Request, exc: _StarletteHTTPException):
+    detail = exc.detail
+    code = default_code_for_status(exc.status_code)
+    message = detail if isinstance(detail, str) else "Request failed."
+    if isinstance(detail, dict):
+        code = detail.get("code", code)
+        message = detail.get("error", message)
+    body = {"detail": detail, "error": message, "code": code, "error_id": uuid.uuid4().hex[:12]}
+    return JSONResponse(body, status_code=exc.status_code, headers=getattr(exc, "headers", None))
+
+
+@app.exception_handler(Exception)
+async def _unhandled_with_code(request: Request, exc: Exception):
+    """Last resort: a stable code and a correlation id, never the exception text."""
+    e = public_error(exc, route=request.url.path, code="internal_error", message="Something went wrong on our side. Please try again.")
+    return JSONResponse(e.as_json(), status_code=500)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_with_code(request: Request, exc: RequestValidationError):
+    from fastapi.encoders import jsonable_encoder
+    body = {"detail": jsonable_encoder(exc.errors()), "error": "The request was not valid.", "code": "invalid_request", "error_id": uuid.uuid4().hex[:12]}
+    return JSONResponse(body, status_code=422)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Session store — one AgentLoop + MemoryEngine per browser session
 # ─────────────────────────────────────────────────────────────────────────────
@@ -325,6 +359,35 @@ def _model_name_for_variant(variant: str | None) -> str:
         metrics.record_registry_fallback(requested_tier, resolved_model)
 
     return resolve_tier_model(variant or "core", on_fallback=_log_fallback)
+
+
+def _resolve_model_with_fallback(variant: str | None) -> tuple[str, str | None]:
+    """Like `_model_name_for_variant`, but also returns the model that was asked for when the registry had to fall back (None otherwise) -- G-015."""
+    seen: dict = {}
+
+    def _on_fallback(requested_tier: str, requested_model: str, resolved_model: str) -> None:
+        seen["from"] = requested_model
+        _logger.warning("Tier '%s' requested model '%s' which is not installed in Ollama -- falling back to '%s'.", requested_tier, requested_model, resolved_model)
+        metrics.record_registry_fallback(requested_tier, resolved_model)
+
+    return resolve_tier_model(variant or "core", on_fallback=_on_fallback), seen.get("from")
+
+
+def _identity_for_frontier(requested_variant, resolution, routing_decision, user) -> dict:
+    reason = "cost_routing_escalation" if routing_decision.escalated else ("sovereignty_override" if getattr(resolution, "sovereignty_overridden", False) else None)
+    return _model_identity(requested_variant=requested_variant, served_tier=resolution.tier, served_model=resolution.model, backend=resolution.backend,
+                           reason=reason, viewer_user_id=user.id if user else None, data_left_infrastructure=resolution.data_left_infrastructure)
+
+
+def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, kernel_answered: bool) -> dict:
+    """What actually generated the text. If the Kernel answered directly, that is the Kernel's resolved tier/model (which may be smaller than requested);
+    otherwise it is the session's own tier/model."""
+    uid = user.id if user else None
+    if kernel_answered:
+        return _model_identity(requested_variant=requested_variant, served_tier=cognitive_result.resolved_tier, served_model=cognitive_result.resolved_model,
+                               reason="entitlement_limit" if cognitive_result.degraded else None, viewer_user_id=uid)
+    return _model_identity(requested_variant=requested_variant, served_tier=getattr(sess, "model_variant", None), served_model=getattr(sess, "served_model", None), fallback_from=getattr(sess, "fallback_from", None),
+                           viewer_user_id=uid)
 
 
 def _resolve_backend_for_chat(variant: str | None):
@@ -534,8 +597,10 @@ def _generate_via_frontier_backend(resolution, persona_system: str, message: str
 
 
 class _Session:
-    def __init__(self, session_id: str, model_variant: str | None = None):
+    def __init__(self, session_id: str, model_variant: str | None = None, user_id: str | None = None):
         self.id = session_id
+        # Who this session serves: public-experiment eligibility is per user (orca/gateway/serving_authority.py).
+        self.user_id = user_id
 
         # Cross-instance continuity: if Redis has this session's state (from
         # this or another API instance), restore the exact conversation
@@ -565,6 +630,8 @@ class _Session:
         self._brain = None
         self._ctx = None
         self._agent = None
+        self.served_model: str | None = None
+        self.fallback_from: str | None = None
         self.doc_store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host)
         self.explain_store = ExplainStore()
         self.knowledge_graph = KnowledgeGraph(session_id=session_id)
@@ -577,13 +644,15 @@ class _Session:
         # drop-in replacement for OrcaBrain's exact interface, so nothing
         # below this line (ContextManager, AgentLoop, tools, memory) needed
         # to change. See docs/orneur/phase-2/LIVE_SERVING_CUTOVER.md.
+        served_model, fallback_from = _resolve_model_with_fallback(self.model_variant)
+        self.served_model, self.fallback_from = served_model, fallback_from      # G-015: remembered so responses can say what served them
         tier_resolution = TierResolution(
             tier=(self.model_variant or "core").removeprefix("orca-"),
             backend="ollama",
-            model=_model_name_for_variant(self.model_variant),
+            model=served_model,
             data_left_infrastructure=False,
         )
-        brain = brain_for_tier_resolution(tier_resolution)
+        brain = brain_for_tier_resolution(tier_resolution, viewer_user_id=self.user_id)
         self._ctx = ContextManager(brain)
         tools = build_registry(memory_engine=self.memory, surface="web")  # G-020: no shell/file/exec tools on the web
         self._agent = AgentLoop(brain=brain, tools=tools, session_id=self.id)
@@ -695,7 +764,7 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
             raise HTTPException(status_code=503, detail="could not allocate a session")
 
     if sid not in _sessions:
-        _sessions[sid] = _Session(sid, model_variant)
+        _sessions[sid] = _Session(sid, model_variant, user_id=user_id)
     _sessions[sid].touch()
     session_store.touch_session(sid)  # refresh Redis TTL — no-op if Redis disabled
 
@@ -985,20 +1054,16 @@ async def cognitive_execute(
     if user:
         allowed, used, limit = check_quota(user.id, user.tier, "message")
         if not allowed:
-            return JSONResponse(
-                {"error": f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages."},
-                status_code=429,
-            )
+            e = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages.", used=used, limit=limit)
+            return JSONResponse(e.as_json(), status_code=e.status)
 
     mod_result = check_input(req.objective)
     metrics.record_moderation_action(mod_result.action)
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories, "endpoint": "cognitive_execute"})
-        return JSONResponse(
-            {"error": "This request can't be processed — it matches a category we don't generate content for."},
-            status_code=400,
-        )
+        e = coded_error("content_refused")
+        return JSONResponse(e.as_json(), status_code=e.status)
 
     from orca.cognitive.contracts import CognitiveRequest
     from orca.cognitive.wiring import get_shared_kernel
@@ -1060,14 +1125,13 @@ async def chat(
     if user:
         allowed, used, limit = check_quota(user.id, user.tier, "message")
         if not allowed:
-            return JSONResponse(
-                {"error": f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages."},
-                status_code=429,
-            )
+            e = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages.", used=used, limit=limit)
+            return JSONResponse(e.as_json(), status_code=e.status)
 
     model_allowed, model_reason = model_access_allowed(user, req.model_variant)
     if not model_allowed:
-        return JSONResponse({"error": model_reason}, status_code=402)
+        e = coded_error("model_access_denied", message=model_reason)
+        return JSONResponse(e.as_json(), status_code=e.status)
 
     # Input moderation — checked before the message ever reaches the model.
     # BLOCK: hard refusal, generation never happens. SUPPORT (self-harm):
@@ -1079,10 +1143,8 @@ async def chat(
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
-        return JSONResponse(
-            {"error": "This request can't be processed — it matches a category we don't generate content for."},
-            status_code=400,
-        )
+        e = coded_error("content_refused")
+        return JSONResponse(e.as_json(), status_code=e.status)
     if mod_result.action in ("support", "flag"):
         audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
@@ -1115,17 +1177,17 @@ async def chat(
         # real a Kernel-execution failure from the caller's perspective.
         code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
         audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
-        return JSONResponse({"error": "This request could not be processed right now. Please try again."}, status_code=500)
+        e2 = public_error(e, route="/api/chat", user_id=user.id if user else None)
+        return JSONResponse(e2.as_json(), status_code=500)
 
     if cognitive_result.status == CognitiveState.ABSTAINED:
         audit.log("cognitive_abstained", user_id=user.id if user else None, detail={
             "reason": cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else None,
         })
         reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
-        return JSONResponse(
-            {"error": _ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), "abstained": True},
-            status_code=422,
-        )
+        e = coded_error("request_abstained", message=_ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), abstained=True,
+                        reason=(reason_key or "UNSPECIFIED").lower())
+        return JSONResponse(e.as_json(), status_code=e.status)
 
     backend_resolution = _resolve_backend_for_chat(req.model_variant)
     backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
@@ -1143,7 +1205,8 @@ async def chat(
                 _generate_via_frontier_backend, backend_resolution, persona_system, req.message
             )
         except Exception as e:
-            return JSONResponse(public_error(e, route="/api/chat", user_id=user.id if user else None).as_json(), status_code=500)
+            _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
 
         if user:
             increment_usage(user.id, "message")
@@ -1178,6 +1241,7 @@ async def chat(
             "session_id": req.session_id or str(uuid.uuid4()),
             "used_tools": [],
             "plan": "frontier_passthrough",
+            "model_identity": _identity_for_frontier(req.model_variant, backend_resolution, routing_decision, user),
             "backend": result.backend,
             "data_left_infrastructure": result.data_left_infrastructure,
             "escalated_by_cost_router": routing_decision.escalated,
@@ -1196,7 +1260,25 @@ async def chat(
 
     used_tools: list[str] = []
     plan_action = "cognitive_direct"
-    if cognitive_result.output is not None:
+    # G-024: same rule as /api/stream. The Kernel's no-retrieval direct answer is used only if this session has no documents, or the Kernel itself
+    # grounded the answer in them (Truth Fabric). Otherwise the uploaded documents go through the deep-RAG pipeline and into the model's context --
+    # they used to be silently ignored on this route unless the wording happened to trigger retrieval.
+    kernel_answered = cognitive_result.output is not None and (sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None)
+    rag_result = None
+    if not kernel_answered and sess.doc_store.count() > 0:
+        history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
+        history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
+        try:
+            rag_result = await asyncio.to_thread(
+                run_deep_rag, req.message, sess.doc_store, history_strs, CONFIG.ollama.host, _model_name_for_variant(req.model_variant),
+            )
+        except Exception as e:
+            # Never answer as if the uploaded documents had been consulted when retrieval failed.
+            _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
+        if rag_result.context_block:
+            enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
+    if kernel_answered:
         # Kernel's plan needed nothing beyond a direct model call --
         # answered via ModelGateway already, entitlement-reconciled. Skip
         # AgentLoop's extra plan/reflect calls for this turn entirely.
@@ -1208,7 +1290,8 @@ async def chat(
         try:
             final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
         except Exception as e:
-            return JSONResponse(public_error(e, route="/api/chat", user_id=user.id if user else None).as_json(), status_code=500)
+            _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
         used_tools = [tc.tool for tc in trace.tool_calls]
         plan_action = trace.plan_action
 
@@ -1242,11 +1325,18 @@ async def chat(
             "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
         })
 
+    _src = _build_sources(answer=final, session_id=sess.id, rag_result=rag_result,
+                          evidence_state=cognitive_result.evidence_state if kernel_answered else None,
+                          citation_coverage=cognitive_result.citation_coverage if kernel_answered else None,
+                          evidence_passages=cognitive_result.evidence_passages if kernel_answered else None)
     return {
         "response": dlp_result["safe_text"],
         "session_id": sess.id,
         "used_tools": used_tools,
         "plan": plan_action,
+        "model_identity": _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=kernel_answered),
+        "source_summary": _src["summary"],
+        "sources": _src["sources"],
         "degraded": cognitive_result.degraded,
         "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
     }
@@ -1276,14 +1366,16 @@ async def stream_chat(
     if user:
         allowed, used, limit = check_quota(user.id, user.tier, "message")
         if not allowed:
+            _q = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro.", used=used, limit=limit)
             async def _quota_err():
-                yield f"data: {json.dumps({'type':'error','text':f'Daily limit reached ({used}/{limit}). Upgrade to Pro.'})}\n\n"
+                yield f"data: {json.dumps(_q.as_sse())}\n\n"
             return StreamingResponse(_quota_err(), media_type="text/event-stream")
 
     model_allowed, model_reason = model_access_allowed(user, req.model_variant)
     if not model_allowed:
+        _g = coded_error("model_access_denied", message=model_reason)
         async def _model_gate_err():
-            yield f"data: {json.dumps({'type': 'error', 'text': model_reason})}\n\n"
+            yield f"data: {json.dumps(_g.as_sse())}\n\n"
         return StreamingResponse(_model_gate_err(), media_type="text/event-stream")
 
     mod_result = check_input(req.message)
@@ -1291,9 +1383,9 @@ async def stream_chat(
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
-        _mod_block_msg = "This request can't be processed — it matches a category we don't generate content for."
+        _m = coded_error("content_refused")
         async def _mod_block():
-            yield f"data: {json.dumps({'type': 'error', 'text': _mod_block_msg})}\n\n"
+            yield f"data: {json.dumps(_m.as_sse())}\n\n"
         return StreamingResponse(_mod_block(), media_type="text/event-stream")
     if mod_result.action in ("support", "flag"):
         audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
@@ -1310,9 +1402,9 @@ async def stream_chat(
     except Exception as e:
         code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
         audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
-        _fail_msg = "This request could not be processed right now. Please try again."
+        _f = public_error(e, route="/api/stream", user_id=user.id if user else None)
         async def _fail_stream():
-            yield f"data: {json.dumps({'type': 'error', 'text': _fail_msg})}\n\n"
+            yield f"data: {json.dumps(_f.as_sse())}\n\n"
         return StreamingResponse(_fail_stream(), media_type="text/event-stream")
 
     if cognitive_result.status == CognitiveState.ABSTAINED:
@@ -1320,9 +1412,10 @@ async def stream_chat(
             "reason": cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else None,
         })
         reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
-        _abstain_msg = _ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed.")
+        _a = coded_error("request_abstained", message=_ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), abstained=True,
+                         reason=(reason_key or "UNSPECIFIED").lower())
         async def _abstain_stream():
-            yield f"data: {json.dumps({'type': 'error', 'text': _abstain_msg, 'abstained': True})}\n\n"
+            yield f"data: {json.dumps(_a.as_sse())}\n\n"
         return StreamingResponse(_abstain_stream(), media_type="text/event-stream")
 
     # Cost-aware escalation — same resolution + routing decision /api/chat
@@ -1348,6 +1441,7 @@ async def stream_chat(
 
         async def _frontier_event_stream() -> AsyncIterator[str]:
             yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+            yield f"data: {json.dumps({'type': 'model', 'identity': _identity_for_frontier(req.model_variant, backend_resolution, routing_decision, user)})}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'text': f'escalating to {backend_resolution.backend}...'})}\n\n"
 
             try:
@@ -1364,15 +1458,10 @@ async def stream_chat(
                     "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
                 })
 
-            # Fake-stream: _generate_via_frontier_backend / Backend.generate()
-            # are synchronous only (see that function's docstring) — chunk the
-            # finished text by word so the frontend's existing per-chunk SSE
-            # rendering still gets incremental output, instead of the whole
-            # response landing as one payload.
-            words = dlp_result["safe_text"].split(" ")
-            for i, w in enumerate(words):
-                yield f"data: {json.dumps({'type': 'chunk', 'text': w if i == 0 else f' {w}'})}\n\n"
-                await asyncio.sleep(0)
+            # G-026: _generate_via_frontier_backend / Backend.generate() are synchronous -- the whole answer already exists. It used to be cut into
+            # words and re-emitted with a sleep(0) between them, which LOOKED like token streaming. It is now delivered once and labelled as replayed.
+            yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
+            yield f"data: {json.dumps({'type': 'chunk', 'text': dlp_result['safe_text'], 'replayed': True})}\n\n"
 
             if user:
                 increment_usage(user.id, "message")
@@ -1390,7 +1479,7 @@ async def stream_chat(
                     "reason": routing_decision.reason,
                 })
 
-            yield f"data: {json.dumps({'type': 'done', 'tools': [], 'message_id': message_id, 'backend': backend_resolution.backend, 'escalated_by_cost_router': routing_decision.escalated, 'routing_reason': routing_decision.reason if routing_decision.escalated else None, 'data_left_infrastructure': backend_resolution.data_left_infrastructure})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'tools': [], 'message_id': message_id, 'backend': backend_resolution.backend, 'escalated_by_cost_router': routing_decision.escalated, 'routing_reason': routing_decision.reason if routing_decision.escalated else None, 'data_left_infrastructure': backend_resolution.data_left_infrastructure, 'delivery': 'replayed', 'model_identity': _identity_for_frontier(req.model_variant, backend_resolution, routing_decision, user)})}\n\n"
 
         return StreamingResponse(
             _frontier_event_stream(),
@@ -1451,12 +1540,15 @@ async def stream_chat(
     async def _event_stream() -> AsyncIterator[str]:
         # Send session_id first
         yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
+        identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
+        yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
         if rag_result and rag_result.sources:
             yield f"data: {json.dumps({'type': 'rag', 'sources': rag_result.sources, 'confidence': rag_result.sufficiency_confidence, 'rounds': rag_result.retrieval_rounds, 'contradictions': rag_result.contradictions})}\n\n"
 
         full = ""
         tool_names: list[str] = []
         plan_action = "direct"
+        delivery = "upstream"
 
         if use_kernel_direct:
             # Kernel's plan needed nothing beyond a direct model call --
@@ -1466,11 +1558,13 @@ async def stream_chat(
             # -- ModelGateway.generate() was a single non-streaming call,
             # this is presentation-layer chunking, not fake generation.
             plan_action = "cognitive_direct"
-            words = (cognitive_result.output or "").split(" ")
-            for i, w in enumerate(words):
-                full += w if i == 0 else f" {w}"
-                yield f"data: {json.dumps({'type': 'chunk', 'text': w if i == 0 else f' {w}'})}\n\n"
-                await asyncio.sleep(0)
+            # G-026: the Kernel's ModelGateway call is non-streaming -- the answer is already complete here. It used to be split into words and
+            # re-emitted with sleep(0) between them (presentation-layer "typing"). It is now sent once and labelled, so a client can neither mistake it
+            # for live generation nor offer a "stop generating" control that would not stop anything.
+            delivery = "replayed"
+            full = cognitive_result.output or ""
+            yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
+            yield f"data: {json.dumps({'type': 'chunk', 'text': full, 'replayed': True})}\n\n"
         else:
             try:
                 gen, trace = await asyncio.to_thread(
@@ -1479,6 +1573,8 @@ async def stream_chat(
                 # Send tool activity if any
                 if trace.plan_action == "tools":
                     yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
+                # G-026: from here chunks are forwarded as the backend produces them; closing the connection cancels the upstream generation.
+                yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
 
                 # contextlib.aclosing, not a bare `async for`: breaking the
                 # loop below on client disconnect does not by itself call
@@ -1549,10 +1645,14 @@ async def stream_chat(
         # Explainability: capture the full retrieval/reasoning trace for this
         # message, keyed by message_id so the frontend "Explain" button can
         # fetch it on demand without bloating every SSE payload.
+        _src = _build_sources(answer=full, session_id=sess.id, rag_result=rag_result,
+                              evidence_state=cognitive_result.evidence_state if use_kernel_direct else None,
+                              citation_coverage=cognitive_result.citation_coverage if use_kernel_direct else None,
+                              evidence_passages=cognitive_result.evidence_passages if use_kernel_direct else None)
         explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
         sess.explain_store.add(explain_record)
 
-        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']})}\n\n"
 
     return StreamingResponse(
         _event_stream(),
@@ -1749,12 +1849,19 @@ async def list_models():
         except RuntimeError:
             resolved_model = None
 
+        # What a client may truthfully say about this tier for the (anonymous) public: lifecycle, disclosure label and whether it would be
+        # served here at all. Eligibility for a user-scoped public experiment is decided per request, so an anonymous view never over-promises.
+        served = resolved_model or configured_model
+        decision = public_serving_decision(tier, served)
         return {
             "model": configured_model,
             "available": _available(configured_model),
             "vision_capable": is_vision_capable(configured_model),
             "resolved_model": resolved_model,
             "fallback_active": resolved_model is not None and resolved_model != configured_model,
+            "lifecycle": decision.lifecycle,
+            "publicly_served": decision.allowed,
+            "disclosure": decision.label or ("Experimental model -- not qualified." if decision.lifecycle == "EXPERIMENTAL" else ""),
         }
 
     def _persona_claim_status(tier: str) -> dict:
@@ -2014,7 +2121,7 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         model=_model_name_for_variant("ultra"),
         data_left_infrastructure=False,
     )
-    ultra_brain = brain_for_tier_resolution(ultra_resolution)
+    ultra_brain = brain_for_tier_resolution(ultra_resolution, viewer_user_id=user.id if user else None)
 
     def on_progress(msg: str):
         # Called from within async coroutine context (main event loop thread)
@@ -2255,10 +2362,8 @@ async def vision_query(
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories, "endpoint": "vision"})
-        return JSONResponse(
-            {"error": "This request can't be processed — it matches a category we don't generate content for."},
-            status_code=400,
-        )
+        e = coded_error("content_refused")
+        return JSONResponse(e.as_json(), status_code=e.status)
 
     sess = _get_session(session_id, model_variant, user_id=user.id if user else None)
     image_b64 = encode_image(data)

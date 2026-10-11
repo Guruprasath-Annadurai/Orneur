@@ -380,6 +380,9 @@ class CognitiveResult:
     # _answer_with_truth_fabric. None for answers that didn't go through it.
     evidence_state: str | None = None
     citation_coverage: dict[str, Any] | None = None
+    # G-027 (additive, optional): the passages the Truth Fabric actually placed in the answering model's context, in the order of their [D#] tags.
+    # Plain dicts (ref, identity, source_type, document_id, location, text, content_hash, retrieved_at). None = the answer did not go through it.
+    evidence_passages: list[dict[str, Any]] | None = None
 
 
 # ── Trace ────────────────────────────────────────────────────────────────

@@ -4,7 +4,8 @@ P0: an unpromoted (EXPERIMENTAL) self-hosted model must not silently reach the p
 Before: orca/gateway/wiring.py passed allow_experimental=True for every live request on every deployment, so whatever Ollama model happened to be
 installed under a tier name -- including the NOT_PROMOTABLE Novus checkpoint -- was served, public or not.
 Now: local/private deployments behave exactly as before; on a public edge (ORNEUR_PUBLIC_EDGE) an EXPERIMENTAL self-hosted model is refused by
-the gateway unless the operator sets the explicit acknowledgement ORNEUR_ALLOW_EXPERIMENTAL_SERVING. Frontier backends are unaffected.
+the gateway. An environment flag (ORNEUR_ALLOW_EXPERIMENTAL_SERVING) is NOT evidence and no longer authorizes anything -- only a signed, scoped,
+expiring public-serving grant does (tests/test_public_serving_authority.py). Frontier backends are unaffected.
 """
 from __future__ import annotations
 
@@ -56,18 +57,19 @@ def test_public_edge_refuses_an_experimental_self_hosted_model(monkeypatch):
     assert pol["public_edge"] is True and pol["experimental_self_hosted_models_served"] is False
 
 
-def test_explicit_acknowledgement_allows_it_and_is_logged(monkeypatch, caplog):
+def test_the_acknowledgement_flag_no_longer_authorizes_and_is_reported_as_ineffective(monkeypatch):
     monkeypatch.setenv("ORNEUR_PUBLIC_EDGE", "true")
     monkeypatch.setenv("ORNEUR_ALLOW_EXPERIMENTAL_SERVING", "yes")
-    with caplog.at_level(logging.WARNING, logger="orca.gateway.wiring"):
-        brain = wiring.brain_for_tier_resolution(NOVUS)
-    assert brain.allow_experimental is True and _resolve(brain)
-    assert any("EXPERIMENTAL" in r.message and "PUBLIC" in r.message for r in caplog.records)
-    assert wiring.serving_policy()["operator_acknowledged_experimental_serving"] is True
+    brain = wiring.brain_for_tier_resolution(NOVUS)
+    assert brain.allow_experimental is False
+    with pytest.raises(ModelNotRoutableError):
+        _resolve(brain)
+    pol = wiring.serving_policy()
+    assert pol["operator_acknowledged_experimental_serving"] is True and pol["experimental_flag_has_authorizing_effect"] is False
 
 
-@pytest.mark.parametrize("value", ["", "0", "false", "no", "off", "enabled", "2"])
-def test_only_explicit_truthy_values_acknowledge(monkeypatch, value):
+@pytest.mark.parametrize("value", ["", "0", "false", "no", "off", "enabled", "2", "1", "true", "yes"])
+def test_no_value_of_the_flag_authorizes_the_public_edge(monkeypatch, value):
     monkeypatch.setenv("ORNEUR_PUBLIC_EDGE", "1")
     monkeypatch.setenv("ORNEUR_ALLOW_EXPERIMENTAL_SERVING", value)
     assert wiring.experimental_self_hosted_allowed() is False

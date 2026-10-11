@@ -171,6 +171,7 @@ def test_wrong_token_wrong_email_expired_and_used_are_indistinguishable(fresh):
     tok = issue_token(em)
     a = _redeem(fresh, "orneur-owner-" + "B" * 43, em).json()
     b = _redeem(fresh, tok, _email()).json()
+    a.pop("error_id"), b.pop("error_id")                           # the per-response correlation id differs by design
     assert a == b                                               # no oracle for "this token exists"
 
 

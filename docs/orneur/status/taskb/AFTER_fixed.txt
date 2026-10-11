@@ -1,0 +1,5 @@
+ok           served=False public edge, unqualified Novus, no flag
+ok           served=False public edge, unqualified Novus, FLAG ONLY
+ok           served=False public edge, Novus artifact aliased onto the nano tier
+ok           served=True  public edge, pinned legacy Genesis (documented decision kept)
+ok           served=True  private deployment, Novus
