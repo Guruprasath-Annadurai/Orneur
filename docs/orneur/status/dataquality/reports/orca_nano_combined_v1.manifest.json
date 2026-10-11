@@ -1,0 +1,81 @@
+{
+  "format": "orneur-dataquality-manifest/1",
+  "manifest": {
+    "approval_state": "DRAFT",
+    "approved_at": null,
+    "approved_by": null,
+    "candidate_ids": [],
+    "created_at": "NOT_RECORDED",
+    "creation_code_sha": "NOT_RECORDED",
+    "dataset_id": "public-sft-orca-nano-combined-v1",
+    "deduplication_result": "see report dedup check",
+    "eval_checksum": "0b7dcafaa549275675368cc25567e31fb434abdb9bc705134827b40cb8b621fb",
+    "failure_ids": [],
+    "filters_applied": "",
+    "frozen": false,
+    "frozen_at": null,
+    "holdout_checksum": null,
+    "known_limitations": [
+      "creation_code_sha is NOT_RECORDED: the build-script commit for these public SFT files is not recorded in the repository",
+      "no per-record provenance, license or generator metadata exists in these files",
+      "manifest built by orca.dataquality from the files as they are; it records identity, it does not vouch for provenance"
+    ],
+    "purpose": "public SFT dataset quality measurement",
+    "record_count": 37,
+    "schema": "{\"text\": str}",
+    "source_paths": [
+      "notebooks/data/orca_nano_combined_eval_v1.jsonl",
+      "notebooks/data/orca_nano_combined_train_v1.jsonl"
+    ],
+    "split_group_keys": {},
+    "target_model_family": "",
+    "target_role": null,
+    "train_checksum": "2e05abdfdc1cf4a254de87f19f27b6ca12dfece317e4d938e35285d1d5273da0",
+    "version": "v1"
+  },
+  "manifest_digest": "303c78dd38774df6b1653e6704d4484e1b9d0ee04dfccfbb69d7c4ad86a2acd4",
+  "record_digest_scheme": "sha256 of each raw JSONL line (without line terminator)",
+  "record_digests": {
+    "eval": [
+      "ec4783a0042ae4e10f5e2528dc38b50635700ea213f798780016dd6d2fa0afba",
+      "bac24635dc5701087a692d16ace2a0eb7377d5c03e38b6a6f37199b5a60aacb4",
+      "82765981f3fac3754ee887a1147659f53e39755bc5001fc36e9906b4f77d5b74"
+    ],
+    "train": [
+      "13f4bb0f3c38d9d3a72b9b060f5421f430011de34902a4c8e82eb2c71b5bfdf1",
+      "e343b79e47e2537ef39b651bb5655cc0dbe3a3e52eef58e2fd91a93c80ee1c67",
+      "7d3417724ea3ae87847519c4855a9806fbba149c100e33b89099645910ee6948",
+      "bc840287aa69290aa19e216c5597d1eb07fdcf070c5411bc38a63a6b21d23c5f",
+      "36b214f1b23acb3d62ab0618f3176911d765e7b85e2c693e3dbbd7c1ae3d352a",
+      "188b01e72350efcec39a63f44e65ef7cea72cb4ef978799321f28f87a9c233c3",
+      "4b542c51429905f2b596c146d6fc32d700e5e4415336c1c8d43eab95fbe2a47e",
+      "0059c4b27c601f4f2d01af27b51079c8c078b5479bfd4bf26a0a1b6c1e4983e7",
+      "2ce79564700b2a7a0ba8be5ddd17237f3a17885ab2fcf0ce449a16ef7305a6b8",
+      "c6ea1e7baa0f2de535158a72d654232e7f0f615649a708a5e7ccd0aa0a8ddac5",
+      "940492b338034f8cacf534ea5e03a7d35c8c795be78b0970b05ada9ca4ba41a6",
+      "71702bf2ed5511ed770788d7ce0a232fa9badfc71d268a7ef4354dab7bcfacfe",
+      "7827ea612e6c12bc7c989b62bb12e582a9294ec1e5bc4011235b246387ef4589",
+      "30e9c33babfa5986d965d3351bdd1e0e28a99f58abe01f7eaa3cb3807c84cbb4",
+      "19a0616b372c52dd83baeef84dc399df08ed1e8e5ffbe71d33ea1e43d0b1a2dd",
+      "af80f6495c9b431baf928db45cc72d5b26f3f4dc49dbb271a60f7b74d26078c2",
+      "69ca9f10cbf677e213337700dbf8b33fc6fef4978344c9c3d3af3f15109b662b",
+      "268394a1ab10c6a9cc8a0906035a09318d4690d03c66505c55d1465a8b59e3e4",
+      "187bbf739bae3f3357dde17556e992b31c30f425093ac81fa5e93c1e629abb77",
+      "a87c57512a5db6a98cea18e765a3745a418598c2c15b353c068b4d129aa221f2",
+      "18652cfee8f967ee920dfaffe9ae1fb24ad56f2cfe4c3f9787877642084c3e37",
+      "e2c7a91652c0f3c03215585b5afce4777ea30aaba85587385d1066ad25b4269f",
+      "20932e642ae1b3626aa5460b4b2ba79c674d04c5e0a21ee4392d40bc5e1b7d4b",
+      "221bbca0fd7bec3c8ac965164dc81b8d2c8e9b9cbdb3f84170b12fa16a19f02a",
+      "d608bf02d1c8b34bebad8977efbcbf48c173f236fd8a2b5393fc1486568f9d59",
+      "a1958216a744a008ecc54b6f6127aad2d9c514e2894fda49f41743394539d5f4",
+      "ee2a781111084f6ea22735fb3f1c5199786179fd538c7fc673acc94693d1bf76",
+      "4a0bc89ee8ddcd5aeea96311881accbeab3594da69a7f66c512af9478a7997ab",
+      "10819d1fc4f17eb8bddbaab92fafd7a0137014098af298dec68d3909119249d9",
+      "817881fd73025d4585adf8eed63dfeb0ac556fef31211ed8b3785fa92d1261cc",
+      "6940009866c6e902b9dae1976eeab5602cf5fb5af35e1dc53b2ce3936631da58",
+      "f244a87e623381734ffac2f6714037846d544b58bb86581f844b74effc97b4b9",
+      "ec23ba106ff9d61ad1d5f6157a52f98de450be52ea266267da0602c0edff20df",
+      "0876bdb39252133776a5e936b512cd3a5343a170d4a2549cd73b456a245bd724"
+    ]
+  }
+}
