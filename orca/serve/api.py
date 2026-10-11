@@ -1730,7 +1730,10 @@ async def list_models():
         except RuntimeError as e:
             return {"backend": None, "error": str(e)}
 
+    from orca.gateway.wiring import serving_policy
+
     return {
+        "serving_policy": serving_policy(),
         "nano":  _tier_status("nano", CONFIG.ollama.model_nano),
         "core":  _tier_status("core", CONFIG.ollama.model_core),
         "ultra": _tier_status("ultra", CONFIG.ollama.model_ultra),
