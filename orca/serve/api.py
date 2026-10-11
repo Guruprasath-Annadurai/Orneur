@@ -386,7 +386,7 @@ def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, ker
     if kernel_answered:
         return _model_identity(requested_variant=requested_variant, served_tier=cognitive_result.resolved_tier, served_model=cognitive_result.resolved_model,
                                reason="entitlement_limit" if cognitive_result.degraded else None, viewer_user_id=uid)
-    return _model_identity(requested_variant=requested_variant, served_tier=sess.model_variant, served_model=sess.served_model, fallback_from=sess.fallback_from,
+    return _model_identity(requested_variant=requested_variant, served_tier=getattr(sess, "model_variant", None), served_model=getattr(sess, "served_model", None), fallback_from=getattr(sess, "fallback_from", None),
                            viewer_user_id=uid)
 
 

@@ -379,3 +379,23 @@ def test_another_users_documents_never_appear_in_sources_on_the_stream_route(cli
     _upload(client, _hdr(ta))
     done = _done(_events(client, _hdr(tb), {"message": PLAIN_Q}))
     assert done["sources"] == []
+
+
+def test_registry_fallback_reports_the_model_that_was_wanted(client, monkeypatch):
+    """Deterministic version of the fallback disclosure: only `orca-nano` is installed, `core` is requested."""
+    import orca.serve.api as api
+
+    with FakeOllama(models=("orca-nano",)) as f:
+        point_orneur_at(f, monkeypatch)
+        served, wanted = api._resolve_model_with_fallback("core")
+    assert served == "orca-nano" and wanted == "orca-core"
+
+
+def test_session_identity_carries_the_fallback_into_the_payload():
+    from types import SimpleNamespace as NS
+
+    from orca.serve.api import _identity_for_ollama
+
+    sess = NS(model_variant="core", served_model="orca-nano", fallback_from="orca-core")
+    i = _identity_for_ollama("core", sess, NS(degraded=False), None, kernel_answered=False)
+    assert i["substituted"] is True and i["substitution_reason"] == "registry_fallback" and i["fallback_from"] == "orca-core" and i["served_model"] == "orca-nano"
