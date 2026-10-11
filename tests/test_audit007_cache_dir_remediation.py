@@ -352,3 +352,38 @@ def test_semantic_memory_refuses_foreign_owned_dir(tmp_path, monkeypatch):
     _chown_dir(cache / "semantic", 0o755)
     with pytest.raises(UntrustedStoreDirectory):
         _semantic(monkeypatch, cache)
+
+
+# --- G-019: execute-only ancestors -----------------------------------------------------------------------------------------------------
+
+@needs_root
+def test_execute_only_ancestor_owned_by_another_user_is_traversable():
+    """The walk used to open every ancestor O_RDONLY, which needs READ permission. A root-owned 0711 directory on the way to the user's own
+    0700 home made startup fail with PermissionError for no security reason: the ancestor is only traversed."""
+    from orca.config import _mkdir_owner_only
+
+    base = Path(tempfile.mkdtemp(dir="/tmp"))
+    try:
+        os.chmod(base, 0o711)                                   # root-owned, execute-only for everyone else
+        home = base / "nb"
+        home.mkdir(mode=0o700)
+        os.chown(home, NOBODY, NOBODY)
+
+        def attempt():
+            ret = _mkdir_owner_only(home / "queue" / "inner", parents=True)
+            os._exit(0 if ret == home / "queue" / "inner" else 3)
+
+        pid = os.fork()
+        if pid == 0:
+            try:
+                os.setgroups([])
+                os.setgid(NOBODY)
+                os.setuid(NOBODY)
+                attempt()
+            except BaseException:
+                os._exit(1)
+        _, status = os.waitpid(pid, 0)
+        assert os.waitstatus_to_exitcode(status) == 0
+        assert stat.S_IMODE((home / "queue" / "inner").stat().st_mode) == 0o700
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
