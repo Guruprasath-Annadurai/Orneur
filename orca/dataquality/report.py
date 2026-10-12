@@ -18,6 +18,9 @@ from orca.dataquality import privacy as PR
 from orca.dataquality import provenance as PV
 from orca.dataquality import schema as SC
 from orca.dataquality import teacher_rights as TR
+from orca.dataquality import frozen_eval as FE
+from orca.dataquality import teacher_derivation as TD
+from orca.dataquality import usage_rights as UR
 from orca.dataquality._common import load_jsonl, parsed, sha256_file
 
 REPORT_FORMAT = "orneur-dataquality-report/1"
@@ -32,7 +35,8 @@ def build_report(train_path, eval_path=None, *, kind: str = "auto", strict_keys:
                  max_near_record_fraction: float = D.DEFAULT_MAX_NEAR_RECORD_FRACTION, canaries=None, fingerprint_set=None, semantic_embedder=None,
                  category_fields: tuple = B.DEFAULT_FIELDS, labels=None, min_share: float = 0.05, manifest_env=None,
                  legacy_quick_ratio_pool: dict | None = None, allow_pii: tuple = (), now: str | None = None,
-                 train_label: str | None = None, eval_label: str | None = None) -> dict:
+                 train_label: str | None = None, eval_label: str | None = None,
+                 intended_use: str | None = None, expected_eval_sha256: str | None = None) -> dict:
     train_lines = load_jsonl(train_path)
     eval_lines = load_jsonl(eval_path) if eval_path else None
     register = teacher_rights_register(teacher_register)
@@ -47,6 +51,12 @@ def build_report(train_path, eval_path=None, *, kind: str = "auto", strict_keys:
         PR.scan_lines(train_lines, label=Path(train_path).name, raw_bytes=Path(train_path).read_bytes(), allow_pii=allow_pii),
         B.balance(train_lines, fields=category_fields, labels=labels, min_share=min_share),
     ]
+    if intended_use is not None:   # opt-in P1 checks; absent => report bytes unchanged
+        checks.append(UR.check_source_manifest(source_registry))
+        checks.append(UR.check_usage_rights(train_lines, source_registry, intended_use=intended_use, default_provenance=default_provenance))
+        checks.append(TD.check(train_lines, register, default_provenance=default_provenance))
+        checks.append(FE.check(train_lines, eval_path, expected_sha256=expected_eval_sha256) if eval_path
+                      else {"check": "frozen_eval", "status": NOT_EVALUATED, "reason": "no eval split supplied"})
     if manifest_env is None:
         checks.append({"check": "manifest_verify", "status": NOT_EVALUATED, "reason": "no manifest supplied"})
     else:
