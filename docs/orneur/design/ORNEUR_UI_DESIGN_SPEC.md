@@ -9,7 +9,7 @@ This supersedes the visual direction of `docs/DESIGN_BRIEF.md` (black/white orca
 honestly, don't hide it behind a "beta" badge.**
 
 > **LOGO LOCKED (founder, 2026-10-11): the falcon emblem and segmented-E wordmark constructions in this document and in `preview/` are SUPERSEDED.**
-> The founder-supplied ORNEUR artwork is the sole authoritative visual identity (master SHA-256 `4864b26b78103951fffd2ef5b2a65eaa36182885584a087aa4ea47f77b55dc9c`,
+> The founder-supplied ORNEUR artwork is the sole authoritative visual identity (master SHA-256 `c861c074a34dfd2a45a073b389be3f28a9ede26266b86fedac33f17d34518a1b`,
 > installed under `orca/serve/web/brand/`; see `docs/orneur/brand/BRAND_IDENTITY_LOCK.md`). Open question **Q1 is resolved**. The earlier concepts are kept
 > unchanged below only as audit history; nothing here may be used to redraw or replace the official mark. Palette, greeting and the two-theme rule are unaffected.
 

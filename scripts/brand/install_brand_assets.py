@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Install the founder-approved ORNEUR brand assets into orca/serve/web/brand/.
 
-Usage: install_brand_assets.py <extracted-zip-dir>
+Usage: install_brand_assets.py <extracted ORNEUR_Official_Logo_CORRECTED.zip dir>
 
-The artwork is NOT redrawn. Files supplied by the founder are copied byte for
-byte; the few derivatives (cropped wordmark, resized lockup, 1200x630 social
-card) are produced mechanically from the official master with Pillow and each
-derivation is recorded in ASSETS.json. Filenames carry the first 8 hex digits of
-their own SHA-256 so they can be cached as immutable.
+The artwork is NOT redrawn. Files supplied by the founder are copied byte for byte and each is
+checked against the package's own ASSETS.json; the few web-size derivatives (wordmark 480/240,
+lockup 640) are mechanical Lanczos resizes of the founder's exact crops and are recorded in
+ASSETS.json. Filenames carry the first 8 hex digits of their own SHA-256 so they can be cached
+as immutable. The installer refuses any master whose digest is not the approved one, and the
+superseded master digest can never be accepted.
 """
 from __future__ import annotations
 
@@ -19,26 +20,26 @@ from pathlib import Path
 
 from PIL import Image
 
-MASTER_SHA256 = "4864b26b78103951fffd2ef5b2a65eaa36182885584a087aa4ea47f77b55dc9c"
+MASTER_SHA256 = "c861c074a34dfd2a45a073b389be3f28a9ede26266b86fedac33f17d34518a1b"
+SUPERSEDED_MASTER_SHA256 = ("4864b26b78103951fffd2ef5b2a65eaa36182885584a087aa4ea47f77b55dc9c",)
 OUT = Path(__file__).resolve().parents[2] / "orca" / "serve" / "web" / "brand"
-BG = (3, 5, 10)
-# Pixel boxes in the 1254x1254 master (left, top, right, bottom).
-WORDMARK_BOX = (205, 705, 1050, 805)
-LOCKUP_BOX = (107, 160, 1147, 920)
 
-# (source file in the founder ZIP, stem, role, note)
+# (file in the founder ZIP, stem, role, note)
 SUPPLIED = [
     ("orneur_official_master.png", "orneur-official-master", "master", "Founder master artwork, unaltered"),
-    ("orneur_icon_dark_master.png", "orneur-emblem-800", "emblem_master", "Founder-supplied emblem on native dark background"),
+    ("orneur_logo_lockup_exact_crop.png", "orneur-lockup-exact-crop", "lockup_crop", "Founder-supplied exact crop of the primary lockup"),
+    ("orneur_wordmark_exact_crop.png", "orneur-wordmark-exact-crop", "wordmark_crop", "Founder-supplied exact crop of the wordmark row"),
+    ("orneur_icon_dark_master.png", "orneur-emblem-530", "emblem_master", "Founder-supplied emblem on native dark background"),
     ("orneur_icon_64.png", "orneur-emblem-64", "emblem_64", "Founder-supplied"),
     ("orneur_icon_192.png", "orneur-emblem-192", "emblem_192", "Founder-supplied"),
     ("orneur_icon_256.png", "orneur-emblem-256", "emblem_256", "Founder-supplied"),
-    ("favicon.ico", "favicon", "favicon_ico", "Founder-supplied multi-size ICO (16-256)"),
+    ("favicon.ico", "favicon", "favicon_ico", "Founder-supplied multi-size ICO"),
     ("favicon-16x16.png", "favicon-16x16", "favicon_16", "Founder-supplied"),
     ("favicon-32x32.png", "favicon-32x32", "favicon_32", "Founder-supplied"),
     ("apple-touch-icon.png", "apple-touch-icon", "apple_touch_icon", "Founder-supplied 180x180"),
     ("android-chrome-192x192.png", "pwa-192", "pwa_192", "Founder-supplied"),
     ("android-chrome-512x512.png", "pwa-512", "pwa_512", "Founder-supplied"),
+    ("orneur_social_1200x630.png", "orneur-social-1200x630", "og_image", "Founder-supplied social card"),
 ]
 
 
@@ -49,9 +50,25 @@ def sha(path: Path) -> str:
 def main(src_dir: str) -> int:
     src = Path(src_dir)
     master = src / "orneur_official_master.png"
-    if sha(master) != MASTER_SHA256:
+    digest = sha(master)
+    if digest in SUPERSEDED_MASTER_SHA256:
+        print("STOP: this master is the SUPERSEDED one", file=sys.stderr)
+        return 1
+    if digest != MASTER_SHA256:
         print("STOP: master digest differs from the founder-approved digest", file=sys.stderr)
         return 1
+    if master.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+        print("STOP: master is not a byte-preserved PNG", file=sys.stderr)
+        return 1
+    package = json.loads((src / "ASSETS.json").read_text())
+    if package["official_master_sha256"] != MASTER_SHA256:
+        print("STOP: package manifest names a different master", file=sys.stderr)
+        return 1
+    for name, want in package["files"].items():
+        if sha(src / name) != want:
+            print(f"STOP: {name} does not match the package manifest", file=sys.stderr)
+            return 1
+
     if OUT.exists():
         for old in OUT.iterdir():
             old.unlink()
@@ -59,59 +76,38 @@ def main(src_dir: str) -> int:
     assets = []
 
     def add(src_path: Path, stem: str, role: str, note: str, derived_from: str | None = None):
-        digest = sha(src_path)
-        ext = src_path.suffix
-        name = f"{stem}.{digest[:8]}{ext}"
+        d = sha(src_path)
+        name = f"{stem}.{d[:8]}{src_path.suffix}"
         shutil.copyfile(src_path, OUT / name)
-        w = h = None
-        if ext != ".ico":
-            with Image.open(OUT / name) as im:
-                w, h = im.size
-        else:
-            with Image.open(OUT / name) as im:
-                w, h = im.size
-        assets.append({"role": role, "file": name, "sha256": digest, "width": w, "height": h,
-                       "note": note, "derived_from": derived_from})
+        with Image.open(OUT / name) as im:
+            w, h = im.size
+        assets.append({"role": role, "file": name, "sha256": d, "width": w, "height": h, "note": note, "derived_from": derived_from})
 
     for fname, stem, role, note in SUPPLIED:
         add(src / fname, stem, role, note)
 
     tmp = OUT / "_tmp"
     tmp.mkdir()
-    m = Image.open(master).convert("RGB")
-    # Wordmark-only: a straight crop of the master's letter row, then a Lanczos resize.
-    crop = m.crop(WORDMARK_BOX)
-    wm = crop.resize((480, round(480 * crop.height / crop.width)), Image.LANCZOS)
-    wm.save(tmp / "wm.png", optimize=True)
-    add(tmp / "wm.png", "orneur-wordmark-480", "wordmark_480",
-        f"Crop {WORDMARK_BOX} of the master (letter row only), Lanczos to 480 px wide", "orneur_official_master.png")
-    wm.resize((240, round(240 * wm.height / wm.width)), Image.LANCZOS).save(tmp / "wm240.png", optimize=True)
-    add(tmp / "wm240.png", "orneur-wordmark-240", "wordmark_240",
-        "orneur-wordmark-480 (itself a Lanczos resize of the master letter-row crop) resized to 240 px wide",
-        "orneur_official_master.png")
-    # Primary lockup (emblem + wordmark + expansion + tagline): a straight crop of the master that
-    # excludes the master's bottom row of secondary examples, then a Lanczos resize.
-    lk = m.crop(LOCKUP_BOX)
-    lk = lk.resize((640, round(640 * lk.height / lk.width)), Image.LANCZOS)
-    lk.save(tmp / "lk.png", optimize=True)
-    add(tmp / "lk.png", "orneur-lockup-640", "lockup_640",
-        f"Crop {LOCKUP_BOX} of the master (primary lockup, no bottom examples), Lanczos to 640 px wide", "orneur_official_master.png")
-    # Social card: master at native aspect, centred on a flat canvas of the master's own background colour.
-    card = Image.new("RGB", (1200, 630), BG)
-    lk_card = m.crop(LOCKUP_BOX)
-    lk_card = lk_card.resize((round(590 * lk_card.width / lk_card.height), 590), Image.LANCZOS)
-    card.paste(lk_card, ((1200 - lk_card.width) // 2, 20))
-    card.save(tmp / "og.png", optimize=True)
-    add(tmp / "og.png", "orneur-og-1200x630", "og_image",
-        "Primary-lockup crop resized to 590 px high, centred on a flat (3,5,10) canvas", "orneur_official_master.png")
+    wm = Image.open(src / "orneur_wordmark_exact_crop.png").convert("RGB")
+    for w in (480, 240):
+        wm.resize((w, round(w * wm.height / wm.width)), Image.LANCZOS).save(tmp / f"wm{w}.png", optimize=True)
+        add(tmp / f"wm{w}.png", f"orneur-wordmark-{w}", f"wordmark_{w}",
+            f"orneur_wordmark_exact_crop.png (founder-supplied) Lanczos-resized to {w} px wide", "orneur_wordmark_exact_crop.png")
+    lk = Image.open(src / "orneur_logo_lockup_exact_crop.png").convert("RGB")
+    lk.resize((640, round(640 * lk.height / lk.width)), Image.LANCZOS).save(tmp / "lk640.png", optimize=True)
+    add(tmp / "lk640.png", "orneur-lockup-640", "lockup_640",
+        "orneur_logo_lockup_exact_crop.png (founder-supplied) Lanczos-resized to 640 px wide", "orneur_logo_lockup_exact_crop.png")
     shutil.rmtree(tmp)
 
     doc = {
-        "schema": "orneur.brand-assets/1",
+        "schema": "orneur.brand-assets/2",
         "authority": "Founder-supplied ORNEUR logo is the sole authoritative visual identity.",
         "approved_master_sha256": MASTER_SHA256,
-        "master_digest_note": ("The founder's directive quoted c861c074...; the supplied file hashes to the value above. "
-                               "The founder explicitly accepted 4864b26b... as authoritative on 2026-10-11."),
+        "superseded_master_sha256": list(SUPERSEDED_MASTER_SHA256),
+        "superseded_note": ("4864b26b... was used by PR #39 before the founder's correction of 2026-10-12. It must never be the active master. "
+                            "Observation: its RGB pixels are identical to the approved master (only the file bytes differ), and both differ from the "
+                            "inline WebP image shown in the founder's directive."),
+        "package_manifest_sha256": hashlib.sha256((src / "ASSETS.json").read_bytes()).hexdigest(),
         "no_vector_original": True,
         "no_transparency": "All installed rasters are opaque and carry the native dark background.",
         "assets": sorted(assets, key=lambda a: a["role"]),

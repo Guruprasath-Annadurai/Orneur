@@ -13,7 +13,17 @@ from tests.test_g006_tenant_isolation import client  # noqa: F401  (fixture re-e
 
 WEB = Path(__file__).resolve().parents[1] / "orca" / "serve" / "web"
 BRAND = WEB / "brand"
-APPROVED_MASTER_SHA256 = "4864b26b78103951fffd2ef5b2a65eaa36182885584a087aa4ea47f77b55dc9c"
+APPROVED_MASTER_SHA256 = "c861c074a34dfd2a45a073b389be3f28a9ede26266b86fedac33f17d34518a1b"
+# Digest of the wrong master used by the first version of PR #39 (superseded by the founder, 2026-10-12).
+SUPERSEDED_MASTER_SHA256 = "4864b26b78103951fffd2ef5b2a65eaa36182885584a087aa4ea47f77b55dc9c"
+# Every file name installed from the superseded package; no page may reference any of them and none may remain on disk.
+SUPERSEDED_FILES = (
+    "apple-touch-icon.ca25451e.png", "favicon-16x16.4bb4003b.png", "favicon-32x32.56369742.png", "favicon.82fee6a0.ico",
+    "orneur-emblem-192.cf49c361.png", "orneur-emblem-256.9175ced1.png", "orneur-emblem-64.30ad3075.png",
+    "orneur-emblem-800.d810e3c2.png", "orneur-lockup-640.418dcae1.png", "orneur-official-master.4864b26b.png",
+    "orneur-og-1200x630.af67bb4e.png", "orneur-wordmark-240.fb81e8f4.png", "orneur-wordmark-480.a1c79b07.png",
+    "pwa-192.cf49c361.png", "pwa-512.7361eaa0.png",
+)
 PAGES = ("index.html", "landing.html", "trust.html")
 
 
@@ -39,7 +49,25 @@ def test_master_is_the_founder_approved_file_byte_for_byte():
     a = _assets()["master"]
     data = (BRAND / a["file"]).read_bytes()
     assert hashlib.sha256(data).hexdigest() == APPROVED_MASTER_SHA256 == a["sha256"]
-    assert json.loads((BRAND / "ASSETS.json").read_text())["approved_master_sha256"] == APPROVED_MASTER_SHA256
+    doc = json.loads((BRAND / "ASSETS.json").read_text())
+    assert doc["approved_master_sha256"] == APPROVED_MASTER_SHA256
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"  # a byte-preserved PNG, not a re-encoded WebP/JPEG
+
+
+def test_superseded_master_can_never_be_active():
+    doc = json.loads((BRAND / "ASSETS.json").read_text())
+    assert SUPERSEDED_MASTER_SHA256 in doc["superseded_master_sha256"]
+    assert doc["approved_master_sha256"] != SUPERSEDED_MASTER_SHA256
+    for a in doc["assets"]:
+        assert a["sha256"] != SUPERSEDED_MASTER_SHA256 and SUPERSEDED_MASTER_SHA256[:8] not in a["file"]
+    installed = {p.name for p in BRAND.iterdir()}
+    assert not installed & set(SUPERSEDED_FILES)
+    for page in PAGES:
+        html = (WEB / page).read_text()
+        for name in SUPERSEDED_FILES:
+            assert name not in html, (page, name)
+    installer = (Path(__file__).resolve().parents[1] / "scripts" / "brand" / "install_brand_assets.py").read_text()
+    assert SUPERSEDED_MASTER_SHA256 in installer and 'MASTER_SHA256 = "' + APPROVED_MASTER_SHA256 in installer
 
 
 def test_every_listed_asset_exists_with_matching_hash_name_and_dimensions():
@@ -59,7 +87,7 @@ def test_required_icon_sizes():
     assert sizes["apple_touch_icon"] == (180, 180)
     assert sizes["pwa_192"] == (192, 192) and sizes["pwa_512"] == (512, 512)
     assert sizes["og_image"] == (1200, 630)
-    assert {(16, 16), (32, 32)} <= _ico_sizes(BRAND / _assets()["favicon_ico"]["file"])
+    assert (16, 16) in _ico_sizes(BRAND / _assets()["favicon_ico"]["file"])
 
 
 def test_pages_reference_only_existing_official_assets_and_have_icon_links():

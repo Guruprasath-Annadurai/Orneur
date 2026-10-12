@@ -1,145 +1,167 @@
 {
-  "approved_master_sha256": "4864b26b78103951fffd2ef5b2a65eaa36182885584a087aa4ea47f77b55dc9c",
+  "approved_master_sha256": "c861c074a34dfd2a45a073b389be3f28a9ede26266b86fedac33f17d34518a1b",
   "assets": [
     {
       "derived_from": null,
-      "file": "apple-touch-icon.ca25451e.png",
+      "file": "apple-touch-icon.edc2b62d.png",
       "height": 180,
       "note": "Founder-supplied 180x180",
       "role": "apple_touch_icon",
-      "sha256": "ca25451e3a0044b389b5f4ec9de53920b8b2f1f6a1a17999a9a1d318e405a98a",
+      "sha256": "edc2b62de2020b14ed80bd8f7e85a9f7c158cf6832cf6c936d1e6deea7c319f7",
       "width": 180
     },
     {
       "derived_from": null,
-      "file": "orneur-emblem-192.cf49c361.png",
+      "file": "orneur-emblem-192.40a30f86.png",
       "height": 192,
       "note": "Founder-supplied",
       "role": "emblem_192",
-      "sha256": "cf49c361d22c2b74fda6d129c17d1ff90584cd559fb4521501b7048a216b5803",
+      "sha256": "40a30f8602c8058761785ae9981bd766dcb3263157bca1808603c69231ab03b6",
       "width": 192
     },
     {
       "derived_from": null,
-      "file": "orneur-emblem-256.9175ced1.png",
+      "file": "orneur-emblem-256.5b8e8b28.png",
       "height": 256,
       "note": "Founder-supplied",
       "role": "emblem_256",
-      "sha256": "9175ced15c151fe8e66b8d3b06ff71e36c2a37f522ca51174e30b5df3a5d2d21",
+      "sha256": "5b8e8b28814969a4634418f572959d83a532643ba1a07c65e72dfd0517c4532d",
       "width": 256
     },
     {
       "derived_from": null,
-      "file": "orneur-emblem-64.30ad3075.png",
+      "file": "orneur-emblem-64.7ade6284.png",
       "height": 64,
       "note": "Founder-supplied",
       "role": "emblem_64",
-      "sha256": "30ad3075b60e91804fa3a66628444d7af02fd4bb0dbe7d1c3bcf63b476a7bb5b",
+      "sha256": "7ade628454bc22635e793a1456472f80c286842d3b2e1f8cfc4220ff5232320c",
       "width": 64
     },
     {
       "derived_from": null,
-      "file": "orneur-emblem-800.d810e3c2.png",
-      "height": 800,
+      "file": "orneur-emblem-530.1d344e9d.png",
+      "height": 530,
       "note": "Founder-supplied emblem on native dark background",
       "role": "emblem_master",
-      "sha256": "d810e3c200ff82d15b2d25de76a01ee0fe269b8530000482c48f82d5f911b0fa",
-      "width": 800
+      "sha256": "1d344e9df6f8c741c060c8438246f5ce2174caf26bf6890235bb693092d7593f",
+      "width": 530
     },
     {
       "derived_from": null,
-      "file": "favicon-16x16.4bb4003b.png",
+      "file": "favicon-16x16.d261e4ff.png",
       "height": 16,
       "note": "Founder-supplied",
       "role": "favicon_16",
-      "sha256": "4bb4003b6cbda71387965c47459e549e7e67f5189f8339df47e0c5f188c30326",
+      "sha256": "d261e4ff3e80587799378ba466cdc973ba216ab56a08d4c4e280066674d2fc7a",
       "width": 16
     },
     {
       "derived_from": null,
-      "file": "favicon-32x32.56369742.png",
+      "file": "favicon-32x32.c86b0334.png",
       "height": 32,
       "note": "Founder-supplied",
       "role": "favicon_32",
-      "sha256": "563697424479b737c9d802f1b517a8b7e25477f78e16d003723a31a2b1e1a71c",
+      "sha256": "c86b033421816c43d84118c9635f6237f7d674acb285e6f0886ed00506a59b62",
       "width": 32
     },
     {
       "derived_from": null,
-      "file": "favicon.82fee6a0.ico",
-      "height": 256,
-      "note": "Founder-supplied multi-size ICO (16-256)",
+      "file": "favicon.f62543e5.ico",
+      "height": 16,
+      "note": "Founder-supplied multi-size ICO",
       "role": "favicon_ico",
-      "sha256": "82fee6a0b1832411694bfb7c063cd933df863672482ee3485c97458219a4fe0a",
-      "width": 256
+      "sha256": "f62543e59b9958fbfec2e990e98cb084bc01b1ebcc75bdcfd056d5017ffa3233",
+      "width": 16
     },
     {
-      "derived_from": "orneur_official_master.png",
-      "file": "orneur-lockup-640.418dcae1.png",
-      "height": 468,
-      "note": "Crop (107, 160, 1147, 920) of the master (primary lockup, no bottom examples), Lanczos to 640 px wide",
+      "derived_from": "orneur_logo_lockup_exact_crop.png",
+      "file": "orneur-lockup-640.c4f0bf12.png",
+      "height": 474,
+      "note": "orneur_logo_lockup_exact_crop.png (founder-supplied) Lanczos-resized to 640 px wide",
       "role": "lockup_640",
-      "sha256": "418dcae18873703d084df1e8b873ce41c318d53ef62a018127991f4affabcb4f",
+      "sha256": "c4f0bf1221db971810161d7a6a1c58d71c8158a5ce6c54818fe27ca6382334f3",
       "width": 640
     },
     {
       "derived_from": null,
-      "file": "orneur-official-master.4864b26b.png",
+      "file": "orneur-lockup-exact-crop.a6c44de7.png",
+      "height": 730,
+      "note": "Founder-supplied exact crop of the primary lockup",
+      "role": "lockup_crop",
+      "sha256": "a6c44de7b8586c683bc073d4f7bebb1c856be288cb18dbf1e22655baf99c02a9",
+      "width": 985
+    },
+    {
+      "derived_from": null,
+      "file": "orneur-official-master.c861c074.png",
       "height": 1254,
       "note": "Founder master artwork, unaltered",
       "role": "master",
-      "sha256": "4864b26b78103951fffd2ef5b2a65eaa36182885584a087aa4ea47f77b55dc9c",
+      "sha256": "c861c074a34dfd2a45a073b389be3f28a9ede26266b86fedac33f17d34518a1b",
       "width": 1254
     },
     {
-      "derived_from": "orneur_official_master.png",
-      "file": "orneur-og-1200x630.af67bb4e.png",
+      "derived_from": null,
+      "file": "orneur-social-1200x630.6452caac.png",
       "height": 630,
-      "note": "Primary-lockup crop resized to 590 px high, centred on a flat (3,5,10) canvas",
+      "note": "Founder-supplied social card",
       "role": "og_image",
-      "sha256": "af67bb4eebbc79157368bd179889604403449d03dff7f0c63eadb0c959ca9158",
+      "sha256": "6452caaca0d5a0a9c2f785f764556304d6028ab747949d04ee24483b61147995",
       "width": 1200
     },
     {
       "derived_from": null,
-      "file": "pwa-192.cf49c361.png",
+      "file": "pwa-192.40a30f86.png",
       "height": 192,
       "note": "Founder-supplied",
       "role": "pwa_192",
-      "sha256": "cf49c361d22c2b74fda6d129c17d1ff90584cd559fb4521501b7048a216b5803",
+      "sha256": "40a30f8602c8058761785ae9981bd766dcb3263157bca1808603c69231ab03b6",
       "width": 192
     },
     {
       "derived_from": null,
-      "file": "pwa-512.7361eaa0.png",
+      "file": "pwa-512.f5651347.png",
       "height": 512,
       "note": "Founder-supplied",
       "role": "pwa_512",
-      "sha256": "7361eaa04157ca262daea72a49dab6a329aa51d99a0bb24f771c97c16152368c",
+      "sha256": "f5651347a67d9909d854dec772901e419aea4bd89cfe58c56fcf2917c0d081fe",
       "width": 512
     },
     {
-      "derived_from": "orneur_official_master.png",
-      "file": "orneur-wordmark-240.fb81e8f4.png",
-      "height": 28,
-      "note": "orneur-wordmark-480 (itself a Lanczos resize of the master letter-row crop) resized to 240 px wide",
+      "derived_from": "orneur_wordmark_exact_crop.png",
+      "file": "orneur-wordmark-240.9a2ab2a8.png",
+      "height": 27,
+      "note": "orneur_wordmark_exact_crop.png (founder-supplied) Lanczos-resized to 240 px wide",
       "role": "wordmark_240",
-      "sha256": "fb81e8f4ff7869f912e445271d01f7da4d4902c2b9d77661f2fe3a965903d189",
+      "sha256": "9a2ab2a87fa2305f5060ecc1237e75c4fd4bbc03cefa26e10ef2662fa4544c37",
       "width": 240
     },
     {
-      "derived_from": "orneur_official_master.png",
-      "file": "orneur-wordmark-480.a1c79b07.png",
-      "height": 57,
-      "note": "Crop (205, 705, 1050, 805) of the master (letter row only), Lanczos to 480 px wide",
+      "derived_from": "orneur_wordmark_exact_crop.png",
+      "file": "orneur-wordmark-480.d89f850e.png",
+      "height": 54,
+      "note": "orneur_wordmark_exact_crop.png (founder-supplied) Lanczos-resized to 480 px wide",
       "role": "wordmark_480",
-      "sha256": "a1c79b079a7c18516787f9bc46e54d04a296e263b3069df55a69841317d74ef9",
+      "sha256": "d89f850efe219f4586904f0806968f3e169adbe157e9adb0366b7f41c787af20",
       "width": 480
+    },
+    {
+      "derived_from": null,
+      "file": "orneur-wordmark-exact-crop.a374b14f.png",
+      "height": 106,
+      "note": "Founder-supplied exact crop of the wordmark row",
+      "role": "wordmark_crop",
+      "sha256": "a374b14f52c7a5f1b14dea41acae5e91d6644f92a8a02944595054cf27a690de",
+      "width": 945
     }
   ],
   "authority": "Founder-supplied ORNEUR logo is the sole authoritative visual identity.",
-  "master_digest_note": "The founder's directive quoted c861c074...; the supplied file hashes to the value above. The founder explicitly accepted 4864b26b... as authoritative on 2026-10-11.",
   "no_transparency": "All installed rasters are opaque and carry the native dark background.",
   "no_vector_original": true,
-  "schema": "orneur.brand-assets/1"
+  "package_manifest_sha256": "169a418d8f4ef099abde10fd6f38ef2f93e095d98d0a36e45cb7475edd6f5f05",
+  "schema": "orneur.brand-assets/2",
+  "superseded_master_sha256": [
+    "4864b26b78103951fffd2ef5b2a65eaa36182885584a087aa4ea47f77b55dc9c"
+  ],
+  "superseded_note": "4864b26b... was used by PR #39 before the founder's correction of 2026-10-12. It must never be the active master. Observation: its RGB pixels are identical to the approved master (only the file bytes differ), and both differ from the inline WebP image shown in the founder's directive."
 }
