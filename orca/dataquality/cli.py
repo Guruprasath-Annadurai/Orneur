@@ -14,6 +14,9 @@ from orca.dataquality import balance as B
 from orca.dataquality import contamination as CT
 from orca.dataquality import datacard as DC
 from orca.dataquality import dedup as D
+from orca.dataquality import frozen_eval as FE
+from orca.dataquality import teacher_derivation as TD
+from orca.dataquality import usage_rights as UR
 from orca.dataquality import diversity as DV
 from orca.dataquality import manifest as M
 from orca.dataquality import privacy as PR
@@ -59,6 +62,13 @@ def build_parser() -> argparse.ArgumentParser:
     s = sp.add_parser("provenance"); s.add_argument("file"); s.add_argument("--sources", required=True); s.add_argument("--default-provenance")
     s = sp.add_parser("ingest-gate", help="teacher-rights gate; exit 1 if any record is refused")
     s.add_argument("file"); s.add_argument("--register"); s.add_argument("--default-provenance")
+    s = sp.add_parser("source-manifest", help="validate a source manifest (terms + usage rights per source)"); s.add_argument("file")
+    s = sp.add_parser("usage-rights", help="per-record usage-rights check against a source manifest"); s.add_argument("file"); s.add_argument("--sources", required=True)
+    s.add_argument("--use", default="training", choices=UR.USES); s.add_argument("--default-provenance")
+    s = sp.add_parser("teacher-terms", help="model-derived records must carry a resolving teacher-terms entry"); s.add_argument("file"); s.add_argument("--register")
+    s.add_argument("--use", default=TD.DEFAULT_USE); s.add_argument("--default-provenance")
+    s = sp.add_parser("frozen-eval", help="leakage vs a digest-pinned frozen eval set"); s.add_argument("--train", required=True); s.add_argument("--eval", required=True)
+    s.add_argument("--eval-sha256"); s.add_argument("--canaries")
     s = sp.add_parser("teacher-register"); s.add_argument("action", choices=("validate", "derive", "seal")); s.add_argument("--register"); s.add_argument("--inventory")
     s = sp.add_parser("dedup"); s.add_argument("file"); s.add_argument("--threshold", type=float, default=D.DEFAULT_THRESHOLD)
     s.add_argument("--shingle-n", type=int, default=D.DEFAULT_SHINGLE_N); s.add_argument("--max-near-fraction", type=float, default=D.DEFAULT_MAX_NEAR_RECORD_FRACTION)
@@ -78,6 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--sources"); s.add_argument("--default-provenance"); s.add_argument("--register"); s.add_argument("--canaries"); s.add_argument("--fingerprints")
     s.add_argument("--manifest"); s.add_argument("--labels"); s.add_argument("--field", action="append"); s.add_argument("--min-share", type=float, default=0.05)
     s.add_argument("--threshold", type=float, default=D.DEFAULT_THRESHOLD); s.add_argument("--legacy-pool", action="append", help="repeat to pool files for the legacy quick_ratio figure")
+    s.add_argument("--intended-use", choices=UR.USES, help="adds source_manifest, usage_rights, teacher_terms and frozen_eval checks"); s.add_argument("--eval-sha256")
     s = sp.add_parser("public-sft", help="regenerate manifests+reports for the PUBLIC_SFT files in notebooks/data"); s.add_argument("--root", default=".")
     s.add_argument("--out-dir", required=True)
     s = sp.add_parser("datacard"); s.add_argument("--manifest", required=True); s.add_argument("--report", required=True); s.add_argument("--final", action="store_true")
@@ -104,6 +115,14 @@ def _run(a) -> int:
         res = SC.validate_file(a.file, a.kind, max_chars=a.max_chars, strict_keys=a.strict_keys)
     elif c == "provenance":
         res = PV.check_provenance(load_jsonl(a.file), _json(a.sources), default_provenance=_json(a.default_provenance) if a.default_provenance else None)
+    elif c == "source-manifest":
+        res = UR.check_source_manifest(_json(a.file))
+    elif c == "usage-rights":
+        res = UR.check_usage_rights(load_jsonl(a.file), _json(a.sources), intended_use=a.use, default_provenance=_json(a.default_provenance) if a.default_provenance else None)
+    elif c == "teacher-terms":
+        res = TD.check(load_jsonl(a.file), TR.load_register(a.register), intended_use=a.use, default_provenance=_json(a.default_provenance) if a.default_provenance else None)
+    elif c == "frozen-eval":
+        res = FE.check(load_jsonl(a.train), a.eval, expected_sha256=a.eval_sha256, canaries=_canaries(a.canaries))
     elif c == "ingest-gate":
         res = TR.gate_lines(load_jsonl(a.file), TR.load_register(a.register), default_provenance=_json(a.default_provenance) if a.default_provenance else None)
     elif c == "teacher-register":
@@ -154,7 +173,8 @@ def _run(a) -> int:
                              default_provenance=_json(a.default_provenance) if a.default_provenance else None, teacher_register=a.register,
                              dedup_threshold=a.threshold, canaries=_canaries(a.canaries), fingerprint_set=_json(a.fingerprints) if a.fingerprints else None,
                              category_fields=tuple(a.field) if a.field else B.DEFAULT_FIELDS, labels=_json(a.labels) if a.labels else None, min_share=a.min_share,
-                             manifest_env=_json(a.manifest) if a.manifest else None, legacy_quick_ratio_pool=pool, now=a.now)
+                             manifest_env=_json(a.manifest) if a.manifest else None, legacy_quick_ratio_pool=pool, now=a.now,
+                             intended_use=a.intended_use, expected_eval_sha256=a.eval_sha256)
     elif c == "public-sft":
         from orca.dataquality import public_sft
         res = {"check": "public_sft", "status": "PASS", "written": [Path(p).name for p in public_sft.generate(a.root, a.out_dir)]}
