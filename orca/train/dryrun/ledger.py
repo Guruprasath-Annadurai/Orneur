@@ -115,6 +115,23 @@ class RunLedger:
             return {}
         return {r["body"]["step"]: r["body"]["digest"] for r in res.records if r["body"]["type"] == "checkpoint_saved"}
 
+    def last_type(self) -> str | None:
+        res = self.verify()
+        return res.records[-1]["body"]["type"] if res.ok and res.records else None
+
+    def is_sealed_finished(self) -> bool:
+        res = self.verify()
+        t = [r["body"]["type"] for r in res.records] if res.ok else []
+        return len(t) >= 2 and t[-1] == "manifest_sealed" and t[-2] == "run_finished"
+
+    def final_committed_state_sha256(self) -> str | None:
+        res = self.verify()
+        fin = [r["body"] for r in res.records if r["body"]["type"] == "run_finished"] if res.ok else []
+        return fin[-1]["state_sha256"] if fin else None
+
+    def sealed_count(self) -> int:
+        return sum(1 for r in self.records() if r["body"]["type"] == "manifest_sealed")
+
     def run_started_body(self) -> dict | None:
         res = self.verify()
         if not res.ok or not res.records or res.records[0]["body"].get("type") != "run_started":
@@ -183,3 +200,21 @@ def verify_sealed_manifest(path, ledger: RunLedger) -> list:
     if at is None or at["hash"] != emb.get("head_hash") or emb.get("head_seq") != ev["ledger_head_seq"] or emb.get("head_hash") != ev["ledger_head_hash"]:
         problems.append("MANIFEST_LEDGER_HEAD_MISMATCH")
     return problems
+
+
+def complete_pending_seal(ledger: RunLedger, path) -> bool:
+    """Crash recovery for the window between writing a manifest file and chaining its hash into the ledger. If `path` is a complete, valid
+    registry manifest that binds the CURRENT ledger head, chain its hash now and return True. Anything else (torn file, stale head) returns
+    False and writes nothing; the caller moves such a file aside and seals afresh. Never overwrites or edits the manifest."""
+    try:
+        data = Path(path).read_bytes()
+        doc = json.loads(data)
+        TrainingRunManifest(**doc)
+        emb = doc["training_config"]["dryrun_ledger"]
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+    seq, head = ledger.chain.head()
+    if emb.get("head_seq") != seq or emb.get("head_hash") != head:
+        return False
+    ledger.append("manifest_sealed", manifest_sha256=sha256_hex(data), ledger_head_seq=seq, ledger_head_hash=head)
+    return True
