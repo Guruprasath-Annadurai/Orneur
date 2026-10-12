@@ -1,0 +1,39 @@
+{
+  "schema_version": "orneur-category-mapping-PROPOSAL/0",
+  "status": "PROPOSAL_NOT_FROZEN_NOT_NORMATIVE",
+  "frozen": false,
+  "authorizes_nothing": true,
+  "decision_owner": "FOUNDER",
+  "decision_doc": "docs/orneur/status/evalinfra/FOUNDER_DECISIONS_F1_F3_F5.md",
+  "banner": "PROPOSAL - NOT FROZEN - NOT NORMATIVE. Nothing reads this file. It binds no preregistration, manifest or analysis plan. Authored by an engineer for founder review (finding F3); the V2 corpus does not exist and no private material was used.",
+  "v2_to_spec": [
+    {"v2_category": "instruction_following", "relation": "PARTIAL", "spec_ids": [1], "rationale": "Spec 1 is general instruction following; V2 items are multi-constraint verifiable-format prompts, a narrower slice."},
+    {"v2_category": "strict_contracts", "relation": "NONE", "spec_ids": [], "rationale": "REPORT_ONLY recovery-cost signal; no numbered spec category covers output contracts."},
+    {"v2_category": "structured_outputs", "relation": "WEAK", "spec_ids": [1], "rationale": "Schema extraction from a passage is loosely within spec 1 'professional/everyday'; no dedicated spec category."},
+    {"v2_category": "reasoning", "relation": "WEAK", "spec_ids": [2], "rationale": "V2 reasoning is unique-answer logic puzzles; spec 2 is rubric-judged professional-scenario reasoning. Different task shape."},
+    {"v2_category": "coding", "relation": "CLOSE", "spec_ids": [4], "rationale": "Both are specified functions scored by unit tests. Spec 5 (debugging) is not covered."},
+    {"v2_category": "mathematics", "relation": "CLOSE", "spec_ids": [3], "rationale": "Exact numeric answers; same as spec 3 quantitative reasoning."},
+    {"v2_category": "research", "relation": "NONE", "spec_ids": [], "rationale": "Multi-hop answer plus citation set; no numbered spec category."},
+    {"v2_category": "tool_use", "relation": "PARTIAL", "spec_ids": [11], "rationale": "Tool name and exact arguments plus refusal; spec 11 is tool planning (planning breadth may exceed the V2 item shape)."},
+    {"v2_category": "long_context", "relation": "NONE", "spec_ids": [], "rationale": "Context-length slices; spec 7 (multi-file reasoning) is a different construct."},
+    {"v2_category": "multilingual", "relation": "NONE", "spec_ids": [], "rationale": "No numbered spec category."},
+    {"v2_category": "multimodal_where_applicable", "relation": "NONE", "spec_ids": [], "rationale": "No numbered spec category; N/A for text-only models."},
+    {"v2_category": "verification", "relation": "PARTIAL", "spec_ids": [10], "rationale": "Planted-error step identification and claim-vs-evidence labels test checking ability; spec 10 is resistance to fabricated completion claims. Related, not identical. FOUNDER MUST CONFIRM: 10 is zero-tolerance."},
+    {"v2_category": "evidence_use", "relation": "WEAK", "spec_ids": [12], "rationale": "Correct abstention when evidence is missing resembles spec 12 uncertainty behaviour; the evidence-id requirement does not."},
+    {"v2_category": "counterfactual_reasoning", "relation": "NONE", "spec_ids": [], "rationale": "No numbered spec category."},
+    {"v2_category": "hypothesis_testing", "relation": "NONE", "spec_ids": [], "rationale": "No numbered spec category."},
+    {"v2_category": "discovery_quality", "relation": "NONE", "spec_ids": [], "rationale": "REPORT_ONLY; no numbered spec category."},
+    {"v2_category": "cross_domain_transfer", "relation": "NONE", "spec_ids": [], "rationale": "REPORT_ONLY; capability not claimed; no numbered spec category."},
+    {"v2_category": "information_gain_reasoning", "relation": "WEAK", "spec_ids": [12], "rationale": "Recognising sufficiency is loosely epistemic; otherwise no numbered spec category."},
+    {"v2_category": "latency", "relation": "NONE", "spec_ids": [], "rationale": "PROTOCOL category (measurement), not an item category."},
+    {"v2_category": "cost", "relation": "NONE", "spec_ids": [], "rationale": "PROTOCOL category (measurement), not an item category."},
+    {"v2_category": "trainability", "relation": "NONE", "spec_ids": [], "rationale": "PROTOCOL category (measurement), not an item category."}
+  ],
+  "uncovered_spec_ids": [2, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 17],
+  "uncovered_zero_tolerance_spec_ids": [14, 15, 17],
+  "open_questions": [
+    "Zero-tolerance spec categories 14, 15 and 17 have NO counterpart in the V2 corpus category list. Either add V2 categories (changes the frozen V2 design/floors: founder decision) or run those categories from a separate spec-numbered suite.",
+    "Zero-tolerance spec category 10 is only PARTIALLY covered by V2 'verification'; confirm or add a dedicated V2 category.",
+    "Which taxonomy string should the prereg analysis plan use: spec-numbered ids (current evalinfra default) or V2 names?"
+  ]
+}
