@@ -23,3 +23,12 @@ Locked brand (for the eventual, not-yet-approved UI): abstract falcon emblem, se
 | 15 | Responsive journeys | **Not implemented** | Awaits design approval; only backend contracts exist. |
 
 **Not claimed:** answer correctness, safety on real traffic, load capacity, UI completeness, billing correctness, legal compliance.
+
+## Round 2 additions (branch `claude/p1-conversations-docs`)
+Defects found by new failing-before tests (`tests/test_b2_conversation_documents.py`, FakeOllama test double only) and fixed:
+1. A signed-in user's conversation did **not** appear in `/api/sessions` unless it had been explicitly saved (history list depended on `/api/session/save`). The list now includes every conversation with a durable transcript.
+2. `/api/sessions` was hard-capped at 50 with no way to page. It now takes `limit` (1–200), `offset`, is newest-first and returns `total`/`next_offset` (invalid parameters → 422).
+3. Renaming a conversation after a server restart returned 404 for transcript-only conversations; blank titles were accepted. Both fixed.
+4. Deleting a document that is not in the conversation answered `200 {"deleted": false}`; it now answers 404.
+5. **Concurrent uploads lost document-registry entries** (unsynchronised read-modify-write of `registry.json`). Registry writes are now serialised (thread lock plus `flock`) and atomic.
+Still true: retrieval quality is unmeasured; a disconnected stream's partial answer is not kept (product decision pending).
