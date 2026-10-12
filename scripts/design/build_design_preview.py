@@ -474,7 +474,7 @@ are part of the design, not afterthoughts. Specification: <code>docs/orneur/desi
 <div class="decision"><h3>Changes to earlier brand decisions</h3><ul>
 <li><strong>None</strong> to the locked palette (Slate Indigo #3A4B6B, Solar Coral #FF6B57, Pale Stone #E8E4DE, near-black dark surfaces), the greeting, or the two-theme rule.</li>
 <li>Derived text colours exist only where the raw brand colour fails WCAG AA as text: Light accent text #B03626, Dark accent text #FF8A78 (measured below).</li>
-<li>The falcon emblem and the segmented-E wordmark are <strong>concepts awaiting your decision</strong> (Q1), not approved marks.</li></ul></div>
+<li><strong>SUPERSEDED:</strong> the falcon emblem and segmented-E wordmark below are earlier concepts. The founder-supplied official ORNEUR logo is locked (see docs/orneur/brand/BRAND_IDENTITY_LOCK.md); do not use this generator\'s marks.</li></ul></div>
 <div class="decision"><h3>Proposed UX defaults (not approved)</h3><ul>
 <li>First visit follows the system Dark/Light preference; a later choice persists.</li><li>ORNEUR is the primary product brand; model identity and lifecycle are one tap away and always truthful.</li>
 <li>Experimental models are never shown as production-qualified. Build order after approval: tokens, app shell, secure chat, streaming/cancel/retry, history, files, research.</li></ul></div>
@@ -482,7 +482,7 @@ are part of the design, not afterthoughts. Specification: <code>docs/orneur/desi
 <h2>Desktop: a response in progress (stop is always one click)</h2><div class="grid two">{states}</div>
 <h2>Mobile: a finished answer with citations</h2><div class="grid mob">{mobconv}</div>
 <h2>Mobile: first run and error recovery</h2><div class="grid mob">{mob}</div>
-<h2>Brand: falcon emblem and segmented-E wordmark</h2><div class="grid two">{brand}</div>
+<h2>Brand (SUPERSEDED concepts, kept for audit): falcon emblem and segmented-E wordmark</h2><div class="grid two">{brand}</div>
 <h2>Composer and streaming states</h2><div class="grid two">{composers}</div>
 <h2>Sidebar and conversation history</h2><div class="grid two">{sidebars}</div>
 <h2>Code block and file attachments</h2><div class="grid two">{codefiles}</div>

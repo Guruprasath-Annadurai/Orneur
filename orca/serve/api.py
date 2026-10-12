@@ -27,11 +27,11 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -934,6 +934,49 @@ async def serve_trust():
     if trust.exists():
         return HTMLResponse(trust.read_text())
     return HTMLResponse("<h1>Orneur trust page not found</h1>")
+
+
+def _brand_asset(role: str) -> Optional[Path]:
+    """Founder-approved brand file for ``role`` (see web/brand/ASSETS.json), or None."""
+    try:
+        doc = json.loads((WEB_DIR / "brand" / "ASSETS.json").read_text(encoding="utf-8"))
+        for a in doc["assets"]:
+            if a["role"] == role:
+                return WEB_DIR / "brand" / a["file"]
+    except (OSError, ValueError, KeyError):
+        pass
+    return None
+
+
+def _brand_response(role: str, media_type: str):
+    path = _brand_asset(role)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="not found")
+    # Stable URLs browsers request unprompted: always revalidate, so a replaced icon is never served stale.
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def serve_favicon():
+    return _brand_response("favicon_ico", "image/x-icon")
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+async def serve_apple_touch_icon():
+    return _brand_response("apple_touch_icon", "image/png")
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def serve_web_manifest():
+    icons = []
+    for role, size in (("pwa_192", "192x192"), ("pwa_512", "512x512")):
+        path = _brand_asset(role)
+        if path is not None:
+            icons.append({"src": f"/static/brand/{path.name}", "sizes": size, "type": "image/png", "purpose": "any"})
+    return JSONResponse(
+        {"name": "ORNEUR", "short_name": "ORNEUR", "start_url": "/app", "scope": "/", "display": "standalone",
+         "background_color": "#03050A", "theme_color": "#03050A", "icons": icons},
+        media_type="application/manifest+json", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/livez")
@@ -2750,8 +2793,20 @@ async def admin_stats(admin: User = Depends(require_permission("manage_users")))
 #  Static files (must be last — catches everything under /static)
 # ─────────────────────────────────────────────────────────────────────────────
 
+class _BrandStaticFiles(StaticFiles):
+    """Files under /static/brand/ carry their own content hash in the filename, so they are immutable."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if path.startswith("brand/") and _HASHED_BRAND_FILE.search(path) and response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
+_HASHED_BRAND_FILE = re.compile(r"\.[0-9a-f]{8}\.(png|ico)$")
+
 if WEB_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+    app.mount("/static", _BrandStaticFiles(directory=str(WEB_DIR)), name="static")
 
 
 def create_app() -> FastAPI:
