@@ -9,6 +9,7 @@ Semantic    : distilled facts/concepts across sessions
 from __future__ import annotations
 
 import json
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field, asdict
@@ -60,6 +61,22 @@ class ShortTermMemory:
         return len(self._messages)
 
 
+_CHROMA_LOCK = threading.Lock()
+"""Process-wide: every session's LongTermMemory shares ONE on-disk
+chroma.sqlite3 file. `_vacuum_after_delete()` opens its own raw sqlite3
+connection to that shared file and issues VACUUM, which needs real
+exclusivity -- confirmed by reproduction that running it concurrently with
+an unrelated session's store()/recall() (via chromadb's own client, a
+different connection) raises chromadb.errors.NotFoundError for the
+unrelated, unaffected collection. This lock serializes every chroma
+operation in this class within one process; it does NOT protect against
+concurrent access from a different OS process also opening this file
+(multi-process/multi-worker deployment), which is a real, disclosed,
+not-yet-addressed residual limitation -- out of scope for this fix, which
+closes the privacy gap under the concurrency this repository's own tests
+actually exercise (single-process, multi-threaded)."""
+
+
 class LongTermMemory:
     """ChromaDB vector store for semantic retrieval across sessions.
     Falls back to simple JSON search if chromadb is not installed."""
@@ -70,11 +87,19 @@ class LongTermMemory:
         try:
             import chromadb
             Path(str(MEMORY_DIR / "vectors")).mkdir(parents=True, exist_ok=True)
-            self._client = chromadb.PersistentClient(path=str(MEMORY_DIR / "vectors"))
-            self._collection = self._client.get_or_create_collection(
-                name=f"orca_{session_id[:8]}",
-                metadata={"hnsw:space": "cosine"},
-            )
+            # A fresh PersistentClient + get_or_create_collection() touches the
+            # same shared chroma.sqlite3 file as store()/recall()/delete() --
+            # confirmed by reproduction that constructing a new LongTermMemory
+            # (this constructor) concurrently with another session's delete()
+            # VACUUM raised a raw SQLite disk I/O error, since this was the one
+            # chroma-touching operation in the class NOT already covered by
+            # _CHROMA_LOCK.
+            with _CHROMA_LOCK:
+                self._client = chromadb.PersistentClient(path=str(MEMORY_DIR / "vectors"))
+                self._collection = self._client.get_or_create_collection(
+                    name=f"orca_{session_id[:8]}",
+                    metadata={"hnsw:space": "cosine"},
+                )
             self._available = True
         except ImportError:
             self._available = False
@@ -91,11 +116,12 @@ class LongTermMemory:
             # dict is never empty, regardless of what the caller passed.
             stored_metadata = dict(metadata) if metadata else {}
             stored_metadata.setdefault("stored_at", time.time())
-            self._collection.add(
-                documents=[text],
-                ids=[doc_id],
-                metadatas=[stored_metadata],
-            )
+            with _CHROMA_LOCK:
+                self._collection.add(
+                    documents=[text],
+                    ids=[doc_id],
+                    metadatas=[stored_metadata],
+                )
             return doc_id
         # Fallback: append to JSONL
         with open(self._fallback_file, "a") as f:
@@ -104,7 +130,8 @@ class LongTermMemory:
 
     def recall(self, query: str, n: int = 5) -> list[dict]:
         if self._available:
-            results = self._collection.query(query_texts=[query], n_results=n)
+            with _CHROMA_LOCK:
+                results = self._collection.query(query_texts=[query], n_results=n)
             docs = results.get("documents", [[]])[0]
             metas = results.get("metadatas", [[]])[0]
             return [{"text": d, "metadata": m} for d, m in zip(docs, metas)]
@@ -135,17 +162,79 @@ class LongTermMemory:
         persisted in this session's ChromaDB collection FOREVER, even
         after a full account deletion. Removes the collection (or the
         JSONL fallback file). Returns whether anything was actually
-        found and removed."""
+        found and removed.
+
+        2026-10-14 (P0 privacy remediation, reopened G-025): `delete_collection()`
+        alone is NOT sufficient. It removes the collection from Chroma's own
+        query surface, but the shared `chroma.sqlite3` file is a single SQLite
+        database used by every session's collection -- SQLite marks a deleted
+        row's page as free for reuse, it does not overwrite the bytes, so the
+        deleted collection's raw text remains physically present and
+        recoverable from the file on disk for as long as any OTHER
+        collection's data keeps the file from being fully emptied (confirmed:
+        clean when this was the only collection ever written, NOT clean with
+        a second, still-live collection present -- exactly the shape of any
+        real multi-user deployment). `_vacuum_after_delete()` closes that gap."""
         if self._available:
-            try:
-                self._client.delete_collection(name=f"orca_{self._session_id[:8]}")
-                return True
-            except Exception:
-                return False
+            with _CHROMA_LOCK:
+                try:
+                    self._client.delete_collection(name=f"orca_{self._session_id[:8]}")
+                except Exception:
+                    return False
+                try:
+                    self._vacuum_after_delete()
+                except Exception:
+                    pass  # best-effort defense in depth; the logical deletion above already succeeded
+            return True
         if self._fallback_file.exists():
             self._fallback_file.unlink()
             return True
         return False
+
+    def _vacuum_after_delete(self) -> None:
+        """Best-effort: rebuild the shared chroma.sqlite3 file so the pages
+        freed by the collection just deleted are actually overwritten, not
+        merely marked reusable. The logical deletion above already
+        succeeded by the time this runs, so a failed VACUUM (e.g. the file
+        is locked by a concurrent writer) is a residual forensic-recovery
+        risk, not a reason to report delete() itself as failed -- the
+        collection is still gone from every normal read path.
+
+        MUST be called only while the caller already holds `_CHROMA_LOCK`
+        (as `delete()` does) -- this method does not acquire it itself.
+        Confirmed by reproduction: running VACUUM concurrently with an
+        unrelated session's store()/recall() (a different chromadb
+        connection to the same shared file) raised
+        chromadb.errors.NotFoundError for that unrelated, otherwise
+        untouched collection. The lock serializes every chroma operation
+        in this class within one process.
+
+        Known, disclosed operational cost: VACUUM rebuilds the WHOLE shared
+        file and holds an exclusive lock for the duration, proportional to
+        the file's total size (every session's data, not just the one being
+        deleted) -- at real multi-user scale this briefly blocks concurrent
+        readers/writers of OTHER sessions' long-term memory on every single
+        account deletion. Acceptable for the privacy guarantee this closes;
+        not free. A production deployment with a large, busy vector store
+        should consider a scheduled/batched vacuum instead of a per-deletion
+        one if this becomes a measured bottleneck -- not attempted here.
+        Also disclosed: `_CHROMA_LOCK` is process-local and does not protect
+        against a different OS process (a separate worker) opening this
+        same file concurrently -- a real, not-yet-addressed residual
+        limitation under a multi-process deployment, out of scope here."""
+        import sqlite3
+
+        db_path = MEMORY_DIR / "vectors" / "chroma.sqlite3"
+        if not db_path.exists():
+            return
+        try:
+            conn = sqlite3.connect(str(db_path), timeout=10)
+            try:
+                conn.execute("VACUUM")
+            finally:
+                conn.close()
+        except Exception:
+            pass
 
 
 class EpisodicMemory:

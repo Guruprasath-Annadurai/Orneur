@@ -206,6 +206,37 @@ def test_fails_closed_for_unsafe_sandboxes_and_nesting(tmp_path):
     assert out["guard_active_after"] is False
 
 
+def test_fails_closed_when_the_live_orca_source_tree_is_itself_under_the_sandbox_candidate(tmp_path):
+    """Regression guard (P0 remediation, 2026-10-14): `_preflight()` used to treat "sandbox
+    is under the system temp dir" as SUFFICIENT for safety, not merely necessary. If the
+    orca package actually running this process is itself located under the temp dir --
+    exactly what happens for a disposable verification clone made under /tmp, a CI
+    runner's workspace, or a Docker build context, all three of which happen in this
+    project's own workflow -- guarding that checkout's own root used to SUCCEED, leaving
+    the guard globally active with nothing left to ever call __exit__ (the `attempt()`
+    helper above never does, by design, since it expects these calls to raise). Every
+    later action in that same child process then tripped the now-permanently-active audit
+    hook. Reproduced here (independent of where this test suite itself happens to be
+    checked out) by relocating a real copy of the live orca package under the sandbox
+    candidate and confirming the guard still refuses it."""
+    out = _child("""
+        import orca, shutil
+        clone_root = sb / "clone"
+        clone_root.mkdir()
+        shutil.copytree(Path(orca.__file__).resolve().parent, clone_root / "orca")
+        sys.path.insert(0, str(clone_root))
+        for name in list(sys.modules):
+            if name == "orca" or name.startswith("orca."):
+                del sys.modules[name]
+        import orca as cloned_orca
+        assert str(Path(cloned_orca.__file__).resolve()).startswith(str(clone_root.resolve())), "clone did not take priority on sys.path"
+        attempt("clone_root_as_sandbox", lambda: SyntheticOnlyGuard(clone_root).__enter__())
+        res["guard_active_after"] = S._State.active
+    """, tmp_path)
+    assert out["clone_root_as_sandbox"] == "UNAVAILABLE"
+    assert out["guard_active_after"] is False
+
+
 def test_fails_closed_when_the_audit_hook_is_not_actually_enforcing(tmp_path):
     out = _child("""
         S._audit = lambda event, args: None          # simulate a broken/neutered hook BEFORE it is installed

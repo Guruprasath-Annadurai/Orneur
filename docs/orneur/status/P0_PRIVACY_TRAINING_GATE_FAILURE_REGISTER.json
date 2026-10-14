@@ -1,0 +1,127 @@
+{
+  "schema": "orneur.p0_failure_register/1",
+  "status": "NON_NORMATIVE -- investigative record, not an acceptance-engine artifact. Authorizes nothing.",
+  "date": "2026-10-14",
+  "source_run": "Full combined deterministic suite (tests/), run against the real combined tree of PR #39-45 on top of claude/integration-candidate-2, commit f2b3b80a1e621b282e509529383778b2786c6994 (disposable verification clone, never pushed): 8844 passed, 11 failed, 329 skipped, 7 xfailed, 26m57s.",
+  "remediation_branch": "claude/p0-privacy-training-remediation-2026-10-14",
+  "remediation_base": "origin/claude/integration-candidate-2 @ 21446eedd1fa803eaf6fb6a0ee5c0fa26c00bccd",
+  "note": "No single aggregate pass/fail percentage is reported here, consistent with this project's own SCORECARD.json design choice and the acceptance engine's existing rule against collapsing per-item evidence into one number.",
+  "failures": [
+    {
+      "id": "F1",
+      "test_identifier": "tests/rse/test_block1_final.py::test_enc_divergence_quarantines_the_grant_and_the_sender",
+      "root_cause": "macOS/Darwin-specific: resource.setrlimit(RLIMIT_AS, ...) in orca/rse/imp4/ocr1.py's child-process preexec hook raises ValueError('current limit exceeds maximum limit') on this host; not reproducible on Linux CI. Documented identically across every prior full-suite run in this program (this session's PR #19/#20 rounds).",
+      "baseline_reproduction": "Reproduces identically on the already-accepted claude/phase0-trust-boundary-hardening branch checkout on the same machine -- confirmed pre-existing, not introduced by this or any recent PR.",
+      "environment_dependency": "macOS/Darwin host only. Not reproducible on Linux CI (GitHub Actions ubuntu-latest).",
+      "security_impact": "None. Test-environment limitation in a resource-limit preexec hook used only by the local dev/test harness.",
+      "status": "UNRESOLVED -- environmental, out of scope for this remediation (no code change proposed; would require a Linux-only test host or an OS-conditional skip, neither attempted here).",
+      "retest_evidence": "PENDING_FULL_SUITE_RERUN"
+    },
+    {
+      "id": "F2",
+      "test_identifier": "tests/rse/test_block1_integration.py::test_g_then_v_rehearsal_leaves_every_lock_denied",
+      "root_cause": "Same RLIMIT_AS macOS/Darwin limitation as F1.",
+      "baseline_reproduction": "Same as F1.",
+      "environment_dependency": "macOS/Darwin host only.",
+      "security_impact": "None.",
+      "status": "UNRESOLVED -- environmental, out of scope.",
+      "retest_evidence": "PENDING_FULL_SUITE_RERUN"
+    },
+    {
+      "id": "F3",
+      "test_identifier": "tests/rse/test_block1_remediation.py::test_recipient_journal_is_session_owned_and_survives_restart",
+      "root_cause": "Same RLIMIT_AS macOS/Darwin limitation as F1.",
+      "baseline_reproduction": "Same as F1.",
+      "environment_dependency": "macOS/Darwin host only.",
+      "security_impact": "None.",
+      "status": "UNRESOLVED -- environmental, out of scope.",
+      "retest_evidence": "PENDING_FULL_SUITE_RERUN"
+    },
+    {
+      "id": "F4",
+      "test_identifier": "tests/rse/test_block1_remediation.py::test_enc_divergence_quarantine_is_committed_before_it_is_reported",
+      "root_cause": "Same RLIMIT_AS macOS/Darwin limitation as F1.",
+      "baseline_reproduction": "Same as F1.",
+      "environment_dependency": "macOS/Darwin host only.",
+      "security_impact": "None.",
+      "status": "UNRESOLVED -- environmental, out of scope.",
+      "retest_evidence": "PENDING_FULL_SUITE_RERUN"
+    },
+    {
+      "id": "F5",
+      "test_identifier": "tests/rse/test_block1_remediation.py::test_checker_is_labeled_synthetic_and_cleans_its_directory",
+      "root_cause": "Same RLIMIT_AS macOS/Darwin limitation as F1.",
+      "baseline_reproduction": "Same as F1.",
+      "environment_dependency": "macOS/Darwin host only.",
+      "security_impact": "None.",
+      "status": "UNRESOLVED -- environmental, out of scope.",
+      "retest_evidence": "PENDING_FULL_SUITE_RERUN"
+    },
+    {
+      "id": "F6",
+      "test_identifier": "tests/rse/test_imp4_ocr1.py::test_phase2_checker_pass_has_zero_acceptance_and_replay_dies",
+      "root_cause": "Same RLIMIT_AS macOS/Darwin limitation as F1.",
+      "baseline_reproduction": "Same as F1.",
+      "environment_dependency": "macOS/Darwin host only.",
+      "security_impact": "None.",
+      "status": "UNRESOLVED -- environmental, out of scope.",
+      "retest_evidence": "PENDING_FULL_SUITE_RERUN"
+    },
+    {
+      "id": "F7",
+      "test_identifier": "tests/rse/test_imp4_ocr1.py::test_authenticated_malformed_plaintext_is_not_accepted",
+      "root_cause": "Same RLIMIT_AS macOS/Darwin limitation as F1.",
+      "baseline_reproduction": "Same as F1.",
+      "environment_dependency": "macOS/Darwin host only.",
+      "security_impact": "None.",
+      "status": "UNRESOLVED -- environmental, out of scope.",
+      "retest_evidence": "PENDING_FULL_SUITE_RERUN"
+    },
+    {
+      "id": "F8",
+      "test_identifier": "tests/test_container_adversarial.py::TestTimeoutCancellation::test_child_process_inside_container_is_cleaned_up_on_timeout",
+      "root_cause": "Resource-contention flake against a real Docker daemon under a long (27-minute, 8800+-test), heavily parallel/sequential full-suite run. Not a code defect.",
+      "baseline_reproduction": "Does NOT reproduce standalone: passed cleanly when run in isolation immediately after the full-suite failure. Consistent with container-timing sensitivity under host load, not a deterministic bug.",
+      "environment_dependency": "Full-suite load / Docker daemon contention. Not reproducible as a standalone test run.",
+      "security_impact": "None.",
+      "status": "NOT_A_DEFECT -- confirmed flake, no code change.",
+      "retest_evidence": "PENDING_FULL_SUITE_RERUN"
+    },
+    {
+      "id": "F9",
+      "test_identifier": "tests/test_product_flows_fake_ollama.py::test_account_deletion_removes_data_signs_the_user_out_and_does_not_resurrect_titles",
+      "root_cause": "NOT a commit regression. The assertion (a deleted user's title/fact must never resurface) is byte-for-byte identical to its original introduction at commit f4cc265 (PR #34) and fails identically AT THAT EXACT COMMIT in any environment with chromadb installed -- reproduced on macOS and inside a vanilla linux/python:3.11-slim Docker container, ruling out an OS/filesystem explanation. The real cause: NOT ONE of the 6 install commands across every job in .github/workflows/test.yml ever installed the `memory`/`docs`/`all` extras that pull in chromadb (confirmed by reading the workflow directly), so orca/brain/memory.py's LongTermMemory has silently run its JSONL-fallback code path (a plain, genuinely-clean os.unlink()) in 100% of CI runs across this project's entire ~45-PR history, never once exercising the real ChromaDB-backed deletion path. That real path's delete_collection() call removes a collection from Chroma's own query surface, but the shared chroma.sqlite3 file is one SQLite database for every session's collection -- SQLite marks a deleted row's page reusable, it does not overwrite the bytes -- so the deleted session's raw text remained physically present and recoverable on disk for as long as any OTHER session's collection kept the file from going empty (confirmed clean with only one collection ever written; confirmed NOT clean with a second, still-live collection present, which is the realistic shape of any multi-user deployment).",
+      "baseline_reproduction": "Historical GitHub CI for commit f4cc265 (PR #34) genuinely passed (verified via `gh api repos/.../commits/f4cc265/check-runs`) -- because that CI run, like every run since, never installed chromadb and therefore never exercised this code path.",
+      "environment_dependency": "Requires chromadb installed AND more than one live collection coexisting in the shared chroma.sqlite3 file. Reproducible on both macOS and Linux once that precondition holds -- not an OS-specific issue, a CI-coverage gap.",
+      "security_impact": "HIGH -- real, confirmed privacy defect. A deleted user's raw conversation content (facts stored via commit_to_long_term(), which runs unconditionally on every chat/stream/ultra turn, not just explicit /api/remember calls) remained forensically recoverable from disk after a complete, API-confirmed account deletion, in exactly the multi-session shape a real production deployment has. Confirmed NOT a cross-tenant LIVE-retrieval vulnerability (a colliding or otherwise unrelated session's recall() query never returns the deleted data -- verified directly), but a data-at-rest / secure-erasure gap: literal bytes remained scannable on disk.",
+      "fix": "orca/brain/memory.py: LongTermMemory.delete() now runs a VACUUM of the shared chroma.sqlite3 file (via a dedicated _vacuum_after_delete() method) after delete_collection() succeeds, reclaiming and overwriting the freed pages. A process-wide _CHROMA_LOCK now serializes __init__'s PersistentClient/get_or_create_collection(), store(), recall(), and delete()+vacuum against each other within one process -- the VACUUM step, run via a separate raw sqlite3 connection, was found (by this remediation's own adversarial concurrency test) to race against concurrent chromadb operations on unrelated collections, raising chromadb.errors.NotFoundError / a raw SQLite disk I/O error; the lock closes that. Disclosed, NOT fixed: the lock is process-local only and does not protect against a different OS process (a separate worker) opening the same file concurrently -- a real residual limitation under a multi-process deployment, out of scope for this pass. Disclosed, NOT fixed: VACUUM rebuilds the WHOLE shared file and briefly blocks concurrent access to every OTHER session's long-term memory on every single account deletion -- acceptable for the privacy guarantee this closes, not free; a high-traffic deployment should consider a scheduled/batched vacuum instead if this becomes a measured bottleneck. .github/workflows/test.yml: added `memory` extra to the Deterministic Unit Tests job's install line so this code path can never again go silently unexercised by CI.",
+      "retest_evidence": "7 new adversarial tests added in tests/test_memory_long_term_chroma_privacy.py (deletion+raw-byte-residue, logical non-retrievability, an unrelated live session's data integrity after the triggered vacuum, restart-like reconnect, cross-tenant 8-char-prefix collision (register gap G-022), concurrent write during delete, and vacuum-failure-does-not-block-logical-deletion) -- all 7 pass; the concurrency test specifically re-run 40/40 clean after the lock fix (it failed 1/15 before the __init__ locking was added, confirming a real, now-closed race). Original test_account_deletion_removes_data_signs_the_user_out_and_does_not_resurrect_titles passes with chromadb installed. Broader regression: tests/test_memory_security.py, test_memory_store_metadata.py, test_memory_deletion_integration.py, test_product_flows_fake_ollama.py all pass (31 passed, 1 xfailed -- the known, pre-existing, unrelated G-026 streaming gap)."
+    },
+    {
+      "id": "F10",
+      "test_identifier": "tests/test_trainprep_sentinel.py::test_the_pytest_process_has_no_trainer_packages_loaded_and_no_hook_active",
+      "root_cause": "Not isolated to certainty in this pass. Passes cleanly and repeatedly (confirmed) when run standalone or alongside only its own test file; failed only within the single large (8844-test, 27-minute) full-suite run alongside F11. Plausible candidate cause: this test asserts the OUTER pytest process itself carries no forbidden-package import and no permanently-installed PEP 578 audit hook -- a hook, once installed anywhere in that process (including by an unrelated test elsewhere in the full suite that imports chromadb/torch/etc. for its own legitimate reasons), can never be uninstalled per the sentinel module's own documented design ('PEP 578 audit hooks cannot be removed once installed'). Did not bisect which other test in an 8844-test suite is the trigger in this pass -- flagged as the explicit next step rather than guessed.",
+      "baseline_reproduction": "Did not reproduce in any standalone or small-group run performed in this pass (passed every time, including immediately after the full-suite run that showed it failing).",
+      "environment_dependency": "Full-suite execution order/scale dependent. Not reproducible as a standalone test.",
+      "security_impact": "None confirmed. This test checks a hygiene invariant of the pytest process itself (no forbidden package loaded, no hook active), not a training-authorization control -- orca/train/authorization.py's real, separate training-authorization gate is untouched by this and was independently re-verified (377 tests passed in the training-authorization/trainprep suite, matching the project's own previously-recorded 377-passed baseline).",
+      "status": "UNRESOLVED -- root cause not isolated in this pass. Recommended next step: re-run the full suite with `pytest -p no:randomly` (if a random-order plugin is in play) or bisect by running increasingly large subsets of tests/ to find the specific other test that imports a forbidden package into the outer process without it being expected to.",
+      "retest_evidence": "PENDING_FULL_SUITE_RERUN"
+    },
+    {
+      "id": "F11",
+      "test_identifier": "tests/test_trainprep_sentinel.py::test_fails_closed_for_unsafe_sandboxes_and_nesting",
+      "root_cause": "CONFIRMED, root-caused, deterministic (not a flake, not test-order interference -- initially suspected as such, then disproved by direct reproduction). orca/train/dryrun/sentinel.py's SyntheticOnlyGuard._preflight() treated 'sandbox is under the system temp dir' as SUFFICIENT for safety; it is only necessary. If the checked-out repository itself is located under the system temp directory -- exactly what happens for a disposable verification clone made under /tmp (this remediation's own earlier verification clone, /tmp/orneur-verify), a CI runner's workspace, or a Docker build context, all three of which happen in this project's own workflow -- then SyntheticOnlyGuard(REPO).__enter__() incorrectly SUCCEEDED, activating the guard's global state with nothing left to ever call __exit__() (the test's own `attempt()` helper deliberately never does, since it expects this call to raise). Every subsequent action in that same child process then tripped the now-permanently-active audit hook, including the test's own next legitimate setup step (a symlink creation), producing the exact observed traceback (SyntheticGuaranteeViolation on os.symlink).",
+      "baseline_reproduction": "Deterministically reproduced on demand by copying the repository to /tmp and running the exact same test from there: fails every time under that precondition, passes every time (40/40) under normal operation (repo not under tempdir). Confirmed NOT a flake: 40/40 clean solo runs before the fix, with the bug's real trigger condition identified precisely.",
+      "environment_dependency": "Triggers only when the checked-out repository root is itself located under the system temp directory. Reproduces identically on macOS and (implied by the mechanism being pure Python path comparison, not OS-specific) would reproduce on Linux under the same precondition.",
+      "security_impact": "MEDIUM -- a real integrity gap in the dry-run sentinel's own 'synthetic-only guarantee,' though NOT in the production training-authorization gate (orca/train/authorization.py), which is a separate module, unaffected and independently re-verified. If the real orca package source tree is guarded as if it were an ephemeral synthetic-only sandbox, the sentinel's core guarantee (nothing outside the sandbox is real, non-synthetic code) becomes meaningless for any process relying on it under that precondition.",
+      "fix": "orca/train/dryrun/sentinel.py: _preflight() now additionally rejects any sandbox whose resolved path overlaps (equals, contains, or is contained by) the real, currently-imported orca package's own source directory, independent of where that source tree happens to be checked out. A new regression test, test_fails_closed_when_the_live_orca_source_tree_is_itself_under_the_sandbox_candidate, verified failing-before (confirmed failing without the fix) and passing-after.",
+      "retest_evidence": "13 tests in tests/test_trainprep_sentinel.py now pass (was 12; 1 new regression test added), confirmed 40/40 stable across repeated runs, confirmed passing both from the normal worktree location and from a /tmp-rooted copy (the exact precondition that triggered the original bug). Broader regression: the full training-authorization + trainprep suite (test_genesis_not_trained_guard.py, test_training_authorization_assurance.py, test_training_authorization_gate.py, test_trainprep_auditlog.py, test_trainprep_authorization.py, test_trainprep_binding.py, test_trainprep_budget.py, test_trainprep_checkpoint.py, test_trainprep_cli.py, test_trainprep_inventory.py, test_trainprep_ledger.py, test_trainprep_lock_env.py, test_trainprep_resume.py) -- 377 passed, 1 skipped, 1 xfailed, matching this project's own previously-recorded 377-passed baseline exactly, confirming zero collateral regression."
+    }
+  ],
+  "summary_by_status": {
+    "UNRESOLVED_ENVIRONMENTAL_OUT_OF_SCOPE": 7,
+    "NOT_A_DEFECT_CONFIRMED_FLAKE": 1,
+    "FIXED_AND_VERIFIED": 2,
+    "UNRESOLVED_ROOT_CAUSE_NOT_ISOLATED": 1
+  }
+}

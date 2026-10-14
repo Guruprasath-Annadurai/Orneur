@@ -47,7 +47,7 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install Orca (dev + mcp + nvidia extras -- no GPU/Ollama needed)
+      - name: Install Orca (dev + mcp + nvidia + memory extras -- no GPU/Ollama needed)
         # Phase 15.15 CI truthfulness closure: the deterministic suite
         # includes tests/test_distill.py (needs `openai`, from the
         # `nvidia` extra), tests/test_mcp_fs_server_sandbox.py (a
@@ -64,9 +64,29 @@ jobs:
         # NOT installed here -- it runs in the separate, dedicated
         # `torch-loss-tests` job below instead of pulling torch into
         # every regular test run.
+        #
+        # P0 privacy remediation (2026-10-14): a THIRD instance of this
+        # exact pattern, found the hard way. `memory` (-> chromadb) was
+        # never installed in ANY CI job in this file, so
+        # orca/brain/memory.py's LongTermMemory silently ran its
+        # JSONL-fallback path in 100% of CI runs across this project's
+        # entire history, never once exercising the real ChromaDB-backed
+        # deletion code tests/test_memory_long_term_chroma_privacy.py
+        # exists to test -- which has a confirmed, real privacy defect
+        # (a deleted user's raw data recoverable from the shared sqlite
+        # file) that the fallback path's plain unlink() never has.
+        # Honest disclosure: chromadb's default embedding function downloads
+        # a small (~80MB) ONNX model (all-MiniLM-L6-v2) from the network on
+        # its FIRST use in a given environment, not at install time -- this
+        # does add one real network dependency to this job that was not
+        # there before. No GPU is involved. Confirmed working (reproduced
+        # successfully, repeatedly) in this same CI-equivalent environment
+        # during this remediation; if it ever proves flaky/slow in practice,
+        # the next step is pre-caching that model in the workflow, not
+        # reverting this install line and silently losing coverage again.
         run: |
           pip install uv
-          uv pip install --system -e ".[dev,mcp,nvidia,postgres,pgtest]"
+          uv pip install --system -e ".[dev,mcp,nvidia,memory,postgres,pgtest]"
 
       - name: Run deterministic test suite
         run: bash scripts/ci/run_deterministic_tests.sh

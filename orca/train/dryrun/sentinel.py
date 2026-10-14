@@ -194,6 +194,16 @@ class SyntheticOnlyGuard:
         sb = _real(self.sandbox)
         if not _under(sb, (_real(tempfile.gettempdir()),)) or sb == _real(tempfile.gettempdir()):
             raise SyntheticGuaranteeUnavailable("sandbox must be a directory strictly inside the system temp dir")
+        # "Under the system temp dir" is necessary but not sufficient: a checkout of this
+        # repository itself can legitimately live under the temp dir (a CI runner, a Docker
+        # build context, or a disposable clone made for exactly this kind of verification --
+        # all three happen in this project's own workflow). Guarding the real orca package
+        # source tree as if it were an ephemeral synthetic-only sandbox would make the
+        # guarantee this class exists to provide meaningless, so any overlap with the real
+        # source tree is rejected regardless of where that tree happens to be checked out.
+        orca_src = _real(Path(__import__("orca").__file__).resolve().parent)
+        if _under(orca_src, (sb,)) or _under(sb, (orca_src,)):
+            raise SyntheticGuaranteeUnavailable("sandbox overlaps the real orca package source tree")
         if os.stat(sb).st_uid != os.geteuid():
             raise SyntheticGuaranteeUnavailable("sandbox is not owned by the current user")
         return sb
