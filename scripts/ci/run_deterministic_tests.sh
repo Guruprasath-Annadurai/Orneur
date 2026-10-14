@@ -22,4 +22,27 @@
 # of what shell default the calling workflow step happens to use.
 set -euo pipefail
 
-pytest -m "not live_ollama_smoke" -v 2>&1 | tee /tmp/pytest-log.txt
+# P0 remediation (2026-10-14): tests/test_trainprep_sentinel.py's
+# test_the_pytest_process_has_no_trainer_packages_loaded_and_no_hook_active
+# asserts that THIS pytest process has never imported a FORBIDDEN_TOP_LEVEL
+# package (torch, transformers, tokenizers, ...) -- a real, load-bearing
+# guarantee about the training dry-run sentinel's own hygiene, not a stray
+# flake. Adding the `memory` extra to this job's install (same commit, to
+# close the reopened G-025 privacy gap) transitively pulls in `tokenizers`
+# via chromadb's default embedding function the first time ANY test
+# constructs a real chromadb-backed LongTermMemory/DocStore -- and once
+# imported, it stays in sys.modules for the rest of this one process,
+# failing the hygiene check for every test file after whichever one
+# imports chromadb first, regardless of execution order. This was found
+# live on this exact commit's own CI run, not anticipated in advance.
+#
+# Fix, matching this file's own established precedent for the identical
+# class of problem (test_train_losses.py's torch dependency runs in the
+# separate torch-loss-tests job instead of polluting this shared process):
+# run the sentinel file in genuine isolation, in its own process, BEFORE
+# anything else has a chance to import a forbidden package -- then run
+# everything else. Both invocations' exit codes are checked explicitly
+# (not masked by `tee`, per this script's own original fix above).
+
+pytest tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-sentinel-log.txt
+pytest -m "not live_ollama_smoke" --ignore=tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-log.txt
