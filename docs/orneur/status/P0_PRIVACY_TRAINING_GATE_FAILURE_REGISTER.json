@@ -100,12 +100,12 @@
     {
       "id": "F10",
       "test_identifier": "tests/test_trainprep_sentinel.py::test_the_pytest_process_has_no_trainer_packages_loaded_and_no_hook_active",
-      "root_cause": "Not isolated to certainty in this pass. Passes cleanly and repeatedly (confirmed) when run standalone or alongside only its own test file; failed only within the single large (8844-test, 27-minute) full-suite run alongside F11. Plausible candidate cause: this test asserts the OUTER pytest process itself carries no forbidden-package import and no permanently-installed PEP 578 audit hook -- a hook, once installed anywhere in that process (including by an unrelated test elsewhere in the full suite that imports chromadb/torch/etc. for its own legitimate reasons), can never be uninstalled per the sentinel module's own documented design ('PEP 578 audit hooks cannot be removed once installed'). Did not bisect which other test in an 8844-test suite is the trigger in this pass -- flagged as the explicit next step rather than guessed.",
-      "baseline_reproduction": "Did not reproduce in any standalone or small-group run performed in this pass (passed every time, including immediately after the full-suite run that showed it failing).",
-      "environment_dependency": "Full-suite execution order/scale dependent. Not reproducible as a standalone test.",
+      "root_cause": "CONFIRMED WITH CERTAINTY, found live on real CI (not guessed): this remediation's own fix for F9 (adding the `memory` extra to the Deterministic Unit Tests job, so chromadb is actually installed) transitively imports `tokenizers` -- chromadb's default embedding function depends on it -- the first time any test in the same pytest invocation constructs a real chromadb-backed LongTermMemory/DocStore. `tokenizers` is itself one of the FORBIDDEN_TOP_LEVEL names this exact test checks for. Once imported, it stays in sys.modules for the rest of that one process regardless of execution order, so this hygiene check fails for every test file that runs in the same invocation after whichever one first imports chromadb. CI's own first real run on this remediation's commit 5e4dbafb109ea87b38037bc1502663f3e2db187f reproduced exactly this: \"assert (['tokenizers', 'tokenizers.decoders', ... 14 items] == [])\".",
+      "baseline_reproduction": "Reproduced on real GitHub Actions CI (run 38609485478, job 116008841666) on this remediation's own commit -- not a local-only or full-suite-only artifact. Confirmed NOT test-order-random: deterministic given any chromadb-touching test runs before this one in the same pytest process.",
+      "environment_dependency": "Any single pytest invocation that both (a) installs chromadb (this remediation's own F9 CI fix) and (b) runs this sentinel hygiene test in the same process as any chromadb-touching test. Not OS-specific; a direct, logical consequence of two previously-independent CI fixes landing together, not an environmental flake.",
       "security_impact": "None confirmed. This test checks a hygiene invariant of the pytest process itself (no forbidden package loaded, no hook active), not a training-authorization control -- orca/train/authorization.py's real, separate training-authorization gate is untouched by this and was independently re-verified (377 tests passed in the training-authorization/trainprep suite, matching the project's own previously-recorded 377-passed baseline).",
-      "status": "UNRESOLVED -- root cause not isolated in this pass. Recommended next step: re-run the full suite with `pytest -p no:randomly` (if a random-order plugin is in play) or bisect by running increasingly large subsets of tests/ to find the specific other test that imports a forbidden package into the outer process without it being expected to.",
-      "retest_evidence": "PENDING_FULL_SUITE_RERUN"
+      "status": "FIXED_AND_VERIFIED. scripts/ci/run_deterministic_tests.sh now runs tests/test_trainprep_sentinel.py in its own genuinely isolated pytest invocation FIRST, before anything else has a chance to import a forbidden package, then runs the rest of the suite with it excluded (--ignore) -- the same pattern this project already uses for torch (test_train_losses.py runs in the separate torch-loss-tests job for the identical reason). Verified locally: sentinel alone, 13/13 passed in a genuinely fresh process; the remaining suite (incl. the new privacy test file and the rest of the trainprep suite) collects and runs cleanly together with it excluded.",
+      "retest_evidence": "Local: `pytest tests/test_trainprep_sentinel.py -q` standalone -> 13 passed. `pytest --ignore=tests/test_trainprep_sentinel.py --collect-only -q` -> 8897/8940 collected (43 deselected), new privacy test file's 7 tests confirmed present. `pytest tests/test_memory_long_term_chroma_privacy.py tests/test_trainprep_resume.py tests/test_trainprep_budget.py -q` (chromadb-touching + other trainprep tests together, sentinel excluded) -> 75 passed. CI re-run on the follow-up commit 6d9b1d6a863ae2e5e75b1ca09269ac1c9e28ba0b: pending at time of writing, will be updated once available."
     },
     {
       "id": "F11",
@@ -121,7 +121,7 @@
   "summary_by_status": {
     "UNRESOLVED_ENVIRONMENTAL_OUT_OF_SCOPE": 7,
     "NOT_A_DEFECT_CONFIRMED_FLAKE": 1,
-    "FIXED_AND_VERIFIED": 2,
-    "UNRESOLVED_ROOT_CAUSE_NOT_ISOLATED": 1
+    "FIXED_AND_VERIFIED": 3,
+    "UNRESOLVED_ROOT_CAUSE_NOT_ISOLATED": 0
   }
 }
