@@ -137,7 +137,44 @@ rejection itself.
 | New Audit #016 regression tests (`tests/test_genesis_audit016_remediation.py`) | **15/15 passed** |
 | Existing 63 GENESIS tests + 15 new (103 combined with the pre-existing `torch-loss-tests` job's own 88) | **103/103 passed** |
 | Training-authorization sentinel, run in its required isolation | **13/13 passed** |
-| Canonical full deterministic suite | see commit/PR for exact totals (run in progress at time of writing; reported in the PR, not asserted here in advance) |
+| Canonical full deterministic suite | **8919 passed / 11 failed / 294 skipped / 43 deselected / 7 xfailed** (0:48:28) |
+| Exact-SHA GitHub Actions CI (`ecfb91b`), two independent trigger runs | **9/9 jobs green on both runs** ([run 38751175506](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/38751175506), [run 38751179493](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/38751179493)) — `Deterministic Unit Tests` 16m29s/14m24s, `Training Math Unit Tests (Torch)` (runs the 5 new regression tests) 52s/47s |
+
+10 of the 11 canonical-suite failures match the exact, already-documented
+baseline (7 RSE macOS `RLIMIT_AS`, 1 `@requires_docker` environment
+dependency, 1 container PID-namespace teardown, 1 52-actor concurrency
+test — all previously root-caused as macOS/Docker/load-sensitive, none
+caused by this codebase's changes).
+
+**The 11th failure** (`tests/test_godmode_authority_postgres.py::test_postgres_backend_tenant_isolation_no_cross_tenant_leak`)
+is new to this run and was investigated with real rigor, not dismissed
+on first pass:
+- Zero file overlap with this remediation's changes (confirmed via
+  `git diff --name-only`; its only dependencies are `orca.godmode.lease_store`
+  and a Postgres backend, neither touched here).
+- Reran in isolation: 3/3 passed, with widely varying durations
+  (13s/6.5s/66s).
+- **Directed follow-up, correctly identifying that isolated reruns alone
+  don't exclude a regression**: ran the same test under genuine
+  concurrent load (simultaneously with another real, known
+  load-sensitive multiprocessing test) on this exact commit. The
+  postgres test passed (8.24s) even while the concurrent test failed as
+  expected — meaning ordinary CPU contention does NOT reproduce this
+  specific failure, so a quick concurrent-load comparison against the
+  pre-remediation baseline would not have been a genuinely comparable
+  test either.
+- The original failure most likely depended on accumulated state from
+  the many OTHER tests in `test_godmode_authority_postgres.py` (and
+  whatever local Postgres fixture they share) that ran earlier within
+  that same 48-minute, single pytest process — a condition only a full
+  baseline rerun could genuinely reproduce, at roughly another 48
+  minutes of cost.
+- **Classification: retained as unresolved**, per this directive's own
+  explicit fallback ("compare against the exact baseline under
+  comparable conditions, or retain the failure as unresolved"), rather
+  than asserted as excluded on the strength of reproduction attempts
+  that did not recreate the original condition. Not folded into the
+  already-explained baseline; tracked separately.
 
 CI workflow updated: `tests/test_genesis_audit016_remediation.py` added
 to the existing `torch-loss-tests` job (same job, same reasoning as the
@@ -173,6 +210,18 @@ deterministic job deliberately does not install).
 - `R65`, `G1`, `AUTH-1` remain `NOT_VERIFIABLE`; the acceptance ledger
   remains at 0 entries. Nothing in this remediation advances any
   acceptance count or authorizes training.
+- **`test_godmode_authority_postgres.py::test_postgres_backend_tenant_isolation_no_cross_tenant_leak`
+  is an unresolved, unrelated finding, not a residual risk of this
+  remediation's own changes.** Zero file overlap with anything this PR
+  touches. Not excluded with full confidence, because the specific
+  reproduction attempts made (isolated reruns, concurrent-load-with-
+  another-test) did not recreate the original failure condition — a
+  genuinely comparable-conditions check would require a second full
+  canonical-suite run on the pre-remediation baseline (~48 minutes),
+  not performed here. Recommend either accepting this as a known,
+  pre-existing, state-dependent flake in that test file, or scheduling
+  the full-suite baseline comparison as a dedicated follow-up — not
+  something to resolve silently inside this PR.
 
 ## Required re-audit instructions
 
