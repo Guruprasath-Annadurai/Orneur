@@ -40,14 +40,51 @@ def causal_lm_loss(logits: torch.Tensor, labels: torch.Tensor, ignore_index: int
     labels right-truncated by one before computing cross-entropy -- a
     position's own label is never used to predict itself. Verified
     against torch's own `F.cross_entropy` reference in
-    tests/test_genesis_training_primitives.py, not asserted."""
+    tests/test_genesis_training_primitives.py, not asserted.
+
+    Audit #016 DEFECT-05 fix: raises for `seq_len < 2` rather than
+    silently computing cross-entropy over an empty shifted slice (which
+    returns `nan`, not an error) -- a sequence of length 1 has no
+    next-token pair to predict at all, so there is no loss to compute,
+    not a degenerate zero loss.
+
+    Audit #016 DEFECT-03 fix (fail-closed, not a silent differentiable
+    zero): when EVERY position in a batch is `ignore_index`, this
+    function raises rather than returning a value. Considered the
+    alternative the audit itself proposed (a differentiable
+    `torch.tensor(0.0, requires_grad=True)`) and rejected it for this
+    call site: a fully-masked batch reaching a loss computation at all
+    usually indicates an upstream data-pipeline defect (e.g. a sample
+    with no supervised tokens ever entered the batch), and silently
+    reporting "loss: 0.0" for it would look, in any training log or
+    loss-averaging code, exactly like a real, successful, zero-loss
+    step -- precisely the "silently turning an invalid training batch
+    into successful progress" this fix exists to avoid. A real training
+    loop that legitimately expects occasional fully-masked batches (e.g.
+    certain packed-sequence layouts) should filter them out explicitly,
+    with its own logging, before calling this primitive -- not rely on
+    this primitive to paper over the condition."""
     if logits.shape[:-1] != labels.shape:
         raise ValueError(
             f"logits shape {tuple(logits.shape)} and labels shape {tuple(labels.shape)} "
             f"are inconsistent -- expected logits (..., vocab_size) to match labels (...)"
         )
+    if logits.shape[-2] < 2:
+        raise ValueError(
+            f"causal_lm_loss requires seq_len >= 2 (a sequence of length "
+            f"{logits.shape[-2]} has no next-token pair to predict), not a degenerate zero loss"
+        )
     shift_logits = logits[..., :-1, :].contiguous()
     shift_labels = labels[..., 1:].contiguous()
+    active = (shift_labels != ignore_index).sum()
+    if active == 0:
+        raise ValueError(
+            "causal_lm_loss received a batch where every shifted position is "
+            "ignore_index -- there is no supervised token to compute a loss "
+            "from; this is a fail-closed rejection, not a differentiable zero "
+            "loss, so an upstream data-pipeline defect is never silently "
+            "reported as a successful training step"
+        )
     return F.cross_entropy(
         shift_logits.view(-1, shift_logits.size(-1)),
         shift_labels.view(-1),
@@ -106,11 +143,37 @@ def cosine_warmup_lr(step: int, *, warmup_steps: int, total_steps: int, max_lr: 
     recipes. Returns a pure float (the learning rate value for this exact
     step); applying it to an optimizer's param groups is the caller's
     responsibility, kept separate here so the math is independently
-    testable without an optimizer or model in the loop at all."""
+    testable without an optimizer or model in the loop at all.
+
+    Indexing, precisely (zero-based): `step=0` is the FIRST training
+    step, not a "before training starts" sentinel. With `warmup_steps=W`,
+    `step=0` returns `max_lr * 1/W` (the first nonzero rung of the
+    ramp, not `0.0`), and `step=W-1` returns `max_lr * W/W = max_lr` --
+    i.e. the schedule reaches `max_lr` exactly at the LAST warmup step,
+    not one step after it. `step=warmup_steps` is the first COSINE-decay
+    step (`progress=0`, still exactly `max_lr`, continuous with the
+    warmup phase's own endpoint). `step=total_steps-1` is the last
+    scheduled step (`progress` approaches but does not necessarily equal
+    `1.0`, depending on step count); any `step >= total_steps` clamps to
+    `min_lr`, it does not raise -- running past the planned schedule
+    length is a normal, recoverable condition a caller may legitimately
+    hit (e.g. an early-stopped then resumed run), unlike a negative step,
+    which cannot correspond to any real training-step count and is
+    always a caller error.
+
+    Audit #016 DEFECT-04 fix: `step < 0` now raises, rather than
+    returning a nonsensical negative learning rate (the pre-fix
+    behavior: `cosine_warmup_lr(-2, ...)` silently returned `-0.0001`)."""
+    if step < 0:
+        raise ValueError(f"step must be non-negative (0-based: step=0 is the first training step), got {step}")
     if warmup_steps < 0 or total_steps <= 0:
         raise ValueError("warmup_steps must be >= 0 and total_steps must be > 0")
     if warmup_steps >= total_steps:
         raise ValueError("warmup_steps must be less than total_steps")
+    if max_lr < 0 or min_lr < 0:
+        raise ValueError("max_lr and min_lr must be non-negative")
+    if min_lr > max_lr:
+        raise ValueError(f"min_lr ({min_lr}) must not exceed max_lr ({max_lr})")
     if step < warmup_steps:
         return max_lr * (step + 1) / max(warmup_steps, 1)
     progress = (step - warmup_steps) / max(total_steps - warmup_steps, 1)
@@ -214,23 +277,114 @@ def save_training_state(state: TrainingState, path: Path) -> None:
     """Atomic write (temp file + rename), matching this codebase's
     established pattern elsewhere (orca/brain/memory.py's ledger writes)
     for the same reason: a crash mid-write must never leave a half-
-    written, unreadable checkpoint file."""
+    written, unreadable checkpoint file.
+
+    Audit #016 DEFECT-02 fixes, each independently reproduced before this
+    fix (not assumed from the audit's description alone):
+
+    1. **Deterministic-tempfile collision**: the prior `path.with_suffix(
+       path.suffix + ".tmp")` name is the SAME for every writer targeting
+       this `path`. `tempfile.NamedTemporaryFile(dir=path.parent, ...)`
+       instead gives every call its own randomly-named file, so two
+       concurrent writers can never interleave writes into the same
+       underlying file -- each completes its own independent write before
+       either renames.
+    2. **Symlink-following overwrite**: reproduced directly -- a
+       pre-planted symlink at the old deterministic `.tmp` path caused
+       `torch.save` to follow it and overwrite an unrelated file outside
+       `path.parent` entirely. A `NamedTemporaryFile`'s randomly-generated
+       name cannot match a symlink an attacker planted in advance (they
+       cannot predict it), which structurally closes this path rather
+       than attempting to detect and reject a symlink after the fact.
+    3. **Missing restrictive permissions**: reproduced directly -- the
+       prior code left the written file at the ambient umask (`0o644`
+       observed). The parent directory is now created via this
+       codebase's existing, already-tested `_mkdir_owner_only` helper
+       (`orca/config.py`, 0700, owner-only, symlink-safe ancestor walk --
+       the exact pattern Phase 3 instructed reusing rather than
+       reinventing), and the checkpoint file itself is `chmod`'d to
+       `0o600` before the atomic rename.
+    4. **Exclusive-writer policy for concurrent writers**: an
+       `fcntl.flock` exclusive lock on a sibling `.lock` file is held for
+       the full duration of this function (write + fsync + rename).
+       Two concurrent callers targeting the same `path` are serialized,
+       not merely prevented from corrupting each other's bytes -- the
+       second caller's entire save (including which `TrainingState` ends
+       up as the final, readable content at `path`) waits for the first
+       to fully complete, so "whichever call's rename happened to land
+       last, non-deterministically" is replaced by "whichever call
+       started second, deterministically, completes second." This is an
+       exclusive-writer policy, not a full distributed-training
+       coordination protocol -- sufficient for this primitive's own
+       correctness contract, not a claim about any larger system built
+       on top of it.
+    5. **Durability**: `os.fsync()` on the temp file's descriptor before
+       closing, and on the parent directory's descriptor after the
+       rename, so the rename itself is not lost by a crash immediately
+       after `os.replace()` returns but before the directory entry is
+       flushed to disk -- the standard "fsync the directory too" rule for
+       a truly durable atomic rename."""
+    import fcntl
+    import os
+    import tempfile
+
+    from orca.config import _mkdir_owner_only
+
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    torch.save(state.to_dict(), tmp)
-    tmp.replace(path)
+    parent = _mkdir_owner_only(path.parent, parents=True)
+    path = parent / path.name
+
+    lock_path = parent / f".{path.name}.lock"
+    with open(lock_path, "a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            fd, tmp_name = tempfile.mkstemp(dir=parent, prefix=f".{path.name}.tmp-")
+            tmp = Path(tmp_name)
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    torch.save(state.to_dict(), f)
+                    f.flush()
+                    os.fsync(f.fileno())
+                tmp.chmod(0o600)
+                os.replace(tmp, path)
+                dir_fd = os.open(parent, os.O_RDONLY)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
+            except BaseException:
+                tmp.unlink(missing_ok=True)
+                raise
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def load_training_state(path: Path) -> TrainingState:
-    """Loads a checkpoint written by `save_training_state`. Does NOT use
-    `torch.load`'s legacy pickle-based path on untrusted input -- callers
-    handling a checkpoint from outside this process's own control should
-    additionally verify provenance via `orca.registry.provenance` before
-    calling this; this function only handles the deserialization
-    contract, not trust."""
+    """Loads a checkpoint written by `save_training_state`.
+
+    Audit #016 DEFECT-01 fix, independently reproduced before this fix
+    (not assumed from the audit's description alone): the prior
+    `weights_only=False` call used Python's full pickle engine, and a
+    crafted checkpoint file containing a `__reduce__` method executed
+    arbitrary code immediately upon loading -- confirmed directly against
+    THIS function (not merely against a standalone `torch.load` call) by
+    crafting a payload whose `__reduce__` ran `os.system(...)` and
+    observing it execute during an actual `load_training_state()` call.
+    `weights_only=True` loads every legitimate `TrainingState` checkpoint
+    (verified: `TrainingState.to_dict()` contains only plain Python
+    ints/tuples/lists, raw bytes, and PyTorch tensor dicts -- all
+    representable without the general pickle engine) while rejecting a
+    malicious payload with a loud, immediate `UnpicklingError` instead of
+    running it.
+
+    This function still does NOT perform trust/provenance verification
+    on ITS OWN -- callers handling a checkpoint from outside this
+    process's own control should additionally verify provenance via
+    `orca.registry.provenance` before calling this; `weights_only=True`
+    closes the arbitrary-code-execution path, it does not establish that
+    the checkpoint's CONTENT is the one a caller actually expects."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"no checkpoint at {path}")
-    d = torch.load(path, weights_only=False)  # see module docstring: provenance verification is the caller's job
+    d = torch.load(path, weights_only=True)
     return TrainingState.from_dict(d)
