@@ -1,3 +1,4 @@
+<!-- SUPERSEDED 2026-10-11: the founder-supplied ORNEUR logo is the sole authoritative identity (docs/orneur/brand/BRAND_IDENTITY_LOCK.md). This brief concerned the retired "Orca" mark and is kept only for history. -->
 <!--
 Senior-level brand identity brief for Orca's monochrome mark. Written as a
 creative brief to an experienced (20+ year) brand identity designer, not

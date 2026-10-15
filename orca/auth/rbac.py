@@ -45,3 +45,14 @@ def require_role(min_role: str):
             raise HTTPException(status_code=403, detail=f"Requires role: {min_role}")
         return user
     return _dep
+
+
+def can_assign_role(actor_role: str, target_current_role: str, new_role: str) -> bool:
+    """G-006: ``manage_users`` alone let an admin promote themselves (or a
+    friend) to owner and demote the real owner. An actor may only change a
+    user ranked strictly below themselves, and only to a rank strictly below
+    their own; only an owner can create or change an owner/admin peer."""
+    actor = ROLE_RANK.get(actor_role, 0)
+    if actor >= ROLE_RANK["owner"]:
+        return True
+    return ROLE_RANK.get(target_current_role, 0) < actor and ROLE_RANK.get(new_role, 0) < actor

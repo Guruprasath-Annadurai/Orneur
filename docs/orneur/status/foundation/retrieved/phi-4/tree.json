@@ -1,0 +1,134 @@
+{
+ "repo": "microsoft/phi-4",
+ "revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+ "source_url": "https://huggingface.co/api/models/microsoft/phi-4/tree/2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+ "retrieved_at": "2026-10-11T19:21:00Z",
+ "files": [
+  {
+   "path": ".gitattributes",
+   "size": 1519,
+   "git_blob_sha1": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+   "lfs_sha256": null
+  },
+  {
+   "path": "CODE_OF_CONDUCT.md",
+   "size": 453,
+   "git_blob_sha1": "c72a5749c52ac97bca71c672ef5295d303d22b05",
+   "lfs_sha256": null
+  },
+  {
+   "path": "LICENSE",
+   "size": 1105,
+   "git_blob_sha1": "700edcc5f42c4816520bc554926ad7e0d9e613d7",
+   "lfs_sha256": null
+  },
+  {
+   "path": "README.md",
+   "size": 13763,
+   "git_blob_sha1": "97d90faa2a92ed8fabbc553e46368d6d34e76e89",
+   "lfs_sha256": null
+  },
+  {
+   "path": "SECURITY.md",
+   "size": 2697,
+   "git_blob_sha1": "6b906d43bc2057e6a832c3236897b2e514d6e1e7",
+   "lfs_sha256": null
+  },
+  {
+   "path": "added_tokens.json",
+   "size": 2495,
+   "git_blob_sha1": "c410491b4c95d889958ff4480f37ab235018a67f",
+   "lfs_sha256": null
+  },
+  {
+   "path": "config.json",
+   "size": 802,
+   "git_blob_sha1": "ab17e0b5838762a837102af7269223b5a20d52fd",
+   "lfs_sha256": null
+  },
+  {
+   "path": "data_summary_card.md",
+   "size": 4767,
+   "git_blob_sha1": "e736b6fa688eeae045ef56be10d2225813f017fb",
+   "lfs_sha256": null
+  },
+  {
+   "path": "generation_config.json",
+   "size": 184,
+   "git_blob_sha1": "aaad1bd08a7521c56ff79061403d43a04bd1a6b9",
+   "lfs_sha256": null
+  },
+  {
+   "path": "merges.txt",
+   "size": 916646,
+   "git_blob_sha1": "354558edcdbd64ca7abd407b8be3d5d09d39d781",
+   "lfs_sha256": null
+  },
+  {
+   "path": "model-00001-of-00006.safetensors",
+   "size": 4933656472,
+   "git_blob_sha1": "25f0a3bfd15ad91ef01baee374a0a2ed03389181",
+   "lfs_sha256": "cafbe72210c39b19270cbfce27996afc4383c8a487087bcb91a6290d5ceb8f18"
+  },
+  {
+   "path": "model-00002-of-00006.safetensors",
+   "size": 4954690712,
+   "git_blob_sha1": "e0bf9c3ab85f3749728e3efee53df2ee1b1530dd",
+   "lfs_sha256": "9f87a5897162ed988cfb0fac13879634b4bab3da5a756b4f9dd2437ef8145e20"
+  },
+  {
+   "path": "model-00003-of-00006.safetensors",
+   "size": 4902241352,
+   "git_blob_sha1": "b0538c749471a76ef00dd5d2e40118497cf848ab",
+   "lfs_sha256": "19537df78a263aa0c0b2dc12dbce5908021e30a25e528699b08642c3999eeb05"
+  },
+  {
+   "path": "model-00004-of-00006.safetensors",
+   "size": 4771169120,
+   "git_blob_sha1": "50fdebd9cf1bb643a83a88db50f3aeb6a2ed743d",
+   "lfs_sha256": "d4f17100a39c19d352f2e8108eef6fb975afb86808e50d78a075e162f1edfc93"
+  },
+  {
+   "path": "model-00005-of-00006.safetensors",
+   "size": 4771169120,
+   "git_blob_sha1": "5dfa47ffd2a03c278ac5e3c28ed08df835496949",
+   "lfs_sha256": "a72666b6001d76e7a9dc3ebe0d05a2c3316f546a8c6779c87343f296bdf82e50"
+  },
+  {
+   "path": "model-00006-of-00006.safetensors",
+   "size": 4986116216,
+   "git_blob_sha1": "5d41bad8212bf42a71e940175fb421e15a10fe9c",
+   "lfs_sha256": "a9bfeeea354e31503d09a864e6cd5bd0f1230664065b6a2988b05e22b3228d77"
+  },
+  {
+   "path": "model.safetensors.index.json",
+   "size": 20364,
+   "git_blob_sha1": "d9c4e28d4f7cc72949fdc86940c8a67583750436",
+   "lfs_sha256": null
+  },
+  {
+   "path": "special_tokens_map.json",
+   "size": 95,
+   "git_blob_sha1": "ea8cb2e2c57355312c3ff7b0e0f1beaf8e88ce8e",
+   "lfs_sha256": null
+  },
+  {
+   "path": "tokenizer.json",
+   "size": 4253055,
+   "git_blob_sha1": "4cc07e6ec369bc5bdfd719da75f411373d8b436a",
+   "lfs_sha256": null
+  },
+  {
+   "path": "tokenizer_config.json",
+   "size": 17737,
+   "git_blob_sha1": "25c30b707a88b5e5fc715fb81d2221d1162380b4",
+   "lfs_sha256": null
+  },
+  {
+   "path": "vocab.json",
+   "size": 1612637,
+   "git_blob_sha1": "c5dc46ce1c830966b5e947da6d471ea3c2e1e57e",
+   "lfs_sha256": null
+  }
+ ]
+}

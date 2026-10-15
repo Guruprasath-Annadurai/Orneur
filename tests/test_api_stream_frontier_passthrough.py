@@ -145,4 +145,6 @@ def test_stream_frontier_generation_error_yields_error_event(client, monkeypatch
     assert resp.status_code == 200
     events = _sse_events(resp)
     error = next(e for e in events if e["type"] == "error")
-    assert "upstream API error" in error["text"]
+    assert "upstream API error" not in error["text"]
+    assert error["code"] == "backend_error"
+    assert error["error_id"]

@@ -31,15 +31,25 @@ def verify_password(password: str, stored: str) -> bool:
 
 # ── Token signing (HMAC-SHA256, no PyJWT dep) ────────────────────────────────
 
+from orca.auth.secret import DEV_SECRETS as _DEV_SECRETS, resolve_auth_secret  # noqa: E402  (single source of truth; see orca/auth/secret.py)
+
+
+def assert_secret_usable(value: str) -> None:
+    """Kept for callers/tests that check a candidate value: a published development constant is never usable on a public edge."""
+    if value in _DEV_SECRETS and orneur_env("PUBLIC_EDGE", "").strip().lower() in ("1", "true", "yes"):
+        raise RuntimeError(
+            "ORNEUR_AUTH_SECRET is unset (or a development default) while ORNEUR_PUBLIC_EDGE is enabled; "
+            "refusing to sign or verify session tokens"
+        )
+
+
 def _secret() -> bytes:
-    return orneur_env(
-        "AUTH_SECRET",
-        "orneur-auth-dev-secret-CHANGE-THIS-IN-PRODUCTION"
-    ).encode()
+    return resolve_auth_secret()
 
 
 def create_token(payload: dict, expires_in: int = 86_400 * 30) -> str:
-    p = {**payload, "exp": int(time.time()) + expires_in}
+    now = time.time()
+    p = {**payload, "iat": now, "exp": int(now) + expires_in}
     data = (
         base64.urlsafe_b64encode(json.dumps(p, separators=(",", ":")).encode())
         .rstrip(b"=")

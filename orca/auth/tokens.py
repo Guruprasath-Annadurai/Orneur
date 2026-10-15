@@ -15,19 +15,23 @@ from typing import Optional
 
 from orca.config import orneur_env
 
-_SECRET = orneur_env("AUTH_SECRET", "dev-secret-change-me")
+def _signing_secret() -> bytes:
+    from orca.auth.secret import resolve_auth_secret
+
+    return resolve_auth_secret()
 
 
 def _encode(payload: dict) -> str:
+    payload = {**payload, "iat": time.time()}
     data = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode().rstrip("=")
-    sig  = hmac.new(_SECRET.encode(), data.encode(), hashlib.sha256).hexdigest()
+    sig  = hmac.new(_signing_secret(), data.encode(), hashlib.sha256).hexdigest()
     return f"{data}.{sig}"
 
 
 def _decode(token: str) -> Optional[dict]:
     try:
         data, sig = token.rsplit(".", 1)
-        expected  = hmac.new(_SECRET.encode(), data.encode(), hashlib.sha256).hexdigest()
+        expected  = hmac.new(_signing_secret(), data.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, expected):
             return None
         padding = 4 - len(data) % 4

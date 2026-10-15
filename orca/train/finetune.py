@@ -19,7 +19,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from orca.train.config import TrainingConfig, MODELS_DIR, resolve_training_data_inputs
+from orca.train.authorization import authorize_training, require_grant
+from orca.train.config import TrainingConfig, MODELS_DIR, resolve_training_data_inputs, validate_training_identity
 from orca.registry.provenance import (
     SnapshotIntegrityError,
     complete_training_run,
@@ -27,6 +28,11 @@ from orca.registry.provenance import (
     start_training_run,
     verify_run_snapshot,
 )
+
+
+# The entry path -- not the operator, not an environment variable -- declares which environment class this
+# code path runs in; the signed grant must name exactly this class.
+LOCAL_ENVIRONMENT_CLASS = "SELF_HOSTED_GPU"
 
 
 def _check_deps():
@@ -71,6 +77,17 @@ def train(
     """
     log = on_log or print
 
+    # AUTHORIZATION GATE (fail closed). Identity is validated first so a malformed config keeps
+    # raising its precise error; then NOTHING else -- no snapshot copy, no manifest, no dependency
+    # import, no model load -- happens without a verified, request-exact, signed grant. There is
+    # deliberately no parameter, environment variable or flag that skips this (see
+    # orca/train/authorization.py and docs/orneur/authorization/TRAINING_AUTHORIZATION_DESIGN.md).
+    validate_training_identity(cfg)
+    grant = authorize_training(
+        cfg, environment_class=LOCAL_ENVIRONMENT_CLASS,
+        dataset_manifest_ids=dataset_manifest_ids or [], dataset_bundle_id=dataset_bundle_id,
+    )
+
     # validate_training_identity() is called by start_training_run() --
     # this is the mandatory first step, before ANY model/dependency work,
     # so a bad config never even gets far enough to create a manifest for
@@ -87,7 +104,7 @@ def train(
     )
 
     try:
-        result = _train_impl(cfg, log, manifest)
+        result = _train_impl(cfg, log, manifest, grant)
     except Exception as exc:
         fail_training_run(manifest, f"{type(exc).__name__}: {exc}")
         raise
@@ -117,7 +134,10 @@ def _load_base_model_and_tokenizer(cfg: TrainingConfig, base_model_revision: str
     )
 
 
-def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> dict:
+def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest, grant=None) -> dict:
+    # Defense in depth: calling this lower-level function directly, without the grant train()
+    # obtained from authorize_training(), is refused before any dependency or model work.
+    grant = require_grant(grant, cfg, environment_class=LOCAL_ENVIRONMENT_CLASS)
     _check_deps()
 
     from unsloth import FastLanguageModel
@@ -173,6 +193,8 @@ def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> di
     if eval_file is not None and Path(eval_file).exists():
         data_files["validation"] = eval_file
 
+    # The bytes about to be consumed must be the exact bytes the authority approved.
+    grant.assert_files(train_file, data_files.get("validation"))
     dataset = load_dataset("json", data_files=data_files)
     log(f"[Train] Train examples: {len(dataset['train'])}")
 
@@ -193,6 +215,8 @@ def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> di
             "train": {"path": manifest.dataset_snapshot_paths["train"], "sha256": manifest.dataset_split_digests["train"]},
             "eval": {"path": manifest.dataset_snapshot_paths["validation"], "sha256": manifest.dataset_split_digests["validation"]},
         })
+    # Authorization binding, post-load: the bytes the loader may have read must still be the approved bytes.
+    grant.assert_files(train_file, data_files.get("validation"))
 
     # ── Step 2: Load model + tokenizer, at the exact pinned revision ───────────
     # Only reached once the dataset this run will actually consume has
@@ -262,6 +286,9 @@ def _train_impl(cfg: TrainingConfig, log: Callable[[str], None], manifest) -> di
         packing=True,  # pack multiple short examples → higher GPU utilization
     )
 
+    # Last-mile re-check (expiry may have passed during model load) and the authorized wall-clock cap.
+    grant.assert_valid_for(cfg, environment_class=LOCAL_ENVIRONMENT_CLASS)
+    trainer.add_callback(grant.wall_clock_callback())
     trainer_stats = trainer.train()
     elapsed = time.time() - start
     log(f"[Train] Done in {elapsed/60:.1f} min | loss: {trainer_stats.training_loss:.4f}")

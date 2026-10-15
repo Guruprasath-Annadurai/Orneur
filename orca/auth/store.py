@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from orca.auth.db import get_conn
@@ -25,6 +25,9 @@ class User:
     verified: bool
     role: str = "member"
     signup_seq: int | None = None
+    # G-006: session tokens issued before this epoch-seconds instant are
+    # rejected (bumped by update_password); 0.0 = never invalidated.
+    tokens_valid_after: float = 0.0
 
 
 # First-100 cohort gets Novus free regardless of tier — counted by global
@@ -84,9 +87,45 @@ def mark_verified(user_id: str) -> None:
 
 
 def update_password(user_id: str, new_password: str) -> None:
+    """Sets a new password AND invalidates every session token and reset
+    link issued before this instant (G-006): a stolen token, or a reset
+    link that was already used once, must not survive a password change."""
+    import time
+
     from orca.auth.crypto import hash_password
     with get_conn() as conn:
-        conn.execute("UPDATE users SET password_hash=? WHERE id=?", (hash_password(new_password), user_id))
+        conn.execute(
+            "UPDATE users SET password_hash=?, tokens_valid_after=? WHERE id=?",
+            (hash_password(new_password), time.time(), user_id),
+        )
+
+
+def revoke_token(jti: str, user_id: str, expires_at: float) -> None:
+    """Server-side revocation of ONE session token (logout). Idempotent."""
+    with get_conn() as conn:
+        conn.execute("INSERT INTO revoked_tokens (jti, user_id, expires_at) VALUES (?,?,?) ON CONFLICT DO NOTHING", (jti, user_id, float(expires_at)))
+
+
+def is_token_revoked(jti: str) -> bool:
+    with get_conn() as conn:
+        return conn.execute("SELECT 1 AS x FROM revoked_tokens WHERE jti=?", (jti,)).fetchone() is not None
+
+
+def purge_expired_revocations(now: float | None = None) -> int:
+    """Deletes revocation rows whose token has expired anyway. Returns how many were removed."""
+    import time as _t
+
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM revoked_tokens WHERE expires_at < ?", (_t.time() if now is None else now,))
+        return cur.rowcount or 0
+
+
+def invalidate_all_sessions(user_id: str) -> None:
+    """Sign the user out everywhere: every token issued before now is rejected (same epoch mechanism as a password change)."""
+    import time as _t
+
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET tokens_valid_after=? WHERE id=?", (_t.time(), user_id))
 
 
 def _count_users() -> int:
@@ -112,18 +151,25 @@ def _claim_signup_seq(conn) -> int:
 
 
 def create_user(email: str, password: str, name: str = "") -> User:
+    """Creates an ORDINARY (role `member`) account. G-021: signing up never
+    confers `owner` -- not as the first account, not under any race. The owner
+    is created only through `orca.auth.bootstrap` (operator-issued, single-use,
+    email-bound token)."""
+    with get_conn() as conn:
+        return insert_user(conn, email, password, name, role="member")
+
+
+def insert_user(conn, email: str, password: str, name: str = "", *, role: str = "member") -> User:
     uid = str(uuid.uuid4())
     ph  = hash_password(password)
     now = datetime.now(timezone.utc).isoformat()
     display = name or email.split("@")[0]
-    role = "owner" if _count_users() == 0 else "member"
-    with get_conn() as conn:
-        seq = _claim_signup_seq(conn)
-        conn.execute(
-            "INSERT INTO users (id, email, name, password_hash, tier, role, created_at, signup_seq) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (uid, email.lower().strip(), display, ph, "free", role, now, seq),
-        )
+    seq = _claim_signup_seq(conn)
+    conn.execute(
+        "INSERT INTO users (id, email, name, password_hash, tier, role, created_at, signup_seq) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (uid, email.lower().strip(), display, ph, "free", role, now, seq),
+    )
     return User(id=uid, email=email, name=display, tier="free", verified=False, role=role, signup_seq=seq)
 
 
@@ -246,6 +292,7 @@ def _row_to_user(row) -> Optional[User]:
         verified=bool(row["verified"]),
         role=row["role"] if "role" in cols else "member",
         signup_seq=row["signup_seq"] if "signup_seq" in cols else None,
+        tokens_valid_after=float(row["tokens_valid_after"] or 0) if "tokens_valid_after" in cols else 0.0,
     )
 
 
@@ -275,9 +322,61 @@ def increment_usage(user_id: str, kind: str = "message") -> None:
     with get_conn() as conn:
         conn.execute(
             f"INSERT INTO usage_daily (user_id, date, {col}) VALUES (?,?,1) "
-            f"ON CONFLICT(user_id, date) DO UPDATE SET {col}={col}+1",
+            f"ON CONFLICT(user_id, date) DO UPDATE SET {col}=usage_daily.{col}+1",   # qualified: PostgreSQL rejects the bare column as ambiguous
             (user_id, today),
         )
+
+
+def get_usage_history(user_id: str, days: int = 7) -> list[dict]:
+    """Per-day counters for the last `days` days (newest first); days without activity are omitted."""
+    days = max(1, min(int(days), 366))
+    since = (date.today() - timedelta(days=days - 1)).isoformat()
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT date, messages, ultra_runs FROM usage_daily WHERE user_id=? AND date>=? ORDER BY date DESC", (user_id, since)
+        ).fetchall()
+    return [{"date": r["date"], "messages": r["messages"], "ultra_runs": r["ultra_runs"]} for r in rows]
+
+
+def get_user_sessions_with_created(user_id: str) -> list[tuple[str, str]]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT session_id, created_at FROM user_sessions WHERE user_id=?", (user_id,)).fetchall()
+    return [(r["session_id"], r["created_at"]) for r in rows]
+
+
+def get_retention_days(user_id: str) -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT retention_days FROM user_settings WHERE user_id=?", (user_id,)).fetchone()
+    return int(row["retention_days"]) if row else 0
+
+
+def set_retention_days(user_id: str, days: int) -> None:
+    if not (days == 0 or 1 <= days <= 3650):
+        raise ValueError("retention_days must be 0 (keep) or 1..3650")
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO user_settings (user_id, retention_days, updated_at) VALUES (?,?,?) "
+            "ON CONFLICT (user_id) DO UPDATE SET retention_days=excluded.retention_days, updated_at=excluded.updated_at",
+            (user_id, int(days), now),
+        )
+
+
+def users_with_retention() -> list[tuple[str, int]]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT user_id, retention_days FROM user_settings WHERE retention_days > 0").fetchall()
+    return [(r["user_id"], int(r["retention_days"])) for r in rows]
+
+
+def release_session(session_id: str, user_id: str) -> bool:
+    """Removes the OWNER's claim on one session (and its storage-name claims) so the id and its names are free again. Only the owner's call succeeds."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT user_id FROM user_sessions WHERE session_id=?", (session_id,)).fetchone()
+        if not row or row["user_id"] != user_id:
+            return False
+        conn.execute("DELETE FROM session_storage_keys WHERE session_id=?", (session_id,))
+        conn.execute("DELETE FROM user_sessions WHERE session_id=? AND user_id=?", (session_id, user_id))
+    return True
 
 
 def get_usage_today(user_id: str) -> dict:
@@ -297,12 +396,86 @@ def get_usage_today(user_id: str) -> dict:
 # existed, meaning "delete my account" had no way to find and remove them.
 
 def record_user_session(user_id: str, session_id: str) -> None:
+    """Records ``user_id`` as owner of ``session_id`` iff the session has no
+    owner yet. First writer wins; a second user's attempt is silently a
+    no-op here -- callers that must *refuse* the second user use
+    ``claim_session()``, which reports the outcome."""
     with get_conn() as conn:
         conn.execute(
             "INSERT INTO user_sessions (user_id, session_id, created_at) VALUES (?,?,?) "
-            "ON CONFLICT(user_id, session_id) DO NOTHING",
+            "ON CONFLICT DO NOTHING",
             (user_id, session_id, datetime.now(timezone.utc).isoformat()),
         )
+
+
+def _storage_keys(session_id: str) -> list[str]:
+    """Every storage name a session id is reduced to, case-folded:
+    long-term memory / semantic facts / keyword docs use ``session_id[:8]``
+    (orca/brain/memory.py, orca/docs/store.py) and the document vector
+    collection uses ``session_id[:12]`` with dashes removed. Two session ids
+    that share ANY of these share that data, so each is claimed separately."""
+    sid = session_id.lower()
+    return [f"m:{sid[:8]}", f"d:{sid[:12].replace('-', '')}"]
+
+
+def _prefix_owned_by_other_session(conn, session_id: str) -> bool:
+    sid = session_id.lower()
+    row = conn.execute(
+        "SELECT 1 FROM user_sessions WHERE session_id <> ? AND "
+        "(lower(substr(session_id, 1, 8)) = ? OR replace(lower(substr(session_id, 1, 12)), '-', '') = ?) LIMIT 1",
+        (session_id, sid[:8], sid[:12].replace("-", "")),
+    ).fetchone()
+    return row is not None
+
+
+def _prefix_claimed_by_other_session(conn, session_id: str) -> bool:
+    for key in _storage_keys(session_id):
+        claimed = conn.execute("SELECT session_id FROM session_storage_keys WHERE storage_key=?", (key,)).fetchone()
+        if claimed and claimed["session_id"] != session_id:
+            return True
+    return False
+
+
+def check_session_access(session_id: str, user_id: str | None) -> bool:
+    """Read-only access decision. ``False`` means the caller must be told the
+    session does not exist (404): another user owns it, an anonymous caller is
+    naming an owned session, or ``session_id`` shares a storage name with a
+    different session that is already claimed/owned."""
+    with get_conn() as conn:
+        if _prefix_claimed_by_other_session(conn, session_id) or _prefix_owned_by_other_session(conn, session_id):
+            return False
+        row = conn.execute("SELECT user_id FROM user_sessions WHERE session_id=?", (session_id,)).fetchone()
+    return row is None or row["user_id"] == user_id
+
+
+def claim_session(session_id: str, user_id: str | None) -> bool:
+    """Atomically claim ``session_id`` (and its storage names) for ``user_id``.
+
+    Check-then-record used to be two separate steps, so two workers could
+    both see "unowned" and both record themselves as owner. Each INSERT here
+    is conflict-resolved by the database (primary key on the storage name,
+    unique index on ``user_sessions.session_id``) and the winner is then
+    *read back*, so exactly one caller is told ``True``. An anonymous claim
+    (``user_id`` None) reserves the storage names but leaves the session
+    ownerless, as before.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        for key in _storage_keys(session_id):
+            conn.execute(
+                "INSERT INTO session_storage_keys (storage_key, session_id, created_at) VALUES (?,?,?) "
+                "ON CONFLICT DO NOTHING",
+                (key, session_id, now),
+            )
+        if _prefix_claimed_by_other_session(conn, session_id) or _prefix_owned_by_other_session(conn, session_id):
+            return False
+        if user_id:
+            conn.execute(
+                "INSERT INTO user_sessions (user_id, session_id, created_at) VALUES (?,?,?) ON CONFLICT DO NOTHING",
+                (user_id, session_id, now),
+            )
+        row = conn.execute("SELECT user_id FROM user_sessions WHERE session_id=?", (session_id,)).fetchone()
+    return row is None or row["user_id"] == user_id
 
 
 def get_user_session_ids(user_id: str) -> list[str]:
@@ -352,7 +525,21 @@ def delete_user_account_records(user_id: str) -> None:
     _ensure_api_keys_table()
 
     with get_conn() as conn:
-        conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM usage_daily WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM user_sessions WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        delete_account_rows(conn, user_id)
+
+
+def delete_account_rows(conn, user_id: str) -> None:
+    """The account-level DELETEs on an existing connection, so a caller (owner bootstrap) can make them part of its own transaction.
+    The ``api_keys`` table must already exist (see ``delete_user_account_records``)."""
+    conn.execute("DELETE FROM api_keys WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM usage_daily WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM user_settings WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM idempotency_keys WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM revoked_tokens WHERE user_id=?", (user_id,))
+    conn.execute(
+        "DELETE FROM session_storage_keys WHERE session_id IN "
+        "(SELECT session_id FROM user_sessions WHERE user_id=?)",
+        (user_id,),
+    )
+    conn.execute("DELETE FROM user_sessions WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM users WHERE id=?", (user_id,))

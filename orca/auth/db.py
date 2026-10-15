@@ -72,7 +72,11 @@ CREATE TABLE IF NOT EXISTS users (
     stripe_customer_id  TEXT,
     totp_secret         TEXT,
     totp_enabled        INTEGER NOT NULL DEFAULT 0,
-    signup_seq          INTEGER
+    signup_seq          INTEGER,
+    -- G-006: session tokens issued before this instant (epoch seconds) are
+    -- rejected. Bumped on every password change/reset so a stolen token or a
+    -- replayed reset link stops working. 0 = never invalidated.
+    tokens_valid_after  REAL NOT NULL DEFAULT 0
 );
 
 -- Single-row atomic counter for global signup order — used to gate the
@@ -100,6 +104,59 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, session_id)
 );
+
+CREATE TABLE IF NOT EXISTS session_storage_keys (
+    storage_key TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
+-- G-021: owner bootstrap. `owner_bootstrap` is a singleton (id is always 1):
+-- the PRIMARY KEY makes "who completed bootstrap" a database-decided fact, so
+-- two racing redemptions cannot both win. `owner_bootstrap_tokens` holds
+-- operator-issued, single-use, email-bound, expiring tokens -- only a SHA-256
+-- of the token is stored.
+CREATE TABLE IF NOT EXISTS owner_bootstrap (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    owner_user_id TEXT NOT NULL,
+    completed_at  TEXT NOT NULL,
+    method        TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS owner_bootstrap_tokens (
+    token_hash  TEXT PRIMARY KEY,
+    bound_email TEXT NOT NULL,
+    issued_at   TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    redeemed_at TEXT,
+    redeemed_by TEXT,
+    replace_existing INTEGER NOT NULL DEFAULT 0
+);
+
+-- Workstream B: server-side token revocation (logout). Rows are only needed until the token would have expired anyway.
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+    jti        TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    expires_at REAL NOT NULL
+);
+
+-- Workstream B: per-user privacy settings (conversation retention) and request idempotency.
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id        TEXT PRIMARY KEY,
+    retention_days INTEGER NOT NULL DEFAULT 0,
+    updated_at     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    user_id      TEXT NOT NULL,
+    idem_key     TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    response     TEXT,
+    created_at   REAL NOT NULL,
+    PRIMARY KEY (user_id, idem_key)
+);
+
+
+
 
 -- Enterprise/Team management — one organization per owning account. Seat
 -- limits are tied to the owner's tier (free/pro/enterprise), NOT a separate
@@ -226,7 +283,8 @@ CREATE TABLE IF NOT EXISTS users (
     stripe_customer_id  TEXT,
     totp_secret         TEXT,
     totp_enabled        INTEGER NOT NULL DEFAULT 0,
-    signup_seq          INTEGER
+    signup_seq          INTEGER,
+    tokens_valid_after  DOUBLE PRECISION NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ix_users_stripe_customer ON users(stripe_customer_id);
 
@@ -251,6 +309,59 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, session_id)
 );
+
+CREATE TABLE IF NOT EXISTS session_storage_keys (
+    storage_key TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
+-- G-021: owner bootstrap. `owner_bootstrap` is a singleton (id is always 1):
+-- the PRIMARY KEY makes "who completed bootstrap" a database-decided fact, so
+-- two racing redemptions cannot both win. `owner_bootstrap_tokens` holds
+-- operator-issued, single-use, email-bound, expiring tokens -- only a SHA-256
+-- of the token is stored.
+CREATE TABLE IF NOT EXISTS owner_bootstrap (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    owner_user_id TEXT NOT NULL,
+    completed_at  TEXT NOT NULL,
+    method        TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS owner_bootstrap_tokens (
+    token_hash  TEXT PRIMARY KEY,
+    bound_email TEXT NOT NULL,
+    issued_at   TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    redeemed_at TEXT,
+    redeemed_by TEXT,
+    replace_existing INTEGER NOT NULL DEFAULT 0
+);
+
+-- Workstream B: server-side token revocation (logout). Rows are only needed until the token would have expired anyway.
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+    jti        TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    expires_at DOUBLE PRECISION NOT NULL
+);
+
+-- Workstream B: per-user privacy settings (conversation retention) and request idempotency.
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id        TEXT PRIMARY KEY,
+    retention_days INTEGER NOT NULL DEFAULT 0,
+    updated_at     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+    user_id      TEXT NOT NULL,
+    idem_key     TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    response     TEXT,
+    created_at   DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (user_id, idem_key)
+);
+
+
+
 
 -- See _SCHEMA_SQLITE for the rationale.
 CREATE TABLE IF NOT EXISTS organizations (
@@ -359,6 +470,11 @@ CREATE OR REPLACE RULE breach_log_no_delete AS ON DELETE TO security_breach_log 
 #  layer — this is a DB-level backstop so a query that forgets that filter
 #  fails closed (returns nothing) instead of leaking another user's rows.
 #
+#  Workstream A: `FORCE ROW LEVEL SECURITY` was REMOVED (now NO FORCE). With FORCE, RLS applies to the table OWNER, and managed PostgreSQL gives the application
+#  a non-superuser OWNER role: every INSERT/SELECT was refused ("new row violates row-level security policy"), i.e. no signup or login could work.
+#  Reproduced on a real PostgreSQL 16 (tests/test_a_postgres_integration.py). Policies still bind every NON-owner role; owner-role defense in depth needs
+#  set_user_context()/set_service_context() wired into the connection layer first (tracked as a residual risk).
+#
 #  Deliberately NOT wired into every call site yet — see
 #  set_user_context()/set_service_context() below. Existing store.py code
 #  runs as the Postgres role's default privileges, which this migration
@@ -402,28 +518,28 @@ END;
 $$;
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users FORCE ROW LEVEL SECURITY;
+ALTER TABLE users NO FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS users_service_all ON users;
 CREATE POLICY users_service_all ON users USING (orca_security.is_service());
 DROP POLICY IF EXISTS users_self ON users;
 CREATE POLICY users_self ON users USING (id = orca_security.current_uid());
 
 ALTER TABLE usage_daily ENABLE ROW LEVEL SECURITY;
-ALTER TABLE usage_daily FORCE ROW LEVEL SECURITY;
+ALTER TABLE usage_daily NO FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS usage_daily_service_all ON usage_daily;
 CREATE POLICY usage_daily_service_all ON usage_daily USING (orca_security.is_service());
 DROP POLICY IF EXISTS usage_daily_owner ON usage_daily;
 CREATE POLICY usage_daily_owner ON usage_daily USING (user_id = orca_security.current_uid());
 
 ALTER TABLE privacy_consents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE privacy_consents FORCE ROW LEVEL SECURITY;
+ALTER TABLE privacy_consents NO FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS privacy_consents_service_all ON privacy_consents;
 CREATE POLICY privacy_consents_service_all ON privacy_consents USING (orca_security.is_service());
 DROP POLICY IF EXISTS privacy_consents_owner ON privacy_consents;
 CREATE POLICY privacy_consents_owner ON privacy_consents USING (user_id = orca_security.current_uid());
 
 ALTER TABLE data_export_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE data_export_requests FORCE ROW LEVEL SECURITY;
+ALTER TABLE data_export_requests NO FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS data_export_service_all ON data_export_requests;
 CREATE POLICY data_export_service_all ON data_export_requests USING (orca_security.is_service());
 DROP POLICY IF EXISTS data_export_owner ON data_export_requests;
@@ -530,6 +646,36 @@ def get_conn():
     return _get_sqlite_conn()
 
 
+def _sqlite_backup_before_first_migration() -> None:
+    """Workstream A: an existing SQLite auth database that has never been through the G-006/G-021 migration (no `owner_bootstrap` table) is copied -- with
+    SQLite's online backup API, mode 0600 -- to `auth.db.pre-migration-<UTC>.bak` BEFORE any DDL or the duplicate-owner DELETE runs. Rollback is restoring that file.
+    Taken once: after the migration the marker table exists, so later starts do nothing."""
+    import time as _time
+
+    path = AUTH_DB
+    try:
+        if not path.exists() or path.stat().st_size == 0:
+            return
+    except OSError:
+        return
+    src = sqlite3.connect(str(path))
+    try:
+        has = lambda name: src.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+        if not has("users") or has("owner_bootstrap"):
+            return
+        dest = path.with_name(f"{path.name}.pre-migration-{_time.strftime('%Y%m%dT%H%M%SZ', _time.gmtime())}-{os.getpid()}.bak")
+        fd = os.open(dest, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+        dst = sqlite3.connect(str(dest))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+        os.chmod(dest, 0o600)
+    finally:
+        src.close()
+
+
 def init_db() -> None:
     if BACKEND == "postgres":
         with get_conn() as conn:
@@ -555,12 +701,24 @@ def init_db() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled INTEGER NOT NULL DEFAULT 0")
             conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_seq INTEGER")
+            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tokens_valid_after DOUBLE PRECISION NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE owner_bootstrap_tokens ADD COLUMN IF NOT EXISTS replace_existing INTEGER NOT NULL DEFAULT 0")
+            # G-006: collapse any pre-existing multi-owner rows to the earliest
+            # claim (the one get_session_owner() already favoured), then enforce.
+            conn.execute(
+                "DELETE FROM user_sessions a USING user_sessions b "
+                "WHERE a.session_id = b.session_id AND "
+                "(a.created_at > b.created_at OR (a.created_at = b.created_at AND a.user_id > b.user_id))"
+            )
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_sessions_session ON user_sessions(session_id)")
             # Contains $$ ... $$ function bodies with semicolons inside them —
             # must go through execute_sql_block(), not executescript(), which
             # would break on the naive ';' split (see its docstring).
             conn.execute_sql_block(_RLS_POSTGRES)
+            _mark_legacy_owner(conn)
         return
 
+    _sqlite_backup_before_first_migration()
     with get_conn() as conn:
         conn.executescript(_SCHEMA_SQLITE)
         # Migrations for existing SQLite installs only — a fresh Postgres
@@ -572,11 +730,36 @@ def init_db() -> None:
             "ALTER TABLE users ADD COLUMN totp_secret TEXT",
             "ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE users ADD COLUMN signup_seq INTEGER",
+            "ALTER TABLE users ADD COLUMN tokens_valid_after REAL NOT NULL DEFAULT 0",
+            "ALTER TABLE owner_bootstrap_tokens ADD COLUMN replace_existing INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
                 conn.execute(stmt)
             except Exception:
                 pass  # column already exists
+        # G-006: collapse any pre-existing multi-owner rows to the earliest
+        # claim (the one get_session_owner() already favoured), then enforce
+        # single ownership with a unique index.
+        conn.execute(
+            "DELETE FROM user_sessions WHERE rowid NOT IN "
+            "(SELECT MIN(rowid) FROM user_sessions GROUP BY session_id)"
+        )
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_user_sessions_session ON user_sessions(session_id)")
+        _mark_legacy_owner(conn)
+
+
+def _mark_legacy_owner(conn) -> None:
+    """G-021 upgrade path: an install that already has an owner keeps it -- no
+    role is changed -- and is recorded as bootstrapped (`legacy_existing_owner`),
+    so no new bootstrap token can be redeemed over it."""
+    from datetime import datetime, timezone
+
+    conn.execute(
+        "INSERT INTO owner_bootstrap (id, owner_user_id, completed_at, method) "
+        "SELECT 1, id, ?, 'legacy_existing_owner' FROM users WHERE role='owner' ORDER BY created_at LIMIT 1 "
+        "ON CONFLICT (id) DO NOTHING",
+        (datetime.now(timezone.utc).isoformat(),),
+    )
 
 
 init_db()

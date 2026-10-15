@@ -1,0 +1,16 @@
+{
+  "dimensions": [
+    {"key": "code_implemented", "state": "PARTIAL", "claim": "Workstream A/B serving, auth, conversations and supporting tooling implemented on draft branches; research, hardware and trust-root items are design-only.", "evidence": "docs/orneur/status/ANTIGRAVITY_HANDOFF.md#branches"},
+    {"key": "tests_passing", "state": "PASSING_AUTHOR_RUN", "claim": "Author-run suites and exact-SHA CI pass where recorded; five known sandbox-only failures (uid 0 / no DNS) are documented. This is not independent verification.", "evidence": "docs/orneur/status/ANTIGRAVITY_HANDOFF.md#test-matrix"},
+    {"key": "independent_security_review", "state": "NOT_PERFORMED", "claim": "No independent review is recorded. Claude's own adversarial checks are self-assessment only. Audit #008/#009 text has not arrived.", "evidence": "docs/orneur/status/AUDIT_009_STATUS.md"},
+    {"key": "formal_cryptographic_acceptance", "state": "NOT_PERFORMED", "claim": "Acceptance ledger and trust material are the committed empty baseline; the canonical engine accepts zero rows.", "evidence": "docs/orneur/acceptance/acceptance_ledger.json"},
+    {"key": "dataset_readiness", "state": "TOOLING_ONLY", "claim": "Dataset tooling exists and is exercised on synthetic data only; no protected corpus has been generated or activated.", "evidence": "docs/orneur/status/ANTIGRAVITY_HANDOFF.md#dataset-evidence"},
+    {"key": "evaluation_readiness", "state": "TOOLING_ONLY", "claim": "Synthetic, fail-closed evaluation infrastructure only; V2 private evaluation is not frozen, no hidden set exists, no provider eval run.", "evidence": "docs/orneur/status/evalinfra/INVENTORY.md"},
+    {"key": "foundation_selection", "state": "NOT_SELECTED", "claim": "No foundation model is selected; evidence reassessment is not a selection.", "evidence": "docs/orneur/status/PRETRAINING_FOUNDATION_QUALIFICATION_BLUEPRINT.md"},
+    {"key": "training_environment_readiness", "state": "BLOCKED", "claim": "Preparation tooling is dry-run only. Hardware, custody and trust-root decisions are founder-owned and undecided.", "evidence": "docs/orneur/status/HARDWARE_AND_CUSTODY_OPTIONS.md"},
+    {"key": "training_authorization", "state": "NOT_AUTHORIZED", "claim": "STRICT NO-GO until formal qualification and explicit founder authorization.", "evidence": "orca/genesis (training authorization gate) and docs/orneur/status/ORNEUR_DEVELOPMENT_REGISTER.md"},
+    {"key": "model_capability", "state": "UNMEASURED", "claim": "No ORNEUR-trained model exists; no capability or superiority claim is made. Research hypotheses are pre-registration drafts.", "evidence": "docs/orneur/research/ORNEUR_DIFFERENTIATION_RESEARCH_PROGRAMME.md"},
+    {"key": "product_readiness", "state": "PARTIAL", "claim": "Backend assistant foundation implemented; UI is a non-approved proposal; some capabilities are test-double only and are listed explicitly.", "evidence": "docs/orneur/status/ASSISTANT_FOUNDATION_READINESS.md"},
+    {"key": "production_authorization", "state": "NOT_AUTHORIZED", "claim": "No public deployment, merge to main or production authorization has been granted.", "evidence": "docs/orneur/status/ORNEUR_DEVELOPMENT_REGISTER.md"}
+  ]
+}

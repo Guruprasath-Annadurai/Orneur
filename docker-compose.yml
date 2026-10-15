@@ -81,7 +81,7 @@ services:
       # named `atheris_data` (the pre-Orneur name), rename/migrate it
       # rather than losing that data -- this compose file assumes a fresh
       # deployment. See docs/orneur/phase-1/DEPLOYMENT_NAME_MIGRATION.md.
-      - orneur_data:/root/.orca
+      - orneur_data:/home/orneur/.orca   # image runs as UID 10001; migrate old volumes: docs/orneur/status/CONTAINER_NON_ROOT_MIGRATION.md
     environment:
       ORNEUR_OLLAMA_HOST: http://ollama:11434
       # Real bug this fixes: these defaulted to the raw, un-fine-tuned base

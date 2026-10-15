@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ORNEUR — Intelligence, Without End.</title>
+<link rel="icon" href="/static/brand/favicon.f62543e5.ico" sizes="16x16">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/brand/favicon-32x32.c86b0334.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/brand/favicon-16x16.d261e4ff.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/brand/apple-touch-icon.edc2b62d.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#03050A">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ORNEUR">
+<meta property="og:image" content="/static/brand/orneur-social-1200x630.6452caac.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="ORNEUR official logo">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="/static/brand/orneur-social-1200x630.6452caac.png">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap');
 
@@ -89,11 +103,13 @@ body {
   border-right: 1px solid var(--line);
 }
 
-.logo-icon {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-}
+/* Official ORNEUR artwork: raster, opaque, native dark background. Never recoloured, filtered,
+   shadowed, bordered or animated; same in Dark and Light. */
+.logo-icon { width: 32px; height: 32px; flex-shrink: 0; display: block; }
+.logo-wordmark { display: block; height: 14px; width: auto; }
+.brand-lockup { display: block; height: auto; max-width: 100%; margin: 0 auto; }
+.auth-lockup { width: 240px; }
+.welcome-lockup { width: 320px; }
 
 .logo-text {
   font-family: var(--mono);
@@ -1671,7 +1687,7 @@ body {
 <div id="auth-overlay">
   <div class="auth-box">
     <div class="auth-brand">
-      <div class="auth-wordmark">ORNEUR</div>
+      <img class="brand-lockup auth-lockup" src="/static/brand/orneur-lockup-640.c4f0bf12.png" width="240" height="178" alt="ORNEUR — Orchestrated Reasoning Neural Engine for Unified Reliability" decoding="async">
       <div class="auth-tagline">Enterprise AI &nbsp;/&nbsp; Intelligence, Without End.</div>
     </div>
     <div class="auth-tabs">
@@ -1783,14 +1799,10 @@ body {
 <!-- Header -->
 <header id="header">
   <div class="logo-mark">
-    <!-- ORNEUR mark -->
-    <svg class="logo-icon" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4 20 Q6 14 8.5 13.5 Q10.5 13 11 11.5 Q11.5 10 13 10.5 Q15 11 15.5 9 Q16 7.5 17.5 8.5 Q19 9.5 20 8 Q22 5 24 7 Q20 9 19 13 Q18 17 22 18 Q16 22 12 20 Q8 22 4 20Z" fill="#fff" opacity="0.9"/>
-      <path d="M4 20 Q6 24 10 23 Q8 21 8 19Z" fill="#fff" opacity="0.5"/>
-      <circle cx="20" cy="9" r="1" fill="#fff" opacity="0.6"/>
-    </svg>
+    <!-- ORNEUR official emblem (founder-approved asset; do not redraw) -->
+    <img class="logo-icon" src="/static/brand/orneur-emblem-64.7ade6284.png" srcset="/static/brand/orneur-emblem-64.7ade6284.png 64w, /static/brand/orneur-emblem-192.40a30f86.png 192w, /static/brand/orneur-emblem-256.5b8e8b28.png 256w" sizes="32px" width="32" height="32" alt="ORNEUR emblem" decoding="async">
     <div>
-      <div class="logo-text">ORNEUR</div>
+      <img class="logo-wordmark" src="/static/brand/orneur-wordmark-240.9a2ab2a8.png" srcset="/static/brand/orneur-wordmark-240.9a2ab2a8.png 240w, /static/brand/orneur-wordmark-480.d89f850e.png 480w" sizes="125px" width="125" height="14" alt="ORNEUR" decoding="async">
       <div class="logo-ver">VER 1.0.0</div>
     </div>
   </div>
@@ -1910,7 +1922,7 @@ body {
       <div id="welcome">
 
         <div class="welcome-brand">
-          <div class="welcome-wordmark">ORNEUR</div>
+          <img class="brand-lockup welcome-lockup" src="/static/brand/orneur-lockup-640.c4f0bf12.png" width="320" height="237" alt="ORNEUR — Orchestrated Reasoning Neural Engine for Unified Reliability" decoding="async">
           <div class="welcome-tagline">Enterprise AI &nbsp;/&nbsp; Intelligence, Without End. &nbsp;/&nbsp; Verified, Auditable Answers</div>
         </div>
 
@@ -2377,6 +2389,13 @@ body {
   </div>
 </div>
 
+<!-- Classic (non-module) script, not type="module": this is a large legacy
+     inline script relying on implicit global scope (onclick="..." handlers
+     throughout this file call its top-level functions by name) -- switching
+     it to a module would break that. sse_diagnostics.js is deliberately
+     also a classic script for the same reason, exposing its one function
+     via a plain global instead of import/export. -->
+<script src="/static/sse_diagnostics.js"></script>
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let sessionId = null;
@@ -2528,7 +2547,7 @@ async function pollLicense() {
 
 async function loadSessions() {
   try {
-    const d = await fetch('/api/sessions').then(r => r.json());
+    const d = await fetch('/api/sessions', { headers: _authHeaders() }).then(r => r.json());
     const list = document.getElementById('session-list');
     const sessions = d.sessions || [];
     if (!sessions.length) {
@@ -2638,15 +2657,20 @@ async function sendMessage() {
     let orcaEl = null;
     rawBuffer = '';
     _ragSources = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const lines = dec.decode(value).split('\n');
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const ev = JSON.parse(line.slice(6));
+    let sseBuf = '';
+    // DEF-CP1-03, hardened: a malformed event was previously swallowed by a
+    // bare catch{} with no signal at all, then (a prior pass) diagnosed with
+    // a truncated EXCERPT of the raw SSE line -- which could itself carry a
+    // user's own message content. orca/serve/web/sse_diagnostics.js is
+    // metadata-only (an ordinal + the parse error's name), never the
+    // payload; see that file's docstring. Bounded to 5 warnings per
+    // response either way, so a broken/hostile stream of malformed frames
+    // can't flood the console.
+    const logMalformedEvent = window.ORNEUR_SSE_DIAGNOSTICS.createMalformedEventLogger();
+    const processSseLine = (line) => {
+      if (!line.startsWith('data: ')) return;
+      try {
+        const ev = JSON.parse(line.slice(6));
           if (ev.type === 'session') {
             sessionId = ev.session_id;
           } else if (ev.type === 'rag') {
@@ -2702,9 +2726,29 @@ async function sendMessage() {
             thinkEl.remove();
             appendOrcaMsg('Error: ' + ev.text);
           }
-        } catch {}
+      } catch (err) {
+        logMalformedEvent(err); // metadata only -- `line` is deliberately not passed through
       }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // stream:true carries a multi-byte UTF-8 char split across chunks
+      // over to the next decode() call instead of emitting U+FFFD for it.
+      // sseBuf carries a line split across chunks the same way "\ndata: ..."
+      // lines don't align with network reads (matches sendUltra below).
+      sseBuf += dec.decode(value, { stream: true });
+      const lines = sseBuf.split('\n');
+      sseBuf = lines.pop();
+      for (const line of lines) processSseLine(line);
     }
+    // Flush the decoder (a trailing partial multi-byte char, if the
+    // response ended mid-character) and process whatever is left in
+    // sseBuf -- a final event with no trailing "\n\n" would otherwise be
+    // silently dropped instead of rendered.
+    sseBuf += dec.decode();
+    if (sseBuf) processSseLine(sseBuf);
   } catch(e) {
     thinkEl.remove();
     appendOrcaMsg('Connection error: ' + e.message);
@@ -4037,6 +4081,11 @@ async function runCodeBlock(idx) {
       body: JSON.stringify({ code: raw, session_id: sessionId }),
     });
     const data = await resp.json();
+    if (data.code === 'capability_disabled') {
+      outEl.innerHTML = '<span class="cout-meta">Code execution is not available in this environment.</span>';
+      if (btnEl) btnEl.disabled = false;
+      return;
+    }
 
     let html = '';
     if (data.error) {

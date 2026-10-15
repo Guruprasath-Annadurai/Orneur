@@ -1,0 +1,120 @@
+{
+  "binding_status": {
+    "allowed_candidate_lineage_rules": "BOUND",
+    "category_counts": "BOUND",
+    "code_hashes": "BOUND",
+    "confidence_statistical_method": "BOUND",
+    "contamination_algorithm_versions": "BOUND",
+    "corpus_version": "BOUND",
+    "eval_version": "BOUND",
+    "floors": "BOUND",
+    "gating_report_only_status": "BOUND",
+    "latency_cost_protocols": "BOUND",
+    "model_run_constraints": "BOUND",
+    "private_corpus_aggregate_commitment": "DEFERRED",
+    "qualification_holdout_policy": "BOUND",
+    "resource_spend_limits": "BOUND",
+    "runner_identity": "BOUND",
+    "sandbox_policy_version": "BOUND",
+    "scoring_algorithms": "BOUND",
+    "screen_policy": "BOUND",
+    "semantic_review_mechanism_version": "BOUND",
+    "stage_protocols": "BOUND",
+    "storage_verification_digest": "BOUND",
+    "template_cluster_methodology": "BOUND",
+    "trainability_protocol": "BOUND"
+  },
+  "bindings": {
+    "allowed_candidate_lineage_rules": {
+      "binding": "allowed_candidate_lineage_rules",
+      "synthetic": true
+    },
+    "category_counts": {
+      "binding": "category_counts",
+      "synthetic": true
+    },
+    "code_hashes": {
+      "binding": "code_hashes",
+      "synthetic": true
+    },
+    "confidence_statistical_method": {
+      "binding": "confidence_statistical_method",
+      "synthetic": true
+    },
+    "contamination_algorithm_versions": {
+      "binding": "contamination_algorithm_versions",
+      "synthetic": true
+    },
+    "corpus_version": "SYNTHETIC-DEMO/0",
+    "eval_version": "SYNTHETIC-DEMO/0",
+    "floors": {
+      "binding": "floors",
+      "synthetic": true
+    },
+    "gating_report_only_status": {
+      "binding": "gating_report_only_status",
+      "synthetic": true
+    },
+    "latency_cost_protocols": {
+      "binding": "latency_cost_protocols",
+      "synthetic": true
+    },
+    "model_run_constraints": {
+      "binding": "model_run_constraints",
+      "synthetic": true
+    },
+    "private_corpus_aggregate_commitment": "038f6101bcfbda58bface38669693450d15159dcacda2bbcb4fe00bf654ab667",
+    "qualification_holdout_policy": {
+      "binding": "qualification_holdout_policy",
+      "synthetic": true
+    },
+    "resource_spend_limits": {
+      "binding": "resource_spend_limits",
+      "synthetic": true
+    },
+    "runner_identity": {
+      "binding": "runner_identity",
+      "synthetic": true
+    },
+    "sandbox_policy_version": {
+      "binding": "sandbox_policy_version",
+      "synthetic": true
+    },
+    "scoring_algorithms": {
+      "binding": "scoring_algorithms",
+      "synthetic": true
+    },
+    "screen_policy": {
+      "binding": "screen_policy",
+      "synthetic": true
+    },
+    "semantic_review_mechanism_version": {
+      "binding": "semantic_review_mechanism_version",
+      "synthetic": true
+    },
+    "stage_protocols": {
+      "binding": "stage_protocols",
+      "synthetic": true
+    },
+    "storage_verification_digest": {
+      "binding": "storage_verification_digest",
+      "synthetic": true
+    },
+    "template_cluster_methodology": {
+      "binding": "template_cluster_methodology",
+      "synthetic": true
+    },
+    "trainability_protocol": {
+      "binding": "trainability_protocol",
+      "synthetic": true
+    }
+  },
+  "candidate_results": [],
+  "first_candidate_run_at": null,
+  "floors_status": "LOCKED",
+  "frozen": true,
+  "frozen_at": "2026-10-11T00:00:00Z",
+  "record_sha256": "77baa3f343e73493c67d5eba9cf27c2aaa3381c7f9cc85359dbafeff1521a4ac",
+  "schema_version": "genesis-v2-preregistration/1",
+  "status": "FROZEN"
+}

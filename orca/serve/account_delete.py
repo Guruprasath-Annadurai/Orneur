@@ -54,7 +54,16 @@ def _delete_session_data(session_id: str) -> dict:
     result = {
         "session_id": session_id, "memory_deleted": False, "docs_deleted": 0, "redis_deleted": False,
         "knowledge_graph_deleted": False, "semantic_facts_deleted": False, "memory_continuum_deleted": {},
-        "long_term_vector_memory_deleted": False,
+        # 2026-10-15 (P1 deletion-assurance design): split from one conflated
+        # boolean into the two honestly-distinct facts a caller actually
+        # needs -- whether the data is gone from every normal read path
+        # (logical_deleted, the real privacy guarantee) versus whether the
+        # raw on-disk bytes have also been reclaimed (physical_reclamation,
+        # best-effort hardening, may legitimately be "DEFERRED" under
+        # contention -- see LongTermMemory.delete()'s docstring). Never
+        # collapse these back into one boolean in any caller/API response.
+        "long_term_vector_memory_logically_deleted": False,
+        "long_term_vector_memory_physical_reclamation": None,
     }
 
     try:
@@ -66,12 +75,27 @@ def _delete_session_data(session_id: str) -> dict:
         result["memory_error"] = str(e)
 
     try:
+        from orca.serve import conversations
+        result["conversation_transcript_deleted"] = conversations.delete(session_id)
+    except Exception as e:
+        result["conversation_transcript_error"] = str(e)
+
+    try:
         # Phase 5.1: a real, confirmed gap this cascade never covered --
         # every raw Q:/A: turn committed via MemoryEngine.commit_to_long_term()
         # (unconditional, every chat/stream/ultra turn) lived in this
         # session's own ChromaDB collection with NO deletion path at all
         # before LongTermMemory.delete() was added this phase.
-        result["long_term_vector_memory_deleted"] = LongTermMemory(session_id).delete()
+        # delete_session() classmethod, not LongTermMemory(session_id).delete():
+        # the latter would construct a chromadb client synchronously on THIS
+        # thread first (LongTermMemory.__init__ touches the same shared,
+        # lockable file), before the bounded watchdog inside delete() ever
+        # starts -- confirmed by direct reproduction against a real held
+        # lock. delete_session() does the whole lifecycle, construction
+        # included, inside the bounded background worker.
+        ltm_result = LongTermMemory.delete_session(session_id)
+        result["long_term_vector_memory_logically_deleted"] = ltm_result.logical_deleted
+        result["long_term_vector_memory_physical_reclamation"] = ltm_result.physical_reclamation
     except Exception as e:
         result["long_term_vector_memory_error"] = str(e)
 
@@ -125,6 +149,14 @@ def _remove_session_title(session_id: str) -> None:
     """session_titles.json lives in orca/serve/api.py's module state, not a
     shared store — read/write the file directly rather than importing api.py
     (which would create a circular import: api.py imports this module)."""
+    # The API process also keeps titles in an in-memory dict and rewrites the WHOLE file from it on the next title change, so removing only the
+    # file entry let a deleted user's title reappear the next time anyone renamed a conversation. Purge the live copy too (no import: api.py
+    # imports this module).
+    import sys
+
+    live = getattr(sys.modules.get("orca.serve.api"), "_session_titles", None)
+    if isinstance(live, dict):
+        live.pop(session_id, None)
     titles_path = ORCA_HOME / "session_titles.json"
     try:
         if not titles_path.exists():

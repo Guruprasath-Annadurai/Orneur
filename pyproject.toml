@@ -53,7 +53,7 @@ code   = []   # sandboxed exec uses stdlib only
 voice  = []   # Web Speech API — browser-native, no Python deps
 mcp    = ["mcp>=1.0.0,<2.0.0"]
 stripe = ["stripe>=7.0.0"]
-dev    = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "mypy>=1.10.0", "build>=1.0.0", "pyyaml>=6.0", "cryptography>=49.0.0,<51.0.0"]   # pyyaml: workflow-boundary tests parse .github/workflows; cryptography: vetted Ed25519 for RSE-IMP-1 synthetic signatures
+dev    = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "mypy>=1.10.0", "build>=1.0.0", "pyyaml>=6.0", "cryptography>=49.0.0,<51.0.0", "pyhpke==0.6.5"]   # pyyaml: workflow-boundary tests parse .github/workflows; cryptography: vetted Ed25519; pyhpke: RFC 9180 Base for OCR1 v2, pinned to the reviewed 0.6.5 wheel (cryptography's one-shot HPKE API has no AAD or sequence)
 all    = [
     "chromadb>=0.5.0",
     "pypdf>=4.0.0", "python-docx>=1.1.0", "pdfminer.six>=20221105",
@@ -70,7 +70,12 @@ train  = [
     "accelerate>=1.0.0",
     "wandb>=0.18.0",
     "scipy>=1.14.0",
+    # See the matching comment on the `lens` extra below (PYSEC-2026-3447):
+    # torch is pulled in transitively here too (via unsloth/trl/transformers'
+    # own requirements), so this extra needs the same portable floor.
+    "setuptools>=83.0.0 ; python_full_version >= '3.12'",
 ]
+pgtest = ["pgserver>=0.1.4"]   # starts a real local PostgreSQL for tests/test_a_postgres_integration.py (test-only)
 postgres = [
     "psycopg[binary]>=3.1",
 ]
@@ -86,6 +91,12 @@ nvidia = [
 qualification = [
     "cryptography>=49.0.0,<51.0.0",
 ]
+# OCR1 v2 import path. Not a base dependency: `pip install .` cannot import OCR1.
+# pyhpke is the RFC 9180 library named by RSE12_04. Presence in this extra is not an audit.
+rse = [
+    "cryptography>=49.0.0,<51.0.0",
+    "pyhpke==0.6.5",
+]
 frontier = [
     "openai>=1.0.0",
     "anthropic>=0.40.0",
@@ -96,11 +107,46 @@ lens = [
     "transformers>=4.45.0",
     "accelerate>=1.0.0",
     "safetensors>=0.4.0",
+    # CodeAnt PR #20 review: the [tool.uv] constraint-dependencies floor
+    # below only applies to uv-driven installs (`uv sync`/`uv pip install`
+    # reading this project's own pyproject.toml). A plain
+    # `pip install orneur[lens]` never reads [tool.uv] at all, so on
+    # Python >=3.12 it can still resolve a setuptools pulled in by torch's
+    # own unpinned-upper-bound floor (>=77.0.3) down to a version still
+    # inside PYSEC-2026-3447's affected range -- e.g. against a package
+    # mirror/cache that lags upstream. This is a standard PEP 508 entry,
+    # honored by pip, uv, poetry, and every other PEP 621-compliant
+    # installer, closing that gap for this extra specifically.
+    "setuptools>=83.0.0 ; python_full_version >= '3.12'",
 ]
 
 [project.scripts]
 orneur = "orca.cli:app"
 orca = "orca.cli:app"
+
+[tool.uv]
+# PYSEC-2026-3447 / CVE-2026-59890: setuptools < 83.0.0 can pack a file into
+# an sdist that an exclude/prune MANIFEST.in rule should have kept out, on
+# case-insensitive or Unicode-normalizing filesystems (macOS APFS/HFS+).
+# setuptools isn't a direct dependency of this project -- it is pulled in
+# transitively by torch (python_full_version >= '3.12' only, see uv.lock),
+# which has no reason to need anything older than the patched release.
+# Constraining it here forces uv's resolver to pick a patched version for
+# that edge without touching torch's own declared requirement. Exact pin
+# (not a >= range): `uv pip install --require-hashes`, used by
+# scripts/ci/run_rse_dependency_audit.sh against requirements/rse.txt, picks
+# up this project's [tool.uv] settings even for a plain `-r` install and
+# rejects any constraint that isn't pinned with `==` in that mode --
+# confirmed by that CI job's own failure on the `>=83.0.0` range form.
+# CodeAnt PR #20 review: this [tool.uv] section only covers uv-driven
+# installs -- a plain `pip install` never reads it. The `lens` and `train`
+# extras above each carry their own portable, PEP 508 `setuptools>=83.0.0
+# ; python_full_version >= '3.12'` entry for that reason; this section
+# stays uv-specific (exact pin, required by --require-hashes mode above)
+# rather than trying to also be the pip-facing fix.
+constraint-dependencies = [
+    "setuptools==84.0.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["orca", "orneur"]

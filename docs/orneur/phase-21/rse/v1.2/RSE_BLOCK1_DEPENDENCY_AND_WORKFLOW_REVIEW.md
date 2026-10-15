@@ -1,0 +1,98 @@
+# RSE block 1 — dependency and workflow review
+
+NON_NORMATIVE. Not in Manifest V3. This file proposes corrections. It does not apply them. No security-sensitive dependency change and no workflow edit is authorized by this review. The accepted implementation SHA remains `da567d927b61c41e253b42732aad249b5fdbb104`. Push CI `37884389862` certifies that SHA only.
+
+## 1. What is installed today
+
+`pyproject.toml`:
+
+- `requires-python = ">=3.11"`. Classifiers name 3.11, 3.12, and 3.13.
+- Base `dependencies` do not include `cryptography` or `pyhpke`. `uv pip install -e .` cannot import `orca.rse.imp4.ocr1`. That failure is the production import behavior for a base install: OCR1 is absent, not silently reduced.
+- Extra `dev` includes `cryptography>=49.0.0,<51.0.0` and `pyhpke>=0.6.5,<0.7`, plus pytest, pytest-asyncio, mypy, build, and pyyaml.
+- Extra `rse` is `cryptography>=49.0.0,<51.0.0` and `pyhpke>=0.6.5,<0.7`. The comment states that presence is not an audit.
+- Extra `qualification` repeats the cryptography range for a different component. It is not the RSE extra.
+
+Observed on the software-test machine while preparing this note: pyhpke 0.6.5 requires `cryptography>=42.0.1,<52`. cryptography 50.0.2 was installed. The RSE pin `<51` sits inside pyhpke's range. This observation is not a lock.
+
+`uv.lock` exists and does not contain `pyhpke`. CI does not run `uv sync`. Deterministic and security jobs run `uv pip install -e ".[...]"`, which resolves ranges at job time.
+
+## 2. Scan scope
+
+`.github/workflows/test.yml`, job `security-audit`:
+
+- Name: `Dependency Vulnerability Scan (informational, base install only)`.
+- Installs `uv pip install --system -e .` and then `pip-audit || true`.
+- The workflow text says the job is informational and narrower than a development environment. It does not install the `rse` extra.
+
+The base-install scan does not cover pyhpke or the RSE cryptography pin. A green log of run `37884389862` is not a pyhpke audit. This review did not run a new `pip-audit` of the `rse` extra, and it does not invent an advisory list.
+
+Known base advisories already disclosed by the workflow comment are chromadb `PYSEC-2026-311` and diskcache `PYSEC-2026-2447`, assessed in `docs/SECURITY_AUDIT.md` as not currently exploitable in Orca's stated usage. Those packages are not the RSE import path. They are not closed by this note.
+
+## 3. Exact-SHA CI and `cursor/**`
+
+The push trigger lists `main`, `session-update-2026-08-25`, `phase14b-*`, and `cursor/**`. The pull_request trigger lists `main` and `session-update-2026-08-25` only. It does not list `cursor/**`.
+
+Why the filter exists: a push of `cursor/rse-master-imp2-imp4-c04e` must run the six jobs on the commit SHA. A pull_request checkout is a merge ref. Run `37884389862` is the push event whose `headSha` is `da567d927b61c41e253b42732aad249b5fdbb104`. Run `37884393043` is the pull_request event and is not that evidence.
+
+Permissions: the workflow file has no `permissions:` key. It does not add `id-token`, `pull-requests`, or a custom secret. It does not pass credentials into the RSE tests. The jobs use the repository's default `GITHUB_TOKEN` the same way a push to `main` does.
+
+Required checks: the filter does not remove or skip jobs on `main`. It adds runs for matching push branches. The six jobs are unchanged: deterministic tests, torch math tests, container boot smoke, Genesis V2 security, Genesis V2 sandbox, and the informational base dependency scan.
+
+Reproducibility of the exact SHA: the push run checks out that commit. It stays reproducible for as long as the workflow on that commit still contains the filter and the same job steps. Editing the workflow later does not rewrite run `37884389862`.
+
+Recommendation: keep `cursor/**` until the owner replaces it with an explicit policy. Removing it now would stop exact-SHA push CI for this branch class and would not make `main` stricter. Replacing it later with a named-branch list is an owner policy choice, not a security fix required by this review. Do not widen `pull_request` to `cursor/**` as a substitute. That checkout is a merge ref. Do not add workflow permissions.
+
+Risk of keeping it: anyone who can push a `cursor/**` branch in this repository spends CI on the same jobs `main` already runs. That is repository push trust, not a new secret. Fork pull requests are still the `pull_request` event and do not gain the push filter.
+
+## 4. Proposed patch (not applied)
+
+Apply only after a separate owner authorization. Do not apply it on top of `da567d9` and then reuse run `37884389862`.
+
+```diff
+# pyproject.toml — rse extra and the matching dev pins
+-    "pyhpke>=0.6.5,<0.7"
++    "pyhpke==0.6.5"
+```
+
+Apply that substitution in both the `dev` extra and the `rse` extra. Leave `cryptography>=49.0.0,<51.0.0` unless a later advisory names a floor inside that window. Do not add either package to base `dependencies`. A base install must keep failing the OCR1 import.
+
+Add a lock file generated by `uv pip compile --generate-hashes --python-version 3.11` for `.[rse]`, checked in as a new path such as `requirements/rse.txt`. Do not regenerate the whole `uv.lock` in the same change unless the owner asks for a full lock migration. CI today does not read `uv.lock`.
+
+Add one workflow job, or one step beside the existing scan, that installs `.[rse]` and runs `pip-audit` on that environment. Keep it visibly separate from the base job. Do not mark it `|| true` if the owner wants it to gate release. Do not describe the existing base job as covering it. Suggested install line:
+
+```bash
+uv pip install --system -e ".[rse]"
+pip-audit
+```
+
+Python under test in CI is 3.11 (`actions/setup-python` in `test.yml`). The proposal does not claim 3.12 or 3.13 until those versions are in the RSE job.
+
+## 5. Tests to add with that patch
+
+Do not add them in the ratification commit.
+
+1. A base install, without the `rse` extra, cannot import `orca.rse.imp4.ocr1`.
+2. An install of `.[rse]` imports it and `admit_rfc9180_base` still passes (existing `test_rfc9180_base_vector_is_admitted`).
+3. The compiled `requirements/rse.txt` contains `pyhpke==0.6.5` and a cryptography version inside `>=49,<51`, each with hashes.
+4. The new audit job's install line includes `.[rse]`. The old job's install line remains `uv pip install --system -e .`.
+
+## 6. What this review left open on `c127780`
+
+The list below is the state of the review commit. The successor applies Approvals 4 and 5. Do not read this section as the current tree.
+
+- pyhpke was ranged, not hashed, and absent from `uv.lock`.
+- No RSE-extra vulnerability scan had been recorded for SHA `da567d9`.
+- `cursor/**` was disclosed and not yet an owner-signed policy.
+- cryptography's window is intentional (`qualification` extra comment: floors that exclude named OpenSSL and X.509 advisories through the 49 series, upper bound before the next major).
+
+## 7. Applied after owner authorization
+
+Approval 4 and Approval 5 are recorded in `RSE_BLOCK1_OWNER_APPROVAL_RECORD.md`.
+
+- `dev` and `rse` now pin `pyhpke==0.6.5`. cryptography stays `>=49.0.0,<51.0.0`.
+- `requirements/rse.in` and `requirements/rse.txt` lock the extra's own closure with hashes for CPython 3.11, x86_64 manylinux. Resolved packages: cffi 2.1.1, cryptography 50.0.2, pycparser 3.1, pyhpke 0.6.5. pyhpke 0.6.5 requires `cryptography>=42.0.1,<52`, so 50.0.2 is inside both constraints.
+- The lock is what `uv pip install --require-hashes` installs. CI still does not use `uv sync`. `uv.lock` is not the RSE lock and was not regenerated.
+- Job `rse-dependency-audit` runs `scripts/ci/run_rse_dependency_audit.sh`. `pip-audit` has no `|| true`. The base job is unchanged and still does not cover pyhpke.
+- Local result on that closure before push: no known vulnerabilities. Base findings chromadb `PYSEC-2026-311` and diskcache `PYSEC-2026-2447` are not in `requirements/rse.txt`.
+- `cursor/**` stays on push only. No permissions key was added. The six original jobs are unchanged.
+- The RSE audit job is Python 3.11. It does not certify 3.12 or 3.13.

@@ -1,11 +1,14 @@
 """Auth API routes — signup, login, me, logout."""
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from orca.auth.crypto import create_token
-from orca.auth.middleware import get_current_user
+from orca.auth.crypto import verify_token
+from orca.auth.middleware import _bearer, get_current_user
 from orca.auth.store import (
     DAILY_LIMITS,
     User,
@@ -47,7 +50,7 @@ class LoginRequest(BaseModel):
 
 
 def _make_response(user: User) -> dict:
-    token  = create_token({"sub": user.id, "email": user.email, "tier": user.tier, "role": user.role})
+    token  = create_token({"sub": user.id, "type": "session", "jti": uuid.uuid4().hex, "email": user.email, "tier": user.tier, "role": user.role})
     limits = DAILY_LIMITS.get(user.tier, DAILY_LIMITS["free"])
     usage  = get_usage_today(user.id)
     return {
@@ -67,6 +70,10 @@ def _make_response(user: User) -> dict:
 @router.post("/signup")
 async def signup(req: SignupRequest, request: Request):
     ratelimit.enforce(request, ratelimit.AUTH_SIGNUP)
+    from orca.auth.bootstrap import signup_blocked_until_bootstrap
+    if signup_blocked_until_bootstrap():
+        # G-021: a public deployment with no owner is not open for ordinary signups.
+        raise HTTPException(503, detail={"error": "This deployment has not been initialized.", "code": "owner_not_initialized"})
     if len(req.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     if "@" not in req.email or "." not in req.email.split("@")[-1]:
@@ -90,6 +97,89 @@ async def signup(req: SignupRequest, request: Request):
         token = make_verification_token(user.id, user.email)
         send_verification(user.email, token)
     return _make_response(user)
+
+
+class BootstrapOwnerRequest(BaseModel):
+    token: str
+    email: str
+    password: str
+    name: str = ""
+
+
+@router.get("/bootstrap-status")
+async def bootstrap_status():
+    """Public and deliberately minimal: whether an owner exists. Never names the owner."""
+    from orca.auth.bootstrap import owner_exists
+    return {"initialized": owner_exists()}
+
+
+@router.post("/bootstrap-owner")
+async def bootstrap_owner(req: BootstrapOwnerRequest, request: Request):
+    """Redeem an operator-issued, single-use, email-bound token (`python -m orca.auth.bootstrap issue`). One-time; see orca/auth/bootstrap.py."""
+    ratelimit.enforce(request, ratelimit.AUTH_LOGIN, extra_key="bootstrap_owner")
+    from orca import audit
+    from orca.auth.bootstrap import BootstrapError, redeem
+    try:
+        user = redeem(req.token, req.email, req.password, req.name)
+    except BootstrapError as e:
+        audit.log("owner_bootstrap_refused", detail={"code": e.code})
+        status = 409 if e.code == "already_initialized" else 403
+        raise HTTPException(status, detail={"error": "Owner bootstrap was refused.", "code": e.code})
+    audit.log("owner_bootstrap_completed", user_id=user.id, detail={"method": "token"})
+    return _make_response(user)
+
+
+class RetentionRequest(BaseModel):
+    retention_days: int
+
+
+@router.get("/settings/retention")
+async def get_retention(user: User = Depends(get_current_user)):
+    from orca.auth.store import get_retention_days
+
+    return {"retention_days": get_retention_days(user.id), "meaning": "0 keeps conversations until you delete them; N deletes conversations idle for N days"}
+
+
+@router.put("/settings/retention")
+async def put_retention(req: RetentionRequest, user: User = Depends(get_current_user)):
+    from orca import audit
+    from orca.auth.store import set_retention_days
+
+    if not (req.retention_days == 0 or 1 <= req.retention_days <= 3650):
+        raise HTTPException(422, detail={"error": "retention_days must be 0 or between 1 and 3650.", "code": "invalid_request"})
+    set_retention_days(user.id, req.retention_days)
+    audit.log("retention_changed", user_id=user.id, detail={"retention_days": req.retention_days})
+    return {"retention_days": req.retention_days}
+
+
+@router.post("/logout")
+async def logout(user: User = Depends(get_current_user), creds=Depends(_bearer)):
+    """Revokes THIS session token. A token without a `jti` (issued before this release) cannot be singled out, so it signs the user out everywhere."""
+    from orca.auth.store import invalidate_all_sessions, revoke_token
+
+    payload = verify_token(creds.credentials) if creds and not creds.credentials.startswith("athr_") else None
+    if payload is None:
+        raise HTTPException(400, detail={"error": "API keys are revoked with DELETE /api/auth/apikeys/{id}.", "code": "invalid_request"})
+    jti = payload.get("jti")
+    if jti:
+        revoke_token(jti, user.id, float(payload.get("exp", 0)))
+        scope = "this_session"
+    else:
+        invalidate_all_sessions(user.id)
+        scope = "all_sessions"
+    from orca import audit
+    audit.log("logout", user_id=user.id, detail={"scope": scope})
+    return {"revoked": scope}
+
+
+@router.post("/logout-all")
+async def logout_all(user: User = Depends(get_current_user)):
+    from orca import audit
+    from orca.auth.store import invalidate_all_sessions
+
+    invalidate_all_sessions(user.id)
+    audit.log("logout_all", user_id=user.id, detail={})
+    return {"revoked": "all_sessions"}
 
 
 @router.post("/login")
@@ -280,10 +370,16 @@ async def reset_password(req: ResetRequest):
     if not payload:
         raise HTTPException(400, "Reset link is invalid or expired")
     from orca.auth.store import update_password, get_user_by_id
-    update_password(payload["sub"], req.password)
     user = get_user_by_id(payload["sub"])
     if not user:
         raise HTTPException(404, "User not found")
+    # G-006: single use. update_password() stamps tokens_valid_after, so a
+    # reset link issued before ANY later password change (including the reset
+    # it was issued for) no longer verifies.
+    if float(payload.get("iat", 0)) < user.tokens_valid_after:
+        raise HTTPException(400, "Reset link is invalid or expired")
+    update_password(user.id, req.password)
+    user = get_user_by_id(user.id)
     return _make_response(user)
 
 
@@ -365,6 +461,12 @@ async def admin_set_role(
 ):
     if body.role not in ("owner", "admin", "member", "viewer"):
         raise HTTPException(400, "Invalid role")
+    from orca.auth.rbac import can_assign_role
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+    if not can_assign_role(admin.role, target.role, body.role):
+        raise HTTPException(403, "You cannot assign a role at or above your own, or change a user ranked at or above you")
     set_user_role(user_id, body.role)
     return {"updated": True}
 

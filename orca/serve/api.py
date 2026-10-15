@@ -18,17 +18,20 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import hmac
+import contextlib
 import json
+import re
 import logging
 import os
 import time
 import uuid
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -59,7 +62,7 @@ from orca.serve.registry import resolve_tier_model, resolve_tier_backend, TierRe
 from orca.serve import routing
 from orca.governance.model_cards import check_persona_claim_allowed
 from orca.brain.backends import BackendResponse
-from orca.gateway.wiring import brain_for_tier_resolution
+from orca.gateway.wiring import brain_for_tier_resolution, public_serving_decision
 from orca.brain.memory import MemoryEngine, EpisodicMemory
 from orca.brain.agent import AgentLoop
 from orca.brain.context import ContextManager
@@ -79,6 +82,11 @@ from orca.brain.explainability import ExplainStore, build_from_rag_result
 from orca.brain.knowledge_graph import KnowledgeGraph
 from orca.brain.vision import is_vision_capable, encode_image, build_vision_message
 from orca.serve import session_store, ratelimit, metrics, dlp
+from orca.serve.errors import public_error, coded_error, default_code_for_status
+from orca.serve.model_identity import model_identity as _model_identity
+from orca.serve.citations import build_sources as _build_sources
+from orca.serve import streaming
+from orca.serve.streaming import aiter_blocking
 from orca.serve.moderation import check_input, CRISIS_RESOURCES
 from orca.code import run_code
 
@@ -86,7 +94,39 @@ _START_TIME = time.time()
 WEB_DIR = Path(__file__).parent / "web"
 _logger = logging.getLogger("orca.serve")
 
-app = FastAPI(title="ORNEUR API", version="1.0.0", docs_url=None, redoc_url=None)
+_RETENTION_INTERVAL_S = 6 * 3600
+
+
+async def _retention_loop():
+    """Workstream B: honour each user's conversation-retention setting. Never lets one failure stop the loop or the server."""
+    from orca.serve.retention import purge_expired_conversations
+
+    while True:
+        try:
+            await asyncio.to_thread(purge_expired_conversations)
+        except Exception:
+            _logger.debug("retention purge failed", exc_info=True)
+        await asyncio.sleep(_RETENTION_INTERVAL_S)
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    _retention_task = asyncio.create_task(_retention_loop())
+    try:
+        yield
+    finally:
+        _retention_task.cancel()
+    # Clean shutdown for the bounded streaming worker pool (DEF-CP1-01).
+    # wait=False: blocking the event loop here to join every worker would
+    # itself hang shutdown behind a slow backend call -- the same class of
+    # problem this pool exists to avoid. Workers finish their current
+    # next()/close naturally; new submissions after this point raise, which
+    # aiter_blocking surfaces as an ordinary stream error to any request
+    # still in flight.
+    streaming.shutdown_streaming_pool(wait=False)
+
+
+app = FastAPI(title="ORNEUR API", version="1.0.0", docs_url=None, redoc_url=None, lifespan=_lifespan)
 
 
 def _is_public_edge() -> bool:
@@ -98,6 +138,17 @@ def _is_public_edge() -> bool:
     privately with no public edge at all, so the two flags are
     deliberately independent."""
     return orneur_env("PUBLIC_EDGE", "").strip().lower() in ("1", "true", "yes")
+
+
+def _validate_startup_config() -> None:
+    """Workstream A: refuse to boot a production-like deployment with a forgeable or unsafe configuration (see orca/serve/config_validation.py)."""
+    from orca.serve.config_validation import validate_production_config
+
+    for f in validate_production_config():
+        _logger.warning("config %s: %s %s", f.severity, f.code, f.message) if f.severity == "WARN" else None
+
+
+_validate_startup_config()
 
 
 def _allowed_origins() -> list[str]:
@@ -294,6 +345,38 @@ app.add_middleware(RequestBodySizeLimitMiddleware, max_bytes=MAX_REQUEST_BODY_BY
 app.include_router(auth_router)
 
 
+# G-023: every HTTPException / validation failure also carries a stable machine-readable `code` and an `error_id`, in the same shape the chat routes use.
+# `detail` is kept exactly as before so existing clients keep working.
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+from starlette.exceptions import HTTPException as _StarletteHTTPException  # noqa: E402
+
+
+@app.exception_handler(_StarletteHTTPException)
+async def _http_exception_with_code(request: Request, exc: _StarletteHTTPException):
+    detail = exc.detail
+    code = default_code_for_status(exc.status_code)
+    message = detail if isinstance(detail, str) else "Request failed."
+    if isinstance(detail, dict):
+        code = detail.get("code", code)
+        message = detail.get("error", message)
+    body = {"detail": detail, "error": message, "code": code, "error_id": uuid.uuid4().hex[:12]}
+    return JSONResponse(body, status_code=exc.status_code, headers=getattr(exc, "headers", None))
+
+
+@app.exception_handler(Exception)
+async def _unhandled_with_code(request: Request, exc: Exception):
+    """Last resort: a stable code and a correlation id, never the exception text."""
+    e = public_error(exc, route=request.url.path, code="internal_error", message="Something went wrong on our side. Please try again.")
+    return JSONResponse(e.as_json(), status_code=500)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_with_code(request: Request, exc: RequestValidationError):
+    from fastapi.encoders import jsonable_encoder
+    body = {"detail": jsonable_encoder(exc.errors()), "error": "The request was not valid.", "code": "invalid_request", "error_id": uuid.uuid4().hex[:12]}
+    return JSONResponse(body, status_code=422)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Session store — one AgentLoop + MemoryEngine per browser session
 # ─────────────────────────────────────────────────────────────────────────────
@@ -307,6 +390,80 @@ def _model_name_for_variant(variant: str | None) -> str:
         metrics.record_registry_fallback(requested_tier, resolved_model)
 
     return resolve_tier_model(variant or "core", on_fallback=_log_fallback)
+
+
+def _resolve_model_with_fallback(variant: str | None) -> tuple[str, str | None]:
+    """Like `_model_name_for_variant`, but also returns the model that was asked for when the registry had to fall back (None otherwise) -- G-015."""
+    seen: dict = {}
+
+    def _on_fallback(requested_tier: str, requested_model: str, resolved_model: str) -> None:
+        seen["from"] = requested_model
+        _logger.warning("Tier '%s' requested model '%s' which is not installed in Ollama -- falling back to '%s'.", requested_tier, requested_model, resolved_model)
+        metrics.record_registry_fallback(requested_tier, resolved_model)
+
+    return resolve_tier_model(variant or "core", on_fallback=_on_fallback), seen.get("from")
+
+
+def _identity_for_frontier(requested_variant, resolution, routing_decision, user) -> dict:
+    reason = "cost_routing_escalation" if routing_decision.escalated else ("sovereignty_override" if getattr(resolution, "sovereignty_overridden", False) else None)
+    return _model_identity(requested_variant=requested_variant, served_tier=resolution.tier, served_model=resolution.model, backend=resolution.backend,
+                           reason=reason, viewer_user_id=user.id if user else None, data_left_infrastructure=resolution.data_left_infrastructure)
+
+
+def _identity_for_ollama(requested_variant, sess, cognitive_result, user, *, kernel_answered: bool) -> dict:
+    """What actually generated the text. If the Kernel answered directly, that is the Kernel's resolved tier/model (which may be smaller than requested);
+    otherwise it is the session's own tier/model."""
+    uid = user.id if user else None
+    if kernel_answered:
+        return _model_identity(requested_variant=requested_variant, served_tier=cognitive_result.resolved_tier, served_model=cognitive_result.resolved_model,
+                               reason="entitlement_limit" if cognitive_result.degraded else None, viewer_user_id=uid)
+    return _model_identity(requested_variant=requested_variant, served_tier=getattr(sess, "model_variant", None), served_model=getattr(sess, "served_model", None), fallback_from=getattr(sess, "fallback_from", None),
+                           viewer_user_id=uid)
+
+
+def _persist_turn(user, session_id: str, user_text: str, assistant_text: str, *, identity=None, src=None, message_id=None) -> None:
+    """Workstream B: durable, append-only transcript for SIGNED-IN users (anonymous sessions are not persisted). Best-effort: history must never fail a request."""
+    if not user or not session_id:
+        return
+    try:
+        from orca.serve import conversations
+
+        conversations.append(session_id, "user", user_text)
+        meta: dict = {}
+        if identity:
+            meta["model_identity"] = identity
+        if src:
+            meta["source_summary"] = src["summary"]
+            meta["sources"] = [{k: s.get(k) for k in ("ref", "kind", "filename", "url", "locator", "cited_in_answer")} for s in src["sources"]]
+        if message_id:
+            meta["message_id"] = message_id
+        conversations.append(session_id, "assistant", assistant_text, meta=meta or None)
+    except Exception:
+        _logger.debug("conversation persistence failed", exc_info=True)
+
+
+def _authorize_inference(user, model_variant, message, *, route: str, quota_kind: str = "message"):
+    """The single authorization every inference-spending route applies BEFORE any model, session cost or tool is touched: per-user quota, per-user plan gate
+    for the requested tier, and input moderation. Returns a `PublicError` to refuse, or None to proceed.
+
+    Workstream A: /api/ultra relied only on the SERVER's licence tier and /api/vision had no gate at all, so an anonymous caller could spend the most
+    expensive tier (or unmetered vision) on any licensed instance. A structural test (`tests/test_a_serving_authorization.py`) fails if a new inference route
+    skips this helper."""
+    if user:
+        allowed, used, limit = check_quota(user.id, user.tier, quota_kind)
+        if not allowed:
+            return coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited use.", used=used, limit=limit)
+    model_allowed, model_reason = model_access_allowed(user, model_variant)
+    if not model_allowed:
+        return coded_error("model_access_denied", message=model_reason)
+    mod_result = check_input(message)
+    metrics.record_moderation_action(mod_result.action)
+    if mod_result.action == "block":
+        audit.log("input_moderation_blocked", user_id=user.id if user else None, detail={"categories": mod_result.flagged_categories, "endpoint": route})
+        return coded_error("content_refused")
+    if mod_result.action in ("support", "flag"):
+        audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None, detail={"categories": mod_result.flagged_categories, "endpoint": route})
+    return None
 
 
 def _resolve_backend_for_chat(variant: str | None):
@@ -516,8 +673,10 @@ def _generate_via_frontier_backend(resolution, persona_system: str, message: str
 
 
 class _Session:
-    def __init__(self, session_id: str, model_variant: str | None = None):
+    def __init__(self, session_id: str, model_variant: str | None = None, user_id: str | None = None):
         self.id = session_id
+        # Who this session serves: public-experiment eligibility is per user (orca/gateway/serving_authority.py).
+        self.user_id = user_id
 
         # Cross-instance continuity: if Redis has this session's state (from
         # this or another API instance), restore the exact conversation
@@ -547,6 +706,8 @@ class _Session:
         self._brain = None
         self._ctx = None
         self._agent = None
+        self.served_model: str | None = None
+        self.fallback_from: str | None = None
         self.doc_store = DocStore(session_id=session_id, ollama_host=CONFIG.ollama.host)
         self.explain_store = ExplainStore()
         self.knowledge_graph = KnowledgeGraph(session_id=session_id)
@@ -559,15 +720,17 @@ class _Session:
         # drop-in replacement for OrcaBrain's exact interface, so nothing
         # below this line (ContextManager, AgentLoop, tools, memory) needed
         # to change. See docs/orneur/phase-2/LIVE_SERVING_CUTOVER.md.
+        served_model, fallback_from = _resolve_model_with_fallback(self.model_variant)
+        self.served_model, self.fallback_from = served_model, fallback_from      # G-015: remembered so responses can say what served them
         tier_resolution = TierResolution(
             tier=(self.model_variant or "core").removeprefix("orca-"),
             backend="ollama",
-            model=_model_name_for_variant(self.model_variant),
+            model=served_model,
             data_left_infrastructure=False,
         )
-        brain = brain_for_tier_resolution(tier_resolution)
+        brain = brain_for_tier_resolution(tier_resolution, viewer_user_id=self.user_id)
         self._ctx = ContextManager(brain)
-        tools = build_registry(memory_engine=self.memory)
+        tools = build_registry(memory_engine=self.memory, surface="web")  # G-020: no shell/file/exec tools on the web
         self._agent = AgentLoop(brain=brain, tools=tools, session_id=self.id)
         self._brain = brain
 
@@ -611,19 +774,34 @@ class _Session:
 _sessions: dict[str, _Session] = {}
 
 
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _validate_session_id(session_id: str | None) -> None:
+    """G-006: a caller-supplied session id becomes a file name
+    (episodes/<id>.json, knowledge/<id>.json), a database key and a storage
+    prefix. Anything outside ``[A-Za-z0-9_-]{1,64}`` (``../``, separators,
+    NULs, megabyte strings, markup that the web client interpolates into
+    attributes) is refused before it can reach any of them. The server's own
+    ids are UUIDs and always pass."""
+    if session_id and not _SESSION_ID_RE.fullmatch(session_id):
+        raise HTTPException(status_code=422, detail="invalid session id")
+
+
 def _check_session_ownership(session_id: str | None, user_id: str | None) -> None:
-    """The raise-only half of `_get_session()`'s ownership check,
-    exposed separately so a route needing to check a session it is NOT
-    about to construct/touch (e.g. `load_session()`'s SOURCE
-    `req.session_id`, as opposed to its `target_session_id`) can do so
-    without the side effect of eagerly constructing a full `_Session`
-    (and its chromadb-backed memory/knowledge-graph objects) for a
-    request that is about to be denied anyway."""
+    """The raise-only half of `_get_session()`'s access check, exposed
+    separately so a route needing to check a session it is NOT about to
+    construct/touch (e.g. `load_session()`'s SOURCE `req.session_id`) can do
+    so without eagerly constructing a full `_Session` for a request that is
+    about to be denied anyway. Denies (404, never 403 -- an unauthorized
+    caller must not be able to confirm the session exists) when another user
+    owns it, when an anonymous caller names an owned session, or when the id
+    shares a storage prefix with a different claimed session."""
     if not session_id:
         return
-    from orca.auth.store import get_session_owner
-    owner = get_session_owner(session_id)
-    if owner is not None and owner != user_id:
+    _validate_session_id(session_id)
+    from orca.auth.store import check_session_access
+    if not check_session_access(session_id, user_id):
         raise HTTPException(status_code=404, detail="session not found")
 
 
@@ -632,32 +810,39 @@ def _get_session(session_id: str | None, model_variant: str | None = None, user_
     than per-route: a CALLER-SUPPLIED `session_id` (never a freshly
     generated one -- `session_id is None` always means "give me a new
     session", never an ownership question) that was previously recorded
-    as belonging to a signed-in user (`record_user_session()` below) may
-    only be read back by that SAME user_id. Every route that reaches a
-    session through this function -- chat/stream, docs upload/list/
-    delete, memory recall/remember, explain, knowledge graph, session
-    export/load, ultra -- gets this protection uniformly; a future new
-    route calling `_get_session()` inherits it automatically instead of
-    needing its own copy of the check. A session with NO recorded owner
-    (created anonymously, no bearer token involved) is unaffected -- the
-    session_id itself remains its own shareable credential, preserving
-    existing anonymous-chat behavior exactly. Raises `HTTPException(404)`
-    (never 403) so an unauthorized caller cannot even confirm the
-    session exists."""
-    _check_session_ownership(session_id, user_id)
+    as belonging to a signed-in user may only be read back by that SAME
+    user_id. Every route that reaches a session through this function
+    gets this protection uniformly.
 
-    sid = session_id or str(uuid.uuid4())
+    G-006: the check and the ownership record are ONE atomic
+    ``claim_session()`` (two workers can no longer both "see it unowned" and
+    both become owner), the id is validated before it touches any path, and
+    sessions whose ids collide on the 8-character storage prefix used by
+    long-term memory / semantic facts / the document store are refused
+    instead of silently sharing data. A session with NO recorded owner
+    (created anonymously) stays reachable by anyone who holds its id -- the
+    session_id itself remains its own shareable credential. Raises
+    `HTTPException(404)` (never 403) so an unauthorized caller cannot even
+    confirm the session exists."""
+    from orca.auth.store import claim_session
+
+    _validate_session_id(session_id)
+    if session_id:
+        if not claim_session(session_id, user_id):
+            raise HTTPException(status_code=404, detail="session not found")
+        sid = session_id
+    else:
+        for _ in range(5):  # a fresh uuid4 colliding on 8 chars is ~1e-9 per session at 10k sessions
+            sid = str(uuid.uuid4())
+            if claim_session(sid, user_id):
+                break
+        else:
+            raise HTTPException(status_code=503, detail="could not allocate a session")
+
     if sid not in _sessions:
-        _sessions[sid] = _Session(sid, model_variant)
+        _sessions[sid] = _Session(sid, model_variant, user_id=user_id)
     _sessions[sid].touch()
     session_store.touch_session(sid)  # refresh Redis TTL — no-op if Redis disabled
-
-    # Records which account this session belongs to — without this, "delete
-    # my account" has no way to find and remove the chat history/documents
-    # tied to it, since sessions are otherwise anonymous by session_id alone.
-    if user_id:
-        from orca.auth.store import record_user_session
-        record_user_session(user_id, sid)
 
     # Evict idle sessions (>2h) to save memory
     now = time.time()
@@ -749,6 +934,49 @@ async def serve_trust():
     if trust.exists():
         return HTMLResponse(trust.read_text())
     return HTMLResponse("<h1>Orneur trust page not found</h1>")
+
+
+def _brand_asset(role: str) -> Optional[Path]:
+    """Founder-approved brand file for ``role`` (see web/brand/ASSETS.json), or None."""
+    try:
+        doc = json.loads((WEB_DIR / "brand" / "ASSETS.json").read_text(encoding="utf-8"))
+        for a in doc["assets"]:
+            if a["role"] == role:
+                return WEB_DIR / "brand" / a["file"]
+    except (OSError, ValueError, KeyError):
+        pass
+    return None
+
+
+def _brand_response(role: str, media_type: str):
+    path = _brand_asset(role)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="not found")
+    # Stable URLs browsers request unprompted: always revalidate, so a replaced icon is never served stale.
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def serve_favicon():
+    return _brand_response("favicon_ico", "image/x-icon")
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+async def serve_apple_touch_icon():
+    return _brand_response("apple_touch_icon", "image/png")
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def serve_web_manifest():
+    icons = []
+    for role, size in (("pwa_192", "192x192"), ("pwa_512", "512x512")):
+        path = _brand_asset(role)
+        if path is not None:
+            icons.append({"src": f"/static/brand/{path.name}", "sizes": size, "type": "image/png", "purpose": "any"})
+    return JSONResponse(
+        {"name": "ORNEUR", "short_name": "ORNEUR", "start_url": "/app", "scope": "/", "display": "standalone",
+         "background_color": "#03050A", "theme_color": "#03050A", "icons": icons},
+        media_type="application/manifest+json", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/livez")
@@ -945,20 +1173,16 @@ async def cognitive_execute(
     if user:
         allowed, used, limit = check_quota(user.id, user.tier, "message")
         if not allowed:
-            return JSONResponse(
-                {"error": f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages."},
-                status_code=429,
-            )
+            e = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages.", used=used, limit=limit)
+            return JSONResponse(e.as_json(), status_code=e.status)
 
     mod_result = check_input(req.objective)
     metrics.record_moderation_action(mod_result.action)
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories, "endpoint": "cognitive_execute"})
-        return JSONResponse(
-            {"error": "This request can't be processed — it matches a category we don't generate content for."},
-            status_code=400,
-        )
+        e = coded_error("content_refused")
+        return JSONResponse(e.as_json(), status_code=e.status)
 
     from orca.cognitive.contracts import CognitiveRequest
     from orca.cognitive.wiring import get_shared_kernel
@@ -996,6 +1220,42 @@ async def chat(
     request: Request,
     user: User | None = Depends(get_current_user_optional),
 ):
+    """Chat. A signed-in client may send `Idempotency-Key` (8-128 chars of [A-Za-z0-9_-]): the same key + same payload replays the stored answer without a second
+    model call or quota charge (`Idempotent-Replay: true`); the same key with a different payload is 422; a concurrent duplicate is 409."""
+    key = request.headers.get("idempotency-key")
+    if key is None or user is None:
+        return await _chat_impl(req, request, user)
+    from orca.serve import idempotency
+
+    if not idempotency.valid_key(key):
+        e = coded_error("invalid_request", message="Idempotency-Key must be 8-128 characters of letters, digits, '-' or '_'.")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    state, cached = idempotency.begin(user.id, key, idempotency.request_hash(req.model_dump()))
+    if state == "done":
+        return JSONResponse(cached, headers={"Idempotent-Replay": "true"})
+    if state == "in_progress":
+        e = coded_error("conflict", message="A request with this Idempotency-Key is still being processed.")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    if state == "mismatch":
+        e = coded_error("invalid_request", message="This Idempotency-Key was already used with a different request.")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    try:
+        result = await _chat_impl(req, request, user)
+    except BaseException:
+        idempotency.abort(user.id, key)
+        raise
+    if isinstance(result, dict):
+        idempotency.complete(user.id, key, result)
+    else:
+        idempotency.abort(user.id, key)                      # errors are not cached: a retry is a real retry
+    return result
+
+
+async def _chat_impl(
+    req: ChatRequest,
+    request: Request,
+    user: User | None,
+):
     # IP-based floor applies regardless of auth status — the per-user tier
     # quota below only ever ran `if user:`, leaving anonymous requests with
     # zero limit. This closes that gap; authenticated users still also get
@@ -1020,14 +1280,13 @@ async def chat(
     if user:
         allowed, used, limit = check_quota(user.id, user.tier, "message")
         if not allowed:
-            return JSONResponse(
-                {"error": f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages."},
-                status_code=429,
-            )
+            e = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro for unlimited messages.", used=used, limit=limit)
+            return JSONResponse(e.as_json(), status_code=e.status)
 
     model_allowed, model_reason = model_access_allowed(user, req.model_variant)
     if not model_allowed:
-        return JSONResponse({"error": model_reason}, status_code=402)
+        e = coded_error("model_access_denied", message=model_reason)
+        return JSONResponse(e.as_json(), status_code=e.status)
 
     # Input moderation — checked before the message ever reaches the model.
     # BLOCK: hard refusal, generation never happens. SUPPORT (self-harm):
@@ -1039,10 +1298,8 @@ async def chat(
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
-        return JSONResponse(
-            {"error": "This request can't be processed — it matches a category we don't generate content for."},
-            status_code=400,
-        )
+        e = coded_error("content_refused")
+        return JSONResponse(e.as_json(), status_code=e.status)
     if mod_result.action in ("support", "flag"):
         audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
@@ -1075,17 +1332,17 @@ async def chat(
         # real a Kernel-execution failure from the caller's perspective.
         code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
         audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
-        return JSONResponse({"error": "This request could not be processed right now. Please try again."}, status_code=500)
+        e2 = public_error(e, route="/api/chat", user_id=user.id if user else None)
+        return JSONResponse(e2.as_json(), status_code=500)
 
     if cognitive_result.status == CognitiveState.ABSTAINED:
         audit.log("cognitive_abstained", user_id=user.id if user else None, detail={
             "reason": cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else None,
         })
         reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
-        return JSONResponse(
-            {"error": _ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), "abstained": True},
-            status_code=422,
-        )
+        e = coded_error("request_abstained", message=_ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), abstained=True,
+                        reason=(reason_key or "UNSPECIFIED").lower())
+        return JSONResponse(e.as_json(), status_code=e.status)
 
     backend_resolution = _resolve_backend_for_chat(req.model_variant)
     backend_resolution, routing_decision = _apply_cost_aware_routing(backend_resolution, req.message)
@@ -1103,7 +1360,8 @@ async def chat(
                 _generate_via_frontier_backend, backend_resolution, persona_system, req.message
             )
         except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=500)
+            _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
 
         if user:
             increment_usage(user.id, "message")
@@ -1133,11 +1391,15 @@ async def chat(
                 "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
             })
 
+        _fsid = req.session_id or str(uuid.uuid4())
+        _fident = _identity_for_frontier(req.model_variant, backend_resolution, routing_decision, user)
+        _persist_turn(user, _fsid, req.message, dlp_result["safe_text"], identity=_fident)
         return {
             "response": dlp_result["safe_text"],
-            "session_id": req.session_id or str(uuid.uuid4()),
+            "session_id": _fsid,
             "used_tools": [],
             "plan": "frontier_passthrough",
+            "model_identity": _fident,
             "backend": result.backend,
             "data_left_infrastructure": result.data_left_infrastructure,
             "escalated_by_cost_router": routing_decision.escalated,
@@ -1156,7 +1418,25 @@ async def chat(
 
     used_tools: list[str] = []
     plan_action = "cognitive_direct"
-    if cognitive_result.output is not None:
+    # G-024: same rule as /api/stream. The Kernel's no-retrieval direct answer is used only if this session has no documents, or the Kernel itself
+    # grounded the answer in them (Truth Fabric). Otherwise the uploaded documents go through the deep-RAG pipeline and into the model's context --
+    # they used to be silently ignored on this route unless the wording happened to trigger retrieval.
+    kernel_answered = cognitive_result.output is not None and (sess.doc_store.count() == 0 or cognitive_result.evidence_state is not None)
+    rag_result = None
+    if not kernel_answered and sess.doc_store.count() > 0:
+        history = sess.memory.messages() if hasattr(sess.memory, "messages") else []
+        history_strs = [f"{m.get('role','')}: {m.get('content','')[:200]}" for m in history[-6:]]
+        try:
+            rag_result = await asyncio.to_thread(
+                run_deep_rag, req.message, sess.doc_store, history_strs, CONFIG.ollama.host, _model_name_for_variant(req.model_variant),
+            )
+        except Exception as e:
+            # Never answer as if the uploaded documents had been consulted when retrieval failed.
+            _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
+        if rag_result.context_block:
+            enriched = f"[Document context — cite sources as [D1], [D2], etc.]\n{rag_result.context_block}\n\n{enriched}"
+    if kernel_answered:
         # Kernel's plan needed nothing beyond a direct model call --
         # answered via ModelGateway already, entitlement-reconciled. Skip
         # AgentLoop's extra plan/reflect calls for this turn entirely.
@@ -1168,7 +1448,8 @@ async def chat(
         try:
             final, trace = await asyncio.to_thread(sess.agent.run, enriched, persona_system)
         except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=500)
+            _err = public_error(e, route="/api/chat", user_id=user.id if user else None)
+            return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
         used_tools = [tc.tool for tc in trace.tool_calls]
         plan_action = trace.plan_action
 
@@ -1202,11 +1483,20 @@ async def chat(
             "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
         })
 
+    _src = _build_sources(answer=final, session_id=sess.id, rag_result=rag_result,
+                          evidence_state=cognitive_result.evidence_state if kernel_answered else None,
+                          citation_coverage=cognitive_result.citation_coverage if kernel_answered else None,
+                          evidence_passages=cognitive_result.evidence_passages if kernel_answered else None)
+    _ident = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=kernel_answered)
+    _persist_turn(user, sess.id, req.message, dlp_result["safe_text"], identity=_ident, src=_src)
     return {
         "response": dlp_result["safe_text"],
         "session_id": sess.id,
         "used_tools": used_tools,
         "plan": plan_action,
+        "model_identity": _ident,
+        "source_summary": _src["summary"],
+        "sources": _src["sources"],
         "degraded": cognitive_result.degraded,
         "degradation_reason": cognitive_result.degradation_reason if cognitive_result.degraded else None,
     }
@@ -1236,14 +1526,16 @@ async def stream_chat(
     if user:
         allowed, used, limit = check_quota(user.id, user.tier, "message")
         if not allowed:
+            _q = coded_error("quota_exceeded", message=f"Daily limit reached ({used}/{limit}). Upgrade to Pro.", used=used, limit=limit)
             async def _quota_err():
-                yield f"data: {json.dumps({'type':'error','text':f'Daily limit reached ({used}/{limit}). Upgrade to Pro.'})}\n\n"
+                yield f"data: {json.dumps(_q.as_sse())}\n\n"
             return StreamingResponse(_quota_err(), media_type="text/event-stream")
 
     model_allowed, model_reason = model_access_allowed(user, req.model_variant)
     if not model_allowed:
+        _g = coded_error("model_access_denied", message=model_reason)
         async def _model_gate_err():
-            yield f"data: {json.dumps({'type': 'error', 'text': model_reason})}\n\n"
+            yield f"data: {json.dumps(_g.as_sse())}\n\n"
         return StreamingResponse(_model_gate_err(), media_type="text/event-stream")
 
     mod_result = check_input(req.message)
@@ -1251,9 +1543,9 @@ async def stream_chat(
     if mod_result.action == "block":
         audit.log("input_moderation_blocked", user_id=user.id if user else None,
                   detail={"categories": mod_result.flagged_categories})
-        _mod_block_msg = "This request can't be processed — it matches a category we don't generate content for."
+        _m = coded_error("content_refused")
         async def _mod_block():
-            yield f"data: {json.dumps({'type': 'error', 'text': _mod_block_msg})}\n\n"
+            yield f"data: {json.dumps(_m.as_sse())}\n\n"
         return StreamingResponse(_mod_block(), media_type="text/event-stream")
     if mod_result.action in ("support", "flag"):
         audit.log(f"input_moderation_{mod_result.action}", user_id=user.id if user else None,
@@ -1270,9 +1562,9 @@ async def stream_chat(
     except Exception as e:
         code = e.code.value if isinstance(e, CognitiveError) else "UNMAPPED_COGNITIVE_FAILURE"
         audit.log("cognitive_execution_failed", user_id=user.id if user else None, detail={"code": code})
-        _fail_msg = "This request could not be processed right now. Please try again."
+        _f = public_error(e, route="/api/stream", user_id=user.id if user else None)
         async def _fail_stream():
-            yield f"data: {json.dumps({'type': 'error', 'text': _fail_msg})}\n\n"
+            yield f"data: {json.dumps(_f.as_sse())}\n\n"
         return StreamingResponse(_fail_stream(), media_type="text/event-stream")
 
     if cognitive_result.status == CognitiveState.ABSTAINED:
@@ -1280,9 +1572,10 @@ async def stream_chat(
             "reason": cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else None,
         })
         reason_key = cognitive_result.abstention_reason.value if cognitive_result.abstention_reason else ""
-        _abstain_msg = _ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed.")
+        _a = coded_error("request_abstained", message=_ABSTENTION_MESSAGES.get(reason_key, "This request can't be completed."), abstained=True,
+                         reason=(reason_key or "UNSPECIFIED").lower())
         async def _abstain_stream():
-            yield f"data: {json.dumps({'type': 'error', 'text': _abstain_msg, 'abstained': True})}\n\n"
+            yield f"data: {json.dumps(_a.as_sse())}\n\n"
         return StreamingResponse(_abstain_stream(), media_type="text/event-stream")
 
     # Cost-aware escalation — same resolution + routing decision /api/chat
@@ -1308,6 +1601,7 @@ async def stream_chat(
 
         async def _frontier_event_stream() -> AsyncIterator[str]:
             yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+            yield f"data: {json.dumps({'type': 'model', 'identity': _identity_for_frontier(req.model_variant, backend_resolution, routing_decision, user)})}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'text': f'escalating to {backend_resolution.backend}...'})}\n\n"
 
             try:
@@ -1315,7 +1609,7 @@ async def stream_chat(
                     _generate_via_frontier_backend, backend_resolution, persona_system, req.message
                 )
             except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+                yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
                 return
 
             dlp_result = dlp.scan_output(result.text)
@@ -1324,15 +1618,11 @@ async def stream_chat(
                     "pii_flagged": dlp_result["pii_flagged"], "secrets_redacted": dlp_result["secrets_redacted"],
                 })
 
-            # Fake-stream: _generate_via_frontier_backend / Backend.generate()
-            # are synchronous only (see that function's docstring) — chunk the
-            # finished text by word so the frontend's existing per-chunk SSE
-            # rendering still gets incremental output, instead of the whole
-            # response landing as one payload.
-            words = dlp_result["safe_text"].split(" ")
-            for i, w in enumerate(words):
-                yield f"data: {json.dumps({'type': 'chunk', 'text': w if i == 0 else f' {w}'})}\n\n"
-                await asyncio.sleep(0)
+            # G-026: _generate_via_frontier_backend / Backend.generate() are synchronous -- the whole answer already exists. It used to be cut into
+            # words and re-emitted with a sleep(0) between them, which LOOKED like token streaming. It is now delivered once and labelled as replayed.
+            yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
+            yield f"data: {json.dumps({'type': 'chunk', 'text': dlp_result['safe_text'], 'replayed': True})}\n\n"
+            _persist_turn(user, session_id, req.message, dlp_result["safe_text"], identity=_identity_for_frontier(req.model_variant, backend_resolution, routing_decision, user), message_id=message_id)
 
             if user:
                 increment_usage(user.id, "message")
@@ -1350,7 +1640,7 @@ async def stream_chat(
                     "reason": routing_decision.reason,
                 })
 
-            yield f"data: {json.dumps({'type': 'done', 'tools': [], 'message_id': message_id, 'backend': backend_resolution.backend, 'escalated_by_cost_router': routing_decision.escalated, 'routing_reason': routing_decision.reason if routing_decision.escalated else None, 'data_left_infrastructure': backend_resolution.data_left_infrastructure})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'tools': [], 'message_id': message_id, 'backend': backend_resolution.backend, 'escalated_by_cost_router': routing_decision.escalated, 'routing_reason': routing_decision.reason if routing_decision.escalated else None, 'data_left_infrastructure': backend_resolution.data_left_infrastructure, 'delivery': 'replayed', 'model_identity': _identity_for_frontier(req.model_variant, backend_resolution, routing_decision, user)})}\n\n"
 
         return StreamingResponse(
             _frontier_event_stream(),
@@ -1411,12 +1701,15 @@ async def stream_chat(
     async def _event_stream() -> AsyncIterator[str]:
         # Send session_id first
         yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
+        identity = _identity_for_ollama(req.model_variant, sess, cognitive_result, user, kernel_answered=use_kernel_direct)
+        yield f"data: {json.dumps({'type': 'model', 'identity': identity})}\n\n"
         if rag_result and rag_result.sources:
             yield f"data: {json.dumps({'type': 'rag', 'sources': rag_result.sources, 'confidence': rag_result.sufficiency_confidence, 'rounds': rag_result.retrieval_rounds, 'contradictions': rag_result.contradictions})}\n\n"
 
         full = ""
         tool_names: list[str] = []
         plan_action = "direct"
+        delivery = "upstream"
 
         if use_kernel_direct:
             # Kernel's plan needed nothing beyond a direct model call --
@@ -1426,11 +1719,13 @@ async def stream_chat(
             # -- ModelGateway.generate() was a single non-streaming call,
             # this is presentation-layer chunking, not fake generation.
             plan_action = "cognitive_direct"
-            words = (cognitive_result.output or "").split(" ")
-            for i, w in enumerate(words):
-                full += w if i == 0 else f" {w}"
-                yield f"data: {json.dumps({'type': 'chunk', 'text': w if i == 0 else f' {w}'})}\n\n"
-                await asyncio.sleep(0)
+            # G-026: the Kernel's ModelGateway call is non-streaming -- the answer is already complete here. It used to be split into words and
+            # re-emitted with sleep(0) between them (presentation-layer "typing"). It is now sent once and labelled, so a client can neither mistake it
+            # for live generation nor offer a "stop generating" control that would not stop anything.
+            delivery = "replayed"
+            full = cognitive_result.output or ""
+            yield f"data: {json.dumps({'type': 'stream', 'delivery': 'replayed', 'cancellable': False})}\n\n"
+            yield f"data: {json.dumps({'type': 'chunk', 'text': full, 'replayed': True})}\n\n"
         else:
             try:
                 gen, trace = await asyncio.to_thread(
@@ -1439,17 +1734,35 @@ async def stream_chat(
                 # Send tool activity if any
                 if trace.plan_action == "tools":
                     yield f"data: {json.dumps({'type': 'thinking', 'text': 'using tools...'})}\n\n"
+                # G-026: from here chunks are forwarded as the backend produces them; closing the connection cancels the upstream generation.
+                yield f"data: {json.dumps({'type': 'stream', 'delivery': 'upstream', 'cancellable': True})}\n\n"
 
-                for chunk in gen:
-                    full += chunk
-                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
-                    await asyncio.sleep(0)
+                # contextlib.aclosing, not a bare `async for`: breaking the
+                # loop below on client disconnect does not by itself call
+                # aclose() on an async generator (same rule as a sync
+                # generator abandoned mid-`for`) -- without this, a
+                # disconnected client's backend generator is only closed
+                # whenever Python eventually garbage-collects it, leaking
+                # the worker thread and the backend connection until then.
+                async with contextlib.aclosing(aiter_blocking(gen)) as achunks:
+                    async for chunk in achunks:
+                        full += chunk
+                        yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+                        if await request.is_disconnected():
+                            audit.log("stream_client_disconnected", user_id=user.id if user else None,
+                                      detail={"chars_sent": len(full)})
+                            return
 
                 tool_names = [tc.tool for tc in trace.tool_calls]
                 plan_action = trace.plan_action
 
+            except streaming.StreamingUnavailable as e:
+                err = public_error(e, route="/api/stream", user_id=user.id if user else None,
+                                   code="server_busy", message="The server is at capacity. Please retry shortly.")
+                yield f"data: {json.dumps(err.as_sse())}\n\n"
+                return
             except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+                yield f"data: {json.dumps(public_error(e, route='/api/stream', user_id=user.id if user else None).as_sse())}\n\n"
                 return
 
         # Persist
@@ -1493,10 +1806,15 @@ async def stream_chat(
         # Explainability: capture the full retrieval/reasoning trace for this
         # message, keyed by message_id so the frontend "Explain" button can
         # fetch it on demand without bloating every SSE payload.
+        _src = _build_sources(answer=full, session_id=sess.id, rag_result=rag_result,
+                              evidence_state=cognitive_result.evidence_state if use_kernel_direct else None,
+                              citation_coverage=cognitive_result.citation_coverage if use_kernel_direct else None,
+                              evidence_passages=cognitive_result.evidence_passages if use_kernel_direct else None)
+        _persist_turn(user, sess.id, req.message, full, identity=identity, src=_src, message_id=message_id)
         explain_record = build_from_rag_result(message_id, rag_result, plan_action, tool_names)
         sess.explain_store.add(explain_record)
 
-        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'tools': tool_names, 'message_id': message_id, 'citation_compliance': citation_report, 'degraded': cognitive_result.degraded, 'degradation_reason': cognitive_result.degradation_reason if cognitive_result.degraded else None, 'delivery': delivery, 'model_identity': identity, 'source_summary': _src['summary'], 'sources': _src['sources']})}\n\n"
 
     return StreamingResponse(
         _event_stream(),
@@ -1524,22 +1842,63 @@ async def recall_memory(req: MemoryRequest, user: User | None = Depends(get_curr
 async def remember(req: RememberRequest, user: User | None = Depends(get_current_user_optional)):
     sess = _get_session(req.session_id, user_id=user.id if user else None)
     sess.memory.commit_to_long_term(req.fact, {"type": "user_fact", "manual": True})
-    existing = sess.memory.semantic.recall_fact("all_sessions_summary") or ""
-    sess.memory.semantic.store_fact(
-        "all_sessions_summary",
-        f"{existing}\n[User note] {req.fact}".strip()[-4000:]
-    )
+    # G-006: this route used to ALSO append every user's note to one global,
+    # unscoped `all_sessions_summary` string. Nothing reads it any more (the
+    # read path was retired in Phase 5.1), and it mixed tenants' private text
+    # in a single value that account deletion did not scrub. The note is kept
+    # where it belongs: this session's own long-term memory, above.
     return {"stored": True, "fact": req.fact, "session_id": sess.id}
 
 
+def _anonymous_listing_allowed() -> bool:
+    """Anonymous callers may list saved sessions only on a private install
+    that has no accounts at all (a single-user local deployment has no
+    tenants to isolate). Any public edge, or any instance with an account,
+    answers anonymous callers with an empty list."""
+    from orca.auth.store import _count_users
+    from orca.gateway.wiring import public_edge_enabled
+
+    return not public_edge_enabled() and _count_users() == 0
+
+
 @app.get("/api/sessions")
-async def list_sessions():
-    sessions = EpisodicMemory.list_sessions()
+async def list_sessions(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: User | None = Depends(get_current_user_optional),
+):
+    """Lists the CALLER's conversations, most recently active first, paginated.
+
+    G-006: this used to return every session id and title on the server to anyone. A signed-in caller now sees their own conversations -- those with a
+    durable transcript (written on every turn, no explicit save needed) plus any older explicitly saved episode -- never anyone else's."""
+    from orca.serve import conversations
+
+    saved = EpisodicMemory.list_sessions()                         # newest first by episode mtime
+    if user is not None:
+        from orca.auth.store import get_user_session_ids
+
+        owned = set(get_user_session_ids(user.id))
+        episode_ids = [s for s in saved if s in owned]
+        activity: dict[str, float] = {}
+        for sid in owned:
+            ts = conversations.last_activity(sid)
+            if ts is not None:
+                activity[sid] = ts
+        for sid in episode_ids:
+            activity.setdefault(sid, 0.0)
+        visible = sorted(activity, key=lambda s: activity[s], reverse=True)
+    elif _anonymous_listing_allowed():
+        visible = saved
+        activity = {}
+    else:
+        visible = []
+        activity = {}
+    total = len(visible)
+    page = visible[offset:offset + limit]
+    nxt = offset + limit if offset + limit < total else None
     return {
-        "sessions": [
-            {"id": s, "title": _session_titles.get(s, "")}
-            for s in sessions[:50]
-        ]
+        "sessions": [{"id": s, "title": _session_titles.get(s, ""), "updated_at": activity.get(s) or None} for s in page],
+        "total": total, "limit": limit, "offset": offset, "next_offset": nxt,
     }
 
 
@@ -1559,8 +1918,22 @@ class TitleRequest(BaseModel):
 
 
 @app.patch("/api/session/{session_id}/title")
-async def set_session_title(session_id: str, req: TitleRequest):
+async def set_session_title(session_id: str, req: TitleRequest, user: User | None = Depends(get_current_user_optional)):
+    # G-006: was unauthenticated and unscoped -- anyone could overwrite any
+    # session's title (and mint new keys in the shared titles file for ids
+    # that do not exist). Same access rule as every other session route, and
+    # only for a session this process has actually seen or that has a saved
+    # episode.
+    _check_session_ownership(session_id, user.id if user else None)
+    from orca.serve import conversations
+
+    if (session_id not in _sessions and session_id not in EpisodicMemory.list_sessions()
+            and conversations.last_activity(session_id) is None):
+        raise HTTPException(status_code=404, detail="session not found")
     title = req.title.strip()[:80]
+    if not title:
+        e = coded_error("invalid_request", message="A conversation title can't be blank.")
+        return JSONResponse(e.as_json(), status_code=422)
     _save_title(session_id, title)
     return {"ok": True, "title": title}
 
@@ -1604,30 +1977,136 @@ async def knowledge_graph_entity(session_id: str, entity_name: str, user: User |
     return info
 
 
+def _owned_session_or_404(session_id: str, user: "User | None") -> None:
+    """Read-only access decision for transcript-style routes: never claims, never creates; a foreign or unknown-to-you session is 404."""
+    _check_session_ownership(session_id, user.id if user else None)
+
+
+@app.get("/api/session/{session_id}/messages")
+async def session_messages(session_id: str, limit: int = 200, offset: int = 0, user: User | None = Depends(get_current_user_optional)):
+    """The durable transcript of one of the caller's conversations (paged). Signed-in users only; anonymous sessions are not persisted."""
+    _owned_session_or_404(session_id, user)
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.serve import conversations
+
+    return conversations.transcript(session_id, limit=limit, offset=offset)
+
+
+@app.get("/api/sessions/search")
+async def search_sessions(q: str, request: Request, limit: int = 20, user: User | None = Depends(get_current_user_optional)):
+    """Full-text search over the CALLER's own conversations (titles and messages). Plain substring match, never a regex. Anonymous callers get nothing."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    ratelimit.enforce(request, ratelimit.CHAT_ANY, extra_key="search")
+    q = (q or "").strip()
+    if not (2 <= len(q) <= 200):
+        e = coded_error("invalid_request", message="Search text must be 2 to 200 characters.")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.auth.store import get_user_session_ids
+    from orca.serve import conversations
+
+    owned = get_user_session_ids(user.id)
+    return await asyncio.to_thread(conversations.search, owned, _session_titles, q, limit=max(1, min(int(limit), 50)))
+
+
 @app.get("/api/session/{session_id}/export")
-async def export_session(session_id: str, user: User | None = Depends(get_current_user_optional)):
-    sess = _get_session(session_id, user_id=user.id if user else None)
-    msgs = sess.memory.messages() if hasattr(sess.memory, "messages") else []
+async def export_session(session_id: str, format: str = "md", user: User | None = Depends(get_current_user_optional)):
+    """Export one conversation as Markdown (default) or JSON (`?format=json`, schema orneur.conversation/1)."""
+    _owned_session_or_404(session_id, user)
     title = _session_titles.get(session_id, f"Session {session_id[:8].upper()}")
-    lines = [f"# {title}", f"\n_Exported from Orneur — {time.strftime('%Y-%m-%d %H:%M')}_\n", "---\n"]
-    for m in msgs:
-        role = "**You**" if m.get("role") == "user" else "**Orneur**"
-        lines.append(f"{role}\n\n{m.get('content', '')}\n\n---\n")
-    md = "\n".join(lines)
-    return PlainTextResponse(
-        md,
-        headers={"Content-Disposition": f'attachment; filename="orca-{session_id[:8]}.md"'},
-    )
+    from orca.serve import conversations
+
+    have_file = user is not None and conversations.last_activity(session_id) is not None
+    if format == "json":
+        if not have_file:
+            return {"schema": "orneur.conversation/1", "session_id": session_id, "title": title, "total": 0, "messages": []}
+        return conversations.export_json(session_id, title)
+    if have_file:
+        md = conversations.export_markdown(session_id, title)
+    else:
+        # anonymous / not-yet-persisted sessions: fall back to the live in-memory window (what the export has always shown)
+        sess = _get_session(session_id, user_id=user.id if user else None)
+        msgs = sess.memory.messages() if hasattr(sess.memory, "messages") else []
+        lines = [f"# {title}", f"\n_Exported from ORNEUR — {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}_\n", "---\n"]
+        for m in msgs:
+            role = "**You**" if m.get("role") == "user" else "**ORNEUR**"
+            lines.append(f"{role}\n\n{m.get('content', '')}\n\n---\n")
+        md = "\n".join(lines)
+    return PlainTextResponse(md, headers={"Content-Disposition": f'attachment; filename="orneur-{session_id[:8]}.md"'})
+
+
+@app.delete("/api/session/{session_id}")
+async def delete_conversation(session_id: str, user: User | None = Depends(get_current_user_optional)):
+    """Delete ONE of the caller's conversations and everything scoped to it (transcript, memory, documents, knowledge graph, titles). Owner only."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    _owned_session_or_404(session_id, user)
+    from orca.auth.store import get_user_session_ids, release_session
+    from orca.serve.account_delete import _delete_session_data, _remove_session_title
+
+    if session_id not in set(get_user_session_ids(user.id)):
+        raise HTTPException(status_code=404, detail="session not found")      # nothing of yours by that id (an unclaimed id is not yours to delete)
+    result = await asyncio.to_thread(_delete_session_data, session_id)
+    _remove_session_title(session_id)
+    _sessions.pop(session_id, None)
+    release_session(session_id, user.id)
+    audit.log("conversation_deleted", user_id=user.id, detail={"session_id": session_id})
+    return {"deleted": True, "session_id": session_id, "stores": {k: v for k, v in result.items() if not k.endswith("_error")}}
 
 
 @app.post("/api/session/save")
-async def save_session(req: ChatRequest):
+async def save_session(req: ChatRequest, user: User | None = Depends(get_current_user_optional)):
     sid = req.session_id
+    # G-006: was unauthenticated -- any caller holding another user's id could
+    # force a save of that user's session.
+    _check_session_ownership(sid, user.id if user else None)
     if sid and sid in _sessions:
         sess = _sessions[sid]
         sess.memory.save_session()
         return {"saved": True, "session_id": sid}
     return {"saved": False}
+
+
+@app.get("/api/usage")
+async def my_usage(days: int = 7, user: User | None = Depends(get_current_user_optional)):
+    """The caller's own metering: plan, today's counters against their limits, remaining allowance and a short history. Counts only; per-user cost accounting is not implemented."""
+    if user is None:
+        e = coded_error("auth_required")
+        return JSONResponse(e.as_json(), status_code=e.status)
+    from orca.auth.store import DAILY_LIMITS, get_usage_history, get_usage_today
+
+    limits = DAILY_LIMITS.get(user.tier, DAILY_LIMITS["free"])
+    today = get_usage_today(user.id)
+
+    def remaining(used: int, limit: int):
+        return None if limit == -1 else max(0, limit - used)
+
+    return {
+        "plan": user.tier,
+        "today": today,
+        "limits": limits,
+        "remaining": {"messages": remaining(today["messages"], limits.get("messages", 50)), "ultra_runs": remaining(today["ultra_runs"], limits.get("ultra", 0))},
+        "history": get_usage_history(user.id, days),
+        "cost_accounting": "not_implemented",
+    }
+
+
+@app.get("/api/tools")
+async def available_tools():
+    """What the assistant may do on THIS surface, stated truthfully. Server-authority tools are not registered on the web (G-020); this lists them as blocked."""
+    from orca.tools import SERVER_AUTHORITY_TOOLS, build_registry
+
+    reg = build_registry(surface="web")
+    return {
+        "surface": "web",
+        "available": [{"name": t["name"], "description": t["description"]} for t in reg.schema_list()],
+        "available_when_session_bound": ["memory_recall"],
+        "blocked": [{"name": n, "reason": "not_available_on_web"} for n in sorted(SERVER_AUTHORITY_TOOLS)],
+    }
 
 
 @app.get("/api/models")
@@ -1663,12 +2142,19 @@ async def list_models():
         except RuntimeError:
             resolved_model = None
 
+        # What a client may truthfully say about this tier for the (anonymous) public: lifecycle, disclosure label and whether it would be
+        # served here at all. Eligibility for a user-scoped public experiment is decided per request, so an anonymous view never over-promises.
+        served = resolved_model or configured_model
+        decision = public_serving_decision(tier, served)
         return {
             "model": configured_model,
             "available": _available(configured_model),
             "vision_capable": is_vision_capable(configured_model),
             "resolved_model": resolved_model,
             "fallback_active": resolved_model is not None and resolved_model != configured_model,
+            "lifecycle": decision.lifecycle,
+            "publicly_served": decision.allowed,
+            "disclosure": decision.label or ("Experimental model -- not qualified." if decision.lifecycle == "EXPERIMENTAL" else ""),
         }
 
     def _persona_claim_status(tier: str) -> dict:
@@ -1697,7 +2183,10 @@ async def list_models():
         except RuntimeError as e:
             return {"backend": None, "error": str(e)}
 
+    from orca.gateway.wiring import serving_policy
+
     return {
+        "serving_policy": serving_policy(),
         "nano":  _tier_status("nano", CONFIG.ollama.model_nano),
         "core":  _tier_status("core", CONFIG.ollama.model_core),
         "ultra": _tier_status("ultra", CONFIG.ollama.model_ultra),
@@ -1858,7 +2347,11 @@ async def create_checkout(
     try:
         session = stripe.checkout.Session.create(**session_kwargs)
     except Exception as e:
-        return JSONResponse({"error": f"Could not create checkout session: {e}"}, status_code=502)
+        return JSONResponse(
+            public_error(e, route="/api/billing/checkout", user_id=user.id, code="checkout_unavailable",
+                         message="Could not create a checkout session. Please try again later.").as_json(),
+            status_code=502,
+        )
 
     return {"url": session.url}
 
@@ -1890,6 +2383,12 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
             yield f"data: {json.dumps({'type': 'error', 'text': 'Ultra requires a Pro license. Run: orca activate <key>'})}\n\n"
         return StreamingResponse(_gate_stream(), media_type="text/event-stream")
 
+    _refusal = _authorize_inference(user, "ultra", req.task, route="/api/ultra", quota_kind="ultra")
+    if _refusal is not None:
+        async def _ultra_refused():
+            yield f"data: {json.dumps(_refusal.as_sse())}\n\n"
+        return StreamingResponse(_ultra_refused(), media_type="text/event-stream")
+
     sess = _get_session(req.session_id, user_id=user.id if user else None)
     progress_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
 
@@ -1915,13 +2414,19 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
     # and /api/stream, this HTTP-reachable path was missed by the original
     # cutover. Resolve the same way _Session.__init__ does and inject the
     # Gateway-routed brain so live Ultra traffic is routed identically.
-    ultra_resolution = TierResolution(
-        tier="ultra",
-        backend="ollama",
-        model=_model_name_for_variant("ultra"),
-        data_left_infrastructure=False,
-    )
-    ultra_brain = brain_for_tier_resolution(ultra_resolution)
+    try:
+        ultra_resolution = TierResolution(
+            tier="ultra",
+            backend="ollama",
+            model=_model_name_for_variant("ultra"),
+            data_left_infrastructure=False,
+        )
+        ultra_brain = brain_for_tier_resolution(ultra_resolution, viewer_user_id=user.id if user else None)
+    except Exception as _e:        # no installed model for the tier, or the tier is not routable: a clean coded error, never an unhandled 500
+        _unavail = public_error(_e, route="/api/ultra", user_id=user.id if user else None, code="model_unavailable")
+        async def _ultra_unavailable():
+            yield f"data: {json.dumps(_unavail.as_sse())}\n\n"
+        return StreamingResponse(_ultra_unavailable(), media_type="text/event-stream")
 
     def on_progress(msg: str):
         # Called from within async coroutine context (main event loop thread)
@@ -1934,7 +2439,7 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         yield f"data: {json.dumps({'type': 'session', 'session_id': sess.id})}\n\n"
         yield f"data: {json.dumps({'type': 'pod_launch'})}\n\n"
 
-        ultra = OrcaUltra(on_progress=on_progress, use_tools=True, brain=ultra_brain)
+        ultra = OrcaUltra(on_progress=on_progress, use_tools=True, brain=ultra_brain, surface="web")
         pipeline_task = asyncio.create_task(ultra._run_async(req.task, max_retries=1))
 
         # Stream progress events while pipeline runs
@@ -1956,11 +2461,18 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         try:
             pipeline = pipeline_task.result()
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'text': str(e)})}\n\n"
+            yield f"data: {json.dumps(public_error(e, route='/api/ultra').as_sse())}\n\n"
             return
 
         # Stream final output in small chunks for smooth rendering
-        text = pipeline.final_output
+        _dlp = dlp.scan_output(pipeline.final_output)
+        if _dlp["has_findings"]:
+            audit.log("output_dlp_finding", user_id=user.id if user else None, detail={
+                "pii_flagged": _dlp["pii_flagged"], "secrets_redacted": _dlp["secrets_redacted"], "endpoint": "ultra",
+            })
+        text = _dlp["safe_text"]
+        if user:
+            increment_usage(user.id, "ultra")
         chunk_size = 25
         for i in range(0, len(text), chunk_size):
             yield f"data: {json.dumps({'type': 'chunk', 'text': text[i:i+chunk_size]})}\n\n"
@@ -1969,6 +2481,7 @@ async def ultra_run(req: UltraRequest, user: User | None = Depends(get_current_u
         # Persist to memory
         sess.memory.add_turn("user", req.task)
         sess.memory.add_turn("assistant", pipeline.final_output)
+        _persist_turn(user, sess.id, req.task, text)
         sess.memory.commit_to_long_term(
             f"[Ultra] Q: {req.task[:200]}\nA: {pipeline.final_output[:500]}"
         )
@@ -2015,8 +2528,22 @@ async def upload_doc(
     filename = file.filename or "upload.txt"
     try:
         text = extract(filename, data)
+    except ValueError as e:
+        # The extractor raises ValueError only for caller-fixable input
+        # problems ("Unsupported file type: .xyz"); that text is safe and useful.
+        return JSONResponse({"error": f"Extraction failed: {e}", "code": "unsupported_file"}, status_code=422)
+    except ImportError as e:
+        return JSONResponse(
+            public_error(e, route="/api/docs/upload", user_id=user.id if user else None, code="extractor_unavailable",
+                         message="This file type isn't supported on this deployment.").as_json(),
+            status_code=422,
+        )
     except Exception as e:
-        return JSONResponse({"error": f"Extraction failed: {e}"}, status_code=422)
+        return JSONResponse(
+            public_error(e, route="/api/docs/upload", user_id=user.id if user else None, code="extraction_failed",
+                         message="This file could not be read.").as_json(),
+            status_code=422,
+        )
 
     if not text.strip():
         return JSONResponse({"error": "No text could be extracted from this file."}, status_code=422)
@@ -2068,6 +2595,9 @@ async def delete_doc(
 ):
     """Remove a document and all its chunks from the session store."""
     sess = _get_session(session_id, user_id=user.id if user else None)
+    if not any(d.get("doc_id") == doc_id for d in list_docs(sess.id)):
+        # Say so instead of answering 200 {"deleted": false}: this document is not in this conversation.
+        return JSONResponse({"error": "No such document in this conversation.", "code": "not_found", "doc_id": doc_id}, status_code=404)
     ok = sess.doc_store.delete_doc(doc_id)
     unregister_doc(sess.id, doc_id)
     audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
@@ -2090,28 +2620,29 @@ async def code_run(
     request: Request,
     user: User | None = Depends(get_current_user_optional),
 ):
-    """Execute Python code in a sandboxed subprocess. Returns stdout/stderr/error."""
-    ratelimit.enforce(request, ratelimit.CODE_RUN, extra_key="code_run")
-    if req.language != "python":
-        return JSONResponse({"error": f"Language '{req.language}' not supported. Only Python is available."}, status_code=400)
+    """DISABLED on the web (G-020).
 
-    result = await asyncio.to_thread(run_code, req.code)
-
-    audit.log("code_run", user_id=user.id if user else None,
-              detail={"exit_code": result.exit_code, "duration_ms": result.duration_ms,
-                      "ok": result.ok})
-
-    return {
-        "stdout":      result.stdout,
-        "stderr":      result.stderr,
-        "error":       result.error,
-        "exit_code":   result.exit_code,
-        "duration_ms": result.duration_ms,
-        "ok":          result.ok,
-    }
+    This ran model-independent, caller-supplied Python on the server host under
+    the server's identity. The AST allow-list is not a sandbox: `pathlib` was
+    allowed, so `Path('/proc/self/environ').read_text()` returned the server's
+    environment, including `ORNEUR_AUTH_SECRET` (reproduced against the previous
+    code). Re-enabling needs isolated per-user execution and an independent audit,
+    not a flag. The local CLI is unaffected.
+    """
+    audit.log("code_run_refused", user_id=user.id if user else None, detail={"route": "/api/code/run"})
+    return JSONResponse(
+        {"error": "Code execution is not available in this environment.", "code": "capability_disabled"},
+        status_code=403,
+    )
 
 
 MAX_IMAGE_SIZE = 20 * 1024 * 1024  # 20MB
+
+
+def _looks_like_image(data: bytes) -> bool:
+    """Magic-byte check (PNG, JPEG, GIF, WebP). The declared content type is attacker-controlled and is not trusted."""
+    return (data.startswith(b"\x89PNG\r\n\x1a\n") or data.startswith(b"\xff\xd8\xff") or data[:6] in (b"GIF87a", b"GIF89a")
+            or (data[:4] == b"RIFF" and data[8:12] == b"WEBP"))
 
 
 @app.post("/api/vision")
@@ -2132,12 +2663,19 @@ async def vision_query(
     """
     ratelimit.enforce(request, ratelimit.VISION, extra_key="vision")
 
-    data = await image.read()
+    data = await image.read(MAX_IMAGE_SIZE + 1)         # bounded read: never buffer an arbitrarily large upload
     if len(data) > MAX_IMAGE_SIZE:
         return JSONResponse(
-            {"error": f"Image too large ({len(data)//1024//1024}MB). Max: {MAX_IMAGE_SIZE//1024//1024}MB"},
+            {"error": f"Image too large. Max: {MAX_IMAGE_SIZE//1024//1024}MB", "code": "invalid_request"},
             status_code=413,
         )
+    if not _looks_like_image(data):
+        e = coded_error("invalid_request", message="The uploaded file is not a supported image (PNG, JPEG, GIF or WebP).", status=415)
+        return JSONResponse(e.as_json(), status_code=e.status)
+
+    _refusal = _authorize_inference(user, model_variant, message, route="/api/vision")
+    if _refusal is not None:
+        return JSONResponse(_refusal.as_json(), status_code=_refusal.status)
 
     model_name = _model_name_for_variant(model_variant)
     if not is_vision_capable(model_name):
@@ -2148,16 +2686,6 @@ async def vision_query(
             status_code=400,
         )
 
-    mod_result = check_input(message)
-    metrics.record_moderation_action(mod_result.action)
-    if mod_result.action == "block":
-        audit.log("input_moderation_blocked", user_id=user.id if user else None,
-                  detail={"categories": mod_result.flagged_categories, "endpoint": "vision"})
-        return JSONResponse(
-            {"error": "This request can't be processed — it matches a category we don't generate content for."},
-            status_code=400,
-        )
-
     sess = _get_session(session_id, model_variant, user_id=user.id if user else None)
     image_b64 = encode_image(data)
     vision_message = build_vision_message(message, image_b64)
@@ -2165,7 +2693,17 @@ async def vision_query(
     try:
         response = await asyncio.to_thread(sess.brain.complete, [vision_message])
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        _err = public_error(e, route="/api/vision", user_id=user.id if user else None)
+        return JSONResponse(_err.as_json(), status_code=503 if _err.code == "model_unavailable" else 500)
+
+    _dlp = dlp.scan_output(response)
+    if _dlp["has_findings"]:
+        audit.log("output_dlp_finding", user_id=user.id if user else None, detail={
+            "pii_flagged": _dlp["pii_flagged"], "secrets_redacted": _dlp["secrets_redacted"], "endpoint": "vision",
+        })
+    response = _dlp["safe_text"]
+    if user:
+        increment_usage(user.id, "message")
 
     audit.log("vision_query", user_id=user.id if user else None,
               detail={"model": model_name, "image_bytes": len(data)})
@@ -2184,13 +2722,20 @@ async def admin_metrics(admin: User = Depends(require_permission("audit_read")))
 
 
 @app.get("/metrics", response_class=PlainTextResponse)
-async def prometheus_metrics():
+async def prometheus_metrics(request: Request):
     """
     Prometheus exposition format — no auth, standard scrape convention.
     If exposing this port publicly, put a firewall/reverse-proxy rule in
     front of it; this endpoint reveals operational detail (request volumes,
     error rates, endpoint names) that shouldn't be internet-visible.
     """
+    if _is_public_edge():
+        # Workstream A: on a public edge the scrape endpoint is closed unless a scrape token is configured AND presented (constant-time compare).
+        token = orneur_env("METRICS_TOKEN", "")
+        presented = request.headers.get("authorization", "")
+        if not token or len(token) < 32 or not hmac.compare_digest(presented, f"Bearer {token}"):
+            e = coded_error("forbidden")
+            return JSONResponse(e.as_json(), status_code=403)
     return PlainTextResponse(metrics.get_prometheus_text(), media_type="text/plain; version=0.0.4")
 
 
@@ -2279,8 +2824,20 @@ async def admin_stats(admin: User = Depends(require_permission("manage_users")))
 #  Static files (must be last — catches everything under /static)
 # ─────────────────────────────────────────────────────────────────────────────
 
+class _BrandStaticFiles(StaticFiles):
+    """Files under /static/brand/ carry their own content hash in the filename, so they are immutable."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if path.startswith("brand/") and _HASHED_BRAND_FILE.search(path) and response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
+_HASHED_BRAND_FILE = re.compile(r"\.[0-9a-f]{8}\.(png|ico)$")
+
 if WEB_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+    app.mount("/static", _BrandStaticFiles(directory=str(WEB_DIR)), name="static")
 
 
 def create_app() -> FastAPI:

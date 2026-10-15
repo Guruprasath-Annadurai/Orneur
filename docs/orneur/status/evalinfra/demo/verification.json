@@ -1,0 +1,28 @@
+{
+  "banner": "SYNTHETIC - NOT EVIDENCE OF ANY MODEL CAPABILITY",
+  "verify_result": {
+    "arms_locked": [
+      "B0",
+      "B1",
+      "B2",
+      "T1",
+      "T2"
+    ],
+    "entries": 23,
+    "head": {
+      "entry_hash": "95ef3369eafb52685010f2f7cba75cfe52b7ef219e9603068ca39ab5163460e6",
+      "seq": 22
+    },
+    "kinds": {
+      "ANALYSIS_PLAN_FROZEN": 1,
+      "CONFIG_LOCK": 5,
+      "DATASET_COMMITMENT": 1,
+      "PREREG_FROZEN": 1,
+      "RESULT": 15
+    },
+    "mixed_synthetic_and_real": false,
+    "ok": true,
+    "results": 15,
+    "synthetic": true
+  }
+}

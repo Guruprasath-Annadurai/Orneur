@@ -1,0 +1,87 @@
+{
+  "content_sha256": "fe07b5af1c724a276ed6df8f00bcdabd893257b0168ec39aac494a1f630e1c5b",
+  "derived_from": {
+    "class": "distillation_data",
+    "path": "docs/orneur/phase-21/GENESIS_TRAINING_AND_ADAPTATION_CORPUS_INVENTORY.json",
+    "sha256": "c68d8655e332df2cd664bc13264aaa8a8095024b95d39c1cc816697458ddd977"
+  },
+  "legal_conclusions_asserted": false,
+  "register_version": "1",
+  "schema_version": "orneur-teacher-rights-register/1",
+  "teachers": [
+    {
+      "aliases": [],
+      "inventory_corpus_ids": [
+        "local-distilllog-distill_llama3.1:8b_1787724499",
+        "local-distilllog-distill_llama3.1:8b_1787979086"
+      ],
+      "inventory_record_count": 90,
+      "notes": "Seeded from the corpus inventory; output-use terms NOT reviewed. No legal conclusion is asserted by this entry.",
+      "permitted_uses": [],
+      "restrictions": [],
+      "reviewed_at": null,
+      "reviewed_by": null,
+      "revisions": [],
+      "status": "UNREVIEWED",
+      "teacher_id": "llama3.1:8b",
+      "terms_record_id": null,
+      "terms_source_url": null
+    },
+    {
+      "aliases": [],
+      "inventory_corpus_ids": [
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1783795424",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1783795989",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1783800423",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1783839672",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1783843879",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1783845893",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1784021397",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1784135608",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1784137045",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1784400336",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1784449482",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1784638484",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1785388544",
+        "local-distilllog-distill_nvidia-nemotron-3-ultra-550b-a55b_1785389186"
+      ],
+      "inventory_record_count": 5012,
+      "notes": "Seeded from the corpus inventory; output-use terms NOT reviewed. No legal conclusion is asserted by this entry.",
+      "permitted_uses": [],
+      "restrictions": [],
+      "reviewed_at": null,
+      "reviewed_by": null,
+      "revisions": [],
+      "status": "UNREVIEWED",
+      "teacher_id": "nvidia-nemotron-3-ultra-550b-a55b",
+      "terms_record_id": null,
+      "terms_source_url": null
+    },
+    {
+      "aliases": [],
+      "inventory_corpus_ids": [
+        "local-raw-core_distilled_20260712",
+        "local-raw-core_distilled_20260715",
+        "local-raw-core_distilled_20260719",
+        "local-raw-core_distilled_20260826",
+        "local-raw-nano_distilled_20260712",
+        "local-raw-nano_distilled_20260714",
+        "local-raw-nano_distilled_20260829",
+        "local-raw-ultra_distilled_20260715",
+        "local-raw-ultra_distilled_20260730",
+        "local-raw-ultra_distilled_curated_20260730"
+      ],
+      "inventory_record_count": 5162,
+      "notes": "Raw distilled files whose inventory provenance says 'provider/teacher model outputs (see distill_logs)'; the specific teacher per record is not recorded in the repository. Treated as UNREVIEWED. No legal conclusion is asserted by this entry.",
+      "permitted_uses": [],
+      "restrictions": [],
+      "reviewed_at": null,
+      "reviewed_by": null,
+      "revisions": [],
+      "status": "UNREVIEWED",
+      "teacher_id": "unattributed-provider-teacher",
+      "terms_record_id": null,
+      "terms_source_url": null
+    }
+  ]
+}

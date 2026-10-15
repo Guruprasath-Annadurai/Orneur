@@ -35,12 +35,11 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
-import diskcache
+from orca.safe_cache import open_cache
 
-from orca.config import ORCA_HOME
+from orca.config import ORCA_HOME, _mkdir_owner_only
 
-QUEUE_DIR = ORCA_HOME / "lens" / "queue"
-QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+QUEUE_DIR = _mkdir_owner_only(ORCA_HOME / "lens" / "queue", parents=True)
 
 # Valid job lifecycle: pending -> running -> (done | failed | blocked)
 _VALID_STATUSES = {"pending", "running", "done", "failed", "blocked"}
@@ -74,7 +73,10 @@ class LensJobQueue:
     """
 
     def __init__(self, cache_dir: Path | None = None):
-        self._cache = diskcache.Cache(str(cache_dir or QUEUE_DIR))
+        # A caller-supplied cache_dir used to skip the owner-only/symlink
+        # hardening that QUEUE_DIR gets at import time (PYSEC-2026-2447).
+        directory = _mkdir_owner_only(Path(cache_dir), parents=True) if cache_dir else QUEUE_DIR
+        self._cache = open_cache(directory)  # SafeDisk: never unpickles (orca/safe_cache.py)
 
     def submit(
         self,

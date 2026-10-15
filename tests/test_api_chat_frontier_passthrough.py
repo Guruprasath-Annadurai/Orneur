@@ -154,4 +154,9 @@ def test_frontier_generation_error_returns_500_not_crash(client, monkeypatch):
     resp = client.post("/api/chat", json={"message": "hi", "model_variant": "nano"})
 
     assert resp.status_code == 500
-    assert "upstream API error" in resp.json()["error"]
+    body = resp.json()
+    # The upstream text is logged server-side, never returned to the caller
+    # (see orca/serve/errors.py and tests/test_serve_error_hygiene.py).
+    assert "upstream API error" not in body["error"]
+    assert body["code"] == "backend_error"
+    assert body["error_id"]
