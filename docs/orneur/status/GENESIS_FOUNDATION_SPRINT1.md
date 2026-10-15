@@ -7,27 +7,64 @@ training, no GPU, no spend, no acceptance-count advancement.
 ## Phase 1 — Audit #015 scientific-assumption corrections
 
 Directly checked: no document named "Audit #015", and no committed GENESIS
-model configuration, exists anywhere in this repository (grepped
-directly — zero matches for "30M"/"Audit #015" tied to a model config).
-There is nothing in-place to amend. The eight items are addressed as
-corrections **built into this sprint's own implementation**, so the
-specific error class each one describes cannot recur silently:
+model configuration, existed in `main` at the time this section was
+first drafted (grepped directly — zero matches for "30M"/"Audit #015"
+tied to a model config on `main`). **Correction to that initial finding**:
+the actual Audit #015 document exists as a concurrent, not-yet-merged
+PR — [#54, "Audit 015: Independent Native-Model Reality Audit"](https://github.com/Guruprasath-Annadurai/Orneur/pull/54),
+authored by the founder/independent-auditor account, created around the
+same time as this sprint's own work. Fetched and checked directly once
+found, rather than left as "does not exist":
 
-1. **Embeddings alone exceeding a stated 30M-parameter budget.**
+1. **Embeddings alone exceeding a stated 30M-parameter budget — the real
+   instance, verified with exact numbers.** PR #54's Stage 1 config is
+   stated as: `vocab_size=64,000, d_model=512, n_layers=12, n_heads=8,
+   n_kv_heads=4, max_seq_len=2,048`, "~30M parameters." Computed directly
+   with this sprint's own `GenesisModelConfig` (standard SwiGLU
+   `d_ff = 8/3 * d_model` rounded to 256, tied embeddings): **the
+   embedding table alone is 32,768,000 parameters — already exceeding the
+   stated ~30M total before a single transformer layer is counted.** The
+   real total for this exact config is **65,810,944** — roughly **2.2×**
+   the stated figure, with the embedding table alone accounting for
+   49.8% of the real total. Confirmed this is a `vocab_size`/`d_model`
+   mismatch, not a one-off arithmetic slip: solving for the `d_model`
+   that genuinely produces ~30M total at `vocab_size=64,000` gives
+   `d_model≈296`, not 512 — at `d_model=512`, no choice of layer count
+   at this vocab size can reach a genuine 30M total, because the
+   embedding table alone already exceeds it. PR #54 should correct
+   either the stated parameter count (to ~66M) or the architecture
+   (shrink `d_model` to ~300, or `vocab_size` substantially below
+   64,000) — this sprint does not pick one on the founder/auditor's
+   behalf, only reports the precise, reproducible discrepancy.
    `GenesisModelConfig.total_parameters()` and `.breakdown()`
    (`orca/genesis/model/config.py`) compute every component — including
    the embedding table — from real dimensions, never a hand-entered
-   total. `from_param_budget()` *solves* for dimensions that fit a
-   requested budget and explicitly **raises** if the embedding table
-   alone would exceed it (e.g. `vocab_size=1,000,000` against a
-   100-parameter budget), rather than silently accepting an inconsistent
-   config. Reproducible: `tests/test_genesis_model_architecture.py::test_from_param_budget_rejects_embedding_alone_exceeding_budget`.
+   total, which is how this specific discrepancy was caught mechanically
+   rather than by manual arithmetic. `from_param_budget()` *solves* for
+   dimensions that fit a requested budget and explicitly **raises** if
+   the embedding table alone would exceed it, rather than silently
+   accepting an inconsistent config. Reproducible:
+   `tests/test_genesis_model_architecture.py::test_from_param_budget_rejects_embedding_alone_exceeding_budget`
+   (the general case) and the inline computation above (the specific
+   Audit #015 instance, using this module directly against PR #54's own
+   stated numbers).
 2. **Inconsistent model dimensions and total parameter budgets.**
-   Same fix — `total_parameters()` is derived, never asserted
-   independently of `breakdown()`'s own components (test:
-   `test_parameter_count_breakdown_matches_total`), and cross-checked
-   against a REAL constructed model's actual parameter count, not just
-   internal arithmetic (test: `test_parameter_count_matches_actual_constructed_model`).
+   Same root cause as item 1, same fix — `total_parameters()` is
+   derived, never asserted independently of `breakdown()`'s own
+   components (test: `test_parameter_count_breakdown_matches_total`),
+   and cross-checked against a REAL constructed model's actual parameter
+   count, not just internal arithmetic (test:
+   `test_parameter_count_matches_actual_constructed_model`). PR #54's
+   Stage 3 config (`~300M`, `L=24, d=1024, h=16, kv=8, vocab=64,000,
+   ctx=4,096`) was also checked directly: computed total (assuming the
+   same standard `d_ff = 8/3 * d_model` convention, since PR #54 does
+   not state its own `d_ff` explicitly) is **348,701,696** — about 16%
+   over the stated ~300M, with the embedding table a reasonable 18.8% of
+   the total. This is a materially smaller, more ambiguous discrepancy
+   than Stage 1's (plausibly just a different `d_ff` convention than the
+   one assumed here, not clearly the same embedding-dominates-the-budget
+   error), reported as "approximately consistent, pending PR #54 stating
+   its actual `d_ff`" rather than flagged with Stage 1's confidence.
 3. **Unsupported small-model H100 utilization assumptions.** Not
    addressed by code in this sprint — this is a hardware/throughput
    claim, not an architecture question, and no benchmark was run on real
