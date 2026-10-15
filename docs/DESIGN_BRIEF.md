@@ -1,3 +1,4 @@
+<!-- SUPERSEDED 2026-10-11: logo/mark guidance below (orca marks) is retired; the founder-supplied ORNEUR logo is the sole authoritative identity (docs/orneur/brand/BRAND_IDENTITY_LOCK.md). Kept for history. -->
 # Orca Design Brief — Screen by Screen
 
 Written for use with a design generation tool (Claude/Figma/etc.). Grounded
