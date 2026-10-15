@@ -54,7 +54,16 @@ def _delete_session_data(session_id: str) -> dict:
     result = {
         "session_id": session_id, "memory_deleted": False, "docs_deleted": 0, "redis_deleted": False,
         "knowledge_graph_deleted": False, "semantic_facts_deleted": False, "memory_continuum_deleted": {},
-        "long_term_vector_memory_deleted": False,
+        # 2026-10-15 (P1 deletion-assurance design): split from one conflated
+        # boolean into the two honestly-distinct facts a caller actually
+        # needs -- whether the data is gone from every normal read path
+        # (logical_deleted, the real privacy guarantee) versus whether the
+        # raw on-disk bytes have also been reclaimed (physical_reclamation,
+        # best-effort hardening, may legitimately be "DEFERRED" under
+        # contention -- see LongTermMemory.delete()'s docstring). Never
+        # collapse these back into one boolean in any caller/API response.
+        "long_term_vector_memory_logically_deleted": False,
+        "long_term_vector_memory_physical_reclamation": None,
     }
 
     try:
@@ -77,7 +86,16 @@ def _delete_session_data(session_id: str) -> dict:
         # (unconditional, every chat/stream/ultra turn) lived in this
         # session's own ChromaDB collection with NO deletion path at all
         # before LongTermMemory.delete() was added this phase.
-        result["long_term_vector_memory_deleted"] = LongTermMemory(session_id).delete()
+        # delete_session() classmethod, not LongTermMemory(session_id).delete():
+        # the latter would construct a chromadb client synchronously on THIS
+        # thread first (LongTermMemory.__init__ touches the same shared,
+        # lockable file), before the bounded watchdog inside delete() ever
+        # starts -- confirmed by direct reproduction against a real held
+        # lock. delete_session() does the whole lifecycle, construction
+        # included, inside the bounded background worker.
+        ltm_result = LongTermMemory.delete_session(session_id)
+        result["long_term_vector_memory_logically_deleted"] = ltm_result.logical_deleted
+        result["long_term_vector_memory_physical_reclamation"] = ltm_result.physical_reclamation
     except Exception as e:
         result["long_term_vector_memory_error"] = str(e)
 
