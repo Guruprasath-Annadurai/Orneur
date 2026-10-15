@@ -70,6 +70,9 @@ train  = [
     "accelerate>=1.0.0",
     "wandb>=0.18.0",
     "scipy>=1.14.0",
+    # GENESIS Foundation Sprint 1: orca/genesis/tokenizer/framework.py's
+    # SentencePiece-backed tokenizer training/validation framework.
+    "sentencepiece>=0.2.0",
     # See the matching comment on the `lens` extra below (PYSEC-2026-3447):
     # torch is pulled in transitively here too (via unsloth/trl/transformers'
     # own requirements), so this extra needs the same portable floor.
