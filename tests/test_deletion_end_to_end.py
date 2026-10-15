@@ -56,7 +56,10 @@ def test_deletion_spans_every_still_active_store():
     result = _delete_session_data(session_id)
 
     # Assert: NOTHING survives in ANY store
-    assert result["long_term_vector_memory_deleted"] is True
+    # 2026-10-15 (P1 deletion-assurance design): split into logical vs.
+    # physical-reclamation status -- see LongTermMemory.delete()'s docstring.
+    assert result["long_term_vector_memory_logically_deleted"] is True
+    assert result["long_term_vector_memory_physical_reclamation"] in ("RECLAIMED", "DEFERRED")
     fresh_long_term = LongTermMemory(session_id)
     assert fresh_long_term.recall("Nightingale") == []
 

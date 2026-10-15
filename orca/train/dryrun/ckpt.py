@@ -126,7 +126,7 @@ def _read_manifest(root: Path, name: str) -> dict:
 
 
 def verify_checkpoint(root, name: str, *, expected_plan_sha256: str, expected_digest: str | None = None,
-                      expected_step: int | None = None) -> VerifiedCheckpoint:
+                      expected_step: int | None = None, expected_run_id: str | None = None) -> VerifiedCheckpoint:
     """Raises CheckpointUnverified / CorruptCheckpointError for anything wrong; returns a VerifiedCheckpoint otherwise."""
     root = Path(root)
     man = _read_manifest(root, name)
@@ -137,6 +137,8 @@ def verify_checkpoint(root, name: str, *, expected_plan_sha256: str, expected_di
         raise CheckpointUnverified(f"{name}: checkpoint was produced by a different plan/config")
     if expected_step is not None and man["step"] != expected_step:
         raise CheckpointUnverified(f"{name}: step mismatch")
+    if expected_run_id is not None and man["run_id"] != expected_run_id:
+        raise CheckpointUnverified(f"{name}: checkpoint belongs to a different run (wrong run id)")
     if expected_digest is not None and man["artifact_checksum"] != expected_digest:
         raise CheckpointUnverified(f"{name}: digest differs from the independently recorded (ledger) digest")
     record = CheckpointRecord(
@@ -186,7 +188,8 @@ def list_checkpoint_names(root) -> list:
     return sorted(p.name[: -len(".manifest.json")] for p in root.glob("ckpt-??????.manifest.json"))
 
 
-def latest_verified(root, plan: Plan, *, expected_digests: dict | None = None, require_listed: bool = False) -> tuple:
+def latest_verified(root, plan: Plan, *, expected_digests: dict | None = None, require_listed: bool = False,
+                    expected_run_id: str | None = None) -> tuple:
     """Newest checkpoint that verifies, scanning back past corrupt ones (rollback to the last good). Returns (VerifiedCheckpoint | None,
     {name: reason} for every newer candidate that was rejected). `expected_digests` maps step -> digest from the run ledger."""
     rejected: dict = {}
@@ -197,7 +200,7 @@ def latest_verified(root, plan: Plan, *, expected_digests: dict | None = None, r
             continue
         try:
             return verify_checkpoint(root, name, expected_plan_sha256=plan.sha256, expected_step=step,
-                                     expected_digest=(expected_digests or {}).get(step)), rejected
+                                     expected_digest=(expected_digests or {}).get(step), expected_run_id=expected_run_id), rejected
         except CorruptCheckpointError as e:
             rejected[name] = str(e)
     return None, rejected

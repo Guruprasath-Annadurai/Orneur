@@ -22,7 +22,7 @@ from orca.train.config import resolve_training_data_inputs
 from orca.train.dryrun.binding import Binding, verify_binding
 from orca.train.dryrun.budget import BudgetMeter, HardStop, KillSwitch, ResourceBudget
 from orca.train.dryrun.ckpt import latest_verified, load_state, quarantine_checkpoint, quarantine_uncommitted, save_checkpoint
-from orca.train.dryrun.ledger import RunLedger, build_run_manifest, seal_run_manifest
+from orca.train.dryrun.ledger import RunLedger, build_run_manifest, complete_pending_seal, seal_run_manifest
 from orca.train.dryrun.sentinel import SyntheticOnlyGuard
 from orca.train.dryrun.toy import NonFiniteValue, Plan, ToyEngine, TrainState, initial_state
 
@@ -79,6 +79,42 @@ def _apply_restore(state: TrainState, plan: Plan, restore) -> TrainState:
     return state
 
 
+# Ceilings that are bound into the chained run_started record. `max_steps` is deliberately not one of them: it is the per-invocation pause
+# control (the run is bounded by Plan.total_steps, which is plan-hash-bound) and resuming with a larger step allowance is how a paused run continues.
+_BOUND_UPPER = ("max_tokens", "max_wall_clock_s", "max_spend_usd")
+
+
+def _raised_ceilings(bound, budget: ResourceBudget) -> list:
+    """Names of ceilings the resuming caller loosened relative to the budget bound at run start. A missing/garbled bound fails closed."""
+    if not isinstance(bound, dict):
+        return ["budget_unreadable"]
+    now = budget.as_dict()
+    out = []
+    for n in _BOUND_UPPER:
+        if not isinstance(bound.get(n), (int, float)) or now[n] > bound[n]:
+            out.append(n)
+    if not isinstance(bound.get("sim_cost_usd_per_step"), (int, float)) or now["sim_cost_usd_per_step"] < bound["sim_cost_usd_per_step"]:
+        out.append("sim_cost_usd_per_step")                                # a cheaper per-step cost would stretch the same spend ceiling
+    return out
+
+
+def _settle_pending_seal(ledger: RunLedger, manifests_dir: Path, run_id: str) -> None:
+    """After a crash, a stop/finish may have a manifest file on disk that was never chained. Complete the seal when it is intact and binds the
+    current head; otherwise move the unusable file aside (nothing is deleted) so the next seal can use the name."""
+    if ledger.last_type() not in ("run_finished", "run_stopped"):
+        return
+    path = manifests_dir / f"{run_id}.seg{ledger.sealed_count() + 1}.manifest.json"
+    if not path.exists():
+        return
+    if not complete_pending_seal(ledger, path):
+        q = manifests_dir / "quarantine"
+        q.mkdir(exist_ok=True)
+        n = 0
+        while (q / f"{path.name}.{n}").exists():
+            n += 1
+        os.rename(path, q / f"{path.name}.{n}")
+
+
 def _default_ts() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -122,18 +158,40 @@ def run_core(plan: Plan, root, *, run_id: str, budget: ResourceBudget, binding: 
             raise RunRefused(["LEDGER_MISSING_OR_NOT_INTACT"])
         if started["plan_sha256"] != plan.sha256:
             raise RunRefused(["PLAN_HASH_MISMATCH"])
+        if budget.is_zero or meter.wall_cap_s <= 0:                       # nothing at all (not even "finish an already-done run") on a zero budget
+            raise RunRefused(["ZERO_BUDGET"])
+        raised = _raised_ceilings(started.get("budget"), budget)
+        if raised:
+            raise RunRefused(["BUDGET_RAISED_AFTER_BIND:" + n for n in raised])
         verify_binding(started["binding"], binding)                       # BindingRefused: code / dataset / config changed since the run began
+        _settle_pending_seal(ledger, manifests_dir, run_id)              # crash between "manifest written" and "manifest hash chained"
+        if ledger.is_sealed_finished() or ledger.last_type() == "run_finished":     # already done: resuming is an idempotent no-op (+ seal if unsealed)
+            vc, _ = latest_verified(ckdir, plan, expected_digests=ledger.checkpoint_digests(), require_listed=True, expected_run_id=run_id)
+            if vc is None:
+                raise RunRefused(["NO_VERIFIED_CHECKPOINT"])
+            state = load_state(vc, plan)
+            if state.sha256 != ledger.final_committed_state_sha256():
+                raise RunRefused(["FINAL_STATE_MISMATCH"])
+            mpath = None if ledger.is_sealed_finished() else seal(None)
+            n = ledger.sealed_count()
+            mpath = mpath or manifests_dir / f"{run_id}.seg{n}.manifest.json"
+            meter.steps, meter.tokens, meter.spend_micro = state.step, state.tokens_seen, state.step * meter._step_cost_micro
+            return RunOutcome("FINISHED", None, state, state.step, [r["body"]["name"] for r in ledger.records() if r["body"]["type"] == "checkpoint_saved"],
+                              meter.usage(), ledger.chain.head(), mpath, vc.digest)
         orphans = quarantine_uncommitted(ckdir)                          # crash between rename and commit: never loadable, move aside
-        vc, rejected = latest_verified(ckdir, plan, expected_digests=ledger.checkpoint_digests(), require_listed=True)
-        if vc is None:
+        vc, rejected = latest_verified(ckdir, plan, expected_digests=ledger.checkpoint_digests(), require_listed=True, expected_run_id=run_id)
+        if vc is None and ledger.checkpoint_digests():
             raise RunRefused(["NO_VERIFIED_CHECKPOINT"] + sorted("REJECTED_" + n for n in rejected))
         for name in rejected:                                            # corrupt / unlisted checkpoints newer than the one we resume from
             quarantine_checkpoint(ckdir, name)
-        state = _apply_restore(load_state(vc, plan), plan, restore)
+        if vc is None:                                                   # crashed before ANY checkpoint was committed: the initial state is deterministic
+            state, from_digest = initial_state(plan), "initial-state:" + initial_state(plan).sha256
+        else:
+            state, from_digest = _apply_restore(load_state(vc, plan), plan, restore), vc.digest
         # Caps are cumulative across resumes: consumption is re-derived from the verified state, never reset by resuming.
         meter.steps, meter.tokens = state.step, state.tokens_seen
         meter.spend_micro = state.step * meter._step_cost_micro
-        ledger.append("run_resumed", from_step=state.step, from_digest=vc.digest, binding=binding.as_dict(), restore=sorted(restore),
+        ledger.append("run_resumed", from_step=state.step, from_digest=from_digest, binding=binding.as_dict(), restore=sorted(restore),
                       rejected_checkpoints=sorted(set(rejected) | set(orphans)))
 
     stop_reason, status, pending_exc = None, "FINISHED", None
@@ -228,6 +286,21 @@ def _consume_grant(grant: TrainingGrant, consumed_dir) -> None:
     _CONSUMED_IN_PROCESS.add(key)
 
 
+def _recheck_authority(grant: TrainingGrant) -> None:
+    """A grant is a snapshot; authority can be revoked or the record withdrawn after it was issued. Re-read both at the moment of use, from the
+    same repository-resident files the gate reads. Unreadable means refused, never 'nothing revoked'. Read-only; cannot create or alter a grant."""
+    from orca.train import authorization as gate
+    root = gate._default_root()
+    rev = gate._load_json(root / gate.REVOCATIONS_PATH)
+    if not (isinstance(rev, dict) and rev.get("schema_version") == gate.REVOCATIONS_SCHEMA_VERSION and isinstance(rev.get("revoked_authorization_ids"), list)):
+        raise TrainingNotAuthorized(["REVOCATION_LIST_UNREADABLE"])
+    if grant.authorization_id in rev["revoked_authorization_ids"]:
+        raise TrainingNotAuthorized(["AUTHORIZATION_REVOKED"])
+    rec = gate._load_json(root / gate.RECORD_PATH)
+    if not (isinstance(rec, dict) and rec.get("status") == "AUTHORIZED" and rec.get("authorization_id") == grant.authorization_id):
+        raise TrainingNotAuthorized(["AUTHORIZATION_RECORD_WITHDRAWN"])
+
+
 def rehearse_with_grant(cfg, grant, *, environment_class: str, plan: Plan, root, consumed_dir, guard: SyntheticOnlyGuard, run_id: str,
                         budget: ResourceBudget, binding: Binding, env_manifest_sha256: str, **kw) -> RunOutcome:
     """Refuses (TrainingNotAuthorized) without a genuine, unexpired, config-matching, file-matching, unconsumed grant. The grant's wall clock can
@@ -235,6 +308,7 @@ def rehearse_with_grant(cfg, grant, *, environment_class: str, plan: Plan, root,
     g = require_grant(grant, cfg, environment_class=environment_class)       # NO_TRAINING_GRANT / GRANT_FORGED_OR_TAMPERED / CONFIG_CHANGED / EXPIRED
     resolved = resolve_training_data_inputs(cfg)
     g.assert_files(resolved.train_path, resolved.eval_path)                  # TRAIN_DATA_CHANGED_AFTER_AUTHORIZATION etc.
+    _recheck_authority(g)                                                    # revoked / withdrawn since issuance -> refused at USE, before consuming
     _consume_grant(g, consumed_dir)
     info = {"authorization_id": g.authorization_id, "run_slot": g.run_slot, "key_id": g.key_id, "record_sha256": g.record_sha256}
     return run_synthetic(plan, root, guard=guard, run_id=run_id, budget=budget, binding=binding, env_manifest_sha256=env_manifest_sha256,

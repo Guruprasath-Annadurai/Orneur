@@ -95,6 +95,11 @@ class InferenceChunk:
     prompt_tokens: int | None = None    # populated when the runtime reports it (often only on the final chunk)
     completion_tokens: int | None = None
     trace_id: str | None = None
+    # Stamped by ModelGateway.stream() from the deployment that ACTUALLY served the request (never from the
+    # requested alias); None when a chunk did not come through the gateway.
+    deployment_id: str | None = None
+    resolved_version: str | None = None
+    runtime: str | None = None
 
 
 InferenceStream = AsyncIterator[InferenceChunk]

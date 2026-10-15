@@ -27,11 +27,11 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -936,6 +936,49 @@ async def serve_trust():
     return HTMLResponse("<h1>Orneur trust page not found</h1>")
 
 
+def _brand_asset(role: str) -> Optional[Path]:
+    """Founder-approved brand file for ``role`` (see web/brand/ASSETS.json), or None."""
+    try:
+        doc = json.loads((WEB_DIR / "brand" / "ASSETS.json").read_text(encoding="utf-8"))
+        for a in doc["assets"]:
+            if a["role"] == role:
+                return WEB_DIR / "brand" / a["file"]
+    except (OSError, ValueError, KeyError):
+        pass
+    return None
+
+
+def _brand_response(role: str, media_type: str):
+    path = _brand_asset(role)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="not found")
+    # Stable URLs browsers request unprompted: always revalidate, so a replaced icon is never served stale.
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def serve_favicon():
+    return _brand_response("favicon_ico", "image/x-icon")
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+async def serve_apple_touch_icon():
+    return _brand_response("apple_touch_icon", "image/png")
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def serve_web_manifest():
+    icons = []
+    for role, size in (("pwa_192", "192x192"), ("pwa_512", "512x512")):
+        path = _brand_asset(role)
+        if path is not None:
+            icons.append({"src": f"/static/brand/{path.name}", "sizes": size, "type": "image/png", "purpose": "any"})
+    return JSONResponse(
+        {"name": "ORNEUR", "short_name": "ORNEUR", "start_url": "/app", "scope": "/", "display": "standalone",
+         "background_color": "#03050A", "theme_color": "#03050A", "icons": icons},
+        media_type="application/manifest+json", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/livez")
 async def livez():
     """
@@ -1819,22 +1862,44 @@ def _anonymous_listing_allowed() -> bool:
 
 
 @app.get("/api/sessions")
-async def list_sessions(user: User | None = Depends(get_current_user_optional)):
-    """Lists the CALLER's saved conversations. G-006: this used to return
-    every session id and title on the server to anyone, which both disclosed
-    other users' conversation titles and handed an attacker the exact ids
-    (and 8-character storage prefixes) needed to target them."""
-    saved = EpisodicMemory.list_sessions()
+async def list_sessions(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: User | None = Depends(get_current_user_optional),
+):
+    """Lists the CALLER's conversations, most recently active first, paginated.
+
+    G-006: this used to return every session id and title on the server to anyone. A signed-in caller now sees their own conversations -- those with a
+    durable transcript (written on every turn, no explicit save needed) plus any older explicitly saved episode -- never anyone else's."""
+    from orca.serve import conversations
+
+    saved = EpisodicMemory.list_sessions()                         # newest first by episode mtime
     if user is not None:
         from orca.auth.store import get_user_session_ids
 
         owned = set(get_user_session_ids(user.id))
-        visible = [s for s in saved if s in owned]
+        episode_ids = [s for s in saved if s in owned]
+        activity: dict[str, float] = {}
+        for sid in owned:
+            ts = conversations.last_activity(sid)
+            if ts is not None:
+                activity[sid] = ts
+        for sid in episode_ids:
+            activity.setdefault(sid, 0.0)
+        visible = sorted(activity, key=lambda s: activity[s], reverse=True)
     elif _anonymous_listing_allowed():
         visible = saved
+        activity = {}
     else:
         visible = []
-    return {"sessions": [{"id": s, "title": _session_titles.get(s, "")} for s in visible[:50]]}
+        activity = {}
+    total = len(visible)
+    page = visible[offset:offset + limit]
+    nxt = offset + limit if offset + limit < total else None
+    return {
+        "sessions": [{"id": s, "title": _session_titles.get(s, ""), "updated_at": activity.get(s) or None} for s in page],
+        "total": total, "limit": limit, "offset": offset, "next_offset": nxt,
+    }
 
 
 @app.post("/api/session/load")
@@ -1860,9 +1925,15 @@ async def set_session_title(session_id: str, req: TitleRequest, user: User | Non
     # only for a session this process has actually seen or that has a saved
     # episode.
     _check_session_ownership(session_id, user.id if user else None)
-    if session_id not in _sessions and session_id not in EpisodicMemory.list_sessions():
+    from orca.serve import conversations
+
+    if (session_id not in _sessions and session_id not in EpisodicMemory.list_sessions()
+            and conversations.last_activity(session_id) is None):
         raise HTTPException(status_code=404, detail="session not found")
     title = req.title.strip()[:80]
+    if not title:
+        e = coded_error("invalid_request", message="A conversation title can't be blank.")
+        return JSONResponse(e.as_json(), status_code=422)
     _save_title(session_id, title)
     return {"ok": True, "title": title}
 
@@ -2524,6 +2595,9 @@ async def delete_doc(
 ):
     """Remove a document and all its chunks from the session store."""
     sess = _get_session(session_id, user_id=user.id if user else None)
+    if not any(d.get("doc_id") == doc_id for d in list_docs(sess.id)):
+        # Say so instead of answering 200 {"deleted": false}: this document is not in this conversation.
+        return JSONResponse({"error": "No such document in this conversation.", "code": "not_found", "doc_id": doc_id}, status_code=404)
     ok = sess.doc_store.delete_doc(doc_id)
     unregister_doc(sess.id, doc_id)
     audit.log("doc_delete", user_id=user.id if user else None, detail={"doc_id": doc_id})
@@ -2750,8 +2824,20 @@ async def admin_stats(admin: User = Depends(require_permission("manage_users")))
 #  Static files (must be last — catches everything under /static)
 # ─────────────────────────────────────────────────────────────────────────────
 
+class _BrandStaticFiles(StaticFiles):
+    """Files under /static/brand/ carry their own content hash in the filename, so they are immutable."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if path.startswith("brand/") and _HASHED_BRAND_FILE.search(path) and response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
+_HASHED_BRAND_FILE = re.compile(r"\.[0-9a-f]{8}\.(png|ico)$")
+
 if WEB_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+    app.mount("/static", _BrandStaticFiles(directory=str(WEB_DIR)), name="static")
 
 
 def create_app() -> FastAPI:

@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from orca.dataquality import FAIL, NOT_EVALUATED, PASS
+from orca.dataquality import FAIL, NOT_EVALUATED, PASS, privacy_extra
 from orca.dataquality._common import string_leaves
 
 
-def scan_lines(lines: list, *, label: str = "dataset.jsonl", raw_bytes: bytes | None = None, allow_pii: tuple = ()) -> dict:
+def scan_lines(lines: list, *, label: str = "dataset.jsonl", raw_bytes: bytes | None = None, allow_pii: tuple = (), extra_patterns: bool = True) -> dict:
     from orca.eval.genesis_v2 import privacy_scan as P
     from orca.serve import dlp
 
@@ -37,6 +37,10 @@ def scan_lines(lines: list, *, label: str = "dataset.jsonl", raw_bytes: bytes | 
         for k, v in res["pii_flagged"].items():
             if k not in allow_pii:
                 cats[f"pii:{k}"] = v
+        if extra_patterns:
+            for k, v in privacy_extra.scan("\n".join(string_leaves(l.obj))).items():
+                if k.split(":", 1)[1] not in allow_pii:
+                    cats[k] = cats.get(k, 0) + v
         if cats:
             findings.append({"line": l.line, "categories": dict(sorted(cats.items()))})
             for k, v in cats.items():

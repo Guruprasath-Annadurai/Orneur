@@ -108,3 +108,9 @@ Distinctions taken from `docs/orneur/ORNEUR_MASTER_EXECUTION_AND_ACCEPTANCE_REGI
 
 Also outside this tooling: the actual review of any teacher's output-use terms (needs a human reviewer and a cited terms record), a pre-registered
 local embedding model for semantic overlap, and any real canary/holdout material (private, never touched here).
+
+## P1 gap closures
+
+See `GAP_AUDIT_P1.md`. New commands: `source-manifest FILE`, `usage-rights FILE --sources REG [--use training]`, `teacher-terms FILE [--register R] [--use training_data_generation]`,
+`frozen-eval --train T --eval E --eval-sha256 D`, and `report --intended-use U [--eval-sha256 D]` (adds the four checks to the report; omitted otherwise so existing reports are byte-identical).
+Privacy now also scans international phones, JWTs, Slack tokens, IPv4, checksum-valid IBANs and URL credentials.

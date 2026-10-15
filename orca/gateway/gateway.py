@@ -45,6 +45,7 @@ _CHARS_PER_TOKEN_ESTIMATE = 3.2
 class TimeoutPolicy:
     queue_timeout_s: float = 30.0
     first_token_timeout_s: float = 30.0
+    stream_idle_timeout_s: float = 60.0   # max silence between two chunks of a stream, once it has started
     total_request_timeout_s: float = 180.0
 
 
@@ -310,25 +311,43 @@ class ModelGateway:
 
         async with await self.concurrency.acquire(deployment.deployment_id, queue_timeout_s=self.timeouts.queue_timeout_s, priority=request.priority.value):
             queue_latency_ms = (time.monotonic() - t0) * 1000
-            t_first_chunk_deadline = time.monotonic() + self.timeouts.first_token_timeout_s
+            t_started = time.monotonic()
             first_chunk_seen = False
+            upstream = runtime.stream(request).__aiter__()
+            finished = False
             try:
-                async for chunk in runtime.stream(request):
+                while True:
+                    # Every wait is bounded: first token, then idle gap, always capped by the total deadline.
+                    remaining_total = self.timeouts.total_request_timeout_s - (time.monotonic() - t_started)
+                    wait_s = self.timeouts.stream_idle_timeout_s if first_chunk_seen else self.timeouts.first_token_timeout_s
+                    timed_out_on = "first_token" if not first_chunk_seen else "idle"
+                    if remaining_total <= wait_s:
+                        wait_s, timed_out_on = max(remaining_total, 0.0), "total"
+                    try:
+                        chunk = await asyncio.wait_for(upstream.__anext__(), timeout=wait_s)
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError:
+                        metrics.record_timeout(deployment.deployment_id, timed_out_on)
+                        raise GenerationTimeoutError(internal_detail=f"stream exceeded {timed_out_on} timeout ({wait_s:.3f}s)") from None
                     if not first_chunk_seen:
-                        if time.monotonic() > t_first_chunk_deadline:
-                            self.circuit_breaker.record_failure(deployment.deployment_id)
-                            metrics.record_timeout(deployment.deployment_id, "first_token")
-                            raise GenerationTimeoutError(internal_detail="exceeded first_token_timeout_s")
                         first_chunk_seen = True
                         metrics.record_ttft(deployment.deployment_id, (time.monotonic() - t0) * 1000)
                     if chunk.finish_reason == "cancelled":
                         metrics.record_cancellation(deployment.deployment_id)
                         _logger.info("inference stream cancelled", extra={**log_ctx, "status": "cancelled"})
+                    chunk.deployment_id, chunk.resolved_version, chunk.runtime = deployment.deployment_id, deployment.model_version, deployment.runtime
                     yield chunk
+                finished = True
                 self.circuit_breaker.record_success(deployment.deployment_id)
                 total_latency_ms = (time.monotonic() - t0) * 1000
                 metrics.record_success(deployment.deployment_id, total_latency_ms, queue_latency_ms, 0)
                 _logger.info("inference stream completed", extra={**log_ctx, "status": "ok", "latency_ms": round(total_latency_ms, 1)})
+            except (GeneratorExit, asyncio.CancelledError):
+                # The client stopped (aclose) or the serving task was cancelled: a user action, not a runtime failure.
+                metrics.record_cancellation(deployment.deployment_id)
+                _logger.info("inference stream stopped by the client", extra={**log_ctx, "status": "cancelled"})
+                raise
             except InferenceError as e:
                 self.circuit_breaker.record_failure(deployment.deployment_id)
                 metrics.record_failure(deployment.deployment_id, e.code.value)
@@ -339,6 +358,23 @@ class ModelGateway:
                 metrics.record_failure(deployment.deployment_id, "UNKNOWN")
                 _logger.error("inference stream failed with an unclassified error", extra={**log_ctx, "status": "error", "error_class": type(e).__name__})
                 raise
+            finally:
+                if not finished:
+                    # Whatever ended the stream early, make sure the upstream stops generating and the slot is freed.
+                    await self._stop_upstream(runtime, upstream, request.request_id)
+
+    @staticmethod
+    async def _stop_upstream(runtime, upstream, request_id: str) -> None:
+        try:
+            await asyncio.shield(runtime.cancel(request_id))
+        except Exception:
+            pass
+        close = getattr(upstream, "aclose", None)
+        if close is not None:
+            try:
+                await asyncio.shield(close())
+            except Exception:
+                pass
 
     async def cancel(self, model_id: str, request_id: str) -> bool:
         """Best-effort cancellation propagation to whichever runtime is serving this model family."""

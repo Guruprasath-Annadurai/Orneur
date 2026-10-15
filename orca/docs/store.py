@@ -10,10 +10,13 @@ Embedding strategy:
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
+import os
 import re
+import threading
 import time
 import urllib.request
 import uuid
@@ -44,7 +47,34 @@ def _load_registry() -> dict:
 
 
 def _save_registry(reg: dict) -> None:
-    _REGISTRY_FILE.write_text(json.dumps(reg, indent=2))
+    # Atomic replace: a crash or a concurrent reader never sees a half-written registry.
+    tmp = _REGISTRY_FILE.with_name(_REGISTRY_FILE.name + f".{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.write_text(json.dumps(reg, indent=2))
+    os.replace(tmp, _REGISTRY_FILE)
+
+
+_registry_lock = threading.RLock()
+
+
+@contextlib.contextmanager
+def _registry_txn():
+    """Serialises every read-modify-write of the registry across threads (RLock) and, where available, processes (flock),
+    so two concurrent uploads can never overwrite each other's entry."""
+    with _registry_lock:
+        lock_fd = None
+        try:
+            import fcntl
+
+            DOCS_DIR.mkdir(parents=True, exist_ok=True)
+            lock_fd = os.open(str(_REGISTRY_FILE) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        except (ImportError, OSError):
+            lock_fd = None
+        try:
+            yield
+        finally:
+            if lock_fd is not None:
+                os.close(lock_fd)        # closing releases the flock
 
 
 def _ollama_embed(texts: list[str], host: str = "http://localhost:11434") -> list[list[float]] | None:
@@ -245,24 +275,26 @@ class DocStore:
 # ── Registry helpers ──────────────────────────────────────────────────────────
 
 def register_doc(session_id: str, doc_id: str, filename: str, chunk_count: int, size_bytes: int):
-    reg = _load_registry()
-    if session_id not in reg:
-        reg[session_id] = []
-    reg[session_id].append({
-        "doc_id":      doc_id,
-        "filename":    filename,
-        "chunk_count": chunk_count,
-        "size_bytes":  size_bytes,
-        "uploaded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-    })
-    _save_registry(reg)
+    with _registry_txn():
+        reg = _load_registry()
+        if session_id not in reg:
+            reg[session_id] = []
+        reg[session_id].append({
+            "doc_id":      doc_id,
+            "filename":    filename,
+            "chunk_count": chunk_count,
+            "size_bytes":  size_bytes,
+            "uploaded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+        _save_registry(reg)
 
 
 def unregister_doc(session_id: str, doc_id: str):
-    reg = _load_registry()
-    if session_id in reg:
-        reg[session_id] = [d for d in reg[session_id] if d["doc_id"] != doc_id]
-    _save_registry(reg)
+    with _registry_txn():
+        reg = _load_registry()
+        if session_id in reg:
+            reg[session_id] = [d for d in reg[session_id] if d["doc_id"] != doc_id]
+        _save_registry(reg)
 
 
 def list_docs(session_id: str) -> list[dict]:
