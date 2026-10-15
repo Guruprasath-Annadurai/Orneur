@@ -119,15 +119,34 @@ async def test_client_stop_cancels_upstream_releases_the_slot_and_is_not_a_failu
 
 @pytest.mark.asyncio
 async def test_task_cancellation_is_propagated_like_a_stop():
+    """2026-10-15 CORRECTION: this test previously synchronized with an
+    arbitrary `await asyncio.sleep(0.15)` before calling `task.cancel()`.
+    That raced the gateway's own internal wait against a fixed wall-clock
+    offset rather than a known generator state -- under scheduling delay,
+    `task.cancel()` could fire before the generator had even entered its
+    first `asyncio.wait_for(upstream.__anext__(), ...)` await, and the
+    cancellation would be delivered to a DIFFERENT suspension point than
+    intended. Reproduced directly: the resulting failure wasn't a timing
+    fluke in the abstract -- it consistently manifested at ~180s, exactly
+    `TimeoutPolicy.total_request_timeout_s`'s default, with a captured
+    `GenerationTimeoutError` (an `InferenceError`) instead of
+    `CancelledError` -- meaning the stream had been left running past the
+    intended cancellation point and only stopped when the gateway's own
+    total-budget ceiling fired, not because the task was actually
+    cancelled promptly. Fixed the same way the sibling test
+    (`test_client_stop_cancels_upstream_releases_the_slot_and_is_not_a_failure`)
+    already does it: synchronize on a real event (a chunk having actually
+    been produced and observed), not a fixed sleep duration."""
     rt = _EndlessRuntime(gap_s=0.02)
     gw = _gateway(rt, _deployment())
+    first_chunk_seen = asyncio.Event()
 
     async def consume():
         async for _ in gw.stream(_req(request_id="req-task")):
-            pass
+            first_chunk_seen.set()
 
     task = asyncio.create_task(consume())
-    await asyncio.sleep(0.15)
+    await asyncio.wait_for(first_chunk_seen.wait(), timeout=5.0)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
