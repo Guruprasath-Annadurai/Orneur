@@ -140,11 +140,20 @@ jobs:
           uv pip install --system -e ".[dev]"
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install "transformers>=4.45.0"
+          # GENESIS Foundation Sprint 1: sentencepiece backs
+          # orca/genesis/tokenizer/framework.py's tokenizer training and
+          # validation tests (tests/test_genesis_tokenizer.py). Same
+          # reasoning as torch/transformers above -- a real, lightweight,
+          # CPU-only dependency added to this already-heavier job rather
+          # than the main deterministic one.
+          pip install sentencepiece
 
       - name: Run training-math regression
         run: |
           set -euo pipefail
-          pytest tests/test_train_losses.py tests/test_transformers_adapter.py -v
+          pytest tests/test_train_losses.py tests/test_transformers_adapter.py \
+                 tests/test_genesis_model_architecture.py tests/test_genesis_training_primitives.py \
+                 tests/test_genesis_tokenizer.py -v
 
   container-build:
     name: Production Container Build + Boot Smoke
