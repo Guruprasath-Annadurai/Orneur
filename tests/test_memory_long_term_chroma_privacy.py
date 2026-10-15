@@ -91,31 +91,41 @@ def _cross_process_delete_probe(vectors_path: str, collection_name: str, q: "mul
 
 def test_chromadb_persistent_client_is_not_a_safe_cross_process_interface(home):
     """P1 deletion-assurance design, Architecture Decision review
-    (2026-10-15): documents, as a regression-guarded fact rather than a
-    one-off manual repro, exactly why this codebase never constructs a
-    chromadb client in a separate OS process against the shared
-    persistent directory -- not even for the deletion worker.
+    (2026-10-15, corrected): this test is kept as regression coverage for
+    a REAL, CONFIRMED-BUT-UNREPRODUCED anomaly, not a reliably-reproducing
+    bug. The original observation (full traceback captured, preserved in
+    docs/orneur/status/P1_DELETION_ASSURANCE_DESIGN.md §8.3): during a
+    specific full-suite pytest run, a client constructed in a brand-new
+    process -- strictly AFTER a different process's client had already
+    returned successfully from store() -- raised `NotFoundError` on
+    `delete_collection()` for a collection that data showed was still
+    fully present and recallable in the original process.
 
-    chromadb's own `PersistentClient` docstring says plainly: "This
-    client is intended for local development and testing. For
-    production, prefer a server-backed Chroma instance." This test is
-    the empirical confirmation of why that line matters operationally,
-    not just as a style preference: a client constructed in a brand-new
-    process, immediately after a DIFFERENT process's client created and
-    populated a collection, can fail to see it (NotFoundError) even
-    though the data is fully durable on disk and immediately visible to
-    a fresh client within the ORIGINAL process.
+    This specific test IS properly sequenced (store() returns before the
+    probe subprocess starts) -- the methodology here was never the
+    problem. What changed on 2026-10-15 is confidence in the ROOT CAUSE:
+    seven separate, deliberate attempts to reproduce this anomaly under
+    controlled conditions -- isolated sequential runs (20/20 clean),
+    realistic ~1985-collection scale (25/25 clean), concurrent unrelated
+    writes (15/15 clean), concurrent background VACUUM churn (20/20
+    clean), repeated `importlib.reload()` churn matching this test
+    file's own fixture pattern (40/40 clean), and even re-running the
+    exact original two-file combined suite against a realistic-scale copy
+    of this codebase's own real accumulated store (14/14 clean, 3 runs)
+    -- did NOT reproduce it. The anomaly is real (a genuine traceback was
+    captured) but its cause remains UNRESOLVED, not confirmed to be
+    general chromadb cross-process catalog staleness as first assumed.
 
-    This is not asserted as "always reproduces on every run" (it is a
-    real race, not a deterministic failure) -- it is asserted as "the
-    collection remains fully present and recallable from the original
-    process regardless of what the cross-process probe observed",
-    which is the actual, durable invariant this codebase's architecture
-    depends on: LongTermMemory never routes a real deletion through a
-    freshly-started separate process, precisely because that interface
-    is not one chromadb's embedded persistence mode guarantees is safe.
-    See docs/orneur/status/P1_DELETION_ASSURANCE_DESIGN.md for the full
-    evaluation and the single-process-only architecture this governs."""
+    This test is kept, asserting leniently, specifically so that if this
+    anomaly recurs under normal CI/dev usage, it is captured again here
+    rather than silently vanishing -- and so nothing related to deletion
+    routes through a freshly-started separate process regardless (a
+    chromadb-recommended precaution, independent of whether this exact
+    anomaly is ever pinned down). See
+    docs/orneur/status/P1_DELETION_ASSURANCE_DESIGN.md §8.3 for the full,
+    corrected evidence record, what remains unresolved, and the exact
+    additional instrumentation that would be needed to pin this down if
+    it recurs."""
     sid = str(uuid.uuid4())
     ltm = home.LongTermMemory(sid)
     ltm.store("fact for the cross-process visibility probe")
@@ -147,75 +157,57 @@ def test_chromadb_persistent_client_is_not_a_safe_cross_process_interface(home):
     # assertion is made either way about post-probe recall() in that case.
 
 
-def _fresh_process_recall_probe(vectors_path: str, collection_name: str, query: str, q: "multiprocessing.Queue") -> None:
-    """Module-level (spawn-importable). A COMPLETELY fresh process with no
-    prior chromadb client of its own -- used to check whether data is
-    actually durable on disk after a concurrent-access incident, since the
-    process that experienced the incident may have its own poisoned
-    in-memory segment/catalog cache (see the finding below) that a truly
-    independent process does not share."""
-    import chromadb
-    try:
-        client = chromadb.PersistentClient(path=vectors_path)
-        collection = client.get_collection(name=collection_name)
-        results = collection.query(query_texts=[query], n_results=5)
-        docs = results.get("documents", [[]])[0]
-        q.put(("ok", docs))
-    except Exception as e:
-        q.put(("error", repr(e)))
-
-
-def _cross_process_store_then_read(vectors_path: str, write_sid: str, read_sid: str, text: str, q: "multiprocessing.Queue") -> None:
+def _cross_process_store_then_signal(vectors_path: str, write_sid: str, text: str, done: "multiprocessing.Event") -> None:
     """Module-level target (spawn-importable). Simulates the realistic
     two-real-process shape this codebase actually has in production TODAY
     -- orca/serve/api.py's uvicorn process and orca/mcp/memory_server.py's
     independent stdio process both constructing their own chromadb client
     against the same MEMORY_DIR/vectors -- not a hypothetical future
-    multi-worker topology. `write_sid` is stored by THIS process while the
-    PARENT concurrently starts its own read against `read_sid` (a
-    different, already-pre-existing session), so both processes are
-    genuinely active against the shared store at the same time."""
+    multi-worker topology.
+
+    2026-10-15 CORRECTION: an earlier version of this test (see git
+    history / PR #48's original commit) read `write_sid` from the PARENT
+    process concurrently with this subprocess's store() call, with NO
+    synchronization between them, and reported a ~40-45% "silent miss
+    rate". That number has been RETRACTED -- the reader was never
+    guaranteed to run after the write actually completed, so a miss there
+    is an artifact of an unsynchronized race (the read may simply have
+    run before the write finished), not evidence of a post-completion
+    consistency defect. This version uses a real process-safe
+    synchronization primitive (`multiprocessing.Event`) so a reader can
+    only ever observe a write that has ALREADY, confirmedly, completed --
+    the only ordering that constitutes a genuine "read-after-write"
+    test. See docs/orneur/status/P1_DELETION_ASSURANCE_DESIGN.md §8.3 for
+    the full retraction and the corrected evidence."""
     import orca.brain.memory as memory
     ltm = memory.LongTermMemory(write_sid)
     ltm.store(text)
-    q.put(("stored", None))
+    done.set()  # only signaled AFTER store() has returned -- the real completion barrier
 
 
-def test_concurrent_real_processes_can_silently_miss_a_just_written_fact(home):
+def test_read_after_confirmed_write_is_consistent_across_real_processes(home):
     """CTO correction (2026-10-15): the MCP memory server
     (orca/mcp/memory_server.py) is a genuinely independent, already-shipped
     OS process that can run at the same time as the API server, both
     constructing their own chromadb client against the same
-    MEMORY_DIR/vectors -- this is an EXISTING architectural exposure, not
-    a hypothetical future multi-worker-process concern. This test
-    reproduces that exact shape directly (not the deletion path -- plain
-    read-after-write) and confirms the earlier NotFoundError finding was
-    one symptom of a broader class: a fresh client in a genuinely
-    concurrent, different OS process can silently fail to see a
-    just-written fact at all (no exception, just an empty recall()) --
-    worse than a loud NotFoundError in one sense, because nothing here
-    signals that anything went wrong.
-
-    An advisory cross-process `flock` around every chromadb client
-    construction/operation in both processes was tried as the obvious
-    in-scope coordination fix and did NOT resolve this in direct manual
-    reproduction (~40-45% miss rate with or without the lock, across two
-    independent runs of 15 trials each, 30 preloaded collections) --
-    serializing raw file access does not make chromadb's own client-side
-    catalog view fresh, so it is not shipped here. This is exactly the
-    kind of result that justifies this PR's ARCHITECTURE_DECISION_REQUIRED
-    status for the broader (already-existing, not newly introduced)
-    API/MCP concurrent-access question -- see
-    docs/orneur/status/P1_DELETION_ASSURANCE_DESIGN.md §8.3.
-
-    Like the sibling NotFoundError test above, a miss is a real race, not
-    deterministic every run -- asserted leniently, and the one invariant
-    checked unconditionally is that nothing is ever actually LOST: the
-    writing process's own fresh client always sees its own just-stored
-    data, regardless of what a concurrent different process observed."""
-    # Preload: grow the shared file/catalog to match the load level under
-    # which this was actually observed (in-process, so this setup itself
-    # isn't the contention under test).
+    MEMORY_DIR/vectors -- this is a real, existing architectural shape,
+    not a hypothetical future multi-worker topology, so it deserves a
+    real regression test. This is the CORRECTED replacement for this
+    test's earlier version (see the retraction note on
+    `_cross_process_store_then_signal` above): the earlier version
+    conflated an unsynchronized race with a genuine consistency defect.
+    This version uses `multiprocessing.Event` as a real completion
+    barrier -- the parent process's read only ever starts strictly AFTER
+    the writer subprocess has signaled that `store()` has already
+    returned successfully. This is THE scientifically valid version of
+    "read-after-write consistency" (CTO directive Mission 2/3, 2026-10-15):
+    confirmed clean across repeated manual reproduction (15/15 at small
+    scale, 15/15 against a real HTTP-server-backed chroma instance, 25/25
+    against a realistic ~1985-collection copy of this codebase's own
+    real accumulated store) before being committed here as a permanent
+    regression test. A failure here WOULD be a genuine, actionable
+    finding -- unlike the retracted version, this one does not accept a
+    miss as a legitimate race outcome."""
     for _ in range(15):
         home.LongTermMemory(str(uuid.uuid4())).store("preload filler fact")
 
@@ -223,69 +215,24 @@ def test_concurrent_real_processes_can_silently_miss_a_just_written_fact(home):
     text = "Q: what is my project called?\nA: Nightingale"
 
     ctx = multiprocessing.get_context("spawn")
-    q = ctx.Queue()
-    writer = ctx.Process(
-        target=_cross_process_store_then_read,
-        args=(str(home.MEMORY_DIR / "vectors"), write_sid, write_sid, text, q),
-    )
+    done = ctx.Event()
+    writer = ctx.Process(target=_cross_process_store_then_signal, args=(str(home.MEMORY_DIR / "vectors"), write_sid, text, done))
     writer.start()
-    # Genuine overlap, not "wait then read": the parent process (standing
-    # in for the concurrently-running MCP server) issues its own fresh
-    # read against the SAME session while the writer subprocess may still
-    # be mid-store(), exactly like two real independent orca processes
-    # racing against each other with no coordination between them today.
-    try:
-        concurrent_read = home.LongTermMemory(write_sid).recall("Nightingale")
-        concurrent_read_error = None
-    except Exception as e:
-        # 2026-10-15 CTO-directed reproduction: observed in direct testing
-        # -- chromadb.errors.InternalError("... Error creating hnsw
-        # segment reader: Nothing found on disk") when a read genuinely
-        # overlaps a concurrent write from a different OS process. This is
-        # NOT a silent miss, it's a real exception a live API/MCP request
-        # would have to handle -- stronger evidence than the sibling
-        # NotFoundError test that embedded chromadb is unsafe for genuine
-        # cross-process concurrency, not just slow to catch up.
-        concurrent_read = None
-        concurrent_read_error = e
+
+    # The real completion barrier: block until the writer process has
+    # itself confirmed store() returned, not until some arbitrary amount
+    # of wall-clock time has passed. This is what "the writer's
+    # completion has been communicated across processes" means in
+    # practice, not just "we waited a bit".
+    signaled = done.wait(timeout=10)
     writer.join(timeout=10)
-    assert not writer.is_alive(), "writer subprocess hung -- unexpected, investigate separately"
-    assert q.get_nowait() == ("stored", None)
+    assert signaled, "writer subprocess never signaled completion -- unexpected, investigate separately"
+    assert not writer.is_alive(), "writer subprocess hung after signaling -- unexpected, investigate separately"
 
-    if concurrent_read_error is None:
-        assert concurrent_read == [] or concurrent_read[0]["text"] == text
-
-    # 2026-10-15, escalation found WHILE writing this exact test: checking
-    # durability via a new LongTermMemory() in THIS (parent) process is
-    # not reliable here, because the concurrent read attempt above can
-    # itself raise chromadb.errors.InternalError("... Nothing found on
-    # disk") -- and once that happens, this process's chromadb client
-    # stays unable to read that SAME collection for the rest of its
-    # lifetime, even via a brand-new LongTermMemory instance. That is
-    # itself a genuinely more severe, newly-confirmed finding: one
-    # concurrent read against a collection still mid-creation can poison
-    # that process's own view of it permanently, not just transiently --
-    # recorded here and in the design doc, not papered over by swallowing
-    # it. To get the real, unconfounded answer to "was the write actually
-    # lost", check from a COMPLETELY FRESH, third, independent process
-    # that never touched this collection before, instead of reusing the
-    # (possibly now-poisoned) parent process's own client.
-    verify_q = ctx.Queue()
-    verifier = ctx.Process(
-        target=_fresh_process_recall_probe,
-        args=(str(home.MEMORY_DIR / "vectors"), f"orca_{write_sid[:8]}", "Nightingale", verify_q),
-    )
-    verifier.start()
-    verifier.join(timeout=10)
-    assert not verifier.is_alive(), "verifier subprocess hung -- unexpected, investigate separately"
-    status, payload = verify_q.get_nowait()
-    # The one invariant that must never break, checked from a process that
-    # was never party to the race: the write itself is never actually
-    # lost. `error` here (vs. the parent's InternalError above) would mean
-    # genuine on-disk data loss/corruption, not just a poisoned in-process
-    # cache -- escalate immediately if this branch is ever hit for real.
-    assert status == "ok", f"fresh-process verification failed, possible real data loss: {payload!r}"
-    assert payload and payload[0] == text
+    # Now, and only now, is a read a genuine "read-after-write" test. A
+    # miss here is a real finding, not a legitimate race outcome.
+    hits = home.LongTermMemory(write_sid).recall("Nightingale")
+    assert hits and hits[0]["text"] == text
 
 
 def test_deleting_a_session_removes_its_raw_bytes_even_with_another_live_collection_present(home):

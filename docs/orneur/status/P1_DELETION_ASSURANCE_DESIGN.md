@@ -14,7 +14,7 @@ than from assumption.
 | 1 | Logical deletion / retrieval prevention | **Done.** `delete_collection()` removes the collection from every normal chromadb query path; verified by `recall()` returning `[]` immediately after, in every test and every manual reproduction below. |
 | 2 | Active-database page reclamation | **Done, best-effort.** `VACUUM` physically rewrites the shared `chroma.sqlite3` file. Bounded to `_RECLAIM_TIMEOUT_S` (2s); success is `RECLAIMED`, bounded-timeout failure is `DEFERRED` and durably recorded for retry (§4). |
 | 3 | VACUUM failure/timeout | **Done.** See `DEFERRED` + `pending_reclamation.json` ledger, self-healing on any later successful VACUUM (one VACUUM rebuilds the whole shared file, clearing every session's pending entry, not just the one that triggered it). |
-| 4 | Concurrent reads/writes across separate worker *processes* | **Tested extensively, bounded with a disclosed limitation.** See §2 and §3. |
+| 4 | Concurrent reads/writes across separate worker *processes* | **Tested extensively (§2, §3, §8.3). No reproducible correctness defect found under properly-synchronized conditions across 7 distinct reproduction attempts; one real but unreproduced anomaly remains on record. See §8.3/§12 — final verdict is `ROOT_CAUSE_UNRESOLVED` for this guarantee specifically, not a claim of either safety or defect.** |
 | 5 | Crash/restart recovery | **Tested, confirmed safe.** See §3. |
 | 6 | Backups/snapshots/retention | **Not applicable to this codebase** — see §6. |
 | 7 | User-visible deletion status | **Done.** `DeletionResult(logical_deleted, physical_reclamation)` — see `account_delete.py`'s split response fields. |
@@ -257,90 +257,208 @@ exposure, not only a future one. The reasoning here is kept, struck
 through in spirit, because the option-evaluation table in §8.1 and most
 of its content still stand — only the scoping conclusion changes.
 
-### 8.3 CORRECTION — this is an existing exposure, not only a future one
+### 8.3 CORRECTED evidence record (2026-10-15, second pass)
 
-Directive correction (2026-10-15): `orca/mcp/memory_server.py` is a
-**genuinely independent, already-shipped OS process** (a stdio MCP server
-for IDE integrations, started with `python -m orca.mcp.memory_server` or
-equivalent, entirely separate from `orca serve`'s uvicorn process) that
-constructs its own `MemoryEngine`/`LongTermMemory` against the exact same
-`MEMORY_DIR/vectors`. Nothing prevents a developer or deployment from
-running both at once today. This invalidates treating "multi-process" as
-a purely future, opt-in concern — it is a **present, unenforced**
-architectural risk. Three things were directly tested as a result:
+The first pass of this section (preserved in git history on this branch,
+commit before this correction) reported a "~40–45% silent miss rate" and
+a "persistent cache-poisoning" finding as evidence of an existing,
+present-day chromadb embedded-mode defect. **That characterization is
+retracted.** Root-causing it further (directed re-investigation) found
+the original experiment measured an unsynchronized race, not a
+post-completion consistency defect. This section is restructured exactly
+along the lines required: confirmed observations, retracted findings,
+unreproduced anomalies, remaining architectural risks, and evidence-backed
+recommendations — kept separate so neither category is overstated as the
+other.
 
-**1. Deployment-scope audit (directive requirement #1).** Every entry
-point that can touch this store was enumerated and checked, not assumed:
-`orca serve` (uvicorn, single process, confirmed), `orca/mcp/memory_server.py`
-(separate process, confirmed, no coordination), CLI/TUI (confirmed: only
-touch `EpisodicMemory`, a plain JSON file — no chromadb exposure), `orca/docs/store.py`
-(its own independent `PersistentClient`, but against a **different**
-directory, `ORCA_HOME/docs/vectors` — confirmed no overlap with this
-store, though it carries the identical architectural risk class
-independently). `k8s/deployment.yaml`: `replicas: 1` for the API
-deployment, `ORCA_HOME` mounted from a PersistentVolumeClaim
-(`orneur-api-pvc`) — a one-line replica-count change would let multiple
-pods share that exact volume, with no application-level guard against it.
-**Single-writer ownership is not enforced anywhere in this codebase** —
-grepped for `flock`/`fcntl`/pidfile/singleton patterns near the vectors
-path and found none. It is a deployment convention, not an invariant the
-code checks.
+#### Retracted findings
 
-**2. Direct reproduction of real, overlapping API-process vs.
-MCP-process-shaped access** (not sequential, not simulated — genuine
-concurrent `subprocess`/`multiprocessing` processes against a real shared
-store with 30 preloaded collections, matching the load level under which
-the original NotFoundError race was observed): a writer process
-`store()`-ing a fact while a second, independent process concurrently
-`recall()`s the same session measured a **~40–45% silent miss rate**
-across two independent 15-trial runs (6/15 and 7/15 misses) — the reader
-gets back an empty result, no exception, with the data fully present and
-durable the whole time.
+- **The "~40–45% silent miss rate" claim is retracted.** It was measured
+  by starting a writer subprocess and, WITHOUT WAITING for it to
+  complete, immediately issuing a read from a different process racing
+  against the still-in-flight write. A miss under those conditions does
+  not demonstrate a staleness/caching defect — it may simply mean the
+  read executed before the write finished, which is the expected,
+  unremarkable behavior of any datastore given two uncoordinated,
+  unsynchronized operations. No architecture (embedded or server-backed)
+  is expected to make an in-flight write visible before it returns.
+- **The "persistent in-process cache-poisoning" claim is retracted**
+  for the same reason: the `InternalError` ("Error creating hnsw segment
+  reader: Nothing found on disk") was observed under the same
+  unsynchronized-overlap condition — a read genuinely racing a write
+  whose index segment had not yet been created is a plausible, mundane
+  consequence of reading an object that does not exist yet, not a
+  confirmed defect specific to embedded chromadb or to cross-process
+  access. The subsequent "poisoning" observation (the same process unable
+  to read that collection again) was not independently re-verified under
+  corrected, properly-synchronized conditions and is **not reproduced** in
+  any of the seven clean reproduction attempts below.
+- **The advisory-`flock` test result is retracted as proof of a specific
+  internal chromadb caching defect.** The flock test was run against the
+  same unsynchronized-overlap harness as the retracted miss-rate claim;
+  its failure to reduce the (confounded) miss rate does not, by itself,
+  prove chromadb's client-side catalog is the specific mechanism at
+  fault. It is accurate only as: "an advisory lock does not fix whatever
+  was producing misses in that specific (confounded) experiment" — not as
+  a general statement about chromadb internals.
+- The retired test `test_concurrent_real_processes_can_silently_miss_a_just_written_fact`
+  (which encoded the retracted finding) has been **replaced** with
+  `test_read_after_confirmed_write_is_consistent_across_real_processes`,
+  which uses a real process-safe synchronization primitive
+  (`multiprocessing.Event`) so a reader can only ever observe a write
+  that has ALREADY, confirmedly, completed — the scientifically valid
+  version of a read-after-write test.
 
-**3. An advisory cross-process `flock`, wrapping every chromadb client
-construction/operation in both processes, was tried as the obvious
-in-scope coordination fix and did NOT resolve it** — re-running the exact
-same test with serialized access still measured 7/15 misses. This is
-conclusive evidence (not a guess) that the problem is not raw-file-access
-interleaving (which a lock would fix) but chromadb's own client-side
-catalog/segment caching not reflecting another process's recent commits
-even when access is serialized. **A simple application-level coordination
-mechanism is not a safe fix.**
+#### Confirmed observations (reproduced directly, hold up under scrutiny)
 
-**4. A new, more severe failure mode surfaced while building the
-regression test for finding #2**: a genuine concurrent read against a
-collection still mid-write can raise `chromadb.errors.InternalError:
-Error executing plan: Internal error: Error creating hnsw segment reader:
-Nothing found on disk` — a real exception a live API/MCP request would
-have to handle, not just a silent empty result. Worse: **once this
-happens, the SAME process's chromadb client remains unable to read that
-collection for the rest of that process's lifetime, even via a brand-new
-`LongTermMemory` instance** — a persistent, in-process cache-poisoning
-effect from one bad concurrent access, confirmed by reproduction
-(`tests/test_memory_long_term_chroma_privacy.py::test_concurrent_real_processes_can_silently_miss_a_just_written_fact`).
-Verified via a genuinely independent third process (never party to the
-race) that the underlying data itself is NOT lost — this is a client-side
-cache-poisoning bug, not on-disk data loss — but a live API or MCP process
-that experiences this would need a restart to recover read access to that
-collection, which is a real availability and correctness problem for the
-deployment as it exists today.
+- `orca/mcp/memory_server.py` **is** a genuinely independent, already-
+  shipped OS process (confirmed by reading its source: a standalone
+  `if __name__ == "__main__": asyncio.run(main())` stdio server), separate
+  from `orca serve`'s uvicorn process, constructing its own
+  `MemoryEngine`/`LongTermMemory` against the same `MEMORY_DIR/vectors`.
+  This remains true regardless of the retraction above — it is a fact
+  about the codebase's structure, not a timing-sensitive measurement.
+- Deployment-scope audit (directive requirement #1), unaffected by the
+  retraction: every entry point enumerated and checked, not assumed.
+  `orca serve` (uvicorn, single process). `orca/mcp/memory_server.py`
+  (separate process, confirmed, no coordination). CLI/TUI (confirmed:
+  only touch `EpisodicMemory`, a plain JSON file — no chromadb exposure).
+  `orca/docs/store.py` (its own independent `PersistentClient`, against a
+  **different** directory, `ORCA_HOME/docs/vectors` — no overlap with
+  this store, same risk class independently). `k8s/deployment.yaml`:
+  `replicas: 1`, `ORCA_HOME` mounted from a PersistentVolumeClaim
+  (`orneur-api-pvc`) — a one-line replica-count change would let multiple
+  pods share that exact volume. **Single-writer ownership is not
+  enforced anywhere in this codebase** — grepped for `flock`/`fcntl`/
+  pidfile/singleton patterns near the vectors path and found none.
+- A genuine, separate test-isolation gap, found while investigating this:
+  `tests/test_deletion_end_to_end.py` has no fixture isolating
+  `MEMORY_DIR` from the real default `~/.orca` directory (unlike
+  `tests/test_memory_long_term_chroma_privacy.py`'s `home` fixture, which
+  does). Confirmed this session's own test runs operated against the
+  real, ~1985-collection, months-accumulated store on the machine this
+  work was done on. Each test uses a fresh random UUID session id and
+  only ever deletes its own exact collection by name — no risk of
+  colliding with or deleting real pre-existing data was found — but this
+  should be fixed as its own, separate, narrowly-scoped change (isolate
+  `MEMORY_DIR` the same way `home` does for the other file), not folded
+  into this PR's diff.
+- **Seven distinct, deliberately corrected reproduction attempts, all
+  clean (0 failures)**, run specifically to re-test for a genuine
+  post-completion consistency defect once the synchronization confound
+  was removed:
+  1. Strict sequential write→read, small scale: 15/15 clean (embedded).
+  2. Strict sequential write→read, small scale, **real HTTP
+     server-backed chroma** (a local `chroma run` instance actually
+     started and queried, not simulated): 15/15 clean.
+  3. Reading a settled, already-committed session while a different
+     process is busy writing unrelated new sessions concurrently (the
+     realistic API-writes/MCP-reads-older-memory shape): 15/15 clean.
+  4. Strict sequential write→delete racing continuous background
+     delete+VACUUM churn from another process: 20/20 clean.
+  5. Strict sequential write→read→delete against a **safe, isolated copy
+     of this machine's real ~1985-collection accumulated store**: 25/25
+     clean.
+  6. Repeated `importlib.reload()` churn (40 cycles), matching the exact
+     pattern `tests/test_memory_long_term_chroma_privacy.py`'s own `home`
+     fixture applies once per test: 40/40 clean.
+  7. Re-running the EXACT original two-file combined pytest suite against
+     a realistic-scale copy of the real store (closest replication of the
+     original full-suite conditions achievable): 14/14 clean, 3 repeated
+     runs.
 
-**Corrected recommendation**: given direct, tested evidence that (a) this
-is a present, not merely future, exposure, and (b) the obvious in-scope
-coordination fix (an advisory lock) does not resolve it, **a safe,
-enforced single-owner mechanism is not demonstrably feasible within this
-PR's scope.** The only architecturally sound fix remains Option 2
-(chromadb's own client-server mode, §8.1), which requires migrating every
-chromadb call site — not just deletion — and standing up new operational
-infrastructure. That is a distinct, resourced architectural decision for
-an operator to make, not something this PR can respond to with a quick
-patch. **This PR does not claim the broader API/MCP concurrent-access
-question is resolved.** What it does claim, narrowly and correctly: the
-deletion-assurance design in §5 is correct for a **single chromadb client
-process at a time** — which is not quite the same statement as "correct
-for the current deployment," since the MCP server means that precondition
-is not actually always true today. The honest, narrow claim this PR
-stands behind is stated in §12.
+#### Unreproduced anomaly (real, not retracted, cause unresolved)
+
+The ORIGINAL `NotFoundError` observed during a specific full-suite pytest
+run remains real — a genuine traceback was captured and is preserved
+below, and the methodology that produced it WAS properly sequenced (the
+writer's `store()` call had already returned before the probe subprocess
+started). This is categorically different from the retracted findings
+above. However, **none of the seven reproduction attempts above
+reproduced it**, including attempt #7, which replicates the original
+combined-suite conditions as closely as practical. The specific
+hypotheses tested and ruled out: raw lack of synchronization (was never
+actually the issue here, since the original was already sequential),
+realistic store scale alone, concurrent unrelated writes, concurrent
+VACUUM churn, and `importlib.reload()` churn matching the test fixture
+pattern — none of these, individually or in the closest available
+combination, reproduce it.
+
+**Preserved original evidence** (directive requirement, Mission 1):
+
+```
+DEBUG _delete_sync exception: NotFoundError('Collection [orca_e2e-9dc6] does not exist')
+  File ".../orca/brain/memory.py", line 621, in _delete_sync
+    client.delete_collection(name=f"orca_{session_id[:8]}")
+  File ".../chromadb/api/client.py", line 405, in delete_collection
+  File ".../chromadb/api/rust.py", line 324, in delete_collection
+chromadb.errors.InternalError / NotFoundError: Collection [orca_e2e-9dc6] does not exist
+```
+
+Environment: chromadb 1.5.9 (rust-backend client), Python 3.11, macOS,
+observed inside `tests/test_deletion_end_to_end.py::test_deletion_spans_every_still_active_store`
+during a run of the full two-file combined suite (`test_memory_long_term_chroma_privacy.py`
++ `test_deletion_end_to_end.py`) against this session's real, accumulated
+`~/.orca` store (not isolated — see the test-isolation gap noted above),
+after many preceding tests in the same pytest file had already run.
+
+**What evidence would be needed to resolve this**: the anomaly appears
+tied to something present in that specific full pytest-session's
+accumulated process state that none of attempts #1–7 individually
+recreate. The most likely remaining candidate, not yet tested: running
+the FULL, real multi-hundred-file pytest suite (not just these two
+files) up through the point of the original failure, with chromadb's own
+internal logging/tracing enabled and OS-level strace/dtrace on the
+specific `delete_collection()` call, to capture what the process's
+actual file-descriptor and memory state looked like at the moment of
+failure — meaningfully more instrumentation than a two-file, ad hoc
+reproduction can provide. This is flagged as the specific next step if
+and when this anomaly recurs, rather than spending further unscoped time
+chasing it now that the cheaper, most-likely hypotheses are ruled out.
+
+#### Remaining architectural risk (independent of the above)
+
+Independent of whether the above anomaly is ever pinned down, chromadb's
+own `PersistentClient` documentation states: *"This client is intended
+for local development and testing. For production, prefer a
+server-backed Chroma instance."* This remains a real, vendor-stated
+constraint this codebase does not follow for its `orca serve` + MCP
+server topology, regardless of whether any of this session's specific
+experiments happened to reproduce a concrete failure from it. It is
+reported as a **risk to be aware of**, not as a confirmed, measured defect.
+
+#### Mission 5 — architecture comparison under equivalent, correctly synchronized workloads
+
+| Criterion | Embedded (current) | Server-backed (chroma client-server) |
+|---|---|---|
+| Read-after-write consistency (properly synchronized) | Confirmed clean, 25/25+ across multiple scales | Confirmed clean, 15/15 at small scale |
+| Delete/recall correctness (properly synchronized) | Confirmed clean across all 7 reproduction attempts | Not separately stress-tested beyond the same small-scale check |
+| Latency at small scale | Sub-second for construct+store+recall+delete (typically <0.1s) | Comparable, sub-second, once warmed up |
+| **Latency at realistic scale (~1985 collections)** | **1.77s total for construct+store+recall+delete+vacuum** (measured directly) | **First `add()` call after server startup took 604 seconds (10m4s)**, confirmed via the server's own timestamped log (not a client artifact) — a SECOND `add()` call on a fresh collection afterward took 0.51s, so this is a one-time cold-start cost at this scale, not a sustained per-request problem, but a real and severe one |
+| Operational complexity | None — already running | A new server process to deploy, monitor, keep available; a ~10-minute cold-start tax at realistic scale is a serious operational consideration for restarts/redeploys |
+| Compatibility with API and MCP entry points | Both already compatible (current state) | Would require migrating both `LongTermMemory` and `DocStore` (different directories, same risk class) to `HttpClient` |
+| Process consistency / crash recovery | Previously confirmed safe (`kill -9` mid-VACUUM, clean `integrity_check`) | Not separately crash-tested in this pass |
+
+**Neither architecture was assumed safe or unsafe before measurement**, per
+Mission 5's instruction. The result: no demonstrated correctness
+advantage for server-backed mode under equivalent, correctly synchronized
+workloads, and a newly-discovered, severe cold-start latency cost at
+realistic scale that argues for caution, not urgency, before migrating.
+
+#### Corrected recommendation
+
+Given (a) the headline evidence that motivated urgency (the 40–45% miss
+rate, the cache-poisoning finding) is retracted, (b) seven separate
+attempts to find a genuine correctness defect in embedded mode under
+realistic, properly-synchronized conditions all came back clean, and (c)
+server-backed mode has its own newly-discovered, serious cold-start
+latency cost at realistic scale that was not previously known: **this PR
+does not have evidence-backed grounds to recommend migrating to
+server-backed chroma**, and does not do so. The one remaining open item
+is the unreproduced original anomaly, named precisely above with the
+specific instrumentation that would be needed if it recurs — not left
+vague, and not used to justify a conclusion the evidence does not
+support in either direction. The final verdict is stated in §12.
 
 ## 9. Honest residual risk
 
@@ -360,17 +478,30 @@ stands behind is stated in §12.
   either way and remains visible to `check_pending_logical_deletions()`
   for retry, but the retry itself re-attempts the full operation rather
   than resuming the original in-flight one.
-- **Corrected, elevated risk (§8.3): the multi-process exposure is
-  present today**, via `orca/mcp/memory_server.py` running concurrently
-  with `orca serve`, not merely a future `workers=N` scenario. Measured
-  directly: a ~40–45% silent read-after-write miss rate under realistic
-  concurrent load, and a confirmed `InternalError` + persistent
-  in-process cache-poisoning failure mode on top of that. An advisory
-  cross-process lock does not fix it (tested, not assumed). No safe,
-  in-scope mitigation is implemented in this PR — see §8.3 for why a
-  quick patch was rejected rather than attempted and shipped unverified.
-- The migration path that would actually fix §8.3 (chromadb's
-  client-server mode, §8.1 Option 2) is not implemented or scheduled.
+- **§8.3, corrected**: `orca/mcp/memory_server.py` is confirmed to be a
+  genuinely independent process accessing the same shared store as
+  `orca serve` today, not merely a future `workers=N` scenario — that
+  structural fact stands. However, the specific measured evidence that
+  this is UNSAFE (the "~40–45% miss rate", the cache-poisoning mode) is
+  **retracted** after further root-causing found it was measured under an
+  unsynchronized race, not a genuine post-completion consistency defect.
+  Seven separate, properly-synchronized reproduction attempts (small
+  scale, realistic ~1985-collection scale, concurrent writes, concurrent
+  VACUUM churn, module-reload churn, real HTTP-server-backed mode, and
+  the closest practical replication of the original full-suite
+  conditions) found no reproducible correctness defect. One real,
+  separately-captured anomaly (a `NotFoundError` with a genuine
+  traceback) remains unreproduced and its root cause is unresolved — see
+  §8.3 for the exact evidence and what further instrumentation would be
+  needed if it recurs. This risk entry is downgraded from "confirmed
+  unsafe" to "structurally present, not demonstrated unsafe, one
+  unresolved anomaly on record."
+- Server-backed chroma was directly measured, not assumed safe: at
+  realistic (~1985-collection) scale, the first `add()` call after
+  server startup took **604 seconds**, confirmed via the server's own
+  log, before warming up to normal latency. This is a newly-discovered,
+  real operational risk of the migration path itself, relevant to any
+  future decision to pursue it.
 
 ## 10. User-visible status mapping (directive requirement #7)
 
@@ -413,55 +544,65 @@ acceptance-register test is touched by this PR's diff.
 - The full account-deletion cascade (`_delete_session_data`) reports
   `logical_deleted=True` and a valid `physical_reclamation` across every
   still-active memory store, with real chromadb, not a mock.
-- **New**: `test_chromadb_persistent_client_is_not_a_safe_cross_process_interface`
-  — regression-guards the exact finding that killed Attempt B (§4): a
-  chromadb client built in a fresh OS process can fail to see a
-  collection a different process's client just created and populated,
-  while the data remains fully present in the original process. Documents
-  *why* this codebase never routes a real deletion through a
-  freshly-started separate process, as an executable fact rather than
-  only a design-doc claim.
-- **New**: `test_concurrent_real_processes_can_silently_miss_a_just_written_fact`
-  — reproduces the §8.3 finding directly: genuine overlapping real-process
-  access can silently miss a just-written fact, or raise a real
-  `InternalError` with persistent in-process cache poisoning. Verifies
-  the one invariant that must hold regardless (checked from an
-  independent third process, never party to the race): the underlying
-  write is never actually lost — this is a visibility/availability bug,
-  confirmed, not a data-loss bug.
+- `test_chromadb_persistent_client_is_not_a_safe_cross_process_interface`
+  — kept as regression coverage for the real, properly-sequenced
+  `NotFoundError` anomaly described in §8.3. Asserts leniently (the
+  anomaly is confirmed-but-unreproduced, not reliably reproducing) —
+  catches it again if it recurs, without failing CI on its absence.
+- `test_read_after_confirmed_write_is_consistent_across_real_processes`
+  — **replaces** the retracted `test_concurrent_real_processes_can_silently_miss_a_just_written_fact`.
+  Uses `multiprocessing.Event` as a real process-safe completion barrier
+  so the reader can only ever observe a write that has already,
+  confirmedly, returned — the scientifically valid version of a
+  read-after-write test (CTO directive Mission 3). Asserts the positive
+  invariant unconditionally (the write IS visible), since this is now a
+  confirmed-clean guarantee, not a leniently-accepted race.
 
 ## 12. Final status
 
-**ARCHITECTURE_DECISION_REQUIRED** — not `READY_FOR_INDEPENDENT_RETEST`,
-per the explicit correction in §8.3. Tests passed vs. guarantees
-established, stated separately as required:
+**ROOT_CAUSE_UNRESOLVED** — not `EMBEDDED_ARCHITECTURE_ACCEPTABLE_WITH_CONSTRAINTS`
+and not `SERVER_BACKED_MIGRATION_REQUIRED_WITH_EVIDENCE`, per the
+corrected evidence in §8.3. Tests passed vs. guarantees established,
+stated separately as required:
 
 - **Tests passed**: 14/14 in this PR's own targeted suite (stable across
-  5 runs); 8597/8605 applicable in the full repo suite (8 pre-existing,
-  unrelated failures, detailed in §11); sentinel/training-authorization
-  hygiene unaffected (13/13).
+  5+ runs); full repo suite results restated in §11; sentinel/
+  training-authorization hygiene unaffected (13/13).
 - **Guarantees actually established**: the tombstone/ledger design in §5
-  is correct for deletion requests made while **no other process holds a
-  chromadb client against this store at that moment** — a precondition,
-  not an ambient fact about the current deployment, now that
-  `orca/mcp/memory_server.py` is confirmed to run as a genuinely
-  independent process against the same store.
-- **Guarantee NOT established**: that the current deployment is safe
-  under real concurrent API/MCP access. It is not — measured directly at
-  a ~40–45% silent-miss rate for ordinary reads, with a confirmed,
-  more severe `InternalError` + cache-poisoning mode on top, and a tested,
-  rejected naive fix (advisory locking). No change in this PR claims to
-  resolve this; it is reported as the open architectural dependency.
-- **The unresolved dependency**: migrating to chromadb's client-server
-  mode (§8.1 Option 2), which requires migrating every chromadb call
-  site in this codebase (store/recall/delete across `LongTermMemory` AND
-  `DocStore`), not just the deletion path this PR touches, and standing
-  up new operational infrastructure (a Chroma server process/service:
-  deployment, health checks, availability story). That is a distinct,
-  resourced architectural decision for an operator to make — named here
-  precisely, not left vague, and explicitly out of this PR's scope to
-  resolve unilaterally.
+  is correct for deletion requests, confirmed under properly-synchronized
+  concurrent access (seven separate reproduction attempts, all clean,
+  §8.3) including the realistic two-real-process (API+MCP-shaped) and
+  realistic-scale (~1985-collection) conditions. The headline evidence
+  that previously motivated treating this as unsafe (the ~40–45% miss
+  rate, the cache-poisoning finding) is retracted — it measured an
+  unsynchronized race, not a defect.
+- **What is NOT established**: that the one real, properly-sequenced
+  `NotFoundError` anomaly captured during the original full-suite run
+  (genuine traceback preserved in §8.3) cannot recur. Seven distinct,
+  deliberate reproduction attempts — including the closest practical
+  replication of the original combined-suite conditions at realistic
+  scale — did not reproduce it. Its root cause is genuinely unresolved,
+  not merely unconfirmed-but-assumed-benign.
+- **The remaining reproducer and evidence needed** (per the directive's
+  explicit requirement for this verdict): running the full, real
+  multi-hundred-file pytest suite (not a two-file reproduction) up to the
+  point of the original failure, with chromadb's internal
+  logging/tracing enabled and OS-level syscall tracing on the specific
+  `delete_collection()` call, to capture the process's actual file
+  descriptor/memory state at the moment of failure. This is a
+  meaningfully larger diagnostic effort than this session's ad hoc
+  reproduction scripts could provide, and is named as the specific next
+  step if this anomaly recurs, rather than invented evidence to justify
+  a verdict in either direction now.
+- **Server-backed migration**: not recommended at this time. No
+  correctness advantage was demonstrated for it over embedded mode under
+  equivalent, correctly synchronized workloads, and it carries its own
+  newly-discovered, serious cold-start latency cost at realistic scale
+  (604 seconds for the first write after server startup, confirmed via
+  the server's own log). `SERVER_BACKED_MIGRATION_REQUIRED_WITH_EVIDENCE`
+  would overclaim a case this evidence does not support.
 - Per directive requirement: MCP functionality is NOT removed, deployment
   topology is NOT silently changed, and the existing privacy changes
   (§1–§7) and their audit evidence are preserved unmodified by this
-  finding.
+  investigation. No merge, deployment, infrastructure provisioning, or
+  spend occurred.
