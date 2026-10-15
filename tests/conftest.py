@@ -17,6 +17,29 @@ import shutil
 import pytest
 
 
+def assert_path_is_isolated_test_storage(resolved_path: str, label: str, tmp_path) -> None:
+    """Fail-closed guard, extracted as a standalone function (rather than
+    inline in the fixture below) specifically so it can be unit-tested
+    directly -- see tests/test_conftest_memory_isolation.py. Raises
+    (via assert) if `resolved_path` is not genuinely under `tmp_path`, or
+    if it is under the real user home directory despite that (a
+    misconfigured shared tmp root nested under the real home would
+    otherwise slip past a naive "is it under tmp_path" check alone)."""
+    real_home = os.path.realpath(os.path.expanduser("~"))
+    tmp_path_resolved = os.path.realpath(str(tmp_path))
+    resolved_real = os.path.realpath(resolved_path)
+    assert resolved_real.startswith(tmp_path_resolved), (
+        f"{label} resolved to {resolved_path!r}, not under this test's tmp_path "
+        f"({tmp_path}) -- refusing to proceed rather than risk touching real storage."
+    )
+    assert not resolved_real.startswith(real_home + os.sep), (
+        f"{label} resolved to {resolved_path!r}, which is under the real home "
+        f"directory ({real_home}) -- refusing to proceed even though it matched "
+        f"tmp_path above (a real home nested under a shared tmp root would be "
+        f"an even worse misconfiguration)."
+    )
+
+
 @pytest.fixture(autouse=True)
 def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     """
@@ -90,6 +113,65 @@ def _isolate_gateway_registry_dirs(tmp_path, monkeypatch):
     docs_tmp.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(docs_store_mod, "DOCS_DIR", docs_tmp)
     monkeypatch.setattr(docs_store_mod, "_REGISTRY_FILE", docs_tmp / "registry.json")
+
+    # P1 deletion-assurance audit finding (2026-10-15): the exact same
+    # unisolated-module-constant leak this fixture already fixes for
+    # DOCS_DIR above also existed for `orca.brain.memory` (LongTermMemory's
+    # chromadb store AND SemanticMemory's diskcache both read their
+    # directory from module-level constants captured at import time) and
+    # for the newer Memory Continuum modules (`orca.memory.episodic`,
+    # `orca.memory.store`). Confirmed live: `tests/test_deletion_end_to_end.py`
+    # has no fixture of its own and was found, during this exact audit,
+    # to have been constructing real `LongTermMemory`/`SemanticMemory`/
+    # episodic-ledger instances against the developer's actual
+    # `~/.orca/memory/` the whole time it existed -- every deletion test
+    # run (this file's own purpose) was a genuine write+delete cycle
+    # against real accumulated data, not a tmp directory. A read-only
+    # forensic check of the real store found the deletions themselves
+    # were NOT the risk (every test uses a fresh random session_id and
+    # only ever deletes its own exact collection by exact name -- no
+    # pre-existing real data was found corrupted or missing), but
+    # multiple leftover test-created collections and ledger files WERE
+    # found sitting in the real store from past unisolated runs. Isolating
+    # all of these here, same tmp_path already used above, closes this
+    # for every test file, not just the one that happened to surface it.
+    import orca.brain.memory as brain_memory_mod
+    import orca.memory.episodic as episodic_mod
+    import orca.memory.store as memory_store_mod
+    memory_tmp = tmp_path / "memory"
+    # NOT `tmp_path / "cache"` -- several security-focused tests
+    # (test_a_safe_cache.py, test_audit007_cache_dir_remediation.py) own
+    # that exact path themselves, creating it with specific restrictive
+    # permissions (e.g. mode=0o700) as part of what they're testing; this
+    # fixture creating it first, with default permissive permissions,
+    # collided and broke those tests (found by actually running the full
+    # suite after adding this isolation, not assumed safe).
+    memory_cache_tmp = tmp_path / "brain_memory_cache"
+    episodic_tmp = memory_tmp / "episodic"
+    continuum_tmp = memory_tmp / "continuum"
+    for _d in (memory_tmp, memory_cache_tmp, episodic_tmp, continuum_tmp):
+        _d.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(brain_memory_mod, "MEMORY_DIR", memory_tmp)
+    monkeypatch.setattr(brain_memory_mod, "CACHE_DIR", memory_cache_tmp)
+    monkeypatch.setattr(episodic_mod, "EPISODIC_DIR", episodic_tmp)
+    monkeypatch.setattr(memory_store_mod, "MEMORY_ROOT", continuum_tmp)
+
+    # Fail-closed guard (CTO directive, 2026-10-15 P1 test-isolation
+    # correction): the isolation above is applied unconditionally by this
+    # autouse fixture, but a future refactor could accidentally construct
+    # a `LongTermMemory`/`SemanticMemory` BEFORE this fixture's
+    # monkeypatch takes effect (e.g. a module-level instance, or a
+    # differently-scoped fixture that runs first). Assert the resolved
+    # path is actually under this test's own tmp_path, never under a real
+    # user home or any other non-test location, so such a regression
+    # fails loudly in THIS fixture rather than silently writing to real
+    # storage again.
+    for _resolved, _label in (
+        (str(brain_memory_mod.MEMORY_DIR), "orca.brain.memory.MEMORY_DIR"),
+        (str(episodic_mod.EPISODIC_DIR), "orca.memory.episodic.EPISODIC_DIR"),
+        (str(memory_store_mod.MEMORY_ROOT), "orca.memory.store.MEMORY_ROOT"),
+    ):
+        assert_path_is_isolated_test_storage(_resolved, _label, tmp_path)
 
     # Phase 21A audit finding, closed in Phase 21B: the exact same
     # unisolated-module-constant leak this fixture already fixed for

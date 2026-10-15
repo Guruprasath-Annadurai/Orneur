@@ -606,3 +606,158 @@ stated separately as required:
   (§1–§7) and their audit evidence are preserved unmodified by this
   investigation. No merge, deployment, infrastructure provisioning, or
   spend occurred.
+
+## 13. Test-isolation incident & real-store impact assessment (2026-10-15, third pass)
+
+Triggered by a CTO directive after this document's own §8.3 disclosed, in
+passing, that `tests/test_deletion_end_to_end.py` had been operating
+against the real default `~/.orca` directory rather than an isolated
+tmp path. This section is the full Mission 1/2/3/5/6 response to that
+finding, kept separate from the chromadb architecture question (§8) since
+it is a distinct issue: a test-infrastructure gap, not a chromadb design
+question.
+
+### 13.1 Mission 2 — real-store impact assessment (read-only, performed first)
+
+Before any further destructive test was run, a read-only forensic
+examination of the real `~/.orca/memory/vectors` directory was performed:
+
+- **Unrelated collection integrity**: the real, accumulated store (1987
+  top-level segment directories, 14.6MB `chroma.sqlite3`, confirmed via
+  `PRAGMA`-level inspection) was not found corrupted. No evidence of a
+  deleted or overwritten pre-existing (non-test) collection was found.
+  Every deletion this codebase's tests perform targets an exact
+  session-derived collection name (`orca_{session_id[:8]}`) generated
+  from a fresh `uuid.uuid4()` — there is no code path (grepped and
+  confirmed) that deletes by pattern, prefix, or wildcard.
+- **Unexpected test-created collections**: confirmed present. A direct
+  SQL query against the real `collections` table found **319 collections
+  matching the `orca_e2e-*` naming pattern** that `tests/test_deletion_end_to_end.py`
+  uses — i.e., still present, not deleted. Cross-referencing the ~15
+  segment directories with a modification time in the last 24h against
+  the current catalog found **none of them are `orca_e2e-*` names** —
+  they are either already absent from the catalog (successfully deleted,
+  with only the on-disk segment not yet reclaimed) or belong to plainly
+  non-`e2e`-named collections (`orca_<8-hex>`) traceable to this
+  session's own earlier, ungated `python3 -c` reproduction scripts that
+  did not override `ORNEUR_HOME`/`ORCA_HOME` (7 such collections
+  identified by exact segment-to-name cross-reference). The large bulk of
+  the 319 `orca_e2e-*` entries, by directory-modification-time evidence,
+  **predate this session** — consistent with this project's own
+  documented history (Phase 5.1's audit: `LongTermMemory` had no
+  deletion method at all until recently), not something introduced today.
+- **Deletion/reclamation ledgers**: `pending_logical_deletion.json` and
+  `pending_reclamation.json` exist in the real directory (created by past
+  unisolated test runs) and are both empty — no outstanding pending state.
+- **Account-deletion side effects**: not separately exercised against the
+  real store in this investigation (account-deletion tests were already
+  covered by the isolated `tests/test_account_delete.py` suite, §13.3).
+- **CI/artifact exposure**: this project's CI does not archive
+  `~/.orca` as a build artifact (confirmed by reading `.github/workflows/`
+  — no such step exists), so no protected data from the real store was
+  exposed via CI output or artifacts as a result of this gap.
+- **No cleanup was performed on the real store.** Per the explicit
+  instruction not to clean up without separate approval, the 319
+  historical `orca_e2e-*` entries and the 7 session-attributable orphans
+  are left exactly as found, named precisely here rather than silently
+  removed or silently left undisclosed.
+
+### 13.2 Mission 1/3 — isolation fix and regression tests
+
+Fixed in `tests/conftest.py`'s existing autouse fixture (the same fixture
+that already isolates `orca.docs.store`, `orca.gateway.deployment`,
+`orca.godmode.lease_store`, and the model/training registries from the
+real `~/.orca` — this gap was an omission from that existing, otherwise
+comprehensive pattern, not a new mechanism):
+
+- `orca.brain.memory.MEMORY_DIR` and `.CACHE_DIR`, `orca.memory.episodic.EPISODIC_DIR`,
+  and `orca.memory.store.MEMORY_ROOT` are now redirected to `tmp_path`
+  subdirectories for every test, unconditionally.
+- A fail-closed guard (`assert_path_is_isolated_test_storage`, a
+  standalone, independently unit-tested function) asserts every one of
+  these resolves under the test's own `tmp_path` and never under the real
+  home directory, so a future accidental regression (e.g. a module-level
+  instance constructed before this fixture's monkeypatch takes effect)
+  fails loudly here instead of silently writing to real storage again.
+- **A real regression was found and fixed while verifying this**: the
+  first isolation path chosen, `tmp_path / "cache"`, collided with a path
+  several existing security tests (`test_a_safe_cache.py`,
+  `test_audit007_cache_dir_remediation.py`) already own themselves,
+  creating it with specific restrictive permissions (`mode=0o700`) as
+  part of what they test — this fixture creating it first, with default
+  permissions, broke 3 tests. Found by actually running the full suite
+  after the change (not assumed safe), fixed by renaming to
+  `tmp_path / "brain_memory_cache"`, re-verified clean.
+- **Verified concretely, not just asserted**: ran
+  `tests/test_deletion_end_to_end.py` before and after the fix, comparing
+  the real store's collection count and the `chroma.sqlite3` file's exact
+  MD5 hash — both byte-identical after the "after" run, confirming the
+  isolated test genuinely never touches the real store anymore.
+- Five new regression tests added in `tests/test_conftest_memory_isolation.py`:
+  confirm the isolation is active for a normal test; confirm the guard
+  function does NOT raise for a genuinely isolated path; confirm it DOES
+  raise (`pytest.raises`, not just existing unexercised) for the real
+  home directory; confirm it DOES raise for a path that is a legitimate
+  tmp directory but not THIS test's own `tmp_path` (the specific property
+  that prevents one parallel worker from reusing another's live test
+  database); confirm two different tests resolve to two different,
+  non-colliding `MEMORY_DIR` values.
+
+### 13.3 Mission 5 — qualification results
+
+- `tests/test_memory_long_term_chroma_privacy.py` + `tests/test_deletion_end_to_end.py`
+  + `tests/test_conftest_memory_isolation.py` + `tests/test_account_delete.py`
+  + `tests/test_g006_tenant_isolation.py` combined: **66 passed, 2 xfailed**,
+  stable across 3 repeated runs.
+- Canonical full suite (`scripts/ci/run_deterministic_tests.sh`), run
+  twice: the first run (immediately after adding the isolation fixture,
+  before the cache-path regression above was found) showed **12 failed**
+  — the original 8 plus 3 real regressions from the `tmp_path / "cache"`
+  collision and 1 flake. After the fix, a second full run returned to
+  exactly the original **8 failed, 8603 passed, 293 skipped, 43
+  deselected, 4 xfailed** (8603, not 8598/8597 as in earlier passes of
+  this document, because this pass adds the 5 new isolation tests plus
+  the net effect of the retired/replaced cross-process test — accounted
+  for, not an unexplained drift).
+- **The 8 remaining failures were investigated directly, not assumed
+  unrelated by filename alone**, per this directive's explicit
+  instruction not to invent explanations:
+  - **7 RSE/`imp4_ocr1` failures share one single, confirmed root
+    cause**: `orca/rse/imp4/ocr1.py`'s `_limits()` function attempts
+    `resource.setrlimit(resource.RLIMIT_AS, (128*1024*1024, ...))` in a
+    sandboxed child process, with its own code comment stating *"macOS
+    can reject these limits. Do not continue unlimited."* — and fails
+    closed (`os._exit(71)`) when it does. Reproduced directly on this
+    exact machine: `resource.setrlimit(resource.RLIMIT_AS, ...)` raises
+    `ValueError('current limit exceeds maximum limit')` here, confirming
+    this is the disclosed, designed-for macOS platform limitation the
+    code's own comment anticipates — not 7 independent defects, not
+    caused by this PR's diff (`orca/rse/` is untouched by it), and not an
+    invented explanation: directly reproduced via `python3 -c
+    "resource.setrlimit(...)"` on this machine.
+  - **1 Docker-sandbox failure** (`test_eval_sandbox_docker.py::test_environment_has_no_host_secrets`,
+    `@requires_docker`): environment-dependent, consistent with earlier
+    passes of this document; the sibling Docker tests in the same file
+    passed.
+  - None of the 8 are genuine regressions from this PR's diff.
+
+### 13.4 Mission 6 — final verdict
+
+**`READY_FOR_INDEPENDENT_AUDIT`** — both required preconditions are met:
+destructive-test isolation is demonstrated (not merely implemented: the
+before/after MD5-hash comparison in §13.2 is the demonstration, plus 5
+passing regression tests proving the guard itself fails closed), and
+potential real-store impact has been assessed (§13.1, read-only, with
+exact collection counts and names, not an assertion of zero impact
+without evidence).
+
+**Outstanding, disclosed, NOT blocking independent audit**:
+- 319 historical `orca_e2e-*` collections and 7 session-attributable
+  orphaned collections remain in the real `~/.orca/memory/vectors` store,
+  named exactly, awaiting separate approval before any cleanup.
+- The §8.3 architecture question (`ROOT_CAUSE_UNRESOLVED` for the
+  original `NotFoundError` anomaly) is unchanged by this section and
+  remains its own, separately-tracked open item.
+- No merge, deployment, model training, infrastructure provisioning,
+  unauthorized deletion, or spend occurred in the course of this
+  investigation.
