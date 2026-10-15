@@ -81,7 +81,7 @@ def test_memory_estimate_components_sum_to_total():
     mem = estimate_training_memory(cfg, batch_size=4, seq_len=128)
     assert mem.total == (
         mem.model_weights_bf16 + mem.optimizer_state_fp32 + mem.gradients_bf16 + mem.activations_estimate
-        + mem.logits_estimate
+        + mem.logits_estimate + mem.attention_matrix_estimate
     )
 
 
@@ -124,6 +124,40 @@ def test_logits_memory_can_dominate_at_large_vocab_and_long_sequences():
     cfg = resolve_corrected_tier(tier)
     mem = estimate_training_memory(cfg, batch_size=4, seq_len=4096)
     assert mem.logits_estimate > mem.activations_estimate * 30
+
+
+# --------------------------------------------- Audit #017 continuation (item 8) --
+
+def test_sdpa_backend_assumes_no_materialized_attention_matrix():
+    cfg = _tiny_config()
+    mem = estimate_training_memory(cfg, batch_size=4, seq_len=128, attn_backend="sdpa")
+    assert mem.attention_matrix_estimate == 0
+
+
+def test_manual_backend_includes_a_real_nonzero_quadratic_attention_matrix_cost():
+    cfg = _tiny_config()
+    mem = estimate_training_memory(cfg, batch_size=4, seq_len=128, attn_backend="manual")
+    expected = cfg.n_layers * 4 * cfg.n_heads * 128 * 128 * 4
+    assert mem.attention_matrix_estimate == expected
+    assert mem.attention_matrix_estimate > 0
+    assert mem.total > estimate_training_memory(cfg, batch_size=4, seq_len=128, attn_backend="sdpa").total
+
+
+def test_manual_backend_attention_cost_scales_quadratically_not_linearly_with_seq_len():
+    """The decisive, previously-unjustified-upper-bound-removing check:
+    doubling seq_len must roughly QUADRUPLE the manual-backend attention
+    cost (it is O(seq_len^2)), not merely double it like every other
+    (linear) term in this estimate."""
+    cfg = _tiny_config()
+    short = estimate_training_memory(cfg, batch_size=2, seq_len=64, attn_backend="manual")
+    long = estimate_training_memory(cfg, batch_size=2, seq_len=128, attn_backend="manual")
+    assert long.attention_matrix_estimate == pytest.approx(short.attention_matrix_estimate * 4)
+
+
+def test_estimate_training_memory_rejects_an_unknown_attn_backend():
+    cfg = _tiny_config()
+    with pytest.raises(ValueError, match="attn_backend"):
+        estimate_training_memory(cfg, batch_size=1, seq_len=128, attn_backend="flash-v99")
 
 
 # ------------------------------------------------------- compute estimate --

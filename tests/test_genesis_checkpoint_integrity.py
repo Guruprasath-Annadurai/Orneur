@@ -255,6 +255,51 @@ def test_defect03_manifest_step_or_epoch_mismatch_against_real_state_is_rejected
         load_verified_training_state(path)
 
 
+def test_read_blocks_until_a_concurrent_exclusive_writer_lock_is_released(tmp_path):
+    """Audit #017 section 4.1 TOCTOU remediation: load_verified_training_state()
+    must hold a SHARED lock on the same .{name}.lock file
+    save_training_state()'s writer uses, across the whole hash+load
+    sequence -- a concurrent exclusive holder of that lock must actually
+    block the read, not merely be a documented intention."""
+    import fcntl
+    import threading
+    import time
+
+    path = tmp_path / "checkpoint.pt"
+    save_verified_training_state(_state(step=1), path)
+    lock_path = tmp_path / f".{path.name}.lock"
+
+    held = threading.Event()
+    release = threading.Event()
+
+    def _hold_exclusive_lock():
+        with open(lock_path, "a+") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            held.set()
+            release.wait(timeout=5)
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    holder = threading.Thread(target=_hold_exclusive_lock)
+    holder.start()
+    assert held.wait(timeout=5), "writer thread never acquired the exclusive lock"
+
+    reader_done = threading.Event()
+
+    def _do_read():
+        load_verified_training_state(path)
+        reader_done.set()
+
+    reader = threading.Thread(target=_do_read)
+    reader.start()
+    time.sleep(0.2)
+    assert not reader_done.is_set(), "read must still be blocked while the exclusive lock is held"
+
+    release.set()
+    reader.join(timeout=5)
+    assert reader_done.is_set(), "read must complete once the exclusive lock is released"
+    holder.join(timeout=5)
+
+
 def test_concurrent_verified_saves_to_the_same_path_never_produce_a_mismatched_manifest(tmp_path):
     """Audit #017 section 4.1 (non-atomicity window, not independently
     covered by the audit's own dedicated test but documented as a real

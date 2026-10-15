@@ -67,6 +67,33 @@ def _manifest_path(checkpoint_path: Path) -> Path:
     return checkpoint_path.with_suffix(checkpoint_path.suffix + ".manifest.json")
 
 
+def state_dict_fingerprint(state_dict: dict) -> str:
+    """Audit #017 DEFECT-04 remediation building block: a deterministic
+    SHA-256 digest of a `model_state_dict`'s actual tensor VALUES (not
+    object identity, not a caller-supplied label). Used to prove that a
+    live model's current parameters are bit-identical to what a specific,
+    already content-verified checkpoint actually contains -- the
+    "incorrect model/checkpoint binding" and "swapped model states"
+    threat the audit's required work explicitly names. Keys are sorted
+    so the digest does not depend on dict ordering; each tensor is
+    detached, moved to CPU, made contiguous, and hashed by its raw bytes
+    -- two tensors with the same values but different devices/dtypes
+    that would not actually `torch.equal()` are NOT guaranteed to collide
+    here (dtype is included in a tensor's native byte representation),
+    which is the correct, conservative behavior for an identity check."""
+    h = hashlib.sha256()
+    for key in sorted(state_dict.keys()):
+        value = state_dict[key]
+        h.update(key.encode("utf-8"))
+        if hasattr(value, "detach"):
+            tensor = value.detach().to("cpu").contiguous()
+            h.update(str(tensor.dtype).encode("utf-8"))
+            h.update(tensor.numpy().tobytes())
+        else:
+            h.update(repr(value).encode("utf-8"))
+    return h.hexdigest()
+
+
 def save_verified_training_state(state: TrainingState, path: Path, *, architecture_version: str = ARCHITECTURE_VERSION) -> CheckpointManifest:
     """Saves via the existing, already-remediated `save_training_state()`
     (reused unchanged, not duplicated), then writes a sidecar manifest
@@ -180,7 +207,20 @@ def load_verified_training_state(path: Path) -> TrainingState:
     disagree with the real checkpoint state, must each be caught here --
     the version/format check BEFORE, and the step/epoch check AFTER,
     `load_training_state()`'s own (already-hardened, `weights_only=True`)
-    deserialization is reached."""
+    deserialization is reached.
+
+    Audit #017 section 4.1 TOCTOU remediation: hashing `path` and then
+    separately deserializing it (two separate opens of the same file)
+    left a window where a concurrent writer could replace the file's
+    content between those two reads -- the hash would be computed from
+    one version of the bytes and `load_training_state()` would then
+    deserialize a DIFFERENT version. This now acquires a SHARED
+    (`fcntl.LOCK_SH`) lock on the exact same `.{name}.lock` file
+    `save_training_state()`'s own exclusive writer lock uses, held across
+    both the hash computation and the deserialization -- any concurrent
+    writer (holding that lock exclusively) is blocked until this entire
+    read completes, and multiple concurrent readers do not block each
+    other."""
     path = Path(path)
     manifest_path = _manifest_path(path)
     if not manifest_path.exists():
@@ -200,14 +240,22 @@ def load_verified_training_state(path: Path) -> TrainingState:
         )
     if not path.exists():
         raise FileNotFoundError(f"manifest exists but checkpoint file is missing: {path}")
-    actual_hash = _sha256_of_file(path)
-    if actual_hash != manifest.sha256:
-        raise ChecksumMismatchError(
-            f"checkpoint {path} does not match its manifest's recorded SHA-256 "
-            f"(expected {manifest.sha256}, got {actual_hash}) -- refusing to load "
-            f"a checkpoint whose content has changed since it was saved"
-        )
-    state = load_training_state(path)
+
+    lock_path = path.parent / f".{path.name}.lock"
+    with open(lock_path, "a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)
+        try:
+            actual_hash = _sha256_of_file(path)
+            if actual_hash != manifest.sha256:
+                raise ChecksumMismatchError(
+                    f"checkpoint {path} does not match its manifest's recorded SHA-256 "
+                    f"(expected {manifest.sha256}, got {actual_hash}) -- refusing to load "
+                    f"a checkpoint whose content has changed since it was saved"
+                )
+            state = load_training_state(path)
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
     if state.step != manifest.step or state.epoch != manifest.epoch:
         raise ManifestStateMismatchError(
             f"checkpoint {path}'s manifest records step={manifest.step}, epoch={manifest.epoch}, "

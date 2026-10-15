@@ -19,9 +19,22 @@ from orca.eval import genesis_corpus as GC  # noqa: E402
 from orca.eval import genesis_prereg as PR  # noqa: E402
 from orca.eval.genesis_harness import GenerationResult, Harness, RunProvenance, SamplingConfig  # noqa: E402
 from orca.genesis.model.config import GenesisModelConfig  # noqa: E402
-from orca.genesis.model.eval_adapter import diagnose_adapter, make_inference_backend  # noqa: E402
+from orca.genesis.model.eval_adapter import (  # noqa: E402
+    ModelCheckpointBindingError,
+    ProvenanceStatus,
+    TrainingRunRecordError,
+    diagnose_adapter,
+    make_inference_backend,
+)
 from orca.genesis.model.transformer import GenesisTransformer  # noqa: E402
 from orca.genesis.tokenizer.framework import GenesisTokenizer, TokenizerTrainingConfig, train_tokenizer  # noqa: E402
+from orca.genesis.training.checkpoint_integrity import (  # noqa: E402
+    ChecksumMismatchError,
+    ManifestMissingError,
+    load_verified_training_state,
+    save_verified_training_state,
+)
+from orca.genesis.training.primitives import TrainingState  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -155,29 +168,148 @@ def test_backend_does_not_permanently_mutate_global_rng_state(tiny_model, tokeni
 
 # ------------------------------------------------- the random-weight distinction --
 
+def _real_checkpoint_for(model, tmp_path, *, name="checkpoint.pt", step=1, epoch=0):
+    """Saves a REAL, verified checkpoint containing `model`'s actual
+    current state_dict -- not an empty placeholder dict -- so binding
+    tests have real tensor values to compare."""
+    path = tmp_path / name
+    state = TrainingState(
+        step=step, epoch=epoch, dataloader_position=0, model_state_dict=model.state_dict(),
+        optimizer_state_dict={}, python_rng_state=(1,), torch_rng_state=b"", cuda_rng_state=None,
+    )
+    save_verified_training_state(state, path)
+    return path
+
+
 def test_diagnose_adapter_flags_random_initialization_by_default(tiny_model):
     """The decisive distinction check: a model built fresh in this test
     (no checkpoint loaded) must be flagged as randomly initialized --
     this cannot be silently treated as a 'the model is ready' state."""
     diag = diagnose_adapter(tiny_model)
-    assert diag.is_randomly_initialized is True
+    assert diag.status is ProvenanceStatus.RANDOM_INITIALIZATION
     assert "random" in diag.checkpoint_source.lower()
 
 
-def test_diagnose_adapter_reports_a_real_checkpoint_source_when_one_is_given(tiny_model, tmp_path):
-    real_path = tmp_path / "real_checkpoint.pt"
-    real_path.write_bytes(b"not a real checkpoint, just needs to exist on disk for this test")
-    diag = diagnose_adapter(tiny_model, checkpoint_source=str(real_path))
-    assert diag.is_randomly_initialized is False
-    assert diag.checkpoint_source == str(real_path)
+def test_diagnose_adapter_reports_unverified_for_a_real_verified_checkpoint_bound_to_this_model(tiny_model, tmp_path):
+    """A real, content-verified checkpoint that genuinely IS this model's
+    own current parameters must still land on UNVERIFIED, not TRAINED --
+    content integrity and live-model binding alone never imply an
+    authorized training run happened."""
+    path = _real_checkpoint_for(tiny_model, tmp_path)
+    diag = diagnose_adapter(tiny_model, checkpoint_path=path)
+    assert diag.status is ProvenanceStatus.UNVERIFIED
+    assert diag.checkpoint_source == str(path)
+    assert diag.training_run_id is None
 
 
-def test_diagnose_adapter_rejects_a_nonexistent_checkpoint_source(tiny_model):
-    """Audit #017 DEFECT-04 remediation: the reproduced exploit -- an
-    arbitrary, nonexistent path spoofing trained status with zero
-    verification -- must now be rejected."""
-    with pytest.raises(FileNotFoundError):
-        diagnose_adapter(tiny_model, checkpoint_source="/path/that/does/not/exist/fake-trained-model.pt")
+# ------------------------------------- Mission 1A: adversarial provenance coverage --
+
+def test_diagnose_adapter_rejects_a_nonexistent_checkpoint_path(tiny_model):
+    """Forged path: a checkpoint_path that does not exist at all must
+    propagate the real content-integrity boundary's own error, not be
+    silently accepted or downgraded."""
+    with pytest.raises(ManifestMissingError):
+        diagnose_adapter(tiny_model, checkpoint_path="/path/that/does/not/exist/fake-trained-model.pt")
+
+
+def test_diagnose_adapter_rejects_an_unrelated_existing_file(tiny_model, tmp_path):
+    """Independently re-reproduces the exact Mission 1A bypass: an
+    EXISTING file that has nothing to do with any GENESIS checkpoint
+    (no manifest, not a real checkpoint) must be rejected, not silently
+    treated as a trained checkpoint merely because `Path.exists()` is
+    true."""
+    unrelated = tmp_path / "unrelated_scratch_file.txt"
+    unrelated.write_text("this file has nothing to do with any GENESIS checkpoint")
+    with pytest.raises(ManifestMissingError):
+        diagnose_adapter(tiny_model, checkpoint_path=unrelated)
+
+
+def test_diagnose_adapter_rejects_a_checkpoint_belonging_to_a_different_model_instance(tiny_model, tokenizer, tmp_path):
+    """Swapped model states / incorrect model-checkpoint binding: a
+    checkpoint that is perfectly valid and content-verified -- but
+    belongs to a DIFFERENT model instance with different real weights --
+    must be rejected when diagnosing THIS model."""
+    other_cfg = GenesisModelConfig(
+        vocab_size=tokenizer.vocab_size(), d_model=16, n_layers=2, n_heads=4, n_kv_heads=2, d_ff=32, max_seq_len=32,
+    )
+    torch.manual_seed(999)  # a different seed -> genuinely different real weights
+    other_model = GenesisTransformer(other_cfg)
+    other_checkpoint = _real_checkpoint_for(other_model, tmp_path, name="other_model_checkpoint.pt")
+
+    # Sanity: the swapped checkpoint is itself perfectly valid on its own terms.
+    load_verified_training_state(other_checkpoint)
+
+    with pytest.raises(ModelCheckpointBindingError):
+        diagnose_adapter(tiny_model, checkpoint_path=other_checkpoint)
+
+
+def test_diagnose_adapter_rejects_a_checkpoint_with_a_corrupted_manifest(tiny_model, tmp_path):
+    """Invalid manifest: a single-byte content change caught by the
+    existing checksum boundary must still propagate through
+    diagnose_adapter unchanged."""
+    path = _real_checkpoint_for(tiny_model, tmp_path)
+    data = bytearray(path.read_bytes())
+    data[len(data) // 2] ^= 0xFF
+    path.write_bytes(bytes(data))
+    with pytest.raises(ChecksumMismatchError):
+        diagnose_adapter(tiny_model, checkpoint_path=path)
+
+
+def test_diagnose_adapter_never_reaches_trained_without_an_explicit_training_run_record(tiny_model, tmp_path):
+    """Requirement #4, directly: with no training_run_record_path at
+    all, status must never be TRAINED, regardless of how real and
+    correctly-bound the checkpoint is."""
+    path = _real_checkpoint_for(tiny_model, tmp_path)
+    diag = diagnose_adapter(tiny_model, checkpoint_path=path)
+    assert diag.status is not ProvenanceStatus.TRAINED
+
+
+def test_diagnose_adapter_stays_unverified_when_the_training_run_record_says_unauthorized(tiny_model, tmp_path):
+    path = _real_checkpoint_for(tiny_model, tmp_path)
+    manifest = json.loads((tmp_path / "checkpoint.pt.manifest.json").read_text())
+    record_path = tmp_path / "run_record.json"
+    record_path.write_text(json.dumps({"run_id": "run-1", "checkpoint_sha256": manifest["sha256"], "authorized": False}))
+    diag = diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=record_path)
+    assert diag.status is ProvenanceStatus.UNVERIFIED
+    assert diag.training_run_id == "run-1"
+
+
+def test_diagnose_adapter_reaches_trained_only_with_a_real_authorized_matching_record(tiny_model, tmp_path):
+    """The only path to TRAINED: a real checkpoint, correctly bound to
+    this model, with an explicit record naming this exact checkpoint's
+    verified hash and authorized=True."""
+    path = _real_checkpoint_for(tiny_model, tmp_path)
+    manifest = json.loads((tmp_path / "checkpoint.pt.manifest.json").read_text())
+    record_path = tmp_path / "run_record.json"
+    record_path.write_text(json.dumps({"run_id": "run-42", "checkpoint_sha256": manifest["sha256"], "authorized": True}))
+    diag = diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=record_path)
+    assert diag.status is ProvenanceStatus.TRAINED
+    assert diag.training_run_id == "run-42"
+
+
+def test_diagnose_adapter_rejects_a_training_run_record_naming_a_different_checkpoint(tiny_model, tmp_path):
+    """A record that is otherwise well-formed and says authorized=True,
+    but names a DIFFERENT checkpoint's hash, must be rejected -- not
+    silently attributed to whatever checkpoint happens to be passed in."""
+    path = _real_checkpoint_for(tiny_model, tmp_path)
+    record_path = tmp_path / "run_record.json"
+    record_path.write_text(json.dumps({"run_id": "run-1", "checkpoint_sha256": "0" * 64, "authorized": True}))
+    with pytest.raises(TrainingRunRecordError):
+        diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=record_path)
+
+
+def test_diagnose_adapter_rejects_a_missing_training_run_record_path(tiny_model, tmp_path):
+    path = _real_checkpoint_for(tiny_model, tmp_path)
+    with pytest.raises(TrainingRunRecordError):
+        diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=tmp_path / "does_not_exist.json")
+
+
+def test_diagnose_adapter_rejects_a_malformed_training_run_record(tiny_model, tmp_path):
+    path = _real_checkpoint_for(tiny_model, tmp_path)
+    record_path = tmp_path / "run_record.json"
+    record_path.write_text(json.dumps({"run_id": "run-1"}))  # missing required fields
+    with pytest.raises(TrainingRunRecordError):
+        diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=record_path)
 
 
 def test_random_weight_output_is_not_meaningfully_coherent(tiny_model, tokenizer):
@@ -238,7 +370,7 @@ def test_harness_runs_end_to_end_with_the_genesis_backend_as_a_software_integrat
     assert record.item_id == item["item_id"]
 
     diag = diagnose_adapter(tiny_model)
-    assert diag.is_randomly_initialized, (
+    assert diag.status is ProvenanceStatus.RANDOM_INITIALIZATION, (
         "this harness run is a software-integration smoke test only -- "
         "no trained checkpoint exists anywhere in this codebase, and this "
         "record's score (if any) must never be read as a capability result"

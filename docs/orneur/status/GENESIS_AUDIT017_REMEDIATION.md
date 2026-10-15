@@ -201,9 +201,116 @@ A search across `orca/` and `tests/` confirmed no other module imports
 `checkpoint_integrity`, `eval_adapter`, or `scaling` — the change surface is
 fully contained to the three modified modules and their own tests.
 
-CI run on this exact commit: **pending** at the time of writing — not yet
-pushed/observed; will be updated with the real run link once pushed, per this
-session's standing practice of never asserting unobserved CI results.
+CI run on commit `a424b9f86a862e43279476b0ad0a4e86262c24a8` (this remediation's
+own HEAD at the time it was pushed): **all 9 jobs passing on both the push and
+pull_request triggers** (18/18 total), observed directly via `gh pr checks 58`
+after the push, not asserted in advance.
+
+## Mission 1A addendum — checkpoint provenance, done correctly
+
+A founder continuation order, issued after the above remediation had already
+landed and gone CI-green, raised a further, correct objection: the DEFECT-04
+fix (requiring `checkpoint_source` to exist on disk) was still insufficient
+-- an arbitrary, UNRELATED existing file still flipped status away from
+random-initialization with zero verification that it was ever a real
+checkpoint, let alone one belonging to the model being diagnosed.
+
+**Independent reproduction before any further fix**: a scratch script
+constructed a fresh, randomly-initialized `GenesisTransformer` and an
+unrelated temp file containing arbitrary bytes, then called the
+(then-current, already-"fixed") `diagnose_adapter()` directly. It returned
+`AdapterDiagnostics(is_randomly_initialized=False, checkpoint_source='/var/
+folders/.../tmp...')` -- confirming the gap was real before any further code
+was touched.
+
+### The redesigned trusted checkpoint identity interface
+
+`diagnose_adapter()`'s boolean `is_randomly_initialized` is replaced with a
+tri-state `ProvenanceStatus` (`RANDOM_INITIALIZATION` / `UNVERIFIED` /
+`TRAINED`), reachable only through a full verification chain:
+
+1. **Content-integrity verification**: `checkpoint_path` must pass
+   `load_verified_training_state()`'s complete existing trust boundary
+   (manifest presence, format/architecture version, SHA-256 content hash,
+   step/epoch self-consistency) unchanged -- any failure propagates out of
+   `diagnose_adapter()` exactly as it would from a direct call, never
+   caught or softened.
+2. **Live model/checkpoint binding** (new): a fingerprint of `model`'s
+   ACTUAL current parameters (`state_dict_fingerprint()`, added to
+   `checkpoint_integrity.py` -- a deterministic SHA-256 over sorted
+   state-dict keys and real tensor bytes, not object identity or a label)
+   must equal the fingerprint of the verified checkpoint's own
+   `model_state_dict`. A mismatch raises `ModelCheckpointBindingError` --
+   this is what closes the "swapped model states" / "incorrect
+   model/checkpoint binding" gap the continuation order named explicitly:
+   a perfectly valid, correctly hash-verified checkpoint belonging to a
+   DIFFERENT model instance no longer passes as evidence about THIS model.
+3. **Training-run authorization** (new, strictly opt-in): passing steps 1-2
+   alone yields `UNVERIFIED`, never `TRAINED` -- content integrity and
+   live-model binding alone never imply an authorized training run
+   happened. `TRAINED` requires an additional, explicit
+   `training_run_record_path` naming a `TrainingRunRecord` (`run_id`,
+   `checkpoint_sha256`, `authorized`) whose `checkpoint_sha256` matches
+   this checkpoint's own verified manifest hash AND whose `authorized`
+   field is `True`. A record naming a different checkpoint, or missing, or
+   malformed, raises `TrainingRunRecordError`; a well-formed record that
+   says `authorized: false` stays `UNVERIFIED`. **Nothing in this codebase
+   currently produces such a record for any GENESIS native checkpoint** --
+   GENESIS pretraining remains `NOT_AUTHORIZED` and no training loop exists
+   (Workstream C, still pending). This is the honest, correct current
+   state: every real call in this codebase today lands on
+   `RANDOM_INITIALIZATION` or `UNVERIFIED`; `TRAINED` is a reachable code
+   path for when Workstream C/F eventually produce a real, founder-
+   authorized record, not a status anything currently claims.
+
+### TOCTOU, locking, and manual-attention memory (items 7-8)
+
+- **Read-side TOCTOU** (item 7): `load_verified_training_state()` previously
+  hashed `path` and then separately deserialized it via two independent
+  opens, leaving a window for a concurrent writer to replace the content
+  between them. It now acquires a SHARED (`fcntl.LOCK_SH`) lock on the
+  exact same `.{name}.lock` file `save_training_state()`'s own exclusive
+  writer lock uses, held across both the hash computation and the
+  deserialization -- a concurrent writer is blocked for the whole read.
+  Verified by a real concurrency test
+  (`test_read_blocks_until_a_concurrent_exclusive_writer_lock_is_released`):
+  a background thread holds the exclusive lock, and the read thread is
+  confirmed still blocked 200ms later, then completes immediately once the
+  lock is released.
+- **Checkpoint/manifest consistency** (item 7, write side): already closed
+  in the base Audit #017 remediation above via the `.verified.lock`
+  covering the full save+hash+manifest sequence; re-confirmed unchanged by
+  the existing concurrency test.
+- **Manual-attention memory assumption** (item 8): `estimate_training_memory()`'s
+  docstring previously claimed its activation estimate was a "conservative
+  upper bound" UNCONDITIONALLY -- this was unjustified and has been
+  removed. The function now takes an explicit `attn_backend` parameter
+  (`"sdpa"` or `"manual"`, matching `orca.genesis.model.transformer`'s own
+  parameter) and adds a new `attention_matrix_estimate` field: `0` under
+  `"sdpa"` (assumed fused/no-materialization, stated as an assumption, not
+  a guarantee), and a real, quadratic-in-`seq_len` `(batch, heads, seq,
+  seq)` fp32 tensor cost under `"manual"` (the model's manual attention
+  path genuinely does materialize this tensor). No blanket upper-bound
+  claim remains anywhere in this module's docstrings.
+
+### Adversarial regression coverage added
+
+`tests/test_genesis_eval_adapter.py` (new, in the "Mission 1A" section):
+forged/nonexistent checkpoint path, an unrelated existing file (the exact
+reproduced bypass), a checkpoint belonging to a different model instance
+(swapped model states), a corrupted manifest, never reaching `TRAINED`
+without a training-run record, staying `UNVERIFIED` when a record says
+unauthorized, reaching `TRAINED` only with a real authorized matching
+record, rejecting a record naming a different checkpoint, rejecting a
+missing/malformed record. `tests/test_genesis_scaling.py` (new): sdpa
+assumes zero attention-matrix cost, manual backend's cost is real and
+nonzero, the cost scales quadratically (not linearly) with `seq_len`,
+and an unknown `attn_backend` is rejected. `tests/test_genesis_checkpoint_integrity.py`
+(new): the read-lock blocking test described above.
+
+Full local regression after this addendum: every GENESIS test file plus the
+complete Genesis Capability Eval V1 suite, **228 passed** (up from 214),
+with no existing assertion's underlying claim weakened.
 
 ## Governance
 
@@ -216,9 +323,12 @@ Acceptance ledger unchanged at 0/95. `R65`/`G1`/`AUTH-1` remain
 
 **`AUDIT017_REMEDIATION_READY_FOR_INDEPENDENT_RETEST`**
 
-All 6 reported defects (DEFECT-01 through DEFECT-06) have documented
-dispositions above, each independently reproduced against the real
-vulnerable code before being fixed, each with a persistent regression test,
-and the full existing Genesis test suite (214 tests) passes without
-modification to any assertion's underlying claim. This is a self-report, not
-an independent acceptance — only Antigravity's own retest can award that.
+All 6 reported defects (DEFECT-01 through DEFECT-06) plus the Mission 1A
+provenance-bypass continuation have documented dispositions above, each
+independently reproduced against the real vulnerable/insufficient code before
+being fixed, each with a persistent regression test, and the full existing
+Genesis test suite (228 tests) passes without modification to any assertion's
+underlying claim. This is a self-report, not an independent acceptance --
+only Antigravity's own retest, against this addendum's final SHA (not the
+original vulnerable SHA, and not the first remediation commit `a424b9f`
+alone), can award that.

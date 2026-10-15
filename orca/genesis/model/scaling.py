@@ -38,20 +38,23 @@ class MemoryEstimate:
     gradients_bf16: int
     activations_estimate: int
     logits_estimate: int
+    attention_matrix_estimate: int
     total: int
 
 
-def estimate_training_memory(cfg: GenesisModelConfig, *, batch_size: int, seq_len: int | None = None) -> MemoryEstimate:
+def estimate_training_memory(
+    cfg: GenesisModelConfig, *, batch_size: int, seq_len: int | None = None, attn_backend: str = "sdpa",
+) -> MemoryEstimate:
     """Theoretical memory estimate for training (not inference) this
     config, in the standard bf16-weights + fp32-AdamW-state regime.
-    `activations_estimate` is a rough, intentionally conservative
-    approximation (stored activations roughly proportional to
-    `n_layers * batch_size * seq_len * d_model`, without gradient
-    checkpointing) -- real activation memory depends heavily on the
-    specific training framework's memory-saving techniques (gradient
-    checkpointing, activation recomputation, sequence parallelism),
-    none of which this module assumes or implements. Treat this field as
-    a conservative upper bound to plan against, not a precise prediction.
+    `activations_estimate` is a rough approximation (stored activations
+    roughly proportional to `n_layers * batch_size * seq_len * d_model`,
+    without gradient checkpointing) for the non-attention-matrix tensors
+    (MLP intermediate, residual stream, norm outputs) -- real activation
+    memory depends heavily on the specific training framework's
+    memory-saving techniques (gradient checkpointing, activation
+    recomputation, sequence parallelism), none of which this module
+    assumes or implements.
 
     `logits_estimate` (Audit #017 DEFECT-05 remediation): the prior
     version of this function omitted the vocabulary-logits tensor
@@ -63,9 +66,41 @@ def estimate_training_memory(cfg: GenesisModelConfig, *, batch_size: int, seq_le
     estimates (the audit's own reproduction: ~4.2 GB of logits against
     ~113 MB of estimated non-logits activations for the `10M-smoke` tier
     at batch_size=4, seq_len=4096 -- roughly 37x). It is reported as its
-    own field, not folded silently into `activations_estimate`, so a
-    caller can see exactly how much of the total this one tensor accounts
-    for."""
+    own field, not folded silently into `activations_estimate`.
+
+    `attention_matrix_estimate` (Audit #017 continuation directive, item
+    8): the prior version's docstring claimed `activations_estimate` was
+    a "conservative upper bound" unconditionally -- that claim was
+    UNJUSTIFIED and has been removed. `orca.genesis.model.transformer`
+    supports two attention implementations (`attn_backend` parameter:
+    `"sdpa"` or `"manual"`), and they have fundamentally different memory
+    profiles:
+      - `attn_backend="sdpa"` (the default here, matching the model's own
+        default): PyTorch's fused scaled-dot-product-attention kernel is
+        ASSUMED to avoid materializing the full `(batch, heads, seq,
+        seq)` attention-weight tensor -- this is the standard behavior of
+        modern fused/flash-attention-style kernels, but it is an
+        ASSUMPTION about the kernel actually selected at runtime (backend
+        availability depends on hardware, dtype, and PyTorch version),
+        not a guarantee this module can verify. `attention_matrix_estimate`
+        is `0` on this path.
+      - `attn_backend="manual"`: the model's own manual implementation
+        DOES materialize the full `(batch, heads, seq, seq)` attention
+        weights tensor per layer, in fp32 (standard practice for softmax
+        numerical stability before casting back down) -- this is included
+        here explicitly, and at long sequence lengths it scales
+        QUADRATICALLY in `seq_len`, unlike every other term in this
+        estimate, which scales linearly. This is the real, measurable
+        memory cost of that code path, not a theoretical concern.
+      - Any other real-world attention implementation not represented by
+        these two `attn_backend` values is NOT covered by this function;
+        no claim is made about it.
+
+    Given the above, this function makes NO blanket "upper bound" claim.
+    Treat every field as a labeled, backend-conditional estimate to plan
+    against -- not a universal guarantee."""
+    if attn_backend not in ("sdpa", "manual"):
+        raise ValueError(f"unknown attn_backend: {attn_backend!r} (expected 'sdpa' or 'manual')")
     seq_len = seq_len or cfg.max_seq_len
     n_params = cfg.total_parameters()
 
@@ -73,21 +108,28 @@ def estimate_training_memory(cfg: GenesisModelConfig, *, batch_size: int, seq_le
     gradients = n_params * BYTES_PER_PARAM_BF16
     # AdamW fp32 state: master weight + exp_avg + exp_avg_sq, 4 bytes each.
     optimizer_state = n_params * BYTES_PER_PARAM_FP32 * 3
-    # Deliberately rough, deliberately conservative (no checkpointing
-    # assumed): roughly 2 bytes (bf16) per activation element, with a
-    # small constant-factor fudge for the several tensors kept per layer
-    # (attention scores, MLP intermediate, residual stream).
+    # Non-attention-matrix activations: roughly 2 bytes (bf16) per
+    # element, with a small constant-factor fudge for the several tensors
+    # kept per layer (MLP intermediate, residual stream, norm outputs).
     activations = 2 * cfg.n_layers * batch_size * seq_len * cfg.d_model * 6
     # Vocabulary logits: (batch_size, seq_len, vocab_size) in fp32.
     logits = batch_size * seq_len * cfg.vocab_size * BYTES_PER_PARAM_FP32
+    # Attention weights: (batch, heads, seq, seq) in fp32, one per layer
+    # -- only materialized under the "manual" backend; 0 under "sdpa"
+    # (assumed fused, see docstring above).
+    if attn_backend == "manual":
+        attention_matrix = cfg.n_layers * batch_size * cfg.n_heads * seq_len * seq_len * BYTES_PER_PARAM_FP32
+    else:
+        attention_matrix = 0
 
-    total = model_weights + gradients + optimizer_state + activations + logits
+    total = model_weights + gradients + optimizer_state + activations + logits + attention_matrix
     return MemoryEstimate(
         model_weights_bf16=model_weights,
         optimizer_state_fp32=optimizer_state,
         gradients_bf16=gradients,
         activations_estimate=activations,
         logits_estimate=logits,
+        attention_matrix_estimate=attention_matrix,
         total=total,
     )
 
