@@ -27,7 +27,10 @@ read a "score" without also seeing that flag.
 """
 from __future__ import annotations
 
+import contextlib
+import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 
@@ -46,6 +49,31 @@ class AdapterDiagnostics:
     checkpoint_source: str  # "none (fresh random init)" or a real checkpoint path, never silently blank
 
 
+def _rng_scope(seed: int | None):
+    """Audit #017 DEFECT-06 (RNG mutation): generation previously called
+    `torch.manual_seed()` directly, permanently mutating the process-wide
+    RNG for every caller of this process, not just this one backend call.
+    `torch.random.fork_rng()` saves the RNG state on entry and restores it
+    on exit, so seeding inside this scope is confined to this call."""
+    if seed is None:
+        return contextlib.nullcontext()
+    return torch.random.fork_rng(devices=[])
+
+
+def _strip_stop_sequences(text: str, stop: tuple[str, ...]) -> str:
+    """Audit #017 DEFECT-06 (stop token retention): standard evaluation
+    benchmarks require the stop sequence itself to be excluded from the
+    scored completion -- truncate `text` at the earliest occurrence of
+    any configured stop string, exactly as a real inference server's
+    stop-sequence handling would."""
+    cut = len(text)
+    for s in stop:
+        idx = text.find(s)
+        if idx != -1:
+            cut = min(cut, idx)
+    return text[:cut]
+
+
 def make_inference_backend(model: GenesisTransformer, tokenizer: GenesisTokenizer, *, device: str = "cpu"):
     """Returns a callable matching `Harness`'s expected
     `Callable[[str, SamplingConfig], GenerationResult]` signature,
@@ -58,34 +86,48 @@ def make_inference_backend(model: GenesisTransformer, tokenizer: GenesisTokenize
     model.eval()
 
     def _backend(prompt: str, sampling: SamplingConfig) -> GenerationResult:
-        import time
-
-        if sampling.seed is not None:
-            torch.manual_seed(sampling.seed)
-
         t0 = time.monotonic()
         try:
             prompt_ids = tokenizer.encode(prompt)
-            input_ids = torch.tensor([prompt_ids], device=device)
-            generated_ids: list[int] = []
-            first_token_s = None
+            if len(prompt_ids) >= model.cfg.max_seq_len:
+                # Audit #017 DEFECT-06 (context overflow): previously
+                # returned text="", error=None -- indistinguishable from
+                # a real, successful empty completion. A prompt that
+                # already fills (or exceeds) the model's context window
+                # cannot generate even one token and must be reported as
+                # a real error, not a silent empty success.
+                return GenerationResult(
+                    text="", error=f"prompt_tokens={len(prompt_ids)} >= max_seq_len={model.cfg.max_seq_len}: "
+                                   f"no room to generate even one token",
+                    prompt_tokens=len(prompt_ids), completion_tokens=0,
+                )
 
-            for _ in range(sampling.max_new_tokens):
-                if input_ids.shape[-1] >= model.cfg.max_seq_len:
-                    break
-                next_id = model.generate_step(input_ids, temperature=sampling.temperature)
-                token_id = int(next_id.item())
-                if first_token_s is None:
-                    first_token_s = time.monotonic() - t0
-                if token_id == EOS_ID:
-                    break
-                generated_ids.append(token_id)
-                input_ids = torch.cat([input_ids, next_id.unsqueeze(0)], dim=-1)
-                decoded_so_far = tokenizer.decode(generated_ids)
-                if sampling.stop and any(s in decoded_so_far for s in sampling.stop):
-                    break
+            with _rng_scope(sampling.seed):
+                if sampling.seed is not None:
+                    torch.manual_seed(sampling.seed)
+
+                input_ids = torch.tensor([prompt_ids], device=device)
+                generated_ids: list[int] = []
+                first_token_s = None
+
+                for _ in range(sampling.max_new_tokens):
+                    if input_ids.shape[-1] >= model.cfg.max_seq_len:
+                        break
+                    next_id = model.generate_step(input_ids, temperature=sampling.temperature)
+                    token_id = int(next_id.item())
+                    if first_token_s is None:
+                        first_token_s = time.monotonic() - t0
+                    if token_id == EOS_ID:
+                        break
+                    generated_ids.append(token_id)
+                    input_ids = torch.cat([input_ids, next_id.unsqueeze(0)], dim=-1)
+                    decoded_so_far = tokenizer.decode(generated_ids)
+                    if sampling.stop and any(s in decoded_so_far for s in sampling.stop):
+                        break
 
             text = tokenizer.decode(generated_ids)
+            if sampling.stop:
+                text = _strip_stop_sequences(text, sampling.stop)
             end_to_end_s = time.monotonic() - t0
             return GenerationResult(
                 text=text, first_token_s=first_token_s, end_to_end_s=end_to_end_s,
@@ -108,8 +150,30 @@ def diagnose_adapter(model: GenesisTransformer, *, checkpoint_source: str | None
     own whether a model object was loaded from a real, trained checkpoint
     or constructed fresh, and guessing would be exactly the kind of
     "quietly blur the distinction" behavior this module exists to
-    prevent."""
-    return AdapterDiagnostics(
-        is_randomly_initialized=checkpoint_source is None,
-        checkpoint_source=checkpoint_source or "none (fresh random init)",
-    )
+    prevent.
+
+    Audit #017 DEFECT-04 remediation: previously, ANY caller-supplied
+    string -- including a nonexistent, fabricated path -- was enough to
+    flip `is_randomly_initialized` to `False`, letting a fresh random
+    model be reported as trained with no verification at all. This now
+    requires `checkpoint_source` to name a file that actually exists on
+    disk, raising `FileNotFoundError` otherwise.
+
+    This remains a BOUNDED fix, not a complete provenance guarantee: a
+    real file existing at `checkpoint_source` does not, by itself, prove
+    `model`'s weights were actually loaded from that file (that stronger
+    binding would require the caller to load through
+    `orca.genesis.training.checkpoint_integrity.load_verified_training_state`
+    and thread the resulting, hash-verified checkpoint identity through to
+    this call -- a larger provenance-binding change out of this bounded
+    remediation's scope). What this fix does close is the specific
+    reproduced exploit: an arbitrary, non-existent string spoofing trained
+    status with zero verification."""
+    if checkpoint_source is None:
+        return AdapterDiagnostics(is_randomly_initialized=True, checkpoint_source="none (fresh random init)")
+    if not Path(checkpoint_source).exists():
+        raise FileNotFoundError(
+            f"declared checkpoint_source does not exist: {checkpoint_source!r} -- refusing to report "
+            f"a model as trained based on a checkpoint path that cannot be found"
+        )
+    return AdapterDiagnostics(is_randomly_initialized=False, checkpoint_source=checkpoint_source)

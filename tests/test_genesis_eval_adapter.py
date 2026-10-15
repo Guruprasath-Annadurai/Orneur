@@ -87,9 +87,70 @@ def test_backend_reports_errors_through_the_result_not_by_raising(tiny_model, to
     backend = make_inference_backend(tiny_model, tokenizer)
     sampling = SamplingConfig(temperature=0.0, top_p=1.0, max_new_tokens=5, seed=0)
     result = backend(long_prompt, sampling)
-    # Either it handles gracefully (stops at max_seq_len, error is None)
-    # or reports a real error -- it must never raise past this function.
     assert isinstance(result, GenerationResult)
+    # Audit #017 DEFECT-06 remediation: a prompt that already fills (or
+    # exceeds) max_seq_len must report a real error, not a silent
+    # text="", error=None "successful empty completion" -- the two are
+    # indistinguishable to a caller unless this is enforced.
+    assert result.error is not None
+    assert result.text == ""
+    assert result.completion_tokens == 0
+
+
+def test_backend_reports_a_real_error_not_a_silent_empty_success_on_context_overflow(tiny_model, tokenizer):
+    """A dedicated regression test for the exact Audit #017 DEFECT-06
+    reproduction: a prompt tokenizing to >= max_seq_len tokens must not
+    be silently treated as a zero-token successful completion."""
+    backend = make_inference_backend(tiny_model, tokenizer)
+    overflowing_prompt = "word " * (tiny_model.cfg.max_seq_len + 5)
+    sampling = SamplingConfig(temperature=0.0, top_p=1.0, max_new_tokens=5, seed=0)
+    result = backend(overflowing_prompt, sampling)
+    assert result.error is not None
+    assert "max_seq_len" in result.error
+
+
+def test_backend_strips_stop_sequence_from_the_returned_text(tiny_model, tokenizer):
+    """Audit #017 DEFECT-06 remediation: the stop sequence itself must
+    not appear in the scored completion text, matching standard
+    inference-server stop-sequence semantics."""
+    import torch as _torch
+
+    from orca.eval.genesis_harness import GenerationResult as _GR
+
+    stop_text = "STOPHERE"
+    stop_ids = tokenizer.encode(stop_text)
+    seq = list(stop_ids) + [1, 2, 3]
+    idx = 0
+
+    def _mock_step(input_ids, temperature=1.0):
+        nonlocal idx
+        val = seq[idx % len(seq)]
+        idx += 1
+        return _torch.tensor([val])
+
+    tiny_model.generate_step = _mock_step
+    backend = make_inference_backend(tiny_model, tokenizer)
+    sampling = SamplingConfig(temperature=0.0, top_p=1.0, max_new_tokens=len(stop_ids) + 3, seed=0, stop=(stop_text,))
+    result = backend("prompt", sampling)
+    assert isinstance(result, _GR)
+    assert stop_text not in result.text
+
+
+def test_backend_does_not_permanently_mutate_global_rng_state(tiny_model, tokenizer):
+    """Audit #017 DEFECT-06 remediation: calling the backend with a seed
+    must not leave the process-wide RNG in a different state than before
+    the call -- `torch.random.fork_rng()` must restore it on exit."""
+    import torch as _torch
+
+    _torch.manual_seed(999)
+    before = _torch.get_rng_state().clone()
+
+    backend = make_inference_backend(tiny_model, tokenizer)
+    sampling = SamplingConfig(temperature=0.0, top_p=1.0, max_new_tokens=4, seed=12345)
+    backend("Hello there", sampling)
+
+    after = _torch.get_rng_state()
+    assert _torch.equal(before, after), "global RNG state must be restored after a seeded backend call"
 
 
 # ------------------------------------------------- the random-weight distinction --
@@ -103,10 +164,20 @@ def test_diagnose_adapter_flags_random_initialization_by_default(tiny_model):
     assert "random" in diag.checkpoint_source.lower()
 
 
-def test_diagnose_adapter_reports_a_real_checkpoint_source_when_one_is_given(tiny_model):
-    diag = diagnose_adapter(tiny_model, checkpoint_source="/path/to/real_checkpoint.pt")
+def test_diagnose_adapter_reports_a_real_checkpoint_source_when_one_is_given(tiny_model, tmp_path):
+    real_path = tmp_path / "real_checkpoint.pt"
+    real_path.write_bytes(b"not a real checkpoint, just needs to exist on disk for this test")
+    diag = diagnose_adapter(tiny_model, checkpoint_source=str(real_path))
     assert diag.is_randomly_initialized is False
-    assert diag.checkpoint_source == "/path/to/real_checkpoint.pt"
+    assert diag.checkpoint_source == str(real_path)
+
+
+def test_diagnose_adapter_rejects_a_nonexistent_checkpoint_source(tiny_model):
+    """Audit #017 DEFECT-04 remediation: the reproduced exploit -- an
+    arbitrary, nonexistent path spoofing trained status with zero
+    verification -- must now be rejected."""
+    with pytest.raises(FileNotFoundError):
+        diagnose_adapter(tiny_model, checkpoint_source="/path/that/does/not/exist/fake-trained-model.pt")
 
 
 def test_random_weight_output_is_not_meaningfully_coherent(tiny_model, tokenizer):

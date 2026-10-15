@@ -149,18 +149,138 @@ def test_interrupted_manifest_write_leaves_old_manifest_intact(tmp_path, monkeyp
 
     import orca.genesis.training.checkpoint_integrity as ci
 
-    # Patch Path.replace just for the manifest's tmp file by checking the name.
-    original_replace = ci.Path.replace
+    # Audit #017 DEFECT-01 remediation changed the manifest write to
+    # os.replace() over a random mkstemp()-created tmp file (no longer a
+    # deterministic ".manifest.json.tmp" name) -- patch os.replace itself.
+    original_os_replace = ci.os.replace
 
-    def _patched_replace(self, target):
-        if str(self).endswith(".manifest.json.tmp"):
+    def _patched_replace(src, dst):
+        if ".manifest.json.tmp-" in str(src):
             raise OSError("simulated crash during manifest rename")
-        return original_replace(self, target)
+        return original_os_replace(src, dst)
 
-    monkeypatch.setattr(ci.Path, "replace", _patched_replace)
+    monkeypatch.setattr(ci.os, "replace", _patched_replace)
     with pytest.raises(OSError, match="simulated crash"):
         save_verified_training_state(_state(step=2), path)
     monkeypatch.undo()
 
     # The original manifest (for step=1) must be untouched and still valid.
     assert (tmp_path / "checkpoint.pt.manifest.json").read_bytes() == original_manifest_bytes
+
+
+# ---------------------------------------------- Audit #017 remediation --
+
+def test_defect01_preexisting_symlink_at_the_old_predictable_manifest_tmp_path_is_not_followed(tmp_path):
+    """Audit #017 DEFECT-01 (High, independently reproduced before this
+    fix): the manifest write previously used a deterministic temporary
+    filename opened without O_EXCL/O_NOFOLLOW, so a pre-planted symlink
+    at that exact path caused the write to follow it and overwrite an
+    arbitrary sensitive target file. `tempfile.mkstemp()`'s random name
+    means an attacker cannot pre-plant the real tmp path; this test
+    plants a symlink at the OLD, now-unused deterministic path to confirm
+    it is simply never touched."""
+    import os as _os
+
+    sensitive = tmp_path / "sensitive_victim.txt"
+    sensitive.write_text("TOP SECRET CONTENT")
+
+    ckpt_path = tmp_path / "checkpoint.pt"
+    old_predictable_tmp = tmp_path / f".{ckpt_path.name}.manifest.json.tmp"
+    _os.symlink(sensitive, old_predictable_tmp)
+
+    save_verified_training_state(_state(step=1), ckpt_path)
+
+    assert sensitive.read_text() == "TOP SECRET CONTENT"
+
+
+def test_defect01_manifest_has_owner_only_permissions_and_no_symlink_at_final_path(tmp_path):
+    import os
+    import stat
+    path = tmp_path / "checkpoint.pt"
+    save_verified_training_state(_state(), path)
+    manifest_path = tmp_path / "checkpoint.pt.manifest.json"
+    assert not manifest_path.is_symlink()
+    mode = stat.S_IMODE(os.stat(manifest_path).st_mode)
+    assert mode == 0o600
+
+
+def test_defect02_unsupported_format_version_is_rejected(tmp_path):
+    """Audit #017 DEFECT-02 (independently reproduced before this fix):
+    an incompatible format_version must now be rejected, not silently
+    accepted."""
+    from orca.genesis.training.checkpoint_integrity import UnsupportedManifestVersionError, _manifest_path
+
+    path = tmp_path / "checkpoint.pt"
+    save_verified_training_state(_state(step=1), path)
+    mpath = _manifest_path(path)
+    m = json.loads(mpath.read_text())
+    m["format_version"] = "unsupported-incompatible-v999"
+    mpath.write_text(json.dumps(m))
+
+    with pytest.raises(UnsupportedManifestVersionError):
+        load_verified_training_state(path)
+
+
+def test_defect02_unsupported_architecture_version_is_rejected(tmp_path):
+    from orca.genesis.training.checkpoint_integrity import UnsupportedManifestVersionError, _manifest_path
+
+    path = tmp_path / "checkpoint.pt"
+    save_verified_training_state(_state(step=1), path)
+    mpath = _manifest_path(path)
+    m = json.loads(mpath.read_text())
+    m["architecture_version"] = "genesis-incompatible-v999"
+    mpath.write_text(json.dumps(m))
+
+    with pytest.raises(UnsupportedManifestVersionError):
+        load_verified_training_state(path)
+
+
+def test_defect03_manifest_step_or_epoch_mismatch_against_real_state_is_rejected(tmp_path):
+    """Audit #017 DEFECT-03 (independently reproduced before this fix):
+    a manifest edited to claim a different step/epoch than the actually
+    deserialized checkpoint state must now be rejected, not silently
+    accepted (the checksum alone only proves the checkpoint BYTES are
+    unchanged -- it says nothing about whether the manifest's own
+    metadata fields agree with that content)."""
+    from orca.genesis.training.checkpoint_integrity import ManifestStateMismatchError, _manifest_path
+
+    path = tmp_path / "checkpoint.pt"
+    save_verified_training_state(_state(step=10), path)
+    mpath = _manifest_path(path)
+    m = json.loads(mpath.read_text())
+    m["step"] = 999999
+    mpath.write_text(json.dumps(m))
+
+    with pytest.raises(ManifestStateMismatchError):
+        load_verified_training_state(path)
+
+
+def test_concurrent_verified_saves_to_the_same_path_never_produce_a_mismatched_manifest(tmp_path):
+    """Audit #017 section 4.1 (non-atomicity window, not independently
+    covered by the audit's own dedicated test but documented as a real
+    finding): several threads calling save_verified_training_state()
+    against the SAME path concurrently must never leave behind a manifest
+    whose recorded sha256/step/epoch disagree with the checkpoint that is
+    actually on disk afterward -- whichever writer's result ends up on
+    disk, the final (checkpoint, manifest) pair must be internally
+    self-consistent and load cleanly."""
+    import threading
+
+    path = tmp_path / "checkpoint.pt"
+    errors: list[BaseException] = []
+
+    def _writer(step: int) -> None:
+        try:
+            save_verified_training_state(_state(step=step), path)
+        except BaseException as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=_writer, args=(i,)) for i in range(1, 6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors
+    loaded = load_verified_training_state(path)
+    assert loaded.step in range(1, 6)

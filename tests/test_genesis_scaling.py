@@ -81,6 +81,7 @@ def test_memory_estimate_components_sum_to_total():
     mem = estimate_training_memory(cfg, batch_size=4, seq_len=128)
     assert mem.total == (
         mem.model_weights_bf16 + mem.optimizer_state_fp32 + mem.gradients_bf16 + mem.activations_estimate
+        + mem.logits_estimate
     )
 
 
@@ -100,6 +101,29 @@ def test_memory_estimate_increases_with_batch_size_and_seq_len():
     large_batch = estimate_training_memory(cfg, batch_size=8, seq_len=128)
     assert large_batch.activations_estimate > small_batch.activations_estimate
     assert large_batch.total > small_batch.total
+
+
+def test_logits_memory_is_tracked_separately_and_included_in_total():
+    """Audit #017 DEFECT-05 remediation: the vocabulary-logits tensor
+    (batch_size * seq_len * vocab_size * 4 bytes, fp32) must be a real,
+    separate, nonzero field included in the total -- not silently
+    omitted, as the prior version did."""
+    cfg = _tiny_config()
+    mem = estimate_training_memory(cfg, batch_size=4, seq_len=128)
+    expected_logits = 4 * 128 * cfg.vocab_size * 4
+    assert mem.logits_estimate == expected_logits
+    assert mem.logits_estimate > 0
+
+
+def test_logits_memory_can_dominate_at_large_vocab_and_long_sequences():
+    """Reproduces the audit's own finding directly: at a large vocabulary
+    and long sequence length, the logits tensor alone dwarfs the
+    non-logits activation estimate -- this must now be visible in
+    logits_estimate rather than silently absent from the total."""
+    tier = next(t for t in CORRECTED_SCALING_TIERS if t.name == "10M-smoke")
+    cfg = resolve_corrected_tier(tier)
+    mem = estimate_training_memory(cfg, batch_size=4, seq_len=4096)
+    assert mem.logits_estimate > mem.activations_estimate * 30
 
 
 # ------------------------------------------------------- compute estimate --

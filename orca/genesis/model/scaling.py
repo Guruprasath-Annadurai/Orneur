@@ -37,6 +37,7 @@ class MemoryEstimate:
     optimizer_state_fp32: int
     gradients_bf16: int
     activations_estimate: int
+    logits_estimate: int
     total: int
 
 
@@ -50,7 +51,21 @@ def estimate_training_memory(cfg: GenesisModelConfig, *, batch_size: int, seq_le
     specific training framework's memory-saving techniques (gradient
     checkpointing, activation recomputation, sequence parallelism),
     none of which this module assumes or implements. Treat this field as
-    a conservative upper bound to plan against, not a precise prediction."""
+    a conservative upper bound to plan against, not a precise prediction.
+
+    `logits_estimate` (Audit #017 DEFECT-05 remediation): the prior
+    version of this function omitted the vocabulary-logits tensor
+    entirely. Before cross-entropy loss, the model produces logits of
+    shape `(batch_size, seq_len, vocab_size)` -- computed in fp32 for
+    numerically stable softmax/cross-entropy, the standard practice this
+    estimate assumes. For a large vocabulary at long sequence lengths
+    this tensor alone can dwarf every other activation this function
+    estimates (the audit's own reproduction: ~4.2 GB of logits against
+    ~113 MB of estimated non-logits activations for the `10M-smoke` tier
+    at batch_size=4, seq_len=4096 -- roughly 37x). It is reported as its
+    own field, not folded silently into `activations_estimate`, so a
+    caller can see exactly how much of the total this one tensor accounts
+    for."""
     seq_len = seq_len or cfg.max_seq_len
     n_params = cfg.total_parameters()
 
@@ -63,13 +78,16 @@ def estimate_training_memory(cfg: GenesisModelConfig, *, batch_size: int, seq_le
     # small constant-factor fudge for the several tensors kept per layer
     # (attention scores, MLP intermediate, residual stream).
     activations = 2 * cfg.n_layers * batch_size * seq_len * cfg.d_model * 6
+    # Vocabulary logits: (batch_size, seq_len, vocab_size) in fp32.
+    logits = batch_size * seq_len * cfg.vocab_size * BYTES_PER_PARAM_FP32
 
-    total = model_weights + gradients + optimizer_state + activations
+    total = model_weights + gradients + optimizer_state + activations + logits
     return MemoryEstimate(
         model_weights_bf16=model_weights,
         optimizer_state_fp32=optimizer_state,
         gradients_bf16=gradients,
         activations_estimate=activations,
+        logits_estimate=logits,
         total=total,
     )
 

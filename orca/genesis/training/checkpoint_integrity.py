@@ -24,8 +24,11 @@ here, exactly as `load_training_state()`'s own docstring already states.
 """
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
+import os
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -70,23 +73,60 @@ def save_verified_training_state(state: TrainingState, path: Path, *, architectu
     recording the checkpoint's real SHA-256 -- computed from the actual
     bytes on disk AFTER the atomic rename, not from the in-memory state
     before serialization, so the hash reflects exactly what a future
-    reader will see."""
+    reader will see.
+
+    Audit #017 DEFECT-01 remediation: the manifest write previously used
+    a deterministic temporary filename opened via `Path.write_text()`
+    (`O_CREAT | O_TRUNC`, no `O_EXCL`/`O_NOFOLLOW`) -- a pre-planted
+    symlink at that predictable path caused the write to follow it and
+    overwrite an arbitrary attacker-chosen target. This now uses the
+    same `tempfile.mkstemp()` + owner-only-chmod + `fsync` + atomic
+    `os.replace()` discipline Sprint 1 / Audit #016 already established
+    for `save_training_state()` itself -- a random, exclusively-created
+    (`O_EXCL`) name that an attacker cannot pre-plant a symlink at.
+
+    Audit #017 section 4.1 also flagged a non-atomicity window: the inner
+    `save_training_state()` call acquires and releases its OWN exclusive
+    lock internally, so by the time this function hashes the file and
+    writes the manifest, that lock is already gone -- two concurrent
+    `save_verified_training_state()` callers targeting the same `path`
+    could interleave (writer A's checkpoint bytes hashed into writer B's
+    manifest, or vice versa). This function now holds an outer exclusive
+    lock, scoped to the verified-save operation specifically (a distinct
+    `.{name}.verified.lock` file, not the inner lock `save_training_state`
+    already manages on its own), across the ENTIRE save+hash+manifest
+    sequence, so two concurrent verified-save calls against the same path
+    fully serialize relative to each other."""
     path = Path(path)
-    save_training_state(state, path)
-    manifest = CheckpointManifest(
-        format_version=CHECKPOINT_FORMAT_VERSION,
-        architecture_version=architecture_version,
-        sha256=_sha256_of_file(path),
-        step=state.step,
-        epoch=state.epoch,
-    )
-    manifest_path = _manifest_path(path)
     parent = _mkdir_owner_only(path.parent, parents=True)
-    tmp = parent / f".{manifest_path.name}.tmp"
-    tmp.write_text(json.dumps(manifest.to_dict()))
-    tmp.replace(manifest_path)
-    manifest_path.chmod(0o600)
-    return manifest
+    verified_lock_path = parent / f".{path.name}.verified.lock"
+    with open(verified_lock_path, "a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            save_training_state(state, path)
+            manifest = CheckpointManifest(
+                format_version=CHECKPOINT_FORMAT_VERSION,
+                architecture_version=architecture_version,
+                sha256=_sha256_of_file(path),
+                step=state.step,
+                epoch=state.epoch,
+            )
+            manifest_path = _manifest_path(path)
+            fd, tmp_str = tempfile.mkstemp(dir=parent, prefix=f".{manifest_path.name}.tmp-")
+            tmp = Path(tmp_str)
+            try:
+                with os.fdopen(fd, "w") as f:
+                    f.write(json.dumps(manifest.to_dict()))
+                    f.flush()
+                    os.fsync(f.fileno())
+                tmp.chmod(0o600)
+                os.replace(tmp, manifest_path)
+            except BaseException:
+                tmp.unlink(missing_ok=True)
+                raise
+            return manifest
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 class ChecksumMismatchError(Exception):
@@ -106,19 +146,58 @@ class ManifestMissingError(Exception):
     checkpoint indistinguishable from a tampered one in logs/alerts."""
 
 
+class UnsupportedManifestVersionError(Exception):
+    """Audit #017 DEFECT-02: raised when a manifest's `format_version` or
+    `architecture_version` does not match what this code actually
+    understands. The manifest's content-hash field alone proves the
+    checkpoint bytes are unchanged since *some* save -- it says nothing
+    about whether this version of the loading code can interpret those
+    bytes correctly. A future format or architecture revision must fail
+    closed here, not be silently deserialized as if it were the current
+    one."""
+
+
+class ManifestStateMismatchError(Exception):
+    """Audit #017 DEFECT-03: raised when the manifest's recorded `step`
+    and `epoch` disagree with the `step`/`epoch` actually present in the
+    deserialized `TrainingState`. The SHA-256 check alone only proves the
+    checkpoint *bytes* are exactly what was hashed into this manifest --
+    a manifest edited (or substituted together with a re-hashed
+    checkpoint) to claim a different step/epoch than the state it
+    accompanies would otherwise load without any indication that its own
+    metadata is self-inconsistent."""
+
+
 def load_verified_training_state(path: Path) -> TrainingState:
     """The trusted-load boundary: refuses to deserialize at all unless
-    the checkpoint's current on-disk content hash matches its manifest.
-    Verified by this module's own adversarial tests: flipping a single
-    byte in either the checkpoint or the manifest, or deleting the
-    manifest entirely, must be caught here -- BEFORE
-    `load_training_state()`'s own (already-hardened,
-    `weights_only=True`) deserialization is ever reached."""
+    the checkpoint's current on-disk content hash matches its manifest,
+    the manifest's format/architecture version is one this code
+    understands, and the manifest's own step/epoch agree with the
+    deserialized state. Verified by this module's own adversarial tests:
+    flipping a single byte in either the checkpoint or the manifest,
+    deleting the manifest entirely, declaring an unsupported format or
+    architecture version, or editing the manifest's step/epoch fields to
+    disagree with the real checkpoint state, must each be caught here --
+    the version/format check BEFORE, and the step/epoch check AFTER,
+    `load_training_state()`'s own (already-hardened, `weights_only=True`)
+    deserialization is reached."""
     path = Path(path)
     manifest_path = _manifest_path(path)
     if not manifest_path.exists():
         raise ManifestMissingError(f"no manifest at {manifest_path} for checkpoint {path}")
     manifest = CheckpointManifest.from_dict(json.loads(manifest_path.read_text()))
+    if manifest.format_version != CHECKPOINT_FORMAT_VERSION:
+        raise UnsupportedManifestVersionError(
+            f"checkpoint {path} was saved under format_version={manifest.format_version!r}, "
+            f"but this code only understands {CHECKPOINT_FORMAT_VERSION!r} -- refusing to load "
+            f"a checkpoint whose on-disk layout this version cannot be certain it interprets correctly"
+        )
+    if manifest.architecture_version != ARCHITECTURE_VERSION:
+        raise UnsupportedManifestVersionError(
+            f"checkpoint {path} was saved under architecture_version={manifest.architecture_version!r}, "
+            f"but the current architecture is {ARCHITECTURE_VERSION!r} -- refusing to load a checkpoint "
+            f"produced under a different model architecture"
+        )
     if not path.exists():
         raise FileNotFoundError(f"manifest exists but checkpoint file is missing: {path}")
     actual_hash = _sha256_of_file(path)
@@ -128,4 +207,11 @@ def load_verified_training_state(path: Path) -> TrainingState:
             f"(expected {manifest.sha256}, got {actual_hash}) -- refusing to load "
             f"a checkpoint whose content has changed since it was saved"
         )
-    return load_training_state(path)
+    state = load_training_state(path)
+    if state.step != manifest.step or state.epoch != manifest.epoch:
+        raise ManifestStateMismatchError(
+            f"checkpoint {path}'s manifest records step={manifest.step}, epoch={manifest.epoch}, "
+            f"but the deserialized state has step={state.step}, epoch={state.epoch} -- refusing to "
+            f"load a checkpoint whose own manifest metadata disagrees with its content"
+        )
+    return state
