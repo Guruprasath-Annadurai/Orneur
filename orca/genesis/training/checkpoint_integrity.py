@@ -32,6 +32,8 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import torch
+
 from orca.config import _mkdir_owner_only
 from orca.genesis.model.config import ARCHITECTURE_VERSION
 from orca.genesis.training.primitives import TrainingState, load_training_state, save_training_state
@@ -80,7 +82,27 @@ def state_dict_fingerprint(state_dict: dict) -> str:
     -- two tensors with the same values but different devices/dtypes
     that would not actually `torch.equal()` are NOT guaranteed to collide
     here (dtype is included in a tensor's native byte representation),
-    which is the correct, conservative behavior for an identity check."""
+    which is the correct, conservative behavior for an identity check.
+
+    Native-Authorization-Convergence P0 fix (two independently reproduced
+    defects in the prior version, both fixed here):
+
+    1. **BF16 (and any dtype NumPy cannot represent) crashed**: the prior
+       code called `tensor.numpy()` directly, which raises
+       `TypeError: Got unsupported ScalarType BFloat16` -- reproduced
+       directly against a plain `torch.zeros(4, dtype=torch.bfloat16)`
+       state dict before this fix. Reinterpreting the tensor's raw bytes
+       via `.view(torch.uint8)` instead of `.numpy()` works for every
+       dtype PyTorch supports, regardless of NumPy's own dtype coverage.
+    2. **Shape-blind collisions**: the prior code hashed only `dtype` +
+       raw bytes, never `shape` -- a `(4,)` tensor and a `(2, 2)` tensor
+       holding the identical underlying values produced an IDENTICAL
+       fingerprint (reproduced directly). A reshape-only tampering of a
+       checkpoint's parameters (same bytes, different logical shape --
+       e.g. silently transposing or flattening a weight matrix) would
+       therefore go completely undetected by the "model/checkpoint
+       binding" check this function exists to provide. `shape` is now
+       hashed explicitly, before the raw bytes."""
     h = hashlib.sha256()
     for key in sorted(state_dict.keys()):
         value = state_dict[key]
@@ -88,7 +110,9 @@ def state_dict_fingerprint(state_dict: dict) -> str:
         if hasattr(value, "detach"):
             tensor = value.detach().to("cpu").contiguous()
             h.update(str(tensor.dtype).encode("utf-8"))
-            h.update(tensor.numpy().tobytes())
+            h.update(repr(tuple(tensor.shape)).encode("utf-8"))
+            raw_bytes = tensor.view(torch.uint8).numpy().tobytes()
+            h.update(raw_bytes)
         else:
             h.update(repr(value).encode("utf-8"))
     return h.hexdigest()
@@ -209,52 +233,96 @@ def load_verified_training_state(path: Path) -> TrainingState:
     `load_training_state()`'s own (already-hardened, `weights_only=True`)
     deserialization is reached.
 
-    Audit #017 section 4.1 TOCTOU remediation: hashing `path` and then
-    separately deserializing it (two separate opens of the same file)
-    left a window where a concurrent writer could replace the file's
-    content between those two reads -- the hash would be computed from
-    one version of the bytes and `load_training_state()` would then
-    deserialize a DIFFERENT version. This now acquires a SHARED
-    (`fcntl.LOCK_SH`) lock on the exact same `.{name}.lock` file
-    `save_training_state()`'s own exclusive writer lock uses, held across
-    both the hash computation and the deserialization -- any concurrent
-    writer (holding that lock exclusively) is blocked until this entire
-    read completes, and multiple concurrent readers do not block each
-    other."""
+    Audit #017 section 4.1 TOCTOU remediation, Native-Authorization-
+    Convergence Mission 1 follow-up fix (round 2): round 1 of this fix
+    made this function hold `.{name}.verified.lock` SHARED across the
+    manifest read, hash, and deserialize steps -- correctly excluding a
+    concurrent `save_verified_training_state()` writer, which holds that
+    same lock EXCLUSIVELY for its entire save+hash+manifest-write
+    sequence. But `save_training_state()` -- the RAW writer, a real,
+    independently-callable function in this codebase, not a hypothetical
+    attacker tool -- only ever acquires a DIFFERENT lock file
+    (`.{name}.lock`), which this function no longer touched at all after
+    round 1. Independently reproduced with a deterministic
+    synchronization-barrier harness (not timing/sleep): a raw writer
+    instructed to fire exactly between this function's hash computation
+    and its separate `load_training_state()` deserialization call landed
+    its new bytes with zero lock contention, and this function returned
+    the raw writer's post-hash content -- step/epoch matching, so
+    `ManifestStateMismatchError` never fired either -- with NO exception
+    raised at all. The SHA-256 this function had just computed and
+    compared never corresponded to the content it actually returned.
+
+    Fix: a single, two-lock hierarchy, acquired in a FIXED order by
+    every writer and reader in this module, so no two callers can ever
+    attempt to acquire them in the opposite order (which is what would
+    create a deadlock):
+      1. `.{name}.verified.lock` -- outer. `save_verified_training_state()`
+         holds this EXCLUSIVELY for its whole save+hash+manifest-write
+         sequence; this function holds it SHARED for its whole
+         read sequence.
+      2. `.{name}.lock` -- inner, the SAME lock file `save_training_state()`
+         (raw writer) and `load_training_state()`-adjacent code already
+         use. This function now ALSO holds it SHARED, nested inside the
+         outer lock, for the ENTIRE manifest-read-through-deserialize
+         sequence -- so a raw writer (which only ever touches this inner
+         lock) is excluded from this function's whole read window, not
+         just part of it. `save_verified_training_state()` already
+         acquires this same inner lock (via its call into
+         `save_training_state()`) strictly AFTER already holding the
+         outer lock, the identical order used here -- no code path in
+         this module ever acquires the inner lock before the outer one,
+         which is what rules out lock-order inversion / nested-flock
+         deadlock between these two functions."""
     path = Path(path)
     manifest_path = _manifest_path(path)
+    # Fast, pre-lock existence check: a checkpoint path whose parent
+    # directory doesn't even exist (e.g. a forged/nonexistent path) must
+    # raise the same ManifestMissingError a caller already expects, not
+    # a raw FileNotFoundError from trying to open a lock file inside a
+    # directory that was never created. Re-checked again under the lock
+    # below for the narrow case where the manifest is deleted between
+    # this check and lock acquisition.
     if not manifest_path.exists():
         raise ManifestMissingError(f"no manifest at {manifest_path} for checkpoint {path}")
-    manifest = CheckpointManifest.from_dict(json.loads(manifest_path.read_text()))
-    if manifest.format_version != CHECKPOINT_FORMAT_VERSION:
-        raise UnsupportedManifestVersionError(
-            f"checkpoint {path} was saved under format_version={manifest.format_version!r}, "
-            f"but this code only understands {CHECKPOINT_FORMAT_VERSION!r} -- refusing to load "
-            f"a checkpoint whose on-disk layout this version cannot be certain it interprets correctly"
-        )
-    if manifest.architecture_version != ARCHITECTURE_VERSION:
-        raise UnsupportedManifestVersionError(
-            f"checkpoint {path} was saved under architecture_version={manifest.architecture_version!r}, "
-            f"but the current architecture is {ARCHITECTURE_VERSION!r} -- refusing to load a checkpoint "
-            f"produced under a different model architecture"
-        )
-    if not path.exists():
-        raise FileNotFoundError(f"manifest exists but checkpoint file is missing: {path}")
-
-    lock_path = path.parent / f".{path.name}.lock"
-    with open(lock_path, "a+") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)
+    verified_lock_path = path.parent / f".{path.name}.verified.lock"
+    raw_lock_path = path.parent / f".{path.name}.lock"
+    with open(verified_lock_path, "a+") as verified_lock_file:
+        fcntl.flock(verified_lock_file.fileno(), fcntl.LOCK_SH)
         try:
-            actual_hash = _sha256_of_file(path)
-            if actual_hash != manifest.sha256:
-                raise ChecksumMismatchError(
-                    f"checkpoint {path} does not match its manifest's recorded SHA-256 "
-                    f"(expected {manifest.sha256}, got {actual_hash}) -- refusing to load "
-                    f"a checkpoint whose content has changed since it was saved"
-                )
-            state = load_training_state(path)
+            with open(raw_lock_path, "a+") as raw_lock_file:
+                fcntl.flock(raw_lock_file.fileno(), fcntl.LOCK_SH)
+                try:
+                    if not manifest_path.exists():
+                        raise ManifestMissingError(f"no manifest at {manifest_path} for checkpoint {path}")
+                    manifest = CheckpointManifest.from_dict(json.loads(manifest_path.read_text()))
+                    if manifest.format_version != CHECKPOINT_FORMAT_VERSION:
+                        raise UnsupportedManifestVersionError(
+                            f"checkpoint {path} was saved under format_version={manifest.format_version!r}, "
+                            f"but this code only understands {CHECKPOINT_FORMAT_VERSION!r} -- refusing to load "
+                            f"a checkpoint whose on-disk layout this version cannot be certain it interprets correctly"
+                        )
+                    if manifest.architecture_version != ARCHITECTURE_VERSION:
+                        raise UnsupportedManifestVersionError(
+                            f"checkpoint {path} was saved under architecture_version={manifest.architecture_version!r}, "
+                            f"but the current architecture is {ARCHITECTURE_VERSION!r} -- refusing to load a checkpoint "
+                            f"produced under a different model architecture"
+                        )
+                    if not path.exists():
+                        raise FileNotFoundError(f"manifest exists but checkpoint file is missing: {path}")
+
+                    actual_hash = _sha256_of_file(path)
+                    if actual_hash != manifest.sha256:
+                        raise ChecksumMismatchError(
+                            f"checkpoint {path} does not match its manifest's recorded SHA-256 "
+                            f"(expected {manifest.sha256}, got {actual_hash}) -- refusing to load "
+                            f"a checkpoint whose content has changed since it was saved"
+                        )
+                    state = load_training_state(path)
+                finally:
+                    fcntl.flock(raw_lock_file.fileno(), fcntl.LOCK_UN)
         finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(verified_lock_file.fileno(), fcntl.LOCK_UN)
 
     if state.step != manifest.step or state.epoch != manifest.epoch:
         raise ManifestStateMismatchError(
