@@ -16,6 +16,7 @@ from orca.genesis.training.checkpoint_integrity import (  # noqa: E402
     ManifestMissingError,
     load_verified_training_state,
     save_verified_training_state,
+    state_dict_fingerprint,
 )
 from orca.genesis.training.primitives import TrainingState, save_training_state  # noqa: E402
 
@@ -256,18 +257,21 @@ def test_defect03_manifest_step_or_epoch_mismatch_against_real_state_is_rejected
 
 
 def test_read_blocks_until_a_concurrent_exclusive_writer_lock_is_released(tmp_path):
-    """Audit #017 section 4.1 TOCTOU remediation: load_verified_training_state()
-    must hold a SHARED lock on the same .{name}.lock file
-    save_training_state()'s writer uses, across the whole hash+load
-    sequence -- a concurrent exclusive holder of that lock must actually
-    block the read, not merely be a documented intention."""
+    """Audit #017 section 4.1 TOCTOU remediation (Native-Authorization-
+    Convergence P0 follow-up): load_verified_training_state() must hold
+    a SHARED lock on the SAME .{name}.verified.lock file
+    save_verified_training_state()'s writer uses across its ENTIRE
+    save+hash+manifest-write sequence (not the narrower inner `.lock`
+    file save_training_state() manages on its own) -- a concurrent
+    exclusive holder of that lock must actually block the read, not
+    merely be a documented intention."""
     import fcntl
     import threading
     import time
 
     path = tmp_path / "checkpoint.pt"
     save_verified_training_state(_state(step=1), path)
-    lock_path = tmp_path / f".{path.name}.lock"
+    lock_path = tmp_path / f".{path.name}.verified.lock"
 
     held = threading.Event()
     release = threading.Event()
@@ -329,3 +333,73 @@ def test_concurrent_verified_saves_to_the_same_path_never_produce_a_mismatched_m
     assert not errors
     loaded = load_verified_training_state(path)
     assert loaded.step in range(1, 6)
+
+
+def test_state_dict_fingerprint_does_not_crash_on_bf16_tensors():
+    """Native-Authorization-Convergence Mission 1 (P0): independently
+    reproduced before this fix -- the prior implementation called
+    `tensor.numpy()` directly, which raises
+    `TypeError: Got unsupported ScalarType BFloat16` for any bf16
+    parameter, meaning `diagnose_adapter()`'s model/checkpoint binding
+    check would crash outright (not fail closed, not fail open -- simply
+    error) for any bf16 model, a routine dtype for real pretraining."""
+    sd = {"w": torch.zeros(4, dtype=torch.bfloat16)}
+    fp = state_dict_fingerprint(sd)
+    assert isinstance(fp, str) and len(fp) == 64
+
+
+def test_state_dict_fingerprint_distinguishes_different_shapes_with_identical_bytes():
+    """Native-Authorization-Convergence Mission 1 (P0): independently
+    reproduced before this fix -- a (4,) tensor and a (2, 2) tensor
+    holding the identical underlying values produced an IDENTICAL
+    fingerprint, because only dtype and raw bytes were hashed, never
+    shape. A reshape-only tamper of a checkpoint's parameters would
+    therefore go completely undetected by the model/checkpoint binding
+    check this function exists to provide."""
+    flat = torch.arange(4, dtype=torch.float32)
+    fp_flat = state_dict_fingerprint({"w": flat.reshape(4)})
+    fp_square = state_dict_fingerprint({"w": flat.reshape(2, 2)})
+    assert fp_flat != fp_square
+
+
+def test_load_verified_training_state_stays_fail_closed_when_a_raw_write_races_a_verified_save(tmp_path):
+    """Native-Authorization-Convergence Mission 1 (P0): independently
+    reproduced before this fix -- `save_verified_training_state()`'s
+    outer critical section and `load_verified_training_state()`'s reader
+    lock used TWO DIFFERENT lock files (`.verified.lock` vs `.lock`), and
+    the manifest itself was read with NO lock held at all. This test does
+    not require perfect simulation of the full concurrent-thread race (see
+    `test_concurrent_verified_saves_to_the_same_path_never_produce_a_mismatched_manifest`
+    above for that); it confirms the narrower, directly-reproduced
+    defect: a raw `save_training_state()` call racing a verified
+    checkpoint's lifecycle must still be caught as a checksum mismatch,
+    not silently accepted."""
+    path = tmp_path / "checkpoint.pt"
+    save_verified_training_state(_state(step=1), path)
+    save_training_state(_state(step=2), path)  # raw write, bypasses save_verified_training_state() entirely
+    with pytest.raises(ChecksumMismatchError):
+        load_verified_training_state(path)
+
+
+def test_save_verified_and_load_verified_use_the_same_lock_file(tmp_path):
+    """Structural regression for the lock-file-mismatch defect: both
+    functions must contend for the identical `.{name}.verified.lock`
+    path, not two different files that leave each other's critical
+    sections unprotected."""
+    import fcntl
+
+    path = tmp_path / "checkpoint.pt"
+    save_verified_training_state(_state(step=1), path)
+    verified_lock_path = path.parent / f".{path.name}.verified.lock"
+    assert verified_lock_path.exists()
+    # A shared lock from a reader and an independent attempt to acquire
+    # an exclusive lock on the SAME path must contend (non-blocking
+    # exclusive attempt fails while the shared lock is held).
+    with open(verified_lock_path, "a+") as reader_fd:
+        fcntl.flock(reader_fd.fileno(), fcntl.LOCK_SH)
+        try:
+            with open(verified_lock_path, "a+") as writer_fd:
+                with pytest.raises(BlockingIOError):
+                    fcntl.flock(writer_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        finally:
+            fcntl.flock(reader_fd.fileno(), fcntl.LOCK_UN)
