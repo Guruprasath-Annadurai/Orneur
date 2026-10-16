@@ -30,6 +30,7 @@ torch = pytest.importorskip("torch")
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
+import orca.config as orca_config  # noqa: E402
 import orca.genesis.governance.authorization as GOV  # noqa: E402
 from orca.genesis.data.manifest import (  # noqa: E402
     GenesisDatasetManifest,
@@ -42,7 +43,8 @@ from orca.genesis.training.orchestration import (  # noqa: E402
     InvalidTransitionError,
     RunState,
 )
-from orca.train.authorization import TrainingGrant, TrainingNotAuthorized  # noqa: E402
+import orca.genesis.training.orchestration as ORCH  # noqa: E402
+from orca.train.authorization import TrainingGrant  # noqa: E402
 from tests.test_training_authorization_gate import ENV as LORA_ENV, World as LoraWorld  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -61,7 +63,12 @@ def _merge(base: dict, over: dict) -> dict:
 
 
 @pytest.fixture(autouse=True)
-def _reset_in_process_guards():
+def _reset_in_process_guards(tmp_path, monkeypatch):
+    """Also isolates the DURABLE, on-disk native-pretraining-authorization
+    replay claim (Mission 2) under a per-test ORCA_HOME -- without this,
+    `_GovWorld`'s fixed default `authorization_id` would collide across
+    test functions in this file via the real, persistent claim directory."""
+    monkeypatch.setattr(orca_config, "ORCA_HOME", tmp_path / "ornhome")
     GenesisTrainingRun.reset_in_process_replay_guard_for_new_process()
     GOV.reset_in_process_nonce_guard_for_new_process()
     yield
@@ -94,7 +101,10 @@ class _GovWorld:
     fixture, parameterized by a REAL manifest's verified identity rather
     than arbitrary synthetic digests."""
 
-    def __init__(self, manifest: GenesisDatasetManifest, *, dataset_content_digest: str | None = None, record_dataset_digest_override: str | None = None):
+    def __init__(
+        self, manifest: GenesisDatasetManifest, *, run_id: str = "integration-run-1",
+        dataset_content_digest: str | None = None, record_dataset_digest_override: str | None = None,
+    ):
         self.priv = Ed25519PrivateKey.generate()
         pub = self.priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
         now = datetime.now(timezone.utc)
@@ -106,19 +116,32 @@ class _GovWorld:
                 "gpu_permission": False, "spend_permission": False,
             }],
         }
+        self.run_id = run_id
+        self.model_config_digest = hashlib.sha256(b"integration-model-config-v1").hexdigest()
+        self.authorized_shard_digests = (hashlib.sha256(b"integration-shard-0").hexdigest(),)
         self.req = GOV.NativePretrainingRequest(
-            run_id="integration-run-1", nonce=hashlib.sha256(b"integration-nonce-seed").hexdigest(),
+            run_id=run_id, nonce=hashlib.sha256(f"integration-nonce-seed-{run_id}".encode()).hexdigest(),
             model_family="genesis", architecture_version="genesis-arch-v1",
-            model_config_digest=hashlib.sha256(b"integration-model-config-v1").hexdigest(),
+            model_config_digest=self.model_config_digest,
             tokenizer_digest=manifest.tokenizer_binding.vocab_digest, dataset_manifest_id=manifest.manifest_id,
             dataset_content_digest=dataset_content_digest if dataset_content_digest is not None else manifest.source_content_digest,
-            authorized_shard_digests=(hashlib.sha256(b"integration-shard-0").hexdigest(),),
+            authorized_shard_digests=self.authorized_shard_digests,
             reviewed_commit_sha="a" * 40, transformation_code_digest=hashlib.sha256(b"integration-pipeline-code-v1").hexdigest(),
             optimizer_config_digest=hashlib.sha256(b"integration-optimizer-config-v1").hexdigest(),
             environment_class=GOV_ENV, gpu_requested=False, max_wall_clock_minutes=30, requested_spend_usd=0.0,
         )
         self._record_dataset_digest_override = record_dataset_digest_override
         self.record = self._sign(self._make_record())
+
+    def validate_matching_run(self, run: "GenesisTrainingRun") -> None:
+        """Validates `run` with EXACTLY the identity fields this
+        `_GovWorld`'s own request/record declare, so a grant minted from
+        this world can genuinely authorize it (Mission 2's positive
+        integration path)."""
+        run.validate(
+            dataset_digest=self.req.dataset_content_digest, model_config_digest=self.model_config_digest,
+            tokenizer_digest=self.req.tokenizer_digest, authorized_shard_digests=self.authorized_shard_digests,
+        )
 
     def _sign(self, rec: dict) -> dict:
         rec = dict(rec)
@@ -198,46 +221,82 @@ def test_a_manifest_tampered_after_the_fact_is_caught_before_governance_ever_see
     assert "digest mismatch" in msg
 
 
-# ====================================================== authorization-layer separation =============
+# ====================================================== authorization-layer binding (Mission 2) =============
 
-def test_a_native_pretraining_grant_cannot_authorize_a_genesis_training_run(monkeypatch):
-    """The two grant TYPES are structurally incompatible -- confirms
-    GenesisTrainingRun.authorize() (Workstream C) requires a real
-    orca.train.authorization.TrainingGrant specifically, and a
-    NativePretrainingGrant (Workstream F, a completely different Python
-    class, different signing domain, different registry file) cannot
-    satisfy it, closing the C-01-adjacent cross-workload-confusion
-    concern at the TYPE level between these two independently-evolving
-    authorization mechanisms."""
+def test_a_correctly_bound_native_pretraining_grant_does_authorize_a_genesis_training_run(monkeypatch):
+    """Native-Authorization-Convergence Mission 2: this is the FLIPPED
+    expectation from the pre-Mission-2 version of this test (which
+    confirmed a NativePretrainingGrant could NEVER authorize a
+    GenesisTrainingRun, since the orchestrator only recognized the
+    legacy LoRA TrainingGrant type). Mission 2 made NativePretrainingGrant
+    the orchestrator's REAL, correct authorization type -- so a grant
+    whose every field is genuinely bound to this run's own declared
+    identity (including Workstream A's real, independently re-verified
+    dataset manifest identity) now DOES authorize it. This is the direct,
+    positive proof of Mission 2's cross-workstream integration."""
     manifest, records = _real_dataset_manifest()
-    gov = _GovWorld(manifest)
+    ok, msg = manifest.verify_against_records(records)
+    assert ok, msg
+
+    gov = _GovWorld(manifest, run_id="integration-run-1")
     native_grant = gov.authorize(monkeypatch)
     assert isinstance(native_grant, GOV.NativePretrainingGrant)
 
-    run = GenesisTrainingRun("integration-run-1", dataset_manifest_ids=(manifest.manifest_id,), environment_class=GOV_ENV)
-    run.validate(dataset_digest=manifest.source_content_digest)
+    run = GenesisTrainingRun(
+        "integration-run-1", dataset_manifest_ids=(manifest.manifest_id,), environment_class=GOV_ENV,
+        repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
+    )
+    gov.validate_matching_run(run)
     run.request_authorization()
-    with pytest.raises(TrainingNotAuthorized):
-        run.authorize(native_grant)  # type: ignore[arg-type]
+    run.authorize(native_grant)
+    assert run.state is RunState.AUTHORIZED
+    assert run.grant is native_grant
+
+
+def test_a_native_pretraining_grant_bound_to_a_different_run_is_still_rejected(monkeypatch):
+    """The positive case above does not mean ANY NativePretrainingGrant
+    authorizes ANY run -- exact workload binding (Mission 2's own
+    requirement) still applies between two independently-constructed
+    GenesisTrainingRun/grant pairs."""
+    manifest, records = _real_dataset_manifest()
+    gov = _GovWorld(manifest, run_id="integration-run-OTHER")
+    native_grant = gov.authorize(monkeypatch)
+
+    run = GenesisTrainingRun(
+        "integration-run-1", dataset_manifest_ids=(manifest.manifest_id,), environment_class=GOV_ENV,
+        repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
+    )
+    gov.validate_matching_run(run)
+    run.request_authorization()
+    with pytest.raises(GOV.NativePretrainingNotAuthorized, match="WRONG_RUN_ID"):
+        run.authorize(native_grant)
     assert run.state is RunState.REJECTED
 
 
 def test_a_lora_training_grant_still_cannot_authorize_a_genesis_training_run(tmp_path, monkeypatch):
     """Re-confirms Workstream C's own C-01 fix still holds on this merged
-    branch: a real, legitimately-issued orca.train.authorization.TrainingGrant
-    for an unrelated LoRA config is still rejected by GenesisTrainingRun,
-    even alongside the new Workstream F governance layer -- the two
+    branch, now expressed against the real native grant type: a real,
+    legitimately-issued orca.train.authorization.TrainingGrant for an
+    unrelated LoRA config is REJECTED AT THE TYPE LEVEL by
+    GenesisTrainingRun (Mission 2 no longer accepts it at all, not even
+    via a fingerprint check) -- the legacy and native authorization
     mechanisms do not interfere with or weaken each other."""
     manifest, records = _real_dataset_manifest()
     lora_world = LoraWorld(tmp_path, monkeypatch)
     lora_grant = lora_world.authorize()
     assert isinstance(lora_grant, TrainingGrant)
 
-    run = GenesisTrainingRun("integration-run-2", dataset_manifest_ids=(manifest.manifest_id,), environment_class=LORA_ENV)
-    run.validate(dataset_digest=manifest.source_content_digest)
+    run = GenesisTrainingRun(
+        "integration-run-2", dataset_manifest_ids=(manifest.manifest_id,), environment_class=LORA_ENV,
+        repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
+    )
+    run.validate(
+        dataset_digest=manifest.source_content_digest, model_config_digest=hashlib.sha256(b"unused").hexdigest(),
+        tokenizer_digest=hashlib.sha256(b"unused").hexdigest(), authorized_shard_digests=(hashlib.sha256(b"unused-shard").hexdigest(),),
+    )
     run.request_authorization()
-    with pytest.raises(TrainingNotAuthorized):
-        run.authorize(lora_grant)
+    with pytest.raises(GOV.NativePretrainingNotAuthorized, match="NO_NATIVE_PRETRAINING_GRANT"):
+        run.authorize(lora_grant)  # type: ignore[arg-type]
     assert run.state is RunState.REJECTED
 
 
@@ -271,30 +330,58 @@ def test_authorizing_a_genesis_training_run_does_not_itself_authorize_native_pre
 # ====================================================== end-to-end real-object wiring =============
 
 def test_full_real_object_chain_dataset_manifest_to_training_run_to_native_grant(monkeypatch):
-    """The complete positive chain, all real objects: a real
-    GenesisDatasetManifest (A) re-verified from real records, a real
-    GenesisTrainingRun (C) validated against that manifest's real digest,
-    and a real NativePretrainingGrant (F) bound to that same manifest's
-    real identity -- three independently-developed modules, on three
-    separate draft branches, genuinely interoperating."""
+    """The complete positive chain, all real objects, now through
+    GENUINE authorization (Mission 2): a real GenesisDatasetManifest (A)
+    re-verified from real records, a real GenesisTrainingRun (C)
+    validated against that manifest's real digest, and a real
+    NativePretrainingGrant (F) bound to that same manifest's real
+    identity -- three independently-developed modules, on three separate
+    draft branches, genuinely interoperating all the way to a real
+    AUTHORIZED state (still short of execution, which additionally
+    requires the FINAL-1/FINAL-2/EXEC-1 acceptance gate -- see the
+    dedicated test below)."""
     manifest, records = _real_dataset_manifest()
     ok, msg = manifest.verify_against_records(records)
     assert ok, msg
 
-    run = GenesisTrainingRun("integration-run-3", dataset_manifest_ids=(manifest.manifest_id,), environment_class=GOV_ENV)
-    run.validate(dataset_digest=manifest.source_content_digest)
+    gov = _GovWorld(manifest, run_id="integration-run-3")
+    run = GenesisTrainingRun(
+        "integration-run-3", dataset_manifest_ids=(manifest.manifest_id,), environment_class=GOV_ENV,
+        repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
+    )
+    gov.validate_matching_run(run)
     assert run.identity.dataset_digest == manifest.source_content_digest
     run.request_authorization()
     assert run.state is RunState.AWAITING_AUTHORIZATION
 
-    gov = _GovWorld(manifest)
     native_grant = gov.authorize(monkeypatch)
     assert native_grant.dataset_manifest_id == run.identity.dataset_manifest_ids[0]
     assert native_grant.dataset_content_digest == run.identity.dataset_digest
 
-    # The two grants remain independently scoped even though they agree on
-    # dataset identity -- the native grant still cannot authorize the run
-    # (see test_a_native_pretraining_grant_cannot_authorize_a_genesis_training_run
-    # above); this test only confirms IDENTITY agreement, not interchangeability.
-    with pytest.raises(TrainingNotAuthorized):
-        run.authorize(native_grant)  # type: ignore[arg-type]
+    run.authorize(native_grant)
+    assert run.state is RunState.AUTHORIZED
+    assert run.grant is native_grant
+
+
+def test_full_real_object_chain_execution_start_still_requires_the_real_empty_acceptance_ledger(monkeypatch):
+    """The positive chain above reaches AUTHORIZED -- it must NOT, by
+    itself, reach RUNNING. start() requires the project-wide
+    founder-acceptance ledger to additionally show FINAL-2 and EXEC-1
+    accepted; the real, committed ledger is empty, so even this fully
+    and correctly authorized run is denied at the execution-start
+    boundary, confirming native training remains NO-GO end to end."""
+    manifest, records = _real_dataset_manifest()
+    gov = _GovWorld(manifest, run_id="integration-run-4")
+    run = GenesisTrainingRun(
+        "integration-run-4", dataset_manifest_ids=(manifest.manifest_id,), environment_class=GOV_ENV,
+        repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
+    )
+    gov.validate_matching_run(run)
+    run.request_authorization()
+    native_grant = gov.authorize(monkeypatch)
+    run.authorize(native_grant)
+    assert run.state is RunState.AUTHORIZED
+
+    with pytest.raises(ORCH.ExecutionAcceptanceIncompleteError):
+        run.start()
+    assert run.state is RunState.REJECTED
