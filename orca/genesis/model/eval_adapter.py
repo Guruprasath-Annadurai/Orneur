@@ -33,7 +33,6 @@ a hash alone, or a caller-supplied label.
 from __future__ import annotations
 
 import contextlib
-import json
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -45,8 +44,6 @@ from orca.eval.genesis_harness import GenerationResult, SamplingConfig
 from orca.genesis.model.transformer import GenesisTransformer
 from orca.genesis.tokenizer.framework import GenesisTokenizer, EOS_ID
 from orca.genesis.training.checkpoint_integrity import (
-    CheckpointManifest,
-    _manifest_path,
     load_verified_training_state,
     state_dict_fingerprint,
 )
@@ -79,51 +76,38 @@ class ModelCheckpointBindingError(Exception):
 
 
 class TrainingRunRecordError(Exception):
-    """Raised when a `training_run_record_path` is supplied but is
-    missing, malformed, or does not bind to the checkpoint it is claimed
-    to authorize. A caller who supplies a training-run record is
-    asserting it should be checked -- a record that fails to check out
-    must fail loudly, not be silently downgraded to UNVERIFIED (which
-    would make a forged or mismatched record indistinguishable from
-    simply not supplying one)."""
+    """Raised when a caller attempts to use the retired
+    `training_run_record_path` / `TrainingRunRecord` mechanism (removed
+    below). Kept as a distinct, importable exception type purely so any
+    code still importing it gets an explicit, named failure rather than
+    an `ImportError` with no context -- see `_REMOVED_TRAINING_RUN_RECORD_MSG`
+    for why the mechanism itself no longer exists."""
 
 
-@dataclass(frozen=True)
-class TrainingRunRecord:
-    """The minimal, explicit shape of a founder-authorized training-run
-    provenance record this module can independently check. NOTHING in
-    this codebase currently creates one of these for any GENESIS native
-    checkpoint -- GENESIS pretraining remains `NOT_AUTHORIZED` and no
-    training loop exists yet (Workstream C). This type and
-    `_load_training_run_record()` exist so that whenever Workstream C/F
-    eventually produce a real, founder-authorized record of a completed,
-    sanctioned training run, this module has a concrete, verifiable
-    interface to bind a checkpoint's identity to it -- until then, no
-    real call in this codebase can produce a legitimate `TRAINED`
-    status, which is the CORRECT and HONEST current state, not a defect
-    to work around."""
-    run_id: str
-    checkpoint_sha256: str
-    authorized: bool
-
-
-def _load_training_run_record(path: Path) -> TrainingRunRecord:
-    if not path.exists():
-        raise TrainingRunRecordError(f"no training-run record at {path}")
-    try:
-        d = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as e:
-        raise TrainingRunRecordError(f"training-run record at {path} could not be read/parsed: {e!r}") from e
-    missing = [k for k in ("run_id", "checkpoint_sha256", "authorized") if k not in d]
-    if missing:
-        raise TrainingRunRecordError(f"training-run record at {path} is missing required field(s): {missing}")
-    if not isinstance(d["authorized"], bool):
-        raise TrainingRunRecordError(f"training-run record at {path}: 'authorized' must be a boolean, got {d['authorized']!r}")
-    if not isinstance(d["run_id"], str) or not d["run_id"]:
-        raise TrainingRunRecordError(f"training-run record at {path}: 'run_id' must be a non-empty string")
-    if not isinstance(d["checkpoint_sha256"], str) or not d["checkpoint_sha256"]:
-        raise TrainingRunRecordError(f"training-run record at {path}: 'checkpoint_sha256' must be a non-empty string")
-    return TrainingRunRecord(run_id=d["run_id"], checkpoint_sha256=d["checkpoint_sha256"], authorized=d["authorized"])
+_REMOVED_TRAINING_RUN_RECORD_MSG = (
+    "TrainingRunRecord / training_run_record_path has been REMOVED, not merely "
+    "hardened. Native-Authorization-Convergence Mission 1 (P0): this module's "
+    "prior design accepted ANY caller-authored, unsigned JSON file as proof a "
+    "checkpoint came from an authorized training run -- reproduced directly: "
+    "a file containing only {'run_id': <any string>, "
+    "'checkpoint_sha256': <copied from the checkpoint's own, non-secret "
+    "manifest>, 'authorized': true} was sufficient to make diagnose_adapter() "
+    "return ProvenanceStatus.TRAINED, with no cryptographic signature, no "
+    "registered authority, and no founder involvement whatsoever. Unlike "
+    "`orca.genesis.governance.authorization.NativePretrainingGrant` (a sealed "
+    "dataclass constructible only via a real Ed25519-signature-verified "
+    "`authorize_native_pretraining()` call), a bare JSON file carries no "
+    "non-forgeable proof of anything -- there is no partial fix that keeps "
+    "this parameter and makes it safe. ProvenanceStatus.TRAINED is therefore "
+    "UNREACHABLE through this function today: no code anywhere in this "
+    "codebase can yet produce a genuine, independently-verifiable attestation "
+    "binding a specific completed checkpoint to a specific authorized "
+    "training run (that requires a real signed completion-attestation design, "
+    "itself gated on Workstream F's authorization chain actually authorizing "
+    "a run -- which the current, real, committed founder-acceptance ledger "
+    "does not). This is the correct, honest, fail-closed state, not a gap to "
+    "silently paper over with new unreviewed crypto under this directive."
+)
 
 
 @dataclass(frozen=True)
@@ -238,9 +222,8 @@ def diagnose_adapter(
     """Call this alongside (never skip it in place of) any harness run
     built from `make_inference_backend`'s output -- it is the explicit,
     unmissable statement of whether the model behind this adapter is a
-    fresh random initialization, a real checkpoint whose binding to
-    `model` cannot be fully authorized, or a genuinely trained and
-    authorized checkpoint.
+    fresh random initialization, or a real checkpoint whose binding to
+    `model` cannot be fully authorized.
 
     Audit #017 continuation directive (Mission 1A): the prior remediation
     (requiring `checkpoint_source` to merely exist on disk) was itself
@@ -248,7 +231,7 @@ def diagnose_adapter(
     EXISTING file (e.g. a scratch temp file with unrelated bytes) still
     flipped the status away from random-initialization with zero
     verification that it was ever a real checkpoint, let alone one
-    belonging to `model`. This function now requires the FULL trusted
+    belonging to `model`. This function requires the FULL trusted
     checkpoint identity chain:
 
       1. `checkpoint_path` must pass `load_verified_training_state()`'s
@@ -267,38 +250,53 @@ def diagnose_adapter(
          perfectly valid, correctly hash-verified checkpoint belonging to
          a DIFFERENT model instance must not be accepted as proof about
          THIS `model`. Mismatch raises `ModelCheckpointBindingError`.
-      3. Passing steps 1-2 alone yields `UNVERIFIED`, never `TRAINED` --
-         a checkpoint can be perfectly real, content-verified, and
-         correctly bound to `model`'s live parameters while still never
-         having come from any authorized training run (every checkpoint
-         in this codebase's own test suite is exactly this: real tensors,
-         real hash verification, zero authorized training behind them).
-      4. `TRAINED` requires an ADDITIONAL, explicit
-         `training_run_record_path` naming a `TrainingRunRecord` whose
-         own `checkpoint_sha256` matches this checkpoint's manifest hash
-         AND whose `authorized` field is `True`. A record that exists but
-         names a different checkpoint, or explicitly says
-         `authorized: false`, raises `TrainingRunRecordError` (an
-         explicitly-supplied, mismatched or unauthorized record is a
-         configuration error or a forgery attempt, not something to
-         silently downgrade) or stays `UNVERIFIED` respectively -- see
-         inline logic. No code in this codebase currently produces such
-         a record for any GENESIS native checkpoint (GENESIS pretraining
-         remains `NOT_AUTHORIZED`; see `TrainingRunRecord`'s own
-         docstring) -- this is the correct, honest state today, not a
-         gap to paper over."""
+      3. Passing steps 1-2 yields `UNVERIFIED` -- the ceiling this
+         function can reach today. A checkpoint can be perfectly real,
+         content-verified, and correctly bound to `model`'s live
+         parameters while still never having come from any authorized
+         training run (every checkpoint in this codebase's own test
+         suite is exactly this: real tensors, real hash verification,
+         zero authorized training behind them).
+
+    Native-Authorization-Convergence Mission 1 (P0) remediation:
+    `ProvenanceStatus.TRAINED` was previously reachable via a fourth,
+    optional step -- supplying a `training_run_record_path` naming a
+    bare, UNSIGNED JSON file with a matching `checkpoint_sha256` and
+    `authorized: true`. Independently reproduced directly before this
+    fix: `checkpoint_sha256` is not a secret (it is the checkpoint's own
+    manifest hash, trivially readable by anyone with filesystem access to
+    the checkpoint), so any caller able to write a JSON file could mint
+    their own `TRAINED` verdict with zero cryptographic proof and zero
+    founder involvement. That entire code path -- `TrainingRunRecord`,
+    `_load_training_run_record()`, and this parameter's TRAINED-granting
+    behavior -- has been REMOVED, not patched; see
+    `_REMOVED_TRAINING_RUN_RECORD_MSG` for why a partial fix (e.g.
+    HMAC-sealing the record in-process) would not actually establish
+    founder authorization either, and would just move the forgeable
+    surface rather than close it. Passing `training_run_record_path` now
+    unconditionally raises `TrainingRunRecordError` -- a hard, visible
+    failure for any caller still depending on the retired mechanism,
+    never a silent downgrade to `UNVERIFIED` (which could mask a caller's
+    mistaken assumption that authorization was actually being checked).
+    `ProvenanceStatus.TRAINED` remains a defined enum value (for the
+    eventual real completion-attestation design, gated on Workstream F's
+    authorization chain and explicit founder authorization) but is
+    UNREACHABLE through any code path in this function as of this fix."""
+    if training_run_record_path is not None:
+        raise TrainingRunRecordError(_REMOVED_TRAINING_RUN_RECORD_MSG)
+
     if checkpoint_path is None:
         return AdapterDiagnostics(status=ProvenanceStatus.RANDOM_INITIALIZATION, checkpoint_source="none (fresh random init)")
 
     checkpoint_path = Path(checkpoint_path)
-    # Step 1: the full existing content-integrity trust boundary. Any
-    # failure (ManifestMissingError, ChecksumMismatchError,
+    # The full existing content-integrity trust boundary. Any failure
+    # (ManifestMissingError, ChecksumMismatchError,
     # UnsupportedManifestVersionError, ManifestStateMismatchError,
     # FileNotFoundError) propagates unchanged -- never caught, softened,
     # or reinterpreted as UNVERIFIED here.
     state = load_verified_training_state(checkpoint_path)
 
-    # Step 2: live model/checkpoint binding.
+    # Live model/checkpoint binding.
     live_fingerprint = state_dict_fingerprint(model.state_dict())
     checkpoint_fingerprint = state_dict_fingerprint(state.model_state_dict)
     if live_fingerprint != checkpoint_fingerprint:
@@ -309,24 +307,4 @@ def diagnose_adapter(
             f"{live_fingerprint[:12]}... != {checkpoint_fingerprint[:12]}...)"
         )
 
-    manifest = CheckpointManifest.from_dict(json.loads(_manifest_path(checkpoint_path).read_text()))
-
-    # Steps 3-4: training-run authorization, strictly opt-in and
-    # independently checkable -- never inferred, never defaulted to True.
-    if training_run_record_path is None:
-        return AdapterDiagnostics(status=ProvenanceStatus.UNVERIFIED, checkpoint_source=str(checkpoint_path))
-
-    record = _load_training_run_record(Path(training_run_record_path))
-    if record.checkpoint_sha256 != manifest.sha256:
-        raise TrainingRunRecordError(
-            f"training-run record at {training_run_record_path} names checkpoint_sha256="
-            f"{record.checkpoint_sha256!r}, but {checkpoint_path}'s actual verified manifest sha256 is "
-            f"{manifest.sha256!r} -- refusing to attribute this record to a checkpoint it does not name"
-        )
-    if not record.authorized:
-        return AdapterDiagnostics(
-            status=ProvenanceStatus.UNVERIFIED, checkpoint_source=str(checkpoint_path), training_run_id=record.run_id,
-        )
-    return AdapterDiagnostics(
-        status=ProvenanceStatus.TRAINED, checkpoint_source=str(checkpoint_path), training_run_id=record.run_id,
-    )
+    return AdapterDiagnostics(status=ProvenanceStatus.UNVERIFIED, checkpoint_source=str(checkpoint_path))

@@ -256,44 +256,46 @@ def test_diagnose_adapter_rejects_a_checkpoint_with_a_corrupted_manifest(tiny_mo
 
 
 def test_diagnose_adapter_never_reaches_trained_without_an_explicit_training_run_record(tiny_model, tmp_path):
-    """Requirement #4, directly: with no training_run_record_path at
-    all, status must never be TRAINED, regardless of how real and
-    correctly-bound the checkpoint is."""
+    """With no training_run_record_path at all, status must never be
+    TRAINED, regardless of how real and correctly-bound the checkpoint
+    is -- UNVERIFIED is the ceiling this function can reach today."""
     path = _real_checkpoint_for(tiny_model, tmp_path)
     diag = diagnose_adapter(tiny_model, checkpoint_path=path)
+    assert diag.status is ProvenanceStatus.UNVERIFIED
     assert diag.status is not ProvenanceStatus.TRAINED
 
 
-def test_diagnose_adapter_stays_unverified_when_the_training_run_record_says_unauthorized(tiny_model, tmp_path):
+def test_diagnose_adapter_rejects_a_forged_unsigned_training_run_record_that_previously_granted_trained(tiny_model, tmp_path):
+    """Native-Authorization-Convergence Mission 1 (P0): independently
+    reproduced before this fix existed -- a caller-authored, completely
+    UNSIGNED JSON file naming the checkpoint's own (non-secret) manifest
+    sha256 and `authorized: true` used to be sufficient to reach
+    ProvenanceStatus.TRAINED, with zero cryptographic proof and zero
+    founder involvement. This forgery must now be hard-rejected, not
+    silently downgraded to UNVERIFIED and not accepted as TRAINED."""
     path = _real_checkpoint_for(tiny_model, tmp_path)
     manifest = json.loads((tmp_path / "checkpoint.pt.manifest.json").read_text())
-    record_path = tmp_path / "run_record.json"
-    record_path.write_text(json.dumps({"run_id": "run-1", "checkpoint_sha256": manifest["sha256"], "authorized": False}))
-    diag = diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=record_path)
-    assert diag.status is ProvenanceStatus.UNVERIFIED
-    assert diag.training_run_id == "run-1"
+    forged_record_path = tmp_path / "forged_run_record.json"
+    forged_record_path.write_text(json.dumps({
+        "run_id": "attacker-claimed-run",
+        "checkpoint_sha256": manifest["sha256"],  # trivially copied -- not a secret
+        "authorized": True,
+    }))
+    with pytest.raises(TrainingRunRecordError):
+        diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=forged_record_path)
 
 
-def test_diagnose_adapter_reaches_trained_only_with_a_real_authorized_matching_record(tiny_model, tmp_path):
-    """The only path to TRAINED: a real checkpoint, correctly bound to
-    this model, with an explicit record naming this exact checkpoint's
-    verified hash and authorized=True."""
+def test_diagnose_adapter_rejects_training_run_record_path_unconditionally_even_when_well_formed(tiny_model, tmp_path):
+    """The removed mechanism is rejected unconditionally -- not just for
+    malformed/mismatched/unauthorized records (those were already
+    correctly rejected before this fix) but for a record that is
+    well-formed, matches the real checkpoint's hash, and claims
+    authorized=True. There is no longer any content a caller can put in
+    this file that reaches anything other than a hard failure."""
     path = _real_checkpoint_for(tiny_model, tmp_path)
     manifest = json.loads((tmp_path / "checkpoint.pt.manifest.json").read_text())
     record_path = tmp_path / "run_record.json"
     record_path.write_text(json.dumps({"run_id": "run-42", "checkpoint_sha256": manifest["sha256"], "authorized": True}))
-    diag = diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=record_path)
-    assert diag.status is ProvenanceStatus.TRAINED
-    assert diag.training_run_id == "run-42"
-
-
-def test_diagnose_adapter_rejects_a_training_run_record_naming_a_different_checkpoint(tiny_model, tmp_path):
-    """A record that is otherwise well-formed and says authorized=True,
-    but names a DIFFERENT checkpoint's hash, must be rejected -- not
-    silently attributed to whatever checkpoint happens to be passed in."""
-    path = _real_checkpoint_for(tiny_model, tmp_path)
-    record_path = tmp_path / "run_record.json"
-    record_path.write_text(json.dumps({"run_id": "run-1", "checkpoint_sha256": "0" * 64, "authorized": True}))
     with pytest.raises(TrainingRunRecordError):
         diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=record_path)
 
@@ -310,6 +312,37 @@ def test_diagnose_adapter_rejects_a_malformed_training_run_record(tiny_model, tm
     record_path.write_text(json.dumps({"run_id": "run-1"}))  # missing required fields
     with pytest.raises(TrainingRunRecordError):
         diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=record_path)
+
+
+def test_provenance_status_trained_is_unreachable_through_any_diagnose_adapter_call(tiny_model, tokenizer, tmp_path):
+    """Structural regression, not just a behavioral one: sweep every
+    combination of arguments this function accepts (no checkpoint, a
+    real correctly-bound checkpoint, a real checkpoint plus any
+    training_run_record_path content) and confirm NONE of them produce
+    ProvenanceStatus.TRAINED -- either the call succeeds and returns
+    RANDOM_INITIALIZATION/UNVERIFIED, or it raises. TRAINED is reachable
+    from no code path in this module today."""
+    path = _real_checkpoint_for(tiny_model, tmp_path)
+    manifest = json.loads((tmp_path / "checkpoint.pt.manifest.json").read_text())
+
+    results = []
+    diag = diagnose_adapter(tiny_model)
+    results.append(diag.status)
+    diag = diagnose_adapter(tiny_model, checkpoint_path=path)
+    results.append(diag.status)
+
+    for authorized in (True, False):
+        for sha in (manifest["sha256"], "0" * 64):
+            record_path = tmp_path / f"record_{authorized}_{sha[:4]}.json"
+            record_path.write_text(json.dumps({"run_id": "r", "checkpoint_sha256": sha, "authorized": authorized}))
+            try:
+                diag = diagnose_adapter(tiny_model, checkpoint_path=path, training_run_record_path=record_path)
+                results.append(diag.status)
+            except TrainingRunRecordError:
+                pass  # the only acceptable outcome for any training_run_record_path content
+
+    assert ProvenanceStatus.TRAINED not in results
+    assert set(results) <= {ProvenanceStatus.RANDOM_INITIALIZATION, ProvenanceStatus.UNVERIFIED}
 
 
 def test_random_weight_output_is_not_meaningfully_coherent(tiny_model, tokenizer):
