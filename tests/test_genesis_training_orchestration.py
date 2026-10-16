@@ -1030,6 +1030,87 @@ def test_a_reviewed_commit_sha_that_is_not_a_real_ancestor_of_head_is_rejected(i
     assert run.state is RunState.REJECTED
 
 
+# ============================================================ NaN / nonfinite / type-confusion hardening ==
+
+def test_nan_spend_is_rejected_not_silently_accepted(ident):
+    """Independently reproduced before this fix: `requested_spend_usd=
+    float("nan")` passed the prior `isinstance(..., (int, float))` and
+    `nan < 0` checks (every comparison against NaN is False), and would
+    have ALSO silently passed authorize()'s later
+    `current.requested_spend_usd > grant.max_spend_usd` limit check for
+    the identical reason -- a NaN spend request would bypass spend-limit
+    enforcement entirely, regardless of what any real grant authorizes."""
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["requested_spend_usd"] = float("nan")
+    with pytest.raises(ValueError, match="finite"):
+        run.validate(**kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_infinite_spend_is_rejected_at_validation_not_only_caught_downstream(ident):
+    """+inf technically fails authorize()'s later `>` check against any
+    finite grant limit (`inf > 0` is True), but it is still not a
+    meaningful resource value -- rejected here too, for defense in depth
+    rather than relying solely on a downstream comparison happening to
+    catch it."""
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["requested_spend_usd"] = float("inf")
+    with pytest.raises(ValueError, match="finite"):
+        run.validate(**kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_boolean_spend_value_is_rejected_despite_bool_being_an_int_subtype(ident):
+    """`bool` is a Python `int` subtype, so `isinstance(True, (int, float))`
+    is True -- a stray `True`/`False` passed where a real spend amount
+    was expected must still be rejected, not silently treated as 1 or 0
+    dollars."""
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["requested_spend_usd"] = True
+    with pytest.raises(ValueError):
+        run.validate(**kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_boolean_wall_clock_value_is_rejected_despite_bool_being_an_int_subtype(ident):
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["requested_wall_clock_minutes"] = True  # == 1, would otherwise pass "< 1" silently
+    with pytest.raises(ValueError):
+        run.validate(**kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_a_string_claiming_to_be_a_boolean_is_rejected_not_silently_coerced(ident):
+    """Independently reproduced before this fix: `bool("False")` is
+    `True` in Python (any non-empty string is truthy) -- a caller
+    passing the STRING `"False"`, intending NOT to request GPU, would
+    previously have silently gotten `gpu_requested=True`, the exact
+    opposite of their intent. `gpu_requested` must now be a real `bool`,
+    never coerced from an arbitrary truthy/falsy value."""
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["gpu_requested"] = "False"
+    with pytest.raises(ValueError, match="never silently coerced"):
+        run.validate(**kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_a_real_boolean_gpu_requested_still_works_normally(ident, monkeypatch):
+    """Negative control: real booleans must still work exactly as
+    before -- confirms the new strict type check doesn't spuriously
+    break the ordinary case."""
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["gpu_requested"] = False
+    run.validate(**kwargs)
+    assert run.state is RunState.VALIDATED
+    assert run.identity.gpu_requested is False
+
+
 # ============================================================ dataset preflight integration (M2-03) ==
 
 class _FakeDatasetManifest:

@@ -204,6 +204,7 @@ response:
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -758,12 +759,30 @@ class GenesisTrainingRun:
                 f"reviewed_commit_sha {reviewed_commit_sha!r} is not verifiably an ancestor of this repository's "
                 f"current HEAD -- a caller-supplied commit SHA alone is never trusted without live verification"
             )
-        if not isinstance(requested_wall_clock_minutes, int) or requested_wall_clock_minutes < 1:
+        # Mission 2 continuation fix (narrowly bounded, per directive):
+        # independently reproduced before this fix -- `requested_spend_usd=
+        # float("nan")` passed BOTH this check (`isinstance(..., (int, float))`
+        # and `nan < 0` are each False, since every comparison against NaN is
+        # False) AND authorize()'s later `current.requested_spend_usd >
+        # grant.max_spend_usd` limit check (`nan > 0` is ALSO False) --
+        # silently bypassing the spend-limit check entirely regardless of
+        # what any real grant actually authorizes. `bool` is also a Python
+        # `int`/`float` subtype, so a stray `True`/`False` would otherwise
+        # slip through these `isinstance` checks as if it were a real
+        # numeric value. Both are now explicitly rejected via
+        # `math.isfinite()` (which is False for both NaN and +/-inf) and an
+        # explicit `isinstance(..., bool)` exclusion.
+        if isinstance(requested_wall_clock_minutes, bool) or not isinstance(requested_wall_clock_minutes, int) \
+                or requested_wall_clock_minutes < 1:
             self._transition(RunState.REJECTED, reason="invalid requested_wall_clock_minutes at validation")
             raise ValueError(f"requested_wall_clock_minutes must be a positive integer, got {requested_wall_clock_minutes!r}")
-        if not isinstance(requested_spend_usd, (int, float)) or requested_spend_usd < 0:
+        if isinstance(requested_spend_usd, bool) or not isinstance(requested_spend_usd, (int, float)) \
+                or not math.isfinite(requested_spend_usd) or requested_spend_usd < 0:
             self._transition(RunState.REJECTED, reason="invalid requested_spend_usd at validation")
-            raise ValueError(f"requested_spend_usd must be a non-negative number, got {requested_spend_usd!r}")
+            raise ValueError(f"requested_spend_usd must be a finite, non-negative number, got {requested_spend_usd!r}")
+        if not isinstance(gpu_requested, bool):
+            self._transition(RunState.REJECTED, reason="invalid gpu_requested at validation")
+            raise ValueError(f"gpu_requested must be a real bool, got {gpu_requested!r} ({type(gpu_requested).__name__}) -- a truthy string like 'False' is never silently coerced")
 
         self.identity.dataset_digest = dataset_digest
         self.identity.model_config_digest = model_config_digest
@@ -772,7 +791,7 @@ class GenesisTrainingRun:
         self.identity.reviewed_commit_sha = reviewed_commit_sha
         self.identity.transformation_code_digest = transformation_code_digest
         self.identity.optimizer_config_digest = optimizer_config_digest
-        self.identity.gpu_requested = bool(gpu_requested)
+        self.identity.gpu_requested = gpu_requested
         self.identity.requested_spend_usd = float(requested_spend_usd)
         self.identity.requested_wall_clock_minutes = requested_wall_clock_minutes
         self._transition(RunState.VALIDATED, reason="full workload identity recorded and well-formed")
