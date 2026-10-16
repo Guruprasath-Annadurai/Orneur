@@ -10,6 +10,7 @@ import pytest
 
 from orca.genesis.data.manifest import (
     GenesisDatasetManifest,
+    ManifestTamperedError,
     ProvenanceRejected,
     SourceOrigin,
     TokenizerBinding,
@@ -140,10 +141,11 @@ def test_saved_manifest_file_has_owner_only_permissions():
 
 
 def test_loaded_manifest_detects_forged_file_content(tmp_path):
-    """A manifest file edited on disk after saving (e.g. an attacker
-    trying to forge a different dataset_name under the same path) is
-    detectable by re-verifying its own internal manifest_id against its
-    own binding fields."""
+    """A-09 fix: `load()` itself is now the trusted boundary -- a
+    manifest file edited on disk after saving (e.g. an attacker trying
+    to forge a different dataset_name under the same path, leaving the
+    original manifest_id unchanged) is REJECTED by `load()` directly,
+    not merely detectable by a caller doing extra work afterward."""
     import json
 
     m = _build()
@@ -151,16 +153,65 @@ def test_loaded_manifest_detects_forged_file_content(tmp_path):
     raw = json.loads(path.read_text())
     raw["dataset_name"] = "forged-name"
     path.write_text(json.dumps(raw))
-    forged = GenesisDatasetManifest.load(path)
-    # The forged manifest's OWN recomputed id (from its current binding
-    # fields) must not match the manifest_id still recorded in the file --
-    # this is exactly how a caller would detect the forgery.
-    recomputed = GenesisDatasetManifest._compute_manifest_id({
-        "schema_version": forged.schema_version, "dataset_name": forged.dataset_name, "version": forged.version,
-        "origins": [o.__dict__ for o in forged.origins], "source_content_digest": forged.source_content_digest,
-        "tokenizer_binding": forged.tokenizer_binding.__dict__,
-    })
-    assert recomputed != forged.manifest_id
+    with pytest.raises(ManifestTamperedError, match="TAMPERED"):
+        GenesisDatasetManifest.load(path)
+
+
+def test_load_rejects_an_arbitrary_substituted_manifest_id(tmp_path):
+    """Even if EVERY other field is left genuinely untouched, a
+    substituted manifest_id alone must be rejected -- confirms the
+    recomputation is the actual trust boundary, not merely one of
+    several fields compared loosely."""
+    import json
+
+    m = _build()
+    path = m.save()
+    raw = json.loads(path.read_text())
+    raw["manifest_id"] = "f" * 64
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ManifestTamperedError, match="TAMPERED"):
+        GenesisDatasetManifest.load(path)
+
+
+def test_load_rejects_a_missing_required_field(tmp_path):
+    import json
+
+    m = _build()
+    path = m.save()
+    raw = json.loads(path.read_text())
+    del raw["source_content_digest"]
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ManifestTamperedError, match="missing required field"):
+        GenesisDatasetManifest.load(path)
+
+
+def test_load_rejects_an_unrecognized_schema_version(tmp_path):
+    import json
+
+    m = _build()
+    path = m.save()
+    raw = json.loads(path.read_text())
+    raw["schema_version"] = "some-future-schema/99"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ManifestTamperedError, match="schema_version"):
+        GenesisDatasetManifest.load(path)
+
+
+def test_load_rejects_malformed_json(tmp_path):
+    path = tmp_path / "broken.json"
+    path.write_text("{not valid json at all")
+    with pytest.raises(ManifestTamperedError, match="not valid JSON"):
+        GenesisDatasetManifest.load(path)
+
+
+def test_an_untampered_manifest_still_loads_cleanly(tmp_path):
+    """Negative control: the trusted-load recomputation must not
+    spuriously reject a genuinely unmodified, correctly-saved manifest."""
+    m = _build()
+    path = m.save()
+    loaded = GenesisDatasetManifest.load(path)
+    assert loaded.manifest_id == m.manifest_id
+    assert loaded.dataset_name == m.dataset_name
 
 
 def test_normalize_record_text_is_deterministic_and_idempotent():
