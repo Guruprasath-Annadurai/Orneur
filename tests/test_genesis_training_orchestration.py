@@ -62,6 +62,21 @@ def _digest(label: str) -> str:
     return hashlib.sha256(label.encode()).hexdigest()
 
 
+def _real_head_sha() -> str:
+    """A real commit SHA that is -- trivially -- its own ancestor, for
+    `validate()`'s live `_is_live_ancestor_of_head()` check (M2-01).
+    Using the actual current HEAD of this checkout, not a fabricated
+    SHA-40-shaped string, is the point: `validate()` now independently
+    verifies this against real git history, not a caller's claim alone."""
+    import subprocess
+    p = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=30, check=False)
+    assert p.returncode == 0, "this test file requires running inside a real git checkout"
+    return p.stdout.strip()
+
+
+_HEAD_SHA = _real_head_sha()
+
+
 def _ts(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -106,7 +121,11 @@ class GrantWorld:
     def __init__(
         self, *, run_id: str, model_config_digest: str, tokenizer_digest: str,
         dataset_manifest_id: str, dataset_content_digest: str, authorized_shard_digests: tuple[str, ...],
-        environment_class: str = ENV, record_over: dict | None = None,
+        environment_class: str = ENV, reviewed_commit_sha: str = _HEAD_SHA,
+        transformation_code_digest: str | None = None, optimizer_config_digest: str | None = None,
+        architecture_version: str = "genesis-arch-v1",
+        gpu_allowed: bool = False, max_spend_usd: float = 0.0, max_wall_clock_minutes: int = 60,
+        record_over: dict | None = None,
     ):
         self.priv = Ed25519PrivateKey.generate()
         pub = self.priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
@@ -119,13 +138,18 @@ class GrantWorld:
                 "gpu_permission": False, "spend_permission": False,
             }],
         }
+        self.gpu_allowed = gpu_allowed
+        self.max_spend_usd = max_spend_usd
+        self.max_wall_clock_minutes = max_wall_clock_minutes
         self.req = GOV.NativePretrainingRequest(
             run_id=run_id, nonce=_digest(f"nonce-{run_id}-{id(self)}"), model_family="genesis",
-            architecture_version="genesis-arch-v1", model_config_digest=model_config_digest, tokenizer_digest=tokenizer_digest,
+            architecture_version=architecture_version, model_config_digest=model_config_digest, tokenizer_digest=tokenizer_digest,
             dataset_manifest_id=dataset_manifest_id, dataset_content_digest=dataset_content_digest,
-            authorized_shard_digests=tuple(authorized_shard_digests), reviewed_commit_sha="a" * 40,
-            transformation_code_digest=_digest("pipeline-code-v1"), optimizer_config_digest=_digest("optimizer-config-v1"),
-            environment_class=environment_class, gpu_requested=False, max_wall_clock_minutes=30, requested_spend_usd=0.0,
+            authorized_shard_digests=tuple(authorized_shard_digests), reviewed_commit_sha=reviewed_commit_sha,
+            transformation_code_digest=transformation_code_digest or _digest(f"pipeline-{run_id}"),
+            optimizer_config_digest=optimizer_config_digest or _digest(f"optimizer-{run_id}"),
+            environment_class=environment_class, gpu_requested=False, max_wall_clock_minutes=max_wall_clock_minutes,
+            requested_spend_usd=0.0,
         )
         self.record = self._sign(self._make_record(record_over or {}))
 
@@ -150,7 +174,10 @@ class GrantWorld:
             "code": {"reviewed_commit_sha": req.reviewed_commit_sha, "transformation_code_digest": req.transformation_code_digest},
             "training": {"optimizer_config_digest": req.optimizer_config_digest},
             "environment_class": req.environment_class,
-            "limits": {"max_wall_clock_minutes": 60, "max_spend_usd": 0, "gpu_allowed": False},
+            "limits": {
+                "max_wall_clock_minutes": self.max_wall_clock_minutes, "max_spend_usd": self.max_spend_usd,
+                "gpu_allowed": self.gpu_allowed,
+            },
             "issued_at": _ts(now - timedelta(hours=1)), "expires_at": _ts(now + timedelta(days=6)),
             "authorizing_authority": {"identity": "synthetic-authority-1", "role": "OWNER", "key_id": "synthetic-authority-1"},
             "signature": None,
@@ -180,12 +207,20 @@ class _Identity:
         self.model_config_digest = _digest(f"model-config-{run_id}")
         self.tokenizer_digest = _digest(f"tokenizer-{run_id}")
         self.authorized_shard_digests = (_digest(f"shard-0-{run_id}"), _digest(f"shard-1-{run_id}"))
+        self.reviewed_commit_sha = _HEAD_SHA
+        self.transformation_code_digest = _digest(f"pipeline-{run_id}")
+        self.optimizer_config_digest = _digest(f"optimizer-{run_id}")
+        self.gpu_requested = False
+        self.requested_spend_usd = 0.0
+        self.requested_wall_clock_minutes = 30
 
     def world(self, **kw) -> GrantWorld:
         defaults = dict(
             run_id=self.run_id, model_config_digest=self.model_config_digest, tokenizer_digest=self.tokenizer_digest,
             dataset_manifest_id=self.dataset_manifest_id, dataset_content_digest=self.dataset_digest,
-            authorized_shard_digests=self.authorized_shard_digests,
+            authorized_shard_digests=self.authorized_shard_digests, reviewed_commit_sha=self.reviewed_commit_sha,
+            transformation_code_digest=self.transformation_code_digest, optimizer_config_digest=self.optimizer_config_digest,
+            max_wall_clock_minutes=max(60, self.requested_wall_clock_minutes),
         )
         defaults.update(kw)
         return GrantWorld(**defaults)
@@ -200,6 +235,9 @@ class _Identity:
         run.validate(
             dataset_digest=self.dataset_digest, model_config_digest=self.model_config_digest,
             tokenizer_digest=self.tokenizer_digest, authorized_shard_digests=self.authorized_shard_digests,
+            reviewed_commit_sha=self.reviewed_commit_sha, transformation_code_digest=self.transformation_code_digest,
+            optimizer_config_digest=self.optimizer_config_digest, gpu_requested=self.gpu_requested,
+            requested_spend_usd=self.requested_spend_usd, requested_wall_clock_minutes=self.requested_wall_clock_minutes,
         )
 
 
@@ -252,11 +290,16 @@ def test_a_grant_genuinely_bound_to_the_runs_full_identity_is_accepted(ident, mo
     ("dataset_manifest_id", "a-different-manifest-id"),
     ("dataset_content_digest", _digest("a different dataset")),
     ("environment_class", "SSH_RENTED_GPU"),
+    ("architecture_version", "a-completely-different-architecture-v99"),
+    ("transformation_code_digest", _digest("a different transformation pipeline")),
+    ("optimizer_config_digest", _digest("a different optimizer config")),
 ])
 def test_wrong_single_field_grant_is_rejected_not_authorized(ident, monkeypatch, field, wrong_value):
-    """Exact workload binding, field by field: a grant that matches EVERY
-    field except ONE must still be rejected -- proving each field is
-    actually checked, not merely one of them standing in for all."""
+    """Exact workload binding, field by field (M2-01: now covers the full
+    signed-authorization field set, not only the original six): a grant
+    that matches EVERY field except ONE must still be rejected -- proving
+    each field is actually checked, not merely one of them standing in
+    for all."""
     run = ident.run()
     ident.validate(run)
     run.request_authorization()
@@ -264,12 +307,70 @@ def test_wrong_single_field_grant_is_rejected_not_authorized(ident, monkeypatch,
         run_id=ident.run_id, model_config_digest=ident.model_config_digest, tokenizer_digest=ident.tokenizer_digest,
         dataset_manifest_id=ident.dataset_manifest_id, dataset_content_digest=ident.dataset_digest,
         authorized_shard_digests=ident.authorized_shard_digests, environment_class=ENV,
+        transformation_code_digest=ident.transformation_code_digest, optimizer_config_digest=ident.optimizer_config_digest,
     )
     kwargs[field] = wrong_value
     grant = GrantWorld(**kwargs).authorize(monkeypatch)
     with pytest.raises(GOV.NativePretrainingNotAuthorized):
         run.authorize(grant)
     assert run.state is RunState.REJECTED
+
+
+def test_a_grant_that_disallows_gpu_rejects_a_run_that_requests_gpu(ident, monkeypatch):
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["gpu_requested"] = True
+    run.validate(**kwargs)
+    run.request_authorization()
+    grant = ident.world(gpu_allowed=False).authorize(monkeypatch)  # the grant does not permit GPU
+    with pytest.raises(GOV.NativePretrainingNotAuthorized, match="GPU_NOT_AUTHORIZED"):
+        run.authorize(grant)
+    assert run.state is RunState.REJECTED
+
+
+def test_a_grant_with_zero_spend_rejects_a_run_that_requests_spend(ident, monkeypatch):
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["requested_spend_usd"] = 50.0
+    run.validate(**kwargs)
+    run.request_authorization()
+    grant = ident.world(max_spend_usd=0.0).authorize(monkeypatch)
+    with pytest.raises(GOV.NativePretrainingNotAuthorized, match="SPEND_NOT_AUTHORIZED"):
+        run.authorize(grant)
+    assert run.state is RunState.REJECTED
+
+
+def test_a_grant_with_a_lower_wall_clock_limit_rejects_a_run_that_requests_more(ident, monkeypatch):
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["requested_wall_clock_minutes"] = 120
+    run.validate(**kwargs)
+    run.request_authorization()
+    grant = ident.world(max_wall_clock_minutes=60).authorize(monkeypatch)  # grant permits only 60 minutes
+    with pytest.raises(GOV.NativePretrainingNotAuthorized, match="WALL_CLOCK_NOT_AUTHORIZED"):
+        run.authorize(grant)
+    assert run.state is RunState.REJECTED
+
+
+def test_a_grant_with_a_higher_wall_clock_limit_than_requested_is_accepted(ident, monkeypatch):
+    """Positive control: wall-clock is a LIMIT, not a value that must
+    match exactly -- a grant permitting up to 60 minutes correctly
+    authorizes a run that only needs 30. (Spend cannot be used for this
+    same positive-direction proof: Workstream F's own gate enforces
+    `max_spend_usd == 0` unconditionally while native training remains
+    NO-GO, regardless of what any individual run requests -- see
+    `orca.genesis.governance.authorization.verify()`'s
+    `SPEND_MUST_BE_ZERO_WHILE_NOGO` check.)"""
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["gpu_requested"] = False
+    kwargs["requested_spend_usd"] = 0.0
+    kwargs["requested_wall_clock_minutes"] = 30
+    run.validate(**kwargs)
+    run.request_authorization()
+    grant = ident.world(gpu_allowed=False, max_spend_usd=0.0, max_wall_clock_minutes=60).authorize(monkeypatch)
+    run.authorize(grant)
+    assert run.state is RunState.AUTHORIZED
 
 
 def test_wrong_authorized_shards_grant_is_rejected(ident, monkeypatch):
@@ -441,6 +542,24 @@ def test_unavailable_revocation_service_denies_rather_than_passing(ident, monkey
     assert run.state is RunState.REJECTED
 
 
+def test_a_truthy_non_boolean_revocation_result_is_still_treated_as_revoked(ident, monkeypatch):
+    """M2-04 adversarial qualification: the revocation-service boundary
+    must not assume a well-behaved `bool` return -- any truthy value
+    (a non-empty string, a non-zero count, a populated list) means
+    revoked, matching ordinary Python truthiness, not a strict `is True`
+    check that a loosely-typed real revocation service could accidentally
+    bypass by returning e.g. `"revoked"` instead of `True`."""
+    run = ident.run(revocation_check=lambda auth_id: "yes, revoked")  # truthy, not literally True
+    ident.validate(run)
+    run.request_authorization()
+    grant = ident.world().authorize(monkeypatch)
+    run.authorize(grant)
+    monkeypatch.setattr(ORCH, "check_founder_acceptance_ledger", lambda repo_root, **_: [])
+    with pytest.raises(GOV.NativePretrainingNotAuthorized, match="AUTHORIZATION_REVOKED_LIVE"):
+        run.start()
+    assert run.state is RunState.REJECTED
+
+
 # ============================================================ durable, cross-process replay (C-05 successor) ==
 
 def test_replay_is_prevented_even_across_a_simulated_new_process(ident, monkeypatch):
@@ -481,6 +600,66 @@ def test_replay_is_prevented_within_one_process_too(ident, monkeypatch):
         run_b.authorize(grant)
 
 
+def test_concurrent_claims_of_the_same_authorization_id_have_exactly_one_winner(ident):
+    """M2-04 adversarial qualification: the durable, on-disk replay claim
+    must be atomic under genuine concurrency, not merely correct in a
+    single-threaded call sequence -- many threads racing to claim the
+    SAME authorization_id simultaneously must produce exactly one
+    winner, proven directly rather than inferred from `O_EXCL`'s
+    documented semantics alone."""
+    import threading
+
+    auth_id = "gnpauth-" + "33" * 8
+    results: list[bool] = []
+    lock = threading.Lock()
+    barrier = threading.Barrier(20)
+
+    def _claim():
+        barrier.wait(timeout=5)  # maximize actual concurrent contention
+        won = ORCH._claim_native_pretraining_authorization(auth_id)
+        with lock:
+            results.append(won)
+
+    threads = [threading.Thread(target=_claim) for _ in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert len(results) == 20
+    assert sum(results) == 1, f"expected exactly one winner among 20 concurrent claimants, got {sum(results)}"
+
+
+def test_crash_consistency_residual_is_documented_not_silently_fixed(ident, monkeypatch, tmp_path):
+    """M2-04: documents a REAL, acknowledged residual rather than
+    silently papering over it (per the directive's own instruction to
+    document limitations that cannot be resolved within this
+    workstream). If a process crashes AFTER
+    `_claim_native_pretraining_authorization()` succeeds but BEFORE
+    `authorize()` finishes transitioning the run to AUTHORIZED (e.g.
+    killed between those two lines), the authorization_id is durably,
+    permanently claimed -- yet no run ever actually reached AUTHORIZED
+    with it. This mirrors `orca.train.authorization._claim_run_slot()`'s
+    own documented trade-off exactly ('a failed or cancelled run still
+    consumes its slot... a local operator who deletes this directory can
+    re-run'): this module does not attempt to solve the general
+    two-phase-commit problem of 'durably claim X and atomically also do
+    Y,' which would require a transaction log this module does not have
+    and was not asked to build. Demonstrated here by simulating the
+    crash directly: claim the id, then attempt a legitimate authorize()
+    with a freshly-matching grant for a DIFFERENT run -- it is correctly
+    refused, with no automatic recovery path, exactly as documented."""
+    ORCH._claim_native_pretraining_authorization("gnpauth-" + "44" * 8)  # simulates the claim half of a crashed authorize()
+
+    run = ident.run()
+    ident.validate(run)
+    run.request_authorization()
+    grant = ident.world(record_over={"authorization_id": "gnpauth-" + "44" * 8}).authorize(monkeypatch)
+    with pytest.raises(ReplayedAuthorizationError):
+        run.authorize(grant)  # the crash's orphaned claim permanently burns this id -- no automatic recovery
+    assert run.state is RunState.REJECTED
+
+
 # ============================================================ execution-start acceptance gate (new) ==
 
 def test_start_denies_execution_when_the_real_acceptance_ledger_is_unpatched(authorized_run):
@@ -517,6 +696,48 @@ def test_start_checks_the_stricter_final2_exec1_rows_not_only_final1(ident, monk
     with pytest.raises(ExecutionAcceptanceIncompleteError):
         run.start()
     assert run.state is RunState.REJECTED
+
+
+def test_execution_permission_becoming_invalid_after_a_pause_blocks_resume(started_run, monkeypatch):
+    """M2-02: independently reproduced as a real gap before this fix --
+    the founder-acceptance ledger's FINAL-1/FINAL-2/EXEC-1 rows were only
+    ever checked at the original start() call; a run that reached
+    RUNNING while the ledger showed those rows accepted, then paused,
+    would previously resume() successfully even if that acceptance had
+    since been WITHDRAWN. Execution permission must be re-established at
+    EVERY resumption point, not assumed to persist from whenever
+    start() last checked it."""
+    started_run.record_step(1, source_identity="a")
+    started_run.pause(reason="pausing")
+    # Simulate acceptance being withdrawn while paused (e.g. a prior
+    # acceptance later found invalid and reverted) -- the real ledger is
+    # always empty; this directly exercises the "no longer accepted"
+    # transition, not merely "was never accepted."
+    monkeypatch.setattr(ORCH, "check_founder_acceptance_ledger", lambda repo_root, **_: ["FINAL-2", "EXEC-1"])
+    with pytest.raises(ExecutionAcceptanceIncompleteError):
+        started_run.resume()
+    assert started_run.state is RunState.FAILED
+
+
+def test_execution_permission_becoming_invalid_during_recovery_blocks_recovered(started_run, monkeypatch):
+    started_run.record_step(1, source_identity="a")
+    started_run.pause(reason="pausing")
+    started_run.begin_recovery(reason="recovering")
+    monkeypatch.setattr(ORCH, "check_founder_acceptance_ledger", lambda repo_root, **_: ["EXEC-1"])
+    with pytest.raises(ExecutionAcceptanceIncompleteError):
+        started_run.recovered()
+    assert started_run.state is RunState.FAILED
+
+
+def test_resume_still_succeeds_when_acceptance_remains_accepted_throughout(started_run):
+    """Negative control: resume() must still succeed when nothing has
+    changed -- confirms M2-02's new re-check is not spuriously failing
+    the ordinary, unchanged case (the `started_run` fixture already keeps
+    `check_founder_acceptance_ledger` patched to return `[]`)."""
+    started_run.record_step(1, source_identity="a")
+    started_run.pause(reason="pausing")
+    started_run.resume()
+    assert started_run.state is RunState.RUNNING
 
 
 # ============================================================ execution-evidence authenticity (C-03) ==
@@ -751,33 +972,146 @@ def test_cannot_resume_a_failed_run(started_run):
         started_run.reject(reason="too late")
 
 
+def _valid_validate_kwargs(ident) -> dict:
+    return dict(
+        dataset_digest=ident.dataset_digest, model_config_digest=ident.model_config_digest,
+        tokenizer_digest=ident.tokenizer_digest, authorized_shard_digests=ident.authorized_shard_digests,
+        reviewed_commit_sha=ident.reviewed_commit_sha, transformation_code_digest=ident.transformation_code_digest,
+        optimizer_config_digest=ident.optimizer_config_digest,
+    )
+
+
 def test_invalid_dataset_digest_rejects_the_run(ident):
     run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["dataset_digest"] = "not-a-real-sha256"
     with pytest.raises(ValueError):
-        run.validate(
-            dataset_digest="not-a-real-sha256", model_config_digest=ident.model_config_digest,
-            tokenizer_digest=ident.tokenizer_digest, authorized_shard_digests=ident.authorized_shard_digests,
-        )
+        run.validate(**kwargs)
     assert run.state is RunState.REJECTED
 
 
 def test_invalid_model_config_digest_rejects_the_run(ident):
     run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["model_config_digest"] = "not-a-real-sha256"
     with pytest.raises(ValueError):
-        run.validate(
-            dataset_digest=ident.dataset_digest, model_config_digest="not-a-real-sha256",
-            tokenizer_digest=ident.tokenizer_digest, authorized_shard_digests=ident.authorized_shard_digests,
-        )
+        run.validate(**kwargs)
     assert run.state is RunState.REJECTED
 
 
 def test_empty_authorized_shard_digests_rejects_the_run(ident):
     run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["authorized_shard_digests"] = ()
     with pytest.raises(ValueError):
-        run.validate(
-            dataset_digest=ident.dataset_digest, model_config_digest=ident.model_config_digest,
-            tokenizer_digest=ident.tokenizer_digest, authorized_shard_digests=(),
-        )
+        run.validate(**kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_invalid_reviewed_commit_sha_rejects_the_run(ident):
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["reviewed_commit_sha"] = "not-a-real-sha1"
+    with pytest.raises(ValueError):
+        run.validate(**kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_a_reviewed_commit_sha_that_is_not_a_real_ancestor_of_head_is_rejected(ident):
+    """M2-01: a caller-supplied SHA-40-SHAPED string that is well-formed
+    but is NOT genuinely an ancestor of this repository's real HEAD must
+    be rejected -- independently verified against live git state, not
+    trusted merely because it looks like a commit hash."""
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    kwargs["reviewed_commit_sha"] = "f" * 40  # well-formed, but not a real commit in this repo's history
+    with pytest.raises(ValueError, match="not verifiably an ancestor"):
+        run.validate(**kwargs)
+    assert run.state is RunState.REJECTED
+
+
+# ============================================================ dataset preflight integration (M2-03) ==
+
+class _FakeDatasetManifest:
+    """A minimal object satisfying Workstream F's `DatasetManifestLike`
+    Protocol (duck-typed, not imported from Workstream A -- this module
+    gains no hard dependency on `orca.genesis.data.manifest`). Mimics the
+    real `GenesisDatasetManifest.verify_against_records()` contract:
+    returns `(True, "")` only when `records` match what this fake
+    manifest was constructed to expect."""
+
+    def __init__(self, manifest_id: str, source_content_digest: str, expected_records: list[str]):
+        self.manifest_id = manifest_id
+        self.source_content_digest = source_content_digest
+        self._expected_records = expected_records
+
+    def verify_against_records(self, normalized_records: list[str]) -> tuple[bool, str]:
+        if list(normalized_records) != self._expected_records:
+            return False, "digest mismatch: records do not match this manifest's claimed content"
+        return True, ""
+
+
+def test_validate_with_a_real_manifest_object_derives_digest_from_verified_identity(ident):
+    """M2-03: the positive path -- a manifest object that successfully
+    re-verifies against the records passed alongside it is accepted, and
+    `dataset_digest` is derived from the VERIFIED object's own
+    `source_content_digest`, not from any separately-supplied string."""
+    run = ident.run()
+    records = ["record one", "record two"]
+    manifest = _FakeDatasetManifest(ident.dataset_manifest_id, ident.dataset_digest, records)
+    kwargs = _valid_validate_kwargs(ident)
+    del kwargs["dataset_digest"]
+    run.validate(dataset_manifest=manifest, dataset_records=records, **kwargs)
+    assert run.state is RunState.VALIDATED
+    assert run.identity.dataset_digest == ident.dataset_digest
+
+
+def test_validate_rejects_a_manifest_that_fails_verify_against_records(ident):
+    """M2-03: independently reproduced as the exact gap this fix closes
+    -- before this fix, `validate()` only ever checked that a
+    caller-supplied digest string was well-formed (64 hex characters),
+    never that it corresponded to any real, re-verifiable content. A
+    manifest object whose own `verify_against_records()` fails (e.g. the
+    records were substituted) must be rejected here, not accepted merely
+    because its `source_content_digest` string looks well-formed."""
+    run = ident.run()
+    real_records = ["record one", "record two"]
+    tampered_records = ["record one", "a substituted record"]
+    manifest = _FakeDatasetManifest(ident.dataset_manifest_id, ident.dataset_digest, real_records)
+    kwargs = _valid_validate_kwargs(ident)
+    del kwargs["dataset_digest"]
+    with pytest.raises(ValueError, match="failed independent re-verification"):
+        run.validate(dataset_manifest=manifest, dataset_records=tampered_records, **kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_validate_rejects_a_manifest_whose_id_is_not_declared_by_this_run(ident):
+    run = ident.run()
+    records = ["record one"]
+    manifest = _FakeDatasetManifest("a-manifest-id-this-run-never-declared", ident.dataset_digest, records)
+    kwargs = _valid_validate_kwargs(ident)
+    del kwargs["dataset_digest"]
+    with pytest.raises(ValueError, match="not in this run's declared dataset_manifest_ids"):
+        run.validate(dataset_manifest=manifest, dataset_records=records, **kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_validate_requires_dataset_records_when_dataset_manifest_is_supplied(ident):
+    run = ident.run()
+    manifest = _FakeDatasetManifest(ident.dataset_manifest_id, ident.dataset_digest, ["x"])
+    kwargs = _valid_validate_kwargs(ident)
+    del kwargs["dataset_digest"]
+    with pytest.raises(ValueError, match="dataset_records is required"):
+        run.validate(dataset_manifest=manifest, **kwargs)
+    assert run.state is RunState.REJECTED
+
+
+def test_validate_requires_either_dataset_digest_or_dataset_manifest(ident):
+    run = ident.run()
+    kwargs = _valid_validate_kwargs(ident)
+    del kwargs["dataset_digest"]
+    with pytest.raises(ValueError, match="requires either dataset_digest or"):
+        run.validate(**kwargs)
     assert run.state is RunState.REJECTED
 
 

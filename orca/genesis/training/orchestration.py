@@ -154,7 +154,52 @@ REQUIRED constructor argument (previously optional) -- matching
 `orca.genesis.governance.authorization.assert_execution_permitted()`'s
 own mandatory-revocation contract, which this module now calls directly
 at every resume-capable transition rather than re-implementing the
-expiry/revocation logic locally.
+expiry/revocation logic locally. A truthy (not merely `True`) return is
+treated as revoked, and a raising/unavailable check denies, never passes
+silently.
+
+**Dataset preflight integration (M2-03)**: `validate()` accepts an
+optional `dataset_manifest` (any object satisfying
+`orca.genesis.governance.authorization.DatasetManifestLike`'s
+Protocol -- duck-typed, so this module imports nothing from Workstream A
+and gains no hard dependency on it) together with the real
+`dataset_records` to check it against, and calls
+`dataset_manifest.verify_against_records()` itself before deriving
+`dataset_digest` from the VERIFIED object -- not from a bare,
+merely-well-formed caller-supplied digest string.
+
+## M2-04: adversarial qualification and known, documented limitations
+
+The following were independently qualified (not merely inspected) as
+part of the Native-Authorization-Convergence Mission 2 source-review
+response:
+
+- **Durable replay under genuine concurrency**: proven atomic with a
+  20-thread barrier-synchronized stress test
+  (`test_concurrent_claims_of_the_same_authorization_id_have_exactly_one_winner`),
+  not merely inferred from `O_CREAT | O_EXCL`'s documented semantics.
+- **Crash consistency -- a REAL, acknowledged, UNRESOLVED residual**: if
+  a process crashes after `_claim_native_pretraining_authorization()`
+  succeeds but before `authorize()` finishes transitioning the run to
+  `AUTHORIZED`, the authorization_id is durably, permanently claimed,
+  yet no run ever actually reached `AUTHORIZED` with it -- there is no
+  automatic recovery path. This mirrors
+  `orca.train.authorization._claim_run_slot()`'s own documented
+  trade-off exactly ("a failed or cancelled run still consumes its
+  slot... a local operator who deletes this directory can re-run").
+  Solving this in general would require a two-phase-commit-style
+  transaction log this module does not have; building one is
+  out-of-scope, separately-authorizable future work, not something this
+  fix silently papers over.
+- **Trusted revocation-service boundary**: an unavailable, erroring, or
+  loosely-typed (truthy-but-not-`True`) revocation result is always
+  treated as a denial -- qualified directly, not merely asserted.
+- **Advisory-lock boundary** (inherited from the Mission 1 checkpoint
+  fix, restated here for completeness): `flock()`-based locking is
+  advisory, not mandatory, and protects only against OTHER code that
+  cooperates with the same lock discipline -- it is not, and cannot be,
+  a defense against a caller with raw filesystem access who bypasses
+  this module's own functions entirely.
 """
 from __future__ import annotations
 
@@ -168,6 +213,7 @@ from pathlib import Path
 from typing import Callable
 
 from orca.genesis.governance.authorization import (
+    DatasetManifestLike,
     NativePretrainingGrant,
     NativePretrainingNotAuthorized,
     assert_execution_permitted,
@@ -213,6 +259,36 @@ def _parse_iso(s: str | None) -> datetime | None:
 
 
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+_SHA40_HEX = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _git(root: Path, *args: str) -> tuple[int, str]:
+    """Mirrors `orca.train.authorization._git()` exactly -- a timed-out
+    or missing git binary fails closed (returncode 127), never silently
+    treated as success."""
+    import subprocess
+    try:
+        p = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=30, check=False)
+        return p.returncode, p.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return 127, ""
+
+
+def _is_live_ancestor_of_head(repo_root: Path, commit_sha: str) -> bool:
+    """M2-01 fix: independently verifies, against the LIVE repository
+    state (not a caller-supplied claim), that `commit_sha` is a real
+    commit and is an ancestor of the current HEAD -- the same
+    `merge-base --is-ancestor` discipline
+    `orca.train.authorization._build_request()` already uses for its own
+    `reviewed_commit_sha` binding. A caller-supplied SHA that merely
+    LOOKS like a commit hash (40 hex characters) but was never actually
+    reviewed, or belongs to an unrelated/future history, fails this
+    check regardless of what any signed record claims about it."""
+    rc, head = _git(repo_root, "rev-parse", "HEAD")
+    if rc != 0 or not head:
+        return False
+    rc2, _ = _git(repo_root, "merge-base", "--is-ancestor", commit_sha, head)
+    return rc2 == 0
 
 
 def _native_pretraining_replay_state_dir() -> Path:
@@ -357,6 +433,15 @@ class RunIdentity:
     model_config_digest: str | None = None  # set by validate(); None beforehand
     tokenizer_digest: str | None = None  # set by validate(); None beforehand
     authorized_shard_digests: tuple[str, ...] | None = None  # set by validate(); None beforehand
+    # M2-01: the remaining signed-authorization fields a NativePretrainingGrant
+    # now carries (PR #69) -- bound here too so authorize() can check ALL of
+    # them, not only the original six.
+    reviewed_commit_sha: str | None = None  # set by validate(); None beforehand
+    transformation_code_digest: str | None = None  # set by validate(); None beforehand
+    optimizer_config_digest: str | None = None  # set by validate(); None beforehand
+    gpu_requested: bool = False
+    requested_spend_usd: float = 0.0
+    requested_wall_clock_minutes: int = 1
 
 
 @dataclass(frozen=True)
@@ -374,6 +459,12 @@ class _AuthorizedIdentitySnapshot:
     tokenizer_digest: str
     authorized_shard_digests: tuple[str, ...]
     environment_class: str
+    reviewed_commit_sha: str
+    transformation_code_digest: str
+    optimizer_config_digest: str
+    gpu_requested: bool
+    requested_spend_usd: float
+    requested_wall_clock_minutes: int
 
 
 @dataclass
@@ -515,6 +606,12 @@ class GenesisTrainingRun:
             tokenizer_digest=self.identity.tokenizer_digest or "",
             authorized_shard_digests=tuple(sorted(self.identity.authorized_shard_digests or ())),
             environment_class=self.environment_class,
+            reviewed_commit_sha=self.identity.reviewed_commit_sha or "",
+            transformation_code_digest=self.identity.transformation_code_digest or "",
+            optimizer_config_digest=self.identity.optimizer_config_digest or "",
+            gpu_requested=self.identity.gpu_requested,
+            requested_spend_usd=self.identity.requested_spend_usd,
+            requested_wall_clock_minutes=self.identity.requested_wall_clock_minutes,
         )
 
     def _reverify_grant_or_transition(self, *, on_failure: RunState, context: str) -> None:
@@ -538,7 +635,19 @@ class GenesisTrainingRun:
            identity must still exactly equal the snapshot frozen at
            `authorize()` time. An authorization is a decision about one
            specific workload; it must never keep applying if that
-           workload's own declared identity has since changed."""
+           workload's own declared identity has since changed.
+        3. M2-02 fix: the project-wide founder-acceptance ledger's
+           FINAL-1/FINAL-2/EXEC-1 rows are now re-checked HERE -- i.e. at
+           EVERY resume-capable transition (`start()`, `resume()`,
+           `recovered()`), not only at the original `start()` call.
+           Independently reproduced as a real gap before this fix: a run
+           that reached RUNNING while the ledger showed those rows
+           accepted, then paused, would previously resume() successfully
+           even if the ledger's acceptance had since been WITHDRAWN
+           (e.g. a prior acceptance later found to be invalid and
+           reverted) -- execution permission must be re-established at
+           every resumption point, not assumed to persist from whenever
+           `start()` last checked it."""
         assert self.grant is not None
         assert self._authorized_identity is not None
         try:
@@ -556,22 +665,71 @@ class GenesisTrainingRun:
                 f"this run's identity has changed since authorize() granted it authorization "
                 f"(was {self._authorized_identity!r}, now {current!r}) -- re-authorization required"
             )
+        missing_rows = check_founder_acceptance_ledger(self.repo_root, required_rows=EXECUTION_START_REQUIRED_ACCEPTANCE_ROWS)
+        if missing_rows:
+            self._transition(on_failure, reason=f"execution-permission acceptance incomplete at {context}: {missing_rows}")
+            raise ExecutionAcceptanceIncompleteError(
+                f"execution permission cannot be (re-)established at {context}: founder-acceptance ledger is missing "
+                f"{missing_rows} (required: {EXECUTION_START_REQUIRED_ACCEPTANCE_ROWS})"
+            )
 
     # ---- PLANNED -> VALIDATED --------------------------------------------------------------
     def validate(
-        self, *, dataset_digest: str, model_config_digest: str, tokenizer_digest: str,
-        authorized_shard_digests: tuple[str, ...],
+        self, *, dataset_digest: str | None = None, model_config_digest: str, tokenizer_digest: str,
+        authorized_shard_digests: tuple[str, ...], reviewed_commit_sha: str, transformation_code_digest: str,
+        optimizer_config_digest: str, gpu_requested: bool = False, requested_spend_usd: float = 0.0,
+        requested_wall_clock_minutes: int = 1, dataset_manifest: DatasetManifestLike | None = None,
+        dataset_records: list[str] | None = None,
     ) -> None:
         """Mission 2: binds the FULL workload identity a
-        `NativePretrainingGrant` must match -- not only the dataset
-        digest. Every one of these must be a real value the caller
-        independently computed from the actual model config / tokenizer /
-        dataset shards (this method does not compute any of them itself,
+        `NativePretrainingGrant` must match. Every one of these must be a
+        real value the caller independently computed from the actual
+        model config / tokenizer / dataset shards / code tree / optimizer
+        config (this method does not compute any of them itself,
         deliberately, to avoid duplicating the responsibility of
         `orca.genesis.data.manifest`/`orca.genesis.tokenizer.framework`/
-        `orca.registry.provenance`)."""
+        `orca.registry.provenance`) -- with TWO exceptions, both M2-01/
+        M2-03 fixes that verify against LIVE state rather than trusting a
+        caller-supplied string alone:
+
+        1. `reviewed_commit_sha` is independently re-checked against this
+           repository's ACTUAL git history (`_is_live_ancestor_of_head()`)
+           -- a caller cannot claim review of a commit that is not
+           genuinely an ancestor of the current HEAD, regardless of what
+           any signed record elsewhere claims.
+        2. M2-03 (dataset preflight integration): pass `dataset_manifest`
+           (any object satisfying Workstream F's own `DatasetManifestLike`
+           Protocol -- e.g. a real `orca.genesis.data.manifest.GenesisDatasetManifest`,
+           duck-typed, not imported, so this module gains no hard
+           dependency on Workstream A) together with `dataset_records`
+           (the actual normalized records to check it against), and this
+           method calls `dataset_manifest.verify_against_records()`
+           itself, deriving `dataset_digest`/the bound manifest id from
+           the VERIFIED object -- not from a bare caller-supplied digest
+           string that could be merely well-formed, never actually
+           checked against real content. `dataset_digest` may be omitted
+           when `dataset_manifest`+`dataset_records` are supplied (and
+           vice versa); supplying neither, or a manifest whose id is not
+           one of this run's declared `dataset_manifest_ids`, raises."""
         if self.state != RunState.PLANNED:
             raise InvalidTransitionError(f"validate() requires PLANNED, got {self.state.value}")
+
+        if dataset_manifest is not None:
+            if dataset_records is None:
+                self._transition(RunState.REJECTED, reason="dataset_manifest supplied without dataset_records at validation")
+                raise ValueError("dataset_records is required when dataset_manifest is supplied -- a manifest must be re-verified against real records, not trusted on its own")
+            if dataset_manifest.manifest_id not in self.identity.dataset_manifest_ids:
+                self._transition(RunState.REJECTED, reason="dataset_manifest.manifest_id is not one of this run's declared dataset_manifest_ids")
+                raise ValueError(f"dataset_manifest.manifest_id {dataset_manifest.manifest_id!r} is not in this run's declared dataset_manifest_ids {self.identity.dataset_manifest_ids!r}")
+            ok, msg = dataset_manifest.verify_against_records(dataset_records)
+            if not ok:
+                self._transition(RunState.REJECTED, reason=f"dataset_manifest failed verify_against_records(): {msg}")
+                raise ValueError(f"dataset_manifest failed independent re-verification against its own records: {msg}")
+            dataset_digest = dataset_manifest.source_content_digest
+        elif dataset_digest is None:
+            self._transition(RunState.REJECTED, reason="neither dataset_digest nor dataset_manifest supplied at validation")
+            raise ValueError("validate() requires either dataset_digest or (dataset_manifest, dataset_records)")
+
         if not isinstance(dataset_digest, str) or not _SHA256_HEX.match(dataset_digest):
             self._transition(RunState.REJECTED, reason="invalid dataset_digest at validation")
             raise ValueError(f"dataset_digest must be a 64-character lowercase hex SHA-256, got {dataset_digest!r}")
@@ -585,10 +743,38 @@ class GenesisTrainingRun:
         if not shards or not all(isinstance(s, str) and _SHA256_HEX.match(s) for s in shards):
             self._transition(RunState.REJECTED, reason="invalid authorized_shard_digests at validation")
             raise ValueError(f"authorized_shard_digests must be a non-empty tuple of 64-character lowercase hex SHA-256 values, got {authorized_shard_digests!r}")
+        if not isinstance(transformation_code_digest, str) or not _SHA256_HEX.match(transformation_code_digest):
+            self._transition(RunState.REJECTED, reason="invalid transformation_code_digest at validation")
+            raise ValueError(f"transformation_code_digest must be a 64-character lowercase hex SHA-256, got {transformation_code_digest!r}")
+        if not isinstance(optimizer_config_digest, str) or not _SHA256_HEX.match(optimizer_config_digest):
+            self._transition(RunState.REJECTED, reason="invalid optimizer_config_digest at validation")
+            raise ValueError(f"optimizer_config_digest must be a 64-character lowercase hex SHA-256, got {optimizer_config_digest!r}")
+        if not isinstance(reviewed_commit_sha, str) or not _SHA40_HEX.match(reviewed_commit_sha):
+            self._transition(RunState.REJECTED, reason="invalid reviewed_commit_sha at validation")
+            raise ValueError(f"reviewed_commit_sha must be a 40-character lowercase hex SHA-1, got {reviewed_commit_sha!r}")
+        if not _is_live_ancestor_of_head(self.repo_root, reviewed_commit_sha):
+            self._transition(RunState.REJECTED, reason="reviewed_commit_sha is not a real ancestor of this repository's current HEAD")
+            raise ValueError(
+                f"reviewed_commit_sha {reviewed_commit_sha!r} is not verifiably an ancestor of this repository's "
+                f"current HEAD -- a caller-supplied commit SHA alone is never trusted without live verification"
+            )
+        if not isinstance(requested_wall_clock_minutes, int) or requested_wall_clock_minutes < 1:
+            self._transition(RunState.REJECTED, reason="invalid requested_wall_clock_minutes at validation")
+            raise ValueError(f"requested_wall_clock_minutes must be a positive integer, got {requested_wall_clock_minutes!r}")
+        if not isinstance(requested_spend_usd, (int, float)) or requested_spend_usd < 0:
+            self._transition(RunState.REJECTED, reason="invalid requested_spend_usd at validation")
+            raise ValueError(f"requested_spend_usd must be a non-negative number, got {requested_spend_usd!r}")
+
         self.identity.dataset_digest = dataset_digest
         self.identity.model_config_digest = model_config_digest
         self.identity.tokenizer_digest = tokenizer_digest
         self.identity.authorized_shard_digests = shards
+        self.identity.reviewed_commit_sha = reviewed_commit_sha
+        self.identity.transformation_code_digest = transformation_code_digest
+        self.identity.optimizer_config_digest = optimizer_config_digest
+        self.identity.gpu_requested = bool(gpu_requested)
+        self.identity.requested_spend_usd = float(requested_spend_usd)
+        self.identity.requested_wall_clock_minutes = requested_wall_clock_minutes
         self._transition(RunState.VALIDATED, reason="full workload identity recorded and well-formed")
 
     # ---- VALIDATED -> AWAITING_AUTHORIZATION -----------------------------------------------
@@ -638,6 +824,26 @@ class GenesisTrainingRun:
             mismatches.append("WRONG_AUTHORIZED_SHARDS")
         if grant.environment_class != current.environment_class:
             mismatches.append("WRONG_ENVIRONMENT_CLASS")
+        # M2-01: the remaining signed-authorization fields the grant now
+        # carries (PR #69) -- architecture/code/optimizer identity bound
+        # exactly, and GPU/spend/wall-clock treated as LIMITS the run's
+        # own declared intent must fall within, not values to match
+        # exactly (a grant permitting up to $50 legitimately covers a run
+        # that only needs $10).
+        if grant.architecture_version != current.model_architecture_version:
+            mismatches.append("WRONG_ARCHITECTURE_VERSION")
+        if grant.reviewed_commit_sha != current.reviewed_commit_sha:
+            mismatches.append("WRONG_REVIEWED_COMMIT")
+        if grant.transformation_code_digest != current.transformation_code_digest:
+            mismatches.append("WRONG_TRANSFORMATION_CODE_DIGEST")
+        if grant.optimizer_config_digest != current.optimizer_config_digest:
+            mismatches.append("WRONG_OPTIMIZER_CONFIG_DIGEST")
+        if current.gpu_requested and not grant.gpu_allowed:
+            mismatches.append("GPU_NOT_AUTHORIZED")
+        if current.requested_spend_usd > grant.max_spend_usd:
+            mismatches.append("SPEND_NOT_AUTHORIZED")
+        if current.requested_wall_clock_minutes > grant.max_wall_clock_minutes:
+            mismatches.append("WALL_CLOCK_NOT_AUTHORIZED")
         if mismatches:
             self._transition(RunState.REJECTED, reason=f"authorization rejected: grant does not match this run's identity ({mismatches})")
             raise NativePretrainingNotAuthorized(mismatches)
@@ -654,25 +860,19 @@ class GenesisTrainingRun:
     # ---- AUTHORIZED -> RUNNING --------------------------------------------------------------
     def start(self) -> None:
         """Re-verifies the grant (integrity, expiry, mandatory live
-        revocation, and identity-drift) at the moment execution actually
-        begins, not only at `authorize()` time -- AND additionally
-        requires the project-wide founder-acceptance ledger to show
-        FINAL-1, FINAL-2, and EXEC-1 all accepted (a stricter,
-        execution-time-specific gate on top of what
-        `authorize_native_pretraining()` itself already required to
-        issue the grant in the first place)."""
+        revocation, identity-drift, and -- M2-02 -- the project-wide
+        founder-acceptance ledger's FINAL-1/FINAL-2/EXEC-1 rows) at the
+        moment execution actually begins, not only at `authorize()`
+        time. All of this is delegated to
+        `_reverify_grant_or_transition()`, the SAME routine `resume()`
+        and `recovered()` call, so execution permission is established
+        (and re-established) identically at every point RUNNING is
+        (re-)entered, not merely at the first `start()`."""
         if self.state != RunState.AUTHORIZED:
             raise InvalidTransitionError(f"start() requires AUTHORIZED, got {self.state.value}")
         if self.grant is None:
             raise InvalidTransitionError("start() called with no grant recorded -- internal invariant violated")
         self._reverify_grant_or_transition(on_failure=RunState.REJECTED, context="start()")
-        missing_rows = check_founder_acceptance_ledger(self.repo_root, required_rows=EXECUTION_START_REQUIRED_ACCEPTANCE_ROWS)
-        if missing_rows:
-            self._transition(RunState.REJECTED, reason=f"execution-start acceptance incomplete: {missing_rows}")
-            raise ExecutionAcceptanceIncompleteError(
-                f"execution cannot start: founder-acceptance ledger is missing {missing_rows} "
-                f"(required: {EXECUTION_START_REQUIRED_ACCEPTANCE_ROWS})"
-            )
         self.execution = ExecutionEvidence()
         self._transition(RunState.RUNNING, reason="execution started under a freshly re-verified grant")
 
