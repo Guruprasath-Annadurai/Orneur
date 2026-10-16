@@ -89,6 +89,18 @@ _GRANT_MAC_FIELDS = (
     "authorization_id", "key_id", "record_sha256", "run_id", "expires_at", "max_wall_clock_minutes",
     "model_config_digest", "tokenizer_digest", "dataset_manifest_id", "dataset_content_digest",
     "authorized_shard_digests", "environment_class",
+    # Mission 2 M2-01 fix: previously the issued grant object discarded
+    # these fields entirely after `verify()` checked them against the
+    # signed record -- so a CONSUMER of the grant (GenesisTrainingRun)
+    # had no way to independently bind its own declared architecture
+    # version, reviewed commit, transformation code, optimizer config,
+    # or GPU/spend intent against what was actually authorized. Now
+    # carried into the grant (and HMAC-protected, like every other
+    # field) so consumers can check them directly against the grant
+    # object itself, not just trust that `verify()` checked them once
+    # at issuance against a record the consumer never sees again.
+    "architecture_version", "reviewed_commit_sha", "transformation_code_digest", "optimizer_config_digest",
+    "gpu_allowed", "max_spend_usd",
 )
 
 
@@ -393,6 +405,12 @@ class NativePretrainingGrant:
     dataset_content_digest: str
     authorized_shard_digests: tuple[str, ...]
     environment_class: str
+    architecture_version: str
+    reviewed_commit_sha: str
+    transformation_code_digest: str
+    optimizer_config_digest: str
+    gpu_allowed: bool
+    max_spend_usd: float
     _seal: object = field(default=None, repr=False, compare=False)
     _mac: str = field(default="", repr=False, compare=False)
 
@@ -535,7 +553,10 @@ def authorize_native_pretraining(
         max_wall_clock_minutes=record["limits"]["max_wall_clock_minutes"], model_config_digest=req.model_config_digest,
         tokenizer_digest=req.tokenizer_digest, dataset_manifest_id=req.dataset_manifest_id,
         dataset_content_digest=req.dataset_content_digest, authorized_shard_digests=req.authorized_shard_digests,
-        environment_class=req.environment_class, _seal=_SEAL,
+        environment_class=req.environment_class, architecture_version=req.architecture_version,
+        reviewed_commit_sha=req.reviewed_commit_sha, transformation_code_digest=req.transformation_code_digest,
+        optimizer_config_digest=req.optimizer_config_digest, gpu_allowed=record["limits"]["gpu_allowed"],
+        max_spend_usd=record["limits"]["max_spend_usd"], _seal=_SEAL,
     )
 
 

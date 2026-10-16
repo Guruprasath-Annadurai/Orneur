@@ -408,7 +408,9 @@ def test_a_hand_constructed_grant_lookalike_is_rejected():
             authorization_id="gnpauth-" + "ff" * 8, key_id="fake", record_sha256="0" * 64, run_id="run-x",
             expires_at="2099-01-01T00:00:00Z", max_wall_clock_minutes=60, model_config_digest="0" * 64,
             tokenizer_digest="0" * 64, dataset_manifest_id="ds-x", dataset_content_digest="0" * 64,
-            authorized_shard_digests=("0" * 64,), environment_class=ENV,
+            authorized_shard_digests=("0" * 64,), environment_class=ENV, architecture_version="genesis-arch-v1",
+            reviewed_commit_sha="a" * 40, transformation_code_digest="0" * 64, optimizer_config_digest="0" * 64,
+            gpu_allowed=False, max_spend_usd=0,
         )
 
 
@@ -419,3 +421,47 @@ def test_grant_cannot_be_pickled_or_copied(monkeypatch):
     grant = w.authorize(monkeypatch=monkeypatch)
     with pytest.raises(TypeError):
         pickle.dumps(grant)
+
+
+def test_grant_carries_the_full_signed_identity_not_only_the_binding_subset(monkeypatch):
+    """Native-Authorization-Convergence Mission 2 (M2-01): independently
+    reproduced before this fix -- the issued grant object previously
+    discarded architecture_version, reviewed_commit_sha,
+    transformation_code_digest, optimizer_config_digest, gpu_allowed, and
+    max_spend_usd entirely after verify() checked them against the
+    signed record at issuance time, leaving a CONSUMER of the grant
+    (GenesisTrainingRun) with no way to independently bind its own
+    declared identity against what was actually authorized. These fields
+    are now carried into the grant and must reflect the real,
+    independently-derived request/record values."""
+    w = World()
+    grant = w.authorize(monkeypatch=monkeypatch)
+    assert grant.architecture_version == w.req.architecture_version
+    assert grant.reviewed_commit_sha == w.req.reviewed_commit_sha
+    assert grant.transformation_code_digest == w.req.transformation_code_digest
+    assert grant.optimizer_config_digest == w.req.optimizer_config_digest
+    assert grant.gpu_allowed is False
+    assert grant.max_spend_usd == 0
+
+
+def test_grant_new_fields_are_hmac_protected_against_post_issuance_tampering(monkeypatch):
+    """Each of M2-01's newly-carried fields must be covered by the same
+    HMAC integrity check as every other grant field -- tampering any one
+    of them post-issuance must be caught by verify_integrity(), not
+    silently accepted because it was added to the dataclass without also
+    being added to `_GRANT_MAC_FIELDS`."""
+    for field_name, bad_value in (
+        ("architecture_version", "tampered-architecture"),
+        ("reviewed_commit_sha", "f" * 40),
+        ("transformation_code_digest", "f" * 64),
+        ("optimizer_config_digest", "f" * 64),
+        ("gpu_allowed", True),
+        ("max_spend_usd", 999999.0),
+    ):
+        A.reset_in_process_nonce_guard_for_new_process()
+        grant = World().authorize(monkeypatch=monkeypatch)  # a fresh grant per field -- the object cannot be copied
+        original = getattr(grant, field_name)
+        object.__setattr__(grant, field_name, bad_value)
+        with pytest.raises(A.NativePretrainingNotAuthorized, match="GRANT_FORGED_OR_TAMPERED"):
+            grant.verify_integrity()
+        assert bad_value != original
