@@ -234,25 +234,46 @@ def load_verified_training_state(path: Path) -> TrainingState:
     deserialization is reached.
 
     Audit #017 section 4.1 TOCTOU remediation, Native-Authorization-
-    Convergence P0 follow-up fix: the original remediation locked
-    `.{name}.lock` (the same file `save_training_state()`'s own inner
-    writer lock uses) around only the hash+deserialize step, but read
-    the MANIFEST file before acquiring any lock at all, and
-    `save_verified_training_state()`'s outer critical section (the one
-    that re-hashes the checkpoint and rewrites the manifest after the
-    inner save completes) is scoped to a DIFFERENT lock file
-    (`.{name}.verified.lock`) that this function never touched.
-    Reproduced directly: a verified checkpoint, then a raw
-    (non-manifest-updating) `save_training_state()` call overwriting the
-    same path, landed its new bytes on disk with zero lock contention
-    against a concurrent `load_verified_training_state()` call, which
-    could observe the new checkpoint bytes against the OLD manifest's
-    hash. This function now acquires `.{name}.verified.lock` --
-    the SAME lock file `save_verified_training_state()` holds exclusively
-    across its ENTIRE save+hash+manifest-write sequence -- held SHARED
-    across the manifest read, the format/version checks, the hash
-    computation, and the deserialization, so a concurrent verified-save
-    is excluded from this entire read window, not just part of it."""
+    Convergence Mission 1 follow-up fix (round 2): round 1 of this fix
+    made this function hold `.{name}.verified.lock` SHARED across the
+    manifest read, hash, and deserialize steps -- correctly excluding a
+    concurrent `save_verified_training_state()` writer, which holds that
+    same lock EXCLUSIVELY for its entire save+hash+manifest-write
+    sequence. But `save_training_state()` -- the RAW writer, a real,
+    independently-callable function in this codebase, not a hypothetical
+    attacker tool -- only ever acquires a DIFFERENT lock file
+    (`.{name}.lock`), which this function no longer touched at all after
+    round 1. Independently reproduced with a deterministic
+    synchronization-barrier harness (not timing/sleep): a raw writer
+    instructed to fire exactly between this function's hash computation
+    and its separate `load_training_state()` deserialization call landed
+    its new bytes with zero lock contention, and this function returned
+    the raw writer's post-hash content -- step/epoch matching, so
+    `ManifestStateMismatchError` never fired either -- with NO exception
+    raised at all. The SHA-256 this function had just computed and
+    compared never corresponded to the content it actually returned.
+
+    Fix: a single, two-lock hierarchy, acquired in a FIXED order by
+    every writer and reader in this module, so no two callers can ever
+    attempt to acquire them in the opposite order (which is what would
+    create a deadlock):
+      1. `.{name}.verified.lock` -- outer. `save_verified_training_state()`
+         holds this EXCLUSIVELY for its whole save+hash+manifest-write
+         sequence; this function holds it SHARED for its whole
+         read sequence.
+      2. `.{name}.lock` -- inner, the SAME lock file `save_training_state()`
+         (raw writer) and `load_training_state()`-adjacent code already
+         use. This function now ALSO holds it SHARED, nested inside the
+         outer lock, for the ENTIRE manifest-read-through-deserialize
+         sequence -- so a raw writer (which only ever touches this inner
+         lock) is excluded from this function's whole read window, not
+         just part of it. `save_verified_training_state()` already
+         acquires this same inner lock (via its call into
+         `save_training_state()`) strictly AFTER already holding the
+         outer lock, the identical order used here -- no code path in
+         this module ever acquires the inner lock before the outer one,
+         which is what rules out lock-order inversion / nested-flock
+         deadlock between these two functions."""
     path = Path(path)
     manifest_path = _manifest_path(path)
     # Fast, pre-lock existence check: a checkpoint path whose parent
@@ -265,37 +286,43 @@ def load_verified_training_state(path: Path) -> TrainingState:
     if not manifest_path.exists():
         raise ManifestMissingError(f"no manifest at {manifest_path} for checkpoint {path}")
     verified_lock_path = path.parent / f".{path.name}.verified.lock"
-    with open(verified_lock_path, "a+") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)
+    raw_lock_path = path.parent / f".{path.name}.lock"
+    with open(verified_lock_path, "a+") as verified_lock_file:
+        fcntl.flock(verified_lock_file.fileno(), fcntl.LOCK_SH)
         try:
-            if not manifest_path.exists():
-                raise ManifestMissingError(f"no manifest at {manifest_path} for checkpoint {path}")
-            manifest = CheckpointManifest.from_dict(json.loads(manifest_path.read_text()))
-            if manifest.format_version != CHECKPOINT_FORMAT_VERSION:
-                raise UnsupportedManifestVersionError(
-                    f"checkpoint {path} was saved under format_version={manifest.format_version!r}, "
-                    f"but this code only understands {CHECKPOINT_FORMAT_VERSION!r} -- refusing to load "
-                    f"a checkpoint whose on-disk layout this version cannot be certain it interprets correctly"
-                )
-            if manifest.architecture_version != ARCHITECTURE_VERSION:
-                raise UnsupportedManifestVersionError(
-                    f"checkpoint {path} was saved under architecture_version={manifest.architecture_version!r}, "
-                    f"but the current architecture is {ARCHITECTURE_VERSION!r} -- refusing to load a checkpoint "
-                    f"produced under a different model architecture"
-                )
-            if not path.exists():
-                raise FileNotFoundError(f"manifest exists but checkpoint file is missing: {path}")
+            with open(raw_lock_path, "a+") as raw_lock_file:
+                fcntl.flock(raw_lock_file.fileno(), fcntl.LOCK_SH)
+                try:
+                    if not manifest_path.exists():
+                        raise ManifestMissingError(f"no manifest at {manifest_path} for checkpoint {path}")
+                    manifest = CheckpointManifest.from_dict(json.loads(manifest_path.read_text()))
+                    if manifest.format_version != CHECKPOINT_FORMAT_VERSION:
+                        raise UnsupportedManifestVersionError(
+                            f"checkpoint {path} was saved under format_version={manifest.format_version!r}, "
+                            f"but this code only understands {CHECKPOINT_FORMAT_VERSION!r} -- refusing to load "
+                            f"a checkpoint whose on-disk layout this version cannot be certain it interprets correctly"
+                        )
+                    if manifest.architecture_version != ARCHITECTURE_VERSION:
+                        raise UnsupportedManifestVersionError(
+                            f"checkpoint {path} was saved under architecture_version={manifest.architecture_version!r}, "
+                            f"but the current architecture is {ARCHITECTURE_VERSION!r} -- refusing to load a checkpoint "
+                            f"produced under a different model architecture"
+                        )
+                    if not path.exists():
+                        raise FileNotFoundError(f"manifest exists but checkpoint file is missing: {path}")
 
-            actual_hash = _sha256_of_file(path)
-            if actual_hash != manifest.sha256:
-                raise ChecksumMismatchError(
-                    f"checkpoint {path} does not match its manifest's recorded SHA-256 "
-                    f"(expected {manifest.sha256}, got {actual_hash}) -- refusing to load "
-                    f"a checkpoint whose content has changed since it was saved"
-                )
-            state = load_training_state(path)
+                    actual_hash = _sha256_of_file(path)
+                    if actual_hash != manifest.sha256:
+                        raise ChecksumMismatchError(
+                            f"checkpoint {path} does not match its manifest's recorded SHA-256 "
+                            f"(expected {manifest.sha256}, got {actual_hash}) -- refusing to load "
+                            f"a checkpoint whose content has changed since it was saved"
+                        )
+                    state = load_training_state(path)
+                finally:
+                    fcntl.flock(raw_lock_file.fileno(), fcntl.LOCK_UN)
         finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(verified_lock_file.fileno(), fcntl.LOCK_UN)
 
     if state.step != manifest.step or state.epoch != manifest.epoch:
         raise ManifestStateMismatchError(
