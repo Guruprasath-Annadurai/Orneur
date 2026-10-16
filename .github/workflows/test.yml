@@ -158,7 +158,7 @@ jobs:
                  tests/test_genesis_eval_adapter.py tests/test_genesis_training_orchestration.py \
                  tests/test_genesis_data_manifest.py tests/test_genesis_data_pipeline.py \
                  tests/test_genesis_data_contamination.py tests/test_genesis_data_multilingual.py \
-                 tests/test_genesis_cross_workstream_integration.py -v
+                 tests/test_genesis_cross_workstream_integration.py tests/test_genesis_workstream_a_end_to_end.py -v
 
   container-build:
     name: Production Container Build + Boot Smoke
