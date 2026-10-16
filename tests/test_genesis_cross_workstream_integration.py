@@ -62,6 +62,20 @@ def _merge(base: dict, over: dict) -> dict:
     return out
 
 
+def _real_head_sha() -> str:
+    """A real commit SHA that is trivially its own ancestor, for
+    validate()'s live _is_live_ancestor_of_head() check (M2-01) -- see
+    tests/test_genesis_training_orchestration.py's own identical
+    helper."""
+    import subprocess
+    p = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=30, check=False)
+    assert p.returncode == 0
+    return p.stdout.strip()
+
+
+_HEAD_SHA = _real_head_sha()
+
+
 @pytest.fixture(autouse=True)
 def _reset_in_process_guards(tmp_path, monkeypatch):
     """Also isolates the DURABLE, on-disk native-pretraining-authorization
@@ -126,7 +140,7 @@ class _GovWorld:
             tokenizer_digest=manifest.tokenizer_binding.vocab_digest, dataset_manifest_id=manifest.manifest_id,
             dataset_content_digest=dataset_content_digest if dataset_content_digest is not None else manifest.source_content_digest,
             authorized_shard_digests=self.authorized_shard_digests,
-            reviewed_commit_sha="a" * 40, transformation_code_digest=hashlib.sha256(b"integration-pipeline-code-v1").hexdigest(),
+            reviewed_commit_sha=_HEAD_SHA, transformation_code_digest=hashlib.sha256(b"integration-pipeline-code-v1").hexdigest(),
             optimizer_config_digest=hashlib.sha256(b"integration-optimizer-config-v1").hexdigest(),
             environment_class=GOV_ENV, gpu_requested=False, max_wall_clock_minutes=30, requested_spend_usd=0.0,
         )
@@ -141,6 +155,9 @@ class _GovWorld:
         run.validate(
             dataset_digest=self.req.dataset_content_digest, model_config_digest=self.model_config_digest,
             tokenizer_digest=self.req.tokenizer_digest, authorized_shard_digests=self.authorized_shard_digests,
+            reviewed_commit_sha=self.req.reviewed_commit_sha, transformation_code_digest=self.req.transformation_code_digest,
+            optimizer_config_digest=self.req.optimizer_config_digest, gpu_requested=self.req.gpu_requested,
+            requested_spend_usd=self.req.requested_spend_usd, requested_wall_clock_minutes=self.req.max_wall_clock_minutes,
         )
 
     def _sign(self, rec: dict) -> dict:
@@ -293,6 +310,8 @@ def test_a_lora_training_grant_still_cannot_authorize_a_genesis_training_run(tmp
     run.validate(
         dataset_digest=manifest.source_content_digest, model_config_digest=hashlib.sha256(b"unused").hexdigest(),
         tokenizer_digest=hashlib.sha256(b"unused").hexdigest(), authorized_shard_digests=(hashlib.sha256(b"unused-shard").hexdigest(),),
+        reviewed_commit_sha=_HEAD_SHA, transformation_code_digest=hashlib.sha256(b"unused-pipeline").hexdigest(),
+        optimizer_config_digest=hashlib.sha256(b"unused-optimizer").hexdigest(),
     )
     run.request_authorization()
     with pytest.raises(GOV.NativePretrainingNotAuthorized, match="NO_NATIVE_PRETRAINING_GRANT"):
