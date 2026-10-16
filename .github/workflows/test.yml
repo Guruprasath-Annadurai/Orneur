@@ -153,7 +153,9 @@ jobs:
           set -euo pipefail
           pytest tests/test_train_losses.py tests/test_transformers_adapter.py \
                  tests/test_genesis_model_architecture.py tests/test_genesis_training_primitives.py \
-                 tests/test_genesis_tokenizer.py tests/test_genesis_audit016_remediation.py -v
+                 tests/test_genesis_tokenizer.py tests/test_genesis_audit016_remediation.py \
+                 tests/test_genesis_scaling.py tests/test_genesis_checkpoint_integrity.py \
+                 tests/test_genesis_eval_adapter.py tests/test_genesis_training_orchestration.py -v
 
   container-build:
     name: Production Container Build + Boot Smoke
