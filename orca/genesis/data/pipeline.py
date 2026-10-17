@@ -385,10 +385,37 @@ def _flush_pending_shard_rows(output_dir: Path, conn: sqlite3.Connection) -> Non
         conn.execute("COMMIT")
 
 
+def iter_kept_records(output_dir: Path, *, page_size: int = 1000) -> Iterator[str]:
+    """P1-01 fix: the genuinely bounded-memory way to consume a
+    processed corpus's kept records -- a generator that pages through
+    the durable SQLite store (never materializing more than `page_size`
+    records in memory at once), for a caller whose corpus is too large
+    to hold the full `kept_records` list `process_corpus()` otherwise
+    returns. Safe to call at any time against a completed (or even
+    partially-flushed -- this reads `kept_records` directly, not only
+    `flushed` rows, since the SQLite table is the authoritative "was
+    this record actually kept" truth regardless of whether its shard
+    file has been written yet) `output_dir`."""
+    conn = sqlite3.connect(output_dir / PROGRESS_DB_NAME)
+    try:
+        last_seq = 0
+        while True:
+            rows = conn.execute(
+                "SELECT seq, normalized_text FROM kept_records WHERE seq > ? ORDER BY seq LIMIT ?", (last_seq, page_size),
+            ).fetchall()
+            if not rows:
+                break
+            for _, text in rows:
+                yield text
+            last_seq = rows[-1][0]
+    finally:
+        conn.close()
+
+
 def process_corpus(
     input_path: Path, output_dir: Path, *, num_shards: int, resume_from_line: int | None = None,
     quality_filter: Callable[[str], bool] | None = None, enforce_pii_screening: bool = True,
-    commit_batch_size: int = DEFAULT_COMMIT_BATCH_SIZE,
+    commit_batch_size: int = DEFAULT_COMMIT_BATCH_SIZE, return_kept_records: bool = True,
 ) -> tuple[ProcessingReport, list[str]]:
     """The full pipeline stage: stream -> corrupt-record rejection ->
     normalize -> exact + bounded-window near-duplicate rejection ->
@@ -401,18 +428,22 @@ def process_corpus(
     manually. Passing it explicitly overrides the recorded progress
     (mainly for tests exercising a specific resume point).
 
-    Returns `(report, kept_records)` -- `kept_records` is this function's
+    Returns `(report, kept_records)`. `kept_records` is this function's
     own bounded, in-memory re-read of ALL kept records from the durable
     SQLite store after processing completes (paged, not loaded as one
-    giant string at any point), preserved for exact backward
+    giant string at any point), preserved by DEFAULT for exact backward
     compatibility with existing callers (e.g. manifest-building code)
-    that consume the full list; a caller processing a corpus too large to
-    hold `kept_records` in memory at all should instead read
-    `output_dir`'s own `_progress.sqlite3` `kept_records` table directly,
-    paged, or iterate the written shard `.jsonl` files -- the PROCESSING
-    loop itself (the actual bottleneck for a huge corpus) never holds
-    more than `commit_batch_size` records in memory at once, regardless
-    of whether the caller later asks for the full list back."""
+    that consume the full list. **P1-01 fix**: the PROCESSING loop
+    itself (the actual bottleneck for a huge corpus) never holds more
+    than `commit_batch_size` records in memory regardless of this flag
+    -- but the prior version of this function's COMPATIBILITY INTERFACE
+    still unconditionally re-materialized the full kept-records list
+    into memory before returning, defeating bounded-memory operation for
+    any caller who didn't need that list back at all. Pass
+    `return_kept_records=False` for a genuinely bounded-memory call
+    (returns `(report, [])`); a caller still needing the records should
+    use `iter_kept_records(output_dir)` afterward, a generator that pages
+    through SQLite rather than materializing the whole list at once."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     # P0-02 fix: independently confirmed as a real risk by inspection --
@@ -532,14 +563,15 @@ def process_corpus(
         _commit_batch()
 
         kept_records: list[str] = []
-        page_size = 1000
-        last_seq = 0
-        while True:
-            rows = conn.execute("SELECT seq, normalized_text FROM kept_records WHERE seq > ? ORDER BY seq LIMIT ?", (last_seq, page_size)).fetchall()
-            if not rows:
-                break
-            kept_records.extend(text for _, text in rows)
-            last_seq = rows[-1][0]
+        if return_kept_records:
+            page_size = 1000
+            last_seq = 0
+            while True:
+                rows = conn.execute("SELECT seq, normalized_text FROM kept_records WHERE seq > ? ORDER BY seq LIMIT ?", (last_seq, page_size)).fetchall()
+                if not rows:
+                    break
+                kept_records.extend(text for _, text in rows)
+                last_seq = rows[-1][0]
 
         return report, kept_records
     finally:

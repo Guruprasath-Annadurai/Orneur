@@ -15,6 +15,7 @@ from orca.genesis.data.pipeline import (
     ProcessingReport,
     deterministic_shard,
     deterministic_split,
+    iter_kept_records,
     process_corpus,
     stream_records,
 )
@@ -664,3 +665,45 @@ def test_concurrent_writers_to_the_same_output_dir_are_serialized_not_corrupted(
 
     total_lines = sum(len(f.read_text().splitlines()) for f in out.glob("*.jsonl"))
     assert total_lines == n, f"expected exactly {n} total lines across all shard files, got {total_lines} -- duplication or loss occurred"
+
+
+# ------------------------------------------------------------ P1-01: genuinely bounded-memory interface --
+
+def test_return_kept_records_false_returns_an_empty_list_not_the_full_corpus(tmp_path):
+    p = tmp_path / "in.jsonl"
+    n = 500
+    _write_jsonl(p, [json.dumps({"text": f"bounded-interface record {i} about topic {i}"}) for i in range(n)])
+    out = tmp_path / "out"
+    report, kept = process_corpus(p, out, num_shards=2, return_kept_records=False)
+    assert report.kept == n
+    assert kept == []
+
+
+def test_iter_kept_records_pages_through_the_full_corpus_without_process_corpus_materializing_it(tmp_path):
+    """P1-01: independently confirms the genuinely bounded-memory path
+    end to end -- process with return_kept_records=False (so
+    process_corpus() itself never materializes the full list), then
+    recover the exact same records via the paged generator."""
+    p = tmp_path / "in.jsonl"
+    n = 300
+    texts = [f"iter-kept record {i} about its own topic {i}" for i in range(n)]
+    _write_jsonl(p, [json.dumps({"text": t}) for t in texts])
+    out = tmp_path / "out"
+    report, kept = process_corpus(p, out, num_shards=2, return_kept_records=False, commit_batch_size=40)
+    assert kept == []
+    assert report.kept == n
+
+    recovered = list(iter_kept_records(out, page_size=37))  # a page size that doesn't evenly divide n
+    assert sorted(recovered) == sorted(texts)
+
+
+def test_return_kept_records_true_still_matches_iter_kept_records(tmp_path):
+    """Negative control: the default (True) path and the paged generator
+    must agree exactly -- confirms return_kept_records=False isn't
+    silently changing what gets kept, only how the caller retrieves it."""
+    p = tmp_path / "in.jsonl"
+    texts = [f"consistency record {i}" for i in range(50)]
+    _write_jsonl(p, [json.dumps({"text": t}) for t in texts])
+    out = tmp_path / "out"
+    report, kept = process_corpus(p, out, num_shards=1)
+    assert sorted(kept) == sorted(iter_kept_records(out))
