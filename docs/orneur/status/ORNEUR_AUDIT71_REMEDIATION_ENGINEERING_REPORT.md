@@ -12,11 +12,13 @@ All four starting checkpoints were verified against live `git log` output before
 
 | Branch | Role | Starting SHA (verified) | Finishing SHA |
 |---|---|---|---|
-| `claude/genesis-cross-workstream-integration-2026-10-16` | PR #65 (integration) | `24693fb5bd3e20f791d7ed0b91a044303591bf6d` | `ee45676...` (see `git log -1`) |
-| `claude/genesis-mission2-native-authorization-2026-10-16` | PR #68 (orchestration) | `19d740383a446ce814e8b3809556b38887b4c1b6` | `f2d26c8...` |
+| `claude/genesis-cross-workstream-integration-2026-10-16` | PR #65 (integration) | `24693fb5bd3e20f791d7ed0b91a044303591bf6d` | `5acc8cf821f4848bae3a46688caac43e6cb34df7`* |
+| `claude/genesis-mission2-native-authorization-2026-10-16` | PR #68 (orchestration) | `19d740383a446ce814e8b3809556b38887b4c1b6` | `f2d26c8a2a0106b6fbfebf980533a39a9e958f79` |
 | `claude/genesis-workstream-f-grant-fields-2026-10-16` | PR #69 (grant fields) | `0942169c2753359283e098f0ea1380f85818faeb` | unchanged (no findings assigned here; audit verdict `PASS`) |
-| `claude/genesis-workstream-a-hardening-2026-10-16` | PR #70 (data layer) | `f03af2f3aa1f639fa6b4cf591e022e0aed32df12` | `da5e8fb...` |
+| `claude/genesis-workstream-a-hardening-2026-10-16` | PR #70 (data layer) | `f03af2f3aa1f639fa6b4cf591e022e0aed32df12` | `da5e8fb6785bb99b57d5d84ad5d1f2523a6a84d2` |
 | `antigravity/genesis-hardening-adversarial-audit` | PR #71 (audit, read-only) | `8277be6fb242db9ba7478e9298e5f377e75c2fc3` | unchanged — inspected and imported from, never written to |
+
+\* PR #65's finishing SHA passed through two intermediate, independently verifiable commits during this closure phase: `ee45676` (first remediation push, exact SHA independently confirmed by the directive that opened this phase) → `4123f56` (engineering report) → `5acc8cf` (CI collection-gate fix, this phase's actual final state — see Section 5).
 
 PR #71 was never merged wholesale; only its audit report and adversarial test file were imported (verbatim, unmodified) into PR #65, preserving provenance. PR #69 required no changes — the audit's own verdict for it was `PASS`.
 
@@ -87,7 +89,31 @@ Every P0 test now failing is the **intended outcome** of remediation — a vulne
 ## 5. Local and exact-head CI results
 
 - PR #66 (prior, unrelated chain): confirmed 9/9 checks passing, `mergeable: true`, `mergeStateStatus: CLEAN` (sanity baseline only).
-- PR #65, #68, #70 exact-head GitHub Actions results for this phase's commits (`ee45676`, `f2d26c8`, `da5e8fb`) are **pending** at the time of writing — not assumed, not fabricated. Will be reported honestly once observed in a later turn, consistent with this session's standing instruction never to proactively poll CI.
+- PR #68 (`f2d26c8`) and PR #70 (`da5e8fb`): confirmed **9/9 checks passing** on exact head, independently observed via `gh pr checks`, including both parallel `Deterministic Unit Tests` runs (16m53s and 13m14s respectively).
+- PR #65: at commit `ee45676` (this phase's first push), independently observed **TWO FAILED** `Deterministic Unit Tests` checks (all 17 other checks passing). Both failures were inspected directly from their actual GitHub Actions logs (`gh run view --log-failed`), not assumed:
+
+  **Root cause**: this job's CI script (`scripts/ci/run_deterministic_tests.sh`) runs `pytest -m "not live_ollama_smoke" --ignore=tests/test_trainprep_sentinel.py` — a broad collection pass across effectively the whole `tests/` directory, in an environment that does **not** install `torch`. The verbatim-imported `tests/test_audit_genesis_hardening_adversarial.py` (Section 1) unconditionally imports `orca.genesis.training.orchestration`, which imports `torch` transitively — and, unlike every torch-dependent test file this repository's own suite writes (which guard with `pytest.importorskip("torch")` at module level), the audit's file carries no such guard, since it was written for the auditor's own, torch-available harness, not this repository's CI matrix. The result was a hard **collection ERROR** (`ModuleNotFoundError: No module named 'torch'`), which aborts pytest's entire collection phase — not a per-file skip, and not the 5 now-intentional P0 assertion failures (those never had a chance to run at all; collection itself never got past this file). Both of the two failed checks were the same underlying job running in parallel shards, hence an identical failure in both logs.
+
+  **Investigated separately, per the directive's item 2**: even with `torch` available, would this file's P0 tests have been reported as CI failures anyway? Yes — they now intentionally assert the opposite of what remediation produces (Section 4), and a plain, ungated `pytest` run has no way to distinguish "a real regression" from "a historical vulnerability demonstration correctly no longer reproducing." Fixing only the `torch` import would not have been sufficient; the file genuinely needed to be excluded from this job's pass/fail gate by design, matching the directive's item 3 exactly.
+
+  **Fix** (`5acc8cf`): added `--ignore=tests/test_audit_genesis_hardening_adversarial.py` to the one CI script that does broad collection (every other job in `.github/workflows/test.yml` already runs an explicit, narrow file list — `test_train_losses.py`/`test_transformers_adapter.py`, the Genesis V2 security/sandbox file lists, etc. — none of which ever touch this file). The corrected, secure-behavior counterpart `tests/test_audit_genesis_hardening_remediation.py` (which **does** carry the standard `importorskip("torch")` guard, written by this repository, not imported) is untouched by this ignore and remains fully inside normal CI collection and gating. The historical file itself is untouched, fully present in the repository, and runnable on demand (`pytest tests/test_audit_genesis_hardening_adversarial.py`) — only excluded from this one job's automated pass/fail surface.
+
+  **Verified locally before pushing**: a fresh virtualenv built outside the repository tree, with `torch` deliberately NOT installed (mirroring this job's real environment), now collects the full suite with **zero collection errors** (previously one hard error); the four GENESIS test files that depend on `torch` correctly **skip** (not error) in that environment; the pure-Python data-layer suite (manifest/pipeline/contamination, no `torch` dependency at all) passes 86/86 in the same environment.
+
+  **Confirmed on exact head after the fix (`5acc8cf`)**: both parallel `Deterministic Unit Tests` runs now **PASS** (17m16s and 17m14s) — exit code 0 from `gh pr checks 65`, 19/19 total checks green, zero pending, zero failing.
+
+## 5a. Environment-pollution issues investigated and ruled out (not silently dismissed)
+
+Two apparent-failure patterns surfaced locally during this phase's own re-verification work and were fully root-caused before being excluded as "unrelated," per the directive's explicit instruction not to label failures as unrelated without baseline evidence:
+
+1. **6 failures in `test_genesis_v2_final_pre_corpus_closure.py` / `test_genesis_v2_owner_preflight.py` / `test_genesis_v2_privacy.py`**, none of which import anything this phase touched. Reproduced in isolation on this phase's own branch (6 failed, 85 passed) and compared against an independent baseline run of the unmodified starting commit `24693fb` in a separate git worktree (0 failed, 91 passed). The differentiator: this session's own scratch Python virtualenv (`.venv_audit/`), used to install `torch`/`numpy` for local test execution, was sitting *inside* the repository working directory. These three test files exercise the repository's own real privacy/corpus/preflight-scanning scripts against the actual repo tree, which picked up the virtualenv's contents (a `secrets.pyi` typeshed stub matched a secret-filename rule; the virtualenv's presence also tripped the "no private corpus exists" check). Relocating the virtualenv outside the repository tree and re-running made all 6 disappear with **zero code changes** — conclusively a local tooling-placement artifact of this session, never present in the actual CI environment (which has no such stray directory), and not reflective of any code regression.
+2. **1 failure in `test_genesis_v2_sandbox_containment.py::test_oversized_stdout_is_capped_and_killed`** (a file this phase never touched), observed once during a 3,156-test run under heavy concurrent system load from unrelated processes sharing this machine. Re-run in isolation: passed cleanly. Timing/resource-sensitive test, consistent with transient load rather than a real regression.
+
+Both were investigated to a concrete, falsifiable conclusion (moved/removed the suspected cause, re-ran, confirmed the effect disappeared) rather than asserted as "probably unrelated."
+
+## 5b. Audit #017 review (directive item 6)
+
+Reviewed `docs/orneur/status/GENESIS_AUDIT017_REMEDIATION.md` (PR #58) directly, not assumed from memory: all 6 originally reported defects (DEFECT-01 through DEFECT-06) plus the Mission 1A provenance-bypass continuation are self-reported as fixed and regression-tested there, with a stated verdict of `AUDIT017_REMEDIATION_READY_FOR_INDEPENDENT_RETEST`. Checked the live PR list: unlike Audit #016 (which has a successor retest PR, #57, `antigravity/audit016-successor-retest`), **no successor retest PR exists for Audit #017** — PR #58 remains open, draft, and has never received an independent re-verification from Antigravity. This is unchanged from the prior phase and **still blocks** independent qualification of anything built on top of it: PR #65's ancestry includes PR #58's Workstream B/D/Mission 1A work by construction (Section 7 of the prior-phase report), so that work's self-reported-but-unverified status is a standing, carried-forward precondition for any eventual merge to `main` — independent of, and not resolved by, this phase's Audit #71 remediation, which was scoped only to PRs #65/#68/#69/#70.
 
 ## 6. Unfixed P0/P1 findings
 
@@ -106,6 +132,10 @@ None of the four P0 findings remain unfixed. Both P1 findings remain **intention
 
 Unchanged from the prior phase: PR #58's Workstream B/D/Mission 1A conditional-remediation requirements remain unmerged and unaccepted, carried forward into PR #65 unresolved. This phase did not touch those files and makes no new claim about their status.
 
+## 8b. Integration-branch ancestry verification (directive item 7)
+
+Independently verified, not assumed: `git merge-base --is-ancestor` confirms both `f2d26c8` (PR #68's exact head) and `da5e8fb` (PR #70's exact head) are real ancestors of PR #65's HEAD. Byte-for-byte diffs of every file this phase touched (`orchestration.py`, `pipeline.py`, `manifest.py`) between each owning branch's head and PR #65's HEAD are empty — the integration branch carries the exact, unmodified latest corrections from both owning branches, not a re-derived or partially-applied copy.
+
 ## 9. Antigravity re-audit handoff
 
 Explicit items for independent re-verification://
@@ -122,8 +152,18 @@ Explicit items for independent re-verification://
 
 ## Verdict
 
-**`READY_FOR_INDEPENDENT_REAUDIT`** for the four P0 findings and the two P1 boundaries addressed in this phase, conditioned on:
-- Exact-head CI results for PR #65/#68/#70 landing green (pending, Section 5).
-- Antigravity's own independent re-verification of the four items in Section 9.
+**`READY_FOR_INDEPENDENT_REAUDIT`**
 
-Only the independent auditor may issue the successor qualification verdict; this report records engineering evidence and a self-assessed starting point for that re-audit, not a self-declared PASS.
+All conditions this phase could itself close are now closed and evidenced, not merely claimed:
+- All four P0 findings fixed, root-caused, and regression-tested (Sections 2, 4).
+- Both P1 boundaries resolved by explicit, honest documentation and a correct-usage regression test, matching the directive's own permitted alternative (Section 3).
+- Exact-head CI fully green on all three PRs: **PR #65 19/19, PR #68 9/9, PR #70 9/9** — independently observed via `gh pr checks` after the CI-closure fix in Section 5, not assumed.
+- Full GENESIS-suite regression: **3,130 passed, 20 skipped, 0 unexpected failures** (Section 4), cross-checked against an independent unmodified-baseline run.
+- Integration-branch ancestry independently verified byte-for-byte against both owning branches (Section 8b).
+- Every apparent anomaly encountered along the way (6 pre-existing-looking test failures, 1 flaky test, 2 failed CI checks) was root-caused to a concrete, falsifiable conclusion before being either fixed or ruled out — none were asserted as "expected" or "unrelated" without evidence.
+
+Remaining, explicitly out of this phase's power to close:
+- PR #58 / Audit #017's self-reported remediation has never received an independent Antigravity retest (Section 5b) — a standing precondition for `main`, carried forward unchanged.
+- The four items in Section 9 require Antigravity's own independent execution, not this session's.
+
+Only the independent auditor may issue the successor qualification verdict; this report records complete engineering evidence and a self-assessed starting point for that re-audit, not a self-declared PASS.
