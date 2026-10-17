@@ -1205,3 +1205,45 @@ def test_cannot_authorize_an_already_authorized_run_again(authorized_run):
     assert authorized_run.state is RunState.AUTHORIZED
     with pytest.raises(InvalidTransitionError):
         authorized_run.authorize(authorized_run.grant)
+
+
+def test_marker_files_are_owner_only_permissions(ident, monkeypatch):
+    """P1-03: durable replay-claim marker files must be 0o600 (owner-only),
+    consistent with every other sensitive artifact this codebase writes
+    under ORCA_HOME."""
+    import os
+    import stat
+
+    run = ident.run()
+    ident.validate(run)
+    run.request_authorization()
+    grant = ident.world().authorize(monkeypatch)
+    run.authorize(grant)
+    marker = ORCH._native_pretraining_replay_state_dir() / f"{grant.authorization_id}.claimed"
+    assert marker.exists()
+    mode = stat.S_IMODE(os.stat(marker).st_mode)
+    assert mode == 0o600
+
+
+def test_deleting_the_marker_file_allows_the_authorization_id_to_be_reclaimed(ident, monkeypatch):
+    """P1-03: documents the accepted residual explicitly, as a test, not
+    merely prose -- a local operator with write access to ORCA_HOME can
+    delete a .claimed marker and allow that authorization_id to be
+    consumed again. This mirrors orca.train.authorization._claim_run_slot()'s
+    own documented trade-off exactly; the security boundary is WHO can
+    write to ORCA_HOME, not this guard mechanism."""
+    run_a = ident.run()
+    ident.validate(run_a)
+    run_a.request_authorization()
+    grant = ident.world().authorize(monkeypatch)
+    run_a.authorize(grant)
+    assert run_a.state is RunState.AUTHORIZED
+
+    marker = ORCH._native_pretraining_replay_state_dir() / f"{grant.authorization_id}.claimed"
+    marker.unlink()
+
+    run_b = ident.run()
+    ident.validate(run_b)
+    run_b.request_authorization()
+    run_b.authorize(grant)  # succeeds again -- the marker's absence means "never claimed"
+    assert run_b.state is RunState.AUTHORIZED
