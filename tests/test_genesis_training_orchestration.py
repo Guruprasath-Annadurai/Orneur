@@ -62,6 +62,22 @@ def _digest(label: str) -> str:
     return hashlib.sha256(label.encode()).hexdigest()
 
 
+def _make_real_shard_dir(tmp_path: Path, run_id: str, *, num_shards: int = 2) -> tuple[Path, tuple[str, ...]]:
+    """Antigravity Audit #71 (AUDIT-P0-01): `validate()` now independently
+    re-verifies `authorized_shard_digests` against the REAL on-disk bytes
+    of `shard_dir` -- a caller-chosen digest string no longer suffices.
+    Writes real, deterministic `shard-*.jsonl` files and returns their
+    genuinely computed digests (via the same SHA-256 streaming discipline
+    `orca.genesis.training.orchestration._compute_authorized_shard_file_digests()`
+    uses), so this fixture's digests always match real file content."""
+    shard_dir = tmp_path / f"shards-{run_id}"
+    shard_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(num_shards):
+        (shard_dir / f"shard-{i:04d}-train.jsonl").write_text(f'{{"text": "fixture record for {run_id} shard {i}"}}\n')
+    digests = ORCH._compute_authorized_shard_file_digests(shard_dir)
+    return shard_dir, tuple(sorted(d for _, d in digests))
+
+
 def _real_head_sha() -> str:
     """A real commit SHA that is -- trivially -- its own ancestor, for
     `validate()`'s live `_is_live_ancestor_of_head()` check (M2-01).
@@ -200,13 +216,13 @@ class _Identity:
     test's digests consistent between `validate()` and the matching
     `GrantWorld`, without repeating six keyword arguments everywhere."""
 
-    def __init__(self, run_id: str = "run-1"):
+    def __init__(self, tmp_path: Path, run_id: str = "run-1"):
         self.run_id = run_id
         self.dataset_manifest_id = "genesis-fixture-v1"
         self.dataset_digest = _digest(f"dataset-{run_id}")
         self.model_config_digest = _digest(f"model-config-{run_id}")
         self.tokenizer_digest = _digest(f"tokenizer-{run_id}")
-        self.authorized_shard_digests = (_digest(f"shard-0-{run_id}"), _digest(f"shard-1-{run_id}"))
+        self.shard_dir, self.authorized_shard_digests = _make_real_shard_dir(tmp_path, run_id)
         self.reviewed_commit_sha = _HEAD_SHA
         self.transformation_code_digest = _digest(f"pipeline-{run_id}")
         self.optimizer_config_digest = _digest(f"optimizer-{run_id}")
@@ -235,15 +251,16 @@ class _Identity:
         run.validate(
             dataset_digest=self.dataset_digest, model_config_digest=self.model_config_digest,
             tokenizer_digest=self.tokenizer_digest, authorized_shard_digests=self.authorized_shard_digests,
-            reviewed_commit_sha=self.reviewed_commit_sha, transformation_code_digest=self.transformation_code_digest,
+            shard_dir=self.shard_dir, reviewed_commit_sha=self.reviewed_commit_sha,
+            transformation_code_digest=self.transformation_code_digest,
             optimizer_config_digest=self.optimizer_config_digest, gpu_requested=self.gpu_requested,
             requested_spend_usd=self.requested_spend_usd, requested_wall_clock_minutes=self.requested_wall_clock_minutes,
         )
 
 
 @pytest.fixture
-def ident() -> _Identity:
-    return _Identity()
+def ident(tmp_path) -> _Identity:
+    return _Identity(tmp_path)
 
 
 @pytest.fixture
@@ -976,7 +993,8 @@ def _valid_validate_kwargs(ident) -> dict:
     return dict(
         dataset_digest=ident.dataset_digest, model_config_digest=ident.model_config_digest,
         tokenizer_digest=ident.tokenizer_digest, authorized_shard_digests=ident.authorized_shard_digests,
-        reviewed_commit_sha=ident.reviewed_commit_sha, transformation_code_digest=ident.transformation_code_digest,
+        shard_dir=ident.shard_dir, reviewed_commit_sha=ident.reviewed_commit_sha,
+        transformation_code_digest=ident.transformation_code_digest,
         optimizer_config_digest=ident.optimizer_config_digest,
     )
 
