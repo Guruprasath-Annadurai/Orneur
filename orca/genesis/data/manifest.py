@@ -33,7 +33,7 @@ from orca.config import _mkdir_owner_only, ORCA_HOME
 from orca.genesis.model.config import ARCHITECTURE_VERSION
 from orca.registry.dataset_manifest import sha256_of_file
 
-MANIFEST_SCHEMA_VERSION = "genesis-dataset-provenance/1"
+MANIFEST_SCHEMA_VERSION = "genesis-dataset-provenance/2"
 GENESIS_DATASET_MANIFEST_DIR = ORCA_HOME / "genesis" / "dataset_manifests"
 
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -137,6 +137,38 @@ class GenesisDatasetManifest:
         canonical = json.dumps(binding_fields, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _binding_fields(
+        *, schema_version: str, dataset_name: str, version: str, origins: list, source_content_digest: str,
+        source_record_count: int, transformation_lineage: list, tokenizer_binding,
+    ) -> dict:
+        """P0-01 fix (Native-Authorization-Convergence): the complete set
+        of fields `manifest_id` is actually derived from. Independently
+        reproduced before this fix: `transformation_lineage` was NOT a
+        binding field at all -- two manifests built from the IDENTICAL
+        records/origins/tokenizer but with COMPLETELY DIFFERENT
+        transformation histories (e.g. one PII-screened and deduplicated,
+        the other recording zero processing steps whatsoever) produced
+        the IDENTICAL `manifest_id`. This is a genuine identity collision:
+        a consumer trusting `manifest_id` as proof of "this exact,
+        verified processing history" had no actual guarantee of that at
+        all. `source_record_count` is now also bound explicitly (cheap,
+        explicit defense; `source_content_digest`'s own order-independent
+        construction already makes a record-count change extremely
+        unlikely to collide, but "unlikely" is not "impossible," and an
+        explicit count costs nothing to bind). A single, shared
+        definition used by BOTH `build()` (computing a NEW manifest_id)
+        and `load()` (recomputing to VERIFY an existing one) -- the two
+        were previously two independent, hand-duplicated dict literals
+        that could silently drift apart from each other, which is itself
+        a latent bug class this refactor also closes."""
+        return {
+            "schema_version": schema_version, "dataset_name": dataset_name, "version": version,
+            "origins": origins, "source_content_digest": source_content_digest,
+            "source_record_count": source_record_count,
+            "transformation_lineage": transformation_lineage, "tokenizer_binding": tokenizer_binding,
+        }
+
     @classmethod
     def build(
         cls, *, dataset_name: str, version: str, origins: list[SourceOrigin], normalized_records: list[str],
@@ -173,11 +205,12 @@ class GenesisDatasetManifest:
 
         origins_t = tuple(origins)
         lineage_t = tuple(transformation_lineage)
-        binding_fields = {
-            "schema_version": MANIFEST_SCHEMA_VERSION, "dataset_name": dataset_name, "version": version,
-            "origins": [asdict(o) for o in origins_t], "source_content_digest": source_content_digest,
-            "tokenizer_binding": asdict(tokenizer_binding),
-        }
+        binding_fields = cls._binding_fields(
+            schema_version=MANIFEST_SCHEMA_VERSION, dataset_name=dataset_name, version=version,
+            origins=[asdict(o) for o in origins_t], source_content_digest=source_content_digest,
+            source_record_count=len(normalized_records), transformation_lineage=[asdict(t) for t in lineage_t],
+            tokenizer_binding=asdict(tokenizer_binding),
+        )
         manifest_id = cls._compute_manifest_id(binding_fields)
 
         return cls(
@@ -255,11 +288,13 @@ class GenesisDatasetManifest:
         except (TypeError, KeyError) as e:
             raise ManifestTamperedError(f"manifest at {path} has an inconsistent or malformed structure: {e!r}") from e
 
-        binding_fields = {
-            "schema_version": instance.schema_version, "dataset_name": instance.dataset_name, "version": instance.version,
-            "origins": [asdict(o) for o in instance.origins], "source_content_digest": instance.source_content_digest,
-            "tokenizer_binding": asdict(instance.tokenizer_binding),
-        }
+        binding_fields = cls._binding_fields(
+            schema_version=instance.schema_version, dataset_name=instance.dataset_name, version=instance.version,
+            origins=[asdict(o) for o in instance.origins], source_content_digest=instance.source_content_digest,
+            source_record_count=instance.source_record_count,
+            transformation_lineage=[asdict(t) for t in instance.transformation_lineage],
+            tokenizer_binding=asdict(instance.tokenizer_binding),
+        )
         recomputed_id = cls._compute_manifest_id(binding_fields)
         if recomputed_id != claimed_manifest_id:
             raise ManifestTamperedError(

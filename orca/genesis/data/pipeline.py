@@ -64,6 +64,7 @@ resumed run APPENDS to -- never overwrites -- prior committed output.
 """
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -221,7 +222,33 @@ def _open_progress_db(output_dir: Path) -> sqlite3.Connection:
         )
     """)
     conn.execute("CREATE TABLE IF NOT EXISTS shard_file_safe_offsets (path TEXT PRIMARY KEY, safe_byte_offset INTEGER NOT NULL)")
+    # P0-02 fix: durably persists the TAIL of the near-duplicate sliding
+    # window (bounded to NEAR_DUP_WINDOW entries) so a resumed run
+    # inherits the real window state a crash interrupted, instead of
+    # starting from an empty window -- see _load_near_dup_window_tail()'s
+    # own docstring for the reproduced defect this closes.
+    conn.execute("CREATE TABLE IF NOT EXISTS near_dup_window (seq INTEGER PRIMARY KEY AUTOINCREMENT, line_number INTEGER NOT NULL, normalized_text TEXT NOT NULL)")
     return conn
+
+
+def _load_near_dup_window_tail(conn: sqlite3.Connection) -> list[tuple[int, str, frozenset]]:
+    """P0-02 fix: independently reproduced before this fix -- the
+    near-duplicate sliding window was held ONLY in process-local memory
+    and reset to empty on every `process_corpus()` call. A record
+    processed just after a restart boundary was therefore never compared
+    against the real records that immediately preceded it in an
+    uninterrupted run, so a genuinely near-duplicate record could be
+    silently KEPT after a resume where an uninterrupted run would have
+    rejected it -- directly reproduced: an uninterrupted run over one
+    synthetic corpus reported 1 near-duplicate and kept 6 records; the
+    SAME corpus, processed via a resume partway through, reported 0
+    near-duplicates and kept 7 -- a different logical corpus. Reloads
+    the durably-persisted tail (bounded to `NEAR_DUP_WINDOW` entries, the
+    same bound the in-memory window itself enforces) so a resumed run's
+    window starts in the SAME state an uninterrupted run's would be in
+    at that point."""
+    rows = conn.execute("SELECT line_number, normalized_text FROM near_dup_window ORDER BY seq").fetchall()
+    return [(line_number, text, frozenset(word_ngrams(text, NEAR_DUP_WORD_NGRAM))) for line_number, text in rows]
 
 
 def _load_progress(conn: sqlite3.Connection) -> ProcessingReport:
@@ -252,6 +279,52 @@ def _truncate_partial_shard_writes(output_dir: Path, conn: sqlite3.Connection) -
                 f.truncate(safe_offset)
                 f.flush()
                 os.fsync(f.fileno())
+
+
+def _verify_and_recover_missing_or_corrupted_shard_output(output_dir: Path, conn: sqlite3.Connection) -> None:
+    """P0-03 fix (Native-Authorization-Convergence): independently
+    reproduced before this fix -- externally deleting (or truncating) a
+    shard file AFTER it was durably flushed left `process_corpus()`
+    completely unaware: `report.kept` and the returned `kept_records`
+    list (re-read from SQLite's own `kept_records` table, not from the
+    filesystem) still reported the full count, even though the actual
+    processed-shard BYTES a downstream consumer would read no longer
+    existed on disk at all. SQLite's `flushed = 1` bookkeeping proved
+    only "this function believes it once wrote this content," never
+    "this content is still actually there." Run at the START of every
+    `process_corpus()` call (before `_truncate_partial_shard_writes()`,
+    which only handles partial/corrupt trailing bytes, not a file that
+    is MISSING or SMALLER than its own recorded safe offset entirely):
+    for every shard file this `output_dir` has ever recorded a safe byte
+    offset for, if that file is now missing or smaller than the
+    recorded offset, every `kept_records` row that maps to it is reset
+    to `flushed = 0` and its safe-offset record is reset to 0 -- so the
+    next `_flush_pending_shard_rows()` call regenerates it from SQLite's
+    own durable truth, rather than silently reporting success over
+    missing output."""
+    recorded = conn.execute("SELECT path, safe_byte_offset FROM shard_file_safe_offsets").fetchall()
+    if not recorded:
+        return
+    distinct_shards = conn.execute("SELECT DISTINCT shard, split FROM kept_records").fetchall()
+    path_to_shard_split = {str(_shard_path(output_dir, shard, split)): (shard, split) for shard, split in distinct_shards}
+
+    for path_str, safe_offset in recorded:
+        p = Path(path_str)
+        actual_size = p.stat().st_size if p.exists() else -1
+        if actual_size >= safe_offset:
+            continue  # present and at least as large as what we believe was durably flushed -- fine
+        shard_split = path_to_shard_split.get(path_str)
+        if shard_split is None:
+            continue  # no kept_records row maps here (nothing to recover)
+        shard, split = shard_split
+        conn.execute("BEGIN")
+        conn.execute("UPDATE kept_records SET flushed = 0 WHERE shard = ? AND split = ?", (shard, split))
+        conn.execute(
+            "INSERT INTO shard_file_safe_offsets (path, safe_byte_offset) VALUES (?, 0) "
+            "ON CONFLICT(path) DO UPDATE SET safe_byte_offset = 0",
+            (path_str,),
+        )
+        conn.execute("COMMIT")
 
 
 def _flush_pending_shard_rows(output_dir: Path, conn: sqlite3.Connection) -> None:
@@ -341,8 +414,25 @@ def process_corpus(
     more than `commit_batch_size` records in memory at once, regardless
     of whether the caller later asks for the full list back."""
     output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # P0-02 fix: independently confirmed as a real risk by inspection --
+    # two process_corpus() calls targeting the SAME output_dir with no
+    # mutual exclusion could both read the same resume_offset and
+    # process overlapping line ranges concurrently; whichever commits
+    # its progress LAST would silently "un-progress" the other's
+    # already-committed advancement. An exclusive flock on a dedicated
+    # lock file, held for this call's ENTIRE duration (not merely around
+    # individual SQLite transactions), serializes concurrent callers
+    # against the same output_dir -- the same exclusive-writer
+    # discipline `orca.genesis.training.primitives.save_training_state`
+    # already established for checkpoint files, applied here to a
+    # whole-directory granularity instead of one file.
+    lock_path = output_dir / ".process_corpus.lock"
+    lock_file = open(lock_path, "a+")
+    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
     conn = _open_progress_db(output_dir)
     try:
+        _verify_and_recover_missing_or_corrupted_shard_output(output_dir, conn)  # P0-03: detect externally deleted/truncated output
         _truncate_partial_shard_writes(output_dir, conn)
         _flush_pending_shard_rows(output_dir, conn)  # finish any batch a prior crash committed to SQLite but never flushed to disk
 
@@ -350,7 +440,7 @@ def process_corpus(
         start_line = report.resume_offset if resume_from_line is None else resume_from_line
 
         seen_exact_cache: set[str] = set()  # a small, same-batch cache only -- see note below; not the durable source of truth
-        near_dup_window: list[tuple[int, str, frozenset]] = []
+        near_dup_window: list[tuple[int, str, frozenset]] = _load_near_dup_window_tail(conn)  # P0-02: inherit the real tail, not an empty window
         pending: list[tuple[str, int, str, str]] = []  # (exact_key, shard, split, normalized_text), bounded to commit_batch_size
 
         def _is_seen_exact(key: str) -> bool:
@@ -375,6 +465,16 @@ def process_corpus(
                 "pii_secret_rejected=excluded.pii_secret_rejected, kept=excluded.kept",
                 (report.resume_offset, report.lines_read, report.corrupt_records, report.exact_duplicates,
                  report.near_duplicates, report.quality_rejected, report.pii_secret_rejected, report.kept),
+            )
+            # P0-02: persist the near-dup window's CURRENT state in the
+            # same transaction/commit boundary as everything else -- a
+            # crash between commits loses at most one batch's worth of
+            # window state, the same bounded trade-off every other piece
+            # of durable state in this function already makes.
+            conn.execute("DELETE FROM near_dup_window")
+            conn.executemany(
+                "INSERT INTO near_dup_window (line_number, normalized_text) VALUES (?, ?)",
+                [(ln, text) for ln, text, _ in near_dup_window],
             )
             conn.execute("COMMIT")
             pending.clear()
@@ -444,6 +544,8 @@ def process_corpus(
         return report, kept_records
     finally:
         conn.close()
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        lock_file.close()
 
 
 def compute_shard_digests(output_dir: Path) -> dict[str, str]:
