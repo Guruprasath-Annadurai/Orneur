@@ -194,6 +194,25 @@ response:
 - **Trusted revocation-service boundary**: an unavailable, erroring, or
   loosely-typed (truthy-but-not-`True`) revocation result is always
   treated as a denial -- qualified directly, not merely asserted.
+- **P1-03: marker deletion and rollback** -- the same residual
+  `_claim_run_slot()` already documents applies identically here, by
+  construction (same `O_CREAT | O_EXCL` discipline): a local operator
+  with filesystem access to `ORCA_HOME` who deletes a `.claimed` marker
+  file CAN cause that `authorization_id` to be claimable again. This is
+  not a defect introduced by this fix -- advisory, filesystem-based
+  replay guards are inherently resettable by anyone with write access to
+  the guard's own storage; the actual security boundary is WHO has
+  write access to `ORCA_HOME`, not the guard mechanism itself. Marker
+  files are created `0o600` (owner-only), consistent with every other
+  sensitive artifact this codebase writes under `ORCA_HOME`.
+- **P1-03: cross-host replay is explicitly NOT covered** -- the durable
+  claim lives on ONE host's local filesystem; two processes on
+  DIFFERENT hosts, each with their own `ORCA_HOME`, cannot detect each
+  other's consumption of the same `authorization_id` at all. Closing
+  this would require shared/networked durable storage (e.g. a database
+  or object store both hosts can reach), which is infrastructure this
+  module does not have and was not asked to build -- documented here as
+  an explicit, out-of-scope limitation rather than an implied guarantee.
 - **Advisory-lock boundary** (inherited from the Mission 1 checkpoint
   fix, restated here for completeness): `flock()`-based locking is
   advisory, not mandatory, and protects only against OTHER code that
