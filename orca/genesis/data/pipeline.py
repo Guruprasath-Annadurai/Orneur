@@ -222,6 +222,15 @@ def _open_progress_db(output_dir: Path) -> sqlite3.Connection:
         )
     """)
     conn.execute("CREATE TABLE IF NOT EXISTS shard_file_safe_offsets (path TEXT PRIMARY KEY, safe_byte_offset INTEGER NOT NULL)")
+    # Antigravity Audit #71 (AUDIT-P0-03): a pre-existing output_dir from
+    # before this column existed gets it added, defaulting to '' -- which
+    # deliberately does NOT match any real file's computed digest (see
+    # _hash_file_prefix()'s docstring), so the FIRST recovery check against
+    # a legacy output_dir fails closed and verifies/regenerates once,
+    # rather than silently trusting an un-verified prior offset record.
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(shard_file_safe_offsets)").fetchall()}
+    if "safe_byte_digest" not in existing_cols:
+        conn.execute("ALTER TABLE shard_file_safe_offsets ADD COLUMN safe_byte_digest TEXT NOT NULL DEFAULT ''")
     # P0-02 fix: durably persists the TAIL of the near-duplicate sliding
     # window (bounded to NEAR_DUP_WINDOW entries) so a resumed run
     # inherits the real window state a crash interrupted, instead of
@@ -262,6 +271,36 @@ def _load_progress(conn: sqlite3.Connection) -> ProcessingReport:
     )
 
 
+_EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
+
+
+def _hash_file_prefix(path: Path, n: int) -> str:
+    """Streams the first `n` bytes of `path` (or the whole file if it is
+    shorter than `n`) and returns their SHA-256 hex digest -- never loads
+    more than a fixed chunk size into memory at once. Used both to record
+    a shard file's TRUE content digest at a known-good byte offset
+    (`_flush_pending_shard_rows()`) and to verify that content hasn't
+    silently changed since (`_verify_and_recover_missing_or_corrupted_shard_output()`).
+    Hashing only the first `n` bytes (not the whole current file) matters
+    because this is called BEFORE `_truncate_partial_shard_writes()` has
+    had a chance to cut away any not-yet-recorded trailing bytes a
+    crashed write may have left behind -- comparing only the prefix a
+    prior call actually recorded as safe avoids a false-positive mismatch
+    against bytes that were never claimed to be safe in the first place."""
+    h = hashlib.sha256()
+    remaining = n
+    if not path.exists():
+        return _EMPTY_SHA256 if n == 0 else h.hexdigest()  # unreachable for n>0 by callers, but never crash
+    with open(path, "rb") as f:
+        while remaining > 0:
+            chunk = f.read(min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            h.update(chunk)
+            remaining -= len(chunk)
+    return h.hexdigest()
+
+
 def _truncate_partial_shard_writes(output_dir: Path, conn: sqlite3.Connection) -> None:
     """Crash-safety recovery step, run once at the START of every
     `process_corpus()` call (whether this is a fresh run or a resume):
@@ -291,28 +330,51 @@ def _verify_and_recover_missing_or_corrupted_shard_output(output_dir: Path, conn
     processed-shard BYTES a downstream consumer would read no longer
     existed on disk at all. SQLite's `flushed = 1` bookkeeping proved
     only "this function believes it once wrote this content," never
-    "this content is still actually there." Run at the START of every
-    `process_corpus()` call (before `_truncate_partial_shard_writes()`,
-    which only handles partial/corrupt trailing bytes, not a file that
-    is MISSING or SMALLER than its own recorded safe offset entirely):
-    for every shard file this `output_dir` has ever recorded a safe byte
-    offset for, if that file is now missing or smaller than the
-    recorded offset, every `kept_records` row that maps to it is reset
-    to `flushed = 0` and its safe-offset record is reset to 0 -- so the
-    next `_flush_pending_shard_rows()` call regenerates it from SQLite's
-    own durable truth, rather than silently reporting success over
-    missing output."""
-    recorded = conn.execute("SELECT path, safe_byte_offset FROM shard_file_safe_offsets").fetchall()
+    "this content is still actually there."
+
+    Antigravity Audit #71 (AUDIT-P0-03) fix: independently reproduced --
+    the prior version of this check trusted file SIZE alone
+    (`actual_size >= safe_offset`). Replacing a flushed shard file's
+    content with equal-size (or larger) junk bytes -- a bit-flip, a
+    block of padding, or arbitrary substituted text -- passed this check
+    completely undetected, since size alone says nothing about content.
+    Now ALSO compares the file's actual SHA-256 digest (over exactly the
+    first `safe_byte_offset` bytes -- see `_hash_file_prefix()`'s own
+    docstring for why only that prefix, not the whole current file, is
+    hashed here) against the digest recorded at the moment those bytes
+    were durably written (`_flush_pending_shard_rows()`). The recorded
+    digest is the TRUSTWORTHY reference precisely because THIS module
+    computed it itself, from bytes it had just written and fsync'd --
+    never from a caller-supplied claim; this is "only regenerate data
+    from a source valid under the documented threat model." A mismatch
+    (content tampered without changing size, or any other equal-or-
+    larger-size substitution) is now treated exactly like a missing
+    file.
+
+    Run at the START of every `process_corpus()` call (before
+    `_truncate_partial_shard_writes()`, which only handles partial/
+    corrupt TRAILING bytes past a known-good offset, not corruption
+    WITHIN that offset): for every shard file this `output_dir` has ever
+    recorded a safe byte offset/digest for, if that file is missing,
+    smaller than the recorded offset, OR its content digest no longer
+    matches, every `kept_records` row that maps to it is reset to
+    `flushed = 0` and its safe-offset/digest record is reset to
+    0/empty -- so the next `_flush_pending_shard_rows()` call
+    regenerates it from SQLite's OWN durable `kept_records` truth (never
+    from the corrupted file itself, which is re-verified again once
+    rewritten), rather than silently reporting success over missing or
+    tampered output."""
+    recorded = conn.execute("SELECT path, safe_byte_offset, safe_byte_digest FROM shard_file_safe_offsets").fetchall()
     if not recorded:
         return
     distinct_shards = conn.execute("SELECT DISTINCT shard, split FROM kept_records").fetchall()
     path_to_shard_split = {str(_shard_path(output_dir, shard, split)): (shard, split) for shard, split in distinct_shards}
 
-    for path_str, safe_offset in recorded:
+    for path_str, safe_offset, safe_digest in recorded:
         p = Path(path_str)
         actual_size = p.stat().st_size if p.exists() else -1
-        if actual_size >= safe_offset:
-            continue  # present and at least as large as what we believe was durably flushed -- fine
+        if actual_size >= safe_offset and _hash_file_prefix(p, safe_offset) == safe_digest:
+            continue  # present, at least as large as flushed, AND content-verified -- genuinely fine
         shard_split = path_to_shard_split.get(path_str)
         if shard_split is None:
             continue  # no kept_records row maps here (nothing to recover)
@@ -320,9 +382,9 @@ def _verify_and_recover_missing_or_corrupted_shard_output(output_dir: Path, conn
         conn.execute("BEGIN")
         conn.execute("UPDATE kept_records SET flushed = 0 WHERE shard = ? AND split = ?", (shard, split))
         conn.execute(
-            "INSERT INTO shard_file_safe_offsets (path, safe_byte_offset) VALUES (?, 0) "
-            "ON CONFLICT(path) DO UPDATE SET safe_byte_offset = 0",
-            (path_str,),
+            "INSERT INTO shard_file_safe_offsets (path, safe_byte_offset, safe_byte_digest) VALUES (?, 0, ?) "
+            "ON CONFLICT(path) DO UPDATE SET safe_byte_offset = 0, safe_byte_digest = excluded.safe_byte_digest",
+            (path_str, _EMPTY_SHA256),
         )
         conn.execute("COMMIT")
 
@@ -345,7 +407,19 @@ def _flush_pending_shard_rows(output_dir: Path, conn: sqlite3.Connection) -> Non
     first means ANY failure between that commit and the final
     flushed=1 update is recovered identically: truncate back to the
     last known-good offset, then redo the flush from SQLite's own
-    durable truth."""
+    durable truth.
+
+    Antigravity Audit #71 (AUDIT-P0-03) fix: the pre-write record now
+    ALSO captures the CURRENT file's own content digest (hashing exactly
+    its pre-write byte count -- the same prefix `_truncate_partial_shard_writes()`
+    would restore it to on a crash between this record and the write
+    below, so the recorded digest stays valid for post-crash recovery
+    verification even if this write is interrupted), and the post-write
+    record captures the digest of the file's new, full content after the
+    append -- both streamed, never loading the whole file into memory at
+    once (`_hash_file_prefix()`). These are the trustworthy reference
+    digests `_verify_and_recover_missing_or_corrupted_shard_output()`
+    later verifies real on-disk bytes against."""
     page_size = 500
     while True:
         rows = conn.execute("SELECT seq, shard, split, normalized_text FROM kept_records WHERE flushed = 0 ORDER BY seq LIMIT ?", (page_size,)).fetchall()
@@ -358,11 +432,12 @@ def _flush_pending_shard_rows(output_dir: Path, conn: sqlite3.Connection) -> Non
         for path in by_file:
             path.parent.mkdir(parents=True, exist_ok=True)
             pre_write_size = path.stat().st_size if path.exists() else 0
+            pre_write_digest = _hash_file_prefix(path, pre_write_size)
             conn.execute("BEGIN")
             conn.execute(
-                "INSERT INTO shard_file_safe_offsets (path, safe_byte_offset) VALUES (?, ?) "
-                "ON CONFLICT(path) DO UPDATE SET safe_byte_offset = excluded.safe_byte_offset",
-                (str(path), pre_write_size),
+                "INSERT INTO shard_file_safe_offsets (path, safe_byte_offset, safe_byte_digest) VALUES (?, ?, ?) "
+                "ON CONFLICT(path) DO UPDATE SET safe_byte_offset = excluded.safe_byte_offset, safe_byte_digest = excluded.safe_byte_digest",
+                (str(path), pre_write_size, pre_write_digest),
             )
             conn.execute("COMMIT")
 
@@ -375,10 +450,11 @@ def _flush_pending_shard_rows(output_dir: Path, conn: sqlite3.Connection) -> Non
                 os.fsync(f.fileno())
             path.chmod(0o600)
             new_size = path.stat().st_size
+            new_digest = _hash_file_prefix(path, new_size)
             conn.execute(
-                "INSERT INTO shard_file_safe_offsets (path, safe_byte_offset) VALUES (?, ?) "
-                "ON CONFLICT(path) DO UPDATE SET safe_byte_offset = excluded.safe_byte_offset",
-                (str(path), new_size),
+                "INSERT INTO shard_file_safe_offsets (path, safe_byte_offset, safe_byte_digest) VALUES (?, ?, ?) "
+                "ON CONFLICT(path) DO UPDATE SET safe_byte_offset = excluded.safe_byte_offset, safe_byte_digest = excluded.safe_byte_digest",
+                (str(path), new_size, new_digest),
             )
         seqs = [seq for seq, _, _, _ in rows]
         conn.executemany("UPDATE kept_records SET flushed = 1 WHERE seq = ?", [(s,) for s in seqs])
@@ -481,8 +557,23 @@ def process_corpus(
             return row is not None
 
         def _commit_batch() -> None:
-            if not pending:
-                return
+            # Antigravity Audit #71 (AUDIT-P0-02): independently reproduced
+            # as a real defect, not merely inspected -- this early return
+            # on an empty `pending` (kept records only) silently discarded
+            # the progress row, rejection counters, and near-dup window for
+            # every batch boundary where nothing was KEPT: a corpus that is
+            # all corrupt/rejected/duplicate records, or a trailing run of
+            # such records after the last kept batch, left NOTHING
+            # committed to SQLite at all -- `report.resume_offset` and
+            # every rejection counter reverted to whatever (possibly
+            # none) a PRIOR batch had committed, so a resume re-read lines
+            # already accounted for, double-counting rejections and
+            # re-scanning already-seen input. Progress must be persisted
+            # at every batch boundary and at loop exit regardless of
+            # whether any record was KEPT -- `pending` only ever holds
+            # records that passed every filter, so gating durability on it
+            # being non-empty conflated "nothing to flush to a shard file"
+            # with "nothing to persist," which are not the same thing.
             conn.execute("BEGIN")
             for exact_key, shard, split, text in pending:
                 conn.execute("INSERT OR IGNORE INTO seen_exact (exact_key) VALUES (?)", (exact_key,))

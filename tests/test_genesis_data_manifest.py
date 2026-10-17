@@ -266,6 +266,7 @@ def test_different_record_count_with_colliding_digest_is_still_bound_explicitly(
             schema_version=m1.schema_version, dataset_name=m1.dataset_name, version=m1.version,
             origins=[o.__dict__ for o in m1.origins], source_content_digest=m1.source_content_digest,
             source_record_count=999,  # tampered count, everything else unchanged
+            normalization_rule=m1.normalization_rule,
             transformation_lineage=[t.__dict__ for t in m1.transformation_lineage],
             tokenizer_binding=m1.tokenizer_binding.__dict__,
         )

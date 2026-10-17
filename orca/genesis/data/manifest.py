@@ -33,7 +33,7 @@ from orca.config import _mkdir_owner_only, ORCA_HOME
 from orca.genesis.model.config import ARCHITECTURE_VERSION
 from orca.registry.dataset_manifest import sha256_of_file
 
-MANIFEST_SCHEMA_VERSION = "genesis-dataset-provenance/2"
+MANIFEST_SCHEMA_VERSION = "genesis-dataset-provenance/3"  # Audit #71 P0-04: normalization_rule is now a binding field
 GENESIS_DATASET_MANIFEST_DIR = ORCA_HOME / "genesis" / "dataset_manifests"
 
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -140,7 +140,7 @@ class GenesisDatasetManifest:
     @staticmethod
     def _binding_fields(
         *, schema_version: str, dataset_name: str, version: str, origins: list, source_content_digest: str,
-        source_record_count: int, transformation_lineage: list, tokenizer_binding,
+        source_record_count: int, normalization_rule: str, transformation_lineage: list, tokenizer_binding,
     ) -> dict:
         """P0-01 fix (Native-Authorization-Convergence): the complete set
         of fields `manifest_id` is actually derived from. Independently
@@ -161,11 +161,36 @@ class GenesisDatasetManifest:
         and `load()` (recomputing to VERIFY an existing one) -- the two
         were previously two independent, hand-duplicated dict literals
         that could silently drift apart from each other, which is itself
-        a latent bug class this refactor also closes."""
+        a latent bug class this refactor also closes.
+
+        Antigravity Audit #71 (AUDIT-P0-04) fix: `normalization_rule`
+        is now ALSO a binding field. Independently reproduced before this
+        fix: a saved manifest file could have `normalization_rule`
+        hand-edited to an arbitrary string (including a misleading or
+        attacker-controlled claim about what normalization was actually
+        applied) with `manifest_id` left unchanged, and `load()` accepted
+        it with zero complaint -- `required_keys` mandated the field be
+        PRESENT, but nothing bound its CONTENT to the identity it claimed
+        to describe. This is a deliberate provenance decision, not an
+        oversight: `normalization_rule` states which concrete
+        normalization implementation produced `source_content_digest`
+        (today, always the fixed description of `normalize_record_text()`
+        -- see `build()`); it is exactly the same kind of
+        "which real process produced this content" claim
+        `transformation_lineage` already makes, and a consumer trusting
+        `manifest_id` as proof of "this exact processing history" must
+        not be able to have the claimed normalization rule silently
+        mutated out from under an unchanged id. Binding it required
+        bumping `MANIFEST_SCHEMA_VERSION` (schema versioning, since the
+        identity formula changed) -- `load()` already rejects an
+        unrecognized `schema_version` (A-09), so this correctly
+        invalidates manifests built under the prior binding-fields
+        formula rather than silently accepting them under a new rule
+        they were never computed against."""
         return {
             "schema_version": schema_version, "dataset_name": dataset_name, "version": version,
             "origins": origins, "source_content_digest": source_content_digest,
-            "source_record_count": source_record_count,
+            "source_record_count": source_record_count, "normalization_rule": normalization_rule,
             "transformation_lineage": transformation_lineage, "tokenizer_binding": tokenizer_binding,
         }
 
@@ -205,10 +230,12 @@ class GenesisDatasetManifest:
 
         origins_t = tuple(origins)
         lineage_t = tuple(transformation_lineage)
+        normalization_rule = "unicodedata.normalize('NFC', text) then collapse whitespace then strip (see normalize_record_text())"
         binding_fields = cls._binding_fields(
             schema_version=MANIFEST_SCHEMA_VERSION, dataset_name=dataset_name, version=version,
             origins=[asdict(o) for o in origins_t], source_content_digest=source_content_digest,
-            source_record_count=len(normalized_records), transformation_lineage=[asdict(t) for t in lineage_t],
+            source_record_count=len(normalized_records), normalization_rule=normalization_rule,
+            transformation_lineage=[asdict(t) for t in lineage_t],
             tokenizer_binding=asdict(tokenizer_binding),
         )
         manifest_id = cls._compute_manifest_id(binding_fields)
@@ -216,7 +243,7 @@ class GenesisDatasetManifest:
         return cls(
             schema_version=MANIFEST_SCHEMA_VERSION, manifest_id=manifest_id, dataset_name=dataset_name, version=version,
             origins=origins_t, source_record_count=len(normalized_records), source_content_digest=source_content_digest,
-            normalization_rule="unicodedata.normalize('NFC', text) then collapse whitespace then strip (see normalize_record_text())",
+            normalization_rule=normalization_rule,
             transformation_lineage=lineage_t, tokenizer_binding=tokenizer_binding,
         )
 
@@ -291,7 +318,7 @@ class GenesisDatasetManifest:
         binding_fields = cls._binding_fields(
             schema_version=instance.schema_version, dataset_name=instance.dataset_name, version=instance.version,
             origins=[asdict(o) for o in instance.origins], source_content_digest=instance.source_content_digest,
-            source_record_count=instance.source_record_count,
+            source_record_count=instance.source_record_count, normalization_rule=instance.normalization_rule,
             transformation_lineage=[asdict(t) for t in instance.transformation_lineage],
             tokenizer_binding=asdict(instance.tokenizer_binding),
         )
