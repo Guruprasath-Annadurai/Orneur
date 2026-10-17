@@ -44,5 +44,24 @@ set -euo pipefail
 # everything else. Both invocations' exit codes are checked explicitly
 # (not masked by `tee`, per this script's own original fix above).
 
+# Antigravity Audit #71 CI closure (2026-10-17): tests/test_audit_genesis_hardening_adversarial.py
+# is an EXACT, unmodified import of Antigravity's independent adversarial audit's own
+# vulnerability-demonstration test file (preserved verbatim for provenance -- see
+# docs/orneur/status/ORNEUR_AUDIT71_REMEDIATION_ENGINEERING_REPORT.md). It has two properties
+# that make it unsuitable for this job's normal, pass/fail-gated, broad collection:
+#   1. Its P0 tests now INTENTIONALLY fail post-remediation (each one asserted the VULNERABLE
+#      behavior; the fix makes that assertion false by design -- a real test failure here would
+#      mean the vulnerability came BACK, not that anything is wrong today).
+#   2. It has no `pytest.importorskip("torch")` guard (unlike every test file this repository's
+#      own test suite writes for torch-dependent code) -- it unconditionally imports
+#      orca.genesis.training.orchestration, which imports torch transitively, and this job's
+#      environment does not install torch. Without a guard, that is a hard COLLECTION ERROR
+#      (not a skip), which aborts this job's entire test run -- not merely one file's results.
+# The corrected, secure-behavior counterpart (tests/test_audit_genesis_hardening_remediation.py,
+# written by this repository, WITH the standard importorskip guard) stays fully inside normal
+# CI collection below and is what this job's green/red status actually reflects for Audit #71.
 pytest tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-sentinel-log.txt
-pytest -m "not live_ollama_smoke" --ignore=tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-log.txt
+pytest -m "not live_ollama_smoke" \
+  --ignore=tests/test_trainprep_sentinel.py \
+  --ignore=tests/test_audit_genesis_hardening_adversarial.py \
+  -v 2>&1 | tee /tmp/pytest-log.txt
