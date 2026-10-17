@@ -88,7 +88,30 @@ def find_exact_matches(candidate_texts: Sequence[str], protected_texts: Sequence
     return out
 
 
-def find_near_duplicates_across_splits(split_to_records: Mapping[str, Sequence[str]]) -> list[tuple[str, int, str, int]]:
+class CrossSplitScreeningTooLargeError(Exception):
+    """P1-02 fix: raised by `find_near_duplicates_across_splits()` when
+    the total record count exceeds `max_total_records`. This function
+    is a CPU-testable reference implementation (pairwise O(n^2)
+    comparison, the same honest trade-off `orca.genesis.data.pipeline`'s
+    own bounded `NEAR_DUP_WINDOW` sliding-window already documents for
+    within-corpus near-dup detection) -- independently reproduced as
+    having NO explicit scalability limit at all before this fix: it
+    would simply run slower and slower, with no boundary past which a
+    caller is told "this input is too large for this implementation."
+    Raising a clear, explicit error past a documented size is the
+    directive's own explicitly-permitted alternative to actually
+    building a MinHash/LSH-indexed implementation (out of scope for
+    this hardening pass, exactly as `pipeline.py`'s own near-duplicate
+    detection already documents for the analogous within-corpus case) --
+    a caller with a genuinely large corpus must shard the cross-split
+    check itself (e.g. per-shard, or via an external indexed near-dup
+    tool) rather than this function silently taking an unbounded amount
+    of time."""
+
+
+def find_near_duplicates_across_splits(
+    split_to_records: Mapping[str, Sequence[str]], *, max_total_records: int = 5000,
+) -> list[tuple[str, int, str, int]]:
     """A-11 (Workstream A hardening): `deterministic_split()`
     (`orca.genesis.data.pipeline`) guarantees a given record's split
     assignment is reproducible and that record is never duplicated
@@ -101,7 +124,24 @@ def find_near_duplicates_across_splits(split_to_records: Mapping[str, Sequence[s
     Returns `(split_a, index_a, split_b, index_b)` tuples for every
     cross-split pair exceeding `NEAR_DUP_JACCARD_THRESHOLD` -- empty
     means none found, which a caller must still treat as "checked and
-    clean," never implicitly assumed without calling this."""
+    clean," never implicitly assumed without calling this.
+
+    P1-02 fix: this is an O(n^2) pairwise comparison -- explicitly
+    bounded by `max_total_records` (default 5000, ~12.5M comparisons,
+    the same order of magnitude this module's own test suite exercises
+    comfortably on CPU). Raises `CrossSplitScreeningTooLargeError`
+    rather than silently taking an unbounded amount of time past that
+    size -- an EXPLICIT scalability limit, the directive's own stated
+    alternative to a full indexed (MinHash/LSH) implementation, which
+    remains a documented, out-of-scope future upgrade."""
+    total = sum(len(records) for records in split_to_records.values())
+    if total > max_total_records:
+        raise CrossSplitScreeningTooLargeError(
+            f"find_near_duplicates_across_splits() received {total} total records, exceeding "
+            f"max_total_records={max_total_records} -- this O(n^2) pairwise comparison has no indexed "
+            f"implementation; shard the cross-split check yourself or raise max_total_records explicitly "
+            f"if you have confirmed the runtime cost is acceptable"
+        )
     bucketed: list[tuple[str, int, frozenset]] = []
     for split_name, records in split_to_records.items():
         for idx, text in enumerate(records):
