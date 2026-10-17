@@ -118,6 +118,7 @@ class _GovWorld:
     def __init__(
         self, manifest: GenesisDatasetManifest, *, run_id: str = "integration-run-1",
         dataset_content_digest: str | None = None, record_dataset_digest_override: str | None = None,
+        tmp_path: Path | None = None,
     ):
         self.priv = Ed25519PrivateKey.generate()
         pub = self.priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
@@ -132,7 +133,19 @@ class _GovWorld:
         }
         self.run_id = run_id
         self.model_config_digest = hashlib.sha256(b"integration-model-config-v1").hexdigest()
-        self.authorized_shard_digests = (hashlib.sha256(b"integration-shard-0").hexdigest(),)
+        self.shard_dir: Path | None = None
+        if tmp_path is not None:
+            # Antigravity Audit #71 (AUDIT-P0-01): GenesisTrainingRun.validate()
+            # now independently re-verifies authorized_shard_digests against
+            # real on-disk shard-*.jsonl bytes -- a caller-chosen digest
+            # string no longer suffices.
+            self.shard_dir = tmp_path / f"shards-{run_id}"
+            self.shard_dir.mkdir(parents=True, exist_ok=True)
+            (self.shard_dir / "shard-0000-train.jsonl").write_text('{"text": "integration fixture shard record"}\n')
+            real_digests = ORCH._compute_authorized_shard_file_digests(self.shard_dir)
+            self.authorized_shard_digests = tuple(sorted(d for _, d in real_digests))
+        else:
+            self.authorized_shard_digests = (hashlib.sha256(b"integration-shard-0").hexdigest(),)
         self.req = GOV.NativePretrainingRequest(
             run_id=run_id, nonce=hashlib.sha256(f"integration-nonce-seed-{run_id}".encode()).hexdigest(),
             model_family="genesis", architecture_version="genesis-arch-v1",
@@ -152,10 +165,12 @@ class _GovWorld:
         `_GovWorld`'s own request/record declare, so a grant minted from
         this world can genuinely authorize it (Mission 2's positive
         integration path)."""
+        assert self.shard_dir is not None, "validate_matching_run() requires _GovWorld to have been constructed with tmp_path"
         run.validate(
             dataset_digest=self.req.dataset_content_digest, model_config_digest=self.model_config_digest,
             tokenizer_digest=self.req.tokenizer_digest, authorized_shard_digests=self.authorized_shard_digests,
-            reviewed_commit_sha=self.req.reviewed_commit_sha, transformation_code_digest=self.req.transformation_code_digest,
+            shard_dir=self.shard_dir, reviewed_commit_sha=self.req.reviewed_commit_sha,
+            transformation_code_digest=self.req.transformation_code_digest,
             optimizer_config_digest=self.req.optimizer_config_digest, gpu_requested=self.req.gpu_requested,
             requested_spend_usd=self.req.requested_spend_usd, requested_wall_clock_minutes=self.req.max_wall_clock_minutes,
         )
@@ -240,7 +255,7 @@ def test_a_manifest_tampered_after_the_fact_is_caught_before_governance_ever_see
 
 # ====================================================== authorization-layer binding (Mission 2) =============
 
-def test_a_correctly_bound_native_pretraining_grant_does_authorize_a_genesis_training_run(monkeypatch):
+def test_a_correctly_bound_native_pretraining_grant_does_authorize_a_genesis_training_run(monkeypatch, tmp_path):
     """Native-Authorization-Convergence Mission 2: this is the FLIPPED
     expectation from the pre-Mission-2 version of this test (which
     confirmed a NativePretrainingGrant could NEVER authorize a
@@ -255,7 +270,7 @@ def test_a_correctly_bound_native_pretraining_grant_does_authorize_a_genesis_tra
     ok, msg = manifest.verify_against_records(records)
     assert ok, msg
 
-    gov = _GovWorld(manifest, run_id="integration-run-1")
+    gov = _GovWorld(manifest, run_id="integration-run-1", tmp_path=tmp_path)
     native_grant = gov.authorize(monkeypatch)
     assert isinstance(native_grant, GOV.NativePretrainingGrant)
 
@@ -270,13 +285,13 @@ def test_a_correctly_bound_native_pretraining_grant_does_authorize_a_genesis_tra
     assert run.grant is native_grant
 
 
-def test_a_native_pretraining_grant_bound_to_a_different_run_is_still_rejected(monkeypatch):
+def test_a_native_pretraining_grant_bound_to_a_different_run_is_still_rejected(monkeypatch, tmp_path):
     """The positive case above does not mean ANY NativePretrainingGrant
     authorizes ANY run -- exact workload binding (Mission 2's own
     requirement) still applies between two independently-constructed
     GenesisTrainingRun/grant pairs."""
     manifest, records = _real_dataset_manifest()
-    gov = _GovWorld(manifest, run_id="integration-run-OTHER")
+    gov = _GovWorld(manifest, run_id="integration-run-OTHER", tmp_path=tmp_path)
     native_grant = gov.authorize(monkeypatch)
 
     run = GenesisTrainingRun(
@@ -307,10 +322,17 @@ def test_a_lora_training_grant_still_cannot_authorize_a_genesis_training_run(tmp
         "integration-run-2", dataset_manifest_ids=(manifest.manifest_id,), environment_class=LORA_ENV,
         repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
     )
+    # Antigravity Audit #71 (AUDIT-P0-01): validate() now independently
+    # re-verifies authorized_shard_digests against real on-disk bytes.
+    unused_shard_dir = tmp_path / "shards-integration-run-2"
+    unused_shard_dir.mkdir(parents=True, exist_ok=True)
+    (unused_shard_dir / "shard-0000-train.jsonl").write_text('{"text": "unused fixture shard record"}\n')
+    unused_shard_digests = tuple(sorted(d for _, d in ORCH._compute_authorized_shard_file_digests(unused_shard_dir)))
     run.validate(
         dataset_digest=manifest.source_content_digest, model_config_digest=hashlib.sha256(b"unused").hexdigest(),
-        tokenizer_digest=hashlib.sha256(b"unused").hexdigest(), authorized_shard_digests=(hashlib.sha256(b"unused-shard").hexdigest(),),
-        reviewed_commit_sha=_HEAD_SHA, transformation_code_digest=hashlib.sha256(b"unused-pipeline").hexdigest(),
+        tokenizer_digest=hashlib.sha256(b"unused").hexdigest(), authorized_shard_digests=unused_shard_digests,
+        shard_dir=unused_shard_dir, reviewed_commit_sha=_HEAD_SHA,
+        transformation_code_digest=hashlib.sha256(b"unused-pipeline").hexdigest(),
         optimizer_config_digest=hashlib.sha256(b"unused-optimizer").hexdigest(),
     )
     run.request_authorization()
@@ -348,7 +370,7 @@ def test_authorizing_a_genesis_training_run_does_not_itself_authorize_native_pre
 
 # ====================================================== end-to-end real-object wiring =============
 
-def test_full_real_object_chain_dataset_manifest_to_training_run_to_native_grant(monkeypatch):
+def test_full_real_object_chain_dataset_manifest_to_training_run_to_native_grant(monkeypatch, tmp_path):
     """The complete positive chain, all real objects, now through
     GENUINE authorization (Mission 2): a real GenesisDatasetManifest (A)
     re-verified from real records, a real GenesisTrainingRun (C)
@@ -363,7 +385,7 @@ def test_full_real_object_chain_dataset_manifest_to_training_run_to_native_grant
     ok, msg = manifest.verify_against_records(records)
     assert ok, msg
 
-    gov = _GovWorld(manifest, run_id="integration-run-3")
+    gov = _GovWorld(manifest, run_id="integration-run-3", tmp_path=tmp_path)
     run = GenesisTrainingRun(
         "integration-run-3", dataset_manifest_ids=(manifest.manifest_id,), environment_class=GOV_ENV,
         repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,
@@ -382,7 +404,7 @@ def test_full_real_object_chain_dataset_manifest_to_training_run_to_native_grant
     assert run.grant is native_grant
 
 
-def test_full_real_object_chain_execution_start_still_requires_the_real_empty_acceptance_ledger(monkeypatch):
+def test_full_real_object_chain_execution_start_still_requires_the_real_empty_acceptance_ledger(monkeypatch, tmp_path):
     """The positive chain above reaches AUTHORIZED -- it must NOT, by
     itself, reach RUNNING. start() requires the project-wide
     founder-acceptance ledger to additionally show FINAL-2 and EXEC-1
@@ -390,7 +412,7 @@ def test_full_real_object_chain_execution_start_still_requires_the_real_empty_ac
     and correctly authorized run is denied at the execution-start
     boundary, confirming native training remains NO-GO end to end."""
     manifest, records = _real_dataset_manifest()
-    gov = _GovWorld(manifest, run_id="integration-run-4")
+    gov = _GovWorld(manifest, run_id="integration-run-4", tmp_path=tmp_path)
     run = GenesisTrainingRun(
         "integration-run-4", dataset_manifest_ids=(manifest.manifest_id,), environment_class=GOV_ENV,
         repo_root=REPO_ROOT, revocation_check=lambda auth_id: False,

@@ -207,7 +207,7 @@ def test_full_workstream_a_pipeline_reaches_authorized_but_stays_no_go(tmp_path,
         dataset_manifest=reloaded, dataset_records=kept_records,  # M2-03: re-verified against real records, not a bare digest string
         model_config_digest=model_config_digest, tokenizer_digest=tokenizer_binding.vocab_digest,
         authorized_shard_digests=tuple(sorted(shard_digests.values())),  # REAL shard-file digests, not caller-chosen strings
-        reviewed_commit_sha=reviewed_commit_sha, transformation_code_digest=transformation_code_digest,
+        shard_dir=out_dir, reviewed_commit_sha=reviewed_commit_sha, transformation_code_digest=transformation_code_digest,
         optimizer_config_digest=optimizer_config_digest,
     )
     assert run.state is RunState.VALIDATED
@@ -274,7 +274,7 @@ def test_tampering_a_shard_after_manifest_binding_invalidates_the_training_ident
     run.validate(
         dataset_digest=manifest.source_content_digest, model_config_digest=hashlib.sha256(b"mcfg").hexdigest(),
         tokenizer_digest=tb.vocab_digest, authorized_shard_digests=tuple(sorted(shard_digests_after.values())),  # the NEW, tampered digests
-        reviewed_commit_sha=reviewed_commit_sha, transformation_code_digest=hashlib.sha256(b"tcd").hexdigest(),
+        shard_dir=out_dir, reviewed_commit_sha=reviewed_commit_sha, transformation_code_digest=hashlib.sha256(b"tcd").hexdigest(),
         optimizer_config_digest=hashlib.sha256(b"ocd").hexdigest(),
     )
     run.request_authorization()
