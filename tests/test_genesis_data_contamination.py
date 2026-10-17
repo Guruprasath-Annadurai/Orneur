@@ -169,3 +169,19 @@ def test_a_clean_looking_report_missing_the_cross_split_check_is_still_not_fully
     report = run_contamination_checks(["anything"], protected_texts=["something else"])
     assert report.clean is True  # no flags from the checks that DID run
     assert report.is_fully_verified_clean(required_checks=["exact_match", "cross_split_near_duplicate"]) is False
+
+
+# ------------------------------------------------- P1-02: explicit cross-split scalability limit --
+
+def test_find_near_duplicates_across_splits_raises_past_the_explicit_size_limit():
+    from orca.genesis.data.contamination import CrossSplitScreeningTooLargeError
+
+    split_to_records = {"train": [f"record {i}" for i in range(6)]}
+    with pytest.raises(CrossSplitScreeningTooLargeError, match="exceeding max_total_records"):
+        find_near_duplicates_across_splits(split_to_records, max_total_records=5)
+
+
+def test_find_near_duplicates_across_splits_allows_a_caller_to_explicitly_raise_the_limit():
+    split_to_records = {"train": [f"record {i}" for i in range(6)]}
+    flagged = find_near_duplicates_across_splits(split_to_records, max_total_records=10)
+    assert flagged == []
