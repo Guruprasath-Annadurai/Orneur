@@ -10,6 +10,7 @@ import pytest
 
 from orca.genesis.data.manifest import (
     GenesisDatasetManifest,
+    ManifestTamperedError,
     ProvenanceRejected,
     SourceOrigin,
     TokenizerBinding,
@@ -140,10 +141,11 @@ def test_saved_manifest_file_has_owner_only_permissions():
 
 
 def test_loaded_manifest_detects_forged_file_content(tmp_path):
-    """A manifest file edited on disk after saving (e.g. an attacker
-    trying to forge a different dataset_name under the same path) is
-    detectable by re-verifying its own internal manifest_id against its
-    own binding fields."""
+    """A-09 fix: `load()` itself is now the trusted boundary -- a
+    manifest file edited on disk after saving (e.g. an attacker trying
+    to forge a different dataset_name under the same path, leaving the
+    original manifest_id unchanged) is REJECTED by `load()` directly,
+    not merely detectable by a caller doing extra work afterward."""
     import json
 
     m = _build()
@@ -151,16 +153,65 @@ def test_loaded_manifest_detects_forged_file_content(tmp_path):
     raw = json.loads(path.read_text())
     raw["dataset_name"] = "forged-name"
     path.write_text(json.dumps(raw))
-    forged = GenesisDatasetManifest.load(path)
-    # The forged manifest's OWN recomputed id (from its current binding
-    # fields) must not match the manifest_id still recorded in the file --
-    # this is exactly how a caller would detect the forgery.
-    recomputed = GenesisDatasetManifest._compute_manifest_id({
-        "schema_version": forged.schema_version, "dataset_name": forged.dataset_name, "version": forged.version,
-        "origins": [o.__dict__ for o in forged.origins], "source_content_digest": forged.source_content_digest,
-        "tokenizer_binding": forged.tokenizer_binding.__dict__,
-    })
-    assert recomputed != forged.manifest_id
+    with pytest.raises(ManifestTamperedError, match="TAMPERED"):
+        GenesisDatasetManifest.load(path)
+
+
+def test_load_rejects_an_arbitrary_substituted_manifest_id(tmp_path):
+    """Even if EVERY other field is left genuinely untouched, a
+    substituted manifest_id alone must be rejected -- confirms the
+    recomputation is the actual trust boundary, not merely one of
+    several fields compared loosely."""
+    import json
+
+    m = _build()
+    path = m.save()
+    raw = json.loads(path.read_text())
+    raw["manifest_id"] = "f" * 64
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ManifestTamperedError, match="TAMPERED"):
+        GenesisDatasetManifest.load(path)
+
+
+def test_load_rejects_a_missing_required_field(tmp_path):
+    import json
+
+    m = _build()
+    path = m.save()
+    raw = json.loads(path.read_text())
+    del raw["source_content_digest"]
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ManifestTamperedError, match="missing required field"):
+        GenesisDatasetManifest.load(path)
+
+
+def test_load_rejects_an_unrecognized_schema_version(tmp_path):
+    import json
+
+    m = _build()
+    path = m.save()
+    raw = json.loads(path.read_text())
+    raw["schema_version"] = "some-future-schema/99"
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ManifestTamperedError, match="schema_version"):
+        GenesisDatasetManifest.load(path)
+
+
+def test_load_rejects_malformed_json(tmp_path):
+    path = tmp_path / "broken.json"
+    path.write_text("{not valid json at all")
+    with pytest.raises(ManifestTamperedError, match="not valid JSON"):
+        GenesisDatasetManifest.load(path)
+
+
+def test_an_untampered_manifest_still_loads_cleanly(tmp_path):
+    """Negative control: the trusted-load recomputation must not
+    spuriously reject a genuinely unmodified, correctly-saved manifest."""
+    m = _build()
+    path = m.save()
+    loaded = GenesisDatasetManifest.load(path)
+    assert loaded.manifest_id == m.manifest_id
+    assert loaded.dataset_name == m.dataset_name
 
 
 def test_normalize_record_text_is_deterministic_and_idempotent():
@@ -168,3 +219,84 @@ def test_normalize_record_text_is_deterministic_and_idempotent():
     once = normalize_record_text(text)
     twice = normalize_record_text(once)
     assert once == twice
+
+
+# ------------------------------------------------- P0-01: manifest identity completeness --
+
+def test_different_transformation_lineage_produces_a_different_manifest_id():
+    """P0-01: independently reproduced before this fix -- transformation_lineage
+    was NOT a manifest_id binding field at all. Two manifests built from
+    the IDENTICAL records/origins/tokenizer but with completely
+    different processing histories (one PII-screened and deduplicated,
+    the other recording zero transformation steps) produced the
+    IDENTICAL manifest_id -- a genuine identity collision a consumer
+    trusting manifest_id as proof of "this exact processing history"
+    had no actual guarantee against."""
+    m_screened = _build(transformation_lineage=[
+        TransformationStep(name="pii_screened", code_reference="orca.learning.sanitize.sanitize_for_candidate", parameters={"enforce_pii_screening": True}),
+        TransformationStep(name="deduplicated", code_reference="orca.genesis.data.pipeline.process_corpus"),
+    ])
+    m_unscreened = _build(transformation_lineage=[])
+    assert m_screened.manifest_id != m_unscreened.manifest_id
+
+
+def test_different_transformation_parameters_produce_a_different_manifest_id():
+    """Not just the STEP NAMES but their actual parameters must be
+    bound -- two lineages with the same step name but materially
+    different parameters (e.g. PII screening enabled vs explicitly
+    disabled) must not collide either."""
+    m_enabled = _build(transformation_lineage=[
+        TransformationStep(name="pii_screened", code_reference="x", parameters={"enforce_pii_screening": True}),
+    ])
+    m_disabled = _build(transformation_lineage=[
+        TransformationStep(name="pii_screened", code_reference="x", parameters={"enforce_pii_screening": False}),
+    ])
+    assert m_enabled.manifest_id != m_disabled.manifest_id
+
+
+def test_different_record_count_with_colliding_digest_is_still_bound_explicitly():
+    """source_record_count is now an explicit binding field, independent
+    of source_content_digest's own (already strong) order-independent
+    construction -- defense in depth, not redundant."""
+    m1 = _build(normalized_records=["a", "b", "c"])
+    # Same records, explicitly checked that record count is part of identity:
+    assert m1.source_record_count == 3
+    recomputed = GenesisDatasetManifest._compute_manifest_id(
+        GenesisDatasetManifest._binding_fields(
+            schema_version=m1.schema_version, dataset_name=m1.dataset_name, version=m1.version,
+            origins=[o.__dict__ for o in m1.origins], source_content_digest=m1.source_content_digest,
+            source_record_count=999,  # tampered count, everything else unchanged
+            normalization_rule=m1.normalization_rule,
+            transformation_lineage=[t.__dict__ for t in m1.transformation_lineage],
+            tokenizer_binding=m1.tokenizer_binding.__dict__,
+        )
+    )
+    assert recomputed != m1.manifest_id
+
+
+def test_build_and_load_compute_manifest_id_identically(tmp_path):
+    """Structural regression for the exact class of bug this fix also
+    closes: build() and load() must derive manifest_id from the EXACT
+    SAME binding-fields definition (_binding_fields()), not two
+    independently hand-maintained dict literals that could silently
+    drift apart from each other."""
+    m = _build()
+    path = m.save()
+    reloaded = GenesisDatasetManifest.load(path)
+    assert reloaded.manifest_id == m.manifest_id
+
+
+def test_load_rejects_a_file_built_under_the_prior_schema_version():
+    """The schema_version bump (P0-01) means a manifest built under the
+    OLD binding-fields formula (missing transformation_lineage/
+    source_record_count from its identity) must be rejected by load(),
+    not silently accepted as if nothing changed."""
+    import json
+
+    m = _build()
+    path = m.save()
+    raw = json.loads(path.read_text())
+    raw["schema_version"] = "genesis-dataset-provenance/1"  # the prior version
+    path.write_text(json.dumps(raw))
+    with pytest.raises(ManifestTamperedError, match="schema_version"):
+        GenesisDatasetManifest.load(path)

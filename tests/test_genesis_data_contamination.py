@@ -11,6 +11,7 @@ import pytest
 from orca.genesis.data.contamination import (
     ContaminationCheckIncomplete,
     find_exact_matches,
+    find_near_duplicates_across_splits,
     find_normalized_substring_matches,
     load_genesis_eval_v1_fingerprints,
     run_contamination_checks,
@@ -112,3 +113,75 @@ def test_holdout_overlap_check_flags_a_real_overlapping_candidate():
     # against the real fingerprint data and reports the check as performed.
     report = run_contamination_checks(["a harmless unrelated synthetic sentence about gardening"], holdout_fingerprints=fps)
     assert "genesis_eval_v1_holdout_overlap" in report.checks_performed
+
+
+# ------------------------------------------------- A-11: cross-split near-duplicate leakage --
+
+def test_find_near_duplicates_across_splits_flags_a_leaking_pair():
+    base = (
+        "The quick brown fox jumps over the lazy dog near the riverbank today while "
+        "the morning sun rises slowly over the distant quiet green hills beyond town"
+    )
+    near = (
+        "The quick brown fox jumps over the lazy dog near the riverbank today while "
+        "the morning sun rises slowly over the distant quiet green hills beyond city"
+    )
+    flagged = find_near_duplicates_across_splits({"train": [base], "validation": [near]})
+    assert flagged == [("train", 0, "validation", 0)]
+
+
+def test_find_near_duplicates_across_splits_ignores_within_split_pairs():
+    """Within-split near-duplicates are pipeline.py's own concern during
+    processing (and are rejected there before ever reaching a split at
+    all) -- this cross-split check must not double-flag records that
+    happen to share a split."""
+    base = "a sentence repeated with only this one word changed: alpha"
+    near = "a sentence repeated with only this one word changed: beta"
+    flagged = find_near_duplicates_across_splits({"train": [base, near]})
+    assert flagged == []
+
+
+def test_find_near_duplicates_across_splits_finds_nothing_for_genuinely_distinct_records():
+    flagged = find_near_duplicates_across_splits({
+        "train": ["a sentence entirely about cooking pasta for dinner tonight"],
+        "validation": ["a completely unrelated sentence about space exploration history"],
+    })
+    assert flagged == []
+
+
+def test_run_contamination_checks_reports_cross_split_leakage():
+    base = "a long enough sentence about a very specific unusual topic for this exact test to work reliably"
+    near = "a long enough sentence about a very specific unusual topic for this exact test to work reliably!!"
+    report = run_contamination_checks(
+        ["irrelevant candidate text"], split_to_records={"train": [base], "test": [near]},
+    )
+    assert "cross_split_near_duplicate" in report.checks_performed
+    assert report.cross_split_near_duplicates == 1
+    assert report.clean is False
+
+
+def test_a_clean_looking_report_missing_the_cross_split_check_is_still_not_fully_verified():
+    """A-11's exact directive wording: zero flags but an incomplete set
+    of checks is not proof of a clean corpus -- demonstrated here
+    specifically for the NEW cross-split check (a caller who forgets to
+    pass split_to_records at all must not have their report treated as
+    having screened for train/eval leakage)."""
+    report = run_contamination_checks(["anything"], protected_texts=["something else"])
+    assert report.clean is True  # no flags from the checks that DID run
+    assert report.is_fully_verified_clean(required_checks=["exact_match", "cross_split_near_duplicate"]) is False
+
+
+# ------------------------------------------------- P1-02: explicit cross-split scalability limit --
+
+def test_find_near_duplicates_across_splits_raises_past_the_explicit_size_limit():
+    from orca.genesis.data.contamination import CrossSplitScreeningTooLargeError
+
+    split_to_records = {"train": [f"record {i}" for i in range(6)]}
+    with pytest.raises(CrossSplitScreeningTooLargeError, match="exceeding max_total_records"):
+        find_near_duplicates_across_splits(split_to_records, max_total_records=5)
+
+
+def test_find_near_duplicates_across_splits_allows_a_caller_to_explicitly_raise_the_limit():
+    split_to_records = {"train": [f"record {i}" for i in range(6)]}
+    flagged = find_near_duplicates_across_splits(split_to_records, max_total_records=10)
+    assert flagged == []

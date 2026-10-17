@@ -33,7 +33,7 @@ from orca.config import _mkdir_owner_only, ORCA_HOME
 from orca.genesis.model.config import ARCHITECTURE_VERSION
 from orca.registry.dataset_manifest import sha256_of_file
 
-MANIFEST_SCHEMA_VERSION = "genesis-dataset-provenance/1"
+MANIFEST_SCHEMA_VERSION = "genesis-dataset-provenance/3"  # Audit #71 P0-04: normalization_rule is now a binding field
 GENESIS_DATASET_MANIFEST_DIR = ORCA_HOME / "genesis" / "dataset_manifests"
 
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -45,6 +45,23 @@ class ProvenanceRejected(ValueError):
     explicit requirement: a dataset is never silently accepted with
     partial or unverifiable provenance -- construction itself fails
     closed."""
+
+
+class ManifestTamperedError(ValueError):
+    """A-09 fix: raised by `GenesisDatasetManifest.load()` when the
+    on-disk JSON's `manifest_id` does not match a FRESH recomputation
+    from its own binding fields, or when the file's structure is
+    malformed/inconsistent. Independently reproduced before this fix:
+    `load()` previously deserialized whatever `manifest_id` (and every
+    other field) the JSON file claimed, with ZERO recomputation or
+    cross-check -- a hand-edited file with a substituted `dataset_name`
+    and an arbitrary `manifest_id` loaded without complaint. A
+    self-consistent hash recomputed from a file's OWN claimed fields
+    still does not, by itself, authenticate who produced that file or
+    whether its content is independently trustworthy -- that remains a
+    SEPARATE, orthogonal concern (e.g. file permissions, signed
+    provenance records, or a trusted registry entry); this only
+    guarantees internal consistency was not silently bypassed."""
 
 
 def normalize_record_text(text: str) -> str:
@@ -120,6 +137,63 @@ class GenesisDatasetManifest:
         canonical = json.dumps(binding_fields, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _binding_fields(
+        *, schema_version: str, dataset_name: str, version: str, origins: list, source_content_digest: str,
+        source_record_count: int, normalization_rule: str, transformation_lineage: list, tokenizer_binding,
+    ) -> dict:
+        """P0-01 fix (Native-Authorization-Convergence): the complete set
+        of fields `manifest_id` is actually derived from. Independently
+        reproduced before this fix: `transformation_lineage` was NOT a
+        binding field at all -- two manifests built from the IDENTICAL
+        records/origins/tokenizer but with COMPLETELY DIFFERENT
+        transformation histories (e.g. one PII-screened and deduplicated,
+        the other recording zero processing steps whatsoever) produced
+        the IDENTICAL `manifest_id`. This is a genuine identity collision:
+        a consumer trusting `manifest_id` as proof of "this exact,
+        verified processing history" had no actual guarantee of that at
+        all. `source_record_count` is now also bound explicitly (cheap,
+        explicit defense; `source_content_digest`'s own order-independent
+        construction already makes a record-count change extremely
+        unlikely to collide, but "unlikely" is not "impossible," and an
+        explicit count costs nothing to bind). A single, shared
+        definition used by BOTH `build()` (computing a NEW manifest_id)
+        and `load()` (recomputing to VERIFY an existing one) -- the two
+        were previously two independent, hand-duplicated dict literals
+        that could silently drift apart from each other, which is itself
+        a latent bug class this refactor also closes.
+
+        Antigravity Audit #71 (AUDIT-P0-04) fix: `normalization_rule`
+        is now ALSO a binding field. Independently reproduced before this
+        fix: a saved manifest file could have `normalization_rule`
+        hand-edited to an arbitrary string (including a misleading or
+        attacker-controlled claim about what normalization was actually
+        applied) with `manifest_id` left unchanged, and `load()` accepted
+        it with zero complaint -- `required_keys` mandated the field be
+        PRESENT, but nothing bound its CONTENT to the identity it claimed
+        to describe. This is a deliberate provenance decision, not an
+        oversight: `normalization_rule` states which concrete
+        normalization implementation produced `source_content_digest`
+        (today, always the fixed description of `normalize_record_text()`
+        -- see `build()`); it is exactly the same kind of
+        "which real process produced this content" claim
+        `transformation_lineage` already makes, and a consumer trusting
+        `manifest_id` as proof of "this exact processing history" must
+        not be able to have the claimed normalization rule silently
+        mutated out from under an unchanged id. Binding it required
+        bumping `MANIFEST_SCHEMA_VERSION` (schema versioning, since the
+        identity formula changed) -- `load()` already rejects an
+        unrecognized `schema_version` (A-09), so this correctly
+        invalidates manifests built under the prior binding-fields
+        formula rather than silently accepting them under a new rule
+        they were never computed against."""
+        return {
+            "schema_version": schema_version, "dataset_name": dataset_name, "version": version,
+            "origins": origins, "source_content_digest": source_content_digest,
+            "source_record_count": source_record_count, "normalization_rule": normalization_rule,
+            "transformation_lineage": transformation_lineage, "tokenizer_binding": tokenizer_binding,
+        }
+
     @classmethod
     def build(
         cls, *, dataset_name: str, version: str, origins: list[SourceOrigin], normalized_records: list[str],
@@ -156,17 +230,20 @@ class GenesisDatasetManifest:
 
         origins_t = tuple(origins)
         lineage_t = tuple(transformation_lineage)
-        binding_fields = {
-            "schema_version": MANIFEST_SCHEMA_VERSION, "dataset_name": dataset_name, "version": version,
-            "origins": [asdict(o) for o in origins_t], "source_content_digest": source_content_digest,
-            "tokenizer_binding": asdict(tokenizer_binding),
-        }
+        normalization_rule = "unicodedata.normalize('NFC', text) then collapse whitespace then strip (see normalize_record_text())"
+        binding_fields = cls._binding_fields(
+            schema_version=MANIFEST_SCHEMA_VERSION, dataset_name=dataset_name, version=version,
+            origins=[asdict(o) for o in origins_t], source_content_digest=source_content_digest,
+            source_record_count=len(normalized_records), normalization_rule=normalization_rule,
+            transformation_lineage=[asdict(t) for t in lineage_t],
+            tokenizer_binding=asdict(tokenizer_binding),
+        )
         manifest_id = cls._compute_manifest_id(binding_fields)
 
         return cls(
             schema_version=MANIFEST_SCHEMA_VERSION, manifest_id=manifest_id, dataset_name=dataset_name, version=version,
             origins=origins_t, source_record_count=len(normalized_records), source_content_digest=source_content_digest,
-            normalization_rule="unicodedata.normalize('NFC', text) then collapse whitespace then strip (see normalize_record_text())",
+            normalization_rule=normalization_rule,
             transformation_lineage=lineage_t, tokenizer_binding=tokenizer_binding,
         )
 
@@ -188,12 +265,73 @@ class GenesisDatasetManifest:
 
     @classmethod
     def load(cls, path: Path) -> "GenesisDatasetManifest":
-        raw = json.loads(Path(path).read_text())
-        raw = dict(raw)
-        raw["origins"] = tuple(SourceOrigin(**o) for o in raw["origins"])
-        raw["transformation_lineage"] = tuple(TransformationStep(**t) for t in raw["transformation_lineage"])
-        raw["tokenizer_binding"] = TokenizerBinding(**raw["tokenizer_binding"])
-        return cls(**raw)
+        """A-09 fix: the TRUSTED load boundary -- recomputes
+        `manifest_id` fresh from the file's own claimed binding fields
+        and REJECTS the file if that recomputation does not match the
+        `manifest_id` the file itself claims. Independently reproduced
+        before this fix: a hand-edited file (e.g. a substituted
+        `dataset_name`, with the original `manifest_id` left
+        unchanged -- or any arbitrary `manifest_id` at all) loaded with
+        zero complaint; `manifest_id` was deserialized and trusted
+        exactly like any other field, never independently re-derived.
+        This recomputation only proves the file is INTERNALLY
+        self-consistent (its own claimed id matches its own claimed
+        content) -- it does NOT, and cannot, authenticate WHO produced
+        the file or that its content is independently trustworthy;
+        that is a separate concern (e.g. a signed provenance record or
+        a trusted registry entry), not something a content hash alone
+        can ever establish. Also rejects a malformed schema (missing
+        required keys, wrong types) and a `schema_version` this code
+        does not understand, rather than attempting a best-effort
+        partial parse."""
+        try:
+            raw = json.loads(Path(path).read_text())
+        except json.JSONDecodeError as e:
+            raise ManifestTamperedError(f"manifest at {path} is not valid JSON: {e!r}") from e
+        if not isinstance(raw, dict):
+            raise ManifestTamperedError(f"manifest at {path} is not a JSON object")
+        required_keys = {
+            "schema_version", "manifest_id", "dataset_name", "version", "origins", "source_record_count",
+            "source_content_digest", "normalization_rule", "transformation_lineage", "tokenizer_binding", "created_at",
+        }
+        missing = required_keys - set(raw)
+        if missing:
+            raise ManifestTamperedError(f"manifest at {path} is missing required field(s): {sorted(missing)}")
+        if raw["schema_version"] != MANIFEST_SCHEMA_VERSION:
+            raise ManifestTamperedError(
+                f"manifest at {path} declares schema_version={raw['schema_version']!r}, "
+                f"but this code only understands {MANIFEST_SCHEMA_VERSION!r}"
+            )
+        claimed_manifest_id = raw["manifest_id"]
+        if not isinstance(claimed_manifest_id, str) or not _SHA256_HEX.match(claimed_manifest_id):
+            raise ManifestTamperedError(f"manifest at {path} has a malformed manifest_id: {claimed_manifest_id!r}")
+
+        try:
+            raw = dict(raw)
+            raw["origins"] = tuple(SourceOrigin(**o) for o in raw["origins"])
+            raw["transformation_lineage"] = tuple(TransformationStep(**t) for t in raw["transformation_lineage"])
+            raw["tokenizer_binding"] = TokenizerBinding(**raw["tokenizer_binding"])
+            instance = cls(**raw)
+        except (TypeError, KeyError) as e:
+            raise ManifestTamperedError(f"manifest at {path} has an inconsistent or malformed structure: {e!r}") from e
+
+        binding_fields = cls._binding_fields(
+            schema_version=instance.schema_version, dataset_name=instance.dataset_name, version=instance.version,
+            origins=[asdict(o) for o in instance.origins], source_content_digest=instance.source_content_digest,
+            source_record_count=instance.source_record_count, normalization_rule=instance.normalization_rule,
+            transformation_lineage=[asdict(t) for t in instance.transformation_lineage],
+            tokenizer_binding=asdict(instance.tokenizer_binding),
+        )
+        recomputed_id = cls._compute_manifest_id(binding_fields)
+        if recomputed_id != claimed_manifest_id:
+            raise ManifestTamperedError(
+                f"manifest at {path} is TAMPERED: its own claimed manifest_id ({claimed_manifest_id}) does not match "
+                f"a fresh recomputation from its own binding fields ({recomputed_id}) -- a self-consistent hash was "
+                f"never actually checked here before this fix, and substituted content went undetected"
+            )
+        if instance.source_record_count < 1:
+            raise ManifestTamperedError(f"manifest at {path} declares source_record_count={instance.source_record_count}, expected >= 1")
+        return instance
 
     def verify_against_records(self, normalized_records: list[str]) -> tuple[bool, str]:
         """Re-derives the content digest from a real set of records and
