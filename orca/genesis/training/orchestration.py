@@ -219,9 +219,67 @@ response:
   cooperates with the same lock discipline -- it is not, and cannot be,
   a defense against a caller with raw filesystem access who bypasses
   this module's own functions entirely.
+
+## Antigravity Audit #71 remediation -- AUDIT-P0-01
+
+Independently reproduced: this module's prior identity-drift check
+compared only IN-MEMORY attributes (`self.identity.authorized_shard_digests`,
+a caller-supplied, sorted multiset of digest strings recorded once at
+`validate()` time). The actual shard FILES on disk were never re-read or
+re-hashed at `start()`, `resume()`, or `recovered()` -- a shard file
+modified, substituted, or swapped with another authorized shard's
+content AFTER `authorize()` went completely undetected; `run.start()`
+and `run.resume()` transitioned to `RUNNING` cleanly regardless.
+
+Fixed by binding the run's identity to the REAL, on-disk shard files
+from the moment `validate()` is called: `validate()` now requires a
+`shard_dir`, independently computes each `shard-*.jsonl` file's actual
+SHA-256 digest (`_compute_authorized_shard_file_digests()`, deliberately
+re-implemented here rather than imported from
+`orca.genesis.data.pipeline.compute_shard_digests` -- this module
+retains no hard dependency on Workstream A, the same duck-typing
+discipline `DatasetManifestLike` already established for dataset-
+manifest preflight, M2-03), and REJECTS at validation time if the
+caller's claimed `authorized_shard_digests` do not match those real,
+independently-computed digests. This full `(filename, digest)` mapping
+-- not merely a sorted multiset of digest strings -- is then part of
+`_current_identity_snapshot()`, which `_reverify_grant_or_transition()`
+already (C-02/Mission 2) re-derives FRESH from current state and
+compares against the frozen `_AuthorizedIdentitySnapshot` at EVERY
+resume-capable transition (`start()`, `resume()`, `recovered()`): since
+the snapshot is recomputed by re-reading and re-hashing the actual files
+on disk every time (never cached, never trusted from a prior call), any
+post-authorization modification, substitution, deletion, or swap is
+caught by the SAME, already-adversarially-tested
+`AuthorizedIdentityChangedError` path identity-drift detection already
+used for every other bound field -- no new, separately-tested check was
+needed. Binding the full filename-to-digest mapping (not only the
+digest multiset the signed grant itself carries, which remains a
+Workstream F governance-contract concern this fix does not redesign)
+additionally closes the "two authorized shard files swapped with each
+other" case, which a multiset-only comparison cannot detect since the
+set of digest VALUES is unchanged even though the filename-to-content
+association is not.
+
+**Verification-to-use race (TOCTOU), honestly scoped**: this check
+re-verifies shard bytes at the instant of each state transition into
+RUNNING, closing the specific window the audit named (authorize-then-
+tamper-then-start/resume). It does NOT, and cannot, guarantee no
+modification occurs in the interval between that check returning and
+whatever process later actually reads the shard bytes to train --
+closing that residual would require the eventual training-loop consumer
+itself to read shard files only through this same verification path (or
+an equivalent, e.g. re-opening by verified file descriptor rather than
+by path), which is not yet buildable: no real GENESIS training loop
+exists anywhere in this codebase (native pretraining remains
+`NOT_AUTHORIZED`). This is documented here as an explicit, open
+architectural requirement for whatever eventually consumes an
+AUTHORIZED/RUNNING run's shard set, not an implied guarantee this module
+does not provide.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -309,6 +367,31 @@ def _is_live_ancestor_of_head(repo_root: Path, commit_sha: str) -> bool:
         return False
     rc2, _ = _git(repo_root, "merge-base", "--is-ancestor", commit_sha, head)
     return rc2 == 0
+
+
+def _compute_authorized_shard_file_digests(shard_dir: Path) -> tuple[tuple[str, str], ...]:
+    """Antigravity Audit #71 (AUDIT-P0-01) fix: real, independently
+    re-derivable SHA-256 digests of the ACTUAL `shard-*.jsonl` files
+    present in `shard_dir` right now, keyed by filename and returned as a
+    sorted tuple of `(filename, digest)` pairs -- never a bare multiset
+    of digest values, so two shards swapped with each other (same set of
+    digest VALUES, different filename-to-content association) are still
+    detected as a change. Deliberately re-implemented here rather than
+    imported from `orca.genesis.data.pipeline.compute_shard_digests`
+    (functionally identical) -- this module gains no hard dependency on
+    Workstream A, exactly the duck-typing discipline `DatasetManifestLike`
+    already established for dataset-manifest preflight integration
+    (M2-03, see module docstring). Called fresh every time this run's
+    current identity snapshot is taken -- never cached -- so a file
+    modified after the previous call is always caught."""
+    digests: dict[str, str] = {}
+    for path in sorted(Path(shard_dir).glob("shard-*.jsonl")):
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        digests[path.name] = h.hexdigest()
+    return tuple(sorted(digests.items()))
 
 
 def _native_pretraining_replay_state_dir() -> Path:
@@ -453,6 +536,7 @@ class RunIdentity:
     model_config_digest: str | None = None  # set by validate(); None beforehand
     tokenizer_digest: str | None = None  # set by validate(); None beforehand
     authorized_shard_digests: tuple[str, ...] | None = None  # set by validate(); None beforehand
+    shard_dir: Path | None = None  # Audit #71 P0-01: set by validate(); the real directory authorized_shard_digests was verified against
     # M2-01: the remaining signed-authorization fields a NativePretrainingGrant
     # now carries (PR #69) -- bound here too so authorize() can check ALL of
     # them, not only the original six.
@@ -478,6 +562,7 @@ class _AuthorizedIdentitySnapshot:
     model_config_digest: str
     tokenizer_digest: str
     authorized_shard_digests: tuple[str, ...]
+    authorized_shard_file_digests: tuple[tuple[str, str], ...]  # Audit #71 P0-01: live (filename, digest) pairs, recomputed from disk every snapshot
     environment_class: str
     reviewed_commit_sha: str
     transformation_code_digest: str
@@ -625,6 +710,10 @@ class GenesisTrainingRun:
             model_config_digest=self.identity.model_config_digest or "",
             tokenizer_digest=self.identity.tokenizer_digest or "",
             authorized_shard_digests=tuple(sorted(self.identity.authorized_shard_digests or ())),
+            authorized_shard_file_digests=(
+                _compute_authorized_shard_file_digests(self.identity.shard_dir)
+                if self.identity.shard_dir is not None else ()
+            ),
             environment_class=self.environment_class,
             reviewed_commit_sha=self.identity.reviewed_commit_sha or "",
             transformation_code_digest=self.identity.transformation_code_digest or "",
@@ -696,10 +785,10 @@ class GenesisTrainingRun:
     # ---- PLANNED -> VALIDATED --------------------------------------------------------------
     def validate(
         self, *, dataset_digest: str | None = None, model_config_digest: str, tokenizer_digest: str,
-        authorized_shard_digests: tuple[str, ...], reviewed_commit_sha: str, transformation_code_digest: str,
-        optimizer_config_digest: str, gpu_requested: bool = False, requested_spend_usd: float = 0.0,
-        requested_wall_clock_minutes: int = 1, dataset_manifest: DatasetManifestLike | None = None,
-        dataset_records: list[str] | None = None,
+        authorized_shard_digests: tuple[str, ...], shard_dir: str | Path, reviewed_commit_sha: str,
+        transformation_code_digest: str, optimizer_config_digest: str, gpu_requested: bool = False,
+        requested_spend_usd: float = 0.0, requested_wall_clock_minutes: int = 1,
+        dataset_manifest: DatasetManifestLike | None = None, dataset_records: list[str] | None = None,
     ) -> None:
         """Mission 2: binds the FULL workload identity a
         `NativePretrainingGrant` must match. Every one of these must be a
@@ -730,7 +819,20 @@ class GenesisTrainingRun:
            checked against real content. `dataset_digest` may be omitted
            when `dataset_manifest`+`dataset_records` are supplied (and
            vice versa); supplying neither, or a manifest whose id is not
-           one of this run's declared `dataset_manifest_ids`, raises."""
+           one of this run's declared `dataset_manifest_ids`, raises.
+
+        `shard_dir` (Audit #71 P0-01 fix, required): the real directory
+        containing this run's `shard-*.jsonl` files. `authorized_shard_digests`
+        is independently re-verified against the REAL, freshly-computed
+        digests of the files actually present there -- a caller cannot
+        claim digests that do not correspond to real on-disk content.
+        This directory (and its live content) is re-read and re-hashed
+        at EVERY subsequent resume-capable transition
+        (`start()`/`resume()`/`recovered()`, via
+        `_reverify_grant_or_transition()`), so a shard file modified,
+        substituted, or swapped after this call is detected and denies
+        the transition -- see the module docstring's "AUDIT-P0-01"
+        section."""
         if self.state != RunState.PLANNED:
             raise InvalidTransitionError(f"validate() requires PLANNED, got {self.state.value}")
 
@@ -763,6 +865,28 @@ class GenesisTrainingRun:
         if not shards or not all(isinstance(s, str) and _SHA256_HEX.match(s) for s in shards):
             self._transition(RunState.REJECTED, reason="invalid authorized_shard_digests at validation")
             raise ValueError(f"authorized_shard_digests must be a non-empty tuple of 64-character lowercase hex SHA-256 values, got {authorized_shard_digests!r}")
+        # Audit #71 P0-01 fix: never trust a caller-supplied digest string
+        # alone -- independently recompute the REAL on-disk digests of the
+        # files actually present in shard_dir and require them to match
+        # exactly before this run's identity is ever bound to them. See
+        # the module docstring's "AUDIT-P0-01" section.
+        shard_dir_path = Path(shard_dir)
+        on_disk_shard_digests = _compute_authorized_shard_file_digests(shard_dir_path)
+        if not on_disk_shard_digests:
+            self._transition(RunState.REJECTED, reason="shard_dir contains no real shard-*.jsonl files at validation")
+            raise ValueError(
+                f"shard_dir {shard_dir_path} contains no shard-*.jsonl files -- refusing to bind this run's "
+                "authorization to a directory with nothing real to verify"
+            )
+        on_disk_digest_values = tuple(sorted(d for _, d in on_disk_shard_digests))
+        if on_disk_digest_values != tuple(sorted(shards)):
+            self._transition(RunState.REJECTED, reason="authorized_shard_digests does not match real on-disk shard file contents at validation")
+            raise ValueError(
+                f"authorized_shard_digests {sorted(shards)!r} does not match the real, independently computed "
+                f"digests of the shard-*.jsonl files actually present in {shard_dir_path} "
+                f"({on_disk_digest_values!r}) -- a caller-supplied digest string is never trusted without live "
+                "verification against real file bytes"
+            )
         if not isinstance(transformation_code_digest, str) or not _SHA256_HEX.match(transformation_code_digest):
             self._transition(RunState.REJECTED, reason="invalid transformation_code_digest at validation")
             raise ValueError(f"transformation_code_digest must be a 64-character lowercase hex SHA-256, got {transformation_code_digest!r}")
@@ -807,6 +931,7 @@ class GenesisTrainingRun:
         self.identity.model_config_digest = model_config_digest
         self.identity.tokenizer_digest = tokenizer_digest
         self.identity.authorized_shard_digests = shards
+        self.identity.shard_dir = shard_dir_path
         self.identity.reviewed_commit_sha = reviewed_commit_sha
         self.identity.transformation_code_digest = transformation_code_digest
         self.identity.optimizer_config_digest = optimizer_config_digest
