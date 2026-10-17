@@ -536,3 +536,131 @@ def test_changing_a_single_shard_byte_changes_its_digest_and_nothing_else(tmp_pa
     for name in before:
         if name != target_name:
             assert after[name] == before[name], f"{name}'s digest changed even though it was never touched"
+
+
+# ------------------------------------------------------------ P0-03: output-integrity recheck --
+
+def test_externally_deleted_shard_output_is_detected_and_regenerated(tmp_path):
+    """P0-03: independently reproduced before this fix -- externally
+    deleting an already-flushed shard file left process_corpus()
+    completely unaware: report.kept and the returned kept_records
+    (re-read from SQLite, not the filesystem) still reported the full
+    count even though the actual output bytes no longer existed on
+    disk. SQLite's own flushed=1 bookkeeping proved only "this function
+    believes it wrote this," never "this content is still there." """
+    p = tmp_path / "in.jsonl"
+    _write_jsonl(p, [json.dumps({"text": f"distinct record {i}"}) for i in range(10)])
+    out = tmp_path / "out"
+    process_corpus(p, out, num_shards=1)
+    for f in out.glob("*.jsonl"):
+        f.unlink()
+    assert not list(out.glob("*.jsonl"))
+
+    report, kept = process_corpus(p, out, num_shards=1)
+    files_after = list(out.glob("*.jsonl"))
+    assert files_after, "shard output was not regenerated after external deletion"
+    total_lines = sum(len(f.read_text().splitlines()) for f in files_after)
+    assert total_lines == 10, f"expected all 10 records regenerated on disk, found {total_lines}"
+    assert len(kept) == 10
+
+
+def test_externally_truncated_shard_output_is_detected_and_regenerated(tmp_path):
+    """Same gap, a different symptom: a file that still EXISTS but has
+    been truncated (e.g. disk corruption, a failed external copy) below
+    its own recorded safe offset must also be recovered, not just a
+    fully-deleted file."""
+    p = tmp_path / "in.jsonl"
+    _write_jsonl(p, [json.dumps({"text": f"distinct record {i}"}) for i in range(10)])
+    out = tmp_path / "out"
+    process_corpus(p, out, num_shards=1)
+    shard_files_before = {f.name: f.read_bytes() for f in out.glob("*.jsonl")}
+    # Truncate whichever split file has the most content (likely "train",
+    # given deterministic_split()'s 90/5/5 default) so this test exercises
+    # a real, non-trivial truncation.
+    target_name = max(shard_files_before, key=lambda n: len(shard_files_before[n]))
+    target_path = out / target_name
+    original_size = len(shard_files_before[target_name])
+    target_path.write_bytes(shard_files_before[target_name][: original_size // 2])
+    assert target_path.stat().st_size < original_size
+
+    process_corpus(p, out, num_shards=1)
+    assert target_path.stat().st_size >= original_size
+    assert target_path.read_bytes() == shard_files_before[target_name]
+    total_lines = sum(len(f.read_text().splitlines()) for f in out.glob("*.jsonl"))
+    assert total_lines == 10
+
+
+def test_near_duplicate_detection_matches_across_a_restart_boundary(tmp_path):
+    """P0-02: independently reproduced before this fix -- the
+    near-duplicate sliding window was held only in process memory and
+    reset to empty on every process_corpus() call. A record processed
+    just after a resume boundary was never compared against the real
+    records immediately preceding it, so a genuinely near-duplicate
+    record could be silently KEPT after a resume where an uninterrupted
+    run would have rejected it -- a different logical corpus, directly
+    violating 'a resumed pipeline must match the required output and
+    accounting semantics of an uninterrupted pipeline.'"""
+    base = (
+        "The quick brown fox jumps over the lazy dog near the riverbank today while "
+        "the morning sun rises slowly over the distant quiet green hills beyond town"
+    )
+    near = (
+        "The quick brown fox jumps over the lazy dog near the riverbank today while "
+        "the morning sun rises slowly over the distant quiet green hills beyond city"
+    )
+    records = [base] + [f"filler record {i} about its own unrelated topic" for i in range(5)] + [near]
+    p = tmp_path / "in.jsonl"
+    _write_jsonl(p, [json.dumps({"text": t}) for t in records])
+
+    ref_report, ref_kept = process_corpus(p, tmp_path / "out_ref", num_shards=1)
+    assert ref_report.near_duplicates == 1 and ref_report.kept == 6
+
+    half = tmp_path / "in_half.jsonl"
+    half.write_text("\n".join(json.dumps({"text": t}) for t in records[:3]) + "\n")
+    out_resumed = tmp_path / "out_resumed"
+    process_corpus(half, out_resumed, num_shards=1)
+    resumed_report, resumed_kept = process_corpus(p, out_resumed, num_shards=1)
+
+    assert resumed_report.near_duplicates == ref_report.near_duplicates == 1
+    assert resumed_report.kept == ref_report.kept == 6
+    assert sorted(resumed_kept) == sorted(ref_kept)
+
+
+def test_concurrent_writers_to_the_same_output_dir_are_serialized_not_corrupted(tmp_path):
+    """P0-02 scenario 8 (two processes writing to the same output
+    directory): multiple threads calling process_corpus() against the
+    IDENTICAL output_dir and input file concurrently must serialize via
+    the exclusive directory lock -- the final merged state must show
+    every record kept exactly once, never duplicated or lost, and no
+    thread may observe a corrupted or partially-written SQLite/shard
+    state."""
+    p = tmp_path / "in.jsonl"
+    n = 50
+    _write_jsonl(p, [json.dumps({"text": f"concurrent-same-dir record {i} about topic {i}"}) for i in range(n)])
+    out = tmp_path / "out"
+
+    errors = []
+    results = []
+
+    def _run():
+        try:
+            report, kept = process_corpus(p, out, num_shards=2, commit_batch_size=7)
+            results.append((report, kept))
+        except BaseException as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=_run) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"concurrent writers to the same output_dir raised: {errors}"
+    # Every thread eventually sees the SAME fully-converged state (each
+    # serialized call either does fresh work or finds everything already
+    # committed by an earlier one).
+    final_kept_counts = {r.kept for r, _ in results}
+    assert final_kept_counts == {n}, f"expected every thread to observe exactly {n} kept records, got {final_kept_counts}"
+
+    total_lines = sum(len(f.read_text().splitlines()) for f in out.glob("*.jsonl"))
+    assert total_lines == n, f"expected exactly {n} total lines across all shard files, got {total_lines} -- duplication or loss occurred"
