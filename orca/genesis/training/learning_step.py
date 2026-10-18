@@ -28,10 +28,45 @@ the authorization boundary is enforced by WHO is allowed to construct
 and call it with real data, not by anything checkable from inside this
 module. See `learning_governance.py`'s own docstring for the actual
 enforcement.
-"""
+
+## Antigravity Audit #074 remediation -- AUDIT-P0-02 (capability token)
+
+Independently reproduced: `step()` previously took no token or
+capability of any kind -- `engine.step(batch, labels)` executed a real
+optimizer step for ANY caller holding a reference to the engine, with
+zero coupling to `GenesisTrainingRun`/`learning_governance.py` at all.
+`step()` now REQUIRES a `capability: ExecutionCapability`, an opaque
+token this engine itself mints (`_issue_capability_for_governance()`)
+but which is only ever CALLED by `learning_governance
+.execute_authorized_training_step()` -- the sanctioned, documented, and
+now the only ergonomic path to a real step.
+
+**Honestly scoped, per this phase's own directive**: this raises the
+bar for a COOPERATING caller sticking to this module's public, intended
+API (a bare `engine.step(batch, labels)` with no token now raises
+`TypeError` immediately, closing the specific, trivial reproduction
+Audit #074 demonstrated) -- it does NOT, and cannot, prevent a
+determined caller in the SAME process/interpreter who is willing to (a)
+call the clearly-internal, single-underscore `_issue_capability_for_
+governance()` directly themselves, or (b) ignore this engine entirely
+and write their own forward/backward/optimizer-step loop from scratch
+against the same public `causal_lm_loss`/`build_optimizer`/`clip_grad_
+norm` primitives this engine itself calls. Python provides no mechanism
+to make either of those impossible for a caller who already shares the
+same interpreter, memory space, and import access as this code -- this
+is not a shortfall of this implementation, it is what "in-process" means.
+Genuine prevention of a co-resident, equally-privileged Python caller
+requires an actual OS-process boundary (e.g. training executes in a
+separate worker process, reachable only via an IPC channel that itself
+re-authenticates every call and never shares interpreter state with the
+caller) -- building and testing that architecture is explicitly out of
+scope for this remediation phase and is recorded as an open
+requirement, not claimed as already closed."""
 from __future__ import annotations
 
+import hmac
 import random
+import secrets
 from dataclasses import dataclass, field
 
 import torch
@@ -64,6 +99,12 @@ class ResourceLimitExceededError(Exception):
     documented resource ceiling -- not a tuned production limit, but a
     sanity bound that stops a misconfigured test or caller from running
     an unbounded amount of CPU work silently."""
+
+
+class MissingExecutionCapabilityError(Exception):
+    """AUDIT-P0-02 fix: raised by `TrainingStepEngine.step()` when
+    `capability` is missing, the wrong type, or does not match this
+    engine's own token. See `ExecutionCapability`'s own docstring."""
 
 
 def set_deterministic_seed(seed: int) -> None:
@@ -125,6 +166,42 @@ class StepResult:
     grad_norm: float | None  # pre-clip grad norm, only populated when applied=True
 
 
+class ExecutionCapability:
+    """AUDIT-P0-02 fix: an opaque token `TrainingStepEngine.step()` now
+    requires. Two, and only two, ways to construct one:
+    1. `ExecutionCapability.for_unchecked_synthetic_test()` -- performs
+       ZERO authorization, explicitly, unmistakably named so that
+       grepping the codebase for this exact name finds every single
+       bypass call site. Exists only because this phase's own directive
+       explicitly permits it ("synthetic, ephemeral CPU tests may
+       continue within existing authorized test boundaries") -- used
+       exclusively by this module's own and other Workstream unit tests
+       that deliberately exercise `step()`'s mechanics in isolation,
+       never by anything claiming real authorization.
+    2. The private, engine-bound token `learning_governance
+       .execute_authorized_training_step()` obtains by calling
+       `TrainingStepEngine._issue_capability_for_governance()` -- gated
+       by a live `GenesisTrainingRun` state/expiry/revocation/identity
+       re-check performed immediately before minting, every single call.
+
+    See `learning_step.py`'s own module docstring (AUDIT-P0-02 section)
+    for exactly what this does and does not prevent -- it raises the bar
+    for a cooperating caller using this module's intended, documented
+    API; it cannot prevent a caller willing to call this class's own
+    constructor, or `_issue_capability_for_governance()`, directly, nor
+    one who bypasses this module entirely and writes an equivalent
+    training loop from scratch. No in-process Python mechanism can."""
+    __slots__ = ("_token", "_unchecked")
+
+    def __init__(self, token: bytes, *, _unchecked: bool = False):
+        self._token = token
+        self._unchecked = _unchecked
+
+    @classmethod
+    def for_unchecked_synthetic_test(cls) -> "ExecutionCapability":
+        return cls(token=b"", _unchecked=True)
+
+
 class TrainingStepEngine:
     """Owns one model, one optimizer, and the accumulation/step-counter
     state needed to perform a real, resumable training run one
@@ -141,9 +218,20 @@ class TrainingStepEngine:
         self.global_step = 0
         self.microbatch_in_cycle = 0  # 0-based position within the current accumulation cycle; resets to 0 after each applied step
         self._accum_loss_sum = 0.0
+        self._capability_token = secrets.token_bytes(32)  # AUDIT-P0-02: minted once per engine; never persisted, never logged
         self.optimizer.zero_grad(set_to_none=True)
 
-    def step(self, input_ids: torch.Tensor, labels: torch.Tensor) -> StepResult:
+    def _issue_capability_for_governance(self) -> ExecutionCapability:
+        """Returns a real, this-engine-bound `ExecutionCapability`.
+        Single-underscore (not name-mangled) so `learning_governance.py`
+        can call it after its own, independent authorization re-check --
+        but, honestly, nothing in Python stops any other caller in this
+        same process/interpreter from calling it too. See the module
+        docstring for exactly what this is, and is not, a defense
+        against."""
+        return ExecutionCapability(self._capability_token)
+
+    def step(self, input_ids: torch.Tensor, labels: torch.Tensor, capability: ExecutionCapability) -> StepResult:
         """One microbatch. `input_ids`/`labels`: (batch, seq_len) of
         token ids -- `labels` already shifted-and-masked by the caller's
         choice of `ignore_index` positions (see
@@ -151,12 +239,27 @@ class TrainingStepEngine:
         OWN internal next-token shift on top of that, exactly as it
         already does for every other caller.
 
+        `capability`: see `ExecutionCapability`'s own docstring. Must
+        either be this engine's own, real token (obtained only via
+        `_issue_capability_for_governance()`) or an explicit
+        `ExecutionCapability.for_unchecked_synthetic_test()` instance --
+        anything else raises `MissingExecutionCapabilityError` before a
+        single tensor operation runs.
+
         Correct zero-grad/step ordering, explicitly: `zero_grad()` is
         called exactly once per accumulation CYCLE (in `__init__` for
         the very first cycle, and again immediately after each
         `optimizer.step()` below) -- never per microbatch. Every
         microbatch's `.backward()` call accumulates into the same
         `.grad` buffers until a full cycle completes."""
+        if not isinstance(capability, ExecutionCapability):
+            raise MissingExecutionCapabilityError(
+                "step() requires a real ExecutionCapability -- see learning_governance"
+                ".execute_authorized_training_step() for the sanctioned way to obtain one, or "
+                "ExecutionCapability.for_unchecked_synthetic_test() for an explicit, named test-only bypass"
+            )
+        if not capability._unchecked and not hmac.compare_digest(capability._token, self._capability_token):
+            raise MissingExecutionCapabilityError("capability token does not match this engine's own token")
         if self.cfg.max_steps is not None and self.global_step >= self.cfg.max_steps:
             raise ResourceLimitExceededError(
                 f"global_step {self.global_step} has already reached max_steps={self.cfg.max_steps}"

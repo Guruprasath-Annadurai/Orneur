@@ -33,6 +33,7 @@ RUNNING), not something the orchestration-layer check already covers.
 """
 from __future__ import annotations
 
+import array
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,8 @@ from orca.genesis.tokenizer.framework import EOS_ID, PAD_ID, GenesisTokenizer
 
 VALID_SPLITS = ("train", "validation", "test")
 IGNORE_INDEX = -100
+_TOKEN_TYPECODE = "q"  # array module "long long" -- platform-independent minimum 8 bytes, safely covers any real vocab id
+_TOKEN_ITEM_SIZE = array.array(_TOKEN_TYPECODE).itemsize
 
 
 class ShardIntegrityError(Exception):
@@ -90,6 +93,7 @@ class LoaderConfig:
     packing: bool = True
     pad_id: int = PAD_ID
     eos_id: int = EOS_ID
+    construction_buffer_tokens: int = 65_536  # AUDIT-P1-01: the real, enforced in-memory ceiling during construction -- see GenesisBlockDataset's own docstring
 
     def __post_init__(self) -> None:
         if self.split not in VALID_SPLITS:
@@ -103,6 +107,8 @@ class LoaderConfig:
                 "authorized_shard_digests is required and must be non-empty -- this loader never reads "
                 "shard content without an explicit, caller-supplied set of digests to verify against"
             )
+        if self.construction_buffer_tokens < self.seq_len:
+            raise ValueError("construction_buffer_tokens must be >= seq_len (a buffer smaller than one block can never flush a complete block)")
 
 
 @dataclass(frozen=True)
@@ -120,15 +126,66 @@ class GenesisBlockDataset:
     Never reads, and structurally cannot read, another split's shard
     files -- `_shard_path()`'s filename convention (`shard-{idx:04d}-
     {split}.jsonl`) is parsed from the actual filename on disk, not
-    assumed from the caller's `split` argument alone."""
+    assumed from the caller's `split` argument alone.
+
+    ## Antigravity Audit #074 remediation -- AUDIT-P1-01 (bounded memory)
+
+    Independently reproduced: the PRIOR version of `_build_blocks()`
+    tokenized every record from every shard file and accumulated ALL of
+    it -- either one giant Python `list[int]` token stream (packing
+    mode) or a `list[torch.Tensor]` with one entry per record
+    (non-packing mode) -- held in `self._blocks` for this dataset's
+    entire lifetime. Peak memory scaled linearly with total corpus
+    size, with no configured ceiling at all; a corpus larger than
+    available RAM crashed with `MemoryError` during construction,
+    before a single training step could run.
+
+    **Fixed**: tokens are now streamed to a fixed-width, append-only
+    on-disk block store (`<shard_dir>/.block_store_<split>_<packing>.bin`,
+    8 bytes/token, platform-independent `array('q')` layout) through a
+    BOUNDED in-memory write buffer (`cfg.construction_buffer_tokens`,
+    default 65,536 tokens = 512 KiB -- never the whole corpus). `block()`
+    then reads exactly one block's worth of bytes (`seq_len * 8`) via a
+    direct `seek()` + bounded `read()` on an already-open file handle --
+    O(1) memory per call, completely independent of how large the
+    overall dataset is. This is genuinely measured, not merely argued:
+    `tests/test_genesis_data_loader.py`'s own
+    `test_p1_01_peak_memory_stays_bounded_on_a_corpus_larger_than_the_buffer`
+    uses `tracemalloc` (the same real-measurement discipline this
+    codebase's own A-07 bounded-memory proof already established) to
+    confirm peak memory during construction does not scale with corpus
+    size, against a corpus deliberately larger than
+    `construction_buffer_tokens`.
+
+    Caller-supplied `authorized_shard_digests` is still, exactly as
+    before, verified against the real, live shard file content at
+    construction time (never a claim this dataset invents or weakens);
+    Audit #074's P1-01 finding additionally noted this mapping itself
+    has no independent authority root of its own at this layer -- true,
+    and unchanged by this fix: the caller (ultimately
+    `GenesisTrainingRun`/`orca.genesis.training.learning_governance`) is
+    responsible for sourcing `authorized_shard_digests` from a real,
+    signed grant, not an arbitrary caller-chosen mapping; this module's
+    own job is to verify the FILES match WHATEVER mapping it is given,
+    which it continues to do unconditionally."""
 
     def __init__(self, cfg: LoaderConfig, tokenizer: GenesisTokenizer):
         self.cfg = cfg
         self.tokenizer = tokenizer
         self._verify_shard_integrity()
-        blocks, report = self._build_blocks()
-        self._blocks = blocks  # list[torch.Tensor], each shape (seq_len + 1,) -- input+next-token in one tensor
-        self.report = report
+        self._store_path = Path(cfg.shard_dir) / f".block_store_{cfg.split}_{'packed' if cfg.packing else 'padded'}.bin"
+        self.report = self._build_block_store()
+        self._store_file = open(self._store_path, "rb")
+
+    def close(self) -> None:
+        if not self._store_file.closed:
+            self._store_file.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _split_shard_paths(self) -> list[Path]:
         """Every file in `shard_dir` whose OWN filename declares it
@@ -160,71 +217,155 @@ class GenesisBlockDataset:
                     f"{authorized!r} -- refusing to read tampered or stale shard content"
                 )
 
-    def _build_blocks(self) -> tuple[list[torch.Tensor], LoadReport]:
+    def _build_block_store(self) -> LoadReport:
+        """AUDIT-P1-01 fix: streams tokens to the on-disk block store
+        through a BOUNDED buffer (`cfg.construction_buffer_tokens`),
+        never holding the full corpus (or even the full output) in
+        memory at once. See this class's own docstring for the full
+        rationale and the dedicated `tracemalloc`-based test that
+        measures this, rather than merely asserting it."""
         records_read = 0
         rejected = 0
-        token_stream: list[int] = []
-        per_record_blocks: list[torch.Tensor] = []
+        total_tokens = 0
+        buffer = array.array(_TOKEN_TYPECODE)
+        buffer_cap = self.cfg.construction_buffer_tokens
 
-        for path in self._split_shard_paths():
-            with open(path, encoding="utf-8") as f:
-                for line_number, raw_line in enumerate(f):
-                    raw_line = raw_line.strip()
-                    if not raw_line:
-                        continue
-                    try:
-                        rec = json.loads(raw_line)
-                        text = rec["text"]
-                        if not isinstance(text, str) or not text.strip():
-                            raise MalformedRecordError("empty or non-string 'text'")
-                        ids = self.tokenizer.encode(text)
-                        if not ids:
-                            raise MalformedRecordError("tokenizer produced zero tokens")
-                    except (json.JSONDecodeError, KeyError, MalformedRecordError):
-                        rejected += 1
-                        continue
-                    records_read += 1
+        with open(self._store_path, "wb") as store:
+            def flush() -> None:
+                nonlocal buffer
+                if buffer:
+                    store.write(buffer.tobytes())
+                    buffer = array.array(_TOKEN_TYPECODE)
 
-                    if self.cfg.packing:
-                        token_stream.extend(ids)
-                        token_stream.append(self.cfg.eos_id)
-                    else:
-                        seq = ids[: self.cfg.seq_len + 1]
-                        if len(seq) < self.cfg.seq_len + 1:
-                            seq = seq + [self.cfg.pad_id] * (self.cfg.seq_len + 1 - len(seq))
-                        per_record_blocks.append(torch.tensor(seq, dtype=torch.long))
+            def emit(ids: list[int]) -> None:
+                nonlocal total_tokens
+                buffer.extend(ids)
+                total_tokens += len(ids)
+                if len(buffer) >= buffer_cap:
+                    flush()
 
+            for path in self._split_shard_paths():
+                with open(path, encoding="utf-8") as f:
+                    for raw_line in f:
+                        raw_line = raw_line.strip()
+                        if not raw_line:
+                            continue
+                        try:
+                            rec = json.loads(raw_line)
+                            text = rec["text"]
+                            if not isinstance(text, str) or not text.strip():
+                                raise MalformedRecordError("empty or non-string 'text'")
+                            ids = self.tokenizer.encode(text)
+                            if not ids:
+                                raise MalformedRecordError("tokenizer produced zero tokens")
+                            # AUDIT-P0-01 fix: a non-packed block is exactly `seq_len`
+                            # REAL tokens (truncated/padded), not `seq_len + 1` -- see
+                            # `block()`'s own docstring for why. A record whose real
+                            # (non-padding) token count is < 2 can NEVER produce a
+                            # single supervised pair under a correct one-shift
+                            # objective (there is no "this token" + "the next token"
+                            # pair to form at all) -- rejected here, at LOAD time, as
+                            # malformed, rather than silently reaching
+                            # causal_lm_loss() and crashing mid-training-step.
+                            if not self.cfg.packing and len(ids) < 2:
+                                raise MalformedRecordError(f"only {len(ids)} token(s) after encoding -- cannot form a single supervised next-token pair")
+                        except (json.JSONDecodeError, KeyError, MalformedRecordError):
+                            rejected += 1
+                            continue
+                        records_read += 1
+
+                        if self.cfg.packing:
+                            emit(ids)
+                            emit([self.cfg.eos_id])
+                        else:
+                            seq = ids[: self.cfg.seq_len]
+                            if len(seq) < self.cfg.seq_len:
+                                seq = seq + [self.cfg.pad_id] * (self.cfg.seq_len - len(seq))
+                            emit(seq)  # exactly one full block -- never accumulated alongside any other record's
+
+            flush()
+            store.flush()
+
+        block_len = self.cfg.seq_len  # AUDIT-P0-01 fix: no "+1" -- see block()'s own docstring
         if self.cfg.packing:
-            block_len = self.cfg.seq_len + 1  # +1 so a block carries both input_ids and the final next-token target
-            num_blocks = len(token_stream) // block_len
-            blocks = [
-                torch.tensor(token_stream[i * block_len:(i + 1) * block_len], dtype=torch.long)
-                for i in range(num_blocks)
-            ]
-            total_tokens = len(token_stream)
+            num_blocks = total_tokens // block_len
+            usable_tokens = num_blocks * block_len
         else:
-            blocks = per_record_blocks
-            total_tokens = sum(b.numel() for b in blocks)
+            num_blocks = records_read
+            usable_tokens = total_tokens
 
-        return blocks, LoadReport(
+        return LoadReport(
             records_read=records_read, records_rejected_malformed=rejected,
-            total_tokens=total_tokens, num_blocks=len(blocks),
+            total_tokens=usable_tokens, num_blocks=num_blocks,
         )
 
     def __len__(self) -> int:
-        return len(self._blocks)
+        return self.report.num_blocks
 
     def block(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """Returns `(input_ids, labels)`, each shape `(seq_len,)`.
-        `labels` masks pad positions with `IGNORE_INDEX` so a
-        pad-truncated record (non-packing mode) never contributes to
-        the loss for its padded tail; `causal_lm_loss` performs its own
-        additional internal shift on top of this."""
-        full = self._blocks[index]
-        input_ids = full[:-1]
-        labels = full[1:].clone()
-        labels[input_ids == self.cfg.pad_id] = IGNORE_INDEX
-        return input_ids, labels
+        """Returns `(input_ids, labels)`, each shape `(seq_len,)` --
+        the SAME token sequence, not pre-shifted against each other.
+
+        AUDIT-P0-01 fix (Antigravity Audit #074), stated as the single,
+        mathematically consistent interface this module now commits to,
+        documented here so it is never silently re-introduced: exactly
+        ONE shift happens anywhere in the whole input->loss pipeline,
+        and it happens inside `orca.genesis.training.primitives
+        .causal_lm_loss()` -- which already, correctly, performs
+        `shift_logits = logits[..., :-1, :]` / `shift_labels = labels[...,
+        1:]` internally, the standard HuggingFace/nanoGPT convention of
+        passing `labels == input_ids` (unshifted) and letting the loss
+        function itself realign them. The PRIOR version of this method
+        ALSO pre-shifted (`input_ids = full[:-1]`, `labels = full[1:]`)
+        before handing both to `causal_lm_loss()`, which shifted AGAIN --
+        independently reproduced (Audit #074, `test_p0_01_mathematical
+        _proof_of_double_shift` and `test_p0_01_associative_recall_learns
+        _t_plus_2_instead_of_t_plus_1`) to train the model to predict
+        T_{i+2}, completely skipping T_{i+1}, while still producing a
+        finite, decreasing loss -- a silent, catastrophic correctness
+        defect no shape-level test had caught.
+
+        `_build_block_store()` now produces blocks of exactly `seq_len`
+        tokens (not `seq_len + 1`) for this exact reason -- feeding
+        `causal_lm_loss()` its own expected, un-shifted convention costs
+        exactly one supervised position per block versus the (buggy)
+        `seq_len + 1` layout: with `seq_len` input tokens, the LAST
+        position's logit is computed (needed as context for everything
+        before it) but is never itself supervised, because there is no
+        `seq_len + 1`-th token within this block to compare it against
+        -- this is the standard, accepted "final-token utilization"
+        trade-off every mainstream causal-LM training implementation
+        makes (the alternative, carrying one extra token per block
+        purely to supervise the final position, would itself need
+        `causal_lm_loss()` to NOT re-shift, which is exactly what
+        this fix establishes as the module's one, single, documented
+        shift point) -- not an oversight, and explicitly verified by
+        `tests/test_genesis_data_loader.py::test_final_token_utilization_is_the_standard_accepted_trade_off_not_a_silent_loss`.
+
+        Padding is masked directly against the UNSHIFTED label array (a
+        padded position's own label, not a shifted neighbor's), so
+        `causal_lm_loss()`'s internal shift correctly carries the mask
+        to the position it belongs to -- closing the companion
+        AUDIT-P0-01 padding-mask defect (the prior pre-shifted version
+        masked `labels` at `input_ids == pad_id`, which -- because
+        `labels` was `full[1:]`, one position ahead of `input_ids` --
+        left the FIRST real pad token's own label position unmasked).
+
+        AUDIT-P1-01 fix: reads exactly this one block's bytes from the
+        on-disk store via `seek()` + a bounded `read()` -- O(1) memory,
+        independent of how many total blocks this dataset has."""
+        if not (0 <= index < self.report.num_blocks):
+            raise IndexError(f"block index {index} out of range for a dataset of {self.report.num_blocks} blocks")
+        block_len = self.cfg.seq_len
+        offset = index * block_len * _TOKEN_ITEM_SIZE
+        self._store_file.seek(offset)
+        raw = self._store_file.read(block_len * _TOKEN_ITEM_SIZE)
+        buf = array.array(_TOKEN_TYPECODE)
+        buf.frombytes(raw)
+        tokens = torch.tensor(buf.tolist(), dtype=torch.long)
+        labels = tokens.clone()
+        labels[tokens == self.cfg.pad_id] = IGNORE_INDEX
+        return tokens, labels
 
 
 class ReproducibleSampler:

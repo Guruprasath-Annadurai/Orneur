@@ -252,3 +252,68 @@ def test_the_real_unauthorized_production_ledger_still_denies_start(tmp_path, mo
     with pytest.raises(ORCH.ExecutionAcceptanceIncompleteError):
         run.start()
     assert run.state is RunState.REJECTED
+
+
+# ==================================================================================
+# Antigravity Audit #074 remediation: AUDIT-P0-02 (in-flight re-validation)
+# ==================================================================================
+
+def test_p0_02_revocation_is_caught_in_flight_without_any_pause_resume_cycle(tmp_path, monkeypatch):
+    """The audit's own exact reproduction, corrected: a grant revoked
+    WHILE a run stays continuously RUNNING (no pause()/resume() at all)
+    must be caught on the very next call through
+    execute_authorized_training_step() -- not merely at the next state
+    transition, which this specific scenario never performs."""
+    revoked_flag = {"revoked": False}
+    run = _build_running_run(tmp_path, monkeypatch, revocation_check=lambda auth_id: revoked_flag["revoked"])
+    engine = _make_engine()
+    input_ids, labels = _batch()
+
+    r1 = execute_authorized_training_step(run, engine, input_ids, labels)
+    assert r1.applied is True
+    assert run.state is RunState.RUNNING  # still RUNNING -- no transition occurred
+
+    revoked_flag["revoked"] = True
+    with pytest.raises(TrainingNotAuthorizedForExecutionError):
+        execute_authorized_training_step(run, engine, input_ids, labels)
+    # The run's in-memory .state is untouched by this in-flight check (only
+    # transitions change .state) -- but every further call is still denied.
+    with pytest.raises(TrainingNotAuthorizedForExecutionError):
+        execute_authorized_training_step(run, engine, input_ids, labels)
+
+
+def test_p0_02_dataset_identity_drift_is_caught_in_flight(tmp_path, monkeypatch):
+    """A shard file tampered WHILE a run stays continuously RUNNING (no
+    pause()/resume()) is caught on the next call through
+    execute_authorized_training_step() -- reusing the run's own identity
+    snapshot comparison, re-derived fresh each call."""
+    run = _build_running_run(tmp_path, monkeypatch)
+    engine = _make_engine()
+    input_ids, labels = _batch()
+    execute_authorized_training_step(run, engine, input_ids, labels)
+    assert run.state is RunState.RUNNING
+
+    shard_dir = run.identity.shard_dir
+    shard_file = sorted(shard_dir.glob("shard-*.jsonl"))[0]
+    shard_file.write_bytes(b'{"text": "tampered mid-flight, no transition occurred"}\n')
+
+    with pytest.raises(TrainingNotAuthorizedForExecutionError):
+        execute_authorized_training_step(run, engine, input_ids, labels)
+
+
+def test_p0_02_a_hollow_run_object_forging_running_state_is_rejected(tmp_path, monkeypatch):
+    """A subclass or stand-in that sets `.state = RunState.RUNNING`
+    directly, bypassing validate()/authorize()/start() entirely (exactly
+    the audit's own `DummyRun` reproduction), must be rejected with a
+    clear, intentional exception -- not silently accepted, and not an
+    opaque AttributeError that looks like a bug rather than a boundary."""
+    class HollowRun(GenesisTrainingRun):
+        def __init__(self):
+            self.state = RunState.RUNNING
+            self.identity = type("Identity", (), {"run_id": "hollow-run"})()
+
+    run = HollowRun()
+    engine = _make_engine()
+    input_ids, labels = _batch()
+    with pytest.raises(TrainingNotAuthorizedForExecutionError):
+        execute_authorized_training_step(run, engine, input_ids, labels)
