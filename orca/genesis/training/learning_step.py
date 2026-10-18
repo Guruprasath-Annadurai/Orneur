@@ -61,12 +61,54 @@ separate worker process, reachable only via an IPC channel that itself
 re-authenticates every call and never shares interpreter state with the
 caller) -- building and testing that architecture is explicitly out of
 scope for this remediation phase and is recorded as an open
-requirement, not claimed as already closed."""
+requirement, not claimed as already closed.
+
+## Antigravity Audit #075 (independent successor requalification) remediation
+
+Audit #075 named `ExecutionCapability.for_unchecked_synthetic_test()`,
+`TrainingStepEngine._issue_capability_for_governance()`, and the
+(now-removed, see `learning_governance.py`) caller-controlled
+revalidation cadence as the three concrete "production bypass paths"
+requiring remediation. Addressed here as follows, stated honestly
+rather than oversold:
+
+- **The genuine fix is architectural, not a tighter in-process check**:
+  `orca.genesis.training.isolated_worker` (new in this phase) is now
+  the ONLY path by which a real, governance-authorized training step
+  can execute -- the worker constructs its own private
+  `TrainingStepEngine` inside a SEPARATE OS process, calls
+  `_issue_capability_for_governance()` on it internally, and never
+  exposes the engine, the model, the optimizer, or any capability
+  object across its IPC boundary to a client. A client process
+  literally has no Python reference to call either bypass method ON,
+  because it never has a reference to the real engine at all -- this
+  is what actually closes the "production bypass" concern, not any
+  change to these two methods' own code.
+  See `isolated_worker.py`'s own module docstring for the full design,
+  its threat model, and what it explicitly does NOT achieve (it is a
+  real OS-process boundary with authenticated IPC, not a container or
+  separate-uid sandbox by default).
+- **`for_unchecked_synthetic_test()` now additionally requires `pytest`
+  to be the importing context** (`"pytest" in sys.modules`), raising
+  `SyntheticTestBypassMisuseError` otherwise. This is explicitly
+  **misuse-resistance, not a security boundary**: it prevents this
+  bypass from being casually left in, or accidentally reached by,
+  ordinary (non-test) code, since `pytest` is never imported by a real
+  training entrypoint. It does NOT stop a determined, co-resident
+  caller, who can trivially `import pytest` first, or monkeypatch
+  `sys.modules`, or call `ExecutionCapability(token=b"", _unchecked=True)`
+  directly (the constructor itself takes no such guard, by design,
+  since `__slots__`-based classes cannot be made un-instantiable from
+  within the same interpreter). Stated plainly, per this phase's own
+  instruction not to claim Python API conventions make arbitrary
+  in-process code untrustable: they do not, and this guard does not
+  claim otherwise."""
 from __future__ import annotations
 
 import hmac
 import random
 import secrets
+import sys
 from dataclasses import dataclass, field
 
 import torch
@@ -105,6 +147,16 @@ class MissingExecutionCapabilityError(Exception):
     """AUDIT-P0-02 fix: raised by `TrainingStepEngine.step()` when
     `capability` is missing, the wrong type, or does not match this
     engine's own token. See `ExecutionCapability`'s own docstring."""
+
+
+class SyntheticTestBypassMisuseError(Exception):
+    """AUDIT-075: raised by `ExecutionCapability.for_unchecked_synthetic
+    _test()` when `pytest` is not present in `sys.modules` -- misuse-
+    resistance against this bypass being reached from ordinary,
+    non-test code, explicitly NOT a security boundary against a
+    determined in-process caller. See this module's own docstring,
+    "Audit #075", for the honest, full scope of what this is and is
+    not."""
 
 
 def set_deterministic_seed(seed: int) -> None:
@@ -199,6 +251,12 @@ class ExecutionCapability:
 
     @classmethod
     def for_unchecked_synthetic_test(cls) -> "ExecutionCapability":
+        if "pytest" not in sys.modules:
+            raise SyntheticTestBypassMisuseError(
+                "ExecutionCapability.for_unchecked_synthetic_test() may only be called from a pytest "
+                "process ('pytest' not found in sys.modules) -- see SyntheticTestBypassMisuseError's own "
+                "docstring for why this is misuse-resistance, not a security boundary"
+            )
         return cls(token=b"", _unchecked=True)
 
 

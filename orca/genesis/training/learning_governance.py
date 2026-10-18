@@ -35,12 +35,31 @@ Independently reproduced, two distinct defects:
    revocation) AND re-derives the run's full identity snapshot
    (catching dataset/shard drift, reusing `GenesisTrainingRun`'s own
    `_current_identity_snapshot()`/`_authorized_identity` comparison) on
-   EVERY SINGLE call -- i.e. at the finest possible cadence, every
-   optimizer-update boundary, not merely at transitions. A caller
-   wanting reduced overhead at real scale can raise
-   `revalidate_every_n_calls`, but the default is `1` (every call),
-   deliberately the safest choice, not a cosmetic check performed once
-   and never again.
+   EVERY SINGLE call -- unconditionally, with no caller-controllable
+   knob of any kind.
+
+## Antigravity Audit #075 (independent successor requalification) remediation -- AUDIT-P0-02 (cadence)
+
+The PRIOR version of this fix (Audit #074) added a `revalidate_every_n_calls`
+PARAMETER, defaulting to `1` but settable by the caller. Antigravity's
+own successor audit demonstrated exactly why that was still a real
+gap, not merely a documented trade-off: a caller (or an attacker able
+to influence the call site) could pass `revalidate_every_n_calls=5`
+and then have a grant revoked -- because the cadence check used
+`engine.global_step % revalidate_every_n_calls == 0`, four full,
+genuinely-unauthorized parameter updates executed before the fifth
+call's revalidation finally caught it
+(`test_p0_02_caller_controlled_revalidate_cadence_bypasses_revocation`,
+independently reproduced before this fix).
+
+**Fixed, structurally, not by tightening a default**: the parameter is
+REMOVED entirely. `execute_authorized_training_step()` now has no
+knob, of any name, that can widen the revalidation window -- every
+single call independently re-verifies the grant and identity, full
+stop. A future caller who genuinely needs reduced per-call overhead at
+real training scale must solve that by making the underlying checks
+themselves cheaper (e.g. caching shard digests with their own
+freshness proof), not by skipping checks on some calls.
 
 2. **Direct `TrainingStepEngine.step()` bypass.** Fixed in
    `learning_step.py` itself (`ExecutionCapability`, Audit #074 P0-02) --
@@ -97,7 +116,6 @@ class TrainingNotAuthorizedForExecutionError(Exception):
 
 def execute_authorized_training_step(
     run: GenesisTrainingRun, engine: TrainingStepEngine, input_ids: torch.Tensor, labels: torch.Tensor,
-    *, revalidate_every_n_calls: int = 1,
 ) -> StepResult:
     """The sanctioned entrypoint. Raises
     `TrainingNotAuthorizedForExecutionError` immediately, before calling
@@ -114,12 +132,9 @@ def execute_authorized_training_step(
        `_reverify_grant_or_transition()` performs at transitions,
        reused here, re-derived fresh every call (AUDIT-P0-02).
 
-    `revalidate_every_n_calls` (default `1`, every call -- the safest,
-    most conservative default): an explicit, documented trade-off knob
-    for a caller at a scale where re-deriving the full identity
-    snapshot (which re-hashes shard files from disk) on every single
-    microbatch call is prohibitively expensive. Raising this WIDENS the
-    window between re-validations -- stated plainly, not hidden."""
+    AUDIT-075: there is deliberately no parameter here that can widen
+    the revalidation cadence -- see this module's own docstring,
+    "Audit #075 ... AUDIT-P0-02 (cadence)"."""
     if not isinstance(run, GenesisTrainingRun):
         raise TrainingNotAuthorizedForExecutionError(
             f"execute_authorized_training_step() requires a real GenesisTrainingRun instance, got "
@@ -144,26 +159,23 @@ def execute_authorized_training_step(
             f"and is refused regardless of its reported .state"
         )
 
-    # AUDIT-P0-02: in-flight re-validation, independent of whatever
-    # run.state currently says, on the cadence revalidate_every_n_calls
-    # requests (default: every call). Reuses the engine's own existing
-    # global_step counter as the cadence tracker -- no new, separately
-    # fragile external state needed.
-    due = (engine.global_step % max(revalidate_every_n_calls, 1)) == 0
-    if due:
-        try:
-            assert_execution_permitted(run.grant, revocation_check=run._revocation_check)
-        except NativePretrainingNotAuthorized as e:
-            raise TrainingNotAuthorizedForExecutionError(
-                f"run {run.identity.run_id!r}'s grant no longer independently re-verifies as permitted "
-                f"RIGHT NOW (in-flight expiry or revocation): {e.reasons}"
-            ) from e
-        current = run._current_identity_snapshot()
-        if current != run._authorized_identity:
-            raise TrainingNotAuthorizedForExecutionError(
-                f"run {run.identity.run_id!r}'s current identity (dataset/shard/code/model) no longer "
-                f"matches the identity snapshot frozen at authorize() time -- in-flight drift detected"
-            )
+    # AUDIT-P0-02 / AUDIT-075: in-flight re-validation on EVERY call,
+    # unconditionally -- no cadence knob of any kind (see module
+    # docstring for why the prior revalidate_every_n_calls parameter
+    # was removed rather than merely defaulted safely).
+    try:
+        assert_execution_permitted(run.grant, revocation_check=run._revocation_check)
+    except NativePretrainingNotAuthorized as e:
+        raise TrainingNotAuthorizedForExecutionError(
+            f"run {run.identity.run_id!r}'s grant no longer independently re-verifies as permitted "
+            f"RIGHT NOW (in-flight expiry or revocation): {e.reasons}"
+        ) from e
+    current = run._current_identity_snapshot()
+    if current != run._authorized_identity:
+        raise TrainingNotAuthorizedForExecutionError(
+            f"run {run.identity.run_id!r}'s current identity (dataset/shard/code/model) no longer "
+            f"matches the identity snapshot frozen at authorize() time -- in-flight drift detected"
+        )
 
     capability = engine._issue_capability_for_governance()
     return engine.step(input_ids, labels, capability=capability)

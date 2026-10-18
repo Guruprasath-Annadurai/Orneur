@@ -33,6 +33,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+import orca.config as orca_config  # noqa: E402
 from orca.genesis.model.config import GenesisModelConfig  # noqa: E402
 from orca.genesis.model.transformer import GenesisTransformer  # noqa: E402
 from orca.genesis.training.learning_step import (  # noqa: E402
@@ -59,6 +60,14 @@ BATCH_SIZE = 8
 MODEL_CFG = GenesisModelConfig(vocab_size=VOCAB, d_model=32, n_layers=2, n_heads=4, n_kv_heads=2, d_ff=64, max_seq_len=32)
 TEST_CAP = ExecutionCapability.for_unchecked_synthetic_test()  # AUDIT-P0-02: explicit, named, test-only bypass
 INTEGRITY_KEY = b"synthetic-proof-test-only-key-never-persisted!!"  # AUDIT-P0-04: not a founder key
+
+
+@pytest.fixture(autouse=True)
+def _isolate_checkpoint_ledger(tmp_path, monkeypatch):
+    """AUDIT-075: isolate the anti-rollback ledger (under `orca.config
+    .ORCA_HOME`) per test -- see test_genesis_resumable_checkpoint.py's
+    identical fixture for the full rationale."""
+    monkeypatch.setattr(orca_config, "ORCA_HOME", tmp_path / "ornhome")
 
 # Pre-registered thresholds (chosen BEFORE this test suite's final run,
 # from a standalone prototype run reaching initial ~2.39 / final ~0.0008
@@ -303,7 +312,7 @@ def test_item6_resume_reproduces_uninterrupted_training_within_tolerance(tmp_pat
     save_resumable_checkpoint(
         path=path, training_state=ts, global_step=engine_a.global_step, microbatch_in_cycle=engine_a.microbatch_in_cycle,
         sampler_position=0, sampler_seed=3, sampler_num_blocks=1,
-        config_fingerprint=fingerprint, dataset_identity=ds_identity, integrity_key=INTEGRITY_KEY,
+        config_fingerprint=fingerprint, dataset_identity=ds_identity, integrity_key=INTEGRITY_KEY, run_id="synthetic-proof-fixture",
     )
 
     set_deterministic_seed(3)
@@ -311,7 +320,7 @@ def test_item6_resume_reproduces_uninterrupted_training_within_tolerance(tmp_pat
     engine_b = TrainingStepEngine(model_b, step_cfg)
     restored = restore_resumable_checkpoint(
         path=path, expected_config_fingerprint=fingerprint, expected_dataset_identity=ds_identity,
-        expected_sampler_seed=3, expected_sampler_num_blocks=1, integrity_key=INTEGRITY_KEY,
+        expected_sampler_seed=3, expected_sampler_num_blocks=1, integrity_key=INTEGRITY_KEY, run_id="synthetic-proof-fixture",
     )
     restored.training_state.restore(model=model_b, optimizer=engine_b.optimizer)
     engine_b.global_step = restored.global_step
@@ -437,7 +446,7 @@ def test_item9_an_incomplete_checkpoint_missing_its_resumable_manifest_is_never_
     with pytest.raises(ResumableManifestTamperedError):
         restore_resumable_checkpoint(
             path=path, expected_config_fingerprint=fingerprint, expected_dataset_identity=ds_identity,
-            expected_sampler_seed=0, expected_sampler_num_blocks=1, integrity_key=INTEGRITY_KEY,
+            expected_sampler_seed=0, expected_sampler_num_blocks=1, integrity_key=INTEGRITY_KEY, run_id="synthetic-proof-fixture",
         )
 
 
@@ -454,7 +463,7 @@ def test_item9_a_corrupted_checkpoint_is_never_trusted_even_with_a_valid_sidecar
     save_resumable_checkpoint(
         path=path, training_state=ts, global_step=engine.global_step, microbatch_in_cycle=engine.microbatch_in_cycle,
         sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
-        config_fingerprint=fingerprint, dataset_identity=ds_identity, integrity_key=INTEGRITY_KEY,
+        config_fingerprint=fingerprint, dataset_identity=ds_identity, integrity_key=INTEGRITY_KEY, run_id="synthetic-proof-fixture",
     )
     corrupted = bytearray(path.read_bytes())
     corrupted[10] ^= 0xFF
@@ -462,7 +471,7 @@ def test_item9_a_corrupted_checkpoint_is_never_trusted_even_with_a_valid_sidecar
     with pytest.raises(ChecksumMismatchError):
         restore_resumable_checkpoint(
             path=path, expected_config_fingerprint=fingerprint, expected_dataset_identity=ds_identity,
-            expected_sampler_seed=0, expected_sampler_num_blocks=1, integrity_key=INTEGRITY_KEY,
+            expected_sampler_seed=0, expected_sampler_num_blocks=1, integrity_key=INTEGRITY_KEY, run_id="synthetic-proof-fixture",
         )
 
 
@@ -483,6 +492,7 @@ def test_p1_03_training_is_reproducible_across_two_entirely_separate_clean_proce
     import sys
 
     script = (
+        "import pytest\n"  # AUDIT-075: for_unchecked_synthetic_test() now requires 'pytest' in sys.modules
         "import torch\n"
         "from orca.genesis.model.config import GenesisModelConfig\n"
         "from orca.genesis.model.transformer import GenesisTransformer\n"

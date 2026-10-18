@@ -107,7 +107,77 @@ to invoke)**:
    forged by anyone who does not hold `integrity_key`, which is never
    itself written into the checkpoint directory by this module. If an
    attacker obtains BOTH the checkpoint files AND this key, no integrity
-   guarantee holds here, and this module makes no claim otherwise."""
+   guarantee holds here, and this module makes no claim otherwise.
+
+## Antigravity Audit #075 (independent successor requalification) remediation
+
+### Rollback protection
+Independently reproduced before this fix: `restore_resumable_checkpoint()`
+validated the sidecar's own internal consistency (HMAC, inner-step
+cross-check) but never checked a restored checkpoint's `global_step`
+against anything OUTSIDE that one checkpoint's own files -- an older,
+validly signed checkpoint (step 5) could be restored in place of a
+newer one (step 100) and would pass every existing check, since nothing
+recorded that step 100 had ever existed.
+
+**Fix**: a small, append-only, HMAC-protected ledger (`_ledger_path()`),
+keyed by a caller-supplied `run_id` and stored OUTSIDE the checkpoint's
+own directory (under `orca.config.ORCA_HOME`), records the highest
+`global_step` ever saved or restored for that run. Both
+`save_resumable_checkpoint()` and `restore_resumable_checkpoint()`
+monotonically advance it; `restore_resumable_checkpoint()` additionally
+REJECTS (`CheckpointRollbackError`) any restore whose `global_step` is
+lower than the ledger's current high-water mark.
+
+**Explicitly, honestly NOT claimed -- re-examined and sharpened per the
+CTO pre-handoff security directive's own challenge**: this ledger is a
+local file, HMAC-protected against FIELD TAMPERING, but it is NOT an
+independent, externally-anchored trust root, and the gap is sharper
+than "an attacker who also knows the key." The precise attack this
+module does NOT prevent: an attacker who, at any earlier point, saved
+a COPY of this run's `run_id` ledger file from when it was legitimately
+at a lower `highest_global_step` (e.g. by reading it off disk, or from
+a backup/snapshot) can later REPLACE the current ledger file with that
+OLD copy, together with the matching OLD checkpoint+manifest pair, and
+restore both simultaneously. The replayed ledger file's HMAC tag is
+STILL VALID -- it was genuinely computed by this same process with
+this same `integrity_key` at the time it was first written; replaying
+it verbatim requires no knowledge of `integrity_key` at all, only
+filesystem write access to both the checkpoint directory and
+`ORCA_HOME`'s ledger directory. `test_audit075_simultaneous_old_checkpoint_and_old_ledger_replay_is_not_detected`
+in `tests/test_genesis_resumable_checkpoint.py` independently
+reproduces this exact scenario and documents that it currently
+SUCCEEDS (the restore is accepted) -- recorded here as a known,
+unresolved gap, not silently patched over.
+
+Put precisely: this mechanism provides HMAC integrity (a field cannot
+be edited in place without detection) and a LOCAL, process-relative
+monotonic progress claim (within one continuously-running process's
+own view of `run_id`, it will never accept going backward), but it is
+NOT an independently anchored anti-rollback authority. The checkpoint
+body, its manifest, and the ledger all live under the same filesystem
+trust boundary; whoever can write to one can, with enough foresight
+(saving old copies in advance), write a self-consistent OLDER triple
+back. Genuinely closing this requires a trust anchor OUTSIDE that
+filesystem -- a remote append-only service, a hardware monotonic
+counter, or any store the training process can append to but cannot
+rewrite -- explicitly out of scope here (no paid infrastructure in
+this phase) and NOT claimed as closed. `CheckpointRollbackError` only
+fires when the CURRENT, un-replayed ledger disagrees with a restore
+attempt in the SAME filesystem state; it is real, useful defense-in-
+depth against a casual or partial rollback (e.g. restoring an old
+checkpoint while the real, current ledger is still in place), but it
+is not a substitute for an independent anchor. A FIRST-EVER restore of
+a checkpoint (nothing newer ever recorded under that `run_id`) also
+cannot be detected as a rollback, by construction -- there is nothing
+yet to roll back FROM.
+
+### Weak key custody
+Independently reproduced: the prior code only checked `if not
+integrity_key`, silently accepting e.g. a 1-byte key. `_require_strong
+_integrity_key()` now rejects any `integrity_key` shorter than
+`MIN_INTEGRITY_KEY_BYTES` (32 bytes / 256 bits) in both save and
+restore, raising `WeakIntegrityKeyError`."""
 from __future__ import annotations
 
 import fcntl
@@ -119,11 +189,14 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import orca.config as orca_config
 from orca.config import _mkdir_owner_only
 from orca.genesis.training.checkpoint_integrity import ChecksumMismatchError, _sha256_of_file
 from orca.genesis.training.primitives import TrainingState, load_training_state, save_training_state
 
 RESUMABLE_SCHEMA_VERSION = "genesis-resumable-checkpoint/2"  # Audit #074 P0-04: now includes an HMAC integrity tag
+LEDGER_SCHEMA_VERSION = "genesis-checkpoint-ledger/1"  # Audit #075 P0-04: anti-rollback monotonic ledger
+MIN_INTEGRITY_KEY_BYTES = 32  # Audit #075: minimum acceptable HMAC key strength (256 bits)
 
 
 class ResumeEquivalenceError(Exception):
@@ -152,6 +225,23 @@ class MidAccumulationCheckpointError(Exception):
     genuine optimizer-step boundary -- see this module's own docstring
     for why gradient-buffer serialization was rejected in favor of this
     fail-closed boundary."""
+
+
+class CheckpointRollbackError(Exception):
+    """Raised by `restore_resumable_checkpoint()` (Audit #075 P0-04)
+    when the checkpoint being restored claims a `global_step` lower
+    than the highest step this `run_id`'s own monotonic ledger has
+    already recorded -- i.e. an attempt to resume from an OLDER, validly
+    signed checkpoint after the run has already progressed further.
+    See this module's own docstring, "Anti-rollback ledger", for the
+    explicit, honest scope of what this does and does not guarantee."""
+
+
+class WeakIntegrityKeyError(Exception):
+    """Raised when `integrity_key` is shorter than
+    `MIN_INTEGRITY_KEY_BYTES` -- Audit #075's "weak key custody"
+    finding: the prior code only checked `if not integrity_key`,
+    silently accepting a 1-byte key with no real HMAC security margin."""
 
 
 def compute_config_fingerprint(*objs: object) -> str:
@@ -231,10 +321,100 @@ def _resumable_manifest_path(checkpoint_path: Path) -> Path:
     return checkpoint_path.with_suffix(checkpoint_path.suffix + ".resumable.json")
 
 
+def _require_strong_integrity_key(integrity_key: bytes) -> None:
+    if not integrity_key:
+        raise ValueError("integrity_key is required and must be non-empty -- see this module's own docstring, AUDIT-P0-04")
+    if len(integrity_key) < MIN_INTEGRITY_KEY_BYTES:
+        raise WeakIntegrityKeyError(
+            f"integrity_key is {len(integrity_key)} bytes; AUDIT-075 requires at least "
+            f"{MIN_INTEGRITY_KEY_BYTES} bytes (256 bits) of real key material -- a short key gives an HMAC "
+            f"no meaningful forgery-resistance margin. Generate one with e.g. os.urandom(32)."
+        )
+
+
+def _ledger_path(run_id: str) -> Path:
+    """Audit #075 P0-04, anti-rollback ledger: deliberately lives under
+    `orca.config.ORCA_HOME` -- a location SEPARATE from wherever the
+    checkpoint directory itself is -- keyed by a SHA-256 of the
+    caller-supplied `run_id` (the logical training run's identity, not
+    a file path). This is read dynamically at call time (not imported
+    as a bound constant) so it honors `ORCA_HOME` being monkeypatched
+    per-test, matching this codebase's own established test-isolation
+    convention.
+
+    **Explicit, honest scope**: this raises the bar for a rollback
+    attack (an attacker must now also control this separate location,
+    not just the checkpoint directory being restored from), but it is
+    NOT a cryptographically independent authority -- it is still a
+    local file on the same machine, protected only by filesystem
+    permissions and the same HMAC key as the checkpoint itself. Genuine
+    rollback protection against an attacker with full local filesystem
+    access requires an external, append-only ledger (a remote service,
+    or a hardware monotonic counter) -- explicitly out of scope here
+    (no paid infrastructure is available in this phase) and recorded as
+    a residual limitation, not silently claimed as closed."""
+    ledger_dir = _mkdir_owner_only(orca_config.ORCA_HOME / "genesis_checkpoint_ledger", parents=True)
+    digest = hashlib.sha256(run_id.encode("utf-8")).hexdigest()
+    return ledger_dir / f"{digest}.ledger.json"
+
+
+def _read_ledger(run_id: str, integrity_key: bytes) -> int:
+    """Returns the highest `global_step` ever recorded for `run_id`, or
+    0 if no ledger entry exists yet. Raises `ResumableManifestTamperedError`
+    if a ledger entry exists but fails its own HMAC check (its fields
+    are the same class of tamper-evident binding as the checkpoint
+    sidecar's own, using the SAME caller-supplied `integrity_key`)."""
+    path = _ledger_path(run_id)
+    if path.is_symlink():
+        raise ResumableManifestTamperedError(f"refusing to trust {path} as a checkpoint ledger -- it is a symlink, not a regular file")
+    if not path.exists():
+        return 0
+    data = json.loads(path.read_text())
+    tag = data.pop("integrity_tag", None)
+    expected = _compute_integrity_tag(integrity_key, data)
+    if tag is None or not hmac.compare_digest(expected, tag):
+        raise ResumableManifestTamperedError(
+            f"checkpoint ledger at {path} failed its HMAC integrity check -- refusing to trust its recorded "
+            f"highest_global_step; this would otherwise silently defeat anti-rollback protection"
+        )
+    if data.get("schema_version") != LEDGER_SCHEMA_VERSION:
+        raise ResumableManifestTamperedError(f"checkpoint ledger at {path} declares an unrecognized schema_version={data.get('schema_version')!r}")
+    return int(data["highest_global_step"])
+
+
+def _advance_ledger(run_id: str, integrity_key: bytes, observed_step: int) -> None:
+    """Held under the SAME exclusive lock `save_resumable_checkpoint()`
+    already takes for its own manifest write. Monotonically raises the
+    ledger's recorded `highest_global_step` to `max(current, observed_step)`
+    -- never lowers it, regardless of what `observed_step` is."""
+    current = _read_ledger(run_id, integrity_key)
+    new_highest = max(current, observed_step)
+    path = _ledger_path(run_id)
+    fields = {
+        "schema_version": LEDGER_SCHEMA_VERSION,
+        "run_id_digest": hashlib.sha256(run_id.encode("utf-8")).hexdigest(),
+        "highest_global_step": new_highest,
+    }
+    record = dict(fields)
+    record["integrity_tag"] = _compute_integrity_tag(integrity_key, fields)
+    fd, tmp_str = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.tmp-")
+    tmp = Path(tmp_str)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(record))
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.chmod(0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def save_resumable_checkpoint(
     *, path: Path, training_state: TrainingState, global_step: int, microbatch_in_cycle: int,
     sampler_position: int, sampler_seed: int, sampler_num_blocks: int,
-    config_fingerprint: str, dataset_identity: DatasetIdentity, integrity_key: bytes,
+    config_fingerprint: str, dataset_identity: DatasetIdentity, integrity_key: bytes, run_id: str,
 ) -> ResumableManifest:
     """Saves the inner `TrainingState` via the existing, unmodified
     `save_training_state()` (the same atomic-write/locking discipline
@@ -261,8 +441,9 @@ def save_resumable_checkpoint(
             f"own docstring, AUDIT-P0-03, for why). Drain the current accumulation cycle to completion before "
             f"checkpointing, or discard it and resume this cycle from scratch."
         )
-    if not integrity_key:
-        raise ValueError("integrity_key is required and must be non-empty -- see this module's own docstring, AUDIT-P0-04")
+    _require_strong_integrity_key(integrity_key)
+    if not run_id:
+        raise ValueError("run_id is required and must be non-empty -- Audit #075 P0-04 binds every save to this run's own anti-rollback ledger")
 
     path = Path(path)
     parent = _mkdir_owner_only(path.parent, parents=True)
@@ -296,6 +477,7 @@ def save_resumable_checkpoint(
             except BaseException:
                 tmp.unlink(missing_ok=True)
                 raise
+            _advance_ledger(run_id, integrity_key, global_step)
             return manifest
         finally:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
@@ -318,7 +500,7 @@ class RestoredRun:
 
 def restore_resumable_checkpoint(
     *, path: Path, expected_config_fingerprint: str, expected_dataset_identity: DatasetIdentity,
-    expected_sampler_seed: int, expected_sampler_num_blocks: int, integrity_key: bytes,
+    expected_sampler_seed: int, expected_sampler_num_blocks: int, integrity_key: bytes, run_id: str,
 ) -> RestoredRun:
     """The trusted, fail-closed restore boundary. Verifies, IN ORDER,
     before applying anything:
@@ -344,7 +526,15 @@ def restore_resumable_checkpoint(
        `TrainingState.step` is cross-checked against the sidecar's own
        `global_step` -- a second, independent consistency check that
        does not depend on `integrity_key` at all, since `step` lives
-       inside the ALREADY content-hash-verified checkpoint body."""
+       inside the ALREADY content-hash-verified checkpoint body.
+    6. **(AUDIT-075)** `global_step` is checked against `run_id`'s own
+       anti-rollback ledger (stored OUTSIDE this checkpoint's own
+       directory -- see `_ledger_path()`'s docstring for its explicit,
+       honest scope): restoring a checkpoint older than the highest
+       step this run has already recorded raises `CheckpointRollbackError`."""
+    _require_strong_integrity_key(integrity_key)
+    if not run_id:
+        raise ValueError("run_id is required and must be non-empty -- Audit #075 P0-04 checks this run's own anti-rollback ledger")
     path = Path(path)
     manifest_path = _resumable_manifest_path(path)
     if not manifest_path.exists():
@@ -396,6 +586,18 @@ def restore_resumable_checkpoint(
             f"inner, content-hash-verified checkpoint's own step is {training_state.step} -- these must be "
             f"identical; refusing to resume from an internally inconsistent checkpoint"
         )
+
+    ledger_highest = _read_ledger(run_id, integrity_key)
+    if manifest.global_step < ledger_highest:
+        raise CheckpointRollbackError(
+            f"refusing to restore checkpoint at {path} (global_step={manifest.global_step}): run_id "
+            f"{run_id!r}'s own anti-rollback ledger has already recorded a higher step "
+            f"({ledger_highest}) -- this looks like an attempt to resume from an OLDER, validly signed "
+            f"checkpoint after the run already progressed further. See _ledger_path()'s docstring for "
+            f"this check's explicit, honest scope."
+        )
+    _advance_ledger(run_id, integrity_key, manifest.global_step)
+
     return RestoredRun(
         training_state=training_state, global_step=manifest.global_step,
         microbatch_in_cycle=manifest.microbatch_in_cycle, sampler_position=manifest.sampler_position,
