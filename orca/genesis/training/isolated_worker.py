@@ -140,11 +140,20 @@ import torch
 from orca.genesis.governance.authorization import NativePretrainingRequest, authorize_native_pretraining
 from orca.genesis.model.config import GenesisModelConfig
 from orca.genesis.model.transformer import GenesisTransformer
-from orca.genesis.training.learning_governance import TrainingNotAuthorizedForExecutionError, execute_authorized_training_step
-from orca.genesis.training.learning_step import TrainingStepConfig, TrainingStepEngine
+from orca.genesis.training.learning_governance import (
+    TrainingNotAuthorizedForExecutionError,
+    execute_authorized_training_step,
+    verify_live_authorization_or_raise,
+)
+from orca.genesis.training.learning_step import TrainingStepConfig, TrainingStepEngine, set_deterministic_seed
 from orca.genesis.training.orchestration import GenesisTrainingRun
 from orca.genesis.training.primitives import TrainingState
-from orca.genesis.training.resumable_checkpoint import DatasetIdentity, restore_resumable_checkpoint, save_resumable_checkpoint
+from orca.genesis.training.resumable_checkpoint import (
+    DatasetIdentity,
+    compute_config_fingerprint,
+    restore_resumable_checkpoint,
+    save_resumable_checkpoint,
+)
 
 _MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 _NONCE_CACHE_SIZE = 4096
@@ -242,6 +251,7 @@ class WorkerStartupConfig:
     orca_home_override: str | None = None  # redirects where the anti-replay/rollback ledgers live; not a security weakening
     test_only_bypass_founder_ledger: bool = False  # see this field's own check in _worker_main -- pytest-gated, misuse-resistant, not a production bypass
     test_only_pinned_registry_sha256: str | None = None  # paired with the above, for synthetic test registries only
+    checkpoint_workspace_dir: str | None = None  # AUDIT-076 Phase 3: the ONLY directory save_checkpoint/restore_checkpoint may ever resolve a path under; None means those commands are refused entirely (fail-closed default)
 
 
 def _canonical(obj) -> bytes:
@@ -274,6 +284,51 @@ def _recv_framed(sock: socket.socket) -> bytes:
     if length > _MAX_MESSAGE_BYTES:
         raise ValueError(f"framed message of {length} bytes exceeds the {_MAX_MESSAGE_BYTES}-byte ceiling")
     return _recv_exact(sock, length)
+
+
+class CheckpointWorkspaceViolationError(Exception):
+    """AUDIT-076 Phase 3: raised by `_enforce_checkpoint_path_confinement()`
+    when a save_checkpoint/restore_checkpoint request's `path` does not
+    resolve strictly underneath this worker's own configured
+    `checkpoint_workspace_dir`, or when no workspace was configured at
+    all (the fail-closed default -- no workspace means no checkpoint
+    capability, not an unrestricted one)."""
+
+
+def _enforce_checkpoint_path_confinement(cfg: "WorkerStartupConfig", requested_path: str) -> None:
+    if cfg.checkpoint_workspace_dir is None:
+        raise CheckpointWorkspaceViolationError(
+            "this worker was started with no checkpoint_workspace_dir configured -- "
+            "save_checkpoint/restore_checkpoint are refused entirely, not merely unrestricted"
+        )
+    workspace = Path(cfg.checkpoint_workspace_dir).resolve()
+    resolved = (workspace / requested_path).resolve() if not Path(requested_path).is_absolute() else Path(requested_path).resolve()
+    try:
+        resolved.relative_to(workspace)
+    except ValueError:
+        raise CheckpointWorkspaceViolationError(
+            f"requested checkpoint path {requested_path!r} resolves to {resolved}, which is outside this "
+            f"worker's own authorized checkpoint workspace {workspace} -- refusing to read or write it"
+        ) from None
+
+
+def _worker_config_fingerprint(cfg: "WorkerStartupConfig") -> str:
+    """AUDIT-076 Phase 3: computed from THIS worker's own, already-
+    verified startup config -- never accepted from the client payload.
+    A client can no longer manufacture the expected value its own
+    checkpoint is verified against."""
+    return compute_config_fingerprint(cfg.model_cfg, cfg.step_cfg)
+
+
+def _worker_dataset_identity(cfg: "WorkerStartupConfig") -> DatasetIdentity:
+    """Same posture as `_worker_config_fingerprint()`, for dataset
+    identity -- derived from the run's own validated identity fields,
+    never from the client's payload."""
+    return DatasetIdentity(
+        dataset_manifest_id=cfg.dataset_manifest_ids[0],
+        dataset_content_digest=cfg.dataset_digest,
+        tokenizer_digest=cfg.tokenizer_digest,
+    )
 
 
 def _read_revoked_ids(path: str) -> list[str]:
@@ -374,6 +429,15 @@ def _worker_main(cfg: WorkerStartupConfig, ready_evt, error_queue, status_queue)
         run.authorize(grant)
         run.start()
 
+        # AUDIT-076 Phase 4: deterministic model initialization. Without
+        # this, two separately-spawned worker processes constructed with
+        # the SAME model_cfg/step_cfg would still get DIFFERENT random
+        # initial weights (a fresh `spawn`ed interpreter has no fixed
+        # torch RNG seed of its own) -- undermining the exact restart-
+        # equivalence this phase's own test suite verifies. Seeded from
+        # `cfg.step_cfg.seed`, the SAME value every other GENESIS
+        # synthetic-learning test already uses for this purpose.
+        set_deterministic_seed(cfg.step_cfg.seed)
         model = GenesisTransformer(cfg.model_cfg)
         engine = TrainingStepEngine(model, cfg.step_cfg)
 
@@ -473,15 +537,27 @@ def _worker_main(cfg: WorkerStartupConfig, ready_evt, error_queue, status_queue)
                             stopped = True
                             break
                     elif command == "save_checkpoint":
-                        # AUDIT-076, Mission 4: the smallest viable extension
-                        # closing the genuine end-to-end chain gap -- the
-                        # checkpoint is captured from THIS worker's own,
-                        # never-exposed model/optimizer/engine state, using
-                        # the same real save_resumable_checkpoint() every
-                        # other GENESIS caller uses. No model/optimizer
-                        # tensor is ever sent over the wire -- only a plain
-                        # "ok" result once the file is written to disk.
+                        # AUDIT-076 Phase 3: hardened following confirmed
+                        # findings against the ORIGINAL version of this
+                        # handler -- it trusted the client's OWN claimed
+                        # path, dataset_identity, config_fingerprint, and
+                        # ledger_run_id outright, and performed NO live
+                        # authorization check at all. All four are fixed
+                        # here, in the same handler (not a separate patch):
+                        # the path must resolve under this worker's own
+                        # configured checkpoint_workspace_dir; dataset
+                        # identity, config fingerprint, and the ledger run
+                        # id are now ALWAYS derived from this worker's own
+                        # verified startup config, never taken from the
+                        # client's payload (the fields are no longer even
+                        # read from it); and a live authorization re-check
+                        # (the SAME one `step` already performs) runs
+                        # before anything is written to disk -- a revoked
+                        # or expired grant now fails this exactly like it
+                        # fails `step`, with the same fail-stop behavior.
                         try:
+                            _enforce_checkpoint_path_confinement(cfg, payload["path"])
+                            verify_live_authorization_or_raise(run)
                             ts = TrainingState.capture(
                                 step=engine.global_step, epoch=0, dataloader_position=payload["sampler_position"],
                                 model=engine.model, optimizer=engine.optimizer,
@@ -490,20 +566,28 @@ def _worker_main(cfg: WorkerStartupConfig, ready_evt, error_queue, status_queue)
                                 path=Path(payload["path"]), training_state=ts, global_step=engine.global_step,
                                 microbatch_in_cycle=engine.microbatch_in_cycle, sampler_position=payload["sampler_position"],
                                 sampler_seed=payload["sampler_seed"], sampler_num_blocks=payload["sampler_num_blocks"],
-                                config_fingerprint=payload["config_fingerprint"],
-                                dataset_identity=DatasetIdentity(**payload["dataset_identity"]),
-                                integrity_key=bytes.fromhex(payload["integrity_key_hex"]), run_id=payload["ledger_run_id"],
+                                config_fingerprint=_worker_config_fingerprint(cfg),
+                                dataset_identity=_worker_dataset_identity(cfg),
+                                integrity_key=bytes.fromhex(payload["integrity_key_hex"]), run_id=cfg.run_id,
                             )
                             _send_framed(conn, _canonical({"ok": True, "error": None, "result": {"global_step": engine.global_step}}))
+                        except TrainingNotAuthorizedForExecutionError as e:
+                            # Same fail-stop posture as `step`'s own authorization
+                            # failure -- this worker's process terminates entirely.
+                            _send_framed(conn, _canonical({"ok": False, "error": f"AUTHORIZATION_DENIED: {e}", "result": None}))
+                            stopped = True
+                            break
                         except Exception as e:  # noqa: BLE001 -- report the failure to the client, never crash the worker over it
                             _send_framed(conn, _canonical({"ok": False, "error": f"CHECKPOINT_SAVE_FAILED: {type(e).__name__}: {e}", "result": None}))
                     elif command == "restore_checkpoint":
                         try:
+                            _enforce_checkpoint_path_confinement(cfg, payload["path"])
+                            verify_live_authorization_or_raise(run)
                             restored = restore_resumable_checkpoint(
-                                path=Path(payload["path"]), expected_config_fingerprint=payload["config_fingerprint"],
-                                expected_dataset_identity=DatasetIdentity(**payload["dataset_identity"]),
+                                path=Path(payload["path"]), expected_config_fingerprint=_worker_config_fingerprint(cfg),
+                                expected_dataset_identity=_worker_dataset_identity(cfg),
                                 expected_sampler_seed=payload["sampler_seed"], expected_sampler_num_blocks=payload["sampler_num_blocks"],
-                                integrity_key=bytes.fromhex(payload["integrity_key_hex"]), run_id=payload["ledger_run_id"],
+                                integrity_key=bytes.fromhex(payload["integrity_key_hex"]), run_id=cfg.run_id,
                             )
                             restored.training_state.restore(model=engine.model, optimizer=engine.optimizer)
                             engine.global_step = restored.global_step
@@ -512,6 +596,10 @@ def _worker_main(cfg: WorkerStartupConfig, ready_evt, error_queue, status_queue)
                                 "ok": True, "error": None,
                                 "result": {"global_step": restored.global_step, "sampler_position": restored.sampler_position},
                             }))
+                        except TrainingNotAuthorizedForExecutionError as e:
+                            _send_framed(conn, _canonical({"ok": False, "error": f"AUTHORIZATION_DENIED: {e}", "result": None}))
+                            stopped = True
+                            break
                         except Exception as e:  # noqa: BLE001
                             _send_framed(conn, _canonical({"ok": False, "error": f"CHECKPOINT_RESTORE_FAILED: {type(e).__name__}: {e}", "result": None}))
                     else:
@@ -580,32 +668,35 @@ class IsolatedWorkerClient:
     def shutdown(self) -> dict:
         return self._request("shutdown")
 
-    def save_checkpoint(
-        self, *, path: str, integrity_key: bytes, sampler_position: int, sampler_seed: int,
-        sampler_num_blocks: int, config_fingerprint: str, dataset_identity: dict, ledger_run_id: str,
-    ) -> dict:
-        """AUDIT-076, Mission 4: commands the worker to capture and save
-        ITS OWN, never-exposed model/optimizer/engine state to `path`,
-        using the real `save_resumable_checkpoint()`. No tensor crosses
-        the wire -- only this plain request and an ok/error response."""
+    def save_checkpoint(self, *, path: str, integrity_key: bytes, sampler_position: int, sampler_seed: int, sampler_num_blocks: int) -> dict:
+        """AUDIT-076, Mission 4 / Phase 3: commands the worker to capture
+        and save ITS OWN, never-exposed model/optimizer/engine state to
+        `path`, using the real `save_resumable_checkpoint()`. No tensor
+        crosses the wire -- only this plain request and an ok/error
+        response. `path` must resolve under the worker's own configured
+        checkpoint workspace. Deliberately NO `config_fingerprint`,
+        `dataset_identity`, or `ledger_run_id` parameter here any more --
+        AUDIT-076 Phase 3 found the worker was trusting a client-supplied
+        value for all three, letting a client manufacture the very
+        values its own checkpoint would later be verified against; the
+        worker now always derives them itself from its own verified
+        startup config, and no longer reads them from this request at all."""
         return self._request("save_checkpoint", {
             "path": path, "integrity_key_hex": integrity_key.hex(), "sampler_position": sampler_position,
             "sampler_seed": sampler_seed, "sampler_num_blocks": sampler_num_blocks,
-            "config_fingerprint": config_fingerprint, "dataset_identity": dataset_identity, "ledger_run_id": ledger_run_id,
         })
 
-    def restore_checkpoint(
-        self, *, path: str, integrity_key: bytes, sampler_seed: int, sampler_num_blocks: int,
-        config_fingerprint: str, dataset_identity: dict, ledger_run_id: str,
-    ) -> dict:
+    def restore_checkpoint(self, *, path: str, integrity_key: bytes, sampler_seed: int, sampler_num_blocks: int) -> dict:
         """The restart-side counterpart: a FRESH worker (its own fresh
         model/optimizer, constructed the same way any worker start-up
         already builds them) restores exactly that saved state into
-        itself before accepting any further `step` commands."""
+        itself before accepting any further `step` commands. Same
+        AUDIT-076 Phase 3 posture as `save_checkpoint()` -- no identity-
+        bearing parameter here is trusted from the client; see its own
+        docstring."""
         return self._request("restore_checkpoint", {
             "path": path, "integrity_key_hex": integrity_key.hex(), "sampler_seed": sampler_seed,
-            "sampler_num_blocks": sampler_num_blocks, "config_fingerprint": config_fingerprint,
-            "dataset_identity": dataset_identity, "ledger_run_id": ledger_run_id,
+            "sampler_num_blocks": sampler_num_blocks,
         })
 
 

@@ -716,7 +716,9 @@ def test_audit076_one_oversized_record_with_no_newline_is_rejected_not_unbounded
     _current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     assert ds.report.records_read == 0
-    assert ds.report.records_rejected_malformed >= 1  # a newline-less oversized record cannot form valid records
+    # AUDIT-076 Phase 2: exactly ONE rejection for the whole oversized physical
+    # record, not one per chunk it happens to span (the discard-until-newline fix).
+    assert ds.report.records_rejected_malformed == 1
     assert peak < record_size / 4, (
         f"peak memory {peak} bytes should be a small fraction of the {record_size}-byte newline-less "
         f"record -- it must not grow leftover without bound waiting for a newline that never arrives"
@@ -907,3 +909,52 @@ def test_audit076_in_place_mutation_during_ingestion_is_caught_by_the_final_dige
             GenesisBlockDataset(cfg, _IdentityTok())
     finally:
         loader_module.os.read = real_read
+
+
+def test_audit076_phase2_oversized_record_cannot_smuggle_a_crafted_suffix_as_a_separate_record(tmp_path):
+    """AUDIT-076 Phase 2: independently reproduces, then proves fixed, a
+    real parsing weakness -- an oversized physical line (no newline
+    until its very end) whose prefix exceeds max_record_bytes used to
+    have its `leftover` buffer reset to empty MID-LINE, so a crafted,
+    well-formed JSON fragment appended right before the line's real
+    terminating newline could be silently accepted and tokenized as if
+    it were an entirely separate, legitimate record. The oversized
+    prefix is deliberately an EXACT multiple of the module's own
+    internal read-chunk size so the reset lands exactly at a chunk
+    boundary -- the precise alignment that made the original version
+    of this fix exploitable."""
+    from orca.genesis.data.loader import _SHARD_READ_CHUNK_BYTES
+
+    shard_dir = tmp_path / "shards"
+    shard_dir.mkdir()
+    shard_file = shard_dir / "shard-0000-train.jsonl"
+
+    normal_record = json.dumps({"text": "a perfectly normal valid record"}) + "\n"
+    marker_record = json.dumps({"text": "SMUGGLED MARKER RECORD SHOULD NEVER BE TOKENIZED"})
+    oversized_prefix = b"X" * (_SHARD_READ_CHUNK_BYTES * 5)  # exact multiple -- see docstring
+    malicious_physical_line = oversized_prefix + marker_record.encode() + b"\n"
+    shard_file.write_bytes(normal_record.encode() + malicious_physical_line)
+
+    digests = compute_shard_digests(shard_dir)
+    cfg = LoaderConfig(
+        shard_dir=shard_dir, split="train", seq_len=4, batch_size=1, seed=0,
+        authorized_shard_digests=digests, tokenizer_digest="tok-a", packing=False,
+        max_record_bytes=1024, max_tokens_per_record=4096,
+    )
+    ds = GenesisBlockDataset(cfg, _IdentityTok())
+
+    # Exactly one real record (the normal one) and exactly one rejection
+    # for the ENTIRE oversized physical line -- not a leaked second record.
+    assert ds.report.records_read == 1
+    assert ds.report.records_rejected_malformed == 1
+    assert ds.report.num_blocks == 1
+
+    inp, _lbl = ds.block(0)
+    marker_tokens = _IdentityTok().encode("SMUGGLED MARKER RECORD")
+    block_tokens = inp.tolist()
+    # The smuggled marker's own token sequence must not appear anywhere
+    # in the published block store at all.
+    assert not any(block_tokens[i:i + len(marker_tokens)] == marker_tokens for i in range(len(block_tokens))), (
+        "the smuggled marker record's tokens leaked into the published block store"
+    )
+    ds.close()

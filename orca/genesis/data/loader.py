@@ -492,6 +492,46 @@ class GenesisBlockDataset:
           unless every shard's digest, checked at the end of its own
           read, matched.
 
+        ## AUDIT-076 Phase 2 -- oversized-record discard state
+
+        Independently reproduced and confirmed before this fix (via
+        `tests/test_genesis_data_loader.py::
+        test_audit076_phase2_oversized_record_cannot_smuggle_a_crafted_suffix_as_a_separate_record`):
+        the version of this method shipped in the first AUDIT-076
+        response, upon detecting `len(leftover) > max_record_bytes`,
+        simply reset `leftover = b""` and continued the SAME chunk-
+        splitting loop as if nothing unusual had happened. If the
+        oversized physical line's eventual terminating newline fell
+        within a LATER chunk, the bytes between the reset point and
+        that newline were treated as an entirely new, independent
+        "line" -- meaning an attacker who crafted one giant invalid
+        record followed, within the SAME physical line (no newline in
+        between), by a small, well-formed JSON fragment and a real
+        newline could get that crafted fragment silently ACCEPTED and
+        tokenized into the training set, disguised as an ordinary
+        record. Exploitability depended on the exact chunk-boundary
+        alignment of the oversized prefix relative to
+        `_SHARD_READ_CHUNK_BYTES`, but required no file-system race or
+        external attacker capability beyond writing one shard file --
+        reproduced directly and deterministically in the test above by
+        constructing the oversized prefix as an exact multiple of
+        `_SHARD_READ_CHUNK_BYTES`.
+
+        **Fixed**: a `discarding_until_newline` state. The moment
+        `len(leftover) > max_record_bytes` is detected, exactly ONE
+        rejection is counted (not one per chunk the oversized record
+        happens to span) and this flag is set; every subsequent chunk,
+        for as long as it is set, is scanned ONLY for the next `b"\n"` --
+        everything up to and including it is discarded outright, never
+        appended to `leftover`, never split, never handed to
+        `process_line()`. Only the bytes AFTER that real newline resume
+        normal line processing. If the file ends while still in this
+        state (no terminating newline ever appears), nothing further is
+        processed -- the single rejection already counted stands, and
+        no fragment is silently accepted. Memory remains bounded
+        throughout: discarding is a constant-time scan-and-drop per
+        chunk, never an accumulation.
+
         **Explicitly, honestly NOT claimed -- corrects an overreach in
         Antigravity's own Audit #076 remediation-pattern suggestion**:
         opening a file descriptor once and rewinding it (`os.lseek`)
@@ -610,6 +650,7 @@ class GenesisBlockDataset:
                     authorized_digest = self.cfg.authorized_shard_digests.get(path.name)
                     live_hash = hashlib.sha256()
                     leftover = b""
+                    discarding_until_newline = False  # AUDIT-076 Phase 2: see docstring, "oversized-record discard state"
                     fd = os.open(str(path), os.O_RDONLY)
                     try:
                         while True:
@@ -617,19 +658,43 @@ class GenesisBlockDataset:
                             if not chunk:
                                 break
                             live_hash.update(chunk)
-                            leftover += chunk
+
+                            if discarding_until_newline:
+                                # Mid-oversized-physical-record: every byte up to and
+                                # including the NEXT real newline belongs to the record
+                                # already rejected -- none of it is ever handed to
+                                # process_line, no matter how many more chunks it spans.
+                                newline_at = chunk.find(b"\n")
+                                if newline_at == -1:
+                                    continue  # entire chunk discarded; still mid-record
+                                leftover = chunk[newline_at + 1:]
+                                discarding_until_newline = False
+                            else:
+                                leftover += chunk
+
                             *complete_lines, leftover = leftover.split(b"\n")
                             for line_bytes in complete_lines:
                                 process_line(line_bytes)
                             if len(leftover) > max_record_bytes:
                                 # Enforced BEFORE waiting for a newline that may never arrive --
-                                # an oversized or newline-less record cannot grow `leftover` without bound.
+                                # an oversized or newline-less record cannot grow `leftover`
+                                # without bound. Exactly ONE rejection is counted here, at the
+                                # moment the threshold is first crossed -- then every further
+                                # byte of this SAME physical record (which may span many more
+                                # chunks) is discarded via `discarding_until_newline`, never
+                                # re-split or re-parsed as if it were a fresh, separate line.
                                 rejected += 1
                                 leftover = b""
+                                discarding_until_newline = True
                     finally:
                         os.close(fd)
-                    if leftover:
+                    if leftover and not discarding_until_newline:
                         process_line(leftover)
+                    elif discarding_until_newline:
+                        # The file ended mid-oversized-record, with no terminating
+                        # newline ever appearing -- already counted as rejected above;
+                        # there is no further line to process.
+                        pass
 
                     live_digest = live_hash.hexdigest()
                     if live_digest != authorized_digest:

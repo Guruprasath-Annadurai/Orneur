@@ -63,7 +63,7 @@ def _isolate(tmp_path, monkeypatch):
     GOV.reset_in_process_nonce_guard_for_new_process()
 
 
-def _make_cfg(tmp_path, *, run_id="iso-worker-run", revoked_ids_path=None, expiry_minutes=120, drop_to_uid=None):
+def _make_cfg(tmp_path, *, run_id="iso-worker-run", revoked_ids_path=None, expiry_minutes=120, drop_to_uid=None, checkpoint_workspace_dir=None):
     mcfg, tcd, ocd = (_digest(x) for x in ("mcfg", "tcd", "ocd"))
     tok_digest = _digest("tok")
     dataset_digest = _digest("dataset")
@@ -129,6 +129,7 @@ def _make_cfg(tmp_path, *, run_id="iso-worker-run", revoked_ids_path=None, expir
         record=record, registry=registry, req=req, revoked_ids_path=str(revoked_ids_path), drop_to_uid=drop_to_uid,
         orca_home_override=str(tmp_path / "ornhome"), test_only_bypass_founder_ledger=True,
         test_only_pinned_registry_sha256=pinned_registry_sha256,
+        checkpoint_workspace_dir=str(checkpoint_workspace_dir) if checkpoint_workspace_dir is not None else str(tmp_path / "ckpt_workspace"),
     )
 
 
@@ -448,12 +449,180 @@ def test_checkpoint_ipc_commands_are_protected_by_the_same_auth_and_replay_check
         try:
             resp = forged.save_checkpoint(
                 path=str(tmp_path / "x.pt"), integrity_key=b"k" * 32, sampler_position=0, sampler_seed=0,
-                sampler_num_blocks=1, config_fingerprint="fp", dataset_identity={"dataset_manifest_id": "m", "dataset_content_digest": "d" * 64, "tokenizer_digest": "t" * 64},
-                ledger_run_id="x",
+                sampler_num_blocks=1,
             )
             assert resp["ok"] is False
             assert resp["error"] == "AUTHENTICATION_FAILED"
         finally:
             forged.close()
+    finally:
+        worker.stop()
+
+
+# ==============================================================================
+# CTO final engineering closeout, Phase 3 -- checkpoint IPC authorization hardening.
+# ==============================================================================
+
+def test_phase3_checkpoint_path_outside_the_workspace_is_rejected(tmp_path):
+    """A client cannot direct save_checkpoint/restore_checkpoint to any
+    path outside this worker's own configured checkpoint_workspace_dir."""
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside" / "escape.pt"
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            resp = client.save_checkpoint(
+                path=str(outside), integrity_key=secrets.token_bytes(32),
+                sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert resp["ok"] is False
+            assert "CHECKPOINT_SAVE_FAILED" in resp["error"]
+            assert "CheckpointWorkspaceViolationError" in resp["error"]
+            assert not outside.exists()
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_phase3_no_configured_workspace_refuses_checkpoint_commands_entirely(tmp_path):
+    """The fail-closed default: no checkpoint_workspace_dir configured
+    means no checkpoint capability at all, not an unrestricted one."""
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=None)
+    cfg = WorkerStartupConfig(**{**cfg.__dict__, "checkpoint_workspace_dir": None})
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            resp = client.save_checkpoint(
+                path=str(tmp_path / "anything.pt"), integrity_key=secrets.token_bytes(32),
+                sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert resp["ok"] is False
+            assert "CheckpointWorkspaceViolationError" in resp["error"]
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_phase3_client_supplied_identity_fields_are_structurally_ignored(tmp_path):
+    """A raw IPC message that still TRIES to smuggle config_fingerprint/
+    dataset_identity/ledger_run_id fields (the pre-Phase-3 API shape)
+    has zero effect -- the worker's own handler never reads those keys
+    from payload at all any more. Proven by round-tripping a save then
+    restore using the worker's OWN derived identity, which must succeed
+    regardless of whatever extra, unused fields the payload carries."""
+    workspace = tmp_path / "workspace"
+    cfg = _make_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            ckpt_path = str(workspace / "ckpt.pt")
+            key = secrets.token_bytes(32)
+            resp = client._request("save_checkpoint", {
+                "path": ckpt_path, "integrity_key_hex": key.hex(), "sampler_position": 0,
+                "sampler_seed": 0, "sampler_num_blocks": 1,
+                # Smuggled, structurally unread fields:
+                "config_fingerprint": "attacker-forged-fingerprint",
+                "dataset_identity": {"dataset_manifest_id": "forged", "dataset_content_digest": "0" * 64, "tokenizer_digest": "0" * 64},
+                "ledger_run_id": "some-other-unrelated-run-id",
+            })
+            assert resp["ok"] is True, resp
+
+            restore_resp = client._request("restore_checkpoint", {
+                "path": ckpt_path, "integrity_key_hex": key.hex(), "sampler_seed": 0, "sampler_num_blocks": 1,
+                "config_fingerprint": "attacker-forged-fingerprint",
+                "dataset_identity": {"dataset_manifest_id": "forged", "dataset_content_digest": "0" * 64, "tokenizer_digest": "0" * 64},
+                "ledger_run_id": "some-other-unrelated-run-id",
+            })
+            assert restore_resp["ok"] is True, restore_resp
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+
+
+def test_phase3_an_unrelated_checkpoint_from_a_different_model_is_rejected(tmp_path):
+    """A checkpoint genuinely saved by one worker (one model/step
+    config) cannot be restored by a DIFFERENT worker (a different
+    model_cfg) -- the worker's own derived config_fingerprint will not
+    match, exactly the resume-equivalence protection this closes a
+    client's ability to defeat by self-declaring a matching fingerprint."""
+    workspace = tmp_path / "workspace"
+    cfg_a = _make_cfg(tmp_path, run_id="unrelated-ckpt-a", checkpoint_workspace_dir=workspace)
+    worker_a = IsolatedTrainingWorker(cfg_a)
+    worker_a.start()
+    ckpt_path = str(workspace / "ckpt.pt")
+    key = secrets.token_bytes(32)
+    try:
+        client_a = worker_a.client()
+        client_a.connect()
+        try:
+            resp = client_a.save_checkpoint(path=ckpt_path, integrity_key=key, sampler_position=0, sampler_seed=0, sampler_num_blocks=1)
+            assert resp["ok"] is True
+        finally:
+            client_a.close()
+    finally:
+        worker_a.stop()
+
+    cfg_b = _make_cfg(tmp_path, run_id="unrelated-ckpt-b", checkpoint_workspace_dir=workspace)
+    different_model_cfg = GenesisModelConfig(vocab_size=32, d_model=32, n_layers=2, n_heads=2, n_kv_heads=1, d_ff=64, max_seq_len=16)
+    cfg_b = WorkerStartupConfig(**{**cfg_b.__dict__, "model_cfg": different_model_cfg})
+    worker_b = IsolatedTrainingWorker(cfg_b)
+    worker_b.start()
+    try:
+        client_b = worker_b.client()
+        client_b.connect()
+        try:
+            restore_resp = client_b.restore_checkpoint(path=ckpt_path, integrity_key=key, sampler_seed=0, sampler_num_blocks=1)
+            assert restore_resp["ok"] is False
+            assert "CHECKPOINT_RESTORE_FAILED" in restore_resp["error"]
+        finally:
+            client_b.close()
+    finally:
+        worker_b.stop()
+
+
+def test_phase3_checkpoint_commands_fail_closed_after_revocation(tmp_path):
+    """Mission A's own fail-stop posture, now ALSO enforced for
+    save_checkpoint/restore_checkpoint, not only step -- a revoked
+    grant must stop a pending checkpoint command exactly like it stops
+    a pending step command, terminating the worker's own process."""
+    revoked_path = tmp_path / "revoked.json"
+    revoked_path.write_text("[]")
+    workspace = tmp_path / "workspace"
+    cfg = _make_cfg(tmp_path, revoked_ids_path=revoked_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            batch = torch.randint(0, 32, (2, 8))
+            step_resp = client.step(batch, batch.clone())
+            assert step_resp["ok"] is True
+
+            revoked_path.write_text(json.dumps([cfg.record["authorization_id"]]))
+
+            resp = client.save_checkpoint(
+                path=str(workspace / "ckpt.pt"), integrity_key=secrets.token_bytes(32),
+                sampler_position=0, sampler_seed=0, sampler_num_blocks=1,
+            )
+            assert resp["ok"] is False
+            assert "AUTHORIZATION_DENIED" in resp["error"]
+        finally:
+            client.close()
+        worker.join(timeout=5.0)
+        assert not worker.is_alive, "worker must terminate after a checkpoint command's own authorization check fails"
     finally:
         worker.stop()

@@ -220,6 +220,7 @@ def test_full_synthetic_chain_source_to_worker_to_checkpoint_restart_to_held_out
             record=record, registry=registry, req=req, revoked_ids_path=str(revoked_path),
             orca_home_override=str(tmp_path / "ornhome"), test_only_bypass_founder_ledger=True,
             test_only_pinned_registry_sha256=GOV.registry_digest(registry),
+            checkpoint_workspace_dir=str(tmp_path),
         )
 
     worker_a = IsolatedTrainingWorker(_cfg("worker_a.sock", req=req, record=record, registry=registry))
@@ -241,7 +242,6 @@ def test_full_synthetic_chain_source_to_worker_to_checkpoint_restart_to_held_out
         save_resp = client_a.save_checkpoint(
             path=ckpt_path, integrity_key=integrity_key, sampler_position=sampler.position,
             sampler_seed=sampler.seed, sampler_num_blocks=sampler.num_blocks,
-            config_fingerprint=config_fingerprint, dataset_identity=dataset_identity, ledger_run_id=run_id,
         )
         assert save_resp["ok"] is True, save_resp
         saved_step = save_resp["result"]["global_step"]
@@ -259,8 +259,7 @@ def test_full_synthetic_chain_source_to_worker_to_checkpoint_restart_to_held_out
         # ---- Stage 8: checkpoint restore, through the worker's own IPC command ----
         restore_resp = client_b.restore_checkpoint(
             path=ckpt_path, integrity_key=integrity_key, sampler_seed=sampler.seed,
-            sampler_num_blocks=sampler.num_blocks, config_fingerprint=config_fingerprint,
-            dataset_identity=dataset_identity, ledger_run_id=run_id,
+            sampler_num_blocks=sampler.num_blocks,
         )
         assert restore_resp["ok"] is True, restore_resp
         assert restore_resp["result"]["global_step"] == saved_step
@@ -309,4 +308,203 @@ def test_full_synthetic_chain_source_to_worker_to_checkpoint_restart_to_held_out
     assert accuracy > 0.7, (
         f"held-out next-token accuracy too low ({accuracy:.2f}) -- the restored checkpoint does not reflect "
         f"genuine learning of the underlying rule through the full source-to-worker-to-checkpoint chain"
+    )
+
+
+def test_restart_equivalence_against_uninterrupted_training(tmp_path):
+    """CTO final engineering closeout, Phase 4: compares UNINTERRUPTED
+    training against CHECKPOINTED-AND-RESTARTED training, both driven by
+    the identical deterministic batch sequence through the real worker
+    IPC chain, and reports every comparison with its own explicit
+    tolerance -- never described as bit-identical, since `TrainingState`
+    captures and restores Python/torch RNG state exactly, but genuine
+    cross-process floating-point reduction order can still differ at
+    the ULP level."""
+    shard_dir = tmp_path / "shards"
+    train_seeds = list(range(1, 41))
+    _write_synthetic_shard(shard_dir, train_seeds, SEQ_LEN + 1)
+    shard_digests = compute_shard_digests(shard_dir)
+    tok = _SpaceSeparatedIntTokenizer()
+    tok_digest = tok.content_digest()
+
+    model_cfg = GenesisModelConfig(vocab_size=VOCAB, d_model=32, n_layers=2, n_heads=4, n_kv_heads=2, d_ff=64, max_seq_len=SEQ_LEN + 4)
+    mcfg_digest = _digest(json.dumps({"vocab_size": VOCAB, "d_model": 32}))
+    loader_cfg = LoaderConfig(
+        shard_dir=shard_dir, split="train", seq_len=SEQ_LEN, batch_size=4, seed=11,
+        authorized_shard_digests=shard_digests, tokenizer_digest=tok_digest, packing=True,
+    )
+    dataset = GenesisBlockDataset(loader_cfg, tok)
+    step_cfg = TrainingStepConfig(grad_accum_steps=1, warmup_steps=20, total_steps=400, max_lr=3e-3)
+    workspace = tmp_path / "workspace"
+    revoked_path = tmp_path / "revoked.json"
+    revoked_path.write_text("[]")
+    sock_dir = Path(tempfile.mkdtemp(prefix="isow-restarteq-"))
+    integrity_key = secrets.token_bytes(32)
+    dataset_digest = _digest("restarteq-dataset")
+
+    def _build(run_id: str, sock_name: str) -> IsolatedTrainingWorker:
+        req, record, registry, tcd, ocd = _mint_grant_inputs(
+            tmp_path, run_id=run_id, mcfg=mcfg_digest, tok_digest=tok_digest,
+            dataset_digest=dataset_digest, shard_digests=tuple(sorted(shard_digests.values())),
+        )
+        cfg = WorkerStartupConfig(
+            workload_id=run_id, auth_token=secrets.token_bytes(32), sock_path=str(sock_dir / sock_name),
+            model_cfg=model_cfg, step_cfg=step_cfg, run_id=run_id, dataset_manifest_ids=("e2e-manifest",),
+            environment_class=ENV, repo_root=str(REPO_ROOT), dataset_digest=dataset_digest,
+            model_config_digest=mcfg_digest, tokenizer_digest=tok_digest,
+            authorized_shard_digests=tuple(sorted(shard_digests.values())), shard_dir=str(shard_dir),
+            reviewed_commit_sha=req.reviewed_commit_sha, transformation_code_digest=tcd, optimizer_config_digest=ocd,
+            record=record, registry=registry, req=req, revoked_ids_path=str(revoked_path),
+            orca_home_override=str(tmp_path / "ornhome"), test_only_bypass_founder_ledger=True,
+            test_only_pinned_registry_sha256=GOV.registry_digest(registry), checkpoint_workspace_dir=str(workspace),
+        )
+        worker = IsolatedTrainingWorker(cfg)
+        worker.start()
+        return worker
+
+    TOTAL_STEPS = 40
+    SPLIT_AT = 20
+
+    # ---- Run 1: UNINTERRUPTED, all TOTAL_STEPS through one worker ----
+    sampler_full = ReproducibleSampler(num_blocks=len(dataset), seed=99)
+    worker_full = _build("restarteq-full", "full.sock")
+    client_full = worker_full.client()
+    client_full.connect()
+    try:
+        for _ in range(TOTAL_STEPS):
+            indices = sampler_full.next_batch_indices(loader_cfg.batch_size)
+            input_ids, labels = make_batch(dataset, indices)
+            resp = client_full.step(input_ids, labels)
+            assert resp["ok"] is True, resp
+        ckpt_full = str(workspace / "ckpt_full.pt")
+        save_resp = client_full.save_checkpoint(
+            path=ckpt_full, integrity_key=integrity_key, sampler_position=sampler_full.position,
+            sampler_seed=sampler_full.seed, sampler_num_blocks=sampler_full.num_blocks,
+        )
+        assert save_resp["ok"] is True
+        full_final_step = save_resp["result"]["global_step"]
+    finally:
+        client_full.close()
+        worker_full.stop()
+
+    # ---- Run 2: CHECKPOINTED AND RESTARTED -- identical batch sequence, split across two workers ----
+    sampler_resumed = ReproducibleSampler(num_blocks=len(dataset), seed=99)  # SAME seed -> identical batch order
+    worker_a = _build("restarteq-a", "a.sock")
+    client_a = worker_a.client()
+    client_a.connect()
+    ckpt_mid = str(workspace / "ckpt_mid.pt")
+    try:
+        for _ in range(SPLIT_AT):
+            indices = sampler_resumed.next_batch_indices(loader_cfg.batch_size)
+            input_ids, labels = make_batch(dataset, indices)
+            resp = client_a.step(input_ids, labels)
+            assert resp["ok"] is True, resp
+        save_resp = client_a.save_checkpoint(
+            path=ckpt_mid, integrity_key=integrity_key, sampler_position=sampler_resumed.position,
+            sampler_seed=sampler_resumed.seed, sampler_num_blocks=sampler_resumed.num_blocks,
+        )
+        assert save_resp["ok"] is True
+    finally:
+        client_a.close()
+        worker_a.stop()
+
+    worker_b = _build("restarteq-b", "b.sock")
+    client_b = worker_b.client()
+    client_b.connect()
+    try:
+        restore_resp = client_b.restore_checkpoint(path=ckpt_mid, integrity_key=integrity_key, sampler_seed=sampler_resumed.seed, sampler_num_blocks=sampler_resumed.num_blocks)
+        assert restore_resp["ok"] is True
+        sampler_resumed.position = restore_resp["result"]["sampler_position"]
+        for _ in range(TOTAL_STEPS - SPLIT_AT):
+            indices = sampler_resumed.next_batch_indices(loader_cfg.batch_size)
+            input_ids, labels = make_batch(dataset, indices)
+            resp = client_b.step(input_ids, labels)
+            assert resp["ok"] is True, resp
+        ckpt_resumed = str(workspace / "ckpt_resumed.pt")
+        save_resp = client_b.save_checkpoint(
+            path=ckpt_resumed, integrity_key=integrity_key, sampler_position=sampler_resumed.position,
+            sampler_seed=sampler_resumed.seed, sampler_num_blocks=sampler_resumed.num_blocks,
+        )
+        assert save_resp["ok"] is True
+        resumed_final_step = save_resp["result"]["global_step"]
+    finally:
+        client_b.close()
+        worker_b.stop()
+    dataset.close()
+
+    # ---- Comparison: step/scheduler progression (EXACT -- these are integers, not tolerance-based) ----
+    assert full_final_step == resumed_final_step == TOTAL_STEPS
+    assert sampler_full.position == sampler_resumed.position, "sampler position must match exactly -- same seed, same batch count"
+
+    # ---- Comparison: model parameters and optimizer state (TOLERANCE-based -- explicitly NOT "bit-identical") ----
+    fp = compute_config_fingerprint(model_cfg, step_cfg)
+    identity = DatasetIdentity(dataset_manifest_id="e2e-manifest", dataset_content_digest=dataset_digest, tokenizer_digest=tok_digest)
+    restored_full = restore_resumable_checkpoint(
+        path=Path(ckpt_full), expected_config_fingerprint=fp, expected_dataset_identity=identity,
+        expected_sampler_seed=sampler_full.seed, expected_sampler_num_blocks=sampler_full.num_blocks,
+        integrity_key=integrity_key, run_id="restarteq-full",
+    )
+    restored_resumed = restore_resumable_checkpoint(
+        path=Path(ckpt_resumed), expected_config_fingerprint=fp, expected_dataset_identity=identity,
+        expected_sampler_seed=sampler_resumed.seed, expected_sampler_num_blocks=sampler_resumed.num_blocks,
+        integrity_key=integrity_key, run_id="restarteq-b",
+    )
+    PARAM_ATOL = 1e-5  # explicit, stated tolerance -- NOT bit-identical equality
+    model_full = GenesisTransformer(model_cfg)
+    model_full.load_state_dict(restored_full.training_state.model_state_dict)
+    model_resumed = GenesisTransformer(model_cfg)
+    model_resumed.load_state_dict(restored_resumed.training_state.model_state_dict)
+    for (n1, p1), (n2, p2) in zip(model_full.named_parameters(), model_resumed.named_parameters()):
+        assert n1 == n2
+        assert torch.allclose(p1, p2, atol=PARAM_ATOL), f"parameter {n1} diverged beyond atol={PARAM_ATOL}: max diff {(p1 - p2).abs().max().item()}"
+
+    opt_full = restored_full.training_state.optimizer_state_dict
+    opt_resumed = restored_resumed.training_state.optimizer_state_dict
+    assert opt_full["param_groups"][0]["lr"] == pytest.approx(opt_resumed["param_groups"][0]["lr"], abs=1e-9), (
+        "optimizer learning rate (a pure function of step via the cosine schedule) must match given identical step counts"
+    )
+    for (k1, s1), (k2, s2) in zip(opt_full["state"].items(), opt_resumed["state"].items()):
+        for key in ("exp_avg", "exp_avg_sq"):
+            if key in s1:
+                assert torch.allclose(s1[key], s2[key], atol=PARAM_ATOL), f"optimizer state {key} for param {k1} diverged beyond atol={PARAM_ATOL}"
+
+    # ---- Comparison: numerical losses within an explicitly stated tolerance ----
+    # Feed ONE further identical batch to each restored (full/resumed) model+
+    # optimizer pair and compare the resulting loss -- proves the two final
+    # states are numerically equivalent enough to behave the same going
+    # forward, not merely that their saved tensors happen to look similar.
+    from orca.genesis.training.primitives import causal_lm_loss
+    probe_batch = torch.randint(4, VOCAB, (2, SEQ_LEN))
+    with torch.no_grad():
+        loss_full = causal_lm_loss(model_full(probe_batch), probe_batch).item()
+        loss_resumed = causal_lm_loss(model_resumed(probe_batch), probe_batch).item()
+    assert loss_full == pytest.approx(loss_resumed, abs=1e-4), (
+        f"probe loss diverged beyond the stated 1e-4 tolerance: full={loss_full}, resumed={loss_resumed}"
+    )
+
+    # ---- Held-out evaluation, before AND after the resumed phase ----
+    held_out_seed = 9973
+    held_out_chain = _chain(held_out_seed, SEQ_LEN + 1)
+    inp = torch.tensor([held_out_chain[:-1]], dtype=torch.long)
+    targets = held_out_chain[1:]
+
+    model_mid = GenesisTransformer(model_cfg)
+    mid_restored = restore_resumable_checkpoint(
+        path=Path(ckpt_mid), expected_config_fingerprint=fp, expected_dataset_identity=identity,
+        expected_sampler_seed=99, expected_sampler_num_blocks=sampler_full.num_blocks,
+        integrity_key=integrity_key, run_id="restarteq-a",
+    )
+    model_mid.load_state_dict(mid_restored.training_state.model_state_dict)
+    model_mid.eval()
+    with torch.no_grad():
+        preds_before = model_mid(inp).argmax(dim=-1)[0].tolist()
+    accuracy_before = sum(1 for p, t in zip(preds_before, targets) if p == t) / len(targets)
+
+    model_resumed.eval()
+    with torch.no_grad():
+        preds_after = model_resumed(inp).argmax(dim=-1)[0].tolist()
+    accuracy_after = sum(1 for p, t in zip(preds_after, targets) if p == t) / len(targets)
+
+    assert accuracy_after >= accuracy_before - 0.1, (
+        f"held-out accuracy regressed after resumed training: before={accuracy_before:.2f}, after={accuracy_after:.2f}"
     )

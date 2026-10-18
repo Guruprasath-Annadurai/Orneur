@@ -135,15 +135,30 @@ def execute_authorized_training_step(
     AUDIT-075: there is deliberately no parameter here that can widen
     the revalidation cadence -- see this module's own docstring,
     "Audit #075 ... AUDIT-P0-02 (cadence)"."""
+    verify_live_authorization_or_raise(run)
+    capability = engine._issue_capability_for_governance()
+    return engine.step(input_ids, labels, capability=capability)
+
+
+def verify_live_authorization_or_raise(run: GenesisTrainingRun) -> None:
+    """AUDIT-076 Phase 3: extracted from `execute_authorized_training_step()`
+    itself (not duplicated) so every state-changing operation against a
+    run -- not only a training step -- can perform the SAME real,
+    unconditional, every-call re-verification. `orca.genesis.training
+    .isolated_worker`'s `save_checkpoint`/`restore_checkpoint` IPC
+    handlers call this directly, closing a finding Audit #076's own
+    Phase 3 named: those two handlers previously performed NO live
+    authorization check at all, meaning a revoked or expired grant
+    would still let checkpoint save/restore succeed indefinitely."""
     if not isinstance(run, GenesisTrainingRun):
         raise TrainingNotAuthorizedForExecutionError(
-            f"execute_authorized_training_step() requires a real GenesisTrainingRun instance, got "
+            f"requires a real GenesisTrainingRun instance, got "
             f"{type(run).__name__!r} -- no stub, mock, or duck-typed substitute is ever accepted"
         )
     if run.state is not RunState.RUNNING:
         raise TrainingNotAuthorizedForExecutionError(
-            f"run {run.identity.run_id!r} is in state {run.state.value}, not RUNNING -- a real training "
-            f"step may only execute while this run's own authorization state machine says it is RUNNING"
+            f"run {run.identity.run_id!r} is in state {run.state.value}, not RUNNING -- this operation "
+            f"may only execute while this run's own authorization state machine says it is RUNNING"
         )
     if getattr(run, "grant", None) is None or getattr(run, "_authorized_identity", None) is None:
         # A real GenesisTrainingRun can NEVER legitimately be RUNNING with
@@ -176,6 +191,3 @@ def execute_authorized_training_step(
             f"run {run.identity.run_id!r}'s current identity (dataset/shard/code/model) no longer "
             f"matches the identity snapshot frozen at authorize() time -- in-flight drift detected"
         )
-
-    capability = engine._issue_capability_for_governance()
-    return engine.step(input_ids, labels, capability=capability)
