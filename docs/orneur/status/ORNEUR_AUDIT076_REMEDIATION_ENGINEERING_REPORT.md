@@ -108,7 +108,12 @@ All 28 failures are confined to exactly the three historical, verbatim-imported 
 PR #65 foundation regression (`test_genesis_training_orchestration.py`, `test_genesis_cross_workstream_integration.py`, `test_genesis_workstream_a_end_to_end.py`, `test_genesis_data_manifest.py`, `test_genesis_data_pipeline.py`, `test_genesis_data_contamination.py`, `test_audit_genesis_hardening_remediation.py`): re-verified, zero regression.
 
 ### GitHub CI evidence
-Exact-head CI results for the commit this report accompanies are recorded in a follow-up update to this same report (and to PR #73) once pulled from the actual job logs — never assumed green in advance, following this session's own established discipline.
+**Exact-head CI** (commit `d4228713dd37711e008ca2675062ca562d7645ca`, run [39153735638](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39153735638)): **all 9 checks pass.** Pulled the actual job logs, not just the green badges:
+- **Training Math Unit Tests (Torch)**: `489 passed in 167.08s`, zero failures. All 7 new Phase 2/3/4 tests individually confirmed `PASSED` by name: `test_audit076_phase2_oversized_record_cannot_smuggle_a_crafted_suffix_as_a_separate_record`, the 5 `test_phase3_*` checkpoint-IPC hardening tests, and `test_restart_equivalence_against_uninterrupted_training`.
+- **Deterministic Unit Tests**: `8895 passed, 383 skipped, 43 deselected, 7 xfailed in 883.33s`, zero failures, clean collection (43 deselected = the two intentionally-excluded verbatim audit-evidence files).
+- All 7 remaining jobs also pass.
+
+This is real, observed, exact-head CI evidence, not assumed in advance.
 
 ### Independent reproduction instructions for successor requalification #077
 ```
