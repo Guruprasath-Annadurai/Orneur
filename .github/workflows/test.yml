@@ -162,7 +162,7 @@ jobs:
                  tests/test_genesis_learning_step.py tests/test_genesis_data_loader.py \
                  tests/test_genesis_resumable_checkpoint.py tests/test_genesis_learning_governance.py \
                  tests/test_genesis_synthetic_learning_proof.py tests/test_audit_genesis_hardening_remediation.py \
-                 tests/test_genesis_isolated_worker.py -v
+                 tests/test_genesis_isolated_worker.py tests/test_genesis_end_to_end_synthetic_integration.py -v
 
   container-build:
     name: Production Container Build + Boot Smoke
