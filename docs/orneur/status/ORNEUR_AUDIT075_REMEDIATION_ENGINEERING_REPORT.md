@@ -151,7 +151,12 @@ All 28 failures are confined to exactly the three historical, verbatim-imported 
 
 Zero unexpected failures anywhere else across 3290 passing tests. **PR #65 foundation regression** (`test_genesis_training_orchestration.py`, `test_genesis_cross_workstream_integration.py`, `test_genesis_workstream_a_end_to_end.py`, `test_genesis_data_manifest.py`, `test_genesis_data_pipeline.py`, `test_genesis_data_contamination.py`, `test_audit_genesis_hardening_remediation.py`): **192 passed, 0 failed** — zero regression to the qualified foundation.
 
-**Exact-head GitHub Actions CI**: verified against the actual pushed commit once available; see this report's own commit history on PR #73 for the real, observed result (not assumed in advance).
+**Exact-head GitHub Actions CI** (commit `dda9039b024ad4c1ccb8ced6f6ee30da5e31732a`, run [39106576301](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39106576301)): **all 9 checks pass.** Pulled the actual job logs, not just the green badges:
+- **Training Math Unit Tests (Torch)**: `472 passed in 134.86s`, zero failures. All 15 `tests/test_genesis_isolated_worker.py` tests individually confirmed `PASSED` by name in the log, including `test_isolation_qualification_is_reported_and_never_overclaimed`, `test_the_worker_module_never_references_the_synthetic_test_bypass`, `test_a_production_configured_worker_can_never_reach_running`, and `test_test_only_founder_ledger_bypass_never_weakens_grant_signature_verification` — the exact tests answering the CTO pre-handoff directive's own challenges. Run on Linux (unlike this phase's own macOS development environment), so `SO_PEERCRED` peer-credential verification genuinely executed, not merely skipped as unavailable.
+- **Deterministic Unit Tests**: `8895 passed, 381 skipped, 43 deselected, 7 xfailed in 995.23s`, zero failures, no collection errors. The 43 deselected are the two `--ignore`d verbatim audit-evidence files, exactly as intended.
+- All 7 remaining jobs (Genesis V2 Security, Genesis V2 Sandbox, Production Container Build + Boot Smoke, RSE Docker Synthetic Integration Lab, RSE dependency lock scan, SSE Diagnostics, Dependency Vulnerability Scan) also pass.
+
+This is real, observed, exact-head CI evidence, not assumed in advance.
 
 ---
 
