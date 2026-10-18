@@ -152,7 +152,12 @@ All 15 failures are accounted for, none is a regression introduced by this phase
 
 Net: zero unexpected or newly-introduced failures across the entire GENESIS suite.
 
-**Exact-head GitHub Actions CI**: a new push to PR #73's branch will trigger CI; results will be observed and reported honestly in a follow-up to this report once the run completes, not assumed green in advance.
+**Exact-head GitHub Actions CI** (commit `740a7ee18b520797a752db9e2ebff2ff71d35ed3`, run [39097594297](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39097594297)): **all 9 checks pass.** Pulled the actual job logs, not just the green badges, to confirm genuine execution:
+- **Training Math Unit Tests (Torch)**: `443 passed in 39.71s`, zero failures/skips. The log was grepped line-by-line and every new test from this phase is individually present and `PASSED` — `test_block_returns_a_single_unshifted_token_identity_not_pre_shifted`, `test_independent_manual_cross_entropy_oracle_proves_exact_target_alignment`, `test_p1_01_peak_memory_stays_bounded_on_a_corpus_larger_than_the_buffer`, all `test_p0_03_*`/`test_p0_04_*` checkpoint tests, all `test_p0_02_*` governance tests, `test_items4_and_5_a_nonperiodic_deterministic_rule_is_learned_and_generalizes_to_a_held_out_sequence`, `test_p1_03_a_double_shifted_training_regime_fails_the_same_held_out_evaluation`, `test_p1_03_training_is_reproducible_across_two_entirely_separate_clean_processes`, and — closing the previously-identified Audit #71 CI gap from Section 9 — all 7 tests in `tests/test_audit_genesis_hardening_remediation.py` now provably execute for real in this job, not merely silently skip.
+- **Deterministic Unit Tests**: `8895 passed, 379 skipped, 43 deselected, 7 xfailed in 1027.34s`, zero failures, no collection errors. The 43 deselected are the two `--ignore`d verbatim audit-evidence files (this phase's and Audit #71's), exactly as `scripts/ci/run_deterministic_tests.sh` intends.
+- All 7 remaining jobs (Genesis V2 Security, Genesis V2 Sandbox, Production Container Build + Boot Smoke, RSE Docker Synthetic Integration Lab, RSE dependency lock scan, SSE Diagnostics, Dependency Vulnerability Scan) also pass.
+
+This is real, observed, exact-head CI evidence — not assumed in advance.
 
 ## 11. Remaining risks and unresolved items, stated without hedging
 
