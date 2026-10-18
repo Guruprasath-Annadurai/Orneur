@@ -60,8 +60,16 @@ set -euo pipefail
 # The corrected, secure-behavior counterpart (tests/test_audit_genesis_hardening_remediation.py,
 # written by this repository, WITH the standard importorskip guard) stays fully inside normal
 # CI collection below and is what this job's green/red status actually reflects for Audit #71.
+#
+# Antigravity Audit #074 CI closure (2026-10-18): same exact situation,
+# same exact reason -- tests/test_native_learning_engine_adversarial_audit.py
+# (the imported, verbatim Native Learning Engine audit evidence) has no
+# importorskip("torch") guard and its P0 tests now intentionally fail
+# post-remediation. Excluded from this job for the identical reasons as
+# the Audit #71 file above.
 pytest tests/test_trainprep_sentinel.py -v 2>&1 | tee /tmp/pytest-sentinel-log.txt
 pytest -m "not live_ollama_smoke" \
   --ignore=tests/test_trainprep_sentinel.py \
   --ignore=tests/test_audit_genesis_hardening_adversarial.py \
+  --ignore=tests/test_native_learning_engine_adversarial_audit.py \
   -v 2>&1 | tee /tmp/pytest-log.txt
