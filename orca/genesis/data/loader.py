@@ -125,6 +125,7 @@ _TOKEN_TYPECODE = "q"  # array module "long long" -- platform-independent minimu
 _TOKEN_ITEM_SIZE = array.array(_TOKEN_TYPECODE).itemsize
 BLOCK_STORE_SCHEMA_VERSION = "genesis-block-store/2"
 _BLOCK_DIGEST_SIZE = 8  # bytes -- truncated SHA-256, see module docstring for the explicit, honest scope of this check
+_SHARD_READ_CHUNK_BYTES = 64 * 1024  # AUDIT-076: fixed-size read chunk for shard ingestion -- the real, enforced in-memory ceiling for the raw-byte side of shard streaming, independent of file size
 
 
 class ShardIntegrityError(Exception):
@@ -201,7 +202,8 @@ class LoaderConfig:
     pad_id: int = PAD_ID
     eos_id: int = EOS_ID
     construction_buffer_tokens: int = 65_536  # AUDIT-P1-01: the real, enforced in-memory ceiling during construction -- see GenesisBlockDataset's own docstring
-    max_tokens_per_record: int | None = None  # AUDIT-075: per-record working-memory ceiling; defaults to construction_buffer_tokens in __post_init__
+    max_tokens_per_record: int | None = None  # AUDIT-075: per-record working-memory ceiling (post-tokenization); defaults to construction_buffer_tokens in __post_init__
+    max_record_bytes: int = 1_048_576  # AUDIT-076: per-record RAW BYTE ceiling, enforced on the undecoded line before any decode/json.loads/tokenize call -- see _build_and_publish_block_store's own docstring
 
     def __post_init__(self) -> None:
         if self.split not in VALID_SPLITS:
@@ -226,6 +228,8 @@ class LoaderConfig:
             object.__setattr__(self, "max_tokens_per_record", self.construction_buffer_tokens)
         if self.max_tokens_per_record < 1:
             raise ValueError("max_tokens_per_record must be >= 1")
+        if self.max_record_bytes < 1:
+            raise ValueError("max_record_bytes must be >= 1")
 
 
 @dataclass(frozen=True)
@@ -435,25 +439,117 @@ class GenesisBlockDataset:
         full corpus has been consumed successfully; a crash or
         exception at any point leaves the canonical store/manifest/
         digest paths untouched (either still absent, or still holding a
-        PRIOR valid publish) and only an orphaned temp file behind."""
+        PRIOR valid publish) and only an orphaned temp file behind.
+
+        ## AUDIT-076 remediation -- truly bounded shard ingestion
+
+        Independently reproduced and confirmed before this fix: the
+        PRIOR version of this method (an AUDIT-075 TOCTOU fix) called
+        `path.read_bytes()` to read an ENTIRE shard file into one Python
+        `bytes` object, then `.decode("utf-8").splitlines()` on top of
+        that -- for a 5 GB shard, this allocates the raw bytes, the
+        decoded Unicode string, AND the list of split line strings
+        simultaneously, completely bypassing `construction_buffer_tokens`
+        and scaling memory `O(shard_size)`. Separately, `block_digests:
+        list[bytes]` accumulated one entry per block for the dataset's
+        entire construction, scaling memory `O(block_count)` -- used
+        only to compute `len(block_digests)` at the end, a value a
+        plain integer counter already gives for free.
+
+        **Fixed, both issues, in the SAME redesign (not two patches)**:
+        - `block_digests` is gone entirely; `num_blocks_written` is a
+          plain `int`, incremented once per flushed block.
+        - Each shard file is opened ONCE via `os.open()` and read in
+          fixed `_SHARD_READ_CHUNK_BYTES` chunks via `os.read()` -- never
+          the whole file. Each chunk simultaneously (a) feeds a running
+          `hashlib.sha256()` for the live content digest and (b) is
+          appended to a small, BOUNDED `leftover` buffer that is split on
+          newlines and immediately parsed/tokenized/emitted line-by-line
+          as complete lines become available, so peak memory for a
+          shard's own content is bounded by `_SHARD_READ_CHUNK_BYTES`
+          plus at most one record's worth of `leftover`, never by the
+          file's total size. `cfg.max_record_bytes` caps how large that
+          `leftover` is EVER allowed to grow (checked incrementally,
+          after every chunk, not only when a newline finally appears) --
+          an oversized or malformed single line (even one with no
+          newline at all) is rejected as malformed BEFORE it is ever
+          decoded or handed to `json.loads()`/the tokenizer, never
+          silently accumulated without bound.
+        - The shard's digest is only known to match or not match once
+          the ENTIRE file has been streamed (the running hash's final
+          `hexdigest()`) -- exactly matching this method's own existing,
+          unchanged "do not publish a derived block store until the
+          entire source set is verified" guarantee: if a shard's final
+          digest fails to match, this method raises BEFORE the overall
+          `try` block reaches its publish step, so the tmp store/digests
+          files built so far (potentially containing data tokenized from
+          a file that turned out to be tampered or corrupted) are
+          discarded by the `finally` block below, never published to the
+          canonical path. Tokens from a not-yet-fully-verified shard DO
+          reach the bounded in-memory buffer and the TEMP store file
+          during streaming (unavoidable for a true single-pass, O(1)-
+          memory design) -- they never reach the CANONICAL, trusted path
+          unless every shard's digest, checked at the end of its own
+          read, matched.
+
+        **Explicitly, honestly NOT claimed -- corrects an overreach in
+        Antigravity's own Audit #076 remediation-pattern suggestion**:
+        opening a file descriptor once and rewinding it (`os.lseek`)
+        does NOT, by itself, make a second read immune to an in-place
+        mutation of the SAME inode's bytes between the hash pass and a
+        hypothetical second (rewound) read pass -- an open read
+        descriptor does not block another process's concurrent writes
+        on POSIX without mandatory locking, which this module cannot
+        impose on an arbitrary writer outside its own control. This
+        module does NOT use a hash-then-rewind-and-reread pattern for
+        that reason: hashing and tokenizing happen from the SAME single
+        pass over the SAME bytes, so there is no second read for an
+        in-place mutation to land in between. The residual exposure
+        this does NOT close -- stated plainly -- is a mutation landing
+        WHILE a chunk is being read (the bytes hashed and the bytes
+        tokenized for that one chunk are identical, since they are the
+        literal same `os.read()` return value, but a write from another
+        process between two successive `os.read()` calls on the same
+        fd can still interleave with this read in ways this module does
+        not control). Closing that fully would require an exclusive
+        advisory lock cooperatively honored by every writer of shard
+        files, which this module cannot impose on an external data
+        pipeline -- recorded as a residual limitation, not claimed as
+        closed.
+
+        **Per this phase's own directive**: `tokenizer.encode()` itself
+        is a single, non-streaming call that returns one Python list for
+        an entire record's text -- this module cannot bound ITS internal
+        peak memory for a pathological tokenizer, only the SIZE OF THE
+        INPUT it is ever called with (`cfg.max_record_bytes`, enforced
+        on the raw, undecoded bytes before this method ever calls
+        `.decode()` or `json.loads()`) and the size of its OUTPUT after
+        the fact (`cfg.max_tokens_per_record`, rejecting -- not merely
+        truncating -- an over-long result). This is NOT the same as a
+        strict, enforced ceiling on the tokenizer's own transient
+        working memory during a single `encode()` call; no claim to the
+        contrary is made. A tokenizer known to expand a bounded input
+        pathologically should not be used with this loader without this
+        limitation being independently accepted."""
         records_read = 0
         rejected = 0
         total_tokens = 0
+        num_blocks_written = 0
         pending: list[int] = []
         block_len = self.cfg.seq_len
         buffer_cap = self.cfg.construction_buffer_tokens
         max_record_tokens = self.cfg.max_tokens_per_record
+        max_record_bytes = self.cfg.max_record_bytes
 
         store_fd, store_tmp_name = tempfile.mkstemp(dir=base_dir, prefix=f".block_store_{cache_id}.", suffix=".tmp")
         digests_fd, digests_tmp_name = tempfile.mkstemp(dir=base_dir, prefix=f".block_store_{cache_id}.digests.", suffix=".tmp")
         store_tmp = Path(store_tmp_name)
         digests_tmp = Path(digests_tmp_name)
-        block_digests: list[bytes] = []
 
         try:
             with os.fdopen(store_fd, "wb") as store, os.fdopen(digests_fd, "wb") as digests_out:
                 def flush_complete_blocks() -> None:
-                    nonlocal pending
+                    nonlocal pending, num_blocks_written
                     while len(pending) >= block_len:
                         block_vals = pending[:block_len]
                         del pending[:block_len]
@@ -461,7 +557,7 @@ class GenesisBlockDataset:
                         store.write(block_bytes)
                         digest = hashlib.sha256(block_bytes).digest()[:_BLOCK_DIGEST_SIZE]
                         digests_out.write(digest)
-                        block_digests.append(digest)
+                        num_blocks_written += 1
 
                 def emit(ids: list[int]) -> None:
                     nonlocal total_tokens
@@ -470,61 +566,79 @@ class GenesisBlockDataset:
                     if len(pending) >= buffer_cap:
                         flush_complete_blocks()
 
+                def process_line(raw_line: bytes) -> None:
+                    nonlocal records_read, rejected
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        return
+                    try:
+                        if len(raw_line) > max_record_bytes:
+                            raise MalformedRecordError(
+                                f"record line is {len(raw_line)} raw bytes, exceeding max_record_bytes={max_record_bytes} "
+                                f"-- rejected before decoding or parsing"
+                            )
+                        rec = json.loads(raw_line.decode("utf-8"))
+                        text = rec["text"]
+                        if not isinstance(text, str) or not text.strip():
+                            raise MalformedRecordError("empty or non-string 'text'")
+                        ids = self.tokenizer.encode(text)
+                        if not ids:
+                            raise MalformedRecordError("tokenizer produced zero tokens")
+                        if len(ids) > max_record_tokens:
+                            raise MalformedRecordError(
+                                f"record produced {len(ids)} tokens, exceeding max_tokens_per_record={max_record_tokens}"
+                            )
+                        # AUDIT-P0-01 fix: a non-packed block is exactly `seq_len`
+                        # REAL tokens (truncated/padded), not `seq_len + 1`.
+                        if not self.cfg.packing and len(ids) < 2:
+                            raise MalformedRecordError(f"only {len(ids)} token(s) after encoding -- cannot form a single supervised next-token pair")
+                    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, MalformedRecordError):
+                        rejected += 1
+                        return
+                    records_read += 1
+
+                    if self.cfg.packing:
+                        emit(ids)
+                        emit([self.cfg.eos_id])
+                    else:
+                        seq = ids[: self.cfg.seq_len]
+                        if len(seq) < self.cfg.seq_len:
+                            seq = seq + [self.cfg.pad_id] * (self.cfg.seq_len - len(seq))
+                        emit(seq)  # exactly one full block -- never accumulated alongside any other record's
+
                 for path in self._split_shard_paths():
-                    # AUDIT-075 ("close the source verification-to-
-                    # consumption race"): `_verify_shard_integrity()`
-                    # already ran once, earlier, as a fast fail-fast
-                    # check -- but that read and THIS read are two
-                    # separate file opens, leaving a window in which the
-                    # file could be swapped between them. Reading the
-                    # whole file once here, hashing those exact bytes,
-                    # and checking the authorized digest against THIS
-                    # read (not trusting the earlier one) closes that
-                    # window for the actual bytes this loop tokenizes --
-                    # the file is verified and consumed from the SAME
-                    # single read, not two independent ones.
-                    raw_bytes = path.read_bytes()
-                    live_digest = hashlib.sha256(raw_bytes).hexdigest()
                     authorized_digest = self.cfg.authorized_shard_digests.get(path.name)
+                    live_hash = hashlib.sha256()
+                    leftover = b""
+                    fd = os.open(str(path), os.O_RDONLY)
+                    try:
+                        while True:
+                            chunk = os.read(fd, _SHARD_READ_CHUNK_BYTES)
+                            if not chunk:
+                                break
+                            live_hash.update(chunk)
+                            leftover += chunk
+                            *complete_lines, leftover = leftover.split(b"\n")
+                            for line_bytes in complete_lines:
+                                process_line(line_bytes)
+                            if len(leftover) > max_record_bytes:
+                                # Enforced BEFORE waiting for a newline that may never arrive --
+                                # an oversized or newline-less record cannot grow `leftover` without bound.
+                                rejected += 1
+                                leftover = b""
+                    finally:
+                        os.close(fd)
+                    if leftover:
+                        process_line(leftover)
+
+                    live_digest = live_hash.hexdigest()
                     if live_digest != authorized_digest:
                         raise ShardIntegrityError(
-                            f"shard file {path.name} content digest {live_digest!r} (as read for tokenization) "
-                            f"does not match authorized digest {authorized_digest!r} -- the file changed between "
-                            f"the initial check and being read, or was never authorized; refusing to use it"
+                            f"shard file {path.name} content digest {live_digest!r} (as streamed for tokenization) "
+                            f"does not match authorized digest {authorized_digest!r} -- the file changed during "
+                            f"reading, or was never authorized; refusing to publish any derived block store built "
+                            f"from this (or any other) shard in this construction"
                         )
-                    for raw_line in raw_bytes.decode("utf-8").splitlines():
-                            raw_line = raw_line.strip()
-                            if not raw_line:
-                                continue
-                            try:
-                                rec = json.loads(raw_line)
-                                text = rec["text"]
-                                if not isinstance(text, str) or not text.strip():
-                                    raise MalformedRecordError("empty or non-string 'text'")
-                                ids = self.tokenizer.encode(text)
-                                if not ids:
-                                    raise MalformedRecordError("tokenizer produced zero tokens")
-                                if len(ids) > max_record_tokens:
-                                    raise MalformedRecordError(
-                                        f"record produced {len(ids)} tokens, exceeding max_tokens_per_record={max_record_tokens}"
-                                    )
-                                # AUDIT-P0-01 fix: a non-packed block is exactly `seq_len`
-                                # REAL tokens (truncated/padded), not `seq_len + 1`.
-                                if not self.cfg.packing and len(ids) < 2:
-                                    raise MalformedRecordError(f"only {len(ids)} token(s) after encoding -- cannot form a single supervised next-token pair")
-                            except (json.JSONDecodeError, KeyError, MalformedRecordError):
-                                rejected += 1
-                                continue
-                            records_read += 1
-
-                            if self.cfg.packing:
-                                emit(ids)
-                                emit([self.cfg.eos_id])
-                            else:
-                                seq = ids[: self.cfg.seq_len]
-                                if len(seq) < self.cfg.seq_len:
-                                    seq = seq + [self.cfg.pad_id] * (self.cfg.seq_len - len(seq))
-                                emit(seq)  # exactly one full block -- never accumulated alongside any other record's
 
                 flush_complete_blocks()
                 store.flush()
@@ -532,7 +646,7 @@ class GenesisBlockDataset:
                 os.fsync(store.fileno())
                 os.fsync(digests_out.fileno())
 
-            num_blocks = len(block_digests)
+            num_blocks = num_blocks_written
             usable_tokens = num_blocks * block_len
 
             store_sha256 = self._sha256_of_file(store_tmp)

@@ -143,6 +143,8 @@ from orca.genesis.model.transformer import GenesisTransformer
 from orca.genesis.training.learning_governance import TrainingNotAuthorizedForExecutionError, execute_authorized_training_step
 from orca.genesis.training.learning_step import TrainingStepConfig, TrainingStepEngine
 from orca.genesis.training.orchestration import GenesisTrainingRun
+from orca.genesis.training.primitives import TrainingState
+from orca.genesis.training.resumable_checkpoint import DatasetIdentity, restore_resumable_checkpoint, save_resumable_checkpoint
 
 _MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 _NONCE_CACHE_SIZE = 4096
@@ -470,6 +472,48 @@ def _worker_main(cfg: WorkerStartupConfig, ready_evt, error_queue, status_queue)
                             _send_framed(conn, _canonical({"ok": False, "error": f"AUTHORIZATION_DENIED: {e}", "result": None}))
                             stopped = True
                             break
+                    elif command == "save_checkpoint":
+                        # AUDIT-076, Mission 4: the smallest viable extension
+                        # closing the genuine end-to-end chain gap -- the
+                        # checkpoint is captured from THIS worker's own,
+                        # never-exposed model/optimizer/engine state, using
+                        # the same real save_resumable_checkpoint() every
+                        # other GENESIS caller uses. No model/optimizer
+                        # tensor is ever sent over the wire -- only a plain
+                        # "ok" result once the file is written to disk.
+                        try:
+                            ts = TrainingState.capture(
+                                step=engine.global_step, epoch=0, dataloader_position=payload["sampler_position"],
+                                model=engine.model, optimizer=engine.optimizer,
+                            )
+                            save_resumable_checkpoint(
+                                path=Path(payload["path"]), training_state=ts, global_step=engine.global_step,
+                                microbatch_in_cycle=engine.microbatch_in_cycle, sampler_position=payload["sampler_position"],
+                                sampler_seed=payload["sampler_seed"], sampler_num_blocks=payload["sampler_num_blocks"],
+                                config_fingerprint=payload["config_fingerprint"],
+                                dataset_identity=DatasetIdentity(**payload["dataset_identity"]),
+                                integrity_key=bytes.fromhex(payload["integrity_key_hex"]), run_id=payload["ledger_run_id"],
+                            )
+                            _send_framed(conn, _canonical({"ok": True, "error": None, "result": {"global_step": engine.global_step}}))
+                        except Exception as e:  # noqa: BLE001 -- report the failure to the client, never crash the worker over it
+                            _send_framed(conn, _canonical({"ok": False, "error": f"CHECKPOINT_SAVE_FAILED: {type(e).__name__}: {e}", "result": None}))
+                    elif command == "restore_checkpoint":
+                        try:
+                            restored = restore_resumable_checkpoint(
+                                path=Path(payload["path"]), expected_config_fingerprint=payload["config_fingerprint"],
+                                expected_dataset_identity=DatasetIdentity(**payload["dataset_identity"]),
+                                expected_sampler_seed=payload["sampler_seed"], expected_sampler_num_blocks=payload["sampler_num_blocks"],
+                                integrity_key=bytes.fromhex(payload["integrity_key_hex"]), run_id=payload["ledger_run_id"],
+                            )
+                            restored.training_state.restore(model=engine.model, optimizer=engine.optimizer)
+                            engine.global_step = restored.global_step
+                            engine.microbatch_in_cycle = restored.microbatch_in_cycle
+                            _send_framed(conn, _canonical({
+                                "ok": True, "error": None,
+                                "result": {"global_step": restored.global_step, "sampler_position": restored.sampler_position},
+                            }))
+                        except Exception as e:  # noqa: BLE001
+                            _send_framed(conn, _canonical({"ok": False, "error": f"CHECKPOINT_RESTORE_FAILED: {type(e).__name__}: {e}", "result": None}))
                     else:
                         _send_framed(conn, _canonical({"ok": False, "error": "UNKNOWN_COMMAND", "result": None}))
             finally:
@@ -535,6 +579,34 @@ class IsolatedWorkerClient:
 
     def shutdown(self) -> dict:
         return self._request("shutdown")
+
+    def save_checkpoint(
+        self, *, path: str, integrity_key: bytes, sampler_position: int, sampler_seed: int,
+        sampler_num_blocks: int, config_fingerprint: str, dataset_identity: dict, ledger_run_id: str,
+    ) -> dict:
+        """AUDIT-076, Mission 4: commands the worker to capture and save
+        ITS OWN, never-exposed model/optimizer/engine state to `path`,
+        using the real `save_resumable_checkpoint()`. No tensor crosses
+        the wire -- only this plain request and an ok/error response."""
+        return self._request("save_checkpoint", {
+            "path": path, "integrity_key_hex": integrity_key.hex(), "sampler_position": sampler_position,
+            "sampler_seed": sampler_seed, "sampler_num_blocks": sampler_num_blocks,
+            "config_fingerprint": config_fingerprint, "dataset_identity": dataset_identity, "ledger_run_id": ledger_run_id,
+        })
+
+    def restore_checkpoint(
+        self, *, path: str, integrity_key: bytes, sampler_seed: int, sampler_num_blocks: int,
+        config_fingerprint: str, dataset_identity: dict, ledger_run_id: str,
+    ) -> dict:
+        """The restart-side counterpart: a FRESH worker (its own fresh
+        model/optimizer, constructed the same way any worker start-up
+        already builds them) restores exactly that saved state into
+        itself before accepting any further `step` commands."""
+        return self._request("restore_checkpoint", {
+            "path": path, "integrity_key_hex": integrity_key.hex(), "sampler_seed": sampler_seed,
+            "sampler_num_blocks": sampler_num_blocks, "config_fingerprint": config_fingerprint,
+            "dataset_identity": dataset_identity, "ledger_run_id": ledger_run_id,
+        })
 
 
 class IsolatedTrainingWorker:

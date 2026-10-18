@@ -431,3 +431,29 @@ def test_the_worker_never_constructs_a_grant_itself_only_verifies_one(tmp_path):
     source = inspect.getsource(worker_module)
     assert "NativePretrainingGrant(" not in source
     assert "_seal=" not in source
+
+
+def test_checkpoint_ipc_commands_are_protected_by_the_same_auth_and_replay_checks(tmp_path):
+    """AUDIT-076, Mission 3/4: the new save_checkpoint/restore_checkpoint
+    IPC commands go through the SAME dispatch loop as step/ping/shutdown
+    -- not a special-cased, less-protected path. A wrong-token request
+    for save_checkpoint must be rejected exactly like any other command."""
+    cfg = _make_cfg(tmp_path)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+    try:
+        from orca.genesis.training.isolated_worker import IsolatedWorkerClient
+        forged = IsolatedWorkerClient(cfg.sock_path, b"completely-wrong-token-xxxxxxxx", cfg.workload_id)
+        forged.connect()
+        try:
+            resp = forged.save_checkpoint(
+                path=str(tmp_path / "x.pt"), integrity_key=b"k" * 32, sampler_position=0, sampler_seed=0,
+                sampler_num_blocks=1, config_fingerprint="fp", dataset_identity={"dataset_manifest_id": "m", "dataset_content_digest": "d" * 64, "tokenizer_digest": "t" * 64},
+                ledger_run_id="x",
+            )
+            assert resp["ok"] is False
+            assert resp["error"] == "AUTHENTICATION_FAILED"
+        finally:
+            forged.close()
+    finally:
+        worker.stop()

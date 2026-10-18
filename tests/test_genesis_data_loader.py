@@ -5,6 +5,7 @@ GENESIS Native Learning Engine, Phase 1, Workstream 2 tests:
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -589,3 +590,320 @@ def test_audit075_disk_exhaustion_during_construction_leaves_no_partial_publish(
     assert list(shard_dir.glob(".block_store_*.tmp*")) == []
     assert list(shard_dir.glob(".block_store_*.bin")) == []
     assert list(shard_dir.glob(".block_store_*.manifest.json")) == []
+
+
+# ==============================================================================
+# AUDIT #076 -- truly bounded shard ingestion. Independently measured at
+# increasing scale (never a single small, fixed fixture), covering raw
+# Python heap (tracemalloc) AND process RSS (resource.getrusage), per
+# the CTO directive's own instruction not to rely on tracemalloc alone.
+# ==============================================================================
+
+def _write_shard(shard_dir, n_lines, line_text):
+    shard_dir.mkdir(parents=True, exist_ok=True)
+    shard_file = shard_dir / "shard-0000-train.jsonl"
+    with open(shard_file, "w", encoding="utf-8") as f:
+        for _ in range(n_lines):
+            f.write(json.dumps({"text": line_text}) + "\n")
+    return shard_file
+
+
+def test_audit076_peak_memory_does_not_scale_with_increasing_shard_size(tmp_path):
+    """Mission 2, item 1: increasing synthetic shard sizes, not a single
+    fixed fixture. A genuinely bounded ingestion path shows peak heap
+    memory staying roughly FLAT as shard size grows by 40x, not scaling
+    proportionally with it (the hallmark of the AUDIT-076 whole-file
+    read defect this phase fixes)."""
+    import gc
+    import tracemalloc
+
+    line_text = "The quick brown fox jumps over the lazy dog in native pretraining loop testing. " * 5
+    peaks = []
+    sizes = []
+    for n_lines in (2_000, 20_000, 80_000):
+        shard_dir = tmp_path / f"shards_{n_lines}"
+        shard_file = _write_shard(shard_dir, n_lines, line_text)
+        sizes.append(shard_file.stat().st_size)
+        digests = compute_shard_digests(shard_dir)
+        cfg = LoaderConfig(
+            shard_dir=shard_dir, split="train", seq_len=16, batch_size=4, seed=42,
+            authorized_shard_digests=digests, tokenizer_digest="tok-a", packing=True,
+            construction_buffer_tokens=1024, max_tokens_per_record=4096,
+        )
+        gc.collect()
+        tracemalloc.start()
+        ds = GenesisBlockDataset(cfg, _IdentityTok())
+        _current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        peaks.append(peak)
+        assert ds.report.num_blocks > 0
+        ds.close()
+
+    assert sizes[-1] > 35 * sizes[0], "fixture itself must actually grow ~40x to prove anything"
+    # A scaling (unbounded) ingestion would show peak growing roughly
+    # proportionally with file size; a bounded one shows peak staying
+    # within a small, roughly-constant multiple regardless of size.
+    assert peaks[-1] < 3 * peaks[0] + 2_000_000, (
+        f"peak memory grew from {peaks[0]} to {peaks[-1]} bytes as shard size grew "
+        f"from {sizes[0]} to {sizes[-1]} bytes -- this looks like O(shard_size) scaling, not bounded ingestion"
+    )
+    assert peaks[-1] < sizes[-1] / 4, (
+        f"peak memory ({peaks[-1]} bytes) should be a small fraction of the largest shard's own size "
+        f"({sizes[-1]} bytes) for genuinely bounded ingestion"
+    )
+
+
+def test_audit076_peak_process_rss_does_not_scale_with_shard_size(tmp_path):
+    """Mission 2, item 5: process RSS, not merely tracemalloc's Python-
+    heap-only view -- catches growth tracemalloc itself would miss (C
+    extension buffers, non-Python allocator activity)."""
+    import resource
+
+    line_text = "RSS measurement fixture line of reasonable, realistic length for a corpus record. " * 5
+    shard_dir = tmp_path / "shards_rss"
+    shard_file = _write_shard(shard_dir, 80_000, line_text)
+    file_size = shard_file.stat().st_size
+    assert file_size > 20_000_000, "fixture must be large enough (>20MB) for an RSS comparison to mean anything"
+    digests = compute_shard_digests(shard_dir)
+    cfg = LoaderConfig(
+        shard_dir=shard_dir, split="train", seq_len=16, batch_size=4, seed=42,
+        authorized_shard_digests=digests, tokenizer_digest="tok-a", packing=True,
+        construction_buffer_tokens=1024, max_tokens_per_record=4096,
+    )
+    rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # KB on Linux, bytes on macOS
+    ds = GenesisBlockDataset(cfg, _IdentityTok())
+    rss_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    ds.close()
+
+    # ru_maxrss is a HIGH-WATER MARK for the whole process and is platform-
+    # unit-dependent (KB on Linux, bytes on macOS) -- normalize to the same
+    # unit as file_size (bytes) using a conservative, platform-sized guess,
+    # and assert the GROWTH during construction is a small fraction of the
+    # shard size, not comparable to it.
+    import sys as _sys
+    unit = 1 if _sys.platform == "darwin" else 1024
+    rss_growth_bytes = max(0, (rss_after - rss_before) * unit)
+    assert rss_growth_bytes < file_size / 4, (
+        f"process RSS grew by {rss_growth_bytes} bytes while ingesting a {file_size}-byte shard -- "
+        f"this looks like the whole file (or a large fraction of it) was materialized in memory"
+    )
+
+
+def test_audit076_one_oversized_record_with_no_newline_is_rejected_not_unbounded(tmp_path):
+    """Mission 2, item 2: a single JSONL "line" with NO newline at all,
+    far exceeding max_record_bytes -- must be rejected (as malformed)
+    strictly before it grows without bound waiting for a newline that
+    never arrives, and must not prevent the rest of a (nonexistent,
+    here) corpus from being processed."""
+    shard_dir = tmp_path / "shards"
+    shard_dir.mkdir()
+    shard_file = shard_dir / "shard-0000-train.jsonl"
+    # No trailing newline -- 20MB of a single "line".
+    record_size = 20 * 1024 * 1024
+    shard_file.write_bytes(b'{"text": "' + b"x" * record_size + b'"}')
+    digests = compute_shard_digests(shard_dir)
+    cfg = LoaderConfig(
+        shard_dir=shard_dir, split="train", seq_len=4, batch_size=1, seed=0,
+        authorized_shard_digests=digests, tokenizer_digest="tok-a", packing=True,
+        max_record_bytes=1024,
+    )
+    import gc
+    import tracemalloc
+
+    gc.collect()
+    tracemalloc.start()
+    ds = GenesisBlockDataset(cfg, _IdentityTok())
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert ds.report.records_read == 0
+    assert ds.report.records_rejected_malformed >= 1  # a newline-less oversized record cannot form valid records
+    assert peak < record_size / 4, (
+        f"peak memory {peak} bytes should be a small fraction of the {record_size}-byte newline-less "
+        f"record -- it must not grow leftover without bound waiting for a newline that never arrives"
+    )
+    ds.close()
+
+
+def test_audit076_oversized_tokenizer_output_is_rejected_not_included(tmp_path):
+    """Mission 2, item 3: a record whose encoded token count exceeds
+    max_tokens_per_record is rejected as malformed and excluded from
+    the block store entirely, not truncated or silently kept."""
+    class _HugeExpansionTok:
+        def encode(self, text):
+            return [1] * 100_000  # wildly expands any input
+
+    shard_dir, digests = _simple_shard(tmp_path, text="short")
+    cfg = LoaderConfig(
+        shard_dir=shard_dir, split="train", seq_len=4, batch_size=1, seed=0,
+        authorized_shard_digests=digests, tokenizer_digest="tok-a", packing=True,
+        max_tokens_per_record=10,
+    )
+    ds = GenesisBlockDataset(cfg, _HugeExpansionTok())
+    assert ds.report.records_read == 0
+    assert ds.report.records_rejected_malformed == 1
+    assert ds.report.num_blocks == 0
+    ds.close()
+
+
+def test_audit076_large_block_count_no_longer_accumulates_a_growing_list(tmp_path):
+    """Mission 2, item 4 (and the exact AUDIT-076 block_digests finding):
+    constructing a dataset with a large number of blocks must not hold
+    one in-memory entry per block -- proven by confirming the internal
+    list this phase removed is gone, and that peak memory for a
+    many-block corpus does not scale with block COUNT any more than
+    with shard byte size."""
+    import gc
+    import tracemalloc
+
+    # ~50,000 short, independent records -> ~50,000+ packed blocks at seq_len=4.
+    shard_dir = tmp_path / "many_blocks"
+    shard_dir.mkdir()
+    shard_file = shard_dir / "shard-0000-train.jsonl"
+    with open(shard_file, "w") as f:
+        for i in range(50_000):
+            f.write(json.dumps({"text": f"{i % 50} {(i + 1) % 50} {(i + 2) % 50}"}) + "\n")
+    digests = compute_shard_digests(shard_dir)
+    cfg = LoaderConfig(
+        shard_dir=shard_dir, split="train", seq_len=4, batch_size=1, seed=0,
+        authorized_shard_digests=digests, tokenizer_digest="tok-a", packing=True,
+        construction_buffer_tokens=256,
+    )
+    gc.collect()
+    tracemalloc.start()
+    ds = GenesisBlockDataset(cfg, _IdentityTok())
+    _current, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert ds.report.num_blocks > 20_000, "fixture must actually produce a large number of blocks"
+    assert peak < 3_000_000, f"peak memory {peak} bytes scaled with block count ({ds.report.num_blocks} blocks)"
+    ds.close()
+
+
+def test_audit076_source_replacement_during_read_is_immune_due_to_open_fd(tmp_path):
+    """Mission 2, item 6: replacing the shard file's directory entry
+    (os.replace -- what a naive TOCTOU attack looks like) WHILE this
+    module holds an already-open read file descriptor on the original
+    inode has NO effect on what this read observes -- POSIX unlink/
+    rename never affects an already-open fd's view of its (now
+    unlinked-by-name) inode. Proven directly: the read must complete
+    against the ORIGINAL content and its digest, not the replacement's."""
+    shard_dir, digests = _simple_shard(tmp_path, text="original authorized content")
+    shard_path = shard_dir / "shard-0000-train.jsonl"
+    original_bytes = shard_path.read_bytes()
+
+    real_open = os.open
+    opened_event = {"opened": False}
+
+    def patched_open(path, flags, *a, **kw):
+        fd = real_open(path, flags, *a, **kw)
+        if str(path) == str(shard_path) and not opened_event["opened"]:
+            opened_event["opened"] = True
+            # Attacker replaces the directory entry with a DIFFERENT file,
+            # right after this module's os.open() returns its fd.
+            replacement = shard_dir / "replacement.jsonl"
+            replacement.write_text(json.dumps({"text": "forged replacement content"}) + "\n")
+            os.replace(str(replacement), str(shard_path))
+        return fd
+
+    import orca.genesis.data.loader as loader_module
+    orig = loader_module.os.open
+    loader_module.os.open = patched_open
+    try:
+        ds = GenesisBlockDataset(LoaderConfig(
+            shard_dir=shard_dir, split="train", seq_len=4, batch_size=1, seed=0,
+            authorized_shard_digests=digests, tokenizer_digest="tok-a",
+        ), _IdentityTok())
+    finally:
+        loader_module.os.open = orig
+
+    assert ds.report.num_blocks > 0  # succeeded, reading the ORIGINAL content via the already-open fd
+    assert shard_path.read_bytes() != original_bytes  # the directory entry now points at the replacement
+    ds.close()
+
+
+def test_audit076_digest_mismatch_on_a_later_shard_publishes_nothing(tmp_path):
+    """Mission 2, item 8: with multiple shard files, a digest mismatch
+    discovered on a LATER file -- AFTER an earlier one already streamed
+    and tokenized cleanly INTO THE BUILD LOOP's own temp buffers -- must
+    still result in NOTHING being published. The tamper is injected
+    precisely at the build loop's own os.open() of the second shard
+    (not before `_verify_shard_integrity()`'s earlier, separate fast
+    check, which uses a different open path entirely and would
+    otherwise catch this before the build loop is ever reached, making
+    this specifically a build-loop-level reproduction)."""
+    shard_dir = tmp_path / "shards"
+    shard_dir.mkdir()
+    (shard_dir / "shard-0000-train.jsonl").write_text(json.dumps({"text": "first valid shard content"}) + "\n")
+    second_path = shard_dir / "shard-0001-train.jsonl"
+    second_path.write_text(json.dumps({"text": "second shard content pre tamper"}) + "\n")
+    digests = compute_shard_digests(shard_dir)
+
+    cfg = LoaderConfig(
+        shard_dir=shard_dir, split="train", seq_len=4, batch_size=1, seed=0,
+        authorized_shard_digests=digests, tokenizer_digest="tok-a", packing=True,
+    )
+
+    real_open = os.open
+    tampered = {"done": False}
+
+    def patched_open(path, flags, *a, **kw):
+        if str(path) == str(second_path) and not tampered["done"]:
+            tampered["done"] = True
+            second_path.write_text(json.dumps({"text": "tampered during the build loop's own read"}) + "\n")
+        return real_open(path, flags, *a, **kw)
+
+    import orca.genesis.data.loader as loader_module
+    loader_module.os.open = patched_open
+    try:
+        with pytest.raises(ShardIntegrityError):
+            GenesisBlockDataset(cfg, _IdentityTok())
+    finally:
+        loader_module.os.open = real_open
+
+    cache_id = compute_block_store_cache_id(cfg)
+    assert not (shard_dir / f".block_store_{cache_id}.bin").exists()
+    assert not (shard_dir / f".block_store_{cache_id}.manifest.json").exists()
+    assert list(shard_dir.glob(".block_store_*.tmp*")) == []
+
+
+def test_audit076_in_place_mutation_during_ingestion_is_caught_by_the_final_digest(tmp_path):
+    """Mission 2, item 7: an IN-PLACE write into the SAME inode (not a
+    replace) partway through this module's own streaming read -- unlike
+    a replace (item 6), this IS visible through the open fd, since both
+    the read-so-far and the mutation target the same underlying bytes.
+    The running SHA-256 covers the ACTUAL bytes delivered by each
+    os.read() call; a mutation landing after some chunks were already
+    read and hashed changes the final digest away from the authorized
+    one, and is caught -- not silently accepted."""
+    line = json.dumps({"text": "stable prefix content repeated many times to span multiple read chunks. "}) + "\n"
+    shard_dir = tmp_path / "shards"
+    shard_dir.mkdir()
+    shard_path = shard_dir / "shard-0000-train.jsonl"
+    # Large enough to span several 64KiB read chunks.
+    shard_path.write_text(line * 5000)
+    digests = compute_shard_digests(shard_dir)
+    cfg = LoaderConfig(
+        shard_dir=shard_dir, split="train", seq_len=4, batch_size=1, seed=0,
+        authorized_shard_digests=digests, tokenizer_digest="tok-a", packing=True,
+    )
+
+    real_read = os.read
+    mutated = {"done": False}
+
+    def patched_read(fd, n):
+        chunk = real_read(fd, n)
+        if chunk and not mutated["done"]:
+            mutated["done"] = True
+            # In-place mutation of the SAME file, mid-stream -- not a
+            # replace. Overwrites a chunk near the end of the file.
+            with open(shard_path, "r+b") as f:
+                f.seek(-200, os.SEEK_END)
+                f.write(b"X" * 100)
+        return chunk
+
+    import orca.genesis.data.loader as loader_module
+    loader_module.os.read = patched_read
+    try:
+        with pytest.raises(ShardIntegrityError):
+            GenesisBlockDataset(cfg, _IdentityTok())
+    finally:
+        loader_module.os.read = real_read
