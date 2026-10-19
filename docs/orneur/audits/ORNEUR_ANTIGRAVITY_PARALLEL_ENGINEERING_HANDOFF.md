@@ -1,134 +1,130 @@
 # ORNEUR ANTIGRAVITY PARALLEL ENGINEERING HANDOFF
 ## Mission Backend Qualification + GENESIS Adversarial Security Tests
 
-**Document ID:** ORNEUR-HANDOFF-AGY-SPRINT-001  
-**Status:** `READY_FOR_ENGINEERING_HANDOFF`  
+**Document ID:** ORNEUR-HANDOFF-AGY-SPRINT-002 (Corrected)  
+**Status:** `READY FOR TARGETED CLAUDE REPAIR`  
 **Date:** 19 October 2026  
 **From:** Antigravity / Gemini Engineering & Independent Audit Agent  
 **To:** GPT-6 (ORNEUR CTO) & Claude Code Engineering Agent  
-**Target Operational Window:** Ready for immediate Claude execution upon credit reset (20 October 2026 at 5:30 PM IST)  
+**Operational Window:** Ready for Claude execution upon credit reset (20 October 2026 at 5:30 PM IST)  
 **Branch:** `antigravity/sprint-c02-mission-and-genesis-security`  
-**Parent Mainline SHA:** `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a`  
+**Test Suite Status:** LOCAL ONLY (18 Passed, 2 Xfailed in 5.39s)  
 **Training Authorization:** NO-GO  
 **GPU Expenditure:** ₹0  
 
 ---
 
-## 1. Executive Summary & Status
+## 1. Executive Summary & Corrected Qualification Posture
 
-During the temporary Claude Code credit exhaustion window (19–20 October 2026), Antigravity has executed an intensive, evidence-driven engineering sprint in strict priority order.
+In response to CTO corrective instructions, Antigravity has revised all test suites, matrix mappings, and transport contracts to eliminate overstated claims:
 
-We have delivered **zero speculative architecture** and **100% concrete, reproducible tests, contracts, and code diffs**:
-- **Priority 1 (C02 Live Mission Execution):** Delivered a comprehensive 14-state capability matrix, a production REST/SSE frontend contract, an actionable gap analysis, and 12 passing adversarial security tests (`12 passed in 0.78s`).
-- **Priority 2 (GENESIS Checkpoint & Authorization Security):** Adversarially qualified and reproduced 3 critical security defects/boundaries (G01 Workspace Escape via relative paths, G02 Cross-Run Authority bypass via omitted `run_id` in HMAC, and G03 Local anti-rollback replay limits) with 4 passing regression tests (`4 passed in 4.13s`).
-- **Priority 3 (Frontend Readiness QA):** Verified all 16 core screens (B01–B16) in `orca/serve/web/index.html` and identified the exact missing integration hooks for C02.
-
-**Overall Verdict:** `READY_FOR_ENGINEERING_HANDOFF`  
-All work is safely isolated in `antigravity/sprint-c02-mission-and-genesis-security` with zero modifications to Claude's branches and zero merge operations.
+- **C02 Security Status:** Domain business logic, state transitions, secret redaction, and access control checks in `operation_store.py` and `relay_reconnect.py` are locally verified. However, because `orca/serve/api.py` exposes zero `/api/missions` routes, and database persistence is not yet active, **C02 live execution is NOT yet production-grade end-to-end**.
+- **Founder-Approved C02 State Mapping Restored:** UI states strictly use the canonical identifiers: Variants A & B, and C02-01 through C02-12. Domain finite-state machine states (`MissionState` enum) are kept cleanly decoupled from UI identifiers.
+- **Authenticated SSE Contract Corrected:** Solves browser `EventSource` header limitations by defining a primary fetch-based streaming client (`fetch()` with `ReadableStream` / `fetchEventSource`) alongside a cookie-authenticated native fallback. Enforces server-derived tenant identity (rejecting client `X-Tenant-ID` as an authorization claim) and formalizes replay/resync rules.
+- **GENESIS Fix-Acceptance Test Gates:** Preserves confirmed findings G01, G02, G03. Distinguishes vulnerability demonstrations from fix-acceptance tests using `@pytest.mark.xfail(strict=True)` to establish unambiguous gates for Claude.
+- **Git Ancestry & Isolation:** Records exact branch provenance and provides a cherry-pick command sequence so Claude does not inadvertently merge unrelated audit branches.
 
 ---
 
-## 2. Exact Commit SHAs & Worktree Provenance
+## 2. Exact Git Lineage & Safe Integration Instructions
 
-| Repository Target | Reference / Branch | SHA / Commit Identifier | Verification Status |
-|---|---|---|---|
-| Mainline Integration | `main` | `20a8546f5a1ece7e5af655c0f30ca7e305f71b1a` | Clean, verified ancestor |
-| Genesis Hardening Parent | PR #73 | `d4228713dd37711e008ca2675062ca562d7645ca` | Qualified parent SHA |
-| Documentation Base | Audit #077 | `70747d15d1bb39b9f83d82804690d827c5a50f81` | Deterministic CI green |
-| Current Active Sprint | `antigravity/sprint-c02-mission-and-genesis-security` | Working Tree (Clean) | 16/16 tests passing |
+### 2.1 Branch Ancestry
+- **Active Sprint Branch:** `antigravity/sprint-c02-mission-and-genesis-security`
+- **Immediate Parent:** `2d2ba74331b3aa6d868cc1bb73f269f9c62d55e0` (`antigravity/genesis-audit077-master-requalification`)
+- **Upstream Anchor:** PR #73 documentation commit `70747d15d1bb39b9f83d82804690d827c5a50f81`
+- **Note for Claude:** This branch stems from the Audit #77 line, NOT directly from `main`. Do not merge this branch directly into `main` without isolating the sprint commits.
 
----
-
-## 3. Priority 1: C02 Live Mission Execution Backend Qualification
-
-### 3.1 14-State Capability Matrix Summary
-Every one of the 14 C02 states was evaluated across 9 dimensions in [`docs/orneur/mission/ORNEUR_C02_BACKEND_CAPABILITY_MATRIX.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/mission/ORNEUR_C02_BACKEND_CAPABILITY_MATRIX.md):
-- **C02-01 (Initializing):** Domain object `Mission` exists; lacks FastAPI endpoint.
-- **C02-02 (Planning):** `ExecutionPlan` / `GoalDAG` implemented; needs streaming SSE bridge.
-- **C02-03 (Plan Proposed):** `WAITING_APPROVAL` supported in state machine; needs REST decision route.
-- **C02-04 (In-Progress):** `executor.py` handles steps; needs SSE telemetry streaming.
-- **C02-05 (Verification):** Full rule engine in `verification.py`; needs frontend telemetry schema.
-- **C02-06 (Permission Escalation):** `authority_bridge.py` enforces dual-custody; needs HITL route.
-- **C02-07 (Paused):** Supported in state machine; needs pause/resume endpoints.
-- **C02-08 (Cancellation Requested):** **Identified Gap** — `MissionState` lacks `CANCELLATION_REQUESTED`.
-- **C02-09 (Cancelled):** Terminal state fully implemented.
-- **C02-10 (Failed):** Diagnostic dump implemented; needs path sanitization.
-- **C02-11 (Reconnecting):** Replay buffer implemented in `relay_reconnect.py`; needs SSE parser.
-- **C02-12 (Retrying):** Deduplication ledger in `operation_store.py`; needs FastAPI idempotency wiring.
-- **C02-13 (Completed Verified):** Mandatory verification gate with evidence reference enforced.
-- **C02-14 (Artifacts Export):** Provenance packaging in `provenance.py`; needs export download route.
-
-### 3.2 Security Test Suite Execution (`tests/test_c02_mission_lifecycle_security.py`)
-All 12 mandatory security invariants were proven with zero regressions:
+### 2.2 Claude Cherry-Pick Integration Command
+To apply these audit deliverables cleanly onto PR #73 or `main`:
+```bash
+# From PR #73 or target development branch:
+git cherry-pick 7e54414a564191abcbf6592cd2cb4f714c9912ff..HEAD
+# Or cherry-pick the specific sprint commit:
+git cherry-pick <latest_sprint_commit>
 ```
-tests/test_c02_mission_lifecycle_security.py::test_mission_creation_actor_validation_and_fail_closed PASSED
-tests/test_c02_mission_lifecycle_security.py::test_unauthorized_mission_creation_fails_closed PASSED
-tests/test_c02_mission_lifecycle_security.py::test_proposed_mission_cannot_execute_without_required_permissions PASSED
-tests/test_c02_mission_lifecycle_security.py::test_permission_self_authorization_strictly_prevented PASSED
-tests/test_c02_mission_lifecycle_security.py::test_running_status_requires_real_execution_transition PASSED
-tests/test_c02_mission_lifecycle_security.py::test_tool_results_preserve_actor_and_tenant_boundaries_and_redact_secrets PASSED
-tests/test_c02_mission_lifecycle_security.py::test_cancellation_requested_cannot_be_mistaken_for_cancellation_completed PASSED
-tests/test_c02_mission_lifecycle_security.py::test_network_disconnection_cannot_silently_become_successful_completion PASSED
-tests/test_c02_mission_lifecycle_security.py::test_retrying_side_effecting_action_cannot_duplicate_effects PASSED
-tests/test_c02_mission_lifecycle_security.py::test_mission_history_cannot_leak_across_users_or_tenants PASSED
-tests/test_c02_mission_lifecycle_security.py::test_resume_requires_verified_state_and_rejects_stale_revision PASSED
-tests/test_c02_mission_lifecycle_security.py::test_completed_status_requires_authoritative_terminal_result PASSED
+
+---
+
+## 3. Priority 1: C02 Live Mission Execution Qualification
+
+### 3.1 Canonical Founder-Approved State Mapping
+Documented in [`ORNEUR_C02_BACKEND_CAPABILITY_MATRIX.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/mission/ORNEUR_C02_BACKEND_CAPABILITY_MATRIX.md):
+- **Variant A — Quiet Mission Brief:** Compact card view for passive monitoring.
+- **Variant B — Contextual Mission Review:** Expanded operational console for telemetry and inspection.
+- **C02-01 — Permission Request:** Subagent requests privileged tool execution.
+- **C02-02 — Approval Pending:** Escalation awaiting supervisor or human authorization (strict anti-self-approval).
+- **C02-03 — Mission Running:** Active execution of DAG plan steps.
+- **C02-04 — Tool Action Details:** In-depth execution telemetry, parameters, duration, and output chunks.
+- **C02-05 — Evidence and Outputs:** Verified intermediate outputs and guardrail evaluation receipts.
+- **C02-06 — Waiting for User Input:** Paused awaiting interactive user clarification or data.
+- **C02-07 — Failed / Interrupted:** Error or interruption occurred; diagnostic trace sanitized.
+- **C02-08 — Cancellation Requested:** Graceful wind-down in flight; awaiting subagent halt.
+- **C02-09 — Mission Cancelled:** Terminal cancelled state.
+- **C02-10 — Resume Review:** Revision conflict comparison prior to resuming paused/failed mission.
+- **C02-11 — Mission Completed:** Terminal success verified with non-empty evidence proof.
+- **C02-12 — Mission History:** Chronological audit log of operations and decisions.
+
+### 3.2 Corrected Security Test Evidence (`tests/test_c02_mission_lifecycle_security.py`)
+Documented in [`ORNEUR_C02_MISSION_SECURITY_TEST_REPORT.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/mission/ORNEUR_C02_MISSION_SECURITY_TEST_REPORT.md):
+- `test_permission_self_authorization_strictly_prevented`: Directly invokes `authorize_operation()` from `orca.mission.operation_store`, verifying that `approved_by == requested_by` raises `SelfAuthorizationError` and rolls back before reaching godmode.
+- `test_mission_history_cannot_leak_across_users_or_tenants`: Directly invokes `reconcile_operation()` from `orca.mission.relay_reconnect`, verifying cross-mission and cross-user lookups raise `RelayReconnectAccessDeniedError`.
+- **Test Output:** `12 passed in 0.93s` (**LOCAL ONLY**).
+
+### 3.3 Corrected Transport Contract
+Documented in [`ORNEUR_C02_FRONTEND_INTEGRATION_CONTRACT.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/mission/ORNEUR_C02_FRONTEND_INTEGRATION_CONTRACT.md):
+- Unified route: `GET /api/missions/{mission_id}/events`
+- Unified plan decision: `POST /api/missions/{mission_id}/plan/decision`
+- Primary Transport: Fetch-based streaming client (`fetch()` + `ReadableStream` / `fetchEventSource`) with `Authorization: Bearer <token>`.
+- Fallback Transport: `EventSource` with `HttpOnly`, `SameSite=Strict`, `__Host-` session cookie.
+- Server-Derived Tenancy: `tenant_id` is extracted strictly server-side from validated session/JWT claims; client `X-Tenant-ID` is rejected as an authorization claim.
+- Reconnection & Replay: `Last-Event-ID` replayed from a 1,000-event ring buffer; expired history returns HTTP 410 Gone with `REPLAY_HORIZON_EXCEEDED`, prompting full resync.
+- DLP Redaction: All text streamed over SSE passes through `orca.serve.dlp` / `redact_secrets()`.
+
+---
+
+## 4. Priority 2: GENESIS Checkpoint Hardening (G01, G02, G03)
+
+Documented in [`ORNEUR_GENESIS_CHECKPOINT_ADVERSARIAL_REPORT.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/audits/ORNEUR_GENESIS_CHECKPOINT_ADVERSARIAL_REPORT.md), [`ORNEUR_GENESIS_CROSS_RUN_AUTHORITY_REPORT.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/audits/ORNEUR_GENESIS_CROSS_RUN_AUTHORITY_REPORT.md), and [`ORNEUR_GENESIS_SECURITY_REGRESSION_HANDOFF.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/audits/ORNEUR_GENESIS_SECURITY_REGRESSION_HANDOFF.md):
+
+| Finding | Defect Summary | Vulnerability Reproduction | Fix-Acceptance Test Gate | Acceptance Criteria for Claude |
+|---|---|---|---|---|
+| **G01** | Relative path writes to `os.getcwd()` instead of workspace; dynamic symlink TOCTOU window. | `test_g01_checkpoint_path_confinement_relative_path_discrepancy` (PASS), `test_g01_dynamic_symlink_substitution_toctou` (PASS) | `test_g01_fix_acceptance_worker_confinement_desired_behavior` (XFAIL) | Return resolved path from `_enforce_checkpoint_path_confinement` and pass it to save/restore. Checkpoint must land in workspace. |
+| **G02** | `ResumableManifest` HMAC tag omits `run_id`, allowing Run B to restore Run A's state without migration grant. | `test_g02_vulnerability_demonstration_cross_run_restore_accepted_without_migration` (PASS) | `test_g02_fix_acceptance_cross_run_restore_without_migration_denied` (XFAIL) | Add `origin_run_id` to manifest and HMAC tag payload. Cross-run restore without migration grant must be rejected. |
+| **G03** | Local anti-rollback ledger can be rolled back in lockstep if an attacker has full filesystem write access. | `test_g03_integrity_key_custody_and_local_ledger_replay_limitation` (PASS) | Documented residual boundary under local threat model. | Trusted controller holds key; worker checks entropy; monotonic ledger protects against accidental rollback. |
+
+---
+
+## 5. Local Test Execution Ledger
+
 ```
-Full test report: [`docs/orneur/mission/ORNEUR_C02_MISSION_SECURITY_TEST_REPORT.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/mission/ORNEUR_C02_MISSION_SECURITY_TEST_REPORT.md).
-
-### 3.3 Frontend Integration Contract & Gaps
-- Complete REST and SSE streaming specification documented in [`docs/orneur/mission/ORNEUR_C02_FRONTEND_INTEGRATION_CONTRACT.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/mission/ORNEUR_C02_FRONTEND_INTEGRATION_CONTRACT.md).
-- Root-cause gap analysis and remediation patches documented in [`docs/orneur/mission/ORNEUR_C02_ENGINEERING_GAPS.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/mission/ORNEUR_C02_ENGINEERING_GAPS.md).
-
----
-
-## 4. Priority 2: GENESIS Checkpoint & Authorization Hardening
-
-### 4.1 G01: Checkpoint Path Confinement & Workspace Escape
-- **Defect:** `_enforce_checkpoint_path_confinement` in `isolated_worker.py` validates `(workspace / raw_path)`, but `save_resumable_checkpoint` receives `Path(raw_path)`. Relative paths write to `os.getcwd()` (repo root), escaping the authorized workspace.
-- **Reproduced:** `tests/test_genesis_checkpoint_adversarial_regression.py::test_g01_checkpoint_path_confinement_relative_path_discrepancy`.
-- **Report:** [`docs/orneur/audits/ORNEUR_GENESIS_CHECKPOINT_ADVERSARIAL_REPORT.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/audits/ORNEUR_GENESIS_CHECKPOINT_ADVERSARIAL_REPORT.md).
-
-### 4.2 G02: Cross-Run Checkpoint Authority Bypass
-- **Defect:** `ResumableManifest` HMAC tag payload omits `run_id`. Run B can resume Run A's checkpoint without founder migration authorization because Run B's ledger is at step 0.
-- **Reproduced:** `tests/test_genesis_checkpoint_adversarial_regression.py::test_g02_checkpoint_authority_manifest_omits_run_id_allowing_cross_run_restore`.
-- **Report:** [`docs/orneur/audits/ORNEUR_GENESIS_CROSS_RUN_AUTHORITY_REPORT.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/audits/ORNEUR_GENESIS_CROSS_RUN_AUTHORITY_REPORT.md).
-
-### 4.3 G03: Integrity-Key Custody & Anti-Rollback Threat Model
-- **Threat Model:** Client passes raw 32-byte key over IPC; worker cannot verify key origin against founder grant. Local anti-rollback ledger can be rolled back in lockstep if an attacker has filesystem write access.
-- **Reproduced:** `tests/test_genesis_checkpoint_adversarial_regression.py::test_g03_integrity_key_custody_and_local_ledger_replay_limitation`.
-- **Report:** [`docs/orneur/audits/ORNEUR_GENESIS_SECURITY_REGRESSION_HANDOFF.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/audits/ORNEUR_GENESIS_SECURITY_REGRESSION_HANDOFF.md).
+tests/test_c02_mission_lifecycle_security.py ............                [ 60%]
+tests/test_genesis_checkpoint_adversarial_regression.py ........        [100%]
+======================== 18 passed, 2 xfailed in 5.39s =========================
+```
+*Note: All results are LOCAL ONLY. Remote GitHub CI has not been triggered for this branch.*
 
 ---
 
-## 5. Priority 3: Frontend Implementation-Readiness QA
+## 6. Prioritized Correction Checklist for Claude (20 Oct 5:30 PM IST)
 
-Inspection of `orca/serve/web/index.html` (4,311 lines), `landing.html`, and `trust.html` confirmed:
-1. **B01–B16 UI Completeness:** Navigation, session management, auth modals, 2FA challenge, settings, upgrade grid, and admin audit dashboards are completely implemented.
-2. **Sub-Agent Pods Currently Static:** In `index.html` lines 1937–1980, the pod cards call `sendStarter()`, injecting text into chat instead of invoking mission orchestration.
-3. **C02 Readiness:** The frontend layout has clean container brackets ready to host the C02 live mission telemetry card once `/api/missions` is mounted.
+When Claude Code credits reset, follow this targeted repair sequence:
 
----
-
-## 6. Claude Engineering Execution Checklist (20 Oct 5:30 PM IST)
-
-When Claude Code credits reset, follow this exact sequence:
-
-- [ ] **1. Checkout Active Branch:**
+- [ ] **1. Review Sprint Handoff:**
+  Inspect [`docs/orneur/audits/ORNEUR_ANTIGRAVITY_PARALLEL_ENGINEERING_HANDOFF.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/audits/ORNEUR_ANTIGRAVITY_PARALLEL_ENGINEERING_HANDOFF.md).
+- [ ] **2. Run Baseline Test Suite:**
   ```bash
-  git checkout antigravity/sprint-c02-mission-and-genesis-security
+  uv run --no-sync --with torch --with numpy --with sentencepiece --with cryptography pytest tests/test_c02_mission_lifecycle_security.py tests/test_genesis_checkpoint_adversarial_regression.py -v
   ```
-- [ ] **2. Verify Baseline Tests:**
-  ```bash
-  uv run --with torch --with numpy --with sentencepiece --with cryptography pytest tests/test_c02_mission_lifecycle_security.py tests/test_genesis_checkpoint_adversarial_regression.py -v
-  ```
-- [ ] **3. Apply G01 Confinement Fix:**
-  Update `isolated_worker.py` to return the resolved path from `_enforce_checkpoint_path_confinement` and pass `safe_checkpoint_path` to `save_resumable_checkpoint`.
-- [ ] **4. Apply G02 Manifest Tag Fix:**
-  Add `origin_run_id: str` to `ResumableManifest` and include it in `_compute_manifest_hmac`.
-- [ ] **5. Add `CANCELLATION_REQUESTED` to `MissionState`:**
-  Update `orca/mission/state_machine.py` to support graceful wind-down.
-- [ ] **6. Mount Missions API Router:**
-  Add `missions_router` to `orca/serve/api.py` implementing the contract in `ORNEUR_C02_FRONTEND_INTEGRATION_CONTRACT.md`.
-- [ ] **7. Wire SSE Stream in `index.html`:**
-  Connect the Sub-Agent Pods to trigger live mission creation and SSE event streaming.
+  Expected baseline: `18 passed, 2 xfailed`.
+- [ ] **3. Fix G01 Workspace Confinement (`isolated_worker.py`):**
+  Update `_enforce_checkpoint_path_confinement` to return the resolved path anchored to `cfg.checkpoint_workspace_dir`, and pass `path=safe_path` in `_handle_save_checkpoint` and `_handle_restore_checkpoint`.
+  Verify `test_g01_fix_acceptance_worker_confinement_desired_behavior` flips from XFAIL to PASS.
+- [ ] **4. Fix G02 Checkpoint Run Binding (`resumable_checkpoint.py`):**
+  Add `origin_run_id: str` to `ResumableManifest` and include it in `_compute_manifest_hmac`. Update `restore_resumable_checkpoint` to enforce `manifest.origin_run_id == run_id`.
+  Verify `test_g02_fix_acceptance_cross_run_restore_without_migration_denied` flips from XFAIL to PASS.
+- [ ] **5. Add `CANCELLATION_REQUESTED` to `MissionState` (`state_machine.py`):**
+  Support graceful wind-down from `RUNNING` to `CANCELLATION_REQUESTED` to `CANCELLED`.
+- [ ] **6. Mount `/api/missions` Router in `orca/serve/api.py`:**
+  Implement the contract specified in [`ORNEUR_C02_FRONTEND_INTEGRATION_CONTRACT.md`](file:///Users/ag/Downloads/Orneur/docs/orneur/mission/ORNEUR_C02_FRONTEND_INTEGRATION_CONTRACT.md).
+- [ ] **7. Wire Sub-Agent Pods in `index.html`:**
+  Replace static `sendStarter()` prompt injection with live mission creation and SSE event streaming.

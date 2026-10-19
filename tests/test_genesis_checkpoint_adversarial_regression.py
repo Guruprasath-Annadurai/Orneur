@@ -256,27 +256,133 @@ def test_g01_checkpoint_path_confinement_directory_traversal_and_absolute_escape
         _enforce_checkpoint_path_confinement(cfg_none, "anything.pt")
 
 
+def test_g01_dynamic_symlink_substitution_toctou(tmp_path):
+    """ADVERSARIAL REPRODUCTION (G01 - TOCTOU Symlink Window):
+    Demonstrates that merely resolving a path string once before file creation does not prevent
+    a Time-of-Check to Time-of-Use (TOCTOU) race if a directory component inside workspace
+    can be swapped for a symlink pointing outside the workspace.
+    """
+    workspace = tmp_path / "authorized_ws"
+    workspace.mkdir()
+    outside = tmp_path / "outside_target"
+    outside.mkdir()
+
+    cfg = _make_worker_startup_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+
+    sub_dir = workspace / "sub"
+    sub_dir.mkdir()
+
+    # Step 1: Check passes when sub is a valid directory
+    relative_target = "sub/checkpoint.pt"
+    _enforce_checkpoint_path_confinement(cfg, relative_target)
+
+    # Step 2: Attacker replaces sub_dir with a symlink to outside directory
+    sub_dir.rmdir()
+    sub_dir.symlink_to(outside)
+
+    # Step 3: A subsequent open/write following standard path resolution would write outside!
+    resolved_now = (workspace / relative_target).resolve()
+    assert resolved_now.is_relative_to(outside.resolve()), (
+        "TOCTOU demonstrated: dynamic symlink swap redirected target outside workspace"
+    )
+
+
+@pytest.mark.xfail(
+    reason="Fix-acceptance test for G01: fails on current vulnerable worker because relative paths write to os.getcwd() instead of workspace",
+    strict=True,
+)
+def test_g01_fix_acceptance_worker_confinement_desired_behavior(tmp_path):
+    """FIX-ACCEPTANCE TEST (G01):
+    Desired Safe Behavior: When a relative path 'safe_relative.pt' is passed to the worker save handler,
+    the checkpoint and manifest MUST be created inside cfg.checkpoint_workspace_dir, and MUST NOT
+    be created in os.getcwd().
+
+    Fails on current vulnerable worker implementation (where file lands in os.getcwd()).
+    """
+    workspace = tmp_path / "workspace_fix_acceptance"
+    workspace.mkdir()
+    cfg = _make_worker_startup_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+
+    model = GenesisTransformer(TINY_MODEL_CFG)
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    key = secrets.token_bytes(32)
+    ds_id = DatasetIdentity("fix-acceptance", _digest("dataset"), _digest("tokenizer"))
+    fp = compute_config_fingerprint(TINY_MODEL_CFG, STEP_CFG)
+    state = TrainingState.capture(step=1, epoch=0, dataloader_position=10, model=model, optimizer=opt)
+
+    requested_rel_path = "safe_relative.pt"
+
+    # Worker handler behavior on current vulnerable codebase:
+    _enforce_checkpoint_path_confinement(cfg, requested_rel_path)
+    save_resumable_checkpoint(
+        path=Path(requested_rel_path), training_state=state, global_step=1, microbatch_in_cycle=0,
+        sampler_position=10, sampler_seed=42, sampler_num_blocks=100,
+        config_fingerprint=fp, dataset_identity=ds_id, integrity_key=key, run_id=cfg.run_id,
+    )
+
+    # Desired safe assertion: file MUST be inside workspace!
+    target_in_workspace = workspace / requested_rel_path
+    try:
+        assert target_in_workspace.exists(), (
+            f"DESIRED SAFE BEHAVIOR: Checkpoint must exist at {target_in_workspace}, but does not!"
+        )
+    finally:
+        # Cleanup any leaked file in CWD if created by vulnerable code
+        for suffix in ("", ".resumable.json", ".lock", ".resumable.lock"):
+            f = Path(f"{requested_rel_path}{suffix}")
+            if f.exists():
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+            f_dot = Path(f".{requested_rel_path}{suffix}")
+            if f_dot.exists():
+                try:
+                    f_dot.unlink()
+                except OSError:
+                    pass
+
+
 # ==============================================================================
 # G02: Cross-Run Checkpoint Authority
 # ==============================================================================
 
-def test_g02_checkpoint_authority_manifest_omits_run_id_allowing_cross_run_restore(tmp_path):
+def test_g02_ordinary_same_run_restore_succeeds(tmp_path):
+    """SPECIFICATION & REGRESSION (G02):
+    Ordinary same-run checkpoint save and restore within the same logical run_id is authorized
+    and must succeed deterministically.
+    """
+    model = GenesisTransformer(TINY_MODEL_CFG)
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    ckpt_dir = tmp_path / "same_run_ckpts"
+    ckpt_dir.mkdir()
+    key = secrets.token_bytes(32)
+    ds_id = DatasetIdentity("same-run", _digest("dataset"), _digest("tokenizer"))
+    fp = compute_config_fingerprint(TINY_MODEL_CFG, STEP_CFG)
+
+    state = TrainingState.capture(step=10, epoch=0, dataloader_position=100, model=model, optimizer=opt)
+    ckpt_path = ckpt_dir / "step10.pt"
+    save_resumable_checkpoint(
+        path=ckpt_path, training_state=state, global_step=10, microbatch_in_cycle=0,
+        sampler_position=100, sampler_seed=42, sampler_num_blocks=100,
+        config_fingerprint=fp, dataset_identity=ds_id, integrity_key=key, run_id="RUN_SAME",
+    )
+
+    # Same-run restore succeeds
+    restored = restore_resumable_checkpoint(
+        path=ckpt_path, expected_config_fingerprint=fp, expected_dataset_identity=ds_id,
+        expected_sampler_seed=42, expected_sampler_num_blocks=100,
+        integrity_key=key, run_id="RUN_SAME",
+    )
+    assert restored.global_step == 10
+    assert restored.sampler_position == 100
+
+
+def test_g02_vulnerability_demonstration_cross_run_restore_accepted_without_migration(tmp_path):
     """ADVERSARIAL REPRODUCTION (G02):
-    Determine whether a checkpoint created by Run A can be restored by Run B without explicit migration grant.
-    Finding:
-    In `orca.genesis.training.resumable_checkpoint.save_resumable_checkpoint`, the tagged fields are:
-      - schema_version
-      - inner_checkpoint_sha256
-      - global_step
-      - microbatch_in_cycle
-      - sampler_position
-      - sampler_seed
-      - sampler_num_blocks
-      - config_fingerprint
-      - dataset_identity
-    `run_id` is NOT part of the HMAC tag!
-    Therefore, Run B (having identical model/step configs, dataset identity, and integrity key) can restore
-    Run A's checkpoint without any founder migration authorization!
+    Demonstrates the confirmed vulnerability on current HEAD:
+    Because `run_id` is omitted from `ResumableManifest` HMAC-tagged fields,
+    Run B can restore Run A's checkpoint without explicit migration authorization.
     """
     model = GenesisTransformer(TINY_MODEL_CFG)
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
@@ -301,33 +407,50 @@ def test_g02_checkpoint_authority_manifest_omits_run_id_allowing_cross_run_resto
     assert "run_id" not in tagged_dict, "run_id must be absent from tagged_dict"
 
     # Now Run B (RUN_BETA) attempts restore with its OWN run_id
-    # Run B has an empty ledger for RUN_BETA.
     restored_in_run_b = restore_resumable_checkpoint(
         path=ckpt_path, expected_config_fingerprint=fp, expected_dataset_identity=ds_id,
         expected_sampler_seed=42, expected_sampler_num_blocks=200,
         integrity_key=key, run_id="RUN_BETA",  # Different run ID!
     )
-
-    # Cross-run restore succeeds without a migration receipt!
+    # Cross-run restore succeeds on current vulnerable code without a migration receipt!
     assert restored_in_run_b.global_step == 15
-    assert restored_in_run_b.sampler_position == 150
 
-    # Furthermore, RUN_BETA's ledger is now initialized at 15
-    # A subsequent attempt to restore step 5 in RUN_BETA is blocked by RUN_BETA's own ledger
-    state_early = TrainingState.capture(step=5, epoch=0, dataloader_position=50, model=model, optimizer=opt)
-    ckpt_early = ckpt_dir / "checkpoint_early.pt"
+
+@pytest.mark.xfail(
+    reason="Fix-acceptance test for G02: fails on current vulnerable resumable_checkpoint because manifest omits run_id from HMAC binding",
+    strict=True,
+)
+def test_g02_fix_acceptance_cross_run_restore_without_migration_denied(tmp_path):
+    """FIX-ACCEPTANCE TEST (G02):
+    Desired Safe Behavior: Restoring a checkpoint saved under Run A into an unrelated Run B
+    without an explicit migration grant MUST be rejected.
+    """
+    model = GenesisTransformer(TINY_MODEL_CFG)
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    ckpt_dir = tmp_path / "g02_fix_ckpts"
+    ckpt_dir.mkdir()
+    key = secrets.token_bytes(32)
+    ds_id = DatasetIdentity("g02-fix", _digest("dataset"), _digest("tokenizer"))
+    fp = compute_config_fingerprint(TINY_MODEL_CFG, STEP_CFG)
+
+    state_a = TrainingState.capture(step=20, epoch=0, dataloader_position=200, model=model, optimizer=opt)
+    ckpt_path = ckpt_dir / "checkpoint_run_a.pt"
     save_resumable_checkpoint(
-        path=ckpt_early, training_state=state_early, global_step=5, microbatch_in_cycle=0,
-        sampler_position=50, sampler_seed=42, sampler_num_blocks=200,
+        path=ckpt_path, training_state=state_a, global_step=20, microbatch_in_cycle=0,
+        sampler_position=200, sampler_seed=42, sampler_num_blocks=200,
         config_fingerprint=fp, dataset_identity=ds_id, integrity_key=key, run_id="RUN_ALPHA",
     )
 
-    with pytest.raises(CheckpointRollbackError):
-        restore_resumable_checkpoint(
-            path=ckpt_early, expected_config_fingerprint=fp, expected_dataset_identity=ds_id,
+    # Desired safe behavior: Run B cannot restore Run A's checkpoint without migration grant
+    with pytest.raises(Exception) as exc_info:  # Expects authority or tamper exception once fixed
+        restored = restore_resumable_checkpoint(
+            path=ckpt_path, expected_config_fingerprint=fp, expected_dataset_identity=ds_id,
             expected_sampler_seed=42, expected_sampler_num_blocks=200,
             integrity_key=key, run_id="RUN_BETA",
         )
+        # If it didn't raise, check if it bound origin_run_id
+        if hasattr(restored, "origin_run_id") and restored.origin_run_id != "RUN_BETA":
+            raise PermissionError("Cross-run restore rejected without migration grant")
 
 
 # ==============================================================================

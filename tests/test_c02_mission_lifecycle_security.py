@@ -145,17 +145,72 @@ def test_proposed_mission_cannot_execute_without_required_permissions():
 
 
 def test_permission_self_authorization_strictly_prevented():
-    """A requester cannot approve their own operation (spec section 21)."""
-    requester = "user_agent_123"
-    approver = "user_agent_123"  # Same principal attempting self-approval
+    """A requester cannot approve their own operation (spec section 21).
 
-    # Simulate the check performed in operation_store.authorize_operation
-    if approver == requester:
-        with pytest.raises(SelfAuthorizationError):
-            raise SelfAuthorizationError(
-                f"requester {requester!r} cannot also approve operation op_test -- "
-                f"spec section 21: requesting an action does not grant authority to perform it."
-            )
+    WHAT THIS PROVES:
+    Invokes the real `authorize_operation` function in `orca.mission.operation_store`.
+    Verifies that when `approved_by == row['requested_by']`, `SelfAuthorizationError`
+    is raised and `conn.rollback()` is executed BEFORE any call reaches the authority
+    engine or lease issuer. Also verifies that third-party approval passes this gate.
+
+    WHAT REMAINS UNTESTED:
+    Does not test distributed consensus, organizational multi-user role hierarchy in
+    Postgres, or hardware token / WebAuthn cryptographic signature validation.
+    """
+    from unittest.mock import MagicMock
+    from orca.mission.operation_store import authorize_operation
+
+    # 1. Self-approval attempt: requester == approver -> raises SelfAuthorizationError
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+    mock_cur.fetchone.return_value = {
+        "id": "op_test_001",
+        "status": "REQUESTED",
+        "requested_by": "agent_requester_123",
+        "kind": "deploy",
+    }
+
+    with pytest.raises(SelfAuthorizationError) as exc_info:
+        authorize_operation(
+            mock_conn,
+            "op_test_001",
+            tenant_id="tenant_alpha",
+            approved_by="agent_requester_123",  # Same identity
+            reason="Self-authorization attempt",
+        )
+    assert "cannot also approve operation" in str(exc_info.value)
+    mock_conn.rollback.assert_called_once()
+
+    # 2. Third-party approval attempt: requester != approver -> passes the self-auth check
+    mock_conn_2 = MagicMock()
+    mock_cur_2 = MagicMock()
+    mock_conn_2.cursor.return_value.__enter__.return_value = mock_cur_2
+    row_dict_2 = {
+        "id": "op_test_002",
+        "mission_id": "mis_123",
+        "idempotency_key": "idem_123",
+        "status": "REQUESTED",
+        "requested_at": "2026-10-19T00:00:00Z",
+        "parameters_fingerprint": "fp123",
+        "requested_by": "agent_requester_123",
+        "kind": "deploy",
+    }
+    mock_cur_2.fetchone.side_effect = [row_dict_2, row_dict_2]
+    # Third-party approver passes the self-auth check and proceeds to lease issuance
+    from unittest.mock import patch
+    from orca.mission.authority_bridge import LeaseIssuanceError
+    with patch("orca.mission.operation_store.issue_operation_lease") as mock_lease:
+        mock_lease.side_effect = LeaseIssuanceError("Simulated policy denial")
+        row, was_auth = authorize_operation(
+            mock_conn_2,
+            "op_test_002",
+            tenant_id="tenant_alpha",
+            approved_by="supervisor_human_456",  # Distinct identity
+            reason="Supervisor review",
+        )
+        assert was_auth is False  # denied by lease engine, but NOT blocked by self-auth guard
+        mock_lease.assert_called_once()
 
 
 # ==============================================================================
@@ -298,32 +353,54 @@ def test_retrying_side_effecting_action_cannot_duplicate_effects():
 # ==============================================================================
 
 def test_mission_history_cannot_leak_across_users_or_tenants():
-    """A user or device session cannot reconcile or access operations of another user's mission."""
-    session_user_a = "user_alice"
-    session_mission_1 = "mission_001"
+    """A user or device session cannot reconcile or access operations of another user's mission.
 
-    # Operation belonging to a different user's mission
-    target_operation = {
-        "id": "op_foreign_999",
-        "mission_id": "mission_002_bob",
-        "kind": "test",
-        "status": "SUCCEEDED",
-        "requested_at": "2026-09-09T00:00:00Z",
-        "result_ref": "secret_ref",
-    }
-    target_mission_bob = {
-        "id": "mission_002_bob",
-        "owner_user_id": "user_bob",
-        "state": "RUNNING",
-    }
+    WHAT THIS PROVES:
+    Directly invokes `reconcile_operation()` in `orca.mission.relay_reconnect`.
+    Proves that looking up an operation belonging to a different mission ID than the
+    session snapshot raises `RelayReconnectAccessDeniedError`.
+    Also proves that probing for a nonexistent operation raises `RelayReconnectAccessDeniedError`
+    (failing closed rather than returning 404 to prevent ID enumeration).
 
-    # Simulate reconcile_operation security gate
-    if session_user_a != target_mission_bob["owner_user_id"] or session_mission_1 != target_operation["mission_id"]:
-        with pytest.raises(RelayReconnectAccessDeniedError):
-            raise RelayReconnectAccessDeniedError(
-                f"session user {session_user_a} cannot reconcile operation {target_operation['id']} "
-                f"belonging to mission {target_operation['mission_id']}"
+    WHAT REMAINS UNTESTED:
+    Does not test Postgres Row Level Security (RLS) policies, cross-tenant caching in Redis,
+    or HTTP-level route authentication middleware.
+    """
+    from unittest.mock import MagicMock, patch
+    from orca.mission.relay_reconnect import reconcile_operation
+
+    mock_conn = MagicMock()
+
+    # Session snapshot for Alice on mission_alice_001
+    mock_snapshot = MagicMock()
+    mock_snapshot.mission_id = "mission_alice_001"
+    mock_snapshot.authenticated_user_id = "user_alice"
+
+    # 1. Cross-mission / cross-user lookup attempt:
+    # Operation belongs to Bob's mission ("mission_bob_002")
+    with patch("orca.mission.relay_reconnect.build_security_valid_relay_snapshot", return_value=mock_snapshot), \
+         patch("orca.mission.relay_reconnect.get_operation", return_value={"id": "op_foreign_999", "mission_id": "mission_bob_002", "status": "SUCCEEDED"}):
+        with pytest.raises(RelayReconnectAccessDeniedError) as exc_info:
+            reconcile_operation(
+                mock_conn,
+                session_id="sess_alice",
+                authenticated_user_id="user_alice",
+                operation_id="op_foreign_999",
             )
+        assert "is not reconcilable from relay session" in str(exc_info.value)
+
+    # 2. Nonexistent / guessed operation ID attempt:
+    # row is None -> raises RelayReconnectAccessDeniedError (no info leak)
+    with patch("orca.mission.relay_reconnect.build_security_valid_relay_snapshot", return_value=mock_snapshot), \
+         patch("orca.mission.relay_reconnect.get_operation", return_value=None):
+        with pytest.raises(RelayReconnectAccessDeniedError) as exc_info_2:
+            reconcile_operation(
+                mock_conn,
+                session_id="sess_alice",
+                authenticated_user_id="user_alice",
+                operation_id="op_guessed_unknown",
+            )
+        assert "is not reconcilable from relay session" in str(exc_info_2.value)
 
 
 # ==============================================================================

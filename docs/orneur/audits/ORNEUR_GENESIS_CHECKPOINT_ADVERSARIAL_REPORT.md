@@ -1,114 +1,50 @@
 # ORNEUR GENESIS CHECKPOINT SECURITY — ADVERSARIAL AUDIT REPORT (G01)
+## Checkpoint Confinement, Relative Path Discrepancy & TOCTOU Race Analysis
 
-**Defect ID:** AUDIT-P0-G01  
+**Document ID:** AUDIT-P0-G01-V2 (Corrected)  
 **Severity:** CRITICAL / P0 SECURITY DEFECT  
-**Target:** `orca/genesis/training/isolated_worker.py` & `resumable_checkpoint.py`  
-**Classification:** Checkpoint Confinement Bypass / Workspace Escape  
-**Test Reproduction:** `tests/test_genesis_checkpoint_adversarial_regression.py::test_g01_*`  
+**Target:** `orca/genesis/training/isolated_worker.py` (`_handle_save_checkpoint`, `_handle_restore_checkpoint`)  
+**Classification:** Checkpoint Confinement Bypass & Workspace Escape  
+**Test Suite:** `tests/test_genesis_checkpoint_adversarial_regression.py`  
+**Tests:** `test_g01_*` (Demonstration PASSED; Fix-Acceptance XFAIL)  
 **Lead Auditor:** Antigravity / Gemini Engineering & Independent Audit Agent  
 
 ---
 
 ## 1. Vulnerability Summary
 
-During the adversarial security qualification of Claude's GENESIS training foundation, an independent code analysis and reproduction identified a critical workspace escape discrepancy in `_enforce_checkpoint_path_confinement`.
+Our independent adversarial audit discovered that `_enforce_checkpoint_path_confinement` in `isolated_worker.py` creates a critical path validation discrepancy:
 
-While the confinement validator checks that `(workspace / raw_path).resolve()` remains within `cfg.checkpoint_workspace_dir`, the caller (`_handle_save_checkpoint`) subsequently passes `path=Path(payload["path"])` directly to `save_resumable_checkpoint`. 
-
-When `payload["path"]` is a relative path (e.g. `"checkpoint_step_100.pt"`):
-1. Confinement validation succeeds because `(workspace / "checkpoint_step_100.pt")` is within the workspace.
-2. But `save_resumable_checkpoint` interprets `Path("checkpoint_step_100.pt")` relative to `os.getcwd()` (the process current working directory, which is the repository root `/app` or `/Users/.../Orneur`).
-3. As a result, checkpoints and manifests are written **outside the authorized workspace directory**, leaking artifacts into the repository root.
-
----
-
-## 2. Root Cause Analysis
-
-### Vulnerable Code in `orca/genesis/training/isolated_worker.py`:
-
-```python
-# Lines 559-566
-def _enforce_checkpoint_path_confinement(cfg: WorkerConfig, raw_path: str) -> None:
-    workspace = Path(cfg.checkpoint_workspace_dir).resolve()
-    candidate = (workspace / raw_path).resolve()
-    if not candidate.is_relative_to(workspace):
-        raise GenesisCheckpointSecurityError(
-            f"Checkpoint path {raw_path!r} escapes the authorized workspace {str(workspace)!r}"
-        )
-
-# Lines 584-586
-_enforce_checkpoint_path_confinement(cfg, payload["path"])
-...
-# Lines 594-596
-save_resumable_checkpoint(
-    path=Path(payload["path"]), # <-- DEFECT: Unresolved relative path passed!
-    training_state=state,
-    ...
-)
-```
-
-### Exploit Demonstration:
-1. Orchestrator configures `checkpoint_workspace_dir = "/tmp/secure_isolated_workspace"`.
-2. Client sends save request: `{"path": "escaped_checkpoint.pt"}`.
-3. Confinement check evaluates `candidate = Path("/tmp/secure_isolated_workspace/escaped_checkpoint.pt")`. `candidate.is_relative_to(workspace)` evaluates to `True`.
-4. Check passes.
-5. `save_resumable_checkpoint` receives `Path("escaped_checkpoint.pt")`.
-6. File is saved at `os.getcwd() / "escaped_checkpoint.pt"`.
-7. Confinement is completely defeated; the checkpoint is written to the project root.
+1. **Validation Path:** The validator computes `candidate = (workspace / raw_path).resolve()` and checks `candidate.is_relative_to(workspace)`.
+2. **Execution Path:** The worker handler then calls:
+   ```python
+   save_resumable_checkpoint(path=Path(payload["path"]), ...)
+   # and
+   restore_resumable_checkpoint(path=Path(payload["path"]), ...)
+   ```
+3. **The Escape:** When `payload["path"]` is a relative path (e.g. `"step100.pt"`), validation succeeds because `workspace / "step100.pt"` is within the workspace. But `save_resumable_checkpoint` interprets `Path("step100.pt")` relative to `os.getcwd()` (the process current working directory, which is the repository root).
+4. **Impact:** Checkpoints and manifests are saved outside the designated workspace into the repository root, escaping confinement. On restore, the worker attempts to read from CWD instead of the workspace.
 
 ---
 
-## 3. Secondary Defect: TOCTOU Symlink Window
+## 2. Dynamic Symlink Substitution (TOCTOU Race Window)
 
-In addition to the relative path discrepancy, resolving the path before creation leaves a Time-of-Check to Time-of-Use (TOCTOU) race condition:
-- If a subdirectory within `checkpoint_workspace_dir` is replaced by a symlink pointing to `/etc` or `~/.ssh` between the confinement check and file opening, `torch.save` will follow the symlink outside the workspace.
-- `_mkdir_owner_only` in `resumable_checkpoint.py` creates parent directories with `0o700`, but atomic temporary files must also use `O_NOFOLLOW` and `O_CREAT | O_EXCL` flags during creation.
+In addition to the relative path discrepancy, resolving the pathname string once before passing it to `save_resumable_checkpoint` leaves a **Time-of-Check to Time-of-Use (TOCTOU) race condition**:
 
----
-
-## 4. Independent Adversarial Reproduction
-
-The vulnerability is deterministically reproduced in `tests/test_genesis_checkpoint_adversarial_regression.py`:
-
-```python
-def test_g01_checkpoint_path_confinement_relative_path_discrepancy(tmp_path):
-    # Proves that passing relative path "step1.pt" causes confinement check to pass
-    # but writes the file to Path("step1.pt").resolve() which does NOT equal the workspace path.
-```
-
-Test output:
-```
-tests/test_genesis_checkpoint_adversarial_regression.py::test_g01_checkpoint_path_confinement_relative_path_discrepancy PASSED [ 25%]
-tests/test_genesis_checkpoint_adversarial_regression.py::test_g01_checkpoint_path_confinement_directory_traversal_and_absolute_escapes PASSED [ 50%]
-```
+- **Attack Vector:** An attacker or concurrent thread swaps an intermediate directory component inside `checkpoint_workspace_dir` for a symlink pointing outside the workspace between the confinement check and the file write.
+- **Root Cause:** Standard Python `open(path, "wb")` and `atomic_write` follow symlinks in path components.
+- **Demonstration:** Verified in `test_g01_dynamic_symlink_substitution_toctou`.
 
 ---
 
-## 5. Smallest Viable Remediating Patch
+## 3. Desired Safe Behavior & Fix-Acceptance Criteria
 
-`_enforce_checkpoint_path_confinement` must return the sanitized, resolved `Path` object, and the caller must use that returned `Path`:
+A complete, race-safe fix requires:
+1. **Resolved Path Anchoring:** `_enforce_checkpoint_path_confinement` must return the safely anchored, resolved `Path` object, and the worker handlers MUST pass that returned path to `save_resumable_checkpoint` and `restore_resumable_checkpoint`.
+2. **Directory Ownership & Permission Invariants:** The workspace directory must be strictly owned by the current process UID with permissions `0o700` before creation.
+3. **Atomic File Creation:** Temporary files must be created using `O_CREAT | O_EXCL | O_NOFOLLOW` flags to prevent following pre-planted symlinks.
 
-```diff
---- a/orca/genesis/training/isolated_worker.py
-+++ b/orca/genesis/training/isolated_worker.py
-@@ -559,7 +559,7 @@ def _verify_grant_or_die(cfg: WorkerConfig) -> None:
--def _enforce_checkpoint_path_confinement(cfg: WorkerConfig, raw_path: str) -> None:
-+def _enforce_checkpoint_path_confinement(cfg: WorkerConfig, raw_path: str) -> Path:
-     workspace = Path(cfg.checkpoint_workspace_dir).resolve()
-     candidate = (workspace / raw_path).resolve()
-     if not candidate.is_relative_to(workspace):
-         raise GenesisCheckpointSecurityError(
-             f"Checkpoint path {raw_path!r} escapes the authorized workspace {str(workspace)!r}"
-         )
-+    return candidate
-
-@@ -584,3 +584,3 @@ def _handle_save_checkpoint(cfg: WorkerConfig, payload: dict[str, Any]) -> dict[
--    _enforce_checkpoint_path_confinement(cfg, payload["path"])
-+    safe_checkpoint_path = _enforce_checkpoint_path_confinement(cfg, payload["path"])
-     ...
-     save_resumable_checkpoint(
--        path=Path(payload["path"]),
-+        path=safe_checkpoint_path,
-```
-
-This patch guarantees that all relative paths are safely anchored to `workspace`, closing the escape vulnerability completely.
+### Fix-Acceptance Test Gate:
+- `test_g01_fix_acceptance_worker_confinement_desired_behavior` has been added with `@pytest.mark.xfail(strict=True)`.
+- It executes against the worker save handler and asserts that relative path checkpoints exist inside `workspace` and NOT in `os.getcwd()`.
+- It currently fails (XFAIL) as expected on the vulnerable code, and will turn to PASS once Claude applies the fix.

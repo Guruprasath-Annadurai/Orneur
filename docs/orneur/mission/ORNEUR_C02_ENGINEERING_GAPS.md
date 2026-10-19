@@ -1,87 +1,64 @@
 # ORNEUR C02 LIVE MISSION EXECUTION — ENGINEERING GAPS & ACTIONABLE REMEDIATION
 
-**Document Version:** 1.0.0  
-**Priority:** P0 / High  
+**Document ID:** ORNEUR-C02-GAPS-002 (Corrected)  
+**Priority:** P0 (Targeted Engineering Action)  
+**Target Consumer:** Claude Code Engineering Agent  
 **Author:** Antigravity / Gemini Engineering & Independent Audit Agent  
-**Target Consumer:** Claude Code Engineering Agent & Principal Architect  
 
 ---
 
 ## 1. Executive Summary
 
-While the domain layer in `orca/mission/` provides solid primitives for planning, execution, and verification, there is a fundamental disconnect between the domain engine and the web server (`orca/serve/api.py`), as well as several discrete state-machine gaps needed for the C02 visual spec.
+This document enumerates the **5 discrete, verifiable engineering gaps** separating the existing ORNEUR backend from the founder-approved C02 Live Mission Execution interface.
 
-This document enumerates the **5 primary engineering gaps** and provides ready-to-implement code patches for Claude to execute immediately upon credit reset (20 October 2026, 5:30 PM IST).
+All domain rules are verified locally, but the transport and persistence layers require targeted implementation by Claude upon credit reset (20 October 2026 at 5:30 PM IST).
 
 ---
 
 ## 2. Identified Engineering Gaps
 
-### GAP-01: Zero Mission Routes in `orca/serve/api.py`
-- **Severity:** P0 (Blocker for Frontend)
-- **Current Reality:** `orca/serve/api.py` contains 44 endpoints covering `/api/stream`, `/api/auth/*`, `/api/admin/*`, `/api/code/run`, etc. It has **zero routes** for `/api/missions`.
-- **Impact:** Frontend cannot instantiate, monitor, or manage live missions via HTTP.
-- **Remediation:** Mount a new APIRouter `missions_router` in `orca/serve/api.py` implementing the contract defined in `ORNEUR_C02_FRONTEND_INTEGRATION_CONTRACT.md`.
+### GAP-01: Zero Mission Routes Mounted in `orca/serve/api.py`
+- **Severity:** P0 Blocker
+- **Current Reality:** `orca/serve/api.py` has 44 routes for auth, chat, admin, and billing, but zero routes under `/api/missions`.
+- **Remediation:** Mount an APIRouter `missions_router` implementing:
+  - `POST /api/missions` (create mission)
+  - `GET /api/missions/{id}` (snapshot fetch)
+  - `GET /api/missions/{id}/events` (authenticated SSE stream)
+  - `POST /api/missions/{id}/plan/decision` (approve/reject plan)
+  - `POST /api/missions/{id}/permissions/{req_id}/decision` (HITL approval)
+  - `POST /api/missions/{id}/pause`, `/resume`, `/cancel` (lifecycle controls)
 
-### GAP-02: Missing `CANCELLATION_REQUESTED` in `MissionState`
-- **Severity:** P1 (Spec Compliance & Safety)
-- **Current Reality:** `MissionState` in `orca/mission/state_machine.py` has:
-  ```python
-  class MissionState(Enum):
-      DRAFT = "DRAFT"
-      PLANNING = "PLANNING"
-      READY = "READY"
-      RUNNING = "RUNNING"
-      WAITING_TOOL = "WAITING_TOOL"
-      WAITING_EXTERNAL_EVENT = "WAITING_EXTERNAL_EVENT"
-      WAITING_APPROVAL = "WAITING_APPROVAL"
-      VERIFYING = "VERIFYING"
-      COURT_REVIEW = "COURT_REVIEW"
-      PAUSED_USER = "PAUSED_USER"
-      PAUSED_WINDOW_REACHED = "PAUSED_WINDOW_REACHED"
-      BLOCKED = "BLOCKED"
-      FAILED = "FAILED"
-      COMPLETED_UNVERIFIED = "COMPLETED_UNVERIFIED"
-      COMPLETED_VERIFIED = "COMPLETED_VERIFIED"
-      CANCELLED = "CANCELLED"
-  ```
-  It has no intermediate `CANCELLATION_REQUESTED` state! When a cancel request arrives, it either immediately flips to terminal `CANCELLED` (abandoning in-flight child processes or external API calls) or must stall in `RUNNING`.
-- **Impact:** Violates C02-08 UI state and prevents graceful wind-down / resource release.
+### GAP-02: Missing `CANCELLATION_REQUESTED` State in `MissionState`
+- **Severity:** P1 Invariant / UX Gap
+- **Current Reality:** `MissionState` in `orca/mission/state_machine.py` currently transitions directly from `RUNNING` to terminal `CANCELLED`. It lacks the in-flight wind-down state (`C02-08 Cancellation Requested`).
 - **Remediation:**
   1. Add `CANCELLATION_REQUESTED = "CANCELLATION_REQUESTED"` to `MissionState`.
-  2. Add transition `RUNNING -> CANCELLATION_REQUESTED` and `WAITING_* -> CANCELLATION_REQUESTED`.
-  3. Add transition `CANCELLATION_REQUESTED -> CANCELLED` upon worker acknowledgment.
+  2. Allow transition from `RUNNING` or `WAITING_*` to `CANCELLATION_REQUESTED`.
+  3. Allow transition from `CANCELLATION_REQUESTED` to `CANCELLED` once child tools halt.
 
-### GAP-03: In-Process Ephemeral Store vs. Neon PostgreSQL Schema
-- **Severity:** P1 (Production Durability)
-- **Current Reality:** `orca/mission/mission_store.py` stores active missions in memory (`dict[str, Mission]`). If the FastAPI server restarts or scales across multiple Fly.io instances, missions are lost or disconnected.
-- **Impact:** Missions cannot survive server restarts; horizontal scaling is impossible.
-- **Remediation:** Create a Neon PostgreSQL migration creating `missions`, `mission_events`, and `mission_approvals` tables with JSONB fields for plans and step telemetry.
+### GAP-03: In-Process Ephemeral Store vs. PostgreSQL Persistence
+- **Severity:** P1 Durability Gap
+- **Current Reality:** `orca/mission/mission_store.py` defaults to in-memory dictionaries. Missions cannot survive process restarts or scale across multiple server instances.
+- **Remediation:** Apply PostgreSQL schema migrations creating `missions`, `mission_events`, and `mission_approvals` tables with JSONB fields for plans and step telemetry.
 
-### GAP-04: Subagent Process Cancellation Heartbeat
-- **Severity:** P1 (Resource Governance & Runaway Mitigation)
-- **Current Reality:** Long-running tool calls in `orca/mission/executor.py` are executed synchronously in worker threads without an interruptible cancellation token passed to subprocesses or external tool invocations.
-- **Impact:** When a user clicks "Cancel Mission", the UI marks cancellation, but background compute continues running until completion, wasting resources.
-- **Remediation:** Integrate `asyncio.Event` or `threading.Event` cancellation tokens into the tool execution harness.
+### GAP-04: Subagent Process Cancellation Token & Heartbeat
+- **Severity:** P1 Resource Leak Gap
+- **Current Reality:** Tool execution in `orca/mission/executor.py` runs synchronously without an interruptible cancellation token passed to subprocesses.
+- **Remediation:** Pass an `asyncio.Event` / `threading.Event` cancellation token to tool executors so cancelling a mission immediately sends SIGTERM to spawned subprocesses.
 
 ### GAP-05: Missing Frontend SSE Adapter in `index.html`
-- **Severity:** P2 (Frontend Wiring)
-- **Current Reality:** The pods in `orca/serve/web/index.html` (lines 1937–1980) simply invoke `sendStarter()`, injecting text into the standard LLM chat box.
-- **Impact:** The C02 Live Mission visual component is not rendered.
-- **Remediation:** Add a tab or view mode for "Missions" that listens to `/api/missions/{id}/events` via `EventSource` and renders the C02 status cards.
+- **Severity:** P2 Frontend Gap
+- **Current Reality:** In `orca/serve/web/index.html` lines 1937–1980, the Sub-Agent Pods invoke `sendStarter()`, sending plain text to the LLM chat instead of invoking mission execution.
+- **Remediation:** Mount the C02 view component, wire it to `GET /api/missions/{id}/events` using a fetch-based SSE reader, and render C02-01 through C02-12 cards.
 
 ---
 
-## 3. Concrete Handoff Plan for Claude (Credit Reset 20 Oct 5:30 PM)
-
-When Claude resumes, execute the following implementation sequence:
+## 3. Targeted Roadmap for Claude (20 Oct 5:30 PM IST)
 
 ```mermaid
 flowchart TD
-    A["Step 1: Update MissionState enum<br/>Add CANCELLATION_REQUESTED"] --> B["Step 2: Implement FastAPI Mission Routes<br/>Mount /api/missions in orca/serve/api.py"]
-    B --> C["Step 3: Connect SSE Generator<br/>Stream events from orca/mission to web clients"]
-    C --> D["Step 4: Neon DB Persistence Migration<br/>Persist missions and event log"]
-    D --> E["Step 5: Frontend Component Mount<br/>Wire C02 UI in index.html"]
+    G1["1. Add CANCELLATION_REQUESTED to state_machine.py"] --> G2["2. Mount /api/missions in orca/serve/api.py"]
+    G2 --> G3["3. Implement SSE generator with DLP redaction"]
+    G3 --> G4["4. Connect subagent cancellation tokens"]
+    G4 --> G5["5. Wire C02 UI in index.html to /events stream"]
 ```
-
-Every step is supported by the tests already written and verified in `tests/test_c02_mission_lifecycle_security.py`.
