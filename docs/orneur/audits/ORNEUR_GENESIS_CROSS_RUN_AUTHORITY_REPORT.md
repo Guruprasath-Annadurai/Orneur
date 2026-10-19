@@ -36,27 +36,44 @@ The system must clearly distinguish between two fundamentally different operatio
 
 ---
 
-## 3. Checkpoint Format Migration & Backward Compatibility Evaluation
+## 3. Checkpoint Format Migration & Contract Decision
 
-Before recommending a version change, format migration compatibility must be evaluated:
+Before implementing the repair, the engine contract must resolve two architectural decisions:
 
-### Option A: Schema Version Bump to V2 (`genesis-resumable-checkpoint-v2`)
-- Add `origin_run_id: str` to `ResumableManifest`.
-- Include `manifest.origin_run_id` in the HMAC tag payload.
-- In `restore_resumable_checkpoint`:
-  - If `manifest.schema_version == "genesis-resumable-checkpoint-v2"`: assert `manifest.origin_run_id == run_id`.
-  - If `manifest.schema_version == "genesis-resumable-checkpoint-v1"` (legacy): emit a deprecation warning and permit same-run restore only if legacy compatibility flag is explicitly enabled.
+### A. Schema Versioning & HMAC Tag Scope
+- **Schema Bump:** Bump `RESUMABLE_SCHEMA_VERSION` from `"genesis-resumable-checkpoint-v1"` to `"genesis-resumable-checkpoint-v2"`.
+- **Field Binding:** Add `origin_run_id: str` to `ResumableManifest`. Include `manifest.origin_run_id` in the HMAC tag computation payload alongside `dataset_identity`, `config_fingerprint`, and sampler state.
+- **Verification Rule:** `restore_resumable_checkpoint(path=..., run_id=run_id, ...)` checks:
+  ```python
+  if manifest.origin_run_id != run_id and not migration_grant:
+      raise PermissionError(
+          f"Cross-run restore rejected: checkpoint originated from run {manifest.origin_run_id!r}, "
+          f"but caller run is {run_id!r}. An explicit founder migration grant is required."
+      )
+  ```
+  If an attacker modifies `origin_run_id` in the JSON manifest, HMAC tag verification fails, raising `ResumableManifestTamperedError`.
+- **Legacy Fallback Contract:** If `manifest.schema_version == "genesis-resumable-checkpoint-v1"` (missing `origin_run_id`), `restore_resumable_checkpoint` must require an explicit opt-in flag (`allow_legacy_v1_checkpoints=True`) or treat it as unvetted migration.
 
-### Option B: Backward-Compatible Optional Field
-- Allow `origin_run_id: str | None = None`.
-- For new saves, populate `origin_run_id = run_id` and include in HMAC tag if present.
-
-**Recommendation:** Option A (V2 schema with explicit fallback) is the cleanest, most tamper-evident approach. It avoids ambiguity and guarantees that all newly generated checkpoints are cryptographically bound to their origin run.
+### B. Intentional Cross-Run Migration Contract
+When a team legitimately needs to initialize Run B from Run A's checkpoint (e.g., branching an experiment or starting an authorized fine-tuning phase):
+- An unauthenticated cross-run restore is strictly forbidden.
+- An explicit **Migration Grant** signed by founder Ed25519 authority must be supplied (`migration_grant: MigrationGrant`), specifying `source_run_id`, `target_run_id`, `checkpoint_hash`, and expiry timestamp.
 
 ---
 
-## 4. Fix-Acceptance Test Gate
+## 4. Fix-Acceptance Test Gate & Strict Assertion Contract
 
-- `test_g02_fix_acceptance_cross_run_restore_without_migration_denied` has been added with `@pytest.mark.xfail(strict=True)`.
-- It asserts that restoring Run A's checkpoint into Run B without migration authorization is rejected.
-- It currently fails (XFAIL) on the vulnerable implementation and will turn to PASS once Claude implements run binding.
+In `tests/test_genesis_checkpoint_adversarial_regression.py`:
+
+- **Ordinary Same-Run Restoration:**
+  - `test_g02_ordinary_same_run_restore_succeeds` saves and restores under `run_id="RUN_ALPHA"`.
+  - **Status:** PASSED (proves baseline same-run recovery is fully functional).
+- **Vulnerability Demonstration:**
+  - `test_g02_vulnerability_demonstration_cross_run_restore_accepted_without_migration` attempts restoring Run A's checkpoint into Run B on vulnerable code.
+  - **Status:** PASSED (confirms vulnerability exists on current HEAD; Run B restores Run A with zero errors).
+- **Fix-Acceptance Test Gate:**
+  - `test_g02_fix_acceptance_cross_run_restore_without_migration_denied` is marked `@pytest.mark.xfail(strict=True)`.
+  - **Direct Exception Assertion:** Uses `pytest.raises((ResumableManifestTamperedError, PermissionError))` directly enclosing `restore_resumable_checkpoint`. No substitute or synthetic exception is raised inside the test itself.
+  - **Current Status:** Fails strictly with `XFAIL` because current `restore_resumable_checkpoint` returns successfully without raising.
+  - Once Claude implements origin run binding, this test will pass, prompting the removal of the XFAIL marker.
+

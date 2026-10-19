@@ -45,20 +45,46 @@ In strict adherence to independent audit rules, **no checkpoint production code 
 
 ---
 
-## 4. Prioritized Engineering Checklist for Claude (20 Oct 5:30 PM IST)
+## 4. Expected-Failure (XFAIL) & Vulnerability Test Lifecycle
+
+This test suite uses strict test segregation between **vulnerability demonstrations** and **fix-acceptance gates**. When Claude repairs the codebase, Claude must follow this explicit lifecycle:
+
+### 4.1 The Role of Strict XFAIL (`@pytest.mark.xfail(strict=True)`)
+- `test_g01_fix_acceptance_worker_confinement_desired_behavior` and `test_g02_fix_acceptance_cross_run_restore_without_migration_denied` are marked `@pytest.mark.xfail(strict=True)`.
+- **Pre-Fix (Current State):** They execute real operations, fail because the codebase is vulnerable, and pytest reports them as `XFAIL`. The overall test suite exits `0`.
+- **Post-Fix (When Claude Fixes Code):** When the underlying implementation is fixed, these tests will succeed. Because `strict=True` is specified, pytest treats unexpected passes as **failures (`XPASS -> FAILED`)**.
+- **Claude Action:** Once the fix is applied, Claude **MUST remove the `@pytest.mark.xfail` decorators** from both fix-acceptance tests. They then become permanent, passing regression tests (`PASSED`).
+
+### 4.2 Retiring / Inverting Vulnerability Demonstrations
+Currently, two tests actively assert the vulnerable state to prove defect existence on real processes:
+1. `test_g01_worker_ipc_vulnerability_demonstration_relative_path_escapes_to_cwd`:
+   - *Current assertion:* Asserts `not (workspace / rel_name).exists()` and `Path(rel_name).exists()`.
+   - *Post-Fix:* This test will fail once the worker anchors relative paths to workspace.
+   - *Claude Action:* Retire this demonstration test, or update its assertions to match `test_g01_fix_acceptance_worker_confinement_desired_behavior`.
+2. `test_g02_vulnerability_demonstration_cross_run_restore_accepted_without_migration`:
+   - *Current assertion:* Asserts that `restore_resumable_checkpoint(run_id="RUN_BETA")` completes successfully without error.
+   - *Post-Fix:* This test will fail because `restore_resumable_checkpoint` will raise `PermissionError` or `ResumableManifestTamperedError`.
+   - *Claude Action:* Retire this test in favor of the fix-acceptance test, or invert the assertion to expect `PermissionError`.
+
+---
+
+## 5. Prioritized Engineering Checklist for Claude (20 Oct 5:30 PM IST)
 
 When Claude resumes, execute the following repair sequence:
 
 1. **G01 Repair (`isolated_worker.py`):**
    - In `_enforce_checkpoint_path_confinement`, return the resolved path anchored to `cfg.checkpoint_workspace_dir`.
    - In `_handle_save_checkpoint` and `_handle_restore_checkpoint`, pass the resolved path to `save_resumable_checkpoint` and `restore_resumable_checkpoint`.
-   - Verify that `test_g01_fix_acceptance_worker_confinement_desired_behavior` flips from XFAIL to PASS.
 2. **G02 Repair (`resumable_checkpoint.py`):**
+   - Bump schema to `genesis-resumable-checkpoint-v2`.
    - Add `origin_run_id: str` to `ResumableManifest` and include it in `_compute_manifest_hmac`.
-   - Update `restore_resumable_checkpoint` to assert `manifest.origin_run_id == run_id`.
-   - Verify that `test_g02_fix_acceptance_cross_run_restore_without_migration_denied` flips from XFAIL to PASS.
-3. **Run Regression Verification:**
+   - Update `restore_resumable_checkpoint` to assert `manifest.origin_run_id == run_id` (raising `PermissionError` without migration grant).
+3. **Update Test Markers & Suite:**
+   - Remove `@pytest.mark.xfail(strict=True)` from `test_g01_fix_acceptance_worker_confinement_desired_behavior` and `test_g02_fix_acceptance_cross_run_restore_without_migration_denied`.
+   - Retire or invert the two vulnerability demonstrations.
+4. **Run Regression Verification:**
    ```bash
-   uv run --no-sync --with torch --with numpy --with sentencepiece --with cryptography pytest tests/test_genesis_checkpoint_adversarial_regression.py -v
+   uv run --no-sync --frozen --with torch --with numpy --with sentencepiece --with cryptography pytest tests/test_genesis_checkpoint_adversarial_regression.py tests/test_c02_mission_lifecycle_security.py -v
    ```
-   All tests must pass.
+   All 21 tests must report clean **`21 passed`** (0 failed, 0 xfailed, 0 xpassed).
+

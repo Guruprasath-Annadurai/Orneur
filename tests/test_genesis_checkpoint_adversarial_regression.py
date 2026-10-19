@@ -287,13 +287,65 @@ def test_g01_dynamic_symlink_substitution_toctou(tmp_path):
     )
 
 
+def test_g01_worker_ipc_vulnerability_demonstration_relative_path_escapes_to_cwd(tmp_path):
+    """ADVERSARIAL REPRODUCTION (G01 - Live Isolated Worker IPC):
+    Demonstrates the live defect over Unix domain socket IPC:
+    When a client commands the isolated worker to save with a relative path 'ipc_leak.pt',
+    the worker's handler validates (workspace / 'ipc_leak.pt'), but passes Path('ipc_leak.pt')
+    to save_resumable_checkpoint.
+    Result: The worker reports ok:True, but the checkpoint and manifest are written to
+    os.getcwd() (the repository root), escaping the authorized workspace directory!
+    """
+    workspace = tmp_path / "authorized_ipc_ws"
+    workspace.mkdir()
+    cfg = _make_worker_startup_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
+
+    rel_name = "ipc_leak_demonstration.pt"
+    try:
+        client = worker.client()
+        client.connect()
+        try:
+            resp = client.save_checkpoint(
+                path=rel_name,
+                integrity_key=secrets.token_bytes(32),
+                sampler_position=0,
+                sampler_seed=0,
+                sampler_num_blocks=1,
+            )
+            # The worker reports success
+            assert resp["ok"] is True, f"Worker unexpectedly rejected relative path: {resp}"
+
+            # VULNERABILITY PROOF:
+            # 1. Checkpoint was NOT written to the authorized workspace:
+            assert not (workspace / rel_name).exists(), "File should not exist in workspace on vulnerable code"
+            # 2. Checkpoint WAS leaked into os.getcwd() (repository root):
+            leaked_in_cwd = Path(rel_name)
+            assert leaked_in_cwd.exists(), "Defect confirmed: file was leaked into process CWD"
+        finally:
+            client.close()
+    finally:
+        worker.stop()
+        # Clean up any leaked artifacts in CWD
+        for suffix in ("", ".resumable.json", ".lock", ".resumable.lock"):
+            f = Path(f"{rel_name}{suffix}")
+            if f.exists():
+                try: f.unlink()
+                except OSError: pass
+            f_dot = Path(f".{rel_name}{suffix}")
+            if f_dot.exists():
+                try: f_dot.unlink()
+                except OSError: pass
+
+
 @pytest.mark.xfail(
     reason="Fix-acceptance test for G01: fails on current vulnerable worker because relative paths write to os.getcwd() instead of workspace",
     strict=True,
 )
 def test_g01_fix_acceptance_worker_confinement_desired_behavior(tmp_path):
     """FIX-ACCEPTANCE TEST (G01):
-    Desired Safe Behavior: When a relative path 'safe_relative.pt' is passed to the worker save handler,
+    Desired Safe Behavior: When a relative path 'ipc_safe_target.pt' is commanded to the worker,
     the checkpoint and manifest MUST be created inside cfg.checkpoint_workspace_dir, and MUST NOT
     be created in os.getcwd().
 
@@ -302,45 +354,46 @@ def test_g01_fix_acceptance_worker_confinement_desired_behavior(tmp_path):
     workspace = tmp_path / "workspace_fix_acceptance"
     workspace.mkdir()
     cfg = _make_worker_startup_cfg(tmp_path, checkpoint_workspace_dir=workspace)
+    worker = IsolatedTrainingWorker(cfg)
+    worker.start()
 
-    model = GenesisTransformer(TINY_MODEL_CFG)
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
-    key = secrets.token_bytes(32)
-    ds_id = DatasetIdentity("fix-acceptance", _digest("dataset"), _digest("tokenizer"))
-    fp = compute_config_fingerprint(TINY_MODEL_CFG, STEP_CFG)
-    state = TrainingState.capture(step=1, epoch=0, dataloader_position=10, model=model, optimizer=opt)
-
-    requested_rel_path = "safe_relative.pt"
-
-    # Worker handler behavior on current vulnerable codebase:
-    _enforce_checkpoint_path_confinement(cfg, requested_rel_path)
-    save_resumable_checkpoint(
-        path=Path(requested_rel_path), training_state=state, global_step=1, microbatch_in_cycle=0,
-        sampler_position=10, sampler_seed=42, sampler_num_blocks=100,
-        config_fingerprint=fp, dataset_identity=ds_id, integrity_key=key, run_id=cfg.run_id,
-    )
-
-    # Desired safe assertion: file MUST be inside workspace!
-    target_in_workspace = workspace / requested_rel_path
+    rel_name = "ipc_safe_target.pt"
     try:
-        assert target_in_workspace.exists(), (
-            f"DESIRED SAFE BEHAVIOR: Checkpoint must exist at {target_in_workspace}, but does not!"
-        )
+        client = worker.client()
+        client.connect()
+        try:
+            resp = client.save_checkpoint(
+                path=rel_name,
+                integrity_key=secrets.token_bytes(32),
+                sampler_position=0,
+                sampler_seed=0,
+                sampler_num_blocks=1,
+            )
+            assert resp["ok"] is True
+
+            # DESIRED SAFE BEHAVIOR:
+            target_in_workspace = workspace / rel_name
+            target_in_cwd = Path(rel_name)
+
+            assert target_in_workspace.exists(), (
+                f"DESIRED SAFE BEHAVIOR: Checkpoint must exist at {target_in_workspace}, but does not!"
+            )
+            assert not target_in_cwd.exists(), (
+                f"DESIRED SAFE BEHAVIOR: Checkpoint must NOT exist in CWD {target_in_cwd}, but does!"
+            )
+        finally:
+            client.close()
     finally:
-        # Cleanup any leaked file in CWD if created by vulnerable code
+        worker.stop()
         for suffix in ("", ".resumable.json", ".lock", ".resumable.lock"):
-            f = Path(f"{requested_rel_path}{suffix}")
+            f = Path(f"{rel_name}{suffix}")
             if f.exists():
-                try:
-                    f.unlink()
-                except OSError:
-                    pass
-            f_dot = Path(f".{requested_rel_path}{suffix}")
+                try: f.unlink()
+                except OSError: pass
+            f_dot = Path(f".{rel_name}{suffix}")
             if f_dot.exists():
-                try:
-                    f_dot.unlink()
-                except OSError:
-                    pass
+                try: f_dot.unlink()
+                except OSError: pass
 
 
 # ==============================================================================
@@ -417,14 +470,20 @@ def test_g02_vulnerability_demonstration_cross_run_restore_accepted_without_migr
 
 
 @pytest.mark.xfail(
-    reason="Fix-acceptance test for G02: fails on current vulnerable resumable_checkpoint because manifest omits run_id from HMAC binding",
+    reason="Fix-acceptance test for G02: fails on current vulnerable resumable_checkpoint because cross-run restore does not raise authority mismatch exception",
     strict=True,
 )
 def test_g02_fix_acceptance_cross_run_restore_without_migration_denied(tmp_path):
     """FIX-ACCEPTANCE TEST (G02):
     Desired Safe Behavior: Restoring a checkpoint saved under Run A into an unrelated Run B
-    without an explicit migration grant MUST be rejected.
+    without an explicit migration grant MUST be rejected by raising an actual authority
+    mismatch or tamper exception from the restoration implementation.
+
+    No substitute exception is raised inside the test itself. Fails on current code because
+    restore_resumable_checkpoint succeeds without error.
     """
+    from orca.genesis.training.resumable_checkpoint import ResumableManifestTamperedError
+
     model = GenesisTransformer(TINY_MODEL_CFG)
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
     ckpt_dir = tmp_path / "g02_fix_ckpts"
@@ -441,16 +500,15 @@ def test_g02_fix_acceptance_cross_run_restore_without_migration_denied(tmp_path)
         config_fingerprint=fp, dataset_identity=ds_id, integrity_key=key, run_id="RUN_ALPHA",
     )
 
-    # Desired safe behavior: Run B cannot restore Run A's checkpoint without migration grant
-    with pytest.raises(Exception) as exc_info:  # Expects authority or tamper exception once fixed
-        restored = restore_resumable_checkpoint(
+    # Desired safe behavior: restore_resumable_checkpoint must raise an authority mismatch
+    # or manifest tamper exception when called with a different run_id.
+    # Note: On current vulnerable code, this does NOT raise, causing pytest.raises to fail (XFAIL).
+    with pytest.raises((ResumableManifestTamperedError, PermissionError)):
+        restore_resumable_checkpoint(
             path=ckpt_path, expected_config_fingerprint=fp, expected_dataset_identity=ds_id,
             expected_sampler_seed=42, expected_sampler_num_blocks=200,
             integrity_key=key, run_id="RUN_BETA",
         )
-        # If it didn't raise, check if it bound origin_run_id
-        if hasattr(restored, "origin_run_id") and restored.origin_run_id != "RUN_BETA":
-            raise PermissionError("Cross-run restore rejected without migration grant")
 
 
 # ==============================================================================

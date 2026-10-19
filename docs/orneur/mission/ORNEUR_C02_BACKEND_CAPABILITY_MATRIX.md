@@ -22,10 +22,16 @@ This document establishes the corrected capability matrix for the **Founder-Appr
 
 ## 2. Founder-Approved Visual Presentation Variants
 
-| Variant ID | Variant Name | Visual Presentation Role | Backend Mapping & Data Dependencies |
+> [!IMPORTANT]
+> **Preserve Founder-Approved Variant Roles Exactly:**
+> - **Variant A (Quiet Mission Brief):** Focused **Mission creation** interface.
+> - **Variant B (Contextual Mission Review):** Dedicated **Pre-execution plan, scope and permission review** interface.
+> - **Live Telemetry Separation:** Live operational execution telemetry (streaming logs, tool parameters, step progress) belongs strictly to running and tool-detail states (**C02-03: Mission Running** and **C02-04: Tool Action Details**), NOT as a replacement for Variant B.
+
+| Variant ID | Variant Name | Primary Role & Interface Purpose | Backend Mapping & Data Dependencies |
 |---|---|---|---|
-| **Variant A** | **Quiet Mission Brief** | Minimal card view summarizing mission objective, current status badge, active step count, and primary intervention button. | Projected from `Mission` metadata (`id`, `title`, `state`, `current_step_index`, `total_steps`). Requires low-frequency status polling or lightweight SSE keepalive. |
-| **Variant B** | **Contextual Mission Review** | Expanded operational console displaying full execution DAG, live streaming stdout/stderr, subagent pod telemetry, tool parameters, and audit timeline. | Projected from full `ExecutionPlan`, `OperationStore` log, and live `step_progress` event stream. Requires high-throughput SSE connection with backpressure buffer. |
+| **Variant A** | **Quiet Mission Brief** | **Mission creation.** Clean, distraction-free modal/card capturing user intent, target systems, objectives, and initial constraints prior to plan generation. | Backed by `MissionCreate` / `ExecutionPlan` intent schemas. Feeds `POST /api/missions` draft initialization. |
+| **Variant B** | **Contextual Mission Review** | **Pre-execution plan, scope and permission review.** Comprehensive pre-flight review displaying proposed execution DAG, requested tool permissions, blast-radius boundaries, and required supervisor sign-offs before launching execution. | Projected from proposed `ExecutionPlan`, `CapabilityAction` lists, and `OperationStore` permission manifests prior to transition into `READY` / `RUNNING`. |
 
 ---
 
