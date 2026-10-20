@@ -306,6 +306,14 @@ def _open_dir_no_symlinks(path: Path, *, parents: bool = False) -> int:
             "unsupported platform: descriptor-relative no-follow directory "
             "operations (openat/mkdirat, O_NOFOLLOW) are required."
         )
+    # The final (leaf) component's fd is RETURNED and used by the caller
+    # for fsync/openat/renameat/etc. -- an O_PATH fd (which
+    # _ANCESTOR_OPEN_FLAGS uses on Linux, to avoid needing read
+    # permission on ancestors) cannot be fsync()'d (EBADF): confirmed on
+    # Linux CI, not reproduced on macOS where O_PATH does not exist and
+    # _ANCESTOR_OPEN_FLAGS falls back to O_RDONLY. Every ancestor BEFORE
+    # the leaf may still use the cheaper O_PATH-based flags, since they
+    # are only ever used as an openat/mkdirat base, never fsync'd.
     absolute = os.path.abspath(path)
     pending = [p for p in absolute.split(os.sep) if p]
     pending.reverse()
@@ -315,8 +323,9 @@ def _open_dir_no_symlinks(path: Path, *, parents: bool = False) -> int:
     try:
         while pending:
             name = pending.pop()
+            flags = _ANCESTOR_OPEN_FLAGS if pending else _DIR_OPEN_FLAGS
             try:
-                nfd = os.open(name, _ANCESTOR_OPEN_FLAGS, dir_fd=fd)
+                nfd = os.open(name, flags, dir_fd=fd)
             except FileNotFoundError:
                 if not parents:
                     raise
@@ -324,7 +333,7 @@ def _open_dir_no_symlinks(path: Path, *, parents: bool = False) -> int:
                     os.mkdir(name, 0o700, dir_fd=fd)
                 except FileExistsError:
                     pass
-                nfd = _open_dir_nofollow(name, fd, shown, _ANCESTOR_OPEN_FLAGS)
+                nfd = _open_dir_nofollow(name, fd, shown, flags)
             except OSError as exc:
                 if exc.errno not in (errno.ELOOP, errno.ENOTDIR):
                     raise
