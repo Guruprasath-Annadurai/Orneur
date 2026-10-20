@@ -1,5 +1,6 @@
 import errno
 import os
+import secrets
 import stat
 import warnings
 from pathlib import Path
@@ -250,6 +251,134 @@ def _mkdir_owner_only(path: Path, *, parents: bool = False) -> Path:
     finally:
         os.close(lfd)
     return Path(os.sep + os.sep.join([*canon, leaf]))
+
+
+def _open_dir_no_symlinks(path: Path, *, parents: bool = False) -> int:
+    """AUDIT-077 P0-01 (intermediate-ancestor TOCTOU escape, found by
+    Antigravity's independent requalification): a STRICTER sibling of
+    `_mkdir_owner_only()` for a threat model where even a SAME-UID
+    symlink substitution must be treated as hostile.
+
+    `_mkdir_owner_only()` deliberately FOLLOWS an ancestor symlink that
+    is owned by root or this process's own uid (see its own docstring)
+    -- correct for ITS threat model (another, lower-privileged LOCAL
+    ACCOUNT reading pickle-backed cache data), but wrong for a confined
+    checkpoint workspace: there, the attacker model Antigravity
+    demonstrated is a same-uid caller racing the narrow window between
+    `_enforce_checkpoint_path_confinement()`'s validation and the
+    checkpoint functions' own directory creation, substituting an
+    intermediate ancestor directory (e.g. `sub` in `sub/inner/ckpt.pt`)
+    for a symlink pointing outside the workspace. Because that symlink
+    is owned by the very same uid performing the legitimate save,
+    `_mkdir_owner_only()` accepted and followed it -- independently
+    reproduced before this fix (see AUDIT-077 P0-01 correction report).
+
+    This function walks every component of `path` from "/" using
+    `openat(O_NOFOLLOW|O_DIRECTORY)` exactly like `_mkdir_owner_only()`.
+    Unlike that function, a symlink is followed ONLY if it is owned by
+    root (uid 0) -- the ordinary system symlinks every POSIX install
+    has (e.g. `/var` -> `/private/var`, `/tmp` -> `/private/tmp` on
+    macOS), which are not part of this attack's race window and would
+    otherwise make this helper unusable on a stock system. A symlink
+    owned by THIS PROCESS'S OWN UID -- or any other non-root uid -- is
+    rejected unconditionally: that is exactly the loophole
+    `_mkdir_owner_only()`'s same-uid exception leaves open, and exactly
+    what Antigravity's reproduction exploited (planting a same-uid-
+    owned symlink inside the workspace during the race window). Missing
+    directories (when `parents=True`) are created via `mkdirat`, mode
+    0700.
+
+    Returns an OPEN file descriptor to the final (leaf) directory --
+    the caller owns it and must `os.close()` it. Critically, the
+    caller must perform EVERY subsequent filesystem operation inside
+    that directory (temp-file creation, rename, lock-file open) via
+    this `dir_fd` (the `dir_fd=` parameter on the relevant `os.*` call),
+    never by re-resolving a fresh path string -- that is what actually
+    closes the TOCTOU window a one-time walk cannot close by itself (a
+    walk that rejects symlinks still has an inherent, narrow race
+    between one `openat()` succeeding and the next syscall; holding the
+    fd and never re-resolving a path string afterward removes every
+    REMAINING re-resolution point an attacker could target). This
+    function is not, and does not claim to be, race-proof against an
+    attacker who wins that single-syscall race during the walk itself."""
+    if not _DIRFD_SUPPORTED:
+        raise UntrustedStoreDirectory(
+            "unsupported platform: descriptor-relative no-follow directory "
+            "operations (openat/mkdirat, O_NOFOLLOW) are required."
+        )
+    absolute = os.path.abspath(path)
+    pending = [p for p in absolute.split(os.sep) if p]
+    pending.reverse()
+    fd = os.open(os.sep, _ANCESTOR_OPEN_FLAGS)
+    shown = os.sep
+    links = 0
+    try:
+        while pending:
+            name = pending.pop()
+            try:
+                nfd = os.open(name, _ANCESTOR_OPEN_FLAGS, dir_fd=fd)
+            except FileNotFoundError:
+                if not parents:
+                    raise
+                try:
+                    os.mkdir(name, 0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                nfd = _open_dir_nofollow(name, fd, shown, _ANCESTOR_OPEN_FLAGS)
+            except OSError as exc:
+                if exc.errno not in (errno.ELOOP, errno.ENOTDIR):
+                    raise
+                st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if not stat.S_ISLNK(st.st_mode):
+                    raise UntrustedStoreDirectory(
+                        f"refusing to use a path under {shown}: {name!r} is not a directory."
+                    ) from exc
+                if st.st_uid != 0:
+                    raise UntrustedStoreDirectory(
+                        f"refusing to use a path under {shown}: {name!r} is a symlink owned by "
+                        f"uid {st.st_uid}, not root -- rejected unconditionally, since this "
+                        "confined workspace's threat model treats a same-uid (or other non-root) "
+                        "ancestor symlink substitution between validation and use as hostile, "
+                        "even though it would be an ordinary trusted case elsewhere."
+                    ) from exc
+                links += 1
+                if links > 40:
+                    raise UntrustedStoreDirectory(f"refusing to use {path}: too many symlinks.")
+                target = os.readlink(name, dir_fd=fd)
+                if target.startswith(os.sep):
+                    os.close(fd)
+                    fd = os.open(os.sep, _ANCESTOR_OPEN_FLAGS)
+                    shown = os.sep
+                pending.extend(reversed([p for p in target.split(os.sep) if p]))
+                continue
+            os.close(fd)
+            fd = nfd
+            shown = os.path.join(shown, name)
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _dirfd_mkstemp(dir_fd: int, prefix: str) -> tuple[int, str]:
+    """`tempfile.mkstemp()`-equivalent relative to an already-open,
+    no-follow-verified directory descriptor (from
+    `_open_dir_no_symlinks()`) -- `tempfile.mkstemp()` itself has no
+    `dir_fd` parameter. Reimplements its `O_EXCL`-based collision
+    avoidance (retry with a fresh random suffix on `FileExistsError`)
+    using `os.open(..., dir_fd=dir_fd)`, so the file is created
+    strictly inside the directory `dir_fd` refers to -- never a freshly
+    re-resolved path string that could have been redirected since
+    `dir_fd` was opened. Returns (fd, name); the caller owns both the
+    fd and cleaning up the name on failure."""
+    for _ in range(100):
+        name = f"{prefix}{secrets.token_hex(8)}"
+        try:
+            fd = os.open(name, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600, dir_fd=dir_fd)
+            return fd, name
+        except FileExistsError:
+            continue
+    raise UntrustedStoreDirectory(f"could not create a unique temp file under this directory after 100 attempts (prefix={prefix!r})")
 
 
 # .expanduser() is required here — python-dotenv (and any shell config a

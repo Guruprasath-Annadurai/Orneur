@@ -323,40 +323,58 @@ def save_training_state(state: TrainingState, path: Path) -> None:
        rename, so the rename itself is not lost by a crash immediately
        after `os.replace()` returns but before the directory entry is
        flushed to disk -- the standard "fsync the directory too" rule for
-       a truly durable atomic rename."""
+       a truly durable atomic rename.
+
+    AUDIT-077 P0-01 fix (intermediate-ancestor TOCTOU escape,
+    independently reproduced and found by Antigravity's requalification
+    before this fix): the prior code validated/created `path.parent` via
+    `_mkdir_owner_only()`, which deliberately FOLLOWS a same-uid-owned
+    ancestor symlink (correct for ITS own, different threat model -- see
+    its own docstring) -- then performed every subsequent operation
+    (lock file, temp file, rename) by RE-RESOLVING fresh path strings
+    under that parent, each one an independent opportunity for a
+    same-uid attacker to have swapped an intermediate ancestor directory
+    for a symlink in the gap since the previous resolution. This
+    function now opens the parent directory ONCE via
+    `_open_dir_no_symlinks()` (which rejects any non-root-owned ancestor
+    symlink outright, never following it) and performs every subsequent
+    operation through that single held `dir_fd` -- never re-resolving a
+    path string afterward, so there is no remaining re-resolution point
+    for the race to target."""
     import fcntl
     import os
-    import tempfile
 
-    from orca.config import _mkdir_owner_only
+    from orca.config import _dirfd_mkstemp, _open_dir_no_symlinks
 
     path = Path(path)
-    parent = _mkdir_owner_only(path.parent, parents=True)
-    path = parent / path.name
-
-    lock_path = parent / f".{path.name}.lock"
-    with open(lock_path, "a+") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    parent_fd = _open_dir_no_symlinks(path.parent, parents=True)
+    try:
+        lock_name = f".{path.name}.lock"
+        lock_fd = os.open(lock_name, os.O_RDWR | os.O_CREAT, 0o600, dir_fd=parent_fd)
         try:
-            fd, tmp_name = tempfile.mkstemp(dir=parent, prefix=f".{path.name}.tmp-")
-            tmp = Path(tmp_name)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
             try:
-                with os.fdopen(fd, "wb") as f:
-                    torch.save(state.to_dict(), f)
-                    f.flush()
-                    os.fsync(f.fileno())
-                tmp.chmod(0o600)
-                os.replace(tmp, path)
-                dir_fd = os.open(parent, os.O_RDONLY)
+                tmp_fd, tmp_name = _dirfd_mkstemp(parent_fd, prefix=f".{path.name}.tmp-")
                 try:
-                    os.fsync(dir_fd)
-                finally:
-                    os.close(dir_fd)
-            except BaseException:
-                tmp.unlink(missing_ok=True)
-                raise
+                    os.fchmod(tmp_fd, 0o600)  # force exact mode regardless of umask, matching the prior tmp.chmod(0o600)
+                    with os.fdopen(tmp_fd, "wb") as f:
+                        torch.save(state.to_dict(), f)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp_name, path.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+                    os.fsync(parent_fd)
+                except BaseException:
+                    try:
+                        os.unlink(tmp_name, dir_fd=parent_fd)
+                    except FileNotFoundError:
+                        pass
+                    raise
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
         finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            os.close(lock_fd)
+    finally:
+        os.close(parent_fd)
 
 
 def load_training_state(path: Path) -> TrainingState:

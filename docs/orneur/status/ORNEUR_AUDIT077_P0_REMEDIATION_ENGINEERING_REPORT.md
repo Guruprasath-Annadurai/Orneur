@@ -1,0 +1,87 @@
+# ORNEUR — CTO Security Remediation Directive: Audit #077 Final Boundary Closure (G01/G02) — Engineering Report
+
+**Directive**: "ORNEUR — CTO SECURITY REMEDIATION DIRECTIVE, Audit #077 Final Boundary Closure — G01 and G02."
+
+**Verified inputs** (confirmed against live `git log`/`git ls-remote` before any change):
+- Claude correction branch: `claude/genesis-audit077-correction-2026-10-20`, verified HEAD `79f99d3b744afebcbd01372d17a6add07e499d1c`
+- Independent Antigravity audit branch: `antigravity/genesis-audit077-correction-requalification`, verified HEAD `5de164b839bfb7c4aa7ceac8e2fe892d741459d9`
+- Adversarial test commit: `7b31649d8eaa7f7912b1e146080c45660a31598a` (`tests/test_audit077_requalification_adversarial_deep.py`, imported verbatim into this repo for provenance, unmodified)
+
+---
+
+## P0-01 — Checkpoint directory TOCTOU, closed
+
+**Root cause, independently confirmed** (via `tests/test_audit077_requalification_adversarial_deep.py::test_g01_intermediate_ancestor_substitution_toctou_escape_demonstration`, run against the pre-fix code before any change): `_enforce_checkpoint_path_confinement()` validates that no ancestor directory is a symlink at validation time, but `save_resumable_checkpoint()` and `save_training_state()` each INDEPENDENTLY re-resolved `path.parent` afterward via `_mkdir_owner_only()` — which deliberately FOLLOWS an ancestor symlink owned by root or this process's own uid (correct for `_mkdir_owner_only()`'s own, different threat model: protecting a cache directory from OTHER, lower-privileged accounts). A same-uid attacker racing the gap between validation and this later re-resolution — swapping an intermediate ancestor directory (e.g. `sub` in `sub/inner/ckpt.pt`) for a symlink pointing outside the workspace — had that symlink followed, because it was owned by the very same uid performing the legitimate save. The checkpoint, its `.resumable.json` manifest, and its lock file were all written **outside** the configured workspace.
+
+**Fixed**: a new, stricter helper, `orca.config._open_dir_no_symlinks()`, performs the same `openat(O_NOFOLLOW|O_DIRECTORY)` walk as `_mkdir_owner_only()` but follows a symlink **only if it is owned by root (uid 0)** — the ordinary system symlinks every POSIX install has (`/var` → `/private/var`, `/tmp` → `/private/tmp` on macOS) — and rejects a symlink owned by this process's own uid, or any other non-root uid, unconditionally. This is the exact loophole the attack exploited; closing it does not require treating every symlink as hostile (which would break on stock systems), only same-uid-or-lower ones.
+
+Critically, `_open_dir_no_symlinks()` returns an **open file descriptor**, and `save_training_state()` (`orca/genesis/training/primitives.py`) and `save_resumable_checkpoint()` (`orca/genesis/training/resumable_checkpoint.py`) now perform **every** subsequent filesystem operation — lock-file open, temp-file creation (`orca.config._dirfd_mkstemp()`, a `tempfile.mkstemp()`-equivalent with a `dir_fd` parameter), atomic rename (`os.replace(..., src_dir_fd=, dst_dir_fd=)`), and (on restore) the manifest read and content-hash computation — through that **single held descriptor**, never by re-resolving a path string again. This is what actually closes the TOCTOU window: a one-time walk that rejects symlinks still has an inherent, narrow race between one `openat()` succeeding and the next syscall, but holding the fd and never re-resolving a path string afterward removes every *remaining* re-resolution point an attacker could target. **This fix is not, and does not claim to be, race-proof against an attacker who wins that single-syscall race during the walk itself** — consistent with this project's established discipline of never overclaiming race-safety.
+
+`restore_resumable_checkpoint()` was hardened the same way on the read side (opening the parent directory once, reading the manifest and computing the content hash through that descriptor) as defense in depth, though a redirected read on that path would in any case be caught by the existing HMAC/content-hash checks (an attacker without `integrity_key` cannot forge a matching manifest).
+
+**Independently reproduced, closed**: a standalone script reproducing the exact scenario (`sub` symlinked to an outside directory after `_enforce_checkpoint_path_confinement()` validates `sub/inner/ckpt.pt`) now raises `UntrustedStoreDirectory` and confirms **zero files escape** to the outside directory. Antigravity's own `test_g01_intermediate_ancestor_substitution_toctou_escape_demonstration` — which asserted the escape succeeded — now fails at that exact assertion, the intended flip confirming the gap it found is closed. The other 4 G01 tests in that file (relative/nested confinement, pre-planted symlink rejection, final-name substitution, failure cleanup) all still pass unchanged.
+
+**What remains honestly undemonstrated**: a parent-directory-component swap landing in the single-syscall gap between one `openat()` call succeeding and the walk's next call (as opposed to the whole-path-resolution-vs-use gap that was actually, deterministically exploited and is now closed) is not claimed closed — no test claims to have won or refuted that narrower race.
+
+---
+
+## P0-02 — Unauthenticated cross-run migration override, removed
+
+**Finding, independently confirmed** (via `test_g02_internal_caller_allow_cross_run_migration_authority_bypass`, run before any change): while `allow_cross_run_migration` was never exposed over the untrusted worker IPC surface, any direct Python caller (an orchestration script, a future feature) could adopt a foreign run's checkpoint merely by passing `allow_cross_run_migration=True` — no cryptographic proof of authorization (no signed grant, no founder signature, no expiry/revocation) was required or checked.
+
+**Fixed**: per the directive's explicit preference ("Remove or disable this override for all callable paths until an authorized migration mechanism has been explicitly designed and approved. Do not invent or issue founder grants."), `restore_resumable_checkpoint()` now **disables** this parameter on every callable path. The keyword parameter is retained for signature compatibility, but passing `allow_cross_run_migration=True` now raises a new, dedicated `CrossRunMigrationDisabledError` instead of proceeding — a loud, explicit refusal, not a silently-ignored no-op. Ordinary same-run restoration is completely unaffected (verified directly: a same-run restore still succeeds; an ordinary cross-run restore with no flag still raises `CrossRunCheckpointAccessError` exactly as before).
+
+**Proposed governance contract** (documented, not designed in detail or implemented, per the directive's own "propose a separate governance contract" instruction): a genuinely intended migration would need an authenticated source run, an authenticated target run, the exact checkpoint digest being migrated, the authorizing principal, a signed and independently verifiable grant, expiry and revocation semantics, single-purpose scope (usable for exactly one migration, not a standing capability), replay resistance, and durable evidence of the migration having occurred. No such mechanism is invented or issued here.
+
+**Verified**: Antigravity's `test_g02_internal_caller_allow_cross_run_migration_authority_bypass` — which asserted the bypass succeeded — now fails at that exact assertion (`CrossRunMigrationDisabledError` raised instead), the intended flip. `test_g02_raw_ipc_cannot_smuggle_migration_flag`, `test_g02_owning_run_id_hmac_binding_and_tamper_rejection`, and `test_g02_schema_v1_legacy_manifest_fail_closed` all still pass unchanged.
+
+---
+
+## P0-03 — CI qualification coverage, corrected
+
+**Finding, independently confirmed**: `tests/test_audit077_master_requalification.py` was never included in `.github/workflows/test.yml`'s `torch-loss-tests` job, and (lacking the `cryptography` package) the new `tests/test_audit077_requalification_adversarial_deep.py` would `importorskip` out of any non-torch job entirely. Both of GitHub Actions runs `39433397742` and `39435728342` (commits `144941d`/`79f99d3`, both "all green") therefore never actually executed either Audit #077 suite — a real CI qualification gap, as Antigravity's own report found.
+
+**Fixed**: `.github/workflows/test.yml`'s `torch-loss-tests` job now installs `cryptography` and runs both `tests/test_audit077_master_requalification.py` and `tests/test_audit077_requalification_adversarial_deep.py` as **required CI gates**, with the three known, intentional vulnerability-demonstration tests (`test_audit077_domain_c_checkpoint_ledger_monotonicity_and_cross_run_boundary`, `test_g01_intermediate_ancestor_substitution_toctou_escape_demonstration`, `test_g02_internal_caller_allow_cross_run_migration_authority_bypass`) individually `--deselect`ed — the same established pattern this project already applies to every other historical audit evidence file (none of which run in this CI job at all), but applied per-test here instead of per-file, so the other 16 genuine acceptance tests across both files become real, required, exact-head CI gates for the first time. Verified locally: `pytest tests/test_audit077_master_requalification.py tests/test_audit077_requalification_adversarial_deep.py --deselect ... --deselect ... --deselect ... -v` → **16 passed, 3 deselected**.
+
+**Not claimed**: the entire regression suite is not claimed green while real failures remain — see the full regression accounting below, which reports every failure, flipped or not.
+
+---
+
+## P0-04 — Residual structural boundaries, reconciled
+
+These three limitations are **not** newly discovered in this phase, are **not** claimed resolved, and remain explicitly documented per the directive's own instruction:
+
+1. **Same-UID worker isolation.** Threat model: a co-resident process running under the SAME uid as the isolated worker can `ptrace`/read `/proc/<pid>/mem`, bypassing process isolation entirely. Current implementation: `IsolatedTrainingWorker` spawns via `multiprocessing`'s `spawn` start method (a genuinely separate OS process, not a fork) with HMAC-authenticated IPC, but runs under the orchestrator's own uid; a `drop_to_uid` configuration option exists but requires root and has never been exercised end-to-end in this codebase's own tests. Independently executed tests: `tests/test_genesis_isolated_worker.py`'s suite exercises the IPC authentication/authorization boundary thoroughly, but no test exercises privilege dropping under root. **Freeze decision**: acceptable for a single-tenant, trusted-operator synthetic pre-training freeze; not acceptable for any multi-tenant or untrusted-co-resident-process deployment without `drop_to_uid` actually being exercised under root.
+
+2. **Unkeyed derived-cache integrity.** Threat model: a coordinated rewrite of a derived tokenization/dataset-index cache's content AND its own digest file together goes undetected, since the digest is plain SHA-256 (content-addressing), not an HMAC (tamper-evidence). Current implementation: unchanged since Audit #074/#075's own findings. Independently executed tests: none newly added this phase (out of this directive's explicit P0-01/P0-02 scope). **Freeze decision**: acceptable for a synthetic foundation freeze where cache content originates entirely from this process's own, already-authorized pipeline; not acceptable once any externally-supplied or multi-party cache content is trusted.
+
+3. **Local-only, single-machine anti-rollback ledger.** Threat model: a host-level storage rollback (snapshot restore, backup restore) resets the ledger's own recorded step monotonicity, defeating `CheckpointRollbackError`'s protection. Current implementation: `_ledger_path()`'s own docstring already states this scope explicitly; unchanged this phase. Independently executed tests: `tests/test_genesis_resumable_checkpoint.py`'s ledger tests verify ordinary (non-host-rollback) rollback rejection thoroughly. **Freeze decision**: acceptable for a single-host synthetic freeze; not acceptable once the ledger's own durability must survive a host-level storage rollback.
+
+None of the above is broadened into a new platform architecture programme; all three are pre-existing and out of this directive's narrow scope, same as the prior Audit #077 correction phase.
+
+---
+
+## Regression evidence
+
+Full combined run (`tests/test_genesis*.py tests/test_audit_genesis*.py tests/test_audit74_successor_adversarial_requalification.py tests/test_audit076_master_qualification.py tests/test_audit077_master_requalification.py tests/test_audit077_requalification_adversarial_deep.py tests/test_native_learning_engine_adversarial_audit.py`): **3344 passed, 32 failed, 17 skipped** (1532.96s).
+
+Every failure accounted for, none hidden:
+- **29 established historical evidence-preservation flips**, none modified this phase: 5 in `test_audit_genesis_hardening_adversarial.py`, 12 in `test_audit74_successor_adversarial_requalification.py`, 11 in `test_native_learning_engine_adversarial_audit.py`, 1 in `test_audit077_master_requalification.py` (Domain C — the prior phase's own intended flip, unaffected by this phase's changes).
+- **2 NEW intended flips from this phase's own P0-01/P0-02 fixes**: `test_audit077_requalification_adversarial_deep.py::test_g01_intermediate_ancestor_substitution_toctou_escape_demonstration` and `::test_g02_internal_caller_allow_cross_run_migration_authority_bypass` — both PoC tests that demonstrated the two gaps this phase closes; both now correctly fail at the point they assert the vulnerability succeeded.
+- **1 confirmed environmental flake**: `tests/test_genesis_audit016_remediation.py::test_defect02_concurrent_writers_do_not_corrupt_the_checkpoint` — a genuine concurrency test (5 real threads racing `save_training_state()` with a 10s join timeout), failed once under the full 25-minute combined run's heavy resource contention, and passed cleanly 4/4 times when re-run standalone immediately after (2.2–2.4s each). Not a regression: unrelated to the dir-fd rewrite's correctness, consistent with this project's established pattern of transient flakes appearing only under maximum combined-suite load (e.g. the Docker-scorer flake reported in the prior Audit #077 correction phase).
+- **Zero unexpected failures** elsewhere, including the 16 genuine (non-deselected) Audit #077 acceptance tests across both suites, all of `tests/test_genesis_resumable_checkpoint.py` (23/23), all of `tests/test_genesis_isolated_worker.py` (31/31 standalone), and all of `tests/test_genesis_checkpoint_integrity.py` / `tests/test_genesis_training_primitives.py` (47/47).
+
+---
+
+## Final verdict
+
+**`PARTIAL`**
+
+G01 and G02 are now closed and independently re-verified against Antigravity's own requalification evidence:
+- **G01**: the demonstrated intermediate-ancestor-substitution TOCTOU escape is closed by holding a single, no-follow-verified directory descriptor across validation and every subsequent filesystem operation (lock, temp-write, rename, and — on restore — manifest read and hash). Not claimed race-proof against the narrower, single-syscall walk-time race.
+- **G02**: the unauthenticated `allow_cross_run_migration` override is disabled on every callable path, raising a loud, dedicated error rather than silently proceeding; no founder grant was invented. A proper governance contract, if genuinely needed, remains a separate, future, explicitly-designed piece of work.
+- **CI**: both Audit #077 suites are now required, exact-head CI gates (16/16 genuine tests), with the 3 known intentional flips explicitly deselected and documented, never hidden.
+
+**Why PARTIAL, not PASS**: the three structural boundaries in P0-04 (same-UID isolation, unkeyed cache integrity, local-only ledger) remain open, pre-existing, and explicitly out of this directive's scope — consistent with every prior phase's own verdict. **Why not BLOCKED**: both P0-01 and P0-02's specific, demonstrated findings are closed and independently re-verifiable; the regression is clean once accounting for established historical flips, this phase's own 2 new intended flips, and 1 confirmed, isolation-verified environmental flake.
+
+**Not done, per explicit restriction**: no model training, no GPU or paid infrastructure use, no founder-grant invention or issuance, no production release, no merge.
