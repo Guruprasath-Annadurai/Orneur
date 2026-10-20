@@ -92,7 +92,13 @@ A separate document, `ORNEUR_AUDIT077_CORRECTION_REQUEST_TO_ANTIGRAVITY.md`, was
 
 ## Phase 7 — Handoff and freeze readiness
 
-Commits, exact immutable SHA, clean-tree status, and observed exact-head CI evidence on an isolated branch recorded in this report's own commit-history follow-up once pushed.
+Per the final directive's explicit procedural requirement, this phase's work was committed on an **isolated branch**, `claude/genesis-audit077-correction-2026-10-20` — not the shared `claude/genesis-native-learning-engine-phase1-2026-10-17` branch every prior commit this session used.
+
+- **Immutable commit SHA**: `144941d8408693278eb52f249d1ab60987bbfec3`
+- **Working tree**: clean at that commit (`git status --short` empty immediately after commit and after push)
+- **Pushed**: `origin/claude/genesis-audit077-correction-2026-10-20` (no PR opened; no merge; no action taken beyond push, per the directive's own restriction)
+- **Observed exact-head CI**: GitHub Actions run [`39433397742`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39433397742), triggered by the push itself, `headSha` confirmed equal to `144941d8...`, **conclusion: success**, all 6 jobs green — Genesis V2 Sandbox containment, Training Math Unit Tests (Torch), RSE dependency lock/vulnerability scan, Genesis V2 Security (encryption), Dependency Vulnerability Scan, and Production Container Build + Boot Smoke. This is a genuinely observed CI result for the exact commit containing this phase's own changes and the newly-imported Audit #077 test file — not an earlier, unrelated commit's run.
+- **Unresolved issues at handoff**: the three structural limitations named in the Final verdict below (same-UID worker security, unkeyed cache integrity, local-only rollback protection), and independent Antigravity requalification of the changed checkpoint boundary, which remains outstanding pending their own review of the prepared correction request.
 
 ---
 
