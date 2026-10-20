@@ -295,7 +295,63 @@ class CheckpointWorkspaceViolationError(Exception):
     capability, not an unrestricted one)."""
 
 
-def _enforce_checkpoint_path_confinement(cfg: "WorkerStartupConfig", requested_path: str) -> None:
+def _enforce_checkpoint_path_confinement(cfg: "WorkerStartupConfig", requested_path: str) -> Path:
+    """AUDIT-077 Phase 1: previously computed and validated a `resolved`
+    path but never RETURNED it -- every call site then went on to use
+    the caller's ORIGINAL, unresolved `requested_path` string for the
+    actual `save_resumable_checkpoint`/`restore_resumable_checkpoint`
+    call instead. For a RELATIVE `requested_path`, those are two
+    genuinely different filesystem targets: validation correctly
+    checked `(workspace / requested_path).resolve()`, but
+    `Path(requested_path)` alone resolves relative to the WORKER
+    PROCESS's OWN CURRENT WORKING DIRECTORY when the underlying
+    filesystem call opens it -- which is not, and has no reason to be,
+    the configured workspace. Independently reproduced before this fix:
+    a relative path like `"ckpt.pt"` passed this function's own
+    validation (checked against `workspace / "ckpt.pt"`) while the
+    checkpoint was actually written wherever the worker process
+    happened to be running from. **Fixed**: this function now RETURNS
+    the validated, resolved, absolute path, and every call site uses
+    EXACTLY that return value for the actual filesystem operation --
+    never the caller's original string again.
+
+    Also now rejects (AUDIT-077 Phase 1, item 5) if the resolved target
+    itself, or ANY directory between it and the workspace root, is
+    already a symlink at validation time -- closing the straightforward
+    "pre-planted symlink" attack. **Explicitly, honestly NOT claimed**:
+    this is a validate-then-use check, not a directory-descriptor-
+    relative (`openat`-style) operation -- a determined local attacker
+    with write access to the workspace's parent directories could still
+    swap a component to a symlink in the narrow window between this
+    check and the LATER, separate `open()` calls
+    `save_resumable_checkpoint()`/`restore_resumable_checkpoint()`
+    perform.
+
+    **Investigated and independently verified** (not merely assumed):
+    for the SPECIFIC case of the final target NAME being swapped to a
+    symlink in that window, `save_resumable_checkpoint()`'s own
+    pre-existing atomic-write discipline (`tempfile.mkstemp()` +
+    `os.replace()`) INCIDENTALLY defeats it -- POSIX `rename()`/
+    `os.replace()` unlinks and replaces whatever directory entry
+    currently sits at the destination name rather than following it to
+    write through to its target, so a symlink planted there gets
+    replaced, not followed.
+    `tests/test_genesis_isolated_worker.py::
+    test_audit077_destination_substitution_after_validation_is_incidentally_defeated_by_atomic_rename`
+    demonstrates this directly. This is an emergent property of the
+    pre-existing atomic-publish pattern, not a purpose-built defense
+    this phase added, and it does NOT cover every possible substitution
+    shape (e.g. a parent-directory component swapped instead of the
+    final name, or a substitution landing during the temp file's own
+    write rather than at the final rename) -- those remain honestly
+    undemonstrated, not claimed closed. Eliminating the remaining
+    window with certainty would require extending `resumable_checkpoint
+    .py`'s own API to accept a directory file descriptor and a confined
+    relative name, threading `os.open(..., dir_fd=...)` through every
+    one of its internal atomic-write/read calls -- a genuine, recorded
+    future improvement, deliberately out of scope for this phase's
+    smallest-necessary-correction mandate. This function and its
+    callers never describe themselves as race-proof."""
     if cfg.checkpoint_workspace_dir is None:
         raise CheckpointWorkspaceViolationError(
             "this worker was started with no checkpoint_workspace_dir configured -- "
@@ -310,6 +366,16 @@ def _enforce_checkpoint_path_confinement(cfg: "WorkerStartupConfig", requested_p
             f"requested checkpoint path {requested_path!r} resolves to {resolved}, which is outside this "
             f"worker's own authorized checkpoint workspace {workspace} -- refusing to read or write it"
         ) from None
+
+    if resolved.is_symlink():
+        raise CheckpointWorkspaceViolationError(f"refusing to use {resolved} -- it is a symlink, not a regular file")
+    for parent in resolved.parents:
+        if parent == workspace:
+            break
+        if parent.is_symlink():
+            raise CheckpointWorkspaceViolationError(f"refusing to use {resolved} -- an intermediate directory {parent} is a symlink")
+
+    return resolved
 
 
 def _worker_config_fingerprint(cfg: "WorkerStartupConfig") -> str:
@@ -556,14 +622,14 @@ def _worker_main(cfg: WorkerStartupConfig, ready_evt, error_queue, status_queue)
                         # or expired grant now fails this exactly like it
                         # fails `step`, with the same fail-stop behavior.
                         try:
-                            _enforce_checkpoint_path_confinement(cfg, payload["path"])
+                            confined_path = _enforce_checkpoint_path_confinement(cfg, payload["path"])
                             verify_live_authorization_or_raise(run)
                             ts = TrainingState.capture(
                                 step=engine.global_step, epoch=0, dataloader_position=payload["sampler_position"],
                                 model=engine.model, optimizer=engine.optimizer,
                             )
                             save_resumable_checkpoint(
-                                path=Path(payload["path"]), training_state=ts, global_step=engine.global_step,
+                                path=confined_path, training_state=ts, global_step=engine.global_step,
                                 microbatch_in_cycle=engine.microbatch_in_cycle, sampler_position=payload["sampler_position"],
                                 sampler_seed=payload["sampler_seed"], sampler_num_blocks=payload["sampler_num_blocks"],
                                 config_fingerprint=_worker_config_fingerprint(cfg),
@@ -581,10 +647,10 @@ def _worker_main(cfg: WorkerStartupConfig, ready_evt, error_queue, status_queue)
                             _send_framed(conn, _canonical({"ok": False, "error": f"CHECKPOINT_SAVE_FAILED: {type(e).__name__}: {e}", "result": None}))
                     elif command == "restore_checkpoint":
                         try:
-                            _enforce_checkpoint_path_confinement(cfg, payload["path"])
+                            confined_path = _enforce_checkpoint_path_confinement(cfg, payload["path"])
                             verify_live_authorization_or_raise(run)
                             restored = restore_resumable_checkpoint(
-                                path=Path(payload["path"]), expected_config_fingerprint=_worker_config_fingerprint(cfg),
+                                path=confined_path, expected_config_fingerprint=_worker_config_fingerprint(cfg),
                                 expected_dataset_identity=_worker_dataset_identity(cfg),
                                 expected_sampler_seed=payload["sampler_seed"], expected_sampler_num_blocks=payload["sampler_num_blocks"],
                                 integrity_key=bytes.fromhex(payload["integrity_key_hex"]), run_id=cfg.run_id,

@@ -177,7 +177,37 @@ Independently reproduced: the prior code only checked `if not
 integrity_key`, silently accepting e.g. a 1-byte key. `_require_strong
 _integrity_key()` now rejects any `integrity_key` shorter than
 `MIN_INTEGRITY_KEY_BYTES` (32 bytes / 256 bits) in both save and
-restore, raising `WeakIntegrityKeyError`."""
+restore, raising `WeakIntegrityKeyError`.
+
+## Antigravity Audit #077 remediation
+
+### Cross-run checkpoint ownership
+Independently reproduced before this fix: `restore_resumable_checkpoint()`
+never recorded, or checked, WHICH run a checkpoint was originally saved
+under -- `run_id` was used only to look up the anti-rollback ledger
+(Audit #075), never bound into the checkpoint's own manifest. A
+checkpoint saved under one `run_id` could therefore be restored under
+an entirely DIFFERENT `run_id` with no explicit authorization at all,
+as long as `config_fingerprint`/`dataset_identity` happened to match
+(e.g. the same model/dataset, re-authorized under a fresh grant) --
+nothing in this module's governance contract declared this an
+intended, permitted capability, and nothing required a separately
+authorized path for it.
+
+**Fixed**: the manifest now carries `owning_run_id` (the `run_id` the
+checkpoint was SAVED under), HMAC-bound exactly like every other
+tagged field -- it cannot be forged without `integrity_key`.
+`restore_resumable_checkpoint()` now REQUIRES `manifest.owning_run_id
+== run_id` by default; a mismatch raises `CrossRunCheckpointAccessError`,
+binding checkpoint ownership to the verified run for normal
+restoration. A new, explicitly named `allow_cross_run_migration: bool
+= False` parameter exists for a genuinely intended migration (an
+operator-driven tool, never exposed over any untrusted IPC surface in
+this codebase) -- the default remains closed, and no caller silently
+gets migration by merely supplying a different `run_id`. This does not
+weaken, replace, or bypass the existing HMAC integrity tag or the
+anti-rollback ledger check in any way -- it is an additional,
+independent check alongside them."""
 from __future__ import annotations
 
 import fcntl
@@ -194,7 +224,7 @@ from orca.config import _mkdir_owner_only
 from orca.genesis.training.checkpoint_integrity import ChecksumMismatchError, _sha256_of_file
 from orca.genesis.training.primitives import TrainingState, load_training_state, save_training_state
 
-RESUMABLE_SCHEMA_VERSION = "genesis-resumable-checkpoint/2"  # Audit #074 P0-04: now includes an HMAC integrity tag
+RESUMABLE_SCHEMA_VERSION = "genesis-resumable-checkpoint/3"  # AUDIT-077 Phase 2: now also binds owning_run_id (see CrossRunCheckpointAccessError)
 LEDGER_SCHEMA_VERSION = "genesis-checkpoint-ledger/1"  # Audit #075 P0-04: anti-rollback monotonic ledger
 MIN_INTEGRITY_KEY_BYTES = 32  # Audit #075: minimum acceptable HMAC key strength (256 bits)
 
@@ -244,6 +274,15 @@ class WeakIntegrityKeyError(Exception):
     silently accepting a 1-byte key with no real HMAC security margin."""
 
 
+class CrossRunCheckpointAccessError(Exception):
+    """AUDIT-077 Phase 2: raised by `restore_resumable_checkpoint()`
+    when the checkpoint's own HMAC-bound `owning_run_id` does not match
+    the `run_id` the restore is being performed under, UNLESS the
+    caller explicitly passes `allow_cross_run_migration=True`. See the
+    module docstring, "Cross-run checkpoint ownership", for why this
+    exists and what it does and does not authorize."""
+
+
 def compute_config_fingerprint(*objs: object) -> str:
     """A single, deterministic SHA-256 over any number of JSON-
     serializable config objects (dataclasses, via `asdict`, or plain
@@ -277,6 +316,7 @@ class DatasetIdentity:
 _TAGGED_FIELDS = (
     "schema_version", "inner_checkpoint_sha256", "global_step", "microbatch_in_cycle",
     "sampler_position", "sampler_seed", "sampler_num_blocks", "config_fingerprint", "dataset_identity",
+    "owning_run_id",
 )
 
 
@@ -300,6 +340,7 @@ class ResumableManifest:
     sampler_num_blocks: int
     config_fingerprint: str
     dataset_identity: DatasetIdentity
+    owning_run_id: str  # AUDIT-077 Phase 2: the run_id this checkpoint was SAVED under; HMAC-bound, checked on restore unless migration is explicitly requested
     integrity_tag: str  # Audit #074 P0-04: HMAC-SHA256 over every field above, keyed by the caller's integrity_key
 
     def _tagged_fields_dict(self) -> dict:
@@ -457,7 +498,7 @@ def save_resumable_checkpoint(
                 "global_step": global_step, "microbatch_in_cycle": microbatch_in_cycle,
                 "sampler_position": sampler_position, "sampler_seed": sampler_seed,
                 "sampler_num_blocks": sampler_num_blocks, "config_fingerprint": config_fingerprint,
-                "dataset_identity": asdict(dataset_identity),
+                "dataset_identity": asdict(dataset_identity), "owning_run_id": run_id,
             }
             manifest = ResumableManifest(
                 **{k: v for k, v in tagged_fields.items() if k != "dataset_identity"},
@@ -501,6 +542,7 @@ class RestoredRun:
 def restore_resumable_checkpoint(
     *, path: Path, expected_config_fingerprint: str, expected_dataset_identity: DatasetIdentity,
     expected_sampler_seed: int, expected_sampler_num_blocks: int, integrity_key: bytes, run_id: str,
+    allow_cross_run_migration: bool = False,
 ) -> RestoredRun:
     """The trusted, fail-closed restore boundary. Verifies, IN ORDER,
     before applying anything:
@@ -531,7 +573,12 @@ def restore_resumable_checkpoint(
        anti-rollback ledger (stored OUTSIDE this checkpoint's own
        directory -- see `_ledger_path()`'s docstring for its explicit,
        honest scope): restoring a checkpoint older than the highest
-       step this run has already recorded raises `CheckpointRollbackError`."""
+       step this run has already recorded raises `CheckpointRollbackError`.
+    7. **(AUDIT-077 Phase 2)** The manifest's own HMAC-bound
+       `owning_run_id` (the `run_id` it was SAVED under) must equal the
+       `run_id` this restore is being performed under, UNLESS the
+       caller explicitly passes `allow_cross_run_migration=True` -- see
+       the module docstring, "Cross-run checkpoint ownership"."""
     _require_strong_integrity_key(integrity_key)
     if not run_id:
         raise ValueError("run_id is required and must be non-empty -- Audit #075 P0-04 checks this run's own anti-rollback ledger")
@@ -539,12 +586,37 @@ def restore_resumable_checkpoint(
     manifest_path = _resumable_manifest_path(path)
     if not manifest_path.exists():
         raise ResumableManifestTamperedError(f"no resumable manifest found at {manifest_path} for checkpoint {path}")
-    manifest = ResumableManifest.from_dict(json.loads(manifest_path.read_text()))
-    if manifest.schema_version != RESUMABLE_SCHEMA_VERSION:
+    try:
+        raw_manifest = json.loads(manifest_path.read_text())
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise ResumableManifestTamperedError(f"resumable manifest at {manifest_path} is not valid JSON -- refusing to trust it: {e}") from e
+
+    # AUDIT-077 Phase 6: the schema_version check MUST happen on the raw,
+    # untrusted dict -- BEFORE ever attempting to construct a
+    # `ResumableManifest` from it. A legacy (pre-Audit-077) schema-v1/v2
+    # manifest lacks `owning_run_id` entirely; constructing the
+    # dataclass directly from such a dict previously raised a bare,
+    # unintentional-looking `TypeError` (a missing constructor argument)
+    # instead of a clean, deliberate rejection -- independently
+    # reproduced before this fix. Every unrecognized or legacy
+    # schema_version, including one from a manifest this code cannot
+    # even fully parse into today's shape, is now rejected the SAME way:
+    # fail closed, with the SAME `ResumableManifestTamperedError`, never
+    # a generic crash that could be mistaken for a bug rather than the
+    # deliberate boundary it is. An old manifest's own HMAC tag (computed
+    # under a DIFFERENT, no-longer-current field set) could never
+    # validate against today's `_TAGGED_FIELDS` shape regardless -- this
+    # check simply makes that rejection explicit and legible rather than
+    # accidental.
+    if not isinstance(raw_manifest, dict) or raw_manifest.get("schema_version") != RESUMABLE_SCHEMA_VERSION:
         raise ResumableManifestTamperedError(
-            f"resumable manifest at {manifest_path} declares schema_version={manifest.schema_version!r}, "
-            f"but this code only understands {RESUMABLE_SCHEMA_VERSION!r}"
+            f"resumable manifest at {manifest_path} declares schema_version="
+            f"{raw_manifest.get('schema_version') if isinstance(raw_manifest, dict) else '<not a JSON object>'!r}, "
+            f"but this code only understands {RESUMABLE_SCHEMA_VERSION!r} -- a legacy or unrecognized schema "
+            f"version is never authenticated against today's field set and is always rejected, fail-closed, "
+            f"rather than partially parsed"
         )
+    manifest = ResumableManifest.from_dict(raw_manifest)
 
     expected_tag = _compute_integrity_tag(integrity_key, manifest._tagged_fields_dict())
     if not hmac.compare_digest(expected_tag, manifest.integrity_tag):
@@ -577,6 +649,22 @@ def restore_resumable_checkpoint(
             f"cannot safely resume from {path}: the live setup does not exactly match what this "
             f"checkpoint was saved under -- mismatched field(s): {mismatches}. Exact resumption is "
             f"not possible; this is a fail-closed rejection, not a best-effort partial resume."
+        )
+
+    # AUDIT-077 Phase 2: cross-run checkpoint ownership. Independently
+    # reproduced before this fix: a checkpoint saved under one run_id
+    # could be restored under a DIFFERENT run_id with no explicit
+    # authorization at all, as long as config_fingerprint/dataset_
+    # identity happened to match (e.g. the same model/dataset, just a
+    # different authorized grant) -- nothing in this module's own
+    # governance contract previously declared this permitted, and
+    # nothing required a separate authorization for it.
+    if manifest.owning_run_id != run_id and not allow_cross_run_migration:
+        raise CrossRunCheckpointAccessError(
+            f"checkpoint at {path} was saved under run_id {manifest.owning_run_id!r}, but this restore is "
+            f"being performed under run_id {run_id!r} -- for NORMAL restoration, checkpoint ownership is "
+            f"bound to the run that created it. If this is a genuinely intended migration, the caller must "
+            f"explicitly pass allow_cross_run_migration=True -- a different run_id is never silently accepted."
         )
 
     training_state = load_training_state(path)

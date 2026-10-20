@@ -341,6 +341,12 @@ def test_restart_equivalence_against_uninterrupted_training(tmp_path):
     sock_dir = Path(tempfile.mkdtemp(prefix="isow-restarteq-"))
     integrity_key = secrets.token_bytes(32)
     dataset_digest = _digest("restarteq-dataset")
+    fp = compute_config_fingerprint(model_cfg, step_cfg)
+    identity = DatasetIdentity(dataset_manifest_id="e2e-manifest", dataset_content_digest=dataset_digest, tokenizer_digest=tok_digest)
+    held_out_seed = 9973
+    held_out_chain = _chain(held_out_seed, SEQ_LEN + 1)
+    held_out_inp = torch.tensor([held_out_chain[:-1]], dtype=torch.long)
+    held_out_targets = held_out_chain[1:]
 
     def _build(run_id: str, sock_name: str) -> IsolatedTrainingWorker:
         req, record, registry, tcd, ocd = _mint_grant_inputs(
@@ -389,7 +395,12 @@ def test_restart_equivalence_against_uninterrupted_training(tmp_path):
 
     # ---- Run 2: CHECKPOINTED AND RESTARTED -- identical batch sequence, split across two workers ----
     sampler_resumed = ReproducibleSampler(num_blocks=len(dataset), seed=99)  # SAME seed -> identical batch order
-    worker_a = _build("restarteq-a", "a.sock")
+    # AUDIT-077 Phase 2: worker_a and worker_b represent ONE logical
+    # restarted run -- they must share the SAME run_id (checkpoint
+    # ownership is now bound to it) even though each spawn still mints
+    # its own, separately authorized grant (a fresh authorization_id).
+    resumed_run_id = "restarteq-resumed"
+    worker_a = _build(resumed_run_id, "a.sock")
     client_a = worker_a.client()
     client_a.connect()
     ckpt_mid = str(workspace / "ckpt_mid.pt")
@@ -408,7 +419,26 @@ def test_restart_equivalence_against_uninterrupted_training(tmp_path):
         client_a.close()
         worker_a.stop()
 
-    worker_b = _build("restarteq-b", "b.sock")
+    # Held-out eval BEFORE the resumed phase -- performed immediately after
+    # ckpt_mid is saved (and its ledger entry is the run's current high-water
+    # mark), since AUDIT-077 Phase 2's checkpoint-ownership binding means
+    # restoring this same, now-older checkpoint later (after ckpt_resumed has
+    # advanced the SAME run's ledger further) would correctly be rejected as
+    # a rollback -- a real property of the now-fixed anti-rollback ledger,
+    # not a workaround for it.
+    mid_restored = restore_resumable_checkpoint(
+        path=Path(ckpt_mid), expected_config_fingerprint=fp, expected_dataset_identity=identity,
+        expected_sampler_seed=99, expected_sampler_num_blocks=sampler_full.num_blocks,
+        integrity_key=integrity_key, run_id=resumed_run_id,
+    )
+    model_mid = GenesisTransformer(model_cfg)
+    model_mid.load_state_dict(mid_restored.training_state.model_state_dict)
+    model_mid.eval()
+    with torch.no_grad():
+        preds_before = model_mid(held_out_inp).argmax(dim=-1)[0].tolist()
+    accuracy_before = sum(1 for p, t in zip(preds_before, held_out_targets) if p == t) / len(held_out_targets)
+
+    worker_b = _build(resumed_run_id, "b.sock")
     client_b = worker_b.client()
     client_b.connect()
     try:
@@ -437,8 +467,6 @@ def test_restart_equivalence_against_uninterrupted_training(tmp_path):
     assert sampler_full.position == sampler_resumed.position, "sampler position must match exactly -- same seed, same batch count"
 
     # ---- Comparison: model parameters and optimizer state (TOLERANCE-based -- explicitly NOT "bit-identical") ----
-    fp = compute_config_fingerprint(model_cfg, step_cfg)
-    identity = DatasetIdentity(dataset_manifest_id="e2e-manifest", dataset_content_digest=dataset_digest, tokenizer_digest=tok_digest)
     restored_full = restore_resumable_checkpoint(
         path=Path(ckpt_full), expected_config_fingerprint=fp, expected_dataset_identity=identity,
         expected_sampler_seed=sampler_full.seed, expected_sampler_num_blocks=sampler_full.num_blocks,
@@ -447,7 +475,7 @@ def test_restart_equivalence_against_uninterrupted_training(tmp_path):
     restored_resumed = restore_resumable_checkpoint(
         path=Path(ckpt_resumed), expected_config_fingerprint=fp, expected_dataset_identity=identity,
         expected_sampler_seed=sampler_resumed.seed, expected_sampler_num_blocks=sampler_resumed.num_blocks,
-        integrity_key=integrity_key, run_id="restarteq-b",
+        integrity_key=integrity_key, run_id=resumed_run_id,
     )
     PARAM_ATOL = 1e-5  # explicit, stated tolerance -- NOT bit-identical equality
     model_full = GenesisTransformer(model_cfg)
@@ -482,28 +510,12 @@ def test_restart_equivalence_against_uninterrupted_training(tmp_path):
         f"probe loss diverged beyond the stated 1e-4 tolerance: full={loss_full}, resumed={loss_resumed}"
     )
 
-    # ---- Held-out evaluation, before AND after the resumed phase ----
-    held_out_seed = 9973
-    held_out_chain = _chain(held_out_seed, SEQ_LEN + 1)
-    inp = torch.tensor([held_out_chain[:-1]], dtype=torch.long)
-    targets = held_out_chain[1:]
-
-    model_mid = GenesisTransformer(model_cfg)
-    mid_restored = restore_resumable_checkpoint(
-        path=Path(ckpt_mid), expected_config_fingerprint=fp, expected_dataset_identity=identity,
-        expected_sampler_seed=99, expected_sampler_num_blocks=sampler_full.num_blocks,
-        integrity_key=integrity_key, run_id="restarteq-a",
-    )
-    model_mid.load_state_dict(mid_restored.training_state.model_state_dict)
-    model_mid.eval()
-    with torch.no_grad():
-        preds_before = model_mid(inp).argmax(dim=-1)[0].tolist()
-    accuracy_before = sum(1 for p, t in zip(preds_before, targets) if p == t) / len(targets)
-
+    # ---- Held-out evaluation, before (computed earlier, right after ckpt_mid
+    # was saved) AND after the resumed phase ----
     model_resumed.eval()
     with torch.no_grad():
-        preds_after = model_resumed(inp).argmax(dim=-1)[0].tolist()
-    accuracy_after = sum(1 for p, t in zip(preds_after, targets) if p == t) / len(targets)
+        preds_after = model_resumed(held_out_inp).argmax(dim=-1)[0].tolist()
+    accuracy_after = sum(1 for p, t in zip(preds_after, held_out_targets) if p == t) / len(held_out_targets)
 
     assert accuracy_after >= accuracy_before - 0.1, (
         f"held-out accuracy regressed after resumed training: before={accuracy_before:.2f}, after={accuracy_after:.2f}"

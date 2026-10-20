@@ -578,3 +578,59 @@ def test_audit075_simultaneous_old_checkpoint_and_old_ledger_replay_is_not_detec
         "if this assertion ever fails, the anti-rollback ledger has been independently anchored since this "
         "test was written -- update resumable_checkpoint.py's own 'Rollback protection' docstring accordingly"
     )
+
+
+def test_audit077_phase6_legacy_schema_v2_manifest_is_rejected_cleanly_not_a_typeerror(tmp_path):
+    """CTO final pre-freeze directive, item 6: a legacy (pre-AUDIT-077)
+    schema-v2 manifest -- lacking owning_run_id entirely -- must be
+    rejected with a clean, intentional ResumableManifestTamperedError,
+    never a bare TypeError from dataclass construction mismatch.
+    Independently reproduced before this fix: constructing
+    ResumableManifest directly from such a dict raised
+    'TypeError: __init__() missing 1 required positional argument:
+    owning_run_id' instead of a deliberate rejection."""
+    import json
+
+    engine, batch = _build_engine_and_run_steps(0)
+    ts = TrainingState.capture(step=5, epoch=0, dataloader_position=0, model=engine.model, optimizer=engine.optimizer)
+    ckpt_path = tmp_path / "legacy_ckpt.pt"
+    save_resumable_checkpoint(
+        path=ckpt_path, training_state=ts, global_step=5, microbatch_in_cycle=0,
+        sampler_position=0, sampler_seed=7, sampler_num_blocks=500,
+        config_fingerprint=FINGERPRINT, dataset_identity=DATASET_IDENTITY, integrity_key=KEY, run_id="legacy-schema-run",
+    )
+    manifest_path = ckpt_path.with_suffix(".pt.resumable.json")
+    manifest = json.loads(manifest_path.read_text())
+    manifest["schema_version"] = "genesis-resumable-checkpoint/2"
+    del manifest["owning_run_id"]  # the legacy v2 shape genuinely lacks this field
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(ResumableManifestTamperedError) as exc_info:
+        restore_resumable_checkpoint(
+            path=ckpt_path, expected_config_fingerprint=FINGERPRINT, expected_dataset_identity=DATASET_IDENTITY,
+            expected_sampler_seed=7, expected_sampler_num_blocks=500, integrity_key=KEY, run_id="legacy-schema-run",
+        )
+    assert "schema_version" in str(exc_info.value)
+    assert "genesis-resumable-checkpoint/2" in str(exc_info.value)
+
+
+def test_audit077_phase6_malformed_non_json_manifest_is_rejected_cleanly(tmp_path):
+    """A manifest file that isn't even valid JSON must also fail
+    cleanly (ResumableManifestTamperedError), not with a raw
+    json.JSONDecodeError bubbling up uncaught."""
+    engine, batch = _build_engine_and_run_steps(0)
+    ts = TrainingState.capture(step=5, epoch=0, dataloader_position=0, model=engine.model, optimizer=engine.optimizer)
+    ckpt_path = tmp_path / "malformed_ckpt.pt"
+    save_resumable_checkpoint(
+        path=ckpt_path, training_state=ts, global_step=5, microbatch_in_cycle=0,
+        sampler_position=0, sampler_seed=7, sampler_num_blocks=500,
+        config_fingerprint=FINGERPRINT, dataset_identity=DATASET_IDENTITY, integrity_key=KEY, run_id="malformed-run",
+    )
+    manifest_path = ckpt_path.with_suffix(".pt.resumable.json")
+    manifest_path.write_text("{not valid json!!")
+
+    with pytest.raises(ResumableManifestTamperedError):
+        restore_resumable_checkpoint(
+            path=ckpt_path, expected_config_fingerprint=FINGERPRINT, expected_dataset_identity=DATASET_IDENTITY,
+            expected_sampler_seed=7, expected_sampler_num_blocks=500, integrity_key=KEY, run_id="malformed-run",
+        )
