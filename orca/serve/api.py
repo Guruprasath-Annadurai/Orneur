@@ -96,6 +96,33 @@ _logger = logging.getLogger("orca.serve")
 
 _RETENTION_INTERVAL_S = 6 * 3600
 
+# AUDIT-B81-A-P2-03: asyncio.create_task(...) alone does NOT keep a task
+# alive -- the event loop only holds a WEAK reference, so a task with no
+# other reference anywhere can be garbage-collected mid-execution, which
+# is exactly what "Task was destroyed but it is pending!" means. This set
+# is the strong reference every fire-and-forget background task needs;
+# the done-callback removes it once finished (success or failure) so the
+# set doesn't grow unbounded, and surfaces a genuine exception instead of
+# letting asyncio's default "exception was never retrieved" warning be
+# the only trace of it.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _track_background_task(coro, *, name: str) -> asyncio.Task:
+    task = asyncio.create_task(coro, name=name)
+    _background_tasks.add(task)
+
+    def _on_done(t: asyncio.Task) -> None:
+        _background_tasks.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            _logger.error("background task %r failed", name, exc_info=exc)
+
+    task.add_done_callback(_on_done)
+    return task
+
 
 async def _retention_loop():
     """Workstream B: honour each user's conversation-retention setting. Never lets one failure stop the loop or the server."""
@@ -116,6 +143,20 @@ async def _lifespan(_app: FastAPI):
         yield
     finally:
         _retention_task.cancel()
+        # AUDIT-B81-A-P2-03: truthful shutdown visibility, not a claim of
+        # termination. A tracked task wraps asyncio.to_thread, and
+        # cancelling the asyncio.Task only stops AWAITING its result --
+        # it does not and cannot stop the underlying OS thread already
+        # running synchronous code (Python has no safe primitive for
+        # that). Logging what's still outstanding is honest; pretending
+        # cancel() stopped it would not be.
+        if _background_tasks:
+            _logger.warning(
+                "shutdown: %d background task(s) still in flight and cannot be force-terminated "
+                "(underlying thread work continues independently of this process's shutdown): %s",
+                len(_background_tasks),
+                [t.get_name() for t in _background_tasks],
+            )
     # Clean shutdown for the bounded streaming worker pool (DEF-CP1-01).
     # wait=False: blocking the event loop here to join every worker would
     # itself hang shutdown behind a slow backend call -- the same class of
@@ -934,6 +975,19 @@ async def serve_trust():
     if trust.exists():
         return HTMLResponse(trust.read_text())
     return HTMLResponse("<h1>Orneur trust page not found</h1>")
+
+
+@app.get("/conversation", response_class=HTMLResponse)
+async def serve_conversation_shell():
+    """B01/B02/B03 founder-approved conversation experience (separate from
+    the pre-existing /app page, which is left unmodified -- preserving its
+    existing functionality -- while this route hosts the new, approved
+    visual design wired to the SAME real backend endpoints /app already
+    uses)."""
+    page = WEB_DIR / "conversation.html"
+    if page.exists():
+        return HTMLResponse(page.read_text())
+    return HTMLResponse("<h1>Orneur conversation UI not found</h1>")
 
 
 def _brand_asset(role: str) -> Optional[Path]:
@@ -1782,10 +1836,15 @@ async def stream_chat(
         # too would be pure UX cost for a background-enrichment feature.
         # Failures here are silent by design (extract_and_add never raises)
         # and don't affect the conversation that already completed.
-        asyncio.create_task(asyncio.to_thread(
-            sess.knowledge_graph.extract_and_add,
-            f"{req.message}\n{full}", "chat", sess.brain,
-        ))
+        # AUDIT-B81-A-P2-03: tracked via _track_background_task so the task
+        # holds a strong reference and can't be garbage-collected mid-run.
+        _track_background_task(
+            asyncio.to_thread(
+                sess.knowledge_graph.extract_and_add,
+                f"{req.message}\n{full}", "chat", sess.brain,
+            ),
+            name=f"kg_extract:{sess.id}",
+        )
 
         # Citation compliance: mechanical check, not just a prompt instruction.
         # If document context was available and the response cited zero
