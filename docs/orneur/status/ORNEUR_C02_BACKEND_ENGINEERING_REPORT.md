@@ -127,4 +127,6 @@ All fixes independently regression-tested: `tests/test_mission_api.py` grew from
 
 **PARTIAL.** A real, tested, authenticated API surface now exists for mission creation, validated planning, permission requests, and approval/denial decisions, with the six CTO-identified P0/P1 defects independently reproduced and fixed — built entirely on the pre-existing, mature `orca.mission` domain layer (plus one additive, backward-compatible schema migration for cancellation truth), with no reimplementation of its already-correct authorization/idempotency logic. Live execution streaming, the full C02/B01–B16 frontend, and the live-Neon test file's actual execution (no credentials available) remain open and explicitly enumerated — not claimed done here.
 
+**Immutable commit SHA for the CTO review corrections**: `a5c29400342f1b42f21228cda2105c11aef62b7a`. **Observed exact-head CI**: GitHub Actions run [`39781468599`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39781468599), `headSha` confirmed equal to `a5c2940...`, conclusion `success`.
+
 No merge, no tag, no training, no GPU/paid infrastructure provisioning, no founder-approved-design modification occurred in this phase.
