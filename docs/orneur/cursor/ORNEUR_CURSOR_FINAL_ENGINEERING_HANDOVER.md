@@ -31,7 +31,7 @@ Not removed: audited security checks. Not changed: acceptance ledger, authorizat
 
 ## 3. Verification
 
-Base: `97582a94efcb93dda6c4e8a8c89e457f446a5af2`.
+Base: `97582a94efcb93dda6c4e8a8c89e457f446a5af2`. Implementation commit: `4398150a41af424e1d04c7e83d314c6ef4b1ca17`.
 
 Local commands (Asia/Calcutta date 22 October 2026, UTC machine clock):
 
@@ -55,7 +55,7 @@ python3 -m pytest tests/test_genesis_resumable_checkpoint.py tests/test_genesis_
 
 No skip was required in those local runs because Torch and SentencePiece were installed. In GitHub's deterministic job, the three Torch files skip via `importorskip` and are listed on `torch-loss-tests` so they still execute. No xfail was added.
 
-CI URL: fill in after the push of this branch. Do not cite run `39759240669`; that run is the base branch, not this diff.
+CI URL: not yet attached. Do not cite run `39759240669`; that run is the base branch, not this diff. The pull request records the Actions run for the pushed head.
 
 ## 4. Readiness, kept separate
 

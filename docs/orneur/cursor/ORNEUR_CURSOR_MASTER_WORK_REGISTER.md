@@ -2,7 +2,7 @@
 
 Owner: Cursor. Base SHA: `97582a94efcb93dda6c4e8a8c89e457f446a5af2`. Branch: `cursor/orneur-pretraining-foundation-p0-4e55`.
 
-The implementation commit SHA is the commit that adds this file. Formal acceptance is unchanged: `pretraining=95 numerator=0`.
+Implementation commit: `4398150a41af424e1d04c7e83d314c6ef4b1ca17`. Formal acceptance is unchanged: `pretraining=95 numerator=0`.
 
 | Task | Priority | Status | Source | Tests | Blocker |
 |---|---|---|---|---|---|

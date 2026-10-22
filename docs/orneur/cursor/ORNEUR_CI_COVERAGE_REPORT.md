@@ -30,4 +30,4 @@ The other `tests/test_cursor_*.py` files do not import Torch. The deterministic 
 
 ## GitHub
 
-The exact-head Actions URL is not available until this branch is pushed. It will be added to the handover when the run exists. A green badge on a different SHA is not evidence for this change.
+Implementation commit `4398150a41af424e1d04c7e83d314c6ef4b1ca17` is the code under test. A green badge on a different SHA, including base run `39759240669`, is not evidence for this diff. The Actions URL for the pushed head belongs in the pull request once that run exists.
