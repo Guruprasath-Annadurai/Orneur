@@ -55,14 +55,22 @@ python3 -m pytest tests/test_genesis_resumable_checkpoint.py tests/test_genesis_
 
 No skip was required in those local runs because Torch and SentencePiece were installed. In GitHub's deterministic job, the three Torch files skip via `importorskip` and are listed on `torch-loss-tests` so they still execute. No xfail was added.
 
-CI URL: not yet attached. Do not cite run `39759240669`; that run is the base branch, not this diff. The pull request records the Actions run for the pushed head.
+Exact-head CI for `3185d0a4760d9cf43b66353e1bb2fd2e99108958`: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39773008463
+
+Push event. Conclusion success. Created 22 October 2026, 17:15 Asia/Calcutta. Completed 22 October 2026, 17:32 Asia/Calcutta. All 9 jobs succeeded. Do not cite run `39759240669`; that run is the base branch, not this diff.
+
+Torch job `119804937804`: `549 passed, 3 deselected` in 263.84s. The 3 deselections are the pre-existing audit #077 demonstrations. All 27 cursor math, keyed-cache, and multilingual cases in that job passed.
+
+Deterministic job `119804937373`: `8948 passed, 389 skipped, 43 deselected, 7 xfailed` in 1011.25s. The 53 non-torch cursor cases passed there. The three torch cursor files were not executed in that job; they executed in the torch job.
+
+No xfail was added. No assertion was weakened. Known intermittent failures: none observed on this run.
 
 ## 4. Readiness, kept separate
 
 | Question | Assessment |
 |---|---|
 | Software implementation | Partial. The gaps in the work register are coded. Large parts of the 95-row register are hardware, custody, or review. |
-| Test qualification | Local pass on the suites above. GitHub exact-head not yet attached. |
+| Test qualification | Local pass on the suites above. GitHub run `39773008463` on `3185d0a` succeeded, including the torch job that executed the math, cache, and multilingual cases. |
 | Independent security qualification | Not done. Cursor is the author. |
 | Dataset provenance | Machinery only. No authorized corpus. |
 | Evaluation readiness | Synthetic harness only. Private holdout not created. |
@@ -75,7 +83,7 @@ CI URL: not yet attached. Do not cite run `39759240669`; that run is the base br
 
 | Owner | Work |
 |---|---|
-| Cursor, still open | Exact-head CI for this SHA. A second clean environment rebuild was not done. Supply-chain lock refresh was not attempted. |
+| Cursor, still open | A second clean environment rebuild was not done. Supply-chain lock refresh was not attempted. Exact-head CI for the implementation docs head `3185d0a` is recorded above. |
 | Claude | C02 mission API and the founder-approved frontend. Do not duplicate. |
 | Independent auditor | Review of this diff and of the still-unmerged GENESIS line. |
 | Founder | Acceptance signatures, training grant, corpus custody, hardware decision, any external anchor. |
@@ -83,6 +91,6 @@ CI URL: not yet attached. Do not cite run `39759240669`; that run is the base br
 
 ## 6. Next engineering batch
 
-1. Read the GitHub log for this SHA and fix any real failure without weakening an assertion.
+1. The GitHub log for `3185d0a` was read. The run succeeded. Do not weaken an assertion if a later run fails.
 2. If a cache key custody path is specified by the founder, require keyed mode for any future authorized run. Do not invent the key.
 3. Leave checkpoint confinement and C02 alone unless a new, reproduced defect appears.

@@ -2,7 +2,7 @@
 
 Owner: Cursor. Base SHA: `97582a94efcb93dda6c4e8a8c89e457f446a5af2`. Branch: `cursor/orneur-pretraining-foundation-p0-4e55`.
 
-Implementation commit: `4398150a41af424e1d04c7e83d314c6ef4b1ca17`. Formal acceptance is unchanged: `pretraining=95 numerator=0`.
+Implementation commit: `4398150a41af424e1d04c7e83d314c6ef4b1ca17`. The GitHub run that executed that code is on docs head `3185d0a4760d9cf43b66353e1bb2fd2e99108958`: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39773008463 (success, 9/9, completed 22 October 2026, 17:32 Asia/Calcutta). Formal acceptance is unchanged: `pretraining=95 numerator=0`.
 
 | Task | Priority | Status | Source | Tests | Blocker |
 |---|---|---|---|---|---|
@@ -14,7 +14,7 @@ Implementation commit: `4398150a41af424e1d04c7e83d314c6ef4b1ca17`. Formal accept
 | F06 model-family contracts | P1 | Tested locally. | `orca/genesis/model/family_registry.py` | `tests/test_cursor_model_family.py` | No checkpoint is registered as trained. |
 | F07 security residuals | P0 | Keyed cache and fail-closed anchor added. Checkpoint remediation not reopened. | `loader.py`, `orca/genesis/training/external_anchor.py` | keyed-cache and external-anchor tests | Same-uid worker isolation was already implemented and was not edited. No external witness exists. |
 | F08 reproducibility | P0 | Partial. Preflight prints git SHA and the register line. | `scripts/cursor/pretraining_preflight.py` | manual run recorded in the handover | No new hash-locked training extra. No second clean-room rebuild in this session. |
-| F09 CI | P0 | Workflow list extended. GitHub run follows the push. | `.github/workflows/test.yml` `torch-loss-tests` | torch job runs the three torch-dependent cursor files. The others collect in the deterministic job. | Exact-head CI URL is not known until the push. |
+| F09 CI | P0 | Workflow list extended. Exact-head run succeeded. | `.github/workflows/test.yml` `torch-loss-tests` | Torch job `119804937804`: 27 cursor math/cache/multilingual cases passed inside `549 passed, 3 deselected`. Deterministic job: 53 non-torch cursor cases passed inside `8948 passed, 389 skipped, 43 deselected, 7 xfailed`. | https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39773008463 on `3185d0a4760d9cf43b66353e1bb2fd2e99108958`. The 3 deselections are the existing audit #077 demonstrations. |
 | F10 compute scenarios | P1 | Labels only. No measured throughput. | `orca/pretrain_foundation/compute_scenarios.py`. Existing `orca/genesis/model/scaling.py` unchanged. | `tests/test_cursor_compute_scenarios.py` | Hardware purchase is a founder decision. |
 | F11 agent substrate | P1 | Tested with in-process handlers. | `orca/pretrain_foundation/agents.py` | `tests/test_cursor_agent_orchestration.py` | Not connected to C02. Not 100 model workers. |
 | F12 fault injection | P1 | Tested for local atomic publish. | `orca/pretrain_foundation/faults.py` | `tests/test_cursor_fault_injection.py` | Does not replace checkpoint fault tests already on the base. |

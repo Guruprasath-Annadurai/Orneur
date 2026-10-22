@@ -30,4 +30,30 @@ The other `tests/test_cursor_*.py` files do not import Torch. The deterministic 
 
 ## GitHub
 
-Implementation commit `4398150a41af424e1d04c7e83d314c6ef4b1ca17` is the code under test. A green badge on a different SHA, including base run `39759240669`, is not evidence for this diff. The Actions URL for the pushed head belongs in the pull request once that run exists.
+Verified head: `3185d0a4760d9cf43b66353e1bb2fd2e99108958`.
+
+That commit records the implementation SHA. The code under test is `4398150a41af424e1d04c7e83d314c6ef4b1ca17`. A green badge on a different SHA, including base run `39759240669`, is not evidence for this diff.
+
+Run: https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39773008463
+
+Event: push. Conclusion: success. Created 22 October 2026, 17:15 Asia/Calcutta. Completed 22 October 2026, 17:32 Asia/Calcutta. Nine jobs, all success.
+
+| Job | Result |
+|---|---|
+| Deterministic Unit Tests (`119804937373`) | success. `8948 passed, 389 skipped, 43 deselected, 7 xfailed` in 1011.25s. |
+| Dependency Vulnerability Scan (informational, base install only) | success |
+| Genesis V2 Security (encryption tests must execute) | success |
+| RSE dependency lock and vulnerability scan | success |
+| SSE Diagnostics (browser-loaded module, zero payload leakage) | success |
+| Genesis V2 Sandbox (containment tests must execute) | success |
+| Training Math Unit Tests (Torch) (`119804937804`) | success. `549 passed, 3 deselected` in 263.84s. |
+| Production Container Build + Boot Smoke | success |
+| RSE Docker Synthetic Integration Lab (bounded, exit-code enforced) | success |
+
+The three deselections in the torch job are the pre-existing audit #077 vulnerability demonstrations named in `.github/workflows/test.yml`. They are not cursor tests.
+
+In that torch job, every case in `tests/test_cursor_training_math.py`, `tests/test_cursor_keyed_cache.py`, and `tests/test_cursor_tokenizer_multilingual.py` passed (27 cases).
+
+In the deterministic job, the non-torch cursor files produced 53 `PASSED` lines: pipeline admission, tokenizer robustness, model family, eval integrity, external anchor, agent orchestration, fault injection, and compute scenarios. The three torch files did not appear as executed cases in that log. They run in the torch job.
+
+No assertion was weakened to obtain this result. Acceptance remains `pretraining=95 numerator=0`.
