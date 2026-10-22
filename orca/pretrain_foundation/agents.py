@@ -42,6 +42,14 @@ class IdempotencyConflict(OrchestratorError):
     """
 
 
+class TaskIdentityConflict(OrchestratorError):
+    """A task id is already registered and cannot be reused.
+
+    The error does not name the existing task's agent, handler, payload,
+    or idempotency key.
+    """
+
+
 class ResultRejected(OrchestratorError):
     """Handler output failed the result contract. The task is not a success."""
 
@@ -152,6 +160,8 @@ class Orchestrator:
                 raise UnknownTask(f"dependency {dep} is not a known task")
         if spec.parent_task_id is not None and spec.parent_task_id not in self.tasks:
             raise UnknownTask(f"parent task {spec.parent_task_id} is not known")
+        if spec.task_id in self.tasks:
+            raise TaskIdentityConflict("task id is already registered")
         self.tasks[spec.task_id] = TaskState(spec=spec, status="QUEUED")
         self.idempotency[spec.idempotency_key] = _IdempotencyBinding(
             agent_id=spec.agent_id,

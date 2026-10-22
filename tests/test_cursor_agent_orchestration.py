@@ -13,6 +13,7 @@ from orca.pretrain_foundation.agents import (
     QueueSaturated,
     ResultRejected,
     ShutdownError,
+    TaskIdentityConflict,
     TaskSpec,
     TaskState,
 )
@@ -183,6 +184,110 @@ def test_idempotency_key_is_bound_to_principal_and_intent():
     assert victim_task not in f"{denied.value} {denied.value!r}"
     assert orch.tasks[victim_task].status == "QUEUED"
     assert len(orch.tasks) == 1
+
+
+def test_reused_task_id_with_a_new_key_does_not_overwrite():
+    calls = {"n": 0}
+
+    def handler(payload, ctx):
+        calls["n"] += 1
+        return {"echo": payload["n"]}
+
+    orch = _orch()
+    orch.register_handler("ok", handler, "read")
+    orch.register_handler("other", lambda payload, ctx: {"ok": True}, "read")
+    orch.register_handler("child-ok", lambda payload, ctx: {"ok": True}, "read")
+    orch.register_agent(AgentIdentity("other-agent", None, frozenset({"read"}), 5))
+    original = orch.submit(_task(
+        "T1",
+        agent_id="root",
+        handler="ok",
+        payload={"n": "original"},
+        idempotency_key="K1-SECRET",
+        cost_units=1,
+    ))
+    child = orch.submit(_task(
+        "child",
+        handler="child-ok",
+        idempotency_key="child-key",
+        parent_task_id="T1",
+        depends_on=("T1",),
+    ))
+    assert original == "T1"
+    assert orch.tasks["T1"].spec.payload == {"n": "original"}
+    assert orch.tasks["T1"].spec.handler == "ok"
+    assert orch.tasks["T1"].spec.idempotency_key == "K1-SECRET"
+    assert orch.spent["root"] == 2
+    assert orch.children["T1"] == [child]
+    binding = orch.idempotency["K1-SECRET"]
+
+    def _collision(**overrides):
+        spent_root = orch.spent["root"]
+        spent_other = orch.spent["other-agent"]
+        fields = {"idempotency_key": "K2", "payload": {"n": "original"}}
+        fields.update(overrides)
+        with pytest.raises(TaskIdentityConflict) as caught:
+            orch.submit(_task("T1", **fields))
+        text = f"{caught.value} {caught.value!r}"
+        assert "other-agent" not in text
+        assert "K1-SECRET" not in text
+        assert "root" not in text
+        assert orch.tasks["T1"].spec.payload == {"n": "original"}
+        assert orch.tasks["T1"].spec.handler == "ok"
+        assert orch.tasks["T1"].spec.agent_id == "root"
+        assert orch.tasks["T1"].spec.idempotency_key == "K1-SECRET"
+        assert orch.tasks["T1"].status == "QUEUED"
+        assert orch.idempotency["K1-SECRET"] == binding
+        assert "K2" not in orch.idempotency
+        assert orch.spent["root"] == spent_root
+        assert orch.spent["other-agent"] == spent_other
+        assert orch.children["T1"] == [child]
+        assert len(orch.tasks) == 2
+
+    _collision()
+    _collision(payload={"n": "changed"})
+    _collision(handler="other")
+    _collision(agent_id="other-agent", payload={"n": "stolen"})
+
+    replay = orch.submit(_task(
+        "retry-id",
+        idempotency_key="K1-SECRET",
+        payload={"n": "original"},
+    ))
+    assert replay == "T1"
+    assert calls["n"] == 0
+    orch.run_until_idle()
+    assert calls["n"] == 1
+    assert orch.tasks["T1"].status == "SUCCEEDED"
+    result = dict(orch.tasks["T1"].result)
+    spent_after_success = orch.spent["root"]
+    with pytest.raises(TaskIdentityConflict):
+        orch.submit(_task("T1", idempotency_key="K3", payload={"n": "after-success"}))
+    assert orch.tasks["T1"].status == "SUCCEEDED"
+    assert orch.tasks["T1"].result == result
+    assert orch.spent["root"] == spent_after_success
+    assert "K3" not in orch.idempotency
+
+    again = orch.submit(_task(
+        "retry-after-success",
+        idempotency_key="K1-SECRET",
+        payload={"n": "original"},
+    ))
+    assert again == "T1"
+    assert calls["n"] == 1
+
+    fresh = Orchestrator(max_concurrent=1, queue_bound=4)
+    fresh.register_agent(AgentIdentity("root", None, frozenset({"read"}), 4))
+    fresh.register_handler("ok", lambda payload, ctx: {"echo": 1}, "read")
+    fresh.submit(_task("T1", idempotency_key="K1-SECRET", payload={"n": "original"}))
+    fresh.cancel("T1")
+    assert fresh.tasks["T1"].status == "CANCELLED"
+    with pytest.raises(TaskIdentityConflict):
+        fresh.submit(_task("T1", idempotency_key="K4", payload={"n": "after-cancel"}))
+    assert fresh.tasks["T1"].status == "CANCELLED"
+    assert fresh.tasks["T1"].spec.payload == {"n": "original"}
+    assert fresh.spent["root"] == 1
+    assert "K4" not in fresh.idempotency
 
 
 def test_non_object_result_is_rejected_by_the_contract():

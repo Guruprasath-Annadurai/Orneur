@@ -27,6 +27,7 @@ Implementation commit: `4398150a41af424e1d04c7e83d314c6ef4b1ca17`. The GitHub ru
 |---|---|---|---|---|---|
 | HMAC key confidentiality | P0 | Local tests passed. Exact-head CI is the PR head after this commit. | `orca/genesis/data/loader.py` `CacheIntegrityKey` | `tests/test_cursor_keyed_cache.py::test_cache_integrity_key_is_absent_from_diagnostic_forms` | Keyed mode stays opt-in. No founder key was minted. |
 | Idempotency authority binding | P0 | Local tests passed. | `orca/pretrain_foundation/agents.py` `Orchestrator.submit` | `tests/test_cursor_agent_orchestration.py` | In-process state is still readable by the orchestrator holder. |
+| Task-id reuse | P0 | Reproduced on `7d66c72`, then rejected before any write. | `orca/pretrain_foundation/agents.py` `TaskIdentityConflict` | `tests/test_cursor_agent_orchestration.py::test_reused_task_id_with_a_new_key_does_not_overwrite` | The in-process maps remain readable by whoever holds the orchestrator. |
 | Corpus pathname substitution | P0 | Reproduced, then rejected with `O_NOFOLLOW` opens. | `orca/genesis/data/pipeline.py` | `tests/test_cursor_pipeline_admission.py` plus `tests/test_genesis_data_pipeline.py` | Ancestor symlinks above an input leaf are still followed when `allowed_root` is unset. Checkpoint confinement was not reopened. |
 
 Independent audit: required before any of this is treated as accepted. This register is not that audit. Handoff: `ORNEUR_ANTIGRAVITY_SECURITY_HANDOFF.md`.

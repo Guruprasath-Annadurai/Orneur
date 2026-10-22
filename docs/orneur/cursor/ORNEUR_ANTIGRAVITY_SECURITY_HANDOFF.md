@@ -28,6 +28,12 @@ A replay now returns that task id only when the agent id matches and the intent 
 
 A different agent raises `PermissionDenied`. A different handler, payload, dependency, parent, cost, or timeout raises `IdempotencyConflict`. A same-agent retry whose current permissions no longer include the handler permission raises `PermissionDenied`. Those errors do not include the original task id. The in-process `idempotency` dict still holds that id for the orchestrator owner.
 
+### Task-id reuse
+
+Reproduced on `7d66c721061c4d1a614c91ef38f95ea7aec91990` before the guard: `submit()` assigns `self.tasks[spec.task_id]` whenever the idempotency key is new. A second request with task id `T1` and key `K2` replaced `T1`'s handler, payload, and queued state, added a second idempotency binding, and charged the budget again. The first test run failed with `DID NOT RAISE TaskIdentityConflict`.
+
+`submit()` now raises `TaskIdentityConflict("task id is already registered")` before writing the task, the idempotency map, the child list, the trace, or the budget. The message does not include the existing agent id, handler, payload, or idempotency key. The same rejection applies to a different agent, a changed payload, a changed handler, and a task that has already succeeded or been cancelled. A same-key, same-intent retry still returns the original id and does not run the handler again.
+
 ### Corpus pathname substitution
 
 Reproduced before the fix, on this tree: planting `shard-0000-train.jsonl` as a symlink and calling `process_corpus` appended corpus JSON to the symlink target outside `output_dir`.
@@ -44,7 +50,7 @@ Python 3.12. Commands:
 python3 -m pytest tests/test_cursor_pipeline_admission.py tests/test_cursor_agent_orchestration.py tests/test_cursor_keyed_cache.py tests/test_genesis_data_pipeline.py tests/test_genesis_data_loader.py tests/test_audit_genesis_hardening_remediation.py::test_remediation_p0_03_same_size_tampering_is_detected_and_regenerated
 ```
 
-106 passed, including the cache-key diagnostic scan and the same-size shard tamper regression. No assertion was weakened. No xfail was added.
+On `7d66c72`, that command passed 106 tests. After the task-id guard, `tests/test_cursor_agent_orchestration.py` passed 11 tests, including `test_reused_task_id_with_a_new_key_does_not_overwrite`. The earlier failure on the unguarded code was `DID NOT RAISE TaskIdentityConflict`. No assertion was weakened. No xfail was added.
 
 ## Remaining risks for review
 
@@ -55,6 +61,6 @@ python3 -m pytest tests/test_cursor_pipeline_admission.py tests/test_cursor_agen
 | Same-uid worker isolation | `isolated_worker.py` was not edited. Same-uid peer credentials are not a kernel sandbox. |
 | Input ancestor symlinks | Followed when `allowed_root` is omitted. The leaf itself is not followed. |
 | Progress database | Opened with `O_NOFOLLOW`, then SQLite reopens the real path for its journal. A pre-planted symlink is refused. A same-uid swap after that open is outside this claim. |
-| In-process idempotency map | The mismatched caller does not receive the other task id from `submit()`. Code that already holds the `Orchestrator` can read the map. |
+| In-process idempotency map | A conflicting `submit()` does not return another agent's task id, and a reused task id is rejected without naming the current owner. Code that already holds the `Orchestrator` can still read `tasks` and `idempotency`. |
 | Checkpoint confinement | Not reopened. No new defect was reproduced there. |
 | Formal acceptance | Numerator remains 0 of 95. Training is not authorized. |
