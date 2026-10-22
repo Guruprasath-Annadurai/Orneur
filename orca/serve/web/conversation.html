@@ -12,9 +12,14 @@
    this repo's own copy of ORNEUR_UIUX_FINAL_CTO_REVIEW_HANDOFF(2).zip's
    manifest before use). Meridian Light is the :root default; Obsidian
    Dark is applied via body.dark -- exactly the locked pattern.
+   AUDIT-B81-A-P1-02: --error and --warn-text are per-theme because the
+   same hex can pass WCAG AA in one theme's card/chip background and fail
+   in the other's (e.g. #C94B4B is 4.54:1 on the light authcard but only
+   3.84:1 on the dark one) -- computed against var(--compose)/var(--chip)
+   as actually used, not asserted from the brand palette alone.
    ────────────────────────────────────────────────────────────────────── */
-:root{--bg:#F6F3EE;--ink:#27231E;--soft:#5F5A55;--muted:#696256;--border:#E4DED6;--line:#E9E3DD;--bubble:#EEEAE5;--compose:#FFFEFC;--chip:#F3F0EC;--rail:#121212;--shadow:rgba(50,45,40,.08);--head:#302D2A;--active:#FAF9F7;--accent:#3A4B6B;--coral:#FF6B57}
-body.dark{--bg:#080808;--ink:#F5F3EF;--soft:#AAA8A5;--muted:#93918D;--border:#303030;--line:#2A2A2A;--bubble:#1B1B1B;--compose:#191919;--chip:#191919;--rail:#101010;--shadow:rgba(0,0,0,.25);--head:#F5F3EF;--active:#242424}
+:root{--bg:#F6F3EE;--ink:#27231E;--soft:#5F5A55;--muted:#696256;--border:#E4DED6;--line:#E9E3DD;--bubble:#EEEAE5;--compose:#FFFEFC;--chip:#F3F0EC;--rail:#121212;--shadow:rgba(50,45,40,.08);--head:#302D2A;--active:#FAF9F7;--accent:#3A4B6B;--coral:#FF6B57;--error:#C94B4B;--warn-text:#8f4a00}
+body.dark{--bg:#080808;--ink:#F5F3EF;--soft:#AAA8A5;--muted:#93918D;--border:#303030;--line:#2A2A2A;--bubble:#1B1B1B;--compose:#191919;--chip:#191919;--rail:#101010;--shadow:rgba(0,0,0,.25);--head:#F5F3EF;--active:#242424;--error:#D96868;--warn-text:#e3a44c}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Arial,sans-serif}
 body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased}
@@ -33,7 +38,7 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .rec{min-height:35px;display:flex;align-items:center;padding:0 12px;color:#ADA9A5;font-size:13px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;border-radius:7px;cursor:pointer;border:none;background:none;width:100%;text-align:left;font-family:inherit}
 .rec:before{content:'•';margin-right:9px;color:#888}
 .rec.selected{background:#282828;color:#F5F3EF;font-weight:600}
-.recents-empty{color:#6b6b6b;font-size:12px;padding:6px 12px}
+.recents-empty{color:#909090;font-size:12px;padding:6px 12px}
 .sidebottom{margin-top:auto;border-top:1px solid #292929;padding-top:10px}
 .profile{gap:10px}
 .avatar{border:1px solid #525252;border-radius:50%;height:28px;width:28px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
@@ -74,10 +79,19 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .msg-actions button{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--muted);font-family:inherit;font-size:11.5px;cursor:pointer;padding:4px 0}
 .msg-actions button:hover{color:var(--ink)}
 .unavailable-note{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;border:1px solid var(--border);border-radius:9px;padding:9px 12px;background:var(--chip)}
-.interrupted-badge{display:inline-flex;align-items:center;gap:7px;color:#b35c00;font-size:12px;border:1px solid #e3a44c;border-radius:9px;padding:7px 11px;margin-top:10px;background:var(--chip)}
+.interrupted-badge{display:inline-flex;align-items:center;gap:7px;color:var(--warn-text);font-size:12px;border:1px solid #e3a44c;border-radius:9px;padding:7px 11px;margin-top:10px;background:var(--chip)}
 .thinking{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px}
 .dot-pulse{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:pulse 1.1s infinite ease-in-out}
 @keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+/* AUDIT-B81-A-P2-02: the pulsing dot and the sidebar's slide transition
+   are purely decorative motion -- the actual state (processing vs not,
+   drawer open vs closed) is already conveyed by the "Thinking"/model
+   text and by the drawer's final resting position, neither of which
+   this touches. A static, fully-visible dot keeps that state readable
+   without the animation. */
+@media (prefers-reduced-motion: reduce) {
+  .dot-pulse{animation:none;opacity:1}
+}
 
 /* Composer -- shared between B01 centered and B02 docked */
 .composer-wrap{flex-shrink:0;padding:0 0 22px}
@@ -101,9 +115,10 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .modelmenu{position:relative}
 .modelmenu-panel{display:none;position:absolute;bottom:40px;left:0;width:260px;background:var(--compose);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px var(--shadow);padding:6px;z-index:20}
 .modelmenu-panel.open{display:block}
-.modelopt{display:flex;flex-direction:column;gap:2px;padding:9px 10px;border-radius:8px;cursor:pointer}
-.modelopt:hover{background:var(--chip)}
-.modelopt.unavailable{opacity:.55;cursor:not-allowed}
+.modelopt{display:flex;flex-direction:column;gap:2px;padding:9px 10px;border-radius:8px;cursor:pointer;width:100%;text-align:left;background:none;border:none;font-family:inherit;color:inherit}
+.modelopt:hover,.modelopt:focus-visible{background:var(--chip)}
+.modelopt:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.modelopt.unavailable,.modelopt:disabled{opacity:.55;cursor:not-allowed}
 .modelopt .mname{font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px}
 .modelopt .mnote{font-size:11px;color:var(--muted)}
 
@@ -118,8 +133,9 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 .authtabs{display:flex;gap:6px;margin-bottom:16px}
 .authtabs button{flex:1;border:1px solid var(--border);background:none;border-radius:9px;padding:8px;font-size:12.5px;cursor:pointer;color:var(--soft);font-family:inherit}
 .authtabs button.active{background:var(--chip);color:var(--ink);font-weight:650}
-.autherr{color:#C94B4B;font-size:12px;min-height:16px;margin-bottom:6px}
-.authskip{text-align:center;margin-top:14px;font-size:12px;color:var(--muted);cursor:pointer}
+.autherr{color:var(--error);font-size:12px;min-height:16px;margin-bottom:6px}
+.authskip{display:block;width:100%;text-align:center;margin-top:14px;font-size:12px;color:var(--muted);cursor:pointer;background:none;border:none;font-family:inherit;padding:0}
+.authskip:focus-visible,.authtabs button:focus-visible,.authcard input:focus-visible,.authcard button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 .mobilemenu-btn{display:none;width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--soft);align-items:center;justify-content:center;margin-right:8px;cursor:pointer;flex-shrink:0}
 .sidebar-veil{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:39}
@@ -133,33 +149,41 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
   .reading-container{padding:16px 0}
   .composer{width:calc(100% - 32px)}
 }
+/* Placed after the mobile block so it wins the cascade on equal
+   specificity (source order, not just @media nesting, decides the
+   winner here) -- the drawer still opens/closes, just without the
+   animated slide, which is the actual state (open vs closed) the user
+   needs, not the motion itself. */
+@media (max-width:900px) and (prefers-reduced-motion: reduce){
+  .sidebar{transition:none}
+}
 </style>
 </head>
 <body class="dark">
 <div id="auth-overlay">
-  <div class="authcard">
+  <div class="authcard" id="authcard" role="dialog" aria-modal="true" aria-labelledby="auth-si-title" tabindex="-1">
     <div class="authtabs">
       <button id="tab-signin" class="active" onclick="switchAuthTab('signin')">Sign in</button>
       <button id="tab-signup" onclick="switchAuthTab('signup')">Create account</button>
     </div>
     <div id="form-signin">
-      <h1>Welcome back</h1>
+      <h1 id="auth-si-title">Welcome back</h1>
       <p class="sub">Sign in to continue your conversations.</p>
-      <div class="autherr" id="si-error"></div>
+      <div class="autherr" id="si-error" role="alert"></div>
       <input id="si-email" type="email" placeholder="Email" autocomplete="username"/>
       <input id="si-password" type="password" placeholder="Password" autocomplete="current-password"/>
       <button class="primary" id="si-btn" onclick="doLogin()">Sign in</button>
     </div>
     <div id="form-signup" style="display:none">
-      <h1>Create your account</h1>
+      <h1 id="auth-su-title">Create your account</h1>
       <p class="sub">Create an account to start a conversation.</p>
-      <div class="autherr" id="su-error"></div>
+      <div class="autherr" id="su-error" role="alert"></div>
       <input id="su-name" type="text" placeholder="Name"/>
       <input id="su-email" type="email" placeholder="Email" autocomplete="username"/>
       <input id="su-password" type="password" placeholder="Password (min 8 characters)" autocomplete="new-password"/>
       <button class="primary" id="su-btn" onclick="doSignup()">Create account</button>
     </div>
-    <div class="authskip" onclick="continueAnonymous()">Continue without an account</div>
+    <button type="button" class="authskip" id="auth-skip-btn" onclick="continueAnonymous()">Continue without an account</button>
   </div>
 </div>
 
@@ -260,6 +284,31 @@ body{background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing
 let _authToken = null, _authUser = null, _anonymous = false;
 let sessionId = null;
 let isStreaming = false;
+// AUDIT-B81-A-P1-01: every in-flight /api/stream request must prove it
+// still owns the view before it's allowed to mutate sessionId or the DOM.
+// _streamEpoch is bumped by any identity-changing navigation (new
+// conversation, switching conversations, logout) -- never by UI-only
+// changes like theme or the mobile drawer, which a live stream must
+// survive. A stale request's callbacks compare their captured epoch
+// against the current one and silently no-op once they no longer match;
+// this is what stops a delayed SSE event from overwriting a different
+// conversation's session id or appending content into a view the
+// request no longer belongs to.
+let _streamEpoch = 0;
+let _activeStreamController = null;
+function _abandonActiveStream() {
+  _streamEpoch++;
+  if (_activeStreamController) {
+    // Stops the browser from reading further response bytes. This does
+    // NOT prove the backend stopped generating or running tools -- see
+    // sendMessage()'s own terminalState handling, which never presents
+    // a client-side abort as a confirmed server-side cancellation.
+    try { _activeStreamController.abort(); } catch (e) {}
+    _activeStreamController = null;
+  }
+  isStreaming = false;
+  updateSendEnabled();
+}
 let selectedModelVariant = null;
 let _models = {};
 
@@ -298,8 +347,24 @@ function _sanitizeLinkHref(rawUrl) {
 
 function mdToHtml(md) {
   let h = esc(md);
-  h = h.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, c) => `<pre><code>${c.trim()}</code></pre>`);
-  h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // AUDIT-B81-A-P2-01: code regions are protected with a placeholder
+  // BEFORE any other inline substitution (bold/italic/links) runs, and
+  // restored only at the very end -- otherwise literal **bold**-looking
+  // or [link](...)-looking text inside a code example gets reinterpreted
+  // as real Markdown by the later regexes, since they don't know about
+  // HTML tag boundaries. The placeholder token is built from
+  // crypto.getRandomValues, a fresh unguessable value every call, not a
+  // fixed/predictable string, so untrusted model text can't be crafted
+  // to collide with it and break back out of a protected region.
+  const codeStore = [];
+  const nonce = 'ORNEURCODE' + Array.from(crypto.getRandomValues(new Uint32Array(3))).map((n) => n.toString(36)).join('') + 'X';
+  const protect = (html) => {
+    const token = `${nonce}${codeStore.length}${nonce}`;
+    codeStore.push(html);
+    return token;
+  };
+  h = h.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, c) => protect(`<pre><code>${c.trim()}</code></pre>`));
+  h = h.replace(/`([^`]+)`/g, (_, c) => protect(`<code>${c}</code>`));
   h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
   h = h.replace(/^### (.+)$/gm, '<h3>$1</h3>');
@@ -312,6 +377,10 @@ function mdToHtml(md) {
     if (safeHref === null) return `${text} [link removed: unsupported URL]`;
     return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer">${text}</a>`;
   });
+  // Restore the real code HTML now, before paragraph/line-break assembly,
+  // so the <p> un-wrapping cleanup below still sees real <pre>/<code>
+  // block boundaries exactly as it did before code was protected.
+  h = h.replace(new RegExp(`${nonce}(\\d+)${nonce}`, 'g'), (_, i) => codeStore[Number(i)]);
   h = h.replace(/\n\n/g, '</p><p>');
   h = h.replace(/\n/g, '<br>');
   return `<p>${h}</p>`
@@ -358,15 +427,38 @@ function wireComposer() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   });
   composerEl.querySelector('#send-btn').addEventListener('click', sendMessage);
-  composerEl.querySelector('#model-btn').addEventListener('click', () => {
+  const modelBtn = composerEl.querySelector('#model-btn');
+  modelBtn.setAttribute('aria-haspopup', 'true');
+  modelBtn.setAttribute('aria-expanded', 'false');
+  composerEl.querySelector('#model-panel').setAttribute('role', 'menu');
+  function _closeModelPanel() {
     const panel = composerEl.querySelector('#model-panel');
-    panel.classList.toggle('open');
+    panel.classList.remove('open');
+    modelBtn.setAttribute('aria-expanded', 'false');
+  }
+  modelBtn.addEventListener('click', () => {
+    const panel = composerEl.querySelector('#model-panel');
+    const willOpen = !panel.classList.contains('open');
+    panel.classList.toggle('open', willOpen);
+    modelBtn.setAttribute('aria-expanded', String(willOpen));
+    if (willOpen) {
+      const firstOpt = panel.querySelector('.modelopt:not(:disabled)');
+      if (firstOpt) firstOpt.focus();
+    }
   });
   document.addEventListener('click', (e) => {
     const panel = composerEl && composerEl.querySelector('#model-panel');
     const btn = composerEl && composerEl.querySelector('#model-btn');
     if (panel && panel.classList.contains('open') && !panel.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
-      panel.classList.remove('open');
+      _closeModelPanel();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const panel = composerEl && composerEl.querySelector('#model-panel');
+    if (panel && panel.classList.contains('open')) {
+      _closeModelPanel();
+      modelBtn.focus();
     }
   });
   renderModelOptions();
@@ -419,8 +511,15 @@ function renderModelOptions() {
     if (info.fallback_active) parts.push(`Currently serving via ${MODEL_LABELS[_variantForModel(info.resolved_model)] || info.resolved_model}`);
     if (!sendable) parts.push('Not available');
     const note = parts.length ? parts.join(' — ') : (sendable ? 'Available' : 'Not available');
-    const opt = document.createElement('div');
+    // AUDIT-B81-A-P1-03: a real <button>, not a clickable <div>, so the
+    // model list is reachable and activatable with Tab/Enter/Space --
+    // the simplest accessible pattern that matches the actual keyboard
+    // interaction (no ARIA menu/listbox role is added, since this isn't
+    // implementing roving-tabindex arrow-key navigation).
+    const opt = document.createElement('button');
+    opt.type = 'button';
     opt.className = 'modelopt' + (sendable ? '' : ' unavailable');
+    if (!sendable) opt.disabled = true;
     opt.innerHTML = `<span class="mname"><span class="neutral-dot${sendable ? ' avail' : ''}"></span>${MODEL_LABELS[variant]}</span>` +
       `<span class="mnote">${esc(note)}</span>`;
     if (sendable) {
@@ -447,6 +546,7 @@ function selectModel(variant, disclosureNote) {
   composerEl.querySelector('#model-label').textContent = MODEL_LABELS[variant];
   composerEl.querySelector('#model-dot').classList.add('avail');
   composerEl.querySelector('#model-panel').classList.remove('open');
+  composerEl.querySelector('#model-btn').setAttribute('aria-expanded', 'false');
   // Honest, persistent disclosure -- not just inside the dropdown that
   // closes on selection. Title attribute surfaces it on hover; the
   // model button's own accessible name carries it for screen readers.
@@ -479,6 +579,7 @@ function showActiveView(title) {
 }
 
 function newConversation() {
+  _abandonActiveStream(); // AUDIT-B81-A-P1-01: any in-flight response is no longer ours
   sessionId = null;
   document.getElementById('reading-container').innerHTML = '';
   highlightSelectedRecent(null);
@@ -604,6 +705,17 @@ async function sendMessage() {
   input.value = ''; input.style.height = 'auto';
   updateSendEnabled();
 
+  // AUDIT-B81-A-P1-01: claim ownership of the view BEFORE the first
+  // await. Any request started after this one (a new send, a conversation
+  // switch, a logout) bumps _streamEpoch, and every callback below checks
+  // isOwner() before touching sessionId, isStreaming or the DOM -- so a
+  // delayed event from this request can never mutate a view it no longer
+  // belongs to, no matter how long the fetch takes to resolve.
+  const myEpoch = ++_streamEpoch;
+  const isOwner = () => myEpoch === _streamEpoch;
+  const myController = new AbortController();
+  _activeStreamController = myController;
+
   isStreaming = true;
   updateSendEnabled();
   const thinkEl = appendThinking();
@@ -621,7 +733,9 @@ async function sendMessage() {
       method: 'POST',
       headers: _authHeaders(),
       body: JSON.stringify({ message: text, session_id: sessionId, model_variant: selectedModelVariant }),
+      signal: myController.signal,
     });
+    if (!isOwner()) return; // navigated away while awaiting the response headers
     if (!resp.ok || !resp.body) {
       thinkEl.remove();
       appendUnavailableNote('The request could not be completed (status ' + resp.status + '). This is a genuine error state, not a simulated one.');
@@ -634,6 +748,10 @@ async function sendMessage() {
 
     const processLine = (line) => {
       if (!line.startsWith('data: ')) return;
+      // Ownership check FIRST, before parsing or dispatching anything --
+      // a request that has lost ownership must have zero observable
+      // effect on sessionId, isStreaming or the DOM, full stop.
+      if (!isOwner()) return;
       try {
         const ev = JSON.parse(line.slice(6));
         if (ev.type === 'session') {
@@ -675,6 +793,7 @@ async function sendMessage() {
 
     while (true) {
       const { done, value } = await reader.read();
+      if (!isOwner()) return; // lost ownership while awaiting the next chunk
       if (done) break;
       sseBuf += dec.decode(value, { stream: true });
       const lines = sseBuf.split('\n');
@@ -682,6 +801,7 @@ async function sendMessage() {
       lines.forEach(processLine);
     }
 
+    if (!isOwner()) return;
     if (terminalState === 'pending') {
       // The stream's underlying connection closed (EOF) without a real
       // `done` or `error` event ever arriving -- covers a network
@@ -693,12 +813,22 @@ async function sendMessage() {
       appendUnavailableNote('The response stream ended unexpectedly before completion.');
     }
   } catch (e) {
-    thinkEl.remove();
-    if (answerEl) markMessageInterrupted(answerEl);
-    appendUnavailableNote('Network error while streaming the response.');
+    // AbortError fires when _abandonActiveStream() cancelled OUR OWN
+    // fetch (we lost ownership) -- isOwner() is already false in that
+    // case, so this branch is a no-op for us and the newer owner's own
+    // request/state is untouched. A genuine network failure on a request
+    // that still owns the view falls through to the same isOwner() guard.
+    if (isOwner()) {
+      thinkEl.remove();
+      if (answerEl) markMessageInterrupted(answerEl);
+      appendUnavailableNote('Network error while streaming the response.');
+    }
   } finally {
-    isStreaming = false;
-    updateSendEnabled();
+    if (isOwner()) {
+      isStreaming = false;
+      _activeStreamController = null;
+      updateSendEnabled();
+    }
   }
 }
 
@@ -734,6 +864,7 @@ function highlightSelectedRecent(sid) {
 }
 
 async function openSession(sid, title) {
+  _abandonActiveStream(); // AUDIT-B81-A-P1-01: switching conversations ends this view's claim on any in-flight response
   sessionId = sid;
   highlightSelectedRecent(sid);
   showActiveView(title);
@@ -760,7 +891,68 @@ function switchAuthTab(tab) {
   document.getElementById('form-signup').style.display = tab === 'signup' ? '' : 'none';
   document.getElementById('tab-signin').classList.toggle('active', tab === 'signin');
   document.getElementById('tab-signup').classList.toggle('active', tab === 'signup');
+  // AUDIT-B81-A-P1-03: the dialog's accessible name must track whichever
+  // form is actually visible -- a stale aria-labelledby pointing at a
+  // hidden h1 would announce the wrong title to assistive tech.
+  document.getElementById('authcard').setAttribute('aria-labelledby', tab === 'signin' ? 'auth-si-title' : 'auth-su-title');
+  const firstField = document.getElementById(tab === 'signin' ? 'si-email' : 'su-name');
+  if (firstField) firstField.focus();
 }
+
+/* ── Auth dialog: focus trap, initial focus, restoration (AUDIT-B81-A-P1-03) ──
+   The overlay covers the whole viewport, but without this, Tab could still
+   reach controls underneath it (nothing marks .app inert) and a keyboard
+   user has no way to know where focus landed or get it back. */
+let _preAuthFocusEl = null;
+
+function _authFocusableEls() {
+  const card = document.getElementById('authcard');
+  return [...card.querySelectorAll('button, input, [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => el.offsetParent !== null && !el.disabled);
+}
+
+function openAuthOverlay() {
+  _preAuthFocusEl = document.activeElement;
+  document.getElementById('auth-overlay').classList.remove('hidden');
+  const focusables = _authFocusableEls();
+  (focusables[0] || document.getElementById('authcard')).focus();
+}
+
+function closeAuthOverlay() {
+  document.getElementById('auth-overlay').classList.add('hidden');
+  if (_preAuthFocusEl && document.body.contains(_preAuthFocusEl)) {
+    _preAuthFocusEl.focus();
+  }
+  _preAuthFocusEl = null;
+}
+
+document.getElementById('auth-overlay').addEventListener('keydown', (e) => {
+  if (document.getElementById('auth-overlay').classList.contains('hidden')) return;
+  if (e.key === 'Escape') {
+    // Anonymous continuation is an already-visible, equally-reachable
+    // control in this same dialog (the "Continue without an account"
+    // button) -- Escape triggers that exact same explicitly-permitted
+    // guest flow, not a bypass of any protected content. If a future
+    // caller of this overlay ever requires authentication with no
+    // anonymous option, Escape must be disabled for that case rather
+    // than reused as-is.
+    e.preventDefault();
+    continueAnonymous();
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const focusables = _authFocusableEls();
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+});
 
 async function doLogin() {
   const email = document.getElementById('si-email').value.trim();
@@ -810,7 +1002,7 @@ function onAuthSuccess(data) {
   _authUser = data.user;
   _anonymous = false;
   try { localStorage.setItem('orneur_token', data.token); } catch (e) {}
-  document.getElementById('auth-overlay').classList.add('hidden');
+  closeAuthOverlay();
   updateAccountUI();
   loadSessions();
   loadModels();
@@ -818,7 +1010,7 @@ function onAuthSuccess(data) {
 
 function continueAnonymous() {
   _anonymous = true;
-  document.getElementById('auth-overlay').classList.add('hidden');
+  closeAuthOverlay();
   updateAccountUI();
   loadModels();
 }
@@ -838,7 +1030,7 @@ function doLogout() {
   document.getElementById('recents-list').innerHTML = '<div class="recents-empty">Sign in to see your conversations</div>';
   newConversation();
   updateAccountUI();
-  document.getElementById('auth-overlay').classList.remove('hidden');
+  openAuthOverlay();
 }
 
 async function tryRestoreSession() {
@@ -851,7 +1043,7 @@ async function tryRestoreSession() {
     const data = await r.json();
     _authToken = stored;
     _authUser = data.user;
-    document.getElementById('auth-overlay').classList.add('hidden');
+    closeAuthOverlay();
     updateAccountUI();
     loadSessions();
     loadModels();
@@ -882,6 +1074,11 @@ document.querySelector('.navnew').addEventListener('click', () => setMobileSideb
   const restored = await tryRestoreSession();
   if (!restored) {
     await loadModels(); // models are visible even signed-out; sending still requires auth per /api/chat's own rules
+    // The overlay is visible by default from the initial markup (no JS
+    // ever had to "open" it in this path) -- still needs its initial
+    // keyboard focus placed explicitly, same as openAuthOverlay() does.
+    const firstField = _authFocusableEls()[0];
+    if (firstField) firstField.focus();
   }
   if (composerEl) {
     const input = composerEl.querySelector('#msg-input');

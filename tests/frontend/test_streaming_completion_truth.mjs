@@ -123,6 +123,7 @@ readingRegion.scrollHeight = 0;
 readingRegion.scrollTop = 0;
 
 const sandbox = {
+  crypto,
   document: {
     getElementById(id) {
       if (id === 'reading-container') return readingContainer;

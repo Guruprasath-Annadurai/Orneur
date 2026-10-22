@@ -295,6 +295,8 @@ jobs:
         run: |
           node --test tests/frontend/test_markdown_link_sanitization.mjs
           node --test tests/frontend/test_streaming_completion_truth.mjs
+          node --test tests/frontend/test_contrast_regression.mjs
+          node --test tests/frontend/test_stream_ownership_epoch.mjs
 
       - name: Set up Python (to actually serve the page, not just read it off disk)
         uses: actions/setup-python@v5

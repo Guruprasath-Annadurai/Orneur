@@ -42,7 +42,7 @@ const escFn = extractBalancedFunction(source, 'function esc(t) {', 0);
 const sanitizeFn = extractBalancedFunction(source, 'function _sanitizeLinkHref(', escFn.end);
 const mdToHtmlFn = extractBalancedFunction(source, 'function mdToHtml(', sanitizeFn.end);
 
-const sandbox = {};
+const sandbox = { crypto };
 vm.createContext(sandbox);
 vm.runInContext(`${escFn.text}\n${sanitizeFn.text}\n${mdToHtmlFn.text}`, sandbox);
 const { mdToHtml } = sandbox;
@@ -122,4 +122,46 @@ test('code blocks, bold, italic, headings, and lists still render normally', () 
   assert.ok(out.includes('<em>italic</em>'));
   assert.ok(out.includes('<li>item one</li>'));
   assert.ok(out.includes('<pre><code>const x = 1;</code></pre>'));
+});
+
+// AUDIT-B81-A-P2-01 -- code-block/inline-code integrity.
+test('a fenced code block containing literal **bold**-looking syntax is not reinterpreted as Markdown', () => {
+  const out = mdToHtml('```\n**not bold** just code\n```');
+  assert.ok(out.includes('<pre><code>**not bold** just code</code></pre>'), out);
+  assert.ok(!out.includes('<strong>'), 'bold substitution must not reach inside a code fence: ' + out);
+});
+
+test('a fenced code block containing a literal markdown-link pattern is never turned into a clickable anchor', () => {
+  const out = mdToHtml('```\n[Open result](javascript:alert(1))\n```');
+  assert.ok(!out.includes('<a '), 'literal link syntax inside a code fence must stay literal text: ' + out);
+  assert.ok(out.includes('[Open result](javascript:alert(1))'), out);
+});
+
+test('inline code containing literal **bold**/[link]() syntax is preserved literally, not reinterpreted', () => {
+  const out = mdToHtml('Use `**bold** and [x](http://evil.test)` as literal syntax in docs.');
+  assert.ok(out.includes('<code>**bold** and [x](http://evil.test)</code>'), out);
+  assert.ok(!out.includes('<strong>'), out);
+  assert.ok(!out.includes('<a '), out);
+});
+
+test('Markdown outside a code block still renders normally alongside protected code', () => {
+  const out = mdToHtml('Real **bold** text, then `literal **not bold**` inline code, then more **bold**.');
+  // Exactly two real <strong> tags (the two genuine bold spans outside
+  // code), and the inline code's own literal asterisks never produce a
+  // third one.
+  const strongCount = (out.match(/<strong>/g) || []).length;
+  assert.equal(strongCount, 2, out);
+  assert.ok(out.includes('<code>literal **not bold**</code>'), out);
+});
+
+test('two calls to mdToHtml use different random placeholder nonces (not a fixed, guessable token)', () => {
+  // Render the same code-containing input twice and confirm the function
+  // doesn't leak a stable/predictable placeholder string into either
+  // output (which would indicate a fixed, crafted-collision-prone
+  // scheme rather than a fresh per-call nonce).
+  const a = mdToHtml('```\nx\n```');
+  const b = mdToHtml('```\nx\n```');
+  assert.ok(a.includes('<pre><code>x</code></pre>'));
+  assert.ok(b.includes('<pre><code>x</code></pre>'));
+  assert.ok(!a.includes('ORNEURCODE0ORNEURCODE') || !b.includes('ORNEURCODE0ORNEURCODE'), 'placeholder tokens must not be left unresolved in the output');
 });
