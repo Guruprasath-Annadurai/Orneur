@@ -91,6 +91,14 @@ class CorruptRecordError(Exception):
     propagates out and never halts the stream."""
 
 
+class CorpusBoundaryError(Exception):
+    """Raised when an input path crosses a filesystem trust boundary.
+
+    A symlink at the input path itself is never followed. When the caller
+    supplies `allowed_root`, the resolved path must stay inside that root.
+    This is a path check, not a claim of kernel-level confinement."""
+
+
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
     """The established mkstemp + fsync + os.replace discipline (Sprint 1 /
     Audit #016's `save_training_state` pattern), reimplemented here for a
@@ -138,30 +146,182 @@ class ProcessingReport:
             self.corrupt_samples.append(reason)
 
 
-def stream_records(path: Path, *, resume_from_line: int = 0) -> Iterator[tuple[int, str]]:
-    """Memory-bounded streaming reader: yields (line_number, text) one
-    line at a time, never loading the whole file into memory.
-    `resume_from_line` skips already-processed lines (restart safety) --
-    a caller resuming a prior run passes the `resume_offset` their last
-    `ProcessingReport` recorded. Malformed JSON lines are skipped with a
-    recorded reason, never raised past this function."""
-    with open(path, encoding="utf-8") as f:
-        for line_number, raw_line in enumerate(f):
-            if line_number < resume_from_line:
-                continue
-            raw_line = raw_line.strip()
-            if not raw_line:
-                continue
-            try:
-                rec = json.loads(raw_line)
-            except json.JSONDecodeError:
-                yield line_number, ""  # caller distinguishes via a sentinel check below
-                continue
-            text = rec.get("text") if isinstance(rec, dict) else None
-            if not isinstance(text, str) or not text.strip():
-                yield line_number, ""
-                continue
-            yield line_number, text
+def _contains_surrogate_escape(text: str) -> bool:
+    """True when `surrogateescape` had to smuggle an invalid UTF-8 byte.
+
+    Well-formed Unicode text never contains U+DC80..U+DCFF. Those code
+    points appear only because the decoder was asked to keep going past
+    a byte that is not valid UTF-8."""
+    return any(0xDC80 <= ord(ch) <= 0xDCFF for ch in text)
+
+
+def _reject_input_boundary(path: Path, *, allowed_root: Path | None) -> Path:
+    path = Path(path)
+    if path.is_symlink():
+        raise CorpusBoundaryError(f"refusing to read {path} -- the input path is a symlink")
+    if allowed_root is not None:
+        root = Path(allowed_root).resolve()
+        resolved = path.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise CorpusBoundaryError(
+                f"refusing to read {path} -- resolved path {resolved} is outside allowed root {root}"
+            ) from exc
+    return path
+
+
+def _classify_line(raw_line: str, *, require_license: bool) -> tuple[str, str | None] | None:
+    """Classify one physical line.
+
+    Returns None for a blank line (not a record). Returns `(text, None)`
+    for a record that may be kept. Returns `("", reason)` for a record
+    that must be counted as corrupt and not kept. Encoding failures are
+    corrupt records, not exceptions.
+    """
+    if _contains_surrogate_escape(raw_line):
+        return "", "invalid UTF-8 encoding"
+    stripped = raw_line.strip()
+    if not stripped:
+        return None
+    try:
+        rec = json.loads(stripped)
+    except json.JSONDecodeError:
+        return "", "malformed JSON"
+    if not isinstance(rec, dict):
+        return "", "JSON value is not an object"
+    text = rec.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return "", "missing or empty text field"
+    if require_license:
+        license_name = rec.get("license")
+        usage = rec.get("usage_restrictions")
+        if not isinstance(license_name, str) or not license_name.strip():
+            return "", "license metadata omitted or empty"
+        if not isinstance(usage, str) or not usage.strip():
+            return "", "usage_restrictions metadata omitted or empty"
+    return text, None
+
+
+def _iter_bounded_physical_lines(path: Path, max_record_bytes: int) -> Iterator[tuple[int, bytes | None]]:
+    """Yield `(line_number, payload)` without buffering more than
+    `max_record_bytes` of any one line.
+
+    `payload is None` means the line exceeded the cap; the unread tail
+    was discarded up to the next newline. Newline convention for this
+    mode is `\\n`, with a trailing `\\r` left for the caller to strip.
+    A final line without a trailing newline is still yielded.
+    """
+    if max_record_bytes < 1:
+        raise ValueError("max_record_bytes must be >= 1")
+    with open(path, "rb") as handle:
+        line_number = 0
+        buf = bytearray()
+        overflowing = False
+        while True:
+            chunk = handle.read(64 * 1024)
+            if not chunk:
+                break
+            for byte in chunk:
+                if byte == 0x0A:
+                    yield line_number, None if overflowing else bytes(buf)
+                    line_number += 1
+                    buf.clear()
+                    overflowing = False
+                    continue
+                if overflowing:
+                    continue
+                if len(buf) >= max_record_bytes:
+                    overflowing = True
+                    buf.clear()
+                    continue
+                buf.append(byte)
+        if overflowing or buf:
+            yield line_number, None if overflowing else bytes(buf)
+
+
+def iter_classified_records(
+    path: Path,
+    *,
+    resume_from_line: int = 0,
+    allowed_root: Path | None = None,
+    require_license: bool = False,
+    max_record_bytes: int | None = None,
+) -> Iterator[tuple[int, str, str | None]]:
+    """Yield `(line_number, text, rejection_reason)`.
+
+    `rejection_reason is None` only for a usable text record. Blank lines
+    are not yielded. Invalid UTF-8, malformed JSON, missing text, omitted
+    license metadata (when requested), and oversized lines are yielded
+    with an explicit reason so callers can audit the rejection instead of
+    seeing an exception or a silent drop.
+
+    `require_license` defaults to False so existing callers that only
+    carry a `text` field keep their current contract. Authorized corpus
+    ingestion must pass True; a license string is metadata, not a grant
+    that the text itself is approved for training.
+    """
+    path = _reject_input_boundary(Path(path), allowed_root=allowed_root)
+    if max_record_bytes is None:
+        source = _iter_text_lines(path)
+    else:
+        source = _iter_capped_lines(path, max_record_bytes)
+    for line_number, raw_line, pre_reason in source:
+        if line_number < resume_from_line:
+            continue
+        if pre_reason is not None:
+            yield line_number, "", pre_reason
+            continue
+        classified = _classify_line(raw_line, require_license=require_license)
+        if classified is None:
+            continue
+        text, reason = classified
+        yield line_number, text, reason
+
+
+def _iter_text_lines(path: Path) -> Iterator[tuple[int, str, str | None]]:
+    with open(path, encoding="utf-8", errors="surrogateescape") as handle:
+        for line_number, raw_line in enumerate(handle):
+            yield line_number, raw_line, None
+
+
+def _iter_capped_lines(path: Path, max_record_bytes: int) -> Iterator[tuple[int, str, str | None]]:
+    for line_number, payload in _iter_bounded_physical_lines(path, max_record_bytes):
+        if payload is None:
+            yield line_number, "", f"record exceeds max_record_bytes={max_record_bytes}"
+            continue
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            yield line_number, "", "invalid UTF-8 encoding"
+            continue
+        yield line_number, text, None
+
+
+def stream_records(
+    path: Path,
+    *,
+    resume_from_line: int = 0,
+    allowed_root: Path | None = None,
+    require_license: bool = False,
+    max_record_bytes: int | None = None,
+) -> Iterator[tuple[int, str]]:
+    """Memory-bounded streaming reader: yields `(line_number, text)`.
+
+    `resume_from_line` skips already-processed lines (restart safety).
+    Malformed JSON, invalid UTF-8, and (when requested) missing license
+    metadata yield an empty string so existing callers keep counting them
+    as corrupt records. They are not raised. Blank lines are skipped.
+    See `iter_classified_records` for the audited reason string.
+    """
+    for line_number, text, reason in iter_classified_records(
+        path,
+        resume_from_line=resume_from_line,
+        allowed_root=allowed_root,
+        require_license=require_license,
+        max_record_bytes=max_record_bytes,
+    ):
+        yield line_number, "" if reason else text
 
 
 def deterministic_shard(normalized_text: str, *, num_shards: int) -> int:
@@ -492,6 +652,8 @@ def process_corpus(
     input_path: Path, output_dir: Path, *, num_shards: int, resume_from_line: int | None = None,
     quality_filter: Callable[[str], bool] | None = None, enforce_pii_screening: bool = True,
     commit_batch_size: int = DEFAULT_COMMIT_BATCH_SIZE, return_kept_records: bool = True,
+    require_license: bool = False, allowed_root: Path | None = None,
+    max_record_bytes: int | None = None,
 ) -> tuple[ProcessingReport, list[str]]:
     """The full pipeline stage: stream -> corrupt-record rejection ->
     normalize -> exact + bounded-window near-duplicate rejection ->
@@ -603,11 +765,17 @@ def process_corpus(
             seen_exact_cache.clear()
             _flush_pending_shard_rows(output_dir, conn)
 
-        for line_number, raw_text in stream_records(input_path, resume_from_line=start_line):
+        for line_number, raw_text, rejection in iter_classified_records(
+            input_path,
+            resume_from_line=start_line,
+            allowed_root=allowed_root,
+            require_license=require_license,
+            max_record_bytes=max_record_bytes,
+        ):
             report.lines_read += 1
             report.resume_offset = line_number + 1
-            if not raw_text:
-                report.record_corrupt(f"line {line_number}: malformed JSON or missing/empty 'text' field")
+            if rejection is not None:
+                report.record_corrupt(f"line {line_number}: {rejection}")
                 continue
 
             normalized = normalize_record_text(raw_text)

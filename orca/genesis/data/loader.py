@@ -88,18 +88,22 @@ This phase's fix, in one coherent design (not three independent patches):
   own resolved, real path -- a symlink planted at any of these three
   names is rejected rather than silently followed.
 
-**Explicitly, honestly NOT claimed**: the per-block digest is a plain
-(truncated) SHA-256, not an HMAC against any secret key -- there is no
-established, owner-controlled key-custody infrastructure for derived
-data caches the way `orca.genesis.training.resumable_checkpoint`'s
-`integrity_key` exists for checkpoints. This detects accidental
-corruption, truncation, and after-the-fact tampering by a party who
-does not also control the digest sidecar at the moment of attack; it is
-NOT cryptographic protection against an adversary with simultaneous
-write access to both the store and its manifest. Closing that fully
-would require the same class of trust-anchor work Audit #074's P0-04
-fix did for checkpoints, applied to this cache -- recorded here as a
-residual limitation, not silently claimed as closed.
+**Unkeyed mode, honestly scoped**: when `LoaderConfig.cache_integrity_key`
+is omitted, the per-block digest remains a truncated SHA-256. That
+detects accidental corruption and tampering by a party who does not also
+rewrite the digest sidecar. It is NOT protection against an adversary
+who can write the store and the manifest together.
+
+**Keyed mode**: pass a caller-supplied `cache_integrity_key` of at least
+32 bytes. The key is not read from the repository, not generated inside
+this module, and not treated as founder authority. The cache id then
+includes a SHA-256 fingerprint of the key (not the key), each block
+digest is HMAC-SHA256, and the manifest carries an HMAC over the store
+digest and the digest-file digest. A coordinated rewrite that does not
+know the key fails closed with `BlockStoreTamperedError` instead of
+being rebuilt over. Losing the key means that cache cannot be trusted;
+delete it and rebuild from shard bytes that still match
+`authorized_shard_digests`. There is still no external witness service.
 """
 from __future__ import annotations
 
@@ -124,7 +128,13 @@ IGNORE_INDEX = -100
 _TOKEN_TYPECODE = "q"  # array module "long long" -- platform-independent minimum 8 bytes, safely covers any real vocab id
 _TOKEN_ITEM_SIZE = array.array(_TOKEN_TYPECODE).itemsize
 BLOCK_STORE_SCHEMA_VERSION = "genesis-block-store/2"
-_BLOCK_DIGEST_SIZE = 8  # bytes -- truncated SHA-256, see module docstring for the explicit, honest scope of this check
+_BLOCK_DIGEST_SIZE = 8  # bytes -- truncated SHA-256, unkeyed mode only
+_KEYED_BLOCK_DIGEST_SIZE = 32  # full HMAC-SHA256 when cache_integrity_key is set
+# Matches resumable_checkpoint.MIN_INTEGRITY_KEY_BYTES. Duplicated here
+# so the data loader does not import the training checkpoint stack.
+_MIN_CACHE_INTEGRITY_KEY_BYTES = 32
+_UNKEYED_INTEGRITY_MODE = "unkeyed-sha256"
+_KEYED_INTEGRITY_MODE = "hmac-sha256"
 _SHARD_READ_CHUNK_BYTES = 64 * 1024  # AUDIT-076: fixed-size read chunk for shard ingestion -- the real, enforced in-memory ceiling for the raw-byte side of shard streaming, independent of file size
 
 
@@ -204,6 +214,7 @@ class LoaderConfig:
     construction_buffer_tokens: int = 65_536  # AUDIT-P1-01: the real, enforced in-memory ceiling during construction -- see GenesisBlockDataset's own docstring
     max_tokens_per_record: int | None = None  # AUDIT-075: per-record working-memory ceiling (post-tokenization); defaults to construction_buffer_tokens in __post_init__
     max_record_bytes: int = 1_048_576  # AUDIT-076: per-record RAW BYTE ceiling, enforced on the undecoded line before any decode/json.loads/tokenize call -- see _build_and_publish_block_store's own docstring
+    cache_integrity_key: bytes | None = None  # caller-supplied HMAC key; None keeps the unkeyed truncated-SHA contract
 
     def __post_init__(self) -> None:
         if self.split not in VALID_SPLITS:
@@ -230,6 +241,17 @@ class LoaderConfig:
             raise ValueError("max_tokens_per_record must be >= 1")
         if self.max_record_bytes < 1:
             raise ValueError("max_record_bytes must be >= 1")
+        if self.cache_integrity_key is not None:
+            if not isinstance(self.cache_integrity_key, (bytes, bytearray)):
+                raise ValueError("cache_integrity_key must be bytes")
+            key = bytes(self.cache_integrity_key)
+            object.__setattr__(self, "cache_integrity_key", key)
+            if len(key) < _MIN_CACHE_INTEGRITY_KEY_BYTES:
+                raise ValueError(
+                    f"cache_integrity_key is {len(key)} bytes; at least "
+                    f"{_MIN_CACHE_INTEGRITY_KEY_BYTES} bytes are required. "
+                    "A short key is not accepted, and this module will not mint one."
+                )
 
 
 @dataclass(frozen=True)
@@ -260,6 +282,10 @@ def compute_block_store_cache_id(cfg: LoaderConfig) -> str:
         "tokenizer_digest": cfg.tokenizer_digest,
         "authorized_shard_digests": sorted(cfg.authorized_shard_digests.items()),
     }
+    # Absent when unkeyed, so existing cache ids stay byte-identical.
+    if cfg.cache_integrity_key is not None:
+        payload["integrity_mode"] = _KEYED_INTEGRITY_MODE
+        payload["integrity_key_fingerprint"] = hashlib.sha256(cfg.cache_integrity_key).hexdigest()
     canonical = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
 
@@ -408,9 +434,17 @@ class GenesisBlockDataset:
             return None
         if manifest.get("schema_version") != BLOCK_STORE_SCHEMA_VERSION:
             return None
-        actual_sha256 = self._sha256_of_file(self._store_path)
-        if actual_sha256 != manifest.get("store_sha256"):
-            return None
+        mode = manifest.get("integrity_mode", _UNKEYED_INTEGRITY_MODE)
+        if self.cfg.cache_integrity_key is not None:
+            self._require_keyed_manifest(manifest)
+        else:
+            if mode != _UNKEYED_INTEGRITY_MODE:
+                raise BlockStoreTamperedError(
+                    "refusing to read a keyed block-store cache without cache_integrity_key"
+                )
+            actual_sha256 = self._sha256_of_file(self._store_path)
+            if actual_sha256 != manifest.get("store_sha256"):
+                return None
         try:
             return LoadReport(
                 records_read=manifest["records_read"],
@@ -428,6 +462,57 @@ class GenesisBlockDataset:
             for chunk in iter(lambda: f.read(1024 * 1024), b""):
                 h.update(chunk)
         return h.hexdigest()
+
+    def _block_digest_width(self) -> int:
+        if self.cfg.cache_integrity_key is None:
+            return _BLOCK_DIGEST_SIZE
+        return _KEYED_BLOCK_DIGEST_SIZE
+
+    def _block_digest(self, raw: bytes) -> bytes:
+        if self.cfg.cache_integrity_key is None:
+            return hashlib.sha256(raw).digest()[:_BLOCK_DIGEST_SIZE]
+        return hmac.new(self.cfg.cache_integrity_key, raw, hashlib.sha256).digest()
+
+    @staticmethod
+    def _keyed_manifest_body(manifest: dict) -> dict:
+        return {key: value for key, value in manifest.items() if key != "integrity_tag"}
+
+    def _keyed_manifest_tag(self, body: dict) -> str:
+        canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        return hmac.new(self.cfg.cache_integrity_key, canonical, hashlib.sha256).hexdigest()
+
+    def _require_keyed_manifest(self, manifest: dict) -> None:
+        """Fail closed. A bad keyed manifest is never treated as a cache miss."""
+        if manifest.get("integrity_mode") != _KEYED_INTEGRITY_MODE:
+            raise BlockStoreTamperedError(
+                "keyed cache load refused a manifest that is not hmac-sha256; "
+                "refusing to downgrade to the unkeyed digest"
+            )
+        tag = manifest.get("integrity_tag")
+        if not isinstance(tag, str) or not tag:
+            raise BlockStoreTamperedError("keyed cache manifest is missing its integrity tag")
+        expected = self._keyed_manifest_tag(self._keyed_manifest_body(manifest))
+        if not hmac.compare_digest(expected, tag):
+            raise BlockStoreTamperedError(
+                "keyed cache manifest HMAC does not match; the store or its sidecars "
+                "were modified without the cache integrity key"
+            )
+        actual_store = self._sha256_of_file(self._store_path)
+        if actual_store != manifest.get("store_sha256"):
+            raise BlockStoreTamperedError("keyed cache store bytes do not match the signed manifest")
+        actual_digests = self._sha256_of_file(self._digests_path)
+        if actual_digests != manifest.get("digests_sha256"):
+            raise BlockStoreTamperedError("keyed cache digest sidecar does not match the signed manifest")
+        width = self._block_digest_width()
+        try:
+            num_blocks = int(manifest["num_blocks"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BlockStoreTamperedError("keyed cache manifest is missing num_blocks") from exc
+        digest_bytes = self._digests_path.stat().st_size
+        if digest_bytes != num_blocks * width:
+            raise BlockStoreTamperedError(
+                f"keyed cache digest sidecar is {digest_bytes} bytes, expected {num_blocks * width}"
+            )
 
     def _build_and_publish_block_store(self, base_dir: Path, cache_id: str) -> LoadReport:
         """Called while holding the exclusive cache lock. Streams
@@ -595,8 +680,7 @@ class GenesisBlockDataset:
                         del pending[:block_len]
                         block_bytes = array.array(_TOKEN_TYPECODE, block_vals).tobytes()
                         store.write(block_bytes)
-                        digest = hashlib.sha256(block_bytes).digest()[:_BLOCK_DIGEST_SIZE]
-                        digests_out.write(digest)
+                        digests_out.write(self._block_digest(block_bytes))
                         num_blocks_written += 1
 
                 def emit(ids: list[int]) -> None:
@@ -727,6 +811,10 @@ class GenesisBlockDataset:
                 "num_blocks": num_blocks,
                 "store_sha256": store_sha256,
             }
+            if self.cfg.cache_integrity_key is not None:
+                manifest["integrity_mode"] = _KEYED_INTEGRITY_MODE
+                manifest["digests_sha256"] = self._sha256_of_file(digests_tmp)
+                manifest["integrity_tag"] = self._keyed_manifest_tag(manifest)
             manifest_tmp_fd, manifest_tmp_name = tempfile.mkstemp(dir=base_dir, prefix=f".block_store_{cache_id}.manifest.", suffix=".tmp")
             manifest_tmp = Path(manifest_tmp_name)
             with os.fdopen(manifest_tmp_fd, "w") as f:
@@ -777,10 +865,11 @@ class GenesisBlockDataset:
                 "block store is truncated or was modified outside this module's coordinated publish path"
             )
 
-        self._digests_file.seek(index * _BLOCK_DIGEST_SIZE)
-        expected_digest = self._digests_file.read(_BLOCK_DIGEST_SIZE)
-        actual_digest = hashlib.sha256(raw).digest()[:_BLOCK_DIGEST_SIZE]
-        if len(expected_digest) != _BLOCK_DIGEST_SIZE or not hmac.compare_digest(actual_digest, expected_digest):
+        width = self._block_digest_width()
+        self._digests_file.seek(index * width)
+        expected_digest = self._digests_file.read(width)
+        actual_digest = self._block_digest(raw)
+        if len(expected_digest) != width or not hmac.compare_digest(actual_digest, expected_digest):
             raise BlockStoreTamperedError(
                 f"block {index}'s content does not match the digest recorded for it at construction time -- "
                 "the on-disk block store was modified after publication"

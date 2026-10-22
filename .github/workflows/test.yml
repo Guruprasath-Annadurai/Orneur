@@ -198,6 +198,8 @@ jobs:
                  tests/test_genesis_isolated_worker.py tests/test_genesis_end_to_end_synthetic_integration.py \
                  tests/test_audit077_master_requalification.py tests/test_audit077_requalification_adversarial_deep.py \
                  tests/test_audit078_final_requalification.py \
+                 tests/test_cursor_training_math.py tests/test_cursor_keyed_cache.py \
+                 tests/test_cursor_tokenizer_multilingual.py \
                  --deselect tests/test_audit077_master_requalification.py::test_audit077_domain_c_checkpoint_ledger_monotonicity_and_cross_run_boundary \
                  --deselect tests/test_audit077_requalification_adversarial_deep.py::test_g01_intermediate_ancestor_substitution_toctou_escape_demonstration \
                  --deselect tests/test_audit077_requalification_adversarial_deep.py::test_g02_internal_caller_allow_cross_run_migration_authority_bypass \

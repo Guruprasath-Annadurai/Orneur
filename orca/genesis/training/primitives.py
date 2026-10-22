@@ -264,6 +264,7 @@ class TrainingState:
         )
 
     def restore(self, *, model: torch.nn.Module, optimizer: torch.optim.Optimizer) -> None:
+        validate_optimizer_state(model, self.optimizer_state_dict)
         model.load_state_dict(self.model_state_dict)
         optimizer.load_state_dict(self.optimizer_state_dict)
         random.setstate(self.python_rng_state)
@@ -271,6 +272,96 @@ class TrainingState:
         if self.cuda_rng_state and torch.cuda.is_available():
             for i, state in enumerate(self.cuda_rng_state):
                 torch.cuda.set_rng_state(torch.ByteTensor(list(state)), i)
+
+
+class OptimizerStateCorruptionError(Exception):
+    """Raised when optimizer state cannot belong to this model.
+
+    Checks slot coverage, moment shapes, finiteness, and a non-negative
+    step. It does not detect an equal-shaped moment swapped between two
+    parameters; checkpoint HMAC binding covers that case.
+    """
+
+
+def _trainable_parameter_order(model: torch.nn.Module) -> list[torch.nn.Parameter]:
+    """Same order `grouped_parameters` feeds AdamW: decay matrices, then 1-D."""
+    decay, no_decay = [], []
+    for param in model.parameters():
+        if not param.requires_grad:
+            continue
+        (decay if param.dim() >= 2 else no_decay).append(param)
+    return decay + no_decay
+
+
+def validate_optimizer_state(model: torch.nn.Module, optimizer_state_dict: dict) -> None:
+    """Reject an optimizer state dict that does not match `model`.
+
+    An empty `state` mapping is valid: AdamW leaves it empty until the
+    first `step()`. A partial mapping, a non-finite moment, a negative
+    step, or a shape mismatch is not valid and must not be loaded.
+    """
+    if not isinstance(optimizer_state_dict, dict):
+        raise OptimizerStateCorruptionError("optimizer state is not a dict")
+    state = optimizer_state_dict.get("state")
+    groups = optimizer_state_dict.get("param_groups")
+    if not isinstance(state, dict) or not isinstance(groups, list):
+        raise OptimizerStateCorruptionError("optimizer state dict is missing state or param_groups")
+    ordered = _trainable_parameter_order(model)
+    referenced: list[int] = []
+    for group in groups:
+        if not isinstance(group, dict) or not isinstance(group.get("params"), (list, tuple)):
+            raise OptimizerStateCorruptionError("optimizer param group is malformed")
+        for raw_index in group["params"]:
+            try:
+                referenced.append(int(raw_index))
+            except (TypeError, ValueError) as exc:
+                raise OptimizerStateCorruptionError("optimizer param index is not an integer") from exc
+    if referenced != list(range(len(ordered))):
+        raise OptimizerStateCorruptionError(
+            f"optimizer tracks {referenced} but this model has {len(ordered)} trainable parameters "
+            "in decay-then-nodecay order"
+        )
+    normalized: dict[int, dict] = {}
+    for key, slot in state.items():
+        try:
+            index = int(key)
+        except (TypeError, ValueError) as exc:
+            raise OptimizerStateCorruptionError(f"optimizer state key {key!r} is not an index") from exc
+        if index < 0 or index >= len(ordered):
+            raise OptimizerStateCorruptionError(f"optimizer state key {index} is outside the model")
+        if not isinstance(slot, dict):
+            raise OptimizerStateCorruptionError(f"optimizer slot {index} is not a dict")
+        normalized[index] = slot
+    if not normalized:
+        return
+    if set(normalized) != set(range(len(ordered))):
+        raise OptimizerStateCorruptionError("optimizer state covers only some parameters")
+    for index, param in enumerate(ordered):
+        slot = normalized[index]
+        for moment_name in ("exp_avg", "exp_avg_sq"):
+            moment = slot.get(moment_name)
+            if not torch.is_tensor(moment):
+                raise OptimizerStateCorruptionError(f"optimizer slot {index} is missing tensor {moment_name}")
+            if tuple(moment.shape) != tuple(param.shape):
+                raise OptimizerStateCorruptionError(
+                    f"optimizer slot {index} {moment_name} shape {tuple(moment.shape)} != parameter shape {tuple(param.shape)}"
+                )
+            if not bool(torch.isfinite(moment).all()):
+                raise OptimizerStateCorruptionError(f"optimizer slot {index} {moment_name} is not finite")
+        step = slot.get("step")
+        if step is None:
+            raise OptimizerStateCorruptionError(f"optimizer slot {index} is missing step")
+        if torch.is_tensor(step):
+            if step.numel() != 1 or not bool(torch.isfinite(step).all()):
+                raise OptimizerStateCorruptionError(f"optimizer slot {index} step is not a finite scalar")
+            step_val = int(step.detach().item())
+        else:
+            try:
+                step_val = int(step)
+            except (TypeError, ValueError) as exc:
+                raise OptimizerStateCorruptionError(f"optimizer slot {index} step is not an integer") from exc
+        if step_val < 0:
+            raise OptimizerStateCorruptionError(f"optimizer slot {index} step is negative ({step_val})")
 
 
 def save_training_state(state: TrainingState, path: Path) -> None:

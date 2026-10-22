@@ -30,15 +30,19 @@ from pathlib import Path
 
 import sentencepiece as spm
 
-
-# Reserved special-token ids, fixed across every GENESIS tokenizer so
-# downstream code (loss masking, generation stopping) can rely on them
-# without re-reading a vocabulary file per model.
-PAD_TOKEN, PAD_ID = "<pad>", 0
-BOS_TOKEN, BOS_ID = "<bos>", 1
-EOS_TOKEN, EOS_ID = "<eos>", 2
-UNK_TOKEN, UNK_ID = "<unk>", 3
-SPECIAL_TOKENS = (PAD_TOKEN, BOS_TOKEN, EOS_TOKEN, UNK_TOKEN)
+# Reserved special-token ids live in a dependency-free module so data
+# and robustness checks can import them without importing SentencePiece.
+from orca.genesis.tokenizer.specials import (  # noqa: E402
+    BOS_ID,
+    BOS_TOKEN,
+    EOS_ID,
+    EOS_TOKEN,
+    PAD_ID,
+    PAD_TOKEN,
+    SPECIAL_TOKENS,
+    UNK_ID,
+    UNK_TOKEN,
+)
 
 
 def normalize_text(text: str) -> str:
