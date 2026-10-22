@@ -96,4 +96,6 @@ Regression: `tests/test_conversation_shell.py` + a broad `tests/test_api_*.py` s
    - **B03**: Implemented and live-verified (reading typography, copy action, real content rendering); outline/citation sub-features not built (no real data to back them).
 10. **Single next recommended engineering milestone**: wire the B02 "Variant B" contextual file/source panel and B03's optional answer-outline (both already fully speced and, in B03's case, have real reusable source HTML/CSS in the approved archive) — or, per the CTO's own prior directive sequencing, continue the C02 mission-execution backend's remaining gaps (SSE streaming, execution-time screens) before expanding B04+.
 
+**Immutable commit SHA**: `37e7032bc88e5d5b58cdc62752b4d0b1c5e94948`. **Draft PR**: [#81](https://github.com/Guruprasath-Annadurai/Orneur/pull/81). **Observed exact-head CI**: GitHub Actions run [`39806504339`](https://github.com/Guruprasath-Annadurai/Orneur/actions/runs/39806504339), `headSha` confirmed equal to `37e7032...`, conclusion `success`.
+
 No merge, no tag, no training, no GPU/paid infrastructure provisioning, no founder-approved-design modification (the approved references were followed, not altered) occurred in this phase.
