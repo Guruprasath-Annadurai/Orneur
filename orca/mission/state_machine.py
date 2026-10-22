@@ -1,7 +1,7 @@
 """
 Mission State Machine (Phase 15 spec section 6).
 
-The 16 canonical mission states and their validated transitions.
+The 17 canonical mission states and their validated transitions.
 Structurally enforces two hard invariants from the spec, not merely
 documents them:
 
@@ -29,17 +29,28 @@ AUDIT-C02-P0-03 ("cancellation truth"): CANCELLATION_REQUESTED is a
 MIGHT have a live worker process (RUNNING, any WAITING_* state, any
 PAUSED_* state, BLOCKED) is not itself proof the worker has stopped.
 Those states can no longer transition directly to CANCELLED -- only
-to CANCELLATION_REQUESTED, from which the only further moves are
-CANCELLED (worker termination independently confirmed) or FAILED
-(reconciliation could not confirm clean termination; this is a
-fail-closed outcome, never silently reported as a successful cancel).
-DRAFT/PLANNING/READY still transition directly to CANCELLED: no
-worker exists yet in those states, so there is nothing to confirm
-terminated. This module itself does not perform any reconciliation --
-it only makes "request" and "confirmed" genuinely distinct, persisted
-states; the actual worker-termination check is the caller's
-responsibility (see orca.serve.mission_api's cancel/confirm-cancelled
-endpoints for the current, honestly-scoped implementation)."""
+to CANCELLATION_REQUESTED. DRAFT/PLANNING/READY still transition
+directly to CANCELLED: no worker exists yet in those states, so there
+is nothing to confirm terminated. This module itself does not perform
+any reconciliation -- it only makes "request" and "confirmed"
+genuinely distinct, persisted states; the actual worker-termination
+check is the caller's responsibility (see
+orca.serve.mission_api._require_reconciliation_principal() and the
+cancel/confirm-cancelled endpoints for the current, honestly-scoped
+implementation).
+
+AUDIT-C02-P0-03 follow-up correction: the first version of this fix
+let CANCELLATION_REQUESTED resolve to CANCELLED or FAILED on a bare
+caller-supplied boolean -- including from the mission's own owner,
+with no independent termination evidence at all. CANCELLATION_UNRESOLVED
+is a 17th state, added for the genuinely distinct "a reconciliation
+attempt happened but could not determine the worker's fate" outcome --
+it must NEVER be silently folded into FAILED (which would misrepresent
+an unresolved cancellation as a confirmed execution failure) or into
+CANCELLED (which would misreport a possibly-still-running worker as
+safely stopped). It is deliberately NOT terminal: a later, successful
+reconciliation attempt can still resolve it to CANCELLATION_REQUESTED
+(retry), CANCELLED, or FAILED."""
 from __future__ import annotations
 
 from enum import Enum
@@ -62,6 +73,7 @@ class MissionState(Enum):
     COMPLETED_UNVERIFIED = "COMPLETED_UNVERIFIED"
     COMPLETED_VERIFIED = "COMPLETED_VERIFIED"
     CANCELLATION_REQUESTED = "CANCELLATION_REQUESTED"
+    CANCELLATION_UNRESOLVED = "CANCELLATION_UNRESOLVED"
     CANCELLED = "CANCELLED"
 
 
@@ -106,7 +118,18 @@ _ALLOWED_TRANSITIONS: dict[MissionState, frozenset[MissionState]] = {
     S.PAUSED_USER: frozenset({S.RUNNING, S.CANCELLATION_REQUESTED}),
     S.PAUSED_WINDOW_REACHED: frozenset({S.RUNNING, S.CANCELLATION_REQUESTED}),
     S.BLOCKED: frozenset({S.RUNNING, S.PLANNING, S.FAILED, S.CANCELLATION_REQUESTED}),
-    S.CANCELLATION_REQUESTED: frozenset({S.CANCELLED, S.FAILED}),
+    # Includes a self-loop (CANCELLATION_REQUESTED -> itself): a
+    # reconciliation attempt reporting STILL_RUNNING retires the old
+    # cancellation episode and mints a fresh one, but the mission
+    # legitimately remains CANCELLATION_REQUESTED throughout -- this
+    # is "try again," not an error.
+    S.CANCELLATION_REQUESTED: frozenset({S.CANCELLED, S.FAILED, S.CANCELLATION_UNRESOLVED, S.CANCELLATION_REQUESTED}),
+    # Includes a self-loop (CANCELLATION_UNRESOLVED -> itself):
+    # a repeated reconciliation attempt that STILL cannot determine
+    # the worker's fate must be representable without raising --
+    # "still don't know" is itself a legitimate, repeatable outcome,
+    # not an error.
+    S.CANCELLATION_UNRESOLVED: frozenset({S.CANCELLATION_REQUESTED, S.CANCELLED, S.FAILED, S.CANCELLATION_UNRESOLVED}),
     S.FAILED: frozenset(),
     S.COMPLETED_UNVERIFIED: frozenset(),
     S.COMPLETED_VERIFIED: frozenset(),

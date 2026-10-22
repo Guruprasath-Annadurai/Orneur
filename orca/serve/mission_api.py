@@ -20,16 +20,19 @@ into the existing store functions' calls.
 """
 from __future__ import annotations
 
+import hmac
 import secrets
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from orca.auth import get_current_user
 from orca.auth.store import User
+from orca.config import orneur_env
 from orca.mission import mission_store, operation_store
 from orca.mission.db import get_conn
+from orca.mission.mission_store import CancellationEvidenceError
 from orca.mission.operation_store import (
     OperationConflictError,
     OperationNotFoundError,
@@ -215,68 +218,123 @@ async def cancel_mission(
     BLOCKED state) moves to CANCELLATION_REQUESTED here, never
     directly to CANCELLED. DRAFT/PLANNING/READY (nothing running yet)
     still go straight to CANCELLED, since there is nothing to confirm
-    terminated.
-
-    This endpoint does NOT itself perform worker termination or
-    reconciliation -- that mechanism does not exist in this codebase
-    yet (orca.mission.executor/container_executor/sandbox_executor are
-    not wired to this API layer in this increment). Confirming
-    CANCELLATION_REQUESTED -> CANCELLED is `/confirm-cancelled` below,
-    and until something actually drives that confirmation, a mission
-    correctly stays in CANCELLATION_REQUESTED rather than being
-    reported as cancelled."""
+    terminated. `mission_store.request_mission_cancellation()` mints a
+    fresh, server-generated cancellation episode id in the same
+    transaction -- resolving it is `/confirm-cancelled` below, which
+    requires an independent reconciliation credential, never this
+    endpoint's own (ordinary, authenticated-owner) caller."""
     mission = _get_owned_mission_or_404(conn, mission_id, user)
     current_state = MissionState(mission["state"])
     if current_state in _PRE_RUN_STATES:
-        target = MissionState.CANCELLED
+        try:
+            mission = mission_store.transition_mission(conn, mission_id, MissionState.CANCELLED)
+        except MissionStateError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
     elif current_state in _LIVE_WORKER_STATES:
-        target = MissionState.CANCELLATION_REQUESTED
+        try:
+            mission = mission_store.request_mission_cancellation(conn, mission_id)
+        except MissionStateError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
     else:
-        # CANCELLATION_REQUESTED itself, or any terminal state: there
-        # is no legitimate "/cancel again" action from here. Resolve
-        # via /confirm-cancelled instead, or accept the existing
-        # terminal outcome.
+        # CANCELLATION_REQUESTED/CANCELLATION_UNRESOLVED, or any
+        # terminal state: there is no legitimate "/cancel again"
+        # action from here. Resolution happens via the independent
+        # reconciliation credential at /confirm-cancelled, never by
+        # the mission owner calling /cancel repeatedly.
         raise HTTPException(
             status_code=409,
             detail=f"cannot cancel a mission in state {current_state.value} -- "
-                   f"use /confirm-cancelled if it is already CANCELLATION_REQUESTED",
+                   f"a cancellation episode is already in progress or this state is terminal",
         )
-    try:
-        mission = mission_store.transition_mission(conn, mission_id, target)
-    except MissionStateError as e:
-        raise HTTPException(status_code=409, detail=str(e)) from e
     return mission
 
 
+def _require_reconciliation_principal(authorization: str | None = Header(default=None)) -> str:
+    """AUDIT-C02-P0-03 follow-up correction (CTO review): the FIRST
+    fix still let the authenticated MISSION OWNER themselves supply a
+    bare boolean to /confirm-cancelled -- an ordinary user asserting
+    their own worker's termination, with zero independent evidence.
+    "Ordinary authenticated users must not confirm worker termination"
+    is enforced structurally here: this dependency is a COMPLETELY
+    separate credential from `get_current_user` (no user session,
+    however privileged, satisfies it) -- a shared secret only a real,
+    out-of-band reconciliation process is meant to hold, configured
+    via `ORNEUR_MISSION_RECONCILIATION_TOKEN`.
+
+    FAILS CLOSED when unconfigured: if the operator has not set this
+    secret, EVERY call is rejected (503) -- there is no default, no
+    bypass, and no fallback to trusting the caller. This honestly
+    reflects that no automated reconciliation process actually exists
+    in this codebase yet; configuring the secret is what a real
+    worker-termination reconciliation integration would do when it is
+    built, not something this endpoint fabricates on its behalf.
+
+    Returns a fixed principal label (never a user id) for logging --
+    this credential does not identify a person, only "the
+    reconciliation process," which is a system actor, not a tenant."""
+    configured = orneur_env("MISSION_RECONCILIATION_TOKEN")
+    if not configured:
+        raise HTTPException(
+            status_code=503,
+            detail="no reconciliation credential is configured on this server -- cancellation "
+                   "confirmation is unavailable until a real reconciliation process is wired up "
+                   "and ORNEUR_MISSION_RECONCILIATION_TOKEN is set",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="reconciliation credential required")
+    presented = authorization[len("Bearer "):]
+    if not hmac.compare_digest(presented, configured):
+        raise HTTPException(status_code=401, detail="invalid reconciliation credential")
+    return "reconciliation-process"
+
+
 class ConfirmCancelledRequest(BaseModel):
-    termination_confirmed: bool
+    cancellation_episode_id: str = Field(..., min_length=1)
+    outcome: Literal["TERMINATED", "STILL_RUNNING", "UNRESOLVED"]
 
 
 @router.post("/{mission_id}/confirm-cancelled")
 async def confirm_cancelled(
     mission_id: str,
     body: ConfirmCancelledRequest,
-    user: User = Depends(get_current_user),
+    _principal: str = Depends(_require_reconciliation_principal),
     conn=Depends(_mission_conn),
 ):
-    """Resolves a CANCELLATION_REQUESTED mission to its confirmed
-    outcome: CANCELLED if `termination_confirmed=True`, or FAILED
-    (fail-closed, never a silent CANCELLED) if `termination_confirmed
-    =False` -- e.g. a reconciliation process determined the worker did
-    not cleanly stop.
+    """Resolves a CANCELLATION_REQUESTED/CANCELLATION_UNRESOLVED
+    mission using evidence bound to the exact mission and cancellation
+    episode -- never a bare boolean from the mission owner's own
+    session (see `_require_reconciliation_principal`'s docstring for
+    the full correction history).
 
-    HONEST SCOPE NOTE: this endpoint is the explicit confirmation
-    hook the directive's "cancellation truth" requirement calls for.
-    It does not itself verify worker termination -- there is no
-    automated reconciliation loop in this codebase wired to missions
-    yet. Until one exists, callers (an operator, or a future
-    reconciliation job) must supply `termination_confirmed` from a
-    real, out-of-band check; this endpoint refuses to invent that
-    answer itself."""
-    mission = _get_owned_mission_or_404(conn, mission_id, user)
-    target = MissionState.CANCELLED if body.termination_confirmed else MissionState.FAILED
+    This endpoint deliberately does NOT scope by mission ownership --
+    a reconciliation process is a system actor responsible for
+    whatever missions it is terminating, not a "user" with missions of
+    their own. Its only gate is the reconciliation credential above.
+
+    `cancellation_episode_id` must match the mission's CURRENT, live
+    episode (minted by `request_mission_cancellation()` when the
+    mission entered CANCELLATION_REQUESTED) -- a forged id, or a stale
+    one from an earlier cancellation attempt on this same mission, is
+    rejected with 409 and changes nothing (`CancellationEvidenceError`).
+
+    `outcome`:
+      - `TERMINATED`: worker independently confirmed stopped -> CANCELLED.
+      - `STILL_RUNNING`: worker is still alive -> stays in
+        CANCELLATION_REQUESTED, under a FRESH episode id (the old one
+        is retired, so it cannot be replayed against the new attempt).
+      - `UNRESOLVED`: reconciliation could not determine the worker's
+        fate (e.g. it was itself interrupted) -> CANCELLATION_UNRESOLVED,
+        an explicit, non-terminal, honestly-unresolved state -- never
+        silently reported as either a successful cancel or a mission
+        failure."""
     try:
-        mission = mission_store.transition_mission(conn, mission_id, target)
+        mission = mission_store.resolve_mission_cancellation(
+            conn, mission_id, cancellation_episode_id=body.cancellation_episode_id, outcome=body.outcome,
+        )
+    except mission_store.MissionNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except CancellationEvidenceError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     except MissionStateError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     return mission

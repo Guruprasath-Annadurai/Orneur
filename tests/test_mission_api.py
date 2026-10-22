@@ -59,6 +59,8 @@ class _FakeCursor:
                     "mode", "autonomy_level", "state", "owner_user_id", "window_started_at",
                     "window_deadline_at", "created_at", "updated_at"]
             row = dict(zip(cols, params))
+            row["cancellation_episode_id"] = None
+            row["cancellation_episode_revision"] = None
             self._db["missions"][row["id"]] = row
             self._result = []
         elif sql_norm.startswith("SELECT * FROM missions WHERE id = %s"):
@@ -68,6 +70,29 @@ class _FakeCursor:
             rows = [r for r in self._db["missions"].values() if r["owner_user_id"] == params[0]]
             rows.sort(key=lambda r: r["created_at"], reverse=True)
             self._result = rows
+        elif sql_norm.startswith("UPDATE missions SET state = %s, cancellation_episode_id = %s, cancellation_episode_revision = %s"):
+            # request_mission_cancellation(): params (new_state, episode_id, revision, updated_at, mission_id, expected_state)
+            new_state, episode_id, revision, _updated_at, mission_id, expected_state = params
+            row = self._db["missions"][mission_id]
+            if row["state"] == expected_state:
+                row["state"] = new_state
+                row["cancellation_episode_id"] = episode_id
+                row["cancellation_episode_revision"] = revision
+                self._rowcount = 1
+            else:
+                self._rowcount = 0
+            self._result = []
+        elif sql_norm.startswith("UPDATE missions SET state = %s, cancellation_episode_id = %s"):
+            # resolve_mission_cancellation(): params (new_state, new_episode_id, updated_at, mission_id, expected_state)
+            new_state, new_episode_id, _updated_at, mission_id, expected_state = params
+            row = self._db["missions"][mission_id]
+            if row["state"] == expected_state:
+                row["state"] = new_state
+                row["cancellation_episode_id"] = new_episode_id
+                self._rowcount = 1
+            else:
+                self._rowcount = 0
+            self._result = []
         elif sql_norm.startswith("UPDATE missions SET state"):
             # params: (new_state, updated_at, mission_id, expected_current_state)
             new_state, _updated_at, mission_id, expected_state = params
@@ -293,6 +318,26 @@ def test_cancel_from_draft_goes_directly_to_cancelled(client):
     assert resp.json()["state"] == "CANCELLED"
 
 
+_RECONCILIATION_TOKEN = "test-reconciliation-secret-do-not-use-in-prod"
+
+
+@pytest.fixture(autouse=True)
+def _reconciliation_token(monkeypatch):
+    monkeypatch.setenv("ORNEUR_MISSION_RECONCILIATION_TOKEN", _RECONCILIATION_TOKEN)
+
+
+def _reconciliation_headers(token: str = _RECONCILIATION_TOKEN) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _run_mission_to_running(client, shared_db, mission_id: str):
+    conn = _FakeConn(shared_db)
+    mission_store.transition_mission(conn, mission_id, MissionState.PLANNING)
+    mission_store.create_mission_steps(conn, mission_id, ["step one"])
+    mission_store.transition_mission(conn, mission_id, MissionState.READY)
+    mission_store.transition_mission(conn, mission_id, MissionState.RUNNING)
+
+
 def test_cancel_from_running_requests_cancellation_not_direct_cancel(client, shared_db):
     """AUDIT-C02-P0-03: a mission that might have a live worker
     process must never be reported CANCELLED on a single call --
@@ -300,71 +345,230 @@ def test_cancel_from_running_requests_cancellation_not_direct_cancel(client, sha
     _as(client, _user("alice"))
     created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
     mission_id = created["id"]
-
-    conn = _FakeConn(shared_db)
-    mission_store.transition_mission(conn, mission_id, MissionState.PLANNING)
-    mission_store.transition_mission(conn, mission_id, MissionState.READY)
-    mission_store.transition_mission(conn, mission_id, MissionState.RUNNING)
+    _run_mission_to_running(client, shared_db, mission_id)
 
     resp = client.post(f"/v1/missions/{mission_id}/cancel")
     assert resp.status_code == 200, resp.text
     assert resp.json()["state"] == "CANCELLATION_REQUESTED"
+    assert resp.json()["cancellation_episode_id"]
 
     # Calling /cancel again while still CANCELLATION_REQUESTED must
     # not silently succeed either -- there is no CANCELLATION_REQUESTED
-    # -> CANCELLATION_REQUESTED transition.
+    # -> CANCELLATION_REQUESTED transition via the owner-facing /cancel
+    # endpoint (only /confirm-cancelled, under the reconciliation
+    # credential, may move it onward).
     resp2 = client.post(f"/v1/missions/{mission_id}/cancel")
     assert resp2.status_code == 409
 
 
-def test_confirm_cancelled_true_marks_cancelled(client, shared_db):
+def test_ordinary_authenticated_user_cannot_confirm_cancellation(client, shared_db):
+    """AUDIT-C02-P0-03 follow-up correction: the mission's own owner,
+    however authenticated, must NOT be able to confirm termination --
+    only the separate reconciliation credential may."""
     _as(client, _user("alice"))
     created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
     mission_id = created["id"]
+    _run_mission_to_running(client, shared_db, mission_id)
+    cancel_resp = client.post(f"/v1/missions/{mission_id}/cancel").json()
+    episode_id = cancel_resp["cancellation_episode_id"]
+
+    # No reconciliation header at all -- just the owner's own session.
+    resp = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+    )
+    assert resp.status_code == 401
 
     conn = _FakeConn(shared_db)
-    mission_store.transition_mission(conn, mission_id, MissionState.PLANNING)
-    mission_store.transition_mission(conn, mission_id, MissionState.READY)
-    mission_store.transition_mission(conn, mission_id, MissionState.RUNNING)
+    assert mission_store.get_mission(conn, mission_id)["state"] == "CANCELLATION_REQUESTED"
+
+
+def test_confirmation_with_no_reconciliation_token_configured_fails_closed(client, shared_db, monkeypatch):
+    """If the operator has not configured a real reconciliation
+    credential, confirmation must be entirely unavailable (503) --
+    never silently permitted."""
+    monkeypatch.delenv("ORNEUR_MISSION_RECONCILIATION_TOKEN", raising=False)
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+    _run_mission_to_running(client, shared_db, mission_id)
+    cancel_resp = client.post(f"/v1/missions/{mission_id}/cancel").json()
+    episode_id = cancel_resp["cancellation_episode_id"]
+
+    resp = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        headers=_reconciliation_headers("anything"),
+    )
+    assert resp.status_code == 503
+
+
+def test_forged_reconciliation_credential_is_rejected(client, shared_db):
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+    _run_mission_to_running(client, shared_db, mission_id)
+    cancel_resp = client.post(f"/v1/missions/{mission_id}/cancel").json()
+    episode_id = cancel_resp["cancellation_episode_id"]
+
+    resp = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        headers=_reconciliation_headers("wrong-secret-entirely"),
+    )
+    assert resp.status_code == 401
+
+    conn = _FakeConn(shared_db)
+    assert mission_store.get_mission(conn, mission_id)["state"] == "CANCELLATION_REQUESTED"
+
+
+def test_forged_cancellation_episode_id_is_rejected(client, shared_db):
+    """A valid reconciliation credential with a MADE-UP episode id
+    must still be refused -- the credential alone is not evidence of
+    which specific cancellation episode was actually resolved."""
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+    _run_mission_to_running(client, shared_db, mission_id)
     client.post(f"/v1/missions/{mission_id}/cancel")
 
-    resp = client.post(f"/v1/missions/{mission_id}/confirm-cancelled", json={"termination_confirmed": True})
+    resp = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": "completely-made-up", "outcome": "TERMINATED"},
+        headers=_reconciliation_headers(),
+    )
+    assert resp.status_code == 409
+
+    conn = _FakeConn(shared_db)
+    assert mission_store.get_mission(conn, mission_id)["state"] == "CANCELLATION_REQUESTED"
+
+
+def test_stale_cancellation_episode_id_is_rejected_after_still_running_retry(client, shared_db):
+    """STILL_RUNNING retires the old episode and mints a fresh one --
+    the OLD episode id must no longer work, even with a genuinely
+    valid credential."""
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+    _run_mission_to_running(client, shared_db, mission_id)
+    stale_episode_id = client.post(f"/v1/missions/{mission_id}/cancel").json()["cancellation_episode_id"]
+
+    still_running_resp = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": stale_episode_id, "outcome": "STILL_RUNNING"},
+        headers=_reconciliation_headers(),
+    )
+    assert still_running_resp.status_code == 200, still_running_resp.text
+    assert still_running_resp.json()["state"] == "CANCELLATION_REQUESTED"
+    fresh_episode_id = still_running_resp.json()["cancellation_episode_id"]
+    assert fresh_episode_id != stale_episode_id
+
+    # Replaying the STALE episode id must fail, even though the
+    # mission is (again) legitimately CANCELLATION_REQUESTED.
+    stale_replay_resp = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": stale_episode_id, "outcome": "TERMINATED"},
+        headers=_reconciliation_headers(),
+    )
+    assert stale_replay_resp.status_code == 409
+
+    # The FRESH episode id correctly works.
+    resp = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": fresh_episode_id, "outcome": "TERMINATED"},
+        headers=_reconciliation_headers(),
+    )
     assert resp.status_code == 200, resp.text
     assert resp.json()["state"] == "CANCELLED"
 
 
-def test_confirm_cancelled_false_marks_failed_not_cancelled(client, shared_db):
-    """Fail closed: if termination could not actually be confirmed,
-    the mission must land in FAILED, never silently in CANCELLED."""
+def test_terminated_worker_outcome_confirms_cancelled(client, shared_db):
     _as(client, _user("alice"))
     created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
     mission_id = created["id"]
+    _run_mission_to_running(client, shared_db, mission_id)
+    episode_id = client.post(f"/v1/missions/{mission_id}/cancel").json()["cancellation_episode_id"]
 
-    conn = _FakeConn(shared_db)
-    mission_store.transition_mission(conn, mission_id, MissionState.PLANNING)
-    mission_store.transition_mission(conn, mission_id, MissionState.READY)
-    mission_store.transition_mission(conn, mission_id, MissionState.RUNNING)
-    client.post(f"/v1/missions/{mission_id}/cancel")
-
-    resp = client.post(f"/v1/missions/{mission_id}/confirm-cancelled", json={"termination_confirmed": False})
+    resp = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        headers=_reconciliation_headers(),
+    )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["state"] == "FAILED"
+    assert resp.json()["state"] == "CANCELLED"
 
 
-def test_cross_user_cannot_confirm_cancelled_on_someone_elses_mission(client, shared_db):
+def test_unresolved_outcome_is_distinct_from_both_cancelled_and_failed(client, shared_db):
+    """AUDIT-C02-P0-03 follow-up correction: 'reconciliation could not
+    determine the worker's fate' must never be silently folded into
+    either CANCELLED (misreporting a possibly-still-running worker as
+    safely stopped) or FAILED (misrepresenting an unresolved
+    cancellation as a confirmed execution failure)."""
     _as(client, _user("alice"))
     created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
     mission_id = created["id"]
+    _run_mission_to_running(client, shared_db, mission_id)
+    episode_id = client.post(f"/v1/missions/{mission_id}/cancel").json()["cancellation_episode_id"]
 
-    conn = _FakeConn(shared_db)
-    mission_store.transition_mission(conn, mission_id, MissionState.PLANNING)
-    mission_store.transition_mission(conn, mission_id, MissionState.READY)
-    mission_store.transition_mission(conn, mission_id, MissionState.RUNNING)
-    client.post(f"/v1/missions/{mission_id}/cancel")
+    resp = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": episode_id, "outcome": "UNRESOLVED"},
+        headers=_reconciliation_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "CANCELLATION_UNRESOLVED"
 
-    _as(client, _user("mallory"))
-    resp = client.post(f"/v1/missions/{mission_id}/confirm-cancelled", json={"termination_confirmed": True})
-    assert resp.status_code == 404
+
+def test_reconciliation_interruption_then_retry_eventually_confirms(client, shared_db):
+    """A second reconciliation attempt, after an earlier one came back
+    UNRESOLVED (e.g. the reconciliation process itself was
+    interrupted), can still resolve the SAME episode to a real
+    outcome -- UNRESOLVED is not a dead end."""
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+    _run_mission_to_running(client, shared_db, mission_id)
+    episode_id = client.post(f"/v1/missions/{mission_id}/cancel").json()["cancellation_episode_id"]
+
+    first = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": episode_id, "outcome": "UNRESOLVED"},
+        headers=_reconciliation_headers(),
+    )
+    assert first.json()["state"] == "CANCELLATION_UNRESOLVED"
+
+    second = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        headers=_reconciliation_headers(),
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["state"] == "CANCELLED"
+
+
+def test_double_cancellation_confirmation_is_rejected(client, shared_db):
+    """Once CANCELLED, the episode is cleared -- a second confirmation
+    attempt (replaying the same episode id, or any id) must not
+    succeed again."""
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+    _run_mission_to_running(client, shared_db, mission_id)
+    episode_id = client.post(f"/v1/missions/{mission_id}/cancel").json()["cancellation_episode_id"]
+
+    first = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        headers=_reconciliation_headers(),
+    )
+    assert first.json()["state"] == "CANCELLED"
+
+    second = client.post(
+        f"/v1/missions/{mission_id}/confirm-cancelled",
+        json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+        headers=_reconciliation_headers(),
+    )
+    assert second.status_code == 409
 
 
 def test_operation_request_requires_mission_ownership(client):

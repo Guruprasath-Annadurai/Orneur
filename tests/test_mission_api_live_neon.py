@@ -210,3 +210,63 @@ def test_concurrent_cancel_requests_on_the_same_mission_are_serialized_not_doubl
     finally:
         conn.close()
     assert row["state"] == "CANCELLED"
+
+
+def test_concurrent_confirm_cancelled_calls_on_the_same_episode_are_serialized(client, monkeypatch):
+    """AUDIT-C02-P0-03 follow-up correction, P1-03 real-DB coverage:
+    the SELECT ... FOR UPDATE row lock in
+    orca.mission.mission_store.resolve_mission_cancellation() must
+    make concurrent reconciliation calls on the SAME cancellation
+    episode safe -- exactly one succeeds (CANCELLATION_REQUESTED ->
+    CANCELLED), the rest correctly fail (the episode is already
+    consumed), never double-applied."""
+    token = "live-neon-reconciliation-test-token"
+    monkeypatch.setenv("ORNEUR_MISSION_RECONCILIATION_TOKEN", token)
+
+    _as(client, _user(f"alice-{os.getpid()}"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+    client.post(f"/v1/missions/{mission_id}/plan", json={"steps": ["do it"]})
+
+    conn = get_conn(direct=False)
+    try:
+        from orca.mission.state_machine import MissionState
+        from orca.mission import mission_store
+        mission_store.transition_mission(conn, mission_id, MissionState.RUNNING)
+    finally:
+        conn.close()
+
+    cancel_resp = client.post(f"/v1/missions/{mission_id}/cancel")
+    episode_id = cancel_resp.json()["cancellation_episode_id"]
+
+    results = []
+    lock = threading.Lock()
+
+    def _confirm():
+        local_client = TestClient(api_module.app, raise_server_exceptions=False)
+        resp = local_client.post(
+            f"/v1/missions/{mission_id}/confirm-cancelled",
+            json={"cancellation_episode_id": episode_id, "outcome": "TERMINATED"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with lock:
+            results.append(resp.status_code)
+
+    threads = [threading.Thread(target=_confirm) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+
+    assert results.count(200) == 1, f"expected exactly one successful confirmation, got: {results}"
+    assert all(code in (200, 409) for code in results)
+
+    conn = get_conn(direct=False)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT state FROM missions WHERE id = %s", (mission_id,))
+            row = cur.fetchone()
+        conn.commit()
+    finally:
+        conn.close()
+    assert row["state"] == "CANCELLED"

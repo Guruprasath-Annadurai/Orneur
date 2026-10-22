@@ -232,6 +232,138 @@ def _write_transition(conn, mission_id: str, new_state: MissionState, *, evidenc
     return validated_new
 
 
+def request_mission_cancellation(conn, mission_id: str) -> dict:
+    """AUDIT-C02-P0-03 follow-up correction: entering
+    CANCELLATION_REQUESTED mints a fresh, server-generated,
+    unguessable `cancellation_episode_id` (never client-supplied) and
+    captures the mission's own `current_revision` at this exact
+    moment -- both in the SAME row-locked transaction as the state
+    write, so there is no window where a stale or mismatched
+    confirmation could apply. `resolve_mission_cancellation()` below
+    is the only function that may consume this episode; a confirmation
+    presenting an old episode id (from an earlier cancellation
+    request on this same mission) is rejected as stale, not reused."""
+    import secrets
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM missions WHERE id = %s FOR UPDATE", (mission_id,))
+        row = cur.fetchone()
+        if row is None:
+            conn.rollback()
+            raise MissionNotFoundError(f"No such mission: {mission_id}")
+
+        current = MissionState(row["state"])
+        validated_new = transition(current, MissionState.CANCELLATION_REQUESTED)  # raises MissionStateError if illegal
+
+        episode_id = f"cancep_{secrets.token_hex(16)}"
+        now = _now_iso()
+        cur.execute(
+            """
+            UPDATE missions
+            SET state = %s, cancellation_episode_id = %s, cancellation_episode_revision = %s, updated_at = %s
+            WHERE id = %s AND state = %s
+            """,
+            (validated_new.value, episode_id, row["current_revision"], now, mission_id, current.value),
+        )
+        if cur.rowcount != 1:
+            conn.rollback()
+            raise MissionStoreError(
+                f"Mission {mission_id} state changed unexpectedly during cancellation request "
+                f"(expected {current.value})."
+            )
+    conn.commit()
+    return get_mission(conn, mission_id)  # type: ignore[return-value]
+
+
+class CancellationEvidenceError(MissionStoreError):
+    """Raised by `resolve_mission_cancellation()` when the presented
+    `cancellation_episode_id` does not match the mission's current,
+    live episode -- a forged, stale (from an earlier episode), or
+    wrong-mission confirmation attempt. Never silently accepted."""
+
+
+def resolve_mission_cancellation(
+    conn, mission_id: str, *, cancellation_episode_id: str, outcome: str,
+) -> dict:
+    """The ONLY function that may move a mission OUT of
+    CANCELLATION_REQUESTED / CANCELLATION_UNRESOLVED. Requires the
+    CURRENT, server-minted `cancellation_episode_id` for this exact
+    mission -- a mismatch (forged, stale from an earlier episode, or
+    copied from a different mission) raises `CancellationEvidenceError`
+    and changes nothing. `outcome` must be one of:
+
+      'TERMINATED'    -> CANCELLED (worker independently confirmed stopped)
+      'STILL_RUNNING' -> stays in CANCELLATION_REQUESTED, with a FRESH
+                         episode id (the old one is retired, so a
+                         stale confirmation describing the OLD attempt
+                         can never be replayed against the new one)
+      'UNRESOLVED'    -> CANCELLATION_UNRESOLVED (never silently
+                         folded into FAILED or CANCELLED -- see
+                         orca.mission.state_machine's own docstring)
+
+    This function does not itself determine which outcome is true --
+    that determination is the caller's (a real reconciliation
+    process's) responsibility; see
+    orca.serve.mission_api._require_reconciliation_principal() for who
+    is actually allowed to call this."""
+    import secrets
+
+    if outcome not in ("TERMINATED", "STILL_RUNNING", "UNRESOLVED"):
+        raise ValueError(f"unknown outcome: {outcome!r}")
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM missions WHERE id = %s FOR UPDATE", (mission_id,))
+        row = cur.fetchone()
+        if row is None:
+            conn.rollback()
+            raise MissionNotFoundError(f"No such mission: {mission_id}")
+
+        current = MissionState(row["state"])
+        if current not in (MissionState.CANCELLATION_REQUESTED, MissionState.CANCELLATION_UNRESOLVED):
+            conn.rollback()
+            raise MissionStateError(
+                f"cannot resolve cancellation for mission {mission_id} in state {current.value} -- "
+                f"only CANCELLATION_REQUESTED/CANCELLATION_UNRESOLVED missions have an active episode to resolve."
+            )
+        live_episode = row["cancellation_episode_id"]
+        if not live_episode or cancellation_episode_id != live_episode:
+            conn.rollback()
+            raise CancellationEvidenceError(
+                f"cancellation_episode_id does not match mission {mission_id}'s current, live cancellation "
+                f"episode -- this is either a forged confirmation, a stale one from an earlier cancellation "
+                f"attempt on this mission, or copied from a different mission. Refusing to change anything."
+            )
+
+        now = _now_iso()
+        if outcome == "TERMINATED":
+            target = MissionState.CANCELLED
+            new_episode_id = None
+        elif outcome == "UNRESOLVED":
+            target = MissionState.CANCELLATION_UNRESOLVED
+            new_episode_id = live_episode  # same episode remains open until genuinely resolved
+        else:  # STILL_RUNNING
+            target = MissionState.CANCELLATION_REQUESTED
+            new_episode_id = f"cancep_{secrets.token_hex(16)}"  # retire the old episode, mint a fresh one
+
+        validated_new = transition(current, target)  # raises MissionStateError if illegal
+        cur.execute(
+            """
+            UPDATE missions
+            SET state = %s, cancellation_episode_id = %s, updated_at = %s
+            WHERE id = %s AND state = %s
+            """,
+            (validated_new.value, new_episode_id, now, mission_id, current.value),
+        )
+        if cur.rowcount != 1:
+            conn.rollback()
+            raise MissionStoreError(
+                f"Mission {mission_id} state changed unexpectedly while resolving cancellation "
+                f"(expected {current.value})."
+            )
+    conn.commit()
+    return get_mission(conn, mission_id)  # type: ignore[return-value]
+
+
 def transition_mission(conn, mission_id: str, new_state: MissionState, *, evidence_ref: str | None = None) -> dict:
     """Public entrypoint for a single, standalone legal state
     transition (its own complete transaction: commits on success,
