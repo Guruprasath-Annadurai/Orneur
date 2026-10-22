@@ -64,15 +64,21 @@ resumed run APPENDS to -- never overwrites -- prior committed output.
 """
 from __future__ import annotations
 
+import ctypes
+import errno
 import fcntl
 import hashlib
 import json
 import os
+import re
 import sqlite3
+import stat
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator
+from urllib.parse import quote
 
 from orca.eval.genesis_contamination import jaccard, normalize_text, word_ngrams
 from orca.genesis.data.manifest import normalize_record_text
@@ -83,12 +89,34 @@ NEAR_DUP_JACCARD_THRESHOLD = 0.85
 NEAR_DUP_WINDOW = 500  # bounded pairwise comparison window -- see module docstring
 DEFAULT_COMMIT_BATCH_SIZE = 200
 PROGRESS_DB_NAME = "_progress.sqlite3"
+_PROGRESS_SIDECAR_NAMES = (
+    PROGRESS_DB_NAME + "-wal",
+    PROGRESS_DB_NAME + "-shm",
+    PROGRESS_DB_NAME + "-journal",
+)
+# Darwin `fcntl` command. Linux does not implement it; the Linux path uses
+# `/proc/self/fd/<dirfd>` instead of calling this command.
+_DARWIN_F_GETPATH = 50
+_SQLITE_SYNCHRONOUS_FULL = 2
 
 
 class CorruptRecordError(Exception):
     """Raised internally per-line; always caught by `stream_records()` and
     converted into a `ProcessingReport.corrupt_records` entry -- never
     propagates out and never halts the stream."""
+
+
+class CorpusBoundaryError(Exception):
+    """Raised when a corpus path crosses a filesystem trust boundary.
+
+    Leaf opens use `O_NOFOLLOW` on a directory descriptor. A symlink at a
+    shard name or at the input leaf is not followed. When `allowed_root`
+    is set, each component under that root is opened the same way.
+    This is not a kernel sandbox and does not confine a same-uid process
+    that can rewrite a directory the walk has not yet opened."""
+
+_SYMLINK_ERRNOS = (errno.ELOOP, errno.EMLINK, errno.EPERM)
+_SHARD_LEAF = re.compile(r"^shard-(\d{4})-(train|validation|test)\.jsonl$")
 
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -138,30 +166,289 @@ class ProcessingReport:
             self.corrupt_samples.append(reason)
 
 
-def stream_records(path: Path, *, resume_from_line: int = 0) -> Iterator[tuple[int, str]]:
-    """Memory-bounded streaming reader: yields (line_number, text) one
-    line at a time, never loading the whole file into memory.
-    `resume_from_line` skips already-processed lines (restart safety) --
-    a caller resuming a prior run passes the `resume_offset` their last
-    `ProcessingReport` recorded. Malformed JSON lines are skipped with a
-    recorded reason, never raised past this function."""
-    with open(path, encoding="utf-8") as f:
-        for line_number, raw_line in enumerate(f):
+def _contains_surrogate_escape(text: str) -> bool:
+    """True when `surrogateescape` had to smuggle an invalid UTF-8 byte.
+
+    Well-formed Unicode text never contains U+DC80..U+DCFF. Those code
+    points appear only because the decoder was asked to keep going past
+    a byte that is not valid UTF-8."""
+    return any(0xDC80 <= ord(ch) <= 0xDCFF for ch in text)
+
+
+def _is_symlink_errno(exc: OSError) -> bool:
+    return exc.errno in _SYMLINK_ERRNOS
+
+
+def _open_regular_at(dir_fd: int, name: str, flags: int, *, mode: int = 0o600) -> int:
+    """Open `name` relative to `dir_fd` without following a leaf symlink."""
+    if not name or name in {".", ".."} or "/" in name or "\\" in name:
+        raise CorpusBoundaryError(f"refusing filesystem name {name!r}")
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise CorpusBoundaryError("refusing corpus filesystem access without O_NOFOLLOW")
+    try:
+        fd = os.open(name, flags | os.O_NOFOLLOW | os.O_CLOEXEC, mode, dir_fd=dir_fd)
+    except OSError as exc:
+        if _is_symlink_errno(exc):
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is a symlink") from exc
+        raise
+    return fd
+
+
+def _write_all(fd: int, payload: bytes) -> None:
+    view = memoryview(payload)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise OSError(errno.EIO, "short write on corpus shard")
+        view = view[written:]
+
+
+def _open_corpus_input(path: Path, *, allowed_root: Path | None) -> int:
+    """Open an input file for reading. The returned fd must be closed by the caller.
+
+    The leaf is opened with `O_NOFOLLOW`. When `allowed_root` is set, the
+    path must be lexically inside that root and every component under the
+    root is opened with `O_NOFOLLOW`, so a directory symlink cannot retarget
+    the read after a separate `resolve()` check.
+    """
+    path = Path(path)
+    if allowed_root is None:
+        parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            return _open_regular_at(parent_fd, path.name, os.O_RDONLY)
+        except CorpusBoundaryError:
+            raise CorpusBoundaryError(f"refusing to read {path} -- the input path is a symlink") from None
+        finally:
+            os.close(parent_fd)
+    root = Path(allowed_root).resolve()
+    absolute = Path(os.path.abspath(path))
+    try:
+        relative = absolute.relative_to(root)
+    except ValueError as exc:
+        raise CorpusBoundaryError(
+            f"refusing to read {path} -- resolved path {absolute} is outside allowed root {root}"
+        ) from exc
+    if not relative.parts:
+        raise IsADirectoryError(errno.EISDIR, "Is a directory", str(path))
+    dir_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        for part in relative.parts[:-1]:
+            if part in {".", ".."}:
+                raise CorpusBoundaryError(
+                    f"refusing to read {path} -- component {part!r} escapes the allowed root"
+                )
+            try:
+                nxt = os.open(
+                    part,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    dir_fd=dir_fd,
+                )
+            except OSError as exc:
+                if _is_symlink_errno(exc) or exc.errno == errno.ENOTDIR:
+                    raise CorpusBoundaryError(
+                        f"refusing to read {path} -- component {part!r} is a symlink or not a real directory "
+                        "inside the allowed root"
+                    ) from exc
+                raise
+            os.close(dir_fd)
+            dir_fd = nxt
+        try:
+            return _open_regular_at(dir_fd, relative.parts[-1], os.O_RDONLY)
+        except CorpusBoundaryError:
+            raise CorpusBoundaryError(f"refusing to read {path} -- the input path is a symlink") from None
+    finally:
+        os.close(dir_fd)
+
+
+def _open_directory_leaf(path: Path, *, create: bool) -> int:
+    """Return a directory fd for `path`. A symlink at the leaf is refused.
+
+    Ancestor symlinks above the parent are followed by the parent open.
+    The leaf itself is opened with `O_NOFOLLOW`, so substituting the output
+    directory with a symlink cannot retarget later `openat` calls made on
+    the returned descriptor.
+    """
+    path = Path(path)
+    if create:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        if create:
+            try:
+                os.mkdir(path.name, 0o777, dir_fd=parent_fd)
+            except FileExistsError:
+                pass
+        try:
+            return os.open(
+                path.name,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=parent_fd,
+            )
+        except OSError as exc:
+            if _is_symlink_errno(exc) or exc.errno == errno.ENOTDIR:
+                raise CorpusBoundaryError(
+                    f"refusing to use {path} -- the directory leaf is a symlink or not a directory"
+                ) from exc
+            raise
+    finally:
+        os.close(parent_fd)
+
+
+def _classify_line(raw_line: str, *, require_license: bool) -> tuple[str, str | None] | None:
+    """Classify one physical line.
+
+    Returns None for a blank line (not a record). Returns `(text, None)`
+    for a record that may be kept. Returns `("", reason)` for a record
+    that must be counted as corrupt and not kept. Encoding failures are
+    corrupt records, not exceptions.
+    """
+    if _contains_surrogate_escape(raw_line):
+        return "", "invalid UTF-8 encoding"
+    stripped = raw_line.strip()
+    if not stripped:
+        return None
+    try:
+        rec = json.loads(stripped)
+    except json.JSONDecodeError:
+        return "", "malformed JSON"
+    if not isinstance(rec, dict):
+        return "", "JSON value is not an object"
+    text = rec.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return "", "missing or empty text field"
+    if require_license:
+        license_name = rec.get("license")
+        usage = rec.get("usage_restrictions")
+        if not isinstance(license_name, str) or not license_name.strip():
+            return "", "license metadata omitted or empty"
+        if not isinstance(usage, str) or not usage.strip():
+            return "", "usage_restrictions metadata omitted or empty"
+    return text, None
+
+
+def _iter_bounded_physical_lines(fd: int, max_record_bytes: int) -> Iterator[tuple[int, bytes | None]]:
+    """Yield `(line_number, payload)` without buffering more than
+    `max_record_bytes` of any one line.
+
+    `payload is None` means the line exceeded the cap; the unread tail
+    was discarded up to the next newline. Newline convention for this
+    mode is `\\n`, with a trailing `\\r` left for the caller to strip.
+    A final line without a trailing newline is still yielded.
+    `fd` is not closed.
+    """
+    if max_record_bytes < 1:
+        raise ValueError("max_record_bytes must be >= 1")
+    with os.fdopen(fd, "rb", closefd=False) as handle:
+        line_number = 0
+        buf = bytearray()
+        overflowing = False
+        while True:
+            chunk = handle.read(64 * 1024)
+            if not chunk:
+                break
+            for byte in chunk:
+                if byte == 0x0A:
+                    yield line_number, None if overflowing else bytes(buf)
+                    line_number += 1
+                    buf.clear()
+                    overflowing = False
+                    continue
+                if overflowing:
+                    continue
+                if len(buf) >= max_record_bytes:
+                    overflowing = True
+                    buf.clear()
+                    continue
+                buf.append(byte)
+        if overflowing or buf:
+            yield line_number, None if overflowing else bytes(buf)
+
+
+def iter_classified_records(
+    path: Path,
+    *,
+    resume_from_line: int = 0,
+    allowed_root: Path | None = None,
+    require_license: bool = False,
+    max_record_bytes: int | None = None,
+) -> Iterator[tuple[int, str, str | None]]:
+    """Yield `(line_number, text, rejection_reason)`.
+
+    `rejection_reason is None` only for a usable text record. Blank lines
+    are not yielded. Invalid UTF-8, malformed JSON, missing text, omitted
+    license metadata (when requested), and oversized lines are yielded
+    with an explicit reason so callers can audit the rejection instead of
+    seeing an exception or a silent drop.
+
+    `require_license` defaults to False so existing callers that only
+    carry a `text` field keep their current contract. Authorized corpus
+    ingestion must pass True; a license string is metadata, not a grant
+    that the text itself is approved for training.
+    """
+    fd = _open_corpus_input(Path(path), allowed_root=allowed_root)
+    try:
+        if max_record_bytes is None:
+            source = _iter_text_lines(fd)
+        else:
+            source = _iter_capped_lines(fd, max_record_bytes)
+        for line_number, raw_line, pre_reason in source:
             if line_number < resume_from_line:
                 continue
-            raw_line = raw_line.strip()
-            if not raw_line:
+            if pre_reason is not None:
+                yield line_number, "", pre_reason
                 continue
-            try:
-                rec = json.loads(raw_line)
-            except json.JSONDecodeError:
-                yield line_number, ""  # caller distinguishes via a sentinel check below
+            classified = _classify_line(raw_line, require_license=require_license)
+            if classified is None:
                 continue
-            text = rec.get("text") if isinstance(rec, dict) else None
-            if not isinstance(text, str) or not text.strip():
-                yield line_number, ""
-                continue
-            yield line_number, text
+            text, reason = classified
+            yield line_number, text, reason
+    finally:
+        os.close(fd)
+
+
+def _iter_text_lines(fd: int) -> Iterator[tuple[int, str, str | None]]:
+    with os.fdopen(fd, encoding="utf-8", errors="surrogateescape", closefd=False) as handle:
+        for line_number, raw_line in enumerate(handle):
+            yield line_number, raw_line, None
+
+
+def _iter_capped_lines(fd: int, max_record_bytes: int) -> Iterator[tuple[int, str, str | None]]:
+    for line_number, payload in _iter_bounded_physical_lines(fd, max_record_bytes):
+        if payload is None:
+            yield line_number, "", f"record exceeds max_record_bytes={max_record_bytes}"
+            continue
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            yield line_number, "", "invalid UTF-8 encoding"
+            continue
+        yield line_number, text, None
+
+
+def stream_records(
+    path: Path,
+    *,
+    resume_from_line: int = 0,
+    allowed_root: Path | None = None,
+    require_license: bool = False,
+    max_record_bytes: int | None = None,
+) -> Iterator[tuple[int, str]]:
+    """Memory-bounded streaming reader: yields `(line_number, text)`.
+
+    `resume_from_line` skips already-processed lines (restart safety).
+    Malformed JSON, invalid UTF-8, and (when requested) missing license
+    metadata yield an empty string so existing callers keep counting them
+    as corrupt records. They are not raised. Blank lines are skipped.
+    See `iter_classified_records` for the audited reason string.
+    """
+    for line_number, text, reason in iter_classified_records(
+        path,
+        resume_from_line=resume_from_line,
+        allowed_root=allowed_root,
+        require_license=require_license,
+        max_record_bytes=max_record_bytes,
+    ):
+        yield line_number, "" if reason else text
 
 
 def deterministic_shard(normalized_text: str, *, num_shards: int) -> int:
@@ -195,16 +482,270 @@ def _shard_path(output_dir: Path, shard_idx: int, split_name: str) -> Path:
     return output_dir / f"shard-{shard_idx:04d}-{split_name}.jsonl"
 
 
-def _open_progress_db(output_dir: Path) -> sqlite3.Connection:
-    """The single durable source of truth for this `output_dir`'s
-    processing state. `isolation_level=None` (autocommit OFF by default
-    in the sense that we issue explicit BEGIN/COMMIT) gives this module
-    full control over transaction boundaries, matching exactly where
-    `process_corpus()` wants a batch to be atomic."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(output_dir / PROGRESS_DB_NAME, isolation_level=None)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=FULL")  # durability over raw speed -- this is a crash-safety primitive
+def _require_recorded_shard_leaf(path_str: str, output_dir: Path) -> str:
+    """Accept a stored shard path only when it is exactly this output directory's shard file.
+
+    The returned leaf is opened relative to the output directory descriptor.
+    A stored path that points elsewhere is not stat'd and is not opened.
+    """
+    name = Path(path_str).name
+    match = _SHARD_LEAF.fullmatch(name)
+    if match is None:
+        raise CorpusBoundaryError(
+            f"refusing stored shard path {path_str!r} -- it is not a shard filename"
+        )
+    expected = _shard_path(output_dir, int(match.group(1)), match.group(2))
+    if Path(path_str) != expected:
+        raise CorpusBoundaryError(
+            f"refusing stored shard path {path_str!r} -- it is not under the output directory"
+        )
+    return name
+
+
+def _regular_shard_stat(dir_fd: int, name: str):
+    try:
+        st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(st.st_mode):
+        raise CorpusBoundaryError(f"refusing to use {name} -- shard path is a symlink")
+    if not stat.S_ISREG(st.st_mode):
+        raise CorpusBoundaryError(f"refusing to use {name} -- shard path is not a regular file")
+    return st
+
+
+def _stat_leaf_nofollow(dir_fd: int, name: str):
+    """Stat `name` relative to `dir_fd` without following a leaf symlink."""
+    try:
+        return os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+
+
+def _require_regular_leaf(dir_fd: int, name: str):
+    """Return the no-follow stat of a regular file, or raise."""
+    st = _stat_leaf_nofollow(dir_fd, name)
+    if st is None:
+        raise CorpusBoundaryError(f"refusing to use {name} -- the file is missing")
+    if stat.S_ISLNK(st.st_mode):
+        raise CorpusBoundaryError(f"refusing to use {name} -- the path is a symlink")
+    if not stat.S_ISREG(st.st_mode):
+        raise CorpusBoundaryError(f"refusing to use {name} -- the path is not a regular file")
+    return st
+
+
+def _ensure_regular_leaf(dir_fd: int, name: str):
+    """Create `name` as a regular file if it is absent. A symlink is not replaced."""
+    st = _stat_leaf_nofollow(dir_fd, name)
+    if st is not None:
+        if stat.S_ISLNK(st.st_mode):
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is a symlink")
+        if not stat.S_ISREG(st.st_mode):
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is not a regular file")
+        return st
+    try:
+        fd = _open_regular_at(dir_fd, name, os.O_RDWR | os.O_CREAT | os.O_EXCL)
+    except FileExistsError:
+        return _require_regular_leaf(dir_fd, name)
+    try:
+        return os.fstat(fd)
+    finally:
+        os.close(fd)
+
+
+def _require_descriptor_directory(dir_fd: int, raw: str) -> str:
+    """Accept a kernel-reported directory path only when it is this descriptor."""
+    if not raw.startswith("/") or raw.endswith(" (deleted)") or "\x00" in raw:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- the descriptor path is not a stable absolute directory"
+        )
+    pinned = os.fstat(dir_fd)
+    try:
+        st_path = os.stat(raw, follow_symlinks=False)
+    except OSError as exc:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- the descriptor path cannot be stat'd"
+        ) from exc
+    if stat.S_ISLNK(st_path.st_mode) or not stat.S_ISDIR(st_path.st_mode):
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- the descriptor path is not the opened directory"
+        )
+    if (st_path.st_dev, st_path.st_ino) != (pinned.st_dev, pinned.st_ino):
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- the descriptor path names a different directory"
+        )
+    return raw
+
+
+def _darwin_descriptor_path(fd: int) -> str:
+    """Return the path Darwin associates with an already-open descriptor.
+
+    `F_GETPATH` is a Darwin `fcntl` command. It is not called on Linux.
+    """
+    if sys.platform != "darwin":
+        raise CorpusBoundaryError(
+            f"refusing Darwin descriptor path lookup on {sys.platform}"
+        )
+    buf = ctypes.create_string_buffer(4096)
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.fcntl(fd, _DARWIN_F_GETPATH, buf) == -1:
+        err = ctypes.get_errno()
+        code = errno.errorcode.get(err, str(err))
+        raise CorpusBoundaryError(
+            f"refusing to open the progress database -- F_GETPATH failed ({code})"
+        )
+    raw = os.fsdecode(buf.value)
+    if not raw:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- F_GETPATH returned an empty path"
+        )
+    return raw
+
+
+def _progress_database_uri(dir_fd: int) -> str:
+    """URI for this directory's progress database.
+
+    Linux passes SQLite `/proc/self/fd/<dirfd>/<leaf>`, which opens relative
+    to the directory descriptor. Darwin passes the `F_GETPATH` result for
+    that same descriptor after an inode check. Any other platform is refused.
+    The caller-supplied output path is never handed to SQLite.
+    """
+    leaf = quote(PROGRESS_DB_NAME)
+    if sys.platform == "linux":
+        try:
+            reported = os.readlink(f"/proc/self/fd/{dir_fd}")
+        except OSError as exc:
+            raise CorpusBoundaryError(
+                "refusing to open the progress database -- the directory descriptor has no /proc path"
+            ) from exc
+        _require_descriptor_directory(dir_fd, reported)
+        return f"file:/proc/self/fd/{dir_fd}/{leaf}?mode=rw"
+    if sys.platform == "darwin":
+        directory = _require_descriptor_directory(dir_fd, _darwin_descriptor_path(dir_fd))
+        return "file:" + quote(directory, safe="/") + "/" + leaf + "?mode=rw"
+    raise CorpusBoundaryError(
+        f"refusing to open the progress database on {sys.platform}: "
+        "descriptor-qualified SQLite paths are implemented for Linux and Darwin only"
+    )
+
+
+def _require_sqlite_bound_to_fd(conn: sqlite3.Connection, pinned: os.stat_result) -> None:
+    """Reject a connection whose main file is not the no-follow descriptor."""
+    row = conn.execute("PRAGMA database_list").fetchone()
+    if row is None or not row[2]:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- SQLite reported no database file"
+        )
+    try:
+        st = os.lstat(row[2])
+    except OSError as exc:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- SQLite's database file cannot be lstat'd"
+        ) from exc
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- SQLite's database file is not a regular file"
+        )
+    if (st.st_dev, st.st_ino) != (pinned.st_dev, pinned.st_ino):
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- SQLite opened a different file than the nofollow descriptor"
+        )
+
+
+def _require_wal(conn: sqlite3.Connection) -> None:
+    """WAL plus `synchronous=FULL` is the crash-safety contract. A weaker mode is not accepted."""
+    row = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+    if row is None or str(row[0]).lower() != "wal":
+        raise CorpusBoundaryError(
+            f"refusing to open the progress database -- WAL mode was not established ({row!r})"
+        )
+    conn.execute("PRAGMA synchronous=FULL")
+    level = conn.execute("PRAGMA synchronous").fetchone()
+    if level is None or int(level[0]) != _SQLITE_SYNCHRONOUS_FULL:
+        raise CorpusBoundaryError(
+            f"refusing to open the progress database -- synchronous=FULL was not established ({level!r})"
+        )
+
+
+def _require_progress_sidecars(dir_fd: int, *, wal_required: bool) -> None:
+    """WAL siblings must be regular files. A symlink is never unlinked or followed."""
+    for name in (PROGRESS_DB_NAME + "-wal", PROGRESS_DB_NAME + "-shm"):
+        st = _stat_leaf_nofollow(dir_fd, name)
+        if st is None:
+            if wal_required:
+                raise CorpusBoundaryError(f"refusing to use {name} -- WAL did not create a regular sidecar")
+            continue
+        if stat.S_ISLNK(st.st_mode):
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is a symlink")
+        if not stat.S_ISREG(st.st_mode):
+            raise CorpusBoundaryError(f"refusing to use {name} -- the path is not a regular file")
+    journal = _stat_leaf_nofollow(dir_fd, PROGRESS_DB_NAME + "-journal")
+    if journal is None:
+        return
+    if stat.S_ISLNK(journal.st_mode):
+        raise CorpusBoundaryError(
+            f"refusing to use {PROGRESS_DB_NAME}-journal -- the path is a symlink"
+        )
+    if not stat.S_ISREG(journal.st_mode):
+        raise CorpusBoundaryError(
+            f"refusing to use {PROGRESS_DB_NAME}-journal -- the path is not a regular file"
+        )
+
+
+def _connect_progress_db(dir_fd: int) -> tuple[sqlite3.Connection, int]:
+    """The single durable source of truth for this output directory's
+    processing state. `isolation_level=None` gives this module full
+    control over transaction boundaries, matching exactly where
+    `process_corpus()` wants a batch to be atomic.
+
+    The database file and its `-wal`, `-shm`, and `-journal` siblings are
+    created or checked with `O_NOFOLLOW` on `dir_fd` before SQLite is
+    invoked. SQLite still resolves a descriptor path to the real directory
+    when it places those siblings; this function checks the opened inode
+    and refuses a sibling that is a symlink. It does not fall back to the
+    caller-supplied pathname.
+
+    Linux evidence for the URI is `/proc/self/fd/<dirfd>/<leaf>`. Darwin
+    uses `F_GETPATH` on the same directory descriptor. Other platforms
+    raise `CorpusBoundaryError`. `_open_progress_db` closes `db_fd` after
+    the schema statements; the returned connection does not depend on that
+    descriptor staying open.
+    """
+    uri = _progress_database_uri(dir_fd)
+    try:
+        db_fd = _open_regular_at(
+            dir_fd,
+            PROGRESS_DB_NAME,
+            os.O_RDWR | os.O_CREAT,
+            mode=0o600,
+        )
+    except CorpusBoundaryError as exc:
+        raise CorpusBoundaryError(
+            "refusing to open the progress database -- the path is a symlink"
+        ) from exc
+    try:
+        for name in _PROGRESS_SIDECAR_NAMES:
+            _ensure_regular_leaf(dir_fd, name)
+        pinned = os.fstat(db_fd)
+        _require_progress_sidecars(dir_fd, wal_required=False)
+        conn = sqlite3.connect(uri, uri=True, isolation_level=None)
+    except Exception:
+        os.close(db_fd)
+        raise
+    try:
+        _require_sqlite_bound_to_fd(conn, pinned)
+        _require_wal(conn)
+        _require_progress_sidecars(dir_fd, wal_required=True)
+        _ensure_progress_schema(conn)
+    except Exception:
+        conn.close()
+        os.close(db_fd)
+        raise
+    return conn, db_fd
+
+
+def _ensure_progress_schema(conn: sqlite3.Connection) -> None:
+    """Create the progress tables. WAL and synchronous mode are already required."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS progress (
             id INTEGER PRIMARY KEY CHECK (id = 0), resume_offset INTEGER NOT NULL,
@@ -237,7 +778,26 @@ def _open_progress_db(output_dir: Path) -> sqlite3.Connection:
     # starting from an empty window -- see _load_near_dup_window_tail()'s
     # own docstring for the reproduced defect this closes.
     conn.execute("CREATE TABLE IF NOT EXISTS near_dup_window (seq INTEGER PRIMARY KEY AUTOINCREMENT, line_number INTEGER NOT NULL, normalized_text TEXT NOT NULL)")
-    return conn
+
+
+def _open_progress_db(output_dir: Path, *, create: bool = True) -> sqlite3.Connection:
+    """Open this output directory's progress database.
+
+    Callers in tests pass the directory path. The leaf directory, the
+    database file, and the WAL siblings are opened with `O_NOFOLLOW`.
+    SQLite reopens the real file for its own journal, so the descriptor
+    used to reject a symlink is closed before this function returns.
+    `create=False` does not create a missing output directory.
+    """
+    dir_fd = _open_directory_leaf(Path(output_dir), create=create)
+    db_fd: int | None = None
+    try:
+        conn, db_fd = _connect_progress_db(dir_fd)
+        return conn
+    finally:
+        if db_fd is not None:
+            os.close(db_fd)
+        os.close(dir_fd)
 
 
 def _load_near_dup_window_tail(conn: sqlite3.Connection) -> list[tuple[int, str, frozenset]]:
@@ -274,30 +834,29 @@ def _load_progress(conn: sqlite3.Connection) -> ProcessingReport:
 _EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 
 
-def _hash_file_prefix(path: Path, n: int) -> str:
-    """Streams the first `n` bytes of `path` (or the whole file if it is
-    shorter than `n`) and returns their SHA-256 hex digest -- never loads
-    more than a fixed chunk size into memory at once. Used both to record
-    a shard file's TRUE content digest at a known-good byte offset
-    (`_flush_pending_shard_rows()`) and to verify that content hasn't
-    silently changed since (`_verify_and_recover_missing_or_corrupted_shard_output()`).
-    Hashing only the first `n` bytes (not the whole current file) matters
-    because this is called BEFORE `_truncate_partial_shard_writes()` has
-    had a chance to cut away any not-yet-recorded trailing bytes a
-    crashed write may have left behind -- comparing only the prefix a
-    prior call actually recorded as safe avoids a false-positive mismatch
-    against bytes that were never claimed to be safe in the first place."""
+def _hash_file_prefix(dir_fd: int, name: str, n: int) -> str:
+    """Streams the first `n` bytes of `name` relative to `dir_fd`.
+
+    The file is opened with `O_NOFOLLOW`. A missing file hashes as the
+    empty digest when `n == 0`. A symlink is refused rather than followed.
+    Hashing only the first `n` bytes matters because this is called BEFORE
+    `_truncate_partial_shard_writes()` cuts away unrecorded trailing bytes.
+    """
+    st = _regular_shard_stat(dir_fd, name)
     h = hashlib.sha256()
+    if st is None:
+        return _EMPTY_SHA256 if n == 0 else h.hexdigest()
     remaining = n
-    if not path.exists():
-        return _EMPTY_SHA256 if n == 0 else h.hexdigest()  # unreachable for n>0 by callers, but never crash
-    with open(path, "rb") as f:
+    fd = _open_regular_at(dir_fd, name, os.O_RDONLY)
+    try:
         while remaining > 0:
-            chunk = f.read(min(1024 * 1024, remaining))
+            chunk = os.read(fd, min(1024 * 1024, remaining))
             if not chunk:
                 break
             h.update(chunk)
             remaining -= len(chunk)
+    finally:
+        os.close(fd)
     return h.hexdigest()
 
 
@@ -311,13 +870,24 @@ def _truncate_partial_shard_writes(output_dir: Path, conn: sqlite3.Connection) -
     left behind, so the subsequent idempotent re-flush (from SQLite's
     durable `kept_records` truth) never appends on top of a corrupt
     partial line."""
+    dir_fd = _open_directory_leaf(output_dir, create=False)
+    try:
+        _truncate_partial_shard_writes_at(output_dir, dir_fd, conn)
+    finally:
+        os.close(dir_fd)
+
+
+def _truncate_partial_shard_writes_at(output_dir: Path, dir_fd: int, conn: sqlite3.Connection) -> None:
     for path_str, safe_offset in conn.execute("SELECT path, safe_byte_offset FROM shard_file_safe_offsets").fetchall():
-        p = Path(path_str)
-        if p.exists() and p.stat().st_size > safe_offset:
-            with open(p, "r+b") as f:
-                f.truncate(safe_offset)
-                f.flush()
-                os.fsync(f.fileno())
+        name = _require_recorded_shard_leaf(path_str, output_dir)
+        st = _regular_shard_stat(dir_fd, name)
+        if st is not None and st.st_size > safe_offset:
+            fd = _open_regular_at(dir_fd, name, os.O_RDWR)
+            try:
+                os.ftruncate(fd, safe_offset)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
 
 
 def _verify_and_recover_missing_or_corrupted_shard_output(output_dir: Path, conn: sqlite3.Connection) -> None:
@@ -367,13 +937,22 @@ def _verify_and_recover_missing_or_corrupted_shard_output(output_dir: Path, conn
     recorded = conn.execute("SELECT path, safe_byte_offset, safe_byte_digest FROM shard_file_safe_offsets").fetchall()
     if not recorded:
         return
+    dir_fd = _open_directory_leaf(output_dir, create=False)
+    try:
+        _verify_and_recover_at(output_dir, dir_fd, conn, recorded)
+    finally:
+        os.close(dir_fd)
+
+
+def _verify_and_recover_at(output_dir: Path, dir_fd: int, conn: sqlite3.Connection, recorded) -> None:
     distinct_shards = conn.execute("SELECT DISTINCT shard, split FROM kept_records").fetchall()
     path_to_shard_split = {str(_shard_path(output_dir, shard, split)): (shard, split) for shard, split in distinct_shards}
 
     for path_str, safe_offset, safe_digest in recorded:
-        p = Path(path_str)
-        actual_size = p.stat().st_size if p.exists() else -1
-        if actual_size >= safe_offset and _hash_file_prefix(p, safe_offset) == safe_digest:
+        name = _require_recorded_shard_leaf(path_str, output_dir)
+        st = _regular_shard_stat(dir_fd, name)
+        actual_size = -1 if st is None else st.st_size
+        if actual_size >= safe_offset and _hash_file_prefix(dir_fd, name, safe_offset) == safe_digest:
             continue  # present, at least as large as flushed, AND content-verified -- genuinely fine
         shard_split = path_to_shard_split.get(path_str)
         if shard_split is None:
@@ -390,6 +969,14 @@ def _verify_and_recover_missing_or_corrupted_shard_output(output_dir: Path, conn
 
 
 def _flush_pending_shard_rows(output_dir: Path, conn: sqlite3.Connection) -> None:
+    dir_fd = _open_directory_leaf(output_dir, create=False)
+    try:
+        _flush_pending_shard_rows_at(output_dir, dir_fd, conn)
+    finally:
+        os.close(dir_fd)
+
+
+def _flush_pending_shard_rows_at(output_dir: Path, dir_fd: int, conn: sqlite3.Connection) -> None:
     """Idempotent: appends every `kept_records` row with `flushed = 0` to
     its target shard file, in bounded pages (never loading the whole
     table into memory).
@@ -425,36 +1012,43 @@ def _flush_pending_shard_rows(output_dir: Path, conn: sqlite3.Connection) -> Non
         rows = conn.execute("SELECT seq, shard, split, normalized_text FROM kept_records WHERE flushed = 0 ORDER BY seq LIMIT ?", (page_size,)).fetchall()
         if not rows:
             break
-        by_file: dict[Path, list[tuple[int, str]]] = {}
+        by_file: dict[str, list[tuple[int, str]]] = {}
+        recorded_path: dict[str, str] = {}
         for seq, shard, split, text in rows:
-            by_file.setdefault(_shard_path(output_dir, shard, split), []).append((seq, text))
+            name = _shard_path(output_dir, shard, split).name
+            if _SHARD_LEAF.fullmatch(name) is None:
+                raise CorpusBoundaryError(f"refusing shard name {name!r}")
+            by_file.setdefault(name, []).append((seq, text))
+            recorded_path[name] = str(_shard_path(output_dir, shard, split))
 
-        for path in by_file:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            pre_write_size = path.stat().st_size if path.exists() else 0
-            pre_write_digest = _hash_file_prefix(path, pre_write_size)
+        for name in by_file:
+            st = _regular_shard_stat(dir_fd, name)
+            pre_write_size = 0 if st is None else st.st_size
+            pre_write_digest = _hash_file_prefix(dir_fd, name, pre_write_size)
             conn.execute("BEGIN")
             conn.execute(
                 "INSERT INTO shard_file_safe_offsets (path, safe_byte_offset, safe_byte_digest) VALUES (?, ?, ?) "
                 "ON CONFLICT(path) DO UPDATE SET safe_byte_offset = excluded.safe_byte_offset, safe_byte_digest = excluded.safe_byte_digest",
-                (str(path), pre_write_size, pre_write_digest),
+                (recorded_path[name], pre_write_size, pre_write_digest),
             )
             conn.execute("COMMIT")
 
         conn.execute("BEGIN")
-        for path, entries in by_file.items():
+        for name, entries in by_file.items():
             payload = "".join(json.dumps({"text": t}, ensure_ascii=False) + "\n" for _, t in entries).encode("utf-8")
-            with open(path, "ab") as f:
-                f.write(payload)
-                f.flush()
-                os.fsync(f.fileno())
-            path.chmod(0o600)
-            new_size = path.stat().st_size
-            new_digest = _hash_file_prefix(path, new_size)
+            fd = _open_regular_at(dir_fd, name, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+            try:
+                _write_all(fd, payload)
+                os.fsync(fd)
+                os.fchmod(fd, 0o600)
+                new_size = os.fstat(fd).st_size
+            finally:
+                os.close(fd)
+            new_digest = _hash_file_prefix(dir_fd, name, new_size)
             conn.execute(
                 "INSERT INTO shard_file_safe_offsets (path, safe_byte_offset, safe_byte_digest) VALUES (?, ?, ?) "
                 "ON CONFLICT(path) DO UPDATE SET safe_byte_offset = excluded.safe_byte_offset, safe_byte_digest = excluded.safe_byte_digest",
-                (str(path), new_size, new_digest),
+                (recorded_path[name], new_size, new_digest),
             )
         seqs = [seq for seq, _, _, _ in rows]
         conn.executemany("UPDATE kept_records SET flushed = 1 WHERE seq = ?", [(s,) for s in seqs])
@@ -472,7 +1066,7 @@ def iter_kept_records(output_dir: Path, *, page_size: int = 1000) -> Iterator[st
     `flushed` rows, since the SQLite table is the authoritative "was
     this record actually kept" truth regardless of whether its shard
     file has been written yet) `output_dir`."""
-    conn = sqlite3.connect(output_dir / PROGRESS_DB_NAME)
+    conn = _open_progress_db(output_dir, create=False)
     try:
         last_seq = 0
         while True:
@@ -492,6 +1086,8 @@ def process_corpus(
     input_path: Path, output_dir: Path, *, num_shards: int, resume_from_line: int | None = None,
     quality_filter: Callable[[str], bool] | None = None, enforce_pii_screening: bool = True,
     commit_batch_size: int = DEFAULT_COMMIT_BATCH_SIZE, return_kept_records: bool = True,
+    require_license: bool = False, allowed_root: Path | None = None,
+    max_record_bytes: int | None = None,
 ) -> tuple[ProcessingReport, list[str]]:
     """The full pipeline stage: stream -> corrupt-record rejection ->
     normalize -> exact + bounded-window near-duplicate rejection ->
@@ -521,7 +1117,6 @@ def process_corpus(
     use `iter_kept_records(output_dir)` afterward, a generator that pages
     through SQLite rather than materializing the whole list at once."""
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
     # P0-02 fix: independently confirmed as a real risk by inspection --
     # two process_corpus() calls targeting the SAME output_dir with no
     # mutual exclusion could both read the same resume_offset and
@@ -534,11 +1129,21 @@ def process_corpus(
     # discipline `orca.genesis.training.primitives.save_training_state`
     # already established for checkpoint files, applied here to a
     # whole-directory granularity instead of one file.
-    lock_path = output_dir / ".process_corpus.lock"
-    lock_file = open(lock_path, "a+")
-    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-    conn = _open_progress_db(output_dir)
+    # The directory fd is the anchor for every later shard, lock, and
+    # progress-database open. Those opens use O_NOFOLLOW, so a symlink
+    # planted at a shard name is not followed.
+    dir_fd = _open_directory_leaf(output_dir, create=True)
+    lock_fd: int | None = None
+    conn: sqlite3.Connection | None = None
     try:
+        try:
+            lock_fd = _open_regular_at(dir_fd, ".process_corpus.lock", os.O_RDWR | os.O_CREAT)
+        except CorpusBoundaryError as exc:
+            raise CorpusBoundaryError(
+                "refusing to lock .process_corpus.lock -- the path is a symlink"
+            ) from exc
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        conn = _open_progress_db(output_dir)
         _verify_and_recover_missing_or_corrupted_shard_output(output_dir, conn)  # P0-03: detect externally deleted/truncated output
         _truncate_partial_shard_writes(output_dir, conn)
         _flush_pending_shard_rows(output_dir, conn)  # finish any batch a prior crash committed to SQLite but never flushed to disk
@@ -603,11 +1208,17 @@ def process_corpus(
             seen_exact_cache.clear()
             _flush_pending_shard_rows(output_dir, conn)
 
-        for line_number, raw_text in stream_records(input_path, resume_from_line=start_line):
+        for line_number, raw_text, rejection in iter_classified_records(
+            input_path,
+            resume_from_line=start_line,
+            allowed_root=allowed_root,
+            require_license=require_license,
+            max_record_bytes=max_record_bytes,
+        ):
             report.lines_read += 1
             report.resume_offset = line_number + 1
-            if not raw_text:
-                report.record_corrupt(f"line {line_number}: malformed JSON or missing/empty 'text' field")
+            if rejection is not None:
+                report.record_corrupt(f"line {line_number}: {rejection}")
                 continue
 
             normalized = normalize_record_text(raw_text)
@@ -666,9 +1277,12 @@ def process_corpus(
 
         return report, kept_records
     finally:
-        conn.close()
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-        lock_file.close()
+        if conn is not None:
+            conn.close()
+        if lock_fd is not None:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+        os.close(dir_fd)
 
 
 def compute_shard_digests(output_dir: Path) -> dict[str, str]:
@@ -686,11 +1300,29 @@ def compute_shard_digests(output_dir: Path) -> dict[str, str]:
     binding check) invalidates any grant authorized against the
     PREVIOUS digest -- demonstrated directly in this module's own test
     suite."""
+    output_dir = Path(output_dir)
+    if not output_dir.exists():
+        return {}
+    dir_fd = _open_directory_leaf(output_dir, create=False)
     digests: dict[str, str] = {}
-    for path in sorted(output_dir.glob("shard-*.jsonl")):
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                h.update(chunk)
-        digests[path.name] = h.hexdigest()
+    try:
+        for name in sorted(os.listdir(dir_fd)):
+            if _SHARD_LEAF.fullmatch(name) is None:
+                continue
+            st = _regular_shard_stat(dir_fd, name)
+            if st is None:
+                continue
+            h = hashlib.sha256()
+            fd = _open_regular_at(dir_fd, name, os.O_RDONLY)
+            try:
+                while True:
+                    chunk = os.read(fd, 1024 * 1024)
+                    if not chunk:
+                        break
+                    h.update(chunk)
+            finally:
+                os.close(fd)
+            digests[name] = h.hexdigest()
+    finally:
+        os.close(dir_fd)
     return digests
