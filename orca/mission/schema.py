@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS missions (
                            'DRAFT', 'PLANNING', 'READY', 'RUNNING', 'WAITING_TOOL',
                            'WAITING_EXTERNAL_EVENT', 'WAITING_APPROVAL', 'VERIFYING',
                            'COURT_REVIEW', 'PAUSED_USER', 'PAUSED_WINDOW_REACHED',
+                           'CANCELLATION_REQUESTED',
                            'BLOCKED', 'FAILED', 'COMPLETED_UNVERIFIED',
                            'COMPLETED_VERIFIED', 'CANCELLED'
                        )),
@@ -415,4 +416,36 @@ ALTER TABLE operations ADD COLUMN IF NOT EXISTS parameters_fingerprint TEXT;
 ALTER TABLE operations ADD COLUMN IF NOT EXISTS requested_by TEXT;
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS lease_id TEXT;
 ALTER TABLE authority_decisions ADD COLUMN IF NOT EXISTS requested_by TEXT;
+"""
+
+# ─────────────────────────────────────────────────────────────────
+#  AUDIT-C02-P0-03 ("cancellation truth"): adds CANCELLATION_REQUESTED
+#  as a real, persisted mission state, distinct from CANCELLED. A
+#  mission that MIGHT have a live worker process (RUNNING, any
+#  WAITING_* state, any PAUSED_* state, BLOCKED) can no longer
+#  transition directly to CANCELLED -- see
+#  orca.mission.state_machine's updated transition table -- it must
+#  pass through CANCELLATION_REQUESTED first, which is reached only
+#  to CANCELLED (worker termination confirmed) or FAILED
+#  (reconciliation could not confirm clean termination -- fail
+#  closed, never silently reported as a successful cancel). DRAFT/
+#  PLANNING/READY still go directly to CANCELLED: nothing is running
+#  in those states, so there is nothing to confirm terminated.
+#
+#  The CHECK constraint is widened by DROP + re-ADD under the same,
+#  Postgres-default-assigned name (`missions_state_check`) -- safe to
+#  re-run every `apply_schema()` call, matching this module's existing
+#  idempotent-migration discipline (ADD COLUMN IF NOT EXISTS above).
+# ─────────────────────────────────────────────────────────────────
+
+CANCELLATION_REQUESTED_MIGRATION_SQL = """
+ALTER TABLE missions DROP CONSTRAINT IF EXISTS missions_state_check;
+ALTER TABLE missions ADD CONSTRAINT missions_state_check CHECK (state IN (
+    'DRAFT', 'PLANNING', 'READY', 'RUNNING', 'WAITING_TOOL',
+    'WAITING_EXTERNAL_EVENT', 'WAITING_APPROVAL', 'VERIFYING',
+    'COURT_REVIEW', 'PAUSED_USER', 'PAUSED_WINDOW_REACHED',
+    'CANCELLATION_REQUESTED',
+    'BLOCKED', 'FAILED', 'COMPLETED_UNVERIFIED',
+    'COMPLETED_VERIFIED', 'CANCELLED'
+));
 """

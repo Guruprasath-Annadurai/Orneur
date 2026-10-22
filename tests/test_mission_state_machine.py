@@ -94,9 +94,54 @@ class TestPauseResume:
         assert transition(S.RUNNING, S.PAUSED_WINDOW_REACHED) is S.PAUSED_WINDOW_REACHED
         assert transition(S.PAUSED_WINDOW_REACHED, S.RUNNING) is S.RUNNING
 
-    def test_paused_states_can_be_cancelled(self):
-        assert transition(S.PAUSED_USER, S.CANCELLED) is S.CANCELLED
-        assert transition(S.PAUSED_WINDOW_REACHED, S.CANCELLED) is S.CANCELLED
+    def test_paused_states_can_request_cancellation_then_confirm(self):
+        """AUDIT-C02-P0-03 (cancellation truth): a paused mission might
+        still have a live worker process, so it can no longer jump
+        directly to CANCELLED -- it must pass through
+        CANCELLATION_REQUESTED first, which is only then confirmed to
+        CANCELLED (or, if termination cannot be confirmed, FAILED --
+        see TestCancellationRequested below)."""
+        assert transition(S.PAUSED_USER, S.CANCELLATION_REQUESTED) is S.CANCELLATION_REQUESTED
+        assert transition(S.CANCELLATION_REQUESTED, S.CANCELLED) is S.CANCELLED
+        assert transition(S.PAUSED_WINDOW_REACHED, S.CANCELLATION_REQUESTED) is S.CANCELLATION_REQUESTED
+
+        with pytest.raises(MissionStateError):
+            transition(S.PAUSED_USER, S.CANCELLED)
+
+
+class TestCancellationRequested:
+    def test_cancellation_requested_confirms_to_cancelled(self):
+        assert transition(S.CANCELLATION_REQUESTED, S.CANCELLED) is S.CANCELLED
+
+    def test_cancellation_requested_can_resolve_to_failed_when_termination_cannot_be_confirmed(self):
+        """Fail closed: if the worker's termination cannot actually be
+        confirmed, the mission must land in FAILED, never silently in
+        CANCELLED as if cleanly stopped."""
+        assert transition(S.CANCELLATION_REQUESTED, S.FAILED) is S.FAILED
+
+    def test_cancellation_requested_is_not_terminal_but_has_no_other_exits(self):
+        assert not is_terminal(S.CANCELLATION_REQUESTED)
+        with pytest.raises(MissionStateError):
+            transition(S.CANCELLATION_REQUESTED, S.RUNNING)
+
+    def test_every_live_worker_state_requests_cancellation_not_direct_cancel(self):
+        """RUNNING and every WAITING_*/PAUSED_*/BLOCKED state might
+        have a live worker -- none of them may jump straight to
+        CANCELLED any more."""
+        for state in (
+            S.RUNNING, S.WAITING_TOOL, S.WAITING_EXTERNAL_EVENT, S.WAITING_APPROVAL,
+            S.PAUSED_USER, S.PAUSED_WINDOW_REACHED, S.BLOCKED,
+        ):
+            assert transition(state, S.CANCELLATION_REQUESTED) is S.CANCELLATION_REQUESTED
+            with pytest.raises(MissionStateError):
+                transition(state, S.CANCELLED)
+
+    def test_draft_planning_ready_still_cancel_directly(self):
+        """Nothing is running yet in these states, so there is nothing
+        to confirm terminated -- the direct path is still legitimate."""
+        assert transition(S.DRAFT, S.CANCELLED) is S.CANCELLED
+        assert transition(S.PLANNING, S.CANCELLED) is S.CANCELLED
+        assert transition(S.READY, S.CANCELLED) is S.CANCELLED
 
 
 class TestBlocked:

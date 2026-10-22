@@ -146,6 +146,45 @@ def create_mission(
     return get_mission(conn, id)  # type: ignore[return-value]
 
 
+def create_mission_steps(conn, mission_id: str, step_descriptions: list[str]) -> tuple[dict, ...]:
+    """AUDIT-C02-P1-01 ("planning truth"): persists a real, validated
+    plan -- one row per step in `mission_steps`, PENDING, in the given
+    order -- rather than allowing a mission to reach READY with no
+    plan content at all. Raises `ValueError` for an empty step list;
+    callers (see `orca.serve.mission_api.plan_mission`) must not call
+    this with no real content and must not transition to READY if it
+    is never called."""
+    if not step_descriptions:
+        raise ValueError("step_descriptions must be non-empty -- a mission cannot be planned with zero steps")
+    now = _now_iso()
+    rows = []
+    with conn.cursor() as cur:
+        for index, description in enumerate(step_descriptions):
+            step_id = f"step_{mission_id}_{index}"
+            cur.execute(
+                """
+                INSERT INTO mission_steps (id, mission_id, step_index, description, status, created_at)
+                VALUES (%s, %s, %s, %s, 'PENDING', %s)
+                """,
+                (step_id, mission_id, index, description, now),
+            )
+            rows.append({"id": step_id, "mission_id": mission_id, "step_index": index,
+                         "description": description, "status": "PENDING", "created_at": now})
+    conn.commit()
+    return tuple(rows)
+
+
+def list_mission_steps(conn, mission_id: str) -> tuple[dict, ...]:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM mission_steps WHERE mission_id = %s ORDER BY step_index ASC",
+            (mission_id,),
+        )
+        rows = cur.fetchall()
+    conn.commit()
+    return tuple(dict(r) for r in rows)
+
+
 def get_mission(conn, mission_id: str) -> dict | None:
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM missions WHERE id = %s", (mission_id,))

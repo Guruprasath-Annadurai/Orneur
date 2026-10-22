@@ -1,7 +1,7 @@
 """
 Mission State Machine (Phase 15 spec section 6).
 
-The 15 canonical mission states and their validated transitions.
+The 16 canonical mission states and their validated transitions.
 Structurally enforces two hard invariants from the spec, not merely
 documents them:
 
@@ -23,7 +23,23 @@ COMPLETED_UNVERIFIED is represented by a NEW mission/verification
 pass, not by mutating the old mission's history in place. This keeps
 "was this specific mission run ever verified" an unambiguous,
 never-rewritten fact.
-"""
+
+AUDIT-C02-P0-03 ("cancellation truth"): CANCELLATION_REQUESTED is a
+16th state, added because a cancel request against a mission that
+MIGHT have a live worker process (RUNNING, any WAITING_* state, any
+PAUSED_* state, BLOCKED) is not itself proof the worker has stopped.
+Those states can no longer transition directly to CANCELLED -- only
+to CANCELLATION_REQUESTED, from which the only further moves are
+CANCELLED (worker termination independently confirmed) or FAILED
+(reconciliation could not confirm clean termination; this is a
+fail-closed outcome, never silently reported as a successful cancel).
+DRAFT/PLANNING/READY still transition directly to CANCELLED: no
+worker exists yet in those states, so there is nothing to confirm
+terminated. This module itself does not perform any reconciliation --
+it only makes "request" and "confirmed" genuinely distinct, persisted
+states; the actual worker-termination check is the caller's
+responsibility (see orca.serve.mission_api's cancel/confirm-cancelled
+endpoints for the current, honestly-scoped implementation)."""
 from __future__ import annotations
 
 from enum import Enum
@@ -45,6 +61,7 @@ class MissionState(Enum):
     FAILED = "FAILED"
     COMPLETED_UNVERIFIED = "COMPLETED_UNVERIFIED"
     COMPLETED_VERIFIED = "COMPLETED_VERIFIED"
+    CANCELLATION_REQUESTED = "CANCELLATION_REQUESTED"
     CANCELLED = "CANCELLED"
 
 
@@ -70,11 +87,11 @@ _ALLOWED_TRANSITIONS: dict[MissionState, frozenset[MissionState]] = {
     S.RUNNING: frozenset({
         S.WAITING_TOOL, S.WAITING_EXTERNAL_EVENT, S.WAITING_APPROVAL,
         S.VERIFYING, S.PAUSED_USER, S.PAUSED_WINDOW_REACHED,
-        S.BLOCKED, S.FAILED, S.COMPLETED_UNVERIFIED, S.CANCELLED,
+        S.BLOCKED, S.FAILED, S.COMPLETED_UNVERIFIED, S.CANCELLATION_REQUESTED,
     }),
-    S.WAITING_TOOL: frozenset({S.RUNNING, S.FAILED, S.PAUSED_WINDOW_REACHED, S.CANCELLED}),
-    S.WAITING_EXTERNAL_EVENT: frozenset({S.RUNNING, S.FAILED, S.PAUSED_WINDOW_REACHED, S.CANCELLED}),
-    S.WAITING_APPROVAL: frozenset({S.RUNNING, S.BLOCKED, S.PAUSED_WINDOW_REACHED, S.CANCELLED}),
+    S.WAITING_TOOL: frozenset({S.RUNNING, S.FAILED, S.PAUSED_WINDOW_REACHED, S.CANCELLATION_REQUESTED}),
+    S.WAITING_EXTERNAL_EVENT: frozenset({S.RUNNING, S.FAILED, S.PAUSED_WINDOW_REACHED, S.CANCELLATION_REQUESTED}),
+    S.WAITING_APPROVAL: frozenset({S.RUNNING, S.BLOCKED, S.PAUSED_WINDOW_REACHED, S.CANCELLATION_REQUESTED}),
     S.VERIFYING: frozenset({
         S.COURT_REVIEW, S.COMPLETED_VERIFIED, S.COMPLETED_UNVERIFIED,
         S.FAILED, S.BLOCKED, S.PAUSED_WINDOW_REACHED,
@@ -86,9 +103,10 @@ _ALLOWED_TRANSITIONS: dict[MissionState, frozenset[MissionState]] = {
     # -- the minimum adjustment needed, not a broadened transition
     # table.
     S.COURT_REVIEW: frozenset({S.COMPLETED_VERIFIED, S.BLOCKED, S.WAITING_APPROVAL, S.FAILED, S.PAUSED_WINDOW_REACHED}),
-    S.PAUSED_USER: frozenset({S.RUNNING, S.CANCELLED}),
-    S.PAUSED_WINDOW_REACHED: frozenset({S.RUNNING, S.CANCELLED}),
-    S.BLOCKED: frozenset({S.RUNNING, S.PLANNING, S.FAILED, S.CANCELLED}),
+    S.PAUSED_USER: frozenset({S.RUNNING, S.CANCELLATION_REQUESTED}),
+    S.PAUSED_WINDOW_REACHED: frozenset({S.RUNNING, S.CANCELLATION_REQUESTED}),
+    S.BLOCKED: frozenset({S.RUNNING, S.PLANNING, S.FAILED, S.CANCELLATION_REQUESTED}),
+    S.CANCELLATION_REQUESTED: frozenset({S.CANCELLED, S.FAILED}),
     S.FAILED: frozenset(),
     S.COMPLETED_UNVERIFIED: frozenset(),
     S.COMPLETED_VERIFIED: frozenset(),

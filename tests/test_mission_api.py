@@ -31,6 +31,8 @@ from fastapi.testclient import TestClient
 
 from orca.auth import get_current_user
 from orca.auth.store import User
+from orca.mission import mission_store
+from orca.mission.state_machine import MissionState
 from orca.serve import api as api_module
 from orca.serve.mission_api import _mission_conn
 
@@ -125,6 +127,18 @@ class _FakeCursor:
             self._rowcount = 1
         elif sql_norm.startswith("INSERT INTO authority_decisions") or sql_norm.startswith("INSERT INTO approvals"):
             self._result = []
+        elif sql_norm.startswith("INSERT INTO mission_steps"):
+            cols = ["id", "mission_id", "step_index", "description", "created_at"]
+            row = dict(zip(cols, params))
+            row["status"] = "PENDING"
+            row["started_at"] = None
+            row["completed_at"] = None
+            self._db["mission_steps"][row["id"]] = row
+            self._result = []
+        elif sql_norm.startswith("SELECT * FROM mission_steps WHERE mission_id = %s"):
+            rows = [r for r in self._db["mission_steps"].values() if r["mission_id"] == params[0]]
+            rows.sort(key=lambda r: r["step_index"])
+            self._result = rows
         else:
             raise AssertionError(f"FakeCursor: unhandled SQL: {sql_norm[:120]}")
 
@@ -158,7 +172,7 @@ class _FakeConn:
 
 @pytest.fixture
 def shared_db():
-    return {"missions": {}, "operations": {}}
+    return {"missions": {}, "operations": {}, "mission_steps": {}}
 
 
 @pytest.fixture
@@ -225,7 +239,7 @@ def test_cross_user_cannot_plan_or_cancel_someone_elses_mission(client):
     mission_id = created["id"]
 
     _as(client, _user("mallory"))
-    assert client.post(f"/v1/missions/{mission_id}/plan").status_code == 404
+    assert client.post(f"/v1/missions/{mission_id}/plan", json={"steps": ["do the thing"]}).status_code == 404
     assert client.post(f"/v1/missions/{mission_id}/cancel").status_code == 404
 
 
@@ -242,12 +256,115 @@ def test_mission_list_is_owner_filtered(client):
     assert repos == ["r1"]
 
 
-def test_plan_transitions_draft_to_ready(client):
+def test_plan_transitions_draft_to_ready_and_persists_real_steps(client):
     _as(client, _user("alice"))
     created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
-    resp = client.post(f"/v1/missions/{created['id']}/plan")
+    mission_id = created["id"]
+    resp = client.post(f"/v1/missions/{mission_id}/plan", json={"steps": ["clone repo", "run tests", "open PR"]})
     assert resp.status_code == 200, resp.text
     assert resp.json()["state"] == "READY"
+
+    steps = client.get(f"/v1/missions/{mission_id}/steps").json()["steps"]
+    assert [s["description"] for s in steps] == ["clone repo", "run tests", "open PR"]
+    assert all(s["status"] == "PENDING" for s in steps)
+
+
+def test_plan_with_no_steps_is_rejected_and_mission_stays_in_draft(client):
+    """AUDIT-C02-P1-01: a mission must never reach READY with zero
+    persisted plan content."""
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+
+    resp = client.post(f"/v1/missions/{mission_id}/plan", json={"steps": []})
+    assert resp.status_code == 422
+
+    mission = client.get(f"/v1/missions/{mission_id}").json()
+    assert mission["state"] == "DRAFT"
+
+
+def test_cancel_from_draft_goes_directly_to_cancelled(client):
+    """Nothing is running yet in DRAFT -- there's nothing to confirm
+    terminated, so the direct path remains legitimate."""
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    resp = client.post(f"/v1/missions/{created['id']}/cancel")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "CANCELLED"
+
+
+def test_cancel_from_running_requests_cancellation_not_direct_cancel(client, shared_db):
+    """AUDIT-C02-P0-03: a mission that might have a live worker
+    process must never be reported CANCELLED on a single call --
+    /cancel only moves it to CANCELLATION_REQUESTED."""
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+
+    conn = _FakeConn(shared_db)
+    mission_store.transition_mission(conn, mission_id, MissionState.PLANNING)
+    mission_store.transition_mission(conn, mission_id, MissionState.READY)
+    mission_store.transition_mission(conn, mission_id, MissionState.RUNNING)
+
+    resp = client.post(f"/v1/missions/{mission_id}/cancel")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "CANCELLATION_REQUESTED"
+
+    # Calling /cancel again while still CANCELLATION_REQUESTED must
+    # not silently succeed either -- there is no CANCELLATION_REQUESTED
+    # -> CANCELLATION_REQUESTED transition.
+    resp2 = client.post(f"/v1/missions/{mission_id}/cancel")
+    assert resp2.status_code == 409
+
+
+def test_confirm_cancelled_true_marks_cancelled(client, shared_db):
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+
+    conn = _FakeConn(shared_db)
+    mission_store.transition_mission(conn, mission_id, MissionState.PLANNING)
+    mission_store.transition_mission(conn, mission_id, MissionState.READY)
+    mission_store.transition_mission(conn, mission_id, MissionState.RUNNING)
+    client.post(f"/v1/missions/{mission_id}/cancel")
+
+    resp = client.post(f"/v1/missions/{mission_id}/confirm-cancelled", json={"termination_confirmed": True})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "CANCELLED"
+
+
+def test_confirm_cancelled_false_marks_failed_not_cancelled(client, shared_db):
+    """Fail closed: if termination could not actually be confirmed,
+    the mission must land in FAILED, never silently in CANCELLED."""
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+
+    conn = _FakeConn(shared_db)
+    mission_store.transition_mission(conn, mission_id, MissionState.PLANNING)
+    mission_store.transition_mission(conn, mission_id, MissionState.READY)
+    mission_store.transition_mission(conn, mission_id, MissionState.RUNNING)
+    client.post(f"/v1/missions/{mission_id}/cancel")
+
+    resp = client.post(f"/v1/missions/{mission_id}/confirm-cancelled", json={"termination_confirmed": False})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "FAILED"
+
+
+def test_cross_user_cannot_confirm_cancelled_on_someone_elses_mission(client, shared_db):
+    _as(client, _user("alice"))
+    created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_id = created["id"]
+
+    conn = _FakeConn(shared_db)
+    mission_store.transition_mission(conn, mission_id, MissionState.PLANNING)
+    mission_store.transition_mission(conn, mission_id, MissionState.READY)
+    mission_store.transition_mission(conn, mission_id, MissionState.RUNNING)
+    client.post(f"/v1/missions/{mission_id}/cancel")
+
+    _as(client, _user("mallory"))
+    resp = client.post(f"/v1/missions/{mission_id}/confirm-cancelled", json={"termination_confirmed": True})
+    assert resp.status_code == 404
 
 
 def test_operation_request_requires_mission_ownership(client):
@@ -306,6 +423,60 @@ def test_self_approval_is_rejected(client):
     assert resp.status_code == 403
 
 
+def test_distinct_principal_approval_journey_reaches_a_real_allow_decision(client, shared_db):
+    """AUDIT-C02-P1-02 ("real approval path"): demonstrates that
+    orca.mission.operation_store's underlying engine genuinely
+    supports a legitimate operation-request-to-approval journey
+    between two DISTINCT, real principals, reaching an actual ALLOW
+    decision from the real orca.godmode authority engine (NOT
+    mocked/faked) -- not merely that self-approval is rejected.
+
+    HONEST SCOPE NOTE, called out explicitly rather than worked
+    around: this phase's HTTP API (orca/serve/mission_api.py) gates
+    BOTH operation requests and approvals on mission ownership
+    (`owner_user_id == caller.id`) -- there is currently no "approver"
+    role distinct from "mission owner" exposed over HTTP, because
+    `orca.auth.store.User` has no workspace/role concept beyond a
+    bare `id` yet. That means, AS BUILT TODAY, the only caller who can
+    reach `/approve` for a given mission is that mission's own owner
+    -- so a genuinely distinct HTTP-level requester/approver pair is
+    not yet expressible without a real multi-principal authorization
+    model (a separate, future piece of work). This test therefore
+    exercises the real domain engine directly (bypassing the HTTP
+    ownership gate, which is the part that is narrow, not the
+    underlying mechanism) to prove the mechanism itself is NOT
+    artificially limited to a single principal, and that self-
+    authorization is independently, structurally enforced by the SAME
+    code path regardless of which layer calls it."""
+    from orca.mission import operation_store
+
+    conn = _FakeConn(shared_db)
+    op, created = operation_store.request_operation(
+        conn, id="op-distinct-1", idempotency_key="distinct-key", kind="shell_exec",
+        requested_by="alice", mission_id="mission-distinct-1", target="ls", parameters=None,
+    )
+    assert created is True
+    assert op["status"] == "REQUESTED"
+
+    # A genuinely different principal (bob) approves alice's request.
+    authorized_op, allowed = operation_store.authorize_operation(
+        conn, op["id"], tenant_id="tenant-distinct-1", approved_by="bob", reason="qualification journey",
+    )
+    assert allowed is True, "a distinct, legitimate approver must be able to reach a real ALLOW decision"
+    assert authorized_op["status"] == "AUTHORIZED"
+
+    # Self-authorization remains independently, structurally rejected
+    # by the SAME function -- not weakened to make the above work.
+    op2, _ = operation_store.request_operation(
+        conn, id="op-distinct-2", idempotency_key="distinct-key-2", kind="shell_exec",
+        requested_by="alice", mission_id="mission-distinct-1", target="ls", parameters=None,
+    )
+    with pytest.raises(operation_store.SelfAuthorizationError):
+        operation_store.authorize_operation(
+            conn, op2["id"], tenant_id="tenant-distinct-1", approved_by="alice", reason="trying to self-approve",
+        )
+
+
 def test_approval_denial_marks_operation_cancelled(client):
     _as(client, _user("alice"))
     created = client.post("/v1/missions", json={"repository": "r", "mode": "ASSIST", "autonomy_level": "L0"}).json()
@@ -318,6 +489,56 @@ def test_approval_denial_marks_operation_cancelled(client):
     resp = client.post(f"/v1/missions/{mission_id}/operations/{op['id']}/deny")
     assert resp.status_code == 200
     assert resp.json()["status"] == "CANCELLED"
+
+
+def test_idempotency_key_collision_across_missions_is_rejected_not_silently_returned(client):
+    """AUDIT-C02-P0-01: operations.idempotency_key is globally unique
+    (not scoped per-mission) in the existing schema. The SAME key with
+    matching kind/target/parameters, reused under a DIFFERENT mission,
+    must never be silently treated as "your mission's successful
+    retry" -- it must be reported as a conflict."""
+    _as(client, _user("alice"))
+    mission_a = client.post("/v1/missions", json={"repository": "r1", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_b = client.post("/v1/missions", json={"repository": "r2", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+
+    payload = {"kind": "shell_exec", "target": "ls", "idempotency_key": "shared-key-across-missions"}
+    r1 = client.post(f"/v1/missions/{mission_a['id']}/operations", json=payload)
+    assert r1.status_code == 201, r1.text
+    op_a = r1.json()["operation"]
+    assert op_a["mission_id"] == mission_a["id"]
+
+    r2 = client.post(f"/v1/missions/{mission_b['id']}/operations", json=payload)
+    assert r2.status_code == 409, r2.text
+    assert "different mission" in r2.json()["detail"]
+
+
+def test_cannot_approve_operation_belonging_to_a_different_mission(client):
+    """AUDIT-C02-P0-02: approving at
+    /v1/missions/{mission_id}/operations/{operation_id}/approve must
+    verify operation_id actually belongs to mission_id, not merely
+    that the caller owns mission_id. Otherwise an operation_id learned
+    from elsewhere could be approved/denied through an unrelated
+    mission's URL."""
+    _as(client, _user("alice"))
+    mission_a = client.post("/v1/missions", json={"repository": "r1", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+    mission_b = client.post("/v1/missions", json={"repository": "r2", "mode": "ASSIST", "autonomy_level": "L0"}).json()
+
+    op_a = client.post(
+        f"/v1/missions/{mission_a['id']}/operations",
+        json={"kind": "shell_exec", "target": "ls", "idempotency_key": "k-a"},
+    ).json()["operation"]
+
+    # Attempt to approve mission A's operation through mission B's URL.
+    resp = client.post(
+        f"/v1/missions/{mission_b['id']}/operations/{op_a['id']}/approve",
+        json={"reason": "approving via the wrong mission"},
+    )
+    assert resp.status_code == 404
+
+    # Same cross-mission mismatch on the deny path (already correct,
+    # verified here as a regression guard).
+    resp2 = client.post(f"/v1/missions/{mission_b['id']}/operations/{op_a['id']}/deny")
+    assert resp2.status_code == 404
 
 
 def test_cannot_deny_an_already_denied_operation(client):
